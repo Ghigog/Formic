@@ -15,6 +15,8 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
   const [cards, setCards] = useState(initialCards);
   const [extras, setExtras] = useState<Record<string, CardExtras | undefined>>({});
   const [stats, setStats] = useState(initialStats);
+  /** Live PRD text per Epic while the Product Agent writes. */
+  const [prdStreams, setPrdStreams] = useState<Record<string, string>>({});
 
   // Refetch is debounced: a burst of card events should cost one request.
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,6 +88,14 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
           }));
           break;
 
+        case "epic.prd":
+          setPrdStreams((prev) => ({
+            ...prev,
+            [event.epicId]: event.done ? "" : (prev[event.epicId] ?? "") + event.delta,
+          }));
+          if (event.done) scheduleRefetch();
+          break;
+
         case "run.finished":
           scheduleRefetch();
           break;
@@ -145,5 +155,14 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
     [refetch],
   );
 
-  return { cards, extras, stats, connection, transition, createEpic, refetch };
+  return {
+    cards,
+    extras,
+    stats,
+    prdStreams,
+    connection,
+    transition,
+    createEpic,
+    refetch,
+  };
 }

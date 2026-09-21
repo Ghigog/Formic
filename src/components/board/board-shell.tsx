@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Board } from "./board";
 import { NewItemDialog } from "./new-item-dialog";
+import { EpicDrawer } from "./epic-drawer";
 import { AmbientDrawer, type AmbientStats } from "@/components/ui/ambient-drawer";
 import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
@@ -24,11 +25,10 @@ export function BoardShell({
   baseBranch: string;
   initialStats: AmbientStats;
 }) {
-  const { cards, extras, stats, connection, transition, createEpic } = useBoard(
-    initialCards,
-    initialStats,
-  );
+  const { cards, extras, stats, prdStreams, connection, transition, createEpic } =
+    useBoard(initialCards, initialStats);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [openEpicId, setOpenEpicId] = useState<string | null>(null);
 
   const stopAll = async () => {
     await fetch("/api/runs/stop", { method: "POST" });
@@ -42,7 +42,9 @@ export function BoardShell({
         projectName={projectName}
         repoFullName={repoFullName}
         baseBranch={baseBranch}
-        onOpenCard={() => {}}
+        onOpenCard={(card) =>
+          setOpenEpicId(card.kind === "epic" ? card.id : card.epicId)
+        }
         onNewItem={() => setDialogOpen(true)}
         onTransition={transition}
       />
@@ -51,6 +53,12 @@ export function BoardShell({
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         onSubmit={createEpic}
+      />
+
+      <EpicDrawer
+        epicId={openEpicId}
+        onClose={() => setOpenEpicId(null)}
+        streamingPrd={openEpicId ? prdStreams[openEpicId] : undefined}
       />
 
       <AmbientDrawer stats={stats} onStopAll={() => void stopAll()} />
