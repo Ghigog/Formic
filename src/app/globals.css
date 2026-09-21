@@ -136,12 +136,22 @@
   --color-on-crimson: var(--formic-on-crimson);
 
   /*
-   * Strict 8px grid. Tailwind's default scale is 4px-based; this replaces it
-   * so `p-2` is 16px and a stray `p-3` cannot introduce a 12px value that was
-   * not deliberate. The one documented exception is card padding, exposed as
-   * `p-card` below.
+   * 8px grid.
+   *
+   * Tailwind's spacing scale is deliberately left at its 4px base. Setting
+   * `--spacing: 8px` also redefines every utility derived from it, including
+   * `leading-*` and `size-*`, so `leading-5` silently becomes 40px and a 6px
+   * status dot becomes 12px. The grid is enforced by using even steps
+   * (`p-2` = 8px, `p-4` = 16px, `p-6` = 24px, `p-8` = 32px) rather than by
+   * changing what every utility means. The one documented exception is card
+   * padding, exposed as `p-card` below.
+   *
+   * Line heights are named rather than numeric for the same reason: dense UI
+   * text needs values the spacing scale does not express well.
    */
-  --spacing: 8px;
+  --leading-dense: 1.25;
+  --leading-card: 1.45;
+  --leading-prose: 1.65;
 
   --font-sans:
     var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI",

@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TicketStatus {
+  draft
+  specified
+  ready
+  waiting
+  running
+  review
+  merged
+  blocked
+  failed
+}
+
+enum ColumnId {
+  backlog
+  todo
+  in_progress
+  in_review
+  done
+}
+
+enum AgentRole {
+  product
+  architect
+  coder
+  reviewer
+  pm
+}
+
+enum AgentRunStatus {
+  queued
+  running
+  succeeded
+  failed
+  blocked
+  cancelled
+}
+
+enum TicketSize {
+  S
+  M
+  L
+  XL
+}
+
+model Project {
+  id           String   @id @default(cuid())
+  name         String
+  repoFullName String
+  baseBranch   String   @default("main")
+  createdAt    DateTime @default(now())
+
+  epics  Epic[]
+  events Event[]
+
+  @@map("project")
+}
+
+model Epic {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title            String
+  rawRequest       String
+  /// Structured PRD from the Product Agent. Null until stage 2 completes.
+  prd              Json?
+  prdEditedByHuman Boolean @default(false)
+  showcase         String?
+
+  status    TicketStatus @default(draft)
+  /// Set only for blocked/failed cards, so a stalled card keeps its column.
+  stalledIn ColumnId?
+  stage     Int          @default(1)
+  /// Fractional index. A drag writes one row instead of renumbering a column.
+  position  Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tickets Ticket[]
+  runs    AgentRun[]
+
+  @@index([projectId, status])
+  @@map("epic")
+}
+
+model Ticket {
+  id     String @id @default(cuid())
+  epicId String
+  epic   Epic   @relation(fields: [epicId], references: [id], onDelete: Cascade)
+
+  key                String
+  title              String
+  description        String
+  acceptanceCriteria String[]
+  /// Normalised directory prefixes. The concurrency boundary.
+  fileScope          String[]
+  size               TicketSize @default(M)
+
+  status    TicketStatus @default(waiting)
+  stalledIn ColumnId?
+  stage     Int          @default(3)
+  position  Float
+
+  branchName    String?
+  prNumber      Int?
+  prUrl         String?
+  blockedReason String?
+  attempts      Int     @default(0)
+
+  costCents Float @default(0)
+  tokensIn  Int   @default(0)
+  tokensOut Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dependsOn  TicketDependency[] @relation("dependent")
+  dependents TicketDependency[] @relation("dependency")
+  runs       AgentRun[]
+
+  @@unique([epicId, key])
+  @@index([epicId, status])
+  @@map("ticket")
+}
+
+model TicketDependency {
+  ticketId          String
+  ticket            Ticket @relation("dependent", fields: [ticketId], references: [id], onDelete: Cascade)
+  dependsOnTicketId String
+  dependsOn         Ticket @relation("dependency", fields: [dependsOnTicketId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, dependsOnTicketId])
+  @@index([dependsOnTicketId])
+  @@map("ticket_dependency")
+}
+
+model AgentRun {
+  id   String    @id @default(cuid())
+  role AgentRole
+
+  epicId String?
+  epic   Epic?   @relation(fields: [epicId], references: [id], onDelete: Cascade)
+
+  ticketId String?
+  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  status AgentRunStatus @default(queued)
+  model  String?
+
+  tokensIn  Int   @default(0)
+  tokensOut Int   @default(0)
+  costCents Float @default(0)
+
+  sandboxId String?
+  error     String?
+
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([status])
+  @@index([ticketId])
+  @@map("agent_run")
+}
+
+/// Append-only event log. Backs SSE replay: a reconnecting client asks for
+/// everything after the last `seq` it saw rather than showing a gap.
+model Event {
+  seq       BigInt   @id @default(autoincrement())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      String
+  payload   Json
+  at        DateTime @default(now())
+
+  @@index([projectId, seq])
+  @@map("event")
+}

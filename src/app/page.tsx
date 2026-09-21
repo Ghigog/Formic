@@ -1,33 +1,25 @@
 import { BoardShell } from "@/components/board/board-shell";
-import type { CardExtras } from "@/components/board/card";
-import {
-  FIXTURE_CARDS,
-  FIXTURE_CI,
-  FIXTURE_PROGRESS,
-} from "@/lib/fixtures/board";
+import { repository } from "@/lib/db";
 
-export default function BoardPage() {
-  const extras: Record<string, CardExtras | undefined> = {};
-  for (const [id, ci] of Object.entries(FIXTURE_CI)) {
-    extras[id] = { ...extras[id], ci };
-  }
-  for (const [id, progress] of Object.entries(FIXTURE_PROGRESS)) {
-    extras[id] = { ...extras[id], progress };
-  }
+export const dynamic = "force-dynamic";
+
+export default async function BoardPage() {
+  const repo = repository();
+  const project = await repo.defaultProject();
+  const cards = await repo.boardCards(project.id);
 
   return (
     <BoardShell
-      initialCards={FIXTURE_CARDS}
-      extras={extras}
-      projectName="Formic"
-      repoFullName={process.env.GITHUB_REPO ?? "Ghigog/Formic"}
-      baseBranch={process.env.GITHUB_BASE_BRANCH ?? "main"}
-      stats={{
+      initialCards={cards}
+      projectName={project.name}
+      repoFullName={project.repoFullName}
+      baseBranch={project.baseBranch}
+      initialStats={{
         activeSandboxes: 0,
         provider: process.env.SANDBOX_PROVIDER ?? "local",
-        tokensIn: 128_400,
-        tokensOut: 31_200,
-        costCents: 212,
+        tokensIn: 0,
+        tokensOut: 0,
+        costCents: 0,
         logLines: [],
       }}
     />
