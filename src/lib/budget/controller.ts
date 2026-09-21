@@ -10,6 +10,7 @@ import {
   checkBudget,
 } from "./limits";
 import { publish } from "@/lib/events/bus";
+import { disposeAllSandboxes } from "@/lib/sandbox";
 
 /**
  * Live run registry and the global stop.
@@ -147,11 +148,10 @@ export async function stopAll(
   for (const run of targets) {
     await stopRun(run.runId, reason, "global");
   }
-  await publish(projectId, {
-    type: "sandbox.count",
-    active: activeRunCount(projectId),
-    provider: process.env.SANDBOX_PROVIDER ?? "local",
-  });
+
+  // Aborting a run asks the agent to stop. Disposing the sandboxes makes it
+  // true regardless of whether the agent was listening.
+  await disposeAllSandboxes(projectId);
   return targets.length;
 }
 
