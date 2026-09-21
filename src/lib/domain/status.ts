@@ -1,0 +1,139 @@
+/**
+ * Ticket status is the source of truth. The Kanban column is a *view* of it.
+ *
+ * This matters because cards are moved by two different actors: a human
+ * dragging a card, and an agent finishing a run. If the column were canonical,
+ * those two paths would write different fields and race. Both write `status`;
+ * the board derives the column.
+ */
+
+export const COLUMNS = [
+  "backlog",
+  "todo",
+  "in_progress",
+  "in_review",
+  "done",
+] as const;
+
+export type ColumnId = (typeof COLUMNS)[number];
+
+export const COLUMN_LABELS: Record<ColumnId, string> = {
+  backlog: "Backlog",
+  todo: "To Do",
+  in_progress: "In Progress",
+  in_review: "In Review",
+  done: "Done",
+};
+
+export const TICKET_STATUSES = [
+  /** Backlog. Raw user input, no PRD yet. */
+  "draft",
+  /** Backlog. Product Agent has written a PRD. Epics only. */
+  "specified",
+  /** To Do. All dependencies satisfied, eligible to run. */
+  "ready",
+  /** To Do. Held by an unsatisfied dependency. */
+  "waiting",
+  /** In Progress. A sandbox run is live. */
+  "running",
+  /** In Review. A PR is open, CI and merge are in flight. */
+  "review",
+  /** Done. Merged. */
+  "merged",
+  /** Parked anywhere. Needs a human before it can move. */
+  "blocked",
+  /** Terminal failure. Needs a human to retry or abandon. */
+  "failed",
+] as const;
+
+export type TicketStatus = (typeof TICKET_STATUSES)[number];
+
+const STATUS_TO_COLUMN: Record<TicketStatus, ColumnId> = {
+  draft: "backlog",
+  specified: "backlog",
+  ready: "todo",
+  waiting: "todo",
+  running: "in_progress",
+  review: "in_review",
+  merged: "done",
+  // Blocked and failed cards stay in the column they stalled in; the board
+  // reads `stalledIn` for those. See columnFor().
+  blocked: "todo",
+  failed: "todo",
+};
+
+/**
+ * Where a card renders. Blocked and failed cards keep their position rather
+ * than teleporting to a "blocked" column that does not exist in the design.
+ */
+export function columnFor(
+  status: TicketStatus,
+  stalledIn?: ColumnId | null,
+): ColumnId {
+  if ((status === "blocked" || status === "failed") && stalledIn) {
+    return stalledIn;
+  }
+  return STATUS_TO_COLUMN[status];
+}
+
+/** A card the user is allowed to pick up. Running cards are not draggable. */
+export function isDraggable(status: TicketStatus): boolean {
+  return status !== "running" && status !== "review";
+}
+
+/** Terminal states an agent will not move on from without a human. */
+export function isStalled(status: TicketStatus): status is "blocked" | "failed" {
+  return status === "blocked" || status === "failed";
+}
+
+export function isTerminal(status: TicketStatus): boolean {
+  return status === "merged" || isStalled(status);
+}
+
+/**
+ * Column moves a human may perform. Backwards moves are permitted for
+ * recovery (pulling a failed card back to To Do), forwards moves only one
+ * column at a time so a card cannot skip its agent.
+ */
+const ALLOWED_USER_MOVES: Record<ColumnId, readonly ColumnId[]> = {
+  backlog: ["todo"],
+  todo: ["backlog", "in_progress"],
+  in_progress: ["todo"],
+  in_review: ["todo"],
+  done: [],
+};
+
+export type MoveRejection =
+  | { ok: true }
+  | { ok: false; reason: string };
+
+export function canUserMove(from: ColumnId, to: ColumnId): MoveRejection {
+  if (from === to) return { ok: true };
+  const allowed = ALLOWED_USER_MOVES[from];
+  if (!allowed.includes(to)) {
+    return {
+      ok: false,
+      reason: `Cards cannot move from ${COLUMN_LABELS[from]} to ${COLUMN_LABELS[to]}.`,
+    };
+  }
+  return { ok: true };
+}
+
+/** The status a card lands in when a human drops it into a column. */
+export function statusForUserDrop(
+  to: ColumnId,
+  dependenciesMet: boolean,
+): TicketStatus {
+  switch (to) {
+    case "backlog":
+      return "draft";
+    case "todo":
+      return dependenciesMet ? "ready" : "waiting";
+    case "in_progress":
+      return "running";
+    case "in_review":
+      return "review";
+    case "done":
+      return "merged";
+  }
+}
