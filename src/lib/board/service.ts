@@ -11,6 +11,8 @@ import {
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import { positionForIndex } from "@/lib/ordering";
 import { publish } from "@/lib/events/bus";
+import { launch, runArchitectAgent, runProductAgent } from "@/lib/agents/pipeline";
+import { prdSchema } from "@/lib/domain/entities";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -98,7 +100,46 @@ export async function applyTransition(
     blockedReason: null,
   });
 
+  // Moving an Epic into To Do is the Architect Agent's trigger. It runs
+  // detached so the drag returns immediately; progress arrives over SSE.
+  if (card.kind === "epic" && t.to === "todo") {
+    const detail = await repo.epicDetail(card.id);
+    const prd = prdSchema.safeParse(detail?.prd);
+
+    if (!prd.success) {
+      return {
+        ok: true,
+        status,
+        runId: null,
+      };
+    }
+
+    const tree = await repoTree();
+    const title = detail!.title;
+
+    launch(
+      () => runArchitectAgent(projectId, card.id, title, prd.data, tree),
+      `architect agent for ${card.key}`,
+    );
+  }
+
   return { ok: true, status, runId: null };
+}
+
+/**
+ * Top-level directories the Architect Agent uses to ground its file scopes.
+ * Read from the sandbox once PROT-05 is wired in; until then the known layout
+ * of this repository is a better prompt than nothing.
+ */
+async function repoTree(): Promise<string[]> {
+  return [
+    "src/app",
+    "src/components",
+    "src/lib",
+    "prisma",
+    "docs",
+    "scripts",
+  ];
 }
 
 export async function createBacklogItem(
@@ -125,6 +166,12 @@ export async function createBacklogItem(
     kind: "epic",
     epicId: null,
   });
+
+  // Stage 1 -> 2. The Product Agent expands the raw request into a PRD.
+  launch(
+    () => runProductAgent(projectId, card.id, rawRequest.trim()),
+    `product agent for ${card.key}`,
+  );
 
   return card;
 }

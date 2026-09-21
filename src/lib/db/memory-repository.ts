@@ -29,6 +29,7 @@ interface Store {
   project: ProjectSummary;
   cards: Map<string, BoardCard>;
   prds: Map<string, unknown>;
+  rawRequests: Map<string, string>;
   showcases: Map<string, string>;
   events: Array<{ seq: number; type: string; payload: unknown; at: Date }>;
 }
@@ -49,6 +50,7 @@ function store(): Store {
     },
     cards: new Map(),
     prds: new Map(),
+    rawRequests: new Map(),
     showcases: new Map(),
     events: [],
   };
@@ -104,6 +106,7 @@ export class MemoryRepository implements Repository {
       doneCount: 0,
     };
     s.cards.set(card.id, card);
+    s.rawRequests.set(card.id, input.rawRequest);
     return card;
   }
 
@@ -166,6 +169,17 @@ export class MemoryRepository implements Repository {
 
   async cardById(cardId: string): Promise<BoardCard | null> {
     return store().cards.get(cardId) ?? null;
+  }
+
+  async epicDetail(epicId: string) {
+    const s = store();
+    const card = s.cards.get(epicId);
+    if (!card) return null;
+    return {
+      title: card.title,
+      rawRequest: s.rawRequests.get(epicId) ?? card.title,
+      prd: s.prds.get(epicId) ?? null,
+    };
   }
 
   async setEpicPrd(epicId: string, prd: unknown): Promise<void> {

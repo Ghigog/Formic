@@ -30,6 +30,10 @@ export function BoardShell({
   );
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  const stopAll = async () => {
+    await fetch("/api/runs/stop", { method: "POST" });
+  };
+
   return (
     <>
       <Board
@@ -49,7 +53,7 @@ export function BoardShell({
         onSubmit={createEpic}
       />
 
-      <AmbientDrawer stats={stats} />
+      <AmbientDrawer stats={stats} onStopAll={() => void stopAll()} />
 
       {connection === "reconnecting" && (
         <div

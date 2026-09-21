@@ -52,6 +52,9 @@ export interface Repository {
   /** Positions in a column, ascending, for fractional index placement. */
   columnPositions(projectId: string, column: ColumnId): Promise<number[]>;
   cardById(id: string): Promise<BoardCard | null>;
+  epicDetail(
+    epicId: string,
+  ): Promise<{ title: string; rawRequest: string; prd: unknown } | null>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
   appendEvent(projectId: string, type: string, payload: unknown): Promise<number>;

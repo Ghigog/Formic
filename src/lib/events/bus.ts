@@ -2,6 +2,7 @@ import "server-only";
 
 import { repository } from "@/lib/db";
 import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
+import { redactDeep } from "@/lib/secrets/redact";
 
 /**
  * In-process pub/sub with a durable tail.
@@ -47,8 +48,13 @@ export function subscriberCount(projectId: string): number {
 
 export async function publish(
   projectId: string,
-  event: FormicEvent,
+  raw: FormicEvent,
 ): Promise<number> {
+  // Single choke point for secret scrubbing. Everything the UI ever sees
+  // passes through here, so redaction happens once rather than at every
+  // call site that might log a command line or a clone URL.
+  const event = redactDeep(raw);
+
   const seq = await repository().appendEvent(projectId, event.type, event);
   const sequenced: SequencedEvent = {
     seq,

@@ -1,5 +1,10 @@
 import type { AgentRegistry } from "./ports";
 import {
+  AnthropicArchitectAgent,
+  AnthropicProductAgent,
+  AnthropicShowcaseAgent,
+} from "./anthropic";
+import {
   MockArchitectAgent,
   MockProductAgent,
   MockShowcaseAgent,
@@ -31,11 +36,12 @@ export function agents(): AgentRegistry {
     return cached;
   }
 
-  // Populated by the real implementations. Imported lazily so the mock path
-  // never pulls the SDK in.
-  throw new Error(
-    "Real agents are registered in src/lib/agents/anthropic.ts; call registerAnthropicAgents() first.",
-  );
+  cached = {
+    product: new AnthropicProductAgent(),
+    architect: new AnthropicArchitectAgent(),
+    showcase: new AnthropicShowcaseAgent(),
+  };
+  return cached;
 }
 
 export function setAgents(registry: AgentRegistry): void {

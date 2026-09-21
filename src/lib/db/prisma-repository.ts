@@ -257,6 +257,15 @@ export class PrismaRepository implements Repository {
     return cards.find((c) => c.id === id) ?? null;
   }
 
+  async epicDetail(epicId: string) {
+    const db = prisma();
+    const epic = await db.epic.findUnique({
+      where: { id: epicId },
+      select: { title: true, rawRequest: true, prd: true },
+    });
+    return epic ?? null;
+  }
+
   async setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void> {
     const db = prisma();
     await db.epic.update({
