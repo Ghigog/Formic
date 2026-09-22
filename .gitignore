@@ -11,3 +11,8 @@ next-env.d.ts
 coverage/
 prisma/dev.db
 /src/generated/
+
+# Playwright run artefacts
+/e2e/.results
+/playwright-report
+/test-results
