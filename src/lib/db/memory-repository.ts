@@ -1,5 +1,7 @@
 import "server-only";
 
+import { normalizeRepo } from "@/lib/secrets/repo";
+
 import type {
   CreateEpicInput,
   CreateTicketInput,
@@ -46,7 +48,7 @@ interface Store {
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
   events: Array<{ seq: number; type: string; payload: unknown; at: Date }>;
-  runs: Map<string, RunRecord & { status: AgentRunStatus }>;
+  runs: Map<string, RunRecord & { status: AgentRunStatus; startedAt: Date }>;
   deliveries: Set<string>;
 }
 
@@ -61,7 +63,7 @@ function store(): Store {
     project: {
       id: "project_default",
       name: "Formic",
-      repoFullName: process.env.GITHUB_REPO ?? "Ghigog/Formic",
+      repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
       baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
     },
     cards: new Map(),
@@ -244,6 +246,10 @@ export class MemoryRepository implements Repository {
       .slice(0, limit);
   }
 
+  async latestEventSeq(_projectId: string): Promise<number> {
+    return store().events.at(-1)?.seq ?? 0;
+  }
+
   async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
     const s = store();
     const card = s.cards.get(ticketId);
@@ -295,7 +301,7 @@ export class MemoryRepository implements Repository {
   }
 
   async startRun(run: RunRecord): Promise<void> {
-    store().runs.set(run.id, { ...run, status: "running" });
+    store().runs.set(run.id, { ...run, status: "running", startedAt: new Date() });
   }
 
   async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
@@ -303,9 +309,13 @@ export class MemoryRepository implements Repository {
     if (run) run.status = outcome.status;
   }
 
-  async unfinishedRuns(): Promise<Array<RunRecord & { status: AgentRunStatus }>> {
+  async unfinishedRuns(
+    startedBefore: Date,
+  ): Promise<Array<RunRecord & { status: AgentRunStatus }>> {
     return [...store().runs.values()].filter(
-      (r) => r.status === "queued" || r.status === "running",
+      (r) =>
+        (r.status === "queued" || r.status === "running") &&
+        r.startedAt < startedBefore,
     );
   }
 

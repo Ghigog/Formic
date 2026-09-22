@@ -71,11 +71,12 @@ export function prisma(): PrismaClient {
     );
   }
 
-  const client = new PrismaClient({ adapter: new PrismaPg(poolConfig(url)) });
-
-  // Next dev reloads modules; without this the pool grows on every edit.
-  if (process.env.NODE_ENV !== "production") {
-    globalThis.__formicPrisma = client;
-  }
-  return client;
+  // Cached in every environment: callers invoke prisma() per query, so an
+  // uncached production build opened a fresh pool per call and leaked them
+  // until the database refused connections. globalThis (not module scope)
+  // also survives dev-mode module reloads.
+  globalThis.__formicPrisma = new PrismaClient({
+    adapter: new PrismaPg(poolConfig(url)),
+  });
+  return globalThis.__formicPrisma;
 }

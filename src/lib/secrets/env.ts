@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { normalizeRepo } from "./repo";
 
 /**
  * Validated server-side configuration.
@@ -56,17 +57,44 @@ function cleanedProcessEnv(): Record<string, string | undefined> {
   return out;
 }
 
+let warnings: string[] = [];
+
+/**
+ * Every key here is optional or defaulted, so a malformed value is dropped
+ * (falling back to "unset" or its default) and reported, never thrown. One
+ * bad optional variable used to 500 every route that read config, which is
+ * the opposite of "each credential unlocks one layer".
+ */
 export function env(): Env {
   if (cached) return cached;
-  const parsed = schema.safeParse(cleanedProcessEnv());
-  if (!parsed.success) {
-    const detail = parsed.error.issues
-      .map((i) => `${i.path.join(".")}: ${i.message}`)
-      .join("; ");
-    throw new Error(`Invalid environment configuration. ${detail}`);
+
+  const input = cleanedProcessEnv();
+  if (input.GITHUB_REPO) {
+    input.GITHUB_REPO = normalizeRepo(input.GITHUB_REPO) ?? input.GITHUB_REPO;
   }
+
+  let parsed = schema.safeParse(input);
+  const found: string[] = [];
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const key = String(issue.path[0]);
+      found.push(`${key} is invalid and was ignored: ${issue.message}`);
+      delete input[key];
+    }
+    parsed = schema.safeParse(input);
+    if (!parsed.success) throw new Error("Unreachable: every config key is optional.");
+  }
+
+  for (const message of found) console.warn(`[formic] config: ${message}`);
+  warnings = found;
   cached = parsed.data;
   return cached;
+}
+
+/** Config problems found by env(), for /api/health. */
+export function configWarnings(): string[] {
+  env();
+  return warnings;
 }
 
 export class MissingCredentialError extends Error {
@@ -106,4 +134,5 @@ export function authenticatedCloneUrl(repoFullName: string): string {
 
 export function resetEnvCache(): void {
   cached = null;
+  warnings = [];
 }
