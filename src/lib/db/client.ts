@@ -45,11 +45,20 @@ export function hasDatabase(): boolean {
  * pushes succeed and every runtime query fail with a TLS error. Only relax
  * verification for URLs that asked for SSL in the first place, so a local,
  * SSL-less Postgres (via `npm run db:local`) is unaffected.
+ *
+ * The `sslmode` has to come out of the string itself, not just be
+ * countermanded with an explicit `ssl` option: pg's ConnectionParameters
+ * re-parses `connectionString` and does
+ * `Object.assign({}, config, parse(connectionString))`, so whatever the
+ * string's own `sslmode` resolves to always overwrites an `ssl` passed
+ * alongside it.
  */
 function poolConfig(url: string): PoolConfig {
-  return /[?&]sslmode=/.test(url)
-    ? { connectionString: url, ssl: { rejectUnauthorized: false } }
-    : { connectionString: url };
+  if (!/[?&]sslmode=/.test(url)) return { connectionString: url };
+
+  const stripped = new URL(url);
+  stripped.searchParams.delete("sslmode");
+  return { connectionString: stripped.toString(), ssl: { rejectUnauthorized: false } };
 }
 
 export function prisma(): PrismaClient {

@@ -1,0 +1,52 @@
+name: Production smoke test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the deployed app is actually up
+        env:
+          PROD_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          if [ -z "$PROD_URL" ]; then
+            echo "No PRODUCTION_URL repository variable set — skipping."
+            echo "Set one under Settings > Secrets and variables > Actions > Variables to enable this check."
+            exit 0
+          fi
+
+          check() {
+            path="$1"
+            url="${PROD_URL%/}${path}"
+            echo "GET $url"
+            response="$(curl -sS -w '\n%{http_code}' --max-time 15 "$url")"
+            status="$(echo "$response" | tail -n1)"
+            body="$(echo "$response" | sed '$d')"
+            echo "$body"
+            if [ "$status" != "200" ]; then
+              echo "::error::$path returned HTTP $status"
+              return 1
+            fi
+          }
+
+          # /api/health alone doesn't reach the database (its counters are
+          # in-memory), and / does (it loads the board's default project),
+          # so both together catch a build that's green but a runtime that
+          # can't actually talk to a configured database — exactly what
+          # slipped past CI the last few rounds.
+          attempt=0
+          until check "/api/health" && check "/"; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge 5 ]; then
+              echo "::error::Deployment still unhealthy after retries"
+              exit 1
+            fi
+            echo "Retrying in 20s (attempt $attempt/5, in case the deploy is still in flight)..."
+            sleep 20
+          done
+
+          echo "Deployment is healthy."
