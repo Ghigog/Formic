@@ -7,8 +7,12 @@ import type {
   MoveInput,
   ProjectSummary,
   Repository,
+  RunOutcome,
+  RunRecord,
+  TicketDetail,
+  TicketUpdate,
 } from "./repository";
-import type { BoardCard } from "@/lib/domain/entities";
+import type { AgentRunStatus, BoardCard } from "@/lib/domain/entities";
 import { type ColumnId, type TicketStatus, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -315,6 +319,114 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
+    const db = prisma();
+    const row = await db.ticket.findUnique({
+      where: { id: ticketId },
+      include: { epic: { select: { projectId: true } } },
+    });
+    return row ? toTicketDetail(row) : null;
+  }
+
+  async ticketByPrNumber(
+    projectId: string,
+    prNumber: number,
+  ): Promise<TicketDetail | null> {
+    const db = prisma();
+    const row = await db.ticket.findFirst({
+      where: { prNumber, epic: { projectId } },
+      include: { epic: { select: { projectId: true } } },
+    });
+    return row ? toTicketDetail(row) : null;
+  }
+
+  async updateTicket(ticketId: string, update: TicketUpdate): Promise<void> {
+    const db = prisma();
+    const { costCents, tokensIn, tokensOut, ...rest } = update;
+
+    await db.ticket.update({
+      where: { id: ticketId },
+      data: {
+        ...rest,
+        // Spend accumulates across a ticket's runs; everything else is a set.
+        ...(costCents !== undefined ? { costCents: { increment: costCents } } : {}),
+        ...(tokensIn !== undefined ? { tokensIn: { increment: tokensIn } } : {}),
+        ...(tokensOut !== undefined ? { tokensOut: { increment: tokensOut } } : {}),
+      },
+    });
+  }
+
+  async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
+    const db = prisma();
+    const rows = await db.ticket.findMany({
+      where: { epicId },
+      orderBy: { position: "asc" },
+      include: { epic: { select: { projectId: true } } },
+    });
+    return rows.map(toTicketDetail);
+  }
+
+  async startRun(run: RunRecord): Promise<void> {
+    const db = prisma();
+    await db.agentRun.upsert({
+      where: { id: run.id },
+      create: {
+        id: run.id,
+        role: run.role,
+        epicId: run.epicId,
+        ticketId: run.ticketId,
+        model: run.model,
+        sandboxId: run.sandboxId,
+        status: "running",
+        startedAt: new Date(),
+      },
+      update: { sandboxId: run.sandboxId, status: "running" },
+    });
+  }
+
+  async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
+    const db = prisma();
+    await db.agentRun.updateMany({
+      where: { id: runId },
+      data: {
+        status: outcome.status,
+        error: outcome.error,
+        tokensIn: outcome.tokensIn,
+        tokensOut: outcome.tokensOut,
+        costCents: outcome.costCents,
+        finishedAt: new Date(),
+      },
+    });
+  }
+
+  async unfinishedRuns(): Promise<Array<RunRecord & { status: AgentRunStatus }>> {
+    const db = prisma();
+    const rows = await db.agentRun.findMany({
+      where: { status: { in: ["queued", "running"] } },
+    });
+    return rows.map((r: RunRow) => ({
+      id: r.id,
+      role: r.role,
+      epicId: r.epicId,
+      ticketId: r.ticketId,
+      model: r.model,
+      sandboxId: r.sandboxId,
+      status: r.status,
+    }));
+  }
+
+  async claimDelivery(key: string): Promise<boolean> {
+    const db = prisma();
+    try {
+      await db.webhookDelivery.create({ data: { key } });
+      return true;
+    } catch {
+      // The primary key is the idempotency mechanism: a duplicate insert
+      // losing the race is exactly the answer we want, not an error.
+      return false;
+    }
+  }
+
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
     const db = prisma();
     const cards = (await this.boardCards(projectId))
@@ -332,4 +444,56 @@ export class PrismaRepository implements Repository {
       ),
     );
   }
+}
+
+type TicketRow = {
+  id: string;
+  epicId: string;
+  key: string;
+  title: string;
+  description: string;
+  acceptanceCriteria: string[];
+  fileScope: string[];
+  status: TicketStatus;
+  stalledIn: ColumnId | null;
+  stage: number;
+  branchName: string | null;
+  summary: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  blockedReason: string | null;
+  attempts: number;
+  epic: { projectId: string };
+};
+
+type RunRow = {
+  id: string;
+  role: RunRecord["role"];
+  epicId: string | null;
+  ticketId: string | null;
+  model: string | null;
+  sandboxId: string | null;
+  status: AgentRunStatus;
+};
+
+function toTicketDetail(row: TicketRow): TicketDetail {
+  return {
+    id: row.id,
+    epicId: row.epicId,
+    projectId: row.epic.projectId,
+    key: row.key,
+    title: row.title,
+    description: row.description,
+    acceptanceCriteria: row.acceptanceCriteria,
+    fileScope: row.fileScope,
+    status: row.status,
+    stalledIn: row.stalledIn,
+    stage: row.stage,
+    branchName: row.branchName,
+    prNumber: row.prNumber,
+    prUrl: row.prUrl,
+    blockedReason: row.blockedReason,
+    attempts: row.attempts,
+    summary: row.summary,
+  };
 }

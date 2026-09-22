@@ -1,6 +1,10 @@
 import "server-only";
 
-import type { BoardCard } from "@/lib/domain/entities";
+import type {
+  AgentRole,
+  AgentRunStatus,
+  BoardCard,
+} from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 
 /**
@@ -36,6 +40,59 @@ export interface MoveInput {
   position: number;
 }
 
+/** Everything a coding agent and its pipeline need about one ticket. */
+export interface TicketDetail {
+  id: string;
+  epicId: string;
+  projectId: string;
+  key: string;
+  title: string;
+  description: string;
+  acceptanceCriteria: string[];
+  fileScope: string[];
+  status: TicketStatus;
+  stalledIn: ColumnId | null;
+  stage: number;
+  branchName: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  blockedReason: string | null;
+  attempts: number;
+  summary: string | null;
+}
+
+export interface TicketUpdate {
+  status?: TicketStatus;
+  stalledIn?: ColumnId | null;
+  stage?: number;
+  branchName?: string | null;
+  prNumber?: number | null;
+  prUrl?: string | null;
+  blockedReason?: string | null;
+  attempts?: number;
+  summary?: string | null;
+  costCents?: number;
+  tokensIn?: number;
+  tokensOut?: number;
+}
+
+export interface RunRecord {
+  id: string;
+  role: AgentRole;
+  epicId: string | null;
+  ticketId: string | null;
+  model: string | null;
+  sandboxId: string | null;
+}
+
+export interface RunOutcome {
+  status: AgentRunStatus;
+  error: string | null;
+  tokensIn: number;
+  tokensOut: number;
+  costCents: number;
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -64,4 +121,31 @@ export interface Repository {
     limit?: number,
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
   rebalanceColumn(projectId: string, column: ColumnId): Promise<void>;
+
+  /* PROT-06 / PROT-07: the ticket run lifecycle. */
+
+  ticketDetail(ticketId: string): Promise<TicketDetail | null>;
+  /** The ticket a webhook is about. Pull request numbers are unique per repo. */
+  ticketByPrNumber(
+    projectId: string,
+    prNumber: number,
+  ): Promise<TicketDetail | null>;
+  updateTicket(ticketId: string, update: TicketUpdate): Promise<void>;
+  /** Every ticket under an Epic, for dependency gating and the showcase. */
+  ticketsForEpic(epicId: string): Promise<TicketDetail[]>;
+
+  startRun(run: RunRecord): Promise<void>;
+  finishRun(runId: string, outcome: RunOutcome): Promise<void>;
+  /**
+   * Runs still marked live. After a restart these are by definition orphans:
+   * the process that owned their sandbox is gone.
+   */
+  unfinishedRuns(): Promise<Array<RunRecord & { status: AgentRunStatus }>>;
+
+  /**
+   * Records a webhook delivery, returning false when it has been seen before.
+   * GitHub delivers at least once and out of order; this is what makes a
+   * redelivery a no-op rather than a second fix commit.
+   */
+  claimDelivery(key: string): Promise<boolean>;
 }

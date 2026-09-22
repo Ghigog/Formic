@@ -4,9 +4,12 @@ import {
   AnthropicProductAgent,
   AnthropicShowcaseAgent,
 } from "./anthropic";
+import { AnthropicCoderAgent, AnthropicReviewerAgent } from "./coder";
 import {
   MockArchitectAgent,
+  MockCoderAgent,
   MockProductAgent,
+  MockReviewerAgent,
   MockShowcaseAgent,
 } from "./mock";
 
@@ -31,6 +34,8 @@ export function agents(): AgentRegistry {
     cached = {
       product: new MockProductAgent(),
       architect: new MockArchitectAgent(),
+      coder: new MockCoderAgent(),
+      reviewer: new MockReviewerAgent(),
       showcase: new MockShowcaseAgent(),
     };
     return cached;
@@ -39,6 +44,8 @@ export function agents(): AgentRegistry {
   cached = {
     product: new AnthropicProductAgent(),
     architect: new AnthropicArchitectAgent(),
+    coder: new AnthropicCoderAgent(),
+    reviewer: new AnthropicReviewerAgent(),
     showcase: new AnthropicShowcaseAgent(),
   };
   return cached;

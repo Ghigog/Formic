@@ -6,8 +6,12 @@ import type {
   MoveInput,
   ProjectSummary,
   Repository,
+  RunOutcome,
+  RunRecord,
+  TicketDetail,
+  TicketUpdate,
 } from "./repository";
-import type { BoardCard } from "@/lib/domain/entities";
+import type { AgentRunStatus, BoardCard } from "@/lib/domain/entities";
 import { type ColumnId, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -25,13 +29,25 @@ let seq = 0;
 let idCounter = 0;
 const id = (prefix: string) => `${prefix}_${(++idCounter).toString(36)}`;
 
+/** The ticket fields the board does not render and so BoardCard does not carry. */
+interface TicketExtras {
+  description: string;
+  acceptanceCriteria: string[];
+  branchName: string | null;
+  attempts: number;
+  summary: string | null;
+}
+
 interface Store {
   project: ProjectSummary;
   cards: Map<string, BoardCard>;
+  ticketExtras: Map<string, TicketExtras>;
   prds: Map<string, unknown>;
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
   events: Array<{ seq: number; type: string; payload: unknown; at: Date }>;
+  runs: Map<string, RunRecord & { status: AgentRunStatus }>;
+  deliveries: Set<string>;
 }
 
 declare global {
@@ -49,10 +65,13 @@ function store(): Store {
       baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
     },
     cards: new Map(),
+    ticketExtras: new Map(),
     prds: new Map(),
     rawRequests: new Map(),
     showcases: new Map(),
     events: [],
+    runs: new Map(),
+    deliveries: new Set(),
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -138,6 +157,13 @@ export class MemoryRepository implements Repository {
         doneCount: 0,
       };
       made.set(input.key, card);
+      s.ticketExtras.set(card.id, {
+        description: input.description,
+        acceptanceCriteria: input.acceptanceCriteria,
+        branchName: null,
+        attempts: 0,
+        summary: null,
+      });
     }
 
     for (const input of inputs) {
@@ -218,6 +244,83 @@ export class MemoryRepository implements Repository {
       .slice(0, limit);
   }
 
+  async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
+    const s = store();
+    const card = s.cards.get(ticketId);
+    if (!card || card.kind !== "ticket") return null;
+    return toDetail(card, s.ticketExtras.get(ticketId), s.project.id);
+  }
+
+  async ticketByPrNumber(
+    _projectId: string,
+    prNumber: number,
+  ): Promise<TicketDetail | null> {
+    const s = store();
+    for (const card of s.cards.values()) {
+      if (card.kind === "ticket" && card.prNumber === prNumber) {
+        return toDetail(card, s.ticketExtras.get(card.id), s.project.id);
+      }
+    }
+    return null;
+  }
+
+  async updateTicket(ticketId: string, update: TicketUpdate): Promise<void> {
+    const s = store();
+    const card = s.cards.get(ticketId);
+    if (!card) return;
+
+    if (update.status !== undefined) card.status = update.status;
+    if (update.stalledIn !== undefined) card.stalledIn = update.stalledIn;
+    if (update.stage !== undefined) card.stage = update.stage;
+    if (update.prNumber !== undefined) card.prNumber = update.prNumber;
+    if (update.prUrl !== undefined) card.prUrl = update.prUrl;
+    if (update.blockedReason !== undefined) {
+      card.blockedReason = update.blockedReason;
+    }
+    if (update.costCents !== undefined) card.costCents += update.costCents;
+
+    const extras = s.ticketExtras.get(ticketId);
+    if (!extras) return;
+    if (update.branchName !== undefined) extras.branchName = update.branchName;
+    if (update.attempts !== undefined) extras.attempts = update.attempts;
+    if (update.summary !== undefined) extras.summary = update.summary;
+  }
+
+  async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
+    const s = store();
+    return [...s.cards.values()]
+      .filter((c) => c.kind === "ticket" && c.epicId === epicId)
+      .sort(byPosition)
+      .map((c) => toDetail(c, s.ticketExtras.get(c.id), s.project.id));
+  }
+
+  async startRun(run: RunRecord): Promise<void> {
+    store().runs.set(run.id, { ...run, status: "running" });
+  }
+
+  async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
+    const run = store().runs.get(runId);
+    if (run) run.status = outcome.status;
+  }
+
+  async unfinishedRuns(): Promise<Array<RunRecord & { status: AgentRunStatus }>> {
+    return [...store().runs.values()].filter(
+      (r) => r.status === "queued" || r.status === "running",
+    );
+  }
+
+  async claimDelivery(key: string): Promise<boolean> {
+    const s = store();
+    if (s.deliveries.has(key)) return false;
+    s.deliveries.add(key);
+    // Bounded, like the event log: this is a demo store.
+    if (s.deliveries.size > 5000) {
+      const oldest = s.deliveries.values().next().value;
+      if (oldest) s.deliveries.delete(oldest);
+    }
+    return true;
+  }
+
   async rebalanceColumn(_projectId: string, column: ColumnId): Promise<void> {
     const cards = (await this.boardCards())
       .filter((c) => columnFor(c.status, c.stalledIn) === column)
@@ -228,4 +331,30 @@ export class MemoryRepository implements Repository {
       card.position = fresh[i]!;
     });
   }
+}
+
+function toDetail(
+  card: BoardCard,
+  extras: TicketExtras | undefined,
+  projectId: string,
+): TicketDetail {
+  return {
+    id: card.id,
+    epicId: card.epicId ?? "",
+    projectId,
+    key: card.key,
+    title: card.title,
+    description: extras?.description ?? card.title,
+    acceptanceCriteria: extras?.acceptanceCriteria ?? [],
+    fileScope: card.fileScope,
+    status: card.status,
+    stalledIn: card.stalledIn,
+    stage: card.stage,
+    branchName: extras?.branchName ?? null,
+    prNumber: card.prNumber,
+    prUrl: card.prUrl,
+    blockedReason: card.blockedReason,
+    attempts: extras?.attempts ?? 0,
+    summary: extras?.summary ?? null,
+  };
 }

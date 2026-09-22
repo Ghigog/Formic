@@ -12,7 +12,9 @@ import type { CardTransition, TransitionResult } from "@/lib/domain/transitions"
 import { positionForIndex } from "@/lib/ordering";
 import { publish } from "@/lib/events/bus";
 import { launch, runArchitectAgent, runProductAgent } from "@/lib/agents/pipeline";
+import { runCoderAgent } from "@/lib/coder/pipeline";
 import { prdSchema } from "@/lib/domain/entities";
+import { scopesOverlap } from "@/lib/domain/scope";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -27,6 +29,26 @@ function dependenciesMet(card: BoardCard, all: BoardCard[]): boolean {
     all.filter((c) => c.status === "merged").map((c) => c.id),
   );
   return card.dependsOn.every((id) => merged.has(id));
+}
+
+/**
+ * The other card already writing these files, if there is one.
+ *
+ * Only running cards count. A card in review holds an open pull request, but
+ * it is not editing a checkout, and treating it as a conflict would stall the
+ * board for as long as CI takes — which is most of the time.
+ */
+function scopeConflict(card: BoardCard, all: BoardCard[]): BoardCard | null {
+  if (card.fileScope.length === 0) return null;
+  return (
+    all.find(
+      (other) =>
+        other.id !== card.id &&
+        other.status === "running" &&
+        other.fileScope.length > 0 &&
+        scopesOverlap(card.fileScope, other.fileScope),
+    ) ?? null
+  );
 }
 
 export async function applyTransition(
@@ -69,6 +91,17 @@ export async function applyTransition(
       reason: `${card.key} is waiting on ${blocking || "a dependency"} to merge first.`,
       revertTo: actual,
     };
+  }
+
+  if (t.to === "in_progress") {
+    const conflict = scopeConflict(card, cards);
+    if (conflict) {
+      return {
+        ok: false,
+        reason: `${conflict.key} is already working in ${conflict.fileScope.join(", ")}. Two agents cannot write the same files at once.`,
+        revertTo: actual,
+      };
+    }
   }
 
   const status = statusForUserDrop(t.to, met);
@@ -120,6 +153,16 @@ export async function applyTransition(
     launch(
       () => runArchitectAgent(projectId, card.id, title, prd.data, tree),
       `architect agent for ${card.key}`,
+    );
+  }
+
+  // Moving a ticket into In Progress is the Coder Agent's trigger: sandbox,
+  // implement, check the diff against the file scope, push, open a pull
+  // request. Detached for the same reason as above.
+  if (card.kind === "ticket" && t.to === "in_progress") {
+    launch(
+      () => runCoderAgent(projectId, card.id),
+      `coder agent for ${card.key}`,
     );
   }
 
