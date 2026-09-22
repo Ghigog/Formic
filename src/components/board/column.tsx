@@ -182,7 +182,7 @@ export function Column({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              "flex min-h-16 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto rounded-lg transition-colors",
+              "flex min-h-16 flex-1 flex-col overflow-x-hidden overflow-y-auto rounded-lg transition-colors [&>li:not(:last-child)]:mb-2.5",
               snapshot.isDraggingOver && "bg-clay/8",
             )}
           >
