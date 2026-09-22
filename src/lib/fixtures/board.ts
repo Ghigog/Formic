@@ -1,12 +1,24 @@
 import type { BoardCard } from "@/lib/domain/entities";
+import type { CardExtras } from "@/components/board/card";
+import type { AmbientStats } from "@/components/ui/ambient-drawer";
 
 /**
- * Demo data. Covers one Epic with children, a card in every column, a running
- * card, a card in review, and a failed card, so every visual state on the
- * board has something to render before the database exists.
+ * The demo board.
+ *
+ * Content follows design/artboards/Main.html: the same epics, ticket ids, log
+ * lines, commits and PR numbers. Where the artboard shows the same ticket in
+ * two columns at once — it is a mockup, and the brief says the ids are sample
+ * data — the fixture keeps one card per ticket and moves it, so the board is
+ * internally consistent while every card anatomy still has something to draw:
+ * a backlog epic and a raw idea, a To Do DAG with one unlocked and one
+ * blocked child, two running cards, a failing and a passing review, and a
+ * merged group.
  */
 
-function card(partial: Partial<BoardCard> & Pick<BoardCard, "id" | "key" | "title" | "status">): BoardCard {
+function card(
+  partial: Partial<BoardCard> &
+    Pick<BoardCard, "id" | "key" | "title" | "status">,
+): BoardCard {
   return {
     kind: "ticket",
     stalledIn: null,
@@ -29,133 +41,218 @@ function card(partial: Partial<BoardCard> & Pick<BoardCard, "id" | "key" | "titl
 }
 
 export const FIXTURE_CARDS: BoardCard[] = [
+  /* ---- Backlog --------------------------------------------------------- */
   card({
-    id: "epic-1",
+    id: "epic-4",
     kind: "epic",
-    key: "EPIC-1",
-    title: "Let reviewers leave inline comments on a showcase",
-    status: "draft",
-    stage: 1,
-    position: 1000,
-    size: null,
-  }),
-  card({
-    id: "epic-2",
-    kind: "epic",
-    key: "EPIC-2",
-    title: "Saved board filters per project",
+    key: "EPIC-04",
+    title: "Concurrent merge queue",
     status: "specified",
     stage: 2,
-    position: 2000,
+    position: 1000,
     size: null,
     agentRole: "product",
     model: "claude-opus-5",
   }),
+  card({
+    id: "idea-1",
+    key: "RAW-07",
+    title: "Swipe between columns on mobile instead of drag-and-drop",
+    status: "draft",
+    stage: 1,
+    position: 2000,
+    size: null,
+  }),
 
+  /* ---- To Do ----------------------------------------------------------- */
   card({
     id: "epic-3",
     kind: "epic",
-    key: "EPIC-3",
-    title: "Keyboard navigation across the board",
+    key: "EPIC-03",
+    title: "Agentic execution loop",
     status: "ready",
     stage: 3,
     position: 1000,
     size: null,
-    childCount: 4,
-    doneCount: 1,
+    childCount: 6,
+    doneCount: 0,
     agentRole: "architect",
     model: "claude-opus-5",
   }),
   card({
-    id: "t-1",
-    key: "FOR-101",
-    title: "Roving tabindex across columns",
+    id: "prot-7",
+    key: "PROT-07",
+    title: "Reviewer webhook",
     status: "ready",
     stage: 3,
     position: 1100,
     epicId: "epic-3",
     size: "M",
-    fileScope: ["src/components/board"],
+    fileScope: ["agents/reviewer/**"],
   }),
   card({
-    id: "t-2",
-    key: "FOR-102",
-    title: "Shortcut help overlay",
+    id: "prot-8",
+    key: "PROT-08",
+    title: "Showcase aggregator",
     status: "waiting",
     stage: 3,
     position: 1200,
     epicId: "epic-3",
     size: "S",
-    fileScope: ["src/components/ui"],
-    dependsOn: ["t-1"],
-  }),
-  card({
-    id: "t-3",
-    key: "FOR-103",
-    title: "Announce card moves to screen readers",
-    status: "failed",
-    stalledIn: "todo",
-    stage: 5,
-    position: 1300,
-    epicId: "epic-3",
-    size: "S",
-    fileScope: ["src/lib/a11y"],
-    blockedReason: "Coder agent edited outside its file scope (src/app/page.tsx)",
-    costCents: 42,
+    fileScope: ["agents/pm/**"],
+    dependsOn: ["prot-7"],
+    blockedReason: "blocked by PROT-07",
   }),
 
+  /* ---- In Progress ----------------------------------------------------- */
   card({
-    id: "t-4",
-    key: "FOR-104",
-    title: "Persist column order with a fractional index",
+    id: "prot-6",
+    key: "PROT-06",
+    title: "Implement Coder Agent execution loop",
     status: "running",
     stage: 5,
     position: 1000,
     epicId: "epic-3",
     size: "M",
-    fileScope: ["src/lib/ordering"],
+    fileScope: ["agents/coder/**"],
     agentRole: "coder",
-    model: "claude-opus-5",
+    model: "claude-sonnet-5",
     costCents: 88,
   }),
-
   card({
-    id: "t-5",
-    key: "FOR-105",
-    title: "Drag handle hit area on touch devices",
-    status: "review",
-    stage: 7,
-    position: 1000,
+    id: "prot-5",
+    key: "PROT-05",
+    title: "Set up E2B sandbox environment",
+    status: "running",
+    stage: 4,
+    position: 2000,
     epicId: "epic-3",
     size: "S",
-    fileScope: ["src/components/board/card.tsx"],
-    agentRole: "reviewer",
-    model: "claude-opus-5",
-    prNumber: 42,
-    prUrl: "https://github.com/example/formic/pull/42",
-    costCents: 31,
+    fileScope: ["services/sandbox/**"],
+    agentRole: "coder",
+    model: "claude-sonnet-5",
+    costCents: 21,
   }),
 
+  /* ---- In Review ------------------------------------------------------- */
   card({
-    id: "t-6",
-    key: "FOR-100",
-    title: "Column scaffolding and layout grid",
-    status: "merged",
-    stage: 8,
+    id: "prot-3",
+    key: "PROT-03",
+    title: "Build Backlog “Product Agent” pipeline",
+    status: "review",
+    stage: 6,
     position: 1000,
     epicId: "epic-3",
     size: "M",
-    fileScope: ["src/components/board/column.tsx"],
-    prNumber: 38,
-    prUrl: "https://github.com/example/formic/pull/38",
-    costCents: 55,
+    fileScope: ["agents/product/**"],
+    agentRole: "reviewer",
+    model: "claude-sonnet-5",
+    prNumber: 118,
+    prUrl: "https://github.com/formic-labs/formic-web/pull/118",
+    costCents: 64,
+  }),
+  card({
+    id: "prot-4",
+    key: "PROT-04",
+    title: "Build To Do “Architect Agent” pipeline",
+    status: "review",
+    stage: 7,
+    position: 2000,
+    epicId: "epic-3",
+    size: "L",
+    fileScope: ["agents/architect/**"],
+    agentRole: "reviewer",
+    model: "claude-sonnet-5",
+    prNumber: 117,
+    prUrl: "https://github.com/formic-labs/formic-web/pull/117",
+    costCents: 96,
+  }),
+
+  /* ---- Done ------------------------------------------------------------ */
+  card({
+    id: "epic-1",
+    kind: "epic",
+    key: "EPIC-01",
+    title: "Board foundations",
+    status: "merged",
+    stage: 8,
+    position: 1000,
+    size: null,
+    childCount: 2,
+    doneCount: 2,
+  }),
+  card({
+    id: "prot-1",
+    key: "PROT-01",
+    title: "Next.js + Kanban UI",
+    status: "merged",
+    stage: 8,
+    position: 1100,
+    epicId: "epic-1",
+    size: "M",
+    fileScope: ["src/components/board/**"],
+    prNumber: 114,
+    prUrl: "https://github.com/formic-labs/formic-web/pull/114",
+    costCents: 131,
+  }),
+  card({
+    id: "prot-2",
+    key: "PROT-02",
+    title: "Database + persistence",
+    status: "merged",
+    stage: 8,
+    position: 1200,
+    epicId: "epic-1",
+    size: "M",
+    fileScope: ["prisma/**", "src/lib/db/**"],
+    prNumber: 116,
+    prUrl: "https://github.com/formic-labs/formic-web/pull/116",
+    costCents: 118,
   }),
 ];
 
-export const FIXTURE_CI: Record<string, "pending" | "passing" | "failing"> = {
-  "t-5": "failing",
+/** Display-only detail for the demo board. See CardExtras. */
+export const FIXTURE_EXTRAS: Record<string, CardExtras> = {
+  "epic-4": {
+    summary:
+      "Lift the one-PR-at-a-time limit: file-scope locks plus an ordered rebase queue.",
+    stageLabel: "PRD draft",
+  },
+  "idea-1": { age: "2h ago" },
+  "epic-3": { dagSummary: "DAG ready · 6 tickets · 2 file scopes locked" },
+  "prot-6": {
+    elapsed: "04:12",
+    sandboxId: "E2B · sbx_8f2a41",
+    progress: { label: "Running vitest · 13/21 files", fraction: 0.62 },
+  },
+  "prot-5": {
+    elapsed: "00:48",
+    progress: { label: "Cloning formic-web · 28%", fraction: 0.28 },
+  },
+  "prot-3": {
+    ci: "failing",
+    checks: { passed: 10, failed: 2 },
+    reviewState: "Fix loop · try 2",
+    logExcerpt: ["FAIL app/api/epics/route.test.ts", "expected 200, received 500"],
+  },
+  "prot-4": {
+    ci: "passing",
+    checks: { passed: 12, failed: 0 },
+    reviewState: "Rebase queued · 1st",
+    diffstat: "+284 / −12 · 9 files",
+  },
+  "prot-1": { mergeCommit: "4a91c07" },
+  "prot-2": { mergeCommit: "8d3e2b1" },
 };
 
-export const FIXTURE_PROGRESS: Record<string, { label: string; fraction: number | null }> = {
-  "t-4": { label: "Running tests", fraction: 0.6 },
+/** What the ambient drawer reports on the demo board. */
+export const FIXTURE_STATS: Omit<AmbientStats, "provider"> = {
+  activeSandboxes: 2,
+  tokensIn: 141_200,
+  tokensOut: 41_200,
+  costCents: 214,
+  throughput: 1900,
+  queueDepth: 2,
+  mergeLockPr: 117,
+  logLines: [],
 };

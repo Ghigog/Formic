@@ -1,247 +1,317 @@
 @import "tailwindcss";
 
 /*
- * Formic design tokens.
+ * Formic token layer.
  *
- * Two layers, deliberately:
+ * Every value here is lifted verbatim from design/artboards/Main.html. The
+ * artboard is the source of truth: where DESIGN.md and the markup disagree,
+ * the markup wins, so the hexes below are the ones the mockup actually paints
+ * rather than the rounded set quoted in the prose.
  *
- *   --formic-*        brand FILL colors, exactly the hex values in the design
- *                     specification. Used as backgrounds, borders and large
- *                     shapes. Identical in both themes.
- *
- *   --color-*-text    the same colors as FOREGROUND, adjusted per theme so
- *                     body text clears 4.5:1.
- *
- * The split exists because several spec colors are legible as fills but not as
- * text. Measured against Parched Cream: Terracotta Amber 3.28:1, Clay Ochre
- * 3.34:1, Rust Orange 3.60:1. Against Deep Anthracite: Crimson 3.11:1, Jade
- * Green 3.41:1. Keeping the fills exact preserves the designer's palette; the
- * text variants keep failure states readable, which matters most of all on
- * this board.
+ * Tokens are declared once on :root and re-exported to Tailwind through
+ * `@theme inline`, so a component never writes a raw hex.
  */
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-  /* Brand fills, verbatim from the specification. */
-  --formic-amber: #d96b27; /* Terracotta Amber, primary action */
-  --formic-ochre: #c27803; /* Clay Ochre, active agent */
-  --formic-anthracite: #1c1917; /* Deep Anthracite */
-  --formic-cream: #fbf9f5; /* Parched Cream */
-  --formic-jade: #2e7d32; /* merged, passing, done */
-  --formic-rust: #e65100; /* rebasing, resolving, retrying */
-  --formic-crimson: #c62828; /* CI failure, blocked */
+  /* --- Brand ------------------------------------------------------------ */
+  --terracotta: #d96b27; /* borders, epic chips, logo mark, drag handles */
+  --terracotta-cta: #b5511a; /* filled buttons only; #D96B27 is 3.4:1 on white */
+  --terracotta-deep: #8f3f12; /* link hover, epic chip label */
+  --clay: #c27803; /* agent live: pulsing borders, progress fills, trails */
+  --clay-lit: #e0a33c; /* the bright half of clayPulse, ambient drawer dots */
 
-  /* Surfaces */
-  --formic-bg: var(--formic-cream);
-  --formic-surface: #ffffff;
-  --formic-surface-sunken: #f3efe8;
-  --formic-border: #e7e5e4; /* the 1px badge border from the spec */
-  --formic-border-strong: #d6d3d1;
+  /* --- Ground ----------------------------------------------------------- */
+  --anthracite: #1c1917; /* primary text, terminal, ambient drawer */
+  --cream: #fbf9f5; /* page ground */
+  --column: #f4f1eb; /* column wells */
+  --column-line: #eae6de; /* the column well's own 1px edge */
+  --panel: #f7f4ee; /* secondary strips */
+  --card: #ffffff;
+  --nested: #fdfcfa; /* child-ticket rows inside an accordion */
+  --nested-muted: #faf8f4; /* the same row when the ticket is blocked */
 
-  /* Foreground */
-  --formic-fg: var(--formic-anthracite);
-  --formic-fg-muted: #57534e;
-  --formic-fg-subtle: #79716b;
+  /* --- Lines ------------------------------------------------------------ */
+  --border: #e7e5e4; /* all 1px borders */
+  --border-dashed: #d6d3d1; /* the composer's dashed edge */
+  --hairline: #f0eeea; /* dividers inside a card */
+  --track: #f0ebe2; /* progress bar trough on a card */
 
-  /* Accessible text variants, light theme (on Parched Cream) */
-  --formic-amber-text: #b4511a; /* 4.83:1 */
-  --formic-ochre-text: #9a5d02; /* 5.07:1 */
-  --formic-jade-text: #2e7d32; /* 4.88:1, unchanged */
-  --formic-rust-text: #c74400; /* 4.69:1 */
-  --formic-crimson-text: #c62828; /* 5.35:1, unchanged */
+  /* --- Text ------------------------------------------------------------- */
+  --text: var(--anthracite);
+  --text-muted: #57534e; /* 4.5:1 on cream; do not lighten */
+  --dot-idle: #a8a29e; /* the dot for a column with nothing live in it */
 
-  /*
-   * Text placed ON a brand fill. Measured both ways; anthracite wins on amber,
-   * ochre and rust, white wins on jade and crimson. Using white throughout
-   * would put the primary CTA at 3.45:1.
-   */
-  --formic-on-amber: var(--formic-anthracite); /* 5.07:1 */
-  --formic-on-ochre: var(--formic-anthracite); /* 4.98:1 */
-  --formic-on-rust: var(--formic-anthracite); /* 4.61:1 */
-  --formic-on-jade: #ffffff; /* 5.13:1 */
-  --formic-on-crimson: #ffffff; /* 5.62:1 */
+  /* --- Status ----------------------------------------------------------- */
+  --jade: #2e7d32; /* merged, tests passing, done */
+  --rust: #e65100; /* rebasing, conflict resolving, retry */
+  --crimson: #c62828; /* CI failure, agent blocked */
 
-  --formic-focus: var(--formic-amber);
+  /* Epic chips: a tinted fill inside a 1px status-coloured octagon. */
+  --epic-chip: #fdf1e8;
+  --epic-chip-text: var(--terracotta-deep);
+  --jade-chip: #edf4ed;
+  --jade-chip-text: #1e5620;
+  --jade-wash: #f7faf7; /* the merged-epic group header */
+
+  /* --- Terminal and ambient drawer -------------------------------------- */
+  --drawer-line: #3b3734;
+  --drawer-muted: #c6c0ba;
+  --log-text: #e7e5e4;
+  --log-error: #f0a58a; /* crimson is 3.1:1 on anthracite; this is 6.9:1 */
+
+  --focus: var(--terracotta-cta);
 }
 
-/* Dark theme. Card containers become Deep Anthracite per the specification. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --formic-bg: #131110;
-    --formic-surface: var(--formic-anthracite);
-    --formic-surface-sunken: #0e0d0c;
-    --formic-border: #37322e;
-    --formic-border-strong: #4a433d;
-
-    --formic-fg: #f5f1ea;
-    --formic-fg-muted: #b5aca2;
-    --formic-fg-subtle: #8a8078;
-
-    --formic-amber-text: #e8834a; /* 6.48:1 */
-    --formic-ochre-text: #d99a2b; /* 7.17:1 */
-    --formic-jade-text: #66bb6a; /* 7.40:1 */
-    --formic-rust-text: #ff7043; /* 6.37:1 */
-    --formic-crimson-text: #ef5350; /* 5.02:1 */
-  }
-}
-
+/*
+ * Dark theme.
+ *
+ * Opt-in only, via data-theme="dark". The spec names Deep Anthracite as the
+ * dark card surface but no full dark palette, and none of the artboards mock
+ * one, so the board must not silently render dark for anyone whose OS happens
+ * to prefer it. Values below are derived, not designed, and are here so the
+ * work is not lost when the dark artboards land.
+ */
 :root[data-theme="dark"] {
-  --formic-bg: #131110;
-  --formic-surface: var(--formic-anthracite);
-  --formic-surface-sunken: #0e0d0c;
-  --formic-border: #37322e;
-  --formic-border-strong: #4a433d;
+  --cream: #131110;
+  --column: #1a1716;
+  --column-line: #2a2523;
+  --panel: #1a1716;
+  --card: #1c1917;
+  --nested: #221e1c;
+  --nested-muted: #1a1716;
 
-  --formic-fg: #f5f1ea;
-  --formic-fg-muted: #b5aca2;
-  --formic-fg-subtle: #8a8078;
+  --border: #37322e;
+  --border-dashed: #4a433d;
+  --hairline: #2a2523;
+  --track: #2a2523;
 
-  --formic-amber-text: #e8834a;
-  --formic-ochre-text: #d99a2b;
-  --formic-jade-text: #66bb6a;
-  --formic-rust-text: #ff7043;
-  --formic-crimson-text: #ef5350;
+  --text: #f5f1ea;
+  --text-muted: #b5aca2;
+  --dot-idle: #6b635c;
+
+  --epic-chip: #34211a;
+  --epic-chip-text: #e8834a;
+  --jade-chip: #1b2a1c;
+  --jade-chip-text: #66bb6a;
+  --jade-wash: #17201a;
 }
 
 @theme inline {
-  --color-amber: var(--formic-amber);
-  --color-ochre: var(--formic-ochre);
-  --color-anthracite: var(--formic-anthracite);
-  --color-cream: var(--formic-cream);
-  --color-jade: var(--formic-jade);
-  --color-rust: var(--formic-rust);
-  --color-crimson: var(--formic-crimson);
+  --color-terracotta: var(--terracotta);
+  --color-terracotta-cta: var(--terracotta-cta);
+  --color-terracotta-deep: var(--terracotta-deep);
+  --color-clay: var(--clay);
+  --color-clay-lit: var(--clay-lit);
 
-  --color-bg: var(--formic-bg);
-  --color-surface: var(--formic-surface);
-  --color-sunken: var(--formic-surface-sunken);
-  --color-line: var(--formic-border);
-  --color-line-strong: var(--formic-border-strong);
+  --color-anthracite: var(--anthracite);
+  --color-cream: var(--cream);
+  --color-column: var(--column);
+  --color-column-line: var(--column-line);
+  --color-panel: var(--panel);
+  --color-card: var(--card);
+  --color-nested: var(--nested);
+  --color-nested-muted: var(--nested-muted);
 
-  --color-fg: var(--formic-fg);
-  --color-fg-muted: var(--formic-fg-muted);
-  --color-fg-subtle: var(--formic-fg-subtle);
+  --color-line: var(--border);
+  --color-line-dashed: var(--border-dashed);
+  --color-hairline: var(--hairline);
+  --color-track: var(--track);
 
-  --color-amber-text: var(--formic-amber-text);
-  --color-ochre-text: var(--formic-ochre-text);
-  --color-jade-text: var(--formic-jade-text);
-  --color-rust-text: var(--formic-rust-text);
-  --color-crimson-text: var(--formic-crimson-text);
+  --color-ink: var(--text);
+  --color-muted: var(--text-muted);
+  --color-idle: var(--dot-idle);
 
-  --color-on-amber: var(--formic-on-amber);
-  --color-on-ochre: var(--formic-on-ochre);
-  --color-on-jade: var(--formic-on-jade);
-  --color-on-rust: var(--formic-on-rust);
-  --color-on-crimson: var(--formic-on-crimson);
+  --color-jade: var(--jade);
+  --color-rust: var(--rust);
+  --color-crimson: var(--crimson);
+
+  --color-epic-chip: var(--epic-chip);
+  --color-epic-chip-text: var(--epic-chip-text);
+  --color-jade-chip: var(--jade-chip);
+  --color-jade-chip-text: var(--jade-chip-text);
+  --color-jade-wash: var(--jade-wash);
+
+  --color-drawer-line: var(--drawer-line);
+  --color-drawer-muted: var(--drawer-muted);
+  --color-log-text: var(--log-text);
+  --color-log-error: var(--log-error);
 
   /*
-   * 8px grid.
-   *
-   * Tailwind's spacing scale is deliberately left at its 4px base. Setting
-   * `--spacing: 8px` also redefines every utility derived from it, including
-   * `leading-*` and `size-*`, so `leading-5` silently becomes 40px and a 6px
-   * status dot becomes 12px. The grid is enforced by using even steps
-   * (`p-2` = 8px, `p-4` = 16px, `p-6` = 24px, `p-8` = 32px) rather than by
-   * changing what every utility means. The one documented exception is card
-   * padding, exposed as `p-card` below.
-   *
-   * Line heights are named rather than numeric for the same reason: dense UI
-   * text needs values the spacing scale does not express well.
+   * Aliases kept for the surfaces PROT-01 does not own — the epic drawer, the
+   * DAG pane, the PRD pane, the stepper. They resolve to the artboard palette,
+   * so those screens pick up the corrected colours without being rewritten
+   * here.
+   */
+  --color-bg: var(--cream);
+  --color-surface: var(--card);
+  --color-sunken: var(--column);
+  --color-line-strong: var(--border-dashed);
+  --color-fg: var(--text);
+  --color-fg-muted: var(--text-muted);
+  --color-fg-subtle: var(--text-muted);
+  --color-amber: var(--terracotta);
+  --color-amber-text: var(--terracotta-cta);
+  --color-ochre: var(--clay);
+  --color-ochre-text: var(--text-muted);
+  --color-jade-text: var(--jade);
+  --color-rust-text: var(--text-muted);
+  --color-crimson-text: var(--crimson);
+  --color-on-amber: #ffffff;
+  --color-on-ochre: var(--anthracite);
+  --color-on-jade: #ffffff;
+  --color-on-rust: var(--anthracite);
+  --color-on-crimson: #ffffff;
+
+  /*
+   * 8px grid: 8 / 16 / 24 / 32 / 48. Tailwind's spacing base stays at 4px on
+   * purpose — setting `--spacing: 8px` also redefines `leading-*` and `size-*`,
+   * so a 6px status dot would silently become 12px. The grid is held by using
+   * even steps (p-3 = 12px card padding, gap-2 = 8px, gap-4 = 16px,
+   * p-6 = 24px) rather than by changing what every utility means.
    */
   --leading-dense: 1.25;
-  --leading-card: 1.45;
+  --leading-card: 1.35;
   --leading-prose: 1.65;
 
   --font-sans:
-    var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    "Plus Jakarta Sans", "Segoe UI", ui-sans-serif, system-ui, -apple-system,
     sans-serif;
-  --font-serif: var(--font-newsreader), ui-serif, Georgia, Cambria, serif;
-  --font-mono:
-    var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-serif: Newsreader, Georgia, Cambria, ui-serif, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --radius-card: 6px;
+  /* The two lifts in the design: a card under the cursor, and the mobile FAB. */
+  --shadow-lift: 0 8px 20px rgb(28 25 23 / 0.18);
+  --shadow-fab: 0 8px 20px rgb(28 25 23 / 0.22);
+
+  --radius-card: 8px;
+  --radius-column: 12px;
+  --radius-nested: 6px;
+  --radius-modal: 12px;
   --radius-badge: 3px;
 }
 
 @layer base {
-  html {
-    color-scheme: light dark;
-  }
-
   body {
-    background-color: var(--formic-bg);
-    color: var(--formic-fg);
+    background-color: var(--cream);
+    color: var(--text);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Compact data density: 12px card padding, the spec's stated exception. */
+  a {
+    color: var(--terracotta-cta);
+  }
+
+  a:hover {
+    color: var(--terracotta-deep);
+  }
+
+  /* 12px card padding: the one exception the 8px grid grants, for density. */
   .p-card {
     padding: 12px;
   }
 
   :focus-visible {
-    outline: 2px solid var(--formic-focus);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
+}
 
-  /* The 8-motif. A regular octagon as a clip path, used by coin badges. */
-  .clip-octagon {
+@layer components {
+  /*
+   * The octagonal coin badge. A chamfered clip, not a border-radius: the
+   * 8-motif reads as a struck coin rather than a pill.
+   *
+   * `clip-path` cuts a CSS border off at the diagonals, so the 1px edge is
+   * drawn by nesting two clipped elements — outer is the border colour with
+   * 1px of padding, inner is the fill.
+   */
+  .oct {
     clip-path: polygon(
-      30% 0%,
-      70% 0%,
-      100% 30%,
-      100% 70%,
-      70% 100%,
-      30% 100%,
-      0% 70%,
-      0% 30%
+      7px 0,
+      calc(100% - 7px) 0,
+      100% 7px,
+      100% calc(100% - 7px),
+      calc(100% - 7px) 100%,
+      7px 100%,
+      0 calc(100% - 7px),
+      0 7px
+    );
+  }
+
+  /* 26px and larger: the chamfer grows with the node. */
+  .oct-lg {
+    clip-path: polygon(
+      9px 0,
+      calc(100% - 9px) 0,
+      100% 9px,
+      100% calc(100% - 9px),
+      calc(100% - 9px) 100%,
+      9px 100%,
+      0 calc(100% - 9px),
+      0 9px
     );
   }
 }
 
 @layer utilities {
-  /* Active agent: a slow clay pulse on the card border, not a glow. */
-  @keyframes formic-pulse-border {
+  /* Two motion loops, and no others. */
+  @keyframes clayPulse {
     0%,
     100% {
-      border-color: var(--formic-ochre);
+      box-shadow: 0 0 0 0 rgb(194 120 3 / 0.28);
+      border-color: var(--clay);
     }
     50% {
-      border-color: var(--formic-border-strong);
+      box-shadow: 0 0 0 4px rgb(194 120 3 / 0);
+      border-color: var(--clay-lit);
     }
   }
 
-  .animate-agent-pulse {
-    animation: formic-pulse-border 2.4s ease-in-out infinite;
-  }
-
-  /* A dependency trail pulse when a parent unlocks its children. */
-  @keyframes formic-trail-pulse {
-    0% {
-      stroke-opacity: 0.35;
-      stroke-width: 1.5;
-    }
-    45% {
-      stroke-opacity: 1;
-      stroke-width: 2.5;
-    }
+  @keyframes dotPulse {
+    0%,
     100% {
-      stroke-opacity: 0.35;
-      stroke-width: 1.5;
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
     }
   }
 
-  .animate-trail-pulse {
-    animation: formic-trail-pulse 1.1s ease-out 2;
+  @keyframes trailPulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
+  .pulse-card {
+    animation: clayPulse 2.4s ease-in-out infinite;
+  }
+
+  .pulse-dot {
+    animation: dotPulse 1.6s ease-in-out infinite;
+  }
+
+  .pulse-trail {
+    animation: trailPulse 2.4s ease-in-out infinite;
+  }
+
+  /* Not in the mockups; the brief asks for it explicitly. */
   @media (prefers-reduced-motion: reduce) {
-    .animate-agent-pulse,
-    .animate-trail-pulse {
+    .pulse-card,
+    .pulse-dot,
+    .pulse-trail {
       animation: none;
-      border-color: var(--formic-ochre);
+    }
+
+    .pulse-card {
+      border-color: var(--clay);
     }
   }
 }

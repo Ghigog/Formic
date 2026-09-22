@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Formic — Live agent sandbox inspector</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;background:#FBF9F5;color:#1C1917;-webkit-font-smoothing:antialiased}
+a{color:#B5511A}a:hover{color:#8F3F12}
+.oct{clip-path:polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px)}
+.ln{display:block;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.75;white-space:pre}
+@keyframes dotPulse{0%,100%{opacity:1}50%{opacity:0.25}}
+@keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
+.pulse-dot{animation:dotPulse 1.6s ease-in-out infinite}
+.caret{animation:caret 1s step-end infinite}
+</style>
+</helmet>
+
+<div style="width: 1440px; height: 980px; box-sizing: border-box; position: relative; background: #FBF9F5; overflow: hidden;">
+
+  <div style="position: absolute; inset: 0; background: rgba(28,25,23,0.52);"></div>
+
+  <div style="position: absolute; right: 0; top: 0; width: 760px; height: 980px; box-sizing: border-box; display: flex; flex-direction: column; background: #FBF9F5; border-left: 1px solid #E7E5E4; box-shadow: -24px 0 64px rgba(28,25,23,0.3);">
+
+    <!-- Header -->
+    <header style="height: 88px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 16px; padding: 0 24px; background: #FFFFFF; border-bottom: 1px solid #E7E5E4;">
+      <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">PROT-06</span>
+          <span class="oct" style="display: inline-flex; background: #E7E5E4; padding: 1px;"><span class="oct" style="display: inline-flex; background: #FFFFFF; padding: 2px 7px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: #57534E;">SONNET 3.5</span></span>
+          <span class="oct" style="display: inline-flex; background: #E7E5E4; padding: 1px;"><span class="oct" style="display: inline-flex; background: #FFFFFF; padding: 2px 7px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: #57534E;">AGENT 2</span></span>
+        </div>
+        <h1 style="margin: 0; font-size: 19px; font-weight: 600; line-height: 1.2; color: #1C1917;">Implement Coder Agent execution loop</h1>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1C1917;">04:12</span>
+
+      <button type="button" aria-label="Close sandbox inspector" style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; cursor: pointer;">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="#1C1917" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+
+    <!-- Sandbox status strip -->
+    <div style="flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 24px; padding: 16px 24px; background: #F7F4EE; border-bottom: 1px solid #E7E5E4;">
+      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(194,120,3,0.14); font-size: 12px; font-weight: 600; color: #1C1917;">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: #C27803;" class="pulse-dot"></span>Sandbox live
+      </span>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #57534E;">Container</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1C1917;">sbx_8f2a41</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #57534E;">Image</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1C1917;">node20-pnpm</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #57534E;">Branch</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1C1917;">agent/prot-06</span>
+      </div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end;">
+        <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #57534E;">Budget left</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1C1917;">15m 48s</span>
+      </div>
+    </div>
+
+    <!-- Terminal -->
+    <section style="flex-grow: 1; min-height: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 20px 24px 0;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Execution stream</h2>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">stdout + stderr</span>
+        <div style="flex-grow: 1;"></div>
+        <button type="button" style="height: 28px; padding: 0 10px; border: 1px solid #E7E5E4; border-radius: 6px; background: #FFFFFF; font: inherit; font-size: 11px; font-weight: 600; color: #1C1917; cursor: pointer;">Follow</button>
+      </div>
+
+      <div style="flex-grow: 1; min-height: 0; box-sizing: border-box; padding: 16px; border-radius: 10px; background: #1C1917; overflow: hidden;">
+        <span class="ln" style="color: #E0A33C;">$ git clone --depth 1 git@github.com:formic-labs/formic-web.git</span>
+        <span class="ln" style="color: #A8A29E;">Cloning into 'formic-web'... done. HEAD at 8d3e2b1</span>
+        <span class="ln" style="color: #E0A33C;">$ pnpm install --frozen-lockfile</span>
+        <span class="ln" style="color: #A8A29E;">Packages: +412  Done in 21.4s</span>
+        <span class="ln" style="color: #E0A33C;">$ formic apply-patch agents/coder/executor.ts</span>
+        <span class="ln" style="color: #A8A29E;">scope check: agents/coder/** ✓  3 files touched</span>
+        <span class="ln" style="color: #E0A33C;">$ pnpm vitest run agents/coder</span>
+        <span class="ln" style="color: #8FBF92;"> ✓ agents/coder/plan.test.ts (6 tests) 412ms</span>
+        <span class="ln" style="color: #8FBF92;"> ✓ agents/coder/scope.test.ts (4 tests) 188ms</span>
+        <span class="ln" style="color: #E0A33C;"> ❯ agents/coder/executor.test.ts (11 tests | 3 running)</span>
+        <span class="ln" style="color: #F0A58A;"> ✗ retries exhausted → rewriting stub at line 84</span>
+        <span class="ln" style="color: #FBF9F5;">13/21 files · <span class="caret" style="color: #E0A33C;">▊</span></span>
+      </div>
+    </section>
+
+    <!-- Live diff -->
+    <section style="flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 20px 24px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Live diff</h2>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">agents/coder/executor.ts</span>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #1E5620;">+34</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #9A2020;">−7</span>
+      </div>
+
+      <div style="box-sizing: border-box; border: 1px solid #E7E5E4; border-radius: 10px; background: #FFFFFF; overflow: hidden;">
+        <div style="padding: 6px 12px; background: #F7F4EE; border-bottom: 1px solid #E7E5E4;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">@@ -78,9 +78,12 @@ export async function runTicket(</span>
+        </div>
+        <div style="padding: 8px 0;">
+          <span class="ln" style="padding: 0 12px; color: #57534E;">   const sandbox = await E2B.create(image);</span>
+          <span class="ln" style="padding: 0 12px; background: rgba(198,40,40,0.09); color: #7A1C1C;">-  await sandbox.run(cmd);</span>
+          <span class="ln" style="padding: 0 12px; background: rgba(46,125,50,0.10); color: #1E5620;">+  const guard = scopeGuard(ticket.fileScope);</span>
+          <span class="ln" style="padding: 0 12px; background: rgba(46,125,50,0.10); color: #1E5620;">+  const result = await sandbox.run(cmd, { guard, timeoutMs: 20 * 60_000 });</span>
+          <span class="ln" style="padding: 0 12px; background: rgba(46,125,50,0.10); color: #1E5620;">+  if (!result.ok) return retry(ticket, result.logs);</span>
+          <span class="ln" style="padding: 0 12px; color: #57534E;">   return commitAndPush(sandbox, ticket.branch);</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Actions -->
+    <footer style="height: 76px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 24px; background: #FFFFFF; border-top: 1px solid #E7E5E4;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #57534E;">attempt 1 of 3 · 24.1k tokens</span>
+      <div style="flex-grow: 1;"></div>
+      <button type="button" style="height: 40px; padding: 0 16px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; font: inherit; font-size: 13px; font-weight: 600; color: #1C1917; cursor: pointer;">Pause agent</button>
+      <button type="button" style="height: 40px; padding: 0 16px; border: none; border-radius: 8px; background: #B5511A; font: inherit; font-size: 13px; font-weight: 600; color: #FFFFFF; cursor: pointer;">Take over branch</button>
+    </footer>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

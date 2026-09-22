@@ -40,7 +40,7 @@ export function PheromoneTrail({
     <path
       d={d}
       fill="none"
-      stroke="var(--formic-ochre)"
+      stroke="var(--clay)"
       strokeWidth={active ? 2 : 1.5}
       strokeOpacity={active ? 0.9 : 0.35}
       strokeLinecap="round"
@@ -72,6 +72,66 @@ export function TrailLayer({
       className="pointer-events-none absolute inset-0 overflow-visible"
     >
       {children}
+    </svg>
+  );
+}
+
+/**
+ * The board-column variant: a fixed-geometry trail drawn in the 22px gutter
+ * left of an epic's child tickets.
+ *
+ * Fixed rather than measured because the rows are a known height (60px in a
+ * board column, 92px in the drawer) precisely so the curve endpoints land on
+ * a row's vertical centre without a layout pass. A spine runs the height of
+ * the group at 22% opacity; one quadratic branch per child leaves it at 45%,
+ * or in jade when the dependency has already unlocked.
+ */
+const ROW = 60;
+const GAP = 8;
+const STEP = ROW + GAP;
+
+export function ColumnTrail({
+  /** One entry per child row, in render order. True once it is unblocked. */
+  unlocked,
+}: {
+  unlocked: boolean[];
+}) {
+  const n = unlocked.length;
+  if (n === 0) return null;
+
+  const height = n * ROW + (n - 1) * GAP;
+  const spine = STEP * (n - 1) + ROW / 2 + 6;
+
+  return (
+    <svg
+      width={22}
+      height={height}
+      viewBox={`0 0 22 ${height}`}
+      fill="none"
+      aria-hidden
+      className="pointer-events-none absolute top-3 left-[10px]"
+    >
+      <path
+        d={`M6 0 V${spine}`}
+        stroke="var(--clay)"
+        strokeOpacity={0.22}
+        strokeWidth={1.5}
+      />
+      {unlocked.map((open, i) => {
+        const start = STEP * i + 14;
+        const end = STEP * i + ROW / 2;
+        return (
+          <path
+            key={i}
+            d={`M6 ${start} Q6 ${end} 22 ${end}`}
+            fill="none"
+            strokeWidth={1.5}
+            stroke={open ? "var(--jade)" : "var(--clay)"}
+            strokeOpacity={open ? 1 : 0.45}
+            className={open ? "pulse-trail" : undefined}
+          />
+        );
+      })}
     </svg>
   );
 }

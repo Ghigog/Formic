@@ -1,28 +1,18 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Newsreader, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-jakarta",
-  display: "swap",
-});
-
-const newsreader = Newsreader({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
-  variable: "--font-newsreader",
-  display: "swap",
-});
-
-const geistMono = Geist_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-geist-mono",
-  display: "swap",
-});
+/**
+ * Fonts come from a single Google Fonts `css2` link, exactly as the artboards
+ * declare them: Plus Jakarta Sans for UI, Newsreader for editorial text,
+ * JetBrains Mono for ids, hashes, scopes and logs. Fallbacks (system-ui,
+ * Georgia, monospace) are set alongside the families in globals.css.
+ */
+const GOOGLE_FONTS =
+  "https://fonts.googleapis.com/css2" +
+  "?family=JetBrains+Mono:wght@400;500" +
+  "&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600" +
+  "&family=Plus+Jakarta+Sans:wght@400;500;600;700" +
+  "&display=swap";
 
 export const metadata: Metadata = {
   title: "Formic",
@@ -34,11 +24,17 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="en"
-      className={`${jakarta.variable} ${newsreader.variable} ${geistMono.variable}`}
-    >
-      <body className="min-h-dvh bg-bg text-fg">{children}</body>
+    <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link rel="stylesheet" href={GOOGLE_FONTS} />
+      </head>
+      <body className="bg-cream text-ink min-h-dvh">{children}</body>
     </html>
   );
 }

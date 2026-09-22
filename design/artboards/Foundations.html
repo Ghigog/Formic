@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Formic — Foundations</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;background:#FBF9F5;color:#1C1917;-webkit-font-smoothing:antialiased}
+a{color:#B5511A}a:hover{color:#8F3F12}
+.oct{clip-path:polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px)}
+.octL{clip-path:polygon(9px 0,calc(100% - 9px) 0,100% 9px,100% calc(100% - 9px),calc(100% - 9px) 100%,9px 100%,0 calc(100% - 9px),0 9px)}
+@keyframes clayPulse{0%,100%{box-shadow:0 0 0 0 rgba(194,120,3,0.3)}50%{box-shadow:0 0 0 5px rgba(194,120,3,0)}}
+@keyframes dotPulse{0%,100%{opacity:1}50%{opacity:0.25}}
+.pulse-node{animation:clayPulse 2.4s ease-in-out infinite}
+.pulse-dot{animation:dotPulse 1.6s ease-in-out infinite}
+</style>
+</helmet>
+
+<div style="width: 1440px; height: 980px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px; padding: 48px; background: #FBF9F5; overflow: hidden;">
+
+  <!-- Header -->
+  <header style="display: flex; align-items: flex-end; gap: 20px;">
+    <span class="oct" style="width: 40px; height: 40px; background: #1C1917; display: inline-flex; align-items: center; justify-content: center; color: #FBF9F5; font-family: Newsreader, Georgia, serif; font-size: 22px; font-weight: 600;">F</span>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #57534E;">FOUNDATIONS · HANDOFF</span>
+      <h1 style="margin: 0; font-family: Newsreader, Georgia, serif; font-size: 30px; font-weight: 600; line-height: 1; letter-spacing: -0.015em; color: #1C1917;">Constrained speed, surgical execution</h1>
+    </div>
+    <div style="flex-grow: 1;"></div>
+    <span style="max-width: 300px; font-size: 12px; line-height: 1.55; color: #57534E;">Earth-and-fire tokens on an 8px grid. Warm workbench, never sci-fi.</span>
+  </header>
+
+  <!-- Row A -->
+  <div style="display: flex; gap: 24px;">
+
+    <!-- Colour -->
+    <section style="width: 760px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 24px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Colour</h2>
+
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 64px; border-radius: 8px; background: #D96B27; display: block;"></span>
+          <span style="font-size: 12px; font-weight: 600; color: #1C1917;">Terracotta Amber</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#D96B27 · accent</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 64px; border-radius: 8px; background: #C27803; display: block;"></span>
+          <span style="font-size: 12px; font-weight: 600; color: #1C1917;">Clay Ochre</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#C27803 · agent live</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 64px; border-radius: 8px; background: #1C1917; display: block;"></span>
+          <span style="font-size: 12px; font-weight: 600; color: #1C1917;">Deep Anthracite</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#1C1917 · text, terminal</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 64px; border-radius: 8px; background: #FBF9F5; border: 1px solid #E7E5E4; display: block;"></span>
+          <span style="font-size: 12px; font-weight: 600; color: #1C1917;">Parched Cream</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#FBF9F5 · ground</span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 44px; border-radius: 8px; background: #2E7D32; display: block;"></span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#2E7D32 · merged</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 44px; border-radius: 8px; background: #E65100; display: block;"></span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#E65100 · rebasing</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 44px; border-radius: 8px; background: #C62828; display: block;"></span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#C62828 · blocked</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 44px; border-radius: 8px; background: #B5511A; display: block;"></span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#B5511A · filled CTA</span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #F7F4EE; border-radius: 8px;">
+        <span style="width: 28px; height: 28px; border-radius: 6px; background: #F4F1EB; border: 1px solid #E7E5E4; display: block;"></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#F4F1EB column</span>
+        <span style="width: 28px; height: 28px; border-radius: 6px; background: #FFFFFF; border: 1px solid #E7E5E4; display: block;"></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#FFFFFF card</span>
+        <span style="width: 28px; height: 28px; border-radius: 6px; background: #E7E5E4; display: block;"></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">#E7E5E4 border</span>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-size: 11px; color: #57534E;">White label text sits on #B5511A, not #D96B27 — 4.5:1.</span>
+      </div>
+    </section>
+
+    <!-- Typography -->
+    <section style="flex-grow: 1; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 24px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Typography</h2>
+
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: Newsreader, Georgia, serif; font-size: 30px; font-weight: 600; line-height: 1.1; color: #1C1917;">Board foundations are live</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">Newsreader 600 · epic titles, PRDs, showcases</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px solid #F0EEEA;">
+        <span style="font-size: 20px; font-weight: 600; color: #1C1917;">Implement Coder Agent loop</span>
+        <span style="font-size: 14px; font-weight: 500; color: #1C1917;">Card titles run at 13px / 500, columns at 11px / 600 upper</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">Plus Jakarta Sans 500 · 600 · UI and structure</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px solid #F0EEEA;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #1C1917;">PROT-06 · 4a91c07 · sbx_8f2a41</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">JetBrains Mono 400 · ids, hashes, logs, metadata</span>
+      </div>
+
+      <div style="display: flex; align-items: flex-end; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid #F0EEEA;">
+        <span style="width: 8px; height: 8px; background: #C27803; display: block;"></span>
+        <span style="width: 8px; height: 16px; background: #C27803; display: block;"></span>
+        <span style="width: 8px; height: 24px; background: #C27803; display: block;"></span>
+        <span style="width: 8px; height: 32px; background: #C27803; display: block;"></span>
+        <span style="width: 8px; height: 48px; background: #C27803; display: block;"></span>
+        <span style="margin-left: 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">8 · 16 · 24 · 32 · 48 — card padding 12</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- Row B -->
+  <div style="display: flex; gap: 24px; flex-grow: 1; min-height: 0;">
+
+    <!-- Badges -->
+    <section style="flex: 1; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 24px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Octagonal coin badges</h2>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <span class="oct" style="display: inline-flex; background: #E7E5E4; padding: 1px;"><span class="oct" style="display: inline-flex; background: #FFFFFF; padding: 3px 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: #57534E;">SONNET 3.5</span></span>
+        <span class="oct" style="display: inline-flex; background: #E7E5E4; padding: 1px;"><span class="oct" style="display: inline-flex; background: #FFFFFF; padding: 3px 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: #57534E;">S</span></span>
+        <span class="oct" style="display: inline-flex; background: #E7E5E4; padding: 1px;"><span class="oct" style="display: inline-flex; background: #FFFFFF; padding: 3px 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: #57534E;">M</span></span>
+        <span class="oct" style="display: inline-flex; background: #E7E5E4; padding: 1px;"><span class="oct" style="display: inline-flex; background: #FFFFFF; padding: 3px 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: #57534E;">PR #118</span></span>
+        <span class="oct" style="display: inline-flex; background: #D96B27; padding: 1px;"><span class="oct" style="display: inline-flex; background: #FDF1E8; padding: 3px 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: #8F3F12;">EPIC</span></span>
+        <span class="oct" style="display: inline-flex; background: #2E7D32; padding: 1px;"><span class="oct" style="display: inline-flex; background: #EDF4ED; padding: 3px 8px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: #1E5620;">MERGED</span></span>
+      </div>
+      <span style="font-size: 11px; line-height: 1.5; color: #57534E;">1px border at #E7E5E4, 7px chamfer, mono 9px. Accent borders only for epic and merged.</span>
+
+      <h2 style="margin: 8px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Status chips</h2>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; background: rgba(194,120,3,0.12); font-size: 11px; font-weight: 600; color: #1C1917;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #C27803;" class="pulse-dot"></span>Coder Agent</span>
+        <span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; background: rgba(46,125,50,0.12); font-size: 11px; font-weight: 600; color: #1C1917;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #2E7D32;"></span>checks passed</span>
+        <span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; background: rgba(230,81,0,0.12); font-size: 11px; font-weight: 600; color: #1C1917;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #E65100;"></span>rebase queued</span>
+        <span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; background: rgba(198,40,40,0.12); font-size: 11px; font-weight: 600; color: #1C1917;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #C62828;"></span>2 checks failed</span>
+        <span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; background: #F0EEEA; font-size: 11px; font-weight: 600; color: #57534E;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #A8A29E;"></span>blocked</span>
+      </div>
+      <span style="font-size: 11px; line-height: 1.5; color: #57534E;">Status colour carries in the dot, never the label — a 10% tint keeps every chip readable.</span>
+    </section>
+
+    <!-- Controls and card states -->
+    <section style="flex: 1; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 24px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Controls</h2>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+        <button type="button" style="height: 36px; padding: 0 14px; border: none; border-radius: 8px; background: #B5511A; font: inherit; font-size: 13px; font-weight: 600; color: #FFFFFF; cursor: pointer;">Primary</button>
+        <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; font: inherit; font-size: 13px; font-weight: 600; color: #1C1917; cursor: pointer;">Secondary</button>
+        <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #E7E5E4; border-radius: 8px; background: #1C1917; font: inherit; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FBF9F5; cursor: pointer;">Terminal</button>
+        <button type="button" aria-label="Close" style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; cursor: pointer;">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="#1C1917" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <span style="font-size: 11px; line-height: 1.5; color: #57534E;">36px on desktop, 44px minimum on touch. Icon-only buttons always carry a label for screen readers.</span>
+
+      <h2 style="margin: 8px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Card states</h2>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">idle</span>
+          <span style="font-size: 12px; color: #1C1917;">1px #E7E5E4, no motion</span>
+        </div>
+        <div class="pulse-node" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #FFFFFF; border: 1px solid #C27803; border-radius: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">running</span>
+          <span style="font-size: 12px; color: #1C1917;">clay border, 2.4s breath</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #FDFCFA; border: 1px solid #E7E5E4; border-radius: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">blocked</span>
+          <span style="font-size: 12px; color: #57534E;">muted ground, grey dot</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stepper and trails -->
+    <section style="flex: 1; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 24px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Step nodes</h2>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+          <span class="octL" style="width: 26px; height: 26px; background: #1C1917; display: inline-flex; align-items: center; justify-content: center;">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 6.2 5 8.2 9 3.8" stroke="#FBF9F5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;">DONE</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+          <span class="octL pulse-node" style="width: 26px; height: 26px; background: #C27803; display: inline-flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #1C1917;">4</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #8F3F12;">ACTIVE</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+          <span class="octL" style="width: 26px; height: 26px; background: #E7E5E4; display: inline-flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #57534E;">5</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;">PENDING</span>
+        </div>
+        <span style="font-size: 11px; line-height: 1.5; color: #57534E;">Eight stages, prompt to showcase.</span>
+      </div>
+
+      <h2 style="margin: 8px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Pheromone trails</h2>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <svg width="140" height="92" viewBox="0 0 140 92" fill="none" aria-hidden="true">
+          <path d="M10 8 V78" stroke="#C27803" stroke-opacity="0.22" stroke-width="1.5"/>
+          <path d="M10 8 Q10 26 34 26" stroke="#C27803" stroke-opacity="0.5" stroke-width="1.5" fill="none"/>
+          <path d="M10 44 Q10 62 34 62" stroke="#2E7D32" stroke-width="1.5" fill="none"/>
+          <rect x="34" y="16" width="96" height="20" rx="4" fill="#FDFCFA" stroke="#E7E5E4"/>
+          <rect x="34" y="52" width="96" height="20" rx="4" fill="#FDFCFA" stroke="#E7E5E4"/>
+        </svg>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #57534E;"><span style="width: 16px; height: 1.5px; background: #C27803;"></span>blocking dependency</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #57534E;"><span style="width: 16px; height: 1.5px; background: #2E7D32;"></span>unlocked, pulses once</span>
+        </div>
+      </div>
+
+      <span style="margin-top: auto; font-size: 11px; line-height: 1.5; color: #57534E;">Trails appear on hover in To&nbsp;Do and stay drawn inside the epic drawer.</span>
+    </section>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
