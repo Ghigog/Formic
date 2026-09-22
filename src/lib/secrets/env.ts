@@ -37,9 +37,28 @@ export type Env = z.infer<typeof schema>;
 
 let cached: Env | null = null;
 
+/**
+ * Vercel's env var UI takes a value verbatim: pasting `SANDBOX_PROVIDER="local"`
+ * straight from .env.example (quotes included, as the file's own syntax
+ * shows them) sets the value to the five characters `"local"`, not `local`.
+ * Stripping one matching pair of surrounding quotes tolerates that without
+ * weakening validation of the actual value.
+ */
+function unquote(value: string): string {
+  return value.match(/^(['"])([\s\S]*)\1$/)?.[2] ?? value;
+}
+
+function cleanedProcessEnv(): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    out[key] = typeof value === "string" ? unquote(value.trim()) : value;
+  }
+  return out;
+}
+
 export function env(): Env {
   if (cached) return cached;
-  const parsed = schema.safeParse(process.env);
+  const parsed = schema.safeParse(cleanedProcessEnv());
   if (!parsed.success) {
     const detail = parsed.error.issues
       .map((i) => `${i.path.join(".")}: ${i.message}`)
