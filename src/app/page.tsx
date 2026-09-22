@@ -1,5 +1,6 @@
 import { BoardShell } from "@/components/board/board-shell";
-import { repository } from "@/lib/db";
+import { hasDatabase, repository } from "@/lib/db";
+import { FIXTURE_EXTRAS, FIXTURE_STATS } from "@/lib/fixtures/board";
 
 export const dynamic = "force-dynamic";
 
@@ -7,21 +8,32 @@ export default async function BoardPage() {
   const repo = repository();
   const project = await repo.defaultProject();
   const cards = await repo.boardCards(project.id);
+  const provider = process.env.SANDBOX_PROVIDER ?? "local";
+
+  // With no database the board runs on the demo fixtures, so the ambient bar
+  // and the card detail are seeded to match. With one, both start empty and
+  // fill from the event stream.
+  const demo = !hasDatabase();
 
   return (
     <BoardShell
       initialCards={cards}
+      initialExtras={demo ? FIXTURE_EXTRAS : {}}
       projectName={project.name}
       repoFullName={project.repoFullName}
       baseBranch={project.baseBranch}
-      initialStats={{
-        activeSandboxes: 0,
-        provider: process.env.SANDBOX_PROVIDER ?? "local",
-        tokensIn: 0,
-        tokensOut: 0,
-        costCents: 0,
-        logLines: [],
-      }}
+      initialStats={
+        demo
+          ? { ...FIXTURE_STATS, provider }
+          : {
+              activeSandboxes: 0,
+              provider,
+              tokensIn: 0,
+              tokensOut: 0,
+              costCents: 0,
+              logLines: [],
+            }
+      }
     />
   );
 }

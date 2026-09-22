@@ -52,9 +52,19 @@ npm run dev
 | `npm run db:push` / `db:seed` | Apply schema, load demo data |
 | `npm run serve` | Start the built app and verify the running build id |
 
+## Design
+
+`design/DESIGN.md` is the UI brief and `design/artboards/` holds the rendered
+mockups — self-contained HTML, no build step, open them in a browser. The
+artboard wins wherever it and the brief disagree. Every colour, radius and
+font in the app comes from the token layer in `src/app/globals.css`, which is
+lifted from `design/artboards/Main.html`; components reference tokens, never
+raw hex.
+
 ## Layout
 
 ```
+design/              UI brief and the rendered artboards
 docs/tasks/          Ticket specs, one file per PROT-xx
 prisma/              Schema and seed
 src/app/             Routes and API handlers

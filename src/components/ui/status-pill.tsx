@@ -1,12 +1,50 @@
 import { cn } from "./cn";
-import { STATUS_LABEL, toneFor } from "@/lib/tokens";
+import { STATUS_LABEL, TONES, isLive, toneFor, type ToneName } from "@/lib/tokens";
 import type { TicketStatus } from "@/lib/domain/status";
 
 /**
- * Status is the one piece of card metadata that is not a coin badge: it needs
- * to read at a glance from across a column, and an octagon at legible text
- * size is too wide for a dense card.
+ * A status chip: 12% tint of the status colour, anthracite label, 5px dot.
+ *
+ * The colour lives in the dot alone. Tinting the label instead would force a
+ * darker variant of every status colour to clear 4.5:1, and the palette would
+ * drift one state at a time.
  */
+export function StatusChip({
+  tone = "neutral",
+  pulsing = false,
+  children,
+  className,
+}: {
+  tone?: ToneName;
+  /** Only a live agent breathes. */
+  pulsing?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const t = TONES[tone];
+  return (
+    <span
+      className={cn(
+        "text-ink inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
+        "text-[10px] leading-4 font-semibold whitespace-nowrap",
+        t.chip,
+        className,
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "size-[5px] shrink-0 rounded-full",
+          t.dot,
+          pulsing && "pulse-dot",
+        )}
+      />
+      {children}
+    </span>
+  );
+}
+
+/** The same chip, driven by a card's domain status. */
 export function StatusPill({
   status,
   detail,
@@ -17,28 +55,25 @@ export function StatusPill({
   className?: string;
 }) {
   const tone = toneFor(status);
-  const pulsing = status === "running";
-
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-[11px] leading-4 font-medium",
-        tone.text,
+        "text-ink inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
+        "text-[10px] leading-4 font-semibold whitespace-nowrap",
+        tone.chip,
         className,
       )}
     >
       <span
         aria-hidden
         className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          tone.fill,
-          pulsing && "animate-pulse",
+          "size-[5px] shrink-0 rounded-full",
+          tone.dot,
+          isLive(status) && "pulse-dot",
         )}
       />
       {STATUS_LABEL[status]}
-      {detail ? (
-        <span className="text-fg-subtle font-normal">· {detail}</span>
-      ) : null}
+      {detail ? <span className="text-muted font-normal">· {detail}</span> : null}
     </span>
   );
 }

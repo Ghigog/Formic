@@ -1,44 +1,59 @@
 import { cn } from "./cn";
-import { TONES, type ToneName } from "@/lib/tokens";
 
+/**
+ * A flat progress track: no radius beyond half its height, no percentage
+ * label of its own. The caption underneath carries the meaning ("Running
+ * vitest · 13/21 files"), which is why the bar itself stays quiet.
+ */
 export function ProgressBar({
   value,
-  tone = "amber",
   label,
+  caption,
+  height = 4,
+  track = "bg-track",
+  fill = "bg-clay",
   className,
 }: {
   /** 0..1. Null renders an indeterminate bar. */
   value: number | null;
-  tone?: ToneName;
-  label?: string;
+  /** Accessible name. Required: the bar has no visible label of its own. */
+  label: string;
+  /** Mono caption rendered under the bar, as on a running card. */
+  caption?: string;
+  height?: 4 | 6;
+  track?: string;
+  fill?: string;
   className?: string;
 }) {
-  const t = TONES[tone];
-  const pct = value == null ? null : Math.round(Math.min(1, Math.max(0, value)) * 100);
+  const pct =
+    value == null ? null : Math.round(Math.min(1, Math.max(0, value)) * 100);
 
   return (
-    <div className={cn("flex items-center gap-1", className)}>
-      <div
+    <div className={cn("flex flex-col gap-[5px]", className)}>
+      <span
         role="progressbar"
         aria-valuenow={pct ?? undefined}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={label}
-        className="bg-sunken relative h-1 flex-1 overflow-hidden rounded-full"
+        className={cn("block overflow-hidden", track)}
+        style={{ height, borderRadius: height / 2 }}
       >
-        {pct == null ? (
-          <div className={cn("absolute inset-y-0 w-1/3 animate-pulse rounded-full", t.fill)} />
-        ) : (
-          <div
-            className={cn("h-full rounded-full transition-[width] duration-500", t.fill)}
-            style={{ width: `${pct}%` }}
-          />
-        )}
-      </div>
-      {pct != null && (
-        <span className="text-fg-subtle font-mono text-[10px] tabular-nums">
-          {pct}%
-        </span>
+        {/*
+          Indeterminate draws a short, dimmed fill rather than a travelling
+          bar: the motion budget is two loops, and neither is this one.
+        */}
+        <span
+          className={cn(
+            "block transition-[width] duration-500",
+            fill,
+            pct == null && "opacity-50",
+          )}
+          style={{ width: `${pct ?? 33}%`, height }}
+        />
+      </span>
+      {caption && (
+        <span className="text-muted font-mono text-[10px]">{caption}</span>
       )}
     </div>
   );

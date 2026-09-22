@@ -3,9 +3,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
-import { Column } from "./column";
+import { Column, columnCount } from "./column";
 import { BoardHeader } from "./header";
-import type { CardExtras } from "./card";
+import { BacklogComposer } from "./composer";
+import type { ExtrasMap } from "./card";
 import type { BoardCard } from "@/lib/domain/entities";
 import {
   COLUMNS,
@@ -13,6 +14,7 @@ import {
   type ColumnId,
   canUserMove,
   columnFor,
+  isDraggable,
 } from "@/lib/domain/status";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import { byPosition, positionForIndex } from "@/lib/ordering";
@@ -26,13 +28,17 @@ const NEXT_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
 
 export interface BoardProps {
   cards: BoardCard[];
-  extras?: Record<string, CardExtras | undefined>;
+  extras?: ExtrasMap;
   projectName: string;
   repoFullName: string;
   baseBranch: string;
   inSync?: boolean;
+  syncedLabel?: string;
   onOpenCard: (card: BoardCard) => void;
+  onShowcase?: (epic: BoardCard) => void;
   onNewItem: () => void;
+  /** Backlog's inline composer. Same destination as the header CTA. */
+  onCapture: (rawRequest: string) => Promise<void>;
   /**
    * The single trigger. Returns the server's verdict; a rejection rolls the
    * card back to where it came from.
@@ -47,8 +53,11 @@ export function Board({
   repoFullName,
   baseBranch,
   inSync = true,
+  syncedLabel,
   onOpenCard,
+  onShowcase,
   onNewItem,
+  onCapture,
   onTransition,
 }: BoardProps) {
   const [optimistic, setOptimistic] = useState<BoardCard[]>(cards);
@@ -142,60 +151,71 @@ export function Board({
     [commit, live],
   );
 
-  const advance = useCallback(
-    (card: BoardCard) => {
-      const from = columnFor(card.status, card.stalledIn);
-      const to = NEXT_COLUMN[from];
-      if (!to) return;
-      void commit(card, to, byColumn[to].length);
-    },
-    [byColumn, commit],
-  );
+  /*
+   * Mobile advance. @hello-pangea/dnd does not survive a touch scroll
+   * container, so small screens get an explicit action instead of a worse
+   * version of the same gesture. It acts on the first card in the visible
+   * column that can actually move, and says which one in its accessible name.
+   */
+  const advanceTarget = useMemo(() => {
+    const to = NEXT_COLUMN[activeTab];
+    if (!to) return null;
+    const card = byColumn[activeTab].find((c) => isDraggable(c.status));
+    return card ? { card, to } : null;
+  }, [activeTab, byColumn]);
 
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <>
       <BoardHeader
         projectName={projectName}
         repoFullName={repoFullName}
         baseBranch={baseBranch}
         inSync={inSync}
+        syncedLabel={syncedLabel}
         epicsTotal={epics.length}
         epicsDone={epicsDone}
         onNewItem={onNewItem}
       />
 
-      {/* Mobile column tabs. Replaces the 5-column layout below 768px. */}
+      {/* Sticky column tabs. Replaces the 5-column layout below 768px. */}
       <nav
-        className="border-line bg-surface sticky top-[41px] z-20 flex gap-0.5 overflow-x-auto border-b px-1 py-1 md:hidden"
         aria-label="Columns"
+        className="border-line bg-cream flex h-13 shrink-0 items-center gap-2 overflow-x-auto border-b px-4 md:hidden"
       >
-        {COLUMNS.map((col) => (
-          <button
-            key={col}
-            type="button"
-            onClick={() => setActiveTab(col)}
-            aria-current={activeTab === col}
-            className={cn(
-              "rounded px-1.5 py-1 text-[12px] font-medium whitespace-nowrap transition-colors",
-              activeTab === col
-                ? "bg-amber text-on-amber"
-                : "text-fg-muted hover:text-fg",
-            )}
-          >
-            {COLUMN_LABELS[col]}
-            <span className="ml-1 font-mono text-[10px] tabular-nums opacity-70">
-              {byColumn[col].length}
-            </span>
-          </button>
-        ))}
+        {COLUMNS.map((col) => {
+          const active = activeTab === col;
+          return (
+            <button
+              key={col}
+              type="button"
+              onClick={() => setActiveTab(col)}
+              aria-current={active ? "true" : undefined}
+              className="inline-flex h-11 shrink-0 items-center"
+            >
+              <span
+                className={cn(
+                  "inline-flex h-9 items-center rounded-full text-[13px] whitespace-nowrap",
+                  active
+                    ? "bg-anthracite text-cream px-3.5 font-semibold"
+                    : "border-line bg-card text-muted border px-3 font-medium",
+                )}
+              >
+                {COLUMN_LABELS[col]}{" "}
+                <span className="ml-1 tabular-nums">
+                  {columnCount(byColumn[col], col)}
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </nav>
 
       {error && (
         <div
           role="alert"
-          className="border-crimson bg-crimson/10 text-crimson-text mx-2 mt-1 rounded border px-2 py-1 text-[12px]"
+          className="bg-crimson/12 text-ink mx-4 mt-2 shrink-0 rounded-md px-2 py-1.5 text-[12px] md:mx-6"
         >
           {error}
         </div>
@@ -204,8 +224,8 @@ export function Board({
       <DragDropContext onDragEnd={onDragEnd}>
         <main
           className={cn(
-            "min-h-0 flex-1 gap-2 p-2 pb-12",
-            isMobile ? "flex flex-col" : "grid grid-cols-5",
+            "relative flex min-h-0 flex-1",
+            isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6",
           )}
         >
           {visibleColumns.map((col) => (
@@ -214,16 +234,44 @@ export function Board({
               id={col}
               cards={byColumn[col]}
               extras={extras}
-              onOpen={onOpenCard}
-              onAdvance={advance}
-              advanceLabel={
-                NEXT_COLUMN[col] ? `Advance to ${COLUMN_LABELS[NEXT_COLUMN[col]!]}` : null
+              bare={isMobile}
+              composer={
+                col === "backlog" ? (
+                  <BacklogComposer onSubmit={onCapture} />
+                ) : undefined
               }
-              showAdvance={isMobile}
+              onOpen={onOpenCard}
+              onShowcase={onShowcase}
             />
           ))}
+
+          {isMobile && advanceTarget && (
+            <button
+              type="button"
+              onClick={() =>
+                void commit(
+                  advanceTarget.card,
+                  advanceTarget.to,
+                  byColumn[advanceTarget.to].length,
+                )
+              }
+              aria-label={`Advance ${advanceTarget.card.key} to ${COLUMN_LABELS[advanceTarget.to]}`}
+              className="bg-terracotta-cta fixed right-4 bottom-[72px] z-30 inline-flex h-13 items-center gap-2 rounded-[26px] px-5 text-[14px] font-semibold text-white shadow-fab"
+            >
+              Advance card
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M3.5 8h9M9 4.5 12.5 8 9 11.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
         </main>
       </DragDropContext>
-    </div>
+    </>
   );
 }
