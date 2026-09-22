@@ -19,10 +19,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U formic"
           --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      # A real database, so the build's schema push and the app's runtime
-      # queries run here first rather than for the first time in production.
-      DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,10 +27,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # Unit tests run on the in-memory store by design, so no DATABASE_URL.
       - run: npm test
+
+      # A real database from here on, so the build's schema push and the
+      # app's runtime queries run here first, not first in production.
       - run: npm run build
+        env:
+          DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
 
       - name: Boot the production build and hit it
+        env:
+          DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
         run: |
           npx next start -p 3111 > server.log 2>&1 &
           for i in $(seq 1 30); do
