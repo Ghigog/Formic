@@ -641,7 +641,7 @@ export function EpicGroup({
               )}
             />
           )}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col [&>div:not(:last-child)]:mb-2">
             {tickets.map((child, i) => (
               <Draggable
                 key={child.id}
