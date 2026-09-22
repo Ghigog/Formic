@@ -13,7 +13,13 @@ declare global {
 }
 
 export function databaseUrl(): string | null {
-  const url = process.env.DATABASE_URL;
+  // Vercel's Supabase integration doesn't name its variable DATABASE_URL, so
+  // fall back to the pooled connection strings it does set. Prefer the one
+  // built for Prisma (pgbouncer-aware) over the generic pooled URL.
+  const url =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL;
   return url && url.length > 0 ? url : null;
 }
 

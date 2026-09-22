@@ -26,7 +26,7 @@ Each credential unlocks one layer and nothing breaks without it:
 
 | Variable | Unlocks |
 | :-- | :-- |
-| `DATABASE_URL` | Durable state. Without it, the in-memory store. |
+| `DATABASE_URL` (or `POSTGRES_PRISMA_URL` / `POSTGRES_URL`, as set by Vercel's Postgres integrations) | Durable state. Without it, the in-memory store. |
 | `ANTHROPIC_API_KEY` | Real agents. Without it, mocks. |
 | `GITHUB_TOKEN`, `GITHUB_REPO` | Cloning and pushing. |
 | `E2B_API_KEY` + `SANDBOX_PROVIDER=e2b` | Isolated sandboxes. Without it, local child processes. |
@@ -40,6 +40,11 @@ npm run dev
 ```
 
 `GET /api/health` reports which of those layers are live, plus the build id.
+
+On Vercel, `npm run build` applies the schema automatically (`scripts/db-push.sh`,
+a no-op without a configured database) and the server seeds the demo board
+itself the first time it finds zero epics — neither `db:push` nor `db:seed`
+needs to be run by hand there.
 
 ## Scripts
 
