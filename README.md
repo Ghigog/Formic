@@ -46,7 +46,8 @@ npm run dev
 | :-- | :-- |
 | `npm run dev` | Development server |
 | `npm run build` / `npm start` | Production build and serve |
-| `npm test` | Unit and integration tests |
+| `npm test` | Domain and component tests (node + jsdom) |
+| `npm run test:e2e` | End-to-end tests in a real browser |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:local` | Start a local Postgres for development |
 | `npm run db:push` / `db:seed` | Apply schema, load demo data |
@@ -66,6 +67,7 @@ raw hex.
 ```
 design/              UI brief and the rendered artboards
 docs/tasks/          Ticket specs, one file per PROT-xx
+e2e/                 End-to-end tests and their page helpers
 prisma/              Schema and seed
 src/app/             Routes and API handlers
 src/components/      board/ and ui/
@@ -78,6 +80,10 @@ src/lib/
   budget/            Spend ceilings and the kill switch
   secrets/           Config validation and redaction
 ```
+
+Tests come in three layers — domain in node, components in jsdom, and the
+board end to end in a real browser. `docs/testing.md` says what belongs in
+each, and what is not covered yet.
 
 `src/lib/domain` has no I/O and no framework imports. Everything that decides
 whether something is *allowed* lives there, which is why it is the part with
