@@ -30,10 +30,13 @@ function live(): Map<string, SandboxHandle> {
   return globalThis.__formicSandboxes;
 }
 
+export const LOCAL_SANDBOX_ON_VERCEL =
+  "The local sandbox can't run on Vercel: functions have no git and a read-only filesystem. Set SANDBOX_PROVIDER=e2b and E2B_API_KEY.";
+
 export function sandboxProvider(): SandboxProvider {
-  return env().SANDBOX_PROVIDER === "e2b"
-    ? new E2BSandboxProvider()
-    : new LocalSandboxProvider();
+  if (env().SANDBOX_PROVIDER === "e2b") return new E2BSandboxProvider();
+  if (process.env.VERCEL) throw new Error(LOCAL_SANDBOX_ON_VERCEL);
+  return new LocalSandboxProvider();
 }
 
 export function activeSandboxCount(): number {
@@ -66,7 +69,7 @@ export async function disposeAllSandboxes(projectId: string): Promise<number> {
   const handles = [...live().values()];
   await Promise.allSettled(handles.map((h) => h.dispose()));
   live().clear();
-  await announce(projectId, sandboxProvider().name);
+  await announce(projectId, env().SANDBOX_PROVIDER);
   return handles.length;
 }
 

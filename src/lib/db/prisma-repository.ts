@@ -1,5 +1,7 @@
 import "server-only";
 
+import { normalizeRepo } from "@/lib/secrets/repo";
+
 import { prisma } from "./client";
 import type {
   CreateEpicInput,
@@ -36,12 +38,24 @@ export class PrismaRepository implements Repository {
   async defaultProject(): Promise<ProjectSummary> {
     const db = prisma();
     const existing = await db.project.findFirst({ orderBy: { createdAt: "asc" } });
-    if (existing) return existing;
+    if (existing) {
+      // A project seeded from a malformed GITHUB_REPO carries that value into
+      // every GitHub API URL; heal it once rather than on every call.
+      const repo =
+        normalizeRepo(existing.repoFullName) ?? normalizeRepo(process.env.GITHUB_REPO);
+      if (repo && repo !== existing.repoFullName) {
+        return db.project.update({
+          where: { id: existing.id },
+          data: { repoFullName: repo },
+        });
+      }
+      return existing;
+    }
 
     return db.project.create({
       data: {
         name: "Formic",
-        repoFullName: process.env.GITHUB_REPO ?? "Ghigog/Formic",
+        repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
         baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
       },
     });
@@ -304,6 +318,15 @@ export class PrismaRepository implements Repository {
     return Number(row.seq);
   }
 
+  async latestEventSeq(projectId: string): Promise<number> {
+    const row = await prisma().event.findFirst({
+      where: { projectId },
+      orderBy: { seq: "desc" },
+      select: { seq: true },
+    });
+    return row ? Number(row.seq) : 0;
+  }
+
   async eventsAfter(projectId: string, seq: number, limit = 500) {
     const db = prisma();
     const rows = await db.event.findMany({
@@ -399,10 +422,15 @@ export class PrismaRepository implements Repository {
     });
   }
 
-  async unfinishedRuns(): Promise<Array<RunRecord & { status: AgentRunStatus }>> {
+  async unfinishedRuns(
+    startedBefore: Date,
+  ): Promise<Array<RunRecord & { status: AgentRunStatus }>> {
     const db = prisma();
     const rows = await db.agentRun.findMany({
-      where: { status: { in: ["queued", "running"] } },
+      where: {
+        status: { in: ["queued", "running"] },
+        createdAt: { lt: startedBefore },
+      },
     });
     return rows.map((r: RunRow) => ({
       id: r.id,

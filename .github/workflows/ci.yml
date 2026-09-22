@@ -8,6 +8,21 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: formic
+          POSTGRES_PASSWORD: formic
+          POSTGRES_DB: formic
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U formic"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # A real database, so the build's schema push and the app's runtime
+      # queries run here first rather than for the first time in production.
+      DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,3 +33,19 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+      - name: Boot the production build and hit it
+        run: |
+          npx next start -p 3111 > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3111/api/health > health.json && break
+            sleep 1
+          done
+          cat health.json
+          jq -e '.ok == true and .database == "postgres"' health.json
+          curl -sf -o /dev/null http://localhost:3111/
+          grep -q "seeded the demo board" server.log
+
+      - name: Server log
+        if: always()
+        run: cat server.log || true

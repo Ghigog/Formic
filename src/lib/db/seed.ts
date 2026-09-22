@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import { normalizeRepo } from "../secrets/repo";
 
 /**
  * Loads the demo board into a real database: one Epic with a PRD and four
@@ -16,7 +17,7 @@ export async function seedDemoBoard(prisma: PrismaClient): Promise<void> {
     create: {
       id: "project_seed",
       name: "Formic",
-      repoFullName: process.env.GITHUB_REPO ?? "Ghigog/Formic",
+      repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
       baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
     },
   });

@@ -120,6 +120,8 @@ export interface Repository {
     seq: number,
     limit?: number,
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
+  /** Highest event sequence number so far, or 0 with none. */
+  latestEventSeq(projectId: string): Promise<number>;
   rebalanceColumn(projectId: string, column: ColumnId): Promise<void>;
 
   /* PROT-06 / PROT-07: the ticket run lifecycle. */
@@ -137,10 +139,12 @@ export interface Repository {
   startRun(run: RunRecord): Promise<void>;
   finishRun(runId: string, outcome: RunOutcome): Promise<void>;
   /**
-   * Runs still marked live. After a restart these are by definition orphans:
-   * the process that owned their sandbox is gone.
+   * Runs still marked live that began before `startedBefore`. Callers pass a
+   * cutoff older than any worker can live, so every match is an orphan.
    */
-  unfinishedRuns(): Promise<Array<RunRecord & { status: AgentRunStatus }>>;
+  unfinishedRuns(
+    startedBefore: Date,
+  ): Promise<Array<RunRecord & { status: AgentRunStatus }>>;
 
   /**
    * Records a webhook delivery, returning false when it has been seen before.

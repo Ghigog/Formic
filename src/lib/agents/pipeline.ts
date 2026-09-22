@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { after } from "next/server";
 
 import { agents } from "./registry";
 import type { AgentContext, AgentOutcome, Usage } from "./ports";
@@ -207,9 +208,22 @@ export async function runArchitectAgent(
 /**
  * Detached launcher. A rejected promise here must not become an unhandled
  * rejection that takes the server down.
+ *
+ * Inside a request it goes through `after()`: on Vercel a function is frozen
+ * once its response is sent, so plain fire-and-forget work silently stopped
+ * mid-run. `after()` keeps the function alive until the work settles, up to
+ * the function's max duration. Outside a request (tests, scripts) there is
+ * no such scope and `after()` throws, so it runs detached as before.
  */
 export function launch(work: () => Promise<void>, label: string): void {
-  void work().catch((e) => {
-    console.error(`[formic] ${label} failed:`, e);
-  });
+  const run = () =>
+    work().catch((e) => {
+      console.error(`[formic] ${label} failed:`, e);
+    });
+
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
 }

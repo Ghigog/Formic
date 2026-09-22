@@ -32,8 +32,21 @@ export async function GET(req: NextRequest) {
     async start(controller) {
       let closed = false;
 
+      // Events can arrive twice (in-process bus and the durable tail below),
+      // so dedupe by sequence number rather than trust arrival order.
+      const delivered = new Set<number>();
+      // A fresh connection tails from now; a reconnect from its cursor.
+      let polledThrough =
+        Number.isFinite(cursor) && cursor > 0
+          ? cursor
+          : await repository().latestEventSeq(project.id);
+
       const send = (e: SequencedEvent) => {
-        if (closed) return;
+        if (closed || delivered.has(e.seq)) return;
+        delivered.add(e.seq);
+        if (delivered.size > 2_000) {
+          delivered.delete(delivered.values().next().value as number);
+        }
 
         // Backpressure: once the buffer is deep, log and progress frames are
         // dropped so state changes still get through.
@@ -62,6 +75,25 @@ export async function GET(req: NextRequest) {
 
       const unsubscribe = subscribe(project.id, send);
 
+      // The in-process bus only reaches subscribers in this instance. On
+      // serverless the run publishing an event is often in another one, so
+      // also tail the durable log; `send` drops anything already delivered.
+      let polling = false;
+      const tail = setInterval(async () => {
+        if (closed || polling) return;
+        polling = true;
+        try {
+          for (const e of await replay(project.id, polledThrough)) {
+            send(e);
+            polledThrough = Math.max(polledThrough, e.seq);
+          }
+        } catch {
+          // A missed poll is retried on the next tick.
+        } finally {
+          polling = false;
+        }
+      }, 2_000);
+
       // Comment frames keep intermediaries from closing an idle connection.
       const heartbeat = setInterval(() => {
         if (closed) return;
@@ -76,6 +108,7 @@ export async function GET(req: NextRequest) {
         if (closed) return;
         closed = true;
         clearInterval(heartbeat);
+        clearInterval(tail);
         unsubscribe();
         try {
           controller.close();

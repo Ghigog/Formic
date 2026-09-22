@@ -9,44 +9,44 @@ jobs:
   smoke-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Check the deployed app is actually up
+      - name: Wait for this commit to be live, then check it
         env:
           PROD_URL: ${{ vars.PRODUCTION_URL }}
         run: |
           if [ -z "$PROD_URL" ]; then
-            echo "No PRODUCTION_URL repository variable set — skipping."
-            echo "Set one under Settings > Secrets and variables > Actions > Variables to enable this check."
+            echo "No PRODUCTION_URL repository variable set, skipping."
             exit 0
           fi
+          base="${PROD_URL%/}"
 
-          check() {
-            path="$1"
-            url="${PROD_URL%/}${path}"
-            echo "GET $url"
-            response="$(curl -sS -w '\n%{http_code}' --max-time 15 "$url")"
-            status="$(echo "$response" | tail -n1)"
-            body="$(echo "$response" | sed '$d')"
-            echo "$body"
-            if [ "$status" != "200" ]; then
-              echo "::error::$path returned HTTP $status"
-              return 1
+          # Checking right after a merge would test the previous deploy, so
+          # first wait until /api/health reports this commit. Vercel builds
+          # take about a minute; give it six.
+          deadline=$((SECONDS + 360))
+          while :; do
+            status=$(curl -s -o health.json -w '%{http_code}' --max-time 15 "$base/api/health" || echo 000)
+            live=$(jq -r '.commit // "unknown"' health.json 2>/dev/null || echo unknown)
+            if [ "$live" = "$GITHUB_SHA" ] || [ "$live" = "unknown" ] || [ "$live" = "null" ]; then
+              [ "$status" = "200" ] && break
             fi
-          }
-
-          # /api/health alone doesn't reach the database (its counters are
-          # in-memory), and / does (it loads the board's default project),
-          # so both together catch a build that's green but a runtime that
-          # can't actually talk to a configured database — exactly what
-          # slipped past CI the last few rounds.
-          attempt=0
-          until check "/api/health" && check "/"; do
-            attempt=$((attempt + 1))
-            if [ "$attempt" -ge 5 ]; then
-              echo "::error::Deployment still unhealthy after retries"
+            if [ $SECONDS -ge $deadline ]; then
+              echo "::error::Production never became healthy on $GITHUB_SHA (serving: $live, /api/health: HTTP $status)"
+              cat health.json 2>/dev/null
               exit 1
             fi
-            echo "Retrying in 20s (attempt $attempt/5, in case the deploy is still in flight)..."
+            echo "Serving $live, /api/health $status; waiting for $GITHUB_SHA..."
             sleep 20
           done
 
-          echo "Deployment is healthy."
+          cat health.json; echo
+          if [ "$live" != "$GITHUB_SHA" ]; then
+            echo "::warning::/api/health doesn't report a commit, so this may be checking an older deploy."
+          fi
+          jq -r '.warnings[]?' health.json | while read -r w; do echo "::warning::$w"; done
+
+          page=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$base/")
+          if [ "$page" != "200" ]; then
+            echo "::error::/ returned HTTP $page"
+            exit 1
+          fi
+          echo "Production is healthy on $live."

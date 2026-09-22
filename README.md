@@ -41,10 +41,24 @@ npm run dev
 
 `GET /api/health` reports which of those layers are live, plus the build id.
 
-On Vercel, `npm run build` applies the schema automatically (`scripts/db-push.sh`,
-a no-op without a configured database) and the server seeds the demo board
-itself the first time it finds zero epics — neither `db:push` nor `db:seed`
-needs to be run by hand there.
+## Deploying on Vercel
+
+- **Schema.** Production builds apply the schema (`scripts/db-push.sh`).
+  Preview builds skip it, since they share production's database. A change
+  that would drop data fails the build instead of running; apply it by hand.
+- **Seed.** The server seeds the demo board the first time it finds a
+  database with no epics, and never again after that.
+- **Config.** A malformed optional variable is ignored and listed under
+  `warnings` in `/api/health`; it no longer takes the app down.
+  `GITHUB_REPO` accepts `owner/repo` or the repository URL.
+- **Agent runs** continue after the request returns (`after()`), up to the
+  function's max duration: 300 seconds on the Hobby plan. A run still
+  unfinished after 10 minutes is failed with a reason on its card.
+- **Sandboxes.** The local provider can't run on Vercel. Use
+  `SANDBOX_PROVIDER=e2b` with `E2B_API_KEY` for coder runs.
+- **Checks.** CI builds and boots the app against a real Postgres on every
+  PR. After each merge, the smoke test waits for that commit to go live and
+  checks `/api/health` and `/` (set the `PRODUCTION_URL` repo variable).
 
 ## Scripts
 
