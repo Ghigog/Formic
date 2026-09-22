@@ -3,6 +3,9 @@ import path from "node:path";
 import { hasDatabase } from "@/lib/db";
 import { useMockAgents } from "@/lib/agents/registry";
 import { activeRunCount } from "@/lib/budget/controller";
+import { activeSandboxCount } from "@/lib/sandbox";
+import { mergeTarget, usingMockVcs } from "@/lib/vcs";
+import { env } from "@/lib/secrets/env";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +30,10 @@ export async function GET() {
     database: hasDatabase() ? "postgres" : "memory",
     agents: useMockAgents() ? "mock" : "anthropic",
     sandbox: process.env.SANDBOX_PROVIDER ?? "local",
+    github: usingMockVcs() ? "mock" : "live",
+    webhook: env().GITHUB_WEBHOOK_SECRET ? "configured" : "unconfigured",
+    mergeTarget: mergeTarget(env().GITHUB_BASE_BRANCH),
     activeRuns: activeRunCount(),
+    activeSandboxes: activeSandboxCount(),
   });
 }

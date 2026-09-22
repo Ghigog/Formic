@@ -1,5 +1,6 @@
 import type { Prd } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
+import type { Workspace } from "@/lib/sandbox/workspace";
 
 /**
  * The agent boundary. Every pipeline is reachable through one of these, and
@@ -17,6 +18,12 @@ export interface AgentContext {
   emit: (event: FormicEvent) => void;
   /** Cooperative cancellation: budgets, the kill switch, and user cancel. */
   signal: AbortSignal;
+  /**
+   * Records spend mid-run. A single-call agent can leave this alone and let
+   * the pipeline account for it at the end; a loop cannot, because a budget
+   * that is only checked after the loop finishes is not a budget.
+   */
+  charge?: (usage: Usage) => Promise<void>;
 }
 
 export interface Usage {
@@ -69,8 +76,63 @@ export interface ShowcaseAgent {
   ): Promise<AgentOutcome<string>>;
 }
 
+
+/**
+ * What a coding agent is handed. The workspace is already scoped: writes
+ * outside `fileScope` throw before they reach the checkout, so the agent
+ * learns its boundary from an error it can act on rather than from a run that
+ * is rejected twenty minutes later.
+ */
+export interface CoderTask {
+  ticketId: string;
+  key: string;
+  title: string;
+  description: string;
+  acceptanceCriteria: string[];
+  fileScope: string[];
+}
+
+export interface CodeChange {
+  /** One line for the card and the PR title. */
+  summary: string;
+  /** Commit body. What changed and why, not a list of files. */
+  detail: string;
+  /** Command the agent verified the change with, if it found one. */
+  verifiedWith: string | null;
+}
+
+/** PROT-06. Ticket in, edited workspace out. Commits and pushes are the caller's. */
+export interface CoderAgent {
+  implement(
+    ctx: AgentContext,
+    input: { task: CoderTask; workspace: Workspace },
+  ): Promise<AgentOutcome<CodeChange>>;
+}
+
+export interface FailingCheck {
+  name: string;
+  summary: string;
+  annotations: Array<{ path: string; line: number | null; message: string }>;
+}
+
+/** PROT-07. Red CI in, fix in the workspace out. */
+export interface ReviewerAgent {
+  fix(
+    ctx: AgentContext,
+    input: {
+      task: CoderTask;
+      workspace: Workspace;
+      checks: FailingCheck[];
+      attempt: number;
+      maxAttempts: number;
+    },
+  ): Promise<AgentOutcome<CodeChange>>;
+}
+
 export interface AgentRegistry {
   product: ProductAgent;
   architect: ArchitectAgent;
+  coder: CoderAgent;
+  reviewer: ReviewerAgent;
   showcase: ShowcaseAgent;
 }

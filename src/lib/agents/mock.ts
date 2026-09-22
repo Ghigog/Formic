@@ -2,12 +2,18 @@ import type {
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
+  CodeChange,
+  CoderAgent,
+  CoderTask,
   DraftTicket,
+  FailingCheck,
   ProductAgent,
+  ReviewerAgent,
   ShowcaseAgent,
   Usage,
 } from "./ports";
 import type { Prd } from "@/lib/domain/entities";
+import type { Workspace } from "@/lib/sandbox/workspace";
 
 /**
  * Canned agents. They stream, they take a plausible amount of time, and they
@@ -202,5 +208,117 @@ export class MockShowcaseAgent implements ShowcaseAgent {
 
     ctx.emit({ type: "epic.showcase", epicId: input.epicId, markdown: body });
     return { ok: true, value: body, usage: MOCK_USAGE };
+  }
+}
+
+/** The file a mock run leaves behind, inside the ticket's first scope entry. */
+function noteFor(task: CoderTask): { path: string; contents: string } {
+  const root = task.fileScope[0] ?? "src";
+  return {
+    path: `${root}/${task.key.toLowerCase()}.md`,
+    contents: [
+      `# ${task.key} — ${task.title}`,
+      "",
+      task.description,
+      "",
+      "## Acceptance criteria",
+      "",
+      ...task.acceptanceCriteria.map((c) => `- [x] ${c}`),
+      "",
+      "_Written by the mock Coder Agent. No model was called._",
+      "",
+    ].join("\n"),
+  };
+}
+
+export class MockCoderAgent implements CoderAgent {
+  async implement(
+    ctx: AgentContext,
+    input: { task: CoderTask; workspace: Workspace },
+  ): Promise<AgentOutcome<CodeChange>> {
+    const { task, workspace } = input;
+    const steps = [
+      "Reading the ticket",
+      "Locating the file scope",
+      "Writing the change",
+      "Running the checks",
+    ];
+
+    for (const [i, label] of steps.entries()) {
+      ctx.emit({
+        type: "run.progress",
+        runId: ctx.runId,
+        ticketId: task.ticketId,
+        role: "coder",
+        label,
+        fraction: (i + 1) / steps.length,
+      });
+      ctx.emit({
+        type: "run.log",
+        runId: ctx.runId,
+        stream: "stdout",
+        line: `[mock coder] ${label.toLowerCase()}`,
+      });
+      await sleep(350, ctx.signal);
+    }
+
+    const note = noteFor(task);
+    await workspace.writeFile(note.path, note.contents);
+    ctx.emit({
+      type: "run.diff",
+      runId: ctx.runId,
+      path: note.path,
+      patch: await workspace.diff(note.path).catch(() => ""),
+    });
+
+    return {
+      ok: true,
+      value: {
+        summary: `${task.title} (mock run)`,
+        detail:
+          "Placeholder change written by the mock Coder Agent so the board can be driven end to end with no API key.",
+        verifiedWith: null,
+      },
+      usage: MOCK_USAGE,
+    };
+  }
+}
+
+export class MockReviewerAgent implements ReviewerAgent {
+  async fix(
+    ctx: AgentContext,
+    input: {
+      task: CoderTask;
+      workspace: Workspace;
+      checks: FailingCheck[];
+      attempt: number;
+      maxAttempts: number;
+    },
+  ): Promise<AgentOutcome<CodeChange>> {
+    ctx.emit({
+      type: "run.progress",
+      runId: ctx.runId,
+      ticketId: input.task.ticketId,
+      role: "reviewer",
+      label: `Fixing ${input.checks[0]?.name ?? "CI"} (attempt ${input.attempt})`,
+      fraction: input.attempt / input.maxAttempts,
+    });
+    await sleep(400, ctx.signal);
+
+    const note = noteFor(input.task);
+    await input.workspace.writeFile(
+      note.path,
+      `${note.contents}\n_Fix attempt ${input.attempt}._\n`,
+    );
+
+    return {
+      ok: true,
+      value: {
+        summary: `Fix ${input.checks[0]?.name ?? "CI"} (mock run)`,
+        detail: "Placeholder fix written by the mock Reviewer Agent.",
+        verifiedWith: null,
+      },
+      usage: MOCK_USAGE,
+    };
   }
 }

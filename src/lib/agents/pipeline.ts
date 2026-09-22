@@ -8,7 +8,7 @@ import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { positionForIndex } from "@/lib/ordering";
-import type { Prd } from "@/lib/domain/entities";
+import type { AgentRole, Prd } from "@/lib/domain/entities";
 
 /**
  * Wires agents to column transitions.
@@ -18,16 +18,18 @@ import type { Prd } from "@/lib/domain/entities";
  * user should never watch a spinner while a model thinks.
  */
 
-interface RunHandle {
+export interface RunHandle {
   runId: string;
   ctx: AgentContext;
+  /** Records the sandbox this run owns, so a restart can find the orphan. */
+  attachSandbox: (sandboxId: string) => Promise<void>;
   finish: (outcome: AgentOutcome<unknown>) => Promise<void>;
 }
 
-function startRun(
+export function startRun(
   projectId: string,
-  role: "product" | "architect" | "pm",
-  ids: { epicId?: string | null; ticketId?: string | null },
+  role: AgentRole,
+  ids: { epicId?: string | null; ticketId?: string | null; model?: string | null },
 ): RunHandle {
   const runId = randomUUID();
   const signal = beginRun({
@@ -36,6 +38,25 @@ function startRun(
     epicId: ids.epicId ?? null,
     ticketId: ids.ticketId ?? null,
   });
+
+  const record = {
+    id: runId,
+    role,
+    epicId: ids.epicId ?? null,
+    ticketId: ids.ticketId ?? null,
+    model: ids.model ?? null,
+    sandboxId: null as string | null,
+  };
+  // Journalled so a restart can find the orphan; never awaited, because an
+  // agent must not wait on a write, and never unhandled either.
+  void repository()
+    .startRun(record)
+    .catch((e) => console.error("[formic] could not journal run:", e));
+
+  // What has already been billed to the budget. An agent that loops charges
+  // as it goes; finish() must then settle only the difference, or a run pays
+  // for every turn twice and trips its own ceiling.
+  let charged = 0;
 
   const ctx: AgentContext = {
     runId,
@@ -46,13 +67,29 @@ function startRun(
       // failed publish is not a reason to fail the run.
       void publish(projectId, event);
     },
+    charge: async (usage) => {
+      charged = usage.costCents;
+      await recordSpend(runId, { cents: usage.costCents, attempts: 0 });
+    },
+  };
+
+  const attachSandbox = async (sandboxId: string) => {
+    record.sandboxId = sandboxId;
+    await repository().startRun(record);
   };
 
   const finish = async (outcome: AgentOutcome<unknown>) => {
     const usage: Usage = outcome.usage;
     await recordSpend(runId, {
-      cents: usage.costCents,
+      cents: Math.max(usage.costCents - charged, 0),
       attempts: 1,
+    });
+    await repository().finishRun(runId, {
+      status: outcome.ok ? "succeeded" : outcome.blocked ? "blocked" : "failed",
+      error: outcome.ok ? null : outcome.error,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+      costCents: usage.costCents,
     });
     await publish(projectId, {
       type: "run.usage",
@@ -70,7 +107,7 @@ function startRun(
     endRun(runId);
   };
 
-  return { runId, ctx, finish };
+  return { runId, ctx, attachSandbox, finish };
 }
 
 /** Stage 2. Raw backlog request becomes an Epic PRD. */

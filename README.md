@@ -30,6 +30,7 @@ Each credential unlocks one layer and nothing breaks without it:
 | `ANTHROPIC_API_KEY` | Real agents. Without it, mocks. |
 | `GITHUB_TOKEN`, `GITHUB_REPO` | Cloning and pushing. |
 | `E2B_API_KEY` + `SANDBOX_PROVIDER=e2b` | Isolated sandboxes. Without it, local child processes. |
+| `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop. |
 
 ```bash
 npm run db:local     # throwaway local Postgres, prints a DATABASE_URL
@@ -75,6 +76,9 @@ src/lib/
   domain/            Status, file scopes, DAG, events, contracts. No I/O.
   db/                Repository interface; Prisma and in-memory
   agents/            Ports, mocks, Anthropic implementations, pipelines
+  coder/             Checkout, commit, push, pull request (PROT-06)
+  review/            Webhook, fix-or-merge loop, merge lane (PROT-07)
+  vcs/               GitHub REST client, and a mock of it
   sandbox/           Provider interface; local and E2B
   events/            Pub/sub with a durable tail
   budget/            Spend ceilings and the kill switch
@@ -97,14 +101,39 @@ cycles and for scope overlap between tickets that could run at the same time,
 and a Coder Agent's diff is checked against its scope before it may commit. A
 prompt asking nicely for isolation is not a boundary.
 
+**Nothing reaches the base branch unattended.** The Reviewer Agent merges into
+`formic/integration`; promoting that to the base branch is a human's click.
+`MERGE_TARGET=base` turns that off, which is the PRD's original behaviour and
+should be a decision someone makes on purpose. Either way the merge lane is
+serialized: one merge in flight at a time, each rebased on the result of the
+last.
+
 **The local sandbox provider is not isolation.** It runs child processes on the
 host with host network and filesystem access. It exists so the system can be
 built and tested without an E2B account. Use E2B for anything running
 model-authored code you have not read.
 
+## GitHub webhook
+
+PROT-07 reacts to CI. Point a repository webhook at `/api/webhooks/github`,
+content type `application/json`, secret matching `GITHUB_WEBHOOK_SECRET`, and
+subscribe it to **Check runs**, **Check suites**, **Workflow runs** and **Pull
+requests**. Without the secret the endpoint returns 503 and handles nothing —
+an unsigned delivery can start an agent, so it is never accepted.
+
+Deliveries are idempotent on `(pull request, head sha, check)`, not on the
+delivery id, so a redelivery under a new id is still the same result and still
+does nothing. A result about a commit that is no longer the head is dropped.
+
 ## Status
 
-PROT-00 through PROT-05 and PROT-09 through PROT-12 are implemented. PROT-06
-(Coder Agent), PROT-07 (Reviewer Agent) and PROT-08 (Showcase) are specified
-in `docs/tasks/` and not yet built; the showcase agent port and its mock exist,
-so the wiring is in place.
+All twelve tickets are implemented. The lifecycle runs end to end: a backlog
+request becomes a PRD, a PRD becomes a validated ticket DAG, a ticket becomes
+a pull request from a sandbox, CI drives a bounded fix-or-merge loop, and a
+fully merged Epic gets a showcase.
+
+Two limits worth naming. Agent runs are not durable: a worker that dies
+mid-run fails its card with a reason on restart rather than resuming, and the
+sandbox is reclaimed by its TTL (`src/lib/agents/recovery.ts`). And the event
+bus is single-process, so more than one server instance needs it swapped for
+Postgres LISTEN/NOTIFY or Redis.

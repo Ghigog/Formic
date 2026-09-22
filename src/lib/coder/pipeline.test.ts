@@ -1,0 +1,390 @@
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { runCoderAgent } from "./pipeline";
+import { setCheckoutFactory } from "./checkout";
+import { reviewPullRequest } from "@/lib/review/pipeline";
+import { resetMergeLanes } from "@/lib/review/lane";
+import { repository } from "@/lib/db";
+import type { TicketDetail } from "@/lib/db/repository";
+import { resetAgents, setAgents } from "@/lib/agents/registry";
+import type {
+  AgentContext,
+  AgentOutcome,
+  CodeChange,
+  CoderAgent,
+  CoderTask,
+  ReviewerAgent,
+} from "@/lib/agents/ports";
+import {
+  MemoryWorkspace,
+  type Workspace,
+  scopedWorkspace,
+} from "@/lib/sandbox/workspace";
+import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
+import {
+  MockArchitectAgent,
+  MockProductAgent,
+  MockShowcaseAgent,
+} from "@/lib/agents/mock";
+
+/**
+ * The Coder and Reviewer pipelines end to end, on the in-memory store and a
+ * mock GitHub. What is being tested is the platform's half of PROT-06 and
+ * PROT-07 — the file-scope check, the state transitions, the merge lane and
+ * the retry ceiling — with the model replaced by a stub, because none of
+ * those guarantees may depend on what a model happened to return.
+ */
+
+const PROJECT = "project_default";
+const REPO = "acme/widgets";
+
+const NO_USAGE = { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 };
+
+/** A coder that does whatever the test tells it to, to whichever workspace. */
+class StubCoder implements CoderAgent {
+  constructor(
+    private readonly act: (
+      workspace: Workspace,
+      task: CoderTask,
+    ) => Promise<void>,
+  ) {}
+
+  async implement(
+    _ctx: AgentContext,
+    input: { task: CoderTask; workspace: Workspace },
+  ): Promise<AgentOutcome<CodeChange>> {
+    await this.act(input.workspace, input.task);
+    return {
+      ok: true,
+      value: { summary: "did the thing", detail: "details", verifiedWith: "npm test" },
+      usage: NO_USAGE,
+    };
+  }
+}
+
+class StubReviewer implements ReviewerAgent {
+  constructor(
+    private readonly act: (
+      workspace: Workspace,
+      task: CoderTask,
+    ) => Promise<void>,
+  ) {}
+
+  async fix(
+    _ctx: AgentContext,
+    input: { task: CoderTask; workspace: Workspace },
+  ): Promise<AgentOutcome<CodeChange>> {
+    await this.act(input.workspace, input.task);
+    return {
+      ok: true,
+      value: { summary: "fixed it", detail: "details", verifiedWith: null },
+      usage: NO_USAGE,
+    };
+  }
+}
+
+function useAgents(coder: CoderAgent, reviewer: ReviewerAgent): void {
+  setAgents({
+    product: new MockProductAgent(),
+    architect: new MockArchitectAgent(),
+    coder,
+    reviewer,
+    showcase: new MockShowcaseAgent(),
+  });
+}
+
+const writesInScope = (name = "thing.ts") =>
+  async (workspace: Workspace, task: CoderTask) => {
+    await workspace.writeFile(`${task.fileScope[0]}/${name}`, "export const a = 1;\n");
+  };
+
+async function seedTicket(options?: {
+  fileScope?: string[];
+  dependsOnKeys?: string[];
+}): Promise<TicketDetail> {
+  const repo = repository();
+  const epic = await repo.createEpic({
+    projectId: PROJECT,
+    title: "An epic",
+    rawRequest: "Do a thing",
+    position: 1,
+  });
+  const [ticket] = await repo.createTickets([
+    {
+      epicId: epic.id,
+      key: "T-1",
+      title: "Do the thing",
+      description: "The thing, done.",
+      acceptanceCriteria: ["It is done"],
+      fileScope: options?.fileScope ?? ["src/lib/feature"],
+      size: "M",
+      position: 1,
+      dependsOnKeys: options?.dependsOnKeys ?? [],
+    },
+  ]);
+  return (await repo.ticketDetail(ticket!.id))!;
+}
+
+/** Waits for detached work (launch()) to reach a state, or gives up loudly. */
+async function until(
+  predicate: () => Promise<boolean>,
+  what: string,
+  timeoutMs = 4000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`Timed out waiting for ${what}.`);
+}
+
+beforeEach(() => {
+  // A fresh board per test: the in-memory store is a module global, which is
+  // the point of it, and is also the thing that leaks between tests.
+  (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
+  MockVcsClient.reset();
+  resetMergeLanes();
+  resetAgents();
+  resetVcs();
+  setCheckoutFactory(null);
+  setVcs(new MockVcsClient(REPO));
+});
+
+describe("the Coder Agent pipeline", () => {
+  it("takes a ticket to a pull request, and on to merged once CI is green", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer(writesInScope()));
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const afterCoder = (await repository().ticketDetail(ticket.id))!;
+    expect(afterCoder.prNumber).toBeGreaterThan(0);
+    expect(afterCoder.prUrl).toContain(REPO);
+    expect(afterCoder.branchName).toMatch(/^formic\/t-1-/);
+    expect(afterCoder.summary).toBe("did the thing");
+
+    // With a mock GitHub no webhook arrives, so the pipeline drives the
+    // review itself. The card should land in Done without further input.
+    await until(async () => {
+      const t = await repository().ticketDetail(ticket.id);
+      return t?.status === "merged";
+    }, "the ticket to merge");
+
+    // Every ticket under the Epic has merged, so PROT-08's showcase runs.
+    await until(async () => {
+      const epic = await repository().cardById(ticket.epicId);
+      return epic?.stage === 8;
+    }, "the Epic showcase");
+  });
+
+  it("throws the run away when the diff strays outside the file scope", async () => {
+    // The agent goes around the scoped workspace — a shell can do this, which
+    // is exactly why the diff is checked again before anything is pushed.
+    const escaped = new MemoryWorkspace();
+    setCheckoutFactory(async (request) => ({
+      workspace: scopedWorkspace(escaped, request.ticket.fileScope),
+      raw: escaped,
+      sandboxId: null,
+      async dispose() {},
+    }));
+
+    useAgents(
+      new StubCoder(async () => {
+        await escaped.writeFile("src/app/page.tsx", "export default null;");
+      }),
+      new StubReviewer(writesInScope()),
+    );
+
+    const ticket = await seedTicket({ fileScope: ["src/lib/feature"] });
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("in_progress");
+    expect(after.blockedReason).toContain("src/app/page.tsx");
+    expect(after.blockedReason).toContain("Nothing was pushed");
+    // The decisive assertion: no pull request was opened.
+    expect(after.prNumber).toBeNull();
+  });
+
+  it("fails a run that changed nothing rather than opening an empty pull request", async () => {
+    useAgents(
+      new StubCoder(async () => {}),
+      new StubReviewer(writesInScope()),
+    );
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("failed");
+    expect(after.blockedReason).toContain("without changing anything");
+    expect(after.prNumber).toBeNull();
+  });
+
+  it("runs two tickets with disjoint scopes without their changes meeting", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer(writesInScope()));
+
+    const repo = repository();
+    const epic = await repo.createEpic({
+      projectId: PROJECT,
+      title: "Two tracks",
+      rawRequest: "Two things at once",
+      position: 1,
+    });
+    const created = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "One",
+        description: "One",
+        acceptanceCriteria: ["a"],
+        fileScope: ["src/lib/one"],
+        size: "S",
+        position: 1,
+        dependsOnKeys: [],
+      },
+      {
+        epicId: epic.id,
+        key: "T-2",
+        title: "Two",
+        description: "Two",
+        acceptanceCriteria: ["b"],
+        fileScope: ["src/lib/two"],
+        size: "S",
+        position: 2,
+        dependsOnKeys: [],
+      },
+    ]);
+
+    await Promise.all(created.map((c) => runCoderAgent(PROJECT, c.id)));
+
+    const details = await repo.ticketsForEpic(epic.id);
+    const prNumbers = details.map((d) => d.prNumber);
+    expect(prNumbers.every((n) => typeof n === "number")).toBe(true);
+    expect(new Set(prNumbers).size).toBe(2);
+  });
+});
+
+describe("the Reviewer Agent pipeline", () => {
+  async function openPullRequestFor(ticket: TicketDetail, checksPass: boolean) {
+    resetVcs();
+    const client = new MockVcsClient(REPO, checksPass);
+    setVcs(client);
+
+    const pull = await client.openPullRequest({
+      headBranch: "formic/t-1-abc123",
+      baseBranch: "formic/integration",
+      title: "T-1",
+      body: "",
+    });
+
+    await repository().updateTicket(ticket.id, {
+      status: "review",
+      stage: 6,
+      branchName: pull.headBranch,
+      prNumber: pull.number,
+      prUrl: pull.url,
+    });
+
+    return pull;
+  }
+
+  it("stops after the retry ceiling and says which check is failing", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer(writesInScope()));
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+
+    // Four red results on the same commit: three fixes, then the card stops.
+    for (let i = 0; i < 4; i++) {
+      await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+    }
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.attempts).toBe(3);
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("in_review");
+    expect(after.blockedReason).toContain("ci / test");
+    expect(after.blockedReason).toContain("needs a human");
+  });
+
+  it("ignores a result about a commit that is no longer the head", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer(writesInScope()));
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+
+    await reviewPullRequest(PROJECT, pull.number, "a-sha-from-two-pushes-ago");
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.attempts).toBe(0);
+    expect(after.status).toBe("review");
+  });
+
+  it("does not spend a fix attempt on a cancelled check", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer(writesInScope()));
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+
+    // Nothing ran, so there is nothing to fix and nothing to merge.
+    MockVcsClient.setChecks(pull.number, "cancelled");
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.attempts).toBe(0);
+    expect(after.status).toBe("review");
+  });
+
+  it("releases a dependent ticket when the one it waits on merges", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer(writesInScope()));
+
+    const repo = repository();
+    const epic = await repo.createEpic({
+      projectId: PROJECT,
+      title: "Chained",
+      rawRequest: "One then the other",
+      position: 1,
+    });
+    const created = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "First",
+        description: "First",
+        acceptanceCriteria: ["a"],
+        fileScope: ["src/lib/one"],
+        size: "S",
+        position: 1,
+        dependsOnKeys: [],
+      },
+      {
+        epicId: epic.id,
+        key: "T-2",
+        title: "Second",
+        description: "Second",
+        acceptanceCriteria: ["b"],
+        fileScope: ["src/lib/two"],
+        size: "S",
+        position: 2,
+        dependsOnKeys: ["T-1"],
+      },
+    ]);
+
+    const second = created.find((c) => c.key === "T-2")!;
+    expect(second.status).toBe("waiting");
+
+    const first = (await repo.ticketDetail(created[0]!.id))!;
+    const pull = await openPullRequestFor(first, true);
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    expect((await repo.ticketDetail(first.id))!.status).toBe("merged");
+    expect((await repo.ticketDetail(second.id))!.status).toBe("ready");
+  });
+
+  it("treats a redelivered result as already handled", async () => {
+    const repo = repository();
+    expect(await repo.claimDelivery("7:abc:ci")).toBe(true);
+    expect(await repo.claimDelivery("7:abc:ci")).toBe(false);
+    expect(await repo.claimDelivery("7:def:ci")).toBe(true);
+  });
+});

@@ -55,3 +55,23 @@ committed, pushed to a branch, and opened as a PR.
   single most expensive failure mode in this system. See PROT-12.
 - This ticket is doing four jobs (trigger, workflow, agent, VCS integration).
   Consider splitting it once PROT-05's interface is settled.
+
+## As built
+
+- The loop is a Messages API tool-use loop (`src/lib/agents/coding-loop.ts`),
+  not the Claude Agent SDK. The note above still stands in general, but it
+  does not apply here: the SDK's file tools run in the host process, and these
+  tools have to run inside the sandbox. The loop is shared with PROT-07, so
+  the harness is written once rather than twice.
+- **No durable workflow.** Temporal and Inngest are both a deployment this MVP
+  does not have. The acceptance criterion offers "resumes or cleanly fails";
+  this does the second, explicitly. Runs are journalled to `agent_run`, and a
+  startup hook fails everything still marked live and parks its card with a
+  reason (`src/lib/agents/recovery.ts`). No sandbox outlives its TTL whether
+  or not the process comes back, so nothing is orphaned either way.
+- File scope is enforced twice: the workspace handed to the agent rejects
+  out-of-scope writes as they happen, and the whole diff is re-checked before
+  the commit, because an agent with a shell can go around the first one.
+- Concurrency is gated at the drag, not in the agent: a ticket cannot enter
+  In Progress while another *running* ticket's scope overlaps it. A ticket in
+  review does not count — it holds a pull request, not a checkout.

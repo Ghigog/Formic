@@ -112,6 +112,9 @@ model Ticket {
   position  Float
 
   branchName    String?
+  /// One line describing what the Coder Agent actually changed. Feeds the
+  /// Epic showcase, which would otherwise only know ticket titles.
+  summary       String?
   prNumber      Int?
   prUrl         String?
   blockedReason String?
@@ -130,6 +133,7 @@ model Ticket {
 
   @@unique([epicId, key])
   @@index([epicId, status])
+  @@index([prNumber])
   @@map("ticket")
 }
 
@@ -171,6 +175,18 @@ model AgentRun {
   @@index([status])
   @@index([ticketId])
   @@map("agent_run")
+}
+
+/// Webhook deliveries already handled, keyed on the delivery id and on
+/// (pull request, head sha, check). GitHub delivers at least once and out of
+/// order, so this table is what stops a redelivery becoming a second fix
+/// commit. See docs/tasks/PROT-07-reviewer-agent.md.
+model WebhookDelivery {
+  key        String   @id
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+  @@map("webhook_delivery")
 }
 
 /// Append-only event log. Backs SSE replay: a reconnecting client asks for

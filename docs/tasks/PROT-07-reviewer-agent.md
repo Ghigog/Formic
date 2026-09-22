@@ -49,3 +49,24 @@ CI results on an agent-authored PR drive an autonomous fix-or-merge loop.
   `(pr, head_sha, check_name)` is not optional.
 - A fix loop that responds to its own pushes is the obvious runaway. Gate on
   commit authorship and an attempt counter stored on the ticket.
+
+## As built
+
+**The decision the ticket asked for: nothing reaches the base branch
+unattended.** Agents merge into `formic/integration`, created from the base
+branch on first use, and promoting it is a human's click. `MERGE_TARGET=base`
+restores the PRD's behaviour, in one place, as a deliberate choice.
+
+- Conflicts are never forced. The branch is brought up to date with a merge,
+  never a rebase or a force-push, and anything that does not apply cleanly
+  parks the card as blocked.
+- Idempotency is keyed on `(pull request, head sha, check)` rather than the
+  delivery id, so a redelivery under a new id is still the same result. A
+  result about a commit that is no longer the head is dropped, which is what
+  makes out-of-order deliveries harmless.
+- The runaway gate is threefold: agent commits carry a fixed authorship, the
+  attempt counter is persisted on the ticket so a restart cannot reset it, and
+  reactions are serialized per ticket so a commit finishing four checks does
+  not open four sandboxes.
+- After the ceiling the card is parked in `blocked` with the failing check
+  named, in the column it stalled in.

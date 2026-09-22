@@ -20,6 +20,14 @@ const schema = z.object({
     .regex(/^[\w.-]+\/[\w.-]+$/, "Expected owner/repo")
     .optional(),
   GITHUB_BASE_BRANCH: z.string().default("main"),
+  /** Shared secret for the GitHub webhook receiver. See PROT-07. */
+  GITHUB_WEBHOOK_SECRET: z.string().optional(),
+  /**
+   * Where the Reviewer Agent is allowed to merge. "integration" keeps the
+   * base branch behind a human click; "base" is the PRD's original
+   * behaviour and an explicit decision to turn it on.
+   */
+  MERGE_TARGET: z.enum(["integration", "base"]).default("integration"),
   E2B_API_KEY: z.string().optional(),
   SANDBOX_PROVIDER: z.enum(["e2b", "local"]).default("local"),
   AGENT_PROVIDER: z.enum(["anthropic", "mock"]).optional(),
@@ -55,7 +63,12 @@ export class MissingCredentialError extends Error {
 }
 
 export function requireCredential(
-  key: "ANTHROPIC_API_KEY" | "GITHUB_TOKEN" | "E2B_API_KEY" | "GITHUB_REPO",
+  key:
+    | "ANTHROPIC_API_KEY"
+    | "GITHUB_TOKEN"
+    | "E2B_API_KEY"
+    | "GITHUB_REPO"
+    | "GITHUB_WEBHOOK_SECRET",
   feature: string,
 ): string {
   const value = env()[key];
