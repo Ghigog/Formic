@@ -14,6 +14,12 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env.DATABASE_URL ?? "",
+    // Same fallback as src/lib/db/client.ts: Vercel's Supabase integration
+    // doesn't set DATABASE_URL directly.
+    url:
+      process.env.DATABASE_URL ??
+      process.env.POSTGRES_PRISMA_URL ??
+      process.env.POSTGRES_URL ??
+      "",
   },
 });
