@@ -17,6 +17,7 @@ import { prdSchema } from "@/lib/domain/entities";
 import { scopesOverlap } from "@/lib/domain/scope";
 import { projectFor } from "./project";
 import { directoryTree } from "@/lib/vcs/repositories";
+import { credentialsForProject } from "@/lib/auth/credentials";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -217,7 +218,10 @@ async function placeAmong(
  */
 async function repoTree(projectId: string): Promise<string[]> {
   const project = await projectFor(projectId);
-  const tree = await directoryTree(project.repoFullName, project.baseBranch);
+  const { githubToken } = await credentialsForProject(project);
+  const tree = githubToken
+    ? await directoryTree(project.repoFullName, project.baseBranch, githubToken)
+    : null;
   if (tree && tree.length > 0) return tree;
   return [
     "src/app",

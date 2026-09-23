@@ -50,17 +50,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true, handled: 0, ignored: true }, { status: 202 });
   }
 
-  // Every repository on the board can point its webhook here; the payload
-  // says which one this is about.
+  // One GitHub App webhook serves every repository, and one repository can
+  // be on several people's boards. Every project on it hears the signal;
+  // only the one whose ticket holds that pull request acts on it.
   const repo = repository();
   const fullName = (payload as { repository?: { full_name?: unknown } })
     ?.repository?.full_name;
-  const project =
-    (typeof fullName === "string"
-      ? (await repo.listProjects()).find(
-          (p) => p.repoFullName.toLowerCase() === fullName.toLowerCase(),
-        )
-      : undefined) ?? (await repo.defaultProject());
+  const projects = typeof fullName === "string" ? await repo.projectsForRepo(fullName) : [];
   let handled = 0;
 
   for (const signal of signals) {
@@ -70,16 +66,18 @@ export async function POST(req: NextRequest) {
     if (!(await repo.claimDelivery(signal.key))) continue;
     handled++;
 
-    if (signal.kind === "ci") {
-      launch(
-        () => reviewPullRequest(project.id, signal.prNumber, signal.headSha),
-        `review of pull request ${signal.prNumber}`,
-      );
-    } else {
-      launch(
-        () => markMergedExternally(project.id, signal.prNumber),
-        `external merge of pull request ${signal.prNumber}`,
-      );
+    for (const project of projects) {
+      if (signal.kind === "ci") {
+        launch(
+          () => reviewPullRequest(project.id, signal.prNumber, signal.headSha),
+          `review of pull request ${signal.prNumber}`,
+        );
+      } else {
+        launch(
+          () => markMergedExternally(project.id, signal.prNumber),
+          `external merge of pull request ${signal.prNumber}`,
+        );
+      }
     }
   }
 

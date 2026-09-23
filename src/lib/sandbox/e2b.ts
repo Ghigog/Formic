@@ -142,7 +142,8 @@ export class E2BSandboxProvider implements SandboxProvider {
   readonly name = "e2b";
 
   async spawn(options: SpawnOptions): Promise<SandboxHandle> {
-    const apiKey = requireCredential("E2B_API_KEY", "The E2B sandbox provider");
+    const apiKey =
+      options.e2bApiKey || requireCredential("E2B_API_KEY", "The E2B sandbox provider");
     const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
 
     const mod = (await import("@e2b/code-interpreter")) as unknown as {

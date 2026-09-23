@@ -5,6 +5,7 @@ import { CoinBadge } from "@/components/ui/coin-badge";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { RepoPicker } from "./repo-picker";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import { AccountMenu, type Account } from "./account-menu";
 
 function LogoMark({ size }: { size: 26 | 28 }) {
   return (
@@ -54,6 +55,7 @@ export function BoardHeader({
   epicsTotal,
   epicsDone,
   onNewItem,
+  account,
 }: {
   projectName: string;
   repoFullName: string;
@@ -64,6 +66,7 @@ export function BoardHeader({
   epicsTotal: number;
   epicsDone: number;
   onNewItem: () => void;
+  account?: Account;
 }) {
   const [owner, repo] = repoFullName.split("/");
   const [picker, setPicker] = useState(false);
@@ -154,6 +157,7 @@ export function BoardHeader({
           <PlusIcon />
           New backlog item
         </button>
+        {account && <AccountMenu account={account} />}
       </header>
 
       {/* Mobile app bar */}
@@ -190,6 +194,7 @@ export function BoardHeader({
         >
           <PlusIcon size={16} />
         </button>
+        {account && <AccountMenu account={account} />}
       </header>
     </>
   );

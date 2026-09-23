@@ -11,7 +11,6 @@ import {
   type VcsClient,
   VcsError,
 } from "./types";
-import { requireCredential } from "@/lib/secrets/env";
 
 /**
  * GitHub REST over fetch.
@@ -52,14 +51,18 @@ function toDetail(raw: RawPull): PullRequestDetail {
 export class GitHubClient implements VcsClient {
   readonly name = "github";
 
-  constructor(private readonly repoFullName: string) {}
+  constructor(
+    private readonly repoFullName: string,
+    /** The project owner's token: their access, their name on the commits. */
+    private readonly token: string,
+  ) {}
 
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
   ): Promise<{ status: number; data: T }> {
-    const token = requireCredential("GITHUB_TOKEN", "Pull request automation");
+    const token = this.token;
 
     let response: Response;
     try {

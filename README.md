@@ -27,12 +27,13 @@ Each credential unlocks one layer and nothing breaks without it:
 | Variable | Unlocks |
 | :-- | :-- |
 | `DATABASE_URL` (or `POSTGRES_PRISMA_URL` / `POSTGRES_URL`, as set by Vercel's Postgres integrations) | Durable state. Without it, the in-memory store. |
-| `ANTHROPIC_API_KEY` | Real agents. Without it, mocks. |
-| `GITHUB_TOKEN` | Cloning and pushing, and the list of repositories in the picker. `GITHUB_REPO` sets the board's default project. |
-| `E2B_API_KEY` + `SANDBOX_PROVIDER=e2b` | Isolated sandboxes. Without it, local child processes. |
+| `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG` | Accounts: everyone signs in with GitHub and works on their own repositories with their own keys. Without them, local mode: one user, no sign-in. |
+| `FORMIC_SECRET` | Encrypts saved tokens and keys and signs sessions. Set it before anyone signs in. |
+| `FORMIC_ALLOWED_USERS` | Only these GitHub usernames may sign in. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop. |
-| `FORMIC_PASSWORD` | A password in front of the whole app. Set it on any public deployment: the board can spend saved API keys and push to your repositories. |
-| `FORMIC_SECRET` | Encrypts API keys saved on agent presets. Defaults to a key derived from the database URL. |
+| `SANDBOX_PROVIDER=e2b` | Isolated sandboxes, on each person's E2B key. Required on Vercel. |
+| `ANTHROPIC_API_KEY`, `E2B_API_KEY` | Optional fallbacks for people who have not added their own keys. |
+| `GITHUB_TOKEN`, `FORMIC_PASSWORD` | Local mode only: the one GitHub credential, and a shared password. |
 
 ```bash
 npm run db:local     # throwaway local Postgres, prints a DATABASE_URL
@@ -43,14 +44,39 @@ npm run dev
 
 `GET /api/health` reports which of those layers are live, plus the build id.
 
-## Picking a repository
+## Accounts
 
-The repository button in the header switches the board to another
-repository, like choosing one in Claude Code on the web. It lists everything
-`GITHUB_TOKEN` can reach (a fine-grained token scoped to a few repositories
-lists just those), and takes a typed `owner/repo` too. Each repository gets
-its own board, created empty the first time it is picked. The choice is per
-browser. The demo board stays under the default project.
+With a GitHub App configured, everyone signs in with GitHub. Each person:
+
+- **picks repositories** from the ones they installed the app on. Each gets
+  its own board, private to them. Two people on the same repository get two
+  boards.
+- **adds their own keys** in Settings: E2B for sandboxes, Anthropic for the
+  agents. A key on a saved agent overrides the Anthropic one.
+- **pushes as themselves.** Agents use the person's GitHub App token, which
+  only reaches repositories where they installed the app, and refreshes on
+  its own. The server's `GITHUB_TOKEN` is never lent to a signed-in user.
+
+The first person to sign in inherits the boards and agents made before
+accounts existed.
+
+### Setting up the GitHub App
+
+Create one at https://github.com/settings/apps/new (or under your org):
+
+- **Callback URL:** `https://<your-app>/api/auth/github/callback`. Add
+  `http://localhost:3000/api/auth/github/callback` too for local development.
+  Preview deployments can't sign in: their URLs change per branch.
+- **Expire user authorization tokens:** on. **Request user authorization
+  during installation:** off. **Setup URL:** `https://<your-app>/`, with
+  "Redirect on update" ticked.
+- **Webhook:** active, `https://<your-app>/api/webhooks/github`, with a
+  secret that goes in `GITHUB_WEBHOOK_SECRET`. One webhook serves every
+  repository the app is installed on.
+- **Repository permissions:** Contents and Pull requests read and write;
+  Checks, Commit statuses and Actions read.
+- **Events:** Check run, Check suite, Workflow run, Pull request.
+- Generate a client secret. No private key is needed.
 
 ## Agents per column
 
@@ -62,9 +88,10 @@ starts from the built-in one. Agents are saved once and can run any column
 on any board. For the Coder and Reviewer, the platform's coding rules (stay
 in the file scope, no git) are appended to whatever the prompt says.
 
-A column with a saved agent runs it for real even with no
-`ANTHROPIC_API_KEY` on the server, using the agent's own key. Keys are
-encrypted at rest and never sent back to the browser.
+A column runs for real as soon as there is a key to run it on: the saved
+agent's own, then the board owner's from Settings, then the server's
+`ANTHROPIC_API_KEY` if set. With none, it runs the mock. Keys are encrypted
+at rest and never sent back to the browser.
 
 ## Deploying on Vercel
 
@@ -159,10 +186,11 @@ model-authored code you have not read.
 
 ## GitHub webhook
 
-PROT-07 reacts to CI. Point a repository webhook at `/api/webhooks/github`,
-content type `application/json`, secret matching `GITHUB_WEBHOOK_SECRET`, and
-subscribe it to **Check runs**, **Check suites**, **Workflow runs** and **Pull
-requests**. Without the secret the endpoint returns 503 and handles nothing —
+PROT-07 reacts to CI. With a GitHub App, its webhook covers every installed
+repository (see Accounts). In local mode, point a repository webhook at
+`/api/webhooks/github`, content type `application/json`, secret matching
+`GITHUB_WEBHOOK_SECRET`, and subscribe it to **Check runs**, **Check
+suites**, **Workflow runs** and **Pull requests**. Without the secret the endpoint returns 503 and handles nothing —
 an unsigned delivery can start an agent, so it is never accepted.
 
 Deliveries are idempotent on `(pull request, head sha, check)`, not on the

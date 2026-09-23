@@ -194,8 +194,8 @@ export function AgentEditor({
             )}
             <span className="text-muted text-[11px]">
               {apiKey === null
-                ? "The saved key will be removed. Runs will use the server's key."
-                : "Stored encrypted and never shown again. Leave empty to use the server's ANTHROPIC_API_KEY."}
+                ? "The saved key will be removed. Runs will use your key from Settings."
+                : "Stored encrypted and never shown again. Leave empty to use your key from Settings."}
             </span>
           </div>
 

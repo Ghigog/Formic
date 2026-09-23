@@ -15,6 +15,7 @@ import { useAgents } from "@/lib/hooks/use-agents";
 import { AgentEditor } from "./agent-editor";
 import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
+import type { Account } from "./account-menu";
 
 /**
  * Client shell: owns the live board state, the capture dialog and the ambient
@@ -33,6 +34,7 @@ export function BoardShell({
   initialStats,
   initialPresets = [],
   initialColumnAgents = {},
+  account,
 }: {
   initialCards: BoardCard[];
   /** Demo detail for the mock board: elapsed times, CI counts, commits. */
@@ -43,6 +45,7 @@ export function BoardShell({
   initialStats: AmbientStats;
   initialPresets?: AgentPreset[];
   initialColumnAgents?: ColumnAgents;
+  account?: Account;
 }) {
   const { cards, extras, stats, prdStreams, connection, transition, createEpic } =
     useBoard(initialCards, initialStats);
@@ -80,6 +83,7 @@ export function BoardShell({
         onNewItem={() => setDialogOpen(true)}
         onCapture={createEpic}
         onTransition={transition}
+        account={account}
         agents={{
           presets: agentState.presets,
           columns: agentState.columns,

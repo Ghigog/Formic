@@ -6,8 +6,12 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  GithubProfile,
+  OwnerScope,
   PresetRecord,
   ProjectSummary,
+  UserRecord,
+  UserSecrets,
   Repository,
   RunOutcome,
   RunRecord,
@@ -67,6 +71,7 @@ interface Store {
   runs: Map<string, RunRecord & { status: AgentRunStatus; startedAt: Date }>;
   deliveries: Set<string>;
   presets: Map<string, AgentPreset & { apiKeyCipher: string | null }>;
+  users: Map<string, UserRecord>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
 }
@@ -82,10 +87,12 @@ function store(): Store {
     // A store from before presets existed survives a dev-server reload.
     existing.presets ??= new Map();
     existing.columnAgents ??= new Map();
+    existing.users ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
     id: "project_default",
+    ownerId: null,
     name: "Formic",
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
@@ -103,6 +110,7 @@ function store(): Store {
     runs: new Map(),
     deliveries: new Set(),
     presets: new Map(),
+    users: new Map(),
     columnAgents: new Map(),
   };
   globalThis.__formicMemoryStore = s;
@@ -126,8 +134,58 @@ export class MemoryRepository implements Repository {
     return store().project;
   }
 
-  async listProjects(): Promise<ProjectSummary[]> {
-    return [...store().projects.values()];
+  async listProjects(scope: OwnerScope): Promise<ProjectSummary[]> {
+    return [...store().projects.values()].filter((p) => inScope(p.ownerId, scope));
+  }
+
+  async projectsForRepo(repoFullName: string): Promise<ProjectSummary[]> {
+    return [...store().projects.values()].filter(
+      (p) => p.repoFullName.toLowerCase() === repoFullName.toLowerCase(),
+    );
+  }
+
+  async userById(userId: string): Promise<UserRecord | null> {
+    return store().users.get(userId) ?? null;
+  }
+
+  async upsertUser(profile: GithubProfile): Promise<UserRecord> {
+    const s = store();
+    const found = [...s.users.values()].find((u) => u.githubId === profile.githubId);
+    if (found) {
+      Object.assign(found, profile);
+      return found;
+    }
+    const user: UserRecord = {
+      id: id("user"),
+      ...profile,
+      githubTokenCipher: null,
+      githubTokenExpiresAt: null,
+      githubRefreshCipher: null,
+      githubRefreshExpiresAt: null,
+      e2bKeyCipher: null,
+      e2bKeyHint: null,
+      anthropicKeyCipher: null,
+      anthropicKeyHint: null,
+    };
+    s.users.set(user.id, user);
+    return user;
+  }
+
+  async updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    Object.assign(user, secrets);
+    return user;
+  }
+
+  async countUsers(): Promise<number> {
+    return store().users.size;
+  }
+
+  async adoptUnowned(userId: string): Promise<void> {
+    const s = store();
+    for (const p of s.projects.values()) if (p.ownerId === null) p.ownerId = userId;
+    for (const p of s.presets.values()) if (p.ownerId === null) p.ownerId = userId;
   }
 
   async projectById(projectId: string): Promise<ProjectSummary | null> {
@@ -135,16 +193,20 @@ export class MemoryRepository implements Repository {
   }
 
   async ensureProject(input: {
+    ownerId: string | null;
     repoFullName: string;
     baseBranch: string;
   }): Promise<ProjectSummary> {
     const s = store();
     const found = [...s.projects.values()].find(
-      (p) => p.repoFullName.toLowerCase() === input.repoFullName.toLowerCase(),
+      (p) =>
+        p.ownerId === input.ownerId &&
+        p.repoFullName.toLowerCase() === input.repoFullName.toLowerCase(),
     );
     if (found) return found;
     const project: ProjectSummary = {
       id: id("project"),
+      ownerId: input.ownerId,
       name: input.repoFullName.split("/")[1] ?? input.repoFullName,
       repoFullName: input.repoFullName,
       baseBranch: input.baseBranch,
@@ -415,8 +477,10 @@ export class MemoryRepository implements Repository {
     return true;
   }
 
-  async listPresets(): Promise<AgentPreset[]> {
-    return [...store().presets.values()].map(publicPreset);
+  async listPresets(scope: OwnerScope): Promise<AgentPreset[]> {
+    return [...store().presets.values()]
+      .filter((p) => inScope(p.ownerId, scope))
+      .map(publicPreset);
   }
 
   async presetForRun(presetId: string) {
@@ -430,6 +494,7 @@ export class MemoryRepository implements Repository {
     const keep = record.apiKeyCipher === undefined;
     const row = {
       id: existing?.id ?? id("preset"),
+      ownerId: existing ? existing.ownerId : (record.ownerId ?? null),
       name: record.name,
       provider: "anthropic" as const,
       model: record.model,
@@ -509,4 +574,8 @@ function toDetail(
 function publicPreset(row: AgentPreset & { apiKeyCipher: string | null }): AgentPreset {
   const { apiKeyCipher, ...rest } = row;
   return { ...rest, hasKey: apiKeyCipher !== null };
+}
+
+function inScope(ownerId: string | null, scope: OwnerScope): boolean {
+  return ownerId === scope.ownerId || (scope.includeUnowned && ownerId === null);
 }

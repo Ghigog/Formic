@@ -51,8 +51,40 @@ enum TicketSize {
   XL
 }
 
+/// A person, signed in with GitHub. Their tokens and keys are sealed with
+/// FORMIC_SECRET; see src/lib/secrets/vault.ts.
+model User {
+  id        String  @id @default(cuid())
+  githubId  Int     @unique
+  login     String
+  name      String?
+  avatarUrl String?
+
+  /// GitHub App user-to-server token, and the refresh token behind it.
+  githubTokenCipher      String?
+  githubTokenExpiresAt   DateTime?
+  githubRefreshCipher    String?
+  githubRefreshExpiresAt DateTime?
+
+  e2bKeyCipher       String?
+  e2bKeyHint         String?
+  anthropicKeyCipher String?
+  anthropicKeyHint   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+  presets  AgentPreset[]
+
+  @@map("user")
+}
+
 model Project {
   id           String   @id @default(cuid())
+  /// Null for the demo board, which belongs to no one.
+  ownerId      String?
+  owner        User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name         String
   repoFullName String
   baseBranch   String   @default("main")
@@ -62,6 +94,7 @@ model Project {
   events       Event[]
   columnAgents ColumnAgent[]
 
+  @@index([ownerId])
   @@map("project")
 }
 
@@ -210,6 +243,9 @@ model Event {
 /// once and assigned to columns on any project's board.
 model AgentPreset {
   id           String   @id @default(cuid())
+  /// Null for presets saved before accounts existed.
+  ownerId      String?
+  owner        User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name         String
   provider     String   @default("anthropic")
   model        String
@@ -224,6 +260,7 @@ model AgentPreset {
 
   columns ColumnAgent[]
 
+  @@index([ownerId])
   @@map("agent_preset")
 }
 

@@ -25,7 +25,7 @@ import { validateDag } from "@/lib/domain/dag";
 import { describeProblems } from "@/lib/domain/problems";
 import { normalizeScope } from "@/lib/domain/scope";
 import { estimateCostCents } from "@/lib/budget/limits";
-import { requireCredential } from "@/lib/secrets/env";
+import { env } from "@/lib/secrets/env";
 import { ARCHITECT_BRIEF, PRODUCT_BRIEF, SHOWCASE_BRIEF } from "./prompts";
 import { requestShape } from "./models";
 
@@ -55,7 +55,10 @@ const clients = new Map<string, Anthropic>();
 
 /** A preset's own key, or the server's. */
 export function anthropicClient(apiKey?: string | null): Anthropic {
-  const key = apiKey || requireCredential("ANTHROPIC_API_KEY", "The agent pipelines");
+  const key = apiKey || env().ANTHROPIC_API_KEY;
+  if (!key) {
+    throw new Error("No Anthropic API key. Add one in Settings, or on this agent.");
+  }
   let c = clients.get(key);
   if (!c) {
     c = new Anthropic({ apiKey: key });
