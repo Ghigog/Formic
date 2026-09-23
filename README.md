@@ -74,13 +74,48 @@ Create one at https://github.com/settings/apps/new (or under your org):
 - **Webhook:** active, `https://<your-app>/api/webhooks/github`, with a
   secret that goes in `GITHUB_WEBHOOK_SECRET`. One webhook serves every
   repository the app is installed on.
-- **Repository permissions:** Contents, Pull requests, Actions, Secrets and
-  Workflows read and write; Checks and Commit statuses read. Actions,
-  Secrets and Workflows are for CLI agents (below).
+- **Repository permissions:** Contents, Pull requests, Issues, Actions,
+  Secrets and Workflows read and write; Checks and Commit statuses read.
+  Issues is for the issue mirror (below); Actions, Secrets and Workflows are
+  for CLI agents.
   After changing permissions on an existing app, each installation has to
   accept them (GitHub emails the owner, or see the app's installation page).
 - **Events:** Check run, Check suite, Workflow run, Pull request.
 - Generate a client secret. No private key is needed.
+
+## The assistant
+
+The top bar has an ask box. Ask anything about the repository or the board,
+and the answer pulls down over the board; the arrow at its bottom right
+rolls it back up, and the conversation is there next time.
+
+- It runs on any saved agent, picked in the shade, with no built-in prompt.
+  An API agent answers in seconds. A CLI agent on your plan (Claude Code,
+  Codex, Gemini CLI) answers from GitHub Actions in a minute or two.
+- It reads the repository (an API agent through GitHub, a CLI agent in its
+  own checkout) and sees the board.
+- It can propose work: a Backlog item for the Product Agent, or an Epic with
+  its tickets straight into To Do, for work that is already planned, such as
+  a ticket list in the repo. Tickets get the Architect's checks (file scopes,
+  a safe dependency graph). Nothing happens until you press Approve.
+- It never changes code. Code changes are tickets, and go through the file
+  scope, pull requests and CI like everything else.
+
+## Work tracked as GitHub issues
+
+Every Epic is filed as a GitHub issue in its repository, and each of its
+tickets as a sub-issue. They move with the board:
+
+- A `formic: <column>` label follows the card, and `formic: needs a human`
+  marks one that stopped.
+- A comment marks the moments worth a notification: the PRD written, work
+  started, a pull request opened, a stop and its reason, a merge.
+- A ticket's pull request says `Closes #N`. Merged tickets and shipped Epics
+  are closed.
+
+Formic does this itself, not through the agents' prompts, so it works the
+same with every provider and costs no tokens. A repository without Issues
+access still runs; the board just says nothing on GitHub.
 
 ## Agents per column
 
@@ -106,8 +141,7 @@ In local mode, a column with no agent runs Claude on the server's
 
 ### CLI agents on your own plan
 
-In Progress and In Review can also run a coding CLI people already pay for,
-instead of an API key:
+Any column can run a CLI people already pay for, instead of an API key:
 
 | Agent | Credential | How to get it |
 | --- | --- | --- |
@@ -126,6 +160,13 @@ They run in the repository's own GitHub Actions, not on Formic's server:
    change against the ticket's file scope, fast-forwards the ticket's branch
    to it, deletes the staging branch, and opens the pull request. CI, fixes
    and the merge go through the same loop as every other agent.
+
+The planning columns (Backlog, To Do, Done) run the same workflow in an
+answer mode. The agent reads the repository and writes its answer (the PRD,
+the ticket graph, or the showcase) to a file; the workflow throws away
+anything else it touched and pushes only that answer. Formic checks it
+exactly as it checks an API agent's answer, and sends a wrong one back as a
+correction (twice for the PRD, three times for the ticket graph).
 
 Nothing the agent does reaches a real branch before the scope check. Formic
 never force-pushes, and the only branches it deletes are its own

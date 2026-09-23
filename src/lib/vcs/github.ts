@@ -12,6 +12,8 @@ import {
   type Comparison,
   STAGING_PREFIX,
   VcsError,
+  type IssuePatch,
+  type IssueRef,
 } from "./types";
 
 /**
@@ -233,6 +235,40 @@ export class GitHubClient implements VcsClient {
 
   async comment(number: number, body: string): Promise<void> {
     await this.request("POST", `/issues/${number}/comments`, { body });
+  }
+
+  async createIssue(input: { title: string; body: string; labels: string[] }): Promise<IssueRef> {
+    const { data } = await this.request<{ number: number; id: number; html_url: string }>(
+      "POST",
+      "/issues",
+      input,
+    );
+    return { number: data.number, id: data.id, url: data.html_url };
+  }
+
+  async updateIssue(number: number, patch: IssuePatch): Promise<void> {
+    await this.request("PATCH", `/issues/${number}`, patch);
+  }
+
+  async addSubIssue(parentNumber: number, childId: number): Promise<void> {
+    await this.request("POST", `/issues/${parentNumber}/sub_issues`, { sub_issue_id: childId });
+  }
+
+  async ensureLabel(name: string, color: string, description: string): Promise<void> {
+    try {
+      await this.request("POST", "/labels", { name, color, description });
+    } catch (e) {
+      // 422: it already exists, which is all this asks for.
+      if (!(e instanceof VcsError) || e.status !== 422) throw e;
+    }
+  }
+
+  async listFiles(ref: string): Promise<string[]> {
+    const { data } = await this.request<{ tree: Array<{ path: string; type: string }> }>(
+      "GET",
+      `/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+    );
+    return data.tree.filter((t) => t.type === "blob").map((t) => t.path);
   }
 
   async readFile(path: string, ref: string): Promise<string | null> {

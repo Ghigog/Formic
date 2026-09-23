@@ -9,6 +9,11 @@
  * only then moves the real branch with the owner's token (which is also what
  * makes CI run on it; pushes made with the workflow's own token do not).
  *
+ * The planning columns run here too. There the agent reads the repository
+ * and answers instead of changing it: its answer is committed alone to the
+ * staging branch as ANSWER_PATH, whatever else it touched is thrown away,
+ * and Formic checks the answer as it would any other agent's.
+ *
  * No server imports: the webhook parser reads the names below too.
  */
 
@@ -16,11 +21,24 @@ export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
 /** Bumped whenever the workflow changes, so old copies get replaced. */
-export const RUNNER_VERSION = "formic-runner: v1";
+export const RUNNER_VERSION = "formic-runner: v2";
 /** Where the setup pull request comes from. */
 export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 
-export type RunnerMode = "implement" | "fix";
+/** Where a planning agent's answer sits on its staging branch. */
+export const ANSWER_PATH = ".formic/answer.md";
+
+export const CODE_MODES = ["implement", "fix"] as const;
+export const ANSWER_MODES = ["product", "architect", "showcase"] as const;
+export type CodeMode = (typeof CODE_MODES)[number];
+export type AnswerMode = (typeof ANSWER_MODES)[number];
+/** The board's assistant answering a question. */
+export type AskMode = "ask";
+export type RunnerMode = CodeMode | AnswerMode | AskMode;
+
+export function isAnswerMode(mode: RunnerMode): mode is AnswerMode {
+  return (ANSWER_MODES as readonly string[]).includes(mode);
+}
 
 /**
  * The run's title, which is how its completion finds its way back: GitHub
@@ -33,18 +51,27 @@ export function runTitle(mode: RunnerMode, ticketKey: string, job: string): stri
 export function parseRunTitle(
   title: string,
 ): { mode: RunnerMode; ticketKey: string; job: string } | null {
-  const m = /^Formic (implement|fix) (\S+) · (\S+)$/.exec(title.trim());
+  const m = /^Formic (implement|fix|product|architect|showcase|ask) (\S+) · (\S+)$/.exec(title.trim());
   return m ? { mode: m[1] as RunnerMode, ticketKey: m[2]!, job: m[3]! } : null;
 }
 
-/** A job id is `<ticket id>--<nonce>`: safe in a branch name and a title. */
-export function jobId(ticketId: string, nonce: string): string {
-  return `${ticketId}--${nonce}`;
+/**
+ * A job id is `<card id>--<nonce>`, plus `-<attempt>` from the second
+ * attempt on: safe in a branch name and a title. The card is a ticket for
+ * the coding modes and an epic for the planning ones.
+ */
+export function jobId(cardId: string, nonce: string, attempt = 1): string {
+  return `${cardId}--${nonce}${attempt > 1 ? `-${attempt}` : ""}`;
 }
 
-export function ticketOfJob(job: string): string | null {
+export function cardOfJob(job: string): string | null {
   const i = job.lastIndexOf("--");
   return i > 0 ? job.slice(0, i) : null;
+}
+
+export function attemptOfJob(job: string): number {
+  const m = /--[^-]+-(\d+)$/.exec(job);
+  return m ? Number(m[1]) : 1;
 }
 
 /**
@@ -69,7 +96,7 @@ on:
         description: Formic job id
         required: true
       mode:
-        description: implement or fix
+        description: implement, fix, product, architect, showcase or ask
         required: true
       ticket:
         description: Ticket key
@@ -128,6 +155,8 @@ jobs:
           MODEL: \${{ inputs.model }}
           PROMPT: \${{ inputs.prompt }}
           FORMIC_SUMMARY: \${{ runner.temp }}/formic-summary.md
+          FORMIC_OUTPUT: \${{ runner.temp }}/formic-answer.md
+          FORMIC_STDOUT: \${{ runner.temp }}/formic-stdout.md
           CLAUDE_CODE_OAUTH_TOKEN: \${{ inputs.cli == 'claude' && secrets.FORMIC_CLAUDE_CODE_TOKEN || '' }}
           CODEX_CREDENTIAL: \${{ inputs.cli == 'codex' && secrets.FORMIC_CODEX_AUTH || '' }}
           GEMINI_API_KEY: \${{ inputs.cli == 'gemini' && secrets.FORMIC_GEMINI_API_KEY || '' }}
@@ -138,7 +167,7 @@ jobs:
               if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then echo "No Claude Code token. Add it to the agent in Formic."; exit 1; fi
               args=(-p "$PROMPT" --dangerously-skip-permissions)
               if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
-              claude "\${args[@]}"
+              claude "\${args[@]}" | tee "$FORMIC_STDOUT"
               ;;
             codex)
               if [ -z "$CODEX_CREDENTIAL" ]; then echo "No Codex sign-in. Add it to the agent in Formic."; exit 1; fi
@@ -151,27 +180,46 @@ jobs:
               unset CODEX_CREDENTIAL
               args=(exec --dangerously-bypass-approvals-and-sandbox)
               if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
-              codex "\${args[@]}" "$PROMPT"
+              codex "\${args[@]}" "$PROMPT" | tee "$FORMIC_STDOUT"
               ;;
             gemini)
               if [ -z "$GEMINI_API_KEY" ]; then echo "No Gemini API key. Add it to the agent in Formic."; exit 1; fi
               args=(-p "$PROMPT" --approval-mode yolo)
               if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
-              gemini "\${args[@]}"
+              gemini "\${args[@]}" | tee "$FORMIC_STDOUT"
               ;;
           esac
 
       - name: Hand the work to Formic
         env:
           JOB: \${{ inputs.job }}
+          MODE: \${{ inputs.mode }}
           TICKET: \${{ inputs.ticket }}
           FORMIC_SUMMARY: \${{ runner.temp }}/formic-summary.md
+          FORMIC_OUTPUT: \${{ runner.temp }}/formic-answer.md
+          FORMIC_STDOUT: \${{ runner.temp }}/formic-stdout.md
           GH_TOKEN: \${{ github.token }}
           REPO: \${{ github.repository }}
         run: |
           set -euo pipefail
           git config user.name "Formic Agent"
           git config user.email "formic-agent@users.noreply.github.com"
+          case "$MODE" in
+            product|architect|showcase|ask)
+              # An answer, not a change: only the answer leaves this run.
+              git reset -q --hard "$FORMIC_START"
+              git clean -qfdx
+              answer="$FORMIC_OUTPUT"
+              if [ ! -s "$answer" ]; then answer="$FORMIC_STDOUT"; fi
+              if [ ! -s "$answer" ]; then echo "The agent finished without an answer."; exit 1; fi
+              mkdir -p "$(dirname "${ANSWER_PATH}")"
+              cp "$answer" "${ANSWER_PATH}"
+              git add -f "${ANSWER_PATH}"
+              git commit -q -m "$TICKET: $MODE answer"
+              git push "https://x-access-token:\${GH_TOKEN}@github.com/\${REPO}.git" "HEAD:refs/heads/formic-staging/\${JOB}"
+              exit 0
+              ;;
+          esac
           git add -A
           if git diff --cached --quiet && [ "$(git rev-parse HEAD)" = "$FORMIC_START" ]; then
             echo "The agent finished without changing anything."

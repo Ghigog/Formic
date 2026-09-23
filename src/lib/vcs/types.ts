@@ -76,6 +76,21 @@ export interface OpenPullRequestInput {
   body: string;
 }
 
+export interface IssueRef {
+  number: number;
+  /** GitHub's internal id, which linking a sub-issue needs. */
+  id: number;
+  url: string;
+}
+
+export interface IssuePatch {
+  title?: string;
+  body?: string;
+  state?: "open" | "closed";
+  /** Replaces every label on the issue. */
+  labels?: string[];
+}
+
 export interface VcsClient {
   readonly name: string;
   /** Creates `branch` from `fromRef` when it does not already exist. */
@@ -88,10 +103,22 @@ export interface VcsClient {
   updateBranch(number: number): Promise<UpdateOutcome>;
   /** `expectedHeadSha` guards against merging a commit nobody reviewed. */
   merge(number: number, expectedHeadSha: string): Promise<MergeOutcome>;
+  /** Comments on a pull request or an issue: they share numbers. */
   comment(number: number, body: string): Promise<void>;
+
+  /* Issues: every Epic and ticket is tracked as one, for people on GitHub. */
+
+  createIssue(input: { title: string; body: string; labels: string[] }): Promise<IssueRef>;
+  updateIssue(number: number, patch: IssuePatch): Promise<void>;
+  /** Files an issue under a parent, by the child's internal id. */
+  addSubIssue(parentNumber: number, childId: number): Promise<void>;
+  /** Creates a label when the repository does not have it yet. */
+  ensureLabel(name: string, color: string, description: string): Promise<void>;
 
   /* The cloud runner: CLI agents that work in the repository's own Actions. */
 
+  /** Every file path on a ref, capped by GitHub at about 100,000. */
+  listFiles(ref: string): Promise<string[]>;
   /** A file's text on a ref, or null when it is not there. */
   readFile(path: string, ref: string): Promise<string | null>;
   /** Creates or replaces one file on a branch, as one commit. */

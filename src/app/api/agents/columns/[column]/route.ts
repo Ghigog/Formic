@@ -4,7 +4,6 @@ import { activeProject, noProject } from "@/lib/board/project";
 import { currentUser } from "@/lib/auth/user";
 import { ownsPreset } from "../../presets/validate";
 import { COLUMNS } from "@/lib/domain/status";
-import { CLI_COLUMNS, provider } from "@/lib/llm/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -29,16 +28,6 @@ export async function PUT(
     return Response.json({ error: "That agent no longer exists." }, { status: 404 });
   }
 
-  if (body.data.presetId && !(CLI_COLUMNS as readonly string[]).includes(col.data)) {
-    const found = await repo.presetForRun(body.data.presetId);
-    const info = found ? provider(found.preset.provider) : undefined;
-    if (info?.kind === "cli") {
-      return Response.json(
-        { error: `${info.label} writes code, so it can only run In Progress or In Review.` },
-        { status: 400 },
-      );
-    }
-  }
 
   const project = await activeProject();
   if (!project) return noProject();

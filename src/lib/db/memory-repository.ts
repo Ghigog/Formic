@@ -17,6 +17,7 @@ import type {
   RunRecord,
   TicketDetail,
   TicketUpdate,
+  AssistantMessage,
 } from "./repository";
 import type {
   AgentPreset,
@@ -49,6 +50,7 @@ interface TicketExtras {
   attempts: number;
   summary: string | null;
   runnerJob: string | null;
+  issueNumber: number | null;
 }
 
 interface Store {
@@ -62,6 +64,8 @@ interface Store {
   prds: Map<string, unknown>;
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
+  epicJobs: Map<string, string>;
+  epicIssues: Map<string, number>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -75,6 +79,7 @@ interface Store {
   users: Map<string, UserRecord>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
+  assistant: AssistantMessage[];
 }
 
 declare global {
@@ -107,12 +112,15 @@ function store(): Store {
     prds: new Map(),
     rawRequests: new Map(),
     showcases: new Map(),
+    epicJobs: new Map(),
+    epicIssues: new Map(),
     events: [],
     runs: new Map(),
     deliveries: new Set(),
     presets: new Map(),
     users: new Map(),
     columnAgents: new Map(),
+    assistant: [],
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -304,6 +312,7 @@ export class MemoryRepository implements Repository {
         attempts: 0,
         summary: null,
         runnerJob: null,
+        issueNumber: null,
       });
     }
 
@@ -347,7 +356,19 @@ export class MemoryRepository implements Repository {
       title: card.title,
       rawRequest: s.rawRequests.get(epicId) ?? card.title,
       prd: s.prds.get(epicId) ?? null,
+      runnerJob: s.epicJobs.get(epicId) ?? null,
+      issueNumber: s.epicIssues.get(epicId) ?? null,
     };
+  }
+
+  async setEpicIssue(epicId: string, issueNumber: number): Promise<void> {
+    store().epicIssues.set(epicId, issueNumber);
+  }
+
+  async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
+    const s = store();
+    if (job) s.epicJobs.set(epicId, job);
+    else s.epicJobs.delete(epicId);
   }
 
   async setEpicPrd(epicId: string, prd: unknown): Promise<void> {
@@ -439,6 +460,7 @@ export class MemoryRepository implements Repository {
     if (update.attempts !== undefined) extras.attempts = update.attempts;
     if (update.summary !== undefined) extras.summary = update.summary;
     if (update.runnerJob !== undefined) extras.runnerJob = update.runnerJob;
+    if (update.issueNumber !== undefined) extras.issueNumber = update.issueNumber;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
@@ -536,6 +558,56 @@ export class MemoryRepository implements Repository {
     else s.columnAgents.set(`${projectId}:${column}`, presetId);
   }
 
+  async assistantAgent(projectId: string): Promise<string | null> {
+    return store().columnAgents.get(`${projectId}:assistant`) ?? null;
+  }
+
+  async setAssistantAgent(projectId: string, presetId: string | null): Promise<void> {
+    const s = store();
+    if (presetId === null) s.columnAgents.delete(`${projectId}:assistant`);
+    else s.columnAgents.set(`${projectId}:assistant`, presetId);
+  }
+
+  async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
+    return store().assistant.filter((m) => m.projectId === projectId).map((m) => ({ ...m }));
+  }
+
+  async assistantMessage(id: string): Promise<AssistantMessage | null> {
+    const found = store().assistant.find((m) => m.id === id);
+    return found ? { ...found } : null;
+  }
+
+  async addAssistantMessage(input: {
+    projectId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: AssistantMessage["status"];
+  }): Promise<AssistantMessage> {
+    const message: AssistantMessage = {
+      id: `msg_${Math.random().toString(36).slice(2, 10)}`,
+      proposals: [],
+      runnerJob: null,
+      createdAt: new Date(),
+      ...input,
+      status: input.status ?? "done",
+    };
+    store().assistant.push(message);
+    return { ...message };
+  }
+
+  async updateAssistantMessage(
+    id: string,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+  ): Promise<void> {
+    const found = store().assistant.find((m) => m.id === id);
+    if (found) Object.assign(found, update);
+  }
+
+  async clearAssistant(projectId: string): Promise<void> {
+    const s = store();
+    s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
+  }
+
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
     const cards = (await this.boardCards(projectId))
       .filter((c) => columnFor(c.status, c.stalledIn) === column)
@@ -572,6 +644,7 @@ function toDetail(
     attempts: extras?.attempts ?? 0,
     summary: extras?.summary ?? null,
     runnerJob: extras?.runnerJob ?? null,
+    issueNumber: extras?.issueNumber ?? null,
   };
 }
 

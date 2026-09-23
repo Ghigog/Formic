@@ -6,6 +6,7 @@ import { ProgressBar } from "@/components/ui/progress-bar";
 import { RepoPicker } from "./repo-picker";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AccountMenu, type Account } from "./account-menu";
+import { AskBox, AskButton, type AssistantControls } from "./assistant";
 
 function LogoMark({ size }: { size: 26 | 28 }) {
   return (
@@ -56,6 +57,7 @@ export function BoardHeader({
   epicsDone,
   onNewItem,
   account,
+  assistant,
 }: {
   projectName: string;
   repoFullName: string;
@@ -67,6 +69,8 @@ export function BoardHeader({
   epicsDone: number;
   onNewItem: () => void;
   account?: Account;
+  /** The board's assistant. Omitted, the header has no ask box. */
+  assistant?: AssistantControls;
 }) {
   const [owner, repo] = repoFullName.split("/");
   const [picker, setPicker] = useState(false);
@@ -129,7 +133,9 @@ export function BoardHeader({
           {sync}
         </CoinBadge>
 
-        <div className="flex-grow" />
+        <div className="flex min-w-0 flex-1 justify-center">
+          {assistant && !isMobile && <AskBox a={assistant} repoName={repo ?? repoFullName} />}
+        </div>
 
         {epicsTotal > 0 && (
           <div className="flex items-center gap-[10px]">
@@ -186,6 +192,7 @@ export function BoardHeader({
           />
         )}
         <div className="flex-grow" />
+        {assistant && isMobile && <AskButton a={assistant} repoName={repo ?? repoFullName} />}
         <button
           type="button"
           onClick={onNewItem}

@@ -45,6 +45,28 @@ export interface MoveInput {
   detached?: boolean;
 }
 
+/** One message in a board's assistant conversation. */
+export interface AssistantMessage {
+  id: string;
+  projectId: string;
+  role: "user" | "assistant";
+  content: string;
+  /** What the assistant proposed changing; each needs the person's approval. */
+  proposals: AssistantProposal[];
+  status: "done" | "pending" | "failed";
+  runnerJob: string | null;
+  createdAt: Date;
+}
+
+export interface AssistantProposal {
+  /** One line for the person to approve or not. */
+  summary: string;
+  action: unknown;
+  state: "proposed" | "applied" | "dismissed" | "failed";
+  /** Why applying it failed, when it did. */
+  error?: string;
+}
+
 /** Everything a coding agent and its pipeline need about one ticket. */
 export interface TicketDetail {
   id: string;
@@ -66,6 +88,8 @@ export interface TicketDetail {
   summary: string | null;
   /** The cloud runner job this ticket is waiting on, if any. */
   runnerJob: string | null;
+  /** The GitHub issue that tracks it, once created. */
+  issueNumber: number | null;
 }
 
 export interface TicketUpdate {
@@ -79,6 +103,7 @@ export interface TicketUpdate {
   attempts?: number;
   summary?: string | null;
   runnerJob?: string | null;
+  issueNumber?: number | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -203,7 +228,17 @@ export interface Repository {
   cardById(id: string): Promise<BoardCard | null>;
   epicDetail(
     epicId: string,
-  ): Promise<{ title: string; rawRequest: string; prd: unknown } | null>;
+  ): Promise<{
+    title: string;
+    rawRequest: string;
+    prd: unknown;
+    runnerJob: string | null;
+    issueNumber: number | null;
+  } | null>;
+  /** The GitHub issue that tracks this epic. */
+  setEpicIssue(epicId: string, issueNumber: number): Promise<void>;
+  /** The Actions run a CLI agent is doing for this epic, or null. */
+  setEpicRunnerJob(epicId: string, job: string | null): Promise<void>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
   appendEvent(projectId: string, type: string, payload: unknown): Promise<number>;
@@ -249,6 +284,23 @@ export interface Repository {
   /** Also unassigns it from every column it ran. */
   deletePreset(presetId: string): Promise<void>;
   columnAgents(projectId: string): Promise<ColumnAgents>;
+  /** The saved agent the board's assistant runs on, or null. */
+  assistantAgent(projectId: string): Promise<string | null>;
+  setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
+  /** The assistant conversation, oldest first. */
+  assistantMessages(projectId: string): Promise<AssistantMessage[]>;
+  assistantMessage(id: string): Promise<AssistantMessage | null>;
+  addAssistantMessage(input: {
+    projectId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: AssistantMessage["status"];
+  }): Promise<AssistantMessage>;
+  updateAssistantMessage(
+    id: string,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+  ): Promise<void>;
+  clearAssistant(projectId: string): Promise<void>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,

@@ -19,6 +19,8 @@ import type {
   RunRecord,
   TicketDetail,
   TicketUpdate,
+  AssistantMessage,
+  AssistantProposal,
 } from "./repository";
 import type {
   AgentRunStatus,
@@ -385,9 +387,17 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const epic = await db.epic.findUnique({
       where: { id: epicId },
-      select: { title: true, rawRequest: true, prd: true },
+      select: { title: true, rawRequest: true, prd: true, runnerJob: true, issueNumber: true },
     });
     return epic ?? null;
+  }
+
+  async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
+    await prisma().epic.update({ where: { id: epicId }, data: { runnerJob: job } });
+  }
+
+  async setEpicIssue(epicId: string, issueNumber: number): Promise<void> {
+    await prisma().epic.update({ where: { id: epicId }, data: { issueNumber } });
   }
 
   async setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void> {
@@ -607,6 +617,58 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async assistantAgent(projectId: string): Promise<string | null> {
+    const row = await prisma().project.findUnique({
+      where: { id: projectId },
+      select: { assistantPresetId: true },
+    });
+    return row?.assistantPresetId ?? null;
+  }
+
+  async setAssistantAgent(projectId: string, presetId: string | null): Promise<void> {
+    await prisma().project.update({ where: { id: projectId }, data: { assistantPresetId: presetId } });
+  }
+
+  async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
+    const rows = await prisma().assistantMessage.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toAssistantMessage);
+  }
+
+  async assistantMessage(id: string): Promise<AssistantMessage | null> {
+    const row = await prisma().assistantMessage.findUnique({ where: { id } });
+    return row ? toAssistantMessage(row) : null;
+  }
+
+  async addAssistantMessage(input: {
+    projectId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: AssistantMessage["status"];
+  }): Promise<AssistantMessage> {
+    const row = await prisma().assistantMessage.create({
+      data: { ...input, status: input.status ?? "done" },
+    });
+    return toAssistantMessage(row);
+  }
+
+  async updateAssistantMessage(
+    id: string,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+  ): Promise<void> {
+    const { proposals, ...rest } = update;
+    await prisma().assistantMessage.update({
+      where: { id },
+      data: { ...rest, ...(proposals !== undefined ? { proposals: proposals as never } : {}) },
+    });
+  }
+
+  async clearAssistant(projectId: string): Promise<void> {
+    await prisma().assistantMessage.deleteMany({ where: { projectId } });
+  }
+
   async claimDelivery(key: string): Promise<boolean> {
     const db = prisma();
     try {
@@ -656,6 +718,7 @@ type TicketRow = {
   blockedReason: string | null;
   attempts: number;
   runnerJob: string | null;
+  issueNumber: number | null;
   epic: { projectId: string };
 };
 
@@ -668,6 +731,24 @@ type RunRow = {
   sandboxId: string | null;
   status: AgentRunStatus;
 };
+
+function toAssistantMessage(row: {
+  id: string;
+  projectId: string;
+  role: string;
+  content: string;
+  proposals: unknown;
+  status: string;
+  runnerJob: string | null;
+  createdAt: Date;
+}): AssistantMessage {
+  return {
+    ...row,
+    role: row.role === "user" ? "user" : "assistant",
+    status: row.status === "pending" || row.status === "failed" ? row.status : "done",
+    proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
+  };
+}
 
 function toTicketDetail(row: TicketRow): TicketDetail {
   return {
@@ -689,6 +770,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     attempts: row.attempts,
     summary: row.summary,
     runnerJob: row.runnerJob,
+    issueNumber: row.issueNumber,
   };
 }
 

@@ -9,6 +9,7 @@ import { BacklogComposer } from "./composer";
 import type { ExtrasMap } from "./card";
 import type { AgentPreset, BoardCard, ColumnAgents } from "@/lib/domain/entities";
 import type { Account } from "./account-menu";
+import type { AssistantControls } from "./assistant";
 import {
   COLUMNS,
   COLUMN_LABELS,
@@ -48,6 +49,8 @@ export interface BoardProps {
   onTransition: (t: CardTransition) => Promise<TransitionResult>;
   /** Who is signed in, for the header's account menu. */
   account?: Account;
+  /** The board's assistant, in the header. */
+  assistant?: AssistantControls;
   /** Per-column agent choice. Omitted, columns show no agent selector. */
   agents?: {
     presets: AgentPreset[];
@@ -72,6 +75,7 @@ export function Board({
   onTransition,
   agents,
   account,
+  assistant,
 }: BoardProps) {
   const [optimistic, setOptimistic] = useState<BoardCard[]>(cards);
   const [error, setError] = useState<string | null>(null);
@@ -217,6 +221,7 @@ export function Board({
         epicsDone={epicsDone}
         onNewItem={onNewItem}
         account={account}
+        assistant={assistant}
       />
 
       {/* Sticky column tabs. Replaces the 5-column layout below 768px. */}

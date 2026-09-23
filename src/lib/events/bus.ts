@@ -3,6 +3,7 @@ import "server-only";
 import { repository } from "@/lib/db";
 import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
 import { redactDeep } from "@/lib/secrets/redact";
+import { syncIssues } from "@/lib/issues/sync";
 
 /**
  * In-process pub/sub with a durable tail.
@@ -69,6 +70,13 @@ export async function publish(
     } catch {
       // A broken subscriber must not take down the publisher.
     }
+  }
+
+  // Card changes are mirrored onto GitHub issues, after the board has them.
+  // Awaited, because a serverless function may stop once this returns; it
+  // never throws.
+  if (event.type === "card.status" || event.type === "card.created") {
+    await syncIssues(projectId, event);
   }
   return seq;
 }

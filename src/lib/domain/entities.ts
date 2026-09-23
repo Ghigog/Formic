@@ -197,7 +197,8 @@ export const agentPresetInputSchema = z
     provider: z.enum(PROVIDER_IDS).default("anthropic"),
     /** Empty for a CLI agent means its own default model. */
     model: z.string().trim().max(200).default(""),
-    prompt: z.string().trim().min(1, "The prompt cannot be empty.").max(20_000),
+    /** May be empty only for the board's assistant, which needs no brief. */
+    prompt: z.string().trim().max(20_000),
     /** A new key; null clears the saved one; omitted keeps it. A Codex sign-in is a JSON file, hence the length. */
     apiKey: z.string().trim().min(1).max(20_000).nullable().optional(),
   })

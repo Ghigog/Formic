@@ -8,7 +8,8 @@
  * CLI agents are the coding tools people already pay for (Claude Code, Codex,
  * Gemini CLI). Formic does not call those; it runs them in the repository's
  * own GitHub Actions on the person's plan, and takes their work from there.
- * They write code, so they are offered for the coding columns only.
+ * They can run any column: the coding ones change the repository, the rest
+ * read it and answer.
  *
  * No server imports: Settings and the agent editor list the same providers.
  */
@@ -180,9 +181,6 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     suggestedModels: [],
   },
 ];
-
-/** CLI agents write code, so they only make sense where code is written. */
-export const CLI_COLUMNS = ["in_progress", "in_review"] as const;
 
 export function provider(id: string): ProviderInfo | undefined {
   return PROVIDERS.find((p) => p.id === id);

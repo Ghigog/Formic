@@ -8,6 +8,8 @@ import {
   type UpdateOutcome,
   type VcsClient,
   type Comparison,
+  type IssuePatch,
+  type IssueRef,
   STAGING_PREFIX,
 } from "./types";
 
@@ -44,6 +46,20 @@ interface MockRepo {
   dispatches: Array<{ file: string; ref: string; inputs: Record<string, string> }>;
   /** Head sha to what that commit changed relative to its base. */
   commits: Map<string, { files: string[]; message: string }>;
+  issues: Map<number, MockIssue>;
+  labels: Set<string>;
+  /** Comments by pull request or issue number. */
+  comments: Map<number, string[]>;
+}
+
+export interface MockIssue {
+  number: number;
+  id: number;
+  title: string;
+  body: string;
+  state: "open" | "closed";
+  labels: string[];
+  subIssues: number[];
 }
 
 function repo(): MockRepo {
@@ -54,11 +70,16 @@ function repo(): MockRepo {
     secrets: new Map(),
     dispatches: [],
     commits: new Map(),
+    issues: new Map(),
+    labels: new Set(),
+    comments: new Map(),
   };
   return g.__formicMockRepo;
 }
 
 let nextNumber = 1000;
+/** Apart from pull request numbers, so tests that count those are unaffected. */
+let nextIssue = 5000;
 
 function fakeSha(): string {
   return Array.from({ length: 40 }, () =>
@@ -147,7 +168,41 @@ export class MockVcsClient implements VcsClient {
     return { ok: true, sha: fakeSha() };
   }
 
-  async comment(): Promise<void> {}
+  async comment(number: number, body: string): Promise<void> {
+    const list = repo().comments.get(number) ?? [];
+    list.push(body);
+    repo().comments.set(number, list);
+  }
+
+  async createIssue(input: { title: string; body: string; labels: string[] }): Promise<IssueRef> {
+    const number = nextIssue++;
+    const issue: MockIssue = { number, id: number * 10, state: "open", subIssues: [], ...input };
+    repo().issues.set(number, issue);
+    return { number, id: issue.id, url: `https://github.com/${this.repoFullName}/issues/${number}` };
+  }
+
+  async updateIssue(number: number, patch: IssuePatch): Promise<void> {
+    const issue = repo().issues.get(number);
+    if (!issue) throw new Error(`No mock issue ${number}.`);
+    Object.assign(issue, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+  }
+
+  async addSubIssue(parentNumber: number, childId: number): Promise<void> {
+    const parent = repo().issues.get(parentNumber);
+    const child = [...repo().issues.values()].find((i) => i.id === childId);
+    if (!parent || !child) throw new Error("No such mock issue.");
+    parent.subIssues.push(child.number);
+  }
+
+  async ensureLabel(name: string): Promise<void> {
+    repo().labels.add(name);
+  }
+
+  async listFiles(ref: string): Promise<string[]> {
+    return [...repo().files.keys()]
+      .filter((k) => k.startsWith(`${ref}:`))
+      .map((k) => k.slice(ref.length + 1));
+  }
 
   async readFile(path: string, ref: string): Promise<string | null> {
     return repo().files.get(`${ref}:${path}`) ?? null;

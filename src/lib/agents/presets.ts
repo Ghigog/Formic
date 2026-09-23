@@ -17,7 +17,6 @@ import { agents, agentsOverridden } from "./registry";
 import { CODER_MODEL } from "./coding-loop";
 import { authMode } from "@/lib/auth/session";
 import {
-  CLI_COLUMNS,
   provider as providerInfo,
   type ProviderId,
   type ProviderInfo,
@@ -80,7 +79,8 @@ async function resolveColumn(projectId: string, column: ColumnId): Promise<Resol
       config: {
         provider,
         model: found.preset.model,
-        brief: found.preset.prompt,
+        // An empty prompt keeps the column's built-in brief.
+        brief: found.preset.prompt.trim() || undefined,
         // A key sealed under a secret that has since changed cannot be
         // opened; the agent then reports it has no key, which is the fix.
         apiKey:
@@ -164,10 +164,9 @@ export async function agentFor<K extends keyof AgentRegistry>(
   if (resolved.kind === "mock") return agents()[role];
   const info = providerInfo(resolved.config.provider ?? "anthropic");
   if (info?.kind === "cli") {
-    // The coding pipelines hand CLI agents to the runner before asking here,
-    // so reaching this means a CLI agent sits in a column that is not coding.
+    // Every pipeline hands CLI agents to the runner before asking here.
     return refusing(
-      `${info.label} writes code in GitHub Actions, so it can only run In Progress or In Review. Pick another agent for ${COLUMN_LABELS[column]}.`,
+      `${info.label} runs in GitHub Actions and cannot answer here. Pick another agent for ${COLUMN_LABELS[column]}.`,
     ) as AgentRegistry[K];
   }
   return make(resolved.config, info?.kind !== "openai");
@@ -206,13 +205,10 @@ export interface CliAgent {
   credential: string | null;
 }
 
-/**
- * The CLI agent a coding column runs, or null when it runs anything else.
- * CLI agents only ever run in the coding columns.
- */
+/** The CLI agent a column runs, or null when it runs anything else. */
 export async function cliAgentFor(
   projectId: string,
-  column: (typeof CLI_COLUMNS)[number],
+  column: ColumnId,
 ): Promise<CliAgent | null> {
   if (agentsOverridden()) return null;
   const resolved = await resolveColumn(projectId, column);
@@ -225,4 +221,34 @@ export async function cliAgentFor(
     brief: resolved.config.brief || null,
     credential: resolved.config.apiKey || null,
   };
+}
+
+/** The agent the board's assistant runs on, however it is reached. */
+export type AssistantAgent =
+  | { kind: "none" }
+  | { kind: "api"; info: ProviderInfo; model: string | null; apiKey: string | null; brief: string | null }
+  | { kind: "cli"; agent: CliAgent };
+
+export async function assistantAgentFor(projectId: string): Promise<AssistantAgent> {
+  const repo = repository();
+  const presetId = await repo.assistantAgent(projectId);
+  const found = presetId ? await repo.presetForRun(presetId) : null;
+  if (!found) return { kind: "none" };
+
+  const info = providerInfo(found.preset.provider);
+  if (!info) return { kind: "none" };
+  const apiKey =
+    (found.apiKeyCipher ? open(found.apiKeyCipher) : null) ??
+    (authMode() === "local" ? envKey(info.id) : null);
+  const model = found.preset.model || null;
+  const brief = found.preset.prompt.trim() || null;
+
+  if (info.kind === "cli") {
+    if (!info.cli || !info.secretName) return { kind: "none" };
+    return {
+      kind: "cli",
+      agent: { info: info as CliAgent["info"], model, brief, credential: apiKey },
+    };
+  }
+  return { kind: "api", info, model, apiKey, brief };
 }

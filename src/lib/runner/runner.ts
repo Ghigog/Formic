@@ -2,11 +2,35 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import type { RunHandle } from "@/lib/agents/pipeline";
-import type { CliAgent } from "@/lib/agents/presets";
+import { z } from "zod";
+
+import {
+  applyPrd,
+  applyShowcase,
+  applyTickets,
+  stallEpic,
+  startRun,
+  type RunHandle,
+} from "@/lib/agents/pipeline";
+import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { failuresBrief, taskBrief } from "@/lib/agents/coder";
-import { CODER_BRIEF, REVIEWER_BRIEF } from "@/lib/agents/prompts";
-import type { FailingCheck } from "@/lib/agents/ports";
+import {
+  ARCHITECT_BRIEF,
+  CODER_BRIEF,
+  PRODUCT_BRIEF,
+  REVIEWER_BRIEF,
+  SHOWCASE_BRIEF,
+} from "@/lib/agents/prompts";
+import type { DraftTicket, FailingCheck } from "@/lib/agents/ports";
+import {
+  MAX_DECOMPOSITION_ATTEMPTS,
+  checkDecomposition,
+  decompositionSchema,
+} from "@/lib/agents/decomposition";
+import { productOutput } from "@/lib/agents/openai-agents";
+import { extractJson } from "@/lib/llm/openai-compat";
+import { prdSchema } from "@/lib/domain/entities";
+import { directoryTree } from "@/lib/vcs/repositories";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { repository } from "@/lib/db";
@@ -16,13 +40,18 @@ import { publish } from "@/lib/events/bus";
 import { STAGING_PREFIX, VcsError, vcs, type VcsClient } from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
+  ANSWER_PATH,
   RUNNER_SETUP_BRANCH,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_FILE,
   RUNNER_WORKFLOW_PATH,
+  attemptOfJob,
+  cardOfJob,
+  isAnswerMode,
   jobId,
   runnerWorkflow,
-  ticketOfJob,
+  type AnswerMode,
+  type CodeMode,
   type RunnerMode,
 } from "./workflow";
 
@@ -77,11 +106,13 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
     (await client.openPullRequest({
       headBranch: RUNNER_SETUP_BRANCH,
       baseBranch,
-      title: "Let Formic run coding agents in GitHub Actions",
+      title: "Let Formic run agents in GitHub Actions",
       body: [
-        "Formic runs CLI coding agents (Claude Code, Codex, Gemini CLI) in this repository's GitHub Actions, on your own plan.",
+        "Formic runs CLI agents (Claude Code, Codex, Gemini CLI) in this repository's GitHub Actions, on your own plan.",
         "",
         "This adds the workflow that does it. It only runs when Formic starts it, pushes the agent's work to a `formic-staging/` branch, and never to a real branch: Formic checks the change against the ticket's file scope first, then opens a pull request as usual.",
+        "",
+        "Planning agents (PRDs, tickets, showcases) run here too. They read the repository and hand back an answer; nothing they touch is kept.",
         "",
         "Merge this once, then retry the card.",
       ].join("\n"),
@@ -104,7 +135,7 @@ function cap(text: string): string {
 
 export function cliPrompt(
   agent: CliAgent,
-  mode: RunnerMode,
+  mode: CodeMode,
   ticket: TicketDetail,
   fix?: { checks: FailingCheck[]; attempt: number; maxAttempts: number },
 ): string {
@@ -123,13 +154,75 @@ export function cliPrompt(
 }
 
 /**
+ * Sets the repository up, stores the credential, records the job and
+ * dispatches it. Returns why it could not, if it could not.
+ */
+async function dispatch(input: {
+  client: VcsClient;
+  baseBranch: string;
+  agent: CliAgent;
+  job: string;
+  mode: RunnerMode;
+  cardKey: string;
+  from: string;
+  prompt: string;
+  /** Recorded before the dispatch: only this job's result is taken. */
+  record: (job: string) => Promise<void>;
+}): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
+  const { client, agent } = input;
+  if (!agent.credential) {
+    return { ok: false, reason: `This agent has no ${agent.info.keyName}. Edit it and add one.`, blocked: true };
+  }
+  try {
+    const runner = await ensureRunner(client, input.baseBranch);
+    if (!runner.ready) {
+      return {
+        ok: false,
+        reason: `${agent.info.label} runs in this repository's GitHub Actions. Merge the setup pull request once (${runner.setupUrl}), then move this card back to try again.`,
+        blocked: true,
+      };
+    }
+
+    // Set on every run, so a replaced token takes effect on the next one.
+    await client.setSecret(agent.info.secretName, agent.credential);
+
+    await input.record(input.job);
+    await client.dispatchWorkflow(RUNNER_WORKFLOW_FILE, input.baseBranch, {
+      job: input.job,
+      mode: input.mode,
+      ticket: input.cardKey,
+      cli: agent.info.cli,
+      model: agent.model ?? "",
+      from: input.from,
+      prompt: cap(input.prompt),
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: `Could not start ${agent.info.label}: ${explain(e)}`, blocked: false };
+  }
+}
+
+function noUsage(agent: CliAgent) {
+  return { model: agent.model ?? agent.info.label, tokensIn: 0, tokensOut: 0, costCents: 0 };
+}
+
+function working(agent: CliAgent, run: RunHandle): void {
+  run.ctx.emit({
+    type: "run.log",
+    runId: run.runId,
+    stream: "stdout",
+    line: `${agent.info.label} is working in GitHub Actions. This card moves on when it finishes.`,
+  });
+}
+
+/**
  * Starts a CLI agent on a ticket. The Formic run records the dispatch and
  * ends there; the ticket stays running until the workflow reports back.
  */
 export async function startCliRun(input: {
   projectId: string;
   ticket: TicketDetail;
-  mode: RunnerMode;
+  mode: CodeMode;
   agent: CliAgent;
   /** The branch the agent starts from. */
   from: string;
@@ -139,64 +232,328 @@ export async function startCliRun(input: {
   stage?: number;
 }): Promise<void> {
   const { projectId, ticket, agent, run } = input;
-  const usage = { model: agent.model ?? agent.info.label, tokensIn: 0, tokensOut: 0, costCents: 0 };
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
 
-  const stop = async (reason: string, blocked: boolean) => {
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent,
+    job: jobId(ticket.id, randomUUID().slice(0, 8)),
+    mode: input.mode,
+    cardKey: ticket.key,
+    from: input.from,
+    prompt: input.prompt,
+    record: (job) => repository().updateTicket(ticket.id, { runnerJob: job }),
+  });
+
+  if (!started.ok) {
     await repository().updateTicket(ticket.id, { runnerJob: null });
-    await stallTicket(projectId, ticket, reason, {
-      blocked,
+    await stallTicket(projectId, ticket, started.reason, {
+      blocked: started.blocked,
       stalledIn: input.stalledIn,
       stage: input.stage,
     });
-    await run.finish({ ok: false, error: reason, blocked, usage });
-  };
-
-  if (!agent.credential) {
-    await stop(`This agent has no ${agent.info.keyName}. Edit it and add one.`, true);
+    await run.finish({ ok: false, error: started.reason, blocked: started.blocked, usage: noUsage(agent) });
     return;
   }
+
+  working(agent, run);
+  await run.finish({ ok: true, value: null, usage: noUsage(agent) });
+}
+
+/* ------------------------------------------------------------------------ */
+/* Planning agents: an answer, not a change.                                 */
+/* ------------------------------------------------------------------------ */
+
+/** Where each planning stage stalls, and the attempts it gets. */
+const ANSWER_STAGE: Record<
+  AnswerMode,
+  { stalledIn: "backlog" | "todo" | null; stage: number; attempts: number; role: "product" | "architect" | "pm" }
+> = {
+  product: { stalledIn: "backlog", stage: 2, attempts: 2, role: "product" },
+  architect: { stalledIn: "todo", stage: 3, attempts: MAX_DECOMPOSITION_ATTEMPTS, role: "architect" },
+  showcase: { stalledIn: null, stage: 8, attempts: 1, role: "pm" },
+};
+
+const ANSWER_RULES = `How to answer:
+- Read the repository as much as you need to ground your answer in what is really there.
+- Do not change, create or delete any file in the repository. Nothing you change is kept.
+- Do not commit, push, or create branches.
+- Write your final answer, and nothing else, to the file named by the FORMIC_OUTPUT environment variable.`;
+
+function jsonShape(schema: z.ZodType): string {
+  return `Your answer is a single JSON object and nothing else, matching this JSON Schema:\n${JSON.stringify(z.toJSONSchema(schema))}`;
+}
+
+/** What the merged tickets of an Epic did, for its showcase. */
+export function showcaseSummaries(
+  tickets: TicketDetail[],
+): Array<{ key: string; title: string; summary: string }> {
+  return tickets.map((t) => ({
+    key: t.key,
+    title: t.title,
+    summary: t.summary ?? t.description.split("\n")[0] ?? t.title,
+  }));
+}
+
+/** The prompt for a planning stage, built from the Epic as it is now. */
+async function answerPrompt(
+  projectId: string,
+  epicId: string,
+  mode: AnswerMode,
+  agent: CliAgent,
+  tree: () => Promise<string[]>,
+): Promise<string | null> {
+  const repo = repository();
+  const epic = await repo.epicDetail(epicId);
+  if (!epic) return null;
+
+  if (mode === "product") {
+    return [
+      (agent.brief ?? PRODUCT_BRIEF).trim(),
+      "",
+      ANSWER_RULES,
+      jsonShape(productOutput),
+      "",
+      "Raw feature request:",
+      "",
+      epic.rawRequest,
+    ].join("\n");
+  }
+
+  const prd = prdSchema.safeParse(epic.prd);
+  if (mode === "architect") {
+    if (!prd.success) return null;
+    return [
+      (agent.brief ?? ARCHITECT_BRIEF).trim(),
+      "",
+      ANSWER_RULES,
+      jsonShape(decompositionSchema),
+      "",
+      `Epic: ${epic.title}`,
+      "",
+      "PRD:",
+      JSON.stringify(prd.data, null, 2),
+      "",
+      "Existing top-level directories in the repository:",
+      (await tree()).slice(0, 200).join("\n") || "(empty repository)",
+    ].join("\n");
+  }
+
+  const tickets = await repo.ticketsForEpic(epicId);
+  return [
+    (agent.brief ?? SHOWCASE_BRIEF).trim(),
+    "",
+    ANSWER_RULES,
+    "Your answer is Markdown.",
+    "",
+    `Epic: ${epic.title}`,
+    prd.success ? `\nOriginal intent: ${prd.data.summary}` : "",
+    "",
+    "Merged tickets:",
+    ...showcaseSummaries(tickets).map((t) => `- ${t.key} ${t.title}: ${t.summary}`),
+  ].join("\n");
+}
+
+/**
+ * Starts a CLI agent on a planning stage of an Epic: the PRD, the ticket
+ * graph, or the showcase. Like a coding run, it returns once dispatched and
+ * the answer arrives on the workflow_run webhook.
+ */
+export async function startCliAnswer(input: {
+  projectId: string;
+  epicId: string;
+  mode: AnswerMode;
+  agent: CliAgent;
+  run: RunHandle;
+  /** A second or later attempt: the previous answer and what was wrong. */
+  retry?: { attempt: number; answer: string; correction: string };
+}): Promise<void> {
+  const { projectId, epicId, mode, agent, run } = input;
+  const repo = repository();
+  const stage = ANSWER_STAGE[mode];
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const card = await repo.cardById(epicId);
+
+  const fail = async (reason: string, blocked: boolean) => {
+    await repo.setEpicRunnerJob(epicId, null);
+    if (stage.stalledIn) {
+      await stallEpic(projectId, epicId, reason, { blocked, stalledIn: stage.stalledIn, stage: stage.stage });
+    }
+    await run.finish({ ok: false, error: reason, blocked, usage: noUsage(agent) });
+  };
+
+  const base = await answerPrompt(projectId, epicId, mode, agent, async () =>
+    creds.githubToken
+      ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.githubToken)) ?? [])
+      : [],
+  );
+  if (!card || !base) {
+    await fail("This Epic has nothing to work from yet.", true);
+    return;
+  }
+
+  const prompt = input.retry
+    ? [
+        base,
+        "",
+        `This is attempt ${input.retry.attempt} of ${stage.attempts}. Your previous answer was:`,
+        "",
+        input.retry.answer.slice(0, 20_000),
+        "",
+        input.retry.correction,
+      ].join("\n")
+    : base;
+
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent,
+    job: jobId(epicId, randomUUID().slice(0, 8), input.retry?.attempt ?? 1),
+    mode,
+    cardKey: card.key,
+    from: project.baseBranch,
+    prompt,
+    record: (job) => repo.setEpicRunnerJob(epicId, job),
+  });
+  if (!started.ok) {
+    await fail(started.reason, started.blocked);
+    return;
+  }
+
+  working(agent, run);
+  await run.finish({ ok: true, value: null, usage: noUsage(agent) });
+}
+
+type Checked<T> = { ok: true; value: T } | { ok: false; correction: string };
+
+function readJson(text: string): unknown {
+  try {
+    return extractJson(text);
+  } catch {
+    return null;
+  }
+}
+
+function checkProduct(text: string): Checked<z.infer<typeof productOutput>> {
+  const raw = readJson(text);
+  if (raw === null) {
+    return { ok: false, correction: "That was not a JSON object. Answer with only the JSON object." };
+  }
+  const parsed = productOutput.safeParse(raw);
+  if (parsed.success) return { ok: true, value: parsed.data };
+  const issue = parsed.error.issues[0];
+  return {
+    ok: false,
+    correction: `That PRD does not match the schema: ${issue?.path.join(".")}: ${issue?.message}. Answer with the corrected JSON object.`,
+  };
+}
+
+function checkTickets(text: string): Checked<DraftTicket[]> {
+  const raw = readJson(text);
+  if (raw === null) {
+    return { ok: false, correction: "That was not a JSON object. Answer with only the JSON object." };
+  }
+  const checked = checkDecomposition(raw);
+  return checked.ok ? { ok: true, value: checked.tickets } : checked;
+}
+
+/**
+ * A planning agent's workflow finished. Reads its answer off the staging
+ * branch and checks it exactly as an API agent's answer is checked: a
+ * wrong answer goes back to the agent as a correction, a right one onto
+ * the board.
+ */
+async function completeCliAnswer(
+  projectId: string,
+  result: RunnerResult & { mode: AnswerMode },
+): Promise<void> {
+  const repo = repository();
+  const epicId = cardOfJob(result.job);
+  if (!epicId) return;
+  if ((await repo.projectOfCard(epicId)) !== projectId) return;
+  const epic = await repo.epicDetail(epicId);
+  if (!epic) return;
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
+  const staging = `${STAGING_PREFIX}${result.job}`;
+  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
-  try {
-    const runner = await ensureRunner(client, project.baseBranch);
-    if (!runner.ready) {
-      await stop(
-        `${agent.info.label} runs in this repository's GitHub Actions. Merge the setup pull request once (${runner.setupUrl}), then move this card back to To Do to try again.`,
-        true,
-      );
-      return;
+  if (epic.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+  await repo.setEpicRunnerJob(epicId, null);
+
+  const stage = ANSWER_STAGE[result.mode];
+  const log = result.url ? ` Its log: ${result.url}` : "";
+  const stall = async (reason: string, blocked: boolean) => {
+    if (stage.stalledIn) {
+      await stallEpic(projectId, epicId, reason, { blocked, stalledIn: stage.stalledIn, stage: stage.stage });
     }
+  };
 
-    // Set on every run, so a replaced token takes effect on the next one.
-    await client.setSecret(agent.info.secretName, agent.credential);
-
-    // Recorded first: only this job's result is taken, whatever else lands.
-    const job = jobId(ticket.id, randomUUID().slice(0, 8));
-    await repository().updateTicket(ticket.id, { runnerJob: job });
-    await client.dispatchWorkflow(RUNNER_WORKFLOW_FILE, project.baseBranch, {
-      job,
-      mode: input.mode,
-      ticket: ticket.key,
-      cli: agent.info.cli,
-      model: agent.model ?? "",
-      from: input.from,
-      prompt: input.prompt,
-    });
-  } catch (e) {
-    await stop(`Could not start ${agent.info.label}: ${explain(e)}`, false);
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    await stall(`The agent's GitHub Actions run ended as ${result.conclusion}.${log}`, false);
     return;
   }
 
-  run.ctx.emit({
-    type: "run.log",
-    runId: run.runId,
-    stream: "stdout",
-    line: `${agent.info.label} is working in GitHub Actions. This card moves on when it finishes.`,
+  let answer: string | null;
+  try {
+    answer = await client.readFile(ANSWER_PATH, staging);
+  } catch (e) {
+    answer = null;
+    console.error("[formic] could not read the agent's answer:", e);
+  }
+  await cleanUp();
+  if (!answer?.trim()) {
+    await stall(`The agent finished without an answer.${log}`, false);
+    return;
+  }
+
+  let checked: Checked<unknown>;
+  if (result.mode === "product") {
+    const product = checkProduct(answer);
+    if (product.ok) return applyPrd(projectId, epicId, product.value.prd);
+    checked = product;
+  } else if (result.mode === "architect") {
+    const tickets = checkTickets(answer);
+    if (tickets.ok) return applyTickets(projectId, epicId, tickets.value);
+    checked = tickets;
+  } else {
+    return applyShowcase(projectId, epicId, answer.trim());
+  }
+
+  const attempt = attemptOfJob(result.job);
+  if (attempt >= stage.attempts) {
+    await stall(
+      result.mode === "architect"
+        ? `The Architect Agent could not produce a valid dependency graph in ${stage.attempts} attempts. This Epic needs a human to split it.`
+        : `The agent's answer could not be used: ${checked.correction}`,
+      result.mode === "architect",
+    );
+    return;
+  }
+
+  // Ask again, with what was wrong. Its own run, so the board shows it.
+  const agent = await cliAgentFor(projectId, result.mode === "product" ? "backlog" : "todo");
+  if (!agent) {
+    await stall(`The agent's answer could not be used: ${checked.correction}`, false);
+    return;
+  }
+  await startCliAnswer({
+    projectId,
+    epicId,
+    mode: result.mode,
+    agent,
+    run: startRun(projectId, stage.role, { epicId, model: agent.model ?? agent.info.label }),
+    retry: { attempt: attempt + 1, answer, correction: checked.correction },
   });
-  await run.finish({ ok: true, value: null, usage });
 }
 
 export interface RunnerResult {
@@ -213,9 +570,75 @@ export interface RunnerResult {
  * checks it, and moves it onto the ticket's branch: a new pull request for
  * an implementation, one more commit on the existing one for a fix.
  */
-export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
+/**
+ * Starts a CLI agent answering the board's assistant. Its answer comes back
+ * like a planning agent's, and the conversation shows it when it does.
+ */
+export async function startCliAsk(input: {
+  projectId: string;
+  messageId: string;
+  agent: CliAgent;
+  prompt: string;
+}): Promise<void> {
   const repo = repository();
-  const ticketId = ticketOfJob(result.job);
+  const project = await projectFor(input.projectId);
+  const creds = await credentialsForProject(project);
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent: input.agent,
+    job: jobId(input.messageId, randomUUID().slice(0, 8)),
+    mode: "ask",
+    cardKey: "assistant",
+    from: project.baseBranch,
+    prompt: input.prompt,
+    record: (job) => repo.updateAssistantMessage(input.messageId, { runnerJob: job }),
+  });
+  if (!started.ok) {
+    const { finishCliAnswer } = await import("@/lib/assistant/turn");
+    await finishCliAnswer(input.messageId, null, started.reason);
+  }
+}
+
+async function completeCliAsk(projectId: string, result: RunnerResult): Promise<void> {
+  const repo = repository();
+  const messageId = cardOfJob(result.job);
+  const message = messageId ? await repo.assistantMessage(messageId) : null;
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  const staging = `${STAGING_PREFIX}${result.job}`;
+  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+
+  if (!message || message.projectId !== projectId || message.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+
+  const { finishCliAnswer } = await import("@/lib/assistant/turn");
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    const log = result.url ? ` Its log: ${result.url}` : "";
+    await finishCliAnswer(message.id, null, `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`);
+    return;
+  }
+  const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
+  await cleanUp();
+  await finishCliAnswer(message.id, answer);
+}
+
+export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
+  const { mode } = result;
+  if (mode === "ask") {
+    await completeCliAsk(projectId, result);
+    return;
+  }
+  if (isAnswerMode(mode)) {
+    await completeCliAnswer(projectId, { ...result, mode });
+    return;
+  }
+  const repo = repository();
+  const ticketId = cardOfJob(result.job);
   if (!ticketId) return;
   if ((await repo.projectOfCard(ticketId)) !== projectId) return;
 
