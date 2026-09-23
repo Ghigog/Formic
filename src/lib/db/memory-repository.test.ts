@@ -27,7 +27,7 @@ describe("projects on the in-memory store", () => {
   it("hands unowned boards and presets to whoever adopts them", async () => {
     const repo = new MemoryRepository();
     const demo = await repo.defaultProject();
-    await repo.savePreset({ name: "old", model: "claude-opus-5", prompt: "p" });
+    await repo.savePreset({ name: "old", provider: "anthropic", model: "claude-opus-5", prompt: "p" });
     await repo.adoptUnowned("u1");
     expect((await repo.projectById(demo.id))?.ownerId).toBe("u1");
     expect(await repo.listPresets({ ownerId: "u1", includeUnowned: false })).toHaveLength(1);

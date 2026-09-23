@@ -8,6 +8,7 @@ import type {
   ColumnAgents,
 } from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
+import type { ProviderId } from "@/lib/llm/providers";
 
 /**
  * The data boundary. Two implementations: Prisma against Postgres, and an
@@ -63,6 +64,8 @@ export interface TicketDetail {
   blockedReason: string | null;
   attempts: number;
   summary: string | null;
+  /** The cloud runner job this ticket is waiting on, if any. */
+  runnerJob: string | null;
 }
 
 export interface TicketUpdate {
@@ -75,6 +78,7 @@ export interface TicketUpdate {
   blockedReason?: string | null;
   attempts?: number;
   summary?: string | null;
+  runnerJob?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -156,6 +160,7 @@ export interface PresetRecord {
   id?: string;
   /** Set on create; an update keeps the owner it had. */
   ownerId?: string | null;
+  provider: ProviderId;
   name: string;
   model: string;
   prompt: string;

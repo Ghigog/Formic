@@ -2,16 +2,26 @@ import "server-only";
 
 import { repository } from "@/lib/db";
 import type { AgentPresetInput } from "@/lib/domain/entities";
-import type { ColumnId } from "@/lib/domain/status";
+import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { hintFor, open, seal } from "@/lib/secrets/vault";
-import { AnthropicArchitectAgent, AnthropicProductAgent, AnthropicShowcaseAgent } from "./anthropic";
-import { AnthropicCoderAgent, AnthropicReviewerAgent } from "./coder";
-import type { AgentConfig, AgentRegistry } from "./ports";
-import { agents, agentsOverridden, useMockAgents } from "./registry";
-import { credentialsForProject } from "@/lib/auth/credentials";
-import { projectFor } from "@/lib/board/project";
-import { MODELS } from "./anthropic";
+import {
+  AnthropicArchitectAgent,
+  AnthropicProductAgent,
+  AnthropicShowcaseAgent,
+  MODELS,
+} from "./anthropic";
+import { OpenAiArchitectAgent, OpenAiProductAgent, OpenAiShowcaseAgent } from "./openai-agents";
+import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
+import type { AgentConfig, AgentOutcome, AgentRegistry } from "./ports";
+import { agents, agentsOverridden } from "./registry";
 import { CODER_MODEL } from "./coding-loop";
+import { authMode } from "@/lib/auth/session";
+import {
+  CLI_COLUMNS,
+  provider as providerInfo,
+  type ProviderId,
+  type ProviderInfo,
+} from "@/lib/llm/providers";
 
 /**
  * Presets on the way in (sealing the key) and on the way out (the agent a
@@ -26,6 +36,7 @@ export async function savePreset(
   return repository().savePreset({
     id: input.id,
     ownerId: input.ownerId,
+    provider: input.provider,
     name: input.name,
     model: input.model,
     prompt: input.prompt,
@@ -38,45 +49,108 @@ export async function savePreset(
 }
 
 /**
- * How a column's agent is configured on this board: its saved preset, or
- * the built-in agent on the owner's Anthropic key. Null means nobody has a
- * key, and the column runs the mock.
+ * What runs a column on this board.
+ *
+ * A saved agent template carries its own provider, model, key and prompt;
+ * nothing else supplies a key. A column without one does not quietly run on
+ * someone's key: signed in with GitHub, its cards stop and say so. Local
+ * mode keeps the old behaviour for development: Claude on the server's
+ * ANTHROPIC_API_KEY if there is one, the mock agents if not.
  */
-export async function agentConfigFor(
-  projectId: string,
-  column: ColumnId,
-): Promise<AgentConfig | null> {
+type Resolution =
+  | { kind: "configured"; config: AgentConfig }
+  | { kind: "mock" }
+  | { kind: "unassigned" };
+
+function envKey(id: ProviderId): string | null {
+  const name = providerInfo(id)?.envKey;
+  return (name && process.env[name]) || null;
+}
+
+async function resolveColumn(projectId: string, column: ColumnId): Promise<Resolution> {
   const repo = repository();
-  const { anthropicKey } = await credentialsForProject(await projectFor(projectId));
+  const local = authMode() === "local";
 
   const presetId = (await repo.columnAgents(projectId))[column];
   const found = presetId ? await repo.presetForRun(presetId) : null;
   if (found) {
+    const provider = found.preset.provider;
     return {
-      model: found.preset.model,
-      brief: found.preset.prompt,
-      // A key sealed under a secret that has since changed cannot be opened;
-      // the run falls back to the owner's key rather than failing outright.
-      apiKey: (found.apiKeyCipher ? open(found.apiKeyCipher) : null) ?? anthropicKey,
+      kind: "configured",
+      config: {
+        provider,
+        model: found.preset.model,
+        brief: found.preset.prompt,
+        // A key sealed under a secret that has since changed cannot be
+        // opened; the agent then reports it has no key, which is the fix.
+        apiKey:
+          (found.apiKeyCipher ? open(found.apiKeyCipher) : null) ??
+          (local ? envKey(provider) : null),
+      },
     };
   }
 
-  if (anthropicKey && process.env.AGENT_PROVIDER !== "mock") return { apiKey: anthropicKey };
-  return null;
+  if (!local) return { kind: "unassigned" };
+  if (process.env.AGENT_PROVIDER !== "mock" && envKey("anthropic")) {
+    return { kind: "configured", config: { provider: "anthropic", apiKey: envKey("anthropic") } };
+  }
+  return { kind: "mock" };
+}
+
+/** Kept for callers that only need the configuration, and for tests. */
+export async function agentConfigFor(
+  projectId: string,
+  column: ColumnId,
+): Promise<AgentConfig | null> {
+  const resolved = await resolveColumn(projectId, column);
+  return resolved.kind === "configured" ? resolved.config : null;
 }
 
 const BUILD: {
   [K in keyof AgentRegistry]: {
     column: ColumnId;
-    make: (config: AgentConfig) => AgentRegistry[K];
+    make: (config: AgentConfig, claude: boolean) => AgentRegistry[K];
   };
 } = {
-  product: { column: "backlog", make: (c) => new AnthropicProductAgent(c) },
-  architect: { column: "todo", make: (c) => new AnthropicArchitectAgent(c) },
-  coder: { column: "in_progress", make: (c) => new AnthropicCoderAgent(c) },
-  reviewer: { column: "in_review", make: (c) => new AnthropicReviewerAgent(c) },
-  showcase: { column: "done", make: (c) => new AnthropicShowcaseAgent(c) },
+  product: {
+    column: "backlog",
+    make: (c, claude) => (claude ? new AnthropicProductAgent(c) : new OpenAiProductAgent(c)),
+  },
+  architect: {
+    column: "todo",
+    make: (c, claude) => (claude ? new AnthropicArchitectAgent(c) : new OpenAiArchitectAgent(c)),
+  },
+  coder: { column: "in_progress", make: (c) => new LoopCoderAgent(c) },
+  reviewer: { column: "in_review", make: (c) => new LoopReviewerAgent(c) },
+  showcase: {
+    column: "done",
+    make: (c, claude) => (claude ? new AnthropicShowcaseAgent(c) : new OpenAiShowcaseAgent(c)),
+  },
 };
+
+/** An agent that refuses every call with the same reason. */
+function refusing(error: string): AgentRegistry[keyof AgentRegistry] {
+  const refuse = async (): Promise<AgentOutcome<never>> => ({
+    ok: false,
+    blocked: true,
+    error,
+    usage: { model: "", tokensIn: 0, tokensOut: 0, costCents: 0 },
+  });
+  return {
+    draftPrd: refuse,
+    decompose: refuse,
+    summarize: refuse,
+    implement: refuse,
+    fix: refuse,
+  } as unknown as AgentRegistry[keyof AgentRegistry];
+}
+
+/** An agent for a column nobody has given one. Every call says so. */
+function unassigned(column: ColumnId): AgentRegistry[keyof AgentRegistry] {
+  return refusing(
+    `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
+  );
+}
 
 /** The agent for a role on this board. */
 export async function agentFor<K extends keyof AgentRegistry>(
@@ -85,8 +159,18 @@ export async function agentFor<K extends keyof AgentRegistry>(
 ): Promise<AgentRegistry[K]> {
   if (agentsOverridden()) return agents()[role];
   const { column, make } = BUILD[role];
-  const config = await agentConfigFor(projectId, column);
-  return config ? make(config) : agents()[role];
+  const resolved = await resolveColumn(projectId, column);
+  if (resolved.kind === "unassigned") return unassigned(column) as AgentRegistry[K];
+  if (resolved.kind === "mock") return agents()[role];
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (info?.kind === "cli") {
+    // The coding pipelines hand CLI agents to the runner before asking here,
+    // so reaching this means a CLI agent sits in a column that is not coding.
+    return refusing(
+      `${info.label} writes code in GitHub Actions, so it can only run In Progress or In Review. Pick another agent for ${COLUMN_LABELS[column]}.`,
+    ) as AgentRegistry[K];
+  }
+  return make(resolved.config, info?.kind !== "openai");
 }
 
 const BUILT_IN_MODEL: Record<keyof AgentRegistry, string> = {
@@ -99,14 +183,46 @@ const BUILT_IN_MODEL: Record<keyof AgentRegistry, string> = {
 
 /**
  * The model a run for this role will use, for the card to show while it
- * works. Null for the mock agents, which use no model at all.
+ * works. Null for the mock agents, and for a column with no agent.
  */
 export async function modelFor(
   projectId: string,
   role: keyof AgentRegistry,
 ): Promise<string | null> {
   if (agentsOverridden()) return null;
-  const config = await agentConfigFor(projectId, BUILD[role].column);
-  if (config) return config.model ?? BUILT_IN_MODEL[role];
-  return useMockAgents() ? null : BUILT_IN_MODEL[role];
+  const resolved = await resolveColumn(projectId, BUILD[role].column);
+  if (resolved.kind !== "configured") return null;
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (info?.kind === "cli") return resolved.config.model || info.label;
+  return resolved.config.model || BUILT_IN_MODEL[role];
+}
+
+/** A CLI agent's settings, as the runner needs them. */
+export interface CliAgent {
+  info: ProviderInfo & { kind: "cli"; cli: NonNullable<ProviderInfo["cli"]>; secretName: string };
+  model: string | null;
+  brief: string | null;
+  /** The person's plan token or key. Null when the template has none. */
+  credential: string | null;
+}
+
+/**
+ * The CLI agent a coding column runs, or null when it runs anything else.
+ * CLI agents only ever run in the coding columns.
+ */
+export async function cliAgentFor(
+  projectId: string,
+  column: (typeof CLI_COLUMNS)[number],
+): Promise<CliAgent | null> {
+  if (agentsOverridden()) return null;
+  const resolved = await resolveColumn(projectId, column);
+  if (resolved.kind !== "configured") return null;
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (info?.kind !== "cli" || !info.cli || !info.secretName) return null;
+  return {
+    info: info as CliAgent["info"],
+    model: resolved.config.model || null,
+    brief: resolved.config.brief || null,
+    credential: resolved.config.apiKey || null,
+  };
 }

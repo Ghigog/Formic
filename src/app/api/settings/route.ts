@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** A new key; null removes the saved one; omitted leaves it. */
 const keySchema = z.string().trim().min(1).max(500).nullable().optional();
-const bodySchema = z.object({ e2bKey: keySchema, anthropicKey: keySchema });
+const bodySchema = z.object({ e2bKey: keySchema });
 
 function sealed(value: string | null | undefined, cipher: string, hint: string) {
   if (value === undefined) return {};
@@ -15,7 +15,7 @@ function sealed(value: string | null | undefined, cipher: string, hint: string) 
   return { [cipher]: seal(value), [hint]: hintFor(value) };
 }
 
-/** Saves this person's own E2B and Anthropic keys. Never returns them. */
+/** Saves this person's sandbox key. Never returns it. */
 export async function PUT(req: Request) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
@@ -26,10 +26,6 @@ export async function PUT(req: Request) {
 
   const updated = await repository().updateUser(user.id, {
     ...sealed(body.data.e2bKey, "e2bKeyCipher", "e2bKeyHint"),
-    ...sealed(body.data.anthropicKey, "anthropicKeyCipher", "anthropicKeyHint"),
   });
-  return Response.json({
-    e2bKeyHint: updated.e2bKeyHint,
-    anthropicKeyHint: updated.anthropicKeyHint,
-  });
+  return Response.json({ e2bKeyHint: updated.e2bKeyHint });
 }

@@ -64,7 +64,13 @@ describe("one person's board is not another's", () => {
     const alice = await person(1, "alice");
     const bob = await person(2, "bob");
     const bobs = await repository().ensureProject({ ownerId: bob.id, repoFullName: "b/y", baseBranch: "main" });
-    const preset = await savePreset({ ownerId: alice.id, name: "hers", model: "claude-opus-5", prompt: "p" });
+    const preset = await savePreset({
+      ownerId: alice.id,
+      name: "hers",
+      provider: "anthropic",
+      model: "claude-opus-5",
+      prompt: "p",
+    });
 
     await actAs(bob.id, bobs.id);
     const params = { params: Promise.resolve({ id: preset.id }) };
@@ -81,12 +87,17 @@ describe("one person's board is not another's", () => {
     expect(listed.presets).toEqual([]);
   });
 
-  it("runs a board's built-in agents on its owner's Anthropic key", async () => {
+  it("stops a column with no agent instead of running it on anyone's key", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-operator");
     const alice = await person(1, "alice");
-    await repository().updateUser(alice.id, { anthropicKeyCipher: seal("sk-ant-alice") });
     const hers = await repository().ensureProject({ ownerId: alice.id, repoFullName: "a/x", baseBranch: "main" });
 
-    expect(await agentConfigFor(hers.id, "todo")).toEqual({ apiKey: "sk-ant-alice" });
+    expect(await agentConfigFor(hers.id, "todo")).toBeNull();
+    const { agentFor } = await import("@/lib/agents/presets");
+    const architect = await agentFor(hers.id, "architect");
+    const outcome = await architect.decompose({} as never, {} as never);
+    expect(outcome).toMatchObject({ ok: false, blocked: true });
+    expect(!outcome.ok && outcome.error).toContain("No agent is set for To Do");
   });
 });
 

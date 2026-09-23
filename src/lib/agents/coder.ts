@@ -15,10 +15,11 @@ import type { Workspace } from "@/lib/sandbox/workspace";
 import { CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
 
 /**
- * The two agents that write code. Same loop, different brief.
+ * The two agents that write code. Same loop, different brief, and any
+ * provider: the loop picks the connector from the agent's config.
  */
 
-function taskBrief(task: CoderTask): string {
+export function taskBrief(task: CoderTask): string {
   return [
     `Ticket ${task.key}: ${task.title}`,
     "",
@@ -31,7 +32,24 @@ function taskBrief(task: CoderTask): string {
   ].join("\n");
 }
 
-export class AnthropicCoderAgent implements CoderAgent {
+/** What each red check reported, for the agent fixing it. */
+export function failuresBrief(checks: FailingCheck[]): string {
+  return checks
+    .map((check) =>
+      [
+        `Check "${check.name}" failed.`,
+        check.summary,
+        ...check.annotations.map(
+          (a) => `${a.path}${a.line ? `:${a.line}` : ""} — ${a.message}`,
+        ),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .join("\n\n");
+}
+
+export class LoopCoderAgent implements CoderAgent {
   constructor(private readonly config: AgentConfig = {}) {}
 
   implement(
@@ -44,6 +62,7 @@ export class AnthropicCoderAgent implements CoderAgent {
       ticketId: input.task.ticketId,
       role: "coder",
       system: withCodingRules(this.config.brief ?? CODER_BRIEF),
+      provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
       prompt: `${taskBrief(input.task)}\n\nImplement it.`,
@@ -51,7 +70,7 @@ export class AnthropicCoderAgent implements CoderAgent {
   }
 }
 
-export class AnthropicReviewerAgent implements ReviewerAgent {
+export class LoopReviewerAgent implements ReviewerAgent {
   constructor(private readonly config: AgentConfig = {}) {}
 
   fix(
@@ -64,19 +83,7 @@ export class AnthropicReviewerAgent implements ReviewerAgent {
       maxAttempts: number;
     },
   ): Promise<AgentOutcome<CodeChange>> {
-    const failures = input.checks
-      .map((check) =>
-        [
-          `Check "${check.name}" failed.`,
-          check.summary,
-          ...check.annotations.map(
-            (a) => `${a.path}${a.line ? `:${a.line}` : ""} — ${a.message}`,
-          ),
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      )
-      .join("\n\n");
+    const failures = failuresBrief(input.checks);
 
     return runCodingLoop({
       ctx,
@@ -84,6 +91,7 @@ export class AnthropicReviewerAgent implements ReviewerAgent {
       ticketId: input.task.ticketId,
       role: "reviewer",
       system: withCodingRules(this.config.brief ?? REVIEWER_BRIEF),
+      provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
       prompt: [

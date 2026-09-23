@@ -48,6 +48,7 @@ interface TicketExtras {
   branchName: string | null;
   attempts: number;
   summary: string | null;
+  runnerJob: string | null;
 }
 
 interface Store {
@@ -302,6 +303,7 @@ export class MemoryRepository implements Repository {
         branchName: null,
         attempts: 0,
         summary: null,
+        runnerJob: null,
       });
     }
 
@@ -436,6 +438,7 @@ export class MemoryRepository implements Repository {
     if (update.branchName !== undefined) extras.branchName = update.branchName;
     if (update.attempts !== undefined) extras.attempts = update.attempts;
     if (update.summary !== undefined) extras.summary = update.summary;
+    if (update.runnerJob !== undefined) extras.runnerJob = update.runnerJob;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
@@ -496,7 +499,7 @@ export class MemoryRepository implements Repository {
       id: existing?.id ?? id("preset"),
       ownerId: existing ? existing.ownerId : (record.ownerId ?? null),
       name: record.name,
-      provider: "anthropic" as const,
+      provider: record.provider,
       model: record.model,
       prompt: record.prompt,
       apiKeyCipher: keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
@@ -568,6 +571,7 @@ function toDetail(
     blockedReason: card.blockedReason,
     attempts: extras?.attempts ?? 0,
     summary: extras?.summary ?? null,
+    runnerJob: extras?.runnerJob ?? null,
   };
 }
 

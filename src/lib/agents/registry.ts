@@ -4,7 +4,7 @@ import {
   AnthropicProductAgent,
   AnthropicShowcaseAgent,
 } from "./anthropic";
-import { AnthropicCoderAgent, AnthropicReviewerAgent } from "./coder";
+import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import {
   MockArchitectAgent,
   MockCoderAgent,
@@ -50,8 +50,8 @@ export function agents(): AgentRegistry {
   cached = {
     product: new AnthropicProductAgent(),
     architect: new AnthropicArchitectAgent(),
-    coder: new AnthropicCoderAgent(),
-    reviewer: new AnthropicReviewerAgent(),
+    coder: new LoopCoderAgent(),
+    reviewer: new LoopReviewerAgent(),
     showcase: new AnthropicShowcaseAgent(),
   };
   return cached;

@@ -8,16 +8,31 @@ import {
   type AgentPresetInput,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
-import { AGENT_MODELS } from "@/lib/agents/models";
 import { DEFAULT_BRIEF } from "@/lib/agents/prompts";
+import {
+  CLI_COLUMNS,
+  PROVIDERS,
+  type ProviderId,
+  provider as providerInfo,
+} from "@/lib/llm/providers";
 
 /** Columns whose agent writes code, and so always gets the platform rules. */
-const CODING_COLUMNS: ReadonlySet<ColumnId> = new Set(["in_progress", "in_review"]);
+const CODING_COLUMNS: ReadonlySet<ColumnId> = new Set(CLI_COLUMNS);
+
+type ModelList =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ready"; models: string[] }
+  | { state: "error"; reason: string };
 
 /**
- * Create or edit a saved agent: a name, a Claude model, an optional API key
- * of its own, and the prompt it works from. A new one starts from the
- * built-in prompt for the column it was opened from.
+ * Create or edit a saved agent: a name, a provider, that provider's API key,
+ * a model, and the prompt it works from. A new one starts from the built-in
+ * prompt for the column it was opened from. The key belongs to this agent
+ * alone; nothing else on the board uses it.
+ *
+ * In the coding columns the providers include CLI agents on a person's own
+ * plan (Claude Code, Codex, Gemini CLI), which run in GitHub Actions.
  */
 export function AgentEditor({
   column,
@@ -35,13 +50,20 @@ export function AgentEditor({
 }) {
   const role = `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
   const [name, setName] = useState(preset?.name ?? "");
-  const [model, setModel] = useState(preset?.model ?? AGENT_MODELS[0]!.id);
+  const [provider, setProvider] = useState<ProviderId>(preset?.provider ?? "anthropic");
+  const [model, setModel] = useState(preset?.model ?? "");
   const [prompt, setPrompt] = useState(preset?.prompt ?? DEFAULT_BRIEF[column]);
   /** Undefined keeps the saved key, null removes it, a string replaces it. */
   const [apiKey, setApiKey] = useState<string | null | undefined>(undefined);
+  const [models, setModels] = useState<ModelList>({ state: "idle" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const info = providerInfo(provider)!;
+  const cli = info.kind === "cli";
+  const choices = PROVIDERS.filter(
+    (p) => p.kind !== "cli" || CODING_COLUMNS.has(column) || p.id === preset?.provider,
+  );
 
   useEffect(() => {
     requestAnimationFrame(() => nameRef.current?.focus());
@@ -52,22 +74,64 @@ export function AgentEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const savedKey = preset?.hasKey && apiKey === undefined;
+  // A saved key belongs to the provider it was saved for.
+  const hasSavedKey = !!preset?.hasKey && preset.provider === provider;
+  const savedKey = hasSavedKey && apiKey === undefined;
+  const typedKey = typeof apiKey === "string" ? apiKey.trim() : "";
+
+  // Ask the provider which models this key can use, once there is a key.
+  useEffect(() => {
+    if (cli || (!typedKey && !savedKey)) {
+      setModels({ state: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setModels({ state: "loading" });
+      fetch("/api/providers/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          ...(typedKey ? { apiKey: typedKey } : { presetId: preset?.id }),
+        }),
+        signal: controller.signal,
+      })
+        .then((r) => r.json())
+        .then((d: { ok: boolean; models?: string[]; reason?: string }) =>
+          setModels(
+            d.ok
+              ? { state: "ready", models: d.models ?? [] }
+              : { state: "error", reason: d.reason ?? "Could not list models." },
+          ),
+        )
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setModels({ state: "error", reason: "Could not list models." });
+          }
+        });
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [provider, cli, typedKey, savedKey, preset?.id]);
 
   async function submit() {
+    if (!hasSavedKey && !typedKey) {
+      setError(`Add your ${info.keyName}. This agent runs on it.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await onSave({
         name,
-        model,
+        provider,
+        model: model.trim(),
         prompt,
-        // An empty box changes nothing; only Remove clears a saved key.
-        ...(apiKey === null
-          ? { apiKey: null }
-          : apiKey?.trim()
-            ? { apiKey: apiKey.trim() }
-            : {}),
+        // An empty box keeps a saved key; Remove clears it; a typed one replaces it.
+        ...(apiKey === null ? { apiKey: null } : typedKey ? { apiKey: typedKey } : {}),
       });
       onClose();
     } catch (e) {
@@ -79,7 +143,7 @@ export function AgentEditor({
 
   async function remove() {
     if (!preset) return;
-    if (!window.confirm(`Delete ${preset.name}? Columns running it go back to their built-in agent.`)) {
+    if (!window.confirm(`Delete ${preset.name}? Columns running it go back to having no agent.`)) {
       return;
     }
     setBusy(true);
@@ -95,6 +159,7 @@ export function AgentEditor({
   const label = "text-ink text-[12px] font-semibold";
   const field =
     "border-line bg-cream text-ink focus:border-clay w-full rounded-md border px-2.5 text-[13px] outline-none";
+  const options = models.state === "ready" && models.models.length ? models.models : info.suggestedModels;
 
   return (
     <div
@@ -136,32 +201,31 @@ export function AgentEditor({
             />
           </label>
 
-          <div className="grid gap-3.5 sm:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className={label}>Provider</span>
-              <select disabled className={`${field} h-9 opacity-80`} value="anthropic">
-                <option value="anthropic">Claude (Anthropic)</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className={label}>Model</span>
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className={`${field} h-9`}
-              >
-                {AGENT_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label} · {m.note}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <label className="flex flex-col gap-1">
+            <span className={label}>Provider</span>
+            <select
+              aria-label="Provider"
+              value={provider}
+              onChange={(e) => {
+                setProvider(e.target.value as ProviderId);
+                setModel("");
+                setApiKey(undefined);
+              }}
+              className={`${field} h-9`}
+            >
+              {choices.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                  {p.freeTier ? " · free tier" : ""}
+                </option>
+              ))}
+            </select>
+            <span className="text-muted text-[11px]">{info.note}</span>
+          </label>
 
           <div className="flex flex-col gap-1">
             <span className={label} id="agent-key-label">
-              API key
+              {cli ? info.keyName : `${info.label} ${info.keyName}`}
             </span>
             {savedKey ? (
               <div className="border-line bg-cream flex h-9 items-center gap-2 rounded-md border px-2.5 text-[13px]">
@@ -173,13 +237,6 @@ export function AgentEditor({
                 >
                   Replace
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setApiKey(null)}
-                  className="text-muted hover:text-ink text-[12px] font-medium"
-                >
-                  Remove
-                </button>
               </div>
             ) : (
               <input
@@ -188,16 +245,55 @@ export function AgentEditor({
                 aria-labelledby="agent-key-label"
                 value={apiKey ?? ""}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-ant-…"
+                placeholder={info.keyPlaceholder}
                 className={`${field} h-9 font-mono`}
               />
             )}
-            <span className="text-muted text-[11px]">
-              {apiKey === null
-                ? "The saved key will be removed. Runs will use your key from Settings."
-                : "Stored encrypted and never shown again. Leave empty to use your key from Settings."}
-            </span>
+            {cli ? (
+              <span className="text-muted text-[11px] leading-[1.5]">
+                {info.howToGetKey} Stored encrypted, and saved as a secret in your
+                repository&apos;s GitHub Actions when the agent runs.{" "}
+                <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
+                  How it works
+                </a>
+              </span>
+            ) : (
+              <span className="text-muted text-[11px]">
+                Stored encrypted and never shown again.{" "}
+                <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
+                  Get a key from {info.label}
+                </a>
+              </span>
+            )}
           </div>
+
+          <label className="flex flex-col gap-1">
+            <span className={label}>Model</span>
+            <input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              list="agent-models"
+              placeholder={cli ? "Its default" : (options[0] ?? "Model id")}
+              aria-label="Model"
+              className={`${field} h-9 font-mono`}
+            />
+            <datalist id="agent-models">
+              {options.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            <span className="text-muted text-[11px]">
+              {cli
+                ? "Optional. Leave empty for the agent's own default."
+                : models.state === "loading"
+                ? "Asking the provider which models your key can use…"
+                : models.state === "ready"
+                  ? `${models.models.length} models available on your key. Start typing to filter.`
+                  : models.state === "error"
+                    ? models.reason
+                    : "Add the key above to see the models it can use."}
+            </span>
+          </label>
 
           <label className="flex flex-col gap-1">
             <span className="flex items-center gap-2">
@@ -220,7 +316,7 @@ export function AgentEditor({
             {CODING_COLUMNS.has(column) && (
               <span className="text-muted text-[11px]">
                 The platform&apos;s coding rules (stay in the file scope, no git, verify
-                before finishing) are always added after this.
+                before finishing) are always added after this, whatever the provider.
               </span>
             )}
           </label>

@@ -34,7 +34,7 @@ export function Welcome({ account }: { account: Account }) {
         </div>
         <RepoPicker current={null} inline onClose={() => {}} className="relative" />
         <a href="/settings" className="text-muted hover:text-ink text-[12px] font-medium">
-          Add your E2B and Anthropic keys in Settings
+          Add your sandbox key in Settings
         </a>
       </main>
     </div>

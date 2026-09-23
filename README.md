@@ -32,7 +32,8 @@ Each credential unlocks one layer and nothing breaks without it:
 | `FORMIC_ALLOWED_USERS` | Only these GitHub usernames may sign in. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop. |
 | `SANDBOX_PROVIDER=e2b` | Isolated sandboxes, on each person's E2B key. Required on Vercel. |
-| `ANTHROPIC_API_KEY`, `E2B_API_KEY` | Optional fallbacks for people who have not added their own keys. |
+| `E2B_API_KEY` | Optional fallback sandbox key for people who have not added their own. |
+| `ANTHROPIC_API_KEY` (and `OPENAI_API_KEY`, `GEMINI_API_KEY`, …) | Local mode only: lets agents run in development without a saved template. |
 | `GITHUB_TOKEN`, `FORMIC_PASSWORD` | Local mode only: the one GitHub credential, and a shared password. |
 
 ```bash
@@ -51,8 +52,8 @@ With a GitHub App configured, everyone signs in with GitHub. Each person:
 - **picks repositories** from the ones they installed the app on. Each gets
   its own board, private to them. Two people on the same repository get two
   boards.
-- **adds their own keys** in Settings: E2B for sandboxes, Anthropic for the
-  agents. A key on a saved agent overrides the Anthropic one.
+- **adds their sandbox key** (E2B) in Settings. AI provider keys live on
+  each agent template instead (see Agents per column).
 - **pushes as themselves.** Agents use the person's GitHub App token, which
   only reaches repositories where they installed the app, and refreshes on
   its own. The server's `GITHUB_TOKEN` is never lent to a signed-in user.
@@ -73,25 +74,62 @@ Create one at https://github.com/settings/apps/new (or under your org):
 - **Webhook:** active, `https://<your-app>/api/webhooks/github`, with a
   secret that goes in `GITHUB_WEBHOOK_SECRET`. One webhook serves every
   repository the app is installed on.
-- **Repository permissions:** Contents and Pull requests read and write;
-  Checks, Commit statuses and Actions read.
+- **Repository permissions:** Contents, Pull requests, Actions, Secrets and
+  Workflows read and write; Checks and Commit statuses read. Actions,
+  Secrets and Workflows are for CLI agents (below).
+  After changing permissions on an existing app, each installation has to
+  accept them (GitHub emails the owner, or see the app's installation page).
 - **Events:** Check run, Check suite, Workflow run, Pull request.
 - Generate a client secret. No private key is needed.
 
 ## Agents per column
 
-Each column's header has an agent selector. By default a column runs its
-built-in agent (Product, Architect, Coder, Reviewer, PM). Pick a saved agent
-instead, edit one with the pencil, or make a new one with **New agent…**: a
-name, a Claude model, an optional API key of its own, and a prompt that
-starts from the built-in one. Agents are saved once and can run any column
-on any board. For the Coder and Reviewer, the platform's coding rules (stay
-in the file scope, no git) are appended to whatever the prompt says.
+Each column's header has an agent menu. An agent is a template: a name, an
+AI provider, that provider's API key, a model, and a prompt that starts from
+the column's built-in one. Templates are saved once and can run any column
+on any board, so one board can use DeepSeek for Product, Gemini for the
+Architect, and Claude for the Coder.
 
-A column runs for real as soon as there is a key to run it on: the saved
-agent's own, then the board owner's from Settings, then the server's
-`ANTHROPIC_API_KEY` if set. With none, it runs the mock. Keys are encrypted
-at rest and never sent back to the browser.
+Providers: Anthropic, OpenAI, Google Gemini, DeepSeek, OpenRouter and Groq.
+Claude runs on Anthropic's own API; the rest share OpenAI's format, so
+adding another is one entry in `src/lib/llm/providers.ts`. The model list in
+the editor is fetched live from the provider with the key you entered.
+
+Signed in with GitHub, a column with no agent does not run: its cards stop
+and say to pick one. No key is ever used that the board's owner did not put
+on a template. For the Coder and Reviewer, the platform's coding rules (stay
+in the file scope, no git) are appended to whatever the prompt says. Keys
+are encrypted at rest and never sent back to the browser.
+
+In local mode, a column with no agent runs Claude on the server's
+`ANTHROPIC_API_KEY`, or the mock agents without one.
+
+### CLI agents on your own plan
+
+In Progress and In Review can also run a coding CLI people already pay for,
+instead of an API key:
+
+| Agent | Credential | How to get it |
+| --- | --- | --- |
+| Claude Code | Claude Pro, Max, Team or Enterprise token | `claude setup-token` on your computer. Lasts a year. |
+| Codex | ChatGPT sign-in, or an OpenAI key | `codex login`, then paste `~/.codex/auth.json`. |
+| Gemini CLI | Gemini API key (free tier works) | https://aistudio.google.com/apikey |
+
+They run in the repository's own GitHub Actions, not on Formic's server:
+
+1. The first time, Formic opens a pull request adding
+   `.github/workflows/formic-agent.yml`. A person merges it once.
+2. Each run, Formic stores the credential as a repository secret and starts
+   the workflow. The agent works on a fresh checkout and pushes to a
+   `formic-staging/` branch.
+3. When the run finishes (the Workflow run webhook), Formic checks the
+   change against the ticket's file scope, fast-forwards the ticket's branch
+   to it, deletes the staging branch, and opens the pull request. CI, fixes
+   and the merge go through the same loop as every other agent.
+
+Nothing the agent does reaches a real branch before the scope check. Formic
+never force-pushes, and the only branches it deletes are its own
+`formic-staging/` ones.
 
 ## Deploying on Vercel
 
@@ -149,6 +187,7 @@ src/lib/
   agents/            Ports, mocks, Anthropic implementations, pipelines
   coder/             Checkout, commit, push, pull request (PROT-06)
   review/            Webhook, fix-or-merge loop, merge lane (PROT-07)
+  runner/            CLI agents in the repository's GitHub Actions
   vcs/               GitHub REST client, and a mock of it
   sandbox/           Provider interface; local and E2B
   events/            Pub/sub with a durable tail

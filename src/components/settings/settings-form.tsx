@@ -18,12 +18,10 @@ export function SettingsForm({
   account,
   installUrl,
   e2b,
-  anthropic,
 }: {
   account: Account;
   installUrl: string | null;
   e2b: KeyState;
-  anthropic: KeyState;
 }) {
   return (
     <div className="bg-cream min-h-dvh">
@@ -73,23 +71,19 @@ export function SettingsForm({
 
         <KeyField
           field="e2bKey"
-          title="E2B"
-          blurb="The sandboxes your coding agents work in."
+          title="Sandbox (E2B)"
+          blurb="The cloud machines your coding agents work in, whichever AI provider they use."
           getFrom="https://e2b.dev/dashboard"
           getFromLabel="e2b.dev/dashboard → API Keys"
           placeholder="e2b_…"
           state={e2b}
         />
 
-        <KeyField
-          field="anthropicKey"
-          title="Anthropic"
-          blurb="Runs the built-in agents, and any saved agent without a key of its own."
-          getFrom="https://console.anthropic.com/settings/keys"
-          getFromLabel="console.anthropic.com → API Keys"
-          placeholder="sk-ant-…"
-          state={anthropic}
-        />
+        <p className="text-muted px-1 text-[12px] leading-[1.5]">
+          AI provider keys live on each agent, not here: pick or create one from
+          a column&apos;s agent menu on the board, and give it the key for its
+          provider.
+        </p>
       </main>
     </div>
   );
@@ -115,7 +109,7 @@ function KeyField({
   placeholder,
   state,
 }: {
-  field: "e2bKey" | "anthropicKey";
+  field: "e2bKey";
   title: string;
   blurb: string;
   getFrom: string;
@@ -139,13 +133,13 @@ function KeyField({
     }).catch(() => null);
     setBusy(false);
     const body = (await res?.json().catch(() => null)) as
-      | { error?: string; e2bKeyHint?: string | null; anthropicKeyHint?: string | null }
+      | { error?: string; e2bKeyHint?: string | null }
       | null;
     if (!res?.ok) {
       setMessage({ ok: false, text: body?.error ?? "That did not save. Try again." });
       return;
     }
-    const saved = field === "e2bKey" ? body?.e2bKeyHint : body?.anthropicKeyHint;
+    const saved = body?.e2bKeyHint;
     setHint(saved ?? null);
     setEditing(!saved);
     setValue("");
@@ -154,7 +148,7 @@ function KeyField({
 
   const fallback = state.serverFallback
     ? "Without one, runs use the server's key."
-    : "Without one, these agents can't run.";
+    : "Without one, coding agents can't run.";
 
   return (
     <Section title={title}>

@@ -1,6 +1,7 @@
 import type { Prd } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { Workspace } from "@/lib/sandbox/workspace";
+import type { ProviderId } from "@/lib/llm/providers";
 
 /**
  * The agent boundary. Every pipeline is reachable through one of these, and
@@ -31,6 +32,8 @@ export interface AgentContext {
  * built-in choice: the pipeline's model, its brief, the server's API key.
  */
 export interface AgentConfig {
+  /** Which provider runs it. Unset means Claude, the built-in default. */
+  provider?: ProviderId;
   model?: string;
   /** Replaces the built-in brief. Coding rules are still appended. */
   brief?: string;

@@ -89,9 +89,18 @@ export function requestShape(
     task_budget?: { type: "tokens"; total: number };
   };
 } {
-  // Unknown ids are treated like the default model: the pipelines' own
-  // choices are all in the table, so this only matters for stale presets.
-  const m = agentModel(model) ?? AGENT_MODELS[0]!;
+  // A model outside the table, such as an older Claude picked from the live
+  // list, gets the plainest request: every Claude model accepts that, while
+  // adaptive thinking or effort on a model without them is a 400.
+  const m: AgentModel = agentModel(model) ?? {
+    id: model,
+    label: model,
+    note: "",
+    adaptiveThinking: false,
+    effort: false,
+    taskBudget: false,
+    refusalFallbacks: false,
+  };
   const betas: string[] = [];
   const outputConfig: {
     effort?: Effort;

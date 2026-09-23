@@ -23,3 +23,12 @@ describe("requestShape", () => {
     expect(requestShape("claude-fable-5-1").fallbacks).toBe("default");
   });
 });
+
+describe("a model outside the table", () => {
+  it("gets the plainest request, which every Claude model accepts", () => {
+    expect(requestShape("claude-3-5-haiku-latest", { effort: "high", taskBudgetTokens: 1 })).toEqual({
+      betas: [],
+      outputConfig: {},
+    });
+  });
+});

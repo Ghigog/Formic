@@ -155,6 +155,9 @@ model Ticket {
   prUrl         String?
   blockedReason String?
   attempts      Int     @default(0)
+  /// The GitHub Actions run a CLI agent is doing for this ticket, if any.
+  /// Only that run's result is taken; any other is stale.
+  runnerJob     String?
 
   costCents Float @default(0)
   tokensIn  Int   @default(0)

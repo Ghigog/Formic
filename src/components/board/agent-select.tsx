@@ -9,6 +9,12 @@ import {
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { modelLabel } from "@/lib/agents/models";
+import { CLI_COLUMNS, provider as providerInfo, shortModelName } from "@/lib/llm/providers";
+
+/** "Sonnet 5" for a known Claude model, the bare id for anything else. */
+function modelName(model: string): string {
+  return shortModelName(modelLabel(model));
+}
 
 export interface ColumnAgentControls {
   presets: AgentPreset[];
@@ -34,6 +40,9 @@ export function AgentSelect({
   const [error, setError] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const role = `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
+  // CLI agents write code in GitHub Actions; elsewhere they have nothing to do.
+  const codes = (CLI_COLUMNS as readonly ColumnId[]).includes(column);
+  const usable = presets.filter((p) => codes || providerInfo(p.provider)?.kind !== "cli");
 
   useEffect(() => {
     if (!open) return;
@@ -76,10 +85,14 @@ export function AgentSelect({
       >
         <AgentIcon />
         <span className="text-ink min-w-0 flex-1 truncate font-medium">
-          {selected ? selected.name : role}
+          {selected ? selected.name : "Choose an agent"}
         </span>
         <span className="text-muted shrink-0 font-mono text-[10px]">
-          {selected ? modelLabel(selected.model) : "Built-in"}
+          {selected
+            ? selected.model
+              ? modelName(selected.model)
+              : (providerInfo(selected.provider)?.label ?? selected.provider).split(" (")[0]
+            : role}
         </span>
         <Chevron />
       </button>
@@ -98,13 +111,13 @@ export function AgentSelect({
             onClick={() => void pick(null)}
           >
             <span className="min-w-0 flex-1">
-              <span className="text-ink block truncate font-medium">{role}</span>
-              <span className="text-muted block text-[10px]">Built-in</span>
+              <span className="text-ink block truncate font-medium">No agent</span>
+              <span className="text-muted block text-[10px]">Cards here wait until you pick one</span>
             </span>
             {!selected && <Check />}
           </button>
 
-          {presets.map((p) => (
+          {usable.map((p) => (
             <div key={p.id} className="group flex items-center">
               <button
                 type="button"
@@ -116,8 +129,8 @@ export function AgentSelect({
                 <span className="min-w-0 flex-1">
                   <span className="text-ink block truncate font-medium">{p.name}</span>
                   <span className="text-muted block font-mono text-[10px]">
-                    {modelLabel(p.model)}
-                    {p.hasKey ? ` · key ••${p.keyHint ?? ""}` : ""}
+                    {providerInfo(p.provider)?.label ?? p.provider}
+                    {p.model ? ` · ${modelName(p.model)}` : ""}
                   </span>
                 </span>
                 {selected?.id === p.id && <Check />}

@@ -14,7 +14,8 @@ import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { type CheckSummary, mergeNeedsPromotion, vcs } from "@/lib/vcs";
 import { inMergeLane, inTicketLane } from "./lane";
-import { agentFor, modelFor } from "@/lib/agents/presets";
+import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
+import { cliPrompt, startCliRun } from "@/lib/runner/runner";
 
 /**
  * PROT-07. CI results drive a fix-or-merge loop.
@@ -333,6 +334,10 @@ async function fixTicket(
   red: CheckSummary[],
 ): Promise<void> {
   const repo = repository();
+  // A CLI agent is already fixing this head in GitHub Actions. More reports
+  // of the same red checks are not a reason to start another.
+  if (ticket.runnerJob) return;
+
   const attempt = ticket.attempts + 1;
   const names = red.map((c) => c.name).join(", ");
 
@@ -374,6 +379,25 @@ async function fixTicket(
     epicId: ticket.epicId,
     ticketId: ticket.id,
   });
+
+  const cli = await cliAgentFor(projectId, "in_review");
+  if (cli) {
+    await startCliRun({
+      projectId,
+      ticket,
+      mode: "fix",
+      agent: cli,
+      from: ticket.branchName,
+      prompt: cliPrompt(cli, "fix", ticket, {
+        checks: logs,
+        attempt,
+        maxAttempts: MAX_FIX_ATTEMPTS,
+      }),
+      run,
+      stalledIn: "in_review",
+    });
+    return;
+  }
 
   const checkout = await openCheckout({
     projectId,

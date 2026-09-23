@@ -20,13 +20,16 @@ import type {
   ShowcaseAgent,
   Usage,
 } from "./ports";
-import { type Prd, fileScopeSchema, prdSchema } from "@/lib/domain/entities";
-import { validateDag } from "@/lib/domain/dag";
-import { describeProblems } from "@/lib/domain/problems";
-import { normalizeScope } from "@/lib/domain/scope";
+import { type Prd, prdSchema } from "@/lib/domain/entities";
 import { estimateCostCents } from "@/lib/budget/limits";
 import { env } from "@/lib/secrets/env";
+import { authMode } from "@/lib/auth/session";
 import { ARCHITECT_BRIEF, PRODUCT_BRIEF, SHOWCASE_BRIEF } from "./prompts";
+import {
+  MAX_DECOMPOSITION_ATTEMPTS,
+  checkDecomposition,
+  decompositionSchema,
+} from "./decomposition";
 import { requestShape } from "./models";
 
 /**
@@ -55,9 +58,11 @@ const clients = new Map<string, Anthropic>();
 
 /** A preset's own key, or the server's. */
 export function anthropicClient(apiKey?: string | null): Anthropic {
-  const key = apiKey || env().ANTHROPIC_API_KEY;
+  // The server's key is for local development only. Signed in with GitHub,
+  // an agent runs on the key its template carries or not at all.
+  const key = apiKey || (authMode() === "local" ? env().ANTHROPIC_API_KEY : undefined);
   if (!key) {
-    throw new Error("No Anthropic API key. Add one in Settings, or on this agent.");
+    throw new Error("This agent has no Anthropic API key. Edit it and add one.");
   }
   let c = clients.get(key);
   if (!c) {
@@ -200,23 +205,6 @@ export class AnthropicProductAgent implements ProductAgent {
   }
 }
 
-const draftTicketSchema = z.object({
-  key: z.string().describe('Short stable key, e.g. "T-1".'),
-  title: z.string(),
-  description: z.string(),
-  acceptanceCriteria: z.array(z.string()).min(1),
-  fileScope: fileScopeSchema,
-  size: z.enum(["S", "M", "L", "XL"]),
-  dependsOn: z.array(z.string()),
-});
-
-const decompositionSchema = z.object({
-  tickets: z.array(draftTicketSchema).min(2).max(12),
-});
-
-/** Attempts before the Architect Agent gives up and asks for a human. */
-const MAX_DECOMPOSITION_ATTEMPTS = 3;
-
 export class AnthropicArchitectAgent implements ArchitectAgent {
   constructor(private readonly config: AgentConfig = {}) {}
 
@@ -293,52 +281,18 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         .map((b) => b.text)
         .join("");
 
-      let tickets: DraftTicket[];
+      let raw: unknown;
       try {
-        const parsed = decompositionSchema.parse(JSON.parse(text));
-        tickets = parsed.tickets.map((t) => ({
-          ...t,
-          fileScope: normalizeScope(t.fileScope),
-        }));
-      } catch (e) {
-        messages.push(
-          { role: "assistant", content: text },
-          {
-            role: "user",
-            content: `That response could not be read as the required shape: ${
-              e instanceof Error ? e.message : String(e)
-            }\n\nReturn the same decomposition in the required format.`,
-          },
-        );
-        continue;
+        raw = JSON.parse(text);
+      } catch {
+        raw = null;
       }
-
-      // The model is not trusted to get the graph right. It is validated here,
-      // and a failure is fed back as a correction rather than persisted.
-      const validation = validateDag(
-        tickets.map((t) => ({
-          key: t.key,
-          dependsOn: t.dependsOn,
-          fileScope: t.fileScope,
-        })),
-      );
-
-      if (validation.ok) {
-        return { ok: true, value: tickets, usage: total };
-      }
+      const checked = checkDecomposition(raw);
+      if (checked.ok) return { ok: true, value: checked.tickets, usage: total };
 
       messages.push(
         { role: "assistant", content: text },
-        {
-          role: "user",
-          content: [
-            "That decomposition is not safe to run. Problems:",
-            "",
-            describeProblems(validation.problems),
-            "",
-            "Return a corrected decomposition in the same format.",
-          ].join("\n"),
-        },
+        { role: "user", content: checked.correction },
       );
     }
 

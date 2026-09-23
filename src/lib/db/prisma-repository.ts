@@ -1,6 +1,7 @@
 import "server-only";
 
 import { normalizeRepo } from "@/lib/secrets/repo";
+import { isProviderId } from "@/lib/llm/providers";
 
 import { prisma } from "./client";
 import type {
@@ -567,6 +568,7 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const data = {
       name: record.name,
+      provider: record.provider,
       model: record.model,
       prompt: record.prompt,
       ...(record.apiKeyCipher !== undefined
@@ -653,6 +655,7 @@ type TicketRow = {
   prUrl: string | null;
   blockedReason: string | null;
   attempts: number;
+  runnerJob: string | null;
   epic: { projectId: string };
 };
 
@@ -685,6 +688,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     blockedReason: row.blockedReason,
     attempts: row.attempts,
     summary: row.summary,
+    runnerJob: row.runnerJob,
   };
 }
 
@@ -698,6 +702,7 @@ function ownerWhere(scope: OwnerScope) {
 function toPreset(row: {
   id: string;
   ownerId: string | null;
+  provider: string;
   name: string;
   model: string;
   prompt: string;
@@ -708,7 +713,8 @@ function toPreset(row: {
     id: row.id,
     ownerId: row.ownerId,
     name: row.name,
-    provider: "anthropic",
+    // Rows from before providers existed default to Claude in the schema.
+    provider: isProviderId(row.provider) ? row.provider : "anthropic",
     model: row.model,
     prompt: row.prompt,
     hasKey: row.apiKeyCipher !== null,
