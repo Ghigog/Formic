@@ -346,3 +346,30 @@
     transition: none;
   }
 }
+
+/*
+ * Ants on the lifecycle stepper: a line of dots marching out of the stage an
+ * agent is working on, toward the next one. Clay, the colour of live work.
+ */
+.ant-trail {
+  height: 3px;
+  background-image: radial-gradient(circle, var(--clay) 1.1px, transparent 1.6px);
+  background-size: 7px 3px;
+  background-repeat: repeat-x;
+  animation: ant-march 0.9s linear infinite;
+}
+
+@keyframes ant-march {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 7px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ant-trail {
+    animation: none;
+  }
+}

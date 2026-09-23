@@ -17,6 +17,7 @@ import {
   canUserMove,
   columnFor,
   isDraggable,
+  statusForUserDrop,
 } from "@/lib/domain/status";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import { byPosition } from "@/lib/ordering";
@@ -144,10 +145,17 @@ export function Board({
       });
 
       setError(null);
+      // The status the server will give it, so the card renders in the
+      // column it was dropped in: the column is derived from status, and the
+      // old one sent it straight back until the server answered.
+      const depsMet = card.dependsOn.every(
+        (id) => live.find((c) => c.id === id)?.status === "merged",
+      );
       setOptimistic((prev) => [
         ...prev.filter((c) => c.id !== card.id),
         {
           ...card,
+          status: to === from ? card.status : statusForUserDrop(to, depsMet),
           position,
           detached,
           stalledIn: to === from ? card.stalledIn : null,
@@ -174,7 +182,7 @@ export function Board({
 
       setOptimistic((prev) => prev.filter((c) => c.id !== card.id));
     },
-    [byColumn, collapsed, onTransition],
+    [byColumn, collapsed, live, onTransition],
   );
 
   const onDragEnd = useCallback(

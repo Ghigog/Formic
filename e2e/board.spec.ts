@@ -245,3 +245,24 @@ test("the assistant pulls down from the top bar and rolls back up", async ({ pag
   await expect(shade).toHaveAttribute("data-open", "false");
   await expect(shade).toBeHidden();
 });
+
+test("a dropped card stays where it was dropped while the server answers", async ({ page }) => {
+  const [first] = await cardIds(page, "Backlog");
+  expect(first, "the demo board should start with a card in Backlog").toBeTruthy();
+
+  await withCardReturned(page, first!, async () => {
+    // Hold the answer back, so the gap between drop and reply is visible.
+    await page.route("**/api/transitions", async (r) => {
+      await new Promise((res) => setTimeout(res, 1200));
+      await r.continue().catch(() => undefined);
+    });
+    const drag = dragCardTo(page, first!, "To Do");
+    await page.waitForRequest("**/api/transitions");
+    for (let i = 0; i < 4; i++) {
+      expect(await columnOf(page, first!)).toBe("To Do");
+      await page.waitForTimeout(200);
+    }
+    await drag;
+    await page.unrouteAll({ behavior: "wait" });
+  });
+});
