@@ -171,6 +171,10 @@ model Ticket {
   runnerJob     String?
   /// The GitHub issue that tracks this ticket, a sub-issue of its epic's.
   issueNumber   Int?
+  /// The estimate on the Fibonacci scale, 1 to 13.
+  storyPoints   Int?
+  /// The steps the agent is working the ticket through: [{ step, status }].
+  plan          Json?
 
   costCents Float @default(0)
   tokensIn  Int   @default(0)

@@ -145,6 +145,7 @@ export async function applyTickets(
       acceptanceCriteria: t.acceptanceCriteria,
       fileScope: t.fileScope,
       size: t.size,
+      storyPoints: t.storyPoints ?? null,
       position: positionForIndex(positions, cursor++),
       dependsOnKeys: t.dependsOn,
     })),

@@ -164,6 +164,7 @@ describe("structured answers from OpenAI-format providers", () => {
       acceptanceCriteria: [{ given: "the board", when: "it runs", then: "a" }],
       fileScope: ["src/lib"],
       size: "S",
+      storyPoints: 3,
       dependsOn,
     });
     const sent = fakeProvider([

@@ -136,6 +136,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["prisma"],
         size: "S",
+        storyPoints: 2,
         dependsOn: [],
       },
       {
@@ -148,6 +149,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["src/app/api"],
         size: "M",
+        storyPoints: 5,
         dependsOn: ["T-1"],
       },
       {
@@ -160,6 +162,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["src/components/feature"],
         size: "M",
+        storyPoints: 5,
         dependsOn: ["T-1"],
       },
       {
@@ -169,6 +172,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         acceptanceCriteria: ["Tests pass", "Edge cases covered"],
         fileScope: ["src/lib/feature"],
         size: "S",
+        storyPoints: 3,
         dependsOn: ["T-2", "T-3"],
       },
     ];

@@ -24,6 +24,7 @@ import type {
   AgentRunStatus,
   BoardCard,
   ColumnAgents,
+  PlanStep,
 } from "@/lib/domain/entities";
 import { type ColumnId, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
@@ -51,6 +52,7 @@ interface TicketExtras {
   summary: string | null;
   runnerJob: string | null;
   issueNumber: number | null;
+  plan?: PlanStep[];
 }
 
 interface Store {
@@ -292,6 +294,7 @@ export class MemoryRepository implements Repository {
         position: input.position,
         epicId: input.epicId,
         size: input.size,
+        storyPoints: input.storyPoints ?? null,
         agentRole: null,
         model: null,
         fileScope: normalizeScope(input.fileScope),
@@ -427,6 +430,18 @@ export class MemoryRepository implements Repository {
       .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
   }
 
+  async ticketEvents(projectId: string, ticketId: string, types: string[], limit = 200) {
+    return store()
+      .events.filter(
+        (e) =>
+          e.projectId === projectId &&
+          types.includes(e.type) &&
+          (e.payload as { ticketId?: unknown } | null)?.ticketId === ticketId,
+      )
+      .slice(-limit)
+      .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
+  }
+
   async latestEventSeq(projectId: string): Promise<number> {
     const mine = store().events.filter((e) => e.projectId === projectId);
     return mine.at(-1)?.seq ?? 0;
@@ -480,6 +495,7 @@ export class MemoryRepository implements Repository {
     if (update.summary !== undefined) extras.summary = update.summary;
     if (update.runnerJob !== undefined) extras.runnerJob = update.runnerJob;
     if (update.issueNumber !== undefined) extras.issueNumber = update.issueNumber;
+    if (update.plan !== undefined) extras.plan = update.plan;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
@@ -674,6 +690,8 @@ function toDetail(
     summary: extras?.summary ?? null,
     runnerJob: extras?.runnerJob ?? null,
     issueNumber: extras?.issueNumber ?? null,
+    storyPoints: card.storyPoints ?? null,
+    plan: extras?.plan ?? [],
   };
 }
 

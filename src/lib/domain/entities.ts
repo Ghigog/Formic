@@ -42,6 +42,21 @@ export type CardKind = (typeof CARD_KINDS)[number];
 export const TICKET_SIZES = ["S", "M", "L", "XL"] as const;
 export type TicketSize = (typeof TICKET_SIZES)[number];
 
+/** Story points: the Fibonacci scale from 1 to 13. */
+export const STORY_POINTS = [1, 2, 3, 5, 8, 13] as const;
+export type StoryPoints = (typeof STORY_POINTS)[number];
+
+/** One step of the plan an agent works a ticket through. */
+export interface PlanStep {
+  step: string;
+  status: "pending" | "in_progress" | "done";
+}
+
+export const planStepSchema = z.object({
+  step: z.string().trim().min(1).max(300),
+  status: z.enum(["pending", "in_progress", "done"]),
+});
+
 /** A directory prefix. Validated further by normalizeScopePath. */
 export const filePathSchema = z
   .string()
@@ -155,6 +170,8 @@ export interface BoardCard {
   /** A ticket the user pulled out of its epic's group. Renders on its own. */
   detached?: boolean;
   size: TicketSize | null;
+  /** Tickets only: the estimate, 1 to 13. Null when none was given. */
+  storyPoints?: number | null;
   agentRole: AgentRole | null;
   model: string | null;
   fileScope: string[];

@@ -66,6 +66,8 @@ export interface DraftTicket {
   acceptanceCriteria: string[];
   fileScope: string[];
   size: "S" | "M" | "L" | "XL";
+  /** 1, 2, 3, 5, 8 or 13. */
+  storyPoints?: number;
   dependsOn: string[];
 }
 

@@ -21,6 +21,7 @@ const spec: TicketSpec = {
   ],
   fileScope: ["src/app/api/export/"],
   size: "S",
+  storyPoints: 3,
   dependsOn: [],
 };
 

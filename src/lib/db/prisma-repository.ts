@@ -27,7 +27,10 @@ import type {
   BoardCard,
   AgentPreset,
   ColumnAgents,
+  PlanStep,
 } from "@/lib/domain/entities";
+import { planStepSchema } from "@/lib/domain/entities";
+import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -221,6 +224,7 @@ export class PrismaRepository implements Repository {
       epicId: t.epicId,
       detached: t.detached,
       size: t.size,
+      storyPoints: t.storyPoints,
       agentRole: t.runs[0]?.role ?? null,
       model: t.runs[0]?.model ?? null,
       fileScope: t.fileScope,
@@ -289,6 +293,7 @@ export class PrismaRepository implements Repository {
             acceptanceCriteria: input.acceptanceCriteria,
             fileScope: normalizeScope(input.fileScope),
             size: input.size,
+            storyPoints: input.storyPoints ?? null,
             position: input.position,
             status: input.dependsOnKeys.length === 0 ? "ready" : "waiting",
             stage: 3,
@@ -323,6 +328,7 @@ export class PrismaRepository implements Repository {
         position: t.position,
         epicId: t.epicId,
         size: t.size,
+        storyPoints: t.storyPoints,
         agentRole: null,
         model: null,
         fileScope: t.fileScope,
@@ -480,6 +486,20 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async ticketEvents(projectId: string, ticketId: string, types: string[], limit = 200) {
+    const rows = await prisma().event.findMany({
+      where: { projectId, type: { in: types }, payload: { path: ["ticketId"], equals: ticketId } },
+      orderBy: { seq: "desc" },
+      take: limit,
+    });
+    return rows.reverse().map((r) => ({
+      seq: Number(r.seq),
+      type: r.type,
+      payload: r.payload,
+      at: r.at,
+    }));
+  }
+
   async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
     const db = prisma();
     const row = await db.ticket.findUnique({
@@ -503,12 +523,13 @@ export class PrismaRepository implements Repository {
 
   async updateTicket(ticketId: string, update: TicketUpdate): Promise<void> {
     const db = prisma();
-    const { costCents, tokensIn, tokensOut, ...rest } = update;
+    const { costCents, tokensIn, tokensOut, plan, ...rest } = update;
 
     await db.ticket.update({
       where: { id: ticketId },
       data: {
         ...rest,
+        ...(plan !== undefined ? { plan: plan as never } : {}),
         // A merged ticket joins its epic's group in Done, wherever it sat.
         ...(rest.status === "merged" ? { detached: false } : {}),
         // Spend accumulates across a ticket's runs; everything else is a set.
@@ -754,6 +775,8 @@ type TicketRow = {
   attempts: number;
   runnerJob: string | null;
   issueNumber: number | null;
+  storyPoints: number | null;
+  plan: unknown;
   epic: { projectId: string };
 };
 
@@ -785,6 +808,12 @@ function toAssistantMessage(row: {
   };
 }
 
+/** A stored plan, read defensively: it is JSON an agent wrote. */
+function planOf(value: unknown): PlanStep[] {
+  const parsed = z.array(planStepSchema).safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
+
 function toTicketDetail(row: TicketRow): TicketDetail {
   return {
     id: row.id,
@@ -806,6 +835,8 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     summary: row.summary,
     runnerJob: row.runnerJob,
     issueNumber: row.issueNumber,
+    storyPoints: row.storyPoints,
+    plan: planOf(row.plan),
   };
 }
 
