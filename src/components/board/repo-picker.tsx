@@ -193,8 +193,15 @@ export function RepoPicker({
             {repos === null ? (
               <p className="text-muted px-2.5 py-2 text-[12px]">Loading…</p>
             ) : fromGitHub.length === 0 ? (
-              <p className="text-muted px-2.5 py-2 text-[12px]">
-                {notice ?? (q ? "No match." : "Nothing else to add.")}
+              <p className="text-muted px-2.5 py-2 text-[12px] leading-[1.5]">
+                {notice ??
+                  (repos.length === 0 && install
+                    ? "Formic isn't installed on any of your repositories yet. Give it access below, then pick one here."
+                    : q && install
+                      ? "Not found. If it's yours, give Formic access to it below."
+                      : q
+                        ? "No match."
+                        : "Nothing else to add.")}
               </p>
             ) : (
               fromGitHub.map((r) => (

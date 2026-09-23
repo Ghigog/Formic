@@ -57,7 +57,9 @@ export async function GET() {
       buildId,
       database,
       ...(databaseError ? { databaseError } : {}),
-      agents: useMockAgents() ? "mock" : "anthropic",
+      // Signed in with GitHub, agents run on each person's own Anthropic key,
+      // so the server having none does not make them mocks.
+      agents: authMode() === "github" ? "per-user" : useMockAgents() ? "mock" : "anthropic",
       sandbox: config.SANDBOX_PROVIDER,
       // Signed in with GitHub, each board uses its owner's token.
       github: authMode() === "github" ? "per-user" : usingMockVcs() ? "mock" : "live",
