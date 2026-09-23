@@ -6,8 +6,8 @@ import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
-import { completeCliRun } from "@/lib/runner/runner";
-import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runnerWorkflow } from "@/lib/runner/workflow";
+import { collectCliAsk, completeCliRun } from "@/lib/runner/runner";
+import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle, runnerWorkflow } from "@/lib/runner/workflow";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
 
@@ -239,11 +239,66 @@ describe("the assistant on a CLI plan", () => {
     );
     await completeCliRun(PROJECT, { job: dispatch.job!, mode: "ask", conclusion: "success", url: null });
 
+    // Sent back once, with what was wrong, instead of dropped on the spot.
+    expect((await reload(pending.id)).status).toBe("pending");
+    const retry = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    expect(retry.job).not.toBe(dispatch.job);
+    expect(retry.prompt).toContain("Formic could not use your proposals");
+    expect(retry.prompt).toContain("Something broken");
+
+    // The second answer still has it wrong: now it is set aside.
+    await client.commitFile(
+      `${STAGING_PREFIX}${retry.job}`,
+      ANSWER_PATH,
+      JSON.stringify({
+        reply: "Here they are.",
+        proposals: [
+          {
+            summary: "Add the export tickets",
+            action: { type: "create_epic_with_tickets", title: "Export", summary: "s", tickets: TICKETS },
+          },
+          { summary: "Something broken", action: { type: "delete_everything" } },
+        ],
+      }),
+      "answer",
+    );
+    await completeCliRun(PROJECT, { job: retry.job!, mode: "ask", conclusion: "success", url: null });
+
     const done = await reload(pending.id);
     expect(done.status).toBe("done");
     expect(done.content).toContain("Here they are.");
     expect(done.content).toContain("could not use");
     expect(done.proposals.map((p) => p.summary)).toEqual(["Add the export tickets"]);
+  });
+
+  it("collects the answer from GitHub when the webhook never arrives", async () => {
+    await useAgent("claude-code");
+    const base = (await projectFor(PROJECT)).baseBranch;
+    const client = new MockVcsClient("acme/widgets");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    const pending = await ask("What tickets are there?");
+    await answer(PROJECT, pending.id);
+    const job = MockVcsClient.runner().dispatches.at(-1)!.inputs.job!;
+
+    // Still running on GitHub: nothing changes.
+    await collectCliAsk(PROJECT, pending.id);
+    expect((await reload(pending.id)).status).toBe("pending");
+
+    // Finished, with its answer on the staging branch, and no webhook.
+    await client.commitFile(`${STAGING_PREFIX}${job}`, ANSWER_PATH, '{"reply": "Three tickets."}', "a");
+    MockVcsClient.runner().runs.set(runTitle("ask", "assistant", job), {
+      status: "completed",
+      conclusion: "success",
+      url: "https://github.com/acme/widgets/actions/runs/9",
+    });
+    vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ["Date"] });
+    try {
+      await collectCliAsk(PROJECT, pending.id);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "Three tickets." });
   });
 
   it("shows a plain-text answer as the reply", async () => {

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { launch } from "@/lib/agents/pipeline";
 import { answer } from "@/lib/assistant/turn";
+import { collectCliAsk } from "@/lib/runner/runner";
 import { currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
@@ -20,6 +21,15 @@ async function board() {
 
 async function state(projectId: string) {
   const repo = repository();
+  // An answer from GitHub Actions is collected here too, not only when the
+  // webhook arrives. Never fails the read.
+  for (const m of await repo.assistantMessages(projectId)) {
+    if (m.status === "pending" && m.runnerJob) {
+      await collectCliAsk(projectId, m.id).catch((e) =>
+        console.warn("[formic] could not check the assistant's run:", e),
+      );
+    }
+  }
   return {
     presetId: await repo.assistantAgent(projectId),
     messages: await repo.assistantMessages(projectId),

@@ -103,7 +103,7 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "You cannot change code or files. You can propose changes to the board, and each one happens only if the person approves it:",
     "- create_epic_with_tickets, for work that is already planned into tickets (a ticket list in the repository, a plan you agreed on). It lands in To Do.",
     "- create_backlog_item, for a request that still needs a PRD. The Product Agent writes one.",
-    "A ticket's fileScope lists the directories it may change, as prefixes from the repository root. Tickets that could run at the same time must not share a scope: make one depend on the other instead. Keys are short and stable, such as \"T-1\".",
+    "A ticket's fileScope lists the directories it may change, as prefixes from the repository root: 1 to 12 entries, so name directories such as \"src/renderer\" rather than every file in them. Tickets that could run at the same time must not share a scope: make one depend on the other instead. Keys are short and stable, such as \"T-1\".",
     "",
     "Answer in short, plain Markdown. After proposing, say in one line what you proposed.",
     "",
@@ -371,7 +371,44 @@ function cliPrompt(system: string, past: Array<{ role: "user" | "assistant"; con
 }
 
 /** A CLI agent's answer arrived, or its run failed. */
-export async function finishCliAnswer(messageId: string, answerText: string | null, failure?: string) {
+/** Asks a CLI agent again, with what was wrong with its proposals. */
+async function askAgain(
+  projectId: string,
+  messageId: string,
+  previous: string,
+  problems: string[],
+  attempt: number,
+): Promise<boolean> {
+  const agent = await assistantAgentFor(projectId);
+  if (agent.kind !== "cli") return false;
+  const all = await repository().assistantMessages(projectId);
+  const past = history(all.filter((m) => m.id !== messageId));
+  const system = await systemPrompt(projectId, agent.agent.brief);
+  const prompt = [
+    cliPrompt(system, past),
+    "",
+    "You answered this already, but Formic could not use your proposals:",
+    ...problems.map((p) => `- ${p}`),
+    "",
+    "Your previous answer:",
+    previous.slice(0, 20_000),
+    "",
+    "Fix the proposals and write the whole answer again, in the same format.",
+  ].join("\n");
+  await startCliAsk({ projectId, messageId, agent: agent.agent, prompt, attempt });
+  return true;
+}
+
+/** Tries a CLI agent gets to hand in proposals Formic can use. */
+const CLI_ANSWER_ATTEMPTS = 2;
+
+export async function finishCliAnswer(
+  messageId: string,
+  answerText: string | null,
+  failure?: string,
+  /** Where the answer came from, so a wrong proposal can be sent back once. */
+  from?: { projectId: string; attempt: number },
+) {
   if (failure || !answerText?.trim()) {
     await finish(messageId, { content: failure ?? "The agent finished without an answer.", status: "failed" });
     return;
@@ -395,6 +432,13 @@ export async function finishCliAnswer(messageId: string, answerText: string | nu
     const checked = checkAction(p.action);
     if (checked.ok) proposals.push({ summary: p.summary, action: checked.action, state: "proposed" });
     else dropped.push(`${p.summary}: ${checked.problem}`);
+  }
+  if (dropped.length && from && from.attempt < CLI_ANSWER_ATTEMPTS) {
+    const again = await askAgain(from.projectId, messageId, answerText, dropped, from.attempt + 1).then(
+      () => true,
+      () => false,
+    );
+    if (again) return;
   }
   const note = dropped.length
     ? `\n\n_Formic set aside ${dropped.length === 1 ? "a proposal" : `${dropped.length} proposals`} it could not use: ${dropped.join("; ")}_`

@@ -14,6 +14,7 @@ import {
   VcsError,
   type IssuePatch,
   type IssueRef,
+  type WorkflowRunRef,
 } from "./types";
 
 /**
@@ -337,6 +338,14 @@ export class GitHubClient implements VcsClient {
       ref,
       inputs,
     });
+  }
+
+  async findRun(file: string, title: string): Promise<WorkflowRunRef | null> {
+    const { data } = await this.request<{
+      workflow_runs: Array<{ display_title: string; status: string; conclusion: string | null; html_url: string }>;
+    }>("GET", `/actions/workflows/${encodeURIComponent(file)}/runs?event=workflow_dispatch&per_page=30`);
+    const run = data.workflow_runs.find((r) => r.display_title === title);
+    return run ? { status: run.status, conclusion: run.conclusion, url: run.html_url } : null;
   }
 
   async compare(base: string, head: string): Promise<Comparison> {

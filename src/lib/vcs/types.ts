@@ -76,6 +76,13 @@ export interface OpenPullRequestInput {
   body: string;
 }
 
+export interface WorkflowRunRef {
+  status: string;
+  /** Null until it completes. */
+  conclusion: string | null;
+  url: string;
+}
+
 export interface IssueRef {
   number: number;
   /** GitHub's internal id, which linking a sub-issue needs. */
@@ -128,6 +135,11 @@ export interface VcsClient {
   /** Stores an Actions secret, encrypted to the repository's key. */
   setSecret(name: string, value: string): Promise<void>;
   dispatchWorkflow(file: string, ref: string, inputs: Record<string, string>): Promise<void>;
+  /**
+   * A recent dispatched run of a workflow, found by its title. For when the
+   * webhook that reports it finishing never arrives.
+   */
+  findRun(file: string, title: string): Promise<WorkflowRunRef | null>;
   compare(base: string, head: string): Promise<Comparison>;
   /** Creates `branch` at `sha`, or fast-forwards it there. Never forces. */
   moveBranch(branch: string, sha: string): Promise<void>;

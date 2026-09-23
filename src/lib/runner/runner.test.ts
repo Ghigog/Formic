@@ -451,12 +451,15 @@ describe("the runner workflow", () => {
   });
 
   it("reports back as a runner signal, not as CI", () => {
+    // As GitHub sends it: a run's name is its run-name, not the workflow's.
+    const title = runTitle("implement", "T-1", "tkt--abcd1234");
     const signals = interpret("workflow_run", {
       action: "completed",
       workflow_run: {
         id: 7,
-        name: RUNNER_WORKFLOW_NAME,
-        display_title: runTitle("implement", "T-1", "tkt--abcd1234"),
+        name: title,
+        path: RUNNER_WORKFLOW_PATH,
+        display_title: title,
         conclusion: "success",
         html_url: "https://github.com/acme/widgets/actions/runs/7",
         head_sha: "deadbeef",
