@@ -239,6 +239,31 @@ describe("the assistant on a CLI plan", () => {
     );
     await completeCliRun(PROJECT, { job: dispatch.job!, mode: "ask", conclusion: "success", url: null });
 
+    // Sent back once, with what was wrong, instead of dropped on the spot.
+    expect((await reload(pending.id)).status).toBe("pending");
+    const retry = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    expect(retry.job).not.toBe(dispatch.job);
+    expect(retry.prompt).toContain("Formic could not use your proposals");
+    expect(retry.prompt).toContain("Something broken");
+
+    // The second answer still has it wrong: now it is set aside.
+    await client.commitFile(
+      `${STAGING_PREFIX}${retry.job}`,
+      ANSWER_PATH,
+      JSON.stringify({
+        reply: "Here they are.",
+        proposals: [
+          {
+            summary: "Add the export tickets",
+            action: { type: "create_epic_with_tickets", title: "Export", summary: "s", tickets: TICKETS },
+          },
+          { summary: "Something broken", action: { type: "delete_everything" } },
+        ],
+      }),
+      "answer",
+    );
+    await completeCliRun(PROJECT, { job: retry.job!, mode: "ask", conclusion: "success", url: null });
+
     const done = await reload(pending.id);
     expect(done.status).toBe("done");
     expect(done.content).toContain("Here they are.");

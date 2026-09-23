@@ -580,6 +580,8 @@ export async function startCliAsk(input: {
   messageId: string;
   agent: CliAgent;
   prompt: string;
+  /** A second attempt, after its proposals were sent back. */
+  attempt?: number;
 }): Promise<void> {
   const repo = repository();
   const project = await projectFor(input.projectId);
@@ -588,7 +590,7 @@ export async function startCliAsk(input: {
     client: vcs(project.repoFullName, creds.githubToken),
     baseBranch: project.baseBranch,
     agent: input.agent,
-    job: jobId(input.messageId, randomUUID().slice(0, 8)),
+    job: jobId(input.messageId, randomUUID().slice(0, 8), input.attempt ?? 1),
     mode: "ask",
     cardKey: "assistant",
     from: project.baseBranch,
@@ -658,7 +660,10 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   }
   const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
   await cleanUp();
-  await finishCliAnswer(message.id, answer);
+  await finishCliAnswer(message.id, answer, undefined, {
+    projectId,
+    attempt: attemptOfJob(result.job),
+  });
 }
 
 export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
