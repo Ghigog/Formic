@@ -74,9 +74,15 @@ function Chevron({ open }: { open: boolean }) {
 export function AmbientDrawer({
   stats,
   onStopAll,
+  bugsSquashed,
+  nest,
 }: {
   stats: AmbientStats;
   onStopAll?: () => void;
+  /** Bugs handed to the agents so far. Omitted, the bar does not count them. */
+  bugsSquashed?: number;
+  /** The colony's nest, at the bar's end. */
+  nest?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const busy = stats.activeSandboxes > 0;
@@ -131,12 +137,22 @@ export function AmbientDrawer({
         </span>
 
         <Divider />
-        <span className="text-drawer-muted font-mono text-[11px]">
-          queue {stats.queueDepth ?? 0} ·{" "}
-          {stats.mergeLockPr
-            ? `merge lock held by PR #${stats.mergeLockPr}`
-            : "merge lock free"}
+        <span
+          className="text-drawer-muted font-mono text-[11px]"
+          title={stats.mergeLockPr ? `Merge lock held by PR #${stats.mergeLockPr}` : "Merge lock free"}
+        >
+          {stats.queueDepth ?? 0} in merge queue
+          {stats.mergeLockPr ? ` · lock PR #${stats.mergeLockPr}` : ""}
         </span>
+
+        {bugsSquashed !== undefined && (
+          <>
+            <Divider />
+            <span className="text-drawer-muted font-mono text-[11px]">
+              {bugsSquashed === 1 ? "1 bug squashed" : `${bugsSquashed} bugs squashed`}
+            </span>
+          </>
+        )}
 
         <div className="flex-grow" />
 
@@ -163,6 +179,7 @@ export function AmbientDrawer({
           Terminal
           <Chevron open={open} />
         </button>
+        {nest}
       </div>
 
       {/* Mobile: icon and count only. */}
@@ -188,6 +205,7 @@ export function AmbientDrawer({
         >
           <Chevron open={open} />
         </button>
+        {nest}
       </div>
     </footer>
   );

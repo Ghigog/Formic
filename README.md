@@ -235,6 +235,13 @@ font in the app comes from the token layer in `src/app/globals.css`, which is
 lifted from `design/artboards/Main.html`; components reference tokens, never
 raw hex.
 
+`design/artboards/ColonyBoard.html` is the colony layer on top of the board:
+levels and points from merged story points, a heat multiplier for merges in
+quick succession, ants that walk out to running work, sound, and a timeline
+with a burndown and forecast. The score is derived from the board itself
+(`src/lib/colony/`); the browser only remembers each watched merge's
+multiplier, the bug style and the sound switch.
+
 ## Layout
 
 ```

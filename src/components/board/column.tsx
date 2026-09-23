@@ -50,6 +50,7 @@ export function Column({
   bare = false,
   collapsed: controlledCollapsed,
   onToggleCollapse,
+  accepts,
   agent,
   onOpen,
   onShowcase,
@@ -71,6 +72,11 @@ export function Column({
    */
   collapsed?: ReadonlySet<string>;
   onToggleCollapse?: (epicId: string) => void;
+  /**
+   * Whether this column would take the card being dragged. Drawn as a dashed
+   * edge under the pointer: terracotta for yes, crimson for no.
+   */
+  accepts?: (cardId: string) => boolean;
   /** Which agent works this column, and the controls to change it. */
   agent?: ColumnAgentControls;
   onOpen: (card: BoardCard) => void;
@@ -177,8 +183,12 @@ export function Column({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              "flex min-h-16 flex-1 flex-col overflow-x-hidden overflow-y-auto rounded-lg transition-colors [&>li:not(:last-child)]:mb-2.5",
-              snapshot.isDraggingOver && "bg-clay/8",
+              // Room around the cards for their lift, tilt and ants.
+              "-mx-2 flex min-h-16 flex-1 flex-col overflow-x-hidden overflow-y-auto rounded-lg px-2 pt-1.5 pb-3 transition-colors [&>li:not(:last-child)]:mb-2",
+              snapshot.isDraggingOver &&
+                (snapshot.draggingOverWith && accepts && !accepts(snapshot.draggingOverWith)
+                  ? "bg-crimson/5 outline-crimson outline-[1.5px] -outline-offset-[1.5px] outline-dashed"
+                  : "bg-terracotta/6 outline-terracotta outline-[1.5px] -outline-offset-[1.5px] outline-dashed"),
               limited && "opacity-50 grayscale",
             )}
           >
@@ -209,7 +219,9 @@ export function Column({
             )}
             {provided.placeholder}
             {items.length === 0 && !snapshot.isDraggingOver && (
-              <li className="text-muted px-0.5 py-2 text-[11px]">Nothing here.</li>
+              <li className="border-line-dashed text-muted flex h-[72px] shrink-0 items-center justify-center rounded-lg border border-dashed text-[11px]">
+                Nothing here.
+              </li>
             )}
           </ul>
         )}

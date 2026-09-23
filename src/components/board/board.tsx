@@ -1,13 +1,18 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
+import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  DragDropContext,
+  type DragStart,
+  type DragUpdate,
+  type DropResult,
+} from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { useCountdown } from "@/lib/hooks/use-countdown";
 import { Column, columnCount } from "./column";
 import { BoardHeader } from "./header";
-import { BacklogComposer } from "./composer";
-import type { ExtrasMap } from "./card";
+import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
+import { useColony } from "@/components/colony/colony";
 import type { AgentPreset, BoardCard, ColumnAgents } from "@/lib/domain/entities";
 import type { Account } from "./account-menu";
 import type { AssistantControls } from "./assistant";
@@ -41,9 +46,8 @@ export interface BoardProps {
   syncedLabel?: string;
   onOpenCard: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
+  /** Opens the capture dialog: Backlog's "New request" and the mobile CTA. */
   onNewItem: () => void;
-  /** Backlog's inline composer. Same destination as the header CTA. */
-  onCapture: (rawRequest: string) => Promise<void>;
   /**
    * The single trigger. Returns the server's verdict; a rejection rolls the
    * card back to where it came from.
@@ -73,7 +77,6 @@ export function Board({
   onOpenCard,
   onShowcase,
   onNewItem,
-  onCapture,
   onTransition,
   agents,
   account,
@@ -101,6 +104,9 @@ export function Board({
   }, []);
 
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const colony = useColony();
+  /** The column under a dragged card, for its sounds. Not state: a drag must not re-render the board. */
+  const dragOver = useRef<ColumnId | null>(null);
 
   // Server state wins whenever it changes; optimistic state only bridges the
   // gap between a drop and its response.
@@ -124,9 +130,6 @@ export function Board({
     return out;
   }, [live]);
 
-  const epics = live.filter((c) => c.kind === "epic");
-  const epicsDone = epics.filter((c) => c.status === "merged").length;
-
   /** `index` is the drag library's: among the destination's rendered rows. */
   const commit = useCallback(
     async (card: BoardCard, to: ColumnId, index: number) => {
@@ -134,6 +137,7 @@ export function Board({
       const verdict = canUserMove(from, to);
       if (!verdict.ok) {
         setError(verdict.reason);
+        colony?.reject(card.id, verdict.reason);
         return;
       }
 
@@ -178,18 +182,54 @@ export function Board({
         // because `live` falls through to server state.
         setOptimistic((prev) => prev.filter((c) => c.id !== card.id));
         setError(result.reason);
+        // After the card has snapped back, so the reason lands on it.
+        requestAnimationFrame(() => colony?.reject(card.id, result.reason));
         return;
       }
 
       setOptimistic((prev) => prev.filter((c) => c.id !== card.id));
     },
-    [byColumn, collapsed, live, onTransition],
+    [byColumn, collapsed, live, onTransition, colony],
+  );
+
+  /** Whether a column would take a card dragged out of `from`. */
+  const accepts = useCallback(
+    (from: ColumnId, to: ColumnId) => {
+      if (from === to) return true;
+      if (!canUserMove(from, to).ok) return false;
+      const until = agents?.presets.find((p) => p.id === agents.columns[to])?.limitedUntil;
+      return !until || new Date(until).getTime() <= Date.now();
+    },
+    [agents],
+  );
+
+  const onDragStart = useCallback(
+    (start: DragStart) => {
+      dragOver.current = start.source.droppableId as ColumnId;
+      colony?.sfx("pickup");
+    },
+    [colony],
+  );
+
+  const onDragUpdate = useCallback(
+    (update: DragUpdate) => {
+      const over = (update.destination?.droppableId as ColumnId | undefined) ?? null;
+      if (over === dragOver.current) return;
+      dragOver.current = over;
+      const from = update.source.droppableId as ColumnId;
+      if (over && over !== from) colony?.sfx(accepts(from, over) ? "hover" : "deny");
+    },
+    [accepts, colony],
   );
 
   const onDragEnd = useCallback(
     (result: DropResult) => {
+      dragOver.current = null;
       const { source, destination, draggableId } = result;
-      if (!destination) return;
+      if (!destination) {
+        colony?.sfx("drop");
+        return;
+      }
       if (
         destination.droppableId === source.droppableId &&
         destination.index === source.index
@@ -200,7 +240,31 @@ export function Board({
       if (!card) return;
       void commit(card, destination.droppableId as ColumnId, destination.index);
     },
-    [commit, live],
+    [commit, live, colony],
+  );
+
+  const epicsById = useMemo(
+    () => new Map(live.filter((c) => c.kind === "epic").map((c) => [c.id, c])),
+    [live],
+  );
+
+  /*
+   * A card's arrow: the one step forward a person may take it. Backlog to
+   * To Do for anything, To Do to In Progress for a ticket that is ready,
+   * and never into a column whose agent is out of usage.
+   */
+  const cardEnv = useMemo<CardEnv>(
+    () => ({
+      epics: epicsById,
+      nextFor: (card, column) => {
+        const to = NEXT_COLUMN[column];
+        if (!to || !isDraggable(card.status)) return null;
+        if (to === "in_progress" && (card.kind !== "ticket" || card.status !== "ready")) return null;
+        return accepts(column, to) ? to : null;
+      },
+      onAdvance: (card, to) => void commit(card, to, Number.MAX_SAFE_INTEGER),
+    }),
+    [epicsById, accepts, commit],
   );
 
   /*
@@ -232,8 +296,6 @@ export function Board({
         baseBranch={baseBranch}
         inSync={inSync}
         syncedLabel={syncedLabel}
-        epicsTotal={epics.length}
-        epicsDone={epicsDone}
         onNewItem={onNewItem}
         account={account}
         assistant={assistant}
@@ -281,8 +343,10 @@ export function Board({
         </div>
       )}
 
-      <DragDropContext onDragEnd={onDragEnd}>
+      <CardEnvContext.Provider value={cardEnv}>
+      <DragDropContext onDragStart={onDragStart} onDragUpdate={onDragUpdate} onDragEnd={onDragEnd}>
         <main
+          data-colony="board"
           className={cn(
             "relative flex min-h-0 flex-1",
             isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6",
@@ -296,6 +360,10 @@ export function Board({
               extras={extras}
               bare={isMobile}
               collapsed={collapsed[col]}
+              accepts={(cardId) => {
+                const card = live.find((c) => c.id === cardId);
+                return !card || accepts(columnFor(card.status, card.stalledIn), col);
+              }}
               onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
               agent={
                 agents && {
@@ -306,9 +374,7 @@ export function Board({
                 }
               }
               composer={
-                col === "backlog" ? (
-                  <BacklogComposer onSubmit={onCapture} />
-                ) : undefined
+                col === "backlog" ? <NewRequestButton onClick={onNewItem} /> : undefined
               }
               onOpen={onOpenCard}
               onShowcase={onShowcase}
@@ -343,6 +409,23 @@ export function Board({
           )}
         </main>
       </DragDropContext>
+      </CardEnvContext.Provider>
     </>
+  );
+}
+
+/** The head of the Backlog: where a new request starts. */
+function NewRequestButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="bg-card border-line-dashed text-muted hover:border-terracotta hover:text-ink flex h-10 shrink-0 items-center gap-2 rounded-lg border border-dashed px-3 text-[12px] font-medium transition-colors active:scale-[0.98]"
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="M6 2.5v7M2.5 6h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+      New request
+    </button>
   );
 }

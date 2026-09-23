@@ -182,6 +182,12 @@ export interface BoardCard {
   costCents: number;
   childCount: number;
   doneCount: number;
+  /** ISO time the card was made. Drives the timeline. */
+  createdAt?: string;
+  /** ISO time its first agent run started, or null before any has. */
+  startedAt?: string | null;
+  /** ISO time it last changed. For a merged card, near enough when it merged. */
+  updatedAt?: string;
 }
 
 export const STAGE_COUNT = LIFECYCLE_STAGES.length;

@@ -287,6 +287,8 @@ export class MemoryRepository implements Repository {
       costCents: 0,
       childCount: 0,
       doneCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     s.cards.set(card.id, card);
     s.epicProject.set(card.id, input.projectId);
@@ -321,6 +323,9 @@ export class MemoryRepository implements Repository {
         costCents: 0,
         childCount: 0,
         doneCount: 0,
+        createdAt: new Date().toISOString(),
+        startedAt: null,
+        updatedAt: new Date().toISOString(),
       };
       made.set(input.key, card);
       s.ticketExtras.set(card.id, {
@@ -349,6 +354,10 @@ export class MemoryRepository implements Repository {
   async move(input: MoveInput): Promise<void> {
     const card = store().cards.get(input.cardId);
     if (!card) return;
+    if (card.status !== input.status) {
+      card.updatedAt = new Date().toISOString();
+      if (input.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
+    }
     card.status = input.status;
     card.stalledIn = input.stalledIn;
     card.position = input.position;
@@ -492,6 +501,10 @@ export class MemoryRepository implements Repository {
     const card = s.cards.get(ticketId);
     if (!card) return;
 
+    if (update.status !== undefined && update.status !== card.status) {
+      card.updatedAt = new Date().toISOString();
+      if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
+    }
     if (update.status !== undefined) card.status = update.status;
     // A merged ticket joins its epic's group in Done, wherever it sat.
     if (update.status === "merged") card.detached = false;

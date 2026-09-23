@@ -44,6 +44,7 @@ type EpicRow = {
   blockedReason: string | null;
   position: number;
   createdAt: Date;
+  updatedAt: Date;
   tickets: Array<{ id: string; status: TicketStatus }>;
 };
 
@@ -180,11 +181,11 @@ export class PrismaRepository implements Repository {
       orderBy: { position: "asc" },
       include: {
         dependsOn: { select: { dependsOnTicketId: true } },
+        // Every run, newest first: the live one names the agent, the
+        // oldest says when work started.
         runs: {
-          where: { status: { in: ["queued", "running"] } },
           orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { role: true, model: true },
+          select: { role: true, model: true, status: true, startedAt: true },
         },
       },
     });
@@ -210,9 +211,14 @@ export class PrismaRepository implements Repository {
       costCents: 0,
       childCount: epic.tickets.length,
       doneCount: epic.tickets.filter((t) => t.status === "merged").length,
+      createdAt: epic.createdAt.toISOString(),
+      updatedAt: epic.updatedAt.toISOString(),
     }));
 
-    const ticketCards: BoardCard[] = tickets.map((t) => ({
+    const ticketCards: BoardCard[] = tickets.map((t) => {
+      const live = t.runs.find((r) => r.status === "queued" || r.status === "running");
+      const started = t.runs.map((r) => r.startedAt).filter((d): d is Date => !!d);
+      return {
       id: t.id,
       kind: "ticket" as const,
       key: t.key,
@@ -225,8 +231,8 @@ export class PrismaRepository implements Repository {
       detached: t.detached,
       size: t.size,
       storyPoints: t.storyPoints,
-      agentRole: t.runs[0]?.role ?? null,
-      model: t.runs[0]?.model ?? null,
+      agentRole: live?.role ?? null,
+      model: live?.model ?? null,
       fileScope: t.fileScope,
       dependsOn: t.dependsOn.map((d) => d.dependsOnTicketId),
       prNumber: t.prNumber,
@@ -235,7 +241,13 @@ export class PrismaRepository implements Repository {
       costCents: t.costCents,
       childCount: 0,
       doneCount: 0,
-    }));
+      createdAt: t.createdAt.toISOString(),
+      startedAt: started.length
+        ? new Date(Math.min(...started.map((d) => d.getTime()))).toISOString()
+        : null,
+      updatedAt: t.updatedAt.toISOString(),
+      };
+    });
 
     return [...epicCards, ...ticketCards].sort(byPosition);
   }

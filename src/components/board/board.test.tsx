@@ -20,11 +20,10 @@ import type { TransitionResult } from "@/lib/domain/transitions";
 function renderBoard(
   cards: BoardCard[],
   overrides: Partial<BoardProps> = {},
-): { onTransition: ReturnType<typeof vi.fn>; onCapture: ReturnType<typeof vi.fn> } {
+): { onTransition: ReturnType<typeof vi.fn> } {
   const onTransition = vi.fn(
     async (): Promise<TransitionResult> => ({ ok: true, status: "ready", runId: null }),
   );
-  const onCapture = vi.fn().mockResolvedValue(undefined);
 
   render(
     <Board
@@ -34,13 +33,12 @@ function renderBoard(
       baseBranch="main"
       onOpenCard={vi.fn()}
       onNewItem={vi.fn()}
-      onCapture={onCapture}
       onTransition={onTransition}
       {...overrides}
     />,
   );
 
-  return { onTransition, onCapture };
+  return { onTransition };
 }
 
 describe("Board, on a wide screen", () => {
@@ -51,43 +49,65 @@ describe("Board, on a wide screen", () => {
     }
   });
 
-  it("gives the Backlog a composer and nobody else", () => {
-    renderBoard([makeCard({ status: "draft" })]);
-    expect(screen.getAllByLabelText("New feature request")).toHaveLength(1);
+  it("starts new requests from the Backlog, and nowhere else on a wide screen", async () => {
+    const onNewItem = vi.fn();
+    renderBoard([makeCard({ status: "draft" })], { onNewItem });
+
+    const buttons = screen.getAllByRole("button", { name: "New request" });
+    expect(buttons).toHaveLength(1);
+    expect(
+      screen.getByRole("region", { name: "Backlog" }).contains(buttons[0]!),
+    ).toBe(true);
+
+    await userEvent.setup().click(buttons[0]!);
+    expect(onNewItem).toHaveBeenCalledOnce();
   });
 
-  it("derives epic progress from the epics, not from the tickets", () => {
-    renderBoard([
-      makeCard({ kind: "epic", status: "merged" }),
-      makeCard({ kind: "epic", status: "ready" }),
-      makeCard({ kind: "epic", status: "draft" }),
-      makeCard({ status: "merged" }),
-    ]);
+  it("sends a card on with its arrow: one typed transition", async () => {
+    const card = makeCard({ key: "PROT-09", status: "draft" });
+    const { onTransition } = renderBoard([card]);
 
-    expect(screen.getByText("1/3")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Epic progress" })).toHaveAttribute(
-      "aria-valuenow",
-      "33",
+    await userEvent.setup().click(
+      screen.getByRole("button", { name: "Move PROT-09 to To Do" }),
     );
+
+    expect(onTransition).toHaveBeenCalledOnce();
+    expect(onTransition.mock.calls[0]![0]).toMatchObject({
+      cardId: card.id,
+      from: "backlog",
+      to: "todo",
+      actor: "user",
+    });
   });
 
-  it("hides the progress bar rather than dividing by zero", () => {
-    renderBoard([makeCard()]);
-    expect(screen.queryByRole("progressbar", { name: "Epic progress" })).toBeNull();
+  it("gives no arrow to a card that could not take the step", () => {
+    renderBoard([
+      makeCard({ key: "PROT-10", status: "waiting" }),
+      makeCard({ key: "PROT-11", status: "merged" }),
+    ]);
+    expect(screen.queryByRole("button", { name: /^Move PROT-10/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Move PROT-11/ })).toBeNull();
+  });
+
+  it("gives a ready ticket its arrow into In Progress", () => {
+    renderBoard([makeCard({ key: "PROT-12", status: "ready" })]);
+    expect(
+      screen.getByRole("button", { name: "Move PROT-12 to In Progress" }),
+    ).toBeInTheDocument();
   });
 
   /*
    * Both headers are in the DOM at once — the wide one and the app bar — and
    * CSS hides whichever does not apply. A real browser drops the hidden one
-   * from the accessibility tree; jsdom loads no CSS, so it sees both. Hence
-   * the explicit pick rather than a bare getByRole.
+   * from the accessibility tree; jsdom loads no CSS, so it sees both. Only
+   * the app bar carries the CTA now: on a wide screen, Backlog has its own.
    */
-  it("routes the header CTA to the capture dialog", async () => {
+  it("routes the app bar's CTA to the capture dialog", async () => {
     const onNewItem = vi.fn();
     renderBoard([makeCard()], { onNewItem });
 
     const ctas = screen.getAllByRole("button", { name: "New backlog item" });
-    expect(ctas).toHaveLength(2);
+    expect(ctas).toHaveLength(1);
 
     await userEvent.setup().click(ctas[0]!);
     expect(onNewItem).toHaveBeenCalledOnce();

@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext, useRef } from "react";
 import { Draggable } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
@@ -11,7 +12,10 @@ import {
   type AgentRole,
   type BoardCard,
 } from "@/lib/domain/entities";
-import { isDraggable, type ColumnId } from "@/lib/domain/status";
+import { COLUMN_LABELS, isDraggable, type ColumnId } from "@/lib/domain/status";
+import { isBug, isSquashed } from "@/lib/colony/game";
+import { spRadius, spVerts } from "@/components/colony/fx";
+import { useColony } from "@/components/colony/colony";
 
 /**
  * Display-only detail that hangs off a card but is not part of the domain
@@ -48,15 +52,25 @@ export interface CardExtras {
 
 export type ExtrasMap = Record<string, CardExtras | undefined>;
 
-/** "claude-sonnet-4-5-20250929" reads as "SONNET 4 5" on a 9px badge. */
+
+/** "claude-sonnet-4-5-20250929" reads as "sonnet 4 5". */
 function modelTag(model: string | null): string | null {
   if (!model) return null;
-  return model
-    .replace(/^claude-/, "")
-    .replace(/-\d{8}$/, "")
-    .replace(/-/g, " ")
-    .toUpperCase();
+  return model.replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-/g, " ");
 }
+
+/** The white card surface the epic groups are built on. */
+const SHELL = "bg-card border-line rounded-lg border";
+
+/** What a card needs from the board around it. */
+export interface CardEnv {
+  epics: ReadonlyMap<string, BoardCard>;
+  /** Where a card's arrow sends it, or null when it has no arrow. */
+  nextFor: (card: BoardCard, column: ColumnId) => ColumnId | null;
+  onAdvance: (card: BoardCard, to: ColumnId) => void;
+}
+
+export const CardEnvContext = createContext<CardEnv | null>(null);
 
 function Pips({ stage }: { stage: number }) {
   return (
@@ -94,21 +108,217 @@ function TerminalIcon() {
   );
 }
 
-/** The white card surface every column variant is built on. */
-const SHELL = "bg-card border-line rounded-lg border";
+/**
+ * The story-point coin: a polygon with more sides the bigger the ticket.
+ * Its ant crew picks the polygon up while an agent works the ticket.
+ */
+export function SpBadge({ points, done = false }: { points: number | null | undefined; done?: boolean }) {
+  const has = points != null;
+  const verts = has
+    ? spVerts(points, 6, 6, Math.min(5.6, spRadius(points) * 1.15))
+        .map((p) => p.map((v) => v.toFixed(2)).join(","))
+        .join(" ")
+    : "";
+  return (
+    <span data-sp className="inline-flex shrink-0">
+    <CoinBadge
+      title={has ? `${points} story points` : "Not estimated yet"}
+      className="gap-1 pl-1.5 tracking-[0.04em] tabular-nums"
+    >
+      {has && (
+        <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
+          <polygon
+            points={verts}
+            fill={done ? "none" : "#C27803"}
+            stroke="#8F3F12"
+            strokeWidth="0.8"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+      {has ? `${points} SP` : "? SP"}
+    </CoinBadge>
+    </span>
+  );
+}
+
+function BugBadge({ squashed }: { squashed: boolean }) {
+  return squashed ? (
+    <span className="oct inline-flex shrink-0 bg-[#A8A29E] p-px">
+      <span className="oct text-muted inline-flex items-center gap-1 bg-[#F0EEEA] py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
+        <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden="true">
+          <ellipse cx="6" cy="6.5" rx="5" ry="1.6" fill="#57534E" />
+          <circle cx="1.5" cy="4.5" r="0.8" fill="#57534E" />
+          <circle cx="10.2" cy="4" r="0.6" fill="#57534E" />
+        </svg>
+        SQUASHED
+      </span>
+    </span>
+  ) : (
+    <span data-bugicon className="oct bg-crimson inline-flex shrink-0 p-px">
+      <span className="oct inline-flex items-center gap-1 bg-[#FBEAEA] py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap text-[#7F1D1D]">
+        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+          <ellipse cx="5" cy="6" rx="2.4" ry="3" fill="#7F1D1D" />
+          <circle cx="5" cy="2.2" r="1.3" fill="#7F1D1D" />
+          <path
+            d="M2.6 4.5 1 3.6M2.6 6.2H.8M2.6 7.9 1 8.8M7.4 4.5 9 3.6M7.4 6.2h1.8M7.4 7.9 9 8.8"
+            stroke="#7F1D1D"
+            strokeWidth="0.8"
+            strokeLinecap="round"
+          />
+        </svg>
+        BUG
+      </span>
+    </span>
+  );
+}
+
+/** The arrow that sends a card on to the next column, where it may go. */
+function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) {
+  const env = useContext(CardEnvContext);
+  const to = env?.nextFor(card, column) ?? null;
+  if (!env || !to) return null;
+  return (
+    <button
+      type="button"
+      aria-label={`Move ${card.key} to ${COLUMN_LABELS[to]}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        env.onAdvance(card, to);
+      }}
+      className="hover:bg-column -my-0.5 -mr-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path
+          d="M2.5 6h7M7 3.5 9.5 6 7 8.5"
+          stroke="var(--text-muted)"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
+/** Which epic a ticket belongs to, or what an orphan is. */
+function EpicLine({ card }: { card: BoardCard }) {
+  const env = useContext(CardEnvContext);
+  const epic = card.epicId ? env?.epics.get(card.epicId) : undefined;
+  const text = epic ? `${epic.key} · ${epic.title}` : isBug(card) ? "Triage" : card.epicId ? null : "Raw idea";
+  if (!text) return null;
+  return <span className="text-muted truncate font-mono text-[9px]">{text}</span>;
+}
+
+/**
+ * The surface every card is drawn on. It carries the card's id for the
+ * colony's effects, a canvas for the trails its ants dig, and a slight tilt
+ * toward the pointer.
+ */
+function CardShell({
+  card,
+  className,
+  children,
+}: {
+  card: BoardCard;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const colony = useColony();
+  const lastHover = useRef(0);
+  return (
+    <div
+      data-tid={card.id}
+      onPointerEnter={() => {
+        if (!colony) return;
+        const now = performance.now();
+        if (now - lastHover.current > 70) {
+          lastHover.current = now;
+          colony.sfx("hover");
+        }
+      }}
+      onPointerMove={(e) => {
+        if (!colony || colony.fx.reducedMotion || e.pointerType === "touch" || e.buttons) return;
+        const el = e.currentTarget;
+        const r = el.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width - 0.5;
+        const py = (e.clientY - r.top) / r.height - 0.5;
+        el.style.transform = `perspective(700px) rotateX(${(-py * 5).toFixed(2)}deg) rotateY(${(px * 7).toFixed(2)}deg) translateY(-2px)`;
+      }}
+      onPointerLeave={(e) => {
+        e.currentTarget.style.transform = "";
+      }}
+      className={cn(
+        "relative isolate rounded-lg border transition-[transform,box-shadow,background-color,border-color] duration-150 ease-[cubic-bezier(.2,.8,.2,1)] hover:shadow-[0_12px_24px_-14px_rgba(28,25,23,0.35)]",
+        className,
+      )}
+    >
+      <canvas
+        data-trail
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 size-full rounded-[7px]"
+      />
+      {children}
+    </div>
+  );
+}
+
+function TicketHead({
+  card,
+  column,
+  pr = false,
+}: {
+  card: BoardCard;
+  column: ColumnId;
+  pr?: boolean;
+}) {
+  return (
+    <div className="flex min-h-[18px] items-center gap-1.5">
+      {isBug(card) && <BugBadge squashed={isSquashed(card)} />}
+      <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
+      <div className="flex-grow" />
+      {pr && card.prNumber && (
+        <CoinBadge title="Pull request" className="shrink-0 whitespace-nowrap">
+          PR #{card.prNumber}
+        </CoinBadge>
+      )}
+      <SpBadge points={card.storyPoints} done={card.status === "merged"} />
+      <AdvanceButton card={card} column={column} />
+    </div>
+  );
+}
+
+function Title({ children, muted = false }: { children: React.ReactNode; muted?: boolean }) {
+  return (
+    <h3 className={cn("text-[13px] leading-card font-medium text-pretty", muted ? "text-muted" : "text-ink")}>
+      {children}
+    </h3>
+  );
+}
 
 /* -------------------------------------------------------------------------
  * Backlog
  * ---------------------------------------------------------------------- */
 
-function BacklogEpic({ card, extras }: { card: BoardCard; extras: CardExtras }) {
+function BacklogEpic({
+  card,
+  column,
+  extras,
+}: {
+  card: BoardCard;
+  column: ColumnId;
+  extras: CardExtras;
+}) {
   return (
-    <div className={cn(SHELL, "flex flex-col gap-2 p-3")}>
-      <div className="flex items-center gap-1.5">
+    <CardShell card={card} className="bg-card border-line flex flex-col gap-2 p-3">
+      <div className="flex min-h-[18px] items-center gap-1.5">
         <CoinBadge tone="epic" className="tracking-[0.08em]">
           EPIC
         </CoinBadge>
+        {isBug(card) && <BugBadge squashed={isSquashed(card)} />}
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
+        <div className="flex-grow" />
+        <AdvanceButton card={card} column={column} />
       </div>
       <h3 className="text-ink font-serif text-[16px] leading-dense font-semibold">
         {card.title}
@@ -123,20 +333,28 @@ function BacklogEpic({ card, extras }: { card: BoardCard; extras: CardExtras }) 
           {extras.stageLabel ? ` · ${extras.stageLabel}` : ""}
         </span>
       </div>
-    </div>
+    </CardShell>
   );
 }
 
-function RawIdea({ card, extras }: { card: BoardCard; extras: CardExtras }) {
+function RawIdea({
+  card,
+  column,
+  extras,
+}: {
+  card: BoardCard;
+  column: ColumnId;
+  extras: CardExtras;
+}) {
   return (
-    <div className={cn(SHELL, "flex flex-col gap-1.5 p-3")}>
-      <span className="text-muted font-mono text-[10px]">
-        RAW{extras.age ? ` · ${extras.age}` : ""}
+    <CardShell card={card} className="bg-card border-line flex flex-col gap-2 p-3">
+      <TicketHead card={card} column={column} />
+      <Title>{card.title}</Title>
+      <span className="text-muted truncate font-mono text-[9px]">
+        {isBug(card) ? "Triage" : "Raw idea"}
+        {extras.age ? ` · ${extras.age}` : ""}
       </span>
-      <h3 className="text-ink text-[13px] leading-card font-medium">
-        {card.title}
-      </h3>
-    </div>
+    </CardShell>
   );
 }
 
@@ -146,49 +364,29 @@ function RawIdea({ card, extras }: { card: BoardCard; extras: CardExtras }) {
 
 function RunningCard({
   card,
+  column,
   extras,
   agentLabel,
 }: {
   card: BoardCard;
+  column: ColumnId;
   extras: CardExtras;
   agentLabel: string | null;
 }) {
   const model = modelTag(card.model);
   return (
-    <div
-      className={cn(
-        "bg-card border-clay pulse-card flex flex-col gap-2.5 rounded-lg border p-3",
-      )}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="text-muted font-mono text-[10px]">{card.key}</span>
-        <div className="flex-grow" />
-        {model && (
-          <CoinBadge title="Model" className="tracking-[0.04em]">
-            {model}
-          </CoinBadge>
-        )}
-        {card.size && (
-          <CoinBadge title="Ticket size" className="tracking-[0.04em]">
-            {card.size}
-          </CoinBadge>
-        )}
-        {card.storyPoints != null && (
-          <CoinBadge title={`${card.storyPoints} story points`} className="tabular-nums">
-            {card.storyPoints} pt
-          </CoinBadge>
-        )}
-      </div>
-
-      <h3 className="text-ink text-[13px] leading-card font-medium">
-        {card.title}
-      </h3>
+    <CardShell card={card} className="bg-card border-clay pulse-card flex flex-col gap-2 p-3">
+      <TicketHead card={card} column={column} />
+      <Title>{card.title}</Title>
+      <EpicLine card={card} />
 
       <div className="flex items-center gap-1.5">
         {agentLabel && (
-          <StatusChip tone="clay" pulsing>
-            {agentLabel}
-          </StatusChip>
+          <span title={model ?? undefined}>
+            <StatusChip tone="clay" pulsing>
+              {agentLabel}
+            </StatusChip>
+          </span>
         )}
         {extras.elapsed && (
           <span className="text-muted font-mono text-[10px] tabular-nums">
@@ -213,7 +411,7 @@ function RunningCard({
           </span>
         </div>
       )}
-    </div>
+    </CardShell>
   );
 }
 
@@ -223,41 +421,41 @@ function RunningCard({
 
 function ReviewCard({
   card,
+  column,
   extras,
   agentLabel,
 }: {
   card: BoardCard;
+  column: ColumnId;
   extras: CardExtras;
   agentLabel: string | null;
 }) {
   const failed = extras.checks?.failed ?? 0;
   const passed = extras.checks?.passed ?? 0;
+  const green = extras.ci === "passing" || (failed === 0 && passed > 0);
 
   return (
-    <div className={cn(SHELL, "flex flex-col gap-2.5 p-3")}>
-      <div className="flex items-center gap-1.5">
-        <span className="text-muted font-mono text-[10px]">{card.key}</span>
-        <div className="flex-grow" />
-        {card.prNumber && (
-          <CoinBadge title="Pull request">PR #{card.prNumber}</CoinBadge>
-        )}
-      </div>
-
-      <h3 className="text-ink text-[13px] leading-card font-medium">
-        {card.title}
-      </h3>
+    <CardShell
+      card={card}
+      className={cn("bg-card flex flex-col gap-2 p-3", green ? "border-[#A5C8A7]" : "border-line")}
+    >
+      <TicketHead card={card} column={column} pr />
+      <Title>{card.title}</Title>
+      <EpicLine card={card} />
 
       <div className="flex flex-wrap gap-1.5">
-        {failed > 0 ? (
+        {failed > 0 || extras.ci === "failing" ? (
           <StatusChip tone="crimson">
-            {failed} check{failed === 1 ? "" : "s"} failed
+            {failed > 0 ? `${failed} check${failed === 1 ? "" : "s"} failed` : "Checks failed"}
           </StatusChip>
-        ) : passed > 0 ? (
+        ) : green ? (
           <StatusChip tone="jade">
-            {passed} check{passed === 1 ? "" : "s"} passed
+            {passed > 0 ? `${passed} check${passed === 1 ? "" : "s"} passed` : "Checks passed"}
           </StatusChip>
         ) : (
-          <StatusChip tone="neutral">CI pending</StatusChip>
+          <StatusChip tone="clay" pulsing>
+            CI running
+          </StatusChip>
         )}
         {extras.reviewState && (
           <StatusChip tone="rust">{extras.reviewState}</StatusChip>
@@ -290,7 +488,31 @@ function ReviewCard({
           )}
         </div>
       )}
-    </div>
+    </CardShell>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Done, on its own: a merged ticket with no epic group to sit in.
+ * ---------------------------------------------------------------------- */
+
+function DoneCard({ card, column, extras }: { card: BoardCard; column: ColumnId; extras: CardExtras }) {
+  const trail = [
+    extras.mergeCommit ? `merged ${extras.mergeCommit}` : "merged",
+    card.prNumber ? `PR #${card.prNumber}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <CardShell card={card} className="flex flex-col gap-2 border-[#D6D0C6] bg-[#E7E3DC] p-3">
+      <TicketHead card={card} column={column} pr />
+      <Title>{card.title}</Title>
+      <EpicLine card={card} />
+      <span className="text-muted inline-flex items-center gap-1.5 font-mono text-[9px]">
+        <span aria-hidden className="bg-jade size-[5px] rounded-full" />
+        {trail}
+      </span>
+    </CardShell>
   );
 }
 
@@ -301,41 +523,32 @@ function ReviewCard({
 
 function PlainTicket({
   card,
+  column,
   extras,
-  tone,
 }: {
   card: BoardCard;
+  column: ColumnId;
   extras: CardExtras;
-  tone: "neutral" | "crimson" | "rust";
 }) {
-  const model = modelTag(card.model);
+  const failed = card.status === "failed";
+  const held = card.status === "waiting" || card.status === "blocked";
   return (
-    <div className={cn(SHELL, "flex flex-col gap-2 p-3")}>
-      <div className="flex items-center gap-1.5">
-        <span className="text-muted font-mono text-[10px]">{card.key}</span>
-        <div className="flex-grow" />
-        {model && <CoinBadge title="Model">{model}</CoinBadge>}
-        {card.size && <CoinBadge title="Ticket size">{card.size}</CoinBadge>}
-        {card.storyPoints != null && (
-          <CoinBadge title={`${card.storyPoints} story points`} className="tabular-nums">
-            {card.storyPoints} pt
-          </CoinBadge>
-        )}
-      </div>
-      <h3 className="text-ink text-[13px] leading-card font-medium">
-        {card.title}
-      </h3>
-      {card.blockedReason && (
-        <StatusChip tone={tone}>{card.blockedReason}</StatusChip>
-      )}
-      {card.fileScope.length > 0 && (
-        <span
-          className="text-muted truncate font-mono text-[9px]"
-          title={card.fileScope.join(", ")}
-        >
-          {card.fileScope.join(" · ")}
-        </span>
-      )}
+    <CardShell
+      card={card}
+      className={cn("border-line flex flex-col gap-2 p-3", held ? "bg-nested-muted" : "bg-card")}
+    >
+      <TicketHead card={card} column={column} />
+      <Title muted={held}>{card.title}</Title>
+      <EpicLine card={card} />
+      {card.blockedReason &&
+        (failed ? (
+          <StatusChip tone="crimson">{card.blockedReason}</StatusChip>
+        ) : (
+          <span className="text-muted inline-flex items-center gap-1.5 font-mono text-[9px]">
+            <span aria-hidden className="bg-idle size-[5px] shrink-0 rounded-full" />
+            {card.blockedReason}
+          </span>
+        ))}
       {extras.progress && (
         <ProgressBar
           value={extras.progress.fraction}
@@ -343,7 +556,7 @@ function PlainTicket({
           caption={extras.progress.label}
         />
       )}
-    </div>
+    </CardShell>
   );
 }
 
@@ -370,25 +583,22 @@ export function CardBody({
 }) {
   const agentLabel = card.agentRole ? AGENT_LABEL[card.agentRole] : null;
 
-  if (card.kind === "epic") return <BacklogEpic card={card} extras={extras} />;
+  if (card.kind === "epic") return <BacklogEpic card={card} column={column} extras={extras} />;
 
   if (column === "in_progress" && card.status === "running") {
-    return <RunningCard card={card} extras={extras} agentLabel={agentLabel} />;
+    return <RunningCard card={card} column={column} extras={extras} agentLabel={agentLabel} />;
   }
   if (column === "in_review") {
-    return <ReviewCard card={card} extras={extras} agentLabel={agentLabel} />;
+    return <ReviewCard card={card} column={column} extras={extras} agentLabel={agentLabel} />;
+  }
+  if (column === "done" && card.status === "merged") {
+    return <DoneCard card={card} column={column} extras={extras} />;
   }
   if (column === "backlog" && !card.blockedReason) {
-    return <RawIdea card={card} extras={extras} />;
+    return <RawIdea card={card} column={column} extras={extras} />;
   }
 
-  return (
-    <PlainTicket
-      card={card}
-      extras={extras}
-      tone={card.status === "failed" ? "crimson" : "rust"}
-    />
-  );
+  return <PlainTicket card={card} column={column} extras={extras} />;
 }
 
 /**
@@ -421,10 +631,18 @@ export function KanbanCard({
           className={cn(
             "rounded-lg outline-none",
             draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
-            snapshot.isDragging && "shadow-lift",
           )}
         >
-          <CardBody card={card} column={column} extras={extras[card.id] ?? {}} />
+          {/* Picked up, the card leans into the drag. */}
+          <div
+            className={cn(
+              "rounded-lg transition-transform duration-150",
+              snapshot.isDragging &&
+                "scale-[1.04] rotate-[-2deg] shadow-[0_28px_48px_-18px_rgba(28,25,23,0.45),0_2px_6px_rgba(28,25,23,0.08)]",
+            )}
+          >
+            <CardBody card={card} column={column} extras={extras[card.id] ?? {}} />
+          </div>
         </li>
       )}
     </Draggable>
@@ -436,7 +654,7 @@ export function KanbanCard({
  * ---------------------------------------------------------------------- */
 
 /** A child row in a To Do accordion. Fixed 60px so the trail curves land. */
-function ChildRow({ card }: { card: BoardCard }) {
+function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
   const blocked = card.status === "waiting" || card.status === "blocked";
   const failed = card.status === "failed";
   const caption = blocked
@@ -445,8 +663,9 @@ function ChildRow({ card }: { card: BoardCard }) {
 
   return (
     <div
+      data-tid={card.id}
       className={cn(
-        "border-line flex h-[60px] flex-col justify-center gap-1 rounded-md border px-2.5 py-2 leading-[normal]",
+        "border-line relative isolate flex h-[60px] flex-col justify-center gap-1 rounded-md border px-2.5 py-2 leading-[normal]",
         blocked || failed ? "bg-nested-muted" : "bg-card",
       )}
     >
@@ -462,12 +681,16 @@ function ChildRow({ card }: { card: BoardCard }) {
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <h4
           className={cn(
-            "truncate text-[12px] font-medium",
+            "min-w-0 flex-1 truncate text-[12px] font-medium",
             blocked ? "text-muted" : "text-ink",
           )}
         >
           {card.title}
         </h4>
+        {card.storyPoints != null && (
+          <span className="text-muted shrink-0 font-mono text-[9px]">{card.storyPoints} SP</span>
+        )}
+        <AdvanceButton card={card} column={column} />
       </div>
       {caption && (
         <span className="text-muted truncate font-mono text-[9px]">{caption}</span>
@@ -486,7 +709,10 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
     .join(" · ");
 
   return (
-    <div className="bg-nested border-line flex flex-col gap-[5px] rounded-md border px-2.5 py-2 leading-[normal]">
+    <div
+      data-tid={card.id}
+      className="bg-nested border-line flex flex-col gap-[5px] rounded-md border px-2.5 py-2 leading-[normal]"
+    >
       <div className="flex items-center gap-1.5">
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
@@ -565,6 +791,7 @@ export function EpicGroup({
             ref={provided.innerRef}
             {...provided.draggableProps}
             {...provided.dragHandleProps}
+            data-tid={epic.id}
             className={cn(
               "border-hairline flex flex-col gap-2 border-b p-3",
               done ? "bg-jade-wash" : "bg-card",
@@ -676,7 +903,7 @@ export function EpicGroup({
                     {done ? (
                       <MergedRow card={child} extras={extras[child.id] ?? {}} />
                     ) : (
-                      <ChildRow card={child} />
+                      <ChildRow card={child} column={column} />
                     )}
                   </div>
                 )}
