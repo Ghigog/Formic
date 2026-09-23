@@ -3,6 +3,7 @@ import { repository } from "@/lib/db";
 import { isDroppable, replay, subscribe } from "@/lib/events/bus";
 import type { SequencedEvent } from "@/lib/domain/events";
 import { activeProject } from "@/lib/board/project";
+import { collectCliRuns } from "@/lib/runner/runner";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -85,6 +86,11 @@ export async function GET(req: NextRequest) {
       const tail = setInterval(async () => {
         if (closed || polling) return;
         polling = true;
+        // While someone watches the board, agent runs whose webhook never
+        // came are found on GitHub. Throttled inside; never holds the tail.
+        void collectCliRuns(project.id).catch((e: unknown) =>
+          console.warn("[formic] could not check the agents' runs:", e),
+        );
         try {
           for (const e of await replay(project.id, polledThrough)) {
             send(e);

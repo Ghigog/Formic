@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { completeCliRun, secretNameFor } from "./runner";
+import { collectCliRuns, completeCliRun, secretNameFor } from "./runner";
 import {
   ANSWER_PATH,
   RUNNER_SETUP_BRANCH,
@@ -529,6 +529,82 @@ describe("a CLI agent fixing red CI", () => {
     expect(after.status).toBe("review");
     expect(after.runnerJob).toBeNull();
     expect(MockVcsClient.runner().branches.get(branch)).toBe(sha);
+  });
+});
+
+describe("collecting a run whose webhook never came", () => {
+  /** Lets the next collection look again, past its 15-second throttle. */
+  async function collectLater() {
+    vi.useFakeTimers({ now: Date.now() + 60_000 * ++minutes, toFake: ["Date"] });
+    try {
+      await collectCliRuns(PROJECT);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+  let minutes = 0;
+
+  it("takes a ticket's finished work on its own", async () => {
+    await useClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    await runCoderAgent(PROJECT, ticket.id);
+    const job = MockVcsClient.runner().dispatches[0]!.inputs.job!;
+    MockVcsClient.stage(`${STAGING_PREFIX}${job}`, ["src/lib/feature/a.ts"], "T-1: Add it");
+
+    // Still running: nothing moves.
+    MockVcsClient.runner().runs.set(runTitle("implement", "T-1", job), {
+      status: "in_progress",
+      conclusion: null,
+      url: "https://github.com/acme/widgets/actions/runs/40",
+    });
+    await collectLater();
+    expect((await repository().ticketDetail(ticket.id))!.prNumber).toBeNull();
+
+    MockVcsClient.runner().runs.set(runTitle("implement", "T-1", job), {
+      status: "completed",
+      conclusion: "success",
+      url: "https://github.com/acme/widgets/actions/runs/40",
+    });
+    await collectLater();
+    expect((await repository().ticketDetail(ticket.id))!.prNumber).toBeGreaterThan(0);
+
+    // The late webhook for the same run then does nothing.
+    const [signal] = interpret("workflow_run", {
+      action: "completed",
+      workflow_run: {
+        id: 40,
+        path: RUNNER_WORKFLOW_PATH,
+        display_title: runTitle("implement", "T-1", job),
+        conclusion: "success",
+        html_url: "https://github.com/acme/widgets/actions/runs/40",
+      },
+    });
+    expect(await repository().claimDelivery(signal!.key)).toBe(false);
+  });
+
+  it("takes an Epic's failed planning run on its own, and saves why", async () => {
+    await useClaudeCode("backlog");
+    await installRunner();
+    const epic = await repository().createEpic({
+      projectId: PROJECT,
+      title: "Export",
+      rawRequest: "Export",
+      position: 1,
+    });
+    await runProductAgent(PROJECT, epic.id, "Export");
+    const job = MockVcsClient.runner().dispatches.at(-1)!.inputs.job!;
+    MockVcsClient.runner().runs.set(runTitle("product", "EPIC-1", job), {
+      status: "completed",
+      conclusion: "timed_out",
+      url: "https://github.com/acme/widgets/actions/runs/41",
+    });
+
+    await collectLater();
+
+    const card = (await repository().cardById(epic.id))!;
+    expect(card).toMatchObject({ status: "failed", stalledIn: "backlog" });
+    expect(card.blockedReason).toContain("60-minute limit");
   });
 });
 

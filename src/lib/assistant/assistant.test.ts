@@ -6,7 +6,7 @@ import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
-import { collectCliAsk, completeCliRun } from "@/lib/runner/runner";
+import { collectCliRuns, completeCliRun } from "@/lib/runner/runner";
 import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle, runnerWorkflow } from "@/lib/runner/workflow";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
@@ -287,7 +287,7 @@ describe("the assistant on a CLI plan", () => {
     const job = MockVcsClient.runner().dispatches.at(-1)!.inputs.job!;
 
     // Still running on GitHub: nothing changes.
-    await collectCliAsk(PROJECT, pending.id);
+    await collectCliRuns(PROJECT);
     expect((await reload(pending.id)).status).toBe("pending");
 
     // Finished, with its answer on the staging branch, and no webhook.
@@ -299,7 +299,7 @@ describe("the assistant on a CLI plan", () => {
     });
     vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ["Date"] });
     try {
-      await collectCliAsk(PROJECT, pending.id);
+      await collectCliRuns(PROJECT);
     } finally {
       vi.useRealTimers();
     }

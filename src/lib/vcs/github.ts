@@ -341,11 +341,27 @@ export class GitHubClient implements VcsClient {
   }
 
   async findRun(file: string, title: string): Promise<WorkflowRunRef | null> {
+    const run = (await this.recentRuns(file)).find((r) => r.title === title);
+    return run ? { status: run.status, conclusion: run.conclusion, url: run.url } : null;
+  }
+
+  async recentRuns(file: string): Promise<Array<WorkflowRunRef & { id: number; title: string }>> {
     const { data } = await this.request<{
-      workflow_runs: Array<{ display_title: string; status: string; conclusion: string | null; html_url: string }>;
-    }>("GET", `/actions/workflows/${encodeURIComponent(file)}/runs?event=workflow_dispatch&per_page=30`);
-    const run = data.workflow_runs.find((r) => r.display_title === title);
-    return run ? { status: run.status, conclusion: run.conclusion, url: run.html_url } : null;
+      workflow_runs: Array<{
+        id: number;
+        display_title: string;
+        status: string;
+        conclusion: string | null;
+        html_url: string;
+      }>;
+    }>("GET", `/actions/workflows/${encodeURIComponent(file)}/runs?event=workflow_dispatch&per_page=50`);
+    return data.workflow_runs.map((r) => ({
+      id: r.id,
+      title: r.display_title,
+      status: r.status,
+      conclusion: r.conclusion,
+      url: r.html_url,
+    }));
   }
 
   async runLog(runUrl: string): Promise<string | null> {

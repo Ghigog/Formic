@@ -55,7 +55,8 @@ import {
   cardOfJob,
   isAnswerMode,
   jobId,
-  runTitle,
+  parseRunTitle,
+  runnerResultKey,
   runnerWorkflow,
   type AnswerMode,
   type CodeMode,
@@ -680,37 +681,55 @@ export async function startCliAsk(input: {
   }
 }
 
-/** When each pending answer was last looked up on GitHub, to go easy on the API. */
+/** When each board's runs were last looked up on GitHub, to go easy on the API. */
 const lastLooked = new Map<string, number>();
 const LOOK_EVERY_MS = 15_000;
 
 /**
- * Collects a CLI agent's answer without waiting for the webhook: asks
- * GitHub whether its run has finished. The webhook is the fast path; this
- * is the one that cannot be missed, so a lost delivery or an app that is
- * not subscribed to workflow runs never leaves a question hanging.
+ * Collects finished CLI agent runs without waiting for the webhook: asks
+ * GitHub which of the runs this board is waiting on have finished. The
+ * webhook is the fast path; this is the one that cannot be missed, so a lost
+ * delivery or an app not subscribed to workflow runs never leaves a card,
+ * an Epic or a question hanging. Each result is claimed under the webhook's
+ * own key, so whichever arrives first takes it and the other does nothing.
  */
-export async function collectCliAsk(projectId: string, messageId: string): Promise<void> {
-  const message = await repository().assistantMessage(messageId);
-  if (!message?.runnerJob || message.status !== "pending") return;
+export async function collectCliRuns(projectId: string): Promise<void> {
   const now = Date.now();
-  if (now - (lastLooked.get(messageId) ?? 0) < LOOK_EVERY_MS) return;
-  lastLooked.set(messageId, now);
+  if (now - (lastLooked.get(projectId) ?? 0) < LOOK_EVERY_MS) return;
+  lastLooked.set(projectId, now);
+
+  const repo = repository();
+  const waiting = new Set<string>();
+  for (const card of await repo.boardCards(projectId)) {
+    const job =
+      card.kind === "epic"
+        ? (await repo.epicDetail(card.id))?.runnerJob
+        : card.status === "running" || card.status === "review"
+          ? (await repo.ticketDetail(card.id))?.runnerJob
+          : null;
+    if (job) waiting.add(job);
+  }
+  for (const m of await repo.assistantMessages(projectId)) {
+    if (m.status === "pending" && m.runnerJob) waiting.add(m.runnerJob);
+  }
+  if (waiting.size === 0) return;
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
-  const run = await client
-    .findRun(RUNNER_WORKFLOW_FILE, runTitle("ask", "assistant", message.runnerJob))
-    .catch(() => null);
-  if (!run || run.status !== "completed") return;
-  lastLooked.delete(messageId);
-  await completeCliRun(projectId, {
-    job: message.runnerJob,
-    mode: "ask",
-    conclusion: run.conclusion ?? "failure",
-    url: run.url,
-  });
+  const runs = await vcs(project.repoFullName, creds.githubToken)
+    .recentRuns(RUNNER_WORKFLOW_FILE)
+    .catch(() => []);
+  for (const run of runs) {
+    const parsed = parseRunTitle(run.title);
+    if (!parsed || !waiting.has(parsed.job) || run.status !== "completed") continue;
+    if (!(await repo.claimDelivery(runnerResultKey(parsed.job, run.id)))) continue;
+    await completeCliRun(projectId, {
+      job: parsed.job,
+      mode: parsed.mode,
+      conclusion: run.conclusion ?? "failure",
+      url: run.url,
+    });
+  }
 }
 
 async function completeCliAsk(projectId: string, result: RunnerResult): Promise<void> {

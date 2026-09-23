@@ -205,6 +205,14 @@ export class MockVcsClient implements VcsClient {
     return repo().runs.get(title) ?? null;
   }
 
+  async recentRuns(_file: string): Promise<Array<WorkflowRunRef & { id: number; title: string }>> {
+    return [...repo().runs.entries()].map(([title, run], i) => ({
+      ...run,
+      title,
+      id: Number(/\/runs\/(\d+)/.exec(run.url)?.[1] ?? i + 1),
+    }));
+  }
+
   async runLog(runUrl: string): Promise<string | null> {
     return repo().logs.get(runUrl) ?? null;
   }

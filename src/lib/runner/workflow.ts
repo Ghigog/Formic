@@ -56,6 +56,14 @@ export function parseRunTitle(
 }
 
 /**
+ * What makes a finished run's result taken once: the webhook and the
+ * collector that looks it up on GitHub both claim this before acting.
+ */
+export function runnerResultKey(job: string, runId: number | string): string {
+  return `runner:${job}:${String(runId)}`;
+}
+
+/**
  * A job id is `<card id>--<nonce>`, plus `-<attempt>` from the second
  * attempt on: safe in a branch name and a title. The card is a ticket for
  * the coding modes and an epic for the planning ones.
