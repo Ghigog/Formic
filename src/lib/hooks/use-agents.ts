@@ -56,5 +56,12 @@ export function useAgents(initialPresets: AgentPreset[], initialColumns: ColumnA
     );
   }, []);
 
-  return { presets, columns, assign, save, remove };
+  /** An agent ran out of usage on its plan, or got it back. */
+  const markLimited = useCallback((presetId: string, until: string | null, note: string | null) => {
+    setPresets((prev) =>
+      prev.map((p) => (p.id === presetId ? { ...p, limitedUntil: until, limitNote: note } : p)),
+    );
+  }, []);
+
+  return { presets, columns, assign, save, remove, markLimited };
 }

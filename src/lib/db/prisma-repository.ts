@@ -581,14 +581,27 @@ export class PrismaRepository implements Repository {
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
+      // A new key is likely a new account, with its own usage.
       ...(record.apiKeyCipher !== undefined
-        ? { apiKeyCipher: record.apiKeyCipher, apiKeyHint: record.apiKeyHint ?? null }
+        ? {
+            apiKeyCipher: record.apiKeyCipher,
+            apiKeyHint: record.apiKeyHint ?? null,
+            limitedUntil: null,
+            limitNote: null,
+          }
         : {}),
     };
     const row = record.id
       ? await db.agentPreset.update({ where: { id: record.id }, data })
       : await db.agentPreset.create({ data: { ...data, ownerId: record.ownerId ?? null } });
     return toPreset(row);
+  }
+
+  async setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void> {
+    await prisma().agentPreset.updateMany({
+      where: { id: presetId },
+      data: { limitedUntil: limit?.until ?? null, limitNote: limit?.note ?? null },
+    });
   }
 
   async deletePreset(presetId: string): Promise<void> {
@@ -790,6 +803,8 @@ function toPreset(row: {
   prompt: string;
   apiKeyCipher: string | null;
   apiKeyHint: string | null;
+  limitedUntil: Date | null;
+  limitNote: string | null;
 }): AgentPreset {
   return {
     id: row.id,
@@ -801,5 +816,7 @@ function toPreset(row: {
     prompt: row.prompt,
     hasKey: row.apiKeyCipher !== null,
     keyHint: row.apiKeyHint,
+    limitedUntil: row.limitedUntil?.toISOString() ?? null,
+    limitNote: row.limitNote,
   };
 }

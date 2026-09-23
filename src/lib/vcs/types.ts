@@ -140,6 +140,11 @@ export interface VcsClient {
    * webhook that reports it finishing never arrives.
    */
   findRun(file: string, title: string): Promise<WorkflowRunRef | null>;
+  /**
+   * The log of a finished run's failed job, by the run's URL, or null when
+   * there is none to read.
+   */
+  runLog(runUrl: string): Promise<string | null>;
   compare(base: string, head: string): Promise<Comparison>;
   /** Creates `branch` at `sha`, or fast-forwards it there. Never forces. */
   moveBranch(branch: string, sha: string): Promise<void>;

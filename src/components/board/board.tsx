@@ -212,8 +212,11 @@ export function Board({
     const to = NEXT_COLUMN[activeTab];
     if (!to) return null;
     const card = byColumn[activeTab].find((c) => isDraggable(c.status));
+    // A column whose agent is out of usage takes nothing until it resets.
+    const until = agents?.presets.find((p) => p.id === agents.columns[to])?.limitedUntil;
+    if (until && Date.parse(until) > Date.now()) return null;
     return card ? { card, to } : null;
-  }, [activeTab, byColumn]);
+  }, [activeTab, byColumn, agents]);
 
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
 

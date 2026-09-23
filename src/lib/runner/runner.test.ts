@@ -328,6 +328,35 @@ describe("starting a CLI agent", () => {
   });
 });
 
+describe("an agent out of usage", () => {
+  it("takes no work until it resets, and a new key lifts it", async () => {
+    const preset = await useClaudeCode();
+    await installRunner();
+    await repository().setPresetLimit(preset.id, {
+      until: new Date(Date.now() + 3_600_000),
+      note: "Claude Code hit its usage limit.",
+    });
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("my-claude is out of usage until");
+    expect(MockVcsClient.runner().dispatches).toHaveLength(0);
+
+    const saved = await savePreset({
+      id: preset.id,
+      name: preset.name,
+      provider: "claude-code",
+      model: "",
+      prompt: "p",
+      apiKey: "sk-ant-oat01-another-account-1111",
+    });
+    expect(saved.limitedUntil).toBeNull();
+  });
+});
+
 describe("taking a CLI agent's work", () => {
   async function dispatched() {
     await useClaudeCode();
@@ -385,6 +414,46 @@ describe("taking a CLI agent's work", () => {
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.status).toBe("failed");
     expect(after.blockedReason).toContain("actions/runs/1");
+  });
+
+  it("says why the run failed, from its log, and marks a limited agent out until it resets", async () => {
+    const { ticket, job } = await dispatched();
+    const url = "https://github.com/acme/widgets/actions/runs/2";
+    MockVcsClient.runner().logs.set(
+      url,
+      [
+        "2026-09-23T15:40:38.4614765Z ##[group]Run set -euo pipefail",
+        "2026-09-23T15:40:38.4716567Z   PROMPT: Handle the rate limit",
+        "2026-09-23T15:40:38.4744084Z ##[endgroup]",
+        "2026-09-23T15:41:32.5220071Z You've hit your session limit · resets 6:30pm (UTC)",
+        "2026-09-23T15:41:32.7166259Z ##[error]Process completed with exit code 1.",
+      ].join("\n"),
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("failed");
+    expect(after.blockedReason).toContain("Claude Code hit its usage limit");
+    expect(after.blockedReason).toContain(url);
+
+    const presetId = (await repository().columnAgents(PROJECT)).in_progress!;
+    const { preset } = (await repository().presetForRun(presetId))!;
+    expect(preset.limitedUntil).toBe("2026-09-23T18:30:00.000Z");
+  });
+
+  it("quotes the agent's last words when the failure is not one it knows", async () => {
+    const { ticket, job } = await dispatched();
+    const url = "https://github.com/acme/widgets/actions/runs/3";
+    MockVcsClient.runner().logs.set(
+      url,
+      "##[group]Run x\n##[endgroup]\nError: ENOSPC: no space left on device\n##[error]Process completed with exit code 1.",
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.blockedReason).toContain("ENOSPC: no space left on device");
   });
 
   it("ignores a result nobody is waiting for", async () => {

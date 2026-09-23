@@ -189,6 +189,13 @@ export interface AgentPreset {
   /** False means runs use the server's ANTHROPIC_API_KEY. */
   hasKey: boolean;
   keyHint: string | null;
+  /**
+   * ISO time this agent's plan is out of usage until, or null. A column
+   * running it takes no work until then.
+   */
+  limitedUntil: string | null;
+  /** What the agent said when it ran out. */
+  limitNote: string | null;
 }
 
 export const agentPresetInputSchema = z

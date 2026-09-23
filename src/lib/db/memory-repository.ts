@@ -527,10 +527,20 @@ export class MemoryRepository implements Repository {
       apiKeyCipher: keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
       keyHint: keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
       hasKey: false,
+      // A new key is likely a new account, with its own usage.
+      limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,
+      limitNote: keep ? (existing?.limitNote ?? null) : null,
     };
     row.hasKey = row.apiKeyCipher !== null;
     s.presets.set(row.id, row);
     return publicPreset(row);
+  }
+
+  async setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void> {
+    const row = store().presets.get(presetId);
+    if (!row) return;
+    row.limitedUntil = limit ? limit.until.toISOString() : null;
+    row.limitNote = limit ? limit.note : null;
   }
 
   async deletePreset(presetId: string): Promise<void> {

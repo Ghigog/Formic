@@ -9,6 +9,7 @@ import type { BoardCard } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { layout } from "./placement";
 import { AgentSelect, type ColumnAgentControls } from "./agent-select";
+import { formatCountdown, useCountdown } from "@/lib/hooks/use-countdown";
 
 /** The one-word description of what happens to a card while it sits here. */
 export const COLUMN_HINT: Record<ColumnId, string> = {
@@ -77,6 +78,10 @@ export function Column({
   className?: string;
 }) {
   const dot = COLUMN_DOT[id];
+  // The column's agent is out of usage on its plan: nothing can land here
+  // until it resets. Picking another agent lifts it at once.
+  const limitedFor = useCountdown(agent?.selected?.limitedUntil);
+  const limited = limitedFor !== null;
   const [ownCollapsed, setOwnCollapsed] = useState<Set<string>>(new Set());
   const collapsed = controlledCollapsed ?? ownCollapsed;
 
@@ -115,6 +120,7 @@ export function Column({
   return (
     <section
       aria-label={COLUMN_LABELS[id]}
+      data-limited={limited || undefined}
       className={cn(
         "flex min-h-0 min-w-0 flex-1 flex-col gap-2.5",
         !bare && "bg-column border-column-line rounded-xl border p-3",
@@ -144,11 +150,20 @@ export function Column({
       </div>
       )}
 
+      {limited && agent?.selected && (
+        <LimitBanner
+          agentName={agent.selected.name}
+          until={agent.selected.limitedUntil!}
+          left={limitedFor}
+          note={agent.selected.limitNote}
+        />
+      )}
+
       {agent && <AgentSelect column={id} {...agent} />}
 
       {composer}
 
-      <Droppable droppableId={id}>
+      <Droppable droppableId={id} isDropDisabled={limited}>
         {(provided, snapshot) => (
           <ul
             ref={provided.innerRef}
@@ -156,6 +171,7 @@ export function Column({
             className={cn(
               "flex min-h-16 flex-1 flex-col overflow-x-hidden overflow-y-auto rounded-lg transition-colors [&>li:not(:last-child)]:mb-2.5",
               snapshot.isDraggingOver && "bg-clay/8",
+              limited && "opacity-50 grayscale",
             )}
           >
             {rendered.map(({ item, index, shown, isCollapsed }) =>
@@ -191,5 +207,41 @@ export function Column({
         )}
       </Droppable>
     </section>
+  );
+}
+
+/**
+ * The front of a column whose agent is out of usage: when it can work
+ * again, counting down, and what the agent said.
+ */
+function LimitBanner({
+  agentName,
+  until,
+  left,
+  note,
+}: {
+  agentName: string;
+  until: string;
+  left: number;
+  note: string | null;
+}) {
+  const at = new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return (
+    <div
+      role="status"
+      title={note ?? undefined}
+      className="border-line bg-card flex items-center gap-2 rounded-md border px-2 py-1.5"
+    >
+      <span aria-hidden className="bg-idle size-1.5 shrink-0 rounded-full" />
+      <span className="text-muted min-w-0 flex-1 truncate text-[11px]">
+        {agentName} is out of usage · back at {at}
+      </span>
+      <span
+        aria-label={`Available in ${formatCountdown(left)}`}
+        className="text-ink shrink-0 font-mono text-[11px] font-semibold tabular-nums"
+      >
+        {formatCountdown(left)}
+      </span>
+    </div>
   );
 }

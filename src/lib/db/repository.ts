@@ -283,6 +283,8 @@ export interface Repository {
   savePreset(record: PresetRecord): Promise<AgentPreset>;
   /** Also unassigns it from every column it ran. */
   deletePreset(presetId: string): Promise<void>;
+  /** Marks a preset out of usage until a time, or clears that. */
+  setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void>;
   columnAgents(projectId: string): Promise<ColumnAgents>;
   /** The saved agent the board's assistant runs on, or null. */
   assistantAgent(projectId: string): Promise<string | null>;

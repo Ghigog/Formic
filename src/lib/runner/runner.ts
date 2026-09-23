@@ -13,6 +13,9 @@ import {
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
+import { diagnose, lastWords } from "@/lib/agents/limits";
+import { provider as providerInfo } from "@/lib/llm/providers";
+import type { ColumnId } from "@/lib/domain/status";
 import { failuresBrief, taskBrief } from "@/lib/agents/coder";
 import {
   ARCHITECT_BRIEF,
@@ -131,6 +134,64 @@ function explain(e: unknown): string {
     return `${message}. Formic's GitHub App needs Actions, Secrets and Workflows (read and write) on this repository, and the workflow must be on its default branch.`;
   }
   return message;
+}
+
+/** The column whose agent runs each mode, or the board's assistant. */
+const MODE_AGENT: Record<RunnerMode, ColumnId | "assistant"> = {
+  implement: "in_progress",
+  fix: "in_review",
+  product: "backlog",
+  architect: "todo",
+  showcase: "done",
+  ask: "assistant",
+};
+
+/**
+ * Why a run did not succeed, in words a card can show. GitHub only says
+ * "failure"; the agent's reason is in the log, so this reads it. A usage
+ * limit with a reset time also marks the agent out until then, which greys
+ * its column out on the board.
+ */
+async function whyItFailed(
+  projectId: string,
+  client: VcsClient,
+  result: RunnerResult,
+): Promise<string> {
+  const log = result.url ? ` Its log: ${result.url}` : "";
+  if (result.conclusion === "cancelled") return `The agent's GitHub Actions run was cancelled.${log}`;
+  if (result.conclusion === "timed_out") {
+    return `The agent ran past the workflow's 60-minute limit and was stopped.${log}`;
+  }
+  const plain = `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`;
+  const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
+  if (!text) return plain;
+
+  const repo = repository();
+  const where = MODE_AGENT[result.mode];
+  const presetId =
+    where === "assistant"
+      ? await repo.assistantAgent(projectId)
+      : (await repo.columnAgents(projectId))[where];
+  const found = presetId ? await repo.presetForRun(presetId) : null;
+  const label = found
+    ? (providerInfo(found.preset.provider)?.label ?? "The agent").split(" (")[0]!
+    : "The agent";
+
+  const diagnosis = diagnose(text, label);
+  if (!diagnosis) {
+    const last = lastWords(text);
+    return last ? `The agent's GitHub Actions run failed: "${last}".${log}` : plain;
+  }
+  if (diagnosis.kind === "limit" && diagnosis.until && found) {
+    await repo.setPresetLimit(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
+    await publish(projectId, {
+      type: "agent.limited",
+      presetId: found.preset.id,
+      until: diagnosis.until.toISOString(),
+      note: diagnosis.message,
+    });
+  }
+  return `${diagnosis.message}${log}`;
 }
 
 function cap(text: string): string {
@@ -505,7 +566,7 @@ async function completeCliAnswer(
 
   if (result.conclusion !== "success") {
     await cleanUp();
-    await stall(`The agent's GitHub Actions run ended as ${result.conclusion}.${log}`, false);
+    await stall(await whyItFailed(projectId, client, result), false);
     return;
   }
 
@@ -659,8 +720,7 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const { finishCliAnswer } = await import("@/lib/assistant/turn");
   if (result.conclusion !== "success") {
     await cleanUp();
-    const log = result.url ? ` Its log: ${result.url}` : "";
-    await finishCliAnswer(message.id, null, `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`);
+    await finishCliAnswer(message.id, null, await whyItFailed(projectId, client, result));
     return;
   }
   const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
@@ -717,7 +777,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   };
 
   if (result.conclusion !== "success") {
-    await stop(`The agent's GitHub Actions run ended as ${result.conclusion}.${log}`, false);
+    await stop(await whyItFailed(projectId, client, result), false);
     return;
   }
 

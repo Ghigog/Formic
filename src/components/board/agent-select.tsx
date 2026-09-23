@@ -129,6 +129,12 @@ export function AgentSelect({
                     {providerInfo(p.provider)?.label ?? p.provider}
                     {p.model ? ` · ${modelName(p.model)}` : ""}
                   </span>
+                  {p.limitedUntil && Date.parse(p.limitedUntil) > Date.now() && (
+                    <span className="text-rust block text-[10px]">
+                      Out of usage until{" "}
+                      {new Date(p.limitedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                    </span>
+                  )}
                 </span>
                 {selected?.id === p.id && <Check />}
               </button>

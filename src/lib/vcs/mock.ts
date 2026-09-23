@@ -50,6 +50,8 @@ interface MockRepo {
   issues: Map<number, MockIssue>;
   /** Workflow runs by title, as a test says they ended. */
   runs: Map<string, WorkflowRunRef>;
+  /** Failed runs' logs by run URL. */
+  logs: Map<string, string>;
   labels: Set<string>;
   /** Comments by pull request or issue number. */
   comments: Map<number, string[]>;
@@ -75,6 +77,7 @@ function repo(): MockRepo {
     commits: new Map(),
     issues: new Map(),
     runs: new Map(),
+    logs: new Map(),
     labels: new Set(),
     comments: new Map(),
   };
@@ -200,6 +203,10 @@ export class MockVcsClient implements VcsClient {
 
   async findRun(_file: string, title: string): Promise<WorkflowRunRef | null> {
     return repo().runs.get(title) ?? null;
+  }
+
+  async runLog(runUrl: string): Promise<string | null> {
+    return repo().logs.get(runUrl) ?? null;
   }
 
   async ensureLabel(name: string): Promise<void> {
