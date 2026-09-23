@@ -10,6 +10,7 @@ import {
   columnOf,
   isStalled,
   statusForUserDrop,
+  unstarted,
 } from "@/lib/domain/status";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import { positionForIndex } from "@/lib/ordering";
@@ -207,12 +208,26 @@ export async function applyTransition(
   // the Architect Agent follows once the PRD lands.
   const met = dependenciesMet(card, cards);
   const toArchitect = card.kind === "epic" && t.to === "todo";
-  const hasPrd = toArchitect
-    ? prdSchema.safeParse((await repo.epicDetail(card.id))?.prd).success
-    : false;
+  const epicDetail = card.kind === "epic" ? await repo.epicDetail(card.id) : null;
+  const hasPrd = prdSchema.safeParse(epicDetail?.prd).success;
   const needsPrd = toArchitect && !hasPrd && card.status !== "draft";
 
-  const status = toArchitect && !hasPrd ? "waiting" : statusForUserDrop(t.to, met);
+  // The tickets an Epic took with it to Backlog come back with it. Made
+  // from the PRD it still has, they are simply ready again; made from an
+  // older one, the Architect Agent breaks it down afresh and replaces them.
+  const parked = toArchitect ? await parkedTickets(card.id) : [];
+  const madeBefore = (t: BoardCard) =>
+    !!epicDetail?.prdUpdatedAt &&
+    Date.parse(t.createdAt ?? "") < epicDetail.prdUpdatedAt.getTime();
+  const breakDown = toArchitect && hasPrd && (parked.length === 0 || parked.some(madeBefore));
+
+  // Back in Backlog, an Epic that has its PRD is still specified, not a draft.
+  const status =
+    toArchitect && !hasPrd
+      ? "waiting"
+      : card.kind === "epic" && t.to === "backlog" && hasPrd
+        ? "specified"
+        : statusForUserDrop(t.to, met);
   const position = await placeAmong(projectId, t.to, card, t.position);
 
   await repo.move({
@@ -235,9 +250,12 @@ export async function applyTransition(
     blockedReason: null,
   });
 
+  if (card.kind === "epic" && t.to === "backlog") await parkTickets(projectId, card.id);
+  if (parked.length > 0) await unparkTickets(projectId, parked, cards);
+
   // Moving an Epic into To Do is the Architect Agent's trigger. It runs
   // detached so the drag returns immediately; progress arrives over SSE.
-  if (toArchitect && hasPrd) {
+  if (breakDown) {
     launch(
       () => decomposeEpic(projectId, card.id),
       `architect agent for ${card.key}`,
@@ -263,6 +281,78 @@ export async function applyTransition(
   }
 
   return { ok: true, status, runId: null };
+}
+
+/** An Epic's tickets waiting with it in Backlog. */
+async function parkedTickets(epicId: string): Promise<BoardCard[]> {
+  const repo = repository();
+  const projectId = await repo.projectOfCard(epicId);
+  if (!projectId) return [];
+  return (await repo.boardCards(projectId)).filter(
+    (c) => c.epicId === epicId && c.status === "draft" && !c.misplacedIn,
+  );
+}
+
+/**
+ * An Epic went back to Backlog, most likely to have its PRD changed: the
+ * tickets no agent has started go with it, as drafts under it, so they are
+ * not left behind in To Do for a plan that is being rethought. Tickets a
+ * person pulled out of the group, and any already worked on, stay put.
+ */
+async function parkTickets(projectId: string, epicId: string): Promise<void> {
+  const repo = repository();
+  const tickets = (await repo.ticketsForEpic(epicId)).filter((t) => t.status !== "draft");
+  const cards = new Map((await repo.boardCards(projectId)).map((c) => [c.id, c]));
+  for (const t of tickets) {
+    const card = cards.get(t.id);
+    if (!card || card.detached || card.misplacedIn || !unstarted(t)) continue;
+    await repo.move({
+      cardId: t.id,
+      kind: "ticket",
+      status: "draft",
+      stalledIn: null,
+      position: card.position,
+      detached: false,
+    });
+    await publish(projectId, {
+      type: "card.status",
+      cardId: t.id,
+      kind: "ticket",
+      status: "draft",
+      stalledIn: null,
+      stage: t.stage,
+      blockedReason: null,
+    });
+  }
+}
+
+/** Parked tickets back in To Do, ready or waiting on what they depend on. */
+async function unparkTickets(
+  projectId: string,
+  parked: BoardCard[],
+  cards: BoardCard[],
+): Promise<void> {
+  const repo = repository();
+  for (const t of parked) {
+    const status = dependenciesMet(t, cards) ? "ready" : "waiting";
+    await repo.move({
+      cardId: t.id,
+      kind: "ticket",
+      status,
+      stalledIn: null,
+      position: t.position,
+      detached: false,
+    });
+    await publish(projectId, {
+      type: "card.status",
+      cardId: t.id,
+      kind: "ticket",
+      status,
+      stalledIn: null,
+      stage: t.stage,
+      blockedReason: null,
+    });
+  }
 }
 
 /**
@@ -323,6 +413,8 @@ export async function createBacklogItem(
  * a runner job, and is waited on for as long as that runs.
  */
 const QUIET_MS = 15 * 60_000;
+/** The runner workflow's own timeout, and a little over. */
+const RUNNER_QUIET_MS = 65 * 60_000;
 
 /**
  * Whether an Epic's planning stopped and needs a person to start it again:
@@ -335,10 +427,12 @@ export function canRetryEpic(
 ): boolean {
   if (card.kind !== "epic") return false;
   if (isStalled(card.status)) return true;
-  if (prdSchema.safeParse(detail.prd).success || detail.runnerJob) return false;
+  if (prdSchema.safeParse(detail.prd).success) return false;
   if (card.status !== "draft" && card.status !== "waiting") return false;
   const since = Date.parse(card.updatedAt ?? card.createdAt ?? "");
-  return Number.isFinite(since) && now - since > QUIET_MS;
+  const quiet = Number.isFinite(since) ? now - since : 0;
+  // A job on GitHub Actions is given its whole timeout before it counts as lost.
+  return quiet > (detail.runnerJob ? RUNNER_QUIET_MS : QUIET_MS);
 }
 
 export type EpicActionResult = { ok: true } | { ok: false; reason: string; status: number };

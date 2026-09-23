@@ -201,6 +201,25 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
   );
 }
 
+/** What each planning agent is doing to an Epic, for its card and drawer. */
+export const EPIC_WORK: Partial<Record<AgentRole, string>> = {
+  product: "Product Agent is writing the PRD…",
+  architect: "Architect Agent is breaking it into tickets…",
+  pm: "PM Agent is writing the showcase…",
+};
+
+/** A live line on an Epic while one of its planning agents works. */
+function EpicWorking({ card }: { card: BoardCard }) {
+  const label = card.agentRole ? EPIC_WORK[card.agentRole] : undefined;
+  if (!label) return null;
+  return (
+    <span className="text-ochre-text inline-flex items-center gap-1.5 text-[11px]">
+      <span aria-hidden className="bg-ochre pulse-dot size-[5px] shrink-0 rounded-full" />
+      {label}
+    </span>
+  );
+}
+
 /**
  * A red "!" on a card that needs a person: it was put somewhere it cannot
  * work, or its agent stopped. Opening the card says what and how to fix it.
@@ -375,6 +394,7 @@ function BacklogEpic({
       {extras.summary && (
         <p className="text-muted text-[11px] leading-[1.5]">{extras.summary}</p>
       )}
+      <EpicWorking card={card} />
       <div className="flex items-center gap-1">
         <Pips stage={card.stage} />
         <span className="text-muted ml-1 font-mono text-[10px]">
@@ -831,7 +851,9 @@ export function EpicGroup({
   const done = column === "done";
 
   return (
-    <li className={cn(SHELL, "flex flex-col overflow-hidden")}>
+    // Never shrunk to fit: a full column scrolls instead. Without this an
+    // overflowing column squeezed each group down to its border.
+    <li className={cn(SHELL, "flex shrink-0 flex-col overflow-hidden")}>
       <Draggable draggableId={epic.id} index={index}>
         {(provided, snapshot) => (
           <div
@@ -884,6 +906,8 @@ export function EpicGroup({
               </button>
             </h3>
 
+            {!done && <EpicWorking card={epic} />}
+
             {!done && own.dagSummary && (
               <span className="text-muted font-mono text-[10px]">
                 {own.dagSummary}
@@ -915,7 +939,9 @@ export function EpicGroup({
       {!collapsed && tickets.length > 0 && (
         <div
           className={cn(
-            "group relative",
+            // A long list scrolls inside the group, so one big Epic does not
+            // push everything else in the column out of reach.
+            "group scroll-area relative max-h-[min(420px,55dvh)]",
             done ? "bg-card p-3" : "bg-nested py-3 pr-3 pl-[34px]",
           )}
         >

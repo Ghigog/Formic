@@ -14,12 +14,15 @@ export function PrdPane({
   prd,
   rawRequest,
   streaming,
+  writing = false,
   onSave,
 }: {
   prd: Prd | null;
   rawRequest: string;
   /** Partial text while the Product Agent writes. */
   streaming?: string;
+  /** The Product Agent is on it, somewhere this page cannot stream from. */
+  writing?: boolean;
   onSave: (prd: Prd) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -51,6 +54,12 @@ export function PrdPane({
               {streaming.slice(-1200)}
             </pre>
           </>
+        ) : writing ? (
+          <p className="text-ochre-text mt-4 inline-flex items-center gap-1.5 text-[12px]">
+            <span aria-hidden className="bg-ochre pulse-dot size-[5px] shrink-0 rounded-full" />
+            Product Agent is writing the PRD. It usually takes a minute or two, and appears
+            here when it is done.
+          </p>
         ) : (
           <p className="text-fg-subtle mt-4 text-[12px]">
             No PRD yet.

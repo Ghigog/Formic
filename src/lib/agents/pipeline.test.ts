@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { makeCard } from "@/test/cards";
+import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 const deferred = vi.hoisted(() => [] as unknown[]);
 
@@ -11,7 +11,7 @@ vi.stubEnv("DATABASE_URL", "");
 vi.stubEnv("POSTGRES_PRISMA_URL", "");
 vi.stubEnv("POSTGRES_URL", "");
 
-const { applyPrd } = await import("./pipeline");
+const { applyPrd, applyTickets } = await import("./pipeline");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
 
@@ -47,6 +47,48 @@ describe("applyPrd", () => {
     seedMemory([epic]);
 
     await applyPrd(PROJECT, epic.id, PRD);
+
+    expect((await repository().cardById(epic.id))?.status).toBe("ready");
+    expect(deferred).toHaveLength(1);
+  });
+});
+
+describe("applyTickets on an Epic broken down again", () => {
+  const draft = (key: string, dependsOn: string[] = []) => ({
+    key,
+    title: key,
+    description: "d",
+    acceptanceCriteria: ["a"],
+    fileScope: [`src/${key}`],
+    size: "S" as const,
+    dependsOn,
+  });
+
+  it("replaces the tickets nobody started, keeps the rest, and renames clashing keys", async () => {
+    const [epic, idle, busy] = makeEpicWithChildren({ status: "ready" }, [
+      { key: "T-1", status: "ready" },
+      { key: "T-2", status: "review", prNumber: 7 },
+    ]);
+    seedMemory([epic!, idle!, busy!]);
+
+    await applyTickets(PROJECT, epic!.id, [draft("T-1"), draft("T-2", ["T-1"])]);
+
+    const tickets = await repository().ticketsForEpic(epic!.id);
+    expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2", "T-2-2"]);
+    expect(tickets.some((t) => t.id === idle!.id)).toBe(false);
+    expect(tickets.some((t) => t.id === busy!.id)).toBe(true);
+    const renamed = (await repository().boardCards(PROJECT)).find((c) => c.key === "T-2-2")!;
+    const first = tickets.find((t) => t.key === "T-1")!;
+    expect(renamed.dependsOn).toEqual([first.id]);
+  });
+});
+
+describe("applyPrd on an Epic already broken down in To Do", () => {
+  it("keeps it in To Do and breaks it down again", async () => {
+    const epic = makeCard({ kind: "epic", status: "ready", size: null });
+    seedMemory([epic]);
+
+    await applyPrd(PROJECT, epic.id, PRD, true);
 
     expect((await repository().cardById(epic.id))?.status).toBe("ready");
     expect(deferred).toHaveLength(1);

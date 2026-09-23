@@ -243,6 +243,8 @@ export interface Repository {
     title: string;
     rawRequest: string;
     prd: unknown;
+    /** When the PRD last changed, or null for none or from before this was kept. */
+    prdUpdatedAt: Date | null;
     runnerJob: string | null;
     issueNumber: number | null;
   } | null>;
@@ -252,6 +254,8 @@ export interface Repository {
   setEpicRunnerJob(epicId: string, job: string | null): Promise<void>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
+  /** Removes tickets, with their runs and dependencies both ways. */
+  deleteTickets(ticketIds: string[]): Promise<void>;
   /** Removes an Epic with its tickets, runs and dependencies. */
   deleteEpic(epicId: string): Promise<void>;
   /** A planning stage stalled: the Epic stays in its column, with why. */

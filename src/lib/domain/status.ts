@@ -76,6 +76,19 @@ export function columnFor(
   return STATUS_TO_COLUMN[status];
 }
 
+/** A ticket no agent has touched yet: no branch, no pull request. */
+export function unstarted(t: {
+  status: TicketStatus;
+  branchName: string | null;
+  prNumber: number | null;
+}): boolean {
+  return (
+    !t.branchName &&
+    !t.prNumber &&
+    (t.status === "draft" || t.status === "ready" || t.status === "waiting")
+  );
+}
+
 /**
  * What is wrong with a card that a person needs to know: why it cannot work
  * where they put it, or why its agent stopped. Null when nothing is.
