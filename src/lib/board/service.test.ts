@@ -5,7 +5,7 @@ const launched = vi.hoisted(() => [] as string[]);
 
 vi.mock("@/lib/agents/pipeline", () => ({
   launch: (_work: unknown, label: string) => launched.push(label),
-  runArchitectAgent: vi.fn(),
+  decomposeEpic: vi.fn(),
   runProductAgent: vi.fn(),
 }));
 vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn() }));
@@ -85,6 +85,56 @@ describe("applyTransition within one column", () => {
     expect(result.ok).toBe(true);
     const moved = await repository().cardById(child!.id);
     expect(moved).toMatchObject({ status: "ready", detached: true });
+    expect(launched).toEqual([]);
+  });
+});
+
+describe("applyTransition of an epic into To Do", () => {
+  const PRD = { summary: "s", problem: "p", scope: ["x"], successCriteria: ["y"] };
+  const drop = (id: string) =>
+    applyTransition(PROJECT, {
+      cardId: id,
+      kind: "epic",
+      from: "backlog",
+      to: "todo",
+      position: 1e9,
+      actor: "user",
+    });
+
+  it("starts the Architect Agent when the PRD is written", async () => {
+    const epic = makeCard({ kind: "epic", status: "specified", size: null });
+    seedMemory([epic]);
+    globalThis.__formicMemoryStore!.prds.set(epic.id, PRD);
+
+    const result = await drop(epic.id);
+
+    expect(result).toMatchObject({ ok: true, status: "ready" });
+    expect(launched).toEqual([`architect agent for ${epic.key}`]);
+  });
+
+  it("holds an epic whose PRD is still being written, without an agent yet", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null });
+    seedMemory([epic]);
+
+    const result = await drop(epic.id);
+
+    expect(result).toMatchObject({ ok: true, status: "waiting" });
+    expect(launched).toEqual([]);
+    expect((await repository().cardById(epic.id))?.status).toBe("waiting");
+  });
+
+  it("refuses an epic whose Product Agent stalled with no PRD", async () => {
+    const epic = makeCard({
+      kind: "epic",
+      status: "failed",
+      stalledIn: "backlog",
+      size: null,
+    });
+    seedMemory([epic]);
+
+    const result = await drop(epic.id);
+
+    expect(result).toMatchObject({ ok: false, revertTo: "backlog" });
     expect(launched).toEqual([]);
   });
 });
