@@ -74,13 +74,30 @@ Create one at https://github.com/settings/apps/new (or under your org):
 - **Webhook:** active, `https://<your-app>/api/webhooks/github`, with a
   secret that goes in `GITHUB_WEBHOOK_SECRET`. One webhook serves every
   repository the app is installed on.
-- **Repository permissions:** Contents, Pull requests, Actions, Secrets and
-  Workflows read and write; Checks and Commit statuses read. Actions,
-  Secrets and Workflows are for CLI agents (below).
+- **Repository permissions:** Contents, Pull requests, Issues, Actions,
+  Secrets and Workflows read and write; Checks and Commit statuses read.
+  Issues is for the issue mirror (below); Actions, Secrets and Workflows are
+  for CLI agents.
   After changing permissions on an existing app, each installation has to
   accept them (GitHub emails the owner, or see the app's installation page).
 - **Events:** Check run, Check suite, Workflow run, Pull request.
 - Generate a client secret. No private key is needed.
+
+## Work tracked as GitHub issues
+
+Every Epic is filed as a GitHub issue in its repository, and each of its
+tickets as a sub-issue. They move with the board:
+
+- A `formic: <column>` label follows the card, and `formic: needs a human`
+  marks one that stopped.
+- A comment marks the moments worth a notification: the PRD written, work
+  started, a pull request opened, a stop and its reason, a merge.
+- A ticket's pull request says `Closes #N`. Merged tickets and shipped Epics
+  are closed.
+
+Formic does this itself, not through the agents' prompts, so it works the
+same with every provider and costs no tokens. A repository without Issues
+access still runs; the board just says nothing on GitHub.
 
 ## Agents per column
 

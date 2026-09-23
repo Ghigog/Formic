@@ -66,6 +66,8 @@ export interface TicketDetail {
   summary: string | null;
   /** The cloud runner job this ticket is waiting on, if any. */
   runnerJob: string | null;
+  /** The GitHub issue that tracks it, once created. */
+  issueNumber: number | null;
 }
 
 export interface TicketUpdate {
@@ -79,6 +81,7 @@ export interface TicketUpdate {
   attempts?: number;
   summary?: string | null;
   runnerJob?: string | null;
+  issueNumber?: number | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -203,7 +206,15 @@ export interface Repository {
   cardById(id: string): Promise<BoardCard | null>;
   epicDetail(
     epicId: string,
-  ): Promise<{ title: string; rawRequest: string; prd: unknown; runnerJob: string | null } | null>;
+  ): Promise<{
+    title: string;
+    rawRequest: string;
+    prd: unknown;
+    runnerJob: string | null;
+    issueNumber: number | null;
+  } | null>;
+  /** The GitHub issue that tracks this epic. */
+  setEpicIssue(epicId: string, issueNumber: number): Promise<void>;
   /** The Actions run a CLI agent is doing for this epic, or null. */
   setEpicRunnerJob(epicId: string, job: string | null): Promise<void>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;

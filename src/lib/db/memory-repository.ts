@@ -49,6 +49,7 @@ interface TicketExtras {
   attempts: number;
   summary: string | null;
   runnerJob: string | null;
+  issueNumber: number | null;
 }
 
 interface Store {
@@ -63,6 +64,7 @@ interface Store {
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
   epicJobs: Map<string, string>;
+  epicIssues: Map<string, number>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -109,6 +111,7 @@ function store(): Store {
     rawRequests: new Map(),
     showcases: new Map(),
     epicJobs: new Map(),
+    epicIssues: new Map(),
     events: [],
     runs: new Map(),
     deliveries: new Set(),
@@ -306,6 +309,7 @@ export class MemoryRepository implements Repository {
         attempts: 0,
         summary: null,
         runnerJob: null,
+        issueNumber: null,
       });
     }
 
@@ -350,7 +354,12 @@ export class MemoryRepository implements Repository {
       rawRequest: s.rawRequests.get(epicId) ?? card.title,
       prd: s.prds.get(epicId) ?? null,
       runnerJob: s.epicJobs.get(epicId) ?? null,
+      issueNumber: s.epicIssues.get(epicId) ?? null,
     };
+  }
+
+  async setEpicIssue(epicId: string, issueNumber: number): Promise<void> {
+    store().epicIssues.set(epicId, issueNumber);
   }
 
   async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
@@ -448,6 +457,7 @@ export class MemoryRepository implements Repository {
     if (update.attempts !== undefined) extras.attempts = update.attempts;
     if (update.summary !== undefined) extras.summary = update.summary;
     if (update.runnerJob !== undefined) extras.runnerJob = update.runnerJob;
+    if (update.issueNumber !== undefined) extras.issueNumber = update.issueNumber;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
@@ -581,6 +591,7 @@ function toDetail(
     attempts: extras?.attempts ?? 0,
     summary: extras?.summary ?? null,
     runnerJob: extras?.runnerJob ?? null,
+    issueNumber: extras?.issueNumber ?? null,
   };
 }
 

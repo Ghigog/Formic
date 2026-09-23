@@ -385,13 +385,17 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const epic = await db.epic.findUnique({
       where: { id: epicId },
-      select: { title: true, rawRequest: true, prd: true, runnerJob: true },
+      select: { title: true, rawRequest: true, prd: true, runnerJob: true, issueNumber: true },
     });
     return epic ?? null;
   }
 
   async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
     await prisma().epic.update({ where: { id: epicId }, data: { runnerJob: job } });
+  }
+
+  async setEpicIssue(epicId: string, issueNumber: number): Promise<void> {
+    await prisma().epic.update({ where: { id: epicId }, data: { issueNumber } });
   }
 
   async setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void> {
@@ -660,6 +664,7 @@ type TicketRow = {
   blockedReason: string | null;
   attempts: number;
   runnerJob: string | null;
+  issueNumber: number | null;
   epic: { projectId: string };
 };
 
@@ -693,6 +698,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     attempts: row.attempts,
     summary: row.summary,
     runnerJob: row.runnerJob,
+    issueNumber: row.issueNumber,
   };
 }
 

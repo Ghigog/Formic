@@ -161,6 +161,8 @@ export function pullRequestBody(
   return [
     change.detail,
     "",
+    // Links the pull request to the ticket's issue on GitHub.
+    ...(ticket.issueNumber ? [`Closes #${ticket.issueNumber}.`, ""] : []),
     `## ${ticket.key} — ${ticket.title}`,
     "",
     ticket.description,
