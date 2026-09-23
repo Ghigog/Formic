@@ -179,6 +179,14 @@ export interface BoardCard {
   prNumber: number | null;
   prUrl: string | null;
   blockedReason: string | null;
+  /**
+   * Where a person put it when that was not somewhere it can be. It shows
+   * there, with `misplacedReason` saying what is wrong and how to fix it,
+   * while its status stays what is really true of it. Null when it is where
+   * its status says.
+   */
+  misplacedIn?: (typeof COLUMNS)[number] | null;
+  misplacedReason?: string | null;
   costCents: number;
   childCount: number;
   doneCount: number;

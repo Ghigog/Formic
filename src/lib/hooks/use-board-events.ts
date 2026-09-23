@@ -48,6 +48,7 @@ export function useBoardEvents(
     const types: FormicEvent["type"][] = [
       "card.status",
       "card.created",
+      "card.deleted",
       "epic.prd",
       "epic.showcase",
       "run.progress",

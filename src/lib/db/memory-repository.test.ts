@@ -121,3 +121,19 @@ describe("merges on the in-memory store", () => {
     expect((await repo.cardById(b!.id))!.mergeMultiplier).toBe(1);
   });
 });
+
+describe("Epic numbers on the in-memory store", () => {
+  it("never gives a deleted Epic's number to a new one", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const make = (title: string) =>
+      repo.createEpic({ projectId: project.id, title, rawRequest: title, position: 1 });
+    const one = await make("one");
+    const two = await make("two");
+    await repo.deleteEpic(two.id);
+    const three = await make("three");
+
+    expect([one.key, three.key]).toEqual(["EPIC-1", "EPIC-3"]);
+    expect(await repo.cardById(two.id)).toBeNull();
+  });
+});

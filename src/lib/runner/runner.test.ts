@@ -497,6 +497,39 @@ describe("taking a CLI agent's work", () => {
     expect(after.blockedReason).toContain("ENOSPC: no space left on device");
   });
 
+  it("closes a ticket that was already done, with no pull request", async () => {
+    const { ticket, job, staging } = await dispatched();
+    MockVcsClient.stage(
+      staging,
+      [],
+      "T-1: The thing is already there\n\nIt is done: src/lib/feature/thing.ts does it.\n\nFormic-Already-Done: true",
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("merged");
+    expect(after.prNumber).toBeNull();
+    expect(after.summary).toBe("Already done: The thing is already there");
+    expect(MockVcsClient.runner().branches.has(staging)).toBe(false);
+  });
+
+  it("still stops on an empty run that does not say it was already done", async () => {
+    const { ticket, job, staging } = await dispatched();
+    MockVcsClient.stage(staging, [], "T-1: nothing");
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    expect((await repository().ticketDetail(ticket.id))!.status).toBe("failed");
+  });
+
+  it("tells the agent how to report a ticket that is already done", async () => {
+    await dispatched();
+    const prompt = MockVcsClient.runner().dispatches[0]!.inputs.prompt!;
+    expect(prompt).toContain("Formic-Already-Done: true");
+    expect(prompt).toContain("--allow-empty");
+  });
+
   it("ignores a result nobody is waiting for", async () => {
     const { ticket, staging } = await dispatched();
     const stale = `${ticket.id}--oldjob00`;

@@ -26,7 +26,7 @@ import type {
   ColumnAgents,
   PlanStep,
 } from "@/lib/domain/entities";
-import { type ColumnId, columnFor } from "@/lib/domain/status";
+import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
@@ -69,6 +69,8 @@ interface Store {
   showcases: Map<string, string>;
   epicJobs: Map<string, string>;
   epicIssues: Map<string, number>;
+  /** The highest Epic number each project has used, deleted ones included. */
+  epicNumbers: Map<string, number>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -96,6 +98,7 @@ function store(): Store {
     existing.presets ??= new Map();
     existing.columnAgents ??= new Map();
     existing.users ??= new Map();
+    existing.epicNumbers ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -116,6 +119,7 @@ function store(): Store {
     showcases: new Map(),
     epicJobs: new Map(),
     epicIssues: new Map(),
+    epicNumbers: new Map(),
     events: [],
     runs: new Map(),
     deliveries: new Set(),
@@ -264,9 +268,15 @@ export class MemoryRepository implements Repository {
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
     const s = store();
+    // One past the highest ever used, so a deleted Epic's key is never reused.
     const n =
-      (await this.boardCards(input.projectId)).filter((c) => c.kind === "epic")
-        .length + 1;
+      Math.max(
+        s.epicNumbers.get(input.projectId) ?? 0,
+        ...(await this.boardCards(input.projectId))
+          .filter((c) => c.kind === "epic")
+          .map((c) => Number(c.key.replace(/^EPIC-/, "")) || 0),
+      ) + 1;
+    s.epicNumbers.set(input.projectId, n);
     const card: BoardCard = {
       id: id("epic"),
       kind: "epic",
@@ -362,14 +372,16 @@ export class MemoryRepository implements Repository {
     card.status = input.status;
     card.stalledIn = input.stalledIn;
     card.position = input.position;
-    // Out of a stall, an Epic's reason goes with it.
-    if (card.kind === "epic" && input.stalledIn === null) card.blockedReason = null;
+    card.misplacedIn = input.misplaced?.in ?? null;
+    card.misplacedReason = input.misplaced?.reason ?? null;
+    // Out of a stall, the reason goes with it.
+    if (input.stalledIn === null) card.blockedReason = null;
     if (input.detached !== undefined) card.detached = input.detached;
   }
 
   async columnPositions(projectId: string, column: ColumnId): Promise<number[]> {
     return (await this.boardCards(projectId))
-      .filter((c) => columnFor(c.status, c.stalledIn) === column)
+      .filter((c) => columnOf(c) === column)
       .map((c) => c.position)
       .sort((a, b) => a - b);
   }
@@ -410,6 +422,8 @@ export class MemoryRepository implements Repository {
       card.stage = 2;
       card.stalledIn = null;
       card.blockedReason = null;
+      card.misplacedIn = null;
+      card.misplacedReason = null;
     }
   }
 
@@ -421,7 +435,33 @@ export class MemoryRepository implements Repository {
       card.stage = 8;
       card.stalledIn = null;
       card.blockedReason = null;
+      card.misplacedIn = null;
+      card.misplacedReason = null;
     }
+  }
+
+  async deleteEpic(epicId: string): Promise<void> {
+    const s = store();
+    for (const card of [...s.cards.values()]) {
+      if (card.epicId !== epicId) continue;
+      s.cards.delete(card.id);
+      s.ticketExtras.delete(card.id);
+    }
+    for (const card of s.cards.values()) {
+      card.dependsOn = card.dependsOn.filter((id) => s.cards.has(id));
+    }
+    for (const [runId, run] of s.runs) {
+      if (run.epicId === epicId || (run.ticketId && !s.cards.has(run.ticketId))) {
+        s.runs.delete(runId);
+      }
+    }
+    s.cards.delete(epicId);
+    s.epicProject.delete(epicId);
+    s.rawRequests.delete(epicId);
+    s.prds.delete(epicId);
+    s.showcases.delete(epicId);
+    s.epicJobs.delete(epicId);
+    s.epicIssues.delete(epicId);
   }
 
   async stallEpic(
@@ -434,6 +474,8 @@ export class MemoryRepository implements Repository {
     card.stalledIn = stall.stalledIn;
     card.stage = stall.stage;
     card.blockedReason = stall.reason;
+    card.misplacedIn = null;
+    card.misplacedReason = null;
   }
 
   async appendEvent(
@@ -521,7 +563,12 @@ export class MemoryRepository implements Repository {
       card.mergePoints = pts;
       card.mergeMultiplier = mult;
     }
-    if (update.status !== undefined) card.status = update.status;
+    if (update.status !== undefined) {
+      card.status = update.status;
+      // An agent moved it on: it goes where its status says.
+      card.misplacedIn = null;
+      card.misplacedReason = null;
+    }
     // A merged ticket joins its epic's group in Done, wherever it sat.
     if (update.status === "merged") card.detached = false;
     if (update.stalledIn !== undefined) card.stalledIn = update.stalledIn;
@@ -700,7 +747,7 @@ export class MemoryRepository implements Repository {
 
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
     const cards = (await this.boardCards(projectId))
-      .filter((c) => columnFor(c.status, c.stalledIn) === column)
+      .filter((c) => columnOf(c) === column)
       .sort(byPosition);
     if (!needsRebalance(cards.map((c) => c.position))) return;
     const fresh = rebalance(cards.length);

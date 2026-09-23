@@ -32,6 +32,11 @@ export const transitionResultSchema = z.discriminatedUnion("ok", [
     status: z.string(),
     /** Set when the move started an agent run. */
     runId: z.string().nullable().default(null),
+    /**
+     * The card landed where it was dropped, but cannot work there: what is
+     * wrong and how to fix it. It stays on the card until it moves again.
+     */
+    problem: z.string().nullable().optional(),
   }),
   z.object({
     ok: z.literal(false),

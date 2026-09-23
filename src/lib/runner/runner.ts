@@ -19,6 +19,7 @@ import { provider as providerInfo } from "@/lib/llm/providers";
 import type { ColumnId } from "@/lib/domain/status";
 import { failuresBrief, taskBrief } from "@/lib/agents/coder";
 import {
+  ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
   CODER_BRIEF,
   PRODUCT_BRIEF,
@@ -84,6 +85,21 @@ const CLI_RULES = `Rules that are enforced, not advisory:
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
 - When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.`;
+
+/**
+ * The trailer that marks a CLI agent's report that the ticket was already
+ * done. The workflow only hands work back when there is a commit, so the
+ * agent makes an empty one; that keeps the installed workflow unchanged.
+ */
+export const ALREADY_DONE_TRAILER = "Formic-Already-Done: true";
+
+const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:
+git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
+
+/** Whether a CLI agent's commits report the ticket as already done. */
+export function reportsAlreadyDone(messages: string[]): boolean {
+  return messages.some((m) => m.split("\n").some((line) => line.trim() === ALREADY_DONE_TRAILER));
+}
 
 export type RunnerState =
   | { ready: true }
@@ -242,7 +258,7 @@ export function cliPrompt(
         "",
         failuresBrief(fix.checks),
       ].join("\n")
-    : "Implement it.";
+    : ["Implement it.", "", ALREADY_DONE_RULE, "", CLI_ALREADY_DONE].join("\n");
   return cap(
     [brief.trim(), "", CLI_RULES, "", ENGINEERING_PRACTICES, "", task, "", work].join("\n"),
   );
@@ -834,6 +850,27 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
 
   try {
     const change = await client.compare(from, staging);
+    if (
+      result.mode === "implement" &&
+      change.files.length === 0 &&
+      reportsAlreadyDone(change.messages)
+    ) {
+      await cleanUp();
+      const message = change.messages.find((m) => m.includes(ALREADY_DONE_TRAILER)) ?? "";
+      const [first, ...rest] = message.split("\n");
+      const line = (first ?? "").trim();
+      const { closeAlreadyDone } = await import("@/lib/review/pipeline");
+      await closeAlreadyDone(projectId, ticket, {
+        summary:
+          (line.startsWith(`${ticket.key}:`) ? line.slice(ticket.key.length + 1).trim() : line) ||
+          ticket.title,
+        detail: rest
+          .filter((l) => l.trim() !== ALREADY_DONE_TRAILER)
+          .join("\n")
+          .trim(),
+      });
+      return;
+    }
     if (change.files.length === 0 || !change.headSha) {
       await stop(`The agent finished without changing anything.${log}`, result.mode === "fix");
       return;

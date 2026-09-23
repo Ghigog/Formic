@@ -94,6 +94,8 @@ export interface IssuePatch {
   title?: string;
   body?: string;
   state?: "open" | "closed";
+  /** Why it closed. GitHub's own field name. */
+  state_reason?: "completed" | "not_planned";
   /** Replaces every label on the issue. */
   labels?: string[];
 }

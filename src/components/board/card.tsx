@@ -12,7 +12,7 @@ import {
   type AgentRole,
   type BoardCard,
 } from "@/lib/domain/entities";
-import { COLUMN_LABELS, isDraggable, type ColumnId } from "@/lib/domain/status";
+import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
 import { isBug, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
@@ -201,6 +201,53 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
   );
 }
 
+/**
+ * A red "!" on a card that needs a person: it was put somewhere it cannot
+ * work, or its agent stopped. Opening the card says what and how to fix it.
+ */
+export function ProblemBadge({ card }: { card: BoardCard }) {
+  const problem = cardProblem(card);
+  if (!problem) return null;
+  return (
+    <span
+      role="img"
+      aria-label={`Needs you: ${problem}`}
+      title={problem}
+      className="bg-crimson text-on-crimson inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none font-bold"
+    >
+      !
+    </span>
+  );
+}
+
+/**
+ * The same problem, spelled out at the top of an opened card: what is wrong
+ * and what to do about it.
+ */
+export function ProblemNotice({ card, className }: { card: BoardCard; className?: string }) {
+  const problem = cardProblem(card);
+  if (!problem) return null;
+  return (
+    <div
+      role="alert"
+      className={cn("bg-crimson/10 text-ink flex items-start gap-2 rounded-md px-2.5 py-2 text-[12px] leading-5", className)}
+    >
+      <span
+        aria-hidden
+        className="bg-crimson text-on-crimson mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none font-bold"
+      >
+        !
+      </span>
+      <p className="min-w-0">
+        <span className="font-semibold">
+          {card.misplacedReason ? "It can't work here. " : "This needs you. "}
+        </span>
+        {problem}
+      </p>
+    </div>
+  );
+}
+
 /** Which epic a ticket belongs to, or what an orphan is. */
 function EpicLine({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
@@ -277,6 +324,7 @@ function TicketHead({
       {isBug(card) && <BugBadge squashed={isSquashed(card)} />}
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
+      <ProblemBadge card={card} />
       {pr && card.prNumber && (
         <CoinBadge title="Pull request" className="shrink-0 whitespace-nowrap">
           PR #{card.prNumber}
@@ -318,6 +366,7 @@ function BacklogEpic({
         {isBug(card) && <BugBadge squashed={isSquashed(card)} />}
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <div className="flex-grow" />
+        <ProblemBadge card={card} />
         <AdvanceButton card={card} column={column} />
       </div>
       <h3 className="text-ink font-serif text-[16px] leading-dense font-semibold">
@@ -584,6 +633,8 @@ export function CardBody({
   const agentLabel = card.agentRole ? AGENT_LABEL[card.agentRole] : null;
 
   if (card.kind === "epic") return <BacklogEpic card={card} column={column} extras={extras} />;
+  // Somewhere it cannot work: none of that column's anatomy applies to it.
+  if (card.misplacedIn) return <PlainTicket card={card} column={column} extras={extras} />;
 
   if (column === "in_progress" && card.status === "running") {
     return <RunningCard card={card} column={column} extras={extras} agentLabel={agentLabel} />;
@@ -618,20 +669,15 @@ export function KanbanCard({
   extras: ExtrasMap;
   onOpen: (card: BoardCard) => void;
 }) {
-  const draggable = isDraggable(card.status);
-
   return (
-    <Draggable draggableId={card.id} index={index} isDragDisabled={!draggable}>
+    <Draggable draggableId={card.id} index={index}>
       {(provided, snapshot) => (
         <li
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={() => onOpen(card)}
-          className={cn(
-            "rounded-lg outline-none",
-            draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
-          )}
+          className="cursor-grab rounded-lg outline-none active:cursor-grabbing"
         >
           {/* Picked up, the card leans into the drag. */}
           <div
@@ -679,6 +725,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
           )}
         />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
+        <ProblemBadge card={card} />
         <h4
           className={cn(
             "min-w-0 flex-1 truncate text-[12px] font-medium",
@@ -785,7 +832,7 @@ export function EpicGroup({
 
   return (
     <li className={cn(SHELL, "flex flex-col overflow-hidden")}>
-      <Draggable draggableId={epic.id} index={index} isDragDisabled={done}>
+      <Draggable draggableId={epic.id} index={index}>
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}
@@ -811,6 +858,7 @@ export function EpicGroup({
                   : epic.key}
               </span>
               <div className="flex-grow" />
+              <ProblemBadge card={epic} />
               {!done && (
                 <button
                   type="button"
@@ -884,7 +932,6 @@ export function EpicGroup({
                 key={child.id}
                 draggableId={child.id}
                 index={index + 1 + i}
-                isDragDisabled={!isDraggable(child.status)}
               >
                 {(provided, snapshot) => (
                   <div
@@ -893,10 +940,7 @@ export function EpicGroup({
                     {...provided.dragHandleProps}
                     onClick={() => onOpen(child)}
                     className={cn(
-                      "rounded-md outline-none",
-                      isDraggable(child.status)
-                        ? "cursor-grab active:cursor-grabbing"
-                        : "cursor-default",
+                      "cursor-grab rounded-md outline-none active:cursor-grabbing",
                       snapshot.isDragging && "shadow-lift",
                     )}
                   >

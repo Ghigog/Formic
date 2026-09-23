@@ -107,6 +107,9 @@ model Epic {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  /// Its number on the board, EPIC-<number>. Given once, never reused, so
+  /// a key keeps meaning the same Epic when others move or are deleted.
+  number           Int?
   title            String
   rawRequest       String
   /// Structured PRD from the Product Agent. Null until stage 2 completes.
@@ -125,6 +128,11 @@ model Epic {
   stage     Int          @default(1)
   /// Why a planning stage stalled. Cleared when the Epic moves on.
   blockedReason String?
+  /// Where a person dropped it when it cannot work there. It shows there,
+  /// with misplacedReason saying what is wrong and how to fix it; its status
+  /// stays what is true. Cleared by its next move or status change.
+  misplacedIn     ColumnId?
+  misplacedReason String?
   /// Fractional index. A drag writes one row instead of renumbering a column.
   position  Float
 
@@ -157,6 +165,11 @@ model Ticket {
   position  Float
   /// Pulled out of its epic's group by a human. Only To Do reads it.
   detached  Boolean      @default(false)
+  /// Where a person dropped it when it cannot work there. It shows there,
+  /// with misplacedReason saying what is wrong and how to fix it; its status
+  /// stays what is true. Cleared by its next move or status change.
+  misplacedIn     ColumnId?
+  misplacedReason String?
 
   branchName    String?
   /// One line describing what the Coder Agent actually changed. Feeds the

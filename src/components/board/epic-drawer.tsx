@@ -6,6 +6,7 @@ import { StepIndicator } from "@/components/ui/step-indicator";
 import { StatusPill } from "@/components/ui/status-pill";
 import { DagPane } from "./dag-pane";
 import { PrdPane } from "./prd-pane";
+import { ProblemNotice } from "./card";
 import type { BoardCard, Prd } from "@/lib/domain/entities";
 import { isStalled } from "@/lib/domain/status";
 import { epicProgress } from "@/lib/domain/stages";
@@ -16,7 +17,12 @@ interface EpicDetail {
   rawRequest: string;
   prd: Prd | null;
   children: BoardCard[];
+  /** Its planning stopped, and a person can start it again. */
+  canRetry: boolean;
 }
+
+const ACTION =
+  "border-line rounded border px-1.5 py-0.5 text-[12px] disabled:opacity-50";
 
 /**
  * Dual-pane Epic drawer: the PRD on the left in editorial serif, the child
@@ -40,6 +46,9 @@ export function EpicDrawer({
   const [detail, setDetail] = useState<EpicDetail | null>(null);
   const [failed, setFailed] = useState(false);
   const [tab, setTab] = useState<"prd" | "dag">("prd");
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Another Epic: nothing of the last one's stays on screen.
   const [shownFor, setShownFor] = useState(epicId);
@@ -47,6 +56,8 @@ export function EpicDrawer({
     setShownFor(epicId);
     setDetail(null);
     setFailed(false);
+    setConfirming(false);
+    setActionError(null);
   }
   const loading = !!epicId && !detail && !failed;
 
@@ -93,6 +104,30 @@ export function EpicDrawer({
     [epicId, load],
   );
 
+  const act = useCallback(
+    async (method: "POST" | "DELETE") => {
+      if (!epicId) return;
+      setBusy(true);
+      setActionError(null);
+      try {
+        const res = await fetch(`/api/epics/${epicId}`, { method });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          setActionError(body?.error ?? "That did not work. Try again in a moment.");
+          return;
+        }
+        if (method === "DELETE") onClose();
+        else await load();
+      } catch {
+        setActionError("That did not work. Try again in a moment.");
+      } finally {
+        setBusy(false);
+        setConfirming(false);
+      }
+    },
+    [epicId, load, onClose],
+  );
+
   if (!epicId) return null;
 
   const epic = detail?.epic;
@@ -114,6 +149,7 @@ export function EpicDrawer({
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
+          {epic && <ProblemNotice card={epic} className="mb-3" />}
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <span className="text-fg-subtle font-mono text-[10px]">
@@ -133,15 +169,68 @@ export function EpicDrawer({
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="text-fg-muted hover:text-fg border-line rounded border px-1.5 py-0.5 text-[12px]"
-            >
-              Close
-            </button>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {detail?.canRetry && !confirming && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void act("POST")}
+                  className={cn(ACTION, "text-fg hover:border-line-strong")}
+                >
+                  Retry
+                </button>
+              )}
+              {epic && !confirming && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirming(true)}
+                  className={cn(ACTION, "text-fg-muted hover:text-crimson-text")}
+                >
+                  Delete
+                </button>
+              )}
+              {confirming && (
+                <>
+                  <span className="text-fg-muted text-[12px]">
+                    {epic && epic.childCount > 0
+                      ? `Delete it and its ${epic.childCount} ticket${epic.childCount === 1 ? "" : "s"}?`
+                      : "Delete it?"}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void act("DELETE")}
+                    className={cn(ACTION, "bg-crimson text-on-crimson border-transparent")}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirming(false)}
+                    className={cn(ACTION, "text-fg-muted hover:text-fg")}
+                  >
+                    Keep
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="text-fg-muted hover:text-fg border-line rounded border px-1.5 py-0.5 text-[12px]"
+              >
+                Close
+              </button>
+            </div>
           </div>
+
+          {actionError && (
+            <p role="alert" className="text-crimson-text mt-2 text-[12px] leading-[1.5]">
+              {actionError}
+            </p>
+          )}
 
           <StepIndicator
             className="mt-3"

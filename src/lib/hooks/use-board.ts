@@ -48,6 +48,7 @@ export function useBoard(
       switch (event.type) {
         case "card.status":
         case "card.created":
+        case "card.deleted":
           scheduleRefetch();
           break;
 

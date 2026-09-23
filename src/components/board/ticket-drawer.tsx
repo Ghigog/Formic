@@ -9,6 +9,8 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
+import { cardProblem } from "@/lib/domain/status";
+import { ProblemNotice } from "./card";
 import {
   activityOf,
   appendActivity,
@@ -114,6 +116,7 @@ export function TicketDrawer({
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
+          {card && <ProblemNotice card={card} className="mb-3" />}
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -172,8 +175,9 @@ export function TicketDrawer({
             working={progress.working}
           />
 
-          {card?.blockedReason && (
-            <p role="alert" className="bg-crimson/10 text-ink mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
+          {/* A reason it waits that is not a problem, such as a dependency. */}
+          {card?.blockedReason && !cardProblem(card) && (
+            <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
               {card.blockedReason}
             </p>
           )}

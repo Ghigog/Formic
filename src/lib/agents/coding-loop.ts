@@ -69,6 +69,8 @@ const finishInput = z.object({
   summary: z.string().min(1),
   detail: z.string().min(1),
   verified_with: z.string().nullable(),
+  // Optional here: a model that leaves it out has changed something.
+  already_done: z.boolean().optional(),
 });
 
 const TOOLS: Anthropic.Beta.BetaTool[] = [
@@ -154,15 +156,20 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "finish",
     description:
-      "Call this once the change is complete and verified. Ends the run.",
+      "Call this once the change is complete and verified, or once you have confirmed the ticket was already done. Ends the run.",
     input_schema: {
       type: "object",
       properties: {
         summary: { type: "string" },
         detail: { type: "string" },
         verified_with: { type: ["string", "null"] },
+        already_done: {
+          type: "boolean",
+          description:
+            "True only when the repository already met every acceptance criterion and you changed nothing.",
+        },
       },
-      required: ["summary", "detail", "verified_with"],
+      required: ["summary", "detail", "verified_with", "already_done"],
       additionalProperties: false,
     },
     strict: true,
@@ -456,6 +463,7 @@ export async function runCodingLoop(
               summary: parsed.data.summary,
               detail: parsed.data.detail,
               verifiedWith: parsed.data.verified_with,
+              alreadyDone: parsed.data.already_done ?? false,
             },
             usage: total,
           };

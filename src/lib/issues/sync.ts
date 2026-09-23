@@ -250,7 +250,9 @@ async function syncEpic(ctx: Context, epicId: string, event?: FormicEvent & { ty
 }
 
 async function sync(projectId: string, event: FormicEvent): Promise<void> {
-  if (event.type !== "card.status" && event.type !== "card.created") return;
+  if (event.type !== "card.status" && event.type !== "card.created" && event.type !== "card.deleted") {
+    return;
+  }
 
   const project = await projectFor(projectId);
   if (project.id !== projectId) return;
@@ -259,6 +261,16 @@ async function sync(projectId: string, event: FormicEvent): Promise<void> {
     client: vcs(project.repoFullName, creds.githubToken),
     repoFullName: project.repoFullName,
   };
+
+  // Deleted on the board: its issues close as not planned, rather than
+  // staying open for work that is no longer coming.
+  if (event.type === "card.deleted") {
+    for (const number of event.issueNumbers) {
+      await ctx.client.updateIssue(number, { state: "closed", state_reason: "not_planned" });
+    }
+    return;
+  }
+
   await ensureLabels(ctx.client, ctx.repoFullName);
 
   if (event.type === "card.status") {

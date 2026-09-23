@@ -76,10 +76,31 @@ export function columnFor(
   return STATUS_TO_COLUMN[status];
 }
 
-/** A card the user is allowed to pick up. Running cards are not draggable. */
-export function isDraggable(status: TicketStatus): boolean {
-  return status !== "running" && status !== "review";
+/**
+ * What is wrong with a card that a person needs to know: why it cannot work
+ * where they put it, or why its agent stopped. Null when nothing is.
+ */
+export function cardProblem(card: {
+  status: TicketStatus;
+  blockedReason?: string | null;
+  misplacedReason?: string | null;
+}): string | null {
+  if (card.misplacedReason) return card.misplacedReason;
+  return isStalled(card.status) && card.blockedReason ? card.blockedReason : null;
 }
+
+/**
+ * Where a card shows: where a person put it, when that was somewhere it
+ * cannot really be, and otherwise where its status says.
+ */
+export function columnOf(card: {
+  status: TicketStatus;
+  stalledIn?: ColumnId | null;
+  misplacedIn?: ColumnId | null;
+}): ColumnId {
+  return card.misplacedIn ?? columnFor(card.status, card.stalledIn);
+}
+
 
 /** Terminal states an agent will not move on from without a human. */
 export function isStalled(status: TicketStatus): status is "blocked" | "failed" {
