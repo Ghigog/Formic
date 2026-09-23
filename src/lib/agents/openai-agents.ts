@@ -117,7 +117,7 @@ async function askForJson<T>(
   return { ok: false, error: lastProblem, usage: total };
 }
 
-const productOutput = z.object({
+export const productOutput = z.object({
   title: z.string().describe("A short imperative Epic title, under 80 characters."),
   prd: prdSchema,
 });

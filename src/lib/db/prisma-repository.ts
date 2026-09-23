@@ -385,9 +385,13 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const epic = await db.epic.findUnique({
       where: { id: epicId },
-      select: { title: true, rawRequest: true, prd: true },
+      select: { title: true, rawRequest: true, prd: true, runnerJob: true },
     });
     return epic ?? null;
+  }
+
+  async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
+    await prisma().epic.update({ where: { id: epicId }, data: { runnerJob: job } });
   }
 
   async setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void> {

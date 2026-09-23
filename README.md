@@ -106,8 +106,7 @@ In local mode, a column with no agent runs Claude on the server's
 
 ### CLI agents on your own plan
 
-In Progress and In Review can also run a coding CLI people already pay for,
-instead of an API key:
+Any column can run a CLI people already pay for, instead of an API key:
 
 | Agent | Credential | How to get it |
 | --- | --- | --- |
@@ -126,6 +125,13 @@ They run in the repository's own GitHub Actions, not on Formic's server:
    change against the ticket's file scope, fast-forwards the ticket's branch
    to it, deletes the staging branch, and opens the pull request. CI, fixes
    and the merge go through the same loop as every other agent.
+
+The planning columns (Backlog, To Do, Done) run the same workflow in an
+answer mode. The agent reads the repository and writes its answer (the PRD,
+the ticket graph, or the showcase) to a file; the workflow throws away
+anything else it touched and pushes only that answer. Formic checks it
+exactly as it checks an API agent's answer, and sends a wrong one back as a
+correction (twice for the PRD, three times for the ticket graph).
 
 Nothing the agent does reaches a real branch before the scope check. Formic
 never force-pushes, and the only branches it deletes are its own

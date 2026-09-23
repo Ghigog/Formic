@@ -62,6 +62,7 @@ interface Store {
   prds: Map<string, unknown>;
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
+  epicJobs: Map<string, string>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -107,6 +108,7 @@ function store(): Store {
     prds: new Map(),
     rawRequests: new Map(),
     showcases: new Map(),
+    epicJobs: new Map(),
     events: [],
     runs: new Map(),
     deliveries: new Set(),
@@ -347,7 +349,14 @@ export class MemoryRepository implements Repository {
       title: card.title,
       rawRequest: s.rawRequests.get(epicId) ?? card.title,
       prd: s.prds.get(epicId) ?? null,
+      runnerJob: s.epicJobs.get(epicId) ?? null,
     };
+  }
+
+  async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
+    const s = store();
+    if (job) s.epicJobs.set(epicId, job);
+    else s.epicJobs.delete(epicId);
   }
 
   async setEpicPrd(epicId: string, prd: unknown): Promise<void> {

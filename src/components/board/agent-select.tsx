@@ -9,7 +9,7 @@ import {
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { modelLabel } from "@/lib/agents/models";
-import { CLI_COLUMNS, provider as providerInfo, shortModelName } from "@/lib/llm/providers";
+import { provider as providerInfo, shortModelName } from "@/lib/llm/providers";
 
 /** "Sonnet 5" for a known Claude model, the bare id for anything else. */
 function modelName(model: string): string {
@@ -40,9 +40,6 @@ export function AgentSelect({
   const [error, setError] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const role = `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
-  // CLI agents write code in GitHub Actions; elsewhere they have nothing to do.
-  const codes = (CLI_COLUMNS as readonly ColumnId[]).includes(column);
-  const usable = presets.filter((p) => codes || providerInfo(p.provider)?.kind !== "cli");
 
   useEffect(() => {
     if (!open) return;
@@ -117,7 +114,7 @@ export function AgentSelect({
             {!selected && <Check />}
           </button>
 
-          {usable.map((p) => (
+          {presets.map((p) => (
             <div key={p.id} className="group flex items-center">
               <button
                 type="button"

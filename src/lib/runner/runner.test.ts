@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { completeCliRun } from "./runner";
 import {
+  ANSWER_PATH,
   RUNNER_SETUP_BRANCH,
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
@@ -10,7 +11,9 @@ import {
   runnerWorkflow,
 } from "./workflow";
 import { runCoderAgent } from "@/lib/coder/pipeline";
-import { agentFor, cliAgentFor, savePreset } from "@/lib/agents/presets";
+import { cliAgentFor, savePreset } from "@/lib/agents/presets";
+import { runArchitectAgent, runProductAgent } from "@/lib/agents/pipeline";
+import type { ColumnId } from "@/lib/domain/status";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
@@ -53,7 +56,7 @@ async function seedTicket(fileScope = ["src/lib/feature"]): Promise<TicketDetail
   return (await repo.ticketDetail(ticket!.id))!;
 }
 
-async function useClaudeCode(column: "in_progress" | "in_review" = "in_progress") {
+async function useClaudeCode(column: ColumnId = "in_progress") {
   const preset = await savePreset({
     name: "my-claude",
     provider: "claude-code",
@@ -94,21 +97,165 @@ afterEach(() => {
 });
 
 describe("CLI agent templates", () => {
-  it("run only in the coding columns", async () => {
+  it("run in any column", async () => {
     const preset = await useClaudeCode();
-    await repository().setColumnAgent(PROJECT, "backlog", preset.id);
+    for (const column of ["backlog", "todo", "in_review", "done"] as const) {
+      await repository().setColumnAgent(PROJECT, column, preset.id);
+    }
 
-    expect(await cliAgentFor(PROJECT, "in_progress")).toMatchObject({
-      credential: TOKEN,
-      model: null,
-      info: { cli: "claude", secretName: "FORMIC_CLAUDE_CODE_TOKEN" },
+    for (const column of ["backlog", "todo", "in_progress", "in_review", "done"] as const) {
+      expect(await cliAgentFor(PROJECT, column)).toMatchObject({
+        credential: TOKEN,
+        model: null,
+        info: { cli: "claude", secretName: "FORMIC_CLAUDE_CODE_TOKEN" },
+      });
+    }
+  });
+});
+
+describe("a CLI agent planning an Epic", () => {
+  const PRD = {
+    summary: "Let people export their board",
+    problem: "Boards cannot leave Formic.",
+    scope: ["A CSV export"],
+    outOfScope: [],
+    technicalContext: [],
+    userStories: [],
+    successCriteria: ["The export opens in a spreadsheet"],
+  };
+  const TICKETS = {
+    tickets: [
+      {
+        key: "T-1",
+        title: "Export endpoint",
+        description: "Serve the CSV.",
+        acceptanceCriteria: ["It downloads"],
+        fileScope: ["src/app/api/export"],
+        size: "S",
+        dependsOn: [],
+      },
+      {
+        key: "T-2",
+        title: "Export button",
+        description: "A button that calls it.",
+        acceptanceCriteria: ["It is on the board"],
+        fileScope: ["src/components/export"],
+        size: "S",
+        dependsOn: ["T-1"],
+      },
+    ],
+  };
+
+  async function seedEpic(prd: unknown = null) {
+    const repo = repository();
+    const epic = await repo.createEpic({
+      projectId: PROJECT,
+      title: "Export",
+      rawRequest: "Let me export my board as CSV",
+      position: 1,
     });
-    const outcome = await (await agentFor(PROJECT, "product")).draftPrd(
-      {} as never,
-      { epicId: "e", rawRequest: "x" },
+    if (prd) await repo.setEpicPrd(epic.id, prd, false);
+    return epic;
+  }
+
+  function answer(job: string, text: string) {
+    return new MockVcsClient("acme/widgets").commitFile(
+      `${STAGING_PREFIX}${job}`,
+      ANSWER_PATH,
+      text,
+      "answer",
     );
-    expect(outcome).toMatchObject({ ok: false, blocked: true });
-    expect(!outcome.ok && outcome.error).toContain("In Progress or In Review");
+  }
+
+  function lastDispatch() {
+    return MockVcsClient.runner().dispatches.at(-1)!.inputs;
+  }
+
+  it("drafts the PRD in Actions and puts it on the Epic", async () => {
+    await useClaudeCode("backlog");
+    const base = await installRunner();
+    const epic = await seedEpic();
+
+    await runProductAgent(PROJECT, epic.id, "Let me export my board as CSV");
+
+    const inputs = lastDispatch();
+    expect(inputs).toMatchObject({ mode: "product", cli: "claude", from: base });
+    expect(inputs.prompt).toContain("Let me export my board as CSV");
+    expect(inputs.prompt).toContain("FORMIC_OUTPUT");
+    expect((await repository().epicDetail(epic.id))!.runnerJob).toBe(inputs.job);
+
+    // Agents often wrap their JSON in a fence; that is fine.
+    await answer(inputs.job!, "```json\n" + JSON.stringify({ title: "Export", prd: PRD }) + "\n```");
+    await completeCliRun(PROJECT, { job: inputs.job!, mode: "product", conclusion: "success", url: null });
+
+    const after = (await repository().epicDetail(epic.id))!;
+    expect(after.prd).toMatchObject(PRD);
+    expect(after.runnerJob).toBeNull();
+    expect((await repository().cardById(epic.id))!.status).toBe("specified");
+    expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${inputs.job}`)).toBe(false);
+  });
+
+  it("sends an unsafe ticket graph back as a correction, then takes the fixed one", async () => {
+    await useClaudeCode("todo");
+    await installRunner();
+    const epic = await seedEpic(PRD);
+
+    await runArchitectAgent(PROJECT, epic.id, "Export", PRD, ["src"]);
+    const first = lastDispatch();
+    expect(first.mode).toBe("architect");
+    expect(first.prompt).toContain("A CSV export");
+
+    // Two tickets that could run together, on the same directory.
+    const clash = structuredClone(TICKETS);
+    clash.tickets[1]!.fileScope = ["src/app/api/export"];
+    clash.tickets[1]!.dependsOn = [];
+    await answer(first.job!, JSON.stringify(clash));
+    await completeCliRun(PROJECT, { job: first.job!, mode: "architect", conclusion: "success", url: null });
+
+    const second = lastDispatch();
+    expect(second.job).not.toBe(first.job);
+    expect(second.prompt).toContain("attempt 2 of 3");
+    expect(second.prompt).toContain("not safe to run");
+    expect(await repository().ticketsForEpic(epic.id)).toHaveLength(0);
+
+    await answer(second.job!, JSON.stringify(TICKETS));
+    await completeCliRun(PROJECT, { job: second.job!, mode: "architect", conclusion: "success", url: null });
+
+    const tickets = await repository().ticketsForEpic(epic.id);
+    expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2"]);
+    expect((await repository().epicDetail(epic.id))!.runnerJob).toBeNull();
+  });
+
+  it("gives up after the last attempt instead of asking forever", async () => {
+    await useClaudeCode("todo");
+    await installRunner();
+    const epic = await seedEpic(PRD);
+
+    await runArchitectAgent(PROJECT, epic.id, "Export", PRD, ["src"]);
+    for (let i = 0; i < 3; i++) {
+      const job = lastDispatch().job!;
+      await answer(job, "I could not decide.");
+      await completeCliRun(PROJECT, { job, mode: "architect", conclusion: "success", url: null });
+    }
+
+    expect(MockVcsClient.runner().dispatches).toHaveLength(3);
+    expect(await repository().ticketsForEpic(epic.id)).toHaveLength(0);
+    expect((await repository().epicDetail(epic.id))!.runnerJob).toBeNull();
+  });
+
+  it("ignores an answer nobody is waiting for", async () => {
+    await useClaudeCode("backlog");
+    await installRunner();
+    const epic = await seedEpic();
+    await runProductAgent(PROJECT, epic.id, "x");
+
+    const stale = `${epic.id}--oldjob00`;
+    await answer(stale, JSON.stringify({ title: "Old", prd: PRD }));
+    await completeCliRun(PROJECT, { job: stale, mode: "product", conclusion: "success", url: null });
+
+    const after = (await repository().epicDetail(epic.id))!;
+    expect(after.prd).toBeNull();
+    expect(after.runnerJob).toBe(lastDispatch().job);
   });
 });
 
@@ -283,12 +430,24 @@ describe("the runner workflow", () => {
     expect(yaml).toContain("persist-credentials: false");
   });
 
-  it("round-trips its title, which is how its result finds the ticket", () => {
+  it("round-trips its title, which is how its result finds the card", () => {
     expect(parseRunTitle(runTitle("fix", "T-12", "abc--1234"))).toEqual({
       mode: "fix",
       ticketKey: "T-12",
       job: "abc--1234",
     });
+    expect(parseRunTitle(runTitle("architect", "E-3", "epc--1234-2"))).toEqual({
+      mode: "architect",
+      ticketKey: "E-3",
+      job: "epc--1234-2",
+    });
+  });
+
+  it("keeps only the answer from a planning run", () => {
+    const yaml = runnerWorkflow();
+    expect(yaml).toContain("product|architect|showcase)");
+    expect(yaml).toContain('git reset -q --hard "$FORMIC_START"');
+    expect(yaml).toContain(`git add -f "${ANSWER_PATH}"`);
   });
 
   it("reports back as a runner signal, not as CI", () => {

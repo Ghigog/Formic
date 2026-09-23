@@ -3,13 +3,14 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 
-import type { AgentContext, AgentOutcome, Usage } from "./ports";
+import type { AgentContext, AgentOutcome, DraftTicket, Usage } from "./ports";
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
-import { agentFor, modelFor } from "./presets";
+import { agentFor, cliAgentFor, modelFor } from "./presets";
+import { startCliAnswer } from "@/lib/runner/runner";
 
 /**
  * Wires agents to column transitions.
@@ -111,44 +112,123 @@ export function startRun(
   return { runId, ctx, attachSandbox, finish };
 }
 
+/** Stage 2 done: the PRD goes on the Epic. */
+export async function applyPrd(projectId: string, epicId: string, prd: Prd): Promise<void> {
+  await repository().setEpicPrd(epicId, prd, false);
+  await publish(projectId, {
+    type: "card.status",
+    cardId: epicId,
+    kind: "epic",
+    status: "specified",
+    stalledIn: null,
+    stage: 2,
+    blockedReason: null,
+  });
+}
+
+/** Stage 3 done: the ticket graph goes on the board under its Epic. */
+export async function applyTickets(
+  projectId: string,
+  epicId: string,
+  tickets: DraftTicket[],
+): Promise<void> {
+  const repo = repository();
+  const positions = await repo.columnPositions(projectId, "todo");
+  let cursor = positions.length;
+
+  await repo.createTickets(
+    tickets.map((t) => ({
+      epicId,
+      key: t.key,
+      title: t.title,
+      description: t.description,
+      acceptanceCriteria: t.acceptanceCriteria,
+      fileScope: t.fileScope,
+      size: t.size,
+      position: positionForIndex(positions, cursor++),
+      dependsOnKeys: t.dependsOn,
+    })),
+  );
+
+  await publish(projectId, {
+    type: "card.created",
+    cardId: epicId,
+    kind: "epic",
+    epicId,
+  });
+}
+
+/** Stage 8. The Epic's closing showcase, once every ticket has merged. */
+export async function applyShowcase(
+  projectId: string,
+  epicId: string,
+  markdown: string,
+): Promise<void> {
+  await repository().setEpicShowcase(epicId, markdown);
+  await publish(projectId, {
+    type: "card.status",
+    cardId: epicId,
+    kind: "epic",
+    status: "merged",
+    stalledIn: null,
+    stage: 8,
+    blockedReason: null,
+  });
+}
+
+/** A planning stage could not finish. The Epic stays where it stopped. */
+export async function stallEpic(
+  projectId: string,
+  epicId: string,
+  error: string,
+  options: { blocked: boolean; stalledIn: "backlog" | "todo"; stage: number },
+): Promise<void> {
+  await publish(projectId, {
+    type: "card.status",
+    cardId: epicId,
+    kind: "epic",
+    status: options.blocked ? "blocked" : "failed",
+    stalledIn: options.stalledIn,
+    stage: options.stage,
+    blockedReason: error,
+  });
+}
+
 /** Stage 2. Raw backlog request becomes an Epic PRD. */
 export async function runProductAgent(
   projectId: string,
   epicId: string,
   rawRequest: string,
 ): Promise<void> {
-  const { ctx, finish } = startRun(projectId, "product", {
+  const run = startRun(projectId, "product", {
     epicId,
     model: await modelFor(projectId, "product"),
   });
-  const repo = repository();
 
-  const outcome = await (await agentFor(projectId, "product")).draftPrd(ctx, { epicId, rawRequest });
+  // A CLI agent on the person's own plan answers from GitHub Actions, and
+  // its answer arrives on the workflow_run webhook.
+  const cli = await cliAgentFor(projectId, "backlog");
+  if (cli) {
+    await startCliAnswer({ projectId, epicId, mode: "product", agent: cli, run });
+    return;
+  }
+
+  const outcome = await (await agentFor(projectId, "product")).draftPrd(run.ctx, {
+    epicId,
+    rawRequest,
+  });
 
   if (outcome.ok) {
-    await repo.setEpicPrd(epicId, outcome.value.prd, false);
-    await publish(projectId, {
-      type: "card.status",
-      cardId: epicId,
-      kind: "epic",
-      status: "specified",
-      stalledIn: null,
-      stage: 2,
-      blockedReason: null,
-    });
+    await applyPrd(projectId, epicId, outcome.value.prd);
   } else {
-    await publish(projectId, {
-      type: "card.status",
-      cardId: epicId,
-      kind: "epic",
-      status: outcome.blocked ? "blocked" : "failed",
+    await stallEpic(projectId, epicId, outcome.error, {
+      blocked: outcome.blocked,
       stalledIn: "backlog",
       stage: 2,
-      blockedReason: outcome.error,
     });
   }
 
-  await finish(outcome);
+  await run.finish(outcome);
 }
 
 /** Stage 3. Epic PRD becomes a validated DAG of child tickets. */
@@ -159,13 +239,18 @@ export async function runArchitectAgent(
   prd: Prd,
   repoTree: string[],
 ): Promise<void> {
-  const { ctx, finish } = startRun(projectId, "architect", {
+  const run = startRun(projectId, "architect", {
     epicId,
     model: await modelFor(projectId, "architect"),
   });
-  const repo = repository();
 
-  const outcome = await (await agentFor(projectId, "architect")).decompose(ctx, {
+  const cli = await cliAgentFor(projectId, "todo");
+  if (cli) {
+    await startCliAnswer({ projectId, epicId, mode: "architect", agent: cli, run });
+    return;
+  }
+
+  const outcome = await (await agentFor(projectId, "architect")).decompose(run.ctx, {
     epicId,
     title,
     prd,
@@ -173,42 +258,16 @@ export async function runArchitectAgent(
   });
 
   if (outcome.ok) {
-    const positions = await repo.columnPositions(projectId, "todo");
-    let cursor = positions.length;
-
-    await repo.createTickets(
-      outcome.value.map((t) => ({
-        epicId,
-        key: t.key,
-        title: t.title,
-        description: t.description,
-        acceptanceCriteria: t.acceptanceCriteria,
-        fileScope: t.fileScope,
-        size: t.size,
-        position: positionForIndex(positions, cursor++),
-        dependsOnKeys: t.dependsOn,
-      })),
-    );
-
-    await publish(projectId, {
-      type: "card.created",
-      cardId: epicId,
-      kind: "epic",
-      epicId,
-    });
+    await applyTickets(projectId, epicId, outcome.value);
   } else {
-    await publish(projectId, {
-      type: "card.status",
-      cardId: epicId,
-      kind: "epic",
-      status: outcome.blocked ? "blocked" : "failed",
+    await stallEpic(projectId, epicId, outcome.error, {
+      blocked: outcome.blocked,
       stalledIn: "todo",
       stage: 3,
-      blockedReason: outcome.error,
     });
   }
 
-  await finish(outcome);
+  await run.finish(outcome);
 }
 
 /**

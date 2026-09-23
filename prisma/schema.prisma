@@ -109,6 +109,9 @@ model Epic {
   prd              Json?
   prdEditedByHuman Boolean @default(false)
   showcase         String?
+  /// The GitHub Actions run a CLI agent is doing for this epic, if any.
+  /// Only that run's answer is taken; any other is stale.
+  runnerJob        String?
 
   status    TicketStatus @default(draft)
   /// Set only for blocked/failed cards, so a stalled card keeps its column.

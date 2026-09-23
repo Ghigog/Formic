@@ -203,7 +203,9 @@ export interface Repository {
   cardById(id: string): Promise<BoardCard | null>;
   epicDetail(
     epicId: string,
-  ): Promise<{ title: string; rawRequest: string; prd: unknown } | null>;
+  ): Promise<{ title: string; rawRequest: string; prd: unknown; runnerJob: string | null } | null>;
+  /** The Actions run a CLI agent is doing for this epic, or null. */
+  setEpicRunnerJob(epicId: string, job: string | null): Promise<void>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
   appendEvent(projectId: string, type: string, payload: unknown): Promise<number>;

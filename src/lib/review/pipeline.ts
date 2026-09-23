@@ -1,6 +1,6 @@
 import "server-only";
 
-import { launch, startRun } from "@/lib/agents/pipeline";
+import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck } from "@/lib/agents/ports";
 import { DEFAULT_RUN_BUDGET } from "@/lib/budget/limits";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
@@ -15,7 +15,7 @@ import { publish } from "@/lib/events/bus";
 import { type CheckSummary, mergeNeedsPromotion, vcs } from "@/lib/vcs";
 import { inMergeLane, inTicketLane } from "./lane";
 import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
-import { cliPrompt, startCliRun } from "@/lib/runner/runner";
+import { cliPrompt, showcaseSummaries, startCliAnswer, startCliRun } from "@/lib/runner/runner";
 
 /**
  * PROT-07. CI results drive a fix-or-merge loop.
@@ -27,7 +27,6 @@ import { cliPrompt, startCliRun } from "@/lib/runner/runner";
  */
 
 const STAGE_MERGE = 7;
-const STAGE_SHOWCASE = 8;
 
 /** After this many fix attempts the card stops and waits for a human. */
 export const MAX_FIX_ATTEMPTS = DEFAULT_RUN_BUDGET.maxAttempts;
@@ -293,29 +292,20 @@ async function maybeShowcase(projectId: string, epicId: string): Promise<void> {
   });
 
   launch(async () => {
+    const cli = await cliAgentFor(projectId, "done");
+    if (cli) {
+      await startCliAnswer({ projectId, epicId, mode: "showcase", agent: cli, run });
+      return;
+    }
+
     const outcome = await (await agentFor(projectId, "showcase")).summarize(run.ctx, {
       epicId,
       title: detail.title,
       prd: prd.success ? prd.data : null,
-      ticketSummaries: siblings.map((t) => ({
-        key: t.key,
-        title: t.title,
-        summary: t.summary ?? t.description.split("\n")[0] ?? t.title,
-      })),
+      ticketSummaries: showcaseSummaries(siblings),
     });
 
-    if (outcome.ok) {
-      await repo.setEpicShowcase(epicId, outcome.value);
-      await publish(projectId, {
-        type: "card.status",
-        cardId: epicId,
-        kind: "epic",
-        status: "merged",
-        stalledIn: null,
-        stage: STAGE_SHOWCASE,
-        blockedReason: null,
-      });
-    }
+    if (outcome.ok) await applyShowcase(projectId, epicId, outcome.value);
 
     await run.finish(outcome);
   }, `showcase for epic ${epicId}`);

@@ -10,14 +10,13 @@ import {
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { DEFAULT_BRIEF } from "@/lib/agents/prompts";
 import {
-  CLI_COLUMNS,
   PROVIDERS,
   type ProviderId,
   provider as providerInfo,
 } from "@/lib/llm/providers";
 
 /** Columns whose agent writes code, and so always gets the platform rules. */
-const CODING_COLUMNS: ReadonlySet<ColumnId> = new Set(CLI_COLUMNS);
+const CODING_COLUMNS: ReadonlySet<ColumnId> = new Set(["in_progress", "in_review"]);
 
 type ModelList =
   | { state: "idle" }
@@ -31,8 +30,8 @@ type ModelList =
  * prompt for the column it was opened from. The key belongs to this agent
  * alone; nothing else on the board uses it.
  *
- * In the coding columns the providers include CLI agents on a person's own
- * plan (Claude Code, Codex, Gemini CLI), which run in GitHub Actions.
+ * The providers include CLI agents on a person's own plan (Claude Code,
+ * Codex, Gemini CLI), which run in GitHub Actions for any column.
  */
 export function AgentEditor({
   column,
@@ -61,9 +60,6 @@ export function AgentEditor({
   const nameRef = useRef<HTMLInputElement>(null);
   const info = providerInfo(provider)!;
   const cli = info.kind === "cli";
-  const choices = PROVIDERS.filter(
-    (p) => p.kind !== "cli" || CODING_COLUMNS.has(column) || p.id === preset?.provider,
-  );
 
   useEffect(() => {
     requestAnimationFrame(() => nameRef.current?.focus());
@@ -213,7 +209,7 @@ export function AgentEditor({
               }}
               className={`${field} h-9`}
             >
-              {choices.map((p) => (
+              {PROVIDERS.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                   {p.freeTier ? " · free tier" : ""}
