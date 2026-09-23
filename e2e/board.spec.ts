@@ -92,7 +92,7 @@ test("an illegal move is refused, and the card stays put", async ({ page }) => {
 });
 
 test("the ambient drawer opens a terminal", async ({ page }) => {
-  const toggle = page.getByRole("button", { name: "Terminal" });
+  const toggle = page.getByRole("button", { name: "Terminal", exact: true });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
 
   await toggle.click();
@@ -107,9 +107,10 @@ test("the ambient drawer opens a terminal", async ({ page }) => {
  * process, so a run that starts its own server (CI always does) starts clean.
  * Locally, `reuseExistingServer` means repeated runs accumulate captures.
  */
-test("the Backlog composer captures a request", async ({ page }) => {
+test("Backlog's New request captures a request", async ({ page }) => {
   const before = (await cardIds(page, "Backlog")).length;
 
+  await column(page, "Backlog").getByRole("button", { name: "New request" }).click();
   await page.getByLabel("New feature request").fill("Rate-limit the merge queue");
   await page.getByRole("button", { name: "Draft PRD" }).click();
 

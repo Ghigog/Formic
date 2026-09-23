@@ -15,6 +15,11 @@ import type { AmbientStats } from "@/components/ui/ambient-drawer";
  * merged group.
  */
 
+/** An ISO time `days` ago, so the demo timeline always ends today. */
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString();
+}
+
 function card(
   partial: Partial<BoardCard> &
     Pick<BoardCard, "id" | "key" | "title" | "status">,
@@ -45,6 +50,8 @@ export const FIXTURE_CARDS: BoardCard[] = [
   /* ---- Backlog --------------------------------------------------------- */
   card({
     id: "epic-4",
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
     kind: "epic",
     key: "EPIC-04",
     title: "Concurrent merge queue",
@@ -57,6 +64,8 @@ export const FIXTURE_CARDS: BoardCard[] = [
   }),
   card({
     id: "idea-1",
+    createdAt: daysAgo(0.1),
+    updatedAt: daysAgo(0.1),
     key: "RAW-07",
     title: "Swipe between columns on mobile instead of drag-and-drop",
     status: "draft",
@@ -64,10 +73,23 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 2000,
     size: null,
   }),
+  card({
+    id: "idea-2",
+    createdAt: daysAgo(0.3),
+    updatedAt: daysAgo(0.3),
+    key: "RAW-08",
+    title: "Ambient drawer flickers when the terminal opens",
+    status: "draft",
+    stage: 1,
+    position: 3000,
+    size: null,
+  }),
 
   /* ---- To Do ----------------------------------------------------------- */
   card({
     id: "epic-3",
+    createdAt: daysAgo(6),
+    updatedAt: daysAgo(4),
     kind: "epic",
     key: "EPIC-03",
     title: "Agentic execution loop",
@@ -82,6 +104,8 @@ export const FIXTURE_CARDS: BoardCard[] = [
   }),
   card({
     id: "prot-7",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
     key: "PROT-07",
     title: "Reviewer webhook",
     status: "ready",
@@ -94,6 +118,8 @@ export const FIXTURE_CARDS: BoardCard[] = [
   }),
   card({
     id: "prot-8",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
     key: "PROT-08",
     title: "Showcase aggregator",
     status: "waiting",
@@ -110,6 +136,9 @@ export const FIXTURE_CARDS: BoardCard[] = [
   /* ---- In Progress ----------------------------------------------------- */
   card({
     id: "prot-6",
+    createdAt: daysAgo(4),
+    startedAt: daysAgo(0.2),
+    updatedAt: daysAgo(0.2),
     key: "PROT-06",
     title: "Implement Coder Agent execution loop",
     status: "running",
@@ -125,6 +154,9 @@ export const FIXTURE_CARDS: BoardCard[] = [
   }),
   card({
     id: "prot-5",
+    createdAt: daysAgo(4),
+    startedAt: daysAgo(0.05),
+    updatedAt: daysAgo(0.05),
     key: "PROT-05",
     title: "Set up E2B sandbox environment",
     status: "running",
@@ -142,6 +174,9 @@ export const FIXTURE_CARDS: BoardCard[] = [
   /* ---- In Review ------------------------------------------------------- */
   card({
     id: "prot-3",
+    createdAt: daysAgo(4),
+    startedAt: daysAgo(3),
+    updatedAt: daysAgo(1),
     key: "PROT-03",
     title: "Build Backlog “Product Agent” pipeline",
     status: "review",
@@ -159,6 +194,9 @@ export const FIXTURE_CARDS: BoardCard[] = [
   }),
   card({
     id: "prot-4",
+    createdAt: daysAgo(4),
+    startedAt: daysAgo(2),
+    updatedAt: daysAgo(0.5),
     key: "PROT-04",
     title: "Build To Do “Architect Agent” pipeline",
     status: "review",
@@ -178,6 +216,8 @@ export const FIXTURE_CARDS: BoardCard[] = [
   /* ---- Done ------------------------------------------------------------ */
   card({
     id: "epic-1",
+    createdAt: daysAgo(9),
+    updatedAt: daysAgo(5),
     kind: "epic",
     key: "EPIC-01",
     title: "Board foundations",
@@ -190,6 +230,9 @@ export const FIXTURE_CARDS: BoardCard[] = [
   }),
   card({
     id: "prot-1",
+    createdAt: daysAgo(9),
+    startedAt: daysAgo(8),
+    updatedAt: daysAgo(6),
     key: "PROT-01",
     title: "Next.js + Kanban UI",
     status: "merged",
@@ -205,6 +248,9 @@ export const FIXTURE_CARDS: BoardCard[] = [
   }),
   card({
     id: "prot-2",
+    createdAt: daysAgo(9),
+    startedAt: daysAgo(7),
+    updatedAt: daysAgo(5),
     key: "PROT-02",
     title: "Database + persistence",
     status: "merged",
@@ -228,6 +274,7 @@ export const FIXTURE_EXTRAS: Record<string, CardExtras> = {
     stageLabel: "PRD draft",
   },
   "idea-1": { age: "2h ago" },
+  "idea-2": { age: "7h ago" },
   "epic-3": { dagSummary: "DAG ready · 6 tickets · 2 file scopes locked" },
   "prot-6": {
     elapsed: "04:12",

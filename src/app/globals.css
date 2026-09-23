@@ -392,3 +392,57 @@
     animation: none;
   }
 }
+
+/*
+ * The colony layer (design/artboards/ColonyBoard.html): a green glow on work
+ * ready to move on, the timeline's marching stripes and its "now" ping.
+ */
+@keyframes readyGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(46 125 50 / 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(46 125 50 / 0);
+  }
+}
+
+@keyframes tlStripe {
+  to {
+    background-position: 17px 0;
+  }
+}
+
+@keyframes tlPing {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+@keyframes reqFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes reqPop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+.glow-ready {
+  animation: readyGlow 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-ready {
+    animation: none;
+  }
+}

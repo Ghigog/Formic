@@ -19,6 +19,10 @@ import { AgentEditor } from "./agent-editor";
 import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
+import { ColonyProvider, useColony } from "@/components/colony/colony";
+import { ColonyTimeline } from "@/components/colony/timeline";
+import { ColonyPopover, NestButton } from "@/components/colony/nest";
+import { ColonyToast, EpicWinDialog } from "@/components/colony/overlays";
 
 /**
  * Client shell: owns the live board state, the capture dialog and the ambient
@@ -88,7 +92,10 @@ export function BoardShell({
     merged[id] = { ...merged[id], ...live };
   }
 
+  const repoName = repoFullName.split("/")[1] ?? repoFullName;
+
   return (
+    <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
     <div className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={cards}
@@ -101,7 +108,6 @@ export function BoardShell({
         }
         onShowcase={(epic) => setOpenEpicId(epic.id)}
         onNewItem={() => setDialogOpen(true)}
-        onCapture={createEpic}
         onTransition={transition}
         account={account}
         assistant={{
@@ -163,7 +169,11 @@ export function BoardShell({
         subscribe={subscribe}
       />
 
-      <AmbientDrawer stats={stats} onStopAll={() => void stopAll()} />
+      <ColonyAmbient stats={stats} onStopAll={() => void stopAll()} />
+      <ColonyTimeline repoName={repoName} />
+      <ColonyPopover />
+      <ColonyToast />
+      <EpicWinDialog onShowcase={(epic) => setOpenEpicId(epic.id)} />
 
       {connection === "reconnecting" && (
         <div
@@ -174,5 +184,18 @@ export function BoardShell({
         </div>
       )}
     </div>
+    </ColonyProvider>
+  );
+}
+
+/** The ambient bar, with the colony's bug count and its nest. */
+function ColonyAmbient(props: { stats: AmbientStats; onStopAll: () => void }) {
+  const colony = useColony();
+  return (
+    <AmbientDrawer
+      {...props}
+      bugsSquashed={colony?.score.squashed}
+      nest={<NestButton />}
+    />
   );
 }

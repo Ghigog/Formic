@@ -42,13 +42,13 @@ describe("AmbientDrawer", () => {
 
   it("says the merge lock is free rather than showing a blank", () => {
     render(<AmbientDrawer stats={stats({ queueDepth: 0 })} />);
-    expect(screen.getByText("queue 0 · merge lock free")).toBeInTheDocument();
+    expect(screen.getByText("0 in merge queue")).toHaveAttribute("title", "Merge lock free");
   });
 
   it("names the PR holding the merge lock", () => {
     render(<AmbientDrawer stats={stats({ queueDepth: 2, mergeLockPr: 117 })} />);
     expect(
-      screen.getByText("queue 2 · merge lock held by PR #117"),
+      screen.getByText("2 in merge queue · lock PR #117"),
     ).toBeInTheDocument();
   });
 
