@@ -147,3 +147,25 @@ test("a ticket dragged out of its epic stays out, in To Do", async ({ page }) =>
     });
   }
 });
+
+test("picking another repository switches the board to it", async ({ page }) => {
+  await page.getByRole("button", { name: /Choose another project/ }).first().click();
+  const picker = page.getByRole("dialog", { name: "Choose a repository" });
+  await expect(picker).toBeVisible();
+
+  await picker.getByLabel("Search repositories").fill("acme/widgets");
+  await picker.getByRole("button", { name: /Use\s*acme\/widgets/ }).click();
+
+  // A new repository starts with an empty board of its own.
+  await expect(page.getByRole("button", { name: /Choose another project/ }).first())
+    .toContainText("acme / widgets");
+  await expect(cardIds(page, "To Do")).resolves.toEqual([]);
+
+  // And the demo board is still there to switch back to.
+  await page.getByRole("button", { name: /Choose another project/ }).first().click();
+  await expect(picker.getByText("On this board")).toBeVisible();
+  await page.screenshot({ path: "e2e/.results/repo-picker.png" });
+  await picker.getByRole("button", { name: /Ghigog\/Formic/i }).click();
+  await expect(page.getByRole("button", { name: /Choose another project/ }).first())
+    .not.toContainText("acme");
+});

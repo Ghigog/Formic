@@ -18,27 +18,40 @@ import { env } from "@/lib/secrets/env";
 
 export const INTEGRATION_BRANCH = "formic/integration";
 
-let cached: VcsClient | null = null;
+/** One client per repository: each project on the board is its own repo. */
+const clients = new Map<string, VcsClient>();
+let override: VcsClient | null = null;
 
+/**
+ * Real GitHub whenever there is a token. The repository comes from the
+ * project picked on the board, so GITHUB_REPO is only the default project.
+ */
 export function usingMockVcs(): boolean {
-  return !env().GITHUB_TOKEN || !env().GITHUB_REPO;
+  if (override) return override.name === "mock";
+  return !env().GITHUB_TOKEN;
 }
 
 export function vcs(repoFullName: string): VcsClient {
-  if (cached) return cached;
-  cached = usingMockVcs()
-    ? new MockVcsClient(repoFullName)
-    : new GitHubClient(repoFullName);
-  return cached;
+  if (override) return override;
+  let client = clients.get(repoFullName);
+  if (!client) {
+    client = usingMockVcs()
+      ? new MockVcsClient(repoFullName)
+      : new GitHubClient(repoFullName);
+    clients.set(repoFullName, client);
+  }
+  return client;
 }
 
+/** Test seam: every repository gets this client. */
 export function setVcs(client: VcsClient): void {
-  cached = client;
+  override = client;
 }
 
 /** Test seam. */
 export function resetVcs(): void {
-  cached = null;
+  override = null;
+  clients.clear();
 }
 
 /** The branch agents may merge into without a human. */

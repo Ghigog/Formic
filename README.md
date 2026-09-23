@@ -28,7 +28,7 @@ Each credential unlocks one layer and nothing breaks without it:
 | :-- | :-- |
 | `DATABASE_URL` (or `POSTGRES_PRISMA_URL` / `POSTGRES_URL`, as set by Vercel's Postgres integrations) | Durable state. Without it, the in-memory store. |
 | `ANTHROPIC_API_KEY` | Real agents. Without it, mocks. |
-| `GITHUB_TOKEN`, `GITHUB_REPO` | Cloning and pushing. |
+| `GITHUB_TOKEN` | Cloning and pushing, and the list of repositories in the picker. `GITHUB_REPO` sets the board's default project. |
 | `E2B_API_KEY` + `SANDBOX_PROVIDER=e2b` | Isolated sandboxes. Without it, local child processes. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop. |
 
@@ -40,6 +40,15 @@ npm run dev
 ```
 
 `GET /api/health` reports which of those layers are live, plus the build id.
+
+## Picking a repository
+
+The repository button in the header switches the board to another
+repository, like choosing one in Claude Code on the web. It lists everything
+`GITHUB_TOKEN` can reach (a fine-grained token scoped to a few repositories
+lists just those), and takes a typed `owner/repo` too. Each repository gets
+its own board, created empty the first time it is picked. The choice is per
+browser. The demo board stays under the default project.
 
 ## Deploying on Vercel
 

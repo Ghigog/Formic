@@ -4,6 +4,7 @@ import { agents } from "@/lib/agents/registry";
 import { startRun, launch } from "@/lib/agents/pipeline";
 import type { CoderTask } from "@/lib/agents/ports";
 import { repository } from "@/lib/db";
+import { projectFor } from "@/lib/board/project";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
@@ -79,7 +80,7 @@ export async function runCoderAgent(
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket) return;
 
-  const project = await repo.defaultProject();
+  const project = await projectFor(projectId);
   const branch = ticket.branchName ?? newBranchName(ticket.key);
   const client = vcs(project.repoFullName);
 

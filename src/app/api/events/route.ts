@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { repository } from "@/lib/db";
 import { isDroppable, replay, subscribe } from "@/lib/events/bus";
 import type { SequencedEvent } from "@/lib/domain/events";
+import { activeProject } from "@/lib/board/project";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export const runtime = "nodejs";
 const HIGH_WATER = 256;
 
 export async function GET(req: NextRequest) {
-  const project = await repository().defaultProject();
+  const project = await activeProject();
 
   const lastEventId =
     req.headers.get("last-event-id") ??

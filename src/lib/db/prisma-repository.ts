@@ -61,6 +61,47 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async listProjects(): Promise<ProjectSummary[]> {
+    return prisma().project.findMany({ orderBy: { createdAt: "asc" } });
+  }
+
+  async projectById(projectId: string): Promise<ProjectSummary | null> {
+    return prisma().project.findUnique({ where: { id: projectId } });
+  }
+
+  async ensureProject(input: {
+    repoFullName: string;
+    baseBranch: string;
+  }): Promise<ProjectSummary> {
+    const db = prisma();
+    const found = await db.project.findFirst({
+      where: { repoFullName: { equals: input.repoFullName, mode: "insensitive" } },
+      orderBy: { createdAt: "asc" },
+    });
+    if (found) return found;
+    return db.project.create({
+      data: {
+        name: input.repoFullName.split("/")[1] ?? input.repoFullName,
+        repoFullName: input.repoFullName,
+        baseBranch: input.baseBranch,
+      },
+    });
+  }
+
+  async projectOfCard(cardId: string): Promise<string | null> {
+    const db = prisma();
+    const epic = await db.epic.findUnique({
+      where: { id: cardId },
+      select: { projectId: true },
+    });
+    if (epic) return epic.projectId;
+    const ticket = await db.ticket.findUnique({
+      where: { id: cardId },
+      select: { epic: { select: { projectId: true } } },
+    });
+    return ticket?.epic.projectId ?? null;
+  }
+
   async boardCards(projectId: string): Promise<BoardCard[]> {
     const db = prisma();
 

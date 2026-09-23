@@ -33,9 +33,12 @@ export async function reconcileOrphanedRuns(now = new Date()): Promise<number> {
   const orphans = await repo.unfinishedRuns(new Date(now.getTime() - ORPHAN_AFTER_MS));
   if (orphans.length === 0) return 0;
 
-  const project = await repo.defaultProject();
+  const fallback = await repo.defaultProject();
 
   for (const run of orphans) {
+    const card = run.ticketId ?? run.epicId;
+    const projectId =
+      (card ? await repo.projectOfCard(card) : null) ?? fallback.id;
     await repo.finishRun(run.id, {
       status: "failed",
       error: REASON,
@@ -43,7 +46,7 @@ export async function reconcileOrphanedRuns(now = new Date()): Promise<number> {
       tokensOut: 0,
       costCents: 0,
     });
-    await publish(project.id, {
+    await publish(projectId, {
       type: "run.finished",
       runId: run.id,
       status: "failed",
@@ -61,7 +64,7 @@ export async function reconcileOrphanedRuns(now = new Date()): Promise<number> {
       stalledIn,
       blockedReason: REASON,
     });
-    await publish(project.id, {
+    await publish(projectId, {
       type: "card.status",
       cardId: ticket.id,
       kind: "ticket",

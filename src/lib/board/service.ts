@@ -15,6 +15,8 @@ import { launch, runArchitectAgent, runProductAgent } from "@/lib/agents/pipelin
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { prdSchema } from "@/lib/domain/entities";
 import { scopesOverlap } from "@/lib/domain/scope";
+import { projectFor } from "./project";
+import { directoryTree } from "@/lib/vcs/repositories";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -168,7 +170,7 @@ export async function applyTransition(
       };
     }
 
-    const tree = await repoTree();
+    const tree = await repoTree(projectId);
     const title = detail!.title;
 
     launch(
@@ -209,11 +211,14 @@ async function placeAmong(
 }
 
 /**
- * Top-level directories the Architect Agent uses to ground its file scopes.
- * Read from the sandbox once PROT-05 is wired in; until then the known layout
- * of this repository is a better prompt than nothing.
+ * Directories the Architect Agent uses to ground its file scopes: the picked
+ * repository's real layout when GitHub can be read, and otherwise the known
+ * layout of this repository, which is a better prompt than nothing.
  */
-async function repoTree(): Promise<string[]> {
+async function repoTree(projectId: string): Promise<string[]> {
+  const project = await projectFor(projectId);
+  const tree = await directoryTree(project.repoFullName, project.baseBranch);
+  if (tree && tree.length > 0) return tree;
   return [
     "src/app",
     "src/components",

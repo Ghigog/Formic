@@ -7,6 +7,7 @@ import { DEFAULT_RUN_BUDGET } from "@/lib/budget/limits";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
 import { stallTicket, taskFor } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
+import { projectFor } from "@/lib/board/project";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
@@ -93,7 +94,7 @@ async function react(
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket || ticket.status === "merged") return;
 
-  const project = await repo.defaultProject();
+  const project = await projectFor(projectId);
   const client = vcs(project.repoFullName);
 
   const pull = await client.pullRequest(prNumber);
@@ -180,7 +181,7 @@ async function mergeTicket(
   prNumber: number,
 ): Promise<void> {
   const repo = repository();
-  const project = await repo.defaultProject();
+  const project = await projectFor(projectId);
   const client = vcs(project.repoFullName);
 
   const update = await client.updateBranch(prNumber);
@@ -349,7 +350,7 @@ async function fixTicket(
     return;
   }
 
-  const project = await repo.defaultProject();
+  const project = await projectFor(projectId);
   const client = vcs(project.repoFullName);
   await repo.updateTicket(ticket.id, { attempts: attempt });
 

@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { RepoPicker } from "./repo-picker";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
 
 function LogoMark({ size }: { size: 26 | 28 }) {
   return (
@@ -63,6 +66,9 @@ export function BoardHeader({
   onNewItem: () => void;
 }) {
   const [owner, repo] = repoFullName.split("/");
+  const [picker, setPicker] = useState(false);
+  // One picker mounted at a time, in whichever header is showing.
+  const isMobile = useMediaQuery("(max-width: 767px)");
   const sync = inSync
     ? `${baseBranch} · synced${syncedLabel ? ` ${syncedLabel}` : ""}`
     : `${baseBranch} · behind`;
@@ -80,8 +86,11 @@ export function BoardHeader({
 
         <span aria-hidden className="bg-line h-6 w-px" />
 
+        <div className="relative">
         <button
           type="button"
+          onClick={() => setPicker((v) => !v)}
+          aria-expanded={picker}
           aria-label={`Project: ${projectName}. Choose another project`}
           className="border-line bg-cream text-ink inline-flex h-[34px] items-center gap-2 rounded-lg border px-[10px] text-[13px] font-medium"
         >
@@ -96,6 +105,14 @@ export function BoardHeader({
             />
           </svg>
         </button>
+        {picker && !isMobile && (
+          <RepoPicker
+            current={repoFullName}
+            onClose={() => setPicker(false)}
+            className="absolute top-full left-0 mt-2"
+          />
+        )}
+        </div>
 
         <CoinBadge
           ground="cream"
@@ -142,8 +159,13 @@ export function BoardHeader({
       {/* Mobile app bar */}
       <header className="border-line bg-card flex h-14 shrink-0 items-center gap-[10px] border-b px-4 md:hidden">
         <LogoMark size={26} />
-        <div className="flex min-w-0 flex-col gap-px">
-          <span className="truncate text-[13px] font-semibold">{repo}</span>
+        <button
+          type="button"
+          onClick={() => setPicker((v) => !v)}
+          aria-label={`Project: ${projectName}. Choose another project`}
+          className="flex min-h-11 min-w-0 flex-col justify-center gap-px text-left"
+        >
+          <span className="truncate text-[13px] font-semibold">{repo} ▾</span>
           <span className="text-muted inline-flex items-center gap-[5px] font-mono text-[9px]">
             <span
               aria-hidden
@@ -151,7 +173,14 @@ export function BoardHeader({
             />
             {sync}
           </span>
-        </div>
+        </button>
+        {picker && isMobile && (
+          <RepoPicker
+            current={repoFullName}
+            onClose={() => setPicker(false)}
+            className="fixed top-14 left-4"
+          />
+        )}
         <div className="flex-grow" />
         <button
           type="button"

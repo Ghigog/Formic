@@ -3,6 +3,7 @@ import { z } from "zod";
 import { repository } from "@/lib/db";
 import { prdSchema } from "@/lib/domain/entities";
 import { publish } from "@/lib/events/bus";
+import { activeProject } from "@/lib/board/project";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function GET(
   const detail = await repo.epicDetail(id);
   if (!detail) return Response.json({ error: "Not found" }, { status: 404 });
 
-  const project = await repo.defaultProject();
+  const project = await activeProject();
   const cards = await repo.boardCards(project.id);
   const epic = cards.find((c) => c.id === id);
   const children = cards.filter((c) => c.epicId === id);
@@ -50,7 +51,7 @@ export async function PATCH(
   const repo = repository();
   await repo.setEpicPrd(id, parsed.data.prd, true);
 
-  const project = await repo.defaultProject();
+  const project = await activeProject();
   await publish(project.id, {
     type: "card.status",
     cardId: id,

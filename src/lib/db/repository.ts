@@ -103,7 +103,17 @@ export interface ProjectSummary {
 }
 
 export interface Repository {
+  /** The first project, created on demand. The fallback when none is chosen. */
   defaultProject(): Promise<ProjectSummary>;
+  listProjects(): Promise<ProjectSummary[]>;
+  projectById(projectId: string): Promise<ProjectSummary | null>;
+  /** The project for a repository, created the first time it is picked. */
+  ensureProject(input: {
+    repoFullName: string;
+    baseBranch: string;
+  }): Promise<ProjectSummary>;
+  /** Which project an epic or ticket belongs to. */
+  projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
