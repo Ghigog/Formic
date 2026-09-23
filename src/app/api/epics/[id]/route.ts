@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { repository } from "@/lib/db";
 import { prdSchema } from "@/lib/domain/entities";
-import { publish } from "@/lib/events/bus";
+import { applyPrd } from "@/lib/agents/pipeline";
 import { activeProject } from "@/lib/board/project";
 
 /** The active project, if this epic is on it. Anyone else's epic is a 404. */
@@ -59,18 +59,7 @@ export async function PATCH(
     );
   }
 
-  const repo = repository();
-  await repo.setEpicPrd(id, parsed.data.prd, true);
-
-  await publish(project.id, {
-    type: "card.status",
-    cardId: id,
-    kind: "epic",
-    status: "specified",
-    stalledIn: null,
-    stage: 2,
-    blockedReason: null,
-  });
+  await applyPrd(project.id, id, parsed.data.prd, true);
 
   return Response.json({ ok: true });
 }

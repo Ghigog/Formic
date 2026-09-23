@@ -11,14 +11,11 @@ import {
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import { positionForIndex } from "@/lib/ordering";
 import { publish } from "@/lib/events/bus";
-import { launch, runArchitectAgent, runProductAgent } from "@/lib/agents/pipeline";
+import { decomposeEpic, launch, runProductAgent } from "@/lib/agents/pipeline";
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { scopesOverlap } from "@/lib/domain/scope";
-import { projectFor } from "./project";
-import { directoryTree } from "@/lib/vcs/repositories";
-import { credentialsForProject } from "@/lib/auth/credentials";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -138,7 +135,22 @@ export async function applyTransition(
     }
   }
 
-  const status = statusForUserDrop(t.to, met);
+  // An Epic is broken down from its PRD. With none yet, it either waits in
+  // To Do for the Product Agent that is still writing one, or, when that
+  // agent stalled, stays put: nothing would ever break it down.
+  const toArchitect = card.kind === "epic" && t.to === "todo";
+  const hasPrd = toArchitect
+    ? prdSchema.safeParse((await repo.epicDetail(card.id))?.prd).success
+    : false;
+  if (toArchitect && !hasPrd && card.status !== "draft") {
+    return {
+      ok: false,
+      reason: `${card.key} has no PRD to break down yet. Write one on the Epic first.`,
+      revertTo: actual,
+    };
+  }
+
+  const status = toArchitect && !hasPrd ? "waiting" : statusForUserDrop(t.to, met);
   const position = await placeAmong(projectId, t.to, card, t.position);
 
   await repo.move({
@@ -163,23 +175,10 @@ export async function applyTransition(
 
   // Moving an Epic into To Do is the Architect Agent's trigger. It runs
   // detached so the drag returns immediately; progress arrives over SSE.
-  if (card.kind === "epic" && t.to === "todo") {
-    const detail = await repo.epicDetail(card.id);
-    const prd = prdSchema.safeParse(detail?.prd);
-
-    if (!prd.success) {
-      return {
-        ok: true,
-        status,
-        runId: null,
-      };
-    }
-
-    const tree = await repoTree(projectId);
-    const title = detail!.title;
-
+  // One still waiting on its PRD is picked up when the PRD lands.
+  if (toArchitect && hasPrd) {
     launch(
-      () => runArchitectAgent(projectId, card.id, title, prd.data, tree),
+      () => decomposeEpic(projectId, card.id),
       `architect agent for ${card.key}`,
     );
   }
@@ -213,28 +212,6 @@ async function placeAmong(
   );
   const index = positions.findIndex((p) => p > proposed);
   return positionForIndex(positions, index === -1 ? positions.length : index);
-}
-
-/**
- * Directories the Architect Agent uses to ground its file scopes: the picked
- * repository's real layout when GitHub can be read, and otherwise the known
- * layout of this repository, which is a better prompt than nothing.
- */
-async function repoTree(projectId: string): Promise<string[]> {
-  const project = await projectFor(projectId);
-  const { githubToken } = await credentialsForProject(project);
-  const tree = githubToken
-    ? await directoryTree(project.repoFullName, project.baseBranch, githubToken)
-    : null;
-  if (tree && tree.length > 0) return tree;
-  return [
-    "src/app",
-    "src/components",
-    "src/lib",
-    "prisma",
-    "docs",
-    "scripts",
-  ];
 }
 
 export async function createBacklogItem(

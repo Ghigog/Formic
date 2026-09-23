@@ -11,6 +11,10 @@ import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
 import { agentFor, cliAgentFor, modelFor } from "./presets";
 import { startCliAnswer } from "@/lib/runner/runner";
+import { prdSchema } from "@/lib/domain/entities";
+import { projectFor } from "@/lib/board/project";
+import { credentialsForProject } from "@/lib/auth/credentials";
+import { directoryTree } from "@/lib/vcs/repositories";
 
 /**
  * Wires agents to column transitions.
@@ -121,18 +125,77 @@ export function startRun(
   return { runId, ctx, attachSandbox, finish };
 }
 
-/** Stage 2 done: the PRD goes on the Epic. */
-export async function applyPrd(projectId: string, epicId: string, prd: Prd): Promise<void> {
-  await repository().setEpicPrd(epicId, prd, false);
+/**
+ * Stage 2 done: the PRD goes on the Epic.
+ *
+ * An Epic someone already dropped into To Do waits there for its PRD. It
+ * stays in To Do and goes straight to the Architect Agent, rather than
+ * jumping back to Backlog and needing a second drag.
+ */
+export async function applyPrd(
+  projectId: string,
+  epicId: string,
+  prd: Prd,
+  byHuman = false,
+): Promise<void> {
+  const repo = repository();
+  const before = await repo.cardById(epicId);
+  const queued = before?.kind === "epic" && before.status === "waiting";
+
+  await repo.setEpicPrd(epicId, prd, byHuman);
+
+  if (queued) {
+    await repo.move({
+      cardId: epicId,
+      kind: "epic",
+      status: "ready",
+      stalledIn: null,
+      position: before.position,
+    });
+  }
+
   await publish(projectId, {
     type: "card.status",
     cardId: epicId,
     kind: "epic",
-    status: "specified",
+    status: queued ? "ready" : "specified",
     stalledIn: null,
     stage: 2,
     blockedReason: null,
   });
+
+  if (queued) launch(() => decomposeEpic(projectId, epicId), `architect agent for ${before.key}`);
+}
+
+/**
+ * Directories the Architect Agent uses to ground its file scopes: the picked
+ * repository's real layout when GitHub can be read, and otherwise the known
+ * layout of this repository, which is a better prompt than nothing.
+ */
+async function repoTree(projectId: string): Promise<string[]> {
+  const project = await projectFor(projectId);
+  const { githubToken } = await credentialsForProject(project);
+  const tree = githubToken
+    ? await directoryTree(project.repoFullName, project.baseBranch, githubToken)
+    : null;
+  if (tree && tree.length > 0) return tree;
+  return [
+    "src/app",
+    "src/components",
+    "src/lib",
+    "prisma",
+    "docs",
+    "scripts",
+  ];
+}
+
+/** Stage 3 from the Epic as saved: its PRD and the repository's layout. */
+export async function decomposeEpic(projectId: string, epicId: string): Promise<void> {
+  const detail = await repository().epicDetail(epicId);
+  const prd = prdSchema.safeParse(detail?.prd);
+  if (!detail || !prd.success) return;
+  const tree = await repoTree(projectId);
+  await runArchitectAgent(projectId, epicId, detail.title, prd.data, tree);
 }
 
 /** Stage 3 done: the ticket graph goes on the board under its Epic. */
