@@ -239,8 +239,16 @@ raw hex.
 levels and points from merged story points, a heat multiplier for merges in
 quick succession, ants that walk out to running work, sound, and a timeline
 with a burndown and forecast. The score is derived from the board itself
-(`src/lib/colony/`); the browser only remembers each watched merge's
-multiplier, the bug style and the sound switch.
+(`src/lib/colony/`): each ticket is stamped with its merge time and what it
+scored when it merges, so every browser agrees. The browser only remembers
+the bug style and the sound switch.
+
+## Deploys
+
+Vercel deploys `main` and nothing else. `vercel.json` turns deployments off
+for every branch with a slash in its name (`claude/…`, `formic/…`, and the
+like), so pull requests get no preview and each merge costs one deploy
+against the plan's daily limit. CI still builds and tests every pull request.
 
 ## Layout
 

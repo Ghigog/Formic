@@ -70,3 +70,54 @@ describe("projects on the in-memory store", () => {
     expect(await repo.eventsAfter(other.id, 0)).toHaveLength(1);
   });
 });
+
+describe("merges on the in-memory store", () => {
+  async function twoTickets(repo: MemoryRepository, projectId: string) {
+    const epic = await repo.createEpic({ projectId, title: "E", rawRequest: "E", position: 1 });
+    return repo.createTickets(
+      ["A", "B"].map((k, i) => ({
+        epicId: epic.id,
+        key: `${k}-1`,
+        title: k,
+        description: k,
+        acceptanceCriteria: [],
+        fileScope: [`src/${k}`],
+        size: "S" as const,
+        storyPoints: 4,
+        position: i,
+        dependsOnKeys: [],
+      })),
+    );
+  }
+
+  it("scores each merge against the project's heat, once", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.ensureProject({ ownerId: "u1", repoFullName: "acme/heat", baseBranch: "main" });
+    const [a, b] = await twoTickets(repo, project.id);
+
+    await repo.updateTicket(a!.id, { status: "merged" });
+    await repo.updateTicket(b!.id, { status: "merged" });
+    const byId = new Map((await repo.boardCards(project.id)).map((c) => [c.id, c]));
+
+    expect(byId.get(a!.id)).toMatchObject({ mergePoints: 4, mergeMultiplier: 1 });
+    // One merge in the window before it: one heat stack.
+    expect(byId.get(b!.id)).toMatchObject({ mergePoints: 6, mergeMultiplier: 1.5 });
+    const stamped = byId.get(a!.id)!.mergedAt;
+    expect(stamped).toBeTruthy();
+
+    await repo.updateTicket(a!.id, { status: "merged" });
+    expect((await repo.cardById(a!.id))!.mergedAt).toBe(stamped);
+  });
+
+  it("does not heat one project with another's merges", async () => {
+    const repo = new MemoryRepository();
+    const one = await repo.ensureProject({ ownerId: "u1", repoFullName: "acme/one", baseBranch: "main" });
+    const two = await repo.ensureProject({ ownerId: "u1", repoFullName: "acme/two", baseBranch: "main" });
+    const [a] = await twoTickets(repo, one.id);
+    const [b] = await twoTickets(repo, two.id);
+
+    await repo.updateTicket(a!.id, { status: "merged" });
+    await repo.updateTicket(b!.id, { status: "merged" });
+    expect((await repo.cardById(b!.id))!.mergeMultiplier).toBe(1);
+  });
+});

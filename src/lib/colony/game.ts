@@ -4,10 +4,9 @@ import { columnFor } from "@/lib/domain/status";
 /**
  * The colony's rules: points, levels and the heat multiplier.
  *
- * Everything durable is derived from the board, so a reload or a second
- * browser agrees on the score. The only thing kept on the side is the
- * multiplier each merge earned while someone was watching (the ledger);
- * a merge nobody saw scores at 1×.
+ * Everything is derived from the board. The server stamps each ticket with
+ * what its merge scored at the moment it merged (see mergeScore), so every
+ * browser agrees on the score, the heat and the level.
  */
 
 /** XP per level. */
@@ -99,16 +98,6 @@ export function pointsOf(card: BoardCard): number {
   return card.storyPoints ?? 1;
 }
 
-/** What one merge earned while someone watched: its points and multiplier. */
-export interface LedgerEntry {
-  pts: number;
-  mult: number;
-  /** Epoch ms. */
-  at: number;
-}
-
-export type Ledger = Record<string, LedgerEntry>;
-
 /** An epic's completion bonus: the story points of everything it merged. */
 export function epicBonus(epic: BoardCard, cards: BoardCard[]): number {
   return cards
@@ -116,9 +105,9 @@ export function epicBonus(epic: BoardCard, cards: BoardCard[]): number {
     .reduce((n, c) => n + pointsOf(c), 0);
 }
 
-/** A merged ticket's points: as recorded, or at 1× if nobody saw it land. */
-export function mergePoints(card: BoardCard, ledger: Ledger): number {
-  return ledger[card.id]?.pts ?? pointsOf(card);
+/** A merged ticket's points: as the server scored them, or 1× from before it did. */
+export function mergePoints(card: BoardCard): number {
+  return card.mergePoints ?? pointsOf(card);
 }
 
 export interface Score {
@@ -134,12 +123,12 @@ export interface Score {
   squashed: number;
 }
 
-export function scoreOf(cards: BoardCard[], ledger: Ledger): Score {
+export function scoreOf(cards: BoardCard[]): Score {
   let earned = 0;
   let bugs = 0;
   let squashed = 0;
   for (const card of cards) {
-    if (card.kind === "ticket" && card.status === "merged") earned += mergePoints(card, ledger);
+    if (card.kind === "ticket" && card.status === "merged") earned += mergePoints(card);
     if (card.kind === "epic" && card.status === "merged") earned += epicBonus(card, cards);
     if (isBug(card)) {
       bugs++;
@@ -158,37 +147,37 @@ export function scoreOf(cards: BoardCard[], ledger: Ledger): Score {
   };
 }
 
-/** Heat stacks still alive at `now`. Each is its expiry time. */
-export function liveStacks(stacks: number[], now: number): number[] {
-  return stacks.filter((t) => t > now).sort((a, b) => a - b);
-}
-
 export function multiplierOf(stackCount: number): number {
-  return 1 + 0.5 * stackCount;
+  return 1 + 0.5 * Math.min(HEAT_MAX, stackCount);
 }
 
 /**
- * One merge against the current heat: what it scores, and the stacks after
- * it adds its own. The oldest stack drops when the pile is full.
+ * What a merge scores, given how many of the project's tickets merged in
+ * the window before it. Each of those is a heat stack.
  */
-export function heatMerge(
-  storyPoints: number,
-  stacks: number[],
-  now: number,
-): { pts: number; mult: number; stacks: number[] } {
-  const live = liveStacks(stacks, now);
-  const mult = multiplierOf(live.length);
-  const next = [...live, now + HEAT_WINDOW_MS];
-  while (next.length > HEAT_MAX) next.shift();
-  return { pts: Math.round(storyPoints * mult), mult, stacks: next };
+export function mergeScore(storyPoints: number | null | undefined, recentMerges: number) {
+  const mult = multiplierOf(recentMerges);
+  return { pts: Math.round((storyPoints ?? 1) * mult), mult };
 }
 
-/** Grade for points per story point merged. */
+/**
+ * The heat right now: one stack per merge in the last window, newest six,
+ * each as the epoch ms it expires at, soonest first.
+ */
+export function heatStacks(cards: BoardCard[], now: number): number[] {
+  return cards
+    .map((c) => (c.mergedAt ? new Date(c.mergedAt).getTime() + HEAT_WINDOW_MS : 0))
+    .filter((t) => t > now)
+    .sort((a, b) => a - b)
+    .slice(-HEAT_MAX);
+}
+
+/** Grade for points per story point merged. Colours are design tokens. */
 export const GRADES: ReadonlyArray<{ min: number; grade: "S" | "A" | "B" | "C"; color: string }> = [
-  { min: 2.5, grade: "S", color: "#C27803" },
-  { min: 2, grade: "A", color: "#2E7D32" },
-  { min: 1.5, grade: "B", color: "#57534E" },
-  { min: 0, grade: "C", color: "#C62828" },
+  { min: 2.5, grade: "S", color: "var(--clay)" },
+  { min: 2, grade: "A", color: "var(--jade)" },
+  { min: 1.5, grade: "B", color: "var(--text-muted)" },
+  { min: 0, grade: "C", color: "var(--crimson)" },
 ];
 
 export function gradeOf(yieldRatio: number) {

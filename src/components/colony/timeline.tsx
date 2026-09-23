@@ -9,27 +9,27 @@ import { centerOf } from "./fx";
 const pct = (d: number) => `${(Math.max(0, Math.min(N, d)) / N) * 100}%`;
 
 const TICKET_LOOK: Record<TimelineTicket["phase"], { bg: string; border: string; anim: string; dot: string }> = {
-  done: { bg: "#57534E", border: "none", anim: "none", dot: "#57534E" },
+  done: { bg: "var(--text-muted)", border: "none", anim: "none", dot: "var(--text-muted)" },
   review: {
-    bg: "repeating-linear-gradient(45deg,#D96B27 0 6px,#EE9A62 6px 12px)",
+    bg: "repeating-linear-gradient(45deg,var(--terracotta) 0 6px,var(--terracotta-lit) 6px 12px)",
     border: "none",
     anim: "tlStripe 1.4s linear infinite",
-    dot: "#D96B27",
+    dot: "var(--terracotta)",
   },
   progress: {
-    bg: "repeating-linear-gradient(45deg,#C27803 0 6px,#E0A33C 6px 12px)",
+    bg: "repeating-linear-gradient(45deg,var(--clay) 0 6px,var(--clay-lit) 6px 12px)",
     border: "none",
     anim: "tlStripe 0.8s linear infinite",
-    dot: "#C27803",
+    dot: "var(--clay)",
   },
-  planned: { bg: "transparent", border: "1.5px dashed #A8A29E", anim: "none", dot: "#D6D3D1" },
+  planned: { bg: "transparent", border: "1.5px dashed var(--dot-idle)", anim: "none", dot: "var(--border-dashed)" },
 };
 
 const GRADE_CHIP = {
-  S: ["#FDF3E1", "#8A5402"],
-  A: ["#EDF4ED", "#1E5620"],
-  B: ["#F3F1ED", "#1C1917"],
-  C: ["#FBEAEA", "#7F1D1D"],
+  S: ["var(--clay-chip)", "var(--clay-chip-text)"],
+  A: ["var(--jade-chip)", "var(--jade-chip-text)"],
+  B: ["var(--hairline)", "var(--text)"],
+  C: ["var(--crimson-chip)", "var(--crimson-chip-text)"],
 } as const;
 
 function Chevron({ open }: { open: boolean }) {
@@ -64,7 +64,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
   const [closed, setClosed] = useState<Set<string>>(new Set());
   // One "now" per opening, so the model does not churn under the animation.
   const [at] = useState(() => new Date());
-  const tl = useMemo(() => buildTimeline(c.cards, c.ledger, at), [c.cards, c.ledger, at]);
+  const tl = useMemo(() => buildTimeline(c.cards, at), [c.cards, at]);
 
   const fmt = (d: number) => {
     const day = new Date(tl.start.getFullYear(), tl.start.getMonth(), tl.start.getDate() + Math.floor(d));
@@ -128,12 +128,12 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
       );
       timers.push(
         setTimeout(() => {
-          const color = st.dataset.color ?? "#C27803";
+          const color = st.dataset.color ?? "var(--clay)";
           c.sfx("stamp");
           c.fx.shake(2);
           const [x, y] = centerOf(st);
           c.fx.ring(x, y, color, 36, 0.35, 2);
-          c.fx.burst(x, y, [color, "#1C1917"], 8, { speed: 120, g: 200, size: 1.6, life: 0.45, shape: "dot" });
+          c.fx.burst(x, y, [color, "var(--text)"], 8, { speed: 120, g: 200, size: 1.6, life: 0.45, shape: "dot" });
         }, d + 180),
       );
     });
@@ -222,7 +222,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
       ref={root}
       role="region"
       aria-label="Timeline"
-      className="bg-cream fixed top-16 right-0 bottom-14 left-0 z-[60] box-border overflow-auto px-6 pt-5 pb-8"
+      className="bg-cream fixed top-14 right-0 bottom-14 left-0 md:top-16 z-[60] box-border overflow-auto px-6 pt-5 pb-8"
     >
       <div className="mx-auto flex max-w-[1520px] min-w-[960px] flex-col gap-4">
         <div className="flex flex-wrap items-end gap-4">
@@ -235,15 +235,15 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
           </span>
           <div className="flex-grow" />
           <div className="text-muted flex items-center gap-3.5 pb-1 text-[11px]">
-            <Legend swatch={{ background: "#57534E" }}>Merged</Legend>
-            <Legend swatch={{ background: "repeating-linear-gradient(45deg,#D96B27 0 4px,#EE9A62 4px 8px)" }}>In review</Legend>
-            <Legend swatch={{ background: "repeating-linear-gradient(45deg,#C27803 0 4px,#E0A33C 4px 8px)" }}>In progress</Legend>
-            <Legend swatch={{ border: "1.5px dashed #A8A29E", boxSizing: "border-box" }}>Planned</Legend>
+            <Legend swatch={{ background: "var(--text-muted)" }}>Merged</Legend>
+            <Legend swatch={{ background: "repeating-linear-gradient(45deg,var(--terracotta) 0 4px,var(--terracotta-lit) 4px 8px)" }}>In review</Legend>
+            <Legend swatch={{ background: "repeating-linear-gradient(45deg,var(--clay) 0 4px,var(--clay-lit) 4px 8px)" }}>In progress</Legend>
+            <Legend swatch={{ border: "1.5px dashed var(--dot-idle)", boxSizing: "border-box" }}>Planned</Legend>
             <span
               title="Grade = points earned ÷ story points merged, with the epic bonus. S ≥ 2.5×, A ≥ 2.0×, B ≥ 1.5×, C below."
               className="inline-flex items-center gap-1.5"
             >
-              <span className="h-3 w-0.5 bg-[rgba(28,25,23,0.35)]" />
+              <span className="h-3 w-0.5 bg-[color-mix(in_srgb,var(--anthracite)_35%,transparent)]" />
               Level up
             </span>
           </div>
@@ -264,7 +264,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     {tl.forecast === null ? "—" : fmt(tl.forecast)}
                   </span>
                   {daysLeft !== null && (
-                    <span className="oct inline-flex bg-[#E7E5E4] p-px">
+                    <span className="oct inline-flex bg-line p-px">
                       <span className="oct bg-cream text-ink inline-flex px-2 py-[3px] font-mono text-[10px] tracking-[0.04em]">
                         {tl.remaining === 0 ? "All merged" : daysLeft < 1 ? "Today" : `in ${Math.ceil(daysLeft)}d`}
                       </span>
@@ -284,7 +284,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
               {tl.boost && (
                 <div className="bg-epic-chip text-terracotta-deep flex items-center gap-2 rounded-lg px-2.5 py-2 text-[11px] leading-[1.35]">
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="shrink-0">
-                    <path d="M6.8 1 2.5 7h3l-.6 4L9.5 5h-3z" fill="#D96B27" />
+                    <path d="M6.8 1 2.5 7h3l-.6 4L9.5 5h-3z" fill="var(--terracotta)" />
                   </svg>
                   <span>
                     Merge {tl.boost.key} to pull the finish in by {tl.boost.days.toFixed(1)} days
@@ -295,13 +295,13 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
 
             {rows.map((r) =>
               r.kind === "epic" ? (
-                <div key={r.e.id} className="bg-card box-border flex h-[52px] items-center gap-2 border-t border-[#EFEDE9] pr-3 pl-2">
+                <div key={r.e.id} className="bg-card box-border flex h-[52px] items-center gap-2 border-t border-hairline pr-3 pl-2">
                   <button
                     type="button"
                     onClick={() => toggle(r.e.id)}
                     aria-label={`${r.open ? "Collapse" : "Expand"} ${r.e.key}`}
                     aria-expanded={r.open}
-                    className="inline-flex size-[26px] shrink-0 items-center justify-center rounded-md hover:bg-[#F3F1ED]"
+                    className="inline-flex size-[26px] shrink-0 items-center justify-center rounded-md hover:bg-hairline"
                   >
                     <Chevron open={r.open} />
                   </button>
@@ -328,8 +328,8 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     <span
                       className="shrink-0 rounded-full px-[7px] py-[3px] font-mono text-[9px] whitespace-nowrap"
                       style={{
-                        background: r.e.grade ? GRADE_CHIP[r.e.grade.grade][0] : "#F3F1ED",
-                        color: r.e.grade ? GRADE_CHIP[r.e.grade.grade][1] : "#57534E",
+                        background: r.e.grade ? GRADE_CHIP[r.e.grade.grade][0] : "var(--hairline)",
+                        color: r.e.grade ? GRADE_CHIP[r.e.grade.grade][1] : "var(--text-muted)",
                       }}
                     >
                       {r.e.grade ? `${r.e.yieldRatio!.toFixed(1)}× · ${r.e.grade.grade} pace` : "No merges yet"}
@@ -348,7 +348,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
               ),
             )}
             {rows.length === 0 && (
-              <div className="text-muted border-t border-[#EFEDE9] px-4 py-4 text-[12px]">
+              <div className="text-muted border-t border-hairline px-4 py-4 text-[12px]">
                 No epics with tickets yet. Once the Architect Agent breaks one down, it lands here.
               </div>
             )}
@@ -367,15 +367,15 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                 return (
                   <span
                     key={i}
-                    className="border-r border-[#F3F1ED] transition-colors duration-100"
+                    className="border-r border-hairline transition-colors duration-100"
                     style={{
                       background:
                         hover === i
-                          ? "rgba(28,25,23,0.05)"
+                          ? "color-mix(in srgb, var(--anthracite) 5%, transparent)"
                           : i === TODAY
-                            ? "rgba(194,120,3,0.08)"
+                            ? "color-mix(in srgb, var(--clay) 8%, transparent)"
                             : wk
-                              ? "rgba(28,25,23,0.025)"
+                              ? "color-mix(in srgb, var(--anthracite) 2.5%, transparent)"
                               : "transparent",
                     }}
                   />
@@ -393,7 +393,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   <div key={i} className="flex flex-col items-center justify-center gap-0.5">
                     <span
                       className="font-mono text-[8px] tracking-[0.08em]"
-                      style={{ color: isT ? "#8F3F12" : "#57534E" }}
+                      style={{ color: isT ? "var(--terracotta-deep)" : "var(--text-muted)" }}
                     >
                       {i === 0 || d.date.getDate() === 1
                         ? d.date.toLocaleDateString("en-US", { month: "short" }).toUpperCase()
@@ -401,7 +401,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     </span>
                     <span
                       className="font-mono text-[11px]"
-                      style={{ fontWeight: isT ? 700 : 500, color: isT ? "#8F3F12" : i > TODAY ? "#57534E" : "#1C1917" }}
+                      style={{ fontWeight: isT ? 700 : 500, color: isT ? "var(--terracotta-deep)" : i > TODAY ? "var(--text-muted)" : "var(--text)" }}
                     >
                       {d.date.getDate()}
                     </span>
@@ -415,12 +415,12 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
               <span className="text-muted absolute bottom-3 left-1.5 font-mono text-[9px]">0</span>
               <div data-tlreveal className="absolute inset-x-0 top-5 bottom-5">
                 <svg viewBox="0 0 1000 200" preserveAspectRatio="none" width="100%" height="100%" aria-hidden className="block overflow-visible">
-                  <polygon points={`${poly(tl.actual)} ${X(tl.now).toFixed(1)},200 0,200`} fill="rgba(194,120,3,0.09)" />
+                  <polygon points={`${poly(tl.actual)} ${X(tl.now).toFixed(1)},200 0,200`} fill="color-mix(in srgb, var(--clay) 9%, transparent)" />
                   {fEnd && (
                     <polyline
                       points={poly([[tl.now, tl.remaining], fEnd])}
                       fill="none"
-                      stroke="#D96B27"
+                      stroke="var(--terracotta)"
                       strokeWidth="2"
                       strokeDasharray="1 6"
                       strokeLinecap="round"
@@ -430,7 +430,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   <polyline
                     points={poly(tl.actual)}
                     fill="none"
-                    stroke="#1C1917"
+                    stroke="var(--text)"
                     strokeWidth="2.25"
                     strokeLinejoin="round"
                     strokeLinecap="round"
@@ -463,7 +463,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                 {fEnd && (
                   <>
                     <span
-                      className="absolute box-border size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#D96B27] bg-white"
+                      className="absolute box-border size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-terracotta bg-white"
                       style={{ left: pct(fEnd[0]), top: `${(Y(fEnd[1]) / 200) * 100}%` }}
                     />
                     <span
@@ -476,24 +476,24 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                 )}
                 <span className="absolute size-0" style={{ left: pct(tl.now), top: `${(Y(tl.remaining) / 200) * 100}%` }}>
                   <span className="bg-clay absolute -top-[9px] -left-[9px] size-[18px] animate-[tlPing_1.8s_ease-out_infinite] rounded-full motion-reduce:hidden" />
-                  <span className="bg-anthracite absolute -top-[5px] -left-[5px] box-border size-2.5 rounded-full border-2 border-white shadow-[0_1px_3px_rgba(28,25,23,0.4)]" />
+                  <span className="bg-anthracite absolute -top-[5px] -left-[5px] box-border size-2.5 rounded-full border-2 border-white shadow-[0_1px_3px_color-mix(in_srgb,var(--anthracite)_40%,transparent)]" />
                 </span>
               </div>
             </div>
 
             {rows.map((r) =>
               r.kind === "epic" ? (
-                <div key={r.e.id} className="relative box-border h-[52px] border-t border-[#EFEDE9]">
+                <div key={r.e.id} className="relative box-border h-[52px] border-t border-hairline">
                   <span
                     data-tlbar
-                    className="absolute top-[17px] h-4 origin-left overflow-hidden rounded-md bg-[#EDE9E3]"
+                    className="absolute top-[17px] h-4 origin-left overflow-hidden rounded-md bg-track"
                     style={{ left: pct(r.e.start), width: pct(Math.max(0.35, r.e.end - r.e.start)) }}
                   >
                     <span
                       className="block h-full rounded-md transition-[width] duration-700"
                       style={{
                         width: `${r.e.totalSp ? (r.e.doneSp / r.e.totalSp) * 100 : 0}%`,
-                        background: r.e.merged ? "#2E7D32" : "#1C1917",
+                        background: r.e.merged ? "var(--jade)" : "var(--text)",
                       }}
                     />
                   </span>
@@ -503,7 +503,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                       style={{ left: pct(r.e.end) }}
                     >
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-                        <path d="m2.2 5.2 1.8 1.8 3.8-4" stroke="#FFFFFF" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="m2.2 5.2 1.8 1.8 3.8-4" stroke="var(--on-accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </span>
                   )}
@@ -536,7 +536,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                 </div>
               ),
             )}
-            {rows.length === 0 && <div className="h-[49px] border-t border-[#EFEDE9]" />}
+            {rows.length === 0 && <div className="h-[49px] border-t border-hairline" />}
 
             <div
               className="border-line relative box-border grid h-[88px] shrink-0 items-end border-t pb-3.5"
@@ -550,7 +550,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     title={d.sp ? `${fmt(i)} · ${d.sp} SP → +${d.pts} pts` : fmt(i)}
                     className="flex flex-col items-center justify-end gap-1"
                   >
-                    <span className="font-mono text-[9px]" style={{ color: inStreak ? "#8F3F12" : "#57534E" }}>
+                    <span className="font-mono text-[9px]" style={{ color: inStreak ? "var(--terracotta-deep)" : "var(--text-muted)" }}>
                       {d.sp || ""}
                     </span>
                     <span
@@ -558,7 +558,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                       className="block w-[72%] origin-bottom rounded-[999px_999px_2px_2px]"
                       style={{
                         height: d.sp ? `${Math.min(46, 8 + d.sp * 3.8)}px` : i <= TODAY ? "3px" : "0px",
-                        background: !d.sp ? "#E7E5E4" : i === TODAY ? "#D96B27" : inStreak ? "#C27803" : "#A8A29E",
+                        background: !d.sp ? "var(--border)" : i === TODAY ? "var(--terracotta)" : inStreak ? "var(--clay)" : "var(--dot-idle)",
                       }}
                     />
                   </div>
@@ -570,7 +570,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
               <span key={lv.level}>
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute top-11 bottom-0 w-0 border-l-[1.5px] border-[rgba(28,25,23,0.22)]"
+                  className="pointer-events-none absolute top-11 bottom-0 w-0 border-l-[1.5px] border-[color-mix(in_srgb,var(--anthracite)_22%,transparent)]"
                   style={{ left: pct(lv.day) }}
                 />
                 <span
@@ -585,7 +585,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
 
             <div
               aria-hidden
-              className="pointer-events-none absolute top-0 bottom-0 -ml-px w-0.5 bg-[rgba(194,120,3,0.55)]"
+              className="pointer-events-none absolute top-0 bottom-0 -ml-px w-0.5 bg-[color-mix(in_srgb,var(--clay)_55%,transparent)]"
               style={{ left: pct(tl.now) }}
             />
             <span
@@ -600,11 +600,11 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
               <>
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute top-11 bottom-0 w-px bg-[rgba(28,25,23,0.3)]"
+                  className="pointer-events-none absolute top-11 bottom-0 w-px bg-[color-mix(in_srgb,var(--anthracite)_30%,transparent)]"
                   style={{ left: pct(hover + 0.5) }}
                 />
                 <div
-                  className="bg-anthracite text-cream pointer-events-none absolute top-[72px] flex flex-col gap-0.5 rounded-lg px-2.5 py-2 whitespace-nowrap shadow-[0_10px_20px_-12px_rgba(28,25,23,0.6)]"
+                  className="bg-anthracite text-cream pointer-events-none absolute top-[72px] flex flex-col gap-0.5 rounded-lg px-2.5 py-2 whitespace-nowrap shadow-[0_10px_20px_-12px_color-mix(in_srgb,var(--anthracite)_60%,transparent)]"
                   style={{
                     left: pct(hover + 0.5),
                     transform: hover > N - 7 ? "translateX(calc(-100% - 10px))" : "translateX(10px)",
@@ -613,7 +613,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   <span className="text-[12px] font-semibold">
                     {tl.days[hover]!.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                   </span>
-                  <span className="font-mono text-[10px] text-[#D6D3D1]">{hoverA}</span>
+                  <span className="font-mono text-[10px] text-line-dashed">{hoverA}</span>
                   <span className="text-clay-lit font-mono text-[10px]">{hoverB}</span>
                 </div>
               </>

@@ -6,7 +6,7 @@ import { RepoPicker } from "./repo-picker";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AccountMenu, type Account } from "./account-menu";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
-import { ColonyHeaderStats } from "@/components/colony/header-stats";
+import { ColonyHeaderStats, ColonyMobileStats } from "@/components/colony/header-stats";
 
 function LogoMark({ size }: { size: 26 | 28 }) {
   return (
@@ -150,7 +150,7 @@ export function BoardHeader({
           className="flex min-h-11 min-w-0 flex-col justify-center gap-px text-left"
         >
           <span className="truncate text-[13px] font-semibold">{repo} ▾</span>
-          <span className="text-muted inline-flex items-center gap-[5px] font-mono text-[9px]">
+          <span className="text-muted inline-flex max-w-full items-center gap-[5px] overflow-hidden font-mono text-[9px] whitespace-nowrap">
             <span
               aria-hidden
               className={`size-[5px] rounded-full ${inSync ? "bg-jade" : "bg-rust"}`}
@@ -166,6 +166,7 @@ export function BoardHeader({
           />
         )}
         <div className="flex-grow" />
+        <ColonyMobileStats />
         {assistant && isMobile && <AskButton a={assistant} repoName={repo ?? repoFullName} />}
         <button
           type="button"

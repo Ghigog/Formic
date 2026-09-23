@@ -14,9 +14,9 @@ import { columnFor } from "@/lib/domain/status";
 import {
   BUG_COST,
   COLOR_UNLOCKS,
-  heatMerge,
+  heatStacks,
   isBug,
-  liveStacks,
+  mergePoints,
   multiplierOf,
   pointsOf,
   scoreOf,
@@ -26,7 +26,6 @@ import {
   epicBonus,
   type BugColor,
   type BugShape,
-  type Ledger,
   type Score,
 } from "@/lib/colony/game";
 import type { ExtrasMap } from "@/components/board/card";
@@ -74,7 +73,6 @@ export interface ColonyApi {
   closeWin: () => void;
   sfx: (n: Sfx, v?: number) => void;
   fx: ColonyFx;
-  ledger: Ledger;
   /** Epoch ms, a second at a time: what the heat bars are measured against. */
   now: number;
   /** A refused move: says why, over the card. */
@@ -111,7 +109,14 @@ export function ColonyProvider({
   const loaded = useHydrated();
 
   const [now, setNow] = useState(() => Date.now());
-  const [held, setHeld] = useState(0);
+  /**
+   * Merges whose points have reached the counter. A merge not in here yet
+   * is still flying to it, so the counter holds those points back. Null
+   * until the board is first seen: everything merged then has landed.
+   */
+  const [landed, setLanded] = useState<ReadonlySet<string> | null>(null);
+  /** Merges with a reaction on its way. */
+  const flying = useRef(new Set<string>());
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [colonyOpen, setColonyOpen] = useState(false);
   const [toast, setToast] = useState<ColonyApi["toast"]>(null);
@@ -119,9 +124,18 @@ export function ColonyProvider({
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const score = useMemo(() => scoreOf(cards, saved.ledger), [cards, saved.ledger]);
-  const stacks = useMemo(() => liveStacks(saved.stacks, now), [saved.stacks, now]);
-  const bugHex = COLOR_UNLOCKS.find((c) => c.key === saved.color)?.hex ?? "#4A2F22";
+  const score = useMemo(() => scoreOf(cards), [cards]);
+  const stacks = useMemo(() => heatStacks(cards, now), [cards, now]);
+  const held = useMemo(() => {
+    if (!landed) return 0;
+    let n = 0;
+    for (const c of cards) {
+      if (c.status !== "merged" || landed.has(c.id)) continue;
+      n += c.kind === "ticket" ? mergePoints(c) : epicBonus(c, cards);
+    }
+    return n;
+  }, [cards, landed]);
+  const bugHex = COLOR_UNLOCKS.find((c) => c.key === saved.color)?.hex ?? COLOR_UNLOCKS[0]!.hex;
 
   const [sound] = useState(() => new SoundEngine());
   const [fx] = useState(() => new ColonyFx(sound));
@@ -196,8 +210,8 @@ export function ColonyProvider({
           );
         }
         const [x, y] = centerOf(b);
-        fx.ring(x, y, "#C27803", 60, 0.6, 2.5);
-        fx.burst(x, y, ["#C27803", "#E0A33C", "#1C1917"], 18, { speed: 240, size: 3 });
+        fx.ring(x, y, "var(--clay)", 60, 0.6, 2.5);
+        fx.burst(x, y, ["var(--clay)", "var(--clay-lit)", "var(--text)"], 18, { speed: 240, size: 3 });
       }
       const got = unlocksAt(lv);
       showToast(
@@ -208,7 +222,7 @@ export function ColonyProvider({
       const nest = colonyEl("nest");
       if (got.length && nest) {
         const [x, y] = centerOf(nest);
-        fx.ring(x, y, "#E0A33C", 40, 0.8, 2);
+        fx.ring(x, y, "var(--clay-lit)", 40, 0.8, 2);
       }
     }, 380);
     return () => clearTimeout(t);
@@ -229,14 +243,14 @@ export function ColonyProvider({
     prev.current = new Map(cards.map((c) => [c.id, { status: c.status, col: columnFor(c.status, c.stalledIn) }]));
     const ciBefore = prevCi.current;
     prevCi.current = Object.fromEntries(Object.entries(extras).map(([k, v]) => [k, v?.ci]));
+    const mergedIds = cards.filter((c) => c.status === "merged").map((c) => c.id);
     // First sight of the board: nothing "happened", it just is.
-    if (!before) return;
+    if (!before) {
+      setLanded(new Set(mergedIds));
+      return;
+    }
 
     const later: Array<() => void> = [];
-    const ledger: Ledger = { ...savedRef.current.ledger };
-    let stackList = savedRef.current.stacks;
-    let ledgerChanged = false;
-    let inFlight = 0;
 
     for (const card of cards) {
       const was = before.get(card.id);
@@ -249,18 +263,13 @@ export function ColonyProvider({
       if (was.status === card.status) continue;
 
       later.push(() => landed(card));
-      if (card.kind === "ticket" && card.status === "merged" && !ledger[card.id]) {
-        const t = Date.now();
-        const heat = heatMerge(pointsOf(card), stackList, t);
-        stackList = heat.stacks;
-        ledger[card.id] = { pts: heat.pts, mult: heat.mult, at: t };
-        ledgerChanged = true;
-        inFlight += heat.pts;
-        later.push(() => merged(card, heat.pts, heat.mult, stackList.length));
+      if (card.kind === "ticket" && card.status === "merged") {
+        flying.current.add(card.id);
+        const heat = heatStacks(cards, Date.now()).length;
+        later.push(() => merged(card, mergePoints(card), card.mergeMultiplier ?? 1, heat));
       } else if (card.kind === "epic" && card.status === "merged") {
-        const bonus = epicBonus(card, cards);
-        inFlight += bonus;
-        later.push(() => epicMerged(card, bonus));
+        flying.current.add(card.id);
+        later.push(() => epicMerged(card, epicBonus(card, cards)));
       } else if (card.status === "running") {
         later.push(() => dispatched(card));
       } else if (card.status === "review") {
@@ -268,11 +277,11 @@ export function ColonyProvider({
       } else if (was.status === "waiting" && card.status === "ready") {
         later.push(() => unlocked(card));
       } else if (card.kind === "epic" && card.status === "specified") {
-        later.push(() => mark(card, "PRD DRAFTED", "Product Agent", "#8F3F12"));
+        later.push(() => mark(card, "PRD DRAFTED", "Product Agent", "var(--terracotta-deep)"));
       } else if (card.status === "failed" || card.status === "blocked") {
         later.push(() => {
           sfx("reject");
-          mark(card, "NEEDS YOU", card.blockedReason ?? null, "#C62828");
+          mark(card, "NEEDS YOU", card.blockedReason ?? null, "var(--crimson)");
         });
       }
       if (isBug(card) && was.col === "backlog" && col !== "backlog") later.push(() => squashBug(card));
@@ -283,11 +292,12 @@ export function ColonyProvider({
       const b = extras[card.id]?.ci;
       if (a === b || !b || !a) continue;
       if (b === "passing") later.push(() => ciPassed(card));
-      if (b === "failing") later.push(() => mark(card, "CHECKS FAILED", "fix loop running", "#C62828"));
+      if (b === "failing") later.push(() => mark(card, "CHECKS FAILED", "fix loop running", "var(--crimson)"));
     }
 
-    if (ledgerChanged) setSaved((s) => ({ ...s, ledger, stacks: stackList }));
-    if (inFlight) setHeld((h) => h + inFlight);
+    // Merged with nothing to show for it (it arrived merged, say): count it now.
+    const quiet = mergedIds.filter((id) => !flying.current.has(id));
+    if (quiet.length) setLanded((s) => new Set([...(s ?? []), ...quiet]));
     if (!later.length) return;
     // After the browser lays the moved cards out in their new columns. Not
     // cancelled on the next change: \`prev\` has already moved on, so a
@@ -309,7 +319,7 @@ export function ColonyProvider({
       sfx("drop");
       fx.squish(e);
       const r = e.getBoundingClientRect();
-      fx.burst(r.left + r.width / 2, r.bottom, ["#D6D3D1", "#E7E5E4", "#A8A29E"], 10, {
+      fx.burst(r.left + r.width / 2, r.bottom, ["var(--border-dashed)", "var(--border)", "var(--dot-idle)"], 10, {
         angle: -Math.PI / 2,
         spread: Math.PI * 0.9,
         speed: 120,
@@ -319,25 +329,26 @@ export function ColonyProvider({
         shape: "dot",
       });
     }
-    function release(pts: number) {
-      setHeld((h) => Math.max(0, h - pts));
+    function release(id: string) {
+      flying.current.delete(id);
+      setLanded((s) => new Set([...(s ?? []), id]));
       const s = colonyEl("score");
       if (s && !fx.reducedMotion) {
         s.animate(
-          [{ transform: "scale(1)" }, { transform: "scale(1.28)", color: "#B5511A" }, { transform: "scale(1)" }],
+          [{ transform: "scale(1)" }, { transform: "scale(1.28)", color: "var(--terracotta-cta)" }, { transform: "scale(1)" }],
           { duration: 380, easing: "ease-out" },
         );
       }
     }
     function merged(card: BoardCard, pts: number, mult: number, stackCount: number) {
       const e = el(card) ?? colonyEl("board");
-      if (!e) return release(pts);
+      if (!e) return release(card.id);
       const [cx, cy, r] = centerOf(e);
       setTimeout(() => sfx("ding"), 40);
       fx.shake(2);
-      fx.ring(cx, cy, "#2E7D32", 100, 0.6, 3);
-      fx.burst(cx, cy, ["#2E7D32", "#D96B27", "#C27803", "#1C1917"], 26, { speed: 300, size: 3.2 });
-      fx.pop(cx, r.top + 4, `+${pts}`, `MERGED · ${pointsOf(card)} SP × ${mult.toFixed(1)}`, "#B5511A", 22);
+      fx.ring(cx, cy, "var(--jade)", 100, 0.6, 3);
+      fx.burst(cx, cy, ["var(--jade)", "var(--terracotta)", "var(--clay)", "var(--text)"], 26, { speed: 300, size: 3.2 });
+      fx.pop(cx, r.top + 4, `+${pts}`, `MERGED · ${pointsOf(card)} SP × ${mult.toFixed(1)}`, "var(--terracotta-cta)", 22);
       const heat = colonyEl("heat");
       if (heat && !fx.reducedMotion) {
         heat.animate(
@@ -352,26 +363,26 @@ export function ColonyProvider({
       }
       sfx("mult", stackCount - 1);
       const s = colonyEl("score");
-      if (!s || !s.getBoundingClientRect().width) return release(pts);
+      if (!s || !s.getBoundingClientRect().width) return release(card.id);
       const [sx, sy] = centerOf(s);
       let got = false;
-      fx.fly(cx, r.top + 10, sx, sy, 6, "#D96B27", (i) => {
+      fx.fly(cx, r.top + 10, sx, sy, 6, "var(--terracotta)", (i) => {
         sfx("blip", i * 2 + stackCount * 3);
         if (!got) {
           got = true;
-          release(pts);
+          release(card.id);
         }
       });
       const tl = colonyEl("timeline");
       if (tl && card.epicId && tl.getBoundingClientRect().width) {
         const [ex, ey] = centerOf(tl);
-        fx.fly(cx, r.top, ex, ey, 3, "#1C1917", (i) => {
+        fx.fly(cx, r.top, ex, ey, 3, "var(--text)", (i) => {
           if (i === 0) {
             tl.animate([{ transform: "none" }, { transform: "scale(1.08)" }, { transform: "none" }], {
               duration: 320,
               easing: "cubic-bezier(.2,.9,.3,1.4)",
             });
-            fx.ring(ex, ey, "#C27803", 50, 0.45);
+            fx.ring(ex, ey, "var(--clay)", 50, 0.45);
           }
           sfx("blip", 12 + i * 3);
         });
@@ -383,7 +394,7 @@ export function ColonyProvider({
         setWin({ epic, tickets: epic.childCount, bonus });
         setTimeout(() => {
           fx.shake(3);
-          release(bonus);
+          release(epic.id);
         }, 720);
       }, 900);
     }
@@ -392,20 +403,20 @@ export function ColonyProvider({
       if (!e) return;
       const [cx, cy] = centerOf(e);
       sfx("mint");
-      fx.ring(cx, cy, "#C27803", 70, 0.5);
-      if (!isBug(card)) fx.mark(e, "AGENT DISPATCHED", card.model ?? null, "#8F3F12");
+      fx.ring(cx, cy, "var(--clay)", 70, 0.5);
+      if (!isBug(card)) fx.mark(e, "AGENT DISPATCHED", card.model ?? null, "var(--terracotta-deep)");
     }
     function unlocked(card: BoardCard) {
       const e = el(card);
       if (!e) return;
       const [x, y, r] = centerOf(e);
       sfx("unlock");
-      fx.ring(x, y, "#2E7D32", 80, 0.6, 2.5);
-      fx.pop(x, r.top, "UNLOCKED", `${card.key} ready to run`, "#2E7D32", 16);
+      fx.ring(x, y, "var(--jade)", 80, 0.6, 2.5);
+      fx.pop(x, r.top, "UNLOCKED", `${card.key} ready to run`, "var(--jade)", 16);
       e.animate(
         [
-          { boxShadow: "0 0 0 0 rgba(46,125,50,0.55)" },
-          { boxShadow: "0 0 0 10px rgba(46,125,50,0)" },
+          { boxShadow: "0 0 0 0 color-mix(in srgb, var(--jade) 55%, transparent)" },
+          { boxShadow: "0 0 0 10px color-mix(in srgb, var(--jade) 0%, transparent)" },
         ],
         { duration: 900, easing: "ease-out" },
       );
@@ -415,27 +426,27 @@ export function ColonyProvider({
       if (!e) return;
       const [x, y, r] = centerOf(e);
       sfx("green");
-      fx.ring(x, y, "#2E7D32", 60, 0.5);
-      fx.pop(x, r.top, "CI PASSED", "ready to merge", "#2E7D32", 15);
+      fx.ring(x, y, "var(--jade)", 60, 0.5);
+      fx.pop(x, r.top, "CI PASSED", "ready to merge", "var(--jade)", 15);
     }
     function penalty(card: BoardCard) {
       const e = el(card);
       if (!e) return;
       const [cx, , r] = centerOf(e);
       sfx("bad");
-      fx.pop(cx, r.top + 4, `−${BUG_COST}`, "BUG REPORTED", "#C62828", 20);
+      fx.pop(cx, r.top + 4, `−${BUG_COST}`, "BUG REPORTED", "var(--crimson)", 20);
       const s = colonyEl("score");
       if (s && s.getBoundingClientRect().width) {
         const [sx, sy] = centerOf(s);
-        fx.fly(sx, sy, cx, r.top + 10, 4, "#C62828", (i) => {
-          if (i === 0) fx.ring(cx, r.top + 10, "#C62828", 36, 0.35);
+        fx.fly(sx, sy, cx, r.top + 10, 4, "var(--crimson)", (i) => {
+          if (i === 0) fx.ring(cx, r.top + 10, "var(--crimson)", 36, 0.35);
         });
         if (!fx.reducedMotion) {
           s.animate(
             [
-              { transform: "none", color: "#C62828" },
-              { transform: "translateX(-5px)", color: "#C62828" },
-              { transform: "translateX(4px)", color: "#C62828" },
+              { transform: "none", color: "var(--crimson)" },
+              { transform: "translateX(-5px)", color: "var(--crimson)" },
+              { transform: "translateX(4px)", color: "var(--crimson)" },
               { transform: "none" },
             ],
             { duration: 420 },
@@ -452,16 +463,16 @@ export function ColonyProvider({
       fx.squash(x, y - 2, () => {
         sfx("squash");
         fx.shake(5);
-        fx.ring(x, y, "#C62828", 56, 0.4, 3);
-        fx.ring(x, y, "#1C1917", 26, 0.25, 1.5);
-        fx.burst(x, y, [fx.bugHex, "#C62828", "#1C1917"], 16, {
+        fx.ring(x, y, "var(--crimson)", 56, 0.4, 3);
+        fx.ring(x, y, "var(--text)", 26, 0.25, 1.5);
+        fx.burst(x, y, [fx.bugHex, "var(--crimson)", "var(--text)"], 16, {
           speed: 200,
           g: 600,
           size: 2.2,
           life: 0.6,
           shape: "dot",
         });
-        fx.pop(x + 20, y - 16, "SQUASHED", null, "#C62828", 15);
+        fx.pop(x + 20, y - 16, "SQUASHED", null, "var(--crimson)", 15);
         setTimeout(() => fx.carriers(x, y, 2, fx.bugHex), 700);
         if (first) setTimeout(() => showToast("First bug squashed"), 1100);
       });
@@ -474,7 +485,7 @@ export function ColonyProvider({
       sfx("reject");
       const e = cardEl(cardId);
       if (!e) return;
-      fx.mark(e, reason, null, "#C62828", 13);
+      fx.mark(e, reason, null, "var(--crimson)", 13);
       if (!fx.reducedMotion) {
         e.animate(
           [
@@ -514,8 +525,8 @@ export function ColonyProvider({
           y - 6,
           () => {
             sfx("squash");
-            fx.ring(x, y - 6, "#C62828", 36, 0.35, 2);
-            fx.burst(x, y - 6, [fx.bugHex, "#1C1917"], 10, { speed: 150, size: 2, life: 0.5, shape: "dot" });
+            fx.ring(x, y - 6, "var(--crimson)", 36, 0.35, 2);
+            fx.burst(x, y - 6, [fx.bugHex, "var(--text)"], 10, { speed: 150, size: 2, life: 0.5, shape: "dot" });
           },
           7,
         );
@@ -557,7 +568,6 @@ export function ColonyProvider({
     closeWin: () => setWin(null),
     sfx,
     fx,
-    ledger: saved.ledger,
     now,
     reject,
   };

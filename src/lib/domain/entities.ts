@@ -186,8 +186,12 @@ export interface BoardCard {
   createdAt?: string;
   /** ISO time its first agent run started, or null before any has. */
   startedAt?: string | null;
-  /** ISO time it last changed. For a merged card, near enough when it merged. */
+  /** ISO time it last changed. */
   updatedAt?: string;
+  /** Tickets: when it merged, and what the merge scored. Null before then. */
+  mergedAt?: string | null;
+  mergePoints?: number | null;
+  mergeMultiplier?: number | null;
 }
 
 export const STAGE_COUNT = LIFECYCLE_STAGES.length;

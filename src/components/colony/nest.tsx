@@ -22,11 +22,11 @@ export function NestButton() {
       onClick={() => c.setColonyOpen(!c.colonyOpen)}
       aria-label="Open colony: levels and bug styles"
       aria-expanded={c.colonyOpen}
-      className="hover:border-drawer-line -mr-2 inline-flex h-9 w-10 items-center justify-center rounded-lg border border-transparent hover:bg-[#292524]"
+      className="hover:border-drawer-line -mr-2 inline-flex h-9 w-10 items-center max-md:size-11 justify-center rounded-lg border border-transparent hover:bg-drawer-hover"
     >
       <svg width="24" height="14" viewBox="0 0 24 14" fill="none" aria-hidden="true">
-        <path d="M1 13.5C3.5 5 7.5 1.5 12 1.5S20.5 5 23 13.5Z" fill="#3B3734" stroke="#57534E" />
-        <ellipse cx="12" cy="11" rx="2.6" ry="2.1" fill="#0C0A09" />
+        <path d="M1 13.5C3.5 5 7.5 1.5 12 1.5S20.5 5 23 13.5Z" fill="var(--drawer-line)" stroke="var(--text-muted)" />
+        <ellipse cx="12" cy="11" rx="2.6" ry="2.1" fill="var(--nest-hole)" />
       </svg>
     </button>
   );
@@ -49,8 +49,8 @@ function BugPreview({ shape, locked, on, c }: { shape: BugShape; locked: boolean
         cv.width / 20,
         on && !c.fx.reducedMotion ? (t / 1000) * 0.12 : 0.26,
         shape,
-        locked ? "#D6D3D1" : c.bugHex,
-        locked ? "#D6D3D1" : undefined,
+        locked ? "var(--border-dashed)" : c.bugHex,
+        locked ? "var(--border-dashed)" : undefined,
       );
       if (on && !c.fx.reducedMotion) raf = requestAnimationFrame(paint);
     };
@@ -96,7 +96,7 @@ export function ColonyPopover() {
         ref={panel}
         role="dialog"
         aria-label="Colony"
-        className="border-line bg-card fixed right-4 bottom-16 z-[75] box-border flex w-[400px] max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_rgba(28,25,23,0.5)]"
+        className="border-line bg-card fixed right-4 bottom-16 z-[75] box-border flex w-[400px] max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)]"
       >
         <div className="flex items-center gap-3">
           <span className="bg-anthracite text-cream inline-flex size-[42px] shrink-0 flex-col items-center justify-center gap-px [clip-path:polygon(10px_0,calc(100%-10px)_0,100%_10px,100%_calc(100%-10px),calc(100%-10px)_100%,10px_100%,0_calc(100%-10px),0_10px)]">
@@ -146,8 +146,8 @@ export function ColonyPopover() {
                   aria-pressed={on}
                   className="flex min-w-0 flex-col items-center gap-0.5 rounded-lg border-[1.5px] px-0.5 py-1.5"
                   style={{
-                    borderColor: on ? "#D96B27" : "#E7E5E4",
-                    background: on ? "#FDF1E8" : locked ? "#FAF8F4" : "#FFFFFF",
+                    borderColor: on ? "var(--terracotta)" : "var(--border)",
+                    background: on ? "var(--epic-chip)" : locked ? "var(--nested-muted)" : "var(--card)",
                     cursor: locked ? "not-allowed" : "pointer",
                   }}
                 >
@@ -178,7 +178,7 @@ export function ColonyPopover() {
                   aria-label={locked ? `${u.label}, unlocks at level ${u.lv}` : `Use ${u.label} bugs`}
                   aria-pressed={on}
                   className="bg-card flex min-w-0 flex-col items-center gap-1 rounded-lg border-[1.5px] px-0.5 py-1.5"
-                  style={{ borderColor: on ? "#D96B27" : "transparent", cursor: locked ? "not-allowed" : "pointer" }}
+                  style={{ borderColor: on ? "var(--terracotta)" : "transparent", cursor: locked ? "not-allowed" : "pointer" }}
                 >
                   <span className="relative inline-flex size-[26px] items-center justify-center">
                     <span
@@ -187,8 +187,8 @@ export function ColonyPopover() {
                     />
                     {locked && (
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" className="relative">
-                        <rect x="2" y="4.5" width="6" height="4.5" rx="1" fill="#1C1917" />
-                        <path d="M3.3 4.5V3.3a1.7 1.7 0 0 1 3.4 0v1.2" stroke="#1C1917" strokeWidth="1" />
+                        <rect x="2" y="4.5" width="6" height="4.5" rx="1" fill="var(--text)" />
+                        <path d="M3.3 4.5V3.3a1.7 1.7 0 0 1 3.4 0v1.2" stroke="var(--text)" strokeWidth="1" />
                       </svg>
                     )}
                   </span>

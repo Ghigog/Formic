@@ -5,7 +5,8 @@ import {
   HEAT_MAX,
   HEAT_WINDOW_MS,
   gradeOf,
-  heatMerge,
+  heatStacks,
+  mergeScore,
   isBug,
   levelOf,
   nextUnlock,
@@ -56,14 +57,15 @@ describe("levels", () => {
 });
 
 describe("score", () => {
-  it("counts merged tickets at 1× unless the ledger saw them land", () => {
+  it("counts a merge at what the server scored it, or 1× from before it did", () => {
     const cards = [
       card({ id: "a", status: "merged", storyPoints: 5 }),
       card({ id: "b", status: "merged", storyPoints: 3 }),
       card({ id: "c", status: "running", storyPoints: 8 }),
     ];
-    expect(scoreOf(cards, {}).earned).toBe(8);
-    expect(scoreOf(cards, { a: { pts: 13, mult: 2.5, at: 0 } }).earned).toBe(16);
+    expect(scoreOf(cards).earned).toBe(8);
+    cards[0] = { ...cards[0]!, mergePoints: 13, mergeMultiplier: 2.5 };
+    expect(scoreOf(cards).earned).toBe(16);
   });
 
   it("adds an epic's story points once it merges", () => {
@@ -72,7 +74,7 @@ describe("score", () => {
       card({ id: "a", status: "merged", storyPoints: 5 }),
       card({ id: "b", status: "merged", storyPoints: 2 }),
     ];
-    expect(scoreOf(cards, {}).earned).toBe(14);
+    expect(scoreOf(cards).earned).toBe(14);
   });
 
   it("charges for bugs in points but never in XP", () => {
@@ -80,7 +82,7 @@ describe("score", () => {
       card({ id: "a", status: "merged", storyPoints: 8 }),
       card({ id: "bug", kind: "epic", epicId: null, title: "Toast flickers on narrow screens", status: "draft" }),
     ];
-    const s = scoreOf(cards, {});
+    const s = scoreOf(cards);
     expect(s.earned).toBe(8);
     expect(s.points).toBe(8 - BUG_COST);
     expect(s.bugs).toBe(1);
@@ -90,7 +92,7 @@ describe("score", () => {
   it("squashes a bug once it leaves the Backlog", () => {
     const bug = card({ id: "b", epicId: null, title: "Fix the broken badge", status: "ready" });
     expect(isBug(bug)).toBe(true);
-    expect(scoreOf([bug], {}).squashed).toBe(1);
+    expect(scoreOf([bug]).squashed).toBe(1);
   });
 
   it("does not count an epic's own tickets as more bugs", () => {
@@ -99,19 +101,21 @@ describe("score", () => {
 });
 
 describe("heat", () => {
-  it("adds half a multiplier per live stack, and stacks expire", () => {
-    const first = heatMerge(4, [], 0);
-    expect(first).toMatchObject({ pts: 4, mult: 1 });
-    const second = heatMerge(4, first.stacks, 1000);
-    expect(second).toMatchObject({ pts: 6, mult: 1.5 });
-    const later = heatMerge(4, second.stacks, 1000 + HEAT_WINDOW_MS + 1);
-    expect(later.mult).toBe(1);
+  it("adds half a multiplier per recent merge, up to six", () => {
+    expect(mergeScore(4, 0)).toEqual({ pts: 4, mult: 1 });
+    expect(mergeScore(4, 1)).toEqual({ pts: 6, mult: 1.5 });
+    expect(mergeScore(4, 10).mult).toBe(1 + 0.5 * HEAT_MAX);
+    expect(mergeScore(null, 0).pts).toBe(1);
   });
 
-  it("holds at most six stacks", () => {
-    let stacks: number[] = [];
-    for (let i = 0; i < 10; i++) stacks = heatMerge(1, stacks, i).stacks;
-    expect(stacks).toHaveLength(HEAT_MAX);
+  it("reads the heat off the board: recent merges, newest six, until they expire", () => {
+    const at = (ms: number) => new Date(ms).toISOString();
+    const cards = Array.from({ length: 8 }, (_, i) =>
+      card({ id: `m${i}`, status: "merged", mergedAt: at(i * 1000) }),
+    );
+    expect(heatStacks(cards, 7_500)).toHaveLength(HEAT_MAX);
+    expect(heatStacks(cards, 7_000 + HEAT_WINDOW_MS)).toHaveLength(0);
+    expect(heatStacks(cards, 1_500 + HEAT_WINDOW_MS)).toHaveLength(6);
   });
 
   it("grades yield", () => {
@@ -133,7 +137,7 @@ describe("timeline", () => {
       card({ id: "b", status: "running", storyPoints: 3, startedAt: daysAgo(1) }),
       card({ id: "c", status: "waiting", storyPoints: 2, dependsOn: ["b"] }),
     ];
-    const tl = buildTimeline(cards, {}, at);
+    const tl = buildTimeline(cards, at);
 
     expect(tl.days).toHaveLength(WINDOW_DAYS);
     expect(tl.total).toBe(10);
@@ -156,7 +160,7 @@ describe("timeline", () => {
       card({ id: "b", status: "merged", updatedAt: daysAgo(1) }),
       card({ id: "c", status: "merged", updatedAt: daysAgo(3) }),
     ];
-    expect(buildTimeline(cards, {}, at).streak).toBe(2);
+    expect(buildTimeline(cards, at).streak).toBe(2);
   });
 
   it("leaves work merged before the window out of the burndown", () => {
@@ -164,7 +168,7 @@ describe("timeline", () => {
       card({ id: "a", status: "merged", storyPoints: 8, updatedAt: daysAgo(40) }),
       card({ id: "b", status: "ready", storyPoints: 2 }),
     ];
-    const tl = buildTimeline(cards, {}, at);
+    const tl = buildTimeline(cards, at);
     expect(tl.total).toBe(2);
     expect(tl.forecast).toBeNull();
   });
