@@ -29,6 +29,8 @@ export function stageByKey(key: StageKey) {
 interface StageCard {
   status: string;
   stage: number;
+  /** The agent working on it right now, if one is. */
+  agentRole?: string | null;
 }
 
 /**
@@ -51,6 +53,7 @@ export function epicProgress(
   }
   const working =
     epic.status === "running" ||
+    !!epic.agentRole ||
     children.some((c) => c.status === "running" || c.status === "review");
   return { current: Math.min(current, LIFECYCLE_STAGES.length), working };
 }

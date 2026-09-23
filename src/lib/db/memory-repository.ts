@@ -65,6 +65,7 @@ interface Store {
   cards: Map<string, BoardCard>;
   ticketExtras: Map<string, TicketExtras>;
   prds: Map<string, unknown>;
+  prdTimes: Map<string, Date>;
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
   epicJobs: Map<string, string>;
@@ -99,6 +100,7 @@ function store(): Store {
     existing.columnAgents ??= new Map();
     existing.users ??= new Map();
     existing.epicNumbers ??= new Map();
+    existing.prdTimes ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -115,6 +117,7 @@ function store(): Store {
     cards: new Map(),
     ticketExtras: new Map(),
     prds: new Map(),
+    prdTimes: new Map(),
     rawRequests: new Map(),
     showcases: new Map(),
     epicJobs: new Map(),
@@ -159,6 +162,9 @@ export function seedMemory(
     });
   }
 }
+
+/** Epic cards whose agent was set from a runner job, to clear when it ends. */
+const fromJob = new WeakSet<BoardCard>();
 
 export class MemoryRepository implements Repository {
   async defaultProject(): Promise<ProjectSummary> {
@@ -259,6 +265,14 @@ export class MemoryRepository implements Repository {
     );
     for (const card of cards) {
       if (card.kind !== "epic") continue;
+      // A CLI agent's job out on GitHub Actions is the agent working on it.
+      if (s.epicJobs.has(card.id)) {
+        card.agentRole =
+          card.status === "merged" ? "pm" : card.stage >= 2 ? "architect" : "product";
+        fromJob.add(card);
+      } else if (fromJob.delete(card)) {
+        card.agentRole = null;
+      }
       const children = cards.filter((c) => c.epicId === card.id);
       card.childCount = children.length;
       card.doneCount = children.filter((c) => c.status === "merged").length;
@@ -398,6 +412,7 @@ export class MemoryRepository implements Repository {
       title: card.title,
       rawRequest: s.rawRequests.get(epicId) ?? card.title,
       prd: s.prds.get(epicId) ?? null,
+      prdUpdatedAt: s.prdTimes.get(epicId) ?? null,
       runnerJob: s.epicJobs.get(epicId) ?? null,
       issueNumber: s.epicIssues.get(epicId) ?? null,
     };
@@ -416,6 +431,7 @@ export class MemoryRepository implements Repository {
   async setEpicPrd(epicId: string, prd: unknown): Promise<void> {
     const s = store();
     s.prds.set(epicId, prd);
+    s.prdTimes.set(epicId, new Date());
     const card = s.cards.get(epicId);
     if (card) {
       card.status = "specified";
@@ -437,6 +453,20 @@ export class MemoryRepository implements Repository {
       card.blockedReason = null;
       card.misplacedIn = null;
       card.misplacedReason = null;
+    }
+  }
+
+  async deleteTickets(ticketIds: string[]): Promise<void> {
+    const s = store();
+    for (const id of ticketIds) {
+      s.cards.delete(id);
+      s.ticketExtras.delete(id);
+    }
+    for (const card of s.cards.values()) {
+      card.dependsOn = card.dependsOn.filter((id) => s.cards.has(id));
+    }
+    for (const [runId, run] of s.runs) {
+      if (run.ticketId && !s.cards.has(run.ticketId)) s.runs.delete(runId);
     }
   }
 

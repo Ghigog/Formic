@@ -327,6 +327,18 @@
     animation: dotPulse 1.6s ease-in-out infinite;
   }
 
+  /*
+   * A scroll area that looks like one. macOS hides scrollbars until you
+   * scroll, which leaves a full column looking like it simply ends; a thin
+   * bar that is always there says there is more.
+   */
+  .scroll-area {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
   .pulse-trail {
     animation: trailPulse 2.4s ease-in-out infinite;
   }

@@ -298,7 +298,10 @@ describe("retrying a stalled Epic", () => {
   it("counts a draft with no PRD, gone quiet for a while, as stuck", () => {
     const epic = makeCard({ kind: "epic", status: "draft", size: null, updatedAt: "2026-01-01T00:00:00Z" });
     expect(canRetryEpic(epic, { prd: null, runnerJob: null })).toBe(true);
-    expect(canRetryEpic(epic, { prd: null, runnerJob: "job-1" })).toBe(false);
+    // A job on GitHub Actions gets its whole hour first.
+    const recent = { ...epic, updatedAt: new Date(Date.now() - 30 * 60_000).toISOString() };
+    expect(canRetryEpic(recent, { prd: null, runnerJob: "job-1" })).toBe(false);
+    expect(canRetryEpic(epic, { prd: null, runnerJob: "job-1" })).toBe(true);
   });
 });
 
@@ -321,5 +324,62 @@ describe("deleting an Epic", () => {
     expect(result).toMatchObject({ ok: false, status: 409 });
     expect(result.ok ? "" : result.reason).toContain(a!.key);
     expect(await repository().cardById(epic!.id)).not.toBeNull();
+  });
+});
+
+describe("an Epic's tickets following it", () => {
+  const PRD_DOC = { summary: "s", problem: "p", scope: ["x"], successCriteria: ["y"] };
+  const move = (id: string, from: "todo" | "backlog", to: "todo" | "backlog") =>
+    applyTransition(PROJECT, { cardId: id, kind: "epic", from, to, position: 1e9, actor: "user" });
+
+  it("takes its unstarted tickets back to Backlog, and leaves the rest", async () => {
+    const [epic, idle, pulled, busy] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "ready" },
+      { status: "ready", detached: true },
+      { status: "running" },
+    ]);
+    seedMemory([epic!, idle!, pulled!, busy!]);
+    globalThis.__formicMemoryStore!.prds.set(epic!.id, PRD_DOC);
+
+    await move(epic!.id, "todo", "backlog");
+
+    const repo = repository();
+    expect(await repo.cardById(epic!.id)).toMatchObject({ status: "specified" });
+    expect((await repo.cardById(idle!.id))?.status).toBe("draft");
+    expect((await repo.cardById(pulled!.id))?.status).toBe("ready");
+    expect((await repo.cardById(busy!.id))?.status).toBe("running");
+  });
+
+  it("brings them back to To Do as they were when the PRD has not changed", async () => {
+    const [epic, a, b] = makeEpicWithChildren({ status: "specified" }, [
+      { status: "draft", createdAt: new Date().toISOString() },
+      { status: "draft", createdAt: new Date().toISOString() },
+    ]);
+    b!.dependsOn = [a!.id];
+    seedMemory([epic!, a!, b!]);
+    const s = globalThis.__formicMemoryStore!;
+    s.prds.set(epic!.id, PRD_DOC);
+    s.prdTimes.set(epic!.id, new Date(Date.now() - 60_000));
+
+    await move(epic!.id, "backlog", "todo");
+
+    const repo = repository();
+    expect((await repo.cardById(a!.id))?.status).toBe("ready");
+    expect((await repo.cardById(b!.id))?.status).toBe("waiting");
+    expect(launched).toEqual([]);
+  });
+
+  it("breaks it down again when the PRD changed since they were made", async () => {
+    const [epic, a] = makeEpicWithChildren({ status: "specified" }, [
+      { status: "draft", createdAt: new Date(Date.now() - 60_000).toISOString() },
+    ]);
+    seedMemory([epic!, a!]);
+    const s = globalThis.__formicMemoryStore!;
+    s.prds.set(epic!.id, PRD_DOC);
+    s.prdTimes.set(epic!.id, new Date());
+
+    await move(epic!.id, "backlog", "todo");
+
+    expect(launched).toEqual([`architect agent for ${epic!.key}`]);
   });
 });

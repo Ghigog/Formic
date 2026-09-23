@@ -92,6 +92,9 @@ model Project {
   /// The saved agent the board's assistant runs on. Not a relation: a
   /// deleted template simply leaves the assistant without one.
   assistantPresetId String?
+  /// The highest Epic number this project has given out, deleted Epics
+  /// included, so a number is never handed out twice.
+  lastEpicNumber Int @default(0)
 
   epics        Epic[]
   events       Event[]
@@ -115,6 +118,9 @@ model Epic {
   /// Structured PRD from the Product Agent. Null until stage 2 completes.
   prd              Json?
   prdEditedByHuman Boolean @default(false)
+  /// When the PRD last changed. Tickets made before it were made from an
+  /// older PRD, so the Epic is broken down again.
+  prdUpdatedAt     DateTime?
   showcase         String?
   /// The GitHub Actions run a CLI agent is doing for this epic, if any.
   /// Only that run's answer is taken; any other is stale.

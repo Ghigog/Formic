@@ -78,6 +78,15 @@ export function EpicDrawer({
     void load();
   }, [load, prdWritten]);
 
+  // While an agent works on it, look again now and then: its answer may
+  // come from GitHub Actions, which streams nothing here.
+  const working = !!detail?.epic?.agentRole;
+  useEffect(() => {
+    if (!working) return;
+    const timer = setInterval(() => void load(), 10_000);
+    return () => clearInterval(timer);
+  }, [working, load]);
+
   useEffect(() => {
     if (!epicId) return;
     const onKey = (e: KeyboardEvent) => {
@@ -268,6 +277,7 @@ export function EpicDrawer({
               prd={detail?.prd ?? null}
               rawRequest={detail?.rawRequest ?? ""}
               streaming={streamingPrd}
+              writing={epic?.agentRole === "product"}
               onSave={save}
             />
           </div>

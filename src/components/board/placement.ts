@@ -15,11 +15,12 @@ import { POSITION_STEP, positionBetween } from "@/lib/ordering";
 
 /**
  * To Do shows the DAG and Done shows the merged set, so in both an epic
- * absorbs the tickets it owns in that column. Elsewhere a ticket stands on
- * its own, which is what the artboard shows for a card mid-flight.
+ * absorbs the tickets it owns in that column. Backlog does too, for the
+ * tickets an Epic took with it when it went back there. Elsewhere a ticket
+ * stands on its own, which is what the artboard shows for a card mid-flight.
  */
 export const GROUPS_CHILDREN: Record<ColumnId, boolean> = {
-  backlog: false,
+  backlog: true,
   todo: true,
   in_progress: false,
   in_review: false,
@@ -55,11 +56,14 @@ export function layout(cards: BoardCard[], column: ColumnId): RenderItem[] {
   for (const card of cards) {
     if (adopted.has(card.id)) continue;
     if (card.kind === "epic") {
-      items.push({
-        kind: "group",
-        epic: card,
-        children: cards.filter((c) => adopted.has(c.id) && c.epicId === card.id),
-      });
+      const children = cards.filter((c) => adopted.has(c.id) && c.epicId === card.id);
+      // A Backlog Epic is only a group while it has tickets with it; most
+      // are still ideas, and read as one.
+      items.push(
+        column === "backlog" && children.length === 0
+          ? { kind: "card", card }
+          : { kind: "group", epic: card, children },
+      );
     } else {
       items.push({ kind: "card", card });
     }

@@ -23,6 +23,7 @@ import type {
   AssistantProposal,
 } from "./repository";
 import type {
+  AgentRole,
   AgentRunStatus,
   BoardCard,
   AgentPreset,
@@ -46,11 +47,27 @@ type EpicRow = {
   blockedReason: string | null;
   misplacedIn: ColumnId | null;
   misplacedReason: string | null;
+  runnerJob: string | null;
   position: number;
   createdAt: Date;
   updatedAt: Date;
   tickets: Array<{ id: string; status: TicketStatus }>;
+  runs: Array<{ role: AgentRole; model: string | null }>;
 };
+
+/**
+ * The agent working on an Epic right now, if one is: a run still going here,
+ * or a CLI agent's job still out on GitHub Actions, whose Formic run ended
+ * at dispatch. Which planning agent that is follows from how far it got.
+ */
+function epicAgent(epic: EpicRow): { role: AgentRole; model: string | null } | null {
+  const live = epic.runs[0];
+  if (live) return live;
+  if (!epic.runnerJob) return null;
+  const role: AgentRole =
+    epic.status === "merged" ? "pm" : epic.stage >= 2 ? "architect" : "product";
+  return { role, model: null };
+}
 
 function epicKey(number: number): string {
   return `EPIC-${number}`;
@@ -187,7 +204,14 @@ export class PrismaRepository implements Repository {
     const epics = await db.epic.findMany({
       where: { projectId },
       orderBy: { position: "asc" },
-      include: { tickets: { select: { id: true, status: true } } },
+      include: {
+        tickets: { select: { id: true, status: true } },
+        runs: {
+          where: { status: { in: ["queued", "running"] } },
+          orderBy: { createdAt: "desc" },
+          select: { role: true, model: true },
+        },
+      },
     });
 
     const tickets = await db.ticket.findMany({
@@ -216,8 +240,8 @@ export class PrismaRepository implements Repository {
       position: epic.position,
       epicId: null,
       size: null,
-      agentRole: null,
-      model: null,
+      agentRole: epicAgent(epic)?.role ?? null,
+      model: epicAgent(epic)?.model ?? null,
       fileScope: [],
       dependsOn: [],
       prNumber: null,
@@ -314,9 +338,9 @@ export class PrismaRepository implements Repository {
   }
 
   /**
-   * One past the highest number the project has used. Epics from before
-   * numbers were stored are numbered first, so a new one never repeats a
-   * key already on the board.
+   * One past the highest number the project has ever given out, deleted
+   * Epics included, so a new one never repeats a key. Epics from before
+   * numbers were stored are numbered first.
    */
   private async nextEpicNumber(projectId: string): Promise<number> {
     const db = prisma();
@@ -333,7 +357,18 @@ export class PrismaRepository implements Repository {
         ),
       );
     }
-    return Math.max(0, ...numbers.values()) + 1;
+    const floor = Math.max(0, ...numbers.values());
+    // Claimed atomically: two Epics made at once still get different numbers.
+    await db.project.updateMany({
+      where: { id: projectId, lastEpicNumber: { lt: floor } },
+      data: { lastEpicNumber: floor },
+    });
+    const project = await db.project.update({
+      where: { id: projectId },
+      data: { lastEpicNumber: { increment: 1 } },
+      select: { lastEpicNumber: true },
+    });
+    return project.lastEpicNumber;
   }
 
   async createTickets(inputs: CreateTicketInput[]): Promise<BoardCard[]> {
@@ -456,7 +491,14 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const epic = await db.epic.findUnique({
       where: { id: epicId },
-      select: { title: true, rawRequest: true, prd: true, runnerJob: true, issueNumber: true },
+      select: {
+        title: true,
+        rawRequest: true,
+        prd: true,
+        prdUpdatedAt: true,
+        runnerJob: true,
+        issueNumber: true,
+      },
     });
     return epic ?? null;
   }
@@ -476,6 +518,7 @@ export class PrismaRepository implements Repository {
       data: {
         prd: prd as never,
         prdEditedByHuman: byHuman,
+        prdUpdatedAt: new Date(),
         status: "specified",
         stage: 2,
         stalledIn: null,
@@ -499,6 +542,11 @@ export class PrismaRepository implements Repository {
         misplacedReason: null,
       },
     });
+  }
+
+  async deleteTickets(ticketIds: string[]): Promise<void> {
+    if (ticketIds.length === 0) return;
+    await prisma().ticket.deleteMany({ where: { id: { in: ticketIds } } });
   }
 
   async deleteEpic(epicId: string): Promise<void> {

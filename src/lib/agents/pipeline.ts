@@ -12,6 +12,7 @@ import type { AgentRole, Prd } from "@/lib/domain/entities";
 import { agentFor, cliAgentFor, modelFor } from "./presets";
 import { startCliAnswer } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
+import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { directoryTree } from "@/lib/vcs/repositories";
@@ -128,9 +129,10 @@ export function startRun(
 /**
  * Stage 2 done: the PRD goes on the Epic.
  *
- * An Epic someone already dropped into To Do waits there for its PRD. It
- * stays in To Do and goes straight to the Architect Agent, rather than
- * jumping back to Backlog and needing a second drag.
+ * An Epic in To Do, whether waiting there for its PRD or already broken down
+ * and having it edited, stays in To Do and goes straight to the Architect
+ * Agent: its tickets are made, or made again from the new PRD, rather than
+ * the Epic jumping back to Backlog and needing a second drag.
  */
 export async function applyPrd(
   projectId: string,
@@ -140,7 +142,10 @@ export async function applyPrd(
 ): Promise<void> {
   const repo = repository();
   const before = await repo.cardById(epicId);
-  const queued = before?.kind === "epic" && before.status === "waiting";
+  const queued =
+    before?.kind === "epic" &&
+    !before.misplacedIn &&
+    (before.status === "waiting" || before.status === "ready");
 
   await repo.setEpicPrd(epicId, prd, byHuman);
 
@@ -205,13 +210,39 @@ export async function applyTickets(
   tickets: DraftTicket[],
 ): Promise<void> {
   const repo = repository();
+
+  // Broken down again: these replace the tickets no agent has started on.
+  // Anything already in flight stays, and a new ticket that reuses one of
+  // its keys is renamed so both can be told apart.
+  const existing = await repo.ticketsForEpic(epicId);
+  const replaced = existing.filter(unstarted);
+  if (replaced.length > 0) {
+    await repo.deleteTickets(replaced.map((t) => t.id));
+    for (const t of replaced) {
+      await publish(projectId, {
+        type: "card.deleted",
+        cardId: t.id,
+        kind: "ticket",
+        issueNumbers: t.issueNumber ? [t.issueNumber] : [],
+      });
+    }
+  }
+  const taken = new Set(existing.filter((t) => !unstarted(t)).map((t) => t.key));
+  const keyFor = new Map<string, string>();
+  for (const t of tickets) {
+    let key = t.key;
+    for (let n = 2; taken.has(key); n++) key = `${t.key}-${n}`;
+    taken.add(key);
+    keyFor.set(t.key, key);
+  }
+
   const positions = await repo.columnPositions(projectId, "todo");
   let cursor = positions.length;
 
   await repo.createTickets(
     tickets.map((t) => ({
       epicId,
-      key: t.key,
+      key: keyFor.get(t.key)!,
       title: t.title,
       description: t.description,
       acceptanceCriteria: t.acceptanceCriteria,
@@ -219,7 +250,7 @@ export async function applyTickets(
       size: t.size,
       storyPoints: t.storyPoints ?? null,
       position: positionForIndex(positions, cursor++),
-      dependsOnKeys: t.dependsOn,
+      dependsOnKeys: t.dependsOn.map((k) => keyFor.get(k) ?? k),
     })),
   );
 

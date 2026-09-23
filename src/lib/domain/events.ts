@@ -23,10 +23,13 @@ export type FormicEvent =
       epicId: string | null;
     }
   | {
-      /** A person deleted an Epic, and every ticket under it with it. */
+      /**
+       * A card is gone: an Epic a person deleted, with every ticket under
+       * it, or a ticket replaced when its Epic was broken down again.
+       */
       type: "card.deleted";
       cardId: string;
-      kind: "epic";
+      kind: "epic" | "ticket";
       /** The GitHub issues that tracked it and its tickets, to close. */
       issueNumbers: number[];
     }
