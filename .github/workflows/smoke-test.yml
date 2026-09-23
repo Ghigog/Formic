@@ -44,7 +44,8 @@ jobs:
           fi
           jq -r '.warnings[]?' health.json | while read -r w; do echo "::warning::$w"; done
 
-          page=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$base/")
+          # With GitHub sign-in on, / redirects to the sign-in page; follow it.
+          page=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$base/")
           if [ "$page" != "200" ]; then
             echo "::error::/ returned HTTP $page"
             exit 1
