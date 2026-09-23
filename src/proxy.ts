@@ -1,28 +1,42 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, gatePassword, safeEqual, sessionToken } from "@/lib/auth/session";
+import {
+  SESSION_COOKIE,
+  authMode,
+  gatePassword,
+  passwordToken,
+  safeEqual,
+  verifySession,
+} from "@/lib/auth/session";
 
 /**
- * Everything behind FORMIC_PASSWORD when it is set. The board can start
- * agents on a saved API key and push to any repository the GitHub token
- * reaches, so a public deployment should not be usable by whoever finds it.
+ * Nothing on the board without signing in. With a GitHub App configured
+ * that means a GitHub session; without one, FORMIC_PASSWORD if it is set.
  *
- * Open regardless: the login itself, health checks, and the GitHub webhook,
+ * Open regardless: sign-in itself, health checks, and the GitHub webhook,
  * which authenticates with its own signature.
  */
 
-const OPEN = [/^\/login$/, /^\/api\/login$/, /^\/api\/health$/, /^\/api\/webhooks\//];
+const OPEN = [
+  /^\/login$/,
+  /^\/api\/login$/,
+  /^\/api\/auth\//,
+  /^\/api\/health$/,
+  /^\/api\/webhooks\//,
+];
 
 export async function proxy(req: NextRequest) {
-  const password = gatePassword();
-  if (!password) return NextResponse.next();
-
   const path = req.nextUrl.pathname;
   if (OPEN.some((re) => re.test(path))) return NextResponse.next();
 
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
-  if (cookie && safeEqual(cookie, await sessionToken(password))) {
-    return NextResponse.next();
+  let allowed: boolean;
+  if (authMode() === "github") {
+    allowed = (await verifySession(cookie)) !== null;
+  } else {
+    const password = gatePassword();
+    allowed = !password || (!!cookie && safeEqual(cookie, await passwordToken(password)));
   }
+  if (allowed) return NextResponse.next();
 
   if (path.startsWith("/api/")) {
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });

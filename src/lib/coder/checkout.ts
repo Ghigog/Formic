@@ -1,6 +1,6 @@
 import "server-only";
 
-import { AGENT_COMMIT_AUTHOR, type VcsClient, usingMockVcs } from "@/lib/vcs";
+import { AGENT_COMMIT_AUTHOR, type VcsClient } from "@/lib/vcs";
 import { DEFAULT_TTL_MS, type SandboxHandle } from "@/lib/sandbox/types";
 import { spawnSandbox } from "@/lib/sandbox";
 import {
@@ -9,7 +9,6 @@ import {
   sandboxWorkspace,
   scopedWorkspace,
 } from "@/lib/sandbox/workspace";
-import { authenticatedCloneUrl } from "@/lib/secrets/env";
 import type { AgentContext } from "@/lib/agents/ports";
 import type { TicketDetail } from "@/lib/db/repository";
 
@@ -39,6 +38,9 @@ export interface CheckoutRequest {
   newBranch: string | null;
   ticket: TicketDetail;
   ctx: AgentContext;
+  /** The project owner's GitHub token. Null runs on an in-memory checkout. */
+  githubToken: string | null;
+  e2bKey: string | null;
 }
 
 type CheckoutFactory = (request: CheckoutRequest) => Promise<Checkout>;
@@ -62,7 +64,7 @@ export async function openCheckout(
   // With no GitHub credential there is nothing to clone and nowhere to push.
   // The board still runs: the agents work against an in-memory checkout and
   // the pull requests are mock ones. See src/lib/vcs/mock.ts.
-  if (usingMockVcs()) {
+  if (!request.githubToken) {
     const memory = new MemoryWorkspace();
     return {
       workspace: scopedWorkspace(memory, request.ticket.fileScope),
@@ -74,7 +76,10 @@ export async function openCheckout(
 
   const sandbox: SandboxHandle = await spawnSandbox(request.projectId, {
     repoFullName: request.repoFullName,
-    cloneUrl: authenticatedCloneUrl(request.repoFullName),
+    // Built here and never stored, so the token cannot end up in a database
+    // column or an event payload.
+    cloneUrl: `https://x-access-token:${request.githubToken}@github.com/${request.repoFullName}.git`,
+    e2bApiKey: request.e2bKey,
     baseBranch: request.fromBranch,
     branchName: request.newBranch ?? undefined,
     ttlMs: DEFAULT_TTL_MS,

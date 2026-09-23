@@ -4,11 +4,12 @@ import { startRun, launch } from "@/lib/agents/pipeline";
 import type { CoderTask } from "@/lib/agents/ports";
 import { repository } from "@/lib/db";
 import { projectFor } from "@/lib/board/project";
+import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { newBranchName } from "@/lib/sandbox";
-import { mergeTarget, usingMockVcs, vcs } from "@/lib/vcs";
+import { mergeTarget, vcs } from "@/lib/vcs";
 import {
   commitAndPush,
   ensureMergeTarget,
@@ -82,7 +83,8 @@ export async function runCoderAgent(
 
   const project = await projectFor(projectId);
   const branch = ticket.branchName ?? newBranchName(ticket.key);
-  const client = vcs(project.repoFullName);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
 
   const run = startRun(projectId, "coder", {
     model: await modelFor(projectId, "coder"),
@@ -114,6 +116,8 @@ export async function runCoderAgent(
     newBranch: branch,
     ticket,
     ctx: run.ctx,
+    githubToken: creds.githubToken,
+    e2bKey: creds.e2bKey,
   }).catch((e: unknown) => e as Error);
 
   if (checkout instanceof Error) {
@@ -241,7 +245,7 @@ export async function runCoderAgent(
     // With a mock GitHub no webhook will ever arrive, so the card would sit
     // in In Review forever. Drive the next stage directly instead, which is
     // what makes the no-credential demo reach Done.
-    if (usingMockVcs()) {
+    if (client.name === "mock") {
       const { reviewPullRequest } = await import("@/lib/review/pipeline");
       launch(
         () => reviewPullRequest(projectId, pull.number, pull.headSha),

@@ -20,6 +20,8 @@ const HIGH_WATER = 256;
 
 export async function GET(req: NextRequest) {
   const project = await activeProject();
+  // 204 is the one status that tells EventSource to stop reconnecting.
+  if (!project) return new Response(null, { status: 204 });
 
   const lastEventId =
     req.headers.get("last-event-id") ??

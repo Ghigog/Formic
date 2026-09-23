@@ -7,7 +7,9 @@ import { hintFor, open, seal } from "@/lib/secrets/vault";
 import { AnthropicArchitectAgent, AnthropicProductAgent, AnthropicShowcaseAgent } from "./anthropic";
 import { AnthropicCoderAgent, AnthropicReviewerAgent } from "./coder";
 import type { AgentConfig, AgentRegistry } from "./ports";
-import { agents, useMockAgents } from "./registry";
+import { agents, agentsOverridden, useMockAgents } from "./registry";
+import { credentialsForProject } from "@/lib/auth/credentials";
+import { projectFor } from "@/lib/board/project";
 import { MODELS } from "./anthropic";
 import { CODER_MODEL } from "./coding-loop";
 
@@ -18,9 +20,12 @@ import { CODER_MODEL } from "./coding-loop";
  * exactly what it did before.
  */
 
-export async function savePreset(input: AgentPresetInput & { id?: string }) {
+export async function savePreset(
+  input: AgentPresetInput & { id?: string; ownerId?: string | null },
+) {
   return repository().savePreset({
     id: input.id,
+    ownerId: input.ownerId,
     name: input.name,
     model: input.model,
     prompt: input.prompt,
@@ -32,23 +37,32 @@ export async function savePreset(input: AgentPresetInput & { id?: string }) {
   });
 }
 
-/** The preset a column runs on this board, ready to hand to an agent. */
+/**
+ * How a column's agent is configured on this board: its saved preset, or
+ * the built-in agent on the owner's Anthropic key. Null means nobody has a
+ * key, and the column runs the mock.
+ */
 export async function agentConfigFor(
   projectId: string,
   column: ColumnId,
 ): Promise<AgentConfig | null> {
   const repo = repository();
+  const { anthropicKey } = await credentialsForProject(await projectFor(projectId));
+
   const presetId = (await repo.columnAgents(projectId))[column];
-  if (!presetId) return null;
-  const found = await repo.presetForRun(presetId);
-  if (!found) return null;
-  return {
-    model: found.preset.model,
-    brief: found.preset.prompt,
-    // A key sealed under a secret that has since changed cannot be opened;
-    // the run falls back to the server's key rather than failing outright.
-    apiKey: found.apiKeyCipher ? open(found.apiKeyCipher) : null,
-  };
+  const found = presetId ? await repo.presetForRun(presetId) : null;
+  if (found) {
+    return {
+      model: found.preset.model,
+      brief: found.preset.prompt,
+      // A key sealed under a secret that has since changed cannot be opened;
+      // the run falls back to the owner's key rather than failing outright.
+      apiKey: (found.apiKeyCipher ? open(found.apiKeyCipher) : null) ?? anthropicKey,
+    };
+  }
+
+  if (anthropicKey && process.env.AGENT_PROVIDER !== "mock") return { apiKey: anthropicKey };
+  return null;
 }
 
 const BUILD: {
@@ -64,11 +78,12 @@ const BUILD: {
   showcase: { column: "done", make: (c) => new AnthropicShowcaseAgent(c) },
 };
 
-/** The agent for a role on this board: its column's preset, or the default. */
+/** The agent for a role on this board. */
 export async function agentFor<K extends keyof AgentRegistry>(
   projectId: string,
   role: K,
 ): Promise<AgentRegistry[K]> {
+  if (agentsOverridden()) return agents()[role];
   const { column, make } = BUILD[role];
   const config = await agentConfigFor(projectId, column);
   return config ? make(config) : agents()[role];
@@ -90,7 +105,8 @@ export async function modelFor(
   projectId: string,
   role: keyof AgentRegistry,
 ): Promise<string | null> {
+  if (agentsOverridden()) return null;
   const config = await agentConfigFor(projectId, BUILD[role].column);
-  if (config?.model) return config.model;
+  if (config) return config.model ?? BUILT_IN_MODEL[role];
   return useMockAgents() ? null : BUILT_IN_MODEL[role];
 }

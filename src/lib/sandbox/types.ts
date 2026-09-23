@@ -56,6 +56,8 @@ export interface SpawnOptions {
   ttlMs?: number;
   signal?: AbortSignal;
   onLog?: (stream: "stdout" | "stderr", line: string) => void;
+  /** The project owner's E2B key. Falls back to the server's E2B_API_KEY. */
+  e2bApiKey?: string | null;
 }
 
 export interface SandboxProvider {

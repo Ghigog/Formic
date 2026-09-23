@@ -20,6 +20,12 @@ import {
  */
 
 let cached: AgentRegistry | null = null;
+/** Set by tests through setAgents: then nothing else chooses the agents. */
+let overridden = false;
+
+export function agentsOverridden(): boolean {
+  return overridden;
+}
 
 export function useMockAgents(): boolean {
   if (process.env.AGENT_PROVIDER === "mock") return true;
@@ -53,9 +59,11 @@ export function agents(): AgentRegistry {
 
 export function setAgents(registry: AgentRegistry): void {
   cached = registry;
+  overridden = true;
 }
 
 /** Test seam. */
 export function resetAgents(): void {
   cached = null;
+  overridden = false;
 }

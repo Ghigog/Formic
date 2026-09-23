@@ -31,15 +31,20 @@ export function RepoPicker({
   current,
   onClose,
   className,
+  inline = false,
 }: {
-  current: string;
+  /** The repository on screen, or null when there is none yet. */
+  current: string | null;
   onClose: () => void;
   className?: string;
+  /** Part of the page rather than a popover: no backdrop, no Escape. */
+  inline?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [repos, setRepos] = useState<RepoOption[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [install, setInstall] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -52,8 +57,14 @@ export function RepoPicker({
       .catch(() => setProjects([]));
     void fetch("/api/github/repos", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; repos?: RepoOption[]; reason?: string }) => {
+      .then((d: {
+        ok: boolean;
+        repos?: RepoOption[];
+        reason?: string;
+        installUrl?: string | null;
+      }) => {
         setRepos(d.repos ?? []);
+        setInstall(d.installUrl ?? null);
         if (!d.ok) setNotice(d.reason ?? "Could not list repositories.");
       })
       .catch(() => {
@@ -63,12 +74,13 @@ export function RepoPicker({
   }, []);
 
   useEffect(() => {
+    if (inline) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, inline]);
 
   const q = query.trim().toLowerCase();
   const onBoard = useMemo(
@@ -117,7 +129,7 @@ export function RepoPicker({
 
   return (
     <>
-      <div aria-hidden className="fixed inset-0 z-40" onClick={onClose} />
+      {!inline && <div aria-hidden className="fixed inset-0 z-40" onClick={onClose} />}
       <div
         role="dialog"
         aria-label="Choose a repository"
@@ -151,7 +163,7 @@ export function RepoPicker({
           )}
 
           {onBoard.length > 0 && (
-            <Section label="On this board">
+            <Section label="Your boards">
               {onBoard.map((p) => {
                 const selected = p.repoFullName === current;
                 return (
@@ -214,6 +226,15 @@ export function RepoPicker({
             )}
           </Section>
         </div>
+
+        {install && (
+          <a
+            href={install}
+            className="text-terracotta border-hairline block border-t px-3 py-2.5 text-[12px] font-semibold"
+          >
+            Give Formic access to more repositories →
+          </a>
+        )}
 
         {error && (
           <p role="alert" className="text-crimson-text border-hairline border-t px-3 py-2 text-[12px]">

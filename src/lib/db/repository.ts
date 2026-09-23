@@ -99,14 +99,63 @@ export interface RunOutcome {
 
 export interface ProjectSummary {
   id: string;
+  /** Null for the demo board, which belongs to no one. */
+  ownerId: string | null;
   name: string;
   repoFullName: string;
   baseBranch: string;
 }
 
+/** Whose projects and presets a query sees. */
+export interface OwnerScope {
+  ownerId: string;
+  /** Also the unowned ones: the demo board, and anything from before accounts. */
+  includeUnowned: boolean;
+}
+
+/** A person, with their credentials still sealed. */
+export interface UserRecord {
+  id: string;
+  githubId: number;
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+  githubTokenCipher: string | null;
+  githubTokenExpiresAt: Date | null;
+  githubRefreshCipher: string | null;
+  githubRefreshExpiresAt: Date | null;
+  e2bKeyCipher: string | null;
+  e2bKeyHint: string | null;
+  anthropicKeyCipher: string | null;
+  anthropicKeyHint: string | null;
+}
+
+export type UserSecrets = Partial<
+  Pick<
+    UserRecord,
+    | "githubTokenCipher"
+    | "githubTokenExpiresAt"
+    | "githubRefreshCipher"
+    | "githubRefreshExpiresAt"
+    | "e2bKeyCipher"
+    | "e2bKeyHint"
+    | "anthropicKeyCipher"
+    | "anthropicKeyHint"
+  >
+>;
+
+export interface GithubProfile {
+  githubId: number;
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+}
+
 /** A preset as stored. The key arrives here already sealed. */
 export interface PresetRecord {
   id?: string;
+  /** Set on create; an update keeps the owner it had. */
+  ownerId?: string | null;
   name: string;
   model: string;
   prompt: string;
@@ -116,15 +165,28 @@ export interface PresetRecord {
 }
 
 export interface Repository {
-  /** The first project, created on demand. The fallback when none is chosen. */
+  /** The demo board: the first unowned project, created on demand. */
   defaultProject(): Promise<ProjectSummary>;
-  listProjects(): Promise<ProjectSummary[]>;
+  listProjects(scope: OwnerScope): Promise<ProjectSummary[]>;
+  /** Every project on a repository, whoever owns it. For webhooks. */
+  projectsForRepo(repoFullName: string): Promise<ProjectSummary[]>;
   projectById(projectId: string): Promise<ProjectSummary | null>;
-  /** The project for a repository, created the first time it is picked. */
+  /** Someone's project for a repository, created the first time they pick it. */
   ensureProject(input: {
+    ownerId: string | null;
     repoFullName: string;
     baseBranch: string;
   }): Promise<ProjectSummary>;
+
+  /* People. */
+
+  userById(userId: string): Promise<UserRecord | null>;
+  /** Creates or refreshes someone from their GitHub profile. */
+  upsertUser(profile: GithubProfile): Promise<UserRecord>;
+  updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
+  countUsers(): Promise<number>;
+  /** Gives a user every unowned project and preset. */
+  adoptUnowned(userId: string): Promise<void>;
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
@@ -173,7 +235,7 @@ export interface Repository {
 
   /* Agent presets, and which one each column runs. */
 
-  listPresets(): Promise<AgentPreset[]>;
+  listPresets(scope: OwnerScope): Promise<AgentPreset[]>;
   /** A preset and its sealed key, for starting a run. */
   presetForRun(
     presetId: string,

@@ -180,6 +180,7 @@ export const COLUMN_AGENT_ROLE: Record<(typeof COLUMNS)[number], AgentRole> = {
 /** A saved agent as the board sees it. The key itself never leaves the server. */
 export interface AgentPreset {
   id: string;
+  ownerId: string | null;
   name: string;
   provider: "anthropic";
   model: string;

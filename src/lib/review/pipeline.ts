@@ -7,6 +7,7 @@ import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
 import { stallTicket, taskFor } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
 import { projectFor } from "@/lib/board/project";
+import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
@@ -95,7 +96,8 @@ async function react(
   if (!ticket || ticket.status === "merged") return;
 
   const project = await projectFor(projectId);
-  const client = vcs(project.repoFullName);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
 
   const pull = await client.pullRequest(prNumber);
   if (pull.merged || pull.state === "closed") return;
@@ -182,7 +184,8 @@ async function mergeTicket(
 ): Promise<void> {
   const repo = repository();
   const project = await projectFor(projectId);
-  const client = vcs(project.repoFullName);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
 
   const update = await client.updateBranch(prNumber);
   if (!update.ok && update.conflict) {
@@ -354,7 +357,8 @@ async function fixTicket(
   }
 
   const project = await projectFor(projectId);
-  const client = vcs(project.repoFullName);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
   await repo.updateTicket(ticket.id, { attempts: attempt });
 
   const logs: FailingCheck[] = [];
@@ -378,6 +382,8 @@ async function fixTicket(
     newBranch: null,
     ticket,
     ctx: run.ctx,
+    githubToken: creds.githubToken,
+    e2bKey: creds.e2bKey,
   }).catch((e: unknown) => e as Error);
 
   if (checkout instanceof Error) {

@@ -1,4 +1,4 @@
-import { gatePassword } from "@/lib/auth/session";
+import { authMode, gatePassword } from "@/lib/auth/session";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { hasDatabase } from "@/lib/db";
@@ -59,9 +59,10 @@ export async function GET() {
       ...(databaseError ? { databaseError } : {}),
       agents: useMockAgents() ? "mock" : "anthropic",
       sandbox: config.SANDBOX_PROVIDER,
-      github: usingMockVcs() ? "mock" : "live",
+      // Signed in with GitHub, each board uses its owner's token.
+      github: authMode() === "github" ? "per-user" : usingMockVcs() ? "mock" : "live",
       webhook: config.GITHUB_WEBHOOK_SECRET ? "configured" : "unconfigured",
-      access: gatePassword() ? "password" : "open",
+      access: authMode() === "github" ? "github" : gatePassword() ? "password" : "open",
       mergeTarget: mergeTarget(config.GITHUB_BASE_BRANCH),
       activeRuns: activeRunCount(),
       activeSandboxes: activeSandboxCount(),

@@ -163,7 +163,7 @@ test("picking another repository switches the board to it", async ({ page }) => 
 
   // And the demo board is still there to switch back to.
   await page.getByRole("button", { name: /Choose another project/ }).first().click();
-  await expect(picker.getByText("On this board")).toBeVisible();
+  await expect(picker.getByText("Your boards")).toBeVisible();
   await page.screenshot({ path: "e2e/.results/repo-picker.png" });
   await picker.getByRole("button", { name: /Ghigog\/Formic/i }).click();
   await expect(page.getByRole("button", { name: /Choose another project/ }).first())
@@ -208,4 +208,25 @@ test("a column runs a saved agent: create, pick, edit, remove", async ({ page })
   page.once("dialog", (d) => void d.accept());
   await edit.getByRole("button", { name: "Delete" }).click();
   await expect(selector).toContainText("Coder Agent");
+});
+
+test("settings keeps a key without ever showing it back", async ({ page }) => {
+  await page.getByRole("button", { name: /^Account:/ }).first().click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  // No event stream on this page, so idle means hydrated: typing before
+  // then is overwritten when React takes over the input.
+  await page.waitForLoadState("networkidle");
+
+  await page.getByLabel("E2B API key").fill("e2b_test_abcd");
+  await page.getByRole("button", { name: "Save" }).first().click();
+  await expect(page.getByText("••••••••abcd")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText("••••••••abcd")).toBeVisible();
+  expect(await page.content()).not.toContain("e2b_test_abcd");
+  await page.screenshot({ path: "e2e/.results/settings.png" });
+
+  await page.getByRole("button", { name: "Remove" }).first().click();
+  await expect(page.getByLabel("E2B API key")).toBeVisible();
 });

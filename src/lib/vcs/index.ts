@@ -18,29 +18,24 @@ import { env } from "@/lib/secrets/env";
 
 export const INTEGRATION_BRANCH = "formic/integration";
 
-/** One client per repository: each project on the board is its own repo. */
-const clients = new Map<string, VcsClient>();
 let override: VcsClient | null = null;
 
 /**
- * Real GitHub whenever there is a token. The repository comes from the
- * project picked on the board, so GITHUB_REPO is only the default project.
+ * Whether the server has its own GitHub credential. Only meaningful in local
+ * mode; signed in with GitHub, each project uses its owner's token instead.
  */
 export function usingMockVcs(): boolean {
   if (override) return override.name === "mock";
   return !env().GITHUB_TOKEN;
 }
 
-export function vcs(repoFullName: string): VcsClient {
+/**
+ * The GitHub client for a repository, acting with a given token. No token
+ * means no GitHub: the mock, so the board still runs end to end.
+ */
+export function vcs(repoFullName: string, token: string | null): VcsClient {
   if (override) return override;
-  let client = clients.get(repoFullName);
-  if (!client) {
-    client = usingMockVcs()
-      ? new MockVcsClient(repoFullName)
-      : new GitHubClient(repoFullName);
-    clients.set(repoFullName, client);
-  }
-  return client;
+  return token ? new GitHubClient(repoFullName, token) : new MockVcsClient(repoFullName);
 }
 
 /** Test seam: every repository gets this client. */
@@ -51,7 +46,6 @@ export function setVcs(client: VcsClient): void {
 /** Test seam. */
 export function resetVcs(): void {
   override = null;
-  clients.clear();
 }
 
 /** The branch agents may merge into without a human. */

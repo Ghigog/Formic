@@ -5,6 +5,15 @@ import { prdSchema } from "@/lib/domain/entities";
 import { publish } from "@/lib/events/bus";
 import { activeProject } from "@/lib/board/project";
 
+/** The active project, if this epic is on it. Anyone else's epic is a 404. */
+async function projectOwning(epicId: string) {
+  const project = await activeProject();
+  if (!project) return null;
+  return (await repository().projectOfCard(epicId)) === project.id ? project : null;
+}
+
+const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
+
 export const dynamic = "force-dynamic";
 
 export async function GET(
@@ -14,10 +23,10 @@ export async function GET(
   const { id } = await params;
   const repo = repository();
 
-  const detail = await repo.epicDetail(id);
-  if (!detail) return Response.json({ error: "Not found" }, { status: 404 });
+  const project = await projectOwning(id);
+  const detail = project ? await repo.epicDetail(id) : null;
+  if (!project || !detail) return notFound();
 
-  const project = await activeProject();
   const cards = await repo.boardCards(project.id);
   const epic = cards.find((c) => c.id === id);
   const children = cards.filter((c) => c.epicId === id);
@@ -39,6 +48,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const project = await projectOwning(id);
+  if (!project) return notFound();
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
 
   if (!parsed.success) {
@@ -51,7 +62,6 @@ export async function PATCH(
   const repo = repository();
   await repo.setEpicPrd(id, parsed.data.prd, true);
 
-  const project = await activeProject();
   await publish(project.id, {
     type: "card.status",
     cardId: id,

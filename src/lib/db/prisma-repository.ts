@@ -7,8 +7,12 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  GithubProfile,
+  OwnerScope,
   PresetRecord,
   ProjectSummary,
+  UserRecord,
+  UserSecrets,
   Repository,
   RunOutcome,
   RunRecord,
@@ -43,7 +47,10 @@ function epicKey(index: number): string {
 export class PrismaRepository implements Repository {
   async defaultProject(): Promise<ProjectSummary> {
     const db = prisma();
-    const existing = await db.project.findFirst({ orderBy: { createdAt: "asc" } });
+    const existing = await db.project.findFirst({
+      where: { ownerId: null },
+      orderBy: { createdAt: "asc" },
+    });
     if (existing) {
       // A project seeded from a malformed GITHUB_REPO carries that value into
       // every GitHub API URL; heal it once rather than on every call.
@@ -67,8 +74,18 @@ export class PrismaRepository implements Repository {
     });
   }
 
-  async listProjects(): Promise<ProjectSummary[]> {
-    return prisma().project.findMany({ orderBy: { createdAt: "asc" } });
+  async listProjects(scope: OwnerScope): Promise<ProjectSummary[]> {
+    return prisma().project.findMany({
+      where: ownerWhere(scope),
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async projectsForRepo(repoFullName: string): Promise<ProjectSummary[]> {
+    return prisma().project.findMany({
+      where: { repoFullName: { equals: repoFullName, mode: "insensitive" } },
+      orderBy: { createdAt: "asc" },
+    });
   }
 
   async projectById(projectId: string): Promise<ProjectSummary | null> {
@@ -76,22 +93,56 @@ export class PrismaRepository implements Repository {
   }
 
   async ensureProject(input: {
+    ownerId: string | null;
     repoFullName: string;
     baseBranch: string;
   }): Promise<ProjectSummary> {
     const db = prisma();
     const found = await db.project.findFirst({
-      where: { repoFullName: { equals: input.repoFullName, mode: "insensitive" } },
+      where: {
+        ownerId: input.ownerId,
+        repoFullName: { equals: input.repoFullName, mode: "insensitive" },
+      },
       orderBy: { createdAt: "asc" },
     });
     if (found) return found;
     return db.project.create({
       data: {
+        ownerId: input.ownerId,
         name: input.repoFullName.split("/")[1] ?? input.repoFullName,
         repoFullName: input.repoFullName,
         baseBranch: input.baseBranch,
       },
     });
+  }
+
+  async userById(userId: string): Promise<UserRecord | null> {
+    return prisma().user.findUnique({ where: { id: userId } });
+  }
+
+  async upsertUser(profile: GithubProfile): Promise<UserRecord> {
+    const { githubId, ...rest } = profile;
+    return prisma().user.upsert({
+      where: { githubId },
+      create: profile,
+      update: rest,
+    });
+  }
+
+  async updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord> {
+    return prisma().user.update({ where: { id: userId }, data: secrets });
+  }
+
+  async countUsers(): Promise<number> {
+    return prisma().user.count();
+  }
+
+  async adoptUnowned(userId: string): Promise<void> {
+    const db = prisma();
+    await db.$transaction([
+      db.project.updateMany({ where: { ownerId: null }, data: { ownerId: userId } }),
+      db.agentPreset.updateMany({ where: { ownerId: null }, data: { ownerId: userId } }),
+    ]);
   }
 
   async projectOfCard(cardId: string): Promise<string | null> {
@@ -499,8 +550,11 @@ export class PrismaRepository implements Repository {
     }));
   }
 
-  async listPresets(): Promise<AgentPreset[]> {
-    const rows = await prisma().agentPreset.findMany({ orderBy: { createdAt: "asc" } });
+  async listPresets(scope: OwnerScope): Promise<AgentPreset[]> {
+    const rows = await prisma().agentPreset.findMany({
+      where: ownerWhere(scope),
+      orderBy: { createdAt: "asc" },
+    });
     return rows.map(toPreset);
   }
 
@@ -521,7 +575,7 @@ export class PrismaRepository implements Repository {
     };
     const row = record.id
       ? await db.agentPreset.update({ where: { id: record.id }, data })
-      : await db.agentPreset.create({ data });
+      : await db.agentPreset.create({ data: { ...data, ownerId: record.ownerId ?? null } });
     return toPreset(row);
   }
 
@@ -634,8 +688,16 @@ function toTicketDetail(row: TicketRow): TicketDetail {
   };
 }
 
+/** Someone's rows, and optionally the unowned ones too. */
+function ownerWhere(scope: OwnerScope) {
+  return scope.includeUnowned
+    ? { OR: [{ ownerId: scope.ownerId }, { ownerId: null }] }
+    : { ownerId: scope.ownerId };
+}
+
 function toPreset(row: {
   id: string;
+  ownerId: string | null;
   name: string;
   model: string;
   prompt: string;
@@ -644,6 +706,7 @@ function toPreset(row: {
 }): AgentPreset {
   return {
     id: row.id,
+    ownerId: row.ownerId,
     name: row.name,
     provider: "anthropic",
     model: row.model,

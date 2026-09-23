@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createBacklogItem } from "@/lib/board/service";
-import { activeProject } from "@/lib/board/project";
+import { activeProject, noProject } from "@/lib/board/project";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   const project = await activeProject();
+  if (!project) return noProject();
   const card = await createBacklogItem(project.id, parsed.data.rawRequest);
   return Response.json({ card }, { status: 201 });
 }
