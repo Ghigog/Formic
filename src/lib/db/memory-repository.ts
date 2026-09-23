@@ -6,6 +6,7 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  PresetRecord,
   ProjectSummary,
   Repository,
   RunOutcome,
@@ -13,7 +14,12 @@ import type {
   TicketDetail,
   TicketUpdate,
 } from "./repository";
-import type { AgentRunStatus, BoardCard } from "@/lib/domain/entities";
+import type {
+  AgentPreset,
+  AgentRunStatus,
+  BoardCard,
+  ColumnAgents,
+} from "@/lib/domain/entities";
 import { type ColumnId, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -60,6 +66,9 @@ interface Store {
   }>;
   runs: Map<string, RunRecord & { status: AgentRunStatus; startedAt: Date }>;
   deliveries: Set<string>;
+  presets: Map<string, AgentPreset & { apiKeyCipher: string | null }>;
+  /** `${projectId}:${column}` to preset id. */
+  columnAgents: Map<string, string>;
 }
 
 declare global {
@@ -68,7 +77,13 @@ declare global {
 }
 
 function store(): Store {
-  if (globalThis.__formicMemoryStore) return globalThis.__formicMemoryStore;
+  const existing = globalThis.__formicMemoryStore;
+  if (existing) {
+    // A store from before presets existed survives a dev-server reload.
+    existing.presets ??= new Map();
+    existing.columnAgents ??= new Map();
+    return existing;
+  }
   const project: ProjectSummary = {
     id: "project_default",
     name: "Formic",
@@ -87,6 +102,8 @@ function store(): Store {
     events: [],
     runs: new Map(),
     deliveries: new Set(),
+    presets: new Map(),
+    columnAgents: new Map(),
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -398,6 +415,59 @@ export class MemoryRepository implements Repository {
     return true;
   }
 
+  async listPresets(): Promise<AgentPreset[]> {
+    return [...store().presets.values()].map(publicPreset);
+  }
+
+  async presetForRun(presetId: string) {
+    const row = store().presets.get(presetId);
+    return row ? { preset: publicPreset(row), apiKeyCipher: row.apiKeyCipher } : null;
+  }
+
+  async savePreset(record: PresetRecord): Promise<AgentPreset> {
+    const s = store();
+    const existing = record.id ? s.presets.get(record.id) : undefined;
+    const keep = record.apiKeyCipher === undefined;
+    const row = {
+      id: existing?.id ?? id("preset"),
+      name: record.name,
+      provider: "anthropic" as const,
+      model: record.model,
+      prompt: record.prompt,
+      apiKeyCipher: keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
+      keyHint: keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
+      hasKey: false,
+    };
+    row.hasKey = row.apiKeyCipher !== null;
+    s.presets.set(row.id, row);
+    return publicPreset(row);
+  }
+
+  async deletePreset(presetId: string): Promise<void> {
+    const s = store();
+    s.presets.delete(presetId);
+    for (const [k, v] of s.columnAgents) if (v === presetId) s.columnAgents.delete(k);
+  }
+
+  async columnAgents(projectId: string): Promise<ColumnAgents> {
+    const out: ColumnAgents = {};
+    for (const [k, v] of store().columnAgents) {
+      const [p, column] = k.split(":");
+      if (p === projectId) out[column as ColumnId] = v;
+    }
+    return out;
+  }
+
+  async setColumnAgent(
+    projectId: string,
+    column: ColumnId,
+    presetId: string | null,
+  ): Promise<void> {
+    const s = store();
+    if (presetId === null) s.columnAgents.delete(`${projectId}:${column}`);
+    else s.columnAgents.set(`${projectId}:${column}`, presetId);
+  }
+
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
     const cards = (await this.boardCards(projectId))
       .filter((c) => columnFor(c.status, c.stalledIn) === column)
@@ -434,4 +504,9 @@ function toDetail(
     attempts: extras?.attempts ?? 0,
     summary: extras?.summary ?? null,
   };
+}
+
+function publicPreset(row: AgentPreset & { apiKeyCipher: string | null }): AgentPreset {
+  const { apiKeyCipher, ...rest } = row;
+  return { ...rest, hasKey: apiKeyCipher !== null };
 }

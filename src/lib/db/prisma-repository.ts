@@ -7,6 +7,7 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  PresetRecord,
   ProjectSummary,
   Repository,
   RunOutcome,
@@ -14,7 +15,12 @@ import type {
   TicketDetail,
   TicketUpdate,
 } from "./repository";
-import type { AgentRunStatus, BoardCard } from "@/lib/domain/entities";
+import type {
+  AgentRunStatus,
+  BoardCard,
+  AgentPreset,
+  ColumnAgents,
+} from "@/lib/domain/entities";
 import { type ColumnId, type TicketStatus, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -493,6 +499,58 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async listPresets(): Promise<AgentPreset[]> {
+    const rows = await prisma().agentPreset.findMany({ orderBy: { createdAt: "asc" } });
+    return rows.map(toPreset);
+  }
+
+  async presetForRun(presetId: string) {
+    const row = await prisma().agentPreset.findUnique({ where: { id: presetId } });
+    return row ? { preset: toPreset(row), apiKeyCipher: row.apiKeyCipher } : null;
+  }
+
+  async savePreset(record: PresetRecord): Promise<AgentPreset> {
+    const db = prisma();
+    const data = {
+      name: record.name,
+      model: record.model,
+      prompt: record.prompt,
+      ...(record.apiKeyCipher !== undefined
+        ? { apiKeyCipher: record.apiKeyCipher, apiKeyHint: record.apiKeyHint ?? null }
+        : {}),
+    };
+    const row = record.id
+      ? await db.agentPreset.update({ where: { id: record.id }, data })
+      : await db.agentPreset.create({ data });
+    return toPreset(row);
+  }
+
+  async deletePreset(presetId: string): Promise<void> {
+    await prisma().agentPreset.deleteMany({ where: { id: presetId } });
+  }
+
+  async columnAgents(projectId: string): Promise<ColumnAgents> {
+    const rows = await prisma().columnAgent.findMany({ where: { projectId } });
+    return Object.fromEntries(rows.map((r) => [r.column, r.presetId]));
+  }
+
+  async setColumnAgent(
+    projectId: string,
+    column: ColumnId,
+    presetId: string | null,
+  ): Promise<void> {
+    const db = prisma();
+    if (presetId === null) {
+      await db.columnAgent.deleteMany({ where: { projectId, column } });
+      return;
+    }
+    await db.columnAgent.upsert({
+      where: { projectId_column: { projectId, column } },
+      create: { projectId, column, presetId },
+      update: { presetId },
+    });
+  }
+
   async claimDelivery(key: string): Promise<boolean> {
     const db = prisma();
     try {
@@ -573,5 +631,24 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     blockedReason: row.blockedReason,
     attempts: row.attempts,
     summary: row.summary,
+  };
+}
+
+function toPreset(row: {
+  id: string;
+  name: string;
+  model: string;
+  prompt: string;
+  apiKeyCipher: string | null;
+  apiKeyHint: string | null;
+}): AgentPreset {
+  return {
+    id: row.id,
+    name: row.name,
+    provider: "anthropic",
+    model: row.model,
+    prompt: row.prompt,
+    hasKey: row.apiKeyCipher !== null,
+    keyHint: row.apiKeyHint,
   };
 }

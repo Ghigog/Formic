@@ -11,6 +11,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
 import type {
+  AgentConfig,
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
@@ -25,6 +26,8 @@ import { describeProblems } from "@/lib/domain/problems";
 import { normalizeScope } from "@/lib/domain/scope";
 import { estimateCostCents } from "@/lib/budget/limits";
 import { requireCredential } from "@/lib/secrets/env";
+import { ARCHITECT_BRIEF, PRODUCT_BRIEF, SHOWCASE_BRIEF } from "./prompts";
+import { requestShape } from "./models";
 
 /**
  * Real agents.
@@ -47,16 +50,18 @@ export const MODELS = {
   showcase: "claude-sonnet-5",
 } as const;
 
-const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+/** One client per API key: a preset may bring its own. */
+const clients = new Map<string, Anthropic>();
 
-let cached: Anthropic | null = null;
-
-function client(): Anthropic {
-  if (cached) return cached;
-  cached = new Anthropic({
-    apiKey: requireCredential("ANTHROPIC_API_KEY", "The agent pipelines"),
-  });
-  return cached;
+/** A preset's own key, or the server's. */
+export function anthropicClient(apiKey?: string | null): Anthropic {
+  const key = apiKey || requireCredential("ANTHROPIC_API_KEY", "The agent pipelines");
+  let c = clients.get(key);
+  if (!c) {
+    c = new Anthropic({ apiKey: key });
+    clients.set(key, c);
+  }
+  return c;
 }
 
 function usageFrom(
@@ -109,18 +114,15 @@ function describeError(e: unknown): string {
   return "Unknown agent failure.";
 }
 
-const PRODUCT_SYSTEM = `You expand a raw feature request into a product requirements document for a single Epic.
-
-Write for an engineer who will decompose this into tickets next. Be concrete about scope and ruthless about what is out of it. Prefer a short document that draws a clear boundary over a long one that hedges.
-
-Do not invent product surface the request does not imply. If the request is too vague to scope, say so in the problem field rather than inventing requirements.`;
-
 export class AnthropicProductAgent implements ProductAgent {
+  constructor(private readonly config: AgentConfig = {}) {}
+
   async draftPrd(
     ctx: AgentContext,
     input: { epicId: string; rawRequest: string },
   ): Promise<AgentOutcome<{ title: string; prd: Prd }>> {
-    const model = MODELS.product;
+    const model = this.config.model ?? MODELS.product;
+    const shape = requestShape(model);
 
     const outputSchema = z.object({
       title: z.string().describe("A short imperative Epic title, under 80 characters."),
@@ -128,14 +130,14 @@ export class AnthropicProductAgent implements ProductAgent {
     });
 
     try {
-      const stream = client().beta.messages.stream({
+      const stream = anthropicClient(this.config.apiKey).beta.messages.stream({
         model,
         max_tokens: 8_000,
-        system: PRODUCT_SYSTEM,
-        thinking: { type: "adaptive" },
-        betas: [FALLBACK_BETA],
-        fallbacks: "default",
-        output_config: { format: zodOutputFormat(outputSchema) },
+        system: this.config.brief ?? PRODUCT_BRIEF,
+        ...(shape.thinking ? { thinking: shape.thinking } : {}),
+        ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
+        betas: shape.betas,
+        output_config: { ...shape.outputConfig, format: zodOutputFormat(outputSchema) },
         messages: [
           {
             role: "user",
@@ -195,17 +197,6 @@ export class AnthropicProductAgent implements ProductAgent {
   }
 }
 
-const ARCHITECT_SYSTEM = `You decompose an Epic PRD into child tickets that autonomous coding agents will implement in parallel.
-
-The file scope is the contract that makes parallelism safe. Two tickets that can run at the same time must not be able to touch the same files, and the platform enforces this: an agent whose diff strays outside its declared scope has the run rejected.
-
-Rules:
-- Declare fileScope as directory prefixes relative to the repository root, such as "src/components/board" or "prisma". Not globs.
-- Tickets that could run concurrently must have disjoint scopes. If two tickets genuinely need the same directory, make one depend on the other instead.
-- Shared files (package.json, lockfiles, tsconfig.json, the Prisma schema) serialise everything that touches them. Concentrate them in as few tickets as possible.
-- dependsOn refers to the key of another ticket in this same response.
-- Between 2 and 12 tickets. Each one must be a coherent, independently reviewable change.`;
-
 const draftTicketSchema = z.object({
   key: z.string().describe('Short stable key, e.g. "T-1".'),
   title: z.string(),
@@ -224,11 +215,14 @@ const decompositionSchema = z.object({
 const MAX_DECOMPOSITION_ATTEMPTS = 3;
 
 export class AnthropicArchitectAgent implements ArchitectAgent {
+  constructor(private readonly config: AgentConfig = {}) {}
+
   async decompose(
     ctx: AgentContext,
     input: { epicId: string; title: string; prd: Prd; repoTree: string[] },
   ): Promise<AgentOutcome<DraftTicket[]>> {
-    const model = MODELS.architect;
+    const model = this.config.model ?? MODELS.architect;
+    const shape = requestShape(model, { effort: "high" });
     const messages: Anthropic.Beta.BetaMessageParam[] = [
       {
         role: "user",
@@ -262,17 +256,17 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
 
       let message: Anthropic.Beta.BetaMessage;
       try {
-        message = await client().beta.messages.create({
+        message = await anthropicClient(this.config.apiKey).beta.messages.create({
           model,
           max_tokens: 16_000,
-          system: ARCHITECT_SYSTEM,
-          thinking: { type: "adaptive" },
+          system: this.config.brief ?? ARCHITECT_BRIEF,
+          ...(shape.thinking ? { thinking: shape.thinking } : {}),
+          ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
           output_config: {
-            effort: "high",
+            ...shape.outputConfig,
             format: zodOutputFormat(decompositionSchema),
           },
-          betas: [FALLBACK_BETA],
-          fallbacks: "default",
+          betas: shape.betas,
           messages,
         });
       } catch (e) {
@@ -354,13 +348,9 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
   }
 }
 
-const SHOWCASE_SYSTEM = `You write the closing showcase for a completed Epic: what shipped, and how someone would try it.
-
-Write for the person who asked for the feature, not for the engineers who built it. Lead with what is now possible. Keep the walkthrough to concrete steps they can follow.
-
-Output Markdown. No preamble, no sign-off.`;
-
 export class AnthropicShowcaseAgent implements ShowcaseAgent {
+  constructor(private readonly config: AgentConfig = {}) {}
+
   async summarize(
     ctx: AgentContext,
     input: {
@@ -370,19 +360,20 @@ export class AnthropicShowcaseAgent implements ShowcaseAgent {
       ticketSummaries: Array<{ key: string; title: string; summary: string }>;
     },
   ): Promise<AgentOutcome<string>> {
-    const model = MODELS.showcase;
+    const model = this.config.model ?? MODELS.showcase;
+    const shape = requestShape(model);
 
     try {
       // Per-PR summaries are written at merge time, so this aggregates short
       // text rather than raw diffs. A large Epic would otherwise blow the
       // context on diff noise.
-      const message = await client().beta.messages.create({
+      const message = await anthropicClient(this.config.apiKey).beta.messages.create({
         model,
         max_tokens: 8_000,
-        system: SHOWCASE_SYSTEM,
-        thinking: { type: "adaptive" },
-        betas: [FALLBACK_BETA],
-        fallbacks: "default",
+        system: this.config.brief ?? SHOWCASE_BRIEF,
+        ...(shape.thinking ? { thinking: shape.thinking } : {}),
+        ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
+        betas: shape.betas,
         messages: [
           {
             role: "user",

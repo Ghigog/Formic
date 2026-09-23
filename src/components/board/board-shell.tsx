@@ -11,6 +11,10 @@ import {
 import type { ExtrasMap } from "./card";
 import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
+import { useAgents } from "@/lib/hooks/use-agents";
+import { AgentEditor } from "./agent-editor";
+import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
+import type { ColumnId } from "@/lib/domain/status";
 
 /**
  * Client shell: owns the live board state, the capture dialog and the ambient
@@ -27,6 +31,8 @@ export function BoardShell({
   repoFullName,
   baseBranch,
   initialStats,
+  initialPresets = [],
+  initialColumnAgents = {},
 }: {
   initialCards: BoardCard[];
   /** Demo detail for the mock board: elapsed times, CI counts, commits. */
@@ -35,11 +41,19 @@ export function BoardShell({
   repoFullName: string;
   baseBranch: string;
   initialStats: AmbientStats;
+  initialPresets?: AgentPreset[];
+  initialColumnAgents?: ColumnAgents;
 }) {
   const { cards, extras, stats, prdStreams, connection, transition, createEpic } =
     useBoard(initialCards, initialStats);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
+  const agentState = useAgents(initialPresets, initialColumnAgents);
+  /** The agent editor: which column it was opened from, and what it edits. */
+  const [editing, setEditing] = useState<{
+    column: ColumnId;
+    preset: AgentPreset | null;
+  } | null>(null);
 
   const stopAll = async () => {
     await fetch("/api/runs/stop", { method: "POST" });
@@ -66,7 +80,28 @@ export function BoardShell({
         onNewItem={() => setDialogOpen(true)}
         onCapture={createEpic}
         onTransition={transition}
+        agents={{
+          presets: agentState.presets,
+          columns: agentState.columns,
+          onAssign: agentState.assign,
+          onEdit: (column, preset) => setEditing({ column, preset }),
+        }}
       />
+
+      {editing && (
+        <AgentEditor
+          column={editing.column}
+          preset={editing.preset}
+          onClose={() => setEditing(null)}
+          onSave={async (input) => {
+            await agentState.save(input, {
+              id: editing.preset?.id,
+              column: editing.column,
+            });
+          }}
+          onDelete={agentState.remove}
+        />
+      )}
 
       <NewItemDialog
         open={dialogOpen}

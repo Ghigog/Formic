@@ -7,7 +7,7 @@ import { Column, columnCount } from "./column";
 import { BoardHeader } from "./header";
 import { BacklogComposer } from "./composer";
 import type { ExtrasMap } from "./card";
-import type { BoardCard } from "@/lib/domain/entities";
+import type { AgentPreset, BoardCard, ColumnAgents } from "@/lib/domain/entities";
 import {
   COLUMNS,
   COLUMN_LABELS,
@@ -45,6 +45,13 @@ export interface BoardProps {
    * card back to where it came from.
    */
   onTransition: (t: CardTransition) => Promise<TransitionResult>;
+  /** Per-column agent choice. Omitted, columns show no agent selector. */
+  agents?: {
+    presets: AgentPreset[];
+    columns: ColumnAgents;
+    onAssign: (column: ColumnId, presetId: string | null) => Promise<void>;
+    onEdit: (column: ColumnId, preset: AgentPreset | null) => void;
+  };
 }
 
 export function Board({
@@ -60,6 +67,7 @@ export function Board({
   onNewItem,
   onCapture,
   onTransition,
+  agents,
 }: BoardProps) {
   const [optimistic, setOptimistic] = useState<BoardCard[]>(cards);
   const [error, setError] = useState<string | null>(null);
@@ -264,6 +272,14 @@ export function Board({
               bare={isMobile}
               collapsed={collapsed[col]}
               onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
+              agent={
+                agents && {
+                  presets: agents.presets,
+                  selected: agents.presets.find((p) => p.id === agents.columns[col]),
+                  onAssign: (presetId) => agents.onAssign(col, presetId),
+                  onEdit: (preset) => agents.onEdit(col, preset),
+                }
+              }
               composer={
                 col === "backlog" ? (
                   <BacklogComposer onSubmit={onCapture} />

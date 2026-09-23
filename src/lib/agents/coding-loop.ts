@@ -7,7 +7,8 @@ import type { AgentContext, AgentOutcome, CodeChange, Usage } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
 import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens } from "@/lib/budget/limits";
-import { requireCredential } from "@/lib/secrets/env";
+import { anthropicClient } from "./anthropic";
+import { requestShape } from "./models";
 
 /**
  * The agentic loop both PROT-06 and PROT-07 run on.
@@ -25,8 +26,6 @@ import { requireCredential } from "@/lib/secrets/env";
 
 export const CODER_MODEL = "claude-opus-5";
 
-const TASK_BUDGET_BETA = "task-budgets-2026-03-13";
-const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
 /** A loop that has not converged in this many turns is not about to. */
 const MAX_ITERATIONS = 40;
@@ -34,19 +33,6 @@ const MAX_ITERATIONS = 40;
 /** Tool output past this is padding; the middle is what gets dropped. */
 const MAX_TOOL_OUTPUT = 16_000;
 
-let cached: Anthropic | null = null;
-
-function client(): Anthropic {
-  if (cached) return cached;
-  cached = new Anthropic({
-    apiKey: requireCredential("ANTHROPIC_API_KEY", "The coding agents"),
-  });
-  return cached;
-}
-
-export function resetCodingClient(): void {
-  cached = null;
-}
 
 export function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
   if (text.length <= limit) return text;
@@ -152,6 +138,9 @@ interface LoopInput {
   role: "coder" | "reviewer";
   system: string;
   prompt: string;
+  /** A preset's model and key; unset runs the built-in coder. */
+  model?: string;
+  apiKey?: string | null;
 }
 
 function addUsage(a: Usage, b: Usage): Usage {
@@ -203,7 +192,11 @@ export async function runCodingLoop(
   input: LoopInput,
 ): Promise<AgentOutcome<CodeChange>> {
   const { ctx, workspace, role, ticketId } = input;
-  const model = CODER_MODEL;
+  const model = input.model ?? CODER_MODEL;
+  const shape = requestShape(model, {
+    effort: "xhigh",
+    taskBudgetTokens: taskBudgetTokens(DEFAULT_RUN_BUDGET),
+  });
   let total: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
   let jsonRetries = 0;
 
@@ -236,20 +229,14 @@ export async function runCodingLoop(
 
     let message: Anthropic.Beta.BetaMessage;
     try {
-      const stream = client().beta.messages.stream({
+      const stream = anthropicClient(input.apiKey).beta.messages.stream({
         model,
         max_tokens: 64_000,
         system: input.system,
-        thinking: { type: "adaptive" },
-        output_config: {
-          effort: "xhigh",
-          task_budget: {
-            type: "tokens",
-            total: taskBudgetTokens(DEFAULT_RUN_BUDGET),
-          },
-        },
-        betas: [TASK_BUDGET_BETA, FALLBACK_BETA],
-        fallbacks: "default",
+        ...(shape.thinking ? { thinking: shape.thinking } : {}),
+        ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
+        output_config: shape.outputConfig,
+        betas: shape.betas,
         tools: TOOLS,
         messages,
       });

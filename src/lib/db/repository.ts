@@ -1,9 +1,11 @@
 import "server-only";
 
 import type {
+  AgentPreset,
   AgentRole,
   AgentRunStatus,
   BoardCard,
+  ColumnAgents,
 } from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 
@@ -102,6 +104,17 @@ export interface ProjectSummary {
   baseBranch: string;
 }
 
+/** A preset as stored. The key arrives here already sealed. */
+export interface PresetRecord {
+  id?: string;
+  name: string;
+  model: string;
+  prompt: string;
+  /** Sealed key; null clears it; omitted keeps it. */
+  apiKeyCipher?: string | null;
+  apiKeyHint?: string | null;
+}
+
 export interface Repository {
   /** The first project, created on demand. The fallback when none is chosen. */
   defaultProject(): Promise<ProjectSummary>;
@@ -157,6 +170,23 @@ export interface Repository {
   unfinishedRuns(
     startedBefore: Date,
   ): Promise<Array<RunRecord & { status: AgentRunStatus }>>;
+
+  /* Agent presets, and which one each column runs. */
+
+  listPresets(): Promise<AgentPreset[]>;
+  /** A preset and its sealed key, for starting a run. */
+  presetForRun(
+    presetId: string,
+  ): Promise<{ preset: AgentPreset; apiKeyCipher: string | null } | null>;
+  savePreset(record: PresetRecord): Promise<AgentPreset>;
+  /** Also unassigns it from every column it ran. */
+  deletePreset(presetId: string): Promise<void>;
+  columnAgents(projectId: string): Promise<ColumnAgents>;
+  setColumnAgent(
+    projectId: string,
+    column: ColumnId,
+    presetId: string | null,
+  ): Promise<void>;
 
   /**
    * Records a webhook delivery, returning false when it has been seen before.

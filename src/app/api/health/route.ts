@@ -1,3 +1,4 @@
+import { gatePassword } from "@/lib/auth/session";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { hasDatabase } from "@/lib/db";
@@ -60,6 +61,7 @@ export async function GET() {
       sandbox: config.SANDBOX_PROVIDER,
       github: usingMockVcs() ? "mock" : "live",
       webhook: config.GITHUB_WEBHOOK_SECRET ? "configured" : "unconfigured",
+      access: gatePassword() ? "password" : "open",
       mergeTarget: mergeTarget(config.GITHUB_BASE_BRANCH),
       activeRuns: activeRunCount(),
       activeSandboxes: activeSandboxCount(),

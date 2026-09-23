@@ -1,6 +1,5 @@
 import "server-only";
 
-import { agents } from "@/lib/agents/registry";
 import { startRun, launch } from "@/lib/agents/pipeline";
 import type { CoderTask } from "@/lib/agents/ports";
 import { repository } from "@/lib/db";
@@ -16,6 +15,7 @@ import {
   openCheckout,
   pullRequestBody,
 } from "./checkout";
+import { agentFor, modelFor } from "@/lib/agents/presets";
 
 /**
  * PROT-06. A ticket in In Progress becomes a pull request.
@@ -85,6 +85,7 @@ export async function runCoderAgent(
   const client = vcs(project.repoFullName);
 
   const run = startRun(projectId, "coder", {
+    model: await modelFor(projectId, "coder"),
     epicId: ticket.epicId,
     ticketId: ticket.id,
   });
@@ -133,7 +134,7 @@ export async function runCoderAgent(
   if (checkout.sandboxId) await run.attachSandbox(checkout.sandboxId);
 
   try {
-    const outcome = await agents().coder.implement(run.ctx, {
+    const outcome = await (await agentFor(projectId, "coder")).implement(run.ctx, {
       task: taskFor(ticket),
       workspace: checkout.workspace,
     });

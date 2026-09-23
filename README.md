@@ -31,6 +31,8 @@ Each credential unlocks one layer and nothing breaks without it:
 | `GITHUB_TOKEN` | Cloning and pushing, and the list of repositories in the picker. `GITHUB_REPO` sets the board's default project. |
 | `E2B_API_KEY` + `SANDBOX_PROVIDER=e2b` | Isolated sandboxes. Without it, local child processes. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop. |
+| `FORMIC_PASSWORD` | A password in front of the whole app. Set it on any public deployment: the board can spend saved API keys and push to your repositories. |
+| `FORMIC_SECRET` | Encrypts API keys saved on agent presets. Defaults to a key derived from the database URL. |
 
 ```bash
 npm run db:local     # throwaway local Postgres, prints a DATABASE_URL
@@ -49,6 +51,20 @@ repository, like choosing one in Claude Code on the web. It lists everything
 lists just those), and takes a typed `owner/repo` too. Each repository gets
 its own board, created empty the first time it is picked. The choice is per
 browser. The demo board stays under the default project.
+
+## Agents per column
+
+Each column's header has an agent selector. By default a column runs its
+built-in agent (Product, Architect, Coder, Reviewer, PM). Pick a saved agent
+instead, edit one with the pencil, or make a new one with **New agent…**: a
+name, a Claude model, an optional API key of its own, and a prompt that
+starts from the built-in one. Agents are saved once and can run any column
+on any board. For the Coder and Reviewer, the platform's coding rules (stay
+in the file scope, no git) are appended to whatever the prompt says.
+
+A column with a saved agent runs it for real even with no
+`ANTHROPIC_API_KEY` on the server, using the agent's own key. Keys are
+encrypted at rest and never sent back to the browser.
 
 ## Deploying on Vercel
 

@@ -169,3 +169,43 @@ test("picking another repository switches the board to it", async ({ page }) => 
   await expect(page.getByRole("button", { name: /Choose another project/ }).first())
     .not.toContainText("acme");
 });
+
+test("a column runs a saved agent: create, pick, edit, remove", async ({ page }) => {
+  const inProgress = column(page, "In Progress");
+  const selector = inProgress.getByRole("button", { name: /Agent for In Progress:/ });
+  await expect(selector).toContainText("Coder Agent");
+
+  // New agent from the column's menu.
+  await selector.click();
+  await inProgress.getByRole("menuitem", { name: /New agent/ }).click();
+  const editor = page.getByRole("dialog", { name: "New agent" });
+  await expect(editor.getByRole("textbox").last()).toHaveValue(/implement one ticket/);
+  await editor.getByPlaceholder("claude-worker").fill("claude-worker");
+  await editor.getByRole("combobox").nth(1).selectOption("claude-sonnet-5");
+  await editor.getByPlaceholder("sk-ant-…").fill("sk-ant-test-9876");
+  await editor.getByRole("button", { name: "Create agent" }).click();
+
+  // It is now what In Progress runs, and it survives a reload.
+  await expect(selector).toContainText("claude-worker");
+  await expect(selector).toContainText("Sonnet 5");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(selector).toContainText("claude-worker");
+  await page.screenshot({ path: "e2e/.results/agent-select.png" });
+
+  // Offered on other columns too, with its key hinted but never shown.
+  await column(page, "In Review").getByRole("button", { name: /Agent for In Review:/ }).click();
+  await expect(
+    column(page, "In Review").getByRole("menuitemradio", { name: /claude-worker.*9876/ }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Edit, then remove it and the column goes back to its built-in agent.
+  await selector.click();
+  await inProgress.getByRole("button", { name: "Edit claude-worker" }).click();
+  const edit = page.getByRole("dialog", { name: "Edit claude-worker" });
+  await expect(edit.getByText("••••••••9876")).toBeVisible();
+  await page.screenshot({ path: "e2e/.results/agent-editor.png" });
+  page.once("dialog", (d) => void d.accept());
+  await edit.getByRole("button", { name: "Delete" }).click();
+  await expect(selector).toContainText("Coder Agent");
+});

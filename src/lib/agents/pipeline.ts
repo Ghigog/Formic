@@ -3,13 +3,13 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 
-import { agents } from "./registry";
 import type { AgentContext, AgentOutcome, Usage } from "./ports";
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
+import { agentFor, modelFor } from "./presets";
 
 /**
  * Wires agents to column transitions.
@@ -117,10 +117,13 @@ export async function runProductAgent(
   epicId: string,
   rawRequest: string,
 ): Promise<void> {
-  const { ctx, finish } = startRun(projectId, "product", { epicId });
+  const { ctx, finish } = startRun(projectId, "product", {
+    epicId,
+    model: await modelFor(projectId, "product"),
+  });
   const repo = repository();
 
-  const outcome = await agents().product.draftPrd(ctx, { epicId, rawRequest });
+  const outcome = await (await agentFor(projectId, "product")).draftPrd(ctx, { epicId, rawRequest });
 
   if (outcome.ok) {
     await repo.setEpicPrd(epicId, outcome.value.prd, false);
@@ -156,10 +159,13 @@ export async function runArchitectAgent(
   prd: Prd,
   repoTree: string[],
 ): Promise<void> {
-  const { ctx, finish } = startRun(projectId, "architect", { epicId });
+  const { ctx, finish } = startRun(projectId, "architect", {
+    epicId,
+    model: await modelFor(projectId, "architect"),
+  });
   const repo = repository();
 
-  const outcome = await agents().architect.decompose(ctx, {
+  const outcome = await (await agentFor(projectId, "architect")).decompose(ctx, {
     epicId,
     title,
     prd,

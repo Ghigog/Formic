@@ -8,7 +8,11 @@ export const dynamic = "force-dynamic";
 export default async function BoardPage() {
   const repo = repository();
   const project = await activeProject();
-  const cards = await repo.boardCards(project.id);
+  const [cards, presets, columnAgents] = await Promise.all([
+    repo.boardCards(project.id),
+    repo.listPresets(),
+    repo.columnAgents(project.id),
+  ]);
   const provider = process.env.SANDBOX_PROVIDER ?? "local";
 
   // With no database the default project runs on the demo fixtures, so the
@@ -24,6 +28,8 @@ export default async function BoardPage() {
       projectName={project.name}
       repoFullName={project.repoFullName}
       baseBranch={project.baseBranch}
+      initialPresets={presets}
+      initialColumnAgents={columnAgents}
       initialStats={
         demo
           ? { ...FIXTURE_STATS, provider }

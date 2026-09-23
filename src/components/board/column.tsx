@@ -8,6 +8,7 @@ import { EpicGroup, KanbanCard, type ExtrasMap } from "./card";
 import type { BoardCard } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { layout } from "./placement";
+import { AgentSelect, type ColumnAgentControls } from "./agent-select";
 
 /** The one-word description of what happens to a card while it sits here. */
 export const COLUMN_HINT: Record<ColumnId, string> = {
@@ -48,6 +49,7 @@ export function Column({
   bare = false,
   collapsed: controlledCollapsed,
   onToggleCollapse,
+  agent,
   onOpen,
   onShowcase,
   className,
@@ -68,6 +70,8 @@ export function Column({
    */
   collapsed?: ReadonlySet<string>;
   onToggleCollapse?: (epicId: string) => void;
+  /** Which agent works this column, and the controls to change it. */
+  agent?: ColumnAgentControls;
   onOpen: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
   className?: string;
@@ -139,6 +143,8 @@ export function Column({
         </span>
       </div>
       )}
+
+      {agent && <AgentSelect column={id} {...agent} />}
 
       {composer}
 
