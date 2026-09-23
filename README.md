@@ -243,6 +243,13 @@ with a burndown and forecast. The score is derived from the board itself
 scored when it merges, so every browser agrees. The browser only remembers
 the bug style and the sound switch.
 
+## Deploys
+
+Vercel deploys `main` and nothing else. `vercel.json` turns deployments off
+for every branch with a slash in its name (`claude/…`, `formic/…`, and the
+like), so pull requests get no preview and each merge costs one deploy
+against the plan's daily limit. CI still builds and tests every pull request.
+
 ## Layout
 
 ```
