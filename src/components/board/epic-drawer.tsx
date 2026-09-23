@@ -8,6 +8,7 @@ import { DagPane } from "./dag-pane";
 import { PrdPane } from "./prd-pane";
 import type { BoardCard, Prd } from "@/lib/domain/entities";
 import { isStalled } from "@/lib/domain/status";
+import { epicProgress } from "@/lib/domain/stages";
 
 interface EpicDetail {
   epic: BoardCard | null;
@@ -89,6 +90,9 @@ export function EpicDrawer({
 
   const epic = detail?.epic;
   const failedAt = epic && isStalled(epic.status) ? epic.stage : null;
+  const progress = epic
+    ? epicProgress(epic, detail?.children ?? [])
+    : { current: 1, working: false };
 
   return (
     <div
@@ -134,8 +138,9 @@ export function EpicDrawer({
 
           <StepIndicator
             className="mt-3"
-            current={epic?.stage ?? 1}
+            current={progress.current}
             failedAt={failedAt}
+            working={progress.working}
           />
         </header>
 
