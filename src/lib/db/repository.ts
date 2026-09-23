@@ -8,6 +8,7 @@ import type {
   ColumnAgents,
 } from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
+import type { ProviderId } from "@/lib/llm/providers";
 
 /**
  * The data boundary. Two implementations: Prisma against Postgres, and an
@@ -156,6 +157,7 @@ export interface PresetRecord {
   id?: string;
   /** Set on create; an update keeps the owner it had. */
   ownerId?: string | null;
+  provider: ProviderId;
   name: string;
   model: string;
   prompt: string;

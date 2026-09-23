@@ -12,9 +12,10 @@ import { authMode } from "./session";
  *
  * Signed in with GitHub, GitHub access is always the person's own token and
  * never the server's: falling back to a server token would let anyone who
- * can sign in act with the operator's access. E2B and Anthropic do fall back
- * to the server's keys when set, which is the operator choosing to pay for
- * people who have not added their own.
+ * can sign in act with the operator's access. E2B falls back to the server's
+ * key when set, which is the operator choosing to pay for sandboxes.
+ *
+ * AI provider keys are not here: each agent template carries its own.
  *
  * In local mode there is one person and the server's keys are theirs.
  */
@@ -23,7 +24,6 @@ export interface Credentials {
   /** An app user token lists repositories through its installations. */
   githubTokenKind: "app" | "pat" | null;
   e2bKey: string | null;
-  anthropicKey: string | null;
 }
 
 export async function credentialsFor(user: UserRecord | null): Promise<Credentials> {
@@ -36,7 +36,6 @@ export async function credentialsFor(user: UserRecord | null): Promise<Credentia
       githubToken,
       githubTokenKind: githubToken ? "app" : null,
       e2bKey: own(user.e2bKeyCipher) ?? config.E2B_API_KEY ?? null,
-      anthropicKey: own(user.anthropicKeyCipher) ?? config.ANTHROPIC_API_KEY ?? null,
     };
   }
 
@@ -44,7 +43,6 @@ export async function credentialsFor(user: UserRecord | null): Promise<Credentia
     githubToken: config.GITHUB_TOKEN ?? null,
     githubTokenKind: config.GITHUB_TOKEN ? "pat" : null,
     e2bKey: own(user?.e2bKeyCipher) ?? config.E2B_API_KEY ?? null,
-    anthropicKey: own(user?.anthropicKeyCipher) ?? config.ANTHROPIC_API_KEY ?? null,
   };
 }
 

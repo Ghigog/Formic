@@ -15,7 +15,8 @@ import type { Workspace } from "@/lib/sandbox/workspace";
 import { CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
 
 /**
- * The two agents that write code. Same loop, different brief.
+ * The two agents that write code. Same loop, different brief, and any
+ * provider: the loop picks the connector from the agent's config.
  */
 
 function taskBrief(task: CoderTask): string {
@@ -31,7 +32,7 @@ function taskBrief(task: CoderTask): string {
   ].join("\n");
 }
 
-export class AnthropicCoderAgent implements CoderAgent {
+export class LoopCoderAgent implements CoderAgent {
   constructor(private readonly config: AgentConfig = {}) {}
 
   implement(
@@ -44,6 +45,7 @@ export class AnthropicCoderAgent implements CoderAgent {
       ticketId: input.task.ticketId,
       role: "coder",
       system: withCodingRules(this.config.brief ?? CODER_BRIEF),
+      provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
       prompt: `${taskBrief(input.task)}\n\nImplement it.`,
@@ -51,7 +53,7 @@ export class AnthropicCoderAgent implements CoderAgent {
   }
 }
 
-export class AnthropicReviewerAgent implements ReviewerAgent {
+export class LoopReviewerAgent implements ReviewerAgent {
   constructor(private readonly config: AgentConfig = {}) {}
 
   fix(
@@ -84,6 +86,7 @@ export class AnthropicReviewerAgent implements ReviewerAgent {
       ticketId: input.task.ticketId,
       role: "reviewer",
       system: withCodingRules(this.config.brief ?? REVIEWER_BRIEF),
+      provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
       prompt: [

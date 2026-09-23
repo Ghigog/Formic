@@ -9,6 +9,12 @@ import {
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { modelLabel } from "@/lib/agents/models";
+import { provider as providerInfo, shortModelName } from "@/lib/llm/providers";
+
+/** "Sonnet 5" for a known Claude model, the bare id for anything else. */
+function modelName(model: string): string {
+  return shortModelName(modelLabel(model));
+}
 
 export interface ColumnAgentControls {
   presets: AgentPreset[];
@@ -76,10 +82,10 @@ export function AgentSelect({
       >
         <AgentIcon />
         <span className="text-ink min-w-0 flex-1 truncate font-medium">
-          {selected ? selected.name : role}
+          {selected ? selected.name : "Choose an agent"}
         </span>
         <span className="text-muted shrink-0 font-mono text-[10px]">
-          {selected ? modelLabel(selected.model) : "Built-in"}
+          {selected ? modelName(selected.model) : role}
         </span>
         <Chevron />
       </button>
@@ -98,8 +104,8 @@ export function AgentSelect({
             onClick={() => void pick(null)}
           >
             <span className="min-w-0 flex-1">
-              <span className="text-ink block truncate font-medium">{role}</span>
-              <span className="text-muted block text-[10px]">Built-in</span>
+              <span className="text-ink block truncate font-medium">No agent</span>
+              <span className="text-muted block text-[10px]">Cards here wait until you pick one</span>
             </span>
             {!selected && <Check />}
           </button>
@@ -116,8 +122,7 @@ export function AgentSelect({
                 <span className="min-w-0 flex-1">
                   <span className="text-ink block truncate font-medium">{p.name}</span>
                   <span className="text-muted block font-mono text-[10px]">
-                    {modelLabel(p.model)}
-                    {p.hasKey ? ` · key ••${p.keyHint ?? ""}` : ""}
+                    {providerInfo(p.provider)?.label ?? p.provider} · {modelName(p.model)}
                   </span>
                 </span>
                 {selected?.id === p.id && <Check />}

@@ -496,7 +496,7 @@ export class MemoryRepository implements Repository {
       id: existing?.id ?? id("preset"),
       ownerId: existing ? existing.ownerId : (record.ownerId ?? null),
       name: record.name,
-      provider: "anthropic" as const,
+      provider: record.provider,
       model: record.model,
       prompt: record.prompt,
       apiKeyCipher: keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,

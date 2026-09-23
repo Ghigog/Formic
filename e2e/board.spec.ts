@@ -181,8 +181,9 @@ test("a column runs a saved agent: create, pick, edit, remove", async ({ page })
   const editor = page.getByRole("dialog", { name: "New agent" });
   await expect(editor.getByRole("textbox").last()).toHaveValue(/implement one ticket/);
   await editor.getByPlaceholder("claude-worker").fill("claude-worker");
-  await editor.getByRole("combobox").nth(1).selectOption("claude-sonnet-5");
+  await editor.getByRole("combobox", { name: "Provider", exact: true }).selectOption("anthropic");
   await editor.getByPlaceholder("sk-ant-…").fill("sk-ant-test-9876");
+  await editor.getByRole("combobox", { name: "Model", exact: true }).fill("claude-sonnet-5");
   await editor.getByRole("button", { name: "Create agent" }).click();
 
   // It is now what In Progress runs, and it survives a reload.
@@ -195,7 +196,7 @@ test("a column runs a saved agent: create, pick, edit, remove", async ({ page })
   // Offered on other columns too, with its key hinted but never shown.
   await column(page, "In Review").getByRole("button", { name: /Agent for In Review:/ }).click();
   await expect(
-    column(page, "In Review").getByRole("menuitemradio", { name: /claude-worker.*9876/ }),
+    column(page, "In Review").getByRole("menuitemradio", { name: /claude-worker.*Anthropic/ }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
 
@@ -218,7 +219,7 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   // then is overwritten when React takes over the input.
   await page.waitForLoadState("networkidle");
 
-  await page.getByLabel("E2B API key").fill("e2b_test_abcd");
+  await page.getByLabel("Sandbox (E2B) API key").fill("e2b_test_abcd");
   await page.getByRole("button", { name: "Save" }).first().click();
   await expect(page.getByText("••••••••abcd")).toBeVisible();
 
@@ -228,5 +229,5 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   await page.screenshot({ path: "e2e/.results/settings.png" });
 
   await page.getByRole("button", { name: "Remove" }).first().click();
-  await expect(page.getByLabel("E2B API key")).toBeVisible();
+  await expect(page.getByLabel("Sandbox (E2B) API key")).toBeVisible();
 });

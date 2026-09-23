@@ -9,6 +9,8 @@ import { ScopeError } from "@/lib/domain/scope";
 import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens } from "@/lib/budget/limits";
 import { anthropicClient } from "./anthropic";
 import { requestShape } from "./models";
+import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
+import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
 
 /**
  * The agentic loop both PROT-06 and PROT-07 run on.
@@ -138,9 +140,37 @@ interface LoopInput {
   role: "coder" | "reviewer";
   system: string;
   prompt: string;
-  /** A preset's model and key; unset runs the built-in coder. */
+  /** Which provider, model and key; unset runs the built-in Claude coder. */
+  provider?: ProviderId;
   model?: string;
   apiKey?: string | null;
+}
+
+/** A tool call, whichever provider asked for it. */
+interface LoopCall {
+  id: string;
+  name: string;
+  input: unknown;
+}
+
+interface Turn {
+  calls: LoopCall[];
+  stop: "done" | "refusal" | "max_tokens";
+  usage: Usage;
+}
+
+/** Thrown for a turn worth simply asking again, e.g. a garbled tool input. */
+class RetryTurn extends Error {}
+
+/**
+ * One provider's side of the conversation. The loop drives it with plain
+ * tool calls and results; the conversation keeps its own wire format,
+ * which matters for Claude, whose thinking blocks must go back unchanged.
+ */
+interface Conversation {
+  next(): Promise<Turn>;
+  toolResults(results: Array<{ id: string; content: string; isError: boolean }>): void;
+  say(text: string): void;
 }
 
 function addUsage(a: Usage, b: Usage): Usage {
@@ -152,18 +182,8 @@ function addUsage(a: Usage, b: Usage): Usage {
   };
 }
 
-function usageFrom(
-  model: string,
-  usage: { input_tokens?: number; output_tokens?: number } | null | undefined,
-): Usage {
-  const tokensIn = usage?.input_tokens ?? 0;
-  const tokensOut = usage?.output_tokens ?? 0;
-  return {
-    model,
-    tokensIn,
-    tokensOut,
-    costCents: estimateCostCents(model, tokensIn, tokensOut),
-  };
+function usageFrom(model: string, tokensIn: number, tokensOut: number): Usage {
+  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, tokensIn, tokensOut) };
 }
 
 function describeError(e: unknown): string {
@@ -183,6 +203,130 @@ function describeError(e: unknown): string {
   return "Unknown agent failure.";
 }
 
+function claudeConversation(input: LoopInput, model: string): Conversation {
+  const shape = requestShape(model, {
+    effort: "xhigh",
+    taskBudgetTokens: taskBudgetTokens(DEFAULT_RUN_BUDGET),
+  });
+  const messages: Anthropic.Beta.BetaMessageParam[] = [
+    { role: "user", content: input.prompt },
+  ];
+  return {
+    async next() {
+      let message: Anthropic.Beta.BetaMessage;
+      try {
+        const stream = anthropicClient(input.apiKey).beta.messages.stream({
+          model,
+          max_tokens: 64_000,
+          system: input.system,
+          ...(shape.thinking ? { thinking: shape.thinking } : {}),
+          ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
+          output_config: shape.outputConfig,
+          betas: shape.betas,
+          tools: TOOLS,
+          messages,
+        });
+        message = await stream.finalMessage();
+      } catch (e) {
+        // Eager input streaming hands validation to us, so an unparseable
+        // tool input is a turn to re-issue rather than a run to fail. API
+        // errors are not: those are real.
+        if (!(e instanceof Anthropic.APIError)) throw new RetryTurn(describeError(e));
+        throw new Error(describeError(e));
+      }
+      messages.push({ role: "assistant", content: message.content });
+      return {
+        calls: message.content
+          .filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use")
+          .map((b) => ({ id: b.id, name: b.name, input: b.input })),
+        stop:
+          message.stop_reason === "refusal"
+            ? "refusal"
+            : message.stop_reason === "max_tokens"
+              ? "max_tokens"
+              : "done",
+        usage: usageFrom(model, message.usage.input_tokens, message.usage.output_tokens),
+      };
+    },
+    toolResults(results) {
+      messages.push({
+        role: "user",
+        content: results.map((r) => ({
+          type: "tool_result" as const,
+          tool_use_id: r.id,
+          is_error: r.isError,
+          content: r.content,
+        })),
+      });
+    },
+    say(text) {
+      messages.push({ role: "user", content: text });
+    },
+  };
+}
+
+/** The same tools, in OpenAI's function format. */
+const OPENAI_TOOLS: ToolSpec[] = TOOLS.map((t) => ({
+  type: "function",
+  function: { name: t.name, description: t.description ?? "", parameters: t.input_schema },
+}));
+
+function openAiConversation(
+  input: LoopInput,
+  info: ProviderInfo,
+  model: string,
+  apiKey: string,
+): Conversation {
+  const messages: ChatMessage[] = [
+    { role: "system", content: input.system },
+    { role: "user", content: input.prompt },
+  ];
+  return {
+    async next() {
+      const result = await chat(info, apiKey, {
+        model,
+        messages,
+        tools: OPENAI_TOOLS,
+        signal: input.ctx.signal,
+      }).catch((e: unknown) => {
+        throw new Error(e instanceof Error ? e.message : String(e));
+      });
+      messages.push({
+        role: "assistant",
+        content: result.message.content ?? "",
+        ...(result.message.tool_calls?.length ? { tool_calls: result.message.tool_calls } : {}),
+      });
+      return {
+        calls: (result.message.tool_calls ?? []).map((c) => {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(c.function.arguments || "{}");
+          } catch {
+            // Garbled arguments fail the tool's own validation, which tells
+            // the model exactly what to fix.
+            parsed = { unparseable: c.function.arguments };
+          }
+          return { id: c.id, name: c.function.name, input: parsed };
+        }),
+        stop: result.finishReason === "length" ? "max_tokens" : "done",
+        usage: usageFrom(model, result.tokensIn, result.tokensOut),
+      };
+    },
+    toolResults(results) {
+      for (const r of results) {
+        messages.push({
+          role: "tool",
+          tool_call_id: r.id,
+          content: r.isError ? `Error: ${r.content}` : r.content,
+        });
+      }
+    },
+    say(text) {
+      messages.push({ role: "user", content: text });
+    },
+  };
+}
+
 /**
  * Runs the loop until the agent calls `finish`, the budget stops it, or it
  * runs out of turns. Returns what the agent changed; committing and pushing
@@ -192,17 +336,10 @@ export async function runCodingLoop(
   input: LoopInput,
 ): Promise<AgentOutcome<CodeChange>> {
   const { ctx, workspace, role, ticketId } = input;
+  const info = provider(input.provider ?? "anthropic")!;
   const model = input.model ?? CODER_MODEL;
-  const shape = requestShape(model, {
-    effort: "xhigh",
-    taskBudgetTokens: taskBudgetTokens(DEFAULT_RUN_BUDGET),
-  });
   let total: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
-  let jsonRetries = 0;
-
-  const messages: Anthropic.Beta.BetaMessageParam[] = [
-    { role: "user", content: input.prompt },
-  ];
+  let retries = 0;
 
   const fail = (error: string, blocked = false): AgentOutcome<CodeChange> => ({
     ok: false,
@@ -210,6 +347,14 @@ export async function runCodingLoop(
     blocked,
     usage: total,
   });
+
+  let conversation: Conversation;
+  if (info.kind === "anthropic") {
+    conversation = claudeConversation(input, model);
+  } else {
+    if (!input.apiKey) return fail(`This agent has no ${info.label} API key. Edit it and add one.`, true);
+    conversation = openAiConversation(input, info, model, input.apiKey);
+  }
 
   const progress = (label: string, iteration: number) => {
     ctx.emit({
@@ -227,64 +372,38 @@ export async function runCodingLoop(
       return fail("Run stopped before the change was finished.", true);
     }
 
-    let message: Anthropic.Beta.BetaMessage;
+    let turn: Turn;
     try {
-      const stream = anthropicClient(input.apiKey).beta.messages.stream({
-        model,
-        max_tokens: 64_000,
-        system: input.system,
-        ...(shape.thinking ? { thinking: shape.thinking } : {}),
-        ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
-        output_config: shape.outputConfig,
-        betas: shape.betas,
-        tools: TOOLS,
-        messages,
-      });
-
-      message = await stream.finalMessage();
-      jsonRetries = 0;
+      turn = await conversation.next();
+      retries = 0;
     } catch (e) {
-      // Eager input streaming hands validation to us, so an unparseable tool
-      // input is a turn to re-issue rather than a run to fail. API errors are
-      // not: those are real and rethrowing the loop would hide them.
-      if (!(e instanceof Anthropic.APIError) && jsonRetries++ < 2) {
-        continue;
-      }
-      return fail(describeError(e));
+      if (e instanceof RetryTurn && retries++ < 2) continue;
+      return fail(e instanceof Error ? e.message : String(e));
     }
 
-    const usage = usageFrom(model, message.usage);
-    total = addUsage(total, usage);
-    await ctx.charge?.(usage);
+    total = addUsage(total, turn.usage);
+    await ctx.charge?.(turn.usage);
 
-    if (message.stop_reason === "refusal") {
+    if (turn.stop === "refusal") {
       return fail("The model declined to work on this ticket.", true);
     }
-    if (message.stop_reason === "max_tokens") {
+    if (turn.stop === "max_tokens") {
       return fail("The agent's turn was cut off before it finished.");
     }
 
-    messages.push({ role: "assistant", content: message.content });
-
-    const calls = message.content.filter(
-      (b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use",
-    );
-
-    if (calls.length === 0) {
+    if (turn.calls.length === 0) {
       // Ended its turn without finishing. One nudge, then give up: a model
       // that cannot say what it did probably did not do it.
       if (iteration >= MAX_ITERATIONS - 1) break;
-      messages.push({
-        role: "user",
-        content:
-          "Call finish with a summary once the change is complete, or keep working if it is not.",
-      });
+      conversation.say(
+        "Call finish with a summary once the change is complete, or keep working if it is not.",
+      );
       continue;
     }
 
-    const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+    const results: Array<{ id: string; content: string; isError: boolean }> = [];
 
-    for (const call of calls) {
+    for (const call of turn.calls) {
       if (call.name === "finish") {
         const parsed = finishInput.safeParse(call.input);
         if (parsed.success) {
@@ -300,9 +419,8 @@ export async function runCodingLoop(
           };
         }
         results.push({
-          type: "tool_result",
-          tool_use_id: call.id,
-          is_error: true,
+          id: call.id,
+          isError: true,
           content: `finish was malformed: ${parsed.error.issues[0]?.message}`,
         });
         continue;
@@ -310,15 +428,10 @@ export async function runCodingLoop(
 
       const outcome = await runTool(call, workspace, ctx, ticketId);
       progress(outcome.label, iteration);
-      results.push({
-        type: "tool_result",
-        tool_use_id: call.id,
-        is_error: outcome.isError,
-        content: truncate(outcome.content),
-      });
+      results.push({ id: call.id, isError: outcome.isError, content: truncate(outcome.content) });
     }
 
-    messages.push({ role: "user", content: results });
+    conversation.toolResults(results);
   }
 
   return fail(
@@ -334,7 +447,7 @@ interface ToolOutcome {
 }
 
 async function runTool(
-  call: Anthropic.Beta.BetaToolUseBlock,
+  call: LoopCall,
   workspace: Workspace,
   ctx: AgentContext,
   ticketId: string,

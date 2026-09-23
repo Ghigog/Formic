@@ -157,7 +157,7 @@ describe("whose credentials a run uses", () => {
     expect(creds.githubToken).toBeNull();
   });
 
-  it("prefers a person's own E2B and Anthropic keys over the server's", async () => {
+  it("prefers a person's own E2B key over the server's", async () => {
     vi.stubEnv("E2B_API_KEY", "e2b_server");
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-server");
     resetEnvCache();
@@ -166,7 +166,6 @@ describe("whose credentials a run uses", () => {
     await repository().updateUser(user.id, { e2bKeyCipher: seal("e2b_mine") });
     const creds = await credentialsFor((await repository().userById(user.id))!);
     expect(creds.e2bKey).toBe("e2b_mine");
-    expect(creds.anthropicKey).toBe("sk-ant-server");
   });
 
   it("uses the server's GitHub token in local mode", async () => {

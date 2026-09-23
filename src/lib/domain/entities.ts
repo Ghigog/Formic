@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { COLUMNS, TICKET_STATUSES } from "./status";
 import { LIFECYCLE_STAGES } from "./stages";
+import { PROVIDER_IDS, type ProviderId } from "@/lib/llm/providers";
 
 /**
  * The shapes every layer agrees on: API routes, agents, the database mapper
@@ -182,7 +183,7 @@ export interface AgentPreset {
   id: string;
   ownerId: string | null;
   name: string;
-  provider: "anthropic";
+  provider: ProviderId;
   model: string;
   prompt: string;
   /** False means runs use the server's ANTHROPIC_API_KEY. */
@@ -192,7 +193,8 @@ export interface AgentPreset {
 
 export const agentPresetInputSchema = z.object({
   name: z.string().trim().min(1, "Give the agent a name.").max(60),
-  model: z.string().min(1),
+  provider: z.enum(PROVIDER_IDS).default("anthropic"),
+  model: z.string().trim().min(1, "Pick a model.").max(200),
   prompt: z.string().trim().min(1, "The prompt cannot be empty.").max(20_000),
   /** A new key; null clears the saved one; omitted keeps it. */
   apiKey: z.string().trim().min(1).max(500).nullable().optional(),

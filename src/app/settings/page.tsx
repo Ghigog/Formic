@@ -22,7 +22,6 @@ export default async function SettingsPage() {
       }}
       installUrl={installUrl()}
       e2b={{ hint: user.e2bKeyHint, serverFallback: !!config.E2B_API_KEY }}
-      anthropic={{ hint: user.anthropicKeyHint, serverFallback: !!config.ANTHROPIC_API_KEY }}
     />
   );
 }
