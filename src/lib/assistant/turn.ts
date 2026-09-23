@@ -17,6 +17,7 @@ import type { ProviderInfo } from "@/lib/llm/providers";
 import { startCliAsk } from "@/lib/runner/runner";
 import { vcs, type VcsClient } from "@/lib/vcs";
 import { assistantActionSchema, checkAction } from "./actions";
+import { ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
 
 /**
  * One turn of the board's assistant: the person asked something, the agent
@@ -104,6 +105,10 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "- create_epic_with_tickets, for work that is already planned into tickets (a ticket list in the repository, a plan you agreed on). It lands in To Do.",
     "- create_backlog_item, for a request that still needs a PRD. The Product Agent writes one.",
     "A ticket's fileScope lists the directories it may change, as prefixes from the repository root: 1 to 12 entries, so name directories such as \"src/renderer\" rather than every file in them. Tickets that could run at the same time must not share a scope: make one depend on the other instead. Keys are short and stable, such as \"T-1\".",
+    "",
+    TICKET_TEMPLATE,
+    "",
+    ENGINEERING_PRACTICES,
     "",
     "Answer in short, plain Markdown. After proposing, say in one line what you proposed.",
     "",

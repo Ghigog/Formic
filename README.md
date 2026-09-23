@@ -83,6 +83,28 @@ Create one at https://github.com/settings/apps/new (or under your org):
 - **Events:** Check run, Check suite, Workflow run, Pull request.
 - Generate a client secret. No private key is needed.
 
+## Conventions every agent follows
+
+Whatever an agent's prompt says, Formic adds these after it:
+
+- **The ticket template.** Every ticket, from the Architect or the
+  assistant, has a user story ("As a…, I'd like to…, so that…"), context
+  (why), a description (what), requirements (how), and acceptance criteria
+  as Gherkin scenarios (given, when, then). It is a schema, not advice: a
+  ticket missing a part goes back to the agent to fix. Tickets store it as
+  Markdown, so it reads well in the GitHub issue and the pull request.
+- **Engineering practices**, as defaults with judgment: test first (TDD), the
+  domain's own words throughout (ubiquitous language), domain-driven design
+  for rich domains, hexagonal architecture where there are real I/O
+  boundaries, SOLID where it earns its keep, and the simplest change that
+  meets the criteria. Each applies only where it makes the code simpler,
+  and the repository's own conventions (its CLAUDE.md, AGENTS.md, or how
+  the code around the change is written) win where they differ.
+- **Product conventions:** user stories in the same form, and the product's
+  own vocabulary.
+
+They live in `src/lib/agents/prompts.ts` and `src/lib/agents/decomposition.ts`.
+
 ## The assistant
 
 The top bar has an ask box. Ask anything about the repository or the board,

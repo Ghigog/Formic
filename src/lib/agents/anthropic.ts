@@ -24,7 +24,13 @@ import { type Prd, prdSchema } from "@/lib/domain/entities";
 import { estimateCostCents } from "@/lib/budget/limits";
 import { env } from "@/lib/secrets/env";
 import { authMode } from "@/lib/auth/session";
-import { ARCHITECT_BRIEF, PRODUCT_BRIEF, SHOWCASE_BRIEF } from "./prompts";
+import {
+  ARCHITECT_BRIEF,
+  PRODUCT_BRIEF,
+  SHOWCASE_BRIEF,
+  withPlanningConventions,
+  withProductConventions,
+} from "./prompts";
 import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
@@ -141,7 +147,7 @@ export class AnthropicProductAgent implements ProductAgent {
       const stream = anthropicClient(this.config.apiKey).beta.messages.stream({
         model,
         max_tokens: 8_000,
-        system: this.config.brief ?? PRODUCT_BRIEF,
+        system: withProductConventions(this.config.brief ?? PRODUCT_BRIEF),
         ...(shape.thinking ? { thinking: shape.thinking } : {}),
         ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
         betas: shape.betas,
@@ -250,7 +256,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         message = await anthropicClient(this.config.apiKey).beta.messages.create({
           model,
           max_tokens: 16_000,
-          system: this.config.brief ?? ARCHITECT_BRIEF,
+          system: withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF),
           ...(shape.thinking ? { thinking: shape.thinking } : {}),
           ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
           output_config: {

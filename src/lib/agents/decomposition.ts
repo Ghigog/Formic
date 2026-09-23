@@ -11,18 +11,82 @@ import type { DraftTicket } from "./ports";
  * failure goes back to it as a correction rather than onto the board.
  */
 
-export const draftTicketSchema = z.object({
+/**
+ * The ticket template every agent writes to: a user story, the why, the
+ * what, the how, and acceptance criteria in Gherkin. A schema rather than a
+ * suggestion in a prompt, so every provider fills in every part.
+ */
+export const ticketSpecSchema = z.object({
   key: z.string().describe('Short stable key, e.g. "T-1".'),
   title: z.string(),
-  description: z.string(),
-  acceptanceCriteria: z.array(z.string()).min(1),
+  userStory: z
+    .object({
+      as: z.string().min(1).describe('Who wants this, e.g. "a board owner".'),
+      want: z.string().min(1).describe('What they would like to do, e.g. "export my board as CSV".'),
+      soThat: z.string().min(1).describe('Why it matters to them, e.g. "I can report on it elsewhere".'),
+    })
+    .describe("As a <as>, I'd like to <want>, so that <soThat>."),
+  context: z.string().min(1).describe("Why: the problem or motivation behind the change."),
+  description: z.string().min(1).describe("What: the change itself, in the domain's own words."),
+  requirements: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe("How: technical requirements, constraints and the approach to take."),
+  acceptanceCriteria: z
+    .array(
+      z.object({
+        given: z.string().min(1),
+        when: z.string().min(1),
+        then: z.string().min(1),
+      }),
+    )
+    .min(1)
+    .describe("Gherkin scenarios: Given <context>, When <action>, Then <outcome>."),
   fileScope: fileScopeSchema,
   size: z.enum(["S", "M", "L", "XL"]),
   dependsOn: z.array(z.string()),
 });
 
+export type TicketSpec = z.infer<typeof ticketSpecSchema>;
+
+/** One Gherkin scenario on one line, as tickets store acceptance criteria. */
+export function gherkin(c: { given: string; when: string; then: string }): string {
+  const clause = (s: string) => s.trim().replace(/^(given|when|then)\s+/i, "").replace(/[.\s]+$/, "");
+  return `Given ${clause(c.given)}, when ${clause(c.when)}, then ${clause(c.then)}.`;
+}
+
+/**
+ * A ticket as the board stores it: the template's parts become a Markdown
+ * description with a heading each, which reads well in the GitHub issue,
+ * the pull request and the coding agent's brief alike.
+ */
+export function toDraftTicket(spec: TicketSpec): DraftTicket {
+  const { as, want, soThat } = spec.userStory;
+  const description = [
+    `**User story:** As ${/^(a|an|the)\s/i.test(as.trim()) ? as.trim() : `a ${as.trim()}`}, I'd like to ${want.trim()}, so that ${soThat.trim().replace(/\.$/, "")}.`,
+    "",
+    "### Context",
+    spec.context.trim(),
+    "",
+    "### Description",
+    spec.description.trim(),
+    "",
+    "### Requirements",
+    ...spec.requirements.map((r) => `- ${r.trim()}`),
+  ].join("\n");
+  return {
+    key: spec.key,
+    title: spec.title,
+    description,
+    acceptanceCriteria: spec.acceptanceCriteria.map(gherkin),
+    fileScope: normalizeScope(spec.fileScope),
+    size: spec.size,
+    dependsOn: spec.dependsOn,
+  };
+}
+
 export const decompositionSchema = z.object({
-  tickets: z.array(draftTicketSchema).min(2).max(12),
+  tickets: z.array(ticketSpecSchema).min(2).max(12),
 });
 
 /** Attempts before the Architect Agent gives up and asks for a human. */
@@ -42,10 +106,7 @@ export function checkDecomposition(
     };
   }
 
-  const tickets = parsed.data.tickets.map((t) => ({
-    ...t,
-    fileScope: normalizeScope(t.fileScope),
-  }));
+  const tickets = parsed.data.tickets.map(toDraftTicket);
   const validation = validateDag(
     tickets.map((t) => ({ key: t.key, dependsOn: t.dependsOn, fileScope: t.fileScope })),
   );
