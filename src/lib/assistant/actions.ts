@@ -3,13 +3,11 @@ import "server-only";
 import { z } from "zod";
 
 import { applyTickets } from "@/lib/agents/pipeline";
-import { draftTicketSchema } from "@/lib/agents/decomposition";
-import type { DraftTicket } from "@/lib/agents/ports";
+import { ticketSpecSchema, toDraftTicket } from "@/lib/agents/decomposition";
 import { createBacklogItem } from "@/lib/board/service";
 import { repository } from "@/lib/db";
 import { validateDag } from "@/lib/domain/dag";
 import { describeProblems } from "@/lib/domain/problems";
-import { normalizeScope } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
 
@@ -33,7 +31,7 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
     type: z.literal("create_epic_with_tickets"),
     title: z.string().trim().min(1).max(80),
     summary: z.string().trim().min(1).describe("What this Epic delivers, in a sentence or two."),
-    tickets: z.array(draftTicketSchema).min(1).max(12),
+    tickets: z.array(ticketSpecSchema).min(1).max(12),
   }),
 ]);
 
@@ -55,7 +53,7 @@ export function checkAction(
   }
   const action = parsed.data;
   if (action.type === "create_epic_with_tickets") {
-    const tickets = normalized(action.tickets);
+    const tickets = action.tickets.map(toDraftTicket);
     const keys = new Set(tickets.map((t) => t.key));
     if (keys.size !== tickets.length) return { ok: false, problem: "Two tickets share a key." };
     const dag = validateDag(
@@ -67,13 +65,9 @@ export function checkAction(
         problem: `Those tickets are not safe to run:\n${describeProblems(dag.problems)}`,
       };
     }
-    return { ok: true, action: { ...action, tickets } };
+    return { ok: true, action };
   }
   return { ok: true, action };
-}
-
-function normalized(tickets: DraftTicket[]): DraftTicket[] {
-  return tickets.map((t) => ({ ...t, fileScope: normalizeScope(t.fileScope) }));
 }
 
 /** Makes an approved change. Returns what now exists, for the conversation. */
@@ -84,6 +78,7 @@ export async function applyAction(projectId: string, action: AssistantAction): P
   }
 
   const repo = repository();
+  const tickets = action.tickets.map(toDraftTicket);
   const epic = await repo.createEpic({
     projectId,
     title: action.title,
@@ -95,11 +90,11 @@ export async function applyAction(projectId: string, action: AssistantAction): P
     {
       summary: action.summary,
       problem: action.summary,
-      scope: action.tickets.map((t) => `${t.key}: ${t.title}`),
+      scope: tickets.map((t) => `${t.key}: ${t.title}`),
       outOfScope: [],
       technicalContext: [],
-      userStories: [],
-      successCriteria: action.tickets.flatMap((t) => t.acceptanceCriteria),
+      userStories: tickets.map((t) => t.description.split("\n")[0]!.replace(/^\*\*User story:\*\* /, "")),
+      successCriteria: tickets.flatMap((t) => t.acceptanceCriteria),
     },
     false,
   );
@@ -122,6 +117,6 @@ export async function applyAction(projectId: string, action: AssistantAction): P
     stage: 3,
     blockedReason: null,
   });
-  await applyTickets(projectId, epic.id, action.tickets);
-  return `Added ${epic.key} to To Do with ${action.tickets.length} ticket${action.tickets.length === 1 ? "" : "s"}.`;
+  await applyTickets(projectId, epic.id, tickets);
+  return `Added ${epic.key} to To Do with ${tickets.length} ticket${tickets.length === 1 ? "" : "s"}.`;
 }

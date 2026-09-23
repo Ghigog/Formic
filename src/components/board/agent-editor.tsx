@@ -15,8 +15,16 @@ import {
   provider as providerInfo,
 } from "@/lib/llm/providers";
 
-/** Columns whose agent writes code, and so always gets the platform rules. */
-const CODING_COLUMNS: ReadonlySet<ColumnId> = new Set(["in_progress", "in_review"]);
+/** What Formic always adds after a column's prompt, whatever the provider. */
+const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
+  backlog:
+    "Always added after this: user stories as “As a…, I'd like to…, so that…”, and the product's own vocabulary.",
+  todo: "Always added after this: the ticket template (user story, context, description, requirements, Gherkin acceptance criteria) and the engineering practices (TDD, DDD, hexagonal, SOLID, applied where they fit).",
+  in_progress:
+    "Always added after this: the coding rules (stay in the file scope, no git, verify before finishing) and the engineering practices (TDD, DDD, hexagonal, SOLID, applied where they fit).",
+  in_review:
+    "Always added after this: the coding rules (stay in the file scope, no git, verify before finishing) and the engineering practices (TDD, DDD, hexagonal, SOLID, applied where they fit).",
+};
 
 type ModelList =
   | { state: "idle" }
@@ -315,11 +323,8 @@ export function AgentEditor({
               rows={10}
               className={`${field} resize-y py-2 font-mono text-[12px] leading-[1.5]`}
             />
-            {!forAssistant && CODING_COLUMNS.has(column) && (
-              <span className="text-muted text-[11px]">
-                The platform&apos;s coding rules (stay in the file scope, no git, verify
-                before finishing) are always added after this, whatever the provider.
-              </span>
+            {!forAssistant && CONVENTIONS_NOTE[column] && (
+              <span className="text-muted text-[11px]">{CONVENTIONS_NOTE[column]}</span>
             )}
           </label>
 

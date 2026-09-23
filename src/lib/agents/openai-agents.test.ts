@@ -157,8 +157,11 @@ describe("structured answers from OpenAI-format providers", () => {
     const ticket = (key: string, dependsOn: string[]) => ({
       key,
       title: key,
+      userStory: { as: "a board owner", want: "d", soThat: "my work moves on" },
+      context: "Why it is needed.",
       description: "d",
-      acceptanceCriteria: ["a"],
+      requirements: ["Covered by a test"],
+      acceptanceCriteria: [{ given: "the board", when: "it runs", then: "a" }],
       fileScope: ["src/lib"],
       size: "S",
       dependsOn,

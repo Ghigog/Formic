@@ -13,7 +13,13 @@ import type {
 } from "./ports";
 import { type Prd, prdSchema } from "@/lib/domain/entities";
 import { estimateCostCents } from "@/lib/budget/limits";
-import { ARCHITECT_BRIEF, PRODUCT_BRIEF, SHOWCASE_BRIEF } from "./prompts";
+import {
+  ARCHITECT_BRIEF,
+  PRODUCT_BRIEF,
+  SHOWCASE_BRIEF,
+  withPlanningConventions,
+  withProductConventions,
+} from "./prompts";
 import { MAX_DECOMPOSITION_ATTEMPTS, checkDecomposition, decompositionSchema } from "./decomposition";
 import { type ChatMessage, chat, extractJson } from "@/lib/llm/openai-compat";
 import { type ProviderInfo, provider } from "@/lib/llm/providers";
@@ -136,7 +142,7 @@ export class OpenAiProductAgent implements ProductAgent {
       r,
       ctx,
       [
-        { role: "system", content: jsonSystem(this.config.brief ?? PRODUCT_BRIEF, productOutput) },
+        { role: "system", content: jsonSystem(withProductConventions(this.config.brief ?? PRODUCT_BRIEF), productOutput) },
         { role: "user", content: `Raw feature request:\n\n${input.rawRequest}` },
       ],
       (raw) => {
@@ -175,7 +181,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       [
         {
           role: "system",
-          content: jsonSystem(this.config.brief ?? ARCHITECT_BRIEF, decompositionSchema),
+          content: jsonSystem(withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF), decompositionSchema),
         },
         {
           role: "user",

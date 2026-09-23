@@ -49,6 +49,48 @@ export const REVIEWER_BRIEF = `You fix a pull request whose CI is red.
 
 You are given the failing checks and what they reported. Reproduce the failure in the sandbox first, then fix its cause. A test that fails because the code is wrong is fixed in the code. Do not chase a green tick by changing what is being asserted, and do not widen the change beyond what the failure needs. If the failure is not something this pull request can fix, say so in finish rather than editing at random.`;
 
+/**
+ * Engineering practices every agent works to, whatever its prompt says.
+ * Defaults with judgment, not rules: each is worth applying only where it
+ * makes the code simpler to understand and change, and a repository's own
+ * conventions (its CLAUDE.md, AGENTS.md, contributing guide, or simply how
+ * the code around the change is written) win where they differ.
+ */
+export const ENGINEERING_PRACTICES = `Engineering practices. Defaults, not dogma: use each one where it makes this code simpler to understand and change, and skip it where it does not. The repository's own conventions (a CLAUDE.md, AGENTS.md or contributing guide, or just how the surrounding code is written) win where they differ.
+- Test first (TDD). Turn the acceptance criteria into failing tests, make them pass with the simplest change, then refactor while they stay green. Where the project has no test setup, verify another way rather than building one out of scope.
+- Ubiquitous language. Name things the way the product and the tickets do, and use the same words in code, tests, UI and commits. One concept, one name.
+- Domain-driven design, where the domain is rich: entities, value objects and clear boundaries between contexts. Plain data and functions are right for simple CRUD.
+- Hexagonal architecture (ports and adapters), where there are real I/O boundaries: keep domain logic free of frameworks, databases and network calls, behind small interfaces. Do not add layers to a script or a thin feature.
+- SOLID, where it earns its keep: one reason to change per unit, depend on abstractions at boundaries. No interfaces with a single implementation just in case.
+- Keep it simple. The smallest change that meets every acceptance criterion; no speculative generality (YAGNI). Leave the code you touch a little clearer than you found it, within the ticket's scope.`;
+
+/**
+ * How tickets are written, for the agents that write them. The shape itself
+ * is enforced by the ticket schema; this says what goes in each part.
+ */
+export const TICKET_TEMPLATE = `How to write each ticket:
+- userStory: who wants it, what they would like to do, and why. "As a <role>, I'd like to <capability>, so that <benefit>." Use the product's own roles, not "user" when a sharper one exists.
+- context: why this change exists, the problem or motivation.
+- description: what the change is, in the domain's own words.
+- requirements: how, as a list: the technical requirements, constraints and intended approach, including the tests that prove it.
+- acceptanceCriteria: Gherkin scenarios, each one observable and testable: given <a starting state>, when <an action>, then <an outcome>. Cover the main path and the edge cases that matter.`;
+
+/** What the Product Agent writes to, whatever its prompt says. */
+export const PRODUCT_CONVENTIONS = `Conventions:
+- Write userStories as "As a <role>, I'd like to <capability>, so that <benefit>."
+- Write successCriteria so they can become Gherkin scenarios: observable outcomes, not implementation details.
+- Use the product's own vocabulary (its ubiquitous language), the same words the code and the team use.`;
+
+/** The Product Agent's brief with the conventions it always follows. */
+export function withProductConventions(brief: string): string {
+  return `${brief.trim()}\n\n${PRODUCT_CONVENTIONS}`;
+}
+
+/** The Architect's brief with the ticket template and the engineering practices. */
+export function withPlanningConventions(brief: string): string {
+  return `${brief.trim()}\n\n${TICKET_TEMPLATE}\n\n${ENGINEERING_PRACTICES}`;
+}
+
 /** The brief a column's agent runs with when no preset replaces it. */
 export const DEFAULT_BRIEF: Record<ColumnId, string> = {
   backlog: PRODUCT_BRIEF,
@@ -58,7 +100,7 @@ export const DEFAULT_BRIEF: Record<ColumnId, string> = {
   done: SHOWCASE_BRIEF,
 };
 
-/** Coder and Reviewer briefs get the enforced rules appended. */
+/** Coder and Reviewer briefs get the enforced rules and the practices appended. */
 export function withCodingRules(brief: string): string {
-  return `${brief.trim()}\n\n${CODING_RULES}`;
+  return `${brief.trim()}\n\n${CODING_RULES}\n\n${ENGINEERING_PRACTICES}`;
 }

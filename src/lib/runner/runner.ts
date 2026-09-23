@@ -20,6 +20,9 @@ import {
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
   SHOWCASE_BRIEF,
+  ENGINEERING_PRACTICES,
+  withPlanningConventions,
+  withProductConventions,
 } from "@/lib/agents/prompts";
 import type { DraftTicket, FailingCheck } from "@/lib/agents/ports";
 import {
@@ -151,7 +154,9 @@ export function cliPrompt(
         failuresBrief(fix.checks),
       ].join("\n")
     : "Implement it.";
-  return cap([brief.trim(), "", CLI_RULES, "", task, "", work].join("\n"));
+  return cap(
+    [brief.trim(), "", CLI_RULES, "", ENGINEERING_PRACTICES, "", task, "", work].join("\n"),
+  );
 }
 
 /**
@@ -312,7 +317,7 @@ async function answerPrompt(
 
   if (mode === "product") {
     return [
-      (agent.brief ?? PRODUCT_BRIEF).trim(),
+      withProductConventions(agent.brief ?? PRODUCT_BRIEF),
       "",
       ANSWER_RULES,
       jsonShape(productOutput),
@@ -327,7 +332,7 @@ async function answerPrompt(
   if (mode === "architect") {
     if (!prd.success) return null;
     return [
-      (agent.brief ?? ARCHITECT_BRIEF).trim(),
+      withPlanningConventions(agent.brief ?? ARCHITECT_BRIEF),
       "",
       ANSWER_RULES,
       jsonShape(decompositionSchema),
