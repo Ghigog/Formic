@@ -49,6 +49,7 @@ async function seedTicket(fileScope = ["src/lib/feature"]): Promise<TicketDetail
       acceptanceCriteria: ["It is done"],
       fileScope,
       size: "M",
+      storyPoints: 3,
       position: 1,
       dependsOnKeys: [],
     },
@@ -135,6 +136,7 @@ describe("a CLI agent planning an Epic", () => {
         acceptanceCriteria: [{ given: "the board", when: "it runs", then: "It downloads" }],
         fileScope: ["src/app/api/export"],
         size: "S",
+        storyPoints: 3,
         dependsOn: [],
       },
       {
@@ -147,6 +149,7 @@ describe("a CLI agent planning an Epic", () => {
         acceptanceCriteria: [{ given: "the board", when: "it runs", then: "It is on the board" }],
         fileScope: ["src/components/export"],
         size: "S",
+        storyPoints: 3,
         dependsOn: ["T-1"],
       },
     ],

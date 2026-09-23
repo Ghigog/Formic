@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fileScopeSchema } from "@/lib/domain/entities";
+import { STORY_POINTS, fileScopeSchema } from "@/lib/domain/entities";
 import { validateDag } from "@/lib/domain/dag";
 import { describeProblems } from "@/lib/domain/problems";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -44,6 +44,9 @@ export const ticketSpecSchema = z.object({
     .describe("Gherkin scenarios: Given <context>, When <action>, Then <outcome>."),
   fileScope: fileScopeSchema,
   size: z.enum(["S", "M", "L", "XL"]),
+  storyPoints: z
+    .literal(STORY_POINTS)
+    .describe("The estimate in story points, on the Fibonacci scale: 1, 2, 3, 5, 8 or 13."),
   dependsOn: z.array(z.string()),
 });
 
@@ -81,6 +84,7 @@ export function toDraftTicket(spec: TicketSpec): DraftTicket {
     acceptanceCriteria: spec.acceptanceCriteria.map(gherkin),
     fileScope: normalizeScope(spec.fileScope),
     size: spec.size,
+    storyPoints: spec.storyPoints,
     dependsOn: spec.dependsOn,
   };
 }

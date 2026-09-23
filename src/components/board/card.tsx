@@ -173,6 +173,11 @@ function RunningCard({
             {card.size}
           </CoinBadge>
         )}
+        {card.storyPoints != null && (
+          <CoinBadge title={`${card.storyPoints} story points`} className="tabular-nums">
+            {card.storyPoints} pt
+          </CoinBadge>
+        )}
       </div>
 
       <h3 className="text-ink text-[13px] leading-card font-medium">
@@ -311,6 +316,11 @@ function PlainTicket({
         <div className="flex-grow" />
         {model && <CoinBadge title="Model">{model}</CoinBadge>}
         {card.size && <CoinBadge title="Ticket size">{card.size}</CoinBadge>}
+        {card.storyPoints != null && (
+          <CoinBadge title={`${card.storyPoints} story points`} className="tabular-nums">
+            {card.storyPoints} pt
+          </CoinBadge>
+        )}
       </div>
       <h3 className="text-ink text-[13px] leading-card font-medium">
         {card.title}

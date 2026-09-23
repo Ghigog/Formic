@@ -54,3 +54,28 @@ export function epicProgress(
     children.some((c) => c.status === "running" || c.status === "review");
   return { current: Math.min(current, LIFECYCLE_STAGES.length), working };
 }
+
+/**
+ * A ticket's own stretch of the lifecycle: from ready to merged. The stage
+ * numbers match the Epic's, so a ticket reads the same on both.
+ */
+export const TICKET_STAGES = [
+  { n: 3, key: "ready", label: "Ready" },
+  ...LIFECYCLE_STAGES.filter((s) => s.n >= 4 && s.n <= 7),
+] as const;
+
+/** Where a ticket is on its stretch, whether an agent is on it, and where it stopped. */
+export function ticketProgress(ticket: StageCard): {
+  current: number;
+  working: boolean;
+  failedAt: number | null;
+} {
+  const stalled = ticket.status === "blocked" || ticket.status === "failed";
+  // Merged is past the last stage: every step complete.
+  const current = ticket.status === "merged" ? 8 : Math.min(Math.max(ticket.stage, 3), 7);
+  return {
+    current,
+    working: ticket.status === "running" || ticket.status === "review",
+    failedAt: stalled ? current : null,
+  };
+}

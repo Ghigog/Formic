@@ -24,8 +24,11 @@ interface Anchor {
 export function DagPane({
   tickets,
   recentlyUnblocked,
+  onOpen,
 }: {
   tickets: BoardCard[];
+  /** Opens a ticket's own view. */
+  onOpen?: (ticket: BoardCard) => void;
   /** Ticket ids whose dependencies just cleared, for the one-shot pulse. */
   recentlyUnblocked?: Set<string>;
 }) {
@@ -144,15 +147,26 @@ export function DagPane({
               <span className="text-fg-subtle font-mono text-[10px]">
                 {card.key}
               </span>
-              {card.size && (
-                <CoinBadge className="ml-auto" title="Ticket size">
-                  {card.size}
-                </CoinBadge>
-              )}
+              <span className="ml-auto flex gap-1">
+                {card.storyPoints != null && (
+                  <CoinBadge title={`${card.storyPoints} story points`}>{card.storyPoints} pt</CoinBadge>
+                )}
+                {card.size && <CoinBadge title="Ticket size">{card.size}</CoinBadge>}
+              </span>
             </div>
 
             <h4 className="text-fg mt-0.5 text-[13px] leading-5 font-medium">
-              {card.title}
+              {onOpen ? (
+                <button
+                  type="button"
+                  onClick={() => onOpen(card)}
+                  className="hover:text-terracotta text-left underline-offset-2 hover:underline"
+                >
+                  {card.title}
+                </button>
+              ) : (
+                card.title
+              )}
             </h4>
 
             <div className="mt-1 flex flex-wrap items-center gap-2">

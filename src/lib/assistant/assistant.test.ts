@@ -29,6 +29,7 @@ const TICKETS = [
     acceptanceCriteria: [{ given: "the board", when: "it runs", then: "It downloads" }],
     fileScope: ["src/app/api/export"],
     size: "S",
+    storyPoints: 3,
     dependsOn: [],
   },
   {
@@ -41,6 +42,7 @@ const TICKETS = [
     acceptanceCriteria: [{ given: "the board", when: "it runs", then: "It is on the board" }],
     fileScope: ["src/components/export"],
     size: "S",
+    storyPoints: 3,
     dependsOn: ["T-1"],
   },
 ];

@@ -6,6 +6,7 @@ import type {
   AgentRunStatus,
   BoardCard,
   ColumnAgents,
+  PlanStep,
 } from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
@@ -31,6 +32,7 @@ export interface CreateTicketInput {
   acceptanceCriteria: string[];
   fileScope: string[];
   size: "S" | "M" | "L" | "XL";
+  storyPoints?: number | null;
   position: number;
   dependsOnKeys: string[];
 }
@@ -90,6 +92,9 @@ export interface TicketDetail {
   runnerJob: string | null;
   /** The GitHub issue that tracks it, once created. */
   issueNumber: number | null;
+  storyPoints: number | null;
+  /** The plan the agent is working through, oldest step first. */
+  plan: PlanStep[];
 }
 
 export interface TicketUpdate {
@@ -104,6 +109,7 @@ export interface TicketUpdate {
   summary?: string | null;
   runnerJob?: string | null;
   issueNumber?: number | null;
+  plan?: PlanStep[];
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -250,6 +256,16 @@ export interface Repository {
   eventsAfter(
     projectId: string,
     seq: number,
+    limit?: number,
+  ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
+  /**
+   * What agents said and did on one ticket, oldest first: the events of the
+   * given types whose payload names it. At most `limit`, the latest ones.
+   */
+  ticketEvents(
+    projectId: string,
+    ticketId: string,
+    types: string[],
     limit?: number,
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
   /** Highest event sequence number so far, or 0 with none. */

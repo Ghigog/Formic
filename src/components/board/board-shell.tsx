@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Board } from "./board";
 import { NewItemDialog } from "./new-item-dialog";
 import { EpicDrawer } from "./epic-drawer";
+import { TicketDrawer, type SubscribeToEvents } from "./ticket-drawer";
+import type { FormicEvent } from "@/lib/domain/events";
 import {
   AmbientDrawer,
   type AmbientStats,
@@ -49,12 +51,20 @@ export function BoardShell({
   account?: Account;
 }) {
   const agentState = useAgents(initialPresets, initialColumnAgents);
+  // Views that follow the event stream themselves, such as an open ticket.
+  const listeners = useRef(new Set<(event: FormicEvent, seq: number) => void>());
+  const subscribe = useCallback<SubscribeToEvents>((listener) => {
+    listeners.current.add(listener);
+    return () => listeners.current.delete(listener);
+  }, []);
   const { cards, extras, stats, prdStreams, connection, transition, createEpic } =
-    useBoard(initialCards, initialStats, (event) => {
+    useBoard(initialCards, initialStats, (event, seq) => {
       if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
+      for (const listener of listeners.current) listener(event, seq);
     });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
+  const [openTicketId, setOpenTicketId] = useState<string | null>(null);
   /** The agent editor: which column it was opened from, and what it edits. */
   const [editing, setEditing] = useState<{
     column: ColumnId | "assistant";
@@ -87,7 +97,7 @@ export function BoardShell({
         repoFullName={repoFullName}
         baseBranch={baseBranch}
         onOpenCard={(card) =>
-          setOpenEpicId(card.kind === "epic" ? card.id : card.epicId)
+          card.kind === "epic" ? setOpenEpicId(card.id) : setOpenTicketId(card.id)
         }
         onShowcase={(epic) => setOpenEpicId(epic.id)}
         onNewItem={() => setDialogOpen(true)}
@@ -136,7 +146,21 @@ export function BoardShell({
       <EpicDrawer
         epicId={openEpicId}
         onClose={() => setOpenEpicId(null)}
+        onOpenTicket={(ticketId) => {
+          setOpenEpicId(null);
+          setOpenTicketId(ticketId);
+        }}
         streamingPrd={openEpicId ? prdStreams[openEpicId] : undefined}
+      />
+
+      <TicketDrawer
+        ticketId={openTicketId}
+        onClose={() => setOpenTicketId(null)}
+        onOpenEpic={(epicId) => {
+          setOpenTicketId(null);
+          setOpenEpicId(epicId);
+        }}
+        subscribe={subscribe}
       />
 
       <AmbientDrawer stats={stats} onStopAll={() => void stopAll()} />

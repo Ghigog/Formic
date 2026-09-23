@@ -1,4 +1,4 @@
-import type { BoardCard } from "@/lib/domain/entities";
+import type { PlanStep, BoardCard } from "@/lib/domain/entities";
 import type { CardExtras } from "@/components/board/card";
 import type { AmbientStats } from "@/components/ui/ambient-drawer";
 
@@ -26,6 +26,7 @@ function card(
     position: 0,
     epicId: null,
     size: "M",
+    storyPoints: 3,
     agentRole: null,
     model: null,
     fileScope: [],
@@ -88,6 +89,7 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 1100,
     epicId: "epic-3",
     size: "M",
+    storyPoints: 3,
     fileScope: ["agents/reviewer/**"],
   }),
   card({
@@ -99,6 +101,7 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 1200,
     epicId: "epic-3",
     size: "S",
+    storyPoints: 2,
     fileScope: ["agents/pm/**"],
     dependsOn: ["prot-7"],
     blockedReason: "blocked by PROT-07",
@@ -114,6 +117,7 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 1000,
     epicId: "epic-3",
     size: "M",
+    storyPoints: 3,
     fileScope: ["agents/coder/**"],
     agentRole: "coder",
     model: "claude-sonnet-5",
@@ -128,6 +132,7 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 2000,
     epicId: "epic-3",
     size: "S",
+    storyPoints: 2,
     fileScope: ["services/sandbox/**"],
     agentRole: "coder",
     model: "claude-sonnet-5",
@@ -144,6 +149,7 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 1000,
     epicId: "epic-3",
     size: "M",
+    storyPoints: 3,
     fileScope: ["agents/product/**"],
     agentRole: "reviewer",
     model: "claude-sonnet-5",
@@ -160,6 +166,7 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 2000,
     epicId: "epic-3",
     size: "L",
+    storyPoints: 8,
     fileScope: ["agents/architect/**"],
     agentRole: "reviewer",
     model: "claude-sonnet-5",
@@ -190,6 +197,7 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 1100,
     epicId: "epic-1",
     size: "M",
+    storyPoints: 3,
     fileScope: ["src/components/board/**"],
     prNumber: 114,
     prUrl: "https://github.com/formic-labs/formic-web/pull/114",
@@ -204,6 +212,7 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 1200,
     epicId: "epic-1",
     size: "M",
+    storyPoints: 3,
     fileScope: ["prisma/**", "src/lib/db/**"],
     prNumber: 116,
     prUrl: "https://github.com/formic-labs/formic-web/pull/116",
@@ -255,4 +264,65 @@ export const FIXTURE_STATS: Omit<AmbientStats, "provider"> = {
   queueDepth: 2,
   mergeLockPr: 117,
   logLines: [],
+};
+
+/**
+ * What the demo's tickets in progress say, written to the ticket template,
+ * and the plans their agents are part way through, so a ticket's own view
+ * has something to show before any agent has run.
+ */
+export const FIXTURE_TICKET_DETAILS: Record<
+  string,
+  { description: string; acceptanceCriteria: string[]; plan: PlanStep[] }
+> = {
+  "prot-6": {
+    description: [
+      "**User story:** As a board owner, I'd like a ticket in In Progress to be implemented by an agent, so that I only step in to review.",
+      "",
+      "### Context",
+      "Tickets reach In Progress with a scope and acceptance criteria, but nothing works them yet.",
+      "",
+      "### Description",
+      "A Coder Agent loop that reads the ticket, edits files inside its scope, runs the checks and hands back a change.",
+      "",
+      "### Requirements",
+      "- Tools: `bash`, `read_file`, `write_file`, `str_replace`, `finish`",
+      "- Writes outside the file scope are refused",
+      "- The run stops at its budget and says so",
+    ].join("\n"),
+    acceptanceCriteria: [
+      "Given a ready ticket, when it moves to In Progress, then an agent opens a pull request for it.",
+      "Given the agent writes outside its scope, when the change is checked, then nothing is pushed and the card says why.",
+    ],
+    plan: [
+      { step: "Read the ticket and the files in agents/coder", status: "done" },
+      { step: "Define the tool set and its schemas", status: "done" },
+      { step: "Write the loop that runs tool calls", status: "in_progress" },
+      { step: "Refuse writes outside the file scope", status: "pending" },
+      { step: "Run the checks and finish", status: "pending" },
+    ],
+  },
+  "prot-5": {
+    description: [
+      "**User story:** As a Coder Agent, I'd like a clean sandbox per ticket, so that my work cannot touch anyone else's.",
+      "",
+      "### Context",
+      "Agents need somewhere to run commands that is not the server.",
+      "",
+      "### Description",
+      "An E2B sandbox minted per run, with the repository checked out on the ticket's branch.",
+      "",
+      "### Requirements",
+      "- One sandbox per run, torn down when it ends",
+      "- The person's own E2B key, never the server's",
+    ].join("\n"),
+    acceptanceCriteria: [
+      "Given a run starts, when the sandbox is ready, then the repository is checked out on the ticket's branch.",
+    ],
+    plan: [
+      { step: "Mint a sandbox with the person's key", status: "done" },
+      { step: "Check the branch out", status: "in_progress" },
+      { step: "Tear it down when the run ends", status: "pending" },
+    ],
+  },
 };

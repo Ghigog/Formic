@@ -9,6 +9,7 @@ import { ScopeError } from "@/lib/domain/scope";
 import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens } from "@/lib/budget/limits";
 import { anthropicClient, describeError } from "./anthropic";
 import { requestShape } from "./models";
+import { MAX_PLAN_STEPS, checkPlan } from "./plan";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
 import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
 
@@ -34,6 +35,16 @@ const MAX_ITERATIONS = 40;
 
 /** Tool output past this is padding; the middle is what gets dropped. */
 const MAX_TOOL_OUTPUT = 16_000;
+/** Longest thought the board is sent in one piece. */
+const MAX_THOUGHT = 4_000;
+
+/**
+ * Asked of every coding agent, so the person watching a ticket can follow
+ * it: the plan up front, kept current, and a word before each action.
+ */
+const PLANNING_RULES = `Working in the open:
+- Before you change anything, call update_plan with every step you intend to take. Keep it current: mark a step in_progress when you start it and done when it is finished, and add or drop steps as you learn more.
+- Before each action, say in a sentence or two what you are about to do and why. The person watching the board reads it.`;
 
 
 export function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
@@ -116,6 +127,31 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: "update_plan",
+    description:
+      "Share your plan for this ticket and keep it current. Call it before you change anything, with every step you intend to take, and again whenever a step starts or finishes. The person watching the board sees it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        steps: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              step: { type: "string" },
+              status: { type: "string", enum: ["pending", "in_progress", "done"] },
+            },
+            required: ["step", "status"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["steps"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
     name: "finish",
     description:
       "Call this once the change is complete and verified. Ends the run.",
@@ -155,6 +191,8 @@ interface LoopCall {
 
 interface Turn {
   calls: LoopCall[];
+  /** What the model thought and said this turn, besides its tool calls. */
+  thoughts: Array<{ kind: "thinking" | "text"; text: string }>;
   stop: "done" | "refusal" | "max_tokens";
   usage: Usage;
 }
@@ -219,6 +257,13 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
       }
       messages.push({ role: "assistant", content: message.content });
       return {
+        thoughts: message.content.flatMap((b): Turn["thoughts"] =>
+          b.type === "thinking" && b.thinking.trim()
+            ? [{ kind: "thinking" as const, text: b.thinking }]
+            : b.type === "text" && b.text.trim()
+              ? [{ kind: "text" as const, text: b.text }]
+              : [],
+        ),
         calls: message.content
           .filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use")
           .map((b) => ({ id: b.id, name: b.name, input: b.input })),
@@ -280,6 +325,9 @@ function openAiConversation(
         ...(result.message.tool_calls?.length ? { tool_calls: result.message.tool_calls } : {}),
       });
       return {
+        thoughts: result.message.content?.trim()
+          ? [{ kind: "text" as const, text: result.message.content }]
+          : [],
         calls: (result.message.tool_calls ?? []).map((c) => {
           let parsed: unknown;
           try {
@@ -331,12 +379,13 @@ export async function runCodingLoop(
     usage: total,
   });
 
+  const briefed = { ...input, system: `${input.system.trim()}\n\n${PLANNING_RULES}` };
   let conversation: Conversation;
   if (info.kind === "anthropic") {
-    conversation = claudeConversation(input, model);
+    conversation = claudeConversation(briefed, model);
   } else {
     if (!input.apiKey) return fail(`This agent has no ${info.label} API key. Edit it and add one.`, true);
-    conversation = openAiConversation(input, info, model, input.apiKey);
+    conversation = openAiConversation(briefed, info, model, input.apiKey);
   }
 
   const progress = (label: string, iteration: number) => {
@@ -366,6 +415,16 @@ export async function runCodingLoop(
 
     total = addUsage(total, turn.usage);
     await ctx.charge?.(turn.usage);
+
+    for (const thought of turn.thoughts) {
+      ctx.emit({
+        type: "run.thought",
+        runId: ctx.runId,
+        ticketId,
+        kind: thought.kind,
+        text: truncate(thought.text.trim(), MAX_THOUGHT),
+      });
+    }
 
     if (turn.stop === "refusal") {
       return fail("The model declined to work on this ticket.", true);
@@ -405,6 +464,19 @@ export async function runCodingLoop(
           id: call.id,
           isError: true,
           content: `finish was malformed: ${parsed.error.issues[0]?.message}`,
+        });
+        continue;
+      }
+
+      if (call.name === "update_plan") {
+        const steps = checkPlan(call.input);
+        if (steps) ctx.emit({ type: "ticket.plan", ticketId, steps });
+        results.push({
+          id: call.id,
+          isError: !steps,
+          content: steps
+            ? "Plan updated."
+            : `update_plan needs 1 to ${MAX_PLAN_STEPS} steps, each with a step and a status.`,
         });
         continue;
       }

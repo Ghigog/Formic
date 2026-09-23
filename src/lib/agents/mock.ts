@@ -12,6 +12,7 @@ import type {
   ShowcaseAgent,
   Usage,
 } from "./ports";
+import type { PlanStep } from "@/lib/domain/entities";
 import type { Prd } from "@/lib/domain/entities";
 import type { Workspace } from "@/lib/sandbox/workspace";
 
@@ -136,6 +137,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["prisma"],
         size: "S",
+        storyPoints: 2,
         dependsOn: [],
       },
       {
@@ -148,6 +150,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["src/app/api"],
         size: "M",
+        storyPoints: 5,
         dependsOn: ["T-1"],
       },
       {
@@ -160,6 +163,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["src/components/feature"],
         size: "M",
+        storyPoints: 5,
         dependsOn: ["T-1"],
       },
       {
@@ -169,6 +173,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         acceptanceCriteria: ["Tests pass", "Edge cases covered"],
         fileScope: ["src/lib/feature"],
         size: "S",
+        storyPoints: 3,
         dependsOn: ["T-2", "T-3"],
       },
     ];
@@ -243,8 +248,21 @@ export class MockCoderAgent implements CoderAgent {
       "Writing the change",
       "Running the checks",
     ];
+    const plan = (done: number): PlanStep[] =>
+      steps.map((step, i) => ({
+        step,
+        status: i < done ? "done" : i === done ? "in_progress" : "pending",
+      }));
 
     for (const [i, label] of steps.entries()) {
+      ctx.emit({ type: "ticket.plan", ticketId: task.ticketId, steps: plan(i) });
+      ctx.emit({
+        type: "run.thought",
+        runId: ctx.runId,
+        ticketId: task.ticketId,
+        kind: "text",
+        text: `${label}. (The mock agent only pretends; add a real agent to this column for real work.)`,
+      });
       ctx.emit({
         type: "run.progress",
         runId: ctx.runId,
@@ -261,6 +279,8 @@ export class MockCoderAgent implements CoderAgent {
       });
       await sleep(350, ctx.signal);
     }
+
+    ctx.emit({ type: "ticket.plan", ticketId: task.ticketId, steps: plan(steps.length) });
 
     const note = noteFor(task);
     await workspace.writeFile(note.path, note.contents);

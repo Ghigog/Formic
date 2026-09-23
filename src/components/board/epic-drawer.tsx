@@ -27,10 +27,13 @@ interface EpicDetail {
 export function EpicDrawer({
   epicId,
   onClose,
+  onOpenTicket,
   streamingPrd,
 }: {
   epicId: string | null;
   onClose: () => void;
+  /** Opens one of its tickets in its own view. */
+  onOpenTicket?: (ticketId: string) => void;
   /** Live PRD text while the Product Agent writes. */
   streamingPrd?: string;
 }) {
@@ -186,7 +189,10 @@ export function EpicDrawer({
               tab === "dag" ? "block" : "hidden lg:block",
             )}
           >
-            <DagPane tickets={detail?.children ?? []} />
+            <DagPane
+              tickets={detail?.children ?? []}
+              onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))}
+            />
           </div>
         </div>
       </div>

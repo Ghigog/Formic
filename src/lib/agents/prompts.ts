@@ -73,7 +73,8 @@ export const TICKET_TEMPLATE = `How to write each ticket:
 - context: why this change exists, the problem or motivation.
 - description: what the change is, in the domain's own words.
 - requirements: how, as a list: the technical requirements, constraints and intended approach, including the tests that prove it.
-- acceptanceCriteria: Gherkin scenarios, each one observable and testable: given <a starting state>, when <an action>, then <an outcome>. Cover the main path and the edge cases that matter.`;
+- acceptanceCriteria: Gherkin scenarios, each one observable and testable: given <a starting state>, when <an action>, then <an outcome>. Cover the main path and the edge cases that matter.
+- storyPoints: the estimate on the Fibonacci scale, 1, 2, 3, 5, 8 or 13, relative to the other tickets. Past 8, consider splitting the ticket.`
 
 /** What the Product Agent writes to, whatever its prompt says. */
 export const PRODUCT_CONVENTIONS = `Conventions:
