@@ -115,6 +115,11 @@ export interface CodeChange {
   detail: string;
   /** Command the agent verified the change with, if it found one. */
   verifiedWith: string | null;
+  /**
+   * The repository already did what the ticket asks, so nothing was changed.
+   * `detail` then holds the evidence, criterion by criterion.
+   */
+  alreadyDone?: boolean;
 }
 
 /** PROT-06. Ticket in, edited workspace out. Commits and pushes are the caller's. */

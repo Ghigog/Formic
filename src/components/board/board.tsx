@@ -22,7 +22,7 @@ import {
   type ColumnId,
   canUserMove,
   columnFor,
-  isDraggable,
+  columnOf,
   statusForUserDrop,
 } from "@/lib/domain/status";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
@@ -124,7 +124,7 @@ export function Board({
       done: [],
     };
     for (const card of live) {
-      out[columnFor(card.status, card.stalledIn)].push(card);
+      out[columnOf(card)].push(card);
     }
     for (const col of COLUMNS) out[col].sort(byPosition);
     return out;
@@ -133,13 +133,12 @@ export function Board({
   /** `index` is the drag library's: among the destination's rendered rows. */
   const commit = useCallback(
     async (card: BoardCard, to: ColumnId, index: number) => {
-      const from = columnFor(card.status, card.stalledIn);
-      const verdict = canUserMove(from, to);
-      if (!verdict.ok) {
-        setError(verdict.reason);
-        colony?.reject(card.id, verdict.reason);
-        return;
-      }
+      const from = columnOf(card);
+      // Any drop is sent: one the rules do not allow still lands, and the
+      // server says what is wrong with it. This only guesses the status it
+      // lands in, so it renders in the right column until the answer.
+      const home = columnFor(card.status, card.stalledIn);
+      const fits = to === from || to === home || canUserMove(home, to).ok;
 
       const { position, detached } = placeDrop({
         card,
@@ -158,13 +157,17 @@ export function Board({
       );
       setOptimistic((prev) => [
         ...prev.filter((c) => c.id !== card.id),
-        {
-          ...card,
-          status: to === from ? card.status : statusForUserDrop(to, depsMet),
-          position,
-          detached,
-          stalledIn: to === from ? card.stalledIn : null,
-        },
+        fits
+          ? {
+              ...card,
+              status: to === from || to === home ? card.status : statusForUserDrop(to, depsMet),
+              position,
+              detached,
+              stalledIn: to === from || to === home ? card.stalledIn : null,
+              misplacedIn: to === from ? card.misplacedIn : null,
+              misplacedReason: to === from ? card.misplacedReason : null,
+            }
+          : { ...card, position, detached, misplacedIn: to },
       ]);
 
       const result = await onTransition({
@@ -188,6 +191,11 @@ export function Board({
       }
 
       setOptimistic((prev) => prev.filter((c) => c.id !== card.id));
+      if (result.problem) {
+        // It stays where it was put; the "!" on it keeps saying why.
+        setError(result.problem);
+        requestAnimationFrame(() => colony?.reject(card.id, "Needs you"));
+      }
     },
     [byColumn, collapsed, live, onTransition, colony],
   );
@@ -258,7 +266,9 @@ export function Board({
       epics: epicsById,
       nextFor: (card, column) => {
         const to = NEXT_COLUMN[column];
-        if (!to || !isDraggable(card.status)) return null;
+        if (!to || card.misplacedIn || card.status === "running" || card.status === "review") {
+          return null;
+        }
         if (to === "in_progress" && (card.kind !== "ticket" || card.status !== "ready")) return null;
         return accepts(column, to) ? to : null;
       },
@@ -282,7 +292,9 @@ export function Board({
   const advanceTarget = useMemo(() => {
     const to = NEXT_COLUMN[activeTab];
     if (!to || nextLimited) return null;
-    const card = byColumn[activeTab].find((c) => isDraggable(c.status));
+    const card = byColumn[activeTab].find(
+      (c) => !c.misplacedIn && c.status !== "running" && c.status !== "review",
+    );
     return card ? { card, to } : null;
   }, [activeTab, byColumn, nextLimited]);
 
@@ -362,7 +374,13 @@ export function Board({
               collapsed={collapsed[col]}
               accepts={(cardId) => {
                 const card = live.find((c) => c.id === cardId);
-                return !card || accepts(columnFor(card.status, card.stalledIn), col);
+                // Where it can work: its own column, or a move the rules allow
+                // from there. Anywhere else still takes it, with a warning.
+                return (
+                  !card ||
+                  col === columnOf(card) ||
+                  accepts(columnFor(card.status, card.stalledIn), col)
+                );
               }}
               onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
               agent={

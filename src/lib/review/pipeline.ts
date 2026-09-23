@@ -173,6 +173,55 @@ export async function markMergedExternally(
 }
 
 /**
+ * The coding agent found the ticket's work already in the repository and
+ * changed nothing. There is nothing to review or merge, so the ticket goes
+ * straight to Done with the agent's evidence as its summary, and whatever
+ * was waiting on it is released exactly as a merge would release it.
+ */
+export async function closeAlreadyDone(
+  projectId: string,
+  ticket: TicketDetail,
+  evidence: { summary: string; detail: string },
+): Promise<void> {
+  const repo = repository();
+  const summary = `Already done: ${evidence.summary}`.slice(0, 200);
+
+  await repo.updateTicket(ticket.id, {
+    status: "merged",
+    stalledIn: null,
+    stage: STAGE_MERGE,
+    blockedReason: null,
+    runnerJob: null,
+    summary,
+  });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticket.id,
+    kind: "ticket",
+    status: "merged",
+    stalledIn: null,
+    stage: STAGE_MERGE,
+    blockedReason: null,
+  });
+
+  // The evidence is the record of why nothing changed; it goes on the
+  // ticket's own issue, which the move to Done closes.
+  if (ticket.issueNumber && evidence.detail.trim()) {
+    const project = await projectFor(projectId);
+    const creds = await credentialsForProject(project);
+    await vcs(project.repoFullName, creds.githubToken)
+      .comment(
+        ticket.issueNumber,
+        `**Already done.** The Coder Agent found this in place and changed nothing.\n\n${evidence.detail.trim()}`,
+      )
+      .catch((e) => console.warn("[formic] could not note an already-done ticket:", e));
+  }
+
+  await releaseDependents(projectId, ticket);
+  await maybeShowcase(projectId, ticket.epicId);
+}
+
+/**
  * One merge at a time, each rebased on the result of the last. Conflicts the
  * agent cannot resolve cleanly park the card rather than being forced
  * through; see the risk note in docs/tasks/PROT-07-reviewer-agent.md.

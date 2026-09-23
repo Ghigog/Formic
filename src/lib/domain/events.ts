@@ -23,6 +23,14 @@ export type FormicEvent =
       epicId: string | null;
     }
   | {
+      /** A person deleted an Epic, and every ticket under it with it. */
+      type: "card.deleted";
+      cardId: string;
+      kind: "epic";
+      /** The GitHub issues that tracked it and its tickets, to close. */
+      issueNumbers: number[];
+    }
+  | {
       type: "epic.prd";
       epicId: string;
       /** Incremental text while the Product Agent streams. */

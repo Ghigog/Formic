@@ -4,8 +4,11 @@ import { repository } from "@/lib/db";
 import type { BoardCard } from "@/lib/domain/entities";
 import {
   type ColumnId,
+  COLUMN_LABELS,
   canUserMove,
   columnFor,
+  columnOf,
+  isStalled,
   statusForUserDrop,
 } from "@/lib/domain/status";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
@@ -52,6 +55,63 @@ function scopeConflict(card: BoardCard, all: BoardCard[]): BoardCard | null {
   );
 }
 
+/**
+ * Why a card cannot work in the column it was dropped in, and how to fix it,
+ * or null when it can. Written for the person who dropped it: each one says
+ * what to do next, because the card stays where they put it.
+ */
+async function whatIsWrong(
+  projectId: string,
+  card: BoardCard,
+  cards: BoardCard[],
+  home: ColumnId,
+  to: ColumnId,
+): Promise<string | null> {
+  const back = `Drag it back to ${COLUMN_LABELS[home]} to undo this.`;
+
+  if (card.kind === "epic" && (to === "in_progress" || to === "in_review" || to === "done")) {
+    return card.childCount > 0
+      ? `An Epic is not worked on itself; its tickets are. Drag it back to ${COLUMN_LABELS[home]} and move its tickets on from there.`
+      : `An Epic is not worked on itself; its tickets are, and it has none yet. Drag it to To Do and the Architect Agent will make them.`;
+  }
+
+  if (to === "done") {
+    return card.prNumber
+      ? `${card.key} reaches Done when its pull request merges. Merge it on GitHub and the card follows. ${back}`
+      : `${card.key} reaches Done when its pull request merges, and it has none yet. ${back}`;
+  }
+
+  if (to === "in_review" && !card.prNumber) {
+    return `${card.key} has no pull request to review yet. Drag it to In Progress from To Do and its agent will open one. ${back}`;
+  }
+
+  const verdict = canUserMove(home, to);
+  if (!verdict.ok) {
+    return `${verdict.reason} Cards move one column at a time so each agent gets its turn. ${back}`;
+  }
+
+  const limited = await columnLimit(projectId, to);
+  if (limited) return `${limited} ${back}`;
+
+  if (to === "in_progress" && !dependenciesMet(card, cards)) {
+    const blocking = card.dependsOn
+      .map((id) => cards.find((c) => c.id === id))
+      .filter((c) => c && c.status !== "merged")
+      .map((c) => c!.key)
+      .join(", ");
+    return `${card.key} is waiting on ${blocking || "a dependency"} to merge first. Drag it back to To Do; it is ready to go once that merges.`;
+  }
+
+  if (to === "in_progress") {
+    const conflict = scopeConflict(card, cards);
+    if (conflict) {
+      return `${conflict.key} is already working in ${conflict.fileScope.join(", ")}, and two agents cannot write the same files at once. Drag this back to To Do and try again when ${conflict.key} is done.`;
+    }
+  }
+
+  return null;
+}
+
 export async function applyTransition(
   projectId: string,
   t: CardTransition,
@@ -64,31 +124,42 @@ export async function applyTransition(
     return { ok: false, reason: "That card no longer exists.", revertTo: t.from };
   }
 
-  const actual = columnFor(card.status, card.stalledIn);
+  const shown = columnOf(card);
+  // Where it really is: a misplaced card's status never changed.
+  const home = columnFor(card.status, card.stalledIn);
 
   // Trust the server's own view of where the card is, not the client's, so a
   // stale tab cannot move a card an agent already advanced.
-  if (actual !== t.from) {
+  if (shown !== t.from) {
     return {
       ok: false,
       reason: "This card moved while you were dragging it.",
-      revertTo: actual,
+      revertTo: shown,
     };
   }
 
+  const detached = card.kind === "ticket" ? (t.detached ?? false) : undefined;
+
   // A reorder within a column changes where the card sits and nothing else:
-  // status, stall and agents all stay as they are. Without this, nudging an
-  // epic within To Do re-ran its Architect Agent, and nudging a specified
-  // backlog epic reset it to draft.
-  if (actual === t.to) {
+  // status, stall, misplacement and agents all stay as they are. Without
+  // this, nudging an epic within To Do re-ran its Architect Agent, and
+  // nudging a specified backlog epic reset it to draft. The same holds for a
+  // misplaced card going back where it belongs: it simply stops being
+  // misplaced.
+  if (t.to === shown || t.to === home) {
     const position = await placeAmong(projectId, t.to, card, t.position);
+    const misplaced =
+      t.to === shown && card.misplacedIn && card.misplacedReason
+        ? { in: card.misplacedIn, reason: card.misplacedReason }
+        : null;
     await repo.move({
       cardId: card.id,
       kind: card.kind,
       status: card.status,
       stalledIn: card.stalledIn,
       position,
-      detached: card.kind === "ticket" ? (t.detached ?? false) : undefined,
+      detached,
+      misplaced,
     });
     await repo.rebalanceColumn(projectId, t.to);
     await publish(projectId, {
@@ -100,55 +171,46 @@ export async function applyTransition(
       stage: card.stage,
       blockedReason: card.blockedReason,
     });
-    return { ok: true, status: card.status, runId: null };
+    return { ok: true, status: card.status, runId: null, problem: misplaced?.reason ?? null };
   }
 
-  const verdict = canUserMove(actual, t.to);
-  if (!verdict.ok) {
-    return { ok: false, reason: verdict.reason, revertTo: actual };
+  // Somewhere it cannot work: it lands there anyway, as the person asked,
+  // keeping its real status and saying what is wrong until it moves again.
+  const problem = await whatIsWrong(projectId, card, cards, home, t.to);
+  if (problem) {
+    const position = await placeAmong(projectId, t.to, card, t.position);
+    await repo.move({
+      cardId: card.id,
+      kind: card.kind,
+      status: card.status,
+      stalledIn: card.stalledIn,
+      position,
+      detached,
+      misplaced: { in: t.to, reason: problem },
+    });
+    await repo.rebalanceColumn(projectId, t.to);
+    await publish(projectId, {
+      type: "card.status",
+      cardId: card.id,
+      kind: card.kind,
+      status: card.status,
+      stalledIn: card.stalledIn,
+      stage: card.stage,
+      blockedReason: card.blockedReason,
+    });
+    return { ok: true, status: card.status, runId: null, problem };
   }
 
-  const limited = await columnLimit(projectId, t.to);
-  if (limited) return { ok: false, reason: limited, revertTo: actual };
-
+  // An Epic is broken down from its PRD. With none yet it waits in To Do for
+  // one: the Product Agent already writing it, or, when none is (it stalled,
+  // or the Epic was somewhere else meanwhile), one started now. Either way
+  // the Architect Agent follows once the PRD lands.
   const met = dependenciesMet(card, cards);
-  if (t.to === "in_progress" && !met) {
-    const blocking = card.dependsOn
-      .map((id) => cards.find((c) => c.id === id)?.key)
-      .filter(Boolean)
-      .join(", ");
-    return {
-      ok: false,
-      reason: `${card.key} is waiting on ${blocking || "a dependency"} to merge first.`,
-      revertTo: actual,
-    };
-  }
-
-  if (t.to === "in_progress") {
-    const conflict = scopeConflict(card, cards);
-    if (conflict) {
-      return {
-        ok: false,
-        reason: `${conflict.key} is already working in ${conflict.fileScope.join(", ")}. Two agents cannot write the same files at once.`,
-        revertTo: actual,
-      };
-    }
-  }
-
-  // An Epic is broken down from its PRD. With none yet, it either waits in
-  // To Do for the Product Agent that is still writing one, or, when that
-  // agent stalled, stays put: nothing would ever break it down.
   const toArchitect = card.kind === "epic" && t.to === "todo";
   const hasPrd = toArchitect
     ? prdSchema.safeParse((await repo.epicDetail(card.id))?.prd).success
     : false;
-  if (toArchitect && !hasPrd && card.status !== "draft") {
-    return {
-      ok: false,
-      reason: `${card.key} has no PRD to break down yet. Write one on the Epic first.`,
-      revertTo: actual,
-    };
-  }
+  const needsPrd = toArchitect && !hasPrd && card.status !== "draft";
 
   const status = toArchitect && !hasPrd ? "waiting" : statusForUserDrop(t.to, met);
   const position = await placeAmong(projectId, t.to, card, t.position);
@@ -159,7 +221,7 @@ export async function applyTransition(
     status,
     stalledIn: null,
     position,
-    detached: card.kind === "ticket" ? (t.detached ?? false) : undefined,
+    detached,
   });
   await repo.rebalanceColumn(projectId, t.to);
 
@@ -169,17 +231,24 @@ export async function applyTransition(
     kind: card.kind,
     status,
     stalledIn: null,
-    stage: card.stage,
+    stage: needsPrd ? 1 : card.stage,
     blockedReason: null,
   });
 
   // Moving an Epic into To Do is the Architect Agent's trigger. It runs
   // detached so the drag returns immediately; progress arrives over SSE.
-  // One still waiting on its PRD is picked up when the PRD lands.
   if (toArchitect && hasPrd) {
     launch(
       () => decomposeEpic(projectId, card.id),
       `architect agent for ${card.key}`,
+    );
+  }
+  if (needsPrd) {
+    const detail = await repo.epicDetail(card.id);
+    await repo.setEpicRunnerJob(card.id, null);
+    launch(
+      () => runProductAgent(projectId, card.id, detail?.rawRequest ?? card.title),
+      `product agent for ${card.key}`,
     );
   }
 
@@ -246,4 +315,109 @@ export async function createBacklogItem(
   );
 
   return card;
+}
+
+/**
+ * How long a planning agent may go quiet before its Epic counts as stuck.
+ * An API agent finishes well inside a function's lifetime; a CLI agent has
+ * a runner job, and is waited on for as long as that runs.
+ */
+const QUIET_MS = 15 * 60_000;
+
+/**
+ * Whether an Epic's planning stopped and needs a person to start it again:
+ * it stalled, or it never got its PRD and nothing is still writing one.
+ */
+export function canRetryEpic(
+  card: BoardCard,
+  detail: { prd: unknown; runnerJob: string | null },
+  now = Date.now(),
+): boolean {
+  if (card.kind !== "epic") return false;
+  if (isStalled(card.status)) return true;
+  if (prdSchema.safeParse(detail.prd).success || detail.runnerJob) return false;
+  if (card.status !== "draft" && card.status !== "waiting") return false;
+  const since = Date.parse(card.updatedAt ?? card.createdAt ?? "");
+  return Number.isFinite(since) && now - since > QUIET_MS;
+}
+
+export type EpicActionResult = { ok: true } | { ok: false; reason: string; status: number };
+
+/**
+ * Starts a stalled Epic's planning again from where it stopped: the Product
+ * Agent when it has no PRD, the Architect Agent when it has one and sits in
+ * To Do. Either way the card leaves its stall and shows it is working.
+ */
+export async function retryEpic(projectId: string, epicId: string): Promise<EpicActionResult> {
+  const repo = repository();
+  const card = await repo.cardById(epicId);
+  const detail = await repo.epicDetail(epicId);
+  if (!card || card.kind !== "epic" || !detail) {
+    return { ok: false, reason: "That Epic no longer exists.", status: 404 };
+  }
+  if (!canRetryEpic(card, detail)) {
+    return { ok: false, reason: `${card.key} is still being worked on.`, status: 409 };
+  }
+
+  const column = columnFor(card.status, card.stalledIn);
+  const hasPrd = prdSchema.safeParse(detail.prd).success;
+  const inTodo = column === "todo";
+  // With no PRD, a To Do Epic waits for it and is then broken down; one in
+  // Backlog just gets its PRD.
+  const status = hasPrd ? (inTodo ? "ready" : "specified") : inTodo ? "waiting" : "draft";
+  const stage = hasPrd ? 2 : 1;
+
+  await repo.setEpicRunnerJob(epicId, null);
+  await repo.move({ cardId: epicId, kind: "epic", status, stalledIn: null, position: card.position });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: epicId,
+    kind: "epic",
+    status,
+    stalledIn: null,
+    stage,
+    blockedReason: null,
+  });
+
+  if (!hasPrd) {
+    launch(
+      () => runProductAgent(projectId, epicId, detail.rawRequest),
+      `product agent for ${card.key}`,
+    );
+  } else if (inTodo) {
+    launch(() => decomposeEpic(projectId, epicId), `architect agent for ${card.key}`);
+  }
+  return { ok: true };
+}
+
+/**
+ * Removes an Epic someone no longer wants, with its PRD and every ticket
+ * under it. Refused while one of its tickets has an agent writing code: that
+ * run would push to a branch nothing is tracking. Its GitHub issues close as
+ * not planned.
+ */
+export async function deleteEpic(projectId: string, epicId: string): Promise<EpicActionResult> {
+  const repo = repository();
+  const card = await repo.cardById(epicId);
+  const detail = await repo.epicDetail(epicId);
+  if (!card || card.kind !== "epic" || !detail) {
+    return { ok: false, reason: "That Epic no longer exists.", status: 404 };
+  }
+
+  const tickets = await repo.ticketsForEpic(epicId);
+  const running = tickets.filter((t) => t.status === "running");
+  if (running.length > 0) {
+    return {
+      ok: false,
+      reason: `${running.map((t) => t.key).join(", ")} ${running.length === 1 ? "is" : "are"} still running. Stop ${running.length === 1 ? "it" : "them"} first.`,
+      status: 409,
+    };
+  }
+
+  const issueNumbers = [detail.issueNumber, ...tickets.map((t) => t.issueNumber)].filter(
+    (n): n is number => n !== null,
+  );
+  await repo.deleteEpic(epicId);
+  await publish(projectId, { type: "card.deleted", cardId: epicId, kind: "epic", issueNumbers });
+  return { ok: true };
 }

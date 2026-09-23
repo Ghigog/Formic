@@ -4,6 +4,7 @@ import { repository } from "@/lib/db";
 import { prdSchema } from "@/lib/domain/entities";
 import { applyPrd } from "@/lib/agents/pipeline";
 import { activeProject } from "@/lib/board/project";
+import { canRetryEpic, deleteEpic, retryEpic } from "@/lib/board/service";
 
 /** The active project, if this epic is on it. Anyone else's epic is a 404. */
 async function projectOwning(epicId: string) {
@@ -37,6 +38,7 @@ export async function GET(
     rawRequest: detail.rawRequest,
     prd: detail.prd,
     children,
+    canRetry: epic ? canRetryEpic(epic, detail) : false,
   });
 }
 
@@ -62,4 +64,32 @@ export async function PATCH(
   await applyPrd(project.id, id, parsed.data.prd, true);
 
   return Response.json({ ok: true });
+}
+
+/** Starts a stalled Epic's planning again. */
+export async function POST(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const project = await projectOwning(id);
+  if (!project) return notFound();
+  const result = await retryEpic(project.id, id);
+  return result.ok
+    ? Response.json({ ok: true })
+    : Response.json({ error: result.reason }, { status: result.status });
+}
+
+/** Deletes an Epic, its PRD and its tickets. */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const project = await projectOwning(id);
+  if (!project) return notFound();
+  const result = await deleteEpic(project.id, id);
+  return result.ok
+    ? Response.json({ ok: true })
+    : Response.json({ error: result.reason }, { status: result.status });
 }

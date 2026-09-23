@@ -45,6 +45,11 @@ export interface MoveInput {
   position: number;
   /** Tickets only. Omitted leaves it as it was. */
   detached?: boolean;
+  /**
+   * Dropped somewhere it cannot work: that column, and what is wrong. The
+   * status above is then what is still true of it. Omitted clears it.
+   */
+  misplaced?: { in: ColumnId; reason: string } | null;
 }
 
 /** One message in a board's assistant conversation. */
@@ -247,6 +252,8 @@ export interface Repository {
   setEpicRunnerJob(epicId: string, job: string | null): Promise<void>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
+  /** Removes an Epic with its tickets, runs and dependencies. */
+  deleteEpic(epicId: string): Promise<void>;
   /** A planning stage stalled: the Epic stays in its column, with why. */
   stallEpic(
     epicId: string,

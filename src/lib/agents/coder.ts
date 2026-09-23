@@ -12,7 +12,7 @@ import type {
 } from "./ports";
 import { runCodingLoop } from "./coding-loop";
 import type { Workspace } from "@/lib/sandbox/workspace";
-import { CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
+import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
 
 /**
  * The two agents that write code. Same loop, different brief, and any
@@ -65,7 +65,13 @@ export class LoopCoderAgent implements CoderAgent {
       provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
-      prompt: `${taskBrief(input.task)}\n\nImplement it.`,
+      prompt: [
+        taskBrief(input.task),
+        "",
+        "Implement it.",
+        "",
+        `${ALREADY_DONE_RULE} To report it, call finish with already_done set to true and the evidence in detail.`,
+      ].join("\n"),
     });
   }
 }

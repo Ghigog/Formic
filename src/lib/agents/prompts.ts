@@ -41,6 +41,14 @@ Rules that are enforced, not advisory:
 - Do not commit, push, or touch git history. The platform does that after it has checked your diff.
 - Do not skip, delete or weaken a test to make a command pass.`;
 
+/**
+ * What a coding agent does when the ticket's work is already in the
+ * repository: a ticket written from a stale view, or one a person or another
+ * ticket already covered. Closing it keeps its dependents moving; a pull
+ * request with nothing in it, or a stall, would not.
+ */
+export const ALREADY_DONE_RULE = `If the repository already does everything this ticket asks, do not change anything to prove it. Check each acceptance criterion against the code (and its tests, where there are some) and run the project's checks. Only when every criterion is met, report the ticket as already done, with the evidence for each criterion: the file and what in it meets it. If any criterion is not met, implement what is missing as usual.`;
+
 export const CODER_BRIEF = `You implement one ticket in a repository, end to end.
 
 Work in this order: read enough of the repository to know where the change goes, make the smallest change that satisfies every acceptance criterion, run the project's checks, then call finish. Keep the change to what the ticket asks for; the file scope is narrow because another agent is working next to you.`;

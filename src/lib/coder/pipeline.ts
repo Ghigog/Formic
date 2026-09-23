@@ -176,6 +176,13 @@ export async function runCoderAgent(
 
     const changed = await checkout.raw.changedFiles();
 
+    if (changed.length === 0 && outcome.value.alreadyDone) {
+      const { closeAlreadyDone } = await import("@/lib/review/pipeline");
+      await closeAlreadyDone(projectId, ticket, outcome.value);
+      await run.finish(outcome);
+      return;
+    }
+
     if (changed.length === 0) {
       const reason = "The agent finished without changing anything.";
       await stallTicket(projectId, ticket, reason, {

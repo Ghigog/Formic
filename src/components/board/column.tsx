@@ -177,7 +177,7 @@ export function Column({
 
       {composer}
 
-      <Droppable droppableId={id} isDropDisabled={limited}>
+      <Droppable droppableId={id}>
         {(provided, snapshot) => (
           <ul
             ref={provided.innerRef}

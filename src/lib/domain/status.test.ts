@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canUserMove,
   columnFor,
-  isDraggable,
+  columnOf,
   isStalled,
   statusForUserDrop,
 } from "./status";
@@ -26,15 +26,14 @@ describe("columnFor", () => {
   });
 });
 
-describe("isDraggable", () => {
-  it("locks cards an agent currently owns", () => {
-    expect(isDraggable("running")).toBe(false);
-    expect(isDraggable("review")).toBe(false);
+describe("columnOf", () => {
+  it("shows a card where a person put it, even where it cannot work", () => {
+    expect(columnOf({ status: "ready", misplacedIn: "in_review" })).toBe("in_review");
   });
 
-  it("allows a human to recover a stalled card", () => {
-    expect(isDraggable("failed")).toBe(true);
-    expect(isDraggable("blocked")).toBe(true);
+  it("otherwise shows it where its status says", () => {
+    expect(columnOf({ status: "ready", misplacedIn: null })).toBe("todo");
+    expect(columnOf({ status: "failed", stalledIn: "in_progress" })).toBe("in_progress");
   });
 });
 

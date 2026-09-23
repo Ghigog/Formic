@@ -31,26 +31,39 @@ import type {
 } from "@/lib/domain/entities";
 import { planStepSchema } from "@/lib/domain/entities";
 import { z } from "zod";
-import { type ColumnId, type TicketStatus, columnFor } from "@/lib/domain/status";
+import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 type EpicRow = {
   id: string;
+  number: number | null;
   title: string;
   status: TicketStatus;
   stalledIn: ColumnId | null;
   stage: number;
   blockedReason: string | null;
+  misplacedIn: ColumnId | null;
+  misplacedReason: string | null;
   position: number;
   createdAt: Date;
   updatedAt: Date;
   tickets: Array<{ id: string; status: TicketStatus }>;
 };
 
-function epicKey(index: number): string {
-  return `EPIC-${index + 1}`;
+function epicKey(number: number): string {
+  return `EPIC-${number}`;
+}
+
+/**
+ * Each Epic's number. A stored one is kept; an Epic from before numbers
+ * were stored takes its place in creation order, which is what it showed
+ * before, so nothing on an existing board is renamed.
+ */
+function epicNumbers(epics: Array<{ id: string; number: number | null; createdAt: Date }>) {
+  const byAge = [...epics].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return new Map(byAge.map((e, i) => [e.id, e.number ?? i + 1]));
 }
 
 export class PrismaRepository implements Repository {
@@ -191,10 +204,11 @@ export class PrismaRepository implements Repository {
       },
     });
 
-    const epicCards: BoardCard[] = epics.map((epic: EpicRow, i: number) => ({
+    const numbers = epicNumbers(epics);
+    const epicCards: BoardCard[] = epics.map((epic: EpicRow) => ({
       id: epic.id,
       kind: "epic" as const,
-      key: epicKey(i),
+      key: epicKey(numbers.get(epic.id)!),
       title: epic.title,
       status: epic.status,
       stalledIn: epic.stalledIn,
@@ -209,6 +223,8 @@ export class PrismaRepository implements Repository {
       prNumber: null,
       prUrl: null,
       blockedReason: epic.blockedReason,
+      misplacedIn: epic.misplacedIn,
+      misplacedReason: epic.misplacedReason,
       costCents: 0,
       childCount: epic.tickets.length,
       doneCount: epic.tickets.filter((t) => t.status === "merged").length,
@@ -239,6 +255,8 @@ export class PrismaRepository implements Repository {
       prNumber: t.prNumber,
       prUrl: t.prUrl,
       blockedReason: t.blockedReason,
+      misplacedIn: t.misplacedIn,
+      misplacedReason: t.misplacedReason,
       costCents: t.costCents,
       childCount: 0,
       doneCount: 0,
@@ -258,9 +276,11 @@ export class PrismaRepository implements Repository {
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
     const db = prisma();
+    const number = await this.nextEpicNumber(input.projectId);
     const epic = await db.epic.create({
       data: {
         projectId: input.projectId,
+        number,
         title: input.title,
         rawRequest: input.rawRequest,
         position: input.position,
@@ -268,12 +288,11 @@ export class PrismaRepository implements Repository {
         stage: 1,
       },
     });
-    const count = await db.epic.count({ where: { projectId: input.projectId } });
 
     return {
       id: epic.id,
       kind: "epic",
-      key: epicKey(count - 1),
+      key: epicKey(number),
       title: epic.title,
       status: epic.status,
       stalledIn: epic.stalledIn,
@@ -292,6 +311,29 @@ export class PrismaRepository implements Repository {
       childCount: 0,
       doneCount: 0,
     };
+  }
+
+  /**
+   * One past the highest number the project has used. Epics from before
+   * numbers were stored are numbered first, so a new one never repeats a
+   * key already on the board.
+   */
+  private async nextEpicNumber(projectId: string): Promise<number> {
+    const db = prisma();
+    const epics = await db.epic.findMany({
+      where: { projectId },
+      select: { id: true, number: true, createdAt: true },
+    });
+    const numbers = epicNumbers(epics);
+    const unnumbered = epics.filter((e) => e.number === null);
+    if (unnumbered.length > 0) {
+      await db.$transaction(
+        unnumbered.map((e) =>
+          db.epic.update({ where: { id: e.id }, data: { number: numbers.get(e.id)! } }),
+        ),
+      );
+    }
+    return Math.max(0, ...numbers.values()) + 1;
   }
 
   async createTickets(inputs: CreateTicketInput[]): Promise<BoardCard[]> {
@@ -367,13 +409,13 @@ export class PrismaRepository implements Repository {
       status: input.status,
       stalledIn: input.stalledIn,
       position: input.position,
+      misplacedIn: input.misplaced?.in ?? null,
+      misplacedReason: input.misplaced?.reason ?? null,
+      // Out of a stall, the reason goes with it.
+      ...(input.stalledIn === null ? { blockedReason: null } : {}),
     };
     if (input.kind === "epic") {
-      await db.epic.update({
-        where: { id: input.cardId },
-        // Out of a stall, the reason goes with it.
-        data: { ...data, ...(input.stalledIn === null ? { blockedReason: null } : {}) },
-      });
+      await db.epic.update({ where: { id: input.cardId }, data });
     } else {
       await db.ticket.update({
         where: { id: input.cardId },
@@ -388,17 +430,17 @@ export class PrismaRepository implements Repository {
   async columnPositions(projectId: string, column: ColumnId): Promise<number[]> {
     const cards = await this.boardCards(projectId);
     return cards
-      .filter((c) => columnFor(c.status, c.stalledIn) === column)
+      .filter((c) => columnOf(c) === column)
       .map((c) => c.position)
       .sort((a, b) => a - b);
   }
 
   async cardById(id: string): Promise<BoardCard | null> {
     const db = prisma();
-    const epic = await db.epic.findUnique({ where: { id } });
+    const epic = await db.epic.findUnique({ where: { id }, select: { projectId: true } });
     if (epic) {
-      const project = await this.defaultProject();
-      const cards = await this.boardCards(project.id);
+      // Its own project's board: any other has no such card.
+      const cards = await this.boardCards(epic.projectId);
       return cards.find((c) => c.id === id) ?? null;
     }
     const ticket = await db.ticket.findUnique({
@@ -438,6 +480,8 @@ export class PrismaRepository implements Repository {
         stage: 2,
         stalledIn: null,
         blockedReason: null,
+        misplacedIn: null,
+        misplacedReason: null,
       },
     });
   }
@@ -446,8 +490,20 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     await db.epic.update({
       where: { id: epicId },
-      data: { showcase: markdown, stage: 8, stalledIn: null, blockedReason: null },
+      data: {
+        showcase: markdown,
+        stage: 8,
+        stalledIn: null,
+        blockedReason: null,
+        misplacedIn: null,
+        misplacedReason: null,
+      },
     });
+  }
+
+  async deleteEpic(epicId: string): Promise<void> {
+    // Tickets, their dependencies and every run cascade with it.
+    await prisma().epic.deleteMany({ where: { id: epicId } });
   }
 
   async stallEpic(
@@ -461,6 +517,8 @@ export class PrismaRepository implements Repository {
         stalledIn: stall.stalledIn,
         stage: stall.stage,
         blockedReason: stall.reason,
+        misplacedIn: null,
+        misplacedReason: null,
       },
     });
   }
@@ -569,6 +627,8 @@ export class PrismaRepository implements Repository {
         ...(plan !== undefined ? { plan: plan as never } : {}),
         // A merged ticket joins its epic's group in Done, wherever it sat.
         ...(rest.status === "merged" ? { detached: false } : {}),
+        // An agent moved it on: it goes where its status says.
+        ...(rest.status !== undefined ? { misplacedIn: null, misplacedReason: null } : {}),
         // Spend accumulates across a ticket's runs; everything else is a set.
         ...(costCents !== undefined ? { costCents: { increment: costCents } } : {}),
         ...(tokensIn !== undefined ? { tokensIn: { increment: tokensIn } } : {}),
@@ -777,7 +837,7 @@ export class PrismaRepository implements Repository {
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
     const db = prisma();
     const cards = (await this.boardCards(projectId))
-      .filter((c) => columnFor(c.status, c.stalledIn) === column)
+      .filter((c) => columnOf(c) === column)
       .sort(byPosition);
 
     if (!needsRebalance(cards.map((c) => c.position))) return;

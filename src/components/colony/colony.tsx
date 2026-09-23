@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { BoardCard } from "@/lib/domain/entities";
-import { columnFor } from "@/lib/domain/status";
+import { columnOf } from "@/lib/domain/status";
 import {
   BUG_COST,
   COLOR_UNLOCKS,
@@ -240,7 +240,7 @@ export function ColonyProvider({
   useEffect(() => {
     if (!loaded) return;
     const before = prev.current;
-    prev.current = new Map(cards.map((c) => [c.id, { status: c.status, col: columnFor(c.status, c.stalledIn) }]));
+    prev.current = new Map(cards.map((c) => [c.id, { status: c.status, col: columnOf(c) }]));
     const ciBefore = prevCi.current;
     prevCi.current = Object.fromEntries(Object.entries(extras).map(([k, v]) => [k, v?.ci]));
     const mergedIds = cards.filter((c) => c.status === "merged").map((c) => c.id);
@@ -254,7 +254,7 @@ export function ColonyProvider({
 
     for (const card of cards) {
       const was = before.get(card.id);
-      const col = columnFor(card.status, card.stalledIn);
+      const col = columnOf(card);
 
       if (!was) {
         if (isBug(card) && col === "backlog") later.push(() => penalty(card));
