@@ -14,6 +14,7 @@ import {
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { diagnose, lastWords } from "@/lib/agents/limits";
+import { planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo } from "@/lib/llm/providers";
 import type { ColumnId } from "@/lib/domain/status";
 import { failuresBrief, taskBrief } from "@/lib/agents/coder";
@@ -82,7 +83,7 @@ const CLI_RULES = `Rules that are enforced, not advisory:
 - Verify before you finish. Find the project's own check command and run it.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
-- When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why.`;
+- When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.`;
 
 export type RunnerState =
   | { ready: true }
@@ -202,6 +203,23 @@ async function whyItFailed(
 export function secretNameFor(agent: Pick<CliAgent, "presetId" | "info">): string {
   if (!agent.presetId) return agent.info.secretName;
   return `${agent.info.secretName}_${agent.presetId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}
+
+/**
+ * What a CLI agent's run leaves for the ticket view: it works out of sight
+ * in GitHub Actions, so its plan and its account of the work are read from
+ * its summary once it is done.
+ */
+async function recordCliWork(projectId: string, ticketId: string, summary: string): Promise<void> {
+  const steps = planFromSummary(summary);
+  if (steps.length > 0) {
+    await repository().updateTicket(ticketId, { plan: steps });
+    await publish(projectId, { type: "ticket.plan", ticketId, steps });
+  }
+  const text = summary.trim();
+  if (text) {
+    await publish(projectId, { type: "run.thought", runId: "", ticketId, kind: "text", text: text.slice(0, 4_000) });
+  }
 }
 
 function cap(text: string): string {
@@ -838,6 +856,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     await cleanUp();
 
     if (result.mode === "fix") {
+      await recordCliWork(projectId, ticket.id, change.messages.at(-1) ?? "");
       await publish(projectId, {
         type: "ci.status",
         ticketId: ticket.id,
@@ -849,6 +868,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     }
 
     const message = change.messages.at(-1) ?? "";
+    await recordCliWork(projectId, ticket.id, message);
     const [first, ...rest] = message.split("\n");
     const line = (first ?? "").trim();
     const summary =

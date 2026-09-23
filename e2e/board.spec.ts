@@ -266,3 +266,18 @@ test("a dropped card stays where it was dropped while the server answers", async
     await page.unrouteAll({ behavior: "wait" });
   });
 });
+
+test("a ticket opens its own view, not its Epic's", async ({ page }) => {
+  const [first] = await cardIds(page, "In Progress");
+  expect(first, "the demo board should have a ticket in progress").toBeTruthy();
+
+  await page.locator(`[data-rfd-draggable-id="${first}"]`).click();
+
+  const dialog = page.getByRole("dialog", { name: "Ticket detail" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("list", { name: "Ticket progress" })).toBeVisible();
+  await expect(dialog.getByText("Plan", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Thought process")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden();
+});

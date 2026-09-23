@@ -103,6 +103,74 @@ describe("the coding loop on an OpenAI-format provider", () => {
     expect(second.at(-1)).toMatchObject({ role: "tool", tool_call_id: "call_1" });
   });
 
+  it("shares its plan and its thinking with the board as it works", async () => {
+    fakeProvider([
+      {
+        role: "assistant",
+        content: "I'll plan this first.",
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: {
+              name: "update_plan",
+              arguments: JSON.stringify({
+                steps: [
+                  { step: "Read the handler", status: "in_progress" },
+                  { step: "Write the fix", status: "pending" },
+                ],
+              }),
+            },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_2",
+            type: "function",
+            function: {
+              name: "finish",
+              arguments: JSON.stringify({ summary: "done", detail: "d", verified_with: null }),
+            },
+          },
+        ],
+      },
+    ]);
+    const events: unknown[] = [];
+
+    const outcome = await runCodingLoop({
+      ctx: { ...ctx(), emit: (e) => events.push(e) },
+      workspace: new MemoryWorkspace(),
+      ticketId: "t-9",
+      role: "coder",
+      system: "sys",
+      prompt: "do it",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      apiKey: "sk-deepseek",
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(events).toContainEqual({
+      type: "run.thought",
+      runId: "run_1",
+      ticketId: "t-9",
+      kind: "text",
+      text: "I'll plan this first.",
+    });
+    expect(events).toContainEqual({
+      type: "ticket.plan",
+      ticketId: "t-9",
+      steps: [
+        { step: "Read the handler", status: "in_progress" },
+        { step: "Write the fix", status: "pending" },
+      ],
+    });
+  });
+
   it("refuses to start without a key rather than trying someone else's", async () => {
     const outcome = await runCodingLoop({
       ctx: ctx(),

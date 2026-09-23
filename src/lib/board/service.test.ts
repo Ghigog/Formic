@@ -10,7 +10,7 @@ vi.mock("@/lib/agents/pipeline", () => ({
 }));
 vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn() }));
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
-vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [] }));
+vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
 const { applyTransition } = await import("./service");
 const { repository } = await import("@/lib/db");

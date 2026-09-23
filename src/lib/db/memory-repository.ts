@@ -133,10 +133,26 @@ function projectOf(s: Store, card: BoardCard): string {
   return (epicId && s.epicProject.get(epicId)) || s.project.id;
 }
 
-export function seedMemory(cards: BoardCard[]): void {
+export function seedMemory(
+  cards: BoardCard[],
+  /** What a demo ticket says and the plan its agent is on, by card id. */
+  details: Record<string, { description: string; acceptanceCriteria: string[]; plan?: PlanStep[] }> = {},
+): void {
   const s = store();
   if (s.cards.size > 0) return;
   for (const card of cards) s.cards.set(card.id, { ...card });
+  for (const [cardId, d] of Object.entries(details)) {
+    s.ticketExtras.set(cardId, {
+      description: d.description,
+      acceptanceCriteria: d.acceptanceCriteria,
+      plan: d.plan,
+      branchName: null,
+      attempts: 0,
+      summary: null,
+      runnerJob: null,
+      issueNumber: null,
+    });
+  }
 }
 
 export class MemoryRepository implements Repository {

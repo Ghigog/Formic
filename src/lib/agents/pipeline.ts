@@ -59,12 +59,21 @@ export function startRun(
   // as it goes; finish() must then settle only the difference, or a run pays
   // for every turn twice and trips its own ceiling.
   let charged = 0;
+  let planWrites: Promise<void> = Promise.resolve();
 
   const ctx: AgentContext = {
     runId,
     projectId,
     signal,
     emit: (event) => {
+      // A plan is state, not only news: a ticket opened later shows it.
+      // Written in order, so a quick succession of updates ends on the last.
+      if (event.type === "ticket.plan") {
+        const { ticketId, steps } = event;
+        planWrites = planWrites
+          .then(() => repository().updateTicket(ticketId, { plan: steps }))
+          .catch((e) => console.error("[formic] could not save the plan:", e));
+      }
       // Fire and forget: an agent must not block on the event bus, and a
       // failed publish is not a reason to fail the run.
       void publish(projectId, event);

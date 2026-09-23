@@ -1,4 +1,4 @@
-import { AGENT_ROLES } from "./entities";
+import { AGENT_ROLES, type PlanStep } from "./entities";
 
 /**
  * Everything the client learns about asynchronously. Delivered over SSE by
@@ -48,6 +48,20 @@ export type FormicEvent =
       runId: string;
       stream: "stdout" | "stderr";
       line: string;
+    }
+  | {
+      /** What an agent thought or said between its actions on a ticket. */
+      type: "run.thought";
+      runId: string;
+      ticketId: string | null;
+      kind: "thinking" | "text";
+      text: string;
+    }
+  | {
+      /** The plan an agent is working a ticket through, as it stands now. */
+      type: "ticket.plan";
+      ticketId: string;
+      steps: PlanStep[];
     }
   | {
       type: "run.diff";

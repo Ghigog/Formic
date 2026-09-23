@@ -14,8 +14,8 @@ const LOG_TAIL = 200;
 export function useBoard(
   initialCards: BoardCard[],
   initialStats: AmbientStats,
-  /** Events that are not the board's own, such as an agent running out. */
-  onOther?: (event: FormicEvent) => void,
+  /** Every event, after the board has taken what it needs from it. */
+  onOther?: (event: FormicEvent, seq: number) => void,
 ) {
   const other = useRef(onOther);
   useEffect(() => {
@@ -43,7 +43,8 @@ export function useBoard(
   }, [refetch]);
 
   const onEvent = useCallback(
-    (event: FormicEvent) => {
+    (event: FormicEvent, seq: number) => {
+      other.current?.(event, seq);
       switch (event.type) {
         case "card.status":
         case "card.created":
@@ -110,7 +111,6 @@ export function useBoard(
           break;
 
         default:
-          other.current?.(event);
           break;
       }
     },

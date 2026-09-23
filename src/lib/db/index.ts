@@ -4,7 +4,7 @@ import { hasDatabase } from "./client";
 import { MemoryRepository, seedMemory } from "./memory-repository";
 import { PrismaRepository } from "./prisma-repository";
 import type { Repository } from "./repository";
-import { FIXTURE_CARDS } from "@/lib/fixtures/board";
+import { FIXTURE_CARDS, FIXTURE_TICKET_DETAILS } from "@/lib/fixtures/board";
 
 let cached: Repository | null = null;
 
@@ -16,7 +16,7 @@ export function repository(): Repository {
   } else {
     // No database configured: run on the in-memory store, pre-loaded with the
     // demo board so a fresh clone shows something real.
-    seedMemory(FIXTURE_CARDS);
+    seedMemory(FIXTURE_CARDS, FIXTURE_TICKET_DETAILS);
     cached = new MemoryRepository();
   }
   return cached;

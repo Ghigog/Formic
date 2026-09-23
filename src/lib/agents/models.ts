@@ -81,7 +81,7 @@ export function requestShape(
   model: string,
   options: { effort?: Effort; taskBudgetTokens?: number } = {},
 ): {
-  thinking?: { type: "adaptive" };
+  thinking?: { type: "adaptive"; display: "summarized" };
   betas: string[];
   fallbacks?: "default";
   outputConfig: {
@@ -115,7 +115,9 @@ export function requestShape(
   if (m.refusalFallbacks) betas.push(FALLBACK_BETA);
 
   return {
-    ...(m.adaptiveThinking ? { thinking: { type: "adaptive" as const } } : {}),
+    // Summarized, so the board can show what the agent is thinking; the
+    // default returns the blocks empty. Billed the same either way.
+    ...(m.adaptiveThinking ? { thinking: { type: "adaptive" as const, display: "summarized" as const } } : {}),
     ...(m.refusalFallbacks ? { fallbacks: "default" as const } : {}),
     betas,
     outputConfig,

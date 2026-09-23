@@ -53,6 +53,15 @@ describe("the ticket template", () => {
     expect(gherkin({ given: "x", when: "y", then: "z" })).toBe("Given x, when y, then z.");
   });
 
+  it("carries the story points onto the ticket, and refuses points off the scale", () => {
+    expect(toDraftTicket(spec).storyPoints).toBe(3);
+    const checked = checkDecomposition({
+      tickets: [{ ...spec, storyPoints: 4 }, { ...spec, key: "T-2", dependsOn: ["T-1"] }],
+    });
+    expect(checked.ok).toBe(false);
+    expect(!checked.ok && checked.correction).toContain("storyPoints");
+  });
+
   it("sends a ticket without the template back to the Architect", () => {
     const { userStory: _, ...noStory } = spec;
     const checked = checkDecomposition({ tickets: [noStory, { ...spec, key: "T-2", dependsOn: ["T-1"] }] });

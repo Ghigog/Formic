@@ -4,7 +4,7 @@ import { FALLBACK_BETA, TASK_BUDGET_BETA, requestShape } from "./models";
 describe("requestShape", () => {
   it("sends Opus 5 everything the pipelines use", () => {
     const shape = requestShape("claude-opus-5", { effort: "xhigh", taskBudgetTokens: 50_000 });
-    expect(shape.thinking).toEqual({ type: "adaptive" });
+    expect(shape.thinking).toEqual({ type: "adaptive", display: "summarized" });
     expect(shape.fallbacks).toBe("default");
     expect(shape.betas).toEqual([TASK_BUDGET_BETA, FALLBACK_BETA]);
     expect(shape.outputConfig).toEqual({

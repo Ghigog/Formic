@@ -52,6 +52,8 @@ export function useBoardEvents(
       "epic.showcase",
       "run.progress",
       "run.log",
+      "run.thought",
+      "ticket.plan",
       "run.diff",
       "run.usage",
       "run.finished",
