@@ -52,6 +52,8 @@ interface TicketExtras {
   attempts: number;
   summary: string | null;
   runnerJob: string | null;
+  /** When that job was sent. */
+  runnerJobAt?: Date | null;
   issueNumber: number | null;
   plan?: PlanStep[];
 }
@@ -69,6 +71,7 @@ interface Store {
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
   epicJobs: Map<string, string>;
+  epicJobTimes: Map<string, Date>;
   epicIssues: Map<string, number>;
   /** The highest Epic number each project has used, deleted ones included. */
   epicNumbers: Map<string, number>;
@@ -101,6 +104,7 @@ function store(): Store {
     existing.users ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.prdTimes ??= new Map();
+    existing.epicJobTimes ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -121,6 +125,7 @@ function store(): Store {
     rawRequests: new Map(),
     showcases: new Map(),
     epicJobs: new Map(),
+    epicJobTimes: new Map(),
     epicIssues: new Map(),
     epicNumbers: new Map(),
     events: [],
@@ -163,7 +168,7 @@ export function seedMemory(
   }
 }
 
-/** Epic cards whose agent was set from a runner job, to clear when it ends. */
+/** Cards whose agent was set from a run or a runner job, to clear when it ends. */
 const fromJob = new WeakSet<BoardCard>();
 
 export class MemoryRepository implements Repository {
@@ -263,16 +268,45 @@ export class MemoryRepository implements Repository {
     const cards = [...s.cards.values()].filter(
       (c) => projectId === undefined || projectOf(s, c) === projectId,
     );
+    // Runs still going here, by the card they are for.
+    const live = new Map<string, { role: BoardCard["agentRole"]; since: Date }>();
+    for (const run of s.runs.values()) {
+      if (run.status !== "running" && run.status !== "queued") continue;
+      const id = run.ticketId ?? run.epicId;
+      if (id) live.set(id, { role: run.role, since: run.startedAt });
+    }
     for (const card of cards) {
-      if (card.kind !== "epic") continue;
-      // A CLI agent's job out on GitHub Actions is the agent working on it.
-      if (s.epicJobs.has(card.id)) {
-        card.agentRole =
-          card.status === "merged" ? "pm" : card.stage >= 2 ? "architect" : "product";
+      // An agent at work: a run here, or a CLI agent's job on GitHub Actions,
+      // whose run here ends at dispatch.
+      const job =
+        card.kind === "epic"
+          ? s.epicJobs.has(card.id)
+            ? {
+                role:
+                  card.status === "merged"
+                    ? ("pm" as const)
+                    : card.stage >= 2
+                      ? ("architect" as const)
+                      : ("product" as const),
+                since: s.epicJobTimes.get(card.id) ?? null,
+              }
+            : null
+          : s.ticketExtras.get(card.id)?.runnerJob
+            ? {
+                role: card.status === "review" ? ("reviewer" as const) : ("coder" as const),
+                since: s.ticketExtras.get(card.id)?.runnerJobAt ?? null,
+              }
+            : null;
+      const working = live.get(card.id) ?? job;
+      if (working) {
+        card.agentRole = working.role;
+        card.workingSince = working.since?.toISOString() ?? null;
         fromJob.add(card);
       } else if (fromJob.delete(card)) {
         card.agentRole = null;
+        card.workingSince = null;
       }
+      if (card.kind !== "epic") continue;
       const children = cards.filter((c) => c.epicId === card.id);
       card.childCount = children.length;
       card.doneCount = children.filter((c) => c.status === "merged").length;
@@ -424,8 +458,13 @@ export class MemoryRepository implements Repository {
 
   async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
     const s = store();
-    if (job) s.epicJobs.set(epicId, job);
-    else s.epicJobs.delete(epicId);
+    if (job) {
+      s.epicJobs.set(epicId, job);
+      s.epicJobTimes.set(epicId, new Date());
+    } else {
+      s.epicJobs.delete(epicId);
+      s.epicJobTimes.delete(epicId);
+    }
   }
 
   async setEpicPrd(epicId: string, prd: unknown): Promise<void> {
@@ -615,7 +654,10 @@ export class MemoryRepository implements Repository {
     if (update.branchName !== undefined) extras.branchName = update.branchName;
     if (update.attempts !== undefined) extras.attempts = update.attempts;
     if (update.summary !== undefined) extras.summary = update.summary;
-    if (update.runnerJob !== undefined) extras.runnerJob = update.runnerJob;
+    if (update.runnerJob !== undefined) {
+      extras.runnerJob = update.runnerJob;
+      extras.runnerJobAt = update.runnerJob ? new Date() : null;
+    }
     if (update.issueNumber !== undefined) extras.issueNumber = update.issueNumber;
     if (update.plan !== undefined) extras.plan = update.plan;
   }

@@ -37,3 +37,21 @@ export function formatCountdown(ms: number): string {
   const clock = h > 0 || days > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
   return days > 0 ? `${days}d ${clock}` : clock;
 }
+
+/**
+ * Milliseconds since `since`, ticking each second: how long an agent has
+ * been at a card. Null when nothing is working on it.
+ */
+export function useElapsed(since: string | null | undefined): number | null {
+  const start = since ? Date.parse(since) : NaN;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (Number.isNaN(start)) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [start]);
+
+  if (Number.isNaN(start)) return null;
+  return Math.max(0, now - start);
+}

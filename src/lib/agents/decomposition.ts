@@ -90,7 +90,7 @@ export function toDraftTicket(spec: TicketSpec): DraftTicket {
 }
 
 export const decompositionSchema = z.object({
-  tickets: z.array(ticketSpecSchema).min(2).max(12),
+  tickets: z.array(ticketSpecSchema).min(1).max(12),
 });
 
 /** Attempts before the Architect Agent gives up and asks for a human. */

@@ -24,7 +24,7 @@ Rules:
 - Tickets that could run concurrently must have disjoint scopes. If two tickets genuinely need the same directory, make one depend on the other instead.
 - Shared files (package.json, lockfiles, tsconfig.json, the Prisma schema) serialise everything that touches them. Concentrate them in as few tickets as possible.
 - dependsOn refers to the key of another ticket in this same response.
-- Between 2 and 12 tickets. Each one must be a coherent, independently reviewable change.`;
+- Between 1 and 12 tickets. Each one must be a coherent, independently reviewable change.`;
 
 export const SHOWCASE_BRIEF = `You write the closing showcase for a completed Epic: what shipped, and how someone would try it.
 
@@ -76,7 +76,9 @@ export const ENGINEERING_PRACTICES = `Engineering practices. Defaults, not dogma
  * How tickets are written, for the agents that write them. The shape itself
  * is enforced by the ticket schema; this says what goes in each part.
  */
-export const TICKET_TEMPLATE = `How to write each ticket:
+export const TICKET_TEMPLATE = `Size the breakdown to the work. As few tickets as the change allows: a small change is one ticket, and work one agent can finish in one pull request is not split. Add a ticket only where it lets work run in parallel or keeps a review small. Keep every field short: context and description in a sentence or two, a handful of requirements, and two to four acceptance scenarios.
+
+How to write each ticket:
 - userStory: who wants it, what they would like to do, and why. "As a <role>, I'd like to <capability>, so that <benefit>." Use the product's own roles, not "user" when a sharper one exists.
 - context: why this change exists, the problem or motivation.
 - description: what the change is, in the domain's own words.
@@ -85,7 +87,12 @@ export const TICKET_TEMPLATE = `How to write each ticket:
 - storyPoints: the estimate on the Fibonacci scale, 1, 2, 3, 5, 8 or 13, relative to the other tickets. Past 8, consider splitting the ticket.`
 
 /** What the Product Agent writes to, whatever its prompt says. */
-export const PRODUCT_CONVENTIONS = `Conventions:
+export const PRODUCT_CONVENTIONS = `Length: size the PRD to the request, never the other way round. The next agent reads every word before it can start, so padding makes the work slower, not better.
+- A small request (one behaviour, one screen, a fix) gets a one-sentence summary, a one or two sentence problem, two to four scope items and two to four success criteria. Leave technicalContext and userStories empty unless one line truly helps.
+- Only a large, multi-part feature earns more, and even then aim for under 500 words in all.
+- One line per list item. Do not restate the request, do not list open questions, and where the request is ambiguous pick the obvious reading and state it in one line.
+
+Conventions:
 - Write userStories as "As a <role>, I'd like to <capability>, so that <benefit>."
 - Write successCriteria so they can become Gherkin scenarios: observable outcomes, not implementation details.
 - Use the product's own vocabulary (its ubiquitous language), the same words the code and the team use.`;

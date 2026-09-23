@@ -16,6 +16,7 @@ import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
 import { isBug, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
+import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
 
 /**
  * Display-only detail that hangs off a card but is not part of the domain
@@ -208,14 +209,32 @@ export const EPIC_WORK: Partial<Record<AgentRole, string>> = {
   pm: "PM Agent is writing the showcase…",
 };
 
+/**
+ * How long the agent on a card has been at it, ticking. Shown only while one
+ * is working, so a card sitting idle does not look busy.
+ */
+export function WorkTimer({ since, className }: { since?: string | null; className?: string }) {
+  const ms = useElapsed(since);
+  if (ms === null) return null;
+  return (
+    <span
+      title="Time the agent has been working on this"
+      className={cn("text-muted font-mono text-[10px] tabular-nums", className)}
+    >
+      {formatCountdown(ms)}
+    </span>
+  );
+}
+
 /** A live line on an Epic while one of its planning agents works. */
 function EpicWorking({ card }: { card: BoardCard }) {
   const label = card.agentRole ? EPIC_WORK[card.agentRole] : undefined;
   if (!label) return null;
   return (
-    <span className="text-ochre-text inline-flex items-center gap-1.5 text-[11px]">
+    <span className="text-ochre-text flex items-center gap-1.5 text-[11px]">
       <span aria-hidden className="bg-ochre pulse-dot size-[5px] shrink-0 rounded-full" />
       {label}
+      <WorkTimer since={card.workingSince} className="ml-auto" />
     </span>
   );
 }
@@ -457,10 +476,12 @@ function RunningCard({
             </StatusChip>
           </span>
         )}
-        {extras.elapsed && (
+        {extras.elapsed ? (
           <span className="text-muted font-mono text-[10px] tabular-nums">
             {extras.elapsed}
           </span>
+        ) : (
+          <WorkTimer since={card.workingSince} />
         )}
       </div>
 
@@ -528,6 +549,14 @@ function ReviewCard({
         )}
         {extras.reviewState && (
           <StatusChip tone="rust">{extras.reviewState}</StatusChip>
+        )}
+        {card.workingSince && agentLabel && (
+          <span className="inline-flex items-center gap-1.5">
+            <StatusChip tone="clay" pulsing>
+              {agentLabel}
+            </StatusChip>
+            <WorkTimer since={card.workingSince} />
+          </span>
         )}
       </div>
 
