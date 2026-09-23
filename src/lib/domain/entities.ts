@@ -151,6 +151,8 @@ export interface BoardCard {
   stage: number;
   position: number;
   epicId: string | null;
+  /** A ticket the user pulled out of its epic's group. Renders on its own. */
+  detached?: boolean;
   size: TicketSize | null;
   agentRole: AgentRole | null;
   model: string | null;

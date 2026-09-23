@@ -75,6 +75,33 @@ export async function applyTransition(
     };
   }
 
+  // A reorder within a column changes where the card sits and nothing else:
+  // status, stall and agents all stay as they are. Without this, nudging an
+  // epic within To Do re-ran its Architect Agent, and nudging a specified
+  // backlog epic reset it to draft.
+  if (actual === t.to) {
+    const position = await placeAmong(projectId, t.to, card, t.position);
+    await repo.move({
+      cardId: card.id,
+      kind: card.kind,
+      status: card.status,
+      stalledIn: card.stalledIn,
+      position,
+      detached: card.kind === "ticket" ? (t.detached ?? false) : undefined,
+    });
+    await repo.rebalanceColumn(projectId, t.to);
+    await publish(projectId, {
+      type: "card.status",
+      cardId: card.id,
+      kind: card.kind,
+      status: card.status,
+      stalledIn: card.stalledIn,
+      stage: card.stage,
+      blockedReason: card.blockedReason,
+    });
+    return { ok: true, status: card.status, runId: null };
+  }
+
   const verdict = canUserMove(actual, t.to);
   if (!verdict.ok) {
     return { ok: false, reason: verdict.reason, revertTo: actual };
@@ -105,14 +132,7 @@ export async function applyTransition(
   }
 
   const status = statusForUserDrop(t.to, met);
-  const positions = (await repo.columnPositions(projectId, t.to)).filter(
-    (p) => p !== card.position,
-  );
-  const index = positions.findIndex((p) => p > t.position);
-  const position = positionForIndex(
-    positions,
-    index === -1 ? positions.length : index,
-  );
+  const position = await placeAmong(projectId, t.to, card, t.position);
 
   await repo.move({
     cardId: card.id,
@@ -120,6 +140,7 @@ export async function applyTransition(
     status,
     stalledIn: null,
     position,
+    detached: card.kind === "ticket" ? (t.detached ?? false) : undefined,
   });
   await repo.rebalanceColumn(projectId, t.to);
 
@@ -167,6 +188,24 @@ export async function applyTransition(
   }
 
   return { ok: true, status, runId: null };
+}
+
+/**
+ * The client's proposed position, re-derived against the server's column so
+ * a card that moved meanwhile cannot produce a collision: the card lands
+ * between the same two neighbours the client saw.
+ */
+async function placeAmong(
+  projectId: string,
+  column: ColumnId,
+  card: BoardCard,
+  proposed: number,
+): Promise<number> {
+  const positions = (await repository().columnPositions(projectId, column)).filter(
+    (p) => p !== card.position,
+  );
+  const index = positions.findIndex((p) => p > proposed);
+  return positionForIndex(positions, index === -1 ? positions.length : index);
 }
 
 /**

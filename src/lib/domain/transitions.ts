@@ -17,6 +17,8 @@ export const cardTransitionSchema = z.object({
   to: z.enum(COLUMNS),
   /** Fractional index within the destination column. */
   position: z.number(),
+  /** Tickets: dropped outside their epic's group, so they stand alone. */
+  detached: z.boolean().optional(),
   /** Who moved it. Agents set this to their role name. */
   actor: z.enum(["user", "agent", "system"]).default("user"),
 });

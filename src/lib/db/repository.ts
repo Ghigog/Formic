@@ -38,6 +38,8 @@ export interface MoveInput {
   status: TicketStatus;
   stalledIn: ColumnId | null;
   position: number;
+  /** Tickets only. Omitted leaves it as it was. */
+  detached?: boolean;
 }
 
 /** Everything a coding agent and its pipeline need about one ticket. */

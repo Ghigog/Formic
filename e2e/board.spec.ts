@@ -5,7 +5,10 @@ import {
   column,
   columnOf,
   dragCardTo,
+  dragCardToBottom,
+  dropzone,
   gotoBoard,
+  idForKey,
   withCardReturned,
 } from "./board";
 
@@ -114,4 +117,33 @@ test("the Backlog composer captures a request", async ({ page }) => {
     .poll(async () => (await cardIds(page, "Backlog")).length)
     .toBeGreaterThan(before);
   await expect(page.getByText("Rate-limit the merge queue")).toBeVisible();
+});
+
+test("a ticket dragged out of its epic stays out, in To Do", async ({ page }) => {
+  const id = await idForKey(page, "PROT-07");
+  const standalone = dropzone(page, "To Do").locator(
+    `> li[data-rfd-draggable-id="${id}"]`,
+  );
+  await expect(standalone, "PROT-07 should start inside EPIC-03").toHaveCount(0);
+
+  try {
+    await dragCardToBottom(page, id, "To Do");
+    await expect(standalone).toHaveCount(1);
+
+    // Still there after a reload: the server kept it, not just the tab.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(standalone).toHaveCount(1);
+  } finally {
+    await page.request.post("/api/transitions", {
+      data: {
+        cardId: id,
+        kind: "ticket",
+        from: "todo",
+        to: "todo",
+        position: 0,
+        detached: false,
+        actor: "user",
+      },
+    });
+  }
 });

@@ -186,6 +186,7 @@ export class MemoryRepository implements Repository {
     card.status = input.status;
     card.stalledIn = input.stalledIn;
     card.position = input.position;
+    if (input.detached !== undefined) card.detached = input.detached;
   }
 
   async columnPositions(_projectId: string, column: ColumnId): Promise<number[]> {
@@ -276,6 +277,8 @@ export class MemoryRepository implements Repository {
     if (!card) return;
 
     if (update.status !== undefined) card.status = update.status;
+    // A merged ticket joins its epic's group in Done, wherever it sat.
+    if (update.status === "merged") card.detached = false;
     if (update.stalledIn !== undefined) card.stalledIn = update.stalledIn;
     if (update.stage !== undefined) card.stage = update.stage;
     if (update.prNumber !== undefined) card.prNumber = update.prNumber;

@@ -117,6 +117,7 @@ export class PrismaRepository implements Repository {
       stage: t.stage,
       position: t.position,
       epicId: t.epicId,
+      detached: t.detached,
       size: t.size,
       agentRole: t.runs[0]?.role ?? null,
       model: t.runs[0]?.model ?? null,
@@ -246,7 +247,13 @@ export class PrismaRepository implements Repository {
     if (input.kind === "epic") {
       await db.epic.update({ where: { id: input.cardId }, data });
     } else {
-      await db.ticket.update({ where: { id: input.cardId }, data });
+      await db.ticket.update({
+        where: { id: input.cardId },
+        data: {
+          ...data,
+          ...(input.detached !== undefined ? { detached: input.detached } : {}),
+        },
+      });
     }
   }
 
@@ -371,6 +378,8 @@ export class PrismaRepository implements Repository {
       where: { id: ticketId },
       data: {
         ...rest,
+        // A merged ticket joins its epic's group in Done, wherever it sat.
+        ...(rest.status === "merged" ? { detached: false } : {}),
         // Spend accumulates across a ticket's runs; everything else is a set.
         ...(costCents !== undefined ? { costCents: { increment: costCents } } : {}),
         ...(tokensIn !== undefined ? { tokensIn: { increment: tokensIn } } : {}),

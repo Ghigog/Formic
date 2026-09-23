@@ -110,6 +110,8 @@ model Ticket {
   stalledIn ColumnId?
   stage     Int          @default(3)
   position  Float
+  /// Pulled out of its epic's group by a human. Only To Do reads it.
+  detached  Boolean      @default(false)
 
   branchName    String?
   /// One line describing what the Coder Agent actually changed. Feeds the

@@ -133,7 +133,9 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
         };
       }
 
-      void refetch();
+      // Awaited so the board swaps its optimistic copy for fresh server state
+      // in one render, rather than flashing the card back where it came from.
+      await refetch();
       return result;
     },
     [refetch],
