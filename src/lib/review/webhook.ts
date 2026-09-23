@@ -1,6 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { RUNNER_WORKFLOW_NAME, parseRunTitle, type RunnerMode } from "@/lib/runner/workflow";
+import {
+  RUNNER_WORKFLOW_NAME,
+  RUNNER_WORKFLOW_PATH,
+  parseRunTitle,
+  type RunnerMode,
+} from "@/lib/runner/workflow";
 
 /**
  * The GitHub webhook boundary.
@@ -114,7 +119,14 @@ export function interpret(event: string, payload: unknown): WebhookSignal[] {
       const run = body.workflow_run as Record<string, unknown> | undefined;
       if (!run || action !== "completed") return [];
       // Formic's own runner is not CI. Its result is the agent's work.
-      if (run.name === RUNNER_WORKFLOW_NAME) {
+      // Known by its file: a run's `name` is its run-name, the per-run
+      // title, not the workflow's name.
+      const path = String(run.path ?? "");
+      if (
+        path === RUNNER_WORKFLOW_PATH ||
+        path.startsWith(`${RUNNER_WORKFLOW_PATH}@`) ||
+        run.name === RUNNER_WORKFLOW_NAME
+      ) {
         const parsed = parseRunTitle(String(run.display_title ?? ""));
         if (!parsed) return [];
         return [

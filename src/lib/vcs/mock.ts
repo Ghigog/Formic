@@ -10,6 +10,7 @@ import {
   type Comparison,
   type IssuePatch,
   type IssueRef,
+  type WorkflowRunRef,
   STAGING_PREFIX,
 } from "./types";
 
@@ -47,6 +48,8 @@ interface MockRepo {
   /** Head sha to what that commit changed relative to its base. */
   commits: Map<string, { files: string[]; message: string }>;
   issues: Map<number, MockIssue>;
+  /** Workflow runs by title, as a test says they ended. */
+  runs: Map<string, WorkflowRunRef>;
   labels: Set<string>;
   /** Comments by pull request or issue number. */
   comments: Map<number, string[]>;
@@ -71,6 +74,7 @@ function repo(): MockRepo {
     dispatches: [],
     commits: new Map(),
     issues: new Map(),
+    runs: new Map(),
     labels: new Set(),
     comments: new Map(),
   };
@@ -192,6 +196,10 @@ export class MockVcsClient implements VcsClient {
     const child = [...repo().issues.values()].find((i) => i.id === childId);
     if (!parent || !child) throw new Error("No such mock issue.");
     parent.subIssues.push(child.number);
+  }
+
+  async findRun(_file: string, title: string): Promise<WorkflowRunRef | null> {
+    return repo().runs.get(title) ?? null;
   }
 
   async ensureLabel(name: string): Promise<void> {

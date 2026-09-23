@@ -49,6 +49,7 @@ import {
   cardOfJob,
   isAnswerMode,
   jobId,
+  runTitle,
   runnerWorkflow,
   type AnswerMode,
   type CodeMode,
@@ -598,6 +599,39 @@ export async function startCliAsk(input: {
     const { finishCliAnswer } = await import("@/lib/assistant/turn");
     await finishCliAnswer(input.messageId, null, started.reason);
   }
+}
+
+/** When each pending answer was last looked up on GitHub, to go easy on the API. */
+const lastLooked = new Map<string, number>();
+const LOOK_EVERY_MS = 15_000;
+
+/**
+ * Collects a CLI agent's answer without waiting for the webhook: asks
+ * GitHub whether its run has finished. The webhook is the fast path; this
+ * is the one that cannot be missed, so a lost delivery or an app that is
+ * not subscribed to workflow runs never leaves a question hanging.
+ */
+export async function collectCliAsk(projectId: string, messageId: string): Promise<void> {
+  const message = await repository().assistantMessage(messageId);
+  if (!message?.runnerJob || message.status !== "pending") return;
+  const now = Date.now();
+  if (now - (lastLooked.get(messageId) ?? 0) < LOOK_EVERY_MS) return;
+  lastLooked.set(messageId, now);
+
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  const run = await client
+    .findRun(RUNNER_WORKFLOW_FILE, runTitle("ask", "assistant", message.runnerJob))
+    .catch(() => null);
+  if (!run || run.status !== "completed") return;
+  lastLooked.delete(messageId);
+  await completeCliRun(projectId, {
+    job: message.runnerJob,
+    mode: "ask",
+    conclusion: run.conclusion ?? "failure",
+    url: run.url,
+  });
 }
 
 async function completeCliAsk(projectId: string, result: RunnerResult): Promise<void> {
