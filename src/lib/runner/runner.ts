@@ -194,6 +194,15 @@ async function whyItFailed(
   return `${diagnosis.message}${log}`;
 }
 
+/**
+ * The Actions secret a saved agent's sign-in lives in: its own, so two
+ * Claude accounts on one repository never swap tokens between runs.
+ */
+export function secretNameFor(agent: Pick<CliAgent, "presetId" | "info">): string {
+  if (!agent.presetId) return agent.info.secretName;
+  return `${agent.info.secretName}_${agent.presetId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}
+
 function cap(text: string): string {
   return text.length > MAX_PROMPT ? `${text.slice(0, MAX_PROMPT)}\n\n[cut short]` : text;
 }
@@ -251,7 +260,8 @@ async function dispatch(input: {
     }
 
     // Set on every run, so a replaced token takes effect on the next one.
-    await client.setSecret(agent.info.secretName, agent.credential);
+    const secret = secretNameFor(agent);
+    await client.setSecret(secret, agent.credential);
 
     await input.record(input.job);
     await client.dispatchWorkflow(RUNNER_WORKFLOW_FILE, input.baseBranch, {
@@ -261,6 +271,7 @@ async function dispatch(input: {
       cli: agent.info.cli,
       model: agent.model ?? "",
       from: input.from,
+      secret,
       prompt: cap(input.prompt),
     });
     return { ok: true };

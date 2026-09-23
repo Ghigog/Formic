@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { completeCliRun } from "./runner";
+import { completeCliRun, secretNameFor } from "./runner";
 import {
   ANSWER_PATH,
   RUNNER_SETUP_BRANCH,
@@ -283,20 +283,22 @@ describe("starting a CLI agent", () => {
     expect(runner.secrets.size).toBe(0);
   });
 
-  it("stores the plan token as a secret and dispatches the workflow", async () => {
-    await useClaudeCode();
+  it("stores the plan token as the agent's own secret and dispatches the workflow", async () => {
+    const preset = await useClaudeCode();
     const base = await installRunner();
     const ticket = await seedTicket();
 
     await runCoderAgent(PROJECT, ticket.id);
 
     const runner = MockVcsClient.runner();
-    expect(runner.secrets.get("FORMIC_CLAUDE_CODE_TOKEN")).toBe(TOKEN);
+    const secret = secretNameFor({ presetId: preset.id, info: { secretName: "FORMIC_CLAUDE_CODE_TOKEN" } as never });
+    expect(secret).toMatch(/^FORMIC_CLAUDE_CODE_TOKEN_[A-Z0-9_]+$/);
+    expect(runner.secrets.get(secret)).toBe(TOKEN);
     expect(runner.dispatches).toHaveLength(1);
     const { file, ref, inputs } = runner.dispatches[0]!;
     expect(file).toBe("formic-agent.yml");
     expect(ref).toBe(base);
-    expect(inputs).toMatchObject({ mode: "implement", ticket: "T-1", cli: "claude", from: base });
+    expect(inputs).toMatchObject({ mode: "implement", ticket: "T-1", cli: "claude", from: base, secret });
     expect(inputs.prompt).toContain("Implement the ticket.");
     expect(inputs.prompt).toContain("src/lib/feature");
     expect(JSON.stringify(inputs)).not.toContain(TOKEN);
@@ -304,6 +306,23 @@ describe("starting a CLI agent", () => {
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.status).toBe("running");
     expect(after.runnerJob).toBe(inputs.job);
+  });
+
+  it("keeps two accounts on the same CLI in separate secrets", async () => {
+    const work = await useClaudeCode("in_progress");
+    const personal = await savePreset({
+      name: "personal-claude",
+      provider: "claude-code",
+      model: "",
+      prompt: "Review it.",
+      apiKey: "sk-ant-oat01-personal-2222",
+    });
+    await repository().setColumnAgent(PROJECT, "backlog", personal.id);
+
+    const a = (await cliAgentFor(PROJECT, "in_progress"))!;
+    const b = (await cliAgentFor(PROJECT, "backlog"))!;
+    expect(a.presetId).toBe(work.id);
+    expect(secretNameFor(a)).not.toBe(secretNameFor(b));
   });
 
   it("refuses without a token", async () => {

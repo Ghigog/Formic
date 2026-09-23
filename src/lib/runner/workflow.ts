@@ -21,7 +21,7 @@ export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
 /** Bumped whenever the workflow changes, so old copies get replaced. */
-export const RUNNER_VERSION = "formic-runner: v2";
+export const RUNNER_VERSION = "formic-runner: v3";
 /** Where the setup pull request comes from. */
 export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 
@@ -78,7 +78,9 @@ export function attemptOfJob(job: string): number {
  * The workflow itself. Inputs reach the shell through `env:` only, never
  * through `${{ }}` inside a script: the prompt is ticket text, and ticket
  * text spliced into bash is a script injection. Each agent gets only its own
- * secret.
+ * secret: each saved agent has one of its own, named by the `secret` input,
+ * so two accounts on the same CLI never overwrite each other mid-run. Only
+ * that CLI's FORMIC_ secrets can be named, never the repository's others.
  */
 export function runnerWorkflow(): string {
   return `# ${RUNNER_VERSION}
@@ -110,6 +112,9 @@ on:
         default: ""
       from:
         description: Branch to start from
+        required: true
+      secret:
+        description: The Actions secret holding this agent's sign-in
         required: true
       prompt:
         description: What to do
@@ -157,9 +162,9 @@ jobs:
           FORMIC_SUMMARY: \${{ runner.temp }}/formic-summary.md
           FORMIC_OUTPUT: \${{ runner.temp }}/formic-answer.md
           FORMIC_STDOUT: \${{ runner.temp }}/formic-stdout.md
-          CLAUDE_CODE_OAUTH_TOKEN: \${{ inputs.cli == 'claude' && secrets.FORMIC_CLAUDE_CODE_TOKEN || '' }}
-          CODEX_CREDENTIAL: \${{ inputs.cli == 'codex' && secrets.FORMIC_CODEX_AUTH || '' }}
-          GEMINI_API_KEY: \${{ inputs.cli == 'gemini' && secrets.FORMIC_GEMINI_API_KEY || '' }}
+          CLAUDE_CODE_OAUTH_TOKEN: \${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
+          CODEX_CREDENTIAL: \${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}
+          GEMINI_API_KEY: \${{ inputs.cli == 'gemini' && startsWith(inputs.secret, 'FORMIC_GEMINI_API_KEY') && secrets[inputs.secret] || '' }}
         run: |
           set -euo pipefail
           case "$CLI" in
