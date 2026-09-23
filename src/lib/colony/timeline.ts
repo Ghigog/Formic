@@ -1,5 +1,5 @@
 import type { BoardCard } from "@/lib/domain/entities";
-import { epicBonus, gradeOf, levelOf, mergePoints, pointsOf, type Ledger } from "./game";
+import { epicBonus, gradeOf, levelOf, mergePoints, pointsOf } from "./game";
 
 /**
  * The timeline: a burndown of story points over a fixed window, the epics as
@@ -93,7 +93,7 @@ function dayOf(iso: string | null | undefined, start: Date): number | null {
   return Math.round((midnight(d).getTime() - start.getTime()) / DAY_MS);
 }
 
-export function buildTimeline(cards: BoardCard[], ledger: Ledger, at: Date = new Date()): Timeline {
+export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeline {
   const start = new Date(midnight(at).getTime() - TODAY * DAY_MS);
   // DST moves a midnight by an hour; re-anchor so day arithmetic stays whole.
   const startDay = midnight(new Date(start.getTime() + DAY_MS / 2));
@@ -113,18 +113,21 @@ export function buildTimeline(cards: BoardCard[], ledger: Ledger, at: Date = new
   for (const t of tickets) {
     const sp = pointsOf(t);
     const merged = t.status === "merged";
-    const mergedDay = merged ? Math.min(TODAY, dayOf(t.updatedAt, startDay) ?? TODAY) : null;
+    // Older tickets merged before the server stamped merges: their last change.
+    const mergedDay = merged
+      ? Math.min(TODAY, dayOf(t.mergedAt ?? t.updatedAt, startDay) ?? TODAY)
+      : null;
     if (mergedDay !== null && mergedDay < 0) {
-      xpBefore += mergePoints(t, ledger);
+      xpBefore += mergePoints(t);
       continue;
     }
     openAtStart += sp;
     if (mergedDay !== null) {
       byDay[mergedDay]!.sp += sp;
-      byDay[mergedDay]!.pts += mergePoints(t, ledger);
-      xpByDay[mergedDay]! += mergePoints(t, ledger);
+      byDay[mergedDay]!.pts += mergePoints(t);
+      xpByDay[mergedDay]! += mergePoints(t);
       mergedInWindow += sp;
-      ptsInWindow += mergePoints(t, ledger);
+      ptsInWindow += mergePoints(t);
     }
     const phase: TicketPhase = merged
       ? "done"
@@ -148,7 +151,13 @@ export function buildTimeline(cards: BoardCard[], ledger: Ledger, at: Date = new
 
   for (const epic of epicsById.values()) {
     if (epic.status !== "merged") continue;
-    const d = dayOf(epic.updatedAt, startDay);
+    // An epic merges with its last ticket.
+    const last = tickets
+      .filter((t) => t.epicId === epic.id && t.mergedAt)
+      .map((t) => t.mergedAt!)
+      .sort()
+      .at(-1);
+    const d = dayOf(last ?? epic.updatedAt, startDay);
     const bonus = epicBonus(epic, cards);
     if (d === null || d > TODAY) xpByDay[TODAY]! += bonus;
     else if (d < 0) xpBefore += bonus;
@@ -222,7 +231,7 @@ export function buildTimeline(cards: BoardCard[], ledger: Ledger, at: Date = new
     const merged = epic.status === "merged";
     const pts = its
       .filter((t) => t.mergedDay !== null)
-      .reduce((n, t) => n + mergePoints(tickets.find((c) => c.id === t.id)!, ledger), 0);
+      .reduce((n, t) => n + mergePoints(tickets.find((c) => c.id === t.id)!), 0);
     // The completion bonus counts once merged, and is assumed on the way:
     // an epic merged at 1× throughout grades A, and heat is what makes an S.
     const ratio = doneSp ? (pts + doneSp) / doneSp : null;

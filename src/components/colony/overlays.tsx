@@ -27,7 +27,7 @@ export function ColonyToast() {
       <div
         ref={ref}
         role="status"
-        className="bg-anthracite text-cream flex items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_rgba(28,25,23,0.55)]"
+        className="bg-anthracite text-cream flex items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
       >
         <span className="oct bg-clay text-anthracite inline-flex size-[22px] items-center justify-center font-mono text-[10px]">
           {c.score.level}
@@ -68,8 +68,8 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
     const t = setTimeout(() => {
       if (!coin.current) return;
       const [x, y] = centerOf(coin.current);
-      c.fx.ring(x, y, "#2E7D32", 130, 0.8, 3);
-      c.fx.burst(x, y, ["#D96B27", "#C27803", "#2E7D32", "#1C1917", "#E0A33C"], 80, {
+      c.fx.ring(x, y, "var(--jade)", 130, 0.8, 3);
+      c.fx.burst(x, y, ["var(--terracotta)", "var(--clay)", "var(--jade)", "var(--text)", "var(--clay-lit)"], 80, {
         speed: 560,
         g: 700,
         size: 4,
@@ -89,13 +89,13 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
   if (!c || !win) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(28,25,23,0.32)] p-4 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[color-mix(in_srgb,var(--anthracite)_32%,transparent)] p-4 backdrop-blur-[2px]">
       <div
         ref={card}
         role="dialog"
         aria-modal
         aria-labelledby="win-title"
-        className="bg-card box-border flex w-[420px] max-w-full flex-col items-center gap-3.5 rounded-xl px-8 pt-10 pb-8 text-center shadow-[0_40px_80px_-24px_rgba(28,25,23,0.5)]"
+        className="bg-card box-border flex w-[420px] max-w-full flex-col items-center gap-3.5 rounded-xl px-8 pt-10 pb-8 text-center shadow-[0_40px_80px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)]"
       >
         <span
           ref={coin}
@@ -103,7 +103,7 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
         >
           <span className="bg-jade-chip inline-flex size-[88px] items-center justify-center [clip-path:polygon(25px_0,calc(100%-25px)_0,100%_25px,100%_calc(100%-25px),calc(100%-25px)_100%,25px_100%,0_calc(100%-25px),0_25px)]">
             <svg width="36" height="36" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M3 6.2 5 8.2 9 3.8" stroke="#2E7D32" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M3 6.2 5 8.2 9 3.8" stroke="var(--jade)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
         </span>

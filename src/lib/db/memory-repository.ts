@@ -29,6 +29,7 @@ import type {
 import { type ColumnId, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
+import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 /**
  * Runs the whole board with no database. Used when DATABASE_URL is unset so a
@@ -504,6 +505,21 @@ export class MemoryRepository implements Repository {
     if (update.status !== undefined && update.status !== card.status) {
       card.updatedAt = new Date().toISOString();
       if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
+    }
+    // The first move to merged is scored against the project's heat then.
+    if (update.status === "merged" && !card.mergedAt) {
+      const now = Date.now();
+      const project = projectOf(s, card);
+      const recent = [...s.cards.values()].filter(
+        (c) =>
+          c.mergedAt &&
+          projectOf(s, c) === project &&
+          new Date(c.mergedAt).getTime() > now - HEAT_WINDOW_MS,
+      ).length;
+      const { pts, mult } = mergeScore(card.storyPoints, recent);
+      card.mergedAt = new Date(now).toISOString();
+      card.mergePoints = pts;
+      card.mergeMultiplier = mult;
     }
     if (update.status !== undefined) card.status = update.status;
     // A merged ticket joins its epic's group in Done, wherever it sat.

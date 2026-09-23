@@ -1,4 +1,4 @@
-import type { BugShape } from "@/lib/colony/game";
+import { COLOR_UNLOCKS, type BugShape } from "@/lib/colony/game";
 import type { SoundEngine } from "./sound";
 
 /**
@@ -33,9 +33,12 @@ export interface FxWorld {
 /** The colony's anchor elements, marked with `data-colony`. */
 export type ColonyAnchor = "board" | "score" | "level" | "heat" | "nest" | "timeline";
 
+/** The one on screen: the wide header and the app bar each carry their own. */
 export function colonyEl(name: ColonyAnchor): HTMLElement | null {
-  const el = document.querySelector<HTMLElement>(`[data-colony="${name}"]`);
-  return el && el.getBoundingClientRect().width > 0 ? el : null;
+  for (const el of document.querySelectorAll<HTMLElement>(`[data-colony="${name}"]`)) {
+    if (el.getBoundingClientRect().width > 0) return el;
+  }
+  return null;
 }
 
 interface Particle {
@@ -141,6 +144,32 @@ type TrailCanvas = HTMLCanvasElement & { __v?: number; __id?: string | null };
 
 const TAU = Math.PI * 2;
 
+/*
+ * Colours. Everything here is named by design token, as \`var(--token)\`,
+ * and resolved against the page when drawn, so the canvas follows the
+ * theme like the DOM does. Resolved values are cached until the theme
+ * attribute changes.
+ */
+const resolved = new Map<string, string>();
+
+export function css(color: string): string {
+  if (!color.startsWith("var(")) return color;
+  const hit = resolved.get(color);
+  if (hit) return hit;
+  const name = color.slice(4, -1).trim();
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#1c1917";
+  resolved.set(color, value);
+  return value;
+}
+
+/** A token at an alpha, for the canvas. */
+export function cssAlpha(color: string, alpha: number): string {
+  const hex = css(color);
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!m) return hex;
+  return `rgba(${parseInt(m[1]!, 16)},${parseInt(m[2]!, 16)},${parseInt(m[3]!, 16)},${alpha})`;
+}
+
 export function cardEl(id: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[data-tid="${CSS.escape(id)}"]`);
 }
@@ -184,8 +213,10 @@ export function drawBug(
   t: number,
   shape: BugShape,
   color: string,
-  ink = "rgba(28,25,23,0.82)",
+  ink = cssAlpha("var(--text)", 0.82),
 ) {
+  color = css(color);
+  ink = css(ink);
   const w = Math.sin(t * 60) * 0.9;
   ctx.save();
   ctx.translate(x, y);
@@ -215,7 +246,7 @@ export function drawBug(
     ctx.fillStyle = color;
     E(0, -1.6, 2, 2);
     E(0, 2.6, 3, 3.4);
-    ctx.fillStyle = "rgba(251,249,245,0.45)";
+    ctx.fillStyle = cssAlpha("var(--cream)", 0.45);
     E(0, 2.2, 0.8, 1.2);
   } else if (shape === "moth") {
     const f = 0.7 + Math.abs(Math.sin(t * 28)) * 0.3;
@@ -284,7 +315,7 @@ export function drawBug(
       ctx.fillStyle = color;
       E(0, 0.8, 3.1, 3.9);
       E(0, -4, 1.7, 1.7);
-      ctx.strokeStyle = "rgba(251,249,245,0.4)";
+      ctx.strokeStyle = cssAlpha("var(--cream)", 0.4);
       ctx.beginPath();
       ctx.moveTo(0, -2.6);
       ctx.lineTo(0, 4.4);
@@ -338,7 +369,7 @@ export class ColonyFx {
     ants: "busy",
     full: true,
     bugShape: "beetle",
-    bugHex: "#4A2F22",
+    bugHex: COLOR_UNLOCKS[0]!.hex,
     covered: false,
   };
 
@@ -367,6 +398,9 @@ export class ColonyFx {
     };
     resize();
     window.addEventListener("resize", resize);
+    // A theme switch re-resolves every colour.
+    const theme = new MutationObserver(() => resolved.clear());
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     this.last = performance.now();
     const loop = (now: number) => {
       this.frame(now);
@@ -376,6 +410,7 @@ export class ColonyFx {
     return () => {
       cancelAnimationFrame(this.raf);
       window.removeEventListener("resize", resize);
+      theme.disconnect();
       this.canvas = null;
     };
   }
@@ -420,7 +455,7 @@ export class ColonyFx {
         life,
         max: life,
         size: (o.size ?? 3) * (0.6 + Math.random() * 0.8),
-        color: colors[i % colors.length]!,
+        color: css(colors[i % colors.length]!),
         rot: Math.random() * 6,
         vr: (Math.random() - 0.5) * 12,
         shape: o.shape ?? "oct",
@@ -430,15 +465,15 @@ export class ColonyFx {
 
   ring(x: number, y: number, color: string, r1 = 42, dur = 0.45, w = 2) {
     if (this.reduced) return;
-    this.rings.push({ x, y, r1, color, life: dur, max: dur, w });
+    this.rings.push({ x, y, r1, color: css(color), life: dur, max: dur, w });
   }
 
   pop(x: number, y: number, text: string, sub: string | null, color: string, size = 20) {
-    this.pops.push({ x, y, text, sub, color, size, life: 1.15, max: 1.15 });
+    this.pops.push({ x, y, text, sub, color: css(color), size, life: 1.15, max: 1.15 });
   }
 
   /** A pop anchored on an element's top edge. */
-  mark(el: Element, text: string, sub: string | null, color = "#57534E", size = 14) {
+  mark(el: Element, text: string, sub: string | null, color = "var(--text-muted)", size = 14) {
     const r = el.getBoundingClientRect();
     this.pop(r.left + r.width / 2, r.top + 4, text, sub, color, size);
   }
@@ -469,7 +504,7 @@ export class ColonyFx {
         t: 0,
         dur: 0.5 + Math.random() * 0.2,
         delay: i * 0.055,
-        color,
+        color: css(color),
         i,
         onEach,
         trail: [],
@@ -515,7 +550,7 @@ export class ColonyFx {
         a: Math.PI / 2,
         ph: Math.random() * 6,
         wait: i * 0.18,
-        carry: color,
+        carry: css(color),
       });
     }
   }
@@ -691,7 +726,7 @@ export class ColonyFx {
       ctx.lineJoin = "round";
       ctx.font = `700 ${p.size}px "Plus Jakarta Sans", system-ui, sans-serif`;
       ctx.lineWidth = 5;
-      ctx.strokeStyle = "#FFFFFF";
+      ctx.strokeStyle = css("var(--card)");
       ctx.strokeText(p.text, 0, 0);
       ctx.fillStyle = p.color;
       ctx.fillText(p.text, 0, 0);
@@ -699,7 +734,7 @@ export class ColonyFx {
         ctx.font = '500 10px "JetBrains Mono", monospace';
         ctx.lineWidth = 4;
         ctx.strokeText(p.sub, 0, p.size * 0.9);
-        ctx.fillStyle = "#1C1917";
+        ctx.fillStyle = css("var(--text)");
         ctx.fillText(p.sub, 0, p.size * 0.9);
       }
       ctx.restore();
@@ -747,8 +782,8 @@ export class ColonyFx {
     ctx.translate(x, y);
     ctx.rotate(a);
     if (sc !== 1) ctx.scale(sc, sc);
-    ctx.strokeStyle = "rgba(28,25,23,0.7)";
-    ctx.fillStyle = "rgba(28,25,23,0.82)";
+    ctx.strokeStyle = cssAlpha("var(--text)", 0.7);
+    ctx.fillStyle = cssAlpha("var(--text)", 0.82);
     ctx.lineWidth = 0.8;
     ctx.lineCap = "round";
     const sw = Math.sin(ph) * 1.3;
@@ -782,9 +817,9 @@ export class ColonyFx {
       ctx.beginPath();
       p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
       ctx.closePath();
-      ctx.fillStyle = "#C27803";
+      ctx.fillStyle = css("var(--clay)");
       ctx.fill();
-      ctx.strokeStyle = "#8F3F12";
+      ctx.strokeStyle = css("var(--terracotta-deep)");
       ctx.lineWidth = 0.7;
       ctx.stroke();
     } else if (carry) {
@@ -826,7 +861,7 @@ export class ColonyFx {
   }
 
   private puff(x: number, y: number) {
-    this.burst(x, y, ["#A8A29E", "#D6D3D1"], 5, { speed: 50, g: 0, life: 0.35, size: 1.3, shape: "dot" });
+    this.burst(x, y, ["var(--dot-idle)", "var(--border-dashed)"], 5, { speed: 50, g: 0, life: 0.35, size: 1.3, shape: "dot" });
   }
 
   private spawnCrew(id: string, sp: number, phase: CrewPhase) {
@@ -977,7 +1012,7 @@ export class ColonyFx {
           if (this.stepAnt(ant, bx, by, 170, dt)) {
             ant.carry = true;
             this.sfx("grab");
-            this.ring(bx, by, "#C27803", 14, 0.3, 1.5);
+            this.ring(bx, by, "var(--clay)", 14, 0.3, 1.5);
           }
         } else {
           const [tx, ty] = this.perim(r, ant.t);
@@ -1081,7 +1116,7 @@ export class ColonyFx {
       cv.width = Math.max(40, Math.round(r.width * 2));
       cv.height = Math.max(40, Math.round(r.height * 2));
       const ctx = cv.getContext("2d")!;
-      ctx.fillStyle = "#1C1917";
+      ctx.fillStyle = css("var(--text)");
       tr = { cv, ctx, grid: new Uint8Array(32 * 16), ver: 0 };
       this.trails.set(id, tr);
     }

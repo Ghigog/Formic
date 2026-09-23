@@ -129,8 +129,8 @@ export function SpBadge({ points, done = false }: { points: number | null | unde
         <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
           <polygon
             points={verts}
-            fill={done ? "none" : "#C27803"}
-            stroke="#8F3F12"
+            fill={done ? "none" : "var(--clay)"}
+            stroke="var(--terracotta-deep)"
             strokeWidth="0.8"
             strokeLinejoin="round"
           />
@@ -144,25 +144,25 @@ export function SpBadge({ points, done = false }: { points: number | null | unde
 
 function BugBadge({ squashed }: { squashed: boolean }) {
   return squashed ? (
-    <span className="oct inline-flex shrink-0 bg-[#A8A29E] p-px">
-      <span className="oct text-muted inline-flex items-center gap-1 bg-[#F0EEEA] py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
+    <span className="oct inline-flex shrink-0 bg-idle p-px">
+      <span className="oct text-muted inline-flex items-center gap-1 bg-hairline py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
         <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden="true">
-          <ellipse cx="6" cy="6.5" rx="5" ry="1.6" fill="#57534E" />
-          <circle cx="1.5" cy="4.5" r="0.8" fill="#57534E" />
-          <circle cx="10.2" cy="4" r="0.6" fill="#57534E" />
+          <ellipse cx="6" cy="6.5" rx="5" ry="1.6" fill="var(--text-muted)" />
+          <circle cx="1.5" cy="4.5" r="0.8" fill="var(--text-muted)" />
+          <circle cx="10.2" cy="4" r="0.6" fill="var(--text-muted)" />
         </svg>
         SQUASHED
       </span>
     </span>
   ) : (
     <span data-bugicon className="oct bg-crimson inline-flex shrink-0 p-px">
-      <span className="oct inline-flex items-center gap-1 bg-[#FBEAEA] py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap text-[#7F1D1D]">
+      <span className="oct inline-flex items-center gap-1 bg-crimson-chip py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap text-crimson-chip-text">
         <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <ellipse cx="5" cy="6" rx="2.4" ry="3" fill="#7F1D1D" />
-          <circle cx="5" cy="2.2" r="1.3" fill="#7F1D1D" />
+          <ellipse cx="5" cy="6" rx="2.4" ry="3" fill="var(--crimson-chip-text)" />
+          <circle cx="5" cy="2.2" r="1.3" fill="var(--crimson-chip-text)" />
           <path
             d="M2.6 4.5 1 3.6M2.6 6.2H.8M2.6 7.9 1 8.8M7.4 4.5 9 3.6M7.4 6.2h1.8M7.4 7.9 9 8.8"
-            stroke="#7F1D1D"
+            stroke="var(--crimson-chip-text)"
             strokeWidth="0.8"
             strokeLinecap="round"
           />
@@ -249,7 +249,7 @@ function CardShell({
         e.currentTarget.style.transform = "";
       }}
       className={cn(
-        "relative isolate rounded-lg border transition-[transform,box-shadow,background-color,border-color] duration-150 ease-[cubic-bezier(.2,.8,.2,1)] hover:shadow-[0_12px_24px_-14px_rgba(28,25,23,0.35)]",
+        "relative isolate rounded-lg border transition-[transform,box-shadow,background-color,border-color] duration-150 ease-[cubic-bezier(.2,.8,.2,1)] hover:shadow-[0_12px_24px_-14px_color-mix(in_srgb,var(--anthracite)_35%,transparent)]",
         className,
       )}
     >
@@ -437,7 +437,7 @@ function ReviewCard({
   return (
     <CardShell
       card={card}
-      className={cn("bg-card flex flex-col gap-2 p-3", green ? "border-[#A5C8A7]" : "border-line")}
+      className={cn("bg-card flex flex-col gap-2 p-3", green ? "border-jade-line" : "border-line")}
     >
       <TicketHead card={card} column={column} pr />
       <Title>{card.title}</Title>
@@ -504,7 +504,7 @@ function DoneCard({ card, column, extras }: { card: BoardCard; column: ColumnId;
     .filter(Boolean)
     .join(" · ");
   return (
-    <CardShell card={card} className="flex flex-col gap-2 border-[#D6D0C6] bg-[#E7E3DC] p-3">
+    <CardShell card={card} className="flex flex-col gap-2 border-done-card-line bg-done-card p-3">
       <TicketHead card={card} column={column} pr />
       <Title>{card.title}</Title>
       <EpicLine card={card} />
@@ -638,7 +638,7 @@ export function KanbanCard({
             className={cn(
               "rounded-lg transition-transform duration-150",
               snapshot.isDragging &&
-                "scale-[1.04] rotate-[-2deg] shadow-[0_28px_48px_-18px_rgba(28,25,23,0.45),0_2px_6px_rgba(28,25,23,0.08)]",
+                "scale-[1.04] rotate-[-2deg] shadow-[0_28px_48px_-18px_color-mix(in_srgb,var(--anthracite)_45%,transparent),0_2px_6px_color-mix(in_srgb,var(--anthracite)_8%,transparent)]",
             )}
           >
             <CardBody card={card} column={column} extras={extras[card.id] ?? {}} />

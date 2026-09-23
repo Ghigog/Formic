@@ -34,6 +34,7 @@ import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
+import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 type EpicRow = {
   id: string;
@@ -246,6 +247,9 @@ export class PrismaRepository implements Repository {
         ? new Date(Math.min(...started.map((d) => d.getTime()))).toISOString()
         : null,
       updatedAt: t.updatedAt.toISOString(),
+      mergedAt: t.mergedAt?.toISOString() ?? null,
+      mergePoints: t.mergePoints,
+      mergeMultiplier: t.mergeMultiplier,
       };
     });
 
@@ -537,10 +541,31 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const { costCents, tokensIn, tokensOut, plan, ...rest } = update;
 
+    // The first move to merged is scored against the project's heat then.
+    let merge = {};
+    if (rest.status === "merged") {
+      const ticket = await db.ticket.findUnique({
+        where: { id: ticketId },
+        select: { mergedAt: true, storyPoints: true, epic: { select: { projectId: true } } },
+      });
+      if (ticket && !ticket.mergedAt) {
+        const now = new Date();
+        const recent = await db.ticket.count({
+          where: {
+            epic: { projectId: ticket.epic.projectId },
+            mergedAt: { gt: new Date(now.getTime() - HEAT_WINDOW_MS) },
+          },
+        });
+        const { pts, mult } = mergeScore(ticket.storyPoints, recent);
+        merge = { mergedAt: now, mergePoints: pts, mergeMultiplier: mult };
+      }
+    }
+
     await db.ticket.update({
       where: { id: ticketId },
       data: {
         ...rest,
+        ...merge,
         ...(plan !== undefined ? { plan: plan as never } : {}),
         // A merged ticket joins its epic's group in Done, wherever it sat.
         ...(rest.status === "merged" ? { detached: false } : {}),

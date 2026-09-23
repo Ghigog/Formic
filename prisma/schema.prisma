@@ -175,6 +175,12 @@ model Ticket {
   storyPoints   Int?
   /// The steps the agent is working the ticket through: [{ step, status }].
   plan          Json?
+  /// When it merged, and what the merge scored: its story points times the
+  /// project's heat at that moment (1 + 0.5 per merge in the 45s before,
+  /// at most six). Set once, on the first move to merged.
+  mergedAt        DateTime?
+  mergePoints     Int?
+  mergeMultiplier Float?
 
   costCents Float @default(0)
   tokensIn  Int   @default(0)
@@ -189,6 +195,7 @@ model Ticket {
 
   @@unique([epicId, key])
   @@index([epicId, status])
+  @@index([mergedAt])
   @@index([prNumber])
   @@map("ticket")
 }

@@ -1,22 +1,19 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import type { BugColor, BugShape, Ledger } from "@/lib/colony/game";
+import type { BugColor, BugShape } from "@/lib/colony/game";
 
 /**
- * What the colony keeps in the browser, per board: the multiplier each
- * watched merge earned, the live heat stacks, the bug style and the sound
- * switch. Nothing here is the score itself; that comes from the board.
+ * What the colony keeps in the browser, per board: the bug style and the
+ * sound switch. Preferences only; the score and the heat come from the board.
  */
 export interface Saved {
-  ledger: Ledger;
-  stacks: number[];
   shape: BugShape;
   color: BugColor;
   sound: boolean;
 }
 
-export const DEFAULTS: Saved = { ledger: {}, stacks: [], shape: "beetle", color: "umber", sound: true };
+export const DEFAULTS: Saved = { shape: "beetle", color: "umber", sound: true };
 
 const listeners = new Set<() => void>();
 let cache: { key: string; value: Saved } | null = null;
