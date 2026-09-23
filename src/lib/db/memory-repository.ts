@@ -83,7 +83,6 @@ interface Store {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicMemoryStore: Store | undefined;
 }
 
@@ -334,6 +333,8 @@ export class MemoryRepository implements Repository {
     card.status = input.status;
     card.stalledIn = input.stalledIn;
     card.position = input.position;
+    // Out of a stall, an Epic's reason goes with it.
+    if (card.kind === "epic" && input.stalledIn === null) card.blockedReason = null;
     if (input.detached !== undefined) card.detached = input.detached;
   }
 
@@ -378,6 +379,8 @@ export class MemoryRepository implements Repository {
     if (card) {
       card.status = "specified";
       card.stage = 2;
+      card.stalledIn = null;
+      card.blockedReason = null;
     }
   }
 
@@ -385,7 +388,23 @@ export class MemoryRepository implements Repository {
     const s = store();
     s.showcases.set(epicId, markdown);
     const card = s.cards.get(epicId);
-    if (card) card.stage = 8;
+    if (card) {
+      card.stage = 8;
+      card.stalledIn = null;
+      card.blockedReason = null;
+    }
+  }
+
+  async stallEpic(
+    epicId: string,
+    stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
+  ): Promise<void> {
+    const card = store().cards.get(epicId);
+    if (!card) return;
+    card.status = stall.status;
+    card.stalledIn = stall.stalledIn;
+    card.stage = stall.stage;
+    card.blockedReason = stall.reason;
   }
 
   async appendEvent(
@@ -527,10 +546,20 @@ export class MemoryRepository implements Repository {
       apiKeyCipher: keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
       keyHint: keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
       hasKey: false,
+      // A new key is likely a new account, with its own usage.
+      limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,
+      limitNote: keep ? (existing?.limitNote ?? null) : null,
     };
     row.hasKey = row.apiKeyCipher !== null;
     s.presets.set(row.id, row);
     return publicPreset(row);
+  }
+
+  async setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void> {
+    const row = store().presets.get(presetId);
+    if (!row) return;
+    row.limitedUntil = limit ? limit.until.toISOString() : null;
+    row.limitNote = limit ? limit.note : null;
   }
 
   async deletePreset(presetId: string): Promise<void> {

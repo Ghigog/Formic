@@ -20,7 +20,6 @@ import { syncIssues } from "@/lib/issues/sync";
 type Subscriber = (event: SequencedEvent) => void;
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicSubscribers: Map<string, Set<Subscriber>> | undefined;
 }
 

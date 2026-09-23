@@ -82,6 +82,14 @@ export type FormicEvent =
       provider: string;
     }
   | {
+      /** A saved agent ran out of usage on its plan, or got it back. */
+      type: "agent.limited";
+      presetId: string;
+      /** ISO time it can work again; null when it can now. */
+      until: string | null;
+      note: string | null;
+    }
+  | {
       type: "budget.exhausted";
       scope: "run" | "epic" | "global";
       id: string;

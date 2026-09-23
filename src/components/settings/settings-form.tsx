@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { Account } from "@/components/board/account-menu";
 
@@ -26,9 +27,9 @@ export function SettingsForm({
   return (
     <div className="bg-cream min-h-dvh">
       <header className="border-line bg-card flex h-16 items-center gap-3 border-b px-4 md:px-6">
-        <a href="/" className="text-muted hover:text-ink text-[13px] font-medium">
+        <Link href="/" className="text-muted hover:text-ink text-[13px] font-medium">
           ← Board
-        </a>
+        </Link>
         <span aria-hidden className="bg-line h-6 w-px" />
         <h1 className="font-serif text-[19px] font-semibold">Settings</h1>
       </header>

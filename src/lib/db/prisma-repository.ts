@@ -38,6 +38,7 @@ type EpicRow = {
   status: TicketStatus;
   stalledIn: ColumnId | null;
   stage: number;
+  blockedReason: string | null;
   position: number;
   createdAt: Date;
   tickets: Array<{ id: string; status: TicketStatus }>;
@@ -202,7 +203,7 @@ export class PrismaRepository implements Repository {
       dependsOn: [],
       prNumber: null,
       prUrl: null,
-      blockedReason: null,
+      blockedReason: epic.blockedReason,
       costCents: 0,
       childCount: epic.tickets.length,
       doneCount: epic.tickets.filter((t) => t.status === "merged").length,
@@ -346,7 +347,11 @@ export class PrismaRepository implements Repository {
       position: input.position,
     };
     if (input.kind === "epic") {
-      await db.epic.update({ where: { id: input.cardId }, data });
+      await db.epic.update({
+        where: { id: input.cardId },
+        // Out of a stall, the reason goes with it.
+        data: { ...data, ...(input.stalledIn === null ? { blockedReason: null } : {}) },
+      });
     } else {
       await db.ticket.update({
         where: { id: input.cardId },
@@ -409,6 +414,8 @@ export class PrismaRepository implements Repository {
         prdEditedByHuman: byHuman,
         status: "specified",
         stage: 2,
+        stalledIn: null,
+        blockedReason: null,
       },
     });
   }
@@ -417,7 +424,22 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     await db.epic.update({
       where: { id: epicId },
-      data: { showcase: markdown, stage: 8 },
+      data: { showcase: markdown, stage: 8, stalledIn: null, blockedReason: null },
+    });
+  }
+
+  async stallEpic(
+    epicId: string,
+    stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
+  ): Promise<void> {
+    await prisma().epic.updateMany({
+      where: { id: epicId },
+      data: {
+        status: stall.status,
+        stalledIn: stall.stalledIn,
+        stage: stall.stage,
+        blockedReason: stall.reason,
+      },
     });
   }
 
@@ -581,14 +603,27 @@ export class PrismaRepository implements Repository {
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
+      // A new key is likely a new account, with its own usage.
       ...(record.apiKeyCipher !== undefined
-        ? { apiKeyCipher: record.apiKeyCipher, apiKeyHint: record.apiKeyHint ?? null }
+        ? {
+            apiKeyCipher: record.apiKeyCipher,
+            apiKeyHint: record.apiKeyHint ?? null,
+            limitedUntil: null,
+            limitNote: null,
+          }
         : {}),
     };
     const row = record.id
       ? await db.agentPreset.update({ where: { id: record.id }, data })
       : await db.agentPreset.create({ data: { ...data, ownerId: record.ownerId ?? null } });
     return toPreset(row);
+  }
+
+  async setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void> {
+    await prisma().agentPreset.updateMany({
+      where: { id: presetId },
+      data: { limitedUntil: limit?.until ?? null, limitNote: limit?.note ?? null },
+    });
   }
 
   async deletePreset(presetId: string): Promise<void> {
@@ -790,6 +825,8 @@ function toPreset(row: {
   prompt: string;
   apiKeyCipher: string | null;
   apiKeyHint: string | null;
+  limitedUntil: Date | null;
+  limitNote: string | null;
 }): AgentPreset {
   return {
     id: row.id,
@@ -801,5 +838,7 @@ function toPreset(row: {
     prompt: row.prompt,
     hasKey: row.apiKeyCipher !== null,
     keyHint: row.apiKeyHint,
+    limitedUntil: row.limitedUntil?.toISOString() ?? null,
+    limitNote: row.limitNote,
   };
 }

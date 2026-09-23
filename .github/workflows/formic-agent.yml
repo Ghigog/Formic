@@ -1,4 +1,4 @@
-# formic-runner: v2
+# formic-runner: v3
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -27,6 +27,9 @@ on:
         default: ""
       from:
         description: Branch to start from
+        required: true
+      secret:
+        description: The Actions secret holding this agent's sign-in
         required: true
       prompt:
         description: What to do
@@ -74,9 +77,9 @@ jobs:
           FORMIC_SUMMARY: ${{ runner.temp }}/formic-summary.md
           FORMIC_OUTPUT: ${{ runner.temp }}/formic-answer.md
           FORMIC_STDOUT: ${{ runner.temp }}/formic-stdout.md
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.cli == 'claude' && secrets.FORMIC_CLAUDE_CODE_TOKEN || '' }}
-          CODEX_CREDENTIAL: ${{ inputs.cli == 'codex' && secrets.FORMIC_CODEX_AUTH || '' }}
-          GEMINI_API_KEY: ${{ inputs.cli == 'gemini' && secrets.FORMIC_GEMINI_API_KEY || '' }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
+          CODEX_CREDENTIAL: ${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}
+          GEMINI_API_KEY: ${{ inputs.cli == 'gemini' && startsWith(inputs.secret, 'FORMIC_GEMINI_API_KEY') && secrets[inputs.secret] || '' }}
         run: |
           set -euo pipefail
           case "$CLI" in

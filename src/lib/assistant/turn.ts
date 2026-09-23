@@ -293,6 +293,10 @@ export async function answer(projectId: string, messageId: string): Promise<void
       });
       return;
     }
+    if (agent.kind === "limited") {
+      await finish(messageId, { content: agent.reason, status: "failed" });
+      return;
+    }
 
     const all = await repo.assistantMessages(projectId);
     const past = history(all.filter((m) => m.id !== messageId));

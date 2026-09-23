@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { completeCliRun } from "./runner";
+import { collectCliRuns, completeCliRun, secretNameFor } from "./runner";
 import {
   ANSWER_PATH,
   RUNNER_SETUP_BRANCH,
@@ -56,7 +56,7 @@ async function seedTicket(fileScope = ["src/lib/feature"]): Promise<TicketDetail
   return (await repo.ticketDetail(ticket!.id))!;
 }
 
-async function useClaudeCode(column: ColumnId = "in_progress") {
+async function assignClaudeCode(column: ColumnId = "in_progress") {
   const preset = await savePreset({
     name: "my-claude",
     provider: "claude-code",
@@ -98,7 +98,7 @@ afterEach(() => {
 
 describe("CLI agent templates", () => {
   it("run in any column", async () => {
-    const preset = await useClaudeCode();
+    const preset = await assignClaudeCode();
     for (const column of ["backlog", "todo", "in_review", "done"] as const) {
       await repository().setColumnAgent(PROJECT, column, preset.id);
     }
@@ -178,7 +178,7 @@ describe("a CLI agent planning an Epic", () => {
   }
 
   it("drafts the PRD in Actions and puts it on the Epic", async () => {
-    await useClaudeCode("backlog");
+    await assignClaudeCode("backlog");
     const base = await installRunner();
     const epic = await seedEpic();
 
@@ -201,8 +201,27 @@ describe("a CLI agent planning an Epic", () => {
     expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${inputs.job}`)).toBe(false);
   });
 
+  it("keeps a stalled Epic stalled, with why, across a reload", async () => {
+    await assignClaudeCode("backlog");
+    await installRunner();
+    const epic = await seedEpic(null);
+
+    await runProductAgent(PROJECT, epic.id, "Let me export my board as CSV");
+    const { job } = lastDispatch();
+    await completeCliRun(PROJECT, { job: job!, mode: "product", conclusion: "cancelled", url: null });
+
+    // What a refresh reads: the stored card, not the event.
+    const card = (await repository().boardCards(PROJECT)).find((c) => c.id === epic.id)!;
+    expect(card).toMatchObject({ status: "failed", stalledIn: "backlog", stage: 2 });
+    expect(card.blockedReason).toContain("cancelled");
+
+    // Moving it on clears the reason.
+    await repository().move({ cardId: epic.id, kind: "epic", status: "draft", stalledIn: null, position: 1 });
+    expect((await repository().cardById(epic.id))!.blockedReason).toBeNull();
+  });
+
   it("sends an unsafe ticket graph back as a correction, then takes the fixed one", async () => {
-    await useClaudeCode("todo");
+    await assignClaudeCode("todo");
     await installRunner();
     const epic = await seedEpic(PRD);
 
@@ -233,7 +252,7 @@ describe("a CLI agent planning an Epic", () => {
   });
 
   it("gives up after the last attempt instead of asking forever", async () => {
-    await useClaudeCode("todo");
+    await assignClaudeCode("todo");
     await installRunner();
     const epic = await seedEpic(PRD);
 
@@ -250,7 +269,7 @@ describe("a CLI agent planning an Epic", () => {
   });
 
   it("ignores an answer nobody is waiting for", async () => {
-    await useClaudeCode("backlog");
+    await assignClaudeCode("backlog");
     await installRunner();
     const epic = await seedEpic();
     await runProductAgent(PROJECT, epic.id, "x");
@@ -267,7 +286,7 @@ describe("a CLI agent planning an Epic", () => {
 
 describe("starting a CLI agent", () => {
   it("opens a setup pull request first, and waits for a person to merge it", async () => {
-    await useClaudeCode();
+    await assignClaudeCode();
     const ticket = await seedTicket();
 
     await runCoderAgent(PROJECT, ticket.id);
@@ -283,20 +302,22 @@ describe("starting a CLI agent", () => {
     expect(runner.secrets.size).toBe(0);
   });
 
-  it("stores the plan token as a secret and dispatches the workflow", async () => {
-    await useClaudeCode();
+  it("stores the plan token as the agent's own secret and dispatches the workflow", async () => {
+    const preset = await assignClaudeCode();
     const base = await installRunner();
     const ticket = await seedTicket();
 
     await runCoderAgent(PROJECT, ticket.id);
 
     const runner = MockVcsClient.runner();
-    expect(runner.secrets.get("FORMIC_CLAUDE_CODE_TOKEN")).toBe(TOKEN);
+    const secret = secretNameFor({ presetId: preset.id, info: { secretName: "FORMIC_CLAUDE_CODE_TOKEN" } as never });
+    expect(secret).toMatch(/^FORMIC_CLAUDE_CODE_TOKEN_[A-Z0-9_]+$/);
+    expect(runner.secrets.get(secret)).toBe(TOKEN);
     expect(runner.dispatches).toHaveLength(1);
     const { file, ref, inputs } = runner.dispatches[0]!;
     expect(file).toBe("formic-agent.yml");
     expect(ref).toBe(base);
-    expect(inputs).toMatchObject({ mode: "implement", ticket: "T-1", cli: "claude", from: base });
+    expect(inputs).toMatchObject({ mode: "implement", ticket: "T-1", cli: "claude", from: base, secret });
     expect(inputs.prompt).toContain("Implement the ticket.");
     expect(inputs.prompt).toContain("src/lib/feature");
     expect(JSON.stringify(inputs)).not.toContain(TOKEN);
@@ -306,8 +327,25 @@ describe("starting a CLI agent", () => {
     expect(after.runnerJob).toBe(inputs.job);
   });
 
+  it("keeps two accounts on the same CLI in separate secrets", async () => {
+    const work = await assignClaudeCode("in_progress");
+    const personal = await savePreset({
+      name: "personal-claude",
+      provider: "claude-code",
+      model: "",
+      prompt: "Review it.",
+      apiKey: "sk-ant-oat01-personal-2222",
+    });
+    await repository().setColumnAgent(PROJECT, "backlog", personal.id);
+
+    const a = (await cliAgentFor(PROJECT, "in_progress"))!;
+    const b = (await cliAgentFor(PROJECT, "backlog"))!;
+    expect(a.presetId).toBe(work.id);
+    expect(secretNameFor(a)).not.toBe(secretNameFor(b));
+  });
+
   it("refuses without a token", async () => {
-    const preset = await useClaudeCode();
+    const preset = await assignClaudeCode();
     await savePreset({
       id: preset.id,
       name: preset.name,
@@ -328,9 +366,38 @@ describe("starting a CLI agent", () => {
   });
 });
 
+describe("an agent out of usage", () => {
+  it("takes no work until it resets, and a new key lifts it", async () => {
+    const preset = await assignClaudeCode();
+    await installRunner();
+    await repository().setPresetLimit(preset.id, {
+      until: new Date(Date.now() + 3_600_000),
+      note: "Claude Code hit its usage limit.",
+    });
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("my-claude is out of usage until");
+    expect(MockVcsClient.runner().dispatches).toHaveLength(0);
+
+    const saved = await savePreset({
+      id: preset.id,
+      name: preset.name,
+      provider: "claude-code",
+      model: "",
+      prompt: "p",
+      apiKey: "sk-ant-oat01-another-account-1111",
+    });
+    expect(saved.limitedUntil).toBeNull();
+  });
+});
+
 describe("taking a CLI agent's work", () => {
   async function dispatched() {
-    await useClaudeCode();
+    await assignClaudeCode();
     await installRunner();
     const ticket = await seedTicket();
     await runCoderAgent(PROJECT, ticket.id);
@@ -387,6 +454,46 @@ describe("taking a CLI agent's work", () => {
     expect(after.blockedReason).toContain("actions/runs/1");
   });
 
+  it("says why the run failed, from its log, and marks a limited agent out until it resets", async () => {
+    const { ticket, job } = await dispatched();
+    const url = "https://github.com/acme/widgets/actions/runs/2";
+    MockVcsClient.runner().logs.set(
+      url,
+      [
+        "2026-09-23T15:40:38.4614765Z ##[group]Run set -euo pipefail",
+        "2026-09-23T15:40:38.4716567Z   PROMPT: Handle the rate limit",
+        "2026-09-23T15:40:38.4744084Z ##[endgroup]",
+        "2026-09-23T15:41:32.5220071Z You've hit your session limit · resets 6:30pm (UTC)",
+        "2026-09-23T15:41:32.7166259Z ##[error]Process completed with exit code 1.",
+      ].join("\n"),
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("failed");
+    expect(after.blockedReason).toContain("Claude Code hit its usage limit");
+    expect(after.blockedReason).toContain(url);
+
+    const presetId = (await repository().columnAgents(PROJECT)).in_progress!;
+    const { preset } = (await repository().presetForRun(presetId))!;
+    expect(preset.limitedUntil).toBe("2026-09-23T18:30:00.000Z");
+  });
+
+  it("quotes the agent's last words when the failure is not one it knows", async () => {
+    const { ticket, job } = await dispatched();
+    const url = "https://github.com/acme/widgets/actions/runs/3";
+    MockVcsClient.runner().logs.set(
+      url,
+      "##[group]Run x\n##[endgroup]\nError: ENOSPC: no space left on device\n##[error]Process completed with exit code 1.",
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.blockedReason).toContain("ENOSPC: no space left on device");
+  });
+
   it("ignores a result nobody is waiting for", async () => {
     const { ticket, staging } = await dispatched();
     const stale = `${ticket.id}--oldjob00`;
@@ -404,7 +511,7 @@ describe("taking a CLI agent's work", () => {
 
 describe("a CLI agent fixing red CI", () => {
   it("fast-forwards the pull request's branch with the fix", async () => {
-    await useClaudeCode("in_review");
+    await assignClaudeCode("in_review");
     const ticket = await seedTicket();
     const job = `${ticket.id}--fix00001`;
     const branch = "formic/t-1-abc";
@@ -422,6 +529,82 @@ describe("a CLI agent fixing red CI", () => {
     expect(after.status).toBe("review");
     expect(after.runnerJob).toBeNull();
     expect(MockVcsClient.runner().branches.get(branch)).toBe(sha);
+  });
+});
+
+describe("collecting a run whose webhook never came", () => {
+  /** Lets the next collection look again, past its 15-second throttle. */
+  async function collectLater() {
+    vi.useFakeTimers({ now: Date.now() + 60_000 * ++minutes, toFake: ["Date"] });
+    try {
+      await collectCliRuns(PROJECT);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+  let minutes = 0;
+
+  it("takes a ticket's finished work on its own", async () => {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    await runCoderAgent(PROJECT, ticket.id);
+    const job = MockVcsClient.runner().dispatches[0]!.inputs.job!;
+    MockVcsClient.stage(`${STAGING_PREFIX}${job}`, ["src/lib/feature/a.ts"], "T-1: Add it");
+
+    // Still running: nothing moves.
+    MockVcsClient.runner().runs.set(runTitle("implement", "T-1", job), {
+      status: "in_progress",
+      conclusion: null,
+      url: "https://github.com/acme/widgets/actions/runs/40",
+    });
+    await collectLater();
+    expect((await repository().ticketDetail(ticket.id))!.prNumber).toBeNull();
+
+    MockVcsClient.runner().runs.set(runTitle("implement", "T-1", job), {
+      status: "completed",
+      conclusion: "success",
+      url: "https://github.com/acme/widgets/actions/runs/40",
+    });
+    await collectLater();
+    expect((await repository().ticketDetail(ticket.id))!.prNumber).toBeGreaterThan(0);
+
+    // The late webhook for the same run then does nothing.
+    const [signal] = interpret("workflow_run", {
+      action: "completed",
+      workflow_run: {
+        id: 40,
+        path: RUNNER_WORKFLOW_PATH,
+        display_title: runTitle("implement", "T-1", job),
+        conclusion: "success",
+        html_url: "https://github.com/acme/widgets/actions/runs/40",
+      },
+    });
+    expect(await repository().claimDelivery(signal!.key)).toBe(false);
+  });
+
+  it("takes an Epic's failed planning run on its own, and saves why", async () => {
+    await assignClaudeCode("backlog");
+    await installRunner();
+    const epic = await repository().createEpic({
+      projectId: PROJECT,
+      title: "Export",
+      rawRequest: "Export",
+      position: 1,
+    });
+    await runProductAgent(PROJECT, epic.id, "Export");
+    const job = MockVcsClient.runner().dispatches.at(-1)!.inputs.job!;
+    MockVcsClient.runner().runs.set(runTitle("product", "EPIC-1", job), {
+      status: "completed",
+      conclusion: "timed_out",
+      url: "https://github.com/acme/widgets/actions/runs/41",
+    });
+
+    await collectLater();
+
+    const card = (await repository().cardById(epic.id))!;
+    expect(card).toMatchObject({ status: "failed", stalledIn: "backlog" });
+    expect(card.blockedReason).toContain("60-minute limit");
   });
 });
 

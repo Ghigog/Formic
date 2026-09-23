@@ -4,6 +4,7 @@ import {
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
   parseRunTitle,
+  runnerResultKey,
   type RunnerMode,
 } from "@/lib/runner/workflow";
 
@@ -136,7 +137,7 @@ export function interpret(event: string, payload: unknown): WebhookSignal[] {
             mode: parsed.mode,
             conclusion: String(run.conclusion ?? "failure"),
             url: typeof run.html_url === "string" ? run.html_url : null,
-            key: `runner:${parsed.job}:${String(run.id ?? "")}`,
+            key: runnerResultKey(parsed.job, String(run.id ?? "")),
           },
         ];
       }

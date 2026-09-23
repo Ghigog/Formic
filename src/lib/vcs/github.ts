@@ -341,11 +341,47 @@ export class GitHubClient implements VcsClient {
   }
 
   async findRun(file: string, title: string): Promise<WorkflowRunRef | null> {
+    const run = (await this.recentRuns(file)).find((r) => r.title === title);
+    return run ? { status: run.status, conclusion: run.conclusion, url: run.url } : null;
+  }
+
+  async recentRuns(file: string): Promise<Array<WorkflowRunRef & { id: number; title: string }>> {
     const { data } = await this.request<{
-      workflow_runs: Array<{ display_title: string; status: string; conclusion: string | null; html_url: string }>;
-    }>("GET", `/actions/workflows/${encodeURIComponent(file)}/runs?event=workflow_dispatch&per_page=30`);
-    const run = data.workflow_runs.find((r) => r.display_title === title);
-    return run ? { status: run.status, conclusion: run.conclusion, url: run.html_url } : null;
+      workflow_runs: Array<{
+        id: number;
+        display_title: string;
+        status: string;
+        conclusion: string | null;
+        html_url: string;
+      }>;
+    }>("GET", `/actions/workflows/${encodeURIComponent(file)}/runs?event=workflow_dispatch&per_page=50`);
+    return data.workflow_runs.map((r) => ({
+      id: r.id,
+      title: r.display_title,
+      status: r.status,
+      conclusion: r.conclusion,
+      url: r.html_url,
+    }));
+  }
+
+  async runLog(runUrl: string): Promise<string | null> {
+    const runId = /\/actions\/runs\/(\d+)/.exec(runUrl)?.[1];
+    if (!runId) return null;
+    const { data } = await this.request<{
+      jobs: Array<{ id: number; conclusion: string | null }>;
+    }>("GET", `/actions/runs/${runId}/jobs?filter=latest`);
+    const job = data.jobs.find((j) => j.conclusion === "failure") ?? data.jobs[0];
+    if (!job) return null;
+    // The log is plain text behind a redirect, so not through request().
+    const response = await fetch(`${API}/repos/${this.repoFullName}/actions/jobs/${job.id}/logs`, {
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    }).catch(() => null);
+    if (!response?.ok) return null;
+    return response.text();
   }
 
   async compare(base: string, head: string): Promise<Comparison> {

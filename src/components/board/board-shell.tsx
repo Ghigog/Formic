@@ -48,11 +48,13 @@ export function BoardShell({
   initialColumnAgents?: ColumnAgents;
   account?: Account;
 }) {
+  const agentState = useAgents(initialPresets, initialColumnAgents);
   const { cards, extras, stats, prdStreams, connection, transition, createEpic } =
-    useBoard(initialCards, initialStats);
+    useBoard(initialCards, initialStats, (event) => {
+      if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
+    });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
-  const agentState = useAgents(initialPresets, initialColumnAgents);
   /** The agent editor: which column it was opened from, and what it edits. */
   const [editing, setEditing] = useState<{
     column: ColumnId | "assistant";

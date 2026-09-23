@@ -21,7 +21,6 @@ import { publish } from "@/lib/events/bus";
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicSandboxes: Map<string, SandboxHandle> | undefined;
 }
 

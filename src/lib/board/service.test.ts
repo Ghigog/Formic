@@ -88,3 +88,33 @@ describe("applyTransition within one column", () => {
     expect(launched).toEqual([]);
   });
 });
+
+describe("applyTransition into a column whose agent is out of usage", () => {
+  it("refuses the move and says when the agent is back", async () => {
+    const epic = makeCard({ kind: "epic", status: "specified", size: null });
+    seedMemory([epic]);
+    const repo = repository();
+    const preset = await repo.savePreset({
+      name: "Claude (work)",
+      provider: "claude-code",
+      model: "",
+      prompt: "",
+      apiKeyCipher: null,
+    });
+    await repo.setColumnAgent(PROJECT, "todo", preset.id);
+    await repo.setPresetLimit(preset.id, { until: new Date(Date.now() + 3_600_000), note: "limit" });
+
+    const result = await applyTransition(PROJECT, {
+      cardId: epic.id,
+      kind: "epic",
+      from: "backlog",
+      to: "todo",
+      position: 1,
+      actor: "user",
+    });
+
+    expect(result).toMatchObject({ ok: false, revertTo: "backlog" });
+    expect(result.ok ? "" : result.reason).toContain("Claude (work) is out of usage until");
+    expect(launched).toEqual([]);
+  });
+});

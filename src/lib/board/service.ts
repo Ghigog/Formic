@@ -13,6 +13,7 @@ import { positionForIndex } from "@/lib/ordering";
 import { publish } from "@/lib/events/bus";
 import { launch, runArchitectAgent, runProductAgent } from "@/lib/agents/pipeline";
 import { runCoderAgent } from "@/lib/coder/pipeline";
+import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { scopesOverlap } from "@/lib/domain/scope";
 import { projectFor } from "./project";
@@ -109,6 +110,9 @@ export async function applyTransition(
   if (!verdict.ok) {
     return { ok: false, reason: verdict.reason, revertTo: actual };
   }
+
+  const limited = await columnLimit(projectId, t.to);
+  if (limited) return { ok: false, reason: limited, revertTo: actual };
 
   const met = dependenciesMet(card, cards);
   if (t.to === "in_progress" && !met) {

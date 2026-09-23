@@ -7,7 +7,7 @@ import type { AgentContext, AgentOutcome, CodeChange, Usage } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
 import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens } from "@/lib/budget/limits";
-import { anthropicClient } from "./anthropic";
+import { anthropicClient, describeError } from "./anthropic";
 import { requestShape } from "./models";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
 import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
@@ -184,23 +184,6 @@ function addUsage(a: Usage, b: Usage): Usage {
 
 function usageFrom(model: string, tokensIn: number, tokensOut: number): Usage {
   return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, tokensIn, tokensOut) };
-}
-
-function describeError(e: unknown): string {
-  if (e instanceof Anthropic.RateLimitError) {
-    return "Rate limited by the Anthropic API. This run will need to be retried.";
-  }
-  if (e instanceof Anthropic.AuthenticationError) {
-    return "The Anthropic API key was rejected.";
-  }
-  if (e instanceof Anthropic.APIConnectionError) {
-    return "Could not reach the Anthropic API.";
-  }
-  if (e instanceof Anthropic.APIError) {
-    return `Anthropic API error ${e.status ?? ""}: ${e.message}`.trim();
-  }
-  if (e instanceof Error) return e.message;
-  return "Unknown agent failure.";
 }
 
 function claudeConversation(input: LoopInput, model: string): Conversation {
@@ -426,7 +409,7 @@ export async function runCodingLoop(
         continue;
       }
 
-      const outcome = await runTool(call, workspace, ctx, ticketId);
+      const outcome = await runTool(call, workspace, ctx);
       progress(outcome.label, iteration);
       results.push({ id: call.id, isError: outcome.isError, content: truncate(outcome.content) });
     }
@@ -450,7 +433,6 @@ async function runTool(
   call: LoopCall,
   workspace: Workspace,
   ctx: AgentContext,
-  ticketId: string,
 ): Promise<ToolOutcome> {
   try {
     switch (call.name) {

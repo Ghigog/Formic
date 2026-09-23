@@ -20,7 +20,9 @@ export function useBoardEvents(
 ) {
   const [state, setState] = useState<ConnectionState>("connecting");
   const handler = useRef(onEvent);
-  handler.current = onEvent;
+  useEffect(() => {
+    handler.current = onEvent;
+  });
 
   const cursor = useRef(0);
 
@@ -56,6 +58,7 @@ export function useBoardEvents(
       "ci.status",
       "sandbox.count",
       "budget.exhausted",
+      "agent.limited",
     ];
     for (const t of types) source.addEventListener(t, onMessage as EventListener);
 

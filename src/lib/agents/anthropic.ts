@@ -1,12 +1,8 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
-import {
-  APIConnectionError,
-  APIError,
-  AuthenticationError,
-  RateLimitError,
-} from "@anthropic-ai/sdk/error";
+import { APIConnectionError, APIError } from "@anthropic-ai/sdk/error";
+import { describeProviderError } from "./limits";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
@@ -107,22 +103,21 @@ function failure(
 }
 
 /**
- * Turns an SDK error into something a card can display. Most specific first:
- * a single broad catch would lose the retryable / not-retryable distinction
- * that decides whether a run is worth another attempt.
+ * Turns an SDK error into something a card can display: a rejected key, an
+ * account out of credit, a rate limit and until when, an overloaded API.
+ * Shared with the coding loop, so every Claude agent says it the same way.
  */
-function describeError(e: unknown): string {
-  if (e instanceof RateLimitError) {
-    return "Rate limited by the Anthropic API. This run will need to be retried.";
-  }
-  if (e instanceof AuthenticationError) {
-    return "The Anthropic API key was rejected.";
-  }
+export function describeError(e: unknown): string {
   if (e instanceof APIConnectionError) {
     return "Could not reach the Anthropic API.";
   }
   if (e instanceof APIError) {
-    return `Anthropic API error ${e.status ?? ""}: ${e.message}`.trim();
+    return describeProviderError({
+      label: "The Anthropic API",
+      status: e.status ?? null,
+      message: e.message,
+      retryAfter: e.headers?.get("retry-after") ?? null,
+    });
   }
   if (e instanceof Error) return e.message;
   return "Unknown agent failure.";

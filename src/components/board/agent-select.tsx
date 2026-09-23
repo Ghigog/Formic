@@ -10,6 +10,7 @@ import {
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { modelLabel } from "@/lib/agents/models";
 import { provider as providerInfo, shortModelName } from "@/lib/llm/providers";
+import { useCountdown } from "@/lib/hooks/use-countdown";
 
 /** "Sonnet 5" for a known Claude model, the bare id for anything else. */
 function modelName(model: string): string {
@@ -129,6 +130,7 @@ export function AgentSelect({
                     {providerInfo(p.provider)?.label ?? p.provider}
                     {p.model ? ` · ${modelName(p.model)}` : ""}
                   </span>
+                  <LimitNote until={p.limitedUntil} />
                 </span>
                 {selected?.id === p.id && <Check />}
               </button>
@@ -200,5 +202,17 @@ function Pencil() {
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <path d="M8 2.5 9.5 4 4.5 9H3V7.5L8 2.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/** "Out of usage until 6:30 PM", while it is. */
+function LimitNote({ until }: { until: string | null }) {
+  const left = useCountdown(until);
+  if (left === null || !until) return null;
+  return (
+    <span className="text-rust block text-[10px]">
+      Out of usage until{" "}
+      {new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+    </span>
   );
 }

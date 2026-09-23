@@ -28,7 +28,6 @@ interface MockPull extends PullRequestDetail {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicMockPulls: Map<number, MockPull> | undefined;
 }
 
@@ -50,6 +49,8 @@ interface MockRepo {
   issues: Map<number, MockIssue>;
   /** Workflow runs by title, as a test says they ended. */
   runs: Map<string, WorkflowRunRef>;
+  /** Failed runs' logs by run URL. */
+  logs: Map<string, string>;
   labels: Set<string>;
   /** Comments by pull request or issue number. */
   comments: Map<number, string[]>;
@@ -75,6 +76,7 @@ function repo(): MockRepo {
     commits: new Map(),
     issues: new Map(),
     runs: new Map(),
+    logs: new Map(),
     labels: new Set(),
     comments: new Map(),
   };
@@ -200,6 +202,18 @@ export class MockVcsClient implements VcsClient {
 
   async findRun(_file: string, title: string): Promise<WorkflowRunRef | null> {
     return repo().runs.get(title) ?? null;
+  }
+
+  async recentRuns(_file: string): Promise<Array<WorkflowRunRef & { id: number; title: string }>> {
+    return [...repo().runs.entries()].map(([title, run], i) => ({
+      ...run,
+      title,
+      id: Number(/\/runs\/(\d+)/.exec(run.url)?.[1] ?? i + 1),
+    }));
+  }
+
+  async runLog(runUrl: string): Promise<string | null> {
+    return repo().logs.get(runUrl) ?? null;
   }
 
   async ensureLabel(name: string): Promise<void> {

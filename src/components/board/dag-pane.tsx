@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -22,10 +22,10 @@ interface Anchor {
  * blocking ticket merges and releases the one below it.
  */
 export function DagPane({
-  children,
+  tickets,
   recentlyUnblocked,
 }: {
-  children: BoardCard[];
+  tickets: BoardCard[];
   /** Ticket ids whose dependencies just cleared, for the one-shot pulse. */
   recentlyUnblocked?: Set<string>;
 }) {
@@ -35,25 +35,25 @@ export function DagPane({
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [hovered, setHovered] = useState<string | null>(null);
 
-  const ordered = (() => {
+  const ordered = useMemo(() => {
     try {
       const order = topologicalOrder(
-        children.map((c) => ({
+        tickets.map((c) => ({
           key: c.id,
           dependsOn: c.dependsOn,
           fileScope: c.fileScope,
         })),
       );
       const index = new Map(order.map((id, i) => [id, i]));
-      return [...children].sort(
+      return [...tickets].sort(
         (a, b) => (index.get(a.id) ?? 0) - (index.get(b.id) ?? 0),
       );
     } catch {
       // A cycle should be impossible past validation, but rendering must not
       // depend on that being true.
-      return children;
+      return tickets;
     }
-  })();
+  }, [tickets]);
 
   // Trails are drawn from measured positions, so they are recomputed whenever
   // the list reflows rather than guessed from row height.
@@ -88,11 +88,11 @@ export function DagPane({
     observer.observe(host);
     for (const row of rowRefs.current.values()) observer.observe(row);
     return () => observer.disconnect();
-  }, [ordered.length, children]);
+  }, [ordered]);
 
   const anchorFor = (id: string) => anchors.find((a) => a.id === id);
 
-  if (children.length === 0) {
+  if (tickets.length === 0) {
     return (
       <p className="text-fg-subtle p-4 text-[12px]">
         No child tickets yet. Move this Epic to To Do and the Architect Agent
@@ -161,7 +161,7 @@ export function DagPane({
                 <span className="text-ochre-text text-[11px]">
                   blocked by{" "}
                   {card.dependsOn
-                    .map((id) => children.find((c) => c.id === id)?.key ?? "?")
+                    .map((id) => tickets.find((c) => c.id === id)?.key ?? "?")
                     .join(", ")}
                 </span>
               )}

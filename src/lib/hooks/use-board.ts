@@ -11,7 +11,16 @@ import { useBoardEvents } from "./use-board-events";
 /** Most recent log lines kept for the ambient terminal. */
 const LOG_TAIL = 200;
 
-export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) {
+export function useBoard(
+  initialCards: BoardCard[],
+  initialStats: AmbientStats,
+  /** Events that are not the board's own, such as an agent running out. */
+  onOther?: (event: FormicEvent) => void,
+) {
+  const other = useRef(onOther);
+  useEffect(() => {
+    other.current = onOther;
+  });
   const [cards, setCards] = useState(initialCards);
   const [extras, setExtras] = useState<Record<string, CardExtras | undefined>>({});
   const [stats, setStats] = useState(initialStats);
@@ -101,6 +110,7 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
           break;
 
         default:
+          other.current?.(event);
           break;
       }
     },

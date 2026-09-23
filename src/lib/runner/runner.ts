@@ -13,6 +13,9 @@ import {
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
+import { diagnose, lastWords } from "@/lib/agents/limits";
+import { provider as providerInfo } from "@/lib/llm/providers";
+import type { ColumnId } from "@/lib/domain/status";
 import { failuresBrief, taskBrief } from "@/lib/agents/coder";
 import {
   ARCHITECT_BRIEF,
@@ -52,7 +55,8 @@ import {
   cardOfJob,
   isAnswerMode,
   jobId,
-  runTitle,
+  parseRunTitle,
+  runnerResultKey,
   runnerWorkflow,
   type AnswerMode,
   type CodeMode,
@@ -133,6 +137,73 @@ function explain(e: unknown): string {
   return message;
 }
 
+/** The column whose agent runs each mode, or the board's assistant. */
+const MODE_AGENT: Record<RunnerMode, ColumnId | "assistant"> = {
+  implement: "in_progress",
+  fix: "in_review",
+  product: "backlog",
+  architect: "todo",
+  showcase: "done",
+  ask: "assistant",
+};
+
+/**
+ * Why a run did not succeed, in words a card can show. GitHub only says
+ * "failure"; the agent's reason is in the log, so this reads it. A usage
+ * limit with a reset time also marks the agent out until then, which greys
+ * its column out on the board.
+ */
+async function whyItFailed(
+  projectId: string,
+  client: VcsClient,
+  result: RunnerResult,
+): Promise<string> {
+  const log = result.url ? ` Its log: ${result.url}` : "";
+  if (result.conclusion === "cancelled") return `The agent's GitHub Actions run was cancelled.${log}`;
+  if (result.conclusion === "timed_out") {
+    return `The agent ran past the workflow's 60-minute limit and was stopped.${log}`;
+  }
+  const plain = `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`;
+  const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
+  if (!text) return plain;
+
+  const repo = repository();
+  const where = MODE_AGENT[result.mode];
+  const presetId =
+    where === "assistant"
+      ? await repo.assistantAgent(projectId)
+      : (await repo.columnAgents(projectId))[where];
+  const found = presetId ? await repo.presetForRun(presetId) : null;
+  const label = found
+    ? (providerInfo(found.preset.provider)?.label ?? "The agent").split(" (")[0]!
+    : "The agent";
+
+  const diagnosis = diagnose(text, label);
+  if (!diagnosis) {
+    const last = lastWords(text);
+    return last ? `The agent's GitHub Actions run failed: "${last}".${log}` : plain;
+  }
+  if (diagnosis.kind === "limit" && diagnosis.until && found) {
+    await repo.setPresetLimit(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
+    await publish(projectId, {
+      type: "agent.limited",
+      presetId: found.preset.id,
+      until: diagnosis.until.toISOString(),
+      note: diagnosis.message,
+    });
+  }
+  return `${diagnosis.message}${log}`;
+}
+
+/**
+ * The Actions secret a saved agent's sign-in lives in: its own, so two
+ * Claude accounts on one repository never swap tokens between runs.
+ */
+export function secretNameFor(agent: Pick<CliAgent, "presetId" | "info">): string {
+  if (!agent.presetId) return agent.info.secretName;
+  return `${agent.info.secretName}_${agent.presetId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}
+
 function cap(text: string): string {
   return text.length > MAX_PROMPT ? `${text.slice(0, MAX_PROMPT)}\n\n[cut short]` : text;
 }
@@ -190,7 +261,8 @@ async function dispatch(input: {
     }
 
     // Set on every run, so a replaced token takes effect on the next one.
-    await client.setSecret(agent.info.secretName, agent.credential);
+    const secret = secretNameFor(agent);
+    await client.setSecret(secret, agent.credential);
 
     await input.record(input.job);
     await client.dispatchWorkflow(RUNNER_WORKFLOW_FILE, input.baseBranch, {
@@ -200,6 +272,7 @@ async function dispatch(input: {
       cli: agent.info.cli,
       model: agent.model ?? "",
       from: input.from,
+      secret,
       prompt: cap(input.prompt),
     });
     return { ok: true };
@@ -505,7 +578,7 @@ async function completeCliAnswer(
 
   if (result.conclusion !== "success") {
     await cleanUp();
-    await stall(`The agent's GitHub Actions run ended as ${result.conclusion}.${log}`, false);
+    await stall(await whyItFailed(projectId, client, result), false);
     return;
   }
 
@@ -608,37 +681,55 @@ export async function startCliAsk(input: {
   }
 }
 
-/** When each pending answer was last looked up on GitHub, to go easy on the API. */
+/** When each board's runs were last looked up on GitHub, to go easy on the API. */
 const lastLooked = new Map<string, number>();
 const LOOK_EVERY_MS = 15_000;
 
 /**
- * Collects a CLI agent's answer without waiting for the webhook: asks
- * GitHub whether its run has finished. The webhook is the fast path; this
- * is the one that cannot be missed, so a lost delivery or an app that is
- * not subscribed to workflow runs never leaves a question hanging.
+ * Collects finished CLI agent runs without waiting for the webhook: asks
+ * GitHub which of the runs this board is waiting on have finished. The
+ * webhook is the fast path; this is the one that cannot be missed, so a lost
+ * delivery or an app not subscribed to workflow runs never leaves a card,
+ * an Epic or a question hanging. Each result is claimed under the webhook's
+ * own key, so whichever arrives first takes it and the other does nothing.
  */
-export async function collectCliAsk(projectId: string, messageId: string): Promise<void> {
-  const message = await repository().assistantMessage(messageId);
-  if (!message?.runnerJob || message.status !== "pending") return;
+export async function collectCliRuns(projectId: string): Promise<void> {
   const now = Date.now();
-  if (now - (lastLooked.get(messageId) ?? 0) < LOOK_EVERY_MS) return;
-  lastLooked.set(messageId, now);
+  if (now - (lastLooked.get(projectId) ?? 0) < LOOK_EVERY_MS) return;
+  lastLooked.set(projectId, now);
+
+  const repo = repository();
+  const waiting = new Set<string>();
+  for (const card of await repo.boardCards(projectId)) {
+    const job =
+      card.kind === "epic"
+        ? (await repo.epicDetail(card.id))?.runnerJob
+        : card.status === "running" || card.status === "review"
+          ? (await repo.ticketDetail(card.id))?.runnerJob
+          : null;
+    if (job) waiting.add(job);
+  }
+  for (const m of await repo.assistantMessages(projectId)) {
+    if (m.status === "pending" && m.runnerJob) waiting.add(m.runnerJob);
+  }
+  if (waiting.size === 0) return;
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
-  const run = await client
-    .findRun(RUNNER_WORKFLOW_FILE, runTitle("ask", "assistant", message.runnerJob))
-    .catch(() => null);
-  if (!run || run.status !== "completed") return;
-  lastLooked.delete(messageId);
-  await completeCliRun(projectId, {
-    job: message.runnerJob,
-    mode: "ask",
-    conclusion: run.conclusion ?? "failure",
-    url: run.url,
-  });
+  const runs = await vcs(project.repoFullName, creds.githubToken)
+    .recentRuns(RUNNER_WORKFLOW_FILE)
+    .catch(() => []);
+  for (const run of runs) {
+    const parsed = parseRunTitle(run.title);
+    if (!parsed || !waiting.has(parsed.job) || run.status !== "completed") continue;
+    if (!(await repo.claimDelivery(runnerResultKey(parsed.job, run.id)))) continue;
+    await completeCliRun(projectId, {
+      job: parsed.job,
+      mode: parsed.mode,
+      conclusion: run.conclusion ?? "failure",
+      url: run.url,
+    });
+  }
 }
 
 async function completeCliAsk(projectId: string, result: RunnerResult): Promise<void> {
@@ -659,8 +750,7 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const { finishCliAnswer } = await import("@/lib/assistant/turn");
   if (result.conclusion !== "success") {
     await cleanUp();
-    const log = result.url ? ` Its log: ${result.url}` : "";
-    await finishCliAnswer(message.id, null, `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`);
+    await finishCliAnswer(message.id, null, await whyItFailed(projectId, client, result));
     return;
   }
   const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
@@ -717,7 +807,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   };
 
   if (result.conclusion !== "success") {
-    await stop(`The agent's GitHub Actions run ended as ${result.conclusion}.${log}`, false);
+    await stop(await whyItFailed(projectId, client, result), false);
     return;
   }
 

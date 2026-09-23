@@ -34,7 +34,6 @@ interface LiveRun {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicRuns: Map<string, LiveRun> | undefined;
 }
 
