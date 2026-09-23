@@ -151,6 +151,8 @@ export interface BoardCard {
   stage: number;
   position: number;
   epicId: string | null;
+  /** A ticket the user pulled out of its epic's group. Renders on its own. */
+  detached?: boolean;
   size: TicketSize | null;
   agentRole: AgentRole | null;
   model: string | null;
@@ -165,3 +167,36 @@ export interface BoardCard {
 }
 
 export const STAGE_COUNT = LIFECYCLE_STAGES.length;
+
+/** The agent each column runs, and so the one a preset on it replaces. */
+export const COLUMN_AGENT_ROLE: Record<(typeof COLUMNS)[number], AgentRole> = {
+  backlog: "product",
+  todo: "architect",
+  in_progress: "coder",
+  in_review: "reviewer",
+  done: "pm",
+};
+
+/** A saved agent as the board sees it. The key itself never leaves the server. */
+export interface AgentPreset {
+  id: string;
+  name: string;
+  provider: "anthropic";
+  model: string;
+  prompt: string;
+  /** False means runs use the server's ANTHROPIC_API_KEY. */
+  hasKey: boolean;
+  keyHint: string | null;
+}
+
+export const agentPresetInputSchema = z.object({
+  name: z.string().trim().min(1, "Give the agent a name.").max(60),
+  model: z.string().min(1),
+  prompt: z.string().trim().min(1, "The prompt cannot be empty.").max(20_000),
+  /** A new key; null clears the saved one; omitted keeps it. */
+  apiKey: z.string().trim().min(1).max(500).nullable().optional(),
+});
+export type AgentPresetInput = z.infer<typeof agentPresetInputSchema>;
+
+/** Which preset runs each column on one board. Unset columns run built-ins. */
+export type ColumnAgents = Partial<Record<(typeof COLUMNS)[number], string>>;

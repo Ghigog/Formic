@@ -58,8 +58,9 @@ model Project {
   baseBranch   String   @default("main")
   createdAt    DateTime @default(now())
 
-  epics  Epic[]
-  events Event[]
+  epics        Epic[]
+  events       Event[]
+  columnAgents ColumnAgent[]
 
   @@map("project")
 }
@@ -110,6 +111,8 @@ model Ticket {
   stalledIn ColumnId?
   stage     Int          @default(3)
   position  Float
+  /// Pulled out of its epic's group by a human. Only To Do reads it.
+  detached  Boolean      @default(false)
 
   branchName    String?
   /// One line describing what the Coder Agent actually changed. Feeds the
@@ -201,4 +204,38 @@ model Event {
 
   @@index([projectId, seq])
   @@map("event")
+}
+
+/// A saved agent: a model, a brief, and optionally its own API key. Saved
+/// once and assigned to columns on any project's board.
+model AgentPreset {
+  id           String   @id @default(cuid())
+  name         String
+  provider     String   @default("anthropic")
+  model        String
+  /// Replaces the built-in brief for whichever column runs it.
+  prompt       String
+  /// AES-GCM ciphertext. Null means the server's ANTHROPIC_API_KEY.
+  apiKeyCipher String?
+  /// Last four characters, so the editor can say which key is saved.
+  apiKeyHint   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  columns ColumnAgent[]
+
+  @@map("agent_preset")
+}
+
+/// Which preset runs a column's agent on one project's board.
+model ColumnAgent {
+  projectId String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  column    ColumnId
+  presetId  String
+  preset    AgentPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, column])
+  @@index([presetId])
+  @@map("column_agent")
 }

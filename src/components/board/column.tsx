@@ -7,6 +7,8 @@ import { CoinBadge } from "@/components/ui/coin-badge";
 import { EpicGroup, KanbanCard, type ExtrasMap } from "./card";
 import type { BoardCard } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
+import { layout } from "./placement";
+import { AgentSelect, type ColumnAgentControls } from "./agent-select";
 
 /** The one-word description of what happens to a card while it sits here. */
 export const COLUMN_HINT: Record<ColumnId, string> = {
@@ -27,58 +29,12 @@ const COLUMN_DOT: Record<ColumnId, { color: string; live: boolean }> = {
 };
 
 /**
- * To Do shows the DAG and Done shows the merged set, so in both an epic
- * absorbs the tickets it owns in that column. Elsewhere a ticket stands on
- * its own, which is what the artboard shows for a card mid-flight.
- */
-const GROUPS_CHILDREN: Record<ColumnId, boolean> = {
-  backlog: false,
-  todo: true,
-  in_progress: false,
-  in_review: false,
-  done: true,
-};
-
-type RenderItem =
-  | { kind: "card"; card: BoardCard }
-  | { kind: "group"; epic: BoardCard; children: BoardCard[] };
-
-/** Column order with each epic's own tickets folded in behind it. */
-function layout(cards: BoardCard[], grouped: boolean): RenderItem[] {
-  if (!grouped) return cards.map((card) => ({ kind: "card" as const, card }));
-
-  const epicIds = new Set(
-    cards.filter((c) => c.kind === "epic").map((c) => c.id),
-  );
-  const adopted = new Set(
-    cards
-      .filter((c) => c.kind !== "epic" && c.epicId && epicIds.has(c.epicId))
-      .map((c) => c.id),
-  );
-
-  const items: RenderItem[] = [];
-  for (const card of cards) {
-    if (adopted.has(card.id)) continue;
-    if (card.kind === "epic") {
-      items.push({
-        kind: "group",
-        epic: card,
-        children: cards.filter((c) => adopted.has(c.id) && c.epicId === card.id),
-      });
-    } else {
-      items.push({ kind: "card", card });
-    }
-  }
-  return items;
-}
-
-/**
  * The count in a column header and on its mobile tab: work items, not render
  * nodes. An epic that has absorbed tickets here counts as those tickets; an
  * epic with none of its own in this column counts as itself.
  */
 export function columnCount(cards: BoardCard[], id: ColumnId): number {
-  return layout(cards, GROUPS_CHILDREN[id]).reduce(
+  return layout(cards, id).reduce(
     (n, item) =>
       n + (item.kind === "card" ? 1 : Math.max(1, item.children.length)),
     0,
@@ -91,6 +47,9 @@ export function Column({
   extras,
   composer,
   bare = false,
+  collapsed: controlledCollapsed,
+  onToggleCollapse,
+  agent,
   onOpen,
   onShowcase,
   className,
@@ -105,14 +64,23 @@ export function Column({
   bare?: boolean;
   /** Backlog leads with an inline composer; the other columns pass nothing. */
   composer?: React.ReactNode;
+  /**
+   * Which epics are folded shut. The board owns this when it needs to place
+   * drops, since a collapsed accordion changes what a drag index points at.
+   */
+  collapsed?: ReadonlySet<string>;
+  onToggleCollapse?: (epicId: string) => void;
+  /** Which agent works this column, and the controls to change it. */
+  agent?: ColumnAgentControls;
   onOpen: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
   className?: string;
 }) {
   const dot = COLUMN_DOT[id];
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [ownCollapsed, setOwnCollapsed] = useState<Set<string>>(new Set());
+  const collapsed = controlledCollapsed ?? ownCollapsed;
 
-  const items = useMemo(() => layout(cards, GROUPS_CHILDREN[id]), [cards, id]);
+  const items = useMemo(() => layout(cards, id), [cards, id]);
 
   const count = items.reduce(
     (n, item) =>
@@ -136,11 +104,13 @@ export function Column({
   });
 
   const toggle = (epicId: string) =>
-    setCollapsed((prev) => {
-      const out = new Set(prev);
-      if (!out.delete(epicId)) out.add(epicId);
-      return out;
-    });
+    onToggleCollapse
+      ? onToggleCollapse(epicId)
+      : setOwnCollapsed((prev) => {
+          const out = new Set(prev);
+          if (!out.delete(epicId)) out.add(epicId);
+          return out;
+        });
 
   return (
     <section
@@ -173,6 +143,8 @@ export function Column({
         </span>
       </div>
       )}
+
+      {agent && <AgentSelect column={id} {...agent} />}
 
       {composer}
 

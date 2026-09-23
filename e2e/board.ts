@@ -108,10 +108,33 @@ export async function dragCardTo(
   const into = await target.boundingBox();
   if (!from || !into) throw new Error(`Cannot drag ${cardId}: nothing to measure.`);
 
+  await dragTo(page, from, into.x + into.width / 2, into.y + 40);
+  await expect.poll(() => columnOf(page, cardId), { timeout }).toBe(to);
+}
+
+/**
+ * Drag a card to the empty space at the bottom of a column: below every
+ * card, and outside any epic's accordion.
+ */
+export async function dragCardToBottom(
+  page: Page,
+  cardId: string,
+  to: ColumnName,
+): Promise<void> {
+  const from = await card(page, cardId).boundingBox();
+  const into = await dropzone(page, to).boundingBox();
+  if (!from || !into) throw new Error(`Cannot drag ${cardId}: nothing to measure.`);
+  await dragTo(page, from, into.x + into.width / 2, into.y + into.height - 12);
+}
+
+async function dragTo(
+  page: Page,
+  from: { x: number; y: number; width: number; height: number },
+  endX: number,
+  endY: number,
+): Promise<void> {
   const startX = from.x + from.width / 2;
   const startY = from.y + Math.min(20, from.height / 2);
-  const endX = into.x + into.width / 2;
-  const endY = into.y + 40;
 
   await page.mouse.move(startX, startY);
   await page.mouse.down();
@@ -124,8 +147,6 @@ export async function dragCardTo(
     );
   }
   await page.mouse.up();
-
-  await expect.poll(() => columnOf(page, cardId), { timeout }).toBe(to);
 }
 
 /**

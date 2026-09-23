@@ -93,6 +93,7 @@ const PRICING: Record<string, { in: number; out: number }> = {
   "claude-opus-5": { in: 500, out: 2500 },
   "claude-sonnet-5": { in: 200, out: 1000 },
   "claude-haiku-4-5": { in: 100, out: 500 },
+  "claude-fable-5-1": { in: 1000, out: 5000 },
 };
 
 export function estimateCostCents(

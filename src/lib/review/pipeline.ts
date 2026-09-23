@@ -1,18 +1,19 @@
 import "server-only";
 
-import { agents } from "@/lib/agents/registry";
 import { launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck } from "@/lib/agents/ports";
 import { DEFAULT_RUN_BUDGET } from "@/lib/budget/limits";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
 import { stallTicket, taskFor } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
+import { projectFor } from "@/lib/board/project";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { type CheckSummary, mergeNeedsPromotion, vcs } from "@/lib/vcs";
 import { inMergeLane, inTicketLane } from "./lane";
+import { agentFor, modelFor } from "@/lib/agents/presets";
 
 /**
  * PROT-07. CI results drive a fix-or-merge loop.
@@ -93,7 +94,7 @@ async function react(
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket || ticket.status === "merged") return;
 
-  const project = await repo.defaultProject();
+  const project = await projectFor(projectId);
   const client = vcs(project.repoFullName);
 
   const pull = await client.pullRequest(prNumber);
@@ -180,7 +181,7 @@ async function mergeTicket(
   prNumber: number,
 ): Promise<void> {
   const repo = repository();
-  const project = await repo.defaultProject();
+  const project = await projectFor(projectId);
   const client = vcs(project.repoFullName);
 
   const update = await client.updateBranch(prNumber);
@@ -282,10 +283,13 @@ async function maybeShowcase(projectId: string, epicId: string): Promise<void> {
   if (!detail) return;
 
   const prd = prdSchema.safeParse(detail.prd);
-  const run = startRun(projectId, "pm", { epicId });
+  const run = startRun(projectId, "pm", {
+    epicId,
+    model: await modelFor(projectId, "showcase"),
+  });
 
   launch(async () => {
-    const outcome = await agents().showcase.summarize(run.ctx, {
+    const outcome = await (await agentFor(projectId, "showcase")).summarize(run.ctx, {
       epicId,
       title: detail.title,
       prd: prd.success ? prd.data : null,
@@ -349,7 +353,7 @@ async function fixTicket(
     return;
   }
 
-  const project = await repo.defaultProject();
+  const project = await projectFor(projectId);
   const client = vcs(project.repoFullName);
   await repo.updateTicket(ticket.id, { attempts: attempt });
 
@@ -362,6 +366,7 @@ async function fixTicket(
   }
 
   const run = startRun(projectId, "reviewer", {
+    model: await modelFor(projectId, "reviewer"),
     epicId: ticket.epicId,
     ticketId: ticket.id,
   });
@@ -392,7 +397,7 @@ async function fixTicket(
   if (checkout.sandboxId) await run.attachSandbox(checkout.sandboxId);
 
   try {
-    const outcome = await agents().reviewer.fix(run.ctx, {
+    const outcome = await (await agentFor(projectId, "reviewer")).fix(run.ctx, {
       task: taskFor(ticket),
       workspace: checkout.workspace,
       checks: logs,

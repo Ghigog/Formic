@@ -7,7 +7,7 @@ import { Column, columnCount } from "./column";
 import { BoardHeader } from "./header";
 import { BacklogComposer } from "./composer";
 import type { ExtrasMap } from "./card";
-import type { BoardCard } from "@/lib/domain/entities";
+import type { AgentPreset, BoardCard, ColumnAgents } from "@/lib/domain/entities";
 import {
   COLUMNS,
   COLUMN_LABELS,
@@ -17,7 +17,8 @@ import {
   isDraggable,
 } from "@/lib/domain/status";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
-import { byPosition, positionForIndex } from "@/lib/ordering";
+import { byPosition } from "@/lib/ordering";
+import { placeDrop } from "./placement";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 
 /** The next column a card can advance to, for the mobile action. */
@@ -44,6 +45,13 @@ export interface BoardProps {
    * card back to where it came from.
    */
   onTransition: (t: CardTransition) => Promise<TransitionResult>;
+  /** Per-column agent choice. Omitted, columns show no agent selector. */
+  agents?: {
+    presets: AgentPreset[];
+    columns: ColumnAgents;
+    onAssign: (column: ColumnId, presetId: string | null) => Promise<void>;
+    onEdit: (column: ColumnId, preset: AgentPreset | null) => void;
+  };
 }
 
 export function Board({
@@ -59,10 +67,28 @@ export function Board({
   onNewItem,
   onCapture,
   onTransition,
+  agents,
 }: BoardProps) {
   const [optimistic, setOptimistic] = useState<BoardCard[]>(cards);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ColumnId>("backlog");
+  const [collapsed, setCollapsed] = useState<Record<ColumnId, Set<string>>>(
+    () => ({
+      backlog: new Set(),
+      todo: new Set(),
+      in_progress: new Set(),
+      in_review: new Set(),
+      done: new Set(),
+    }),
+  );
+
+  const toggleCollapse = useCallback((column: ColumnId, epicId: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev[column]);
+      if (!next.delete(epicId)) next.add(epicId);
+      return { ...prev, [column]: next };
+    });
+  }, []);
 
   const isMobile = useMediaQuery("(max-width: 767px)");
 
@@ -91,6 +117,7 @@ export function Board({
   const epics = live.filter((c) => c.kind === "epic");
   const epicsDone = epics.filter((c) => c.status === "merged").length;
 
+  /** `index` is the drag library's: among the destination's rendered rows. */
   const commit = useCallback(
     async (card: BoardCard, to: ColumnId, index: number) => {
       const from = columnFor(card.status, card.stalledIn);
@@ -100,16 +127,23 @@ export function Board({
         return;
       }
 
-      const destination = byColumn[to].filter((c) => c.id !== card.id);
-      const position = positionForIndex(
-        destination.map((c) => c.position),
+      const { position, detached } = placeDrop({
+        card,
+        destination: byColumn[to],
+        column: to,
+        collapsed: collapsed[to],
         index,
-      );
+      });
 
       setError(null);
       setOptimistic((prev) => [
         ...prev.filter((c) => c.id !== card.id),
-        { ...card, position, stalledIn: to === from ? card.stalledIn : null },
+        {
+          ...card,
+          position,
+          detached,
+          stalledIn: to === from ? card.stalledIn : null,
+        },
       ]);
 
       const result = await onTransition({
@@ -118,6 +152,7 @@ export function Board({
         from,
         to,
         position,
+        detached: card.kind === "ticket" ? detached : undefined,
         actor: "user",
       });
 
@@ -131,7 +166,7 @@ export function Board({
 
       setOptimistic((prev) => prev.filter((c) => c.id !== card.id));
     },
-    [byColumn, onTransition],
+    [byColumn, collapsed, onTransition],
   );
 
   const onDragEnd = useCallback(
@@ -235,6 +270,16 @@ export function Board({
               cards={byColumn[col]}
               extras={extras}
               bare={isMobile}
+              collapsed={collapsed[col]}
+              onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
+              agent={
+                agents && {
+                  presets: agents.presets,
+                  selected: agents.presets.find((p) => p.id === agents.columns[col]),
+                  onAssign: (presetId) => agents.onAssign(col, presetId),
+                  onEdit: (preset) => agents.onEdit(col, preset),
+                }
+              }
               composer={
                 col === "backlog" ? (
                   <BacklogComposer onSubmit={onCapture} />
@@ -252,7 +297,8 @@ export function Board({
                 void commit(
                   advanceTarget.card,
                   advanceTarget.to,
-                  byColumn[advanceTarget.to].length,
+                  // Past the last row: the end of the column.
+                  Number.MAX_SAFE_INTEGER,
                 )
               }
               aria-label={`Advance ${advanceTarget.card.key} to ${COLUMN_LABELS[advanceTarget.to]}`}

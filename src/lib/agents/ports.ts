@@ -26,6 +26,17 @@ export interface AgentContext {
   charge?: (usage: Usage) => Promise<void>;
 }
 
+/**
+ * What a saved preset changes about an agent. Anything unset keeps the
+ * built-in choice: the pipeline's model, its brief, the server's API key.
+ */
+export interface AgentConfig {
+  model?: string;
+  /** Replaces the built-in brief. Coding rules are still appended. */
+  brief?: string;
+  apiKey?: string | null;
+}
+
 export interface Usage {
   model: string;
   tokensIn: number;

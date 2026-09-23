@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { repository } from "@/lib/db";
 import { applyTransition } from "@/lib/board/service";
 import { cardTransitionSchema } from "@/lib/domain/transitions";
+import { activeProject } from "@/lib/board/project";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const project = await repository().defaultProject();
+  const project = await activeProject();
   const result = await applyTransition(project.id, parsed.data);
   return Response.json(result, { status: result.ok ? 200 : 409 });
 }

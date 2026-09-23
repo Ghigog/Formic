@@ -50,8 +50,17 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true, handled: 0, ignored: true }, { status: 202 });
   }
 
+  // Every repository on the board can point its webhook here; the payload
+  // says which one this is about.
   const repo = repository();
-  const project = await repo.defaultProject();
+  const fullName = (payload as { repository?: { full_name?: unknown } })
+    ?.repository?.full_name;
+  const project =
+    (typeof fullName === "string"
+      ? (await repo.listProjects()).find(
+          (p) => p.repoFullName.toLowerCase() === fullName.toLowerCase(),
+        )
+      : undefined) ?? (await repo.defaultProject());
   let handled = 0;
 
   for (const signal of signals) {

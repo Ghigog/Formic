@@ -6,6 +6,7 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  PresetRecord,
   ProjectSummary,
   Repository,
   RunOutcome,
@@ -13,7 +14,12 @@ import type {
   TicketDetail,
   TicketUpdate,
 } from "./repository";
-import type { AgentRunStatus, BoardCard } from "@/lib/domain/entities";
+import type {
+  AgentPreset,
+  AgentRunStatus,
+  BoardCard,
+  ColumnAgents,
+} from "@/lib/domain/entities";
 import { type ColumnId, columnFor } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -41,15 +47,28 @@ interface TicketExtras {
 }
 
 interface Store {
+  /** The project the demo board belongs to, and the fallback. */
   project: ProjectSummary;
+  projects: Map<string, ProjectSummary>;
+  /** Epic id to project id. Tickets belong to their epic's project. */
+  epicProject: Map<string, string>;
   cards: Map<string, BoardCard>;
   ticketExtras: Map<string, TicketExtras>;
   prds: Map<string, unknown>;
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
-  events: Array<{ seq: number; type: string; payload: unknown; at: Date }>;
+  events: Array<{
+    seq: number;
+    projectId: string;
+    type: string;
+    payload: unknown;
+    at: Date;
+  }>;
   runs: Map<string, RunRecord & { status: AgentRunStatus; startedAt: Date }>;
   deliveries: Set<string>;
+  presets: Map<string, AgentPreset & { apiKeyCipher: string | null }>;
+  /** `${projectId}:${column}` to preset id. */
+  columnAgents: Map<string, string>;
 }
 
 declare global {
@@ -58,14 +77,23 @@ declare global {
 }
 
 function store(): Store {
-  if (globalThis.__formicMemoryStore) return globalThis.__formicMemoryStore;
+  const existing = globalThis.__formicMemoryStore;
+  if (existing) {
+    // A store from before presets existed survives a dev-server reload.
+    existing.presets ??= new Map();
+    existing.columnAgents ??= new Map();
+    return existing;
+  }
+  const project: ProjectSummary = {
+    id: "project_default",
+    name: "Formic",
+    repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
+    baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
+  };
   const s: Store = {
-    project: {
-      id: "project_default",
-      name: "Formic",
-      repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
-      baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
-    },
+    project,
+    projects: new Map([[project.id, project]]),
+    epicProject: new Map(),
     cards: new Map(),
     ticketExtras: new Map(),
     prds: new Map(),
@@ -74,9 +102,17 @@ function store(): Store {
     events: [],
     runs: new Map(),
     deliveries: new Set(),
+    presets: new Map(),
+    columnAgents: new Map(),
   };
   globalThis.__formicMemoryStore = s;
   return s;
+}
+
+/** The project a card belongs to. Seeded cards belong to the default one. */
+function projectOf(s: Store, card: BoardCard): string {
+  const epicId = card.kind === "epic" ? card.id : card.epicId;
+  return (epicId && s.epicProject.get(epicId)) || s.project.id;
 }
 
 export function seedMemory(cards: BoardCard[]): void {
@@ -90,8 +126,44 @@ export class MemoryRepository implements Repository {
     return store().project;
   }
 
-  async boardCards(): Promise<BoardCard[]> {
-    const cards = [...store().cards.values()];
+  async listProjects(): Promise<ProjectSummary[]> {
+    return [...store().projects.values()];
+  }
+
+  async projectById(projectId: string): Promise<ProjectSummary | null> {
+    return store().projects.get(projectId) ?? null;
+  }
+
+  async ensureProject(input: {
+    repoFullName: string;
+    baseBranch: string;
+  }): Promise<ProjectSummary> {
+    const s = store();
+    const found = [...s.projects.values()].find(
+      (p) => p.repoFullName.toLowerCase() === input.repoFullName.toLowerCase(),
+    );
+    if (found) return found;
+    const project: ProjectSummary = {
+      id: id("project"),
+      name: input.repoFullName.split("/")[1] ?? input.repoFullName,
+      repoFullName: input.repoFullName,
+      baseBranch: input.baseBranch,
+    };
+    s.projects.set(project.id, project);
+    return project;
+  }
+
+  async projectOfCard(cardId: string): Promise<string | null> {
+    const s = store();
+    const card = s.cards.get(cardId);
+    return card ? projectOf(s, card) : null;
+  }
+
+  async boardCards(projectId?: string): Promise<BoardCard[]> {
+    const s = store();
+    const cards = [...s.cards.values()].filter(
+      (c) => projectId === undefined || projectOf(s, c) === projectId,
+    );
     for (const card of cards) {
       if (card.kind !== "epic") continue;
       const children = cards.filter((c) => c.epicId === card.id);
@@ -103,7 +175,9 @@ export class MemoryRepository implements Repository {
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
     const s = store();
-    const n = [...s.cards.values()].filter((c) => c.kind === "epic").length + 1;
+    const n =
+      (await this.boardCards(input.projectId)).filter((c) => c.kind === "epic")
+        .length + 1;
     const card: BoardCard = {
       id: id("epic"),
       kind: "epic",
@@ -127,6 +201,7 @@ export class MemoryRepository implements Repository {
       doneCount: 0,
     };
     s.cards.set(card.id, card);
+    s.epicProject.set(card.id, input.projectId);
     s.rawRequests.set(card.id, input.rawRequest);
     return card;
   }
@@ -186,10 +261,11 @@ export class MemoryRepository implements Repository {
     card.status = input.status;
     card.stalledIn = input.stalledIn;
     card.position = input.position;
+    if (input.detached !== undefined) card.detached = input.detached;
   }
 
-  async columnPositions(_projectId: string, column: ColumnId): Promise<number[]> {
-    return (await this.boardCards())
+  async columnPositions(projectId: string, column: ColumnId): Promise<number[]> {
+    return (await this.boardCards(projectId))
       .filter((c) => columnFor(c.status, c.stalledIn) === column)
       .map((c) => c.position)
       .sort((a, b) => a - b);
@@ -228,43 +304,49 @@ export class MemoryRepository implements Repository {
   }
 
   async appendEvent(
-    _projectId: string,
+    projectId: string,
     type: string,
     payload: unknown,
   ): Promise<number> {
     const s = store();
     const next = ++seq;
-    s.events.push({ seq: next, type, payload, at: new Date() });
+    s.events.push({ seq: next, projectId, type, payload, at: new Date() });
     // Bounded: this is a demo store, not a durable log.
     if (s.events.length > 2000) s.events.splice(0, s.events.length - 2000);
     return next;
   }
 
-  async eventsAfter(_projectId: string, after: number, limit = 500) {
+  async eventsAfter(projectId: string, after: number, limit = 500) {
     return store()
-      .events.filter((e) => e.seq > after)
-      .slice(0, limit);
+      .events.filter((e) => e.projectId === projectId && e.seq > after)
+      .slice(0, limit)
+      .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
   }
 
-  async latestEventSeq(_projectId: string): Promise<number> {
-    return store().events.at(-1)?.seq ?? 0;
+  async latestEventSeq(projectId: string): Promise<number> {
+    const mine = store().events.filter((e) => e.projectId === projectId);
+    return mine.at(-1)?.seq ?? 0;
   }
 
   async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
     const s = store();
     const card = s.cards.get(ticketId);
     if (!card || card.kind !== "ticket") return null;
-    return toDetail(card, s.ticketExtras.get(ticketId), s.project.id);
+    return toDetail(card, s.ticketExtras.get(ticketId), projectOf(s, card));
   }
 
   async ticketByPrNumber(
-    _projectId: string,
+    projectId: string,
     prNumber: number,
   ): Promise<TicketDetail | null> {
     const s = store();
     for (const card of s.cards.values()) {
-      if (card.kind === "ticket" && card.prNumber === prNumber) {
-        return toDetail(card, s.ticketExtras.get(card.id), s.project.id);
+      if (
+        card.kind === "ticket" &&
+        card.prNumber === prNumber &&
+        projectOf(s, card) === projectId
+      ) {
+        return toDetail(card, s.ticketExtras.get(card.id), projectId);
       }
     }
     return null;
@@ -276,6 +358,8 @@ export class MemoryRepository implements Repository {
     if (!card) return;
 
     if (update.status !== undefined) card.status = update.status;
+    // A merged ticket joins its epic's group in Done, wherever it sat.
+    if (update.status === "merged") card.detached = false;
     if (update.stalledIn !== undefined) card.stalledIn = update.stalledIn;
     if (update.stage !== undefined) card.stage = update.stage;
     if (update.prNumber !== undefined) card.prNumber = update.prNumber;
@@ -297,7 +381,7 @@ export class MemoryRepository implements Repository {
     return [...s.cards.values()]
       .filter((c) => c.kind === "ticket" && c.epicId === epicId)
       .sort(byPosition)
-      .map((c) => toDetail(c, s.ticketExtras.get(c.id), s.project.id));
+      .map((c) => toDetail(c, s.ticketExtras.get(c.id), projectOf(s, c)));
   }
 
   async startRun(run: RunRecord): Promise<void> {
@@ -331,8 +415,61 @@ export class MemoryRepository implements Repository {
     return true;
   }
 
-  async rebalanceColumn(_projectId: string, column: ColumnId): Promise<void> {
-    const cards = (await this.boardCards())
+  async listPresets(): Promise<AgentPreset[]> {
+    return [...store().presets.values()].map(publicPreset);
+  }
+
+  async presetForRun(presetId: string) {
+    const row = store().presets.get(presetId);
+    return row ? { preset: publicPreset(row), apiKeyCipher: row.apiKeyCipher } : null;
+  }
+
+  async savePreset(record: PresetRecord): Promise<AgentPreset> {
+    const s = store();
+    const existing = record.id ? s.presets.get(record.id) : undefined;
+    const keep = record.apiKeyCipher === undefined;
+    const row = {
+      id: existing?.id ?? id("preset"),
+      name: record.name,
+      provider: "anthropic" as const,
+      model: record.model,
+      prompt: record.prompt,
+      apiKeyCipher: keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
+      keyHint: keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
+      hasKey: false,
+    };
+    row.hasKey = row.apiKeyCipher !== null;
+    s.presets.set(row.id, row);
+    return publicPreset(row);
+  }
+
+  async deletePreset(presetId: string): Promise<void> {
+    const s = store();
+    s.presets.delete(presetId);
+    for (const [k, v] of s.columnAgents) if (v === presetId) s.columnAgents.delete(k);
+  }
+
+  async columnAgents(projectId: string): Promise<ColumnAgents> {
+    const out: ColumnAgents = {};
+    for (const [k, v] of store().columnAgents) {
+      const [p, column] = k.split(":");
+      if (p === projectId) out[column as ColumnId] = v;
+    }
+    return out;
+  }
+
+  async setColumnAgent(
+    projectId: string,
+    column: ColumnId,
+    presetId: string | null,
+  ): Promise<void> {
+    const s = store();
+    if (presetId === null) s.columnAgents.delete(`${projectId}:${column}`);
+    else s.columnAgents.set(`${projectId}:${column}`, presetId);
+  }
+
+  async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
+    const cards = (await this.boardCards(projectId))
       .filter((c) => columnFor(c.status, c.stalledIn) === column)
       .sort(byPosition);
     if (!needsRebalance(cards.map((c) => c.position))) return;
@@ -367,4 +504,9 @@ function toDetail(
     attempts: extras?.attempts ?? 0,
     summary: extras?.summary ?? null,
   };
+}
+
+function publicPreset(row: AgentPreset & { apiKeyCipher: string | null }): AgentPreset {
+  const { apiKeyCipher, ...rest } = row;
+  return { ...rest, hasKey: apiKeyCipher !== null };
 }

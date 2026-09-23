@@ -15,6 +15,8 @@ import { launch, runArchitectAgent, runProductAgent } from "@/lib/agents/pipelin
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { prdSchema } from "@/lib/domain/entities";
 import { scopesOverlap } from "@/lib/domain/scope";
+import { projectFor } from "./project";
+import { directoryTree } from "@/lib/vcs/repositories";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -75,6 +77,33 @@ export async function applyTransition(
     };
   }
 
+  // A reorder within a column changes where the card sits and nothing else:
+  // status, stall and agents all stay as they are. Without this, nudging an
+  // epic within To Do re-ran its Architect Agent, and nudging a specified
+  // backlog epic reset it to draft.
+  if (actual === t.to) {
+    const position = await placeAmong(projectId, t.to, card, t.position);
+    await repo.move({
+      cardId: card.id,
+      kind: card.kind,
+      status: card.status,
+      stalledIn: card.stalledIn,
+      position,
+      detached: card.kind === "ticket" ? (t.detached ?? false) : undefined,
+    });
+    await repo.rebalanceColumn(projectId, t.to);
+    await publish(projectId, {
+      type: "card.status",
+      cardId: card.id,
+      kind: card.kind,
+      status: card.status,
+      stalledIn: card.stalledIn,
+      stage: card.stage,
+      blockedReason: card.blockedReason,
+    });
+    return { ok: true, status: card.status, runId: null };
+  }
+
   const verdict = canUserMove(actual, t.to);
   if (!verdict.ok) {
     return { ok: false, reason: verdict.reason, revertTo: actual };
@@ -105,14 +134,7 @@ export async function applyTransition(
   }
 
   const status = statusForUserDrop(t.to, met);
-  const positions = (await repo.columnPositions(projectId, t.to)).filter(
-    (p) => p !== card.position,
-  );
-  const index = positions.findIndex((p) => p > t.position);
-  const position = positionForIndex(
-    positions,
-    index === -1 ? positions.length : index,
-  );
+  const position = await placeAmong(projectId, t.to, card, t.position);
 
   await repo.move({
     cardId: card.id,
@@ -120,6 +142,7 @@ export async function applyTransition(
     status,
     stalledIn: null,
     position,
+    detached: card.kind === "ticket" ? (t.detached ?? false) : undefined,
   });
   await repo.rebalanceColumn(projectId, t.to);
 
@@ -147,7 +170,7 @@ export async function applyTransition(
       };
     }
 
-    const tree = await repoTree();
+    const tree = await repoTree(projectId);
     const title = detail!.title;
 
     launch(
@@ -170,11 +193,32 @@ export async function applyTransition(
 }
 
 /**
- * Top-level directories the Architect Agent uses to ground its file scopes.
- * Read from the sandbox once PROT-05 is wired in; until then the known layout
- * of this repository is a better prompt than nothing.
+ * The client's proposed position, re-derived against the server's column so
+ * a card that moved meanwhile cannot produce a collision: the card lands
+ * between the same two neighbours the client saw.
  */
-async function repoTree(): Promise<string[]> {
+async function placeAmong(
+  projectId: string,
+  column: ColumnId,
+  card: BoardCard,
+  proposed: number,
+): Promise<number> {
+  const positions = (await repository().columnPositions(projectId, column)).filter(
+    (p) => p !== card.position,
+  );
+  const index = positions.findIndex((p) => p > proposed);
+  return positionForIndex(positions, index === -1 ? positions.length : index);
+}
+
+/**
+ * Directories the Architect Agent uses to ground its file scopes: the picked
+ * repository's real layout when GitHub can be read, and otherwise the known
+ * layout of this repository, which is a better prompt than nothing.
+ */
+async function repoTree(projectId: string): Promise<string[]> {
+  const project = await projectFor(projectId);
+  const tree = await directoryTree(project.repoFullName, project.baseBranch);
+  if (tree && tree.length > 0) return tree;
   return [
     "src/app",
     "src/components",
