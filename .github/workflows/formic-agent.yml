@@ -1,0 +1,149 @@
+# formic-runner: v2
+# Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
+# on your own plan when a Formic card asks for one, and pushes its work to a
+# formic-staging/ branch for Formic to check. Formic replaces this file when
+# its version changes.
+name: Formic agent
+run-name: "Formic ${{ inputs.mode }} ${{ inputs.ticket }} · ${{ inputs.job }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Formic job id
+        required: true
+      mode:
+        description: implement, fix, product, architect, showcase or ask
+        required: true
+      ticket:
+        description: Ticket key
+        required: true
+      cli:
+        description: claude, codex or gemini
+        required: true
+      model:
+        description: Model, or empty for the agent's default
+        required: false
+        default: ""
+      from:
+        description: Branch to start from
+        required: true
+      prompt:
+        description: What to do
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: formic-${{ inputs.job }}
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.from }}
+          persist-credentials: false
+
+      - name: Remember where the agent started
+        run: echo "FORMIC_START=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the agent
+        env:
+          CLI: ${{ inputs.cli }}
+        run: |
+          case "$CLI" in
+            claude) npm install -g @anthropic-ai/claude-code ;;
+            codex) npm install -g @openai/codex ;;
+            gemini) npm install -g @google/gemini-cli ;;
+            *) echo "Unknown agent: $CLI"; exit 1 ;;
+          esac
+
+      - name: Run the agent
+        env:
+          CLI: ${{ inputs.cli }}
+          MODEL: ${{ inputs.model }}
+          PROMPT: ${{ inputs.prompt }}
+          FORMIC_SUMMARY: ${{ runner.temp }}/formic-summary.md
+          FORMIC_OUTPUT: ${{ runner.temp }}/formic-answer.md
+          FORMIC_STDOUT: ${{ runner.temp }}/formic-stdout.md
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.cli == 'claude' && secrets.FORMIC_CLAUDE_CODE_TOKEN || '' }}
+          CODEX_CREDENTIAL: ${{ inputs.cli == 'codex' && secrets.FORMIC_CODEX_AUTH || '' }}
+          GEMINI_API_KEY: ${{ inputs.cli == 'gemini' && secrets.FORMIC_GEMINI_API_KEY || '' }}
+        run: |
+          set -euo pipefail
+          case "$CLI" in
+            claude)
+              if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then echo "No Claude Code token. Add it to the agent in Formic."; exit 1; fi
+              args=(-p "$PROMPT" --dangerously-skip-permissions)
+              if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+              claude "${args[@]}" | tee "$FORMIC_STDOUT"
+              ;;
+            codex)
+              if [ -z "$CODEX_CREDENTIAL" ]; then echo "No Codex sign-in. Add it to the agent in Formic."; exit 1; fi
+              if [[ "$CODEX_CREDENTIAL" == \{* ]]; then
+                mkdir -p ~/.codex
+                printf '%s' "$CODEX_CREDENTIAL" > ~/.codex/auth.json
+              else
+                export CODEX_API_KEY="$CODEX_CREDENTIAL" OPENAI_API_KEY="$CODEX_CREDENTIAL"
+              fi
+              unset CODEX_CREDENTIAL
+              args=(exec --dangerously-bypass-approvals-and-sandbox)
+              if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
+              codex "${args[@]}" "$PROMPT" | tee "$FORMIC_STDOUT"
+              ;;
+            gemini)
+              if [ -z "$GEMINI_API_KEY" ]; then echo "No Gemini API key. Add it to the agent in Formic."; exit 1; fi
+              args=(-p "$PROMPT" --approval-mode yolo)
+              if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
+              gemini "${args[@]}" | tee "$FORMIC_STDOUT"
+              ;;
+          esac
+
+      - name: Hand the work to Formic
+        env:
+          JOB: ${{ inputs.job }}
+          MODE: ${{ inputs.mode }}
+          TICKET: ${{ inputs.ticket }}
+          FORMIC_SUMMARY: ${{ runner.temp }}/formic-summary.md
+          FORMIC_OUTPUT: ${{ runner.temp }}/formic-answer.md
+          FORMIC_STDOUT: ${{ runner.temp }}/formic-stdout.md
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config user.name "Formic Agent"
+          git config user.email "formic-agent@users.noreply.github.com"
+          case "$MODE" in
+            product|architect|showcase|ask)
+              # An answer, not a change: only the answer leaves this run.
+              git reset -q --hard "$FORMIC_START"
+              git clean -qfdx
+              answer="$FORMIC_OUTPUT"
+              if [ ! -s "$answer" ]; then answer="$FORMIC_STDOUT"; fi
+              if [ ! -s "$answer" ]; then echo "The agent finished without an answer."; exit 1; fi
+              mkdir -p "$(dirname ".formic/answer.md")"
+              cp "$answer" ".formic/answer.md"
+              git add -f ".formic/answer.md"
+              git commit -q -m "$TICKET: $MODE answer"
+              git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}"
+              exit 0
+              ;;
+          esac
+          git add -A
+          if git diff --cached --quiet && [ "$(git rev-parse HEAD)" = "$FORMIC_START" ]; then
+            echo "The agent finished without changing anything."
+            exit 1
+          fi
+          if [ ! -s "$FORMIC_SUMMARY" ]; then
+            printf '%s: changes from the agent\n' "$TICKET" > "$FORMIC_SUMMARY"
+          fi
+          git commit --allow-empty -F "$FORMIC_SUMMARY"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}"
