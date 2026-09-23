@@ -241,6 +241,11 @@ export interface Repository {
   setEpicRunnerJob(epicId: string, job: string | null): Promise<void>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
+  /** A planning stage stalled: the Epic stays in its column, with why. */
+  stallEpic(
+    epicId: string,
+    stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
+  ): Promise<void>;
   appendEvent(projectId: string, type: string, payload: unknown): Promise<number>;
   eventsAfter(
     projectId: string,

@@ -38,6 +38,7 @@ type EpicRow = {
   status: TicketStatus;
   stalledIn: ColumnId | null;
   stage: number;
+  blockedReason: string | null;
   position: number;
   createdAt: Date;
   tickets: Array<{ id: string; status: TicketStatus }>;
@@ -202,7 +203,7 @@ export class PrismaRepository implements Repository {
       dependsOn: [],
       prNumber: null,
       prUrl: null,
-      blockedReason: null,
+      blockedReason: epic.blockedReason,
       costCents: 0,
       childCount: epic.tickets.length,
       doneCount: epic.tickets.filter((t) => t.status === "merged").length,
@@ -346,7 +347,11 @@ export class PrismaRepository implements Repository {
       position: input.position,
     };
     if (input.kind === "epic") {
-      await db.epic.update({ where: { id: input.cardId }, data });
+      await db.epic.update({
+        where: { id: input.cardId },
+        // Out of a stall, the reason goes with it.
+        data: { ...data, ...(input.stalledIn === null ? { blockedReason: null } : {}) },
+      });
     } else {
       await db.ticket.update({
         where: { id: input.cardId },
@@ -409,6 +414,8 @@ export class PrismaRepository implements Repository {
         prdEditedByHuman: byHuman,
         status: "specified",
         stage: 2,
+        stalledIn: null,
+        blockedReason: null,
       },
     });
   }
@@ -417,7 +424,22 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     await db.epic.update({
       where: { id: epicId },
-      data: { showcase: markdown, stage: 8 },
+      data: { showcase: markdown, stage: 8, stalledIn: null, blockedReason: null },
+    });
+  }
+
+  async stallEpic(
+    epicId: string,
+    stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
+  ): Promise<void> {
+    await prisma().epic.updateMany({
+      where: { id: epicId },
+      data: {
+        status: stall.status,
+        stalledIn: stall.stalledIn,
+        stage: stall.stage,
+        blockedReason: stall.reason,
+      },
     });
   }
 

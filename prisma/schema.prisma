@@ -123,6 +123,8 @@ model Epic {
   /// Set only for blocked/failed cards, so a stalled card keeps its column.
   stalledIn ColumnId?
   stage     Int          @default(1)
+  /// Why a planning stage stalled. Cleared when the Epic moves on.
+  blockedReason String?
   /// Fractional index. A drag writes one row instead of renumbering a column.
   position  Float
 

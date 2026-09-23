@@ -183,11 +183,19 @@ export async function stallEpic(
   error: string,
   options: { blocked: boolean; stalledIn: "backlog" | "todo"; stage: number },
 ): Promise<void> {
+  const status = options.blocked ? "blocked" : "failed";
+  // Saved, not only announced: a refresh must still show where it stopped.
+  await repository().stallEpic(epicId, {
+    status,
+    stalledIn: options.stalledIn,
+    stage: options.stage,
+    reason: error,
+  });
   await publish(projectId, {
     type: "card.status",
     cardId: epicId,
     kind: "epic",
-    status: options.blocked ? "blocked" : "failed",
+    status,
     stalledIn: options.stalledIn,
     stage: options.stage,
     blockedReason: error,

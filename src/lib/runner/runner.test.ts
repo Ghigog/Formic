@@ -201,6 +201,25 @@ describe("a CLI agent planning an Epic", () => {
     expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${inputs.job}`)).toBe(false);
   });
 
+  it("keeps a stalled Epic stalled, with why, across a reload", async () => {
+    await useClaudeCode("backlog");
+    await installRunner();
+    const epic = await seedEpic(null);
+
+    await runProductAgent(PROJECT, epic.id, "Let me export my board as CSV");
+    const { job } = lastDispatch();
+    await completeCliRun(PROJECT, { job: job!, mode: "product", conclusion: "cancelled", url: null });
+
+    // What a refresh reads: the stored card, not the event.
+    const card = (await repository().boardCards(PROJECT)).find((c) => c.id === epic.id)!;
+    expect(card).toMatchObject({ status: "failed", stalledIn: "backlog", stage: 2 });
+    expect(card.blockedReason).toContain("cancelled");
+
+    // Moving it on clears the reason.
+    await repository().move({ cardId: epic.id, kind: "epic", status: "draft", stalledIn: null, position: 1 });
+    expect((await repository().cardById(epic.id))!.blockedReason).toBeNull();
+  });
+
   it("sends an unsafe ticket graph back as a correction, then takes the fixed one", async () => {
     await useClaudeCode("todo");
     await installRunner();

@@ -334,6 +334,8 @@ export class MemoryRepository implements Repository {
     card.status = input.status;
     card.stalledIn = input.stalledIn;
     card.position = input.position;
+    // Out of a stall, an Epic's reason goes with it.
+    if (card.kind === "epic" && input.stalledIn === null) card.blockedReason = null;
     if (input.detached !== undefined) card.detached = input.detached;
   }
 
@@ -378,6 +380,8 @@ export class MemoryRepository implements Repository {
     if (card) {
       card.status = "specified";
       card.stage = 2;
+      card.stalledIn = null;
+      card.blockedReason = null;
     }
   }
 
@@ -385,7 +389,23 @@ export class MemoryRepository implements Repository {
     const s = store();
     s.showcases.set(epicId, markdown);
     const card = s.cards.get(epicId);
-    if (card) card.stage = 8;
+    if (card) {
+      card.stage = 8;
+      card.stalledIn = null;
+      card.blockedReason = null;
+    }
+  }
+
+  async stallEpic(
+    epicId: string,
+    stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
+  ): Promise<void> {
+    const card = store().cards.get(epicId);
+    if (!card) return;
+    card.status = stall.status;
+    card.stalledIn = stall.stalledIn;
+    card.stage = stall.stage;
+    card.blockedReason = stall.reason;
   }
 
   async appendEvent(
