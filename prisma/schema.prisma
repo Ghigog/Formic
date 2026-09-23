@@ -89,10 +89,14 @@ model Project {
   repoFullName String
   baseBranch   String   @default("main")
   createdAt    DateTime @default(now())
+  /// The saved agent the board's assistant runs on. Not a relation: a
+  /// deleted template simply leaves the assistant without one.
+  assistantPresetId String?
 
   epics        Epic[]
   events       Event[]
   columnAgents ColumnAgent[]
+  assistantMessages AssistantMessage[]
 
   @@index([ownerId])
   @@map("project")
@@ -285,4 +289,25 @@ model ColumnAgent {
   @@id([projectId, column])
   @@index([presetId])
   @@map("column_agent")
+}
+
+/// The board's assistant: a conversation per project with the agent the
+/// person picked for it.
+model AssistantMessage {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "user" or "assistant".
+  role      String
+  content   String
+  /// Changes the assistant proposed, each waiting for the person's approval.
+  proposals Json?
+  /// "done", "pending" while the agent works, or "failed".
+  status    String   @default("done")
+  /// The Actions run a CLI agent is answering this in, if any.
+  runnerJob String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@map("assistant_message")
 }

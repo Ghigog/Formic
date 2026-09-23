@@ -45,6 +45,28 @@ export interface MoveInput {
   detached?: boolean;
 }
 
+/** One message in a board's assistant conversation. */
+export interface AssistantMessage {
+  id: string;
+  projectId: string;
+  role: "user" | "assistant";
+  content: string;
+  /** What the assistant proposed changing; each needs the person's approval. */
+  proposals: AssistantProposal[];
+  status: "done" | "pending" | "failed";
+  runnerJob: string | null;
+  createdAt: Date;
+}
+
+export interface AssistantProposal {
+  /** One line for the person to approve or not. */
+  summary: string;
+  action: unknown;
+  state: "proposed" | "applied" | "dismissed" | "failed";
+  /** Why applying it failed, when it did. */
+  error?: string;
+}
+
 /** Everything a coding agent and its pipeline need about one ticket. */
 export interface TicketDetail {
   id: string;
@@ -262,6 +284,23 @@ export interface Repository {
   /** Also unassigns it from every column it ran. */
   deletePreset(presetId: string): Promise<void>;
   columnAgents(projectId: string): Promise<ColumnAgents>;
+  /** The saved agent the board's assistant runs on, or null. */
+  assistantAgent(projectId: string): Promise<string | null>;
+  setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
+  /** The assistant conversation, oldest first. */
+  assistantMessages(projectId: string): Promise<AssistantMessage[]>;
+  assistantMessage(id: string): Promise<AssistantMessage | null>;
+  addAssistantMessage(input: {
+    projectId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: AssistantMessage["status"];
+  }): Promise<AssistantMessage>;
+  updateAssistantMessage(
+    id: string,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+  ): Promise<void>;
+  clearAssistant(projectId: string): Promise<void>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,

@@ -83,6 +83,24 @@ Create one at https://github.com/settings/apps/new (or under your org):
 - **Events:** Check run, Check suite, Workflow run, Pull request.
 - Generate a client secret. No private key is needed.
 
+## The assistant
+
+The top bar has an ask box. Ask anything about the repository or the board,
+and the answer pulls down over the board; the arrow at its bottom right
+rolls it back up, and the conversation is there next time.
+
+- It runs on any saved agent, picked in the shade, with no built-in prompt.
+  An API agent answers in seconds. A CLI agent on your plan (Claude Code,
+  Codex, Gemini CLI) answers from GitHub Actions in a minute or two.
+- It reads the repository (an API agent through GitHub, a CLI agent in its
+  own checkout) and sees the board.
+- It can propose work: a Backlog item for the Product Agent, or an Epic with
+  its tickets straight into To Do, for work that is already planned, such as
+  a ticket list in the repo. Tickets get the Architect's checks (file scopes,
+  a safe dependency graph). Nothing happens until you press Approve.
+- It never changes code. Code changes are tickets, and go through the file
+  scope, pull requests and CI like everything else.
+
 ## Work tracked as GitHub issues
 
 Every Epic is filed as a GitHub issue in its repository, and each of its

@@ -40,18 +40,22 @@ export function AgentEditor({
   onSave,
   onDelete,
 }: {
-  column: ColumnId;
+  /** The column it was opened from, or the board's assistant. */
+  column: ColumnId | "assistant";
   /** Null creates a new agent. */
   preset: AgentPreset | null;
   onClose: () => void;
   onSave: (input: AgentPresetInput) => Promise<void>;
   onDelete: (presetId: string) => Promise<void>;
 }) {
-  const role = `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
+  const forAssistant = column === "assistant";
+  const role = forAssistant ? "Assistant" : `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
+  // The assistant has no built-in brief: it answers whatever it is asked.
+  const defaultPrompt = forAssistant ? "" : DEFAULT_BRIEF[column];
   const [name, setName] = useState(preset?.name ?? "");
   const [provider, setProvider] = useState<ProviderId>(preset?.provider ?? "anthropic");
   const [model, setModel] = useState(preset?.model ?? "");
-  const [prompt, setPrompt] = useState(preset?.prompt ?? DEFAULT_BRIEF[column]);
+  const [prompt, setPrompt] = useState(preset?.prompt ?? defaultPrompt);
   /** Undefined keeps the saved key, null removes it, a string replaces it. */
   const [apiKey, setApiKey] = useState<string | null | undefined>(undefined);
   const [models, setModels] = useState<ModelList>({ state: "idle" });
@@ -180,7 +184,9 @@ export function AgentEditor({
           <p className="text-muted mt-0.5 text-[12px]">
             {preset
               ? "Changes apply to every column running this agent, from its next run."
-              : `Runs as the ${role} in ${COLUMN_LABELS[column]} once saved.`}
+              : forAssistant
+                ? "Answers questions in the top bar once saved."
+                : `Runs as the ${role} in ${COLUMN_LABELS[column]} once saved.`}
           </p>
         </div>
 
@@ -297,7 +303,7 @@ export function AgentEditor({
               <span className="flex-grow" />
               <button
                 type="button"
-                onClick={() => setPrompt(DEFAULT_BRIEF[column])}
+                onClick={() => setPrompt(defaultPrompt)}
                 className="text-muted hover:text-ink text-[11px] font-medium"
               >
                 Reset to built-in
@@ -309,7 +315,7 @@ export function AgentEditor({
               rows={10}
               className={`${field} resize-y py-2 font-mono text-[12px] leading-[1.5]`}
             />
-            {CODING_COLUMNS.has(column) && (
+            {!forAssistant && CODING_COLUMNS.has(column) && (
               <span className="text-muted text-[11px]">
                 The platform&apos;s coding rules (stay in the file scope, no git, verify
                 before finishing) are always added after this, whatever the provider.

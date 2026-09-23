@@ -315,3 +315,34 @@
     }
   }
 }
+
+/*
+ * The assistant's shade. It unrolls from the top bar like a sun visor and
+ * rolls back up the same way, so it reads as the same surface moving, not a
+ * dialog appearing.
+ */
+.assistant-shade {
+  clip-path: inset(0 0 0 0 round 0 0 16px 16px);
+  transition:
+    clip-path 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 180ms ease-out,
+    visibility 0s;
+}
+
+.assistant-shade[data-open="false"] {
+  clip-path: inset(0 0 100% 0 round 0 0 16px 16px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    clip-path 260ms cubic-bezier(0.4, 0, 1, 1),
+    opacity 180ms ease-in 80ms,
+    visibility 0s 260ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-shade,
+  .assistant-shade[data-open="false"] {
+    transition: none;
+  }
+}

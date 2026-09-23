@@ -32,7 +32,9 @@ export const CODE_MODES = ["implement", "fix"] as const;
 export const ANSWER_MODES = ["product", "architect", "showcase"] as const;
 export type CodeMode = (typeof CODE_MODES)[number];
 export type AnswerMode = (typeof ANSWER_MODES)[number];
-export type RunnerMode = CodeMode | AnswerMode;
+/** The board's assistant answering a question. */
+export type AskMode = "ask";
+export type RunnerMode = CodeMode | AnswerMode | AskMode;
 
 export function isAnswerMode(mode: RunnerMode): mode is AnswerMode {
   return (ANSWER_MODES as readonly string[]).includes(mode);
@@ -49,7 +51,7 @@ export function runTitle(mode: RunnerMode, ticketKey: string, job: string): stri
 export function parseRunTitle(
   title: string,
 ): { mode: RunnerMode; ticketKey: string; job: string } | null {
-  const m = /^Formic (implement|fix|product|architect|showcase) (\S+) · (\S+)$/.exec(title.trim());
+  const m = /^Formic (implement|fix|product|architect|showcase|ask) (\S+) · (\S+)$/.exec(title.trim());
   return m ? { mode: m[1] as RunnerMode, ticketKey: m[2]!, job: m[3]! } : null;
 }
 
@@ -94,7 +96,7 @@ on:
         description: Formic job id
         required: true
       mode:
-        description: implement, fix, product, architect or showcase
+        description: implement, fix, product, architect, showcase or ask
         required: true
       ticket:
         description: Ticket key
@@ -203,7 +205,7 @@ jobs:
           git config user.name "Formic Agent"
           git config user.email "formic-agent@users.noreply.github.com"
           case "$MODE" in
-            product|architect|showcase)
+            product|architect|showcase|ask)
               # An answer, not a change: only the answer leaves this run.
               git reset -q --hard "$FORMIC_START"
               git clean -qfdx

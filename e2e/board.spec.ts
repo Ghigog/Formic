@@ -231,3 +231,17 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   await page.getByRole("button", { name: "Remove" }).first().click();
   await expect(page.getByLabel("Sandbox (E2B) API key")).toBeVisible();
 });
+
+test("the assistant pulls down from the top bar and rolls back up", async ({ page }) => {
+  const shade = page.locator("section[aria-label=Assistant]");
+  await expect(shade).toHaveAttribute("data-open", "false");
+
+  await page.getByRole("button", { name: "Pull the assistant down" }).click();
+  await expect(shade).toHaveAttribute("data-open", "true");
+  await expect(shade.getByText(/Ask anything about/)).toBeVisible();
+  await expect(shade.getByLabel("The assistant's agent")).toBeVisible();
+
+  await shade.getByRole("button", { name: "Roll the assistant up" }).click();
+  await expect(shade).toHaveAttribute("data-open", "false");
+  await expect(shade).toBeHidden();
+});

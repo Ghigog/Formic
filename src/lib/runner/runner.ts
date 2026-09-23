@@ -570,8 +570,69 @@ export interface RunnerResult {
  * checks it, and moves it onto the ticket's branch: a new pull request for
  * an implementation, one more commit on the existing one for a fix.
  */
+/**
+ * Starts a CLI agent answering the board's assistant. Its answer comes back
+ * like a planning agent's, and the conversation shows it when it does.
+ */
+export async function startCliAsk(input: {
+  projectId: string;
+  messageId: string;
+  agent: CliAgent;
+  prompt: string;
+}): Promise<void> {
+  const repo = repository();
+  const project = await projectFor(input.projectId);
+  const creds = await credentialsForProject(project);
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent: input.agent,
+    job: jobId(input.messageId, randomUUID().slice(0, 8)),
+    mode: "ask",
+    cardKey: "assistant",
+    from: project.baseBranch,
+    prompt: input.prompt,
+    record: (job) => repo.updateAssistantMessage(input.messageId, { runnerJob: job }),
+  });
+  if (!started.ok) {
+    const { finishCliAnswer } = await import("@/lib/assistant/turn");
+    await finishCliAnswer(input.messageId, null, started.reason);
+  }
+}
+
+async function completeCliAsk(projectId: string, result: RunnerResult): Promise<void> {
+  const repo = repository();
+  const messageId = cardOfJob(result.job);
+  const message = messageId ? await repo.assistantMessage(messageId) : null;
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  const staging = `${STAGING_PREFIX}${result.job}`;
+  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+
+  if (!message || message.projectId !== projectId || message.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+
+  const { finishCliAnswer } = await import("@/lib/assistant/turn");
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    const log = result.url ? ` Its log: ${result.url}` : "";
+    await finishCliAnswer(message.id, null, `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`);
+    return;
+  }
+  const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
+  await cleanUp();
+  await finishCliAnswer(message.id, answer);
+}
+
 export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
   const { mode } = result;
+  if (mode === "ask") {
+    await completeCliAsk(projectId, result);
+    return;
+  }
   if (isAnswerMode(mode)) {
     await completeCliAnswer(projectId, { ...result, mode });
     return;

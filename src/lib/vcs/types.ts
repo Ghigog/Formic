@@ -117,6 +117,8 @@ export interface VcsClient {
 
   /* The cloud runner: CLI agents that work in the repository's own Actions. */
 
+  /** Every file path on a ref, capped by GitHub at about 100,000. */
+  listFiles(ref: string): Promise<string[]>;
   /** A file's text on a ref, or null when it is not there. */
   readFile(path: string, ref: string): Promise<string | null>;
   /** Creates or replaces one file on a branch, as one commit. */

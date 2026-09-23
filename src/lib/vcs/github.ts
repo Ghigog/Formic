@@ -263,6 +263,14 @@ export class GitHubClient implements VcsClient {
     }
   }
 
+  async listFiles(ref: string): Promise<string[]> {
+    const { data } = await this.request<{ tree: Array<{ path: string; type: string }> }>(
+      "GET",
+      `/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+    );
+    return data.tree.filter((t) => t.type === "blob").map((t) => t.path);
+  }
+
   async readFile(path: string, ref: string): Promise<string | null> {
     try {
       const { data } = await this.request<{ content?: string; encoding?: string }>(

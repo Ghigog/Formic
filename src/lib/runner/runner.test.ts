@@ -445,7 +445,7 @@ describe("the runner workflow", () => {
 
   it("keeps only the answer from a planning run", () => {
     const yaml = runnerWorkflow();
-    expect(yaml).toContain("product|architect|showcase)");
+    expect(yaml).toContain("product|architect|showcase|ask)");
     expect(yaml).toContain('git reset -q --hard "$FORMIC_START"');
     expect(yaml).toContain(`git add -f "${ANSWER_PATH}"`);
   });

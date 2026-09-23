@@ -12,6 +12,7 @@ import type { ExtrasMap } from "./card";
 import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
 import { useAgents } from "@/lib/hooks/use-agents";
+import { useAssistant } from "@/lib/hooks/use-assistant";
 import { AgentEditor } from "./agent-editor";
 import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
@@ -54,9 +55,16 @@ export function BoardShell({
   const agentState = useAgents(initialPresets, initialColumnAgents);
   /** The agent editor: which column it was opened from, and what it edits. */
   const [editing, setEditing] = useState<{
-    column: ColumnId;
+    column: ColumnId | "assistant";
     preset: AgentPreset | null;
   } | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantUsed, setAssistantUsed] = useState(false);
+  const assistant = useAssistant(assistantUsed);
+  const openAssistant = (open: boolean) => {
+    if (open) setAssistantUsed(true);
+    setAssistantOpen(open);
+  };
 
   const stopAll = async () => {
     await fetch("/api/runs/stop", { method: "POST" });
@@ -84,6 +92,14 @@ export function BoardShell({
         onCapture={createEpic}
         onTransition={transition}
         account={account}
+        assistant={{
+          ...assistant,
+          open: assistantOpen,
+          setOpen: openAssistant,
+          presets: agentState.presets,
+          onNewAgent: () => setEditing({ column: "assistant", preset: null }),
+          onEditAgent: (preset) => setEditing({ column: "assistant", preset }),
+        }}
         agents={{
           presets: agentState.presets,
           columns: agentState.columns,
@@ -98,10 +114,12 @@ export function BoardShell({
           preset={editing.preset}
           onClose={() => setEditing(null)}
           onSave={async (input) => {
-            await agentState.save(input, {
+            const { column } = editing;
+            const preset = await agentState.save(input, {
               id: editing.preset?.id,
-              column: editing.column,
+              column: column === "assistant" ? undefined : column,
             });
+            if (column === "assistant" && !editing.preset) await assistant.setAgent(preset.id);
           }}
           onDelete={agentState.remove}
         />

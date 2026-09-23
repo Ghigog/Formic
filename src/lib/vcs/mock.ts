@@ -198,6 +198,12 @@ export class MockVcsClient implements VcsClient {
     repo().labels.add(name);
   }
 
+  async listFiles(ref: string): Promise<string[]> {
+    return [...repo().files.keys()]
+      .filter((k) => k.startsWith(`${ref}:`))
+      .map((k) => k.slice(ref.length + 1));
+  }
+
   async readFile(path: string, ref: string): Promise<string | null> {
     return repo().files.get(`${ref}:${path}`) ?? null;
   }
