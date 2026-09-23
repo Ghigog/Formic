@@ -27,7 +27,7 @@ export function agentsOverridden(): boolean {
   return overridden;
 }
 
-export function useMockAgents(): boolean {
+export function usingMockAgents(): boolean {
   if (process.env.AGENT_PROVIDER === "mock") return true;
   if (process.env.AGENT_PROVIDER === "anthropic") return false;
   return !process.env.ANTHROPIC_API_KEY;
@@ -36,7 +36,7 @@ export function useMockAgents(): boolean {
 export function agents(): AgentRegistry {
   if (cached) return cached;
 
-  if (useMockAgents()) {
+  if (usingMockAgents()) {
     cached = {
       product: new MockProductAgent(),
       architect: new MockArchitectAgent(),

@@ -98,15 +98,23 @@ export function Column({
    * allotted here rather than inside the group: a collapsed epic contributes
    * one index, an expanded one contributes itself plus a child each.
    */
+  const rendered: Array<{
+    item: (typeof items)[number];
+    index: number;
+    shown: BoardCard[];
+    isCollapsed?: boolean;
+  }> = [];
   let next = 0;
-  const rendered = items.map((item) => {
-    if (item.kind === "card") return { item, index: next++, shown: [] as BoardCard[] };
-    const index = next++;
+  for (const item of items) {
+    if (item.kind === "card") {
+      rendered.push({ item, index: next++, shown: [] });
+      continue;
+    }
     const isCollapsed = collapsed.has(item.epic.id);
     const shown = isCollapsed ? [] : item.children;
-    next += shown.length;
-    return { item, index, shown, isCollapsed };
-  });
+    rendered.push({ item, index: next, shown, isCollapsed });
+    next += 1 + shown.length;
+  }
 
   const toggle = (epicId: string) =>
     onToggleCollapse

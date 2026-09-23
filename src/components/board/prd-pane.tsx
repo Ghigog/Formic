@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Prd } from "@/lib/domain/entities";
 
 /**
@@ -23,13 +23,16 @@ export function PrdPane({
   onSave: (prd: Prd) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => (prd ? JSON.stringify(prd, null, 2) : ""));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  // The draft follows the stored PRD whenever that changes.
+  const [draftOf, setDraftOf] = useState(prd);
+  if (prd !== draftOf) {
+    setDraftOf(prd);
     if (prd) setDraft(JSON.stringify(prd, null, 2));
-  }, [prd]);
+  }
 
   if (!prd) {
     return (

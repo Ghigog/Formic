@@ -13,7 +13,6 @@ const { savePreset, agentConfigFor } = await import("@/lib/agents/presets");
 const presetRoute = await import("@/app/api/agents/presets/[id]/route");
 const columnRoute = await import("@/app/api/agents/columns/[column]/route");
 const agentsRoute = await import("@/app/api/agents/route");
-const { seal } = await import("@/lib/secrets/vault");
 const { resetEnvCache } = await import("@/lib/secrets/env");
 
 async function person(githubId: number, login: string) {

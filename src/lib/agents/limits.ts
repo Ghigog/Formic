@@ -23,7 +23,6 @@ export type Diagnosis =
 /* ------------------------------------------------------------------------ */
 
 const TIMESTAMP = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s?/;
-// eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*m/g;
 
 interface Line {

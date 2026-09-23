@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { hasDatabase } from "@/lib/db";
 import { prisma } from "@/lib/db/client";
-import { useMockAgents } from "@/lib/agents/registry";
+import { usingMockAgents } from "@/lib/agents/registry";
 import { activeRunCount } from "@/lib/budget/controller";
 import { activeSandboxCount, LOCAL_SANDBOX_ON_VERCEL } from "@/lib/sandbox";
 import { mergeTarget, usingMockVcs } from "@/lib/vcs";
@@ -59,7 +59,7 @@ export async function GET() {
       ...(databaseError ? { databaseError } : {}),
       // Signed in with GitHub, agents run on each person's own Anthropic key,
       // so the server having none does not make them mocks.
-      agents: authMode() === "github" ? "per-user" : useMockAgents() ? "mock" : "anthropic",
+      agents: authMode() === "github" ? "per-user" : usingMockAgents() ? "mock" : "anthropic",
       sandbox: config.SANDBOX_PROVIDER,
       // Signed in with GitHub, each board uses its owner's token.
       github: authMode() === "github" ? "per-user" : usingMockVcs() ? "mock" : "live",

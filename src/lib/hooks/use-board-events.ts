@@ -20,7 +20,9 @@ export function useBoardEvents(
 ) {
   const [state, setState] = useState<ConnectionState>("connecting");
   const handler = useRef(onEvent);
-  handler.current = onEvent;
+  useEffect(() => {
+    handler.current = onEvent;
+  });
 
   const cursor = useRef(0);
 

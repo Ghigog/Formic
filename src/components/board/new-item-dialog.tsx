@@ -20,13 +20,19 @@ export function NewItemDialog({
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
+  // A fresh dialog each time it opens.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) {
       setValue("");
       setError(null);
-      // Focus after the dialog paints, or the caret lands nowhere.
-      requestAnimationFrame(() => ref.current?.focus());
     }
+  }
+
+  useEffect(() => {
+    // Focus after the dialog paints, or the caret lands nowhere.
+    if (open) requestAnimationFrame(() => ref.current?.focus());
   }, [open]);
 
   useEffect(() => {

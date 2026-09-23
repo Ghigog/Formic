@@ -409,7 +409,7 @@ export async function runCodingLoop(
         continue;
       }
 
-      const outcome = await runTool(call, workspace, ctx, ticketId);
+      const outcome = await runTool(call, workspace, ctx);
       progress(outcome.label, iteration);
       results.push({ id: call.id, isError: outcome.isError, content: truncate(outcome.content) });
     }
@@ -433,7 +433,6 @@ async function runTool(
   call: LoopCall,
   workspace: Workspace,
   ctx: AgentContext,
-  ticketId: string,
 ): Promise<ToolOutcome> {
   try {
     switch (call.name) {

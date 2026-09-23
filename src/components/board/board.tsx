@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
+import { useCountdown } from "@/lib/hooks/use-countdown";
 import { Column, columnCount } from "./column";
 import { BoardHeader } from "./header";
 import { BacklogComposer } from "./composer";
@@ -208,15 +209,18 @@ export function Board({
    * version of the same gesture. It acts on the first card in the visible
    * column that can actually move, and says which one in its accessible name.
    */
+  // A column whose agent is out of usage takes nothing until it resets.
+  const nextColumn = NEXT_COLUMN[activeTab];
+  const nextLimited =
+    useCountdown(
+      nextColumn && agents?.presets.find((p) => p.id === agents.columns[nextColumn])?.limitedUntil,
+    ) !== null;
   const advanceTarget = useMemo(() => {
     const to = NEXT_COLUMN[activeTab];
-    if (!to) return null;
+    if (!to || nextLimited) return null;
     const card = byColumn[activeTab].find((c) => isDraggable(c.status));
-    // A column whose agent is out of usage takes nothing until it resets.
-    const until = agents?.presets.find((p) => p.id === agents.columns[to])?.limitedUntil;
-    if (until && Date.parse(until) > Date.now()) return null;
     return card ? { card, to } : null;
-  }, [activeTab, byColumn, agents]);
+  }, [activeTab, byColumn, nextLimited]);
 
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
 

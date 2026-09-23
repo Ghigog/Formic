@@ -35,30 +35,34 @@ export function EpicDrawer({
   streamingPrd?: string;
 }) {
   const [detail, setDetail] = useState<EpicDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [tab, setTab] = useState<"prd" | "dag">("prd");
+
+  // Another Epic: nothing of the last one's stays on screen.
+  const [shownFor, setShownFor] = useState(epicId);
+  if (epicId !== shownFor) {
+    setShownFor(epicId);
+    setDetail(null);
+    setFailed(false);
+  }
+  const loading = !!epicId && !detail && !failed;
 
   const load = useCallback(async () => {
     if (!epicId) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/epics/${epicId}`, { cache: "no-store" });
-      if (res.ok) setDetail((await res.json()) as EpicDetail);
-    } finally {
-      setLoading(false);
-    }
+    return fetch(`/api/epics/${epicId}`, { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<EpicDetail>) : null))
+      .then(
+        (found) => (found ? setDetail(found) : setFailed(true)),
+        () => setFailed(true),
+      );
   }, [epicId]);
 
+  // Load on open, and again when the Product Agent finishes writing, so the
+  // streamed draft is replaced by the stored document.
+  const prdWritten = streamingPrd === "";
   useEffect(() => {
-    setDetail(null);
     void load();
-  }, [load]);
-
-  // Reload when the Product Agent finishes writing, so the streamed draft is
-  // replaced by the stored document.
-  useEffect(() => {
-    if (streamingPrd === "") void load();
-  }, [streamingPrd, load]);
+  }, [load, prdWritten]);
 
   useEffect(() => {
     if (!epicId) return;
@@ -182,7 +186,7 @@ export function EpicDrawer({
               tab === "dag" ? "block" : "hidden lg:block",
             )}
           >
-            <DagPane children={detail?.children ?? []} />
+            <DagPane tickets={detail?.children ?? []} />
           </div>
         </div>
       </div>

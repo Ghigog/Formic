@@ -28,7 +28,6 @@ interface MockPull extends PullRequestDetail {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicMockPulls: Map<number, MockPull> | undefined;
 }
 

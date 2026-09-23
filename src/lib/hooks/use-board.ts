@@ -18,7 +18,9 @@ export function useBoard(
   onOther?: (event: FormicEvent) => void,
 ) {
   const other = useRef(onOther);
-  other.current = onOther;
+  useEffect(() => {
+    other.current = onOther;
+  });
   const [cards, setCards] = useState(initialCards);
   const [extras, setExtras] = useState<Record<string, CardExtras | undefined>>({});
   const [stats, setStats] = useState(initialStats);

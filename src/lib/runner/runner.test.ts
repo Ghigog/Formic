@@ -56,7 +56,7 @@ async function seedTicket(fileScope = ["src/lib/feature"]): Promise<TicketDetail
   return (await repo.ticketDetail(ticket!.id))!;
 }
 
-async function useClaudeCode(column: ColumnId = "in_progress") {
+async function assignClaudeCode(column: ColumnId = "in_progress") {
   const preset = await savePreset({
     name: "my-claude",
     provider: "claude-code",
@@ -98,7 +98,7 @@ afterEach(() => {
 
 describe("CLI agent templates", () => {
   it("run in any column", async () => {
-    const preset = await useClaudeCode();
+    const preset = await assignClaudeCode();
     for (const column of ["backlog", "todo", "in_review", "done"] as const) {
       await repository().setColumnAgent(PROJECT, column, preset.id);
     }
@@ -178,7 +178,7 @@ describe("a CLI agent planning an Epic", () => {
   }
 
   it("drafts the PRD in Actions and puts it on the Epic", async () => {
-    await useClaudeCode("backlog");
+    await assignClaudeCode("backlog");
     const base = await installRunner();
     const epic = await seedEpic();
 
@@ -202,7 +202,7 @@ describe("a CLI agent planning an Epic", () => {
   });
 
   it("keeps a stalled Epic stalled, with why, across a reload", async () => {
-    await useClaudeCode("backlog");
+    await assignClaudeCode("backlog");
     await installRunner();
     const epic = await seedEpic(null);
 
@@ -221,7 +221,7 @@ describe("a CLI agent planning an Epic", () => {
   });
 
   it("sends an unsafe ticket graph back as a correction, then takes the fixed one", async () => {
-    await useClaudeCode("todo");
+    await assignClaudeCode("todo");
     await installRunner();
     const epic = await seedEpic(PRD);
 
@@ -252,7 +252,7 @@ describe("a CLI agent planning an Epic", () => {
   });
 
   it("gives up after the last attempt instead of asking forever", async () => {
-    await useClaudeCode("todo");
+    await assignClaudeCode("todo");
     await installRunner();
     const epic = await seedEpic(PRD);
 
@@ -269,7 +269,7 @@ describe("a CLI agent planning an Epic", () => {
   });
 
   it("ignores an answer nobody is waiting for", async () => {
-    await useClaudeCode("backlog");
+    await assignClaudeCode("backlog");
     await installRunner();
     const epic = await seedEpic();
     await runProductAgent(PROJECT, epic.id, "x");
@@ -286,7 +286,7 @@ describe("a CLI agent planning an Epic", () => {
 
 describe("starting a CLI agent", () => {
   it("opens a setup pull request first, and waits for a person to merge it", async () => {
-    await useClaudeCode();
+    await assignClaudeCode();
     const ticket = await seedTicket();
 
     await runCoderAgent(PROJECT, ticket.id);
@@ -303,7 +303,7 @@ describe("starting a CLI agent", () => {
   });
 
   it("stores the plan token as the agent's own secret and dispatches the workflow", async () => {
-    const preset = await useClaudeCode();
+    const preset = await assignClaudeCode();
     const base = await installRunner();
     const ticket = await seedTicket();
 
@@ -328,7 +328,7 @@ describe("starting a CLI agent", () => {
   });
 
   it("keeps two accounts on the same CLI in separate secrets", async () => {
-    const work = await useClaudeCode("in_progress");
+    const work = await assignClaudeCode("in_progress");
     const personal = await savePreset({
       name: "personal-claude",
       provider: "claude-code",
@@ -345,7 +345,7 @@ describe("starting a CLI agent", () => {
   });
 
   it("refuses without a token", async () => {
-    const preset = await useClaudeCode();
+    const preset = await assignClaudeCode();
     await savePreset({
       id: preset.id,
       name: preset.name,
@@ -368,7 +368,7 @@ describe("starting a CLI agent", () => {
 
 describe("an agent out of usage", () => {
   it("takes no work until it resets, and a new key lifts it", async () => {
-    const preset = await useClaudeCode();
+    const preset = await assignClaudeCode();
     await installRunner();
     await repository().setPresetLimit(preset.id, {
       until: new Date(Date.now() + 3_600_000),
@@ -397,7 +397,7 @@ describe("an agent out of usage", () => {
 
 describe("taking a CLI agent's work", () => {
   async function dispatched() {
-    await useClaudeCode();
+    await assignClaudeCode();
     await installRunner();
     const ticket = await seedTicket();
     await runCoderAgent(PROJECT, ticket.id);
@@ -511,7 +511,7 @@ describe("taking a CLI agent's work", () => {
 
 describe("a CLI agent fixing red CI", () => {
   it("fast-forwards the pull request's branch with the fix", async () => {
-    await useClaudeCode("in_review");
+    await assignClaudeCode("in_review");
     const ticket = await seedTicket();
     const job = `${ticket.id}--fix00001`;
     const branch = "formic/t-1-abc";
@@ -545,7 +545,7 @@ describe("collecting a run whose webhook never came", () => {
   let minutes = 0;
 
   it("takes a ticket's finished work on its own", async () => {
-    await useClaudeCode();
+    await assignClaudeCode();
     await installRunner();
     const ticket = await seedTicket();
     await runCoderAgent(PROJECT, ticket.id);
@@ -584,7 +584,7 @@ describe("collecting a run whose webhook never came", () => {
   });
 
   it("takes an Epic's failed planning run on its own, and saves why", async () => {
-    await useClaudeCode("backlog");
+    await assignClaudeCode("backlog");
     await installRunner();
     const epic = await repository().createEpic({
       projectId: PROJECT,
