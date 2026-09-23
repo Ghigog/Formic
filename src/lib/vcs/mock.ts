@@ -7,6 +7,8 @@ import {
   type PullRequestRef,
   type UpdateOutcome,
   type VcsClient,
+  type Comparison,
+  STAGING_PREFIX,
 } from "./types";
 
 /**
@@ -30,6 +32,30 @@ declare global {
 function pulls(): Map<number, MockPull> {
   if (!globalThis.__formicMockPulls) globalThis.__formicMockPulls = new Map();
   return globalThis.__formicMockPulls;
+}
+
+/** Branches, files, secrets and dispatches: the rest of the mock repository. */
+interface MockRepo {
+  /** Branch name to head sha. */
+  branches: Map<string, string>;
+  /** `${ref}:${path}` to file text. */
+  files: Map<string, string>;
+  secrets: Map<string, string>;
+  dispatches: Array<{ file: string; ref: string; inputs: Record<string, string> }>;
+  /** Head sha to what that commit changed relative to its base. */
+  commits: Map<string, { files: string[]; message: string }>;
+}
+
+function repo(): MockRepo {
+  const g = globalThis as { __formicMockRepo?: MockRepo };
+  g.__formicMockRepo ??= {
+    branches: new Map(),
+    files: new Map(),
+    secrets: new Map(),
+    dispatches: [],
+    commits: new Map(),
+  };
+  return g.__formicMockRepo;
 }
 
 let nextNumber = 1000;
@@ -123,6 +149,63 @@ export class MockVcsClient implements VcsClient {
 
   async comment(): Promise<void> {}
 
+  async readFile(path: string, ref: string): Promise<string | null> {
+    return repo().files.get(`${ref}:${path}`) ?? null;
+  }
+
+  async commitFile(branch: string, path: string, content: string, _message: string): Promise<void> {
+    repo().files.set(`${branch}:${path}`, content);
+    repo().branches.set(branch, fakeSha());
+  }
+
+  async findPullRequest(headBranch: string): Promise<PullRequestRef | null> {
+    for (const pull of pulls().values()) {
+      if (pull.headBranch === headBranch && pull.state === "open") return pull;
+    }
+    return null;
+  }
+
+  async setSecret(name: string, value: string): Promise<void> {
+    repo().secrets.set(name, value);
+  }
+
+  async dispatchWorkflow(file: string, ref: string, inputs: Record<string, string>): Promise<void> {
+    repo().dispatches.push({ file, ref, inputs });
+  }
+
+  async compare(_base: string, head: string): Promise<Comparison> {
+    const sha = repo().branches.get(head) ?? head;
+    const commit = repo().commits.get(sha);
+    return { files: commit?.files ?? [], messages: commit ? [commit.message] : [], headSha: sha };
+  }
+
+  async moveBranch(branch: string, sha: string): Promise<void> {
+    repo().branches.set(branch, sha);
+    // A PR from this branch now points at the new head, as on GitHub.
+    for (const pull of pulls().values()) {
+      if (pull.headBranch === branch) pull.headSha = sha;
+    }
+  }
+
+  async deleteStagingBranch(branch: string): Promise<void> {
+    if (!branch.startsWith(STAGING_PREFIX)) throw new Error(`Refusing to delete ${branch}.`);
+    repo().branches.delete(branch);
+  }
+
+  /* Test seams for the runner. */
+
+  /** What an Actions run pushed: a staging branch with these changes. */
+  static stage(branch: string, files: string[], message: string): string {
+    const sha = fakeSha();
+    repo().branches.set(branch, sha);
+    repo().commits.set(sha, { files, message });
+    return sha;
+  }
+
+  static runner(): MockRepo {
+    return repo();
+  }
+
   /** Test seam: flip a mock PR's checks and hand back the head sha. */
   static setChecks(number: number, conclusion: CheckSummary["conclusion"]): string {
     const pull = pulls().get(number);
@@ -137,5 +220,6 @@ export class MockVcsClient implements VcsClient {
 
   static reset(): void {
     pulls().clear();
+    (globalThis as { __formicMockRepo?: MockRepo }).__formicMockRepo = undefined;
   }
 }

@@ -9,6 +9,8 @@ import {
   type PullRequestRef,
   type UpdateOutcome,
   type VcsClient,
+  type Comparison,
+  STAGING_PREFIX,
   VcsError,
 } from "./types";
 
@@ -231,5 +233,117 @@ export class GitHubClient implements VcsClient {
 
   async comment(number: number, body: string): Promise<void> {
     await this.request("POST", `/issues/${number}/comments`, { body });
+  }
+
+  async readFile(path: string, ref: string): Promise<string | null> {
+    try {
+      const { data } = await this.request<{ content?: string; encoding?: string }>(
+        "GET",
+        `/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`,
+      );
+      return data.content ? Buffer.from(data.content, "base64").toString("utf8") : "";
+    } catch (e) {
+      if (e instanceof VcsError && e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  async commitFile(branch: string, path: string, content: string, message: string): Promise<void> {
+    const encoded = path.split("/").map(encodeURIComponent).join("/");
+    let sha: string | undefined;
+    try {
+      const { data } = await this.request<{ sha: string }>(
+        "GET",
+        `/contents/${encoded}?ref=${encodeURIComponent(branch)}`,
+      );
+      sha = data.sha;
+    } catch (e) {
+      if (!(e instanceof VcsError) || e.status !== 404) throw e;
+    }
+    await this.request("PUT", `/contents/${encoded}`, {
+      message,
+      content: Buffer.from(content, "utf8").toString("base64"),
+      branch,
+      ...(sha ? { sha } : {}),
+    });
+  }
+
+  async findPullRequest(headBranch: string): Promise<PullRequestRef | null> {
+    const owner = this.repoFullName.split("/")[0];
+    const { data } = await this.request<RawPull[]>(
+      "GET",
+      `/pulls?state=open&head=${encodeURIComponent(`${owner}:${headBranch}`)}`,
+    );
+    return data[0] ? toDetail(data[0]) : null;
+  }
+
+  async setSecret(name: string, value: string): Promise<void> {
+    const { data: key } = await this.request<{ key_id: string; key: string }>(
+      "GET",
+      "/actions/secrets/public-key",
+    );
+    // GitHub requires a libsodium sealed box to the repository's public key:
+    // only Actions can open it, and nothing reading the API can.
+    const sodium = (await import("libsodium-wrappers")).default;
+    await sodium.ready;
+    const sealed = sodium.crypto_box_seal(
+      sodium.from_string(value),
+      sodium.from_base64(key.key, sodium.base64_variants.ORIGINAL),
+    );
+    await this.request("PUT", `/actions/secrets/${encodeURIComponent(name)}`, {
+      encrypted_value: sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL),
+      key_id: key.key_id,
+    });
+  }
+
+  async dispatchWorkflow(file: string, ref: string, inputs: Record<string, string>): Promise<void> {
+    await this.request("POST", `/actions/workflows/${encodeURIComponent(file)}/dispatches`, {
+      ref,
+      inputs,
+    });
+  }
+
+  async compare(base: string, head: string): Promise<Comparison> {
+    const { data } = await this.request<{
+      files?: Array<{ filename: string; previous_filename?: string }>;
+      commits: Array<{ sha: string; commit: { message: string } }>;
+    }>("GET", `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`);
+    const files = new Set<string>();
+    for (const f of data.files ?? []) {
+      files.add(f.filename);
+      // A rename touches the path it left as well as the one it took.
+      if (f.previous_filename) files.add(f.previous_filename);
+    }
+    return {
+      files: [...files],
+      messages: data.commits.map((c) => c.commit.message),
+      headSha: data.commits.at(-1)?.sha ?? "",
+    };
+  }
+
+  async moveBranch(branch: string, sha: string): Promise<void> {
+    try {
+      await this.request("PATCH", `/git/refs/heads/${encodeURIComponent(branch)}`, {
+        sha,
+        force: false,
+      });
+    } catch (e) {
+      if (!(e instanceof VcsError) || (e.status !== 404 && e.status !== 422)) throw e;
+      // 422 on a branch that does not exist yet: create it instead. On one
+      // that does exist it means "not a fast-forward", and creating fails too,
+      // which is the refusal we want.
+      await this.request("POST", "/git/refs", { ref: `refs/heads/${branch}`, sha });
+    }
+  }
+
+  async deleteStagingBranch(branch: string): Promise<void> {
+    if (!branch.startsWith(STAGING_PREFIX)) {
+      throw new VcsError(`Refusing to delete ${branch}: only ${STAGING_PREFIX} branches.`);
+    }
+    try {
+      await this.request("DELETE", `/git/refs/heads/${branch.split("/").map(encodeURIComponent).join("/")}`);
+    } catch (e) {
+      if (!(e instanceof VcsError) || e.status !== 422) throw e;
+    }
   }
 }

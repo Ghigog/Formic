@@ -19,7 +19,7 @@ import { CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
  * provider: the loop picks the connector from the agent's config.
  */
 
-function taskBrief(task: CoderTask): string {
+export function taskBrief(task: CoderTask): string {
   return [
     `Ticket ${task.key}: ${task.title}`,
     "",
@@ -30,6 +30,23 @@ function taskBrief(task: CoderTask): string {
     "",
     `File scope (you may write only inside these paths): ${task.fileScope.join(", ")}`,
   ].join("\n");
+}
+
+/** What each red check reported, for the agent fixing it. */
+export function failuresBrief(checks: FailingCheck[]): string {
+  return checks
+    .map((check) =>
+      [
+        `Check "${check.name}" failed.`,
+        check.summary,
+        ...check.annotations.map(
+          (a) => `${a.path}${a.line ? `:${a.line}` : ""} — ${a.message}`,
+        ),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .join("\n\n");
 }
 
 export class LoopCoderAgent implements CoderAgent {
@@ -66,19 +83,7 @@ export class LoopReviewerAgent implements ReviewerAgent {
       maxAttempts: number;
     },
   ): Promise<AgentOutcome<CodeChange>> {
-    const failures = input.checks
-      .map((check) =>
-        [
-          `Check "${check.name}" failed.`,
-          check.summary,
-          ...check.annotations.map(
-            (a) => `${a.path}${a.line ? `:${a.line}` : ""} — ${a.message}`,
-          ),
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      )
-      .join("\n\n");
+    const failures = failuresBrief(input.checks);
 
     return runCodingLoop({
       ctx,

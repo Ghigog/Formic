@@ -4,9 +4,20 @@
  * Everything the agents do to GitHub goes through this: open a pull request,
  * read its checks, bring it up to date, merge it. Narrow on purpose — the
  * surface an autonomous agent can reach is a security property, not an
- * implementation detail. There is no force-push here and no branch deletion,
- * because nothing in the MVP should be able to perform either.
+ * implementation detail. There is no force-push here, and the only branches
+ * that can be deleted are Formic's own staging branches.
  */
+
+/** Branches the cloud runner pushes to. The only ones Formic may delete. */
+export const STAGING_PREFIX = "formic-staging/";
+
+export interface Comparison {
+  /** Paths changed between the two refs. */
+  files: string[];
+  /** Commit messages on the head side, oldest first. */
+  messages: string[];
+  headSha: string;
+}
 
 export interface PullRequestRef {
   number: number;
@@ -78,6 +89,23 @@ export interface VcsClient {
   /** `expectedHeadSha` guards against merging a commit nobody reviewed. */
   merge(number: number, expectedHeadSha: string): Promise<MergeOutcome>;
   comment(number: number, body: string): Promise<void>;
+
+  /* The cloud runner: CLI agents that work in the repository's own Actions. */
+
+  /** A file's text on a ref, or null when it is not there. */
+  readFile(path: string, ref: string): Promise<string | null>;
+  /** Creates or replaces one file on a branch, as one commit. */
+  commitFile(branch: string, path: string, content: string, message: string): Promise<void>;
+  /** The open pull request from a branch, if there is one. */
+  findPullRequest(headBranch: string): Promise<PullRequestRef | null>;
+  /** Stores an Actions secret, encrypted to the repository's key. */
+  setSecret(name: string, value: string): Promise<void>;
+  dispatchWorkflow(file: string, ref: string, inputs: Record<string, string>): Promise<void>;
+  compare(base: string, head: string): Promise<Comparison>;
+  /** Creates `branch` at `sha`, or fast-forwards it there. Never forces. */
+  moveBranch(branch: string, sha: string): Promise<void>;
+  /** Deletes a staging branch. Refuses any branch outside STAGING_PREFIX. */
+  deleteStagingBranch(branch: string): Promise<void>;
 }
 
 export class VcsError extends Error {

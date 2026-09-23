@@ -28,6 +28,8 @@ export async function POST(req: Request) {
   if (!body.success) return Response.json({ error: "Expected a provider." }, { status: 400 });
 
   const info = provider(body.data.provider)!;
+  // A CLI agent's models are whatever its CLI accepts; there is nothing to ask.
+  if (info.kind === "cli") return Response.json({ ok: true, models: info.suggestedModels });
   let key = body.data.apiKey ?? null;
   if (!key && body.data.presetId) {
     const found = await repository().presetForRun(body.data.presetId);

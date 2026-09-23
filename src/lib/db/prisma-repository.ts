@@ -655,6 +655,7 @@ type TicketRow = {
   prUrl: string | null;
   blockedReason: string | null;
   attempts: number;
+  runnerJob: string | null;
   epic: { projectId: string };
 };
 
@@ -687,6 +688,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     blockedReason: row.blockedReason,
     attempts: row.attempts,
     summary: row.summary,
+    runnerJob: row.runnerJob,
   };
 }
 

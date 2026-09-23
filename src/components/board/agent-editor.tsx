@@ -9,10 +9,15 @@ import {
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { DEFAULT_BRIEF } from "@/lib/agents/prompts";
-import { PROVIDERS, type ProviderId, provider as providerInfo } from "@/lib/llm/providers";
+import {
+  CLI_COLUMNS,
+  PROVIDERS,
+  type ProviderId,
+  provider as providerInfo,
+} from "@/lib/llm/providers";
 
 /** Columns whose agent writes code, and so always gets the platform rules. */
-const CODING_COLUMNS: ReadonlySet<ColumnId> = new Set(["in_progress", "in_review"]);
+const CODING_COLUMNS: ReadonlySet<ColumnId> = new Set(CLI_COLUMNS);
 
 type ModelList =
   | { state: "idle" }
@@ -25,6 +30,9 @@ type ModelList =
  * a model, and the prompt it works from. A new one starts from the built-in
  * prompt for the column it was opened from. The key belongs to this agent
  * alone; nothing else on the board uses it.
+ *
+ * In the coding columns the providers include CLI agents on a person's own
+ * plan (Claude Code, Codex, Gemini CLI), which run in GitHub Actions.
  */
 export function AgentEditor({
   column,
@@ -52,6 +60,10 @@ export function AgentEditor({
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const info = providerInfo(provider)!;
+  const cli = info.kind === "cli";
+  const choices = PROVIDERS.filter(
+    (p) => p.kind !== "cli" || CODING_COLUMNS.has(column) || p.id === preset?.provider,
+  );
 
   useEffect(() => {
     requestAnimationFrame(() => nameRef.current?.focus());
@@ -69,7 +81,7 @@ export function AgentEditor({
 
   // Ask the provider which models this key can use, once there is a key.
   useEffect(() => {
-    if (!typedKey && !savedKey) {
+    if (cli || (!typedKey && !savedKey)) {
       setModels({ state: "idle" });
       return;
     }
@@ -103,11 +115,11 @@ export function AgentEditor({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [provider, typedKey, savedKey, preset?.id]);
+  }, [provider, cli, typedKey, savedKey, preset?.id]);
 
   async function submit() {
     if (!hasSavedKey && !typedKey) {
-      setError(`Add a ${info.label} API key. This agent runs on it.`);
+      setError(`Add your ${info.keyName}. This agent runs on it.`);
       return;
     }
     setBusy(true);
@@ -201,7 +213,7 @@ export function AgentEditor({
               }}
               className={`${field} h-9`}
             >
-              {PROVIDERS.map((p) => (
+              {choices.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                   {p.freeTier ? " · free tier" : ""}
@@ -213,7 +225,7 @@ export function AgentEditor({
 
           <div className="flex flex-col gap-1">
             <span className={label} id="agent-key-label">
-              {info.label} API key
+              {cli ? info.keyName : `${info.label} ${info.keyName}`}
             </span>
             {savedKey ? (
               <div className="border-line bg-cream flex h-9 items-center gap-2 rounded-md border px-2.5 text-[13px]">
@@ -237,12 +249,22 @@ export function AgentEditor({
                 className={`${field} h-9 font-mono`}
               />
             )}
-            <span className="text-muted text-[11px]">
-              Stored encrypted and never shown again.{" "}
-              <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
-                Get a key from {info.label}
-              </a>
-            </span>
+            {cli ? (
+              <span className="text-muted text-[11px] leading-[1.5]">
+                {info.howToGetKey} Stored encrypted, and saved as a secret in your
+                repository&apos;s GitHub Actions when the agent runs.{" "}
+                <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
+                  How it works
+                </a>
+              </span>
+            ) : (
+              <span className="text-muted text-[11px]">
+                Stored encrypted and never shown again.{" "}
+                <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
+                  Get a key from {info.label}
+                </a>
+              </span>
+            )}
           </div>
 
           <label className="flex flex-col gap-1">
@@ -251,7 +273,7 @@ export function AgentEditor({
               value={model}
               onChange={(e) => setModel(e.target.value)}
               list="agent-models"
-              placeholder={options[0] ?? "Model id"}
+              placeholder={cli ? "Its default" : (options[0] ?? "Model id")}
               aria-label="Model"
               className={`${field} h-9 font-mono`}
             />
@@ -261,7 +283,9 @@ export function AgentEditor({
               ))}
             </datalist>
             <span className="text-muted text-[11px]">
-              {models.state === "loading"
+              {cli
+                ? "Optional. Leave empty for the agent's own default."
+                : models.state === "loading"
                 ? "Asking the provider which models your key can use…"
                 : models.state === "ready"
                   ? `${models.models.length} models available on your key. Start typing to filter.`

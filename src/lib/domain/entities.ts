@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { COLUMNS, TICKET_STATUSES } from "./status";
 import { LIFECYCLE_STAGES } from "./stages";
-import { PROVIDER_IDS, type ProviderId } from "@/lib/llm/providers";
+import { PROVIDER_IDS, provider as providerInfo, type ProviderId } from "@/lib/llm/providers";
 
 /**
  * The shapes every layer agrees on: API routes, agents, the database mapper
@@ -191,14 +191,20 @@ export interface AgentPreset {
   keyHint: string | null;
 }
 
-export const agentPresetInputSchema = z.object({
-  name: z.string().trim().min(1, "Give the agent a name.").max(60),
-  provider: z.enum(PROVIDER_IDS).default("anthropic"),
-  model: z.string().trim().min(1, "Pick a model.").max(200),
-  prompt: z.string().trim().min(1, "The prompt cannot be empty.").max(20_000),
-  /** A new key; null clears the saved one; omitted keeps it. */
-  apiKey: z.string().trim().min(1).max(500).nullable().optional(),
-});
+export const agentPresetInputSchema = z
+  .object({
+    name: z.string().trim().min(1, "Give the agent a name.").max(60),
+    provider: z.enum(PROVIDER_IDS).default("anthropic"),
+    /** Empty for a CLI agent means its own default model. */
+    model: z.string().trim().max(200).default(""),
+    prompt: z.string().trim().min(1, "The prompt cannot be empty.").max(20_000),
+    /** A new key; null clears the saved one; omitted keeps it. A Codex sign-in is a JSON file, hence the length. */
+    apiKey: z.string().trim().min(1).max(20_000).nullable().optional(),
+  })
+  .refine((p) => p.model !== "" || providerInfo(p.provider)?.kind === "cli", {
+    message: "Pick a model.",
+    path: ["model"],
+  });
 export type AgentPresetInput = z.infer<typeof agentPresetInputSchema>;
 
 /** Which preset runs each column on one board. Unset columns run built-ins. */

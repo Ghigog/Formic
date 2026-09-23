@@ -74,8 +74,11 @@ Create one at https://github.com/settings/apps/new (or under your org):
 - **Webhook:** active, `https://<your-app>/api/webhooks/github`, with a
   secret that goes in `GITHUB_WEBHOOK_SECRET`. One webhook serves every
   repository the app is installed on.
-- **Repository permissions:** Contents and Pull requests read and write;
-  Checks, Commit statuses and Actions read.
+- **Repository permissions:** Contents, Pull requests, Actions, Secrets and
+  Workflows read and write; Checks and Commit statuses read. Actions,
+  Secrets and Workflows are for CLI agents (below).
+  After changing permissions on an existing app, each installation has to
+  accept them (GitHub emails the owner, or see the app's installation page).
 - **Events:** Check run, Check suite, Workflow run, Pull request.
 - Generate a client secret. No private key is needed.
 
@@ -100,6 +103,33 @@ are encrypted at rest and never sent back to the browser.
 
 In local mode, a column with no agent runs Claude on the server's
 `ANTHROPIC_API_KEY`, or the mock agents without one.
+
+### CLI agents on your own plan
+
+In Progress and In Review can also run a coding CLI people already pay for,
+instead of an API key:
+
+| Agent | Credential | How to get it |
+| --- | --- | --- |
+| Claude Code | Claude Pro, Max, Team or Enterprise token | `claude setup-token` on your computer. Lasts a year. |
+| Codex | ChatGPT sign-in, or an OpenAI key | `codex login`, then paste `~/.codex/auth.json`. |
+| Gemini CLI | Gemini API key (free tier works) | https://aistudio.google.com/apikey |
+
+They run in the repository's own GitHub Actions, not on Formic's server:
+
+1. The first time, Formic opens a pull request adding
+   `.github/workflows/formic-agent.yml`. A person merges it once.
+2. Each run, Formic stores the credential as a repository secret and starts
+   the workflow. The agent works on a fresh checkout and pushes to a
+   `formic-staging/` branch.
+3. When the run finishes (the Workflow run webhook), Formic checks the
+   change against the ticket's file scope, fast-forwards the ticket's branch
+   to it, deletes the staging branch, and opens the pull request. CI, fixes
+   and the merge go through the same loop as every other agent.
+
+Nothing the agent does reaches a real branch before the scope check. Formic
+never force-pushes, and the only branches it deletes are its own
+`formic-staging/` ones.
 
 ## Deploying on Vercel
 
@@ -157,6 +187,7 @@ src/lib/
   agents/            Ports, mocks, Anthropic implementations, pipelines
   coder/             Checkout, commit, push, pull request (PROT-06)
   review/            Webhook, fix-or-merge loop, merge lane (PROT-07)
+  runner/            CLI agents in the repository's GitHub Actions
   vcs/               GitHub REST client, and a mock of it
   sandbox/           Provider interface; local and E2B
   events/            Pub/sub with a durable tail

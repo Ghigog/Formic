@@ -64,6 +64,8 @@ export interface TicketDetail {
   blockedReason: string | null;
   attempts: number;
   summary: string | null;
+  /** The cloud runner job this ticket is waiting on, if any. */
+  runnerJob: string | null;
 }
 
 export interface TicketUpdate {
@@ -76,6 +78,7 @@ export interface TicketUpdate {
   blockedReason?: string | null;
   attempts?: number;
   summary?: string | null;
+  runnerJob?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;

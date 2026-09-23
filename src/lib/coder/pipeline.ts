@@ -16,7 +16,10 @@ import {
   openCheckout,
   pullRequestBody,
 } from "./checkout";
-import { agentFor, modelFor } from "@/lib/agents/presets";
+import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
+import type { CodeChange, Usage } from "@/lib/agents/ports";
+import type { VcsClient } from "@/lib/vcs";
+import { cliPrompt, startCliRun } from "@/lib/runner/runner";
 
 /**
  * PROT-06. A ticket in In Progress becomes a pull request.
@@ -108,6 +111,24 @@ export async function runCoderAgent(
     stage: STAGE_CODE_RUN,
     blockedReason: null,
   });
+
+  // A CLI agent on the person's own plan works in GitHub Actions instead of
+  // a sandbox here, and reports back on the workflow_run webhook.
+  const cli = await cliAgentFor(projectId, "in_progress");
+  if (cli) {
+    await startCliRun({
+      projectId,
+      ticket: { ...ticket, branchName: branch },
+      mode: "implement",
+      agent: cli,
+      from: project.baseBranch,
+      prompt: cliPrompt(cli, "implement", ticket),
+      run,
+      stalledIn: "in_progress",
+      stage: STAGE_CODE_RUN,
+    });
+    return;
+  }
 
   const checkout = await openCheckout({
     projectId,
@@ -201,58 +222,82 @@ export async function runCoderAgent(
       return;
     }
 
-    const target = mergeTarget(project.baseBranch);
-    await ensureMergeTarget(client, target, project.baseBranch);
-
-    const pull = await client.openPullRequest({
-      headBranch: branch,
-      baseBranch: target,
-      title: `${ticket.key}: ${outcome.value.summary}`,
-      body: pullRequestBody(ticket, outcome.value),
+    await openTicketPullRequest(projectId, ticket, client, {
+      branch,
+      change: outcome.value,
+      usage: outcome.usage,
     });
-
-    await repo.updateTicket(ticket.id, {
-      status: "review",
-      stalledIn: null,
-      stage: STAGE_PR_OPEN,
-      prNumber: pull.number,
-      prUrl: pull.url,
-      summary: outcome.value.summary,
-      blockedReason: null,
-      costCents: outcome.usage.costCents,
-      tokensIn: outcome.usage.tokensIn,
-      tokensOut: outcome.usage.tokensOut,
-    });
-    await publish(projectId, {
-      type: "card.status",
-      cardId: ticket.id,
-      kind: "ticket",
-      status: "review",
-      stalledIn: null,
-      stage: STAGE_PR_OPEN,
-      blockedReason: null,
-    });
-    await publish(projectId, {
-      type: "ci.status",
-      ticketId: ticket.id,
-      prNumber: pull.number,
-      state: "pending",
-      checkName: null,
-    });
-
     await run.finish(outcome);
-
-    // With a mock GitHub no webhook will ever arrive, so the card would sit
-    // in In Review forever. Drive the next stage directly instead, which is
-    // what makes the no-credential demo reach Done.
-    if (client.name === "mock") {
-      const { reviewPullRequest } = await import("@/lib/review/pipeline");
-      launch(
-        () => reviewPullRequest(projectId, pull.number, pull.headSha),
-        `mock review for ${ticket.key}`,
-      );
-    }
   } finally {
     await checkout.dispose();
+  }
+}
+
+/**
+ * The agent's change is on the ticket's branch: open its pull request (or
+ * find the one already open from it) and move the card to In Review.
+ */
+export async function openTicketPullRequest(
+  projectId: string,
+  ticket: TicketDetail,
+  client: VcsClient,
+  input: { branch: string; change: CodeChange; usage?: Usage },
+): Promise<void> {
+  const repo = repository();
+  const project = await projectFor(projectId);
+  const target = mergeTarget(project.baseBranch);
+  await ensureMergeTarget(client, target, project.baseBranch);
+
+  const pull =
+    (await client.findPullRequest(input.branch)) ??
+    (await client.openPullRequest({
+      headBranch: input.branch,
+      baseBranch: target,
+      title: `${ticket.key}: ${input.change.summary}`,
+      body: pullRequestBody(ticket, input.change),
+    }));
+
+  await repo.updateTicket(ticket.id, {
+    status: "review",
+    stalledIn: null,
+    stage: STAGE_PR_OPEN,
+    prNumber: pull.number,
+    prUrl: pull.url,
+    summary: input.change.summary,
+    blockedReason: null,
+    ...(input.usage
+      ? {
+          costCents: input.usage.costCents,
+          tokensIn: input.usage.tokensIn,
+          tokensOut: input.usage.tokensOut,
+        }
+      : {}),
+  });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticket.id,
+    kind: "ticket",
+    status: "review",
+    stalledIn: null,
+    stage: STAGE_PR_OPEN,
+    blockedReason: null,
+  });
+  await publish(projectId, {
+    type: "ci.status",
+    ticketId: ticket.id,
+    prNumber: pull.number,
+    state: "pending",
+    checkName: null,
+  });
+
+  // With a mock GitHub no webhook will ever arrive, so the card would sit
+  // in In Review forever. Drive the next stage directly instead, which is
+  // what makes the no-credential demo reach Done.
+  if (client.name === "mock") {
+    const { reviewPullRequest } = await import("@/lib/review/pipeline");
+    launch(
+      () => reviewPullRequest(projectId, pull.number, pull.headSha),
+      `mock review for ${ticket.key}`,
+    );
   }
 }

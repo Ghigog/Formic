@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { RUNNER_WORKFLOW_NAME, parseRunTitle, type RunnerMode } from "@/lib/runner/workflow";
+
 /**
  * The GitHub webhook boundary.
  *
@@ -39,7 +41,16 @@ export type WebhookSignal =
       /** Keyed on (pull request, head sha, check) — not on the delivery id. */
       key: string;
     }
-  | { kind: "merged"; prNumber: number; key: string };
+  | { kind: "merged"; prNumber: number; key: string }
+  | {
+      /** A CLI agent's run in the repository's Actions finished. */
+      kind: "runner";
+      job: string;
+      mode: RunnerMode;
+      conclusion: string;
+      url: string | null;
+      key: string;
+    };
 
 interface PullRef {
   number: number;
@@ -102,6 +113,21 @@ export function interpret(event: string, payload: unknown): WebhookSignal[] {
     case "workflow_run": {
       const run = body.workflow_run as Record<string, unknown> | undefined;
       if (!run || action !== "completed") return [];
+      // Formic's own runner is not CI. Its result is the agent's work.
+      if (run.name === RUNNER_WORKFLOW_NAME) {
+        const parsed = parseRunTitle(String(run.display_title ?? ""));
+        if (!parsed) return [];
+        return [
+          {
+            kind: "runner",
+            job: parsed.job,
+            mode: parsed.mode,
+            conclusion: String(run.conclusion ?? "failure"),
+            url: typeof run.html_url === "string" ? run.html_url : null,
+            key: `runner:${parsed.job}:${String(run.id ?? "")}`,
+          },
+        ];
+      }
       return ciSignals(
         pullNumbers(run.pull_requests),
         String(run.head_sha ?? ""),

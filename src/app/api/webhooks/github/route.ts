@@ -4,6 +4,7 @@ import { launch } from "@/lib/agents/pipeline";
 import { repository } from "@/lib/db";
 import { markMergedExternally, reviewPullRequest } from "@/lib/review/pipeline";
 import { interpret, verifySignature } from "@/lib/review/webhook";
+import { completeCliRun } from "@/lib/runner/runner";
 import { env } from "@/lib/secrets/env";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +68,12 @@ export async function POST(req: NextRequest) {
     handled++;
 
     for (const project of projects) {
-      if (signal.kind === "ci") {
+      if (signal.kind === "runner") {
+        launch(
+          () => completeCliRun(project.id, signal),
+          `agent run ${signal.job} finishing`,
+        );
+      } else if (signal.kind === "ci") {
         launch(
           () => reviewPullRequest(project.id, signal.prNumber, signal.headSha),
           `review of pull request ${signal.prNumber}`,

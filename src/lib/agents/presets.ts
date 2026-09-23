@@ -16,7 +16,12 @@ import type { AgentConfig, AgentOutcome, AgentRegistry } from "./ports";
 import { agents, agentsOverridden } from "./registry";
 import { CODER_MODEL } from "./coding-loop";
 import { authMode } from "@/lib/auth/session";
-import { provider as providerInfo, type ProviderId } from "@/lib/llm/providers";
+import {
+  CLI_COLUMNS,
+  provider as providerInfo,
+  type ProviderId,
+  type ProviderInfo,
+} from "@/lib/llm/providers";
 
 /**
  * Presets on the way in (sealing the key) and on the way out (the agent a
@@ -123,12 +128,12 @@ const BUILD: {
   },
 };
 
-/** An agent for a column nobody has given one. Every call says so. */
-function unassigned(column: ColumnId): AgentRegistry[keyof AgentRegistry] {
+/** An agent that refuses every call with the same reason. */
+function refusing(error: string): AgentRegistry[keyof AgentRegistry] {
   const refuse = async (): Promise<AgentOutcome<never>> => ({
     ok: false,
     blocked: true,
-    error: `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
+    error,
     usage: { model: "", tokensIn: 0, tokensOut: 0, costCents: 0 },
   });
   return {
@@ -138,6 +143,13 @@ function unassigned(column: ColumnId): AgentRegistry[keyof AgentRegistry] {
     implement: refuse,
     fix: refuse,
   } as unknown as AgentRegistry[keyof AgentRegistry];
+}
+
+/** An agent for a column nobody has given one. Every call says so. */
+function unassigned(column: ColumnId): AgentRegistry[keyof AgentRegistry] {
+  return refusing(
+    `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
+  );
 }
 
 /** The agent for a role on this board. */
@@ -150,8 +162,15 @@ export async function agentFor<K extends keyof AgentRegistry>(
   const resolved = await resolveColumn(projectId, column);
   if (resolved.kind === "unassigned") return unassigned(column) as AgentRegistry[K];
   if (resolved.kind === "mock") return agents()[role];
-  const claude = providerInfo(resolved.config.provider ?? "anthropic")?.kind !== "openai";
-  return make(resolved.config, claude);
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (info?.kind === "cli") {
+    // The coding pipelines hand CLI agents to the runner before asking here,
+    // so reaching this means a CLI agent sits in a column that is not coding.
+    return refusing(
+      `${info.label} writes code in GitHub Actions, so it can only run In Progress or In Review. Pick another agent for ${COLUMN_LABELS[column]}.`,
+    ) as AgentRegistry[K];
+  }
+  return make(resolved.config, info?.kind !== "openai");
 }
 
 const BUILT_IN_MODEL: Record<keyof AgentRegistry, string> = {
@@ -173,5 +192,37 @@ export async function modelFor(
   if (agentsOverridden()) return null;
   const resolved = await resolveColumn(projectId, BUILD[role].column);
   if (resolved.kind !== "configured") return null;
-  return resolved.config.model ?? BUILT_IN_MODEL[role];
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (info?.kind === "cli") return resolved.config.model || info.label;
+  return resolved.config.model || BUILT_IN_MODEL[role];
+}
+
+/** A CLI agent's settings, as the runner needs them. */
+export interface CliAgent {
+  info: ProviderInfo & { kind: "cli"; cli: NonNullable<ProviderInfo["cli"]>; secretName: string };
+  model: string | null;
+  brief: string | null;
+  /** The person's plan token or key. Null when the template has none. */
+  credential: string | null;
+}
+
+/**
+ * The CLI agent a coding column runs, or null when it runs anything else.
+ * CLI agents only ever run in the coding columns.
+ */
+export async function cliAgentFor(
+  projectId: string,
+  column: (typeof CLI_COLUMNS)[number],
+): Promise<CliAgent | null> {
+  if (agentsOverridden()) return null;
+  const resolved = await resolveColumn(projectId, column);
+  if (resolved.kind !== "configured") return null;
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (info?.kind !== "cli" || !info.cli || !info.secretName) return null;
+  return {
+    info: info as CliAgent["info"],
+    model: resolved.config.model || null,
+    brief: resolved.config.brief || null,
+    credential: resolved.config.apiKey || null,
+  };
 }
