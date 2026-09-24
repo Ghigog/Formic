@@ -161,6 +161,7 @@ export function TicketDrawer({
                 </div>
               )}
             </div>
+            {view?.canStop && <StopButton ticketId={ticketId} onStopped={load} />}
             <button
               type="button"
               onClick={onClose}
@@ -219,11 +220,14 @@ export function TicketDrawer({
           <section
             aria-label="Agent"
             className={cn(
-              "bg-sunken min-h-0 overflow-y-auto p-4",
-              tab === "agent" ? "block" : "hidden lg:block",
+              "bg-sunken min-h-0 flex-col",
+              tab === "agent" ? "flex" : "hidden lg:flex",
             )}
           >
-            {view && <AgentBody view={view} working={progress.working} />}
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {view && <AgentBody view={view} working={progress.working} />}
+            </div>
+            {view && <NoteBox ticketId={ticketId} />}
           </section>
         </div>
       </div>
@@ -343,7 +347,101 @@ function AgentBody({ view, working }: { view: TicketView; working: boolean }) {
   );
 }
 
+/** Stops the agent working the ticket, wherever it runs. */
+function StopButton({ ticketId, onStopped }: { ticketId: string; onStopped: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        await fetch(`/api/tickets/${ticketId}/stop`, { method: "POST" }).catch(() => undefined);
+        setBusy(false);
+        onStopped();
+      }}
+      className="text-log-error border-log-error/40 hover:bg-log-error/10 rounded border px-1.5 py-0.5 text-[12px] font-medium disabled:opacity-60"
+    >
+      {busy ? "Stopping…" : "Stop agent"}
+    </button>
+  );
+}
+
+/**
+ * A note to the agent: read at its next step while it works, and given to
+ * every later run of the ticket.
+ */
+function NoteBox({ ticketId }: { ticketId: string }) {
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const send = async () => {
+    const note = text.trim();
+    if (!note || sending) return;
+    setSending(true);
+    setError(null);
+    const res = await fetch(`/api/tickets/${ticketId}/notes`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: note }),
+    }).catch(() => null);
+    setSending(false);
+    if (res?.ok) setText("");
+    else setError("Could not send the note. Try again.");
+  };
+
+  return (
+    <form
+      className="border-line shrink-0 border-t p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void send();
+      }}
+    >
+      <label htmlFor={`note-${ticketId}`} className="sr-only">
+        Note to the agent
+      </label>
+      <textarea
+        id={`note-${ticketId}`}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            void send();
+          }
+        }}
+        rows={2}
+        maxLength={2000}
+        placeholder="Tell the agent something, such as a different way to do it"
+        className="border-line bg-surface text-fg placeholder:text-fg-subtle w-full resize-none rounded-md border px-2 py-1.5 text-[12px] leading-5"
+      />
+      <div className="mt-1.5 flex items-center gap-2">
+        <p className="text-fg-subtle min-w-0 flex-1 text-[11px] leading-4">
+          {error ?? "Read at its next step, and by every later run. Codex and Gemini CLI read it on their next run."}
+        </p>
+        <button
+          type="submit"
+          disabled={!text.trim() || sending}
+          className="bg-amber text-on-amber rounded px-2.5 py-1 text-[12px] font-medium disabled:opacity-50"
+        >
+          {sending ? "Sending…" : "Send"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ActivityLine({ item }: { item: TicketActivity }) {
+  if (item.kind === "note") {
+    return (
+      <li className="border-amber/50 bg-surface ml-6 rounded-md border px-2 py-1.5 text-[12px] leading-5 whitespace-pre-wrap">
+        <span className="text-ochre-text mr-1 font-semibold">You:</span>
+        {item.text}
+      </li>
+    );
+  }
   if (item.kind === "action") {
     return (
       <li className="text-fg-muted flex items-center gap-1.5 font-mono text-[11px]">

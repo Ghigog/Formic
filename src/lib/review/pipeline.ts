@@ -14,6 +14,7 @@ import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { type CheckSummary, mergeNeedsPromotion, vcs } from "@/lib/vcs";
 import { inMergeLane, inTicketLane } from "./lane";
+import { noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
 import { cliPrompt, showcaseSummaries, startCliAnswer, startCliRun } from "@/lib/runner/runner";
 
@@ -431,7 +432,7 @@ async function fixTicket(
         checks: logs,
         attempt,
         maxAttempts: MAX_FIX_ATTEMPTS,
-      }),
+      }, await noteTexts(projectId, ticket.id)),
       run,
       stalledIn: "in_review",
     });
@@ -467,7 +468,7 @@ async function fixTicket(
 
   try {
     const outcome = await (await agentFor(projectId, "reviewer")).fix(run.ctx, {
-      task: taskFor(ticket),
+      task: taskFor(ticket, await noteTexts(projectId, ticket.id)),
       workspace: checkout.workspace,
       checks: logs,
       attempt,

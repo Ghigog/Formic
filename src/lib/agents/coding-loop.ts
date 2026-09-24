@@ -216,6 +216,11 @@ interface Conversation {
   next(): Promise<Turn>;
   toolResults(results: Array<{ id: string; content: string; isError: boolean }>): void;
   say(text: string): void;
+  /**
+   * Adds a person's words to the turn about to be sent. For Claude they join
+   * the tool results' message: two user messages in a row are refused.
+   */
+  note(text: string): void;
 }
 
 function addUsage(a: Usage, b: Usage): Usage {
@@ -297,6 +302,14 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
     say(text) {
       messages.push({ role: "user", content: text });
     },
+    note(text) {
+      const last = messages.at(-1);
+      if (last?.role === "user" && Array.isArray(last.content)) {
+        last.content.push({ type: "text", text });
+      } else {
+        messages.push({ role: "user", content: text });
+      }
+    },
   };
 }
 
@@ -360,6 +373,9 @@ function openAiConversation(
       }
     },
     say(text) {
+      messages.push({ role: "user", content: text });
+    },
+    note(text) {
       messages.push({ role: "user", content: text });
     },
   };
@@ -495,6 +511,15 @@ export async function runCodingLoop(
     }
 
     conversation.toolResults(results);
+
+    // The person watching can stop the run or steer it between turns.
+    const heard = await ctx.interrupts?.().catch(() => null);
+    if (heard?.stopped) return fail(heard.stopped, true);
+    for (const note of heard?.notes ?? []) {
+      conversation.note(
+        `A note from the person watching this ticket. Take it into account from here on:\n\n${note}`,
+      );
+    }
   }
 
   return fail(

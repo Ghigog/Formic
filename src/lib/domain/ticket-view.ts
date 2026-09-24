@@ -11,8 +11,8 @@ export interface TicketActivity {
   /** The event it came from, for ordering and de-duplication. */
   seq: number;
   at: string;
-  /** Reasoning, what it said, or an action it took. */
-  kind: "thinking" | "text" | "action";
+  /** Reasoning, what it said, an action it took, or a person's note to it. */
+  kind: "thinking" | "text" | "action" | "note";
   text: string;
 }
 
@@ -26,10 +26,12 @@ export interface TicketView {
   dependsOn: Array<{ id: string; key: string; title: string; status: string }>;
   plan: PlanStep[];
   activity: TicketActivity[];
+  /** Whether an agent is working it now, so it can be stopped. */
+  canStop: boolean;
 }
 
 /** The event types a ticket's activity is made of. */
-export const ACTIVITY_EVENTS = ["run.thought", "run.progress"] as const;
+export const ACTIVITY_EVENTS = ["run.thought", "run.progress", "ticket.note"] as const;
 
 /** An event as a line of activity, or null when it is not one for this ticket. */
 export function activityOf(
@@ -40,6 +42,9 @@ export function activityOf(
 ): TicketActivity | null {
   if (event.type === "run.thought" && event.ticketId === ticketId) {
     return { seq, at, kind: event.kind, text: event.text };
+  }
+  if (event.type === "ticket.note" && event.ticketId === ticketId) {
+    return { seq, at, kind: "note", text: event.text };
   }
   if (event.type === "run.progress" && event.ticketId === ticketId) {
     return { seq, at, kind: "action", text: event.label };

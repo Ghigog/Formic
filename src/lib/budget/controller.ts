@@ -132,6 +132,16 @@ export async function stopRun(
   });
 }
 
+/**
+ * A person stopped a ticket: aborts its runs in this process. The ticket's
+ * own status says so to the runs in any other, which ask between turns.
+ */
+export function abortTicketRuns(ticketId: string, reason: string): void {
+  for (const run of [...runs().values()].filter((r) => r.ticketId === ticketId)) {
+    run.controller.abort(new Error(reason));
+  }
+}
+
 export async function stopEpic(epicId: string, reason: string): Promise<void> {
   for (const run of [...runs().values()].filter((r) => r.epicId === epicId)) {
     await stopRun(run.runId, reason, "epic");

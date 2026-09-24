@@ -6,6 +6,7 @@ import { after } from "next/server";
 import type { AgentContext, AgentOutcome, DraftTicket, Usage } from "./ports";
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
+import { ticketNotes } from "@/lib/coder/notes";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
@@ -66,11 +67,33 @@ export function startRun(
   let charged = 0;
   let planWrites: Promise<void> = Promise.resolve();
 
+  const startedAt = new Date();
+  const heard = new Set<number>();
+  const ticketId = ids.ticketId ?? null;
+
   const ctx: AgentContext = {
     runId,
     projectId,
     signal,
-    emit: (event) => {
+    // Read from the database, not memory: the stop and the note may reach
+    // another instance than the one running the agent.
+    interrupts: ticketId
+      ? async () => {
+          const ticket = await repository().ticketDetail(ticketId);
+          const stopped =
+            ticket && (ticket.status === "blocked" || ticket.status === "failed")
+              ? (ticket.blockedReason ?? "Stopped.")
+              : null;
+          const fresh = (await ticketNotes(projectId, ticketId, startedAt)).filter(
+            (n) => !heard.has(n.seq),
+          );
+          for (const n of fresh) heard.add(n.seq);
+          return { stopped, notes: fresh.map((n) => n.text) };
+        }
+      : undefined,
+    emit: (raw) => {
+      // A terminal line says which ticket it is for.
+      const event = raw.type === "run.log" && !raw.ticketId && ticketId ? { ...raw, ticketId } : raw;
       // A plan is state, not only news: a ticket opened later shows it.
       // Written in order, so a quick succession of updates ends on the last.
       if (event.type === "ticket.plan") {

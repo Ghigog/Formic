@@ -212,6 +212,15 @@ export class MockVcsClient implements VcsClient {
     }));
   }
 
+  async cancelRun(runId: number): Promise<void> {
+    for (const run of repo().runs.values()) {
+      if (run.url.endsWith(`/runs/${runId}`) && run.status !== "completed") {
+        run.status = "completed";
+        run.conclusion = "cancelled";
+      }
+    }
+  }
+
   async runLog(runUrl: string): Promise<string | null> {
     return repo().logs.get(runUrl) ?? null;
   }

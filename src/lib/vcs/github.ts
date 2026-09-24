@@ -364,6 +364,10 @@ export class GitHubClient implements VcsClient {
     }));
   }
 
+  async cancelRun(runId: number): Promise<void> {
+    await this.request("POST", `/actions/runs/${runId}/cancel`);
+  }
+
   async runLog(runUrl: string): Promise<string | null> {
     const runId = /\/actions\/runs\/(\d+)/.exec(runUrl)?.[1];
     if (!runId) return null;

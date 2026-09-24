@@ -29,6 +29,13 @@ export function taskBrief(task: CoderTask): string {
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
     "",
     `File scope (you may write only inside these paths): ${task.fileScope.join(", ")}`,
+    ...(task.notes?.length
+      ? [
+          "",
+          "Notes from the person watching this ticket. Follow them; where they disagree, the newest wins:",
+          ...task.notes.map((n) => `- ${n}`),
+        ]
+      : []),
   ].join("\n");
 }
 
