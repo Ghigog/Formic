@@ -4,6 +4,10 @@ import { createTodoItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
 
 export const dynamic = "force-dynamic";
+// POST starts the Architect Agent drafting the ticket (see launch() in
+// src/lib/agents/pipeline.ts). Matches the platform's function cap;
+// DEFAULT_RUN_BUDGET stays under it.
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   rawRequest: z.string().min(3, "Describe the ticket in a sentence or two.").max(4000),

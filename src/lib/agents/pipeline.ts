@@ -547,8 +547,12 @@ async function stallDraftingTicket(
  * Inside a request it goes through `after()`: on Vercel a function is frozen
  * once its response is sent, so plain fire-and-forget work silently stopped
  * mid-run. `after()` keeps the function alive until the work settles, up to
- * the function's max duration. Outside a request (tests, scripts) there is
- * no such scope and `after()` throws, so it runs detached as before.
+ * the function's max duration — the `maxDuration` declared on the route that
+ * called this. DEFAULT_RUN_BUDGET (src/lib/budget/limits.ts) stays under that
+ * ceiling on purpose: a run notices its own budget and stops cleanly, rather
+ * than the platform cutting it off with no chance to report why. Outside a
+ * request (tests, scripts) there is no such scope and `after()` throws, so it
+ * runs detached as before.
  */
 export function launch(work: () => Promise<void>, label: string): void {
   const run = () =>

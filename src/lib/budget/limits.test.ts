@@ -23,7 +23,7 @@ describe("checkBudget", () => {
 
   it("stops at the time ceiling", () => {
     const v = checkBudget(
-      { ...ZERO_SPEND, elapsedMs: 15 * 60 * 1000 },
+      { ...ZERO_SPEND, elapsedMs: DEFAULT_RUN_BUDGET.maxDurationMs },
       DEFAULT_RUN_BUDGET,
     );
     expect(v.ok).toBe(false);
