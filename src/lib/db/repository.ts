@@ -94,6 +94,8 @@ export interface AssistantMessage {
   proposals: AssistantProposal[];
   status: "done" | "pending" | "failed";
   runnerJob: string | null;
+  /** The preset that job was dispatched with, so a failure is blamed on it. */
+  runnerAgent: string | null;
   createdAt: Date;
 }
 
@@ -140,6 +142,8 @@ export interface TicketDetail {
   summary: string | null;
   /** The cloud runner job this ticket is waiting on, if any. */
   runnerJob: string | null;
+  /** The preset that job was dispatched with, so a failure is blamed on it. */
+  runnerAgent: string | null;
   /** The GitHub issue that tracks it, once created. */
   issueNumber: number | null;
   storyPoints: number | null;
@@ -162,6 +166,7 @@ export interface TicketUpdate {
   attempts?: number;
   summary?: string | null;
   runnerJob?: string | null;
+  runnerAgent?: string | null;
   issueNumber?: number | null;
   plan?: PlanStep[];
   handoff?: string[];
@@ -315,12 +320,14 @@ export interface Repository {
     /** When the PRD last changed, or null for none or from before this was kept. */
     prdUpdatedAt: Date | null;
     runnerJob: string | null;
+    /** The preset that job was dispatched with, so a failure is blamed on it. */
+    runnerAgent: string | null;
     issueNumber: number | null;
   } | null>;
   /** The GitHub issue that tracks this epic. */
   setEpicIssue(epicId: string, issueNumber: number): Promise<void>;
-  /** The Actions run a CLI agent is doing for this epic, or null. */
-  setEpicRunnerJob(epicId: string, job: string | null): Promise<void>;
+  /** The Actions run a CLI agent is doing for this epic, or null, and the preset dispatched with it. */
+  setEpicRunnerJob(epicId: string, job: string | null, agentId?: string | null): Promise<void>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
   /** Removes tickets, with their runs and dependencies both ways. */
@@ -423,7 +430,7 @@ export interface Repository {
   }): Promise<AssistantMessage>;
   updateAssistantMessage(
     id: string,
-    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void>;
   clearAssistant(projectId: string): Promise<void>;
   /** One card's chat, oldest first. */
