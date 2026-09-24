@@ -58,6 +58,8 @@ interface TicketExtras {
   attempts: number;
   summary: string | null;
   runnerJob: string | null;
+  /** The preset that job was dispatched with. */
+  runnerAgent?: string | null;
   /** When that job was sent. */
   runnerJobAt?: Date | null;
   issueNumber: number | null;
@@ -94,6 +96,7 @@ interface Store {
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
   epicJobs: Map<string, string>;
+  epicJobAgents: Map<string, string | null>;
   epicJobTimes: Map<string, Date>;
   epicIssues: Map<string, number>;
   /** The highest Epic number each project has used, deleted ones included. */
@@ -133,6 +136,7 @@ function store(): Store {
     existing.epicNumbers ??= new Map();
     existing.prdTimes ??= new Map();
     existing.epicJobTimes ??= new Map();
+    existing.epicJobAgents ??= new Map();
     existing.attachments ??= new Map();
     return existing;
   }
@@ -154,6 +158,7 @@ function store(): Store {
     rawRequests: new Map(),
     showcases: new Map(),
     epicJobs: new Map(),
+    epicJobAgents: new Map(),
     epicJobTimes: new Map(),
     epicIssues: new Map(),
     epicNumbers: new Map(),
@@ -554,6 +559,7 @@ export class MemoryRepository implements Repository {
       prd: s.prds.get(epicId) ?? null,
       prdUpdatedAt: s.prdTimes.get(epicId) ?? null,
       runnerJob: s.epicJobs.get(epicId) ?? null,
+      runnerAgent: s.epicJobAgents.get(epicId) ?? null,
       issueNumber: s.epicIssues.get(epicId) ?? null,
     };
   }
@@ -562,13 +568,15 @@ export class MemoryRepository implements Repository {
     store().epicIssues.set(epicId, issueNumber);
   }
 
-  async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
+  async setEpicRunnerJob(epicId: string, job: string | null, agentId: string | null = null): Promise<void> {
     const s = store();
     if (job) {
       s.epicJobs.set(epicId, job);
+      s.epicJobAgents.set(epicId, agentId);
       s.epicJobTimes.set(epicId, new Date());
     } else {
       s.epicJobs.delete(epicId);
+      s.epicJobAgents.delete(epicId);
       s.epicJobTimes.delete(epicId);
     }
   }
@@ -764,6 +772,7 @@ export class MemoryRepository implements Repository {
       extras.runnerJob = update.runnerJob;
       extras.runnerJobAt = update.runnerJob ? new Date() : null;
     }
+    if (update.runnerAgent !== undefined) extras.runnerAgent = update.runnerAgent;
     if (update.issueNumber !== undefined) extras.issueNumber = update.issueNumber;
     if (update.plan !== undefined) extras.plan = update.plan;
     if (update.handoff !== undefined) extras.handoff = update.handoff;
@@ -959,6 +968,7 @@ export class MemoryRepository implements Repository {
       id: `msg_${Math.random().toString(36).slice(2, 10)}`,
       proposals: [],
       runnerJob: null,
+      runnerAgent: null,
       createdAt: new Date(),
       ...input,
       status: input.status ?? "done",
@@ -1059,6 +1069,7 @@ function toDetail(
     attempts: extras?.attempts ?? 0,
     summary: extras?.summary ?? null,
     runnerJob: extras?.runnerJob ?? null,
+    runnerAgent: extras?.runnerAgent ?? null,
     issueNumber: extras?.issueNumber ?? null,
     storyPoints: card.storyPoints ?? null,
     plan: extras?.plan ?? [],

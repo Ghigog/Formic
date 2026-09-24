@@ -602,16 +602,17 @@ export class PrismaRepository implements Repository {
         prd: true,
         prdUpdatedAt: true,
         runnerJob: true,
+        runnerAgent: true,
         issueNumber: true,
       },
     });
     return epic ?? null;
   }
 
-  async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
+  async setEpicRunnerJob(epicId: string, job: string | null, agentId: string | null = null): Promise<void> {
     await prisma().epic.update({
       where: { id: epicId },
-      data: { runnerJob: job, runnerJobAt: job ? new Date() : null },
+      data: { runnerJob: job, runnerAgent: job ? agentId : null, runnerJobAt: job ? new Date() : null },
     });
   }
 
@@ -1023,7 +1024,7 @@ export class PrismaRepository implements Repository {
 
   async updateAssistantMessage(
     id: string,
-    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void> {
     const { proposals, ...rest } = update;
     await prisma().assistantMessage.update({
@@ -1123,6 +1124,7 @@ type TicketRow = {
   blockedReason: string | null;
   attempts: number;
   runnerJob: string | null;
+  runnerAgent: string | null;
   issueNumber: number | null;
   storyPoints: number | null;
   plan: unknown;
@@ -1149,6 +1151,7 @@ function toAssistantMessage(row: {
   proposals: unknown;
   status: string;
   runnerJob: string | null;
+  runnerAgent: string | null;
   createdAt: Date;
 }): AssistantMessage {
   return {
@@ -1204,6 +1207,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     attempts: row.attempts,
     summary: row.summary,
     runnerJob: row.runnerJob,
+    runnerAgent: row.runnerAgent,
     issueNumber: row.issueNumber,
     storyPoints: row.storyPoints,
     plan: planOf(row.plan),

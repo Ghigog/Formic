@@ -262,6 +262,7 @@ export async function closeAlreadyDone(
     stage: STAGE_MERGE,
     blockedReason: null,
     runnerJob: null,
+    runnerAgent: null,
     summary,
   });
   await publish(projectId, {
