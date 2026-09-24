@@ -14,7 +14,7 @@ export const XP_PER_LEVEL = 50;
 /** What reporting a bug costs, in points. Never XP: levels only go up. */
 export const BUG_COST = 5;
 /** How long one heat stack lasts. */
-export const HEAT_WINDOW_MS = 45_000;
+export const HEAT_WINDOW_MS = 45 * 60_000;
 /** Most heat stacks at once. */
 export const HEAT_MAX = 6;
 
