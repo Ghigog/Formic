@@ -285,6 +285,7 @@ model AgentRun {
 
   @@index([status])
   @@index([ticketId])
+  @@index([epicId])
   @@map("agent_run")
 }
 

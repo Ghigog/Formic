@@ -271,6 +271,116 @@ describe("rerouting on the in-memory store", () => {
   });
 });
 
+describe("Epic spend on the in-memory store", () => {
+  it("sums a run's spend as it accrues, before it finishes", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+
+    await repo.startRun({ id: "r1", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.recordRunSpend("r1", 150);
+
+    expect(await repo.epicSpentCents(epic.id)).toBe(150);
+  });
+
+  it("does not forget a run's spend once it has finished", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+
+    await repo.startRun({ id: "r1", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.recordRunSpend("r1", 900);
+    await repo.finishRun("r1", { status: "succeeded", error: null, tokensIn: 0, tokensOut: 0, costCents: 900 });
+
+    // A second run starts once the first is long done; the Epic's total
+    // still has to include what the finished run spent.
+    await repo.startRun({ id: "r2", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.recordRunSpend("r2", 300);
+
+    expect(await repo.epicSpentCents(epic.id)).toBe(1200);
+  });
+
+  it("keeps one Epic's spend out of another's sum", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const a = await repo.createEpic({ projectId: project.id, title: "a", rawRequest: "a", position: 1 });
+    const b = await repo.createEpic({ projectId: project.id, title: "b", rawRequest: "b", position: 2 });
+
+    await repo.startRun({ id: "ra", role: "coder", epicId: a.id, ticketId: null, model: null, sandboxId: null });
+    await repo.recordRunSpend("ra", 500);
+    await repo.startRun({ id: "rb", role: "coder", epicId: b.id, ticketId: null, model: null, sandboxId: null });
+    await repo.recordRunSpend("rb", 700);
+
+    expect(await repo.epicSpentCents(a.id)).toBe(500);
+    expect(await repo.epicSpentCents(b.id)).toBe(700);
+  });
+});
+
+describe("the stop flag on the in-memory store", () => {
+  it("cancels every live run under a project, and leaves a finished run alone", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const elsewhere = await repo.ensureProject({ ownerId: "u1", repoFullName: "acme/elsewhere", baseBranch: "main" });
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+    const away = await repo.createEpic({ projectId: elsewhere.id, title: "away", rawRequest: "away", position: 1 });
+
+    await repo.startRun({ id: "live", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: "sbx-1" });
+    await repo.startRun({ id: "done", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: "sbx-2" });
+    await repo.finishRun("done", { status: "succeeded", error: null, tokensIn: 0, tokensOut: 0, costCents: 0 });
+    await repo.startRun({ id: "far", role: "coder", epicId: away.id, ticketId: null, model: null, sandboxId: "sbx-3" });
+
+    const cancelled = await repo.cancelRuns({ projectId: project.id }, "Stopped by a human.");
+
+    expect(cancelled).toEqual([{ id: "live", sandboxId: "sbx-1" }]);
+    expect(await repo.runCancelReason("live")).toBe("Stopped by a human.");
+    expect(await repo.runCancelReason("done")).toBeNull();
+    expect(await repo.runCancelReason("far")).toBeNull();
+  });
+
+  it("cancels a single run by id, leaving its Epic's other runs live", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+
+    await repo.startRun({ id: "r1", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.startRun({ id: "r2", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+
+    const cancelled = await repo.cancelRuns({ runId: "r1" }, "Run budget: over.");
+
+    expect(cancelled).toEqual([{ id: "r1", sandboxId: null }]);
+    expect(await repo.runCancelReason("r1")).toBe("Run budget: over.");
+    expect(await repo.runCancelReason("r2")).toBeNull();
+  });
+
+  it("cancels every live run under an Epic, whichever instance started them", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+    const other = await repo.createEpic({ projectId: project.id, title: "o", rawRequest: "o", position: 2 });
+
+    await repo.startRun({ id: "r1", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.startRun({ id: "r2", role: "reviewer", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.startRun({ id: "r3", role: "coder", epicId: other.id, ticketId: null, model: null, sandboxId: null });
+
+    const cancelled = await repo.cancelRuns({ epicId: epic.id }, "Epic budget: over.");
+
+    expect(cancelled.map((c) => c.id).sort()).toEqual(["r1", "r2"]);
+    expect(await repo.runCancelReason("r3")).toBeNull();
+  });
+
+  it("does not cancel a run twice, or report a reason for one that was never stopped", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+    await repo.startRun({ id: "r1", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+
+    expect(await repo.runCancelReason("r1")).toBeNull();
+    await repo.cancelRuns({ runId: "r1" }, "first");
+    expect(await repo.cancelRuns({ runId: "r1" }, "second")).toEqual([]);
+    expect(await repo.runCancelReason("r1")).toBe("first");
+  });
+});
+
 describe("how long an agent has been at a card", () => {
   it("dates an Epic's work from when its job was sent, and clears it after", async () => {
     const repo = new MemoryRepository();

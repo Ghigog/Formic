@@ -80,11 +80,18 @@ export function startRun(
     // another instance than the one running the agent.
     interrupts: ticketId
       ? async () => {
-          const ticket = await repository().ticketDetail(ticketId);
+          const [ticket, cancelled] = await Promise.all([
+            repository().ticketDetail(ticketId),
+            // A "Stop all", or its Epic's budget, cancelled this run: both
+            // are written durably, so the instance actually driving it sees
+            // them here even though neither ever touched its own registry.
+            repository().runCancelReason(runId),
+          ]);
           const stopped =
-            ticket && (ticket.status === "blocked" || ticket.status === "failed")
+            cancelled ??
+            (ticket && (ticket.status === "blocked" || ticket.status === "failed")
               ? (ticket.blockedReason ?? "Stopped.")
-              : null;
+              : null);
           const fresh = (await ticketNotes(projectId, ticketId, startedAt)).filter(
             (n) => !heard.has(n.seq),
           );

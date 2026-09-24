@@ -105,7 +105,10 @@ interface Store {
     payload: unknown;
     at: Date;
   }>;
-  runs: Map<string, RunRecord & { status: AgentRunStatus; startedAt: Date }>;
+  runs: Map<
+    string,
+    RunRecord & { status: AgentRunStatus; startedAt: Date; costCents: number; error: string | null }
+  >;
   deliveries: Set<string>;
   presets: Map<string, AgentPreset & { apiKeyCipher: string | null }>;
   users: Map<string, UserRecord>;
@@ -172,6 +175,12 @@ function store(): Store {
 function projectOf(s: Store, card: BoardCard): string {
   const epicId = card.kind === "epic" ? card.id : card.epicId;
   return (epicId && s.epicProject.get(epicId)) || s.project.id;
+}
+
+/** The project a run belongs to, by its Epic or, failing that, its ticket's. */
+function projectOfRun(s: Store, run: { epicId: string | null; ticketId: string | null }): string | null {
+  const epicId = run.epicId ?? (run.ticketId ? s.cards.get(run.ticketId)?.epicId : undefined);
+  return (epicId && s.epicProject.get(epicId)) || null;
 }
 
 export function seedMemory(
@@ -770,12 +779,27 @@ export class MemoryRepository implements Repository {
   }
 
   async startRun(run: RunRecord): Promise<void> {
-    store().runs.set(run.id, { ...run, status: "running", startedAt: new Date() });
+    const s = store();
+    // Called again to attach a sandbox once the run is under way: its
+    // already-accrued spend and start time must survive that, or a restart
+    // of the same call resets an Epic's running total to zero.
+    const existing = s.runs.get(run.id);
+    s.runs.set(run.id, {
+      ...run,
+      status: "running",
+      startedAt: existing?.startedAt ?? new Date(),
+      costCents: existing?.costCents ?? 0,
+      error: existing?.error ?? null,
+    });
   }
 
   async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
     const run = store().runs.get(runId);
-    if (run) run.status = outcome.status;
+    if (run) {
+      run.status = outcome.status;
+      run.error = outcome.error;
+      run.costCents = outcome.costCents;
+    }
   }
 
   async unfinishedRuns(
@@ -786,6 +810,46 @@ export class MemoryRepository implements Repository {
         (r.status === "queued" || r.status === "running") &&
         r.startedAt < startedBefore,
     );
+  }
+
+  async recordRunSpend(runId: string, costCents: number): Promise<void> {
+    const run = store().runs.get(runId);
+    if (run) run.costCents = costCents;
+  }
+
+  async epicSpentCents(epicId: string): Promise<number> {
+    let total = 0;
+    for (const run of store().runs.values()) {
+      if (run.epicId === epicId) total += run.costCents;
+    }
+    return total;
+  }
+
+  async cancelRuns(
+    scope: { runId: string } | { epicId: string } | { projectId: string },
+    reason: string,
+  ): Promise<Array<{ id: string; sandboxId: string | null }>> {
+    const s = store();
+    const cancelled: Array<{ id: string; sandboxId: string | null }> = [];
+    for (const run of s.runs.values()) {
+      if (run.status !== "queued" && run.status !== "running") continue;
+      const matches =
+        "runId" in scope
+          ? run.id === scope.runId
+          : "epicId" in scope
+            ? run.epicId === scope.epicId
+            : projectOfRun(s, run) === scope.projectId;
+      if (!matches) continue;
+      run.status = "cancelled";
+      run.error = reason;
+      cancelled.push({ id: run.id, sandboxId: run.sandboxId });
+    }
+    return cancelled;
+  }
+
+  async runCancelReason(runId: string): Promise<string | null> {
+    const run = store().runs.get(runId);
+    return run && run.status === "cancelled" ? (run.error ?? "Stopped.") : null;
   }
 
   async claimDelivery(key: string): Promise<boolean> {

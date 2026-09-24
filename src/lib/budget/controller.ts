@@ -10,16 +10,26 @@ import {
   checkBudget,
 } from "./limits";
 import { publish } from "@/lib/events/bus";
-import { disposeAllSandboxes } from "@/lib/sandbox";
+import { disposeSandboxes } from "@/lib/sandbox";
+import { repository } from "@/lib/db";
 
 /**
  * Live run registry and the global stop.
  *
  * Every agent run registers here and receives an AbortSignal. The signal fires
  * when the run exceeds its budget, when its Epic exceeds the aggregate budget,
- * or when a human hits stop. Agents are expected to check it; sandboxes are
+ * or when a human hits stop, for a run this process is driving. Sandboxes are
  * disposed by their own TTL regardless, so an agent that ignores the signal
  * still cannot run forever.
+ *
+ * On serverless a stop or a budget rarely lands in the same instance as the
+ * run it is about to affect, so every stop is also written to the run's own
+ * AgentRun row before anything local happens: cancelled, with why. A run's
+ * `interrupts` (see src/lib/agents/pipeline.ts) polls that between turns, so
+ * the instance actually driving it notices and aborts even though this
+ * process's in-memory registry never held it. Spend is written the same way,
+ * as it accrues, so an Epic's ceiling is checked against every run under it
+ * from the database rather than only the ones live in this process.
  */
 
 interface LiveRun {
@@ -86,6 +96,13 @@ export async function recordSpend(
   run.spend = addSpend(run.spend, delta);
   run.spend.elapsedMs = Date.now() - run.startedAt;
 
+  // Written on every call, not only at the end: an Epic's ceiling is read
+  // from here, and a run that never finishes (crashed worker, still going
+  // in another instance) must not make its Epic forget what it has spent.
+  await repository()
+    .recordRunSpend(runId, run.spend.cents)
+    .catch((e) => console.error("[formic] could not persist run spend:", e));
+
   const verdict = checkBudget(run.spend, run.budget);
   if (!verdict.ok) {
     await stopRun(runId, `Run budget: ${verdict.reason}`, "run");
@@ -93,11 +110,17 @@ export async function recordSpend(
   }
 
   if (run.epicId) {
-    const epicSpend = [...runs().values()]
-      .filter((r) => r.epicId === run.epicId)
-      .reduce((acc, r) => addSpend(acc, r.spend), { ...ZERO_SPEND });
+    // Summed across every run under the Epic, database-side: finished runs
+    // this process never saw, and runs a sibling instance is driving, both
+    // count, not only what this process's own registry knows about.
+    const epicCents = await repository()
+      .epicSpentCents(run.epicId)
+      .catch(() => run.spend.cents);
 
-    const epicVerdict = checkBudget(epicSpend, DEFAULT_EPIC_BUDGET);
+    const epicVerdict = checkBudget(
+      { cents: epicCents, elapsedMs: 0, attempts: 0 },
+      DEFAULT_EPIC_BUDGET,
+    );
     if (!epicVerdict.ok) {
       await stopEpic(run.epicId, `Epic budget: ${epicVerdict.reason}`);
       return false;
@@ -114,6 +137,10 @@ export async function stopRun(
 ): Promise<void> {
   const run = runs().get(runId);
   if (!run) return;
+
+  await repository()
+    .cancelRuns({ runId }, reason)
+    .catch((e) => console.error("[formic] could not persist the stop:", e));
 
   run.controller.abort(new Error(reason));
   runs().delete(runId);
@@ -143,25 +170,46 @@ export function abortTicketRuns(ticketId: string, reason: string): void {
 }
 
 export async function stopEpic(epicId: string, reason: string): Promise<void> {
+  // Durable first, so a sibling run this process never registered — another
+  // instance is driving it — is cancelled too, not only the ones below.
+  await repository()
+    .cancelRuns({ epicId }, reason)
+    .catch((e) => console.error("[formic] could not persist the epic stop:", e));
+
   for (const run of [...runs().values()].filter((r) => r.epicId === epicId)) {
     await stopRun(run.runId, reason, "epic");
   }
 }
 
-/** The visible global stop. Halts every run and lets sandboxes dispose. */
+/** The visible global stop. Halts every run and disposes their sandboxes. */
 export async function stopAll(
   projectId: string,
   reason = "Stopped by a human.",
+  e2bApiKey?: string | null,
 ): Promise<number> {
-  const targets = [...runs().values()].filter((r) => r.projectId === projectId);
-  for (const run of targets) {
+  // The database, not this process's registry, says which runs are live:
+  // "Stop all" is as likely to be pressed on the instance sitting idle as on
+  // the one actually driving a run.
+  const cancelled = await repository()
+    .cancelRuns({ projectId }, reason)
+    .catch((e) => {
+      console.error("[formic] could not persist the stop:", e);
+      return [] as Array<{ id: string; sandboxId: string | null }>;
+    });
+
+  for (const run of [...runs().values()].filter((r) => r.projectId === projectId)) {
     await stopRun(run.runId, reason, "global");
   }
 
-  // Aborting a run asks the agent to stop. Disposing the sandboxes makes it
-  // true regardless of whether the agent was listening.
-  await disposeAllSandboxes(projectId);
-  return targets.length;
+  // Aborting asks the agent to stop; disposing the sandbox by the id the
+  // database just gave us makes it true regardless of whether the instance
+  // driving that run was listening, or was this one at all.
+  const sandboxIds = cancelled
+    .map((c) => c.sandboxId)
+    .filter((id): id is string => id !== null);
+  await disposeSandboxes(projectId, sandboxIds, e2bApiKey);
+
+  return cancelled.length;
 }
 
 export function spendFor(runId: string): Spend | null {

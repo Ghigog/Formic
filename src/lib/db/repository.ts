@@ -369,6 +369,28 @@ export interface Repository {
   unfinishedRuns(
     startedBefore: Date,
   ): Promise<Array<RunRecord & { status: AgentRunStatus }>>;
+  /**
+   * Persists a run's running cost so it survives the process that is
+   * driving it, and so an Epic's total can be summed from here instead of
+   * from memory only one instance holds. Called as spend accrues, not only
+   * once the run finishes.
+   */
+  recordRunSpend(runId: string, costCents: number): Promise<void>;
+  /** Every run's spend under an Epic, finished or still running, summed. */
+  epicSpentCents(epicId: string): Promise<number>;
+  /**
+   * Marks every run in scope that is still queued or running cancelled,
+   * with a reason: the durable form of a stop, so a run driven by any
+   * instance sees it on its next poll rather than only the one that
+   * happened to receive the request. Returns which of them had a sandbox,
+   * so the caller can dispose it.
+   */
+  cancelRuns(
+    scope: { runId: string } | { epicId: string } | { projectId: string },
+    reason: string,
+  ): Promise<Array<{ id: string; sandboxId: string | null }>>;
+  /** Why a run was cancelled, from this instance or another; null if it has not been. */
+  runCancelReason(runId: string): Promise<string | null>;
 
   /* Agent presets, and which one each column runs. */
 
