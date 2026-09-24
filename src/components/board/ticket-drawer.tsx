@@ -5,6 +5,7 @@ import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { PlanSteps } from "@/components/ui/plan-steps";
+import { SideBySide, WithChat } from "@/components/ui/split";
 import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
@@ -208,38 +209,38 @@ export function TicketDrawer({
           ))}
         </div>
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-2">
-          <section
-            aria-label="Ticket"
-            className={cn(
-              "border-line min-h-0 overflow-y-auto p-4 lg:border-r",
-              tab === "ticket" ? "block" : "hidden lg:block",
-            )}
-          >
-            {view && <TicketBody view={view} />}
-          </section>
-
-          <section
-            aria-label="Agent"
-            className={cn(
-              "bg-sunken min-h-0 flex-col",
-              tab === "agent" ? "flex" : "hidden lg:flex",
-            )}
-          >
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {view && <AgentBody view={view} working={progress.working} />}
-            </div>
-            {view && (
-              <div className="border-line h-[280px] shrink-0 border-t">
-                <CardChat
-                  kind="ticket"
-                  cardId={ticketId}
-                  agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(view.card.status, view.card.stalledIn)]]}
-                />
-              </div>
-            )}
-          </section>
-        </div>
+        <SideBySide
+          storageKey="ticket"
+          first={
+            <section
+              aria-label="Ticket"
+              className={cn("min-h-0 overflow-y-auto p-4", tab === "ticket" ? "block" : "hidden lg:block")}
+            >
+              {view && <TicketBody view={view} />}
+            </section>
+          }
+          second={
+            <section
+              aria-label="Agent"
+              className={cn("bg-sunken min-h-0 flex-col", tab === "agent" ? "flex" : "hidden lg:flex")}
+            >
+              <WithChat
+                storageKey="ticket"
+                chat={
+                  view && (
+                    <CardChat
+                      kind="ticket"
+                      cardId={ticketId}
+                      agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(view.card.status, view.card.stalledIn)]]}
+                    />
+                  )
+                }
+              >
+                <div className="p-4">{view && <AgentBody view={view} working={progress.working} />}</div>
+              </WithChat>
+            </section>
+          }
+        />
       </div>
     </div>
   );
