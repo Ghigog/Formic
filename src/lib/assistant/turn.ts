@@ -1,9 +1,9 @@
 import "server-only";
 
-import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
-import { MODELS, anthropicClient } from "@/lib/agents/anthropic";
+import { MODELS } from "@/lib/agents/anthropic";
+import { claudeSpeak, openAiSpeak, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
 import { assistantAgentFor } from "@/lib/agents/presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
@@ -12,8 +12,7 @@ import { repository } from "@/lib/db";
 import type { AssistantMessage, AssistantProposal } from "@/lib/db/repository";
 import type { BoardCard } from "@/lib/domain/entities";
 import { COLUMN_LABELS, columnFor } from "@/lib/domain/status";
-import { type ChatMessage, type ToolSpec, chat, extractJson } from "@/lib/llm/openai-compat";
-import type { ProviderInfo } from "@/lib/llm/providers";
+import { extractJson } from "@/lib/llm/openai-compat";
 import { startCliAsk } from "@/lib/runner/runner";
 import { vcs, type VcsClient } from "@/lib/vcs";
 import { assistantActionSchema, checkAction } from "./actions";
@@ -36,7 +35,7 @@ const listInput = z.object({ prefix: z.string().optional() });
 const readInput = z.object({ path: z.string().min(1) });
 const proposeInput = z.object({ summary: z.string().min(1), action: z.unknown() });
 
-const TOOL_DEFS: Array<{ name: string; description: string; schema: Record<string, unknown> }> = [
+const TOOL_DEFS: ToolDef[] = [
   {
     name: "list_files",
     description:
@@ -131,12 +130,6 @@ function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistan
     }));
 }
 
-interface ToolCall {
-  id: string;
-  name: string;
-  input: unknown;
-}
-
 async function runTool(
   call: ToolCall,
   client: VcsClient,
@@ -178,92 +171,6 @@ async function runTool(
   } catch (e) {
     return { content: e instanceof Error ? e.message : String(e), isError: true };
   }
-}
-
-type Speak = (
-  toolResults: Array<{ id: string; content: string; isError: boolean }> | null,
-) => Promise<{ text: string; calls: ToolCall[] }>;
-
-function claude(
-  apiKey: string | null,
-  model: string,
-  system: string,
-  past: Array<{ role: "user" | "assistant"; content: string }>,
-): Speak {
-  const messages: Anthropic.MessageParam[] = past.map((m) => ({ role: m.role, content: m.content }));
-  const tools: Anthropic.Tool[] = TOOL_DEFS.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: t.schema as Anthropic.Tool.InputSchema,
-  }));
-  return async (results) => {
-    if (results) {
-      messages.push({
-        role: "user",
-        content: results.map((r) => ({
-          type: "tool_result" as const,
-          tool_use_id: r.id,
-          is_error: r.isError,
-          content: r.content,
-        })),
-      });
-    }
-    const message = await anthropicClient(apiKey).messages.create({
-      model,
-      max_tokens: 8_000,
-      system,
-      tools,
-      messages,
-    });
-    messages.push({ role: "assistant", content: message.content });
-    return {
-      text: message.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map((b) => b.text)
-        .join("\n")
-        .trim(),
-      calls: message.content
-        .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
-        .map((b) => ({ id: b.id, name: b.name, input: b.input })),
-    };
-  };
-}
-
-function openAi(
-  info: ProviderInfo,
-  apiKey: string,
-  model: string,
-  system: string,
-  past: Array<{ role: "user" | "assistant"; content: string }>,
-): Speak {
-  const messages: ChatMessage[] = [{ role: "system", content: system }, ...past];
-  const tools: ToolSpec[] = TOOL_DEFS.map((t) => ({
-    type: "function",
-    function: { name: t.name, description: t.description, parameters: t.schema },
-  }));
-  return async (results) => {
-    for (const r of results ?? []) {
-      messages.push({ role: "tool", tool_call_id: r.id, content: r.isError ? `Error: ${r.content}` : r.content });
-    }
-    const result = await chat(info, apiKey, { model, messages, tools });
-    messages.push({
-      role: "assistant",
-      content: result.message.content ?? "",
-      ...(result.message.tool_calls?.length ? { tool_calls: result.message.tool_calls } : {}),
-    });
-    return {
-      text: (result.message.content ?? "").trim(),
-      calls: (result.message.tool_calls ?? []).map((c) => {
-        let input: unknown;
-        try {
-          input = JSON.parse(c.function.arguments || "{}");
-        } catch {
-          input = { unparseable: c.function.arguments };
-        }
-        return { id: c.id, name: c.function.name, input };
-      }),
-    };
-  };
 }
 
 async function finish(
@@ -311,11 +218,11 @@ export async function answer(projectId: string, messageId: string): Promise<void
     const { info } = agent;
     let speak: Speak;
     if (info.kind === "anthropic") {
-      speak = claude(agent.apiKey, agent.model ?? MODELS.product, system, past);
+      speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, past, TOOL_DEFS);
     } else {
       if (!agent.apiKey) throw new Error(`This agent has no ${info.label} API key. Edit it and add one.`);
       if (!agent.model) throw new Error(`This agent has no ${info.label} model. Edit it and pick one.`);
-      speak = openAi(info, agent.apiKey, agent.model, system, past);
+      speak = openAiSpeak(info, agent.apiKey, agent.model, system, past, TOOL_DEFS);
     }
 
     const project = await projectFor(projectId);

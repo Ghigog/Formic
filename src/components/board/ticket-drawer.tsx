@@ -8,8 +8,10 @@ import { PlanSteps } from "@/components/ui/plan-steps";
 import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
+import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE } from "@/lib/domain/entities";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
-import { cardProblem } from "@/lib/domain/status";
+import { cardProblem, columnFor } from "@/lib/domain/status";
+import { CardChat } from "./card-chat";
 import { ProblemNotice, WorkTimer } from "./card";
 import {
   activityOf,
@@ -227,6 +229,15 @@ export function TicketDrawer({
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {view && <AgentBody view={view} working={progress.working} />}
             </div>
+            {view && (
+              <div className="border-line h-[280px] shrink-0 border-t">
+                <CardChat
+                  kind="ticket"
+                  cardId={ticketId}
+                  agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(view.card.status, view.card.stalledIn)]]}
+                />
+              </div>
+            )}
             {view && <NoteBox ticketId={ticketId} />}
           </section>
         </div>

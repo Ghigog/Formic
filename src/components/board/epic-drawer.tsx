@@ -4,11 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { StatusPill } from "@/components/ui/status-pill";
+import { CardChat } from "./card-chat";
 import { DagPane } from "./dag-pane";
 import { PrdPane } from "./prd-pane";
 import { ProblemNotice, WorkTimer } from "./card";
-import type { BoardCard, Prd } from "@/lib/domain/entities";
-import { isStalled } from "@/lib/domain/status";
+import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type BoardCard, type Prd } from "@/lib/domain/entities";
+import { columnFor, isStalled } from "@/lib/domain/status";
 import { epicProgress } from "@/lib/domain/stages";
 
 interface EpicDetail {
@@ -289,14 +290,25 @@ export function EpicDrawer({
 
           <div
             className={cn(
-              "bg-sunken min-h-0 overflow-y-auto",
-              tab === "dag" ? "block" : "hidden lg:block",
+              "bg-sunken flex min-h-0 flex-col",
+              tab === "dag" ? "flex" : "hidden lg:flex",
             )}
           >
-            <DagPane
-              tickets={detail?.children ?? []}
-              onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))}
-            />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <DagPane
+                tickets={detail?.children ?? []}
+                onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))}
+              />
+            </div>
+            {epic && (
+              <div className="border-line h-[280px] shrink-0 border-t">
+                <CardChat
+                  kind="epic"
+                  cardId={epicId}
+                  agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(epic.status, epic.stalledIn)]]}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

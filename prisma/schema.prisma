@@ -100,6 +100,7 @@ model Project {
   events       Event[]
   columnAgents ColumnAgent[]
   assistantMessages AssistantMessage[]
+  cardChatMessages  CardChatMessage[]
 
   @@index([ownerId])
   @@map("project")
@@ -356,4 +357,26 @@ model AssistantMessage {
 
   @@index([projectId, createdAt])
   @@map("assistant_message")
+}
+
+/// A card's chat with its column's agent: a conversation per Epic or
+/// ticket, not tied to a relation since either table can own one.
+model CardChatMessage {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "epic" or "ticket".
+  cardKind  String
+  cardId    String
+  /// "user" or "assistant".
+  role      String
+  content   String
+  /// "done", "pending" while the agent works, or "failed".
+  status    String   @default("done")
+  /// The Actions run a CLI agent is answering this in, if any.
+  runnerJob String?
+  createdAt DateTime @default(now())
+
+  @@index([cardId, createdAt])
+  @@map("card_chat_message")
 }
