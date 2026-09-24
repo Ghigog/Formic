@@ -7,12 +7,16 @@ vi.mock("@/lib/agents/pipeline", () => ({
   launch: (_work: unknown, label: string) => launched.push(label),
   decomposeEpic: vi.fn(),
   runProductAgent: vi.fn(),
+  runArchitectDraftTicket: vi.fn(),
+  repoTree: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn() }));
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
-const { applyTransition, canRetryEpic, deleteEpic, retryEpic } = await import("./service");
+const { applyTransition, canRetryEpic, createTodoItem, deleteEpic, retryEpic } = await import(
+  "./service"
+);
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
 
@@ -381,5 +385,38 @@ describe("an Epic's tickets following it", () => {
     await move(epic!.id, "backlog", "todo");
 
     expect(launched).toEqual([`architect agent for ${epic!.key}`]);
+  });
+});
+
+describe("createTodoItem", () => {
+  it("creates a blocked, detached ticket under a standalone holder Epic and drafts it", async () => {
+    const card = await createTodoItem(PROJECT, "  Fix the broken footer link.  ");
+
+    expect(card.kind).toBe("ticket");
+    expect(card.status).toBe("blocked");
+    expect(card.stalledIn).toBe("todo");
+    expect(card.blockedReason).toBe("Drafting the ticket…");
+    expect(card.detached).toBe(true);
+
+    // The holder Epic never renders as its own card.
+    const cards = await repository().boardCards(PROJECT);
+    expect(cards).toEqual([expect.objectContaining({ id: card.id, kind: "ticket" })]);
+
+    expect(launched).toEqual([`architect agent for ${card.key}`]);
+  });
+
+  it("places the ticket after whatever else is already in To Do", async () => {
+    const existing = makeCard({ kind: "ticket", status: "ready" });
+    seedMemory([existing]);
+
+    const card = await createTodoItem(PROJECT, "Add a retry button.");
+
+    expect(card.position).toBeGreaterThan(existing.position);
+  });
+
+  it("claims attachments uploaded against the request id, a no-op with none yet", async () => {
+    const card = await createTodoItem(PROJECT, "Add a retry button.", "req-1");
+
+    expect(await repository().attachmentsFor({ ticketId: card.id })).toEqual([]);
   });
 });

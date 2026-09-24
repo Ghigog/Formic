@@ -1,5 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
+import type {
+  AgentContext,
+  AgentOutcome,
+  ArchitectAgent,
+  DraftTicket,
+} from "@/lib/agents/ports";
+import {
+  MockCoderAgent,
+  MockProductAgent,
+  MockReviewerAgent,
+  MockShowcaseAgent,
+} from "@/lib/agents/mock";
 
 const deferred = vi.hoisted(() => [] as unknown[]);
 
@@ -11,9 +23,46 @@ vi.stubEnv("DATABASE_URL", "");
 vi.stubEnv("POSTGRES_PRISMA_URL", "");
 vi.stubEnv("POSTGRES_URL", "");
 
-const { applyPrd, applyTickets } = await import("./pipeline");
+const { applyPrd, applyTickets, runArchitectDraftTicket } = await import("./pipeline");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
+const { resetAgents, setAgents } = await import("./registry");
+
+const NO_USAGE = { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 };
+
+/** An Architect Agent whose draftTicket does whatever the test tells it to. */
+class StubArchitect implements ArchitectAgent {
+  constructor(
+    private readonly outcome: (
+      input: { rawRequest: string },
+    ) => Promise<
+      AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
+    >,
+  ) {}
+
+  async decompose(): Promise<AgentOutcome<DraftTicket[]>> {
+    throw new Error("not used");
+  }
+
+  async draftTicket(
+    _ctx: AgentContext,
+    input: { rawRequest: string },
+  ): Promise<
+    AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
+  > {
+    return this.outcome(input);
+  }
+}
+
+function useArchitect(architect: ArchitectAgent) {
+  setAgents({
+    product: new MockProductAgent(),
+    architect,
+    coder: new MockCoderAgent(),
+    reviewer: new MockReviewerAgent(),
+    showcase: new MockShowcaseAgent(),
+  });
+}
 
 const PROJECT = "project_default";
 const PRD = {
@@ -29,6 +78,10 @@ const PRD = {
 beforeEach(() => {
   deferred.length = 0;
   globalThis.__formicMemoryStore = undefined;
+});
+
+afterEach(() => {
+  resetAgents();
 });
 
 describe("applyPrd", () => {
@@ -92,5 +145,83 @@ describe("applyPrd on an Epic already broken down in To Do", () => {
 
     expect((await repository().cardById(epic.id))?.status).toBe("ready");
     expect(deferred).toHaveLength(1);
+  });
+});
+
+describe("runArchitectDraftTicket", () => {
+  const draftedTicket: DraftTicket = {
+    key: "T-1",
+    title: "Add the missing button",
+    description: "Add the button the raw request asked for.",
+    acceptanceCriteria: ["The button appears where the request says"],
+    fileScope: ["src/components/button"],
+    size: "S",
+    storyPoints: 2,
+    dependsOn: [],
+  };
+
+  const seedDrafting = () => {
+    const [epic, ticket] = makeEpicWithChildren(
+      { status: "draft", standalone: true, size: null },
+      [
+        {
+          key: "T-1",
+          status: "blocked",
+          stalledIn: "todo",
+          blockedReason: "Drafting the ticket…",
+          detached: true,
+          fileScope: [],
+        },
+      ],
+    );
+    seedMemory([epic!, ticket!]);
+    return { epic: epic!, ticket: ticket! };
+  };
+
+  it("fills in the drafted ticket and clears the block on success", async () => {
+    const { epic, ticket } = seedDrafting();
+    useArchitect(
+      new StubArchitect(async () => ({
+        ok: true,
+        value: { kind: "ticket", ticket: draftedTicket },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, "raw request text", []);
+
+    const cards = await repository().boardCards(PROJECT);
+    const drafted = cards.find((c) => c.epicId === epic.id && c.kind === "ticket");
+    expect(drafted).toBeDefined();
+    expect(drafted?.title).toBe(draftedTicket.title);
+    expect(drafted?.fileScope).toEqual(draftedTicket.fileScope);
+    expect(drafted?.size).toBe(draftedTicket.size);
+    expect(drafted?.storyPoints).toBe(draftedTicket.storyPoints);
+    expect(drafted?.status).toBe("ready");
+    expect(drafted?.blockedReason).toBeNull();
+    expect(drafted?.detached).toBe(true);
+
+    const detail = await repository().ticketDetail(drafted!.id);
+    expect(detail?.description).toBe(draftedTicket.description);
+    expect(detail?.acceptanceCriteria).toEqual(draftedTicket.acceptanceCriteria);
+  });
+
+  it("stalls the ticket blocked in To Do when the run fails", async () => {
+    const { epic, ticket } = seedDrafting();
+    useArchitect(
+      new StubArchitect(async () => ({
+        ok: false,
+        error: "The model declined to draft this ticket.",
+        blocked: true,
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, "raw request text", []);
+
+    const card = await repository().cardById(ticket.id);
+    expect(card?.status).toBe("blocked");
+    expect(card?.stalledIn).toBe("todo");
+    expect(card?.blockedReason).toBe("The model declined to draft this ticket.");
   });
 });
