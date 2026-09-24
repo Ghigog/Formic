@@ -7,6 +7,8 @@ import {
   safeEqual,
   verifySession,
 } from "@/lib/auth/session";
+import { needsTermsAcceptance } from "@/lib/auth/user";
+import { repository } from "@/lib/db";
 
 /**
  * Nothing on the board without signing in. With a GitHub App configured
@@ -26,26 +28,47 @@ const OPEN = [
   /^\/api\/runner\/report$/,
 ];
 
+/** Exempt from the terms gate below, so accepting them isn't itself gated on accepting them. */
+const LEGAL = /^\/legal(\/|$)/;
+
 export async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname;
   if (OPEN.some((re) => re.test(path))) return NextResponse.next();
 
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
+  let userId: string | null = null;
   let allowed: boolean;
   if (authMode() === "github") {
-    allowed = (await verifySession(cookie)) !== null;
+    userId = await verifySession(cookie);
+    allowed = userId !== null;
   } else {
     const password = gatePassword();
     allowed = !password || (!!cookie && safeEqual(cookie, await passwordToken(password)));
   }
-  if (allowed) return NextResponse.next();
-
-  if (path.startsWith("/api/")) {
-    return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  if (!allowed) {
+    if (path.startsWith("/api/")) {
+      return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+    }
+    const login = new URL("/login", req.url);
+    login.searchParams.set("next", path + req.nextUrl.search);
+    return NextResponse.redirect(login);
   }
-  const login = new URL("/login", req.url);
-  login.searchParams.set("next", path + req.nextUrl.search);
-  return NextResponse.redirect(login);
+
+  // GitHub accounts are real people who can be asked to agree to something;
+  // local mode's one implicit user has no sign-in flow to hang this off.
+  if (userId && !LEGAL.test(path)) {
+    const user = await repository().userById(userId);
+    if (user && needsTermsAcceptance(user)) {
+      if (path.startsWith("/api/")) {
+        return NextResponse.json({ error: "Accept the current terms first." }, { status: 403 });
+      }
+      const legal = new URL("/legal", req.url);
+      legal.searchParams.set("next", path + req.nextUrl.search);
+      return NextResponse.redirect(legal);
+    }
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {

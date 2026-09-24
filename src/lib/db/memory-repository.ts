@@ -245,6 +245,7 @@ export class MemoryRepository implements Repository {
       e2bKeyHint: null,
       anthropicKeyCipher: null,
       anthropicKeyHint: null,
+      termsAcceptedVersion: null,
     };
     s.users.set(user.id, user);
     return user;
@@ -254,6 +255,13 @@ export class MemoryRepository implements Repository {
     const user = store().users.get(userId);
     if (!user) throw new Error(`No user ${userId}.`);
     Object.assign(user, secrets);
+    return user;
+  }
+
+  async acceptTerms(userId: string, version: string): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    user.termsAcceptedVersion = version;
     return user;
   }
 

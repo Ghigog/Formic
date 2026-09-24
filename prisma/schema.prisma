@@ -76,6 +76,11 @@ model User {
   anthropicKeyCipher String?
   anthropicKeyHint   String?
 
+  /// The terms/privacy version this person last agreed to, and when. Null
+  /// means never accepted. See CURRENT_TERMS_VERSION in src/lib/auth/user.ts.
+  termsAcceptedVersion String?
+  termsAcceptedAt      DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

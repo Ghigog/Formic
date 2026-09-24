@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { proxy } from "./proxy";
 import { SESSION_COOKIE, signSession } from "@/lib/auth/session";
+import { repository } from "@/lib/db";
+import { CURRENT_TERMS_VERSION } from "@/lib/auth/user";
+
+beforeEach(() => {
+  globalThis.__formicMemoryStore = undefined;
+});
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -45,5 +51,47 @@ describe("proxy", () => {
 
   it("is open in local mode with no password", async () => {
     expect((await proxy(request("/"))).headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("sends someone who hasn't accepted the current terms to /legal, remembering where they were", async () => {
+    githubMode();
+    const user = await repository().upsertUser({ githubId: 1, login: "octo", name: null, avatarUrl: null });
+    const cookie = await signSession(user.id);
+
+    const res = await proxy(request("/settings", cookie));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("http://localhost/legal?next=%2Fsettings");
+  });
+
+  it("answers the API with 403 when the current terms are not yet accepted", async () => {
+    githubMode();
+    const user = await repository().upsertUser({ githubId: 1, login: "octo", name: null, avatarUrl: null });
+    expect((await proxy(request("/api/board", await signSession(user.id)))).status).toBe(403);
+  });
+
+  it("keeps /legal itself open to someone who hasn't accepted yet", async () => {
+    githubMode();
+    const user = await repository().upsertUser({ githubId: 1, login: "octo", name: null, avatarUrl: null });
+    const cookie = await signSession(user.id);
+    for (const path of ["/legal", "/legal/accept"]) {
+      expect((await proxy(request(path, cookie))).headers.get("x-middleware-next")).toBe("1");
+    }
+  });
+
+  it("lets someone who accepted the current terms through to the board", async () => {
+    githubMode();
+    const user = await repository().upsertUser({ githubId: 1, login: "octo", name: null, avatarUrl: null });
+    await repository().acceptTerms(user.id, CURRENT_TERMS_VERSION);
+    const res = await proxy(request("/settings", await signSession(user.id)));
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("asks again once the terms version moves on", async () => {
+    githubMode();
+    const user = await repository().upsertUser({ githubId: 1, login: "octo", name: null, avatarUrl: null });
+    await repository().acceptTerms(user.id, "2020-01-01");
+    const res = await proxy(request("/settings", await signSession(user.id)));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("http://localhost/legal?next=%2Fsettings");
   });
 });
