@@ -238,7 +238,6 @@ export function TicketDrawer({
                 />
               </div>
             )}
-            {view && <NoteBox ticketId={ticketId} />}
           </section>
         </div>
       </div>
@@ -392,72 +391,6 @@ function StopButton({ ticketId, onStopped }: { ticketId: string; onStopped: () =
     >
       {busy ? "Stopping…" : "Stop agent"}
     </button>
-  );
-}
-
-/**
- * A note to the agent: read at its next step while it works, and given to
- * every later run of the ticket.
- */
-function NoteBox({ ticketId }: { ticketId: string }) {
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const send = async () => {
-    const note = text.trim();
-    if (!note || sending) return;
-    setSending(true);
-    setError(null);
-    const res = await fetch(`/api/tickets/${ticketId}/notes`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: note }),
-    }).catch(() => null);
-    setSending(false);
-    if (res?.ok) setText("");
-    else setError("Could not send the note. Try again.");
-  };
-
-  return (
-    <form
-      className="border-line shrink-0 border-t p-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void send();
-      }}
-    >
-      <label htmlFor={`note-${ticketId}`} className="sr-only">
-        Note to the agent
-      </label>
-      <textarea
-        id={`note-${ticketId}`}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            void send();
-          }
-        }}
-        rows={2}
-        maxLength={2000}
-        placeholder="Tell the agent something, such as a different way to do it"
-        className="border-line bg-surface text-fg placeholder:text-fg-subtle w-full resize-none rounded-md border px-2 py-1.5 text-[12px] leading-5"
-      />
-      <div className="mt-1.5 flex items-center gap-2">
-        <p className="text-fg-subtle min-w-0 flex-1 text-[11px] leading-4">
-          {error ?? "Read at its next step, and by every later run. Codex and Gemini CLI read it on their next run."}
-        </p>
-        <button
-          type="submit"
-          disabled={!text.trim() || sending}
-          className="bg-amber text-on-amber rounded px-2.5 py-1 text-[12px] font-medium disabled:opacity-50"
-        >
-          {sending ? "Sending…" : "Send"}
-        </button>
-      </div>
-    </form>
   );
 }
 
