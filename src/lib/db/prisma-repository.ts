@@ -621,6 +621,7 @@ export class PrismaRepository implements Repository {
         runnerJob: true,
         runnerAgent: true,
         issueNumber: true,
+        showcase: true,
       },
     });
     return epic ?? null;

@@ -9,6 +9,8 @@ vi.mock("@/lib/agents/pipeline", () => ({
   runProductAgent: vi.fn(),
   runArchitectDraftTicket: vi.fn(),
   repoTree: vi.fn().mockResolvedValue([]),
+  startRun: vi.fn(() => ({})),
+  applyShowcase: vi.fn(),
 }));
 vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn() }));
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
@@ -252,6 +254,61 @@ describe("dropping a card where it cannot work", () => {
 
     expect(result.ok ? result.problem : "").toContain("its tickets are");
     expect(await repository().cardById(epic.id)).toMatchObject({ status: "ready", misplacedIn: "in_progress" });
+    expect(launched).toEqual([]);
+  });
+
+  it("marks an epic dropped into Done while a ticket is still open", async () => {
+    const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [{ status: "merged" }, { status: "ready" }]);
+    seedMemory([epic!, ...kids]);
+
+    const result = await applyTransition(PROJECT, {
+      cardId: epic!.id,
+      kind: "epic",
+      from: "todo",
+      to: "done",
+      position: 1,
+      actor: "user",
+    });
+
+    expect(result.ok ? result.problem : "").toContain("its tickets are");
+    expect(await repository().cardById(epic!.id)).toMatchObject({ status: "ready", misplacedIn: "done" });
+  });
+});
+
+describe("an epic whose tickets have all merged", () => {
+  it("goes to Done when dropped there, and gets its showcase written", async () => {
+    const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [{ status: "merged" }, { status: "merged" }]);
+    seedMemory([epic!, ...kids]);
+
+    const result = await applyTransition(PROJECT, {
+      cardId: epic!.id,
+      kind: "epic",
+      from: "todo",
+      to: "done",
+      position: 1,
+      actor: "user",
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "merged" });
+    expect(await repository().cardById(epic!.id)).toMatchObject({ status: "merged", misplacedIn: null });
+    expect(launched).toEqual([`showcase for epic ${epic!.id}`]);
+  });
+
+  it("keeps a showcase it already has", async () => {
+    const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [{ status: "merged" }]);
+    seedMemory([epic!, ...kids]);
+    globalThis.__formicMemoryStore!.showcases.set(epic!.id, "Shipped.");
+
+    await applyTransition(PROJECT, {
+      cardId: epic!.id,
+      kind: "epic",
+      from: "todo",
+      to: "done",
+      position: 1,
+      actor: "user",
+    });
+
+    expect((await repository().cardById(epic!.id))?.status).toBe("merged");
     expect(launched).toEqual([]);
   });
 });

@@ -596,6 +596,7 @@ export class MemoryRepository implements Repository {
       runnerJob: s.epicJobs.get(epicId) ?? null,
       runnerAgent: s.epicJobAgents.get(epicId) ?? null,
       issueNumber: s.epicIssues.get(epicId) ?? null,
+      showcase: s.showcases.get(epicId) ?? null,
     };
   }
 

@@ -12,6 +12,7 @@ import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
+import { positionForIndex } from "@/lib/ordering";
 import { type CheckSummary, type PullRequestDetail, mergeNeedsPromotion, vcs } from "@/lib/vcs";
 import { inMergeLane, inTicketLane } from "./lane";
 import { addNote, noteTexts } from "@/lib/coder/notes";
@@ -181,7 +182,17 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
   lastSwept.set(projectId, now);
 
   const repo = repository();
-  const waiting = (await repo.boardCards(projectId)).filter(
+  const cards = await repo.boardCards(projectId);
+
+  // An Epic whose tickets all merged before Epics completed themselves.
+  for (const epic of cards) {
+    if (epic.kind !== "epic" || epic.status === "merged") continue;
+    if (epic.childCount > 0 && epic.doneCount === epic.childCount) {
+      await completeEpic(projectId, epic.id);
+    }
+  }
+
+  const waiting = cards.filter(
     (c) => c.kind === "ticket" && c.status === "review" && c.prNumber,
   );
   if (waiting.length === 0) return;
@@ -239,7 +250,7 @@ export async function markMergedExternally(
   });
 
   await releaseDependents(projectId, ticket);
-  await maybeShowcase(projectId, ticket.epicId);
+  await completeEpic(projectId, ticket.epicId);
 }
 
 /**
@@ -310,7 +321,7 @@ async function closeWithoutMerge(
   }
 
   await releaseDependents(projectId, ticket);
-  await maybeShowcase(projectId, ticket.epicId);
+  await completeEpic(projectId, ticket.epicId);
 }
 
 /**
@@ -381,7 +392,7 @@ async function mergeTicket(
   }
 
   await releaseDependents(projectId, ticket);
-  await maybeShowcase(projectId, ticket.epicId);
+  await completeEpic(projectId, ticket.epicId);
 }
 
 /**
@@ -416,8 +427,17 @@ async function releaseDependents(
   }
 }
 
-/** PROT-08. The Epic's showcase, once every ticket under it has merged. */
-async function maybeShowcase(projectId: string, epicId: string): Promise<void> {
+/**
+ * PROT-08. Once every ticket under an Epic has merged, the Epic is done: it
+ * moves to the top of Done on its own, and the PM Agent writes its showcase
+ * if it has none yet. Saved before the showcase runs, so an Epic whose
+ * showcase fails still leaves To Do.
+ */
+export async function completeEpic(
+  projectId: string,
+  epicId: string,
+  position?: number,
+): Promise<void> {
   const repo = repository();
   const siblings = await repo.ticketsForEpic(epicId);
   if (siblings.length === 0) return;
@@ -425,6 +445,29 @@ async function maybeShowcase(projectId: string, epicId: string): Promise<void> {
 
   const detail = await repo.epicDetail(epicId);
   if (!detail) return;
+  const card = await repo.cardById(epicId);
+  if (card?.status === "merged") return;
+
+  const done = await repo.columnPositions(projectId, "done");
+  await repo.move({
+    cardId: epicId,
+    kind: "epic",
+    status: "merged",
+    stalledIn: null,
+    position: position ?? positionForIndex(done, 0),
+  });
+  await repo.rebalanceColumn(projectId, "done");
+  await publish(projectId, {
+    type: "card.status",
+    cardId: epicId,
+    kind: "epic",
+    status: "merged",
+    stalledIn: null,
+    stage: card?.stage ?? 8,
+    blockedReason: null,
+  });
+
+  if (detail.showcase) return;
 
   const prd = prdSchema.safeParse(detail.prd);
   const run = startRun(projectId, "pm", {

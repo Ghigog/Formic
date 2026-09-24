@@ -23,7 +23,7 @@ import {
   runProductAgent,
 } from "@/lib/agents/pipeline";
 import { runCoderAgent } from "@/lib/coder/pipeline";
-import { reviewPullRequest } from "@/lib/review/pipeline";
+import { completeEpic, reviewPullRequest } from "@/lib/review/pipeline";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
@@ -37,6 +37,10 @@ import { scopesOverlap } from "@/lib/domain/scope";
  * Every rejection names a reason the UI can show and a column to snap back to,
  * because a card that silently returns to where it started reads as a bug.
  */
+
+function allMerged(epic: BoardCard): boolean {
+  return epic.childCount > 0 && epic.doneCount === epic.childCount;
+}
 
 function dependenciesMet(card: BoardCard, all: BoardCard[]): boolean {
   if (card.dependsOn.length === 0) return true;
@@ -79,6 +83,8 @@ async function whatIsWrong(
   to: ColumnId,
 ): Promise<string | null> {
   const back = `Drag it back to ${COLUMN_LABELS[home]} to undo this.`;
+
+  if (card.kind === "epic" && to === "done" && allMerged(card)) return null;
 
   if (card.kind === "epic" && (to === "in_progress" || to === "in_review" || to === "done")) {
     return card.childCount > 0
@@ -192,6 +198,14 @@ export async function applyTransition(
   // Somewhere it cannot work: it lands there anyway, as the person asked,
   // keeping its real status and saying what is wrong until it moves again.
   const problem = await whatIsWrong(projectId, card, cards, home, t.to);
+
+  // Every ticket merged: the Epic is simply done, exactly as if its last
+  // merge had just happened.
+  if (!problem && card.kind === "epic" && t.to === "done") {
+    await completeEpic(projectId, card.id, await placeAmong(projectId, "done", card, t.position));
+    return { ok: true, status: "merged", runId: null };
+  }
+
   if (problem) {
     const position = await placeAmong(projectId, t.to, card, t.position);
     await repo.move({
