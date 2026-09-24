@@ -51,12 +51,31 @@ export type AgentOutcome<T> =
   | { ok: true; value: T; usage: Usage }
   | { ok: false; error: string; blocked: boolean; usage: Usage };
 
+/**
+ * What an agent needs to see or read one attachment, independent of how it
+ * is stored: an image is handed to the model as base64, a text file as its
+ * decoded content.
+ */
+export interface AgentAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  kind: "image" | "file";
+  base64?: string;
+  text?: string;
+}
+
 /** PROT-03. Raw feature request in, structured Epic PRD out. */
 export interface ProductAgent {
   draftPrd(
     ctx: AgentContext,
-    input: { epicId: string; rawRequest: string },
-  ): Promise<AgentOutcome<{ title: string; prd: Prd }>>;
+    input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<
+      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "reroute"; reason: string; ticket: DraftTicket }
+    >
+  >;
 }
 
 export interface DraftTicket {
@@ -77,6 +96,13 @@ export interface ArchitectAgent {
     ctx: AgentContext,
     input: { epicId: string; title: string; prd: Prd; repoTree: string[] },
   ): Promise<AgentOutcome<DraftTicket[]>>;
+  /** A To Do request: no PRD, just the raw text and one ticket to draft. */
+  draftTicket(
+    ctx: AgentContext,
+    input: { rawRequest: string; repoTree: string[]; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
+  >;
 }
 
 /** PROT-08. Merged diffs in, showcase document out. */
