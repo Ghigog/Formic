@@ -53,7 +53,9 @@ export function ProgressBar({
         />
       </span>
       {caption && (
-        <span className="text-muted font-mono text-[10px]">{caption}</span>
+        <span className="text-muted block truncate font-mono text-[10px]">
+          {caption}
+        </span>
       )}
     </div>
   );
