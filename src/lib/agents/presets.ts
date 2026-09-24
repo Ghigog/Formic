@@ -289,12 +289,12 @@ export type ColumnChatAgent =
   | { kind: "none"; reason: string }
   | { kind: "limited"; reason: string }
   | { kind: "api"; info: ProviderInfo; model: string | null; apiKey: string | null; brief: string | null }
-  | { kind: "cli"; info: ProviderInfo; column: ColumnId };
+  | { kind: "cli"; info: ProviderInfo; column: ColumnId; agent: CliAgent };
 
 /**
  * The agent to chat with about a card in this column: the same agent the
- * column runs its pipeline stage on. A CLI agent runs in GitHub Actions and
- * cannot hold a live conversation, so it reports that instead of chatting.
+ * column runs its pipeline stage on. A CLI agent answers from GitHub Actions,
+ * a minute or two later, the same way it does the column's work.
  */
 export async function columnChatAgentFor(projectId: string, column: ColumnId): Promise<ColumnChatAgent> {
   const unavailable: ColumnChatAgent = {
@@ -306,7 +306,10 @@ export async function columnChatAgentFor(projectId: string, column: ColumnId): P
   if (resolved.kind === "limited") return { kind: "limited", reason: resolved.reason };
   const info = providerInfo(resolved.config.provider ?? "anthropic");
   if (!info) return unavailable;
-  if (info.kind === "cli") return { kind: "cli", info, column };
+  if (info.kind === "cli") {
+    const agent = await cliAgentFor(projectId, column);
+    return agent ? { kind: "cli", info, column, agent } : unavailable;
+  }
   return {
     kind: "api",
     info,

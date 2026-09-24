@@ -11,7 +11,7 @@ import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
 import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE } from "@/lib/domain/entities";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
-import { cardProblem, columnFor } from "@/lib/domain/status";
+import { columnFor, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
 import { ProblemNotice, WorkTimer } from "./card";
 import {
@@ -81,7 +81,7 @@ export function TicketDrawer({
         return;
       }
       if (
-        (event.type === "card.status" && event.cardId === ticketId) ||
+        ((event.type === "card.status" || event.type === "card.created") && event.cardId === ticketId) ||
         (event.type === "ci.status" && event.ticketId === ticketId)
       ) {
         void load();
@@ -185,7 +185,7 @@ export function TicketDrawer({
           />
 
           {/* A reason it waits that is not a problem, such as a dependency. */}
-          {card?.blockedReason && !cardProblem(card) && (
+          {card?.blockedReason && !card.misplacedReason && !isStalled(card.status) && (
             <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
               {card.blockedReason}
             </p>

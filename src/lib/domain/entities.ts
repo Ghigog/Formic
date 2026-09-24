@@ -203,6 +203,11 @@ export interface BoardCard {
   size: TicketSize | null;
   /** Tickets only: the estimate, 1 to 13. Null when none was given. */
   storyPoints?: number | null;
+  /**
+   * Tickets only: work for a person, not an agent, and why. No agent starts
+   * it; the person does it and closes it from its chat.
+   */
+  needsHuman?: string | null;
   agentRole: AgentRole | null;
   model: string | null;
   fileScope: string[];

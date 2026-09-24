@@ -8,6 +8,8 @@ import {
   withPlanningConventions,
   withProductConventions,
 } from "./prompts";
+import { taskBrief } from "./coder";
+import { withEpicNotes } from "./epic-notes";
 
 /** The ticket template and the practices every agent works to. */
 
@@ -116,5 +118,47 @@ describe("sizing plans to the request", () => {
 
   it("accepts a breakdown into a single ticket", () => {
     expect(checkDecomposition({ tickets: [spec] }).ok).toBe(true);
+  });
+});
+
+describe("work for a person", () => {
+  it("is marked on the ticket when the Architect says so, and only then", () => {
+    expect(toDraftTicket({ ...spec, needsHuman: " Run it on production " }).needsHuman).toBe("Run it on production");
+    expect(toDraftTicket(spec)).not.toHaveProperty("needsHuman");
+    expect(toDraftTicket({ ...spec, needsHuman: "  " })).not.toHaveProperty("needsHuman");
+  });
+
+  it("is something every Architect Agent is told to mark, whatever its prompt", () => {
+    expect(withPlanningConventions("Custom brief.")).toContain("needsHuman");
+  });
+});
+
+describe("a run asked for from the ticket's chat", () => {
+  const task = {
+    ticketId: "t1",
+    key: "T-1",
+    title: "Export",
+    description: "A CSV download.",
+    acceptanceCriteria: ["It downloads"],
+    fileScope: ["src/app"],
+  };
+
+  it("leads with what the person asked, and keeps the ticket as background", () => {
+    const brief = taskBrief({ ...task, instruction: "Only rename the button." });
+    expect(brief.indexOf("Only rename the button.")).toBeLessThan(brief.indexOf("Ticket T-1"));
+    expect(brief).toContain("Do not start the ticket over");
+  });
+
+  it("is the ticket alone when nobody asked for anything", () => {
+    expect(taskBrief(task).startsWith("Ticket T-1: Export")).toBe(true);
+  });
+});
+
+describe("the Product Agent writing a PRD again", () => {
+  it("reads what the person said about it since", () => {
+    expect(withEpicNotes("Export as CSV.", [])).toBe("Export as CSV.");
+    const rewritten = withEpicNotes("Export as CSV.", ["Also JSON."]);
+    expect(rewritten).toContain("Export as CSV.");
+    expect(rewritten).toContain("- Also JSON.");
   });
 });

@@ -31,6 +31,20 @@ export async function epicNoteTexts(projectId: string, epicId: string): Promise<
   return (await epicNotes(projectId, epicId)).map((n) => n.text);
 }
 
+/**
+ * A request with what the person has said about it since, for the Product
+ * Agent writing its PRD again.
+ */
+export function withEpicNotes(request: string, notes: string[]): string {
+  if (notes.length === 0) return request;
+  return [
+    request,
+    "",
+    "What the person has said about it since, oldest first. Where it disagrees with the request above, the newest wins:",
+    ...notes.map((n) => `- ${n}`),
+  ].join("\n");
+}
+
 export async function addEpicNote(projectId: string, epicId: string, text: string): Promise<void> {
   await publish(projectId, { type: "epic.note", epicId, text: text.trim().slice(0, MAX_NOTE) });
 }

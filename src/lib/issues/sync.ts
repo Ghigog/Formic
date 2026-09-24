@@ -208,7 +208,13 @@ function epicNote(event: FormicEvent & { type: "card.status" }): string | null {
   }
 }
 
-async function syncTicket(ctx: Context, ticketId: string, event?: FormicEvent & { type: "card.status" }) {
+async function syncTicket(
+  ctx: Context,
+  ticketId: string,
+  event?: FormicEvent & { type: "card.status" },
+  /** The ticket itself changed, say its agent rewrote it: so does its issue. */
+  rewritten = false,
+) {
   const repo = repository();
   await inLane(`ticket:${ticketId}`, async () => {
     const ticket = await repo.ticketDetail(ticketId);
@@ -220,6 +226,7 @@ async function syncTicket(ctx: Context, ticketId: string, event?: FormicEvent & 
       await ctx.client.updateIssue(number, {
         labels: labelsFor(card),
         state: card.status === "merged" ? "closed" : "open",
+        ...(rewritten ? { title: `${ticket.key}: ${ticket.title}`, body: await ticketBody(ticket, card) } : {}),
       });
     } else if (card.status === "merged") {
       await ctx.client.updateIssue(number, { state: "closed" });
@@ -286,7 +293,7 @@ async function sync(projectId: string, event: FormicEvent): Promise<void> {
       await syncTicket(ctx, ticket.id);
     }
   } else {
-    await syncTicket(ctx, event.cardId);
+    await syncTicket(ctx, event.cardId, undefined, true);
   }
 }
 

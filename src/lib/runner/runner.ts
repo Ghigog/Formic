@@ -17,7 +17,7 @@ import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { diagnose, lastWords } from "@/lib/agents/limits";
 import { planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo } from "@/lib/llm/providers";
-import { epicNoteTexts } from "@/lib/agents/epic-notes";
+import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
 import { reviewBrief, taskBrief } from "@/lib/agents/coder";
 import {
@@ -287,12 +287,22 @@ export function cliPrompt(
   ticket: TicketDetail,
   review?: Omit<ReviewTask, "task" | "workspace">,
   notes: string[] = [],
+  /** What the person asked this run to do, from the ticket's chat. */
+  instruction?: string,
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskFor(ticket, notes);
+  const task = taskFor(ticket, notes, instruction);
   const work = review
     ? [reviewBrief({ ...review, task }), "", CLI_REVIEW]
-    : [taskBrief(task), "", "Implement it.", "", ALREADY_DONE_RULE, "", CLI_ALREADY_DONE];
+    : [
+        taskBrief(task),
+        "",
+        instruction ? "Do what the person asked." : "Implement it.",
+        "",
+        ALREADY_DONE_RULE,
+        "",
+        CLI_ALREADY_DONE,
+      ];
   return cap([brief.trim(), "", CLI_RULES, "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
 }
 
@@ -465,7 +475,7 @@ async function answerPrompt(
       "",
       "Raw feature request:",
       "",
-      epic.rawRequest,
+      withEpicNotes(epic.rawRequest, await epicNoteTexts(projectId, epicId)),
     ].join("\n");
   }
 
@@ -753,6 +763,36 @@ export async function startCliAsk(input: {
   }
 }
 
+/**
+ * Starts a CLI agent answering a card's chat, in the "ask" mode the board's
+ * assistant uses: an answer, not a change. Returns why it could not start,
+ * or null once it is on its way.
+ */
+export async function startCliCardChat(input: {
+  projectId: string;
+  messageId: string;
+  cardKey: string;
+  agent: CliAgent;
+  prompt: string;
+}): Promise<string | null> {
+  const repo = repository();
+  const project = await projectFor(input.projectId);
+  const creds = await credentialsForProject(project);
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent: input.agent,
+    job: jobId(input.messageId, randomUUID().slice(0, 8)),
+    mode: "ask",
+    cardKey: input.cardKey,
+    from: project.baseBranch,
+    prompt: input.prompt,
+    record: (job) =>
+      repo.updateCardChatMessage(input.messageId, { runnerJob: job, runnerAgent: input.agent.presetId }),
+  });
+  return started.ok ? null : started.reason;
+}
+
 /** When each board's runs were last looked up on GitHub, to go easy on the API. */
 const lastLooked = new Map<string, number>();
 const LOOK_EVERY_MS = 15_000;
@@ -784,6 +824,9 @@ export async function collectCliRuns(projectId: string): Promise<void> {
   for (const m of await repo.assistantMessages(projectId)) {
     if (m.status === "pending" && m.runnerJob) waiting.add(m.runnerJob);
   }
+  for (const m of await repo.pendingCardChatJobs(projectId)) {
+    if (m.runnerJob) waiting.add(m.runnerJob);
+  }
   if (waiting.size === 0) return;
 
   const project = await projectFor(projectId);
@@ -814,7 +857,11 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
-  if (!message || message.projectId !== projectId || message.runnerJob !== result.job) {
+  if (!message) {
+    await completeCliCardChat(projectId, result, messageId, client);
+    return;
+  }
+  if (message.projectId !== projectId || message.runnerJob !== result.job) {
     await cleanUp();
     return;
   }
@@ -831,6 +878,33 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
     projectId,
     attempt: attemptOfJob(result.job),
   });
+}
+
+/** A card chat's answer from a CLI agent arrived, or its run failed. */
+async function completeCliCardChat(
+  projectId: string,
+  result: RunnerResult,
+  messageId: string | null,
+  client: VcsClient,
+): Promise<void> {
+  const repo = repository();
+  const message = messageId ? await repo.cardChatMessage(messageId) : null;
+  const staging = `${STAGING_PREFIX}${result.job}`;
+  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+  if (!message || message.projectId !== projectId || message.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+
+  const { finishCliCardChat } = await import("@/lib/agents/card-chat");
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    await finishCliCardChat(message.id, null, await whyItFailed(projectId, client, result, message.runnerAgent));
+    return;
+  }
+  const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
+  await cleanUp();
+  await finishCliCardChat(message.id, answer);
 }
 
 export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
@@ -1125,21 +1199,24 @@ export async function stopTicket(projectId: string, ticketId: string): Promise<b
   });
   abortTicketRuns(ticket.id, STOPPED_BY_PERSON);
 
-  if (job) {
-    try {
-      const project = await projectFor(projectId);
-      const creds = await credentialsForProject(project);
-      const client = vcs(project.repoFullName, creds.githubToken);
-      for (const run of await client.recentRuns(RUNNER_WORKFLOW_FILE)) {
-        if (parseRunTitle(run.title)?.job === job && run.status !== "completed") {
-          await client.cancelRun(run.id);
-        }
-      }
-    } catch (e) {
-      // The card has stopped either way: whatever the run hands back is
-      // for a job nobody waits on, and is thrown away.
-      console.error("[formic] could not cancel the run:", explain(e));
-    }
-  }
+  // The card has stopped either way: whatever the run hands back is for a
+  // job nobody waits on, and is thrown away.
+  if (job) await cancelJob(projectId, job);
   return true;
+}
+
+/** Cancels a CLI agent's GitHub Actions run, if it is still going. Never throws. */
+export async function cancelJob(projectId: string, job: string): Promise<void> {
+  try {
+    const project = await projectFor(projectId);
+    const creds = await credentialsForProject(project);
+    const client = vcs(project.repoFullName, creds.githubToken);
+    for (const run of await client.recentRuns(RUNNER_WORKFLOW_FILE)) {
+      if (parseRunTitle(run.title)?.job === job && run.status !== "completed") {
+        await client.cancelRun(run.id);
+      }
+    }
+  } catch (e) {
+    console.error("[formic] could not cancel the run:", explain(e));
+  }
 }

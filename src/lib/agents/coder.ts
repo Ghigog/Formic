@@ -23,6 +23,16 @@ import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from 
 
 export function taskBrief(task: CoderTask): string {
   return [
+    ...(task.instruction
+      ? [
+          "The person asked for this run from the ticket's chat. Do what they ask here; the ticket below is the background it belongs to. Do not start the ticket over, and do not redo work that is already there.",
+          "",
+          task.instruction,
+          "",
+          "---",
+          "",
+        ]
+      : []),
     `Ticket ${task.key}: ${task.title}`,
     "",
     task.description,

@@ -314,6 +314,7 @@ export class PrismaRepository implements Repository {
       detached: t.detached,
       size: t.size,
       storyPoints: t.storyPoints,
+      needsHuman: t.needsHuman,
       agentRole: live?.role ?? jobRole,
       model: live?.model ?? null,
       workingSince: since?.toISOString() ?? null,
@@ -435,6 +436,7 @@ export class PrismaRepository implements Repository {
             fileScope: normalizeScope(input.fileScope),
             size: input.size,
             storyPoints: input.storyPoints ?? null,
+            needsHuman: input.needsHuman ?? null,
             position: input.position,
             status: input.dependsOnKeys.length === 0 ? "ready" : "waiting",
             stage: 3,
@@ -470,6 +472,7 @@ export class PrismaRepository implements Repository {
         epicId: t.epicId,
         size: t.size,
         storyPoints: t.storyPoints,
+        needsHuman: t.needsHuman,
         agentRole: null,
         model: null,
         fileScope: t.fileScope,
@@ -809,6 +812,7 @@ export class PrismaRepository implements Repository {
       data: {
         ...rest,
         ...merge,
+        ...(rest.fileScope !== undefined ? { fileScope: normalizeScope(rest.fileScope) } : {}),
         ...(plan !== undefined ? { plan: plan as never } : {}),
         ...(rest.runnerJob !== undefined
           ? { runnerJobAt: rest.runnerJob ? new Date() : null }
@@ -1094,13 +1098,20 @@ export class PrismaRepository implements Repository {
 
   async updateCardChatMessage(
     id: string,
-    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob">>,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void> {
     await prisma().cardChatMessage.update({ where: { id }, data: update });
   }
 
   async clearCardChat(cardId: string): Promise<void> {
     await prisma().cardChatMessage.deleteMany({ where: { cardId } });
+  }
+
+  async pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]> {
+    const rows = await prisma().cardChatMessage.findMany({
+      where: { projectId, status: "pending", runnerJob: { not: null } },
+    });
+    return rows.map(toCardChatMessage);
   }
 
   async claimDelivery(key: string): Promise<boolean> {
@@ -1158,6 +1169,7 @@ type TicketRow = {
   plan: unknown;
   handoff: string[];
   reviewedSha: string | null;
+  needsHuman: string | null;
   epic: { projectId: string };
 };
 
@@ -1199,6 +1211,7 @@ function toCardChatMessage(row: {
   content: string;
   status: string;
   runnerJob: string | null;
+  runnerAgent: string | null;
   createdAt: Date;
 }): CardChatMessage {
   return {
@@ -1241,6 +1254,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     plan: planOf(row.plan),
     handoff: row.handoff,
     reviewedSha: row.reviewedSha,
+    needsHuman: row.needsHuman,
   };
 }
 

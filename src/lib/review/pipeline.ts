@@ -253,9 +253,32 @@ export async function closeAlreadyDone(
   ticket: TicketDetail,
   evidence: { summary: string; detail: string },
 ): Promise<void> {
-  const repo = repository();
-  const summary = `Already done: ${evidence.summary}`.slice(0, 200);
+  await closeWithoutMerge(projectId, ticket, {
+    summary: `Already done: ${evidence.summary}`,
+    comment: evidence.detail.trim()
+      ? `**Already done.** The Coder Agent found this in place and changed nothing.\n\n${evidence.detail.trim()}`
+      : null,
+  });
+}
 
+/**
+ * A person says the ticket is done, and nothing is left to merge: work a
+ * person did themselves, or work that turned out not to be needed. It goes
+ * to Done like a merge, with what they said as its summary.
+ */
+export async function closeByPerson(projectId: string, ticket: TicketDetail, summary: string): Promise<void> {
+  await closeWithoutMerge(projectId, ticket, {
+    summary: `Closed by you: ${summary}`,
+    comment: `**Closed from Formic.** ${summary}`,
+  });
+}
+
+async function closeWithoutMerge(
+  projectId: string,
+  ticket: TicketDetail,
+  input: { summary: string; comment: string | null },
+): Promise<void> {
+  const repo = repository();
   await repo.updateTicket(ticket.id, {
     status: "merged",
     stalledIn: null,
@@ -263,7 +286,8 @@ export async function closeAlreadyDone(
     blockedReason: null,
     runnerJob: null,
     runnerAgent: null,
-    summary,
+    needsHuman: null,
+    summary: input.summary.slice(0, 200),
   });
   await publish(projectId, {
     type: "card.status",
@@ -275,17 +299,14 @@ export async function closeAlreadyDone(
     blockedReason: null,
   });
 
-  // The evidence is the record of why nothing changed; it goes on the
-  // ticket's own issue, which the move to Done closes.
-  if (ticket.issueNumber && evidence.detail.trim()) {
+  // The record of why nothing merged goes on the ticket's own issue, which
+  // the move to Done closes.
+  if (ticket.issueNumber && input.comment) {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
     await vcs(project.repoFullName, creds.githubToken)
-      .comment(
-        ticket.issueNumber,
-        `**Already done.** The Coder Agent found this in place and changed nothing.\n\n${evidence.detail.trim()}`,
-      )
-      .catch((e) => console.warn("[formic] could not note an already-done ticket:", e));
+      .comment(ticket.issueNumber, input.comment)
+      .catch((e) => console.warn("[formic] could not note a closed ticket:", e));
   }
 
   await releaseDependents(projectId, ticket);
