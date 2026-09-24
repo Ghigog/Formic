@@ -177,6 +177,18 @@ export function cardEl(id: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[data-tid="${CSS.escape(id)}"]`);
 }
 
+/**
+ * Whether the drag library is holding this card: dragging it, or animating
+ * it into place after a drop. It moves the card with a transform transition
+ * and waits for that transition to end before it calls the drop done. An
+ * animation on the card's transform cancels the transition, the end never
+ * comes, and the drag hangs: the card stays where it was picked up and never
+ * moves. Its dragging style is the one that fixes the card to the viewport.
+ */
+export function heldByDrag(el: Element): boolean {
+  return el.closest<HTMLElement>("[data-rfd-draggable-id]")?.style.position === "fixed";
+}
+
 export function centerOf(el: Element): [number, number, DOMRect] {
   const r = el.getBoundingClientRect();
   return [r.left + r.width / 2, r.top + r.height / 2, r];
@@ -531,7 +543,7 @@ export class ColonyFx {
   }
 
   squish(el: Element) {
-    if (this.reduced) return;
+    if (this.reduced || heldByDrag(el)) return;
     el.animate(
       [
         { transform: "translateY(-6px) scale(1.03,0.97)" },

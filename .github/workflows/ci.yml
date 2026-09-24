@@ -54,3 +54,37 @@ jobs:
       - name: Server log
         if: always()
         run: cat server.log || true
+
+  # The board in a real browser: drags, round trips, the production build.
+  # Its own job, on the in-memory store the suite is written against.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # The runner image ships Chromium: point Playwright at it rather than
+      # downloading one with `playwright install`.
+      - name: Find the pre-installed Chromium
+        run: |
+          chromium="$(command -v chromium || command -v chromium-browser || command -v google-chrome || true)"
+          if [ -z "$chromium" ]; then
+            echo "::error::No pre-installed Chromium on this runner."
+            exit 1
+          fi
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE=$chromium" >> "$GITHUB_ENV"
+          "$chromium" --version
+
+      - run: npm run test:e2e
+
+      - name: Keep what failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: e2e/.results
+          retention-days: 7
