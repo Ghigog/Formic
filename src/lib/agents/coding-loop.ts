@@ -482,7 +482,11 @@ export async function runCodingLoop(
 
   for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     if (ctx.signal.aborted) {
-      return fail("Run stopped before the change was finished.", true);
+      const { reason } = ctx.signal;
+      return fail(
+        reason instanceof Error ? reason.message : "Run stopped before the change was finished.",
+        true,
+      );
     }
 
     let turn: Turn;

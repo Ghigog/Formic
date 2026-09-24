@@ -860,6 +860,61 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async recordRunSpend(runId: string, costCents: number): Promise<void> {
+    const db = prisma();
+    await db.agentRun.updateMany({ where: { id: runId }, data: { costCents } });
+  }
+
+  async epicSpentCents(epicId: string): Promise<number> {
+    const db = prisma();
+    const result = await db.agentRun.aggregate({
+      where: { epicId },
+      _sum: { costCents: true },
+    });
+    return result._sum.costCents ?? 0;
+  }
+
+  async cancelRuns(
+    scope: { runId: string } | { epicId: string } | { projectId: string },
+    reason: string,
+  ): Promise<Array<{ id: string; sandboxId: string | null }>> {
+    const db = prisma();
+    const live = { in: ["queued", "running"] as AgentRunStatus[] };
+    const where =
+      "runId" in scope
+        ? { id: scope.runId, status: live }
+        : "epicId" in scope
+          ? { epicId: scope.epicId, status: live }
+          : {
+              status: live,
+              OR: [
+                { epic: { projectId: scope.projectId } },
+                { ticket: { epic: { projectId: scope.projectId } } },
+              ],
+            };
+
+    const rows = await db.agentRun.findMany({
+      where,
+      select: { id: true, sandboxId: true },
+    });
+    if (rows.length === 0) return [];
+
+    await db.agentRun.updateMany({
+      where: { id: { in: rows.map((r: { id: string }) => r.id) } },
+      data: { status: "cancelled", error: reason, finishedAt: new Date() },
+    });
+    return rows;
+  }
+
+  async runCancelReason(runId: string): Promise<string | null> {
+    const db = prisma();
+    const row = await db.agentRun.findUnique({
+      where: { id: runId },
+      select: { status: true, error: true },
+    });
+    return row?.status === "cancelled" ? (row.error ?? "Stopped.") : null;
+  }
+
   async listPresets(scope: OwnerScope): Promise<AgentPreset[]> {
     const rows = await prisma().agentPreset.findMany({
       where: ownerWhere(scope),

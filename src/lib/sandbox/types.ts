@@ -63,6 +63,12 @@ export interface SpawnOptions {
 export interface SandboxProvider {
   readonly name: string;
   spawn(options: SpawnOptions): Promise<SandboxHandle>;
+  /**
+   * Disposes a sandbox by id alone, with no live handle to call dispose on:
+   * what a stop pressed on a different instance than the one running it has
+   * to use, since that instance never spawned the handle in the first place.
+   */
+  disposeById(id: string, e2bApiKey?: string | null): Promise<void>;
 }
 
 export class SandboxError extends Error {
