@@ -17,6 +17,10 @@ import { positionForIndex } from "@/lib/ordering";
 import { publish } from "@/lib/events/bus";
 import { decomposeEpic, launch, runProductAgent } from "@/lib/agents/pipeline";
 import { runCoderAgent } from "@/lib/coder/pipeline";
+import { reviewPullRequest } from "@/lib/review/pipeline";
+import { projectFor } from "@/lib/board/project";
+import { credentialsForProject } from "@/lib/auth/credentials";
+import { vcs } from "@/lib/vcs";
 import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { scopesOverlap } from "@/lib/domain/scope";
@@ -273,11 +277,28 @@ export async function applyTransition(
   // Moving a ticket into In Progress is the Coder Agent's trigger: sandbox,
   // implement, check the diff against the file scope, push, open a pull
   // request. Detached for the same reason as above.
+  // A person moving a ticket on is a fresh start for its review count.
+  if (card.kind === "ticket" && (t.to === "in_progress" || t.to === "in_review")) {
+    await repo.updateTicket(card.id, { attempts: 0 });
+  }
   if (card.kind === "ticket" && t.to === "in_progress") {
     launch(
       () => runCoderAgent(projectId, card.id),
       `coder agent for ${card.key}`,
     );
+  }
+
+  // Dropped back into In Review, a stalled pull request is reviewed again
+  // from its current head, instead of waiting for a webhook that may never
+  // come.
+  if (card.kind === "ticket" && t.to === "in_review" && card.prNumber) {
+    const prNumber = card.prNumber;
+    launch(async () => {
+      const project = await projectFor(projectId);
+      const creds = await credentialsForProject(project);
+      const pull = await vcs(project.repoFullName, creds.githubToken).pullRequest(prNumber);
+      await reviewPullRequest(projectId, prNumber, pull.headSha);
+    }, `review for ${card.key}`);
   }
 
   return { ok: true, status, runId: null };

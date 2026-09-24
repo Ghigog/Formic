@@ -50,6 +50,7 @@ export async function GET(
       return dep ? [{ id: dep.id, key: dep.key, title: dep.title, status: dep.status }] : [];
     }),
     plan: detail.plan,
+    handoff: detail.handoff,
     activity,
     canStop: card.status === "running" || !!detail.runnerJob || !!card.workingSince,
   };

@@ -17,7 +17,7 @@ import { diagnose, lastWords } from "@/lib/agents/limits";
 import { planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo } from "@/lib/llm/providers";
 import type { ColumnId } from "@/lib/domain/status";
-import { failuresBrief, taskBrief } from "@/lib/agents/coder";
+import { reviewBrief, taskBrief } from "@/lib/agents/coder";
 import {
   ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
@@ -26,10 +26,12 @@ import {
   REVIEWER_BRIEF,
   SHOWCASE_BRIEF,
   ENGINEERING_PRACTICES,
+  HANDOFF_RULE,
   withPlanningConventions,
   withProductConventions,
 } from "@/lib/agents/prompts";
-import type { DraftTicket, FailingCheck } from "@/lib/agents/ports";
+import type { DraftTicket, ReviewTask } from "@/lib/agents/ports";
+import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
@@ -85,10 +87,12 @@ const MAX_PROMPT = 50_000;
 const CLI_RULES = `Rules that are enforced, not advisory:
 - Only change files inside the ticket's file scope. Formic compares your changes to it, and throws the whole run away if anything outside it changed.
 - Match the surrounding code. Read neighbouring files before you write.
-- Verify before you finish. Find the project's own check command and run it.
+- Verify before you finish. Find the project's own checks (typecheck, lint, tests: whatever CI runs) and run them.
+- The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that. If they cannot pass without touching files outside the file scope, stop: undo your changes, and end by saying what is failing and which files it needs.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
-- When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.`;
+- When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.
+- ${HANDOFF_RULE} Put them in the summary as a "For you:" section, one "- step" per line, before the plan.`;
 
 /**
  * The trailer that marks a CLI agent's report that the ticket was already
@@ -246,27 +250,48 @@ function cap(text: string): string {
   return text.length > MAX_PROMPT ? `${text.slice(0, MAX_PROMPT)}\n\n[cut short]` : text;
 }
 
+/** The trailer that ends a CLI reviewer's summary when it changed nothing. */
+export const REVIEW_TRAILER = "Formic-Review:";
+
+const CLI_REVIEW = `How to finish your review. Do exactly one of these:
+- Fix: change the files, then write the summary file as usual.
+- Approve: change no files. Write the summary file with your review, criterion by criterion, as its body and \`${REVIEW_TRAILER} approved\` as its last line.
+- Send back: change no files. Write the summary file with what is wrong and what the Coder Agent should do about it as its body and \`${REVIEW_TRAILER} send-back\` as its last line.
+To approve or send back, then run exactly this, the one commit you may make:
+git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
+
+/** What a CLI reviewer decided when it changed nothing, if it said. */
+export function reviewVerdictOf(messages: string[]): "approved" | "send-back" | null {
+  for (const line of messages.flatMap((m) => m.split("\n")).reverse()) {
+    const m = /^\s*Formic-Review:\s*(approved|send-back)\s*$/i.exec(line);
+    if (m) return m[1]!.toLowerCase() as "approved" | "send-back";
+  }
+  return null;
+}
+
+/** A commit message's body, without its subject and without Formic's trailers. */
+function bodyOf(message: string): string {
+  return message
+    .split("\n")
+    .slice(1)
+    .filter((l) => !l.trim().startsWith(REVIEW_TRAILER) && l.trim() !== ALREADY_DONE_TRAILER)
+    .join("\n")
+    .trim();
+}
+
 export function cliPrompt(
   agent: CliAgent,
   mode: CodeMode,
   ticket: TicketDetail,
-  fix?: { checks: FailingCheck[]; attempt: number; maxAttempts: number },
+  review?: Omit<ReviewTask, "task" | "workspace">,
   notes: string[] = [],
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskBrief(taskFor(ticket, notes));
-  const work = fix
-    ? [
-        `This is fix attempt ${fix.attempt} of ${fix.maxAttempts}. After the last one the card stops and waits for a human.`,
-        "",
-        "Failing checks:",
-        "",
-        failuresBrief(fix.checks),
-      ].join("\n")
-    : ["Implement it.", "", ALREADY_DONE_RULE, "", CLI_ALREADY_DONE].join("\n");
-  return cap(
-    [brief.trim(), "", CLI_RULES, "", ENGINEERING_PRACTICES, "", task, "", work].join("\n"),
-  );
+  const task = taskFor(ticket, notes);
+  const work = review
+    ? [reviewBrief({ ...review, task }), "", CLI_REVIEW]
+    : [taskBrief(task), "", "Implement it.", "", ALREADY_DONE_RULE, "", CLI_ALREADY_DONE];
+  return cap([brief.trim(), "", CLI_RULES, "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
 }
 
 /**
@@ -879,6 +904,26 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       });
       return;
     }
+    if (result.mode === "fix" && change.files.length === 0) {
+      const verdict = reviewVerdictOf(change.messages);
+      const message = change.messages.at(-1) ?? "";
+      if (verdict) {
+        await cleanUp();
+        const review = await import("@/lib/review/pipeline");
+        const reason = bodyOf(message) || "The Reviewer Agent sent it back without a reason.";
+        if (verdict === "send-back") {
+          await review.sendBack(projectId, ticket, reason);
+          return;
+        }
+        const pull = await client.pullRequest(ticket.prNumber!);
+        await review.approve(projectId, ticket, pull.number, pull.headSha, {
+          summary: "Approved",
+          detail: withoutHandoff(bodyOf(message)),
+          handoff: handoffFromSummary(message),
+        });
+        return;
+      }
+    }
     if (change.files.length === 0 || !change.headSha) {
       await stop(`The agent finished without changing anything.${log}`, result.mode === "fix");
       return;
@@ -901,14 +946,10 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     await cleanUp();
 
     if (result.mode === "fix") {
-      await recordCliWork(projectId, ticket.id, change.messages.at(-1) ?? "");
-      await publish(projectId, {
-        type: "ci.status",
-        ticketId: ticket.id,
-        prNumber: ticket.prNumber!,
-        state: "pending",
-        checkName: null,
-      });
+      const message = change.messages.at(-1) ?? "";
+      await recordCliWork(projectId, ticket.id, message);
+      const { recordFix } = await import("@/lib/review/pipeline");
+      await recordFix(projectId, ticket, ticket.prNumber!, change.headSha, handoffFromSummary(message));
       return;
     }
 
@@ -921,7 +962,12 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       ticket.title;
     await openTicketPullRequest(projectId, ticket, client, {
       branch,
-      change: { summary, detail: rest.join("\n").trim(), verifiedWith: null },
+      change: {
+        summary,
+        detail: withoutHandoff(rest.join("\n").trim()),
+        verifiedWith: null,
+        handoff: handoffFromSummary(message),
+      },
     });
   } catch (e) {
     await stop(`Could not take the agent's work: ${explain(e)}`, false);

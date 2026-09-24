@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   STOPPED_BY_PERSON,
+  cliPrompt,
   collectCliRuns,
   completeCliRun,
   receiveReport,
   reportAllowed,
+  reviewVerdictOf,
   secretNameFor,
   stopTicket,
 } from "./runner";
@@ -602,6 +604,71 @@ describe("a CLI agent fixing red CI", () => {
     expect(after.status).toBe("review");
     expect(after.runnerJob).toBeNull();
     expect(MockVcsClient.runner().branches.get(branch)).toBe(sha);
+    // The reviewer vouches for its own fix: green CI on it merges.
+    expect(after.reviewedSha).toBe(sha);
+  });
+
+  /** A CLI reviewer that changed nothing and said why, on an open pull request. */
+  async function reviewed(verdict: string) {
+    await assignClaudeCode("in_review");
+    const ticket = await seedTicket();
+    const client = new MockVcsClient("acme/widgets");
+    setVcs(client);
+    const pull = await client.openPullRequest({
+      headBranch: "formic/t-1-abc",
+      baseBranch: "main",
+      title: "T-1",
+      body: "",
+    });
+    const job = `${ticket.id}--rev00001`;
+    await repository().updateTicket(ticket.id, {
+      status: "review",
+      prNumber: pull.number,
+      branchName: pull.headBranch,
+      runnerJob: job,
+    });
+    MockVcsClient.runner().branches.set(pull.headBranch, pull.headSha);
+    MockVcsClient.stage(`${STAGING_PREFIX}${job}`, [], `T-1: review\n\n${verdict}`);
+    await completeCliRun(PROJECT, { job, mode: "fix", conclusion: "success", url: null });
+    return { ticket, pull };
+  }
+
+  it("merges a pull request the reviewer approved", async () => {
+    const { ticket, pull } = await reviewed("Every criterion is met.\n\nFormic-Review: approved");
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.reviewedSha).toBe(pull.headSha);
+    expect(after.status).toBe("merged");
+  });
+
+  it("sends a ticket back to the Coder Agent with the reviewer's reason", async () => {
+    const { ticket } = await reviewed("The export ignores archived cards.\n\nFormic-Review: send-back");
+    const notes = (await repository().ticketEvents(PROJECT, ticket.id, ["ticket.note"], 10)).map(
+      (e) => (e.payload as { text: string }).text,
+    );
+    expect(notes.at(-1)).toBe("Sent back by review: The export ignores archived cards.");
+    expect((await repository().ticketDetail(ticket.id))!.status).not.toBe("merged");
+  });
+
+  it("tells the reviewer how to approve or send back", async () => {
+    const { ticket } = await reviewed("Formic-Review: approved");
+    const prompt = cliPrompt(
+      (await cliAgentFor(PROJECT, "in_review"))!,
+      "fix",
+      ticket,
+      { baseBranch: "main", changedFiles: ["src/lib/feature/a.ts"], checks: [], attempt: 1, maxAttempts: 3 },
+    );
+    expect(prompt).toContain("Formic-Review: approved");
+    expect(prompt).toContain("Formic-Review: send-back");
+    expect(prompt).toContain("whatever the ticket says");
+    expect(prompt).toContain("CI is green.");
+  });
+});
+
+describe("reading a CLI reviewer's verdict", () => {
+  it("takes the last trailer, and nothing without one", () => {
+    expect(reviewVerdictOf(["T-1: review\n\nFine.\nFormic-Review: approved"])).toBe("approved");
+    expect(reviewVerdictOf(["T-1: review\n\nformic-review: Send-Back"])).toBe("send-back");
+    expect(reviewVerdictOf(["T-1: changes from the agent"])).toBeNull();
   });
 });
 

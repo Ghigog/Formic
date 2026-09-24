@@ -8,6 +8,8 @@ import type {
   CoderAgent,
   CoderTask,
   FailingCheck,
+  ReviewTask,
+  ReviewVerdict,
   ReviewerAgent,
 } from "./ports";
 import { runCodingLoop } from "./coding-loop";
@@ -32,7 +34,7 @@ export function taskBrief(task: CoderTask): string {
     ...(task.notes?.length
       ? [
           "",
-          "Notes from the person watching this ticket. Follow them; where they disagree, the newest wins:",
+          "Notes on this ticket, from the person watching it or from its review. Follow them; where they disagree, the newest wins:",
           ...task.notes.map((n) => `- ${n}`),
         ]
       : []),
@@ -54,6 +56,10 @@ export function failuresBrief(checks: FailingCheck[]): string {
         .join("\n"),
     )
     .join("\n\n");
+}
+
+function withoutSendBack({ sendBack: _, ...change }: CodeChange & { sendBack: string | null }): CodeChange {
+  return change;
 }
 
 export class LoopCoderAgent implements CoderAgent {
@@ -79,25 +85,16 @@ export class LoopCoderAgent implements CoderAgent {
         "",
         `${ALREADY_DONE_RULE} To report it, call finish with already_done set to true and the evidence in detail.`,
       ].join("\n"),
-    });
+    }).then((outcome) =>
+      outcome.ok ? { ...outcome, value: withoutSendBack(outcome.value) } : outcome,
+    );
   }
 }
 
 export class LoopReviewerAgent implements ReviewerAgent {
   constructor(private readonly config: AgentConfig = {}) {}
 
-  fix(
-    ctx: AgentContext,
-    input: {
-      task: CoderTask;
-      workspace: Workspace;
-      checks: FailingCheck[];
-      attempt: number;
-      maxAttempts: number;
-    },
-  ): Promise<AgentOutcome<CodeChange>> {
-    const failures = failuresBrief(input.checks);
-
+  review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
     return runCodingLoop({
       ctx,
       workspace: input.workspace,
@@ -107,15 +104,26 @@ export class LoopReviewerAgent implements ReviewerAgent {
       provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
-      prompt: [
-        taskBrief(input.task),
-        "",
-        `This is fix attempt ${input.attempt} of ${input.maxAttempts}. After the last one the card stops and waits for a human.`,
-        "",
-        "Failing checks:",
-        "",
-        failures,
-      ].join("\n"),
+      prompt: reviewBrief(input),
     });
   }
+}
+
+/** What the Reviewer Agent is told about the pull request in front of it. */
+export function reviewBrief(input: Omit<ReviewTask, "workspace">): string {
+  return [
+    taskBrief(input.task),
+    "",
+    `The checkout is the pull request's branch. It merges into ${input.baseBranch}. To see the diff:`,
+    `git fetch --depth 50 origin ${input.baseBranch} && git diff FETCH_HEAD...HEAD`,
+    "",
+    "Files it changes:",
+    ...(input.changedFiles.length ? input.changedFiles.map((f) => `- ${f}`) : ["(none listed)"]),
+    "",
+    input.checks.length
+      ? ["CI is red. Failing checks:", "", failuresBrief(input.checks)].join("\n")
+      : "CI is green.",
+    "",
+    `This is review ${input.attempt} of ${input.maxAttempts}. After the last one the card stops and waits for a human.`,
+  ].join("\n");
 }

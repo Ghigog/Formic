@@ -56,6 +56,8 @@ interface TicketExtras {
   runnerJobAt?: Date | null;
   issueNumber: number | null;
   plan?: PlanStep[];
+  handoff?: string[];
+  reviewedSha?: string | null;
 }
 
 interface Store {
@@ -660,6 +662,8 @@ export class MemoryRepository implements Repository {
     }
     if (update.issueNumber !== undefined) extras.issueNumber = update.issueNumber;
     if (update.plan !== undefined) extras.plan = update.plan;
+    if (update.handoff !== undefined) extras.handoff = update.handoff;
+    if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
@@ -856,6 +860,8 @@ function toDetail(
     issueNumber: extras?.issueNumber ?? null,
     storyPoints: card.storyPoints ?? null,
     plan: extras?.plan ?? [],
+    handoff: extras?.handoff ?? [],
+    reviewedSha: extras?.reviewedSha ?? null,
   };
 }
 

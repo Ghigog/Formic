@@ -165,7 +165,7 @@ function refusing(error: string): AgentRegistry[keyof AgentRegistry] {
     decompose: refuse,
     summarize: refuse,
     implement: refuse,
-    fix: refuse,
+    review: refuse,
   } as unknown as AgentRegistry[keyof AgentRegistry];
 }
 

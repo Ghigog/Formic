@@ -8,6 +8,21 @@
 
 CI results on an agent-authored PR drive an autonomous fix-or-merge loop.
 
+## Update: a review on every pull request
+
+The fix loop is now a review. Once CI finishes on a head, the Reviewer Agent
+reads the diff against the ticket's acceptance criteria and does one of three
+things: approves it (green CI on exactly that commit merges), fixes it and
+pushes (green CI on its own fix merges without another review), or sends the
+ticket back to the Coder Agent with a reason, which goes on the ticket as a
+note. Red CI is never approved. Reviews share the attempt ceiling, so a ticket
+cannot go round between the two agents forever; a person moving the card
+resets it.
+
+Steps a ticket needs outside the repository (a secret in a service, a command
+on the person's machine) are listed by the agent as "For you" steps. They go on
+the ticket and its pull request, and the Epic's showcase opens with them.
+
 ## Scope
 
 - GitHub webhook receiver with signature verification and idempotent handling

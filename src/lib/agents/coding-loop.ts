@@ -10,6 +10,7 @@ import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens } from "@/lib/b
 import { anthropicClient, describeError } from "./anthropic";
 import { requestShape } from "./models";
 import { MAX_PLAN_STEPS, checkPlan } from "./plan";
+import { checkHandoff } from "./handoff";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
 import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
 
@@ -71,9 +72,12 @@ const finishInput = z.object({
   verified_with: z.string().nullable(),
   // Optional here: a model that leaves it out has changed something.
   already_done: z.boolean().optional(),
+  send_back: z.string().nullable().optional(),
+  for_you: z.array(z.string()).optional(),
+  blocked_reason: z.string().nullable().optional(),
 });
 
-const TOOLS: Anthropic.Beta.BetaTool[] = [
+const WORK_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "bash",
     description:
@@ -153,7 +157,24 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
     },
     strict: true,
   },
-  {
+];
+
+const FOR_YOU = {
+  type: "array",
+  items: { type: "string" },
+  description:
+    "Steps outside the repository the person has to take themselves, one instruction each. Empty when there are none.",
+};
+
+const BLOCKED = {
+  type: ["string", "null"],
+  description:
+    "Only when the project's checks cannot pass without changing files outside the file scope: what is failing and which files it needs. Null otherwise.",
+};
+
+/** How each role ends its run. */
+const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
+  coder: {
     name: "finish",
     description:
       "Call this once the change is complete and verified, or once you have confirmed the ticket was already done. Ends the run.",
@@ -168,13 +189,45 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
           description:
             "True only when the repository already met every acceptance criterion and you changed nothing.",
         },
+        for_you: FOR_YOU,
+        blocked_reason: BLOCKED,
       },
-      required: ["summary", "detail", "verified_with", "already_done"],
+      required: ["summary", "detail", "verified_with", "already_done", "for_you", "blocked_reason"],
       additionalProperties: false,
     },
     strict: true,
   },
-];
+  reviewer: {
+    name: "finish",
+    description:
+      "Call this once you have approved the pull request, fixed it and verified the fix, or decided to send it back. Ends the run.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+        detail: {
+          type: "string",
+          description: "Your review, criterion by criterion, and what you fixed if you fixed anything.",
+        },
+        verified_with: { type: ["string", "null"] },
+        send_back: {
+          type: ["string", "null"],
+          description:
+            "To send the ticket back to the Coder Agent: what is wrong and what to do about it. Change nothing when you send it back. Null to approve or fix.",
+        },
+        for_you: FOR_YOU,
+        blocked_reason: BLOCKED,
+      },
+      required: ["summary", "detail", "verified_with", "send_back", "for_you", "blocked_reason"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+function toolsFor(role: LoopInput["role"]): Anthropic.Beta.BetaTool[] {
+  return [...WORK_TOOLS, FINISH[role]];
+}
 
 interface LoopInput {
   ctx: AgentContext;
@@ -256,7 +309,7 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
           ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
           output_config: shape.outputConfig,
           betas: shape.betas,
-          tools: TOOLS,
+          tools: toolsFor(input.role),
           messages,
         });
         message = await stream.finalMessage();
@@ -314,10 +367,12 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
 }
 
 /** The same tools, in OpenAI's function format. */
-const OPENAI_TOOLS: ToolSpec[] = TOOLS.map((t) => ({
-  type: "function",
-  function: { name: t.name, description: t.description ?? "", parameters: t.input_schema },
-}));
+function openAiTools(role: LoopInput["role"]): ToolSpec[] {
+  return toolsFor(role).map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description ?? "", parameters: t.input_schema },
+  }));
+}
 
 function openAiConversation(
   input: LoopInput,
@@ -334,7 +389,7 @@ function openAiConversation(
       const result = await chat(info, apiKey, {
         model,
         messages,
-        tools: OPENAI_TOOLS,
+        tools: openAiTools(input.role),
         signal: input.ctx.signal,
       }).catch((e: unknown) => {
         throw new Error(e instanceof Error ? e.message : String(e));
@@ -381,6 +436,9 @@ function openAiConversation(
   };
 }
 
+/** What the agent reported. A reviewer's `sendBack` is null for a coder. */
+export type LoopResult = CodeChange & { sendBack: string | null };
+
 /**
  * Runs the loop until the agent calls `finish`, the budget stops it, or it
  * runs out of turns. Returns what the agent changed; committing and pushing
@@ -388,14 +446,14 @@ function openAiConversation(
  */
 export async function runCodingLoop(
   input: LoopInput,
-): Promise<AgentOutcome<CodeChange>> {
+): Promise<AgentOutcome<LoopResult>> {
   const { ctx, workspace, role, ticketId } = input;
   const info = provider(input.provider ?? "anthropic")!;
   const model = input.model ?? CODER_MODEL;
   let total: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
   let retries = 0;
 
-  const fail = (error: string, blocked = false): AgentOutcome<CodeChange> => ({
+  const fail = (error: string, blocked = false): AgentOutcome<LoopResult> => ({
     ok: false,
     error,
     blocked,
@@ -472,7 +530,9 @@ export async function runCodingLoop(
       if (call.name === "finish") {
         const parsed = finishInput.safeParse(call.input);
         if (parsed.success) {
-          progress("Change complete", MAX_ITERATIONS);
+          const blocked = parsed.data.blocked_reason?.trim();
+          if (blocked) return fail(blocked, true);
+          progress(role === "reviewer" ? "Review complete" : "Change complete", MAX_ITERATIONS);
           return {
             ok: true,
             value: {
@@ -480,6 +540,8 @@ export async function runCodingLoop(
               detail: parsed.data.detail,
               verifiedWith: parsed.data.verified_with,
               alreadyDone: parsed.data.already_done ?? false,
+              handoff: checkHandoff(parsed.data.for_you),
+              sendBack: parsed.data.send_back?.trim() || null,
             },
             usage: total,
           };

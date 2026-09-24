@@ -127,6 +127,8 @@ export interface CodeChange {
    * `detail` then holds the evidence, criterion by criterion.
    */
   alreadyDone?: boolean;
+  /** Steps outside the repository the person has to take, if any. */
+  handoff?: string[];
 }
 
 /** PROT-06. Ticket in, edited workspace out. Commits and pushes are the caller's. */
@@ -143,18 +145,36 @@ export interface FailingCheck {
   annotations: Array<{ path: string; line: number | null; message: string }>;
 }
 
-/** PROT-07. Red CI in, fix in the workspace out. */
+/** What the Reviewer Agent is handed: the pull request, checked out. */
+export interface ReviewTask {
+  task: CoderTask;
+  /** On the pull request's branch, scoped like the Coder Agent's. */
+  workspace: Workspace;
+  /** The branch the pull request merges into, to diff against. */
+  baseBranch: string;
+  /** The files the pull request changes. */
+  changedFiles: string[];
+  /** Red CI on the head. Empty when it is green. */
+  checks: FailingCheck[];
+  attempt: number;
+  maxAttempts: number;
+}
+
+/**
+ * The review's outcome. A workspace with changes in it is a fix; none, and
+ * no reason to send it back, is an approval.
+ */
+export interface ReviewVerdict extends CodeChange {
+  /** Why the ticket goes back to the Coder Agent, when it does. */
+  sendBack: string | null;
+}
+
+/**
+ * PROT-07. Every pull request, before it merges: read against the ticket's
+ * acceptance criteria, then approved, fixed, or sent back with a reason.
+ */
 export interface ReviewerAgent {
-  fix(
-    ctx: AgentContext,
-    input: {
-      task: CoderTask;
-      workspace: Workspace;
-      checks: FailingCheck[];
-      attempt: number;
-      maxAttempts: number;
-    },
-  ): Promise<AgentOutcome<CodeChange>>;
+  review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>>;
 }
 
 export interface AgentRegistry {

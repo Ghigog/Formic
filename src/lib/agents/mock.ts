@@ -6,8 +6,9 @@ import type {
   CoderAgent,
   CoderTask,
   DraftTicket,
-  FailingCheck,
   ProductAgent,
+  ReviewTask,
+  ReviewVerdict,
   ReviewerAgent,
   ShowcaseAgent,
   Usage,
@@ -305,38 +306,44 @@ export class MockCoderAgent implements CoderAgent {
 }
 
 export class MockReviewerAgent implements ReviewerAgent {
-  async fix(
-    ctx: AgentContext,
-    input: {
-      task: CoderTask;
-      workspace: Workspace;
-      checks: FailingCheck[];
-      attempt: number;
-      maxAttempts: number;
-    },
-  ): Promise<AgentOutcome<CodeChange>> {
+  async review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
+    const red = input.checks[0]?.name;
     ctx.emit({
       type: "run.progress",
       runId: ctx.runId,
       ticketId: input.task.ticketId,
       role: "reviewer",
-      label: `Fixing ${input.checks[0]?.name ?? "CI"} (attempt ${input.attempt})`,
+      label: red ? `Fixing ${red} (review ${input.attempt})` : "Reading the diff against the ticket",
       fraction: input.attempt / input.maxAttempts,
     });
     await sleep(400, ctx.signal);
 
+    if (!red) {
+      return {
+        ok: true,
+        value: {
+          summary: "Approved (mock run)",
+          detail: "Placeholder approval from the mock Reviewer Agent.",
+          verifiedWith: null,
+          sendBack: null,
+        },
+        usage: MOCK_USAGE,
+      };
+    }
+
     const note = noteFor(input.task);
     await input.workspace.writeFile(
       note.path,
-      `${note.contents}\n_Fix attempt ${input.attempt}._\n`,
+      `${note.contents}\n_Fix from review ${input.attempt}._\n`,
     );
 
     return {
       ok: true,
       value: {
-        summary: `Fix ${input.checks[0]?.name ?? "CI"} (mock run)`,
+        summary: `Fix ${red} (mock run)`,
         detail: "Placeholder fix written by the mock Reviewer Agent.",
         verifiedWith: null,
+        sendBack: null,
       },
       usage: MOCK_USAGE,
     };

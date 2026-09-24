@@ -941,6 +941,8 @@ type TicketRow = {
   issueNumber: number | null;
   storyPoints: number | null;
   plan: unknown;
+  handoff: string[];
+  reviewedSha: string | null;
   epic: { projectId: string };
 };
 
@@ -1001,6 +1003,8 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     issueNumber: row.issueNumber,
     storyPoints: row.storyPoints,
     plan: planOf(row.plan),
+    handoff: row.handoff,
+    reviewedSha: row.reviewedSha,
   };
 }
 

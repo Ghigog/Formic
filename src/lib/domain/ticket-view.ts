@@ -25,6 +25,8 @@ export interface TicketView {
   summary: string | null;
   dependsOn: Array<{ id: string; key: string; title: string; status: string }>;
   plan: PlanStep[];
+  /** Steps outside the repository the person has to take themselves. */
+  handoff: string[];
   activity: TicketActivity[];
   /** Whether an agent is working it now, so it can be stopped. */
   canStop: boolean;
