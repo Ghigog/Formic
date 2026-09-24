@@ -5,9 +5,11 @@ import { z } from "zod";
 import { MODELS } from "./anthropic";
 import { claudeSpeak, openAiSpeak, type Speak, type ToolDef } from "./chat-loop";
 import { truncate } from "./coding-loop";
+import { launch } from "./pipeline";
 import { columnChatAgentFor } from "./presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
+import { addNote } from "@/lib/coder/notes";
 import { repository } from "@/lib/db";
 import type { CardChatMessage } from "@/lib/db/repository";
 import { COLUMN_AGENT_ROLE, AGENT_ROLE_LABELS } from "@/lib/domain/entities";
@@ -15,11 +17,11 @@ import { COLUMN_LABELS, columnFor } from "@/lib/domain/status";
 import { vcs, type VcsClient } from "@/lib/vcs";
 
 /**
- * One turn of a card's chat: the person asked the column's agent something
+ * One turn of a card's chat: the person tells the column's agent something
  * about this Epic or ticket, and it answers with the card's own detail as
- * context. It can read the repository, but it cannot change the board or
- * the ticket lifecycle — for that, the existing note to a running ticket,
- * or the normal drag between columns, still apply.
+ * context. On a ticket, the message also reaches any agent working it, and
+ * every later run of it, as a note. The chat can read the repository, but
+ * it cannot change the board or the ticket lifecycle.
  */
 
 const MAX_TURNS = 10;
@@ -169,15 +171,17 @@ export async function answer(
     const role = COLUMN_AGENT_ROLE[column];
     const agent = await columnChatAgentFor(projectId, column);
 
-    if (agent.kind === "none" || agent.kind === "limited") {
-      await finish(messageId, { content: agent.reason, status: "failed" });
-      return;
-    }
-    if (agent.kind === "cli") {
-      await finish(messageId, {
-        content: `${agent.info.label} runs in GitHub Actions and cannot chat live. Pick another agent for ${COLUMN_LABELS[agent.column]} to chat here, or leave a note instead.`,
-        status: "failed",
-      });
+    if (agent.kind === "none" || agent.kind === "limited" || agent.kind === "cli") {
+      const reason =
+        agent.kind === "cli"
+          ? `${agent.info.label} runs in GitHub Actions and cannot reply here.`
+          : agent.reason;
+      await finish(
+        messageId,
+        cardKind === "ticket"
+          ? { content: `${reason} Your message was passed on to the agent working this ticket.`, status: "done" }
+          : { content: reason, status: "failed" },
+      );
       return;
     }
 
@@ -225,4 +229,38 @@ export async function answer(
   } catch (e) {
     await finish(messageId, { content: e instanceof Error ? e.message : String(e), status: "failed" });
   }
+}
+
+export class ChatBusyError extends Error {
+  constructor() {
+    super("The agent is still answering the last message.");
+  }
+}
+
+/**
+ * Sends the person's message on a card's chat and starts the reply. On a
+ * ticket it is also a note, so the agent working it, and every later run,
+ * reads it even when the column's agent cannot reply live.
+ */
+export async function ask(
+  projectId: string,
+  cardKind: "epic" | "ticket",
+  cardId: string,
+  text: string,
+): Promise<void> {
+  const repo = repository();
+  if ((await repo.cardChatMessages(cardId)).some((m) => m.status === "pending")) {
+    throw new ChatBusyError();
+  }
+  await repo.addCardChatMessage({ projectId, cardKind, cardId, role: "user", content: text });
+  if (cardKind === "ticket") await addNote(projectId, cardId, text);
+  const reply = await repo.addCardChatMessage({
+    projectId,
+    cardKind,
+    cardId,
+    role: "assistant",
+    content: "",
+    status: "pending",
+  });
+  launch(() => answer(cardKind, cardId, reply.id), `${cardKind} chat answer ${reply.id}`);
 }
