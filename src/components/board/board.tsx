@@ -99,16 +99,20 @@ export function Board({
     }),
   );
 
-  const toggleCollapse = useCallback((column: ColumnId, epicId: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev[column]);
-      if (!next.delete(epicId)) next.add(epicId);
-      return { ...prev, [column]: next };
-    });
-  }, []);
-
   const isMobile = useMediaQuery("(max-width: 767px)");
   const colony = useColony();
+
+  const toggleCollapse = useCallback(
+    (column: ColumnId, epicId: string) => {
+      colony?.sfx(collapsed[column].has(epicId) ? "unfold" : "fold");
+      setCollapsed((prev) => {
+        const next = new Set(prev[column]);
+        if (!next.delete(epicId)) next.add(epicId);
+        return { ...prev, [column]: next };
+      });
+    },
+    [collapsed, colony],
+  );
   /** The column under a dragged card, for its sounds. Not state: a drag must not re-render the board. */
   const dragOver = useRef<ColumnId | null>(null);
   /**

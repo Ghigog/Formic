@@ -886,6 +886,7 @@ export function EpicGroup({
 }) {
   const own = extras[epic.id] ?? {};
   const done = column === "done";
+  const colony = useColony();
 
   return (
     // Never shrunk to fit: a full column scrolls instead. Without this an
@@ -918,19 +919,17 @@ export function EpicGroup({
               </span>
               <div className="flex-grow" />
               <ProblemBadge card={epic} />
-              {!done && (
-                <button
-                  type="button"
-                  onClick={onToggle}
-                  aria-expanded={!collapsed}
-                  aria-label={
-                    collapsed ? "Expand child tickets" : "Collapse child tickets"
-                  }
-                  className="inline-flex size-5 items-center justify-center"
-                >
-                  <ChevronUp collapsed={collapsed} />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={!collapsed}
+                aria-label={
+                  collapsed ? "Expand child tickets" : "Collapse child tickets"
+                }
+                className="inline-flex size-5 items-center justify-center"
+              >
+                <ChevronUp collapsed={collapsed} />
+              </button>
             </div>
 
             <h3 className="text-ink font-serif text-[16px] leading-dense font-semibold">
@@ -954,7 +953,11 @@ export function EpicGroup({
             {done && onShowcase && (
               <button
                 type="button"
-                onClick={() => onShowcase(epic)}
+                onPointerEnter={() => colony?.sfx("hover")}
+                onClick={() => {
+                  colony?.sfx("click");
+                  onShowcase(epic);
+                }}
                 className="bg-terracotta-cta inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
               >
                 View showcase

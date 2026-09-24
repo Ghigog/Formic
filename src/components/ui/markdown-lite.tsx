@@ -2,23 +2,29 @@ import { Fragment, type ReactNode } from "react";
 import { cn } from "./cn";
 
 /**
- * The little Markdown tickets are written in: headings, bullet lists,
- * paragraphs, **bold** and `code`. Rendered as elements, never as HTML, so
+ * The little Markdown tickets are written in: headings, bullet and numbered
+ * lists, paragraphs, **bold** and `code`. Rendered as elements, never as HTML, so
  * text an agent wrote cannot inject markup.
  */
 export function MarkdownLite({ text, className }: { text: string; className?: string }) {
   const blocks: ReactNode[] = [];
   let list: string[] = [];
+  let ordered = false;
   let paragraph: string[] = [];
 
   const flushList = () => {
     if (list.length === 0) return;
+    const items = list.map((item, i) => <li key={i}>{inline(item)}</li>);
     blocks.push(
-      <ul key={blocks.length} className="ml-4 list-disc space-y-1">
-        {list.map((item, i) => (
-          <li key={i}>{inline(item)}</li>
-        ))}
-      </ul>,
+      ordered ? (
+        <ol key={blocks.length} className="ml-5 list-decimal space-y-1">
+          {items}
+        </ol>
+      ) : (
+        <ul key={blocks.length} className="ml-4 list-disc space-y-1">
+          {items}
+        </ul>
+      ),
     );
     list = [];
   };
@@ -32,6 +38,7 @@ export function MarkdownLite({ text, className }: { text: string; className?: st
     const line = raw.trimEnd();
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
     if (heading) {
       flushList();
       flushParagraph();
@@ -43,9 +50,11 @@ export function MarkdownLite({ text, className }: { text: string; className?: st
           {heading[1]}
         </h4>,
       );
-    } else if (bullet) {
+    } else if (bullet || numbered) {
       flushParagraph();
-      list.push(bullet[1]!);
+      if (list.length && ordered !== !!numbered) flushList();
+      ordered = !!numbered;
+      list.push((bullet ?? numbered)![1]!);
     } else if (line.trim() === "") {
       flushList();
       flushParagraph();

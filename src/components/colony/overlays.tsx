@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BoardCard } from "@/lib/domain/entities";
 import { XP_PER_LEVEL } from "@/lib/colony/game";
-import { MarkdownLite } from "@/components/ui/markdown-lite";
+import { showcaseHeadline } from "@/lib/domain/showcase";
 import { useColony } from "./colony";
 import { centerOf } from "./fx";
 
@@ -64,23 +64,8 @@ function useShowcase(epicId: string | undefined): string | null {
   return text;
 }
 
-/** A number that counts up to its value once, from zero. */
-function useCountUp(value: number, run: boolean, reduced: boolean): number {
-  const [shown, setShown] = useState(0);
-  useEffect(() => {
-    if (!run || reduced) return;
-    let frame = 0;
-    const start = performance.now();
-    const step = (t: number) => {
-      const k = Math.min(1, (t - start) / 1100);
-      setShown(Math.round(value * (1 - Math.pow(1 - k, 3))));
-      if (k < 1) frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [value, run, reduced]);
-  return reduced ? value : shown;
-}
+/** When each beat of the win lands, in ms from the dialog opening. */
+const BEAT = { burst: 720, count: 900, countMs: 1100, fill: 2150, fillMs: 700, summary: 2950 };
 
 /** An epic landed in Done: what it scored, where the colony stands, and what shipped. */
 export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) => void }) {
@@ -88,15 +73,32 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
   const backdrop = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const coin = useRef<HTMLSpanElement>(null);
+  const score = useRef<HTMLSpanElement>(null);
+  const summary = useRef<HTMLParagraphElement>(null);
   const keep = useRef<HTMLButtonElement>(null);
   const win = c?.win;
   const showcase = useShowcase(win?.epic.id);
-  const total = useCountUp(win?.tally.total ?? 0, !!win, !!c?.fx.reducedMotion);
+  const reduced = !!c?.fx.reducedMotion;
+  const fresh = () => ({ total: reduced ? (win?.tally.total ?? 0) : 0, filled: reduced, summary: reduced });
+  const [shown, setShown] = useState(fresh);
+  // Another win: its own count from zero, not the last one's.
+  const [shownFor, setShownFor] = useState(win);
+  if (win !== shownFor) {
+    setShownFor(win);
+    setShown(fresh());
+  }
 
   useEffect(() => {
     if (!win || !c) return;
+    const { fx, sfx } = c;
     keep.current?.focus();
-    if (!c.fx.reducedMotion) {
+    const at = (ms: number, f: () => void) => setTimeout(f, reduced ? 0 : ms);
+    const timers: Array<ReturnType<typeof setTimeout>> = [];
+    let frame = 0;
+    const total = win.tally.total;
+
+    sfx("coin");
+    if (!reduced) {
       backdrop.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: "ease-out" });
       card.current?.animate(
         [
@@ -114,36 +116,98 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
         { duration: 950, easing: "cubic-bezier(.2,.8,.2,1)" },
       );
     }
-    const t = setTimeout(() => {
-      if (!coin.current) return;
-      const [x, y] = centerOf(coin.current);
-      c.fx.ring(x, y, "var(--jade)", 130, 0.8, 3);
-      c.fx.burst(x, y, ["var(--terracotta)", "var(--clay)", "var(--jade)", "var(--text)", "var(--clay-lit)"], 80, {
-        speed: 560,
-        g: 700,
-        size: 4,
-        life: 1.7,
-      });
-    }, 720);
+    timers.push(
+      at(BEAT.burst, () => {
+        sfx("epic");
+        if (!coin.current) return;
+        const [x, y] = centerOf(coin.current);
+        fx.ring(x, y, "var(--jade)", 130, 0.8, 3);
+        fx.burst(x, y, ["var(--terracotta)", "var(--clay)", "var(--jade)", "var(--text)", "var(--clay-lit)"], 80, {
+          speed: 560,
+          g: 700,
+          size: 4,
+          life: 1.7,
+        });
+      }),
+      at(BEAT.count, () => {
+        const done = () => {
+          sfx("tally");
+          score.current?.animate(
+            [{ transform: "scale(1)" }, { transform: "scale(1.3)" }, { transform: "scale(1)" }],
+            { duration: 320, easing: "cubic-bezier(.2,1.6,.4,1)" },
+          );
+        };
+        if (reduced) return done();
+        const start = performance.now();
+        let lastTick = 0;
+        const step = (t: number) => {
+          const k = Math.min(1, (t - start) / BEAT.countMs);
+          setShown((v) => ({ ...v, total: Math.round(total * (1 - Math.pow(1 - k, 3))) }));
+          if (t - lastTick > 55 && k < 1) {
+            lastTick = t;
+            sfx("tick", k);
+          }
+          if (k < 1) frame = requestAnimationFrame(step);
+          else done();
+        };
+        frame = requestAnimationFrame(step);
+      }),
+      at(BEAT.fill, () => {
+        sfx("fill");
+        setShown((v) => ({ ...v, filled: true }));
+      }),
+      at(BEAT.summary, () => setShown((v) => ({ ...v, summary: true }))),
+    );
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") c.closeWin();
+      if (e.key === "Escape") {
+        sfx("close");
+        c.closeWin();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => {
-      clearTimeout(t);
+      timers.forEach(clearTimeout);
+      cancelAnimationFrame(frame);
       window.removeEventListener("keydown", onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win]);
+
+  const headline = showcase ? showcaseHeadline(showcase) : null;
+  const visible = shown.summary && !!headline;
+  useEffect(() => {
+    if (!visible || !c) return;
+    c.sfx("reveal");
+    if (!reduced) {
+      summary.current?.animate(
+        [
+          { opacity: 0, transform: "translateY(6px)" },
+          { opacity: 1, transform: "none" },
+        ],
+        { duration: 420, easing: "ease-out" },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
   if (!c || !win) return null;
 
   const { tally } = win;
+  const yours = showcase ? (showcase.match(/^- \[ \] /gm) ?? []).length : 0;
   const s = c.score;
+  const before = Math.max(0, s.intoLevel - tally.total);
+  const xp = shown.filled ? s.intoLevel : before;
+  const close = () => {
+    c.sfx("close");
+    c.closeWin();
+  };
+  const hover = () => c.sfx("hover");
 
   return (
     <div
       ref={backdrop}
-      onClick={c.closeWin}
+      onClick={close}
       className="fixed inset-0 z-[80] flex items-center justify-center bg-[color-mix(in_srgb,var(--anthracite)_38%,transparent)] p-4 backdrop-blur-md"
     >
       <div
@@ -176,8 +240,11 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
         <div className="border-line flex w-full flex-col gap-2 rounded-lg border p-4 text-left">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-muted font-mono text-[10px] tracking-[0.12em]">EPIC SCORE</span>
-            <span className="text-terracotta-cta font-mono text-[26px] leading-none font-medium tabular-nums">
-              +{total}
+            <span
+              ref={score}
+              className="text-terracotta-cta inline-block font-mono text-[26px] leading-none font-medium tabular-nums"
+            >
+              +{shown.total}
             </span>
           </div>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
@@ -218,18 +285,28 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
               aria-valuenow={s.intoLevel}
               className="bg-line block h-1.5 w-full overflow-hidden rounded-sm"
             >
-              <span className="bg-clay block h-full" style={{ width: `${(s.intoLevel / XP_PER_LEVEL) * 100}%` }} />
+              <span
+                className="bg-clay block h-full transition-[width] ease-[cubic-bezier(.2,.8,.2,1)]"
+                style={{ width: `${(xp / XP_PER_LEVEL) * 100}%`, transitionDuration: `${BEAT.fillMs}ms` }}
+              />
             </span>
           </div>
         </div>
 
         <div className="bg-sunken w-full rounded-lg p-4 text-left">
           <span className="text-muted font-mono text-[10px] tracking-[0.12em]">SUMMARY</span>
-          {showcase ? (
-            <MarkdownLite text={showcase} className="text-ink mt-2 max-h-[220px] overflow-y-auto text-[13px] leading-[1.55]" />
+          {visible ? (
+            <p ref={summary} className="text-ink m-0 mt-1.5 font-serif text-[17px] leading-[1.4] font-medium">
+              {headline}
+            </p>
           ) : (
-            <p className="text-muted m-0 mt-2 animate-pulse text-[13px] leading-[1.55]">
-              The PM Agent is writing the summary…
+            <p className="text-muted m-0 mt-1.5 animate-pulse text-[13px] leading-[1.55]">
+              {shown.summary ? "The PM Agent is writing the showcase…" : "Tallying…"}
+            </p>
+          )}
+          {visible && yours > 0 && (
+            <p className="text-terracotta-cta m-0 mt-2 text-[12px] font-semibold">
+              {yours === 1 ? "1 step is" : `${yours} steps are`} yours before it all works. They are in the showcase.
             </p>
           )}
         </div>
@@ -238,11 +315,13 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
           {onShowcase && (
             <button
               type="button"
+              onPointerEnter={hover}
               onClick={() => {
+                c.sfx("click");
                 c.closeWin();
                 onShowcase(win.epic);
               }}
-              className="bg-terracotta-cta inline-flex h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white"
+              className="bg-terracotta-cta inline-flex h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-transform hover:-translate-y-px active:translate-y-px"
             >
               View showcase
             </button>
@@ -250,8 +329,9 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
           <button
             ref={keep}
             type="button"
-            onClick={c.closeWin}
-            className="border-line bg-cream text-ink h-10 flex-1 rounded-lg border text-[13px] font-semibold"
+            onPointerEnter={hover}
+            onClick={close}
+            className="border-line bg-cream text-ink h-10 flex-1 rounded-lg border text-[13px] font-semibold transition-transform hover:-translate-y-px active:translate-y-px"
           >
             Keep building
           </button>

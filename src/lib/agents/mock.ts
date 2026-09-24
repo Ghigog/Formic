@@ -235,21 +235,12 @@ export class MockShowcaseAgent implements ShowcaseAgent {
   ): Promise<AgentOutcome<string>> {
     await sleep(400, ctx.signal);
     const body = [
-      `# ${input.title}`,
+      `${input.title} is live: ${input.prd?.summary ?? "the board does what you asked for"}`,
       "",
-      input.prd?.summary ?? "",
+      "## See it",
       "",
-      "## What shipped",
-      "",
-      ...input.ticketSummaries.map(
-        (t) => `- **${t.key} ${t.title}** — ${t.summary}`,
-      ),
-      "",
-      "## Try it",
-      "",
-      "1. Pull the base branch.",
-      "2. Run the app.",
-      "3. Exercise the new surface from the board.",
+      "1. Open the board.",
+      ...input.ticketSummaries.slice(0, 2).map((t, i) => `${i + 2}. Look for ${t.title.toLowerCase()}.`),
     ].join("\n");
 
     ctx.emit({ type: "epic.showcase", epicId: input.epicId, markdown: body });

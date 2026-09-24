@@ -53,6 +53,8 @@ function section(lines: string[]): { start: number; end: number; steps: string[]
   return { start, end, steps };
 }
 
+export const HANDOFF_INTRO = "Steps no agent could take. They happen outside the repository, so they are yours:";
+
 /** The Markdown section that hands the steps to the person. */
 export function handoffSection(steps: Array<{ key: string; steps: string[] }>): string {
   const withSteps = steps.filter((t) => t.steps.length > 0);
@@ -60,7 +62,7 @@ export function handoffSection(steps: Array<{ key: string; steps: string[] }>): 
   return [
     "## For you",
     "",
-    "Steps no agent could take. They happen outside the repository, so they are yours:",
+    HANDOFF_INTRO,
     "",
     ...withSteps.flatMap((t) => t.steps.map((s) => `- [ ] ${s} (${t.key})`)),
   ].join("\n");

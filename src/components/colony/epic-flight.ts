@@ -11,12 +11,25 @@
 export interface Ghost {
   /** A detached copy of the epic's group as it last rendered. */
   node: HTMLElement;
+  /** The column that scrolls it, and where in that column it sat. */
+  box: HTMLElement | null;
+  dx: number;
+  dy: number;
+  /** Where it was, for when its column is gone. */
   rect: DOMRect;
 }
 
 /** The epic's whole group: its header card and any tickets folded under it. */
 export function groupOf(el: Element | null): HTMLElement | null {
   return (el?.closest("li") as HTMLElement | null) ?? (el as HTMLElement | null);
+}
+
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if (y === "auto" || y === "scroll") return p;
+  }
+  return null;
 }
 
 /** A copy of an element that nothing can find, focus or drag. */
@@ -29,10 +42,42 @@ export function ghostOf(el: HTMLElement): Ghost {
   }
   node.setAttribute("aria-hidden", "true");
   node.inert = true;
-  return { node, rect: el.getBoundingClientRect() };
+  const rect = el.getBoundingClientRect();
+  const box = scrollerOf(el);
+  const b = box?.getBoundingClientRect();
+  return {
+    node,
+    box,
+    dx: b ? rect.left - b.left + box!.scrollLeft : 0,
+    dy: b ? rect.top - b.top + box!.scrollTop : 0,
+    rect,
+  };
+}
+
+/** Where the ghost's card would be now, its column scrolled as it is now. */
+export function ghostRect(g: Ghost): DOMRect {
+  if (!g.box?.isConnected) return g.rect;
+  const b = g.box.getBoundingClientRect();
+  return new DOMRect(b.left - g.box.scrollLeft + g.dx, b.top - g.box.scrollTop + g.dy, g.rect.width, g.rect.height);
+}
+
+export interface FlightHooks {
+  /**
+   * Holds the flight on the ground until `go` is called: the browser plays
+   * no sound before the page's first gesture, and the flight is half sound.
+   */
+  hold?: (go: () => void) => void;
+  /** Through the shake; t runs 0 to 1. */
+  onShake?: (t: number) => void;
+  onLift?: () => void;
+  onHover?: () => void;
+  onLaunch?: () => void;
+  onSlam?: (x: number, y: number) => void;
+  onWiggle?: () => void;
 }
 
 const SHAKE_MS = 1000;
+const SHAKE_BEATS = 12;
 const POP_MS = 260;
 const HOVER_MS = 200;
 const FLY_MS = 520;
@@ -60,22 +105,67 @@ function wait(anim: Animation): Promise<void> {
   );
 }
 
-export async function flyHome(
-  ghost: Ghost,
-  home: HTMLElement,
-  hooks: { onLift?: () => void; onSlam?: (x: number, y: number) => void },
-): Promise<void> {
-  home.scrollIntoView({ block: "nearest", inline: "nearest" });
-  const from = ghost.rect;
-  const to = home.getBoundingClientRect();
-  const dx = to.left - from.left;
-  const dy = to.top - from.top;
+function place(node: HTMLElement, r: DOMRect) {
+  node.style.left = `${r.left}px`;
+  node.style.top = `${r.top}px`;
+}
 
+/** Until the page has had a gesture: glowing where it sat, asking for one. */
+async function onTheGround(ghost: Ghost, hold: NonNullable<FlightHooks["hold"]>): Promise<void> {
   const node = ghost.node;
+  node.style.zIndex = "40";
+  const hint = document.createElement("span");
+  hint.textContent = "Complete · click anywhere";
+  Object.assign(hint.style, {
+    position: "absolute",
+    top: "-10px",
+    right: "10px",
+    padding: "2px 8px",
+    borderRadius: "999px",
+    background: "var(--jade)",
+    color: "white",
+    font: "600 10px/1.4 var(--font-mono, monospace)",
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+  });
+  node.style.overflow = "visible";
+  node.appendChild(hint);
+  const glow = node.animate(
+    [
+      { boxShadow: "0 0 0 0 color-mix(in srgb, var(--jade) 45%, transparent)" },
+      { boxShadow: "0 0 0 10px color-mix(in srgb, var(--jade) 0%, transparent)" },
+    ],
+    { duration: 1300, iterations: Infinity, easing: "ease-out" },
+  );
+  const itch = node.animate(
+    [
+      { transform: "none" },
+      { transform: "rotate(-0.8deg)", offset: 0.1 },
+      { transform: "rotate(0.8deg)", offset: 0.2 },
+      { transform: "none", offset: 0.3 },
+    ],
+    { duration: 1800, iterations: Infinity },
+  );
+  let frame = 0;
+  const follow = () => {
+    place(node, ghostRect(ghost));
+    frame = requestAnimationFrame(follow);
+  };
+  frame = requestAnimationFrame(follow);
+  await new Promise<void>((go) => hold(go));
+  cancelAnimationFrame(frame);
+  glow.cancel();
+  itch.cancel();
+  hint.remove();
+  node.style.overflow = "";
+  node.style.zIndex = "75";
+}
+
+export async function flyHome(ghost: Ghost, home: HTMLElement, hooks: FlightHooks): Promise<void> {
+  const node = ghost.node;
+  const from = ghostRect(ghost);
   Object.assign(node.style, {
     position: "fixed",
-    left: `${from.left}px`,
-    top: `${from.top}px`,
     width: `${from.width}px`,
     height: `${from.height}px`,
     margin: "0",
@@ -84,10 +174,27 @@ export async function flyHome(
     transformOrigin: "50% 100%",
     listStyle: "none",
   });
+  place(node, from);
   document.body.appendChild(node);
 
   try {
+    if (hooks.hold) await onTheGround(ghost, hooks.hold);
+
+    home.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const start = ghostRect(ghost);
+    place(node, start);
+    const to = home.getBoundingClientRect();
+    const dx = to.left - start.left;
+    const dy = to.top - start.top;
+
+    let beat = 0;
+    const beats = setInterval(() => {
+      beat++;
+      hooks.onShake?.(Math.min(1, beat / SHAKE_BEATS));
+    }, SHAKE_MS / SHAKE_BEATS);
+    hooks.onShake?.(0);
     await wait(node.animate(shakeFrames(), { duration: SHAKE_MS, easing: "linear" }));
+    clearInterval(beats);
 
     hooks.onLift?.();
     const lifted = "translate(0, -22px) scale(1.1)";
@@ -102,6 +209,7 @@ export async function flyHome(
       ),
     );
 
+    hooks.onHover?.();
     await wait(
       node.animate(
         [
@@ -113,6 +221,7 @@ export async function flyHome(
       ),
     );
 
+    hooks.onLaunch?.();
     const tilt = Math.sign(dx) * 6;
     await wait(
       node.animate(
@@ -152,6 +261,7 @@ export async function flyHome(
     ],
     { duration: 360, easing: "ease-out" },
   );
+  hooks.onWiggle?.();
   await wait(
     home.animate(
       [
