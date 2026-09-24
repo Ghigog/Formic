@@ -18,9 +18,17 @@ export interface Budget {
   maxAttempts: number;
 }
 
+/**
+ * A run's own ceiling stays under the `maxDuration` declared on the routes
+ * that start one (see src/app/api/{epics,tickets,transitions}), which mirror
+ * the serverless platform's own cap (300s on Vercel's Hobby plan). A run that
+ * checks this between turns and stops itself, with margin for the turn
+ * already in flight, reports "ran out of time" and is retryable; a run the
+ * platform kills outright never gets the chance to say anything.
+ */
 export const DEFAULT_RUN_BUDGET: Budget = {
   maxCents: 200,
-  maxDurationMs: 15 * 60 * 1000,
+  maxDurationMs: 4 * 60 * 1000,
   maxAttempts: 3,
 };
 
@@ -54,7 +62,7 @@ export function checkBudget(spend: Spend, budget: Budget): BudgetVerdict {
     return {
       ok: false,
       exceeded: "time",
-      reason: `Time ceiling reached (${Math.round(budget.maxDurationMs / 60000)} minutes).`,
+      reason: `Ran out of time (${Math.round(budget.maxDurationMs / 60000)} minute budget).`,
     };
   }
   if (spend.attempts >= budget.maxAttempts) {

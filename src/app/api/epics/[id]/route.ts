@@ -16,6 +16,10 @@ async function projectOwning(epicId: string) {
 const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
 
 export const dynamic = "force-dynamic";
+// PATCH and POST can start a planning agent (see launch() in
+// src/lib/agents/pipeline.ts). Matches the platform's function cap;
+// DEFAULT_RUN_BUDGET stays under it.
+export const maxDuration = 300;
 
 export async function GET(
   _req: NextRequest,

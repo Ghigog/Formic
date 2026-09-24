@@ -7,6 +7,10 @@ import { MAX_NOTE } from "@/lib/coder/notes";
 import { repository } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+// POST starts the column agent's answer (see launch() in
+// src/lib/agents/pipeline.ts). Matches the platform's function cap;
+// DEFAULT_RUN_BUDGET stays under it.
+export const maxDuration = 300;
 
 const askSchema = z.object({ text: z.string().trim().min(1).max(MAX_NOTE) });
 

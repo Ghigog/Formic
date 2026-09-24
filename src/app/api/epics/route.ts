@@ -4,6 +4,9 @@ import { createBacklogItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
 
 export const dynamic = "force-dynamic";
+// Starts the Product Agent (see launch() in src/lib/agents/pipeline.ts).
+// Matches the platform's function cap; DEFAULT_RUN_BUDGET stays under it.
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   rawRequest: z.string().min(3, "Describe the feature in a sentence or two.").max(4000),

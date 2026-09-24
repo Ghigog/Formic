@@ -4,6 +4,10 @@ import { cardTransitionSchema } from "@/lib/domain/transitions";
 import { activeProject, noProject } from "@/lib/board/project";
 
 export const dynamic = "force-dynamic";
+// A transition can start the Architect, Product, Coder or Reviewer Agent
+// (see launch() in src/lib/agents/pipeline.ts). Matches the platform's
+// function cap; DEFAULT_RUN_BUDGET stays under it.
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
