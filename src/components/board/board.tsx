@@ -82,7 +82,9 @@ export function Board({
   account,
   assistant,
 }: BoardProps) {
-  const [optimistic, setOptimistic] = useState<BoardCard[]>(cards);
+  // Empty until a drop. Seeded with the cards, it pinned every card to how it
+  // first rendered, so nothing the server said about it afterwards showed.
+  const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ColumnId>("backlog");
   const [collapsed, setCollapsed] = useState<Record<ColumnId, Set<string>>>(
@@ -155,8 +157,7 @@ export function Board({
       const depsMet = card.dependsOn.every(
         (id) => live.find((c) => c.id === id)?.status === "merged",
       );
-      setOptimistic((prev) => [
-        ...prev.filter((c) => c.id !== card.id),
+      const moved: BoardCard =
         fits
           ? {
               ...card,
@@ -167,8 +168,11 @@ export function Board({
               misplacedIn: to === from ? card.misplacedIn : null,
               misplacedReason: to === from ? card.misplacedReason : null,
             }
-          : { ...card, position, detached, misplacedIn: to },
-      ]);
+          : { ...card, position, detached, misplacedIn: to };
+      setOptimistic((prev) => [...prev.filter((c) => c.id !== card.id), moved]);
+      // Only this drop's own entry: a second drop of the same card, made while
+      // this one was in flight, has replaced it and must not be undone by it.
+      const settle = () => setOptimistic((prev) => prev.filter((c) => c !== moved));
 
       const result = await onTransition({
         cardId: card.id,
@@ -183,14 +187,14 @@ export function Board({
       if (!result.ok) {
         // Drop the optimistic entry and surface why. The card snaps back
         // because `live` falls through to server state.
-        setOptimistic((prev) => prev.filter((c) => c.id !== card.id));
+        settle();
         setError(result.reason);
         // After the card has snapped back, so the reason lands on it.
         requestAnimationFrame(() => colony?.reject(card.id, result.reason));
         return;
       }
 
-      setOptimistic((prev) => prev.filter((c) => c.id !== card.id));
+      settle();
       if (result.problem) {
         // It stays where it was put; the "!" on it keeps saying why.
         setError(result.problem);

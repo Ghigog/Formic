@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   COLUMNS,
+  card,
   cardIds,
   column,
   columnOf,
@@ -72,23 +73,33 @@ test("a card dragged back to Backlog goes back", async ({ page }) => {
  * Not the first card in Done: that is the epic group's header, which is
  * deliberately not draggable — a merged epic has nowhere to go. The merged
  * tickets underneath it are the ones a user can pick up.
+ *
+ * A move the rules do not allow still lands, as the person asked: the card
+ * shows where it was put, marked with what is wrong, and keeps its real
+ * status until it is moved back.
  */
-test("an illegal move is refused, and the card stays put", async ({ page }) => {
+test("an illegal move lands with a warning, and the card keeps its status", async ({ page }) => {
   const done = await cardIds(page, "Done");
   const merged = done.at(-1);
   expect(merged, "the demo board should start with a merged ticket").toBeTruthy();
 
-  const before = await columnOf(page, merged!);
-  await dragCardTo(page, merged!, "Backlog", 2_000).catch(() => {
-    // Expected: the board refuses the move, so the card never arrives.
-  });
+  await withCardReturned(page, merged!, async () => {
+    await dragCardTo(page, merged!, "Backlog");
 
-  // By text, not by role: Next renders its own empty role="alert" route
-  // announcer on every page, so the role alone is ambiguous.
-  await expect(
-    page.getByText("Cards cannot move from Done to Backlog."),
-  ).toBeVisible();
-  expect(await columnOf(page, merged!)).toBe(before);
+    // By text, not by role: Next renders its own empty role="alert" route
+    // announcer on every page, so the role alone is ambiguous.
+    await expect(page.getByText(/Cards cannot move from Done to Backlog\./)).toBeVisible();
+    await expect(card(page, merged!).getByRole("img", { name: /^Needs you:/ })).toBeVisible();
+
+    const board = await page.request.get("/api/board");
+    const { cards } = (await board.json()) as {
+      cards: Array<{ id: string; status: string; misplacedIn: string | null }>;
+    };
+    expect(cards.find((c) => c.id === merged)).toMatchObject({
+      status: "merged",
+      misplacedIn: "backlog",
+    });
+  });
 });
 
 test("the ambient drawer opens a terminal", async ({ page }) => {

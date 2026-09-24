@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { answer } from "./card-chat";
+import { answer, ask as send } from "./card-chat";
 import { savePreset } from "./presets";
+import { MAX_NOTE, noteTexts } from "@/lib/coder/notes";
 import { resetAgents } from "./registry";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
@@ -130,23 +131,34 @@ describe("a ticket's chat", () => {
     expect(system).toContain("Ship the export button.");
   });
 
-  it("says so when no agent is set for its column", async () => {
+  it("says so when no agent is set for its column, and passes the message on", async () => {
     const ticket = await seedTicket();
     const pending = await ask("ticket", ticket.id, "Split this?");
     await answer("ticket", ticket.id, pending.id);
     const done = await reload(pending.id);
-    expect(done.status).toBe("failed");
+    expect(done.status).toBe("done");
     expect(done.content).toContain("No agent is set for To Do");
+    expect(done.content).toContain("passed on to the agent working this ticket");
   });
 
-  it("says a CLI agent cannot chat live", async () => {
+  it("says a CLI agent cannot reply, and that the message was passed on", async () => {
     const ticket = await seedTicket();
     await assignAgent("todo", "claude-code");
     const pending = await ask("ticket", ticket.id, "Split this?");
     await answer("ticket", ticket.id, pending.id);
     const done = await reload(pending.id);
-    expect(done.status).toBe("failed");
-    expect(done.content).toContain("runs in GitHub Actions and cannot chat live");
+    expect(done.status).toBe("done");
+    expect(done.content).toContain("runs in GitHub Actions and cannot reply here");
+    expect(done.content).toContain("passed on to the agent working this ticket");
+  });
+
+  it("passes every message on to the agent as a note", async () => {
+    const ticket = await seedTicket();
+    const long = "x".repeat(MAX_NOTE);
+    await send(PROJECT, "ticket", ticket.id, "Use the existing helper.");
+    await repository().clearCardChat(ticket.id);
+    await send(PROJECT, "ticket", ticket.id, long);
+    expect(await noteTexts(PROJECT, ticket.id)).toEqual(["Use the existing helper.", long]);
   });
 });
 
@@ -172,5 +184,16 @@ describe("an Epic's chat", () => {
     const system = String((sent[0]!.messages as Array<{ content: string }>)[0]!.content);
     expect(system).toContain("Product Agent");
     expect(system).toContain("Let people export the board as CSV.");
+  });
+
+  it("does not leave a note, since no agent works an Epic", async () => {
+    const epic = await repository().createEpic({
+      projectId: PROJECT,
+      title: "Export",
+      rawRequest: "Export as CSV.",
+      position: 1,
+    });
+    await send(PROJECT, "epic", epic.id, "Keep it small.");
+    expect(await noteTexts(PROJECT, epic.id)).toEqual([]);
   });
 });

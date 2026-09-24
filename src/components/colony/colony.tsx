@@ -29,7 +29,7 @@ import {
   type Score,
 } from "@/lib/colony/game";
 import type { ExtrasMap } from "@/components/board/card";
-import { ColonyFx, cardEl, centerOf, colonyEl, type CrewPhase } from "./fx";
+import { ColonyFx, cardEl, centerOf, colonyEl, heldByDrag, type CrewPhase } from "./fx";
 import { SoundEngine, type Sfx } from "./sound";
 import { useHydrated, useSaved } from "./store";
 
@@ -486,7 +486,7 @@ export function ColonyProvider({
       const e = cardEl(cardId);
       if (!e) return;
       fx.mark(e, reason, null, "var(--crimson)", 13);
-      if (!fx.reducedMotion) {
+      if (!fx.reducedMotion && !heldByDrag(e)) {
         e.animate(
           [
             { transform: "translateX(0)" },

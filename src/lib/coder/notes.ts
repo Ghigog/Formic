@@ -10,7 +10,7 @@ import { publish } from "@/lib/events/bus";
  * run of the ticket is briefed with them.
  */
 
-export const MAX_NOTE = 2_000;
+export const MAX_NOTE = 4_000;
 
 export interface TicketNote {
   seq: number;

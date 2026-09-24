@@ -77,7 +77,9 @@ export function CardChat({
       <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {c.messages.length === 0 ? (
           <p className="text-fg-subtle text-[12px] leading-5">
-            Chat with the {agentLabel} Agent about this {kind === "epic" ? "Epic" : "ticket"}.
+            {kind === "epic"
+              ? `Chat with the ${agentLabel} Agent about this Epic.`
+              : `Chat with the ${agentLabel} Agent about this ticket. Any agent working it, and every later run, reads what you send.`}
           </p>
         ) : (
           c.messages.map((m) => <Message key={m.id} m={m} />)

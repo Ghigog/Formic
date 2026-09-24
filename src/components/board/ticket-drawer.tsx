@@ -5,6 +5,7 @@ import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { PlanSteps } from "@/components/ui/plan-steps";
+import { SideBySide, WithChat } from "@/components/ui/split";
 import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
@@ -208,39 +209,38 @@ export function TicketDrawer({
           ))}
         </div>
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-2">
-          <section
-            aria-label="Ticket"
-            className={cn(
-              "border-line min-h-0 overflow-y-auto p-4 lg:border-r",
-              tab === "ticket" ? "block" : "hidden lg:block",
-            )}
-          >
-            {view && <TicketBody view={view} />}
-          </section>
-
-          <section
-            aria-label="Agent"
-            className={cn(
-              "bg-sunken min-h-0 flex-col",
-              tab === "agent" ? "flex" : "hidden lg:flex",
-            )}
-          >
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {view && <AgentBody view={view} working={progress.working} />}
-            </div>
-            {view && (
-              <div className="border-line h-[280px] shrink-0 border-t">
-                <CardChat
-                  kind="ticket"
-                  cardId={ticketId}
-                  agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(view.card.status, view.card.stalledIn)]]}
-                />
-              </div>
-            )}
-            {view && <NoteBox ticketId={ticketId} />}
-          </section>
-        </div>
+        <SideBySide
+          storageKey="ticket"
+          first={
+            <section
+              aria-label="Ticket"
+              className={cn("min-h-0 overflow-y-auto p-4", tab === "ticket" ? "block" : "hidden lg:block")}
+            >
+              {view && <TicketBody view={view} />}
+            </section>
+          }
+          second={
+            <section
+              aria-label="Agent"
+              className={cn("bg-sunken min-h-0 flex-col", tab === "agent" ? "flex" : "hidden lg:flex")}
+            >
+              <WithChat
+                storageKey="ticket"
+                chat={
+                  view && (
+                    <CardChat
+                      kind="ticket"
+                      cardId={ticketId}
+                      agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(view.card.status, view.card.stalledIn)]]}
+                    />
+                  )
+                }
+              >
+                <div className="p-4">{view && <AgentBody view={view} working={progress.working} />}</div>
+              </WithChat>
+            </section>
+          }
+        />
       </div>
     </div>
   );
@@ -392,72 +392,6 @@ function StopButton({ ticketId, onStopped }: { ticketId: string; onStopped: () =
     >
       {busy ? "Stopping…" : "Stop agent"}
     </button>
-  );
-}
-
-/**
- * A note to the agent: read at its next step while it works, and given to
- * every later run of the ticket.
- */
-function NoteBox({ ticketId }: { ticketId: string }) {
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const send = async () => {
-    const note = text.trim();
-    if (!note || sending) return;
-    setSending(true);
-    setError(null);
-    const res = await fetch(`/api/tickets/${ticketId}/notes`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: note }),
-    }).catch(() => null);
-    setSending(false);
-    if (res?.ok) setText("");
-    else setError("Could not send the note. Try again.");
-  };
-
-  return (
-    <form
-      className="border-line shrink-0 border-t p-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void send();
-      }}
-    >
-      <label htmlFor={`note-${ticketId}`} className="sr-only">
-        Note to the agent
-      </label>
-      <textarea
-        id={`note-${ticketId}`}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            void send();
-          }
-        }}
-        rows={2}
-        maxLength={2000}
-        placeholder="Tell the agent something, such as a different way to do it"
-        className="border-line bg-surface text-fg placeholder:text-fg-subtle w-full resize-none rounded-md border px-2 py-1.5 text-[12px] leading-5"
-      />
-      <div className="mt-1.5 flex items-center gap-2">
-        <p className="text-fg-subtle min-w-0 flex-1 text-[11px] leading-4">
-          {error ?? "Read at its next step, and by every later run. Codex and Gemini CLI read it on their next run."}
-        </p>
-        <button
-          type="submit"
-          disabled={!text.trim() || sending}
-          className="bg-amber text-on-amber rounded px-2.5 py-1 text-[12px] font-medium disabled:opacity-50"
-        >
-          {sending ? "Sending…" : "Send"}
-        </button>
-      </div>
-    </form>
   );
 }
 
