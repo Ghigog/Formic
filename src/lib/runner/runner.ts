@@ -15,7 +15,7 @@ import {
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { diagnose, lastWords } from "@/lib/agents/limits";
-import { planFromSummary } from "@/lib/agents/plan";
+import { planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo } from "@/lib/llm/providers";
 import { epicNoteTexts } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
@@ -1063,7 +1063,10 @@ export async function receiveReport(input: {
   if (!projectId) return { notes: [], stop: true };
 
   const runId = input.job;
-  let plan: PlanStep[] | null = null;
+  // Seeded from the ticket's last known plan, so early actions in a batch
+  // still get a real fraction instead of falling back to indeterminate.
+  let plan: PlanStep[] = ticket.plan;
+  let planChanged = false;
   for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
     switch (item.kind) {
       case "thought":
@@ -1076,11 +1079,12 @@ export async function receiveReport(input: {
           ticketId: ticket.id,
           role: ticket.status === "review" ? "reviewer" : "coder",
           label: item.label,
-          fraction: null,
+          fraction: planFraction(plan),
         });
         break;
       case "plan":
         plan = item.steps;
+        planChanged = true;
         await publish(projectId, { type: "ticket.plan", ticketId: ticket.id, steps: item.steps });
         break;
       case "log":
@@ -1088,7 +1092,7 @@ export async function receiveReport(input: {
         break;
     }
   }
-  if (plan) await repo.updateTicket(ticket.id, { plan });
+  if (planChanged) await repo.updateTicket(ticket.id, { plan });
 
   const notes = (await ticketNotes(projectId, ticket.id, new Date(input.since)))
     .filter((n) => n.seq > input.after)

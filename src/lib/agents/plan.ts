@@ -44,3 +44,9 @@ export function currentStep(steps: readonly PlanStep[]): number {
   const active = steps.findIndex((s) => s.status === "in_progress");
   return active !== -1 ? active : steps.findIndex((s) => s.status !== "done");
 }
+
+/** Share of a plan's steps marked done, for the card's progress bar. */
+export function planFraction(steps: readonly PlanStep[]): number | null {
+  if (steps.length === 0) return null;
+  return steps.filter((s) => s.status === "done").length / steps.length;
+}
