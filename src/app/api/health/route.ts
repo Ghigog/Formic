@@ -1,4 +1,4 @@
-import { authMode, gatePassword } from "@/lib/auth/session";
+import { authMode, gatePassword, secretProblem } from "@/lib/auth/session";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { hasDatabase } from "@/lib/db";
@@ -36,6 +36,8 @@ export async function GET() {
   if (process.env.VERCEL && config.SANDBOX_PROVIDER === "local") {
     warnings.push(LOCAL_SANDBOX_ON_VERCEL);
   }
+  const secretIssue = secretProblem();
+  if (secretIssue) warnings.push(secretIssue);
 
   let database: "memory" | "postgres" | "unreachable" = "memory";
   let databaseError: string | undefined;
@@ -49,7 +51,7 @@ export async function GET() {
     }
   }
 
-  const ok = database !== "unreachable";
+  const ok = database !== "unreachable" && !secretIssue;
   return Response.json(
     {
       ok,
