@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { checkDecomposition, gherkin, toDraftTicket, type TicketSpec } from "./decomposition";
 import {
+  ALREADY_DONE_RULE,
   ENGINEERING_PRACTICES,
+  VERIFY_RULE,
   withCodingRules,
   withPlanningConventions,
   withProductConventions,
@@ -86,6 +88,18 @@ describe("the engineering practices", () => {
 
   it("give the Product Agent the user story form", () => {
     expect(withProductConventions("x")).toContain("As a <role>, I'd like to <capability>, so that <benefit>.");
+  });
+});
+
+describe("verifying", () => {
+  it("runs each check once, whatever the coding agent's prompt", () => {
+    expect(withCodingRules("Custom coder.")).toContain(VERIFY_RULE);
+    expect(VERIFY_RULE).toContain("Run each check once");
+  });
+
+  it("stops at the report when the work is already done", () => {
+    expect(ALREADY_DONE_RULE).toContain("Then stop.");
+    expect(ALREADY_DONE_RULE).toContain("mention it in your report and change nothing");
   });
 });
 

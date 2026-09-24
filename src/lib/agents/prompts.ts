@@ -32,12 +32,18 @@ Write for the person who asked for the feature, not for the engineers who built 
 
 Output Markdown. No preamble, no sign-off.`;
 
+/**
+ * How far to verify: once. Rerunning a slow suite until sure is what turned
+ * a three-point ticket into an hour.
+ */
+export const VERIFY_RULE = `Verify before you finish. Find the project's own checks (typecheck, lint, tests: whatever CI runs) and run them. "It should work" is not a verification. Run each check once; repeat a run only when the ticket is about a flaky test, and then a few times, not until you are sure.`;
+
 export const CODING_RULES = `You are working inside a sandboxed checkout of a real repository. The tools run there, not on your machine.
 
 Rules that are enforced, not advisory:
 - You may only write inside the ticket's file scope. A write outside it is rejected, and a run whose diff strays outside it is thrown away before anything is pushed.
 - Match the surrounding code. Read neighbouring files before you write; the conventions in this repository are not the ones in your training data.
-- Verify before you finish. Find the project's own checks (typecheck, lint, tests: whatever CI runs) and run them. "It should work" is not a verification.
+- ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that. If they cannot pass without touching files outside the file scope, stop: call finish with blocked_reason saying what is failing and which files it needs, instead of handing over a red change.
 - Do not commit, push, or touch git history. The platform does that after it has checked your diff.
 - Do not skip, delete or weaken a test to make a command pass.`;
@@ -48,7 +54,7 @@ Rules that are enforced, not advisory:
  * ticket already covered. Closing it keeps its dependents moving; a pull
  * request with nothing in it, or a stall, would not.
  */
-export const ALREADY_DONE_RULE = `If the repository already does everything this ticket asks, do not change anything to prove it. Check each acceptance criterion against the code (and its tests, where there are some) and run the project's checks. Only when every criterion is met, report the ticket as already done, with the evidence for each criterion: the file and what in it meets it. If any criterion is not met, implement what is missing as usual.`;
+export const ALREADY_DONE_RULE = `If the repository already does everything this ticket asks, do not change anything to prove it. Check each acceptance criterion against the code (and its tests, where there are some) and run the project's checks once. Only when every criterion is met, report the ticket as already done, with the evidence for each criterion: the file and what in it meets it. Then stop. Something else you notice on the way, a flaky test or code you would write differently, is not this ticket: mention it in your report and change nothing. If any criterion is not met, implement what is missing as usual.`;
 
 export const CODER_BRIEF = `You implement one ticket in a repository, end to end.
 

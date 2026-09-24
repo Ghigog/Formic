@@ -27,6 +27,7 @@ import {
   SHOWCASE_BRIEF,
   ENGINEERING_PRACTICES,
   HANDOFF_RULE,
+  VERIFY_RULE,
   withPlanningConventions,
   withProductConventions,
 } from "@/lib/agents/prompts";
@@ -90,7 +91,7 @@ const MAX_REPORT = 20_000;
 const CLI_RULES = `Rules that are enforced, not advisory:
 - Only change files inside the ticket's file scope. Formic compares your changes to it, and throws the whole run away if anything outside it changed.
 - Match the surrounding code. Read neighbouring files before you write.
-- Verify before you finish. Find the project's own checks (typecheck, lint, tests: whatever CI runs) and run them.
+- ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that. If they cannot pass without touching files outside the file scope, stop: undo your changes, and end by saying what is failing and which files it needs.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
