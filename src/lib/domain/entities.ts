@@ -42,6 +42,22 @@ export type CardKind = (typeof CARD_KINDS)[number];
 export const TICKET_SIZES = ["S", "M", "L", "XL"] as const;
 export type TicketSize = (typeof TICKET_SIZES)[number];
 
+export const ATTACHMENT_KINDS = ["image", "file"] as const;
+export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
+
+/**
+ * What the client and drawers see of a stored file: never the raw bytes,
+ * which stay behind attachmentContent so a board payload never carries them.
+ */
+export interface AttachmentSummary {
+  id: string;
+  filename: string;
+  mimeType: string;
+  kind: AttachmentKind;
+  size: number;
+  url: string;
+}
+
 /** Story points: the Fibonacci scale from 1 to 13. */
 export const STORY_POINTS = [1, 2, 3, 5, 8, 13] as const;
 export type StoryPoints = (typeof STORY_POINTS)[number];
@@ -101,6 +117,10 @@ export const epicSchema = z.object({
   stage: z.number().int().min(1).max(8),
   position: z.number(),
   showcase: z.string().nullable().default(null),
+  /** A holder for a ticket with no Epic of its own. See BoardCard.standalone. */
+  standalone: z.boolean().default(false),
+  rerouteFrom: z.enum(COLUMNS).nullable().default(null),
+  rerouteReason: z.string().nullable().default(null),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
@@ -124,6 +144,8 @@ export const ticketSchema = z.object({
   prNumber: z.number().int().nullable().default(null),
   prUrl: z.string().nullable().default(null),
   blockedReason: z.string().nullable().default(null),
+  rerouteFrom: z.enum(COLUMNS).nullable().default(null),
+  rerouteReason: z.string().nullable().default(null),
   attempts: z.number().int().min(0).default(0),
   costCents: z.number().min(0).default(0),
   tokensIn: z.number().int().min(0).default(0),
@@ -169,6 +191,15 @@ export interface BoardCard {
   epicId: string | null;
   /** A ticket the user pulled out of its epic's group. Renders on its own. */
   detached?: boolean;
+  /**
+   * Epics only: a holder for a ticket with no Epic of its own. Never its own
+   * card on the board — boardCards() excludes it, and its one child ticket
+   * renders alone, marked detached, exactly as today.
+   */
+  standalone?: boolean;
+  /** The column a request was rerouted from, and why. Null outside a reroute. */
+  rerouteFrom?: (typeof COLUMNS)[number] | null;
+  rerouteReason?: string | null;
   size: TicketSize | null;
   /** Tickets only: the estimate, 1 to 13. Null when none was given. */
   storyPoints?: number | null;

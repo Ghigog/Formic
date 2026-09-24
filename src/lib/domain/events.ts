@@ -1,4 +1,5 @@
 import { AGENT_ROLES, type PlanStep } from "./entities";
+import type { ColumnId } from "./status";
 
 /**
  * Everything the client learns about asynchronously. Delivered over SSE by
@@ -32,6 +33,15 @@ export type FormicEvent =
       kind: "epic" | "ticket";
       /** The GitHub issues that tracked it and its tickets, to close. */
       issueNumbers: number[];
+    }
+  | {
+      /** A request moved to another column: rerouteFrom/rerouteReason changed. */
+      type: "card.rerouted";
+      cardId: string;
+      kind: "epic" | "ticket";
+      from: ColumnId;
+      to: ColumnId;
+      reason: string;
     }
   | {
       type: "epic.prd";

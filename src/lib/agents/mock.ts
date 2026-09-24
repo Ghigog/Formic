@@ -1,4 +1,5 @@
 import type {
+  AgentAttachment,
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
@@ -56,8 +57,13 @@ function titleFrom(raw: string): string {
 export class MockProductAgent implements ProductAgent {
   async draftPrd(
     ctx: AgentContext,
-    input: { epicId: string; rawRequest: string },
-  ): Promise<AgentOutcome<{ title: string; prd: Prd }>> {
+    input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<
+      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "reroute"; reason: string; ticket: DraftTicket }
+    >
+  > {
     const title = titleFrom(input.rawRequest);
     const prd: Prd = {
       summary: `Deliver "${title}" end to end, from data model through UI, behind the existing project conventions.`,
@@ -102,7 +108,7 @@ export class MockProductAgent implements ProductAgent {
     }
     ctx.emit({ type: "epic.prd", epicId: input.epicId, delta: "", done: true });
 
-    return { ok: true, value: { title, prd }, usage: MOCK_USAGE };
+    return { ok: true, value: { kind: "prd", title, prd }, usage: MOCK_USAGE };
   }
 }
 
@@ -179,6 +185,40 @@ export class MockArchitectAgent implements ArchitectAgent {
     ];
 
     return { ok: true, value: tickets, usage: MOCK_USAGE };
+  }
+
+  async draftTicket(
+    ctx: AgentContext,
+    input: { rawRequest: string; repoTree: string[]; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
+  > {
+    const title = titleFrom(input.rawRequest);
+    ctx.emit({
+      type: "run.progress",
+      runId: ctx.runId,
+      ticketId: null,
+      role: "architect",
+      label: "Drafting ticket",
+      fraction: 1,
+    });
+    await sleep(300, ctx.signal);
+
+    const ticket: DraftTicket = {
+      key: "T-1",
+      title,
+      description: `Implement "${title}" as described in the raw request.`,
+      acceptanceCriteria: [
+        "The behaviour described in the request works end to end",
+        "Existing tests still pass",
+      ],
+      fileScope: ["src"],
+      size: "M",
+      storyPoints: 3,
+      dependsOn: [],
+    };
+
+    return { ok: true, value: { kind: "ticket", ticket }, usage: MOCK_USAGE };
   }
 }
 

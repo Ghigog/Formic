@@ -200,7 +200,11 @@ describe("structured answers from OpenAI-format providers", () => {
       apiKey: "AIza",
     });
 
-    const outcome = await agent.draftPrd(ctx(), { epicId: "e", rawRequest: "add x" });
+    const outcome = await agent.draftPrd(ctx(), {
+      epicId: "e",
+      rawRequest: "add x",
+      attachments: [],
+    });
 
     expect(outcome).toMatchObject({ ok: true, value: { title: "Add x" } });
     expect(sent).toHaveLength(2);
@@ -216,7 +220,11 @@ describe("structured answers from OpenAI-format providers", () => {
       { role: "assistant", content: JSON.stringify({ title: "Add x", prd: PRD }) },
     ]);
     const agent = new OpenAiProductAgent({ provider: "groq", model: "m", apiKey: "gsk" });
-    const outcome = await agent.draftPrd(ctx(), { epicId: "e", rawRequest: "add x" });
+    const outcome = await agent.draftPrd(ctx(), {
+      epicId: "e",
+      rawRequest: "add x",
+      attachments: [],
+    });
     expect(outcome.ok).toBe(true);
     expect(sent[1]!.body.response_format).toBeUndefined();
   });

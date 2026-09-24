@@ -351,10 +351,20 @@ export async function runProductAgent(
   const outcome = await (await agentFor(projectId, "product")).draftPrd(run.ctx, {
     epicId,
     rawRequest,
+    attachments: [],
   });
 
   if (outcome.ok) {
-    await applyPrd(projectId, epicId, outcome.value.prd);
+    if (outcome.value.kind === "prd") {
+      await applyPrd(projectId, epicId, outcome.value.prd);
+    } else {
+      // Rerouting is not wired up yet; a reroute outcome just stalls the Epic.
+      await stallEpic(projectId, epicId, outcome.value.reason, {
+        blocked: true,
+        stalledIn: "backlog",
+        stage: 2,
+      });
+    }
   } else {
     await stallEpic(projectId, epicId, outcome.error, {
       blocked: outcome.blocked,
