@@ -10,6 +10,7 @@ import { columnChatAgentFor } from "./presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { addNote } from "@/lib/coder/notes";
+import { publish } from "@/lib/events/bus";
 import { repository } from "@/lib/db";
 import type { CardChatMessage } from "@/lib/db/repository";
 import { COLUMN_AGENT_ROLE, AGENT_ROLE_LABELS } from "@/lib/domain/entities";
@@ -159,17 +160,64 @@ export async function answer(
   cardId: string,
   messageId: string,
 ): Promise<void> {
+  const spoke = await reply(cardKind, cardId, messageId);
+  if (cardKind === "ticket") await logReply(cardId, messageId, spoke);
+}
+
+/**
+ * A ticket's chat shows in its log, beside the notes a person sends: the
+ * answer goes there too, so one feed holds the whole conversation.
+ */
+async function logReply(ticketId: string, messageId: string, byAgent: boolean): Promise<void> {
+  const repo = repository();
+  const [message, card, projectId] = await Promise.all([
+    repo.cardChatMessage(messageId),
+    repo.cardById(ticketId),
+    repo.projectOfCard(ticketId),
+  ]);
+  if (!message?.content.trim() || !card || !projectId) return;
+  const role = COLUMN_AGENT_ROLE[columnFor(card.status, card.stalledIn)];
+  await publish(projectId, {
+    type: "ticket.reply",
+    ticketId,
+    agent: byAgent ? `${AGENT_ROLE_LABELS[role]} Agent` : null,
+    text: message.content,
+  });
+}
+
+/** Answers the message; true when the column's agent did, false for a notice. */
+async function reply(
+  cardKind: "epic" | "ticket",
+  cardId: string,
+  messageId: string,
+): Promise<boolean> {
   const repo = repository();
   try {
     const card = await repo.cardById(cardId);
     const projectId = await repo.projectOfCard(cardId);
     if (!card || !projectId) {
       await finish(messageId, { content: "This card no longer exists.", status: "failed" });
-      return;
+      return false;
     }
     const column = columnFor(card.status, card.stalledIn);
     const role = COLUMN_AGENT_ROLE[column];
     const agent = await columnChatAgentFor(projectId, column);
+
+    // A CLI agent has no live chat, but the agent working the ticket reads
+    // the message between its steps and answers in the ticket's log, like a
+    // note dropped into a running Claude Code session. Nothing to add here
+    // while it works; when nothing is working it, say when it will be read.
+    if (agent.kind === "cli" && cardKind === "ticket") {
+      const detail = await repo.ticketDetail(cardId);
+      const working = card.status === "running" || !!detail?.runnerJob || !!card.workingSince;
+      await finish(messageId, {
+        content: working
+          ? ""
+          : "Nothing is working this ticket right now. Its agent reads this when it next runs.",
+        status: "done",
+      });
+      return false;
+    }
 
     if (agent.kind === "none" || agent.kind === "limited" || agent.kind === "cli") {
       const reason =
@@ -182,7 +230,7 @@ export async function answer(
           ? { content: `${reason} Your message was passed on to the agent working this ticket.`, status: "done" }
           : { content: reason, status: "failed" },
       );
-      return;
+      return false;
     }
 
     const project = await projectFor(projectId);
@@ -215,7 +263,7 @@ export async function answer(
       const { text, calls } = await speak(results);
       if (calls.length === 0) {
         await finish(messageId, { content: text || "I have nothing to add.", status: "done" });
-        return;
+        return true;
       }
       results = [];
       for (const call of calls) {
@@ -229,6 +277,7 @@ export async function answer(
   } catch (e) {
     await finish(messageId, { content: e instanceof Error ? e.message : String(e), status: "failed" });
   }
+  return false;
 }
 
 export class ChatBusyError extends Error {

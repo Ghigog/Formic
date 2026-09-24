@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { answer, ask as send } from "./card-chat";
 import { savePreset } from "./presets";
 import { MAX_NOTE, noteTexts } from "@/lib/coder/notes";
+import { ACTIVITY_EVENTS, activityOf } from "@/lib/domain/ticket-view";
+import type { FormicEvent } from "@/lib/domain/events";
 import { resetAgents } from "./registry";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
@@ -141,15 +143,55 @@ describe("a ticket's chat", () => {
     expect(done.content).toContain("passed on to the agent working this ticket");
   });
 
-  it("says a CLI agent cannot reply, and that the message was passed on", async () => {
+  it("adds nothing while a CLI agent works the ticket: it answers in the ticket's log", async () => {
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, { status: "running" });
+    await assignAgent("in_progress", "claude-code");
+    const pending = await ask("ticket", ticket.id, "How's it going?");
+    await answer("ticket", ticket.id, pending.id);
+    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "" });
+  });
+
+  it("says when a CLI agent will read it, when nothing is working the ticket", async () => {
     const ticket = await seedTicket();
     await assignAgent("todo", "claude-code");
     const pending = await ask("ticket", ticket.id, "Split this?");
     await answer("ticket", ticket.id, pending.id);
     const done = await reload(pending.id);
     expect(done.status).toBe("done");
-    expect(done.content).toContain("runs in GitHub Actions and cannot reply here");
-    expect(done.content).toContain("passed on to the agent working this ticket");
+    expect(done.content).toContain("reads this when it next runs");
+    expect(done.content).not.toContain("cannot reply");
+  });
+
+  it("puts the answer in the ticket's log, under whoever gave it", async () => {
+    const ticket = await seedTicket();
+    await assignAgent("todo");
+    fakeProvider([{ role: "assistant", content: "Two files, one test." }]);
+    const pending = await ask("ticket", ticket.id, "How big is this?");
+    await answer("ticket", ticket.id, pending.id);
+
+    await assignAgent("todo", "claude-code");
+    const idle = await ask("ticket", ticket.id, "Split this?");
+    await answer("ticket", ticket.id, idle.id);
+
+    const rows = await repository().ticketEvents(PROJECT, ticket.id, [...ACTIVITY_EVENTS], 50);
+    const replies = rows
+      .map((r) => activityOf(r.payload as FormicEvent, ticket.id, r.seq, r.at.toISOString()))
+      .filter((a) => a?.kind === "reply");
+    expect(replies).toMatchObject([
+      { agent: "Architect Agent", text: "Two files, one test." },
+      { agent: null, text: expect.stringContaining("reads this when it next runs") },
+    ]);
+  });
+
+  it("logs nothing while a CLI agent works the ticket: its own answer is in the log", async () => {
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, { status: "running" });
+    await assignAgent("in_progress", "claude-code");
+    const pending = await ask("ticket", ticket.id, "How's it going?");
+    await answer("ticket", ticket.id, pending.id);
+    const rows = await repository().ticketEvents(PROJECT, ticket.id, ["ticket.reply"], 50);
+    expect(rows).toHaveLength(0);
   });
 
   it("passes every message on to the agent as a note", async () => {

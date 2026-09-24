@@ -11,9 +11,14 @@ export interface TicketActivity {
   /** The event it came from, for ordering and de-duplication. */
   seq: number;
   at: string;
-  /** Reasoning, what it said, an action it took, or a person's note to it. */
-  kind: "thinking" | "text" | "action" | "note";
+  /**
+   * Reasoning, what it said, an action it took, a person's note to it, or
+   * the column's agent answering that note.
+   */
+  kind: "thinking" | "text" | "action" | "note" | "reply";
   text: string;
+  /** Replies only: which agent answered, or null for a notice. */
+  agent?: string | null;
 }
 
 export interface TicketView {
@@ -33,7 +38,7 @@ export interface TicketView {
 }
 
 /** The event types a ticket's activity is made of. */
-export const ACTIVITY_EVENTS = ["run.thought", "run.progress", "ticket.note"] as const;
+export const ACTIVITY_EVENTS = ["run.thought", "run.progress", "ticket.note", "ticket.reply"] as const;
 
 /** An event as a line of activity, or null when it is not one for this ticket. */
 export function activityOf(
@@ -47,6 +52,9 @@ export function activityOf(
   }
   if (event.type === "ticket.note" && event.ticketId === ticketId) {
     return { seq, at, kind: "note", text: event.text };
+  }
+  if (event.type === "ticket.reply" && event.ticketId === ticketId) {
+    return { seq, at, kind: "reply", text: event.text, agent: event.agent };
   }
   if (event.type === "run.progress" && event.ticketId === ticketId) {
     return { seq, at, kind: "action", text: event.label };

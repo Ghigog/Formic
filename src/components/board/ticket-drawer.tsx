@@ -226,10 +226,12 @@ export function TicketDrawer({
             >
               <WithChat
                 storageKey="ticket"
+                fixed
                 chat={
                   view && (
                     <CardChat
                       kind="ticket"
+                      inputOnly
                       cardId={ticketId}
                       agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(view.card.status, view.card.stalledIn)]]}
                     />
@@ -400,6 +402,17 @@ function ActivityLine({ item }: { item: TicketActivity }) {
     return (
       <li className="border-amber/50 bg-surface ml-6 rounded-md border px-2 py-1.5 text-[12px] leading-5 whitespace-pre-wrap">
         <span className="text-ochre-text mr-1 font-semibold">You:</span>
+        {item.text}
+      </li>
+    );
+  }
+  if (item.kind === "reply" && !item.agent) {
+    return <li className="text-fg-muted px-2 text-[11px] leading-5 italic">{item.text}</li>;
+  }
+  if (item.kind === "reply") {
+    return (
+      <li className="bg-surface text-fg mr-6 rounded-md px-2 py-1.5 text-[12px] leading-5 whitespace-pre-wrap">
+        <span className="text-fg-muted mr-1 font-semibold">{item.agent}:</span>
         {item.text}
       </li>
     );

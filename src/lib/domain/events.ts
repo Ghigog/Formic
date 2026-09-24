@@ -87,6 +87,17 @@ export type FormicEvent =
       text: string;
     }
   | {
+      /** The column's agent answering a person's note on a ticket's chat. */
+      type: "ticket.reply";
+      ticketId: string;
+      /**
+       * The agent that answered, such as "Architect Agent". Null for a notice
+       * about the message itself, such as no agent being set for the column.
+       */
+      agent: string | null;
+      text: string;
+    }
+  | {
       /** The plan an agent is working a ticket through, as it stands now. */
       type: "ticket.plan";
       ticketId: string;
