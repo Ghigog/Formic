@@ -410,6 +410,20 @@ describe("an agent out of usage", () => {
     });
     expect(saved.limitedUntil).toBeNull();
   });
+
+  it("can be cleared by hand, for a mark that was stale or set on the wrong agent", async () => {
+    const preset = await assignClaudeCode();
+    await repository().setPresetLimit(preset.id, {
+      until: new Date(Date.now() + 3_600_000),
+      note: "Claude Code hit its usage limit.",
+    });
+
+    await repository().setPresetLimit(preset.id, null);
+
+    const cleared = (await repository().presetForRun(preset.id))!.preset;
+    expect(cleared.limitedUntil).toBeNull();
+    expect(cleared.limitNote).toBeNull();
+  });
 });
 
 describe("taking a CLI agent's work", () => {

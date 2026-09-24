@@ -159,13 +159,28 @@ describe("Column with an agent out of usage", () => {
         cards={[]}
         extras={{}}
         onOpen={noop}
-        agent={{ presets: [preset], selected: preset, onAssign: vi.fn(), onEdit: vi.fn() }}
+        agent={{ presets: [preset], selected: preset, onAssign: vi.fn(), onEdit: vi.fn(), onClearLimit: vi.fn() }}
       />,
     );
     const region = screen.getByRole("region", { name: "In Progress" });
     expect(region).toHaveAttribute("data-limited", "true");
     expect(within(region).getByRole("status")).toHaveTextContent("Claude (work) is out of usage");
     expect(within(region).getByLabelText(/^Available in 2:0[45]:\d\d$/)).toBeInTheDocument();
+  });
+
+  it("clears a stale or wrongly attributed limit by hand", async () => {
+    const onClearLimit = vi.fn();
+    renderInDnd(
+      <Column
+        id="in_progress"
+        cards={[]}
+        extras={{}}
+        onOpen={noop}
+        agent={{ presets: [preset], selected: preset, onAssign: vi.fn(), onEdit: vi.fn(), onClearLimit }}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /wrong\? clear/i }));
+    expect(onClearLimit).toHaveBeenCalledWith("p1");
   });
 
   it("is open again once the time has passed", () => {
@@ -176,7 +191,7 @@ describe("Column with an agent out of usage", () => {
         cards={[]}
         extras={{}}
         onOpen={noop}
-        agent={{ presets: [back], selected: back, onAssign: vi.fn(), onEdit: vi.fn() }}
+        agent={{ presets: [back], selected: back, onAssign: vi.fn(), onEdit: vi.fn(), onClearLimit: vi.fn() }}
       />,
     );
     expect(screen.getByRole("region", { name: "In Progress" })).not.toHaveAttribute("data-limited");
