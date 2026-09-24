@@ -203,6 +203,13 @@ export class PrismaRepository implements Repository {
     ]);
   }
 
+  async deleteUser(userId: string): Promise<void> {
+    // Their projects and presets cascade to everything under them: epics,
+    // tickets, runs, dependencies, events, column agents, and both kinds of
+    // chat message. See onDelete: Cascade in schema.prisma.
+    await prisma().user.delete({ where: { id: userId } });
+  }
+
   async projectOfCard(cardId: string): Promise<string | null> {
     const db = prisma();
     const epic = await db.epic.findUnique({

@@ -288,6 +288,8 @@ export interface Repository {
   countUsers(): Promise<number>;
   /** Gives a user every unowned project and preset. */
   adoptUnowned(userId: string): Promise<void>;
+  /** Removes a person and everything they own: projects, presets, and all that cascades from those. */
+  deleteUser(userId: string): Promise<void>;
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
