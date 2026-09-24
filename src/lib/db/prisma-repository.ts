@@ -5,8 +5,10 @@ import { isProviderId } from "@/lib/llm/providers";
 
 import { prisma } from "./client";
 import type {
+  ActiveRun,
   CreateEpicInput,
   CreateTicketInput,
+  EpicRunSpend,
   MoveInput,
   GithubProfile,
   OwnerScope,
@@ -766,6 +768,44 @@ export class PrismaRepository implements Repository {
       sandboxId: r.sandboxId,
       status: r.status,
     }));
+  }
+
+  async addRunSpend(runId: string, deltaCents: number): Promise<void> {
+    await prisma().agentRun.updateMany({
+      where: { id: runId },
+      data: { costCents: { increment: deltaCents } },
+    });
+  }
+
+  async epicRunSpend(epicId: string): Promise<EpicRunSpend[]> {
+    return prisma().agentRun.findMany({
+      where: { epicId },
+      select: { costCents: true, status: true, startedAt: true, finishedAt: true },
+    });
+  }
+
+  async activeRuns(projectId: string): Promise<ActiveRun[]> {
+    return prisma().agentRun.findMany({
+      where: {
+        status: { in: ["queued", "running"] },
+        OR: [{ epic: { projectId } }, { ticket: { epic: { projectId } } }],
+      },
+      select: { id: true, sandboxId: true },
+    });
+  }
+
+  async requestStop(projectId: string): Promise<Date> {
+    const stopRequestedAt = new Date();
+    await prisma().project.update({ where: { id: projectId }, data: { stopRequestedAt } });
+    return stopRequestedAt;
+  }
+
+  async stopRequestedAt(projectId: string): Promise<Date | null> {
+    const row = await prisma().project.findUnique({
+      where: { id: projectId },
+      select: { stopRequestedAt: true },
+    });
+    return row?.stopRequestedAt ?? null;
   }
 
   async listPresets(scope: OwnerScope): Promise<AgentPreset[]> {

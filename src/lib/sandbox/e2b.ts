@@ -141,6 +141,14 @@ class E2BSandboxHandle implements SandboxHandle {
 export class E2BSandboxProvider implements SandboxProvider {
   readonly name = "e2b";
 
+  async disposeById(id: string): Promise<void> {
+    const apiKey = requireCredential("E2B_API_KEY", "The E2B sandbox provider");
+    const mod = (await import("@e2b/code-interpreter")) as unknown as {
+      Sandbox: { kill(sandboxId: string, opts?: { apiKey: string }): Promise<boolean> };
+    };
+    await mod.Sandbox.kill(id, { apiKey });
+  }
+
   async spawn(options: SpawnOptions): Promise<SandboxHandle> {
     const apiKey =
       options.e2bApiKey || requireCredential("E2B_API_KEY", "The E2B sandbox provider");

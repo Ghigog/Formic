@@ -95,6 +95,10 @@ model Project {
   /// The highest Epic number this project has given out, deleted Epics
   /// included, so a number is never handed out twice.
   lastEpicNumber Int @default(0)
+  /// When "Stop all" was last pressed. A durable flag: whichever instance a
+  /// run lives on, it polls this between steps rather than an in-process
+  /// signal that only reaches the instance that raised it.
+  stopRequestedAt DateTime?
 
   epics        Epic[]
   events       Event[]
@@ -266,6 +270,7 @@ model AgentRun {
 
   @@index([status])
   @@index([ticketId])
+  @@index([epicId])
   @@map("agent_run")
 }
 

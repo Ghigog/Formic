@@ -138,6 +138,71 @@ describe("Epic numbers on the in-memory store", () => {
   });
 });
 
+describe("runs on the in-memory store", () => {
+  it("keeps a run's spend and start time across a second journal, such as attaching a sandbox", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+
+    await repo.startRun({ id: "r1", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.addRunSpend("r1", 42);
+    const [before] = await repo.epicRunSpend(epic.id);
+
+    await repo.startRun({ id: "r1", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: "sbx1" });
+
+    const [after] = await repo.epicRunSpend(epic.id);
+    expect(after?.costCents).toBe(42);
+    expect(after?.startedAt).toEqual(before?.startedAt);
+    expect((await repo.activeRuns(project.id))[0]).toEqual({ id: "r1", sandboxId: "sbx1" });
+  });
+
+  it("sums a run's spend into its Epic's, live and finished runs alike", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+
+    await repo.startRun({ id: "finished", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.addRunSpend("finished", 150);
+    await repo.finishRun("finished", { status: "succeeded", error: null, tokensIn: 0, tokensOut: 0, costCents: 150 });
+
+    await repo.startRun({ id: "live", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: null });
+    await repo.addRunSpend("live", 50);
+
+    const rows = await repo.epicRunSpend(epic.id);
+    expect(rows).toHaveLength(2);
+    expect(rows.reduce((sum, r) => sum + r.costCents, 0)).toBe(200);
+    expect(rows.find((r) => r.status === "succeeded")?.finishedAt).toBeInstanceOf(Date);
+    expect(rows.find((r) => r.status === "running")?.finishedAt).toBeNull();
+  });
+
+  it("finds every run still going on a project, by its sandbox, for the global stop", async () => {
+    const repo = new MemoryRepository();
+    const home = await repo.defaultProject();
+    const other = await repo.ensureProject({ ownerId: "u1", repoFullName: "acme/widgets", baseBranch: "main" });
+    const epic = await repo.createEpic({ projectId: other.id, title: "e", rawRequest: "e", position: 1 });
+
+    await repo.startRun({ id: "running", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: "sbx1" });
+    await repo.startRun({ id: "done", role: "coder", epicId: epic.id, ticketId: null, model: null, sandboxId: "sbx2" });
+    await repo.finishRun("done", { status: "succeeded", error: null, tokensIn: 0, tokensOut: 0, costCents: 0 });
+
+    expect(await repo.activeRuns(other.id)).toEqual([{ id: "running", sandboxId: "sbx1" }]);
+    expect(await repo.activeRuns(home.id)).toEqual([]);
+  });
+
+  it("keeps the stop flag durable and per project", async () => {
+    const repo = new MemoryRepository();
+    const home = await repo.defaultProject();
+    const other = await repo.ensureProject({ ownerId: "u1", repoFullName: "acme/widgets", baseBranch: "main" });
+
+    expect(await repo.stopRequestedAt(home.id)).toBeNull();
+
+    const at = await repo.requestStop(home.id);
+
+    expect(await repo.stopRequestedAt(home.id)).toEqual(at);
+    expect(await repo.stopRequestedAt(other.id)).toBeNull();
+  });
+});
+
 describe("how long an agent has been at a card", () => {
   it("dates an Epic's work from when its job was sent, and clears it after", async () => {
     const repo = new MemoryRepository();

@@ -10,7 +10,9 @@ import {
   checkBudget,
 } from "./limits";
 import { publish } from "@/lib/events/bus";
-import { disposeAllSandboxes } from "@/lib/sandbox";
+import { disposeSandboxes } from "@/lib/sandbox";
+import { repository } from "@/lib/db";
+import type { EpicRunSpend } from "@/lib/db/repository";
 
 /**
  * Live run registry and the global stop.
@@ -73,6 +75,22 @@ export function activeRunCount(projectId?: string): number {
 }
 
 /**
+ * An Epic's cumulative spend from every run charged against it, finished
+ * ones included: summed from the database so a run that ended, on this
+ * instance or another, is never forgotten.
+ */
+function epicSpendFrom(rows: EpicRunSpend[]): Spend {
+  const now = Date.now();
+  return rows.reduce((acc, r) => {
+    const elapsedMs = r.startedAt
+      ? (r.finishedAt ?? new Date(now)).getTime() - r.startedAt.getTime()
+      : 0;
+    const attempts = r.status === "queued" || r.status === "running" ? 0 : 1;
+    return addSpend(acc, { cents: r.costCents, elapsedMs, attempts });
+  }, ZERO_SPEND);
+}
+
+/**
  * Records spend and aborts the run if it, or its Epic, has hit a ceiling.
  * Returns false when the run was stopped.
  */
@@ -85,6 +103,7 @@ export async function recordSpend(
 
   run.spend = addSpend(run.spend, delta);
   run.spend.elapsedMs = Date.now() - run.startedAt;
+  if (delta.cents) await repository().addRunSpend(runId, delta.cents);
 
   const verdict = checkBudget(run.spend, run.budget);
   if (!verdict.ok) {
@@ -93,10 +112,7 @@ export async function recordSpend(
   }
 
   if (run.epicId) {
-    const epicSpend = [...runs().values()]
-      .filter((r) => r.epicId === run.epicId)
-      .reduce((acc, r) => addSpend(acc, r.spend), { ...ZERO_SPEND });
-
+    const epicSpend = epicSpendFrom(await repository().epicRunSpend(run.epicId));
     const epicVerdict = checkBudget(epicSpend, DEFAULT_EPIC_BUDGET);
     if (!epicVerdict.ok) {
       await stopEpic(run.epicId, `Epic budget: ${epicVerdict.reason}`);
@@ -148,20 +164,29 @@ export async function stopEpic(epicId: string, reason: string): Promise<void> {
   }
 }
 
-/** The visible global stop. Halts every run and lets sandboxes dispose. */
+/**
+ * The visible global stop. A durable flag first, so a run on another
+ * instance discovers it between its own turns; then whatever this instance
+ * can reach directly: its own local runs, aborted now, and every sandbox on
+ * the project, disposed by the id the database has for it rather than by
+ * what this process's registry happens to hold.
+ */
 export async function stopAll(
   projectId: string,
   reason = "Stopped by a human.",
 ): Promise<number> {
-  const targets = [...runs().values()].filter((r) => r.projectId === projectId);
-  for (const run of targets) {
+  await repository().requestStop(projectId);
+
+  for (const run of [...runs().values()].filter((r) => r.projectId === projectId)) {
     await stopRun(run.runId, reason, "global");
   }
 
-  // Aborting a run asks the agent to stop. Disposing the sandboxes makes it
-  // true regardless of whether the agent was listening.
-  await disposeAllSandboxes(projectId);
-  return targets.length;
+  const active = await repository().activeRuns(projectId);
+  const sandboxIds = active
+    .map((r) => r.sandboxId)
+    .filter((id): id is string => id !== null);
+  await disposeSandboxes(projectId, sandboxIds);
+  return active.length;
 }
 
 export function spendFor(runId: string): Spend | null {

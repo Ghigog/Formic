@@ -80,11 +80,22 @@ export function startRun(
     // another instance than the one running the agent.
     interrupts: ticketId
       ? async () => {
-          const ticket = await repository().ticketDetail(ticketId);
-          const stopped =
-            ticket && (ticket.status === "blocked" || ticket.status === "failed")
-              ? (ticket.blockedReason ?? "Stopped.")
+          const [ticket, stopRequestedAt] = await Promise.all([
+            repository().ticketDetail(ticketId),
+            repository().stopRequestedAt(projectId),
+          ]);
+          // A durable flag, not the local AbortController: "Stop all" may
+          // have been pressed on another instance than the one running this.
+          // A request from before this run began is someone else's stop.
+          const globalStop =
+            stopRequestedAt && stopRequestedAt.getTime() >= startedAt.getTime()
+              ? "Stopped by a human."
               : null;
+          const stopped =
+            globalStop ??
+            (ticket && (ticket.status === "blocked" || ticket.status === "failed")
+              ? (ticket.blockedReason ?? "Stopped.")
+              : null);
           const fresh = (await ticketNotes(projectId, ticketId, startedAt)).filter(
             (n) => !heard.has(n.seq),
           );

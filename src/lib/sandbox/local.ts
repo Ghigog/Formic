@@ -167,6 +167,12 @@ class LocalSandbox implements SandboxHandle {
 export class LocalSandboxProvider implements SandboxProvider {
   readonly name = "local";
 
+  async disposeById(): Promise<void> {
+    // A local sandbox is a child process in this instance's own temp
+    // directory: another instance has no way to reach it. Its own TTL timer
+    // disposes it regardless.
+  }
+
   async spawn(options: SpawnOptions): Promise<SandboxHandle> {
     const id = `local_${randomUUID().slice(0, 8)}`;
     const dir = await mkdtemp(path.join(tmpdir(), "formic-"));

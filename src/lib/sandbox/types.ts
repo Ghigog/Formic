@@ -63,6 +63,11 @@ export interface SpawnOptions {
 export interface SandboxProvider {
   readonly name: string;
   spawn(options: SpawnOptions): Promise<SandboxHandle>;
+  /**
+   * Kills a sandbox this process holds no handle for: it was spawned by
+   * another instance. Best-effort; a provider with no such reach is a no-op.
+   */
+  disposeById(id: string): Promise<void>;
 }
 
 export class SandboxError extends Error {

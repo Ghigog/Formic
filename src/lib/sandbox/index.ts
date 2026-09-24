@@ -64,12 +64,23 @@ export async function spawnSandbox(
   return handle;
 }
 
-export async function disposeAllSandboxes(projectId: string): Promise<number> {
-  const handles = [...live().values()];
-  await Promise.allSettled(handles.map((h) => h.dispose()));
-  live().clear();
-  await announce(projectId, env().SANDBOX_PROVIDER);
-  return handles.length;
+/**
+ * Disposes sandboxes by id, not by what this process happens to hold: the
+ * ids come from the database, so a sandbox spawned on another instance is
+ * reached too, not only the ones this process's registry knows about.
+ */
+export async function disposeSandboxes(projectId: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const provider = sandboxProvider();
+  const registry = live();
+  await Promise.allSettled(
+    ids.map(async (id) => {
+      const handle = registry.get(id);
+      if (handle) await handle.dispose();
+      else await provider.disposeById(id);
+    }),
+  );
+  await announce(projectId, provider.name);
 }
 
 async function announce(projectId: string, provider: string): Promise<void> {

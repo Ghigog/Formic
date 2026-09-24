@@ -3,8 +3,10 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 
 import type {
+  ActiveRun,
   CreateEpicInput,
   CreateTicketInput,
+  EpicRunSpend,
   MoveInput,
   GithubProfile,
   OwnerScope,
@@ -84,13 +86,18 @@ interface Store {
     payload: unknown;
     at: Date;
   }>;
-  runs: Map<string, RunRecord & { status: AgentRunStatus; startedAt: Date }>;
+  runs: Map<
+    string,
+    RunRecord & { status: AgentRunStatus; startedAt: Date; finishedAt: Date | null; costCents: number }
+  >;
   deliveries: Set<string>;
   presets: Map<string, AgentPreset & { apiKeyCipher: string | null }>;
   users: Map<string, UserRecord>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
   assistant: AssistantMessage[];
+  /** When "Stop all" was last pressed on a project, by project id. */
+  stopRequests: Map<string, Date>;
 }
 
 declare global {
@@ -107,6 +114,11 @@ function store(): Store {
     existing.epicNumbers ??= new Map();
     existing.prdTimes ??= new Map();
     existing.epicJobTimes ??= new Map();
+    existing.stopRequests ??= new Map();
+    for (const run of existing.runs.values()) {
+      run.costCents ??= 0;
+      run.finishedAt ??= null;
+    }
     return existing;
   }
   const project: ProjectSummary = {
@@ -137,6 +149,7 @@ function store(): Store {
     users: new Map(),
     columnAgents: new Map(),
     assistant: [],
+    stopRequests: new Map(),
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -675,12 +688,24 @@ export class MemoryRepository implements Repository {
   }
 
   async startRun(run: RunRecord): Promise<void> {
-    store().runs.set(run.id, { ...run, status: "running", startedAt: new Date() });
+    const s = store();
+    const existing = s.runs.get(run.id);
+    if (existing) {
+      // A run journals itself again once its sandbox is ready; its spend and
+      // start time are already in flight and must survive that second write.
+      existing.sandboxId = run.sandboxId;
+      existing.status = "running";
+      return;
+    }
+    s.runs.set(run.id, { ...run, status: "running", startedAt: new Date(), finishedAt: null, costCents: 0 });
   }
 
   async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
     const run = store().runs.get(runId);
-    if (run) run.status = outcome.status;
+    if (!run) return;
+    run.status = outcome.status;
+    run.costCents = outcome.costCents;
+    run.finishedAt = new Date();
   }
 
   async unfinishedRuns(
@@ -691,6 +716,48 @@ export class MemoryRepository implements Repository {
         (r.status === "queued" || r.status === "running") &&
         r.startedAt < startedBefore,
     );
+  }
+
+  async addRunSpend(runId: string, deltaCents: number): Promise<void> {
+    const run = store().runs.get(runId);
+    if (run) run.costCents += deltaCents;
+  }
+
+  async epicRunSpend(epicId: string): Promise<EpicRunSpend[]> {
+    return [...store().runs.values()]
+      .filter((r) => r.epicId === epicId)
+      .map((r) => ({
+        costCents: r.costCents,
+        status: r.status,
+        startedAt: r.startedAt,
+        finishedAt: r.finishedAt,
+      }));
+  }
+
+  async activeRuns(projectId: string): Promise<ActiveRun[]> {
+    const s = store();
+    const projectOfRun = (epicId: string | null, ticketId: string | null): string | null => {
+      if (epicId) return s.epicProject.get(epicId) ?? null;
+      const ticketEpicId = ticketId ? s.cards.get(ticketId)?.epicId : null;
+      return ticketEpicId ? (s.epicProject.get(ticketEpicId) ?? null) : null;
+    };
+    return [...s.runs.values()]
+      .filter(
+        (r) =>
+          (r.status === "queued" || r.status === "running") &&
+          projectOfRun(r.epicId, r.ticketId) === projectId,
+      )
+      .map((r) => ({ id: r.id, sandboxId: r.sandboxId }));
+  }
+
+  async requestStop(projectId: string): Promise<Date> {
+    const now = new Date();
+    store().stopRequests.set(projectId, now);
+    return now;
+  }
+
+  async stopRequestedAt(projectId: string): Promise<Date | null> {
+    return store().stopRequests.get(projectId) ?? null;
   }
 
   async claimDelivery(key: string): Promise<boolean> {

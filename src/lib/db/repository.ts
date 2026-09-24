@@ -143,6 +143,20 @@ export interface RunOutcome {
   costCents: number;
 }
 
+/** A run still going, for the global stop to find its sandbox. */
+export interface ActiveRun {
+  id: string;
+  sandboxId: string | null;
+}
+
+/** What one run has cost an Epic so far, finished or still going. */
+export interface EpicRunSpend {
+  costCents: number;
+  status: AgentRunStatus;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+}
+
 export interface ProjectSummary {
   id: string;
   /** Null for the demo board, which belongs to no one. */
@@ -310,6 +324,20 @@ export interface Repository {
   unfinishedRuns(
     startedBefore: Date,
   ): Promise<Array<RunRecord & { status: AgentRunStatus }>>;
+  /**
+   * Adds to a run's spend as it goes, so the total survives a restart and is
+   * visible to every instance summing its Epic's budget, not only the one
+   * running it.
+   */
+  addRunSpend(runId: string, deltaCents: number): Promise<void>;
+  /** Every run charged against an Epic, finished or still going. */
+  epicRunSpend(epicId: string): Promise<EpicRunSpend[]>;
+  /** Every run still going on a project, for "Stop all" to find their sandboxes. */
+  activeRuns(projectId: string): Promise<ActiveRun[]>;
+  /** Marks every run on a project to stop, whichever instance runs them. */
+  requestStop(projectId: string): Promise<Date>;
+  /** When "Stop all" was last pressed on this project, or null. */
+  stopRequestedAt(projectId: string): Promise<Date | null>;
 
   /* Agent presets, and which one each column runs. */
 
