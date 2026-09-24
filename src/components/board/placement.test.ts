@@ -135,6 +135,28 @@ describe("placeDrop", () => {
     ]);
   });
 
+  // AUD-07: an Epic dragged to To Do and back to Backlog before the
+  // Architect Agent finishes still has its tickets — they are in To Do, not
+  // in the destination's own cards, which is exactly the shape placeDrop
+  // sees here. It has to land as a plain card, not a group with no children
+  // to show, or the round trip strands it.
+  it("lands an epic back in Backlog as a plain card, tickets and all", () => {
+    const epic = makeCard({ kind: "epic", key: "E", size: null, childCount: 4 });
+    const idea = makeCard({ key: "RAW-1", position: epic.position + 5000 });
+    const result = placeDrop({
+      card: epic,
+      destination: [idea],
+      column: "backlog",
+      collapsed: none,
+      index: 0,
+    });
+    const landed = { ...epic, position: result.position };
+    expect(layout([landed, idea], "backlog").map((i) => i.kind)).toEqual([
+      "card",
+      "card",
+    ]);
+  });
+
   it("does not open a collapsed epic to take a ticket", () => {
     const [epic, a] = makeEpicWithChildren({ key: "E" }, [{ key: "A" }]);
     const t = makeCard({ key: "T", epicId: epic!.id, detached: true });
