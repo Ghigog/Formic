@@ -12,8 +12,9 @@ import {
  * Nothing on the board without signing in. With a GitHub App configured
  * that means a GitHub session; without one, FORMIC_PASSWORD if it is set.
  *
- * Open regardless: sign-in itself, health checks, and the GitHub webhook,
- * which authenticates with its own signature.
+ * Open regardless: sign-in itself, health checks, the GitHub webhook, which
+ * authenticates with its own signature, and a runner's report, which carries
+ * a token good for its one job.
  */
 
 const OPEN = [
@@ -22,6 +23,7 @@ const OPEN = [
   /^\/api\/auth\//,
   /^\/api\/health$/,
   /^\/api\/webhooks\//,
+  /^\/api\/runner\/report$/,
 ];
 
 export async function proxy(req: NextRequest) {

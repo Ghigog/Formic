@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { collectCliRuns, completeCliRun, secretNameFor } from "./runner";
+import {
+  STOPPED_BY_PERSON,
+  collectCliRuns,
+  completeCliRun,
+  receiveReport,
+  reportAllowed,
+  secretNameFor,
+  stopTicket,
+} from "./runner";
+import { addNote } from "@/lib/coder/notes";
 import {
   ANSWER_PATH,
   RUNNER_SETUP_BRANCH,
@@ -427,6 +436,34 @@ describe("taking a CLI agent's work", () => {
     expect(branches.has(staging)).toBe(false);
   });
 
+  it("takes a re-run's work onto the pull request that is still open", async () => {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    // Sent back to In Progress with its pull request from an earlier run open.
+    const branch = "formic/t-1-earlier";
+    const pull = await new MockVcsClient("acme/widgets").openPullRequest({
+      headBranch: branch,
+      baseBranch: "formic/integration",
+      title: "T-1: first try",
+      body: "",
+    });
+    await repository().updateTicket(ticket.id, { branchName: branch, prNumber: pull.number, prUrl: pull.url });
+
+    await runCoderAgent(PROJECT, ticket.id);
+    const inputs = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    // It builds on that branch, so its work is a fast-forward of it.
+    expect(inputs.from).toBe(branch);
+
+    const sha = MockVcsClient.stage(`${STAGING_PREFIX}${inputs.job}`, ["src/lib/feature/thing.ts"], "T-1: Do it again");
+    await completeCliRun(PROJECT, { job: inputs.job!, mode: "implement", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after).toMatchObject({ prNumber: pull.number, runnerJob: null, summary: "Do it again" });
+    expect(after.status).not.toBe("running");
+    expect(MockVcsClient.runner().branches.get(branch)).toBe(sha);
+  });
+
   it("throws out work outside the file scope, and pushes nothing", async () => {
     const { ticket, job, staging } = await dispatched();
     MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
@@ -668,6 +705,16 @@ describe("the runner workflow", () => {
     });
   });
 
+  it("streams the agent's output to Formic and hands Claude Code notes through a hook", () => {
+    const yaml = runnerWorkflow();
+    expect(yaml).toContain("--output-format stream-json --verbose");
+    expect(yaml).toContain('--settings "$RUNNER_TEMP/formic-hooks.json"');
+    expect(yaml).toContain("exec --json --output-last-message");
+    expect(yaml).toContain('python3 "$RUNNER_TEMP/formic-report.py" &');
+    // The reporter's script sits at the block's own indent, as Python needs.
+    expect(yaml).toMatch(/\n {10}import json, os, time, urllib.request\n/);
+  });
+
   it("keeps only the answer from a planning run", () => {
     const yaml = runnerWorkflow();
     expect(yaml).toContain("product|architect|showcase|ask)");
@@ -701,5 +748,128 @@ describe("the runner workflow", () => {
         key: "runner:tkt--abcd1234:7",
       },
     ]);
+  });
+});
+
+describe("a CLI agent seen while it works", () => {
+  async function dispatched() {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    await runCoderAgent(PROJECT, ticket.id);
+    const inputs = MockVcsClient.runner().dispatches[0]!.inputs;
+    return { ticket, job: inputs.job!, inputs };
+  }
+
+  const line = (event: unknown) => JSON.stringify(event);
+
+  it("hands the workflow an address to report to, only when the board has one", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example/");
+    const { job, inputs } = await dispatched();
+    const url = new URL(inputs.report!);
+    expect(url.origin + url.pathname).toBe("https://formic.example/api/runner/report");
+    expect(url.searchParams.get("job")).toBe(job);
+    const since = url.searchParams.get("since")!;
+    expect(reportAllowed(job, since, url.searchParams.get("token")!)).toBe(true);
+    expect(reportAllowed("other--job", since, url.searchParams.get("token")!)).toBe(false);
+    expect(reportAllowed(job, since, "0".repeat(64))).toBe(false);
+  });
+
+  it("leaves the address empty on a board with no public one", async () => {
+    vi.stubEnv("FORMIC_URL", "");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
+    const { inputs } = await dispatched();
+    expect(inputs.report).toBe("");
+  });
+
+  it("shows what it thinks, does and plans on the ticket, and hands it the person's notes", async () => {
+    const { ticket, job } = await dispatched();
+    const since = Date.now() - 1_000;
+    const before = await repository().ticketEvents(PROJECT, ticket.id, ["run.thought", "run.progress"]);
+
+    await addNote(PROJECT, ticket.id, "Use the memory repository first.");
+    const reply = await receiveReport({
+      job,
+      since,
+      after: 0,
+      lines: [
+        line({
+          type: "assistant",
+          message: {
+            content: [
+              { type: "text", text: "Reading the repository first." },
+              { type: "tool_use", id: "a", name: "Read", input: { file_path: "src/lib/db/repository.ts" } },
+              {
+                type: "tool_use",
+                id: "b",
+                name: "TodoWrite",
+                input: { todos: [{ content: "Add the model", status: "in_progress" }] },
+              },
+            ],
+          },
+        }),
+      ],
+    });
+
+    expect(reply.stop).toBe(false);
+    expect(reply.notes.map((n) => n.text)).toEqual(["Use the memory repository first."]);
+    const events = (await repository().ticketEvents(PROJECT, ticket.id, ["run.thought", "run.progress"])).slice(
+      before.length,
+    );
+    expect(events.map((e) => e.payload)).toMatchObject([
+      { type: "run.thought", kind: "text", text: "Reading the repository first." },
+      { type: "run.progress", label: "Reading src/lib/db/repository.ts" },
+    ]);
+    expect((await repository().ticketDetail(ticket.id))!.plan).toEqual([
+      { step: "Add the model", status: "in_progress" },
+    ]);
+
+    // A note it has been sent is not sent again.
+    const again = await receiveReport({ job, since, after: reply.notes[0]!.seq, lines: [] });
+    expect(again.notes).toEqual([]);
+  });
+
+  it("tells a run nobody waits on any more to stop reporting", async () => {
+    const { ticket, job } = await dispatched();
+    await repository().updateTicket(ticket.id, { runnerJob: null });
+    expect(await receiveReport({ job, since: Date.now(), after: 0, lines: [] })).toEqual({ notes: [], stop: true });
+  });
+
+  it("stops: the card stalls, the run is cancelled, and what it hands back is thrown away", async () => {
+    const { ticket, job } = await dispatched();
+    const title = runTitle("implement", "T-1", job);
+    MockVcsClient.runner().runs.set(title, {
+      status: "in_progress",
+      conclusion: null,
+      url: "https://github.com/acme/widgets/actions/runs/77",
+    });
+
+    expect(await stopTicket(PROJECT, ticket.id)).toBe(true);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after).toMatchObject({ status: "blocked", stalledIn: "in_progress", runnerJob: null });
+    expect(after.blockedReason).toBe(STOPPED_BY_PERSON);
+    expect(MockVcsClient.runner().runs.get(title)).toMatchObject({ status: "completed", conclusion: "cancelled" });
+
+    MockVcsClient.stage(`${STAGING_PREFIX}${job}`, ["src/lib/feature/a.ts"], "T-1: Add it");
+    await completeCliRun(PROJECT, {
+      job,
+      mode: "implement",
+      conclusion: "success",
+      url: "https://github.com/acme/widgets/actions/runs/77",
+    });
+    expect((await repository().ticketDetail(ticket.id))!.prNumber).toBeNull();
+
+    // Nothing left to stop.
+    expect(await stopTicket(PROJECT, ticket.id)).toBe(false);
+  });
+
+  it("briefs every later run with the person's notes", async () => {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    await addNote(PROJECT, ticket.id, "Keep the old API working.");
+    await runCoderAgent(PROJECT, ticket.id);
+    expect(MockVcsClient.runner().dispatches[0]!.inputs.prompt).toContain("- Keep the old API working.");
   });
 });

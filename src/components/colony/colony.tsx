@@ -575,10 +575,12 @@ export function ColonyProvider({
   return (
     <Ctx.Provider value={api}>
       {children}
+      {/* Over the board, under every drawer and dialog (z-50 and up), so
+          an open card is never crawled over by the ants behind it. */}
       <canvas
         ref={canvasRef}
         aria-hidden
-        className="pointer-events-none fixed inset-0 z-[90] h-full w-full"
+        className="pointer-events-none fixed inset-0 z-[45] h-full w-full"
       />
     </Ctx.Provider>
   );

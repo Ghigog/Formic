@@ -37,6 +37,7 @@ const VIEW: TicketView = {
     { step: "Add the endpoint", status: "in_progress" },
     { step: "Test it", status: "pending" },
   ],
+  canStop: false,
   activity: [{ seq: 1, at: "2026-09-23T16:00:00Z", kind: "thinking", text: "The model has a cards table." }],
 };
 
