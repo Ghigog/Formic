@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runCoderAgent } from "./pipeline";
 import { setCheckoutFactory } from "./checkout";
@@ -28,6 +28,7 @@ import {
   scopedWorkspace,
 } from "@/lib/sandbox/workspace";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
+import { resetEnvCache } from "@/lib/secrets/env";
 import {
   MockArchitectAgent,
   MockProductAgent,
@@ -177,22 +178,47 @@ beforeEach(() => {
   setVcs(new MockVcsClient(REPO));
 });
 
+/** Records what each checkout was asked for, and hands back a memory one. */
+function recordCheckouts() {
+  const requests: Array<{ fromBranch: string; newBranch: string | null }> = [];
+  setCheckoutFactory(async (request) => {
+    requests.push({ fromBranch: request.fromBranch, newBranch: request.newBranch });
+    const raw = new MemoryWorkspace();
+    return {
+      workspace: scopedWorkspace(raw, request.ticket.fileScope),
+      raw,
+      sandboxId: null,
+      async dispose() {},
+    };
+  });
+  return requests;
+}
+
 describe("where a ticket starts", () => {
-  /** Records what each checkout was asked for, and hands back a memory one. */
-  function recordCheckouts() {
-    const requests: Array<{ fromBranch: string; newBranch: string | null }> = [];
-    setCheckoutFactory(async (request) => {
-      requests.push({ fromBranch: request.fromBranch, newBranch: request.newBranch });
-      const raw = new MemoryWorkspace();
-      return {
-        workspace: scopedWorkspace(raw, request.ticket.fileScope),
-        raw,
-        sandboxId: null,
-        async dispose() {},
-      };
-    });
-    return requests;
-  }
+  it("starts from the base branch, and its pull request merges straight into it", async () => {
+    const checkouts = recordCheckouts();
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const base = (await projectFor(PROJECT)).baseBranch;
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    expect(checkouts[0]).toMatchObject({ fromBranch: base });
+    expect(MockVcsClient.runner().merges).toEqual([]);
+    const prNumber = (await repository().ticketDetail(ticket.id))!.prNumber!;
+    expect((await new MockVcsClient(REPO).pullRequest(prNumber)).baseBranch).toBe(base);
+  });
+});
+
+describe("where a ticket starts, with MERGE_TARGET=integration", () => {
+  beforeEach(() => {
+    vi.stubEnv("MERGE_TARGET", "integration");
+    resetEnvCache();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetEnvCache();
+  });
 
   it("starts from the branch its pull request merges into, brought up to date first", async () => {
     const checkouts = recordCheckouts();

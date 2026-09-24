@@ -331,10 +331,10 @@ describe("starting a CLI agent", () => {
     const { file, ref, inputs } = runner.dispatches[0]!;
     expect(file).toBe("formic-agent.yml");
     expect(ref).toBe(base);
-    // The workflow runs from the base branch; the ticket starts from the
-    // branch its pull request merges into, brought up to date with the base.
-    expect(inputs).toMatchObject({ mode: "implement", ticket: "T-1", cli: "claude", from: "formic/integration", secret });
-    expect(runner.merges).toContainEqual({ base: "formic/integration", head: base });
+    // The ticket starts from the branch its pull request merges into: by
+    // default the base branch itself, so there is nothing to bring up to date.
+    expect(inputs).toMatchObject({ mode: "implement", ticket: "T-1", cli: "claude", from: base, secret });
+    expect(runner.merges).toEqual([]);
     expect(inputs.prompt).toContain("Implement the ticket.");
     expect(inputs.prompt).toContain("src/lib/feature");
     expect(JSON.stringify(inputs)).not.toContain(TOKEN);
