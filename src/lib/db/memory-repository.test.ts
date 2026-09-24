@@ -5,6 +5,18 @@ beforeEach(() => {
   globalThis.__formicMemoryStore = undefined;
 });
 
+describe("people on the in-memory store", () => {
+  it("starts with no terms accepted, and records a version once it is", async () => {
+    const repo = new MemoryRepository();
+    const user = await repo.upsertUser({ githubId: 1, login: "octo", name: null, avatarUrl: null });
+    expect(user.termsAcceptedVersion).toBeNull();
+
+    const accepted = await repo.acceptTerms(user.id, "2026-09-24");
+    expect(accepted.termsAcceptedVersion).toBe("2026-09-24");
+    expect((await repo.userById(user.id))?.termsAcceptedVersion).toBe("2026-09-24");
+  });
+});
+
 describe("projects on the in-memory store", () => {
   it("creates a project for a repository once, whatever the casing", async () => {
     const repo = new MemoryRepository();

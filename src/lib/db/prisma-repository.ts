@@ -184,6 +184,13 @@ export class PrismaRepository implements Repository {
     return prisma().user.update({ where: { id: userId }, data: secrets });
   }
 
+  async acceptTerms(userId: string, version: string): Promise<UserRecord> {
+    return prisma().user.update({
+      where: { id: userId },
+      data: { termsAcceptedVersion: version, termsAcceptedAt: new Date() },
+    });
+  }
+
   async countUsers(): Promise<number> {
     return prisma().user.count();
   }

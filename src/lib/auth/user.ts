@@ -9,6 +9,17 @@ import { isAllowed } from "./github";
 /** The one person in local mode. GitHub ids start at 1, so 0 is free. */
 const LOCAL_PROFILE = { githubId: 0, login: "local", name: "Local", avatarUrl: null };
 
+/**
+ * Bumped whenever the terms of service or privacy policy change materially
+ * (see docs/legal). Everyone who accepted an older version is asked again.
+ */
+export const CURRENT_TERMS_VERSION = "2026-09-24";
+
+/** Whether this person has not yet agreed to the terms now in force. */
+export function needsTermsAcceptance(user: UserRecord): boolean {
+  return user.termsAcceptedVersion !== CURRENT_TERMS_VERSION;
+}
+
 /** Found once per process, so an ordinary request reads rather than writes. */
 let localUserId: string | null = null;
 

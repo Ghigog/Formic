@@ -219,6 +219,8 @@ export interface UserRecord {
   e2bKeyHint: string | null;
   anthropicKeyCipher: string | null;
   anthropicKeyHint: string | null;
+  /** The terms/privacy version last agreed to, or null if never. */
+  termsAcceptedVersion: string | null;
 }
 
 export type UserSecrets = Partial<
@@ -276,6 +278,8 @@ export interface Repository {
   /** Creates or refreshes someone from their GitHub profile. */
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
   updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
+  /** Records that this person agreed to a version of the terms, now. */
+  acceptTerms(userId: string, version: string): Promise<UserRecord>;
   countUsers(): Promise<number>;
   /** Gives a user every unowned project and preset. */
   adoptUnowned(userId: string): Promise<void>;
