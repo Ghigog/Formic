@@ -10,7 +10,8 @@ import { publish } from "@/lib/events/bus";
  * run of the ticket is briefed with them.
  */
 
-export const MAX_NOTE = 2_000;
+/** As long as a message in a card's chat, which is how notes are sent. */
+export const MAX_NOTE = 4_000;
 
 export interface TicketNote {
   seq: number;

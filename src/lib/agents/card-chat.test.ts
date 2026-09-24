@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { answer } from "./card-chat";
+import { answer, ask as askCard } from "./card-chat";
+import { noteTexts } from "@/lib/coder/notes";
 import { savePreset } from "./presets";
 import { resetAgents } from "./registry";
 import { projectFor } from "@/lib/board/project";
@@ -74,16 +75,7 @@ async function seedTicket(): Promise<TicketDetail> {
 }
 
 async function ask(cardKind: "epic" | "ticket", cardId: string, text: string) {
-  const repo = repository();
-  await repo.addCardChatMessage({ projectId: PROJECT, cardKind, cardId, role: "user", content: text });
-  return repo.addCardChatMessage({
-    projectId: PROJECT,
-    cardKind,
-    cardId,
-    role: "assistant",
-    content: "",
-    status: "pending",
-  });
+  return (await repository().cardChatMessage(await askCard(PROJECT, cardKind, cardId, text)))!;
 }
 
 async function reload(id: string) {
@@ -139,18 +131,43 @@ describe("a ticket's chat", () => {
     expect(done.content).toContain("No agent is set for To Do");
   });
 
-  it("says a CLI agent cannot chat live", async () => {
+  it("passes a message on when a CLI agent cannot reply", async () => {
     const ticket = await seedTicket();
     await assignAgent("todo", "claude-code");
     const pending = await ask("ticket", ticket.id, "Split this?");
     await answer("ticket", ticket.id, pending.id);
     const done = await reload(pending.id);
-    expect(done.status).toBe("failed");
-    expect(done.content).toContain("runs in GitHub Actions and cannot chat live");
+    expect(done.status).toBe("done");
+    expect(done.content).toContain("cannot reply here");
+    expect(done.content).toContain("Your message is passed on");
+  });
+
+  it("reaches the agent working the ticket, and every later run, as a note", async () => {
+    const ticket = await seedTicket();
+    await ask("ticket", ticket.id, "Keep the old API working.");
+    expect(await noteTexts(PROJECT, ticket.id)).toEqual(["Keep the old API working."]);
+    const thread = await repository().cardChatMessages(ticket.id);
+    expect(thread.map((m) => [m.role, m.status])).toEqual([
+      ["user", "done"],
+      ["assistant", "pending"],
+    ]);
+  });
+
+  it("passes a long message on whole", async () => {
+    const ticket = await seedTicket();
+    const long = "x".repeat(4_000);
+    await ask("ticket", ticket.id, long);
+    expect(await noteTexts(PROJECT, ticket.id)).toEqual([long]);
   });
 });
 
 describe("an Epic's chat", () => {
+  it("is a question only: nothing is passed on as a note", async () => {
+    const epic = await repository().createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    await ask("epic", epic.id, "Does this need a PRD?");
+    expect(await noteTexts(PROJECT, epic.id)).toEqual([]);
+  });
+
   it("answers with the Product Agent, and includes the raw request", async () => {
     const repo = repository();
     const epic = await repo.createEpic({

@@ -1,14 +1,15 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { answer } from "@/lib/agents/card-chat";
+import { answer, ask } from "@/lib/agents/card-chat";
 import { launch } from "@/lib/agents/pipeline";
 import { activeProject } from "@/lib/board/project";
+import { MAX_NOTE } from "@/lib/coder/notes";
 import { repository } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const askSchema = z.object({ text: z.string().trim().min(1).max(4_000) });
+const askSchema = z.object({ text: z.string().trim().min(1).max(MAX_NOTE) });
 
 /** The active project, if this ticket is on it. Anyone else's ticket is a 404. */
 async function projectOwning(ticketId: string) {
@@ -51,22 +52,8 @@ export async function POST(
     return Response.json({ error: "The agent is still answering the last message." }, { status: 409 });
   }
 
-  await repo.addCardChatMessage({
-    projectId: project.id,
-    cardKind: "ticket",
-    cardId: id,
-    role: "user",
-    content: body.data.text,
-  });
-  const reply = await repo.addCardChatMessage({
-    projectId: project.id,
-    cardKind: "ticket",
-    cardId: id,
-    role: "assistant",
-    content: "",
-    status: "pending",
-  });
-  launch(() => answer("ticket", id, reply.id), `ticket chat answer ${reply.id}`);
+  const replyId = await ask(project.id, "ticket", id, body.data.text);
+  launch(() => answer("ticket", id, replyId), `ticket chat answer ${replyId}`);
   return Response.json(await state(id));
 }
 

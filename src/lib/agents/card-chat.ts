@@ -7,6 +7,7 @@ import { claudeSpeak, openAiSpeak, type Speak, type ToolDef } from "./chat-loop"
 import { truncate } from "./coding-loop";
 import { columnChatAgentFor } from "./presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
+import { addNote } from "@/lib/coder/notes";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 import type { CardChatMessage } from "@/lib/db/repository";
@@ -15,11 +16,10 @@ import { COLUMN_LABELS, columnFor } from "@/lib/domain/status";
 import { vcs, type VcsClient } from "@/lib/vcs";
 
 /**
- * One turn of a card's chat: the person asked the column's agent something
- * about this Epic or ticket, and it answers with the card's own detail as
- * context. It can read the repository, but it cannot change the board or
- * the ticket lifecycle — for that, the existing note to a running ticket,
- * or the normal drag between columns, still apply.
+ * A card's chat with the agent running its column now. It answers with the
+ * card's own detail as context and can read the repository, but it cannot
+ * change the board. On a ticket, every message also reaches the agent
+ * working it, so the one conversation both asks and steers.
  */
 
 const MAX_TURNS = 10;
@@ -148,6 +148,35 @@ async function finish(
   await repository().updateCardChatMessage(messageId, { content: update.content, status: update.status });
 }
 
+const PASSED_ON =
+  "Your message is passed on: an agent working on this ticket now picks it up as it goes, and every later run of the ticket reads it.";
+
+/**
+ * Records what a person said about a card and returns the reply waiting to
+ * be written. What is said about a ticket also reaches the agent working it
+ * and every later run, so one conversation is both how a person asks and how
+ * they steer.
+ */
+export async function ask(
+  projectId: string,
+  cardKind: "epic" | "ticket",
+  cardId: string,
+  text: string,
+): Promise<string> {
+  const repo = repository();
+  await repo.addCardChatMessage({ projectId, cardKind, cardId, role: "user", content: text });
+  if (cardKind === "ticket") await addNote(projectId, cardId, text);
+  const reply = await repo.addCardChatMessage({
+    projectId,
+    cardKind,
+    cardId,
+    role: "assistant",
+    content: "",
+    status: "pending",
+  });
+  return reply.id;
+}
+
 /**
  * Answers the pending chat message `messageId` on a card. Never throws: a
  * failure becomes the message, so the person sees what went wrong.
@@ -170,14 +199,25 @@ export async function answer(
     const agent = await columnChatAgentFor(projectId, column);
 
     if (agent.kind === "none" || agent.kind === "limited") {
-      await finish(messageId, { content: agent.reason, status: "failed" });
+      await finish(messageId, {
+        content: cardKind === "ticket" ? `${agent.reason} ${PASSED_ON}` : agent.reason,
+        status: "failed",
+      });
       return;
     }
     if (agent.kind === "cli") {
-      await finish(messageId, {
-        content: `${agent.info.label} runs in GitHub Actions and cannot chat live. Pick another agent for ${COLUMN_LABELS[agent.column]} to chat here, or leave a note instead.`,
-        status: "failed",
-      });
+      await finish(
+        messageId,
+        cardKind === "ticket"
+          ? {
+              content: `${agent.info.label} works in GitHub Actions, so it cannot reply here. ${PASSED_ON}`,
+              status: "done",
+            }
+          : {
+              content: `${agent.info.label} works in GitHub Actions, so it cannot reply here. Pick another agent for ${COLUMN_LABELS[agent.column]} to chat about this Epic.`,
+              status: "failed",
+            },
+      );
       return;
     }
 
