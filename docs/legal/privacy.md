@@ -29,11 +29,27 @@ your code or prompts anywhere not on that list.
 ## Retention
 
 Data is kept for as long as your account exists, so the board, its history
-and its cost accounting stay intact. Deleting your account removes your
-rows from Formic's database and revokes its GitHub token; see the account
-deletion feature (once shipped — for now, ask the operator to remove your
-data by hand). Formic does not control retention on the third parties above:
-their own policies govern what they keep once they've processed a request.
+and its cost accounting stay intact. Deleting your account, from Settings,
+removes your rows from Formic's database — your boards, saved agents, keys,
+event history and chat messages — and revokes your GitHub App user token, so
+it stops working at GitHub's end too. Formic does not control retention on
+the third parties above: their own policies govern what they keep once
+they've processed a request.
+
+**What stays on GitHub.** Deleting your Formic account does not touch
+GitHub itself: issues, branches, pull requests, Actions run history and
+repository secrets that agents created or used stay in your repositories
+exactly as they were. To remove them:
+
+- **Issues and pull requests**: close or delete them from the repository on
+  GitHub; GitHub does not let you bulk-delete issues, only close them.
+- **Branches**: delete them from the repository's branch list on GitHub, or
+  with `git push origin --delete <branch>`.
+- **Repository secrets** a run may have used or written: remove them under
+  the repository's Settings → Secrets and variables on GitHub.
+- **The Formic GitHub App itself**: uninstall it from
+  `https://github.com/settings/installations` to revoke every access it has
+  to your repositories, beyond the single token Formic revokes for you.
 
 ## Security
 

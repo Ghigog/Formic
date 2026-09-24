@@ -275,6 +275,32 @@ export class MemoryRepository implements Repository {
     for (const p of s.presets.values()) if (p.ownerId === null) p.ownerId = userId;
   }
 
+  async deleteUser(userId: string): Promise<void> {
+    const s = store();
+    const projectIds = [...s.projects.values()]
+      .filter((p) => p.ownerId === userId)
+      .map((p) => p.id);
+    for (const projectId of projectIds) {
+      for (const card of [...s.cards.values()]) {
+        if (card.kind === "epic" && projectOf(s, card) === projectId) {
+          await this.deleteEpic(card.id);
+        }
+      }
+      for (const key of [...s.columnAgents.keys()]) {
+        if (key.startsWith(`${projectId}:`)) s.columnAgents.delete(key);
+      }
+      s.events = s.events.filter((e) => e.projectId !== projectId);
+      s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
+      s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
+      s.epicNumbers.delete(projectId);
+      s.projects.delete(projectId);
+    }
+    for (const preset of [...s.presets.values()]) {
+      if (preset.ownerId === userId) await this.deletePreset(preset.id);
+    }
+    s.users.delete(userId);
+  }
+
   async projectById(projectId: string): Promise<ProjectSummary | null> {
     return store().projects.get(projectId) ?? null;
   }
