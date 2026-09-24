@@ -231,6 +231,10 @@ model Ticket {
   /// Steps outside the repository the person has to take, one per entry.
   /// The Epic's showcase hands them over once everything has merged.
   handoff       String[] @default([])
+  /// Set when the ticket is work for a person, not an agent (an account to
+  /// set up, a manual test on production): why. Agents do not start it; the
+  /// person does it and closes it from its chat.
+  needsHuman    String?
   /// The head commit the Reviewer Agent last approved or pushed. Green CI on
   /// exactly this commit merges; anything newer is reviewed again.
   reviewedSha   String?
@@ -432,6 +436,9 @@ model CardChatMessage {
   status    String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.
   runnerJob String?
+  /// The preset that run was dispatched with, so a failure is blamed on the
+  /// agent that actually ran it.
+  runnerAgent String?
   createdAt DateTime @default(now())
 
   @@index([cardId, createdAt])

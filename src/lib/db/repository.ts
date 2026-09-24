@@ -37,6 +37,8 @@ export interface CreateTicketInput {
   storyPoints?: number | null;
   position: number;
   dependsOnKeys: string[];
+  /** Work for a person, not an agent: why. */
+  needsHuman?: string | null;
 }
 
 export interface MoveInput {
@@ -118,6 +120,8 @@ export interface CardChatMessage {
   content: string;
   status: "done" | "pending" | "failed";
   runnerJob: string | null;
+  /** The preset that job was dispatched with, so a failure is blamed on it. */
+  runnerAgent: string | null;
   createdAt: Date;
 }
 
@@ -153,9 +157,17 @@ export interface TicketDetail {
   handoff: string[];
   /** The head commit the Reviewer Agent last approved or pushed. */
   reviewedSha: string | null;
+  /** Work for a person, not an agent: why. Null when an agent can do it. */
+  needsHuman: string | null;
 }
 
 export interface TicketUpdate {
+  /** The ticket as written, when its column's agent rewrites it. */
+  title?: string;
+  description?: string;
+  acceptanceCriteria?: string[];
+  fileScope?: string[];
+  needsHuman?: string | null;
   status?: TicketStatus;
   stalledIn?: ColumnId | null;
   stage?: number;
@@ -455,9 +467,11 @@ export interface Repository {
   }): Promise<CardChatMessage>;
   updateCardChatMessage(
     id: string,
-    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob">>,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void>;
   clearCardChat(cardId: string): Promise<void>;
+  /** A board's card chat answers a CLI agent is still writing in GitHub Actions. */
+  pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,

@@ -104,6 +104,10 @@ async function whatIsWrong(
   const limited = await columnLimit(projectId, to);
   if (limited) return `${limited} ${back}`;
 
+  if (to === "in_progress" && card.needsHuman) {
+    return `${card.key} is for you, not an agent: ${card.needsHuman} When it is done, say so in its chat and it closes. ${back}`;
+  }
+
   if (to === "in_progress" && !dependenciesMet(card, cards)) {
     const blocking = card.dependsOn
       .map((id) => cards.find((c) => c.id === id))

@@ -453,6 +453,7 @@ export class MemoryRepository implements Repository {
         epicId: input.epicId,
         size: input.size,
         storyPoints: input.storyPoints ?? null,
+        needsHuman: input.needsHuman ?? null,
         agentRole: null,
         model: null,
         fileScope: normalizeScope(input.fileScope),
@@ -802,6 +803,9 @@ export class MemoryRepository implements Repository {
     if (update.status === "merged") card.detached = false;
     if (update.stalledIn !== undefined) card.stalledIn = update.stalledIn;
     if (update.stage !== undefined) card.stage = update.stage;
+    if (update.title !== undefined) card.title = update.title;
+    if (update.fileScope !== undefined) card.fileScope = normalizeScope(update.fileScope);
+    if (update.needsHuman !== undefined) card.needsHuman = update.needsHuman;
     if (update.prNumber !== undefined) card.prNumber = update.prNumber;
     if (update.prUrl !== undefined) card.prUrl = update.prUrl;
     if (update.blockedReason !== undefined) {
@@ -811,6 +815,8 @@ export class MemoryRepository implements Repository {
 
     const extras = s.ticketExtras.get(ticketId);
     if (!extras) return;
+    if (update.description !== undefined) extras.description = update.description;
+    if (update.acceptanceCriteria !== undefined) extras.acceptanceCriteria = update.acceptanceCriteria;
     if (update.branchName !== undefined) extras.branchName = update.branchName;
     if (update.attempts !== undefined) extras.attempts = update.attempts;
     if (update.summary !== undefined) extras.summary = update.summary;
@@ -1058,6 +1064,7 @@ export class MemoryRepository implements Repository {
     const message: CardChatMessage = {
       id: `cchat_${Math.random().toString(36).slice(2, 10)}`,
       runnerJob: null,
+      runnerAgent: null,
       createdAt: new Date(),
       ...input,
       status: input.status ?? "done",
@@ -1068,7 +1075,7 @@ export class MemoryRepository implements Repository {
 
   async updateCardChatMessage(
     id: string,
-    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob">>,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void> {
     const found = store().cardChat.find((m) => m.id === id);
     if (found) Object.assign(found, update);
@@ -1077,6 +1084,12 @@ export class MemoryRepository implements Repository {
   async clearCardChat(cardId: string): Promise<void> {
     const s = store();
     s.cardChat = s.cardChat.filter((m) => m.cardId !== cardId);
+  }
+
+  async pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]> {
+    return store()
+      .cardChat.filter((m) => m.projectId === projectId && m.status === "pending" && !!m.runnerJob)
+      .map((m) => ({ ...m }));
   }
 
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
@@ -1121,6 +1134,7 @@ function toDetail(
     plan: extras?.plan ?? [],
     handoff: extras?.handoff ?? [],
     reviewedSha: extras?.reviewedSha ?? null,
+    needsHuman: card.needsHuman ?? null,
   };
 }
 

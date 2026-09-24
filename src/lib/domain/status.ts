@@ -90,16 +90,22 @@ export function unstarted(t: {
 }
 
 /**
- * What is wrong with a card that a person needs to know: why it cannot work
- * where they put it, or why its agent stopped. Null when nothing is.
+ * What a person needs to know or do about a card: why it cannot work where
+ * they put it, why its agent stopped, or the work on it that is theirs, not
+ * an agent's. Null when there is nothing.
  */
 export function cardProblem(card: {
   status: TicketStatus;
   blockedReason?: string | null;
   misplacedReason?: string | null;
+  needsHuman?: string | null;
 }): string | null {
   if (card.misplacedReason) return card.misplacedReason;
-  return isStalled(card.status) && card.blockedReason ? card.blockedReason : null;
+  if (isStalled(card.status) && card.blockedReason) return card.blockedReason;
+  if (card.needsHuman && card.status !== "merged") {
+    return `${card.needsHuman.replace(/\.?\s*$/, ".")} No agent does this one. When you have, tell its chat what you did or found, and it closes.`;
+  }
+  return null;
 }
 
 /**

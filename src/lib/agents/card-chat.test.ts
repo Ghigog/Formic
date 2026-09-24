@@ -12,7 +12,7 @@ vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
   },
 }));
 
-import { answer, ask as send } from "./card-chat";
+import { answer, ask as send, finishCliCardChat } from "./card-chat";
 import { savePreset } from "./presets";
 import { MAX_NOTE, noteTexts } from "@/lib/coder/notes";
 import { epicNoteTexts } from "./epic-notes";
@@ -24,11 +24,16 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import type { ColumnId } from "@/lib/domain/status";
 import { resetEnvCache } from "@/lib/secrets/env";
-import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
+import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
+import { applyTransition } from "@/lib/board/service";
+import { cardProblem } from "@/lib/domain/status";
+import { completeCliRun } from "@/lib/runner/runner";
+import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runnerWorkflow } from "@/lib/runner/workflow";
 
 /**
- * A card's chat: the agent that runs its column now answers with the card's
- * own detail as context, and can read the repository but nothing else.
+ * A card's chat: the person talks to the agent they set for the card's
+ * column, whatever it runs on. It knows the card and what is going on with
+ * it, answers, and does what it is asked: moves, closes, redoes, rewrites.
  */
 
 const PROJECT = "project_default";
@@ -65,6 +70,11 @@ async function assignAgent(column: ColumnId, provider: "groq" | "claude-code" = 
 }
 
 async function seedTicket(): Promise<TicketDetail> {
+  return (await seedTickets())[0];
+}
+
+/** T-1, and T-2 waiting on it. */
+async function seedTickets(): Promise<[TicketDetail, TicketDetail]> {
   const repo = repository();
   const epic = await repo.createEpic({
     projectId: PROJECT,
@@ -72,7 +82,7 @@ async function seedTicket(): Promise<TicketDetail> {
     rawRequest: "Do a thing",
     position: 1,
   });
-  const [ticket] = await repo.createTickets([
+  const made = await repo.createTickets([
     {
       epicId: epic.id,
       key: "T-1",
@@ -85,8 +95,42 @@ async function seedTicket(): Promise<TicketDetail> {
       position: 1,
       dependsOnKeys: [],
     },
+    {
+      epicId: epic.id,
+      key: "T-2",
+      title: "Then the next thing",
+      description: "Build on it.",
+      acceptanceCriteria: ["It is done"],
+      fileScope: ["src/lib/other"],
+      size: "S",
+      storyPoints: 1,
+      position: 2,
+      dependsOnKeys: ["T-1"],
+    },
   ]);
-  return (await repo.ticketDetail(ticket!.id))!;
+  return [(await repo.ticketDetail(made[0]!.id))!, (await repo.ticketDetail(made[1]!.id))!];
+}
+
+async function installRunner(): Promise<void> {
+  const base = (await projectFor(PROJECT)).baseBranch;
+  await new MockVcsClient("acme/widgets").commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+}
+
+function lastDispatch() {
+  return MockVcsClient.runner().dispatches.at(-1)!.inputs;
+}
+
+/** The CLI agent's run finished with this answer. */
+async function answerFromActions(job: string, text: string) {
+  await new MockVcsClient("acme/widgets").commitFile(`${STAGING_PREFIX}${job}`, ANSWER_PATH, text, "answer");
+  await completeCliRun(PROJECT, { job, mode: "ask", conclusion: "success", url: null });
+}
+
+async function replies(ticketId: string) {
+  const rows = await repository().ticketEvents(PROJECT, ticketId, [...ACTIVITY_EVENTS], 50);
+  return rows
+    .map((r) => activityOf(r.payload as FormicEvent, ticketId, r.seq, r.at.toISOString()))
+    .filter((a) => a?.kind === "reply");
 }
 
 async function ask(cardKind: "epic" | "ticket", cardId: string, text: string) {
@@ -126,12 +170,14 @@ afterEach(() => {
 });
 
 describe("a ticket's chat", () => {
-  it("answers with the Architect Agent, the ticket's own column", async () => {
+  it("answers with the agent set for the ticket's column, knowing what is going on with it", async () => {
     const ticket = await seedTicket();
     const base = (await projectFor(PROJECT)).baseBranch;
     const client = new MockVcsClient("acme/widgets");
     await client.commitFile(base, "src/lib/feature/index.ts", "export const x = 1;", "seed");
     await assignAgent("todo");
+    await send(PROJECT, "ticket", ticket.id, "Use the existing helper.");
+    await repository().clearCardChat(ticket.id);
     const sent = fakeProvider([
       { role: "assistant", content: null, tool_calls: [call("c1", "read_file", { path: "src/lib/feature/index.ts" })] },
       { role: "assistant", content: "It exports a constant named x." },
@@ -145,67 +191,164 @@ describe("a ticket's chat", () => {
     expect(system).toContain("Architect Agent");
     expect(system).toContain("Ticket T-1: Do the thing");
     expect(system).toContain("Ship the export button.");
+    expect(system).toContain("Column: To Do");
+    expect(system).toContain("No agent is working on it right now.");
+    expect(system).toContain("Person: Use the existing helper.");
   });
 
-  it("says so when no agent is set for its column, and passes the message on", async () => {
+  it("says so when no agent is set for its column, and keeps the message as a note", async () => {
     const ticket = await seedTicket();
     const pending = await ask("ticket", ticket.id, "Split this?");
     await answer("ticket", ticket.id, pending.id);
     const done = await reload(pending.id);
     expect(done.status).toBe("done");
     expect(done.content).toContain("No agent is set for To Do");
-    expect(done.content).toContain("passed on to the agent working this ticket");
+    expect(done.content).toContain("kept as a note");
   });
 
-  it("adds nothing while a CLI agent works the ticket: it answers in the ticket's log", async () => {
-    const ticket = await seedTicket();
-    await repository().updateTicket(ticket.id, { status: "running" });
-    await assignAgent("in_progress", "claude-code");
-    const pending = await ask("ticket", ticket.id, "How's it going?");
+  it("closes the ticket when the person says it is already done, and frees what waits on it", async () => {
+    const [ticket, next] = await seedTickets();
+    await assignAgent("todo");
+    fakeProvider([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [call("c1", "act", { action: { type: "close", summary: "Ran the beta loop by hand." } })],
+      },
+      { role: "assistant", content: "Closed it. T-2 can go ahead." },
+    ]);
+    const pending = await ask("ticket", ticket.id, "This has already been done.");
+
     await answer("ticket", ticket.id, pending.id);
-    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "" });
+
+    const closed = (await repository().ticketDetail(ticket.id))!;
+    expect(closed.status).toBe("merged");
+    expect(closed.summary).toBe("Closed by you: Ran the beta loop by hand.");
+    expect((await repository().ticketDetail(next.id))!.status).toBe("ready");
+    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "Closed it. T-2 can go ahead." });
+    expect(await replies(ticket.id)).toMatchObject([{ agent: "Architect Agent", text: "Closed it. T-2 can go ahead." }]);
   });
 
-  it("says when a CLI agent will read it, when nothing is working the ticket", async () => {
-    const ticket = await seedTicket();
-    await assignAgent("todo", "claude-code");
-    const pending = await ask("ticket", ticket.id, "Split this?");
-    await answer("ticket", ticket.id, pending.id);
-    const done = await reload(pending.id);
-    expect(done.status).toBe("done");
-    expect(done.content).toContain("reads this when it next runs");
-    expect(done.content).not.toContain("cannot reply");
-  });
-
-  it("puts the answer in the ticket's log, under whoever gave it", async () => {
+  it("puts what the person found under Results", async () => {
     const ticket = await seedTicket();
     await assignAgent("todo");
-    fakeProvider([{ role: "assistant", content: "Two files, one test." }]);
-    const pending = await ask("ticket", ticket.id, "How big is this?");
+    fakeProvider([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [call("c1", "act", { action: { type: "edit_ticket", results: "Merged PR #12 on the real repo." } })],
+      },
+      { role: "assistant", content: "Added it." },
+    ]);
+    const pending = await ask("ticket", ticket.id, "It worked: PR #12 merged.");
     await answer("ticket", ticket.id, pending.id);
 
-    await assignAgent("todo", "claude-code");
-    const idle = await ask("ticket", ticket.id, "Split this?");
-    await answer("ticket", ticket.id, idle.id);
-
-    const rows = await repository().ticketEvents(PROJECT, ticket.id, [...ACTIVITY_EVENTS], 50);
-    const replies = rows
-      .map((r) => activityOf(r.payload as FormicEvent, ticket.id, r.seq, r.at.toISOString()))
-      .filter((a) => a?.kind === "reply");
-    expect(replies).toMatchObject([
-      { agent: "Architect Agent", text: "Two files, one test." },
-      { agent: null, text: expect.stringContaining("reads this when it next runs") },
-    ]);
+    expect((await repository().ticketDetail(ticket.id))!.description).toBe(
+      "Ship the export button.\n\n### Results\nMerged PR #12 on the real repo.",
+    );
   });
 
-  it("logs nothing while a CLI agent works the ticket: its own answer is in the log", async () => {
+  it("moves the ticket when asked, starting whatever the column starts", async () => {
     const ticket = await seedTicket();
-    await repository().updateTicket(ticket.id, { status: "running" });
-    await assignAgent("in_progress", "claude-code");
-    const pending = await ask("ticket", ticket.id, "How's it going?");
+    await assignAgent("todo");
+    fakeProvider([
+      { role: "assistant", content: null, tool_calls: [call("c1", "act", { action: { type: "move", to: "in_progress" } })] },
+      { role: "assistant", content: "On its way." },
+    ]);
+    const pending = await ask("ticket", ticket.id, "Start it.");
     await answer("ticket", ticket.id, pending.id);
-    const rows = await repository().ticketEvents(PROJECT, ticket.id, ["ticket.reply"], 50);
-    expect(rows).toHaveLength(0);
+
+    expect((await repository().ticketDetail(ticket.id))!.status).toBe("running");
+    expect(launched).toEqual([`coder agent for ${ticket.key}`]);
+  });
+
+  it("leaves the ticket where it was when it cannot go where it was asked, and says why", async () => {
+    const ticket = await seedTicket();
+    await assignAgent("todo");
+    const sent = fakeProvider([
+      { role: "assistant", content: null, tool_calls: [call("c1", "act", { action: { type: "move", to: "in_review" } })] },
+      { role: "assistant", content: "It has no pull request yet." },
+    ]);
+    const pending = await ask("ticket", ticket.id, "Send it to review.");
+    await answer("ticket", ticket.id, pending.id);
+
+    const card = (await repository().cardById(ticket.id))!;
+    expect(card.misplacedIn ?? null).toBeNull();
+    expect(card.status).toBe("ready");
+    const toolResult = (sent[1]!.messages as Array<{ role: string; content: string }>).find((m) => m.role === "tool");
+    expect(toolResult?.content).toContain("Could not move T-1");
+    expect(toolResult?.content).not.toContain("Drag it back");
+  });
+
+  it("redoes the work its way: stops the agent at it, then starts the Coder Agent with the instruction", async () => {
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, { status: "running", runnerJob: `${ticket.id}--abc` });
+    await assignAgent("in_progress");
+    fakeProvider([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [call("c1", "act", { action: { type: "redo", instruction: "Use the existing helper instead." } })],
+      },
+      { role: "assistant", content: "Starting over with the helper." },
+    ]);
+    const pending = await ask("ticket", ticket.id, "Stop, and use the existing helper instead.");
+    await answer("ticket", ticket.id, pending.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.runnerJob).toBeNull();
+    expect(launched).toEqual([`coder agent for ${ticket.key}, from its chat`]);
+  });
+
+  it("is answered by a CLI agent from GitHub Actions, which can act too", async () => {
+    const ticket = await seedTicket();
+    await assignAgent("todo", "claude-code");
+    await installRunner();
+    const pending = await ask("ticket", ticket.id, "This has already been done.");
+
+    await answer("ticket", ticket.id, pending.id);
+
+    const inputs = lastDispatch();
+    expect(inputs).toMatchObject({ mode: "ask", ticket: "T-1", cli: "claude" });
+    expect(inputs.prompt).toContain("Ticket T-1: Do the thing");
+    expect(inputs.prompt).toContain("This has already been done.");
+    expect(inputs.prompt).toContain('"actions"');
+    const waiting = await reload(pending.id);
+    expect(waiting).toMatchObject({ status: "pending", runnerJob: inputs.job });
+    expect(waiting.content).toContain("reading this in GitHub Actions");
+    expect(await replies(ticket.id)).toMatchObject([{ agent: null, text: expect.stringContaining("GitHub Actions") }]);
+
+    await answerFromActions(
+      inputs.job!,
+      JSON.stringify({ reply: "Closing it.", actions: [{ type: "close", summary: "Done by hand." }] }),
+    );
+
+    expect((await repository().ticketDetail(ticket.id))!.status).toBe("merged");
+    const done = await reload(pending.id);
+    expect(done.status).toBe("done");
+    expect(done.content).toContain("Closing it.");
+    expect(done.content).toContain("Closed T-1");
+    expect((await replies(ticket.id)).at(-1)).toMatchObject({ agent: "Architect Agent" });
+  });
+
+  it("says why a CLI agent's run failed", async () => {
+    const ticket = await seedTicket();
+    await assignAgent("todo", "claude-code");
+    await installRunner();
+    const pending = await ask("ticket", ticket.id, "Split this?");
+    await answer("ticket", ticket.id, pending.id);
+
+    await completeCliRun(PROJECT, { job: lastDispatch().job!, mode: "ask", conclusion: "cancelled", url: null });
+
+    expect(await reload(pending.id)).toMatchObject({ status: "failed", content: expect.stringContaining("cancelled") });
+  });
+
+  it("sets aside an action from a CLI agent that Formic cannot use, and says so", async () => {
+    const ticket = await seedTicket();
+    const pending = await ask("ticket", ticket.id, "Close it.");
+    await finishCliCardChat(pending.id, JSON.stringify({ reply: "Closing.", actions: [{ type: "explode" }] }));
+    expect((await repository().ticketDetail(ticket.id))!.status).toBe("ready");
+    expect((await reload(pending.id)).content).toContain("could not use one of the agent's actions");
   });
 
   it("passes every message on to the agent as a note", async () => {
@@ -216,33 +359,37 @@ describe("a ticket's chat", () => {
     await send(PROJECT, "ticket", ticket.id, long);
     expect(await noteTexts(PROJECT, ticket.id)).toEqual(["Use the existing helper.", long]);
   });
+});
 
-  it("starts the Coder Agent again when its ticket is idle in In Progress", async () => {
+describe("a ticket that is work for a person", () => {
+  it("shows what the person has to do, and no agent starts it", async () => {
     const ticket = await seedTicket();
-    await repository().updateTicket(ticket.id, {
-      status: "blocked",
-      stalledIn: "in_progress",
-      blockedReason: "Out of scope",
-    });
-    await assignAgent("in_progress", "claude-code");
-    const pending = await ask("ticket", ticket.id, "Only touch the button component.");
-    await answer("ticket", ticket.id, pending.id);
+    await repository().updateTicket(ticket.id, { needsHuman: "Run the loop on production" });
+    const card = (await repository().cardById(ticket.id))!;
+    expect(cardProblem(card)).toContain("Run the loop on production.");
 
-    expect(await reload(pending.id)).toMatchObject({
-      status: "done",
-      content: "Starting the Coder Agent again with your note.",
+    const moved = await applyTransition(PROJECT, {
+      cardId: ticket.id,
+      kind: "ticket",
+      from: "todo",
+      to: "in_progress",
+      position: 1,
+      actor: "user",
     });
-    expect(launched).toEqual([`coder agent for ${ticket.key}`]);
+    expect(moved).toMatchObject({ ok: true, problem: expect.stringContaining("is for you, not an agent") });
+    expect(launched).toEqual([]);
   });
 
-  it("does not start a new run while the ticket is already running", async () => {
+  it("stops needing the person once closed", async () => {
     const ticket = await seedTicket();
-    await repository().updateTicket(ticket.id, { status: "running" });
-    await assignAgent("in_progress", "claude-code");
-    const pending = await ask("ticket", ticket.id, "Only touch the button component.");
-    await answer("ticket", ticket.id, pending.id);
-
-    expect(launched).toEqual([]);
+    await repository().updateTicket(ticket.id, { needsHuman: "Run the loop on production" });
+    await finishCliCardChat(
+      (await ask("ticket", ticket.id, "Done.")).id,
+      JSON.stringify({ reply: "Closing.", actions: [{ type: "close", summary: "Ran it." }] }),
+    );
+    const card = (await repository().cardById(ticket.id))!;
+    expect(card.needsHuman ?? null).toBeNull();
+    expect(cardProblem(card)).toBeNull();
   });
 });
 
@@ -306,33 +453,35 @@ describe("an Epic's chat", () => {
     return epic;
   }
 
-  it("breaks an Epic down again when idle in To Do, instead of just answering", async () => {
+  it("breaks an Epic down again when asked to change it", async () => {
     const epic = await seedDecomposedEpic();
-    await assignAgent("todo", "claude-code");
+    await assignAgent("todo");
+    fakeProvider([
+      { role: "assistant", content: null, tool_calls: [call("c1", "act", { action: { type: "redo", instruction: "Split the 13-pointer." } })] },
+      { role: "assistant", content: "Breaking it down again." },
+    ]);
     const pending = await ask("epic", epic.id, "Split the 13-pointer.");
 
     await answer("epic", epic.id, pending.id);
 
-    expect(await reload(pending.id)).toMatchObject({
-      status: "done",
-      content: "Breaking it down again with your note. Tickets already started stay; the rest follow it.",
-    });
-    expect(launched).toEqual([`architect agent for ${epic.key}`]);
+    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "Breaking it down again." });
+    expect(launched).toEqual([`architect agent for ${epic.key}, from its chat`]);
   });
 
   it("does not start a second breakdown while the Architect Agent is already working", async () => {
     const epic = await seedDecomposedEpic();
-    await assignAgent("todo", "claude-code");
+    await assignAgent("todo");
     await repository().setEpicRunnerJob(epic.id, "run-123");
+    const sent = fakeProvider([
+      { role: "assistant", content: null, tool_calls: [call("c1", "act", { action: { type: "redo", instruction: "Split it." } })] },
+      { role: "assistant", content: "It is already on it." },
+    ]);
     const pending = await ask("epic", epic.id, "Split the 13-pointer.");
 
     await answer("epic", epic.id, pending.id);
 
-    expect(await reload(pending.id)).toMatchObject({
-      status: "done",
-      content:
-        "The Architect Agent is already working on this Epic. Your note will be included in its next run.",
-    });
+    const toolResult = (sent[1]!.messages as Array<{ role: string; content: string }>).find((m) => m.role === "tool");
+    expect(toolResult?.content).toContain("already breaking this Epic down");
     expect(launched).toEqual([]);
   });
 });

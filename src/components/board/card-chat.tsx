@@ -17,12 +17,11 @@ function Message({ m }: { m: CardChatMessageView }) {
   if (m.status === "pending") {
     return (
       <div className="text-fg-subtle flex items-center gap-2 text-[12px]" role="status">
-        <span className="bg-clay size-1.5 animate-pulse rounded-full" aria-hidden />
-        Thinking…
+        <span className="bg-clay size-1.5 shrink-0 animate-pulse rounded-full" aria-hidden />
+        {m.content || "Thinking…"}
       </div>
     );
   }
-  // Sent to the agent at work, which answers in the ticket's log.
   if (!m.content) return null;
   return (
     <div
@@ -37,10 +36,11 @@ function Message({ m }: { m: CardChatMessageView }) {
 }
 
 /**
- * A live chat with the agent running this card's column now: the Product
- * Agent for an Epic in Backlog, the Architect Agent for a ticket in To Do,
- * and so on as the card moves. It reads the card and the repository; it
- * cannot change either.
+ * A chat with the agent running this card's column now: the Product Agent
+ * for an Epic in Backlog, the Architect Agent for a ticket in To Do, and so
+ * on as the card moves. It knows the card and what is going on with it, and
+ * does what the person asks: answers, moves or closes the card, or redoes
+ * its work their way.
  */
 export function CardChat({
   kind,
@@ -93,8 +93,8 @@ export function CardChat({
           {c.messages.length === 0 ? (
             <p className="text-fg-subtle text-[12px] leading-5">
               {kind === "epic"
-                ? `Chat with the ${agentLabel} Agent about this Epic.`
-                : `Chat with the ${agentLabel} Agent about this ticket. Any agent working it, and every later run, reads what you send.`}
+                ? `Talk to the ${agentLabel} Agent about this Epic. Ask it anything, or tell it what to change.`
+                : `Talk to the ${agentLabel} Agent about this ticket. Ask it anything, or tell it what to do: change the work, move it, close it. Every agent that works it reads what you send.`}
             </p>
           ) : (
             c.messages.map((m) => <Message key={m.id} m={m} />)
@@ -112,7 +112,7 @@ export function CardChat({
       >
         <div className="flex items-end gap-2">
           <label htmlFor={`chat-${cardId}`} className="sr-only">
-            Ask the {agentLabel} Agent
+            Message the {agentLabel} Agent
           </label>
           <textarea
             id={`chat-${cardId}`}
@@ -121,7 +121,7 @@ export function CardChat({
             onKeyDown={onKeyDown}
             rows={1}
             maxLength={4_000}
-            placeholder={c.pending ? "Answering…" : `Ask the ${agentLabel} Agent…`}
+            placeholder={c.pending ? "Answering…" : `Message the ${agentLabel} Agent…`}
             className="border-line bg-surface text-fg placeholder:text-fg-subtle flex-1 resize-none rounded-md border px-2 py-1.5 text-[12px] leading-5"
           />
           <button

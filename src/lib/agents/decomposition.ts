@@ -48,6 +48,12 @@ export const ticketSpecSchema = z.object({
     .literal(STORY_POINTS)
     .describe("The estimate in story points, on the Fibonacci scale: 1, 2, 3, 5, 8 or 13."),
   dependsOn: z.array(z.string()),
+  needsHuman: z
+    .string()
+    .optional()
+    .describe(
+      "Only for a ticket no coding agent can do, such as setting up an account, a manual test on production, or a decision: why it needs a person. Leave it out for every ticket an agent can do in the repository.",
+    ),
 });
 
 export type TicketSpec = z.infer<typeof ticketSpecSchema>;
@@ -86,6 +92,7 @@ export function toDraftTicket(spec: TicketSpec): DraftTicket {
     size: spec.size,
     storyPoints: spec.storyPoints,
     dependsOn: spec.dependsOn,
+    ...(spec.needsHuman?.trim() ? { needsHuman: spec.needsHuman.trim() } : {}),
   };
 }
 

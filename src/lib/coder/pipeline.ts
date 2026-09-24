@@ -36,8 +36,9 @@ import { cliPrompt, startCliRun } from "@/lib/runner/runner";
 const STAGE_CODE_RUN = 5;
 const STAGE_PR_OPEN = 6;
 
-export function taskFor(ticket: TicketDetail, notes: string[] = []): CoderTask {
+export function taskFor(ticket: TicketDetail, notes: string[] = [], instruction?: string): CoderTask {
   return {
+    ...(instruction ? { instruction } : {}),
     ticketId: ticket.id,
     key: ticket.key,
     title: ticket.title,
@@ -62,6 +63,10 @@ export async function stallTicket(
   const status = options.blocked ? "blocked" : "failed";
   const stage = options.stage ?? ticket.stage;
 
+  // Closed while its agent was being stopped: the run that stopped does not
+  // get to bring it back out of Done.
+  if ((await repository().ticketDetail(ticket.id))?.status === "merged") return;
+
   await repository().updateTicket(ticket.id, {
     status,
     stalledIn: options.stalledIn,
@@ -82,6 +87,8 @@ export async function stallTicket(
 export async function runCoderAgent(
   projectId: string,
   ticketId: string,
+  /** What the person asked this run to do, from the ticket's chat. */
+  options: { instruction?: string } = {},
 ): Promise<void> {
   const repo = repository();
   const found = await repo.ticketDetail(ticketId);
@@ -155,7 +162,14 @@ export async function runCoderAgent(
       mode: "implement",
       agent: cli,
       from: startFrom,
-      prompt: cliPrompt(cli, "implement", ticket, undefined, await noteTexts(projectId, ticket.id)),
+      prompt: cliPrompt(
+        cli,
+        "implement",
+        ticket,
+        undefined,
+        await noteTexts(projectId, ticket.id),
+        options.instruction,
+      ),
       run,
       stalledIn: "in_progress",
       stage: STAGE_CODE_RUN,
@@ -193,7 +207,7 @@ export async function runCoderAgent(
 
   try {
     const outcome = await (await agentFor(projectId, "coder")).implement(run.ctx, {
-      task: taskFor(ticket, await noteTexts(projectId, ticket.id)),
+      task: taskFor(ticket, await noteTexts(projectId, ticket.id), options.instruction),
       workspace: checkout.workspace,
     });
 

@@ -116,9 +116,17 @@ export function withProductConventions(brief: string): string {
   return `${brief.trim()}\n\n${PRODUCT_CONVENTIONS}`;
 }
 
+/**
+ * Work only a person can do, such as a manual test on production or an
+ * account to set up, is still a ticket, so what depends on it waits for it.
+ * It is marked, so no coding agent is started on it and the board asks the
+ * person instead.
+ */
+export const NEEDS_HUMAN_RULE = `A ticket no coding agent can do in the repository (setting up an account or a service, a manual test on real infrastructure, a decision only the person can make) still belongs in the plan when other work depends on it. Set its needsHuman to one line saying what the person has to do. Leave needsHuman out of every ticket an agent can do, including ones that only write documentation.`;
+
 /** The Architect's brief with the ticket template and the engineering practices. */
 export function withPlanningConventions(brief: string): string {
-  return `${brief.trim()}\n\n${TICKET_TEMPLATE}\n\n${ENGINEERING_PRACTICES}`;
+  return `${brief.trim()}\n\n${TICKET_TEMPLATE}\n\n${NEEDS_HUMAN_RULE}\n\n${ENGINEERING_PRACTICES}`;
 }
 
 /** The brief a column's agent runs with when no preset replaces it. */

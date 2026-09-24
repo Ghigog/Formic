@@ -3,38 +3,44 @@ import "server-only";
 import { z } from "zod";
 
 import { MODELS } from "./anthropic";
+import { applyCardAction, cardActionSchema, CARD_ACTIONS_GUIDE, type CardAction } from "./card-actions";
 import { claudeSpeak, openAiSpeak, type Speak, type ToolDef } from "./chat-loop";
 import { truncate } from "./coding-loop";
-import { decomposeEpic, launch } from "./pipeline";
+import { launch } from "./pipeline";
 import { columnChatAgentFor } from "./presets";
 import { addEpicNote } from "./epic-notes";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { addNote } from "@/lib/coder/notes";
-import { runCoderAgent } from "@/lib/coder/pipeline";
 import { publish } from "@/lib/events/bus";
 import { repository } from "@/lib/db";
 import type { CardChatMessage } from "@/lib/db/repository";
-import { COLUMN_AGENT_ROLE, AGENT_ROLE_LABELS, prdSchema } from "@/lib/domain/entities";
-import { COLUMN_LABELS, columnFor } from "@/lib/domain/status";
+import { COLUMN_AGENT_ROLE, AGENT_ROLE_LABELS, type BoardCard } from "@/lib/domain/entities";
+import type { FormicEvent } from "@/lib/domain/events";
+import { COLUMN_LABELS, columnFor, columnOf } from "@/lib/domain/status";
+import { ACTIVITY_EVENTS, activityOf } from "@/lib/domain/ticket-view";
+import { extractJson } from "@/lib/llm/openai-compat";
 import { vcs, type VcsClient } from "@/lib/vcs";
 
 /**
- * One turn of a card's chat: the person tells the column's agent something
- * about this Epic or ticket. On a ticket, the message reaches any agent
- * working it, and every later run of it, as a note; a ticket idle in In
- * Progress is instead started fresh, with the note as its brief. On an Epic
- * already broken down, it goes to the Architect Agent to break down again,
- * replacing only the tickets no one has started. Anything else is answered
- * as a question, with the card's own detail and the repository to read for
- * context, but no way to change either.
+ * One turn of a card's chat. Whatever column the card is in, the person is
+ * talking to the agent they set for that column, whatever it runs on: it
+ * knows the card, what is going on with it and what was said before, and it
+ * can act on it (move it, close it, redo its work with new instructions,
+ * rewrite it) as well as answer. A built-in agent answers here and now; a
+ * CLI agent answers from GitHub Actions, a minute or two later.
+ *
+ * Every message is also kept as a note, so any agent working the card now,
+ * and every later run of it, reads it too.
  */
 
-const MAX_TURNS = 10;
+const MAX_TURNS = 12;
 const MAX_FILES_LISTED = 400;
+const MAX_ACTIVITY = 25;
 
 const listInput = z.object({ prefix: z.string().optional() });
 const readInput = z.object({ path: z.string().min(1) });
+const actInput = z.object({ action: z.unknown() });
 
 const TOOL_DEFS: ToolDef[] = [
   {
@@ -57,27 +63,77 @@ const TOOL_DEFS: ToolDef[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "act",
+    description:
+      "Do something to this card: move, close, redo, stop, edit_ticket or needs_human. It happens at once, and the result says what happened.",
+    schema: {
+      type: "object",
+      properties: { action: z.toJSONSchema(cardActionSchema) },
+      required: ["action"],
+      additionalProperties: false,
+    },
+  },
 ];
 
-async function cardContext(cardKind: "epic" | "ticket", cardId: string): Promise<string> {
-  const repo = repository();
-  if (cardKind === "epic") {
-    const detail = await repo.epicDetail(cardId);
-    if (!detail) return "(This Epic could not be loaded.)";
-    return [
-      `Epic: ${detail.title}`,
-      "",
-      "The person's original request:",
-      detail.rawRequest,
-      ...(detail.prd
-        ? ["", "Its PRD, as JSON:", truncate(JSON.stringify(detail.prd, null, 2), 6_000)]
-        : ["", "It has no PRD yet."]),
-    ].join("\n");
+/* ------------------------------------------------------------------------ */
+/* What the agent knows: the card, and what is going on with it.            */
+/* ------------------------------------------------------------------------ */
+
+function whereItIs(card: BoardCard): string[] {
+  const column = columnOf(card);
+  const lines = [`Column: ${COLUMN_LABELS[column]} (status: ${card.status}).`];
+  if (card.workingSince) {
+    lines.push(
+      `An agent is working on it right now${card.agentRole ? ` (the ${AGENT_ROLE_LABELS[card.agentRole]} Agent)` : ""}, since ${card.workingSince}.`,
+    );
+  } else {
+    lines.push("No agent is working on it right now.");
   }
-  const detail = await repo.ticketDetail(cardId);
+  if (card.misplacedReason) lines.push(`It cannot work where it is: ${card.misplacedReason}`);
+  if (card.blockedReason) {
+    lines.push(
+      card.status === "blocked" || card.status === "failed"
+        ? `It stopped, and waits for the person: ${card.blockedReason}`
+        : `It waits: ${card.blockedReason}`,
+    );
+  }
+  return lines;
+}
+
+async function ticketContext(card: BoardCard): Promise<string> {
+  const repo = repository();
+  const detail = await repo.ticketDetail(card.id);
   if (!detail) return "(This ticket could not be loaded.)";
+  const cards = await repo.boardCards(detail.projectId);
+  const epic = cards.find((c) => c.id === detail.epicId);
+  const deps = card.dependsOn
+    .map((id) => cards.find((c) => c.id === id))
+    .filter((c): c is BoardCard => !!c)
+    .map((c) => `${c.key} (${c.status})`);
+
+  const events = await repo.ticketEvents(detail.projectId, card.id, [...ACTIVITY_EVENTS], 200);
+  const activity = events
+    .map((e) => activityOf(e.payload as FormicEvent, card.id, e.seq, e.at.toISOString()))
+    .filter((a) => !!a)
+    .slice(-MAX_ACTIVITY)
+    .map((a) => {
+      const who = a.kind === "note" ? "Person" : a.kind === "reply" ? (a.agent ?? "Formic") : "Agent";
+      return `- ${who}${a.kind === "action" ? " did" : ""}: ${truncate(a.text, 400).replace(/\s+/g, " ")}`;
+    });
+
   return [
     `Ticket ${detail.key}: ${detail.title}`,
+    ...(epic ? [`In Epic ${epic.key}: ${epic.title}`] : []),
+    ...whereItIs(card),
+    ...(detail.needsHuman ? [`It is marked as work for the person, not an agent: ${detail.needsHuman}`] : []),
+    ...(detail.prNumber ? [`Pull request: #${detail.prNumber} ${detail.prUrl ?? ""}`.trim()] : []),
+    ...(detail.branchName ? [`Branch: ${detail.branchName}`] : []),
+    ...(detail.summary ? [`What was done: ${detail.summary}`] : []),
+    ...(deps.length ? [`Waits on: ${deps.join(", ")}`] : []),
+    ...(detail.plan.length
+      ? ["Plan:", ...detail.plan.map((s) => `- [${s.status === "done" ? "x" : " "}] ${s.step}`)]
+      : []),
     "",
     detail.description,
     ...(detail.acceptanceCriteria.length
@@ -85,29 +141,57 @@ async function cardContext(cardKind: "epic" | "ticket", cardId: string): Promise
       : []),
     "",
     `File scope: ${detail.fileScope.join(", ") || "(none)"}`,
+    ...(activity.length ? ["", "What happened on it lately, oldest first:", ...activity] : []),
+  ].join("\n");
+}
+
+async function epicContext(card: BoardCard): Promise<string> {
+  const repo = repository();
+  const detail = await repo.epicDetail(card.id);
+  if (!detail) return "(This Epic could not be loaded.)";
+  const tickets = await repo.ticketsForEpic(card.id);
+  return [
+    `Epic ${card.key}: ${detail.title}`,
+    ...whereItIs(card),
+    "",
+    "The person's original request:",
+    detail.rawRequest,
+    ...(detail.prd
+      ? ["", "Its PRD, as JSON:", truncate(JSON.stringify(detail.prd, null, 2), 6_000)]
+      : ["", "It has no PRD yet."]),
+    ...(tickets.length
+      ? [
+          "",
+          "Its tickets:",
+          ...tickets.map(
+            (t) =>
+              `- ${t.key} [${COLUMN_LABELS[columnFor(t.status, t.stalledIn)]} · ${t.status}] ${t.title}${t.needsHuman ? " (work for the person)" : ""}`,
+          ),
+        ]
+      : []),
   ].join("\n");
 }
 
 async function systemPrompt(
-  cardKind: "epic" | "ticket",
-  cardId: string,
-  columnLabel: string,
-  roleLabel: string,
+  card: BoardCard,
   repoFullName: string,
   brief: string | null,
 ): Promise<string> {
+  const column = columnFor(card.status, card.stalledIn);
+  const role = AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]];
+  const what = card.kind === "epic" ? "Epic" : "ticket";
   return [
-    `You are the ${roleLabel} Agent, answering questions about one ${cardKind === "epic" ? "Epic" : "ticket"} on a Formic board for the GitHub repository ${repoFullName}. It is in ${columnLabel} right now.`,
+    `You are the ${role} Agent: the agent the person set for the ${COLUMN_LABELS[column]} column of a Formic board for the GitHub repository ${repoFullName}. This ${what} is in ${COLUMN_LABELS[column]}, so it is yours, and the person is talking to you about it in its chat. Whatever they ask about it, you handle.`,
+    ...(brief ? ["", "Your instructions for this column's work:", brief.trim()] : []),
     "",
     "Read the repository before you answer a question about its code. Do not guess at what a file contains.",
     "",
-    "You cannot change the board, the ticket lifecycle, or any file from here. If the person wants a change, tell them what to do (for example, edit the PRD, or drag the card) rather than claiming you did it.",
+    CARD_ACTIONS_GUIDE,
     "",
     "Answer in short, plain Markdown.",
     "",
-    "The card:",
-    await cardContext(cardKind, cardId),
-    ...(brief ? ["", "The person's instructions for this agent:", brief] : []),
+    `The ${what} now:`,
+    card.kind === "epic" ? await epicContext(card) : await ticketContext(card),
   ].join("\n");
 }
 
@@ -117,10 +201,15 @@ function history(messages: CardChatMessage[]): Array<{ role: "user" | "assistant
     .map((m) => ({ role: m.role, content: m.content }));
 }
 
+/* ------------------------------------------------------------------------ */
+/* A built-in agent answers here, with tools.                                */
+/* ------------------------------------------------------------------------ */
+
 async function runTool(
   call: { name: string; input: unknown },
   client: VcsClient,
   ref: string,
+  act: (action: CardAction) => Promise<string>,
 ): Promise<{ content: string; isError: boolean }> {
   try {
     if (call.name === "list_files") {
@@ -143,6 +232,19 @@ async function runTool(
         ? { content: `${path} does not exist on ${ref}.`, isError: true }
         : { content: truncate(text), isError: false };
     }
+    if (call.name === "act") {
+      const parsed = cardActionSchema.safeParse(actInput.parse(call.input).action);
+      if (!parsed.success) {
+        return {
+          content: `Not done: ${parsed.error.issues
+            .slice(0, 3)
+            .map((i) => `${i.path.join(".")}: ${i.message}`)
+            .join("; ")}`,
+          isError: true,
+        };
+      }
+      return { content: await act(parsed.data), isError: false };
+    }
     return { content: `There is no tool called ${call.name}.`, isError: true };
   } catch (e) {
     return { content: e instanceof Error ? e.message : String(e), isError: true };
@@ -153,7 +255,12 @@ async function finish(
   messageId: string,
   update: { content: string; status: "done" | "failed" },
 ): Promise<void> {
-  await repository().updateCardChatMessage(messageId, { content: update.content, status: update.status });
+  await repository().updateCardChatMessage(messageId, {
+    content: update.content,
+    status: update.status,
+    runnerJob: null,
+    runnerAgent: null,
+  });
 }
 
 /**
@@ -165,132 +272,93 @@ export async function answer(
   cardId: string,
   messageId: string,
 ): Promise<void> {
-  const spoke = await reply(cardKind, cardId, messageId);
-  if (cardKind === "ticket") await logReply(cardId, messageId, spoke);
+  // Who answers is the column's agent when the message came in, even when
+  // what it does moves the card on to another column's.
+  const card = await repository().cardById(cardId);
+  const label = card ? agentLabelFor(card) : null;
+  const outcome = await reply(cardKind, cardId, messageId);
+  if (cardKind === "ticket" && outcome !== "later") {
+    await logReply(cardId, messageId, outcome === "agent" ? label : null);
+  }
 }
 
 /**
  * A ticket's chat shows in its log, beside the notes a person sends: the
  * answer goes there too, so one feed holds the whole conversation.
  */
-async function logReply(ticketId: string, messageId: string, byAgent: boolean): Promise<void> {
+async function logReply(ticketId: string, messageId: string, agentLabel: string | null): Promise<void> {
   const repo = repository();
-  const [message, card, projectId] = await Promise.all([
-    repo.cardChatMessage(messageId),
-    repo.cardById(ticketId),
-    repo.projectOfCard(ticketId),
-  ]);
-  if (!message?.content.trim() || !card || !projectId) return;
-  const role = COLUMN_AGENT_ROLE[columnFor(card.status, card.stalledIn)];
+  const [message, projectId] = await Promise.all([repo.cardChatMessage(messageId), repo.projectOfCard(ticketId)]);
+  if (!message?.content.trim() || !projectId) return;
   await publish(projectId, {
     type: "ticket.reply",
     ticketId,
-    agent: byAgent ? `${AGENT_ROLE_LABELS[role]} Agent` : null,
+    agent: agentLabel ? `${agentLabel} Agent` : null,
     text: message.content,
   });
 }
 
-/** Answers the message; true when the column's agent did, false for a notice. */
+/** The agent a card's column runs, by role: who answers in its chat. */
+function agentLabelFor(card: BoardCard): string {
+  return AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(card.status, card.stalledIn)]];
+}
+
+/**
+ * Answers the message: "agent" when the column's agent did, "notice" for a
+ * reason it could not, "later" when a CLI agent answers from GitHub Actions.
+ */
 async function reply(
   cardKind: "epic" | "ticket",
   cardId: string,
   messageId: string,
-): Promise<boolean> {
+): Promise<"agent" | "notice" | "later"> {
   const repo = repository();
   try {
     const card = await repo.cardById(cardId);
     const projectId = await repo.projectOfCard(cardId);
     if (!card || !projectId) {
       await finish(messageId, { content: "This card no longer exists.", status: "failed" });
-      return false;
+      return "notice";
     }
     const column = columnFor(card.status, card.stalledIn);
-    const role = COLUMN_AGENT_ROLE[column];
     const agent = await columnChatAgentFor(projectId, column);
-    const hasAgent = agent.kind !== "none" && agent.kind !== "limited";
 
-    // A ticket idle in In Progress has no run reading its notes right now:
-    // the message is the instruction to pick the work back up, so it starts
-    // one instead of waiting for someone to drag the card.
-    if (cardKind === "ticket" && column === "in_progress" && hasAgent) {
-      const detail = await repo.ticketDetail(cardId);
-      const working = card.status === "running" || !!detail?.runnerJob || !!card.workingSince;
-      if (!working) {
-        launch(() => runCoderAgent(projectId, cardId), `coder agent for ${card.key}`);
-        await finish(messageId, {
-          content: "Starting the Coder Agent again with your note.",
-          status: "done",
-        });
-        return false;
-      }
-    }
-
-    // An Epic already broken down is the Architect Agent's to act on: the
-    // message is an instruction to break it down again, not a question.
-    // Tickets already in flight stay; applyTickets replaces only the rest.
-    if (cardKind === "epic" && column === "todo" && hasAgent) {
-      const detail = await repo.epicDetail(cardId);
-      if (prdSchema.safeParse(detail?.prd).success) {
-        const working = !!detail?.runnerJob || !!card.workingSince;
-        if (working) {
-          await finish(messageId, {
-            content:
-              "The Architect Agent is already working on this Epic. Your note will be included in its next run.",
-            status: "done",
-          });
-        } else {
-          launch(() => decomposeEpic(projectId, cardId), `architect agent for ${card.key}`);
-          await finish(messageId, {
-            content:
-              "Breaking it down again with your note. Tickets already started stay; the rest follow it.",
-            status: "done",
-          });
-        }
-        return false;
-      }
-    }
-
-    // A CLI agent has no live chat, but the agent working the ticket reads
-    // the message between its steps and answers in the ticket's log, like a
-    // note dropped into a running Claude Code session. Nothing to add here
-    // while it works; when nothing is working it, say when it will be read.
-    if (agent.kind === "cli" && cardKind === "ticket") {
-      const detail = await repo.ticketDetail(cardId);
-      const working = card.status === "running" || !!detail?.runnerJob || !!card.workingSince;
-      await finish(messageId, {
-        content: working
-          ? ""
-          : "Nothing is working this ticket right now. Its agent reads this when it next runs.",
-        status: "done",
-      });
-      return false;
-    }
-
-    if (agent.kind === "none" || agent.kind === "limited" || agent.kind === "cli") {
-      const reason =
-        agent.kind === "cli"
-          ? `${agent.info.label} runs in GitHub Actions and cannot reply here.`
-          : agent.reason;
+    if (agent.kind === "none" || agent.kind === "limited") {
       await finish(
         messageId,
         cardKind === "ticket"
-          ? { content: `${reason} Your message was passed on to the agent working this ticket.`, status: "done" }
-          : { content: reason, status: "failed" },
+          ? { content: `${agent.reason} Your message is kept as a note for the agent working this ticket.`, status: "done" }
+          : { content: agent.reason, status: "failed" },
       );
-      return false;
+      return "notice";
     }
 
     const project = await projectFor(projectId);
     const all = await repo.cardChatMessages(cardId);
     const past = history(all.filter((m) => m.id !== messageId));
-    const system = await systemPrompt(
-      cardKind,
-      cardId,
-      COLUMN_LABELS[column],
-      AGENT_ROLE_LABELS[role],
-      project.repoFullName,
-      agent.brief,
-    );
+    const brief = agent.kind === "cli" ? agent.agent.brief : agent.brief;
+    const system = await systemPrompt(card, project.repoFullName, brief);
+
+    if (agent.kind === "cli") {
+      const { startCliCardChat } = await import("@/lib/runner/runner");
+      const failure = await startCliCardChat({
+        projectId,
+        messageId,
+        cardKey: card.key,
+        agent: agent.agent,
+        prompt: cliPrompt(system, past),
+      });
+      if (failure) {
+        await finish(messageId, { content: failure, status: "failed" });
+        return "notice";
+      }
+      const waiting = `${agent.agent.info.label.split(" (")[0]} is reading this in GitHub Actions. Its answer lands here in a minute or two.`;
+      await repo.updateCardChatMessage(messageId, { content: waiting });
+      if (cardKind === "ticket") {
+        await publish(projectId, { type: "ticket.reply", ticketId: cardId, agent: null, text: waiting });
+      }
+      return "later";
+    }
 
     const { info } = agent;
     let speak: Speak;
@@ -304,28 +372,119 @@ async function reply(
 
     const creds = await credentialsForProject(project);
     const client = vcs(project.repoFullName, creds.githubToken);
+    const done: string[] = [];
+    const act = async (action: CardAction) => {
+      const result = await applyCardAction(projectId, cardKind, cardId, action);
+      done.push(result);
+      return result;
+    };
 
     let results: Array<{ id: string; content: string; isError: boolean }> | null = null;
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const { text, calls } = await speak(results);
       if (calls.length === 0) {
-        await finish(messageId, { content: text || "I have nothing to add.", status: "done" });
-        return true;
+        await finish(messageId, { content: text || done.join("\n") || "I have nothing to add.", status: "done" });
+        return "agent";
       }
       results = [];
       for (const call of calls) {
-        results.push({ id: call.id, ...(await runTool(call, client, project.baseBranch)) });
+        results.push({ id: call.id, ...(await runTool(call, client, project.baseBranch, act)) });
       }
     }
     await finish(messageId, {
-      content: "I read a lot and did not reach an answer. Try a narrower question.",
-      status: "failed",
+      content: done.length
+        ? done.join("\n")
+        : "I read a lot and did not reach an answer. Try a narrower question.",
+      status: done.length ? "done" : "failed",
     });
+    return "agent";
   } catch (e) {
     await finish(messageId, { content: e instanceof Error ? e.message : String(e), status: "failed" });
+    return "notice";
   }
-  return false;
 }
+
+/* ------------------------------------------------------------------------ */
+/* A CLI agent answers in GitHub Actions, where it can read the checkout.    */
+/* ------------------------------------------------------------------------ */
+
+const cliAnswerSchema = z.object({
+  reply: z.string(),
+  actions: z.array(z.unknown()).default([]),
+});
+
+export function cliPrompt(
+  system: string,
+  past: Array<{ role: "user" | "assistant"; content: string }>,
+): string {
+  return [
+    system,
+    "",
+    "You are running in a checkout of the repository: read it directly.",
+    "",
+    "The conversation so far, oldest first. Answer the last message from the person.",
+    "",
+    ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
+    "How to answer:",
+    "- Do not change, create or delete any file in the repository. Nothing you change is kept.",
+    "- Write your answer to the file named by the FORMIC_OUTPUT environment variable, as one JSON object and nothing else:",
+    '  {"reply": "<your answer, in Markdown>", "actions": [<an action>, ...]}',
+    "- Formic carries out the actions in order once you finish, and adds what happened under your reply, so write the reply as what you are doing (\"Closing it now.\"), not as a question.",
+    "- Leave actions empty unless the person asked for something to be done. Each action matches this JSON Schema:",
+    JSON.stringify(z.toJSONSchema(cardActionSchema)),
+  ].join("\n");
+}
+
+/**
+ * A CLI agent's answer arrived, or its run failed: carries out what it
+ * decided and shows its reply with what happened.
+ */
+export async function finishCliCardChat(
+  messageId: string,
+  answerText: string | null,
+  failure?: string,
+): Promise<void> {
+  const repo = repository();
+  const message = await repo.cardChatMessage(messageId);
+  if (!message) return;
+  const { projectId, cardKind, cardId } = message;
+  const card = await repo.cardById(cardId);
+  const label = card && !failure && answerText?.trim() ? agentLabelFor(card) : null;
+
+  if (failure || !answerText?.trim()) {
+    await finish(messageId, { content: failure ?? "The agent finished without an answer.", status: "failed" });
+  } else {
+    let raw: unknown = null;
+    try {
+      raw = extractJson(answerText);
+    } catch {
+      // Not JSON: the text is the reply.
+    }
+    const parsed = cliAnswerSchema.safeParse(raw);
+    if (!parsed.success) {
+      await finish(messageId, { content: answerText.trim(), status: "done" });
+    } else {
+      const lines: string[] = [];
+      for (const candidate of parsed.data.actions) {
+        const action = cardActionSchema.safeParse(candidate);
+        lines.push(
+          action.success
+            ? await applyCardAction(projectId, cardKind, cardId, action.data)
+            : `_Formic could not use one of the agent's actions: ${action.error.issues[0]?.message ?? "it was malformed"}._`,
+        );
+      }
+      await finish(messageId, {
+        content: [parsed.data.reply.trim(), ...lines].filter(Boolean).join("\n\n") || "I have nothing to add.",
+        status: "done",
+      });
+    }
+  }
+  if (cardKind === "ticket") await logReply(cardId, messageId, label);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Sending.                                                                  */
+/* ------------------------------------------------------------------------ */
 
 export class ChatBusyError extends Error {
   constructor() {
@@ -334,10 +493,9 @@ export class ChatBusyError extends Error {
 }
 
 /**
- * Sends the person's message on a card's chat and starts the reply. On a
- * ticket it is also a note, so the agent working it, and every later run,
- * reads it even when the column's agent cannot reply live. On an Epic it is
- * kept the same way, for every later breakdown.
+ * Sends the person's message on a card's chat and starts the reply. It is
+ * also kept as a note, so the agent working the card, and every later run
+ * of it, reads it whether or not the column's agent acts on it.
  */
 export async function ask(
   projectId: string,
@@ -352,7 +510,7 @@ export async function ask(
   await repo.addCardChatMessage({ projectId, cardKind, cardId, role: "user", content: text });
   if (cardKind === "ticket") await addNote(projectId, cardId, text);
   if (cardKind === "epic") await addEpicNote(projectId, cardId, text);
-  const reply = await repo.addCardChatMessage({
+  const pending = await repo.addCardChatMessage({
     projectId,
     cardKind,
     cardId,
@@ -360,5 +518,5 @@ export async function ask(
     content: "",
     status: "pending",
   });
-  launch(() => answer(cardKind, cardId, reply.id), `${cardKind} chat answer ${reply.id}`);
+  launch(() => answer(cardKind, cardId, pending.id), `${cardKind} chat answer ${pending.id}`);
 }

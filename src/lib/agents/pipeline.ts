@@ -7,7 +7,7 @@ import type { AgentContext, AgentOutcome, DraftTicket, ExistingTicket, Usage } f
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { ticketNotes } from "@/lib/coder/notes";
-import { epicNoteTexts } from "./epic-notes";
+import { epicNoteTexts, withEpicNotes } from "./epic-notes";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
@@ -302,6 +302,7 @@ export async function applyTickets(
       fileScope: t.fileScope,
       size: t.size,
       storyPoints: t.storyPoints ?? null,
+      needsHuman: t.needsHuman ?? null,
       position: positionForIndex(positions, cursor++),
       dependsOnKeys: t.dependsOn.map((k) => keyFor.get(k) ?? k),
     })),
@@ -405,7 +406,7 @@ export async function runProductAgent(
 
   const outcome = await (await agentFor(projectId, "product")).draftPrd(run.ctx, {
     epicId,
-    rawRequest,
+    rawRequest: withEpicNotes(rawRequest, await epicNoteTexts(projectId, epicId)),
     attachments: [],
   });
 

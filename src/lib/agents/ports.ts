@@ -93,6 +93,8 @@ export interface DraftTicket {
   /** 1, 2, 3, 5, 8 or 13. */
   storyPoints?: number;
   dependsOn: string[];
+  /** Work for a person, not an agent: why. */
+  needsHuman?: string;
 }
 
 /** One child ticket as it stands before a re-decomposition changes it. */
@@ -160,6 +162,11 @@ export interface CoderTask {
   fileScope: string[];
   /** What the person watching the ticket told its agents, oldest first. */
   notes?: string[];
+  /**
+   * What the person asked this run, from the ticket's chat, to do. The
+   * ticket is then background: the run does this, not the ticket over.
+   */
+  instruction?: string;
 }
 
 export interface CodeChange {
