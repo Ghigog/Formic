@@ -21,6 +21,7 @@ import type {
   TicketUpdate,
   AssistantMessage,
   AssistantProposal,
+  CardChatMessage,
 } from "./repository";
 import type {
   AgentRole,
@@ -889,6 +890,44 @@ export class PrismaRepository implements Repository {
     await prisma().assistantMessage.deleteMany({ where: { projectId } });
   }
 
+  async cardChatMessages(cardId: string): Promise<CardChatMessage[]> {
+    const rows = await prisma().cardChatMessage.findMany({
+      where: { cardId },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toCardChatMessage);
+  }
+
+  async cardChatMessage(id: string): Promise<CardChatMessage | null> {
+    const row = await prisma().cardChatMessage.findUnique({ where: { id } });
+    return row ? toCardChatMessage(row) : null;
+  }
+
+  async addCardChatMessage(input: {
+    projectId: string;
+    cardKind: "epic" | "ticket";
+    cardId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: CardChatMessage["status"];
+  }): Promise<CardChatMessage> {
+    const row = await prisma().cardChatMessage.create({
+      data: { ...input, status: input.status ?? "done" },
+    });
+    return toCardChatMessage(row);
+  }
+
+  async updateCardChatMessage(
+    id: string,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob">>,
+  ): Promise<void> {
+    await prisma().cardChatMessage.update({ where: { id }, data: update });
+  }
+
+  async clearCardChat(cardId: string): Promise<void> {
+    await prisma().cardChatMessage.deleteMany({ where: { cardId } });
+  }
+
   async claimDelivery(key: string): Promise<boolean> {
     const db = prisma();
     try {
@@ -971,6 +1010,25 @@ function toAssistantMessage(row: {
     role: row.role === "user" ? "user" : "assistant",
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
+  };
+}
+
+function toCardChatMessage(row: {
+  id: string;
+  projectId: string;
+  cardKind: string;
+  cardId: string;
+  role: string;
+  content: string;
+  status: string;
+  runnerJob: string | null;
+  createdAt: Date;
+}): CardChatMessage {
+  return {
+    ...row,
+    cardKind: row.cardKind === "epic" ? "epic" : "ticket",
+    role: row.role === "user" ? "user" : "assistant",
+    status: row.status === "pending" || row.status === "failed" ? row.status : "done",
   };
 }
 

@@ -283,3 +283,35 @@ export async function assistantAgentFor(projectId: string): Promise<AssistantAge
   }
   return { kind: "api", info, model, apiKey, brief };
 }
+
+/** The agent that answers a card's chat, however it is reached. */
+export type ColumnChatAgent =
+  | { kind: "none"; reason: string }
+  | { kind: "limited"; reason: string }
+  | { kind: "api"; info: ProviderInfo; model: string | null; apiKey: string | null; brief: string | null }
+  | { kind: "cli"; info: ProviderInfo; column: ColumnId };
+
+/**
+ * The agent to chat with about a card in this column: the same agent the
+ * column runs its pipeline stage on. A CLI agent runs in GitHub Actions and
+ * cannot hold a live conversation, so it reports that instead of chatting.
+ */
+export async function columnChatAgentFor(projectId: string, column: ColumnId): Promise<ColumnChatAgent> {
+  const unavailable: ColumnChatAgent = {
+    kind: "none",
+    reason: `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
+  };
+  const resolved = await resolveColumn(projectId, column);
+  if (resolved.kind === "unassigned" || resolved.kind === "mock") return unavailable;
+  if (resolved.kind === "limited") return { kind: "limited", reason: resolved.reason };
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (!info) return unavailable;
+  if (info.kind === "cli") return { kind: "cli", info, column };
+  return {
+    kind: "api",
+    info,
+    model: resolved.config.model || null,
+    apiKey: resolved.config.apiKey || null,
+    brief: resolved.config.brief || null,
+  };
+}

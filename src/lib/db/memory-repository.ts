@@ -18,6 +18,7 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
+  CardChatMessage,
 } from "./repository";
 import type {
   AgentPreset,
@@ -91,6 +92,7 @@ interface Store {
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
   assistant: AssistantMessage[];
+  cardChat: CardChatMessage[];
 }
 
 declare global {
@@ -137,6 +139,7 @@ function store(): Store {
     users: new Map(),
     columnAgents: new Map(),
     assistant: [],
+    cardChat: [],
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -819,6 +822,49 @@ export class MemoryRepository implements Repository {
   async clearAssistant(projectId: string): Promise<void> {
     const s = store();
     s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
+  }
+
+  async cardChatMessages(cardId: string): Promise<CardChatMessage[]> {
+    return store()
+      .cardChat.filter((m) => m.cardId === cardId)
+      .map((m) => ({ ...m }));
+  }
+
+  async cardChatMessage(id: string): Promise<CardChatMessage | null> {
+    const found = store().cardChat.find((m) => m.id === id);
+    return found ? { ...found } : null;
+  }
+
+  async addCardChatMessage(input: {
+    projectId: string;
+    cardKind: "epic" | "ticket";
+    cardId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: CardChatMessage["status"];
+  }): Promise<CardChatMessage> {
+    const message: CardChatMessage = {
+      id: `cchat_${Math.random().toString(36).slice(2, 10)}`,
+      runnerJob: null,
+      createdAt: new Date(),
+      ...input,
+      status: input.status ?? "done",
+    };
+    store().cardChat.push(message);
+    return { ...message };
+  }
+
+  async updateCardChatMessage(
+    id: string,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob">>,
+  ): Promise<void> {
+    const found = store().cardChat.find((m) => m.id === id);
+    if (found) Object.assign(found, update);
+  }
+
+  async clearCardChat(cardId: string): Promise<void> {
+    const s = store();
+    s.cardChat = s.cardChat.filter((m) => m.cardId !== cardId);
   }
 
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {

@@ -74,6 +74,19 @@ export interface AssistantProposal {
   error?: string;
 }
 
+/** One message in a card's chat with its column's agent. */
+export interface CardChatMessage {
+  id: string;
+  projectId: string;
+  cardKind: "epic" | "ticket";
+  cardId: string;
+  role: "user" | "assistant";
+  content: string;
+  status: "done" | "pending" | "failed";
+  runnerJob: string | null;
+  createdAt: Date;
+}
+
 /** Everything a coding agent and its pipeline need about one ticket. */
 export interface TicketDetail {
   id: string;
@@ -341,6 +354,22 @@ export interface Repository {
     update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
   ): Promise<void>;
   clearAssistant(projectId: string): Promise<void>;
+  /** One card's chat, oldest first. */
+  cardChatMessages(cardId: string): Promise<CardChatMessage[]>;
+  cardChatMessage(id: string): Promise<CardChatMessage | null>;
+  addCardChatMessage(input: {
+    projectId: string;
+    cardKind: "epic" | "ticket";
+    cardId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: CardChatMessage["status"];
+  }): Promise<CardChatMessage>;
+  updateCardChatMessage(
+    id: string,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob">>,
+  ): Promise<void>;
+  clearCardChat(cardId: string): Promise<void>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,
