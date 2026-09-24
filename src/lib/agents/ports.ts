@@ -95,11 +95,32 @@ export interface DraftTicket {
   dependsOn: string[];
 }
 
+/** One child ticket as it stands before a re-decomposition changes it. */
+export interface ExistingTicket {
+  key: string;
+  title: string;
+  description: string;
+  acceptanceCriteria: string[];
+  fileScope: string[];
+  storyPoints?: number;
+  /** Already has a branch or pull request: decomposing again cannot replace it. */
+  inFlight: boolean;
+}
+
 /** PROT-04. Epic PRD in, validated child ticket DAG out. */
 export interface ArchitectAgent {
   decompose(
     ctx: AgentContext,
-    input: { epicId: string; title: string; prd: Prd; repoTree: string[] },
+    input: {
+      epicId: string;
+      title: string;
+      prd: Prd;
+      repoTree: string[];
+      /** The Epic's current tickets, when this decomposes it again. */
+      existing?: ExistingTicket[];
+      /** What the person asked of this breakdown, oldest first. */
+      instructions?: string[];
+    },
   ): Promise<AgentOutcome<DraftTicket[]>>;
   /** A To Do request: no PRD, just the raw text and one ticket to draft. */
   draftTicket(

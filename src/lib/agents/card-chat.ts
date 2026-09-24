@@ -5,24 +5,29 @@ import { z } from "zod";
 import { MODELS } from "./anthropic";
 import { claudeSpeak, openAiSpeak, type Speak, type ToolDef } from "./chat-loop";
 import { truncate } from "./coding-loop";
-import { launch } from "./pipeline";
+import { decomposeEpic, launch } from "./pipeline";
 import { columnChatAgentFor } from "./presets";
+import { addEpicNote } from "./epic-notes";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { addNote } from "@/lib/coder/notes";
+import { runCoderAgent } from "@/lib/coder/pipeline";
 import { publish } from "@/lib/events/bus";
 import { repository } from "@/lib/db";
 import type { CardChatMessage } from "@/lib/db/repository";
-import { COLUMN_AGENT_ROLE, AGENT_ROLE_LABELS } from "@/lib/domain/entities";
+import { COLUMN_AGENT_ROLE, AGENT_ROLE_LABELS, prdSchema } from "@/lib/domain/entities";
 import { COLUMN_LABELS, columnFor } from "@/lib/domain/status";
 import { vcs, type VcsClient } from "@/lib/vcs";
 
 /**
  * One turn of a card's chat: the person tells the column's agent something
- * about this Epic or ticket, and it answers with the card's own detail as
- * context. On a ticket, the message also reaches any agent working it, and
- * every later run of it, as a note. The chat can read the repository, but
- * it cannot change the board or the ticket lifecycle.
+ * about this Epic or ticket. On a ticket, the message reaches any agent
+ * working it, and every later run of it, as a note; a ticket idle in In
+ * Progress is instead started fresh, with the note as its brief. On an Epic
+ * already broken down, it goes to the Architect Agent to break down again,
+ * replacing only the tickets no one has started. Anything else is answered
+ * as a question, with the card's own detail and the repository to read for
+ * context, but no way to change either.
  */
 
 const MAX_TURNS = 10;
@@ -202,6 +207,48 @@ async function reply(
     const column = columnFor(card.status, card.stalledIn);
     const role = COLUMN_AGENT_ROLE[column];
     const agent = await columnChatAgentFor(projectId, column);
+    const hasAgent = agent.kind !== "none" && agent.kind !== "limited";
+
+    // A ticket idle in In Progress has no run reading its notes right now:
+    // the message is the instruction to pick the work back up, so it starts
+    // one instead of waiting for someone to drag the card.
+    if (cardKind === "ticket" && column === "in_progress" && hasAgent) {
+      const detail = await repo.ticketDetail(cardId);
+      const working = card.status === "running" || !!detail?.runnerJob || !!card.workingSince;
+      if (!working) {
+        launch(() => runCoderAgent(projectId, cardId), `coder agent for ${card.key}`);
+        await finish(messageId, {
+          content: "Starting the Coder Agent again with your note.",
+          status: "done",
+        });
+        return false;
+      }
+    }
+
+    // An Epic already broken down is the Architect Agent's to act on: the
+    // message is an instruction to break it down again, not a question.
+    // Tickets already in flight stay; applyTickets replaces only the rest.
+    if (cardKind === "epic" && column === "todo" && hasAgent) {
+      const detail = await repo.epicDetail(cardId);
+      if (prdSchema.safeParse(detail?.prd).success) {
+        const working = !!detail?.runnerJob || !!card.workingSince;
+        if (working) {
+          await finish(messageId, {
+            content:
+              "The Architect Agent is already working on this Epic. Your note will be included in its next run.",
+            status: "done",
+          });
+        } else {
+          launch(() => decomposeEpic(projectId, cardId), `architect agent for ${card.key}`);
+          await finish(messageId, {
+            content:
+              "Breaking it down again with your note. Tickets already started stay; the rest follow it.",
+            status: "done",
+          });
+        }
+        return false;
+      }
+    }
 
     // A CLI agent has no live chat, but the agent working the ticket reads
     // the message between its steps and answers in the ticket's log, like a
@@ -289,7 +336,8 @@ export class ChatBusyError extends Error {
 /**
  * Sends the person's message on a card's chat and starts the reply. On a
  * ticket it is also a note, so the agent working it, and every later run,
- * reads it even when the column's agent cannot reply live.
+ * reads it even when the column's agent cannot reply live. On an Epic it is
+ * kept the same way, for every later breakdown.
  */
 export async function ask(
   projectId: string,
@@ -303,6 +351,7 @@ export async function ask(
   }
   await repo.addCardChatMessage({ projectId, cardKind, cardId, role: "user", content: text });
   if (cardKind === "ticket") await addNote(projectId, cardId, text);
+  if (cardKind === "epic") await addEpicNote(projectId, cardId, text);
   const reply = await repo.addCardChatMessage({
     projectId,
     cardKind,
