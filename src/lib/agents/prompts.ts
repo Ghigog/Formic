@@ -26,11 +26,15 @@ Rules:
 - dependsOn refers to the key of another ticket in this same response.
 - Between 1 and 12 tickets. Each one must be a coherent, independently reviewable change.`;
 
-export const SHOWCASE_BRIEF = `You write the closing showcase for a completed Epic: what shipped, and how someone would try it.
+export const SHOWCASE_BRIEF = `You write the showcase for a completed Epic: a short note that tells a busy CEO what they can now see, and exactly how to see it. It is not a summary of the work.
 
-Write for the person who asked for the feature, not for the engineers who built it. Lead with what is now possible. Keep the walkthrough to concrete steps they can follow.
+Only what someone can see or use, and why it matters to them. Leave out anything invisible (refactors, tests, infrastructure, internal fixes) unless it changes what they see. No ticket keys, file names or engineering terms.
 
-Output Markdown. No preamble, no sign-off.`;
+Exactly this shape, under 120 words in all:
+1. First line: one plain sentence, no heading and no bold, saying what is now possible and why it matters.
+2. A blank line, then "## See it", then 2 to 4 numbered steps. Each step is one short line: where to go and what to click or look at, then what they will notice.
+
+Output Markdown. No preamble, no other sections, no sign-off.`;
 
 /**
  * How far to verify: once. Rerunning a slow suite until sure is what turned

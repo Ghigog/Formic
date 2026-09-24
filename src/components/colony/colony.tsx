@@ -33,7 +33,7 @@ import {
 } from "@/lib/colony/game";
 import type { ExtrasMap } from "@/components/board/card";
 import { ColonyFx, cardEl, centerOf, colonyEl, heldByDrag, type CrewPhase } from "./fx";
-import { flyHome, ghostOf, groupOf, type Ghost } from "./epic-flight";
+import { flyHome, ghostOf, ghostRect, groupOf, type Ghost } from "./epic-flight";
 import { SoundEngine, type Sfx } from "./sound";
 import { useHydrated, useSaved } from "./store";
 
@@ -238,7 +238,7 @@ export function ColonyProvider({
    * board has already moved it to Done by the time anything here runs, so
    * this is the only record of where it flies from.
    */
-  const ghosts = useRef(new Map<string, { el: HTMLElement; ghost: Ghost }>());
+  const ghosts = useRef(new Map<string, Ghost>());
   /** Epics on their way to Done; each one's win waits for its landing. */
   const flights = useRef(new Map<string, Promise<void>>());
   const epicStatus = useRef<Map<string, string> | null>(null);
@@ -252,16 +252,20 @@ export function ColonyProvider({
     for (const epic of epics) {
       const was = before?.get(epic.id);
       if (epic.status !== "merged" || !was || was === "merged") continue;
-      const from = ghosts.current.get(epic.id);
+      const ghost = ghosts.current.get(epic.id);
       const home = groupOf(cardEl(epic.id));
+      if (!ghost || !home || fx.reducedMotion) continue;
       // Either end off screen (a hidden column on a phone): nothing to fly.
-      if (!from || !home || fx.reducedMotion) continue;
-      if (!from.ghost.rect.width || !home.getBoundingClientRect().width) continue;
+      if (!ghostRect(ghost).width || !home.getBoundingClientRect().width) continue;
       home.style.visibility = "hidden";
-      const flight = flyHome(from.ghost, home, {
-        onLift: () => sfx("pickup"),
+      const flight = flyHome(ghost, home, {
+        hold: sound.muted ? (go) => sound.whenAudible(go) : undefined,
+        onShake: (t) => sfx("rumble", t),
+        onLift: () => sfx("pop"),
+        onHover: () => sfx("shimmer"),
+        onLaunch: () => sfx("whoosh"),
         onSlam: (x, y) => {
-          sfx("stamp");
+          sfx("slam");
           fx.shake(7);
           fx.ring(x, y, "var(--jade)", 140, 0.6, 3);
           fx.burst(x, y, ["var(--border-dashed)", "var(--border)", "var(--clay)", "var(--jade)"], 36, {
@@ -273,41 +277,21 @@ export function ColonyProvider({
             life: 0.8,
           });
         },
+        onWiggle: () => sfx("boing"),
       }).finally(() => {
         home.style.visibility = "";
       });
       flights.current.set(epic.id, flight);
     }
 
-    const next = new Map<string, { el: HTMLElement; ghost: Ghost }>();
+    const next = new Map<string, Ghost>();
     for (const epic of epics) {
       if (epic.status === "merged") continue;
       const el = groupOf(cardEl(epic.id));
-      if (el) next.set(epic.id, { el, ghost: ghostOf(el) });
+      if (el) next.set(epic.id, ghostOf(el));
     }
     ghosts.current = next;
-  }, [cards, loaded, fx, sfx]);
-
-  // A scrolled column moves its epics; the flight starts from where they are.
-  useEffect(() => {
-    let frame = 0;
-    const onMove = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        for (const g of ghosts.current.values()) {
-          if (g.el.isConnected) g.ghost.rect = g.el.getBoundingClientRect();
-        }
-      });
-    };
-    window.addEventListener("scroll", onMove, { capture: true, passive: true });
-    window.addEventListener("resize", onMove);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", onMove, { capture: true });
-      window.removeEventListener("resize", onMove);
-    };
-  }, []);
+  }, [cards, loaded, fx, sfx, sound]);
 
   /* --------------------------------------------------------- reactions */
 
@@ -472,7 +456,6 @@ export function ColonyProvider({
     function epicMerged(epic: BoardCard, tally: EpicTally) {
       const show = () => {
         flights.current.delete(epic.id);
-        sfx("epic");
         setWin({ epic, tally });
         setTimeout(() => {
           fx.shake(3);
@@ -481,7 +464,7 @@ export function ColonyProvider({
       };
       const flight = flights.current.get(epic.id);
       if (flight) void flight.then(show);
-      else setTimeout(show, 900);
+      else setTimeout(() => sound.whenAudible(show), 900);
     }
     function dispatched(card: BoardCard) {
       const e = el(card);

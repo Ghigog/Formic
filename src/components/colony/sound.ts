@@ -28,7 +28,22 @@ export type Sfx =
   | "level"
   | "scrub"
   | "stamp"
-  | "epic";
+  | "epic"
+  | "rumble"
+  | "pop"
+  | "shimmer"
+  | "whoosh"
+  | "slam"
+  | "boing"
+  | "coin"
+  | "tick"
+  | "tally"
+  | "fill"
+  | "reveal"
+  | "click"
+  | "fold"
+  | "unfold"
+  | "close";
 
 interface ToneOpts {
   type?: OscillatorType;
@@ -53,12 +68,42 @@ export class SoundEngine {
   private ac: AudioContext | null = null;
   private out: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
+  private waiting: Array<() => void> = [];
   private readonly onGesture = () => {
     this.gestured = true;
+    this.release();
   };
+
+  /** Whatever was waiting to be heard goes now, after the current handlers. */
+  private release() {
+    const run = this.waiting;
+    this.waiting = [];
+    if (run.length) setTimeout(() => run.forEach((f) => f()), 0);
+  }
 
   setEnabled(on: boolean) {
     this.enabled = on;
+    if (!on) this.release();
+  }
+
+  /** Whether the page may make sound yet: some gesture has happened on it. */
+  private unlocked(): boolean {
+    if (!this.gestured && navigator.userActivation?.hasBeenActive) this.gestured = true;
+    return this.gestured;
+  }
+
+  /**
+   * Runs `f` once sound can be heard: now, or at the page's first gesture.
+   * With sound off it runs now, since nothing is waiting to be heard.
+   */
+  whenAudible(f: () => void): void {
+    if (!this.enabled || this.unlocked()) f();
+    else this.waiting.push(f);
+  }
+
+  /** Whether a celebration now would be silent for want of a gesture. */
+  get muted(): boolean {
+    return this.enabled && !this.unlocked();
   }
 
   attach(): () => void {
@@ -73,7 +118,7 @@ export class SoundEngine {
   }
 
   private audio(): AudioContext | null {
-    if (!this.enabled || !this.gestured) return null;
+    if (!this.enabled || !this.unlocked()) return null;
     if (!this.ac) {
       const AC =
         window.AudioContext ??
@@ -142,7 +187,7 @@ export class SoundEngine {
   }
 
   play(n: Sfx, v = 0) {
-    if (!this.enabled || !this.gestured) return;
+    if (!this.enabled || !this.unlocked()) return;
     switch (n) {
       case "pickup":
         this.tone(620, 0.07, { to: 940, gain: 0.045 });
@@ -250,6 +295,84 @@ export class SoundEngine {
           this.tone(f, 0.5, { type: "triangle", gain: 0.05, delay: i * 0.09 }),
         );
         setTimeout(() => this.play("ding"), 520);
+        break;
+      case "rumble": {
+        // v: 0 to 1, how far into the shake. Louder, lower and busier.
+        this.noise(0.06 + v * 0.05, { freq: 900 - v * 500, gain: 0.03 + v * 0.11, q: 1.4 });
+        this.tone(95 - v * 30, 0.07, { type: "triangle", gain: 0.02 + v * 0.07 });
+        if (v > 0.5) this.tone(2600 + v * 900, 0.02, { type: "square", gain: 0.006 + v * 0.01 });
+        break;
+      }
+      case "pop":
+        this.noise(0.03, { freq: 5000, hp: true, gain: 0.08 });
+        this.tone(420, 0.12, { to: 1400, gain: 0.08, type: "triangle" });
+        this.tone(1760, 0.16, { gain: 0.03, delay: 0.05 });
+        break;
+      case "shimmer":
+        [2093, 2637, 3136, 2637].forEach((f, i) =>
+          this.tone(f, 0.12, { type: "triangle", gain: 0.012, delay: i * 0.045 }),
+        );
+        break;
+      case "whoosh":
+        this.noise(0.5, { freq: 400, to: 3800, gain: 0.12, q: 1.8 });
+        this.noise(0.5, { freq: 6000, hp: true, gain: 0.03 });
+        this.tone(180, 0.5, { to: 520, gain: 0.02, type: "sawtooth" });
+        break;
+      case "slam":
+        this.noise(0.28, { freq: 1600, to: 90, gain: 0.34, q: 1.2 });
+        this.tone(120, 0.34, { to: 38, gain: 0.26 });
+        this.tone(62, 0.4, { gain: 0.14, type: "triangle", delay: 0.01 });
+        this.noise(0.09, { freq: 4200, hp: true, gain: 0.05, delay: 0.05 });
+        this.tone(1760, 0.3, { type: "triangle", gain: 0.03, delay: 0.08 });
+        break;
+      case "boing":
+        [740, 587, 698, 622, 659].forEach((f, i) =>
+          this.tone(f, 0.09, { type: "triangle", gain: 0.045 - i * 0.007, delay: i * 0.09 }),
+        );
+        break;
+      case "coin":
+        for (let i = 0; i < 9; i++) {
+          const at = 0.7 * (1 - Math.pow(1 - i / 9, 1.8));
+          this.tone(2200 + i * 110, 0.025, { type: "square", gain: 0.012, delay: at });
+        }
+        this.tone(1568, 0.5, { gain: 0.05, delay: 0.76 });
+        this.tone(2349, 0.4, { gain: 0.03, delay: 0.78 });
+        break;
+      case "tick": {
+        // v: 0 to 1, how far the counter has climbed.
+        const f = 660 * Math.pow(2, (v * 14) / 12);
+        this.tone(f, 0.035, { type: "square", gain: 0.014 });
+        break;
+      }
+      case "tally":
+        this.noise(0.02, { freq: 7000, hp: true, gain: 0.05 });
+        [1047, 1319, 1568, 2093].forEach((f, i) =>
+          this.tone(f, 0.35, { type: "triangle", gain: 0.04, delay: i * 0.05 }),
+        );
+        break;
+      case "fill":
+        this.tone(330, 0.7, { to: 990, gain: 0.03, type: "triangle", attack: 0.08 });
+        this.noise(0.6, { freq: 1200, to: 5000, gain: 0.015 });
+        break;
+      case "reveal":
+        this.tone(784, 0.18, { gain: 0.035, type: "triangle" });
+        this.tone(1175, 0.3, { gain: 0.035, delay: 0.08, type: "triangle" });
+        this.tone(1568, 0.36, { gain: 0.02, delay: 0.16 });
+        break;
+      case "click":
+        this.tone(1800, 0.018, { type: "square", gain: 0.02 });
+        this.noise(0.012, { freq: 6000, hp: true, gain: 0.02 });
+        break;
+      case "fold":
+        this.tone(900, 0.09, { to: 520, gain: 0.03, type: "triangle" });
+        this.noise(0.07, { freq: 3000, to: 900, gain: 0.02 });
+        break;
+      case "unfold":
+        this.tone(520, 0.09, { to: 900, gain: 0.03, type: "triangle" });
+        this.noise(0.07, { freq: 900, to: 3000, gain: 0.02 });
+        break;
+      case "close":
+        this.tone(880, 0.12, { to: 440, gain: 0.03, type: "triangle" });
         break;
     }
   }
