@@ -51,7 +51,7 @@ import { signingSecret } from "@/lib/auth/session";
 import { abortTicketRuns } from "@/lib/budget/controller";
 import { ticketNotes } from "@/lib/coder/notes";
 import { readStream } from "./stream";
-import { STAGING_PREFIX, VcsError, vcs, type VcsClient } from "@/lib/vcs";
+import { STAGING_PREFIX, VcsError, mergeTarget, vcs, type VcsClient } from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ANSWER_PATH,
@@ -83,6 +83,9 @@ import {
 
 /** Dispatch inputs are capped at 65,535 characters in total. */
 const MAX_PROMPT = 50_000;
+
+/** How much of an agent's report the ticket view shows. */
+const MAX_REPORT = 20_000;
 
 const CLI_RULES = `Rules that are enforced, not advisory:
 - Only change files inside the ticket's file scope. Formic compares your changes to it, and throws the whole run away if anything outside it changed.
@@ -242,7 +245,11 @@ async function recordCliWork(projectId: string, ticketId: string, summary: strin
   }
   const text = summary.trim();
   if (text) {
-    await publish(projectId, { type: "run.thought", runId: "", ticketId, kind: "text", text: text.slice(0, 4_000) });
+    const shown =
+      text.length > MAX_REPORT
+        ? `${text.slice(0, MAX_REPORT)}…\n\n[Cut short here. The full report is on the pull request.]`
+        : text;
+    await publish(projectId, { type: "run.thought", runId: "", ticketId, kind: "text", text: shown });
   }
 }
 
@@ -878,8 +885,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   }
 
   const branch = ticket.branchName!;
-  // A re-run with its pull request open started from the ticket's branch.
-  const from = result.mode === "implement" && !ticket.prNumber ? project.baseBranch : branch;
+  // A new ticket started from the branch it merges into; a re-run with its
+  // pull request open started from the ticket's own branch.
+  const from = result.mode === "implement" && !ticket.prNumber ? mergeTarget(project.baseBranch) : branch;
 
   try {
     const change = await client.compare(from, staging);

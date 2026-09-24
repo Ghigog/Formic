@@ -54,6 +54,10 @@ interface MockRepo {
   labels: Set<string>;
   /** Comments by pull request or issue number. */
   comments: Map<number, string[]>;
+  /** `${base}<-${head}` pairs that conflict when merged, as a test says. */
+  conflicts: Set<string>;
+  /** Every branch merge asked for, in order. */
+  merges: Array<{ base: string; head: string }>;
 }
 
 export interface MockIssue {
@@ -79,6 +83,8 @@ function repo(): MockRepo {
     logs: new Map(),
     labels: new Set(),
     comments: new Map(),
+    conflicts: new Set(),
+    merges: [],
   };
   return g.__formicMockRepo;
 }
@@ -160,6 +166,14 @@ export class MockVcsClient implements VcsClient {
   }
 
   async updateBranch(): Promise<UpdateOutcome> {
+    return { ok: true, updated: false };
+  }
+
+  async mergeBranch(base: string, head: string): Promise<UpdateOutcome> {
+    repo().merges.push({ base, head });
+    if (repo().conflicts.has(`${base}<-${head}`)) {
+      return { ok: false, reason: "Merge conflict", conflict: true };
+    }
     return { ok: true, updated: false };
   }
 
@@ -302,6 +316,18 @@ export class MockVcsClient implements VcsClient {
       conclusion,
     }));
     return pull.headSha;
+  }
+
+  /** Test seam: make merging `head` into `base` conflict. */
+  static conflictOn(base: string, head: string): void {
+    repo().conflicts.add(`${base}<-${head}`);
+  }
+
+  /** Test seam: change what GitHub says about a mock PR. */
+  static setPull(number: number, patch: Partial<Pick<PullRequestDetail, "state" | "merged" | "mergeable">>): void {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    Object.assign(pull, patch);
   }
 
   static reset(): void {

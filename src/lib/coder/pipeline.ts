@@ -15,6 +15,7 @@ import {
   commitAndPush,
   ensureMergeTarget,
   openCheckout,
+  prepareMergeTarget,
   pullRequestBody,
 } from "./checkout";
 import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
@@ -83,13 +84,43 @@ export async function runCoderAgent(
   ticketId: string,
 ): Promise<void> {
   const repo = repository();
-  const ticket = await repo.ticketDetail(ticketId);
-  if (!ticket) return;
+  const found = await repo.ticketDetail(ticketId);
+  if (!found) return;
+  let ticket: TicketDetail = found;
 
   const project = await projectFor(projectId);
-  const branch = ticket.branchName ?? newBranchName(ticket.key);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
+
+  // Its pull request was closed without merging: that attempt is over, and
+  // this one starts from the current code on a branch of its own.
+  if (ticket.prNumber) {
+    const pull = await client.pullRequest(ticket.prNumber).catch(() => null);
+    if (pull && pull.state === "closed" && !pull.merged) {
+      const fresh = { prNumber: null, prUrl: null, branchName: null, reviewedSha: null };
+      await repo.updateTicket(ticket.id, fresh);
+      ticket = { ...ticket, ...fresh };
+    }
+  }
+
+  // Sent back with its pull request still open: build on that branch, so
+  // the work lands on the same pull request instead of replacing it.
+  const continuing = !!ticket.prNumber && !!ticket.branchName;
+  const branch = continuing ? ticket.branchName! : newBranchName(ticket.key);
+
+  let startFrom = branch;
+  if (!continuing) {
+    const target = await prepareMergeTarget(client, project.baseBranch);
+    if (!target.ok) {
+      await stallTicket(projectId, ticket, target.reason, {
+        blocked: true,
+        stalledIn: "in_progress",
+        stage: STAGE_CODE_RUN,
+      });
+      return;
+    }
+    startFrom = target.branch;
+  }
 
   const run = startRun(projectId, "coder", {
     model: await modelFor(projectId, "coder"),
@@ -123,9 +154,7 @@ export async function runCoderAgent(
       ticket: { ...ticket, branchName: branch },
       mode: "implement",
       agent: cli,
-      // Sent back with its pull request still open: the agent builds on that
-      // branch, so its work lands on the same pull request.
-      from: ticket.prNumber && ticket.branchName ? ticket.branchName : project.baseBranch,
+      from: startFrom,
       prompt: cliPrompt(cli, "implement", ticket, undefined, await noteTexts(projectId, ticket.id)),
       run,
       stalledIn: "in_progress",
@@ -134,13 +163,10 @@ export async function runCoderAgent(
     return;
   }
 
-  // Sent back with its pull request still open: build on that branch, so
-  // the work lands on the same pull request instead of replacing it.
-  const continuing = !!ticket.prNumber && !!ticket.branchName;
   const checkout = await openCheckout({
     projectId,
     repoFullName: project.repoFullName,
-    fromBranch: continuing ? branch : project.baseBranch,
+    fromBranch: startFrom,
     newBranch: continuing ? null : branch,
     ticket,
     ctx: run.ctx,

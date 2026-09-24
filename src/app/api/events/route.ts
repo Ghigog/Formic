@@ -4,6 +4,7 @@ import { isDroppable, replay, subscribe } from "@/lib/events/bus";
 import type { SequencedEvent } from "@/lib/domain/events";
 import { activeProject } from "@/lib/board/project";
 import { collectCliRuns } from "@/lib/runner/runner";
+import { sweepOpenPullRequests } from "@/lib/review/pipeline";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -90,6 +91,9 @@ export async function GET(req: NextRequest) {
         // came are found on GitHub. Throttled inside; never holds the tail.
         void collectCliRuns(project.id).catch((e: unknown) =>
           console.warn("[formic] could not check the agents' runs:", e),
+        );
+        void sweepOpenPullRequests(project.id).catch((e: unknown) =>
+          console.warn("[formic] could not check the open pull requests:", e),
         );
         try {
           for (const e of await replay(project.id, polledThrough)) {

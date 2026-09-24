@@ -110,6 +110,8 @@ export interface VcsClient {
   checkLog(checkRunId: number): Promise<CheckLog>;
   /** Merges the base branch into the PR head. Never rewrites history. */
   updateBranch(number: number): Promise<UpdateOutcome>;
+  /** Merges `head` into the branch `base` with a merge commit. Never rewrites history. */
+  mergeBranch(base: string, head: string): Promise<UpdateOutcome>;
   /** `expectedHeadSha` guards against merging a commit nobody reviewed. */
   merge(number: number, expectedHeadSha: string): Promise<MergeOutcome>;
   /** Comments on a pull request or an issue: they share numbers. */

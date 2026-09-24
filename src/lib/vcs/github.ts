@@ -209,6 +209,22 @@ export class GitHubClient implements VcsClient {
     }
   }
 
+  async mergeBranch(base: string, head: string): Promise<UpdateOutcome> {
+    try {
+      const { status } = await this.request("POST", "/merges", {
+        base,
+        head,
+        commit_message: `Bring ${head} into ${base}`,
+      });
+      // 201 made a merge commit; 204 means base already had everything.
+      return { ok: true, updated: status === 201 };
+    } catch (e) {
+      if (!(e instanceof VcsError)) throw e;
+      if (e.status === 409) return { ok: false, reason: e.message, conflict: true };
+      throw e;
+    }
+  }
+
   async merge(number: number, expectedHeadSha: string): Promise<MergeOutcome> {
     try {
       const { data } = await this.request<{ sha: string; merged: boolean }>(
