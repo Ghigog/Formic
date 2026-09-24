@@ -56,6 +56,7 @@ export function useBoardEvents(
       "run.thought",
       "ticket.plan",
       "ticket.note",
+      "ticket.reply",
       "run.diff",
       "run.usage",
       "run.finished",

@@ -22,6 +22,8 @@ function Message({ m }: { m: CardChatMessageView }) {
       </div>
     );
   }
+  // Sent to the agent at work, which answers in the ticket's log.
+  if (!m.content) return null;
   return (
     <div
       className={cn(
@@ -44,10 +46,16 @@ export function CardChat({
   kind,
   cardId,
   agentLabel,
+  inputOnly = false,
 }: {
   kind: "epic" | "ticket";
   cardId: string;
   agentLabel: string;
+  /**
+   * Only the input: the conversation shows elsewhere, as it does in a
+   * ticket's log, where notes and their answers land beside the agent's work.
+   */
+  inputOnly?: boolean;
 }) {
   const c = useCardChat(kind, cardId);
   const [text, setText] = useState("");
@@ -73,23 +81,31 @@ export function CardChat({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        {c.messages.length === 0 ? (
-          <p className="text-fg-subtle text-[12px] leading-5">
-            {kind === "epic"
-              ? `Chat with the ${agentLabel} Agent about this Epic.`
-              : `Chat with the ${agentLabel} Agent about this ticket. Any agent working it, and every later run, reads what you send.`}
-          </p>
-        ) : (
-          c.messages.map((m) => <Message key={m.id} m={m} />)
-        )}
-        {c.error && (
-          <p role="alert" className="text-crimson-text text-[12px]">
+    <div className={cn("flex flex-col", !inputOnly && "min-h-0 flex-1")}>
+      {inputOnly ? (
+        c.error && (
+          <p role="alert" className="text-crimson-text px-3 pt-2 text-[12px]">
             {c.error}
           </p>
-        )}
-      </div>
+        )
+      ) : (
+        <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          {c.messages.length === 0 ? (
+            <p className="text-fg-subtle text-[12px] leading-5">
+              {kind === "epic"
+                ? `Chat with the ${agentLabel} Agent about this Epic.`
+                : `Chat with the ${agentLabel} Agent about this ticket. Any agent working it, and every later run, reads what you send.`}
+            </p>
+          ) : (
+            c.messages.map((m) => <Message key={m.id} m={m} />)
+          )}
+          {c.error && (
+            <p role="alert" className="text-crimson-text text-[12px]">
+              {c.error}
+            </p>
+          )}
+        </div>
+      )}
       <form
         onSubmit={(e) => void submit(e)}
         className="border-line shrink-0 border-t p-2"
@@ -116,7 +132,7 @@ export function CardChat({
             {c.pending ? "…" : "Send"}
           </button>
         </div>
-        {c.messages.length > 0 && (
+        {!inputOnly && c.messages.length > 0 && (
           <button
             type="button"
             onClick={() => void c.clear()}

@@ -175,14 +175,26 @@ export function SideBySide({ storageKey, first, second }: { storageKey: string; 
  * A scrolling pane with the card's chat pinned beneath it, and a divider
  * between them to set how tall the chat is.
  */
-export function WithChat({ storageKey, children, chat }: { storageKey: string; children: ReactNode; chat: ReactNode }) {
+export function WithChat({
+  storageKey,
+  children,
+  chat,
+  fixed = false,
+}: {
+  storageKey: string;
+  children: ReactNode;
+  chat: ReactNode;
+  /** Just an input bar, sized to itself: nothing to resize. */
+  fixed?: boolean;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useStoredSize(`formic:${storageKey}:chat`, 280);
 
   return (
     <div ref={box} className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-      {chat && (
+      {chat && fixed && <div className="shrink-0">{chat}</div>}
+      {chat && !fixed && (
         <>
           <SplitHandle
             axis="y"
