@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { StepIndicator } from "@/components/ui/step-indicator";
+import { SideBySide, WithChat } from "@/components/ui/split";
 import { StatusPill } from "@/components/ui/status-pill";
 import { CardChat } from "./card-chat";
 import { DagPane } from "./dag-pane";
@@ -272,45 +273,38 @@ export function EpicDrawer({
           ))}
         </div>
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-2">
-          <div
-            className={cn(
-              "border-line min-h-0 overflow-y-auto lg:border-r",
-              tab === "prd" ? "block" : "hidden lg:block",
-            )}
-          >
-            <PrdPane
-              prd={detail?.prd ?? null}
-              rawRequest={detail?.rawRequest ?? ""}
-              streaming={streamingPrd}
-              writing={epic?.agentRole === "product"}
-              onSave={save}
-            />
-          </div>
-
-          <div
-            className={cn(
-              "bg-sunken flex min-h-0 flex-col",
-              tab === "dag" ? "flex" : "hidden lg:flex",
-            )}
-          >
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <DagPane
-                tickets={detail?.children ?? []}
-                onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))}
+        <SideBySide
+          storageKey="epic"
+          first={
+            <div className={cn("min-h-0 overflow-y-auto", tab === "prd" ? "block" : "hidden lg:block")}>
+              <PrdPane
+                prd={detail?.prd ?? null}
+                rawRequest={detail?.rawRequest ?? ""}
+                streaming={streamingPrd}
+                writing={epic?.agentRole === "product"}
+                onSave={save}
               />
             </div>
-            {epic && (
-              <div className="border-line h-[280px] shrink-0 border-t">
-                <CardChat
-                  kind="epic"
-                  cardId={epicId}
-                  agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(epic.status, epic.stalledIn)]]}
-                />
-              </div>
-            )}
-          </div>
-        </div>
+          }
+          second={
+            <div className={cn("bg-sunken min-h-0 flex-col", tab === "dag" ? "flex" : "hidden lg:flex")}>
+              <WithChat
+                storageKey="epic"
+                chat={
+                  epic && (
+                    <CardChat
+                      kind="epic"
+                      cardId={epicId}
+                      agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(epic.status, epic.stalledIn)]]}
+                    />
+                  )
+                }
+              >
+                <DagPane tickets={detail?.children ?? []} onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))} />
+              </WithChat>
+            </div>
+          }
+        />
       </div>
     </div>
   );
