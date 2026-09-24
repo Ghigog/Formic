@@ -192,7 +192,10 @@ describe("structured answers from OpenAI-format providers", () => {
   it("reads a PRD out of a fenced answer, correcting a bad first try", async () => {
     const sent = fakeProvider([
       { role: "assistant", content: "Here you go:\n```json\n{\"title\": \"x\"}\n```" },
-      { role: "assistant", content: `\`\`\`json\n${JSON.stringify({ title: "Add x", prd: PRD })}\n\`\`\`` },
+      {
+        role: "assistant",
+        content: `\`\`\`json\n${JSON.stringify({ kind: "prd", title: "Add x", prd: PRD })}\n\`\`\``,
+      },
     ]);
     const agent = new OpenAiProductAgent({
       provider: "gemini",
@@ -206,7 +209,7 @@ describe("structured answers from OpenAI-format providers", () => {
       attachments: [],
     });
 
-    expect(outcome).toMatchObject({ ok: true, value: { title: "Add x" } });
+    expect(outcome).toMatchObject({ ok: true, value: { kind: "prd", title: "Add x" } });
     expect(sent).toHaveLength(2);
     expect(sent[0]!.url).toBe(
       "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -217,7 +220,7 @@ describe("structured answers from OpenAI-format providers", () => {
   it("drops JSON mode for a model that refuses it", async () => {
     const sent = fakeProvider([
       { status: 400 },
-      { role: "assistant", content: JSON.stringify({ title: "Add x", prd: PRD }) },
+      { role: "assistant", content: JSON.stringify({ kind: "prd", title: "Add x", prd: PRD }) },
     ]);
     const agent = new OpenAiProductAgent({ provider: "groq", model: "m", apiKey: "gsk" });
     const outcome = await agent.draftPrd(ctx(), {

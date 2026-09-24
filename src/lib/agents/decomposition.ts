@@ -100,6 +100,20 @@ export const decompositionSchema = z.object({
   tickets: z.array(ticketSpecSchema).min(1).max(12),
 });
 
+/**
+ * What draftTicket must return: the one ticket asked for, or a reroute back
+ * to Backlog when the raw request turns out to need a PRD and a breakdown
+ * instead. See PRODUCT_BRIEF/ARCHITECT_BRIEF in ./prompts for the judgment
+ * call this asks the model to make.
+ */
+export const ticketOrRerouteSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("ticket"), ticket: ticketSpecSchema }),
+  z.object({
+    kind: z.literal("reroute"),
+    reason: z.string().min(1).describe("Why this needs a PRD and a breakdown, not one ticket."),
+  }),
+]);
+
 /** Attempts before the Architect Agent gives up and asks for a human. */
 export const MAX_DECOMPOSITION_ATTEMPTS = 3;
 

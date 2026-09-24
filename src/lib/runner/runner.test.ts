@@ -205,7 +205,7 @@ describe("a CLI agent planning an Epic", () => {
     expect((await repository().epicDetail(epic.id))!.runnerJob).toBe(inputs.job);
 
     // Agents often wrap their JSON in a fence; that is fine.
-    await answer(inputs.job!, "```json\n" + JSON.stringify({ title: "Export", prd: PRD }) + "\n```");
+    await answer(inputs.job!, "```json\n" + JSON.stringify({ kind: "prd", title: "Export", prd: PRD }) + "\n```");
     await completeCliRun(PROJECT, { job: inputs.job!, mode: "product", conclusion: "success", url: null });
 
     const after = (await repository().epicDetail(epic.id))!;
@@ -289,7 +289,7 @@ describe("a CLI agent planning an Epic", () => {
     await runProductAgent(PROJECT, epic.id, "x");
 
     const stale = `${epic.id}--oldjob00`;
-    await answer(stale, JSON.stringify({ title: "Old", prd: PRD }));
+    await answer(stale, JSON.stringify({ kind: "prd", title: "Old", prd: PRD }));
     await completeCliRun(PROJECT, { job: stale, mode: "product", conclusion: "success", url: null });
 
     const after = (await repository().epicDetail(epic.id))!;

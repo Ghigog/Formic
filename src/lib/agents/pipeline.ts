@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 
-import type { AgentContext, AgentOutcome, DraftTicket, ExistingTicket, Usage } from "./ports";
+import type { AgentAttachment, AgentContext, AgentOutcome, DraftTicket, ExistingTicket, Usage } from "./ports";
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { ticketNotes } from "@/lib/coder/notes";
@@ -19,6 +19,7 @@ import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { directoryTree } from "@/lib/vcs/repositories";
+import type { AttachmentRef } from "@/lib/db/repository";
 
 /**
  * Wires agents to column transitions.
@@ -385,6 +386,28 @@ export async function stallEpic(
   });
 }
 
+/**
+ * What an agent needs to see an attachment left on the request it is
+ * grounded in: its bytes, read back and shaped for the model, an image as
+ * base64 and a text file inlined. Dropped, not failed, when its content is
+ * gone.
+ */
+async function attachmentsFor(ref: AttachmentRef): Promise<AgentAttachment[]> {
+  const repo = repository();
+  const summaries = await repo.attachmentsFor(ref);
+  const attachments = await Promise.all(
+    summaries.map(async (s): Promise<AgentAttachment | null> => {
+      const content = await repo.attachmentContent(s.id);
+      if (!content) return null;
+      const base = { id: s.id, filename: s.filename, mimeType: s.mimeType };
+      return s.kind === "image"
+        ? { ...base, kind: "image" as const, base64: Buffer.from(content.bytes).toString("base64") }
+        : { ...base, kind: "file" as const, text: Buffer.from(content.bytes).toString("utf-8") };
+    }),
+  );
+  return attachments.filter((a): a is AgentAttachment => a !== null);
+}
+
 /** Stage 2. Raw backlog request becomes an Epic PRD. */
 export async function runProductAgent(
   projectId: string,
@@ -407,19 +430,14 @@ export async function runProductAgent(
   const outcome = await (await agentFor(projectId, "product")).draftPrd(run.ctx, {
     epicId,
     rawRequest: withEpicNotes(rawRequest, await epicNoteTexts(projectId, epicId)),
-    attachments: [],
+    attachments: await attachmentsFor({ epicId }),
   });
 
   if (outcome.ok) {
     if (outcome.value.kind === "prd") {
       await applyPrd(projectId, epicId, outcome.value.prd);
     } else {
-      // Rerouting is not wired up yet; a reroute outcome just stalls the Epic.
-      await stallEpic(projectId, epicId, outcome.value.reason, {
-        blocked: true,
-        stalledIn: "backlog",
-        stage: 2,
-      });
+      await rerouteToTicket(projectId, epicId, outcome.value.reason, outcome.value.ticket);
     }
   } else {
     await stallEpic(projectId, epicId, outcome.error, {
@@ -509,15 +527,14 @@ export async function runArchitectDraftTicket(
     : await (await agentFor(projectId, "architect")).draftTicket(run.ctx, {
         rawRequest,
         repoTree,
-        attachments: [],
+        attachments: await attachmentsFor({ ticketId }),
       });
 
   if (outcome.ok) {
     if (outcome.value.kind === "ticket") {
       await applyDraftedTicket(projectId, epicId, ticketId, outcome.value.ticket);
     } else {
-      // Rerouting is not wired up yet; a reroute outcome just stalls the ticket.
-      await stallDraftingTicket(projectId, ticketId, outcome.value.reason, true);
+      await rerouteToBacklog(projectId, epicId, outcome.value.reason);
     }
   } else {
     await stallDraftingTicket(projectId, ticketId, outcome.error, outcome.blocked);
@@ -588,6 +605,119 @@ async function stallDraftingTicket(
     stage: 3,
     blockedReason: reason,
   });
+}
+
+/**
+ * A Backlog request the Product Agent judged small enough to be one ticket:
+ * the Epic it came from becomes a holder exactly like createTodoItem's, so
+ * the board shows only the ticket the Product Agent already wrote — no
+ * separate Architect Agent run is needed for it.
+ *
+ * Idempotent: an Epic that is already a holder (a second reroute reaching it,
+ * a retry) is left alone rather than rerouted again.
+ */
+export async function rerouteToTicket(
+  projectId: string,
+  epicId: string,
+  reason: string,
+  ticket: DraftTicket,
+): Promise<void> {
+  const repo = repository();
+  const epic = await repo.cardById(epicId);
+  if (!epic || epic.kind !== "epic" || epic.standalone) return;
+
+  await repo.setStandalone(epicId, true);
+
+  const positions = await repo.columnPositions(projectId, "todo");
+  const position = positionForIndex(positions, positions.length);
+
+  const created = (
+    await repo.createTickets([
+      {
+        epicId,
+        key: ticket.key,
+        title: ticket.title,
+        description: ticket.description,
+        acceptanceCriteria: ticket.acceptanceCriteria,
+        fileScope: ticket.fileScope,
+        size: ticket.size,
+        storyPoints: ticket.storyPoints ?? null,
+        needsHuman: ticket.needsHuman ?? null,
+        position,
+        dependsOnKeys: [],
+      },
+    ])
+  )[0]!;
+
+  await repo.move({
+    cardId: created.id,
+    kind: "ticket",
+    status: created.status,
+    stalledIn: null,
+    position,
+    detached: true,
+  });
+  await repo.setReroute(created.id, "ticket", { from: "backlog", reason });
+
+  await publish(projectId, { type: "card.deleted", cardId: epicId, kind: "epic", issueNumbers: [] });
+  await publish(projectId, { type: "card.created", cardId: created.id, kind: "ticket", epicId });
+  await publish(projectId, {
+    type: "card.rerouted",
+    cardId: created.id,
+    kind: "ticket",
+    from: "backlog",
+    to: "todo",
+    reason,
+  });
+}
+
+/**
+ * A To Do request the Architect Agent judged too big for one ticket: the
+ * holder Epic that carried it stops being a holder and takes its place in
+ * Backlog instead, exactly as a fresh backlog item would, so the Product
+ * Agent drafts it a PRD next.
+ *
+ * Idempotent: an Epic already carrying a reroute (a second one reaching it, a
+ * retry) is left alone rather than rerouted again.
+ */
+export async function rerouteToBacklog(projectId: string, epicId: string, reason: string): Promise<void> {
+  const repo = repository();
+  const epic = await repo.cardById(epicId);
+  const detail = await repo.epicDetail(epicId);
+  if (!epic || epic.kind !== "epic" || !detail || epic.rerouteFrom) return;
+
+  const tickets = await repo.ticketsForEpic(epicId);
+  if (tickets.length > 0) await repo.deleteTickets(tickets.map((t) => t.id));
+
+  await repo.setStandalone(epicId, false);
+  await repo.setReroute(epicId, "epic", { from: "todo", reason });
+
+  const positions = await repo.columnPositions(projectId, "backlog");
+  const position = positionForIndex(positions, positions.length);
+  await repo.move({ cardId: epicId, kind: "epic", status: "draft", stalledIn: null, position });
+
+  for (const t of tickets) {
+    await publish(projectId, {
+      type: "card.deleted",
+      cardId: t.id,
+      kind: "ticket",
+      issueNumbers: t.issueNumber ? [t.issueNumber] : [],
+    });
+  }
+  await publish(projectId, { type: "card.created", cardId: epicId, kind: "epic", epicId: null });
+  await publish(projectId, {
+    type: "card.rerouted",
+    cardId: epicId,
+    kind: "epic",
+    from: "todo",
+    to: "backlog",
+    reason,
+  });
+
+  launch(
+    () => runProductAgent(projectId, epicId, detail.rawRequest),
+    `product agent for ${epic.key}`,
+  );
 }
 
 /**

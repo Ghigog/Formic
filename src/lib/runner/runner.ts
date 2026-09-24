@@ -9,6 +9,7 @@ import {
   applyShowcase,
   applyTickets,
   existingTicketsFor,
+  rerouteToTicket,
   stallEpic,
   startRun,
   type RunHandle,
@@ -39,6 +40,7 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  toDraftTicket,
 } from "@/lib/agents/decomposition";
 import { productOutput } from "@/lib/agents/openai-agents";
 import { extractJson } from "@/lib/llm/openai-compat";
@@ -443,6 +445,20 @@ function jsonShape(schema: z.ZodType): string {
   return `Your answer is a single JSON object and nothing else, matching this JSON Schema:\n${JSON.stringify(z.toJSONSchema(schema))}`;
 }
 
+/**
+ * What a CLI agent's prompt says about a request's attachments: that they
+ * exist, and their names, not their content. It runs in a sandbox with no
+ * access to Formic's stored files; fetching them in is a separate ticket.
+ */
+function describeAttachments(attachments: Array<{ filename: string; mimeType: string }>): string {
+  if (attachments.length === 0) return "";
+  return [
+    "",
+    "Attached to this request (not included here; judge by name and type alone):",
+    ...attachments.map((a) => `- ${a.filename} (${a.mimeType})`),
+  ].join("\n");
+}
+
 /** What the merged tickets of an Epic did, for its showcase. */
 export function showcaseSummaries(
   tickets: TicketDetail[],
@@ -467,6 +483,7 @@ async function answerPrompt(
   if (!epic) return null;
 
   if (mode === "product") {
+    const attachments = await repo.attachmentsFor({ epicId });
     return [
       withProductConventions(agent.brief ?? PRODUCT_BRIEF),
       "",
@@ -476,6 +493,7 @@ async function answerPrompt(
       "Raw feature request:",
       "",
       withEpicNotes(epic.rawRequest, await epicNoteTexts(projectId, epicId)),
+      describeAttachments(attachments),
     ].join("\n");
   }
 
@@ -679,7 +697,11 @@ async function completeCliAnswer(
   let checked: Checked<unknown>;
   if (result.mode === "product") {
     const product = checkProduct(answer);
-    if (product.ok) return applyPrd(projectId, epicId, product.value.prd);
+    if (product.ok) {
+      return product.value.kind === "prd"
+        ? applyPrd(projectId, epicId, product.value.prd)
+        : rerouteToTicket(projectId, epicId, product.value.reason, toDraftTicket(product.value.ticket));
+    }
     checked = product;
   } else if (result.mode === "architect") {
     const tickets = checkTickets(answer);

@@ -27,11 +27,33 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  ticketOrRerouteSchema,
   ticketSpecSchema,
   toDraftTicket,
 } from "./decomposition";
 import { type ChatMessage, chat, extractJson } from "@/lib/llm/openai-compat";
 import { type ProviderInfo, provider } from "@/lib/llm/providers";
+
+/**
+ * An attachment ahead of the raw request, in the content-part shape every
+ * OpenAI-format endpoint accepts for a user message: an image as a data URL,
+ * a text-based file inlined as its own part. ChatMessage's content is typed
+ * as a plain string because nothing before this needed more; the cast below
+ * is honest about that; the object sent over the wire is the real shape.
+ */
+function withAttachments(text: string, attachments: AgentAttachment[]): ChatMessage {
+  const parts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [];
+  for (const a of attachments) {
+    if (a.kind === "image" && a.base64) {
+      parts.push({ type: "image_url", image_url: { url: `data:${a.mimeType};base64,${a.base64}` } });
+    } else if (a.kind === "file" && a.text) {
+      parts.push({ type: "text", text: `Attached file "${a.filename}":\n\n${a.text}` });
+    }
+  }
+  if (parts.length === 0) return { role: "user", content: text };
+  parts.push({ type: "text", text });
+  return { role: "user", content: parts as unknown as string };
+}
 
 /**
  * The Product, Architect and Showcase agents on any provider that speaks
@@ -132,10 +154,18 @@ async function askForJson<T>(
   return { ok: false, error: lastProblem, usage: total };
 }
 
-export const productOutput = z.object({
-  title: z.string().describe("A short imperative Epic title, under 80 characters."),
-  prd: prdSchema,
-});
+export const productOutput = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("prd"),
+    title: z.string().describe("A short imperative Epic title, under 80 characters."),
+    prd: prdSchema,
+  }),
+  z.object({
+    kind: z.literal("reroute"),
+    reason: z.string().min(1).describe("Why this is small enough to be one ticket, not an Epic."),
+    ticket: ticketSpecSchema,
+  }),
+]);
 
 export class OpenAiProductAgent implements ProductAgent {
   constructor(private readonly config: AgentConfig) {}
@@ -157,7 +187,7 @@ export class OpenAiProductAgent implements ProductAgent {
       ctx,
       [
         { role: "system", content: jsonSystem(withProductConventions(this.config.brief ?? PRODUCT_BRIEF), productOutput) },
-        { role: "user", content: `Raw feature request:\n\n${input.rawRequest}` },
+        withAttachments(`Raw feature request:\n\n${input.rawRequest}`, input.attachments),
       ],
       (raw) => {
         const parsed = productOutput.safeParse(raw);
@@ -175,7 +205,14 @@ export class OpenAiProductAgent implements ProductAgent {
     if (!result.ok) {
       return failure(r.model, `The Product Agent returned a malformed PRD: ${result.error}`, false, result.usage);
     }
-    return { ok: true, value: { kind: "prd", ...result.value }, usage: result.usage };
+    return {
+      ok: true,
+      value:
+        result.value.kind === "prd"
+          ? { kind: "prd", title: result.value.title, prd: result.value.prd }
+          : { kind: "reroute", reason: result.value.reason, ticket: toDraftTicket(result.value.ticket) },
+      usage: result.usage,
+    };
   }
 }
 
@@ -260,21 +297,21 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       [
         {
           role: "system",
-          content: jsonSystem(withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF), ticketSpecSchema),
+          content: jsonSystem(withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF), ticketOrRerouteSchema),
         },
-        {
-          role: "user",
-          content: [
+        withAttachments(
+          [
             "Raw feature request:",
             input.rawRequest,
             "",
             "Existing top-level directories in the repository:",
             input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
           ].join("\n"),
-        },
+          input.attachments,
+        ),
       ],
       (raw) => {
-        const parsed = ticketSpecSchema.safeParse(raw);
+        const parsed = ticketOrRerouteSchema.safeParse(raw);
         return parsed.success
           ? { ok: true, value: parsed.data }
           : {
@@ -288,7 +325,14 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
     if (!result.ok) {
       return failure(r.model, `The Architect Agent returned a malformed ticket: ${result.error}`, false, result.usage);
     }
-    return { ok: true, value: { kind: "ticket", ticket: toDraftTicket(result.value) }, usage: result.usage };
+    return {
+      ok: true,
+      value:
+        result.value.kind === "ticket"
+          ? { kind: "ticket", ticket: toDraftTicket(result.value.ticket) }
+          : { kind: "reroute", reason: result.value.reason },
+      usage: result.usage,
+    };
   }
 }
 

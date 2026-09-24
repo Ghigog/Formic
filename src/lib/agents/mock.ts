@@ -55,6 +55,37 @@ function titleFrom(raw: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * A deterministic stand-in for the triage judgment a real agent makes: a
+ * short, single-clause request reads as one ticket; anything joining more
+ * than one clause with "and", a semicolon or a list reads as more than one.
+ * Component and e2e tests trigger either branch on purpose by shaping their
+ * raw request text this way.
+ */
+function isSingleTicketWork(raw: string): boolean {
+  const text = raw.trim();
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const clauses = text.split(/\band\b|;|\n\s*[-*]/i).map((s) => s.trim()).filter(Boolean);
+  return sentences.length <= 2 && clauses.length <= 1;
+}
+
+function draftedTicketFrom(rawRequest: string): DraftTicket {
+  const title = titleFrom(rawRequest);
+  return {
+    key: "T-1",
+    title,
+    description: `Implement "${title}" as described in the raw request.`,
+    acceptanceCriteria: [
+      "The behaviour described in the request works end to end",
+      "Existing tests still pass",
+    ],
+    fileScope: ["src"],
+    size: "M",
+    storyPoints: 3,
+    dependsOn: [],
+  };
+}
+
 export class MockProductAgent implements ProductAgent {
   async draftPrd(
     ctx: AgentContext,
@@ -65,6 +96,20 @@ export class MockProductAgent implements ProductAgent {
       | { kind: "reroute"; reason: string; ticket: DraftTicket }
     >
   > {
+    if (isSingleTicketWork(input.rawRequest)) {
+      await sleep(150, ctx.signal);
+      ctx.emit({ type: "epic.prd", epicId: input.epicId, delta: "", done: true });
+      return {
+        ok: true,
+        value: {
+          kind: "reroute",
+          reason: "Small enough to be one ticket: a single behaviour, no separate scope items.",
+          ticket: draftedTicketFrom(input.rawRequest),
+        },
+        usage: MOCK_USAGE,
+      };
+    }
+
     const title = titleFrom(input.rawRequest);
     const prd: Prd = {
       summary: `Deliver "${title}" end to end, from data model through UI, behind the existing project conventions.`,
@@ -194,7 +239,6 @@ export class MockArchitectAgent implements ArchitectAgent {
   ): Promise<
     AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
   > {
-    const title = titleFrom(input.rawRequest);
     ctx.emit({
       type: "run.progress",
       runId: ctx.runId,
@@ -205,21 +249,18 @@ export class MockArchitectAgent implements ArchitectAgent {
     });
     await sleep(300, ctx.signal);
 
-    const ticket: DraftTicket = {
-      key: "T-1",
-      title,
-      description: `Implement "${title}" as described in the raw request.`,
-      acceptanceCriteria: [
-        "The behaviour described in the request works end to end",
-        "Existing tests still pass",
-      ],
-      fileScope: ["src"],
-      size: "M",
-      storyPoints: 3,
-      dependsOn: [],
-    };
+    if (!isSingleTicketWork(input.rawRequest)) {
+      return {
+        ok: true,
+        value: {
+          kind: "reroute",
+          reason: "More than one distinct capability: this needs a PRD and a breakdown, not one ticket.",
+        },
+        usage: MOCK_USAGE,
+      };
+    }
 
-    return { ok: true, value: { kind: "ticket", ticket }, usage: MOCK_USAGE };
+    return { ok: true, value: { kind: "ticket", ticket: draftedTicketFrom(input.rawRequest) }, usage: MOCK_USAGE };
   }
 }
 
