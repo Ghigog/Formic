@@ -41,6 +41,7 @@ export async function GET(
     title: detail.title,
     rawRequest: detail.rawRequest,
     prd: detail.prd,
+    showcase: detail.showcase,
     children,
     canRetry: epic ? canRetryEpic(epic, detail) : false,
   });

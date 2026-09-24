@@ -337,6 +337,8 @@ export interface Repository {
     /** The preset that job was dispatched with, so a failure is blamed on it. */
     runnerAgent: string | null;
     issueNumber: number | null;
+    /** The PM Agent's closing write-up, once every ticket has merged. */
+    showcase: string | null;
   } | null>;
   /** The GitHub issue that tracks this epic. */
   setEpicIssue(epicId: string, issueNumber: number): Promise<void>;

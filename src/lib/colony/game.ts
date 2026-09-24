@@ -110,6 +110,22 @@ export function mergePoints(card: BoardCard): number {
   return card.mergePoints ?? pointsOf(card);
 }
 
+export interface EpicTally {
+  tickets: Array<{ id: string; key: string; title: string; pts: number; mult: number }>;
+  bonus: number;
+  /** Every point the epic earned: its merges and its bonus. */
+  total: number;
+}
+
+/** What an epic scored, ticket by ticket, with its completion bonus on top. */
+export function epicTally(epic: BoardCard, cards: BoardCard[]): EpicTally {
+  const tickets = cards
+    .filter((c) => c.kind === "ticket" && c.epicId === epic.id && c.status === "merged")
+    .map((c) => ({ id: c.id, key: c.key, title: c.title, pts: mergePoints(c), mult: c.mergeMultiplier ?? 1 }));
+  const bonus = epicBonus(epic, cards);
+  return { tickets, bonus, total: tickets.reduce((n, t) => n + t.pts, 0) + bonus };
+}
+
 export interface Score {
   /** XP: every point ever earned. Drives the level. */
   earned: number;

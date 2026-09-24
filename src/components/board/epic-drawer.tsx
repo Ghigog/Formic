@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { SideBySide, WithChat } from "@/components/ui/split";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { StatusPill } from "@/components/ui/status-pill";
 import { CardChat } from "./card-chat";
 import { DagPane } from "./dag-pane";
@@ -18,6 +19,8 @@ interface EpicDetail {
   title: string;
   rawRequest: string;
   prd: Prd | null;
+  /** The PM Agent's write-up, once every ticket has merged. */
+  showcase: string | null;
   children: BoardCard[];
   /** Its planning stopped, and a person can start it again. */
   canRetry: boolean;
@@ -277,6 +280,12 @@ export function EpicDrawer({
           storageKey="epic"
           first={
             <div className={cn("min-h-0 overflow-y-auto", tab === "prd" ? "block" : "hidden lg:block")}>
+              {detail?.showcase && (
+                <section aria-label="Showcase" className="border-line bg-jade-wash border-b p-4">
+                  <span className="text-jade-chip-text font-mono text-[10px] tracking-[0.12em]">SHOWCASE · PM AGENT</span>
+                  <MarkdownLite text={detail.showcase} className="text-fg mt-2 text-[13px] leading-[1.6]" />
+                </section>
+              )}
               <PrdPane
                 prd={detail?.prd ?? null}
                 rawRequest={detail?.rawRequest ?? ""}

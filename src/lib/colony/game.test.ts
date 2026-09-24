@@ -4,6 +4,7 @@ import {
   BUG_COST,
   HEAT_MAX,
   HEAT_WINDOW_MS,
+  epicTally,
   gradeOf,
   heatStacks,
   mergeScore,
@@ -75,6 +76,23 @@ describe("score", () => {
       card({ id: "b", status: "merged", storyPoints: 2 }),
     ];
     expect(scoreOf(cards).earned).toBe(14);
+  });
+
+  it("tallies an epic's merges and its bonus, and nothing of another epic's", () => {
+    const epic = card({ id: "e1", kind: "epic", epicId: null, status: "merged" });
+    const cards = [
+      epic,
+      card({ id: "a", status: "merged", storyPoints: 5, mergePoints: 10, mergeMultiplier: 2 }),
+      card({ id: "b", status: "merged", storyPoints: 2 }),
+      card({ id: "x", epicId: "e2", status: "merged", storyPoints: 8 }),
+    ];
+    const tally = epicTally(epic, cards);
+    expect(tally.tickets.map((t) => [t.key, t.pts, t.mult])).toEqual([
+      ["A", 10, 2],
+      ["B", 2, 1],
+    ]);
+    expect(tally.bonus).toBe(7);
+    expect(tally.total).toBe(19);
   });
 
   it("charges for bugs in points but never in XP", () => {
