@@ -7,6 +7,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
 import type {
+  AgentAttachment,
   AgentConfig,
   AgentContext,
   AgentOutcome,
@@ -31,6 +32,8 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  ticketSpecSchema,
+  toDraftTicket,
 } from "./decomposition";
 import { requestShape } from "./models";
 
@@ -128,8 +131,13 @@ export class AnthropicProductAgent implements ProductAgent {
 
   async draftPrd(
     ctx: AgentContext,
-    input: { epicId: string; rawRequest: string },
-  ): Promise<AgentOutcome<{ title: string; prd: Prd }>> {
+    input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<
+      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "reroute"; reason: string; ticket: DraftTicket }
+    >
+  > {
     const model = this.config.model ?? MODELS.product;
     const shape = requestShape(model);
 
@@ -199,7 +207,7 @@ export class AnthropicProductAgent implements ProductAgent {
         );
       }
 
-      return { ok: true, value: parsed.data, usage };
+      return { ok: true, value: { kind: "prd", ...parsed.data }, usage };
     } catch (e) {
       return failure(model, describeError(e));
     }
@@ -303,6 +311,65 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
       true,
       total,
     );
+  }
+
+  async draftTicket(
+    ctx: AgentContext,
+    input: { rawRequest: string; repoTree: string[]; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
+  > {
+    const model = this.config.model ?? MODELS.architect;
+    const shape = requestShape(model, { effort: "high" });
+
+    try {
+      const message = await anthropicClient(this.config.apiKey).beta.messages.create({
+        model,
+        max_tokens: 8_000,
+        system: withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF),
+        ...(shape.thinking ? { thinking: shape.thinking } : {}),
+        ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
+        output_config: { ...shape.outputConfig, format: zodOutputFormat(ticketSpecSchema) },
+        betas: shape.betas,
+        messages: [
+          {
+            role: "user",
+            content: [
+              "Raw feature request:",
+              input.rawRequest,
+              "",
+              "Existing top-level directories in the repository:",
+              input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+            ].join("\n"),
+          },
+        ],
+      });
+
+      const usage = usageFrom(model, message.usage);
+
+      if (message.stop_reason === "refusal") {
+        return failure(model, "The model declined to draft this ticket.", true, usage);
+      }
+
+      const text = message.content
+        .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+
+      const parsed = ticketSpecSchema.safeParse(JSON.parse(text));
+      if (!parsed.success) {
+        return failure(
+          model,
+          `The Architect Agent returned a malformed ticket: ${parsed.error.issues[0]?.message}`,
+          false,
+          usage,
+        );
+      }
+
+      return { ok: true, value: { kind: "ticket", ticket: toDraftTicket(parsed.data) }, usage };
+    } catch (e) {
+      return failure(model, describeError(e));
+    }
   }
 }
 
