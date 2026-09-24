@@ -14,6 +14,7 @@ import {
   type ProviderId,
   provider as providerInfo,
 } from "@/lib/llm/providers";
+import { pricingNote } from "@/lib/budget/limits";
 
 /** What Formic always adds after a column's prompt, whatever the provider. */
 const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
@@ -302,6 +303,9 @@ export function AgentEditor({
                     ? models.reason
                     : "Add the key above to see the models it can use."}
             </span>
+            {!cli && model.trim() && (
+              <span className="text-muted text-[11px]">{pricingNote(model.trim())}</span>
+            )}
           </label>
 
           <label className="flex flex-col gap-1">
