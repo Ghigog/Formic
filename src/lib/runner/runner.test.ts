@@ -331,7 +331,10 @@ describe("starting a CLI agent", () => {
     const { file, ref, inputs } = runner.dispatches[0]!;
     expect(file).toBe("formic-agent.yml");
     expect(ref).toBe(base);
-    expect(inputs).toMatchObject({ mode: "implement", ticket: "T-1", cli: "claude", from: base, secret });
+    // The workflow runs from the base branch; the ticket starts from the
+    // branch its pull request merges into, brought up to date with the base.
+    expect(inputs).toMatchObject({ mode: "implement", ticket: "T-1", cli: "claude", from: "formic/integration", secret });
+    expect(runner.merges).toContainEqual({ base: "formic/integration", head: base });
     expect(inputs.prompt).toContain("Implement the ticket.");
     expect(inputs.prompt).toContain("src/lib/feature");
     expect(JSON.stringify(inputs)).not.toContain(TOKEN);
@@ -929,6 +932,27 @@ describe("a CLI agent seen while it works", () => {
 
     // Nothing left to stop.
     expect(await stopTicket(PROJECT, ticket.id)).toBe(false);
+  });
+
+  async function reportShown(message: string): Promise<string> {
+    const { ticket, job } = await dispatched();
+    MockVcsClient.stage(`${STAGING_PREFIX}${job}`, ["src/lib/feature/a.ts"], message);
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+    const events = await repository().ticketEvents(PROJECT, ticket.id, ["run.thought"]);
+    return (events.at(-1)?.payload as { text?: string } | undefined)?.text ?? "";
+  }
+
+  it("shows the agent's whole report", async () => {
+    // AUD-02's report was 4,006 characters and lost its last word.
+    const report = `T-1: Add it\n\n${"x".repeat(3_990)} full test suite`;
+    expect(await reportShown(report)).toBe(report);
+  });
+
+  it("says so when a report is too long to show whole", async () => {
+    const report = `T-1: Add it\n\n${"y".repeat(30_000)}`;
+    const shown = await reportShown(report);
+    expect(shown.length).toBeLessThan(report.length);
+    expect(shown).toContain("[Cut short here. The full report is on the pull request.]");
   });
 
   it("briefs every later run with the person's notes", async () => {

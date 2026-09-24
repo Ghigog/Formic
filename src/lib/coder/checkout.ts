@@ -1,6 +1,6 @@
 import "server-only";
 
-import { AGENT_COMMIT_AUTHOR, type VcsClient } from "@/lib/vcs";
+import { AGENT_COMMIT_AUTHOR, mergeTarget, type VcsClient } from "@/lib/vcs";
 import { DEFAULT_TTL_MS, type SandboxHandle } from "@/lib/sandbox/types";
 import { spawnSandbox } from "@/lib/sandbox";
 import {
@@ -202,4 +202,28 @@ export async function ensureMergeTarget(
 ): Promise<void> {
   if (target === baseBranch) return;
   await client.ensureBranch(target, baseBranch);
+}
+
+/**
+ * The branch a new ticket starts from: the one its pull request will merge
+ * into, first brought up to date with the base branch. A ticket cut from
+ * anywhere else carries the difference between the two into its pull
+ * request, and conflicts on it. When the two cannot be merged cleanly no
+ * ticket can start safely, and the reason says what a person has to do.
+ */
+export async function prepareMergeTarget(
+  client: VcsClient,
+  baseBranch: string,
+): Promise<{ ok: true; branch: string } | { ok: false; reason: string }> {
+  const target = mergeTarget(baseBranch);
+  if (target === baseBranch) return { ok: true, branch: target };
+  await client.ensureBranch(target, baseBranch);
+  const synced = await client.mergeBranch(target, baseBranch);
+  if (synced.ok) return { ok: true, branch: target };
+  return {
+    ok: false,
+    reason: synced.conflict
+      ? `${baseBranch} and ${target} have changed the same files and cannot be merged automatically. Merge ${baseBranch} into ${target} on GitHub, resolving the conflicts, then move this ticket to In Progress again.`
+      : `Could not bring ${target} up to date with ${baseBranch}: ${synced.reason}`,
+  };
 }

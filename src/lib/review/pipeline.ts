@@ -107,6 +107,12 @@ async function react(
   const client = vcs(project.repoFullName, creds.githubToken);
 
   const pull = await client.pullRequest(prNumber);
+  if (pull.merged) return;
+  const stuck = ticket.runnerJob ? null : whyStuck(ticket.key, pull);
+  if (stuck) {
+    await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
+    return;
+  }
   if (pull.merged || pull.state === "closed") return;
   if (pull.headSha !== headSha) return;
 
@@ -142,6 +148,66 @@ async function react(
   }
 
   await reviewTicket(projectId, ticket, pull, red);
+}
+
+/**
+ * Why a pull request can never move on by itself, or null when it can. A
+ * conflicted one gets no CI, because GitHub cannot build its merge; a closed
+ * one gets nothing at all. Either would leave the card waiting forever for a
+ * webhook that is not coming.
+ */
+function whyStuck(key: string, pull: PullRequestDetail): string | null {
+  if (pull.state === "closed") {
+    return `${key}'s pull request #${pull.number} was closed without merging. Move ${key} to To Do, then In Progress, to start it over on the current code.`;
+  }
+  if (pull.mergeable === false) {
+    return `${key}'s pull request #${pull.number} conflicts with ${pull.baseBranch}, so CI cannot run on it. Resolve the conflict on GitHub and it carries on once CI passes, or close the pull request and move ${key} to To Do, then In Progress, to redo it on the current code.`;
+  }
+  return null;
+}
+
+/** When each board's open pull requests were last looked at, to go easy on the API. */
+const lastSwept = new Map<string, number>();
+const SWEEP_EVERY_MS = 30_000;
+
+/**
+ * Looks at every pull request the board is waiting on in In Review. Nothing
+ * else notices one that conflicted or was closed, since neither sends the CI
+ * webhook the reviewer waits for; this parks it with a reason instead.
+ */
+export async function sweepOpenPullRequests(projectId: string): Promise<void> {
+  const now = Date.now();
+  if (now - (lastSwept.get(projectId) ?? 0) < SWEEP_EVERY_MS) return;
+  lastSwept.set(projectId, now);
+
+  const repo = repository();
+  const waiting = (await repo.boardCards(projectId)).filter(
+    (c) => c.kind === "ticket" && c.status === "review" && c.prNumber,
+  );
+  if (waiting.length === 0) return;
+
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+
+  for (const card of waiting) {
+    const ticket = await repo.ticketDetail(card.id);
+    // A reviewer at work in GitHub Actions reports back on its own.
+    if (!ticket?.prNumber || ticket.status !== "review" || ticket.runnerJob) continue;
+    const pull = await client.pullRequest(ticket.prNumber).catch(() => null);
+    if (!pull) continue;
+    if (pull.merged) {
+      await markMergedExternally(projectId, pull.number);
+      continue;
+    }
+    const stuck = whyStuck(ticket.key, pull);
+    if (stuck) await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
+  }
+}
+
+/** Test seam. */
+export function resetPullRequestSweep(): void {
+  lastSwept.clear();
 }
 
 /**

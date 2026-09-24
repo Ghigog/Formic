@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { runCoderAgent } from "./pipeline";
 import { setCheckoutFactory } from "./checkout";
-import { reviewPullRequest } from "@/lib/review/pipeline";
+import {
+  resetPullRequestSweep,
+  reviewPullRequest,
+  sweepOpenPullRequests,
+} from "@/lib/review/pipeline";
+import { projectFor } from "@/lib/board/project";
 import { resetMergeLanes } from "@/lib/review/lane";
 import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
@@ -167,8 +172,86 @@ beforeEach(() => {
   resetMergeLanes();
   resetAgents();
   resetVcs();
+  resetPullRequestSweep();
   setCheckoutFactory(null);
   setVcs(new MockVcsClient(REPO));
+});
+
+describe("where a ticket starts", () => {
+  /** Records what each checkout was asked for, and hands back a memory one. */
+  function recordCheckouts() {
+    const requests: Array<{ fromBranch: string; newBranch: string | null }> = [];
+    setCheckoutFactory(async (request) => {
+      requests.push({ fromBranch: request.fromBranch, newBranch: request.newBranch });
+      const raw = new MemoryWorkspace();
+      return {
+        workspace: scopedWorkspace(raw, request.ticket.fileScope),
+        raw,
+        sandboxId: null,
+        async dispose() {},
+      };
+    });
+    return requests;
+  }
+
+  it("starts from the branch its pull request merges into, brought up to date first", async () => {
+    const checkouts = recordCheckouts();
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const base = (await projectFor(PROJECT)).baseBranch;
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    expect(MockVcsClient.runner().merges[0]).toEqual({ base: "formic/integration", head: base });
+    expect(checkouts[0]).toMatchObject({ fromBranch: "formic/integration" });
+    const prNumber = (await repository().ticketDetail(ticket.id))!.prNumber!;
+    expect((await new MockVcsClient(REPO).pullRequest(prNumber)).baseBranch).toBe("formic/integration");
+  });
+
+  it("does not start, and says why, when the two branches conflict", async () => {
+    const checkouts = recordCheckouts();
+    const coder = new StubCoder(writesInScope());
+    useAgents(coder, new StubReviewer());
+    const ticket = await seedTicket();
+    MockVcsClient.conflictOn("formic/integration", (await projectFor(PROJECT)).baseBranch);
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("in_progress");
+    expect(after.blockedReason).toContain("cannot be merged automatically");
+    expect(after.prNumber).toBeNull();
+    expect(coder.tasks).toHaveLength(0);
+    expect(checkouts).toHaveLength(0);
+  });
+
+  it("starts over on a new branch when its last pull request was closed without merging", async () => {
+    const client = new MockVcsClient(REPO);
+    const old = await client.openPullRequest({
+      headBranch: "formic/t-1-old111",
+      baseBranch: "formic/integration",
+      title: "T-1",
+      body: "",
+    });
+    MockVcsClient.setPull(old.number, { state: "closed" });
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, {
+      branchName: old.headBranch,
+      prNumber: old.number,
+      prUrl: old.url,
+    });
+    const checkouts = recordCheckouts();
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    expect(checkouts[0]!.fromBranch).toBe("formic/integration");
+    expect(checkouts[0]!.newBranch).not.toBe(old.headBranch);
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.branchName).not.toBe(old.headBranch);
+    expect(after.prNumber).not.toBe(old.number);
+  });
 });
 
 describe("the Coder Agent pipeline", () => {
@@ -326,6 +409,46 @@ describe("the Reviewer Agent pipeline", () => {
 
     return pull;
   }
+
+  it("parks a conflicted pull request instead of waiting for CI that cannot run", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+
+    await sweepOpenPullRequests(PROJECT);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("in_review");
+    expect(after.blockedReason).toContain(`#${pull.number} conflicts with formic/integration`);
+  });
+
+  it("parks a pull request that was closed without merging", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    MockVcsClient.setPull(pull.number, { state: "closed" });
+
+    await sweepOpenPullRequests(PROJECT);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("was closed without merging");
+  });
+
+  it("notices a conflict when CI reports, too", async () => {
+    const reviewer = new StubReviewer();
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    expect((await repository().ticketDetail(ticket.id))!.status).toBe("blocked");
+    expect(reviewer.reviews).toHaveLength(0);
+  });
 
   it("stops after the retry ceiling and says which check is failing", async () => {
     useAgents(new StubCoder(writesInScope()), new StubReviewer(fixesInScope));
