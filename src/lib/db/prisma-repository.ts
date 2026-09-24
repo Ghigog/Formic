@@ -5,6 +5,9 @@ import { isProviderId } from "@/lib/llm/providers";
 
 import { prisma } from "./client";
 import type {
+  AttachmentContent,
+  AttachmentRef,
+  CreateAttachmentInput,
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
@@ -12,6 +15,7 @@ import type {
   OwnerScope,
   PresetRecord,
   ProjectSummary,
+  Reroute,
   UserRecord,
   UserSecrets,
   Repository,
@@ -26,6 +30,7 @@ import type {
 import type {
   AgentRole,
   AgentRunStatus,
+  AttachmentSummary,
   BoardCard,
   AgentPreset,
   ColumnAgents,
@@ -48,6 +53,9 @@ type EpicRow = {
   blockedReason: string | null;
   misplacedIn: ColumnId | null;
   misplacedReason: string | null;
+  standalone: boolean;
+  rerouteFrom: ColumnId | null;
+  rerouteReason: string | null;
   runnerJob: string | null;
   runnerJobAt: Date | null;
   position: number;
@@ -233,33 +241,40 @@ export class PrismaRepository implements Repository {
     });
 
     const numbers = epicNumbers(epics);
-    const epicCards: BoardCard[] = epics.map((epic: EpicRow) => ({
-      id: epic.id,
-      kind: "epic" as const,
-      key: epicKey(numbers.get(epic.id)!),
-      title: epic.title,
-      status: epic.status,
-      stalledIn: epic.stalledIn,
-      stage: epic.stage,
-      position: epic.position,
-      epicId: null,
-      size: null,
-      agentRole: epicAgent(epic)?.role ?? null,
-      model: epicAgent(epic)?.model ?? null,
-      workingSince: epicAgent(epic)?.since?.toISOString() ?? null,
-      fileScope: [],
-      dependsOn: [],
-      prNumber: null,
-      prUrl: null,
-      blockedReason: epic.blockedReason,
-      misplacedIn: epic.misplacedIn,
-      misplacedReason: epic.misplacedReason,
-      costCents: 0,
-      childCount: epic.tickets.length,
-      doneCount: epic.tickets.filter((t) => t.status === "merged").length,
-      createdAt: epic.createdAt.toISOString(),
-      updatedAt: epic.updatedAt.toISOString(),
-    }));
+    // A standalone Epic is a holder, not its own card: its child ticket
+    // renders alone, detached, exactly as today.
+    const epicCards: BoardCard[] = epics
+      .filter((epic: EpicRow) => !epic.standalone)
+      .map((epic: EpicRow) => ({
+        id: epic.id,
+        kind: "epic" as const,
+        key: epicKey(numbers.get(epic.id)!),
+        title: epic.title,
+        status: epic.status,
+        stalledIn: epic.stalledIn,
+        stage: epic.stage,
+        position: epic.position,
+        epicId: null,
+        standalone: epic.standalone,
+        rerouteFrom: epic.rerouteFrom,
+        rerouteReason: epic.rerouteReason,
+        size: null,
+        agentRole: epicAgent(epic)?.role ?? null,
+        model: epicAgent(epic)?.model ?? null,
+        workingSince: epicAgent(epic)?.since?.toISOString() ?? null,
+        fileScope: [],
+        dependsOn: [],
+        prNumber: null,
+        prUrl: null,
+        blockedReason: epic.blockedReason,
+        misplacedIn: epic.misplacedIn,
+        misplacedReason: epic.misplacedReason,
+        costCents: 0,
+        childCount: epic.tickets.length,
+        doneCount: epic.tickets.filter((t) => t.status === "merged").length,
+        createdAt: epic.createdAt.toISOString(),
+        updatedAt: epic.updatedAt.toISOString(),
+      }));
 
     const ticketCards: BoardCard[] = tickets.map((t) => {
       const live = t.runs.find((r) => r.status === "queued" || r.status === "running");
@@ -295,6 +310,8 @@ export class PrismaRepository implements Repository {
       blockedReason: t.blockedReason,
       misplacedIn: t.misplacedIn,
       misplacedReason: t.misplacedReason,
+      rerouteFrom: t.rerouteFrom,
+      rerouteReason: t.rerouteReason,
       costCents: t.costCents,
       childCount: 0,
       doneCount: 0,
@@ -337,6 +354,9 @@ export class PrismaRepository implements Repository {
       stage: epic.stage,
       position: epic.position,
       epicId: null,
+      standalone: false,
+      rerouteFrom: null,
+      rerouteReason: null,
       size: null,
       agentRole: null,
       model: null,
@@ -474,6 +494,77 @@ export class PrismaRepository implements Repository {
         },
       });
     }
+  }
+
+  async setStandalone(epicId: string, standalone: boolean): Promise<void> {
+    await prisma().epic.updateMany({ where: { id: epicId }, data: { standalone } });
+  }
+
+  async setReroute(
+    cardId: string,
+    kind: "epic" | "ticket",
+    reroute: Reroute | null,
+  ): Promise<void> {
+    const data = {
+      rerouteFrom: reroute?.from ?? null,
+      rerouteReason: reroute?.reason ?? null,
+    };
+    if (kind === "epic") {
+      await prisma().epic.updateMany({ where: { id: cardId }, data });
+    } else {
+      await prisma().ticket.updateMany({ where: { id: cardId }, data });
+    }
+  }
+
+  async createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary> {
+    const row = await prisma().attachment.create({
+      data: {
+        projectId: input.projectId,
+        epicId: input.epicId ?? null,
+        ticketId: input.ticketId ?? null,
+        requestId: input.requestId ?? null,
+        filename: input.filename,
+        mimeType: input.mimeType,
+        kind: input.kind,
+        size: input.size,
+        bytes: Buffer.from(input.bytes),
+      },
+    });
+    return toAttachmentSummary(row);
+  }
+
+  async attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]> {
+    const rows = await prisma().attachment.findMany({
+      where: attachmentRefWhere(ref),
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toAttachmentSummary);
+  }
+
+  async attachmentContent(id: string): Promise<AttachmentContent | null> {
+    const row = await prisma().attachment.findUnique({
+      where: { id },
+      select: { bytes: true, mimeType: true },
+    });
+    return row ? { bytes: row.bytes, mimeType: row.mimeType } : null;
+  }
+
+  async claimAttachments(
+    requestId: string,
+    ref: { epicId: string } | { ticketId: string },
+  ): Promise<void> {
+    await prisma().attachment.updateMany({
+      where: { requestId },
+      data:
+        "epicId" in ref
+          ? { epicId: ref.epicId, requestId: null }
+          : { ticketId: ref.ticketId, requestId: null },
+    });
+  }
+
+  async deleteAttachments(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await prisma().attachment.deleteMany({ where: { id: { in: ids } } });
   }
 
   async columnPositions(projectId: string, column: ColumnId): Promise<number[]> {
@@ -1063,6 +1154,29 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     plan: planOf(row.plan),
     handoff: row.handoff,
     reviewedSha: row.reviewedSha,
+  };
+}
+
+function attachmentRefWhere(ref: AttachmentRef) {
+  if ("epicId" in ref) return { epicId: ref.epicId };
+  if ("ticketId" in ref) return { ticketId: ref.ticketId };
+  return { requestId: ref.requestId };
+}
+
+function toAttachmentSummary(row: {
+  id: string;
+  filename: string;
+  mimeType: string;
+  kind: string;
+  size: number;
+}): AttachmentSummary {
+  return {
+    id: row.id,
+    filename: row.filename,
+    mimeType: row.mimeType,
+    kind: row.kind === "image" ? "image" : "file",
+    size: row.size,
+    url: `/api/attachments/${row.id}`,
   };
 }
 
