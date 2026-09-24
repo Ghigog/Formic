@@ -113,13 +113,16 @@ export function Board({
   const dragOver = useRef<ColumnId | null>(null);
   /**
    * The columns as last rendered before a drag began, held until it ends.
-   * A running agent streams progress over SSE every couple hundred
-   * milliseconds; each tick lands in `extras`/`stats` state a few components
-   * up and re-renders the board. Off a drag, that is harmless. Mid-drag, it
-   * can land inside the pointer's synthetic move sequence and cost
-   * @hello-pangea/dnd the gesture — it sees no destination and no transition
-   * is ever sent. Rendering this snapshot instead while one is set keeps that
-   * unrelated state change from touching the dragged card's subtree at all.
+   * Agents stream status and progress over SSE while they work, and a tick
+   * arriving mid-drag re-renders the board even though nothing about the
+   * dragged card changed. @hello-pangea/dnd cannot survive a re-render of its
+   * subtree mid-gesture: at best it drops the gesture (`onDragEnd` sees no
+   * destination), at worst — if the event actually moves the dragged card to
+   * a different column — its `<Draggable>` unmounts while the library still
+   * has it pinned to the pointer with `position: fixed`, so the card the user
+   * is holding vanishes outright. Freezing the rendered columns to this
+   * snapshot for the life of the drag keeps any such update from touching
+   * that subtree until the gesture is over.
    */
   const [dragSnapshot, setDragSnapshot] = useState<React.ReactNode[] | null>(null);
 

@@ -279,6 +279,84 @@ test("a dropped card stays where it was dropped while the server answers", async
   });
 });
 
+/*
+ * The board holds an SSE connection open for its whole life, and any other
+ * card's status changing — an agent finishing a step, CI reporting in —
+ * refetches the entire board and re-renders every column. @hello-pangea/dnd
+ * cannot survive its subtree re-rendering mid-gesture: at best it drops the
+ * gesture outright (no destination, no transition sent); at worst, if the
+ * update actually moves the card being dragged, its rendered node vanishes
+ * while the library still has it pinned to the pointer. In Review is the
+ * column this hits hardest, since that is where CI and agent activity land
+ * most often while a person might be looking at the board.
+ */
+test("an unrelated card's status change mid-drag does not disturb the drag", async ({ page }) => {
+  const [dragged] = await cardIds(page, "In Review");
+  expect(dragged, "the demo board should start with a card in In Review").toBeTruthy();
+
+  const board = await page.request.get("/api/board");
+  const { cards } = (await board.json()) as {
+    cards: Array<{ id: string; kind: string; status: string }>;
+  };
+  const victim = cards.find((c) => c.status === "running");
+  expect(victim, "the demo board should start with a running card").toBeTruthy();
+
+  await withCardReturned(page, dragged!, async () => {
+    const posts: Array<Record<string, unknown>> = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url().includes("/api/transitions")) {
+        posts.push(JSON.parse(r.postData() ?? "{}"));
+      }
+    });
+
+    const source = card(page, dragged!);
+    const target = dropzone(page, "To Do");
+    const from = (await source.boundingBox())!;
+    const into = (await target.boundingBox())!;
+    const startX = from.x + from.width / 2;
+    const startY = from.y + Math.min(20, from.height / 2);
+    const endX = into.x + into.width / 2;
+    const endY = into.y + 40;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    for (let i = 1; i <= 15; i++) {
+      await page.mouse.move(
+        startX + ((endX - startX) * i) / 15,
+        startY + ((endY - startY) * i) / 15,
+      );
+      if (i === 7) {
+        // Mid-gesture: an unrelated card's own status "changes" (a same-column
+        // nudge is enough to publish `card.status`), simulating an agent or CI
+        // event landing on the board while the person is still dragging.
+        const res = await page.request.post("/api/transitions", {
+          data: {
+            cardId: victim!.id,
+            kind: victim!.kind,
+            from: "in_progress",
+            to: "in_progress",
+            position: 999_999,
+            actor: "agent",
+          },
+        });
+        expect(res.ok()).toBe(true);
+      }
+      // The dragged card must stay exactly one visible, on-screen node
+      // throughout — never zero (unmounted out from under the gesture) and
+      // never more than one (a stale copy left behind).
+      const dragging = card(page, dragged!);
+      await expect(dragging).toHaveCount(1);
+      await expect(dragging).toBeVisible();
+    }
+    await page.mouse.up();
+
+    await expect.poll(() => columnOf(page, dragged!)).toBe("To Do");
+    // The concurrent event must not have cost the gesture: exactly one
+    // transition for the card the user actually dragged.
+    expect(posts.filter((p) => p.cardId === dragged)).toHaveLength(1);
+  });
+});
+
 test("a ticket opens its own view, not its Epic's", async ({ page }) => {
   const [first] = await cardIds(page, "In Progress");
   expect(first, "the demo board should have a ticket in progress").toBeTruthy();
