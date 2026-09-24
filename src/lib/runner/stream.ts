@@ -61,6 +61,10 @@ function short(text: string, max = 80): string {
 export function toolLabel(name: string, input: Json): string {
   const path = str(input.file_path) || str(input.path) || str(input.absolute_path) || str(input.notebook_path);
   const rel = path.replace(/^\/home\/runner\/work\/[^/]+\/[^/]+\//, "");
+  // Its report to Formic, written outside the repository.
+  if (/\/_temp\/formic-(summary|answer)\.md$/.test(path) && /^(Write|write_file|Edit|replace)$/.test(name)) {
+    return path.endsWith("summary.md") ? "Writing up what it did" : "Writing its answer";
+  }
   switch (name) {
     case "Bash":
     case "run_shell_command":

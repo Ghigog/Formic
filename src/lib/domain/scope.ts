@@ -3,7 +3,8 @@
  * run at the same time only if the files they are allowed to touch are
  * disjoint.
  *
- * Scopes are *directory prefixes*, not globs. Glob intersection is
+ * Scopes are *directory prefixes*, not globs, plus one reading of a name
+ * without an extension as the module of that name (see containsPath). Glob intersection is
  * undecidable-adjacent in the general case and quietly wrong in the common
  * one; prefix comparison is exact and explainable to a user. If richer
  * patterns are needed later, they go through a normaliser that reduces them to
@@ -79,10 +80,19 @@ export function normalizeScope(scope: readonly string[]): string[] {
     .sort();
 }
 
-/** True when `parent` is the same path as `child` or a directory above it. */
+/**
+ * True when `parent` is the same path as `child`, a directory above it, or
+ * a module named without its extension: `src/lib/auth/session` covers
+ * `session.ts` and `session.test.ts` beside it, which is what a ticket that
+ * names the module means. Only a name with no extension of its own reads
+ * that way, and only for files in the same directory.
+ */
 export function containsPath(parent: string, child: string): boolean {
   if (parent === child) return true;
-  return child.startsWith(parent + "/");
+  if (child.startsWith(parent + "/")) return true;
+  const name = parent.slice(parent.lastIndexOf("/") + 1);
+  if (name.includes(".") || !child.startsWith(parent + ".")) return false;
+  return !child.slice(parent.length).includes("/");
 }
 
 /** Two scopes overlap when any entry of one contains, or is contained by, an entry of the other. */

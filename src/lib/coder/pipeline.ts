@@ -123,7 +123,9 @@ export async function runCoderAgent(
       ticket: { ...ticket, branchName: branch },
       mode: "implement",
       agent: cli,
-      from: project.baseBranch,
+      // Sent back with its pull request still open: the agent builds on that
+      // branch, so its work lands on the same pull request.
+      from: ticket.prNumber && ticket.branchName ? ticket.branchName : project.baseBranch,
       prompt: cliPrompt(cli, "implement", ticket, undefined, await noteTexts(projectId, ticket.id)),
       run,
       stalledIn: "in_progress",

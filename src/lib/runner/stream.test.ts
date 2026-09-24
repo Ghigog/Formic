@@ -117,5 +117,6 @@ describe("reading a CLI agent's stream", () => {
     expect(toolLabel("Grep", { pattern: "boardCards" })).toBe("Searching for boardCards");
     expect(toolLabel("Edit", { file_path: "/home/runner/work/Formic/Formic/src/a.ts" })).toBe("Editing src/a.ts");
     expect(toolLabel("mcp__thing", {})).toBe("mcp__thing");
+    expect(toolLabel("Write", { file_path: "/home/runner/work/_temp/formic-summary.md" })).toBe("Writing up what it did");
   });
 });

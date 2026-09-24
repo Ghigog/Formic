@@ -832,7 +832,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     ticket.runnerJob === result.job &&
     !!ticket.branchName &&
     (result.mode === "implement"
-      ? ticket.status === "running" && !ticket.prNumber
+      ? ticket.status === "running"
       : ticket.status === "review" && !!ticket.prNumber);
   if (!waiting) {
     await cleanUp();
@@ -853,7 +853,8 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   }
 
   const branch = ticket.branchName!;
-  const from = result.mode === "implement" ? project.baseBranch : branch;
+  // A re-run with its pull request open started from the ticket's branch.
+  const from = result.mode === "implement" && !ticket.prNumber ? project.baseBranch : branch;
 
   try {
     const change = await client.compare(from, staging);
