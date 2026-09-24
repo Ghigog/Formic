@@ -34,10 +34,39 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  ticketOrRerouteSchema,
   ticketSpecSchema,
   toDraftTicket,
 } from "./decomposition";
 import { requestShape } from "./models";
+
+/** Image types the API accepts as an image content block. Anything else is inlined as text instead. */
+const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+/**
+ * An attachment as the model sees it: an image ahead of the raw request
+ * becomes an image content block, a text-based file becomes its own text
+ * block. Both agents ground their triage judgment and their draft in these
+ * the same way they ground it in the raw request text.
+ */
+function attachmentBlocks(attachments: AgentAttachment[]): Anthropic.Beta.BetaContentBlockParam[] {
+  const blocks: Anthropic.Beta.BetaContentBlockParam[] = [];
+  for (const a of attachments) {
+    if (a.kind === "image" && a.base64 && IMAGE_MEDIA_TYPES.has(a.mimeType)) {
+      blocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: a.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+          data: a.base64,
+        },
+      });
+    } else if (a.kind === "file" && a.text) {
+      blocks.push({ type: "text", text: `Attached file "${a.filename}":\n\n${a.text}` });
+    }
+  }
+  return blocks;
+}
 
 /**
  * Real agents.
@@ -143,10 +172,18 @@ export class AnthropicProductAgent implements ProductAgent {
     const model = this.config.model ?? MODELS.product;
     const shape = requestShape(model);
 
-    const outputSchema = z.object({
-      title: z.string().describe("A short imperative Epic title, under 80 characters."),
-      prd: prdSchema,
-    });
+    const outputSchema = z.discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("prd"),
+        title: z.string().describe("A short imperative Epic title, under 80 characters."),
+        prd: prdSchema,
+      }),
+      z.object({
+        kind: z.literal("reroute"),
+        reason: z.string().min(1).describe("Why this is small enough to be one ticket, not an Epic."),
+        ticket: ticketSpecSchema,
+      }),
+    ]);
 
     try {
       const stream = anthropicClient(this.config.apiKey).beta.messages.stream({
@@ -160,7 +197,10 @@ export class AnthropicProductAgent implements ProductAgent {
         messages: [
           {
             role: "user",
-            content: `Raw feature request:\n\n${input.rawRequest}`,
+            content: [
+              ...attachmentBlocks(input.attachments),
+              { type: "text", text: `Raw feature request:\n\n${input.rawRequest}` },
+            ],
           },
         ],
       });
@@ -209,7 +249,14 @@ export class AnthropicProductAgent implements ProductAgent {
         );
       }
 
-      return { ok: true, value: { kind: "prd", ...parsed.data }, usage };
+      return {
+        ok: true,
+        value:
+          parsed.data.kind === "prd"
+            ? { kind: "prd", title: parsed.data.title, prd: parsed.data.prd }
+            : { kind: "reroute", reason: parsed.data.reason, ticket: toDraftTicket(parsed.data.ticket) },
+        usage,
+      };
     } catch (e) {
       return failure(model, describeError(e));
     }
@@ -339,18 +386,24 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         system: withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF),
         ...(shape.thinking ? { thinking: shape.thinking } : {}),
         ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
-        output_config: { ...shape.outputConfig, format: zodOutputFormat(ticketSpecSchema) },
+        output_config: { ...shape.outputConfig, format: zodOutputFormat(ticketOrRerouteSchema) },
         betas: shape.betas,
         messages: [
           {
             role: "user",
             content: [
-              "Raw feature request:",
-              input.rawRequest,
-              "",
-              "Existing top-level directories in the repository:",
-              input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
-            ].join("\n"),
+              ...attachmentBlocks(input.attachments),
+              {
+                type: "text",
+                text: [
+                  "Raw feature request:",
+                  input.rawRequest,
+                  "",
+                  "Existing top-level directories in the repository:",
+                  input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+                ].join("\n"),
+              },
+            ],
           },
         ],
       });
@@ -366,7 +419,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         .map((b) => b.text)
         .join("");
 
-      const parsed = ticketSpecSchema.safeParse(JSON.parse(text));
+      const parsed = ticketOrRerouteSchema.safeParse(JSON.parse(text));
       if (!parsed.success) {
         return failure(
           model,
@@ -376,7 +429,14 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         );
       }
 
-      return { ok: true, value: { kind: "ticket", ticket: toDraftTicket(parsed.data) }, usage };
+      return {
+        ok: true,
+        value:
+          parsed.data.kind === "ticket"
+            ? { kind: "ticket", ticket: toDraftTicket(parsed.data.ticket) }
+            : { kind: "reroute", reason: parsed.data.reason },
+        usage,
+      };
     } catch (e) {
       return failure(model, describeError(e));
     }

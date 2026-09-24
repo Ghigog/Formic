@@ -1,18 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 import type {
+  AgentAttachment,
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
   DraftTicket,
   ExistingTicket,
+  ProductAgent,
 } from "@/lib/agents/ports";
 import {
+  MockArchitectAgent,
   MockCoderAgent,
   MockProductAgent,
   MockReviewerAgent,
   MockShowcaseAgent,
 } from "@/lib/agents/mock";
+import type { Prd } from "@/lib/domain/entities";
 
 const deferred = vi.hoisted(() => [] as unknown[]);
 
@@ -24,10 +28,12 @@ vi.stubEnv("DATABASE_URL", "");
 vi.stubEnv("POSTGRES_PRISMA_URL", "");
 vi.stubEnv("POSTGRES_URL", "");
 
-const { applyPrd, applyTickets, decomposeEpic, runArchitectDraftTicket } = await import("./pipeline");
+const { applyPrd, applyTickets, decomposeEpic, runArchitectDraftTicket, runProductAgent } =
+  await import("./pipeline");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
 const { resetAgents, setAgents } = await import("./registry");
+const { publish } = await import("@/lib/events/bus");
 
 const NO_USAGE = { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 };
 
@@ -35,7 +41,7 @@ const NO_USAGE = { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 };
 class StubArchitect implements ArchitectAgent {
   constructor(
     private readonly outcome: (
-      input: { rawRequest: string },
+      input: { rawRequest: string; attachments: AgentAttachment[] },
     ) => Promise<
       AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
     >,
@@ -47,7 +53,7 @@ class StubArchitect implements ArchitectAgent {
 
   async draftTicket(
     _ctx: AgentContext,
-    input: { rawRequest: string },
+    input: { rawRequest: string; attachments: AgentAttachment[] },
   ): Promise<
     AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
   > {
@@ -59,6 +65,37 @@ function useArchitect(architect: ArchitectAgent) {
   setAgents({
     product: new MockProductAgent(),
     architect,
+    coder: new MockCoderAgent(),
+    reviewer: new MockReviewerAgent(),
+    showcase: new MockShowcaseAgent(),
+  });
+}
+
+/** A Product Agent whose draftPrd does whatever the test tells it to. */
+class StubProduct implements ProductAgent {
+  constructor(
+    private readonly outcome: (
+      input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
+    ) => Promise<
+      AgentOutcome<
+        | { kind: "prd"; title: string; prd: Prd }
+        | { kind: "reroute"; reason: string; ticket: DraftTicket }
+      >
+    >,
+  ) {}
+
+  async draftPrd(
+    _ctx: AgentContext,
+    input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
+  ) {
+    return this.outcome(input);
+  }
+}
+
+function useProduct(product: ProductAgent) {
+  setAgents({
+    product,
+    architect: new MockArchitectAgent(),
     coder: new MockCoderAgent(),
     reviewer: new MockReviewerAgent(),
     showcase: new MockShowcaseAgent(),
@@ -249,6 +286,167 @@ describe("runArchitectDraftTicket", () => {
     expect(card?.status).toBe("blocked");
     expect(card?.stalledIn).toBe("todo");
     expect(card?.blockedReason).toBe("The model declined to draft this ticket.");
+  });
+
+  it("reroutes a too-big request to Backlog and starts the Product Agent", async () => {
+    const { epic, ticket } = seedDrafting();
+    useArchitect(
+      new StubArchitect(async () => ({
+        ok: true,
+        value: { kind: "reroute", reason: "Needs a PRD and a breakdown." },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, "raw request text", []);
+
+    const cards = await repository().boardCards(PROJECT);
+    expect(cards).toEqual([
+      expect.objectContaining({
+        id: epic.id,
+        kind: "epic",
+        status: "draft",
+        rerouteFrom: "todo",
+        rerouteReason: "Needs a PRD and a breakdown.",
+      }),
+    ]);
+    expect(await repository().ticketsForEpic(epic.id)).toHaveLength(0);
+    // The events land before the Product Agent starts: deleted, created, rerouted.
+    const cardEvents = vi.mocked(publish).mock.calls.map(([, event]) => event.type).filter((t) => t.startsWith("card."));
+    expect(cardEvents).toEqual(["card.deleted", "card.created", "card.rerouted"]);
+    expect(deferred).toEqual([expect.any(Function)]);
+  });
+
+  it("does not reroute the same request a second time", async () => {
+    const { epic, ticket } = seedDrafting();
+    useArchitect(
+      new StubArchitect(async () => ({
+        ok: true,
+        value: { kind: "reroute", reason: "Needs a PRD and a breakdown." },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, "raw request text", []);
+    const launchedOnce = deferred.length;
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, "raw request text", []);
+
+    expect(deferred).toHaveLength(launchedOnce);
+    expect(await repository().cardById(epic.id)).toMatchObject({
+      rerouteReason: "Needs a PRD and a breakdown.",
+    });
+  });
+
+  it("passes the ticket's attachments to the Architect Agent", async () => {
+    const { epic, ticket } = seedDrafting();
+    await repository().createAttachment({
+      projectId: PROJECT,
+      ticketId: ticket.id,
+      filename: "before.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+    let seen: AgentAttachment[] = [];
+    useArchitect(
+      new StubArchitect(async (input) => {
+        seen = input.attachments;
+        return { ok: true, value: { kind: "ticket", ticket: draftedTicket }, usage: NO_USAGE };
+      }),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, "raw request text", []);
+
+    expect(seen).toEqual([
+      expect.objectContaining({ filename: "before.png", kind: "image", base64: expect.any(String) }),
+    ]);
+  });
+});
+
+describe("runProductAgent, rerouted to a ticket", () => {
+  const draftedTicket: DraftTicket = {
+    key: "T-1",
+    title: "Fix the footer link",
+    description: "Fix the footer link that 404s.",
+    acceptanceCriteria: ["The link no longer 404s"],
+    fileScope: ["src/components/footer"],
+    size: "S",
+    storyPoints: 1,
+    dependsOn: [],
+  };
+
+  it("turns the Epic into a holder and puts the ticket in To Do", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null });
+    seedMemory([epic]);
+    useProduct(
+      new StubProduct(async () => ({
+        ok: true,
+        value: { kind: "reroute", reason: "Small enough to be one ticket.", ticket: draftedTicket },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runProductAgent(PROJECT, epic.id, "Fix the footer link that 404s.");
+
+    const cards = await repository().boardCards(PROJECT);
+    expect(cards).toEqual([
+      expect.objectContaining({
+        kind: "ticket",
+        epicId: epic.id,
+        title: draftedTicket.title,
+        rerouteFrom: "backlog",
+        rerouteReason: "Small enough to be one ticket.",
+      }),
+    ]);
+    expect(await repository().cardById(epic.id)).toMatchObject({ standalone: true });
+    const cardEvents = vi.mocked(publish).mock.calls.map(([, event]) => event.type).filter((t) => t.startsWith("card."));
+    expect(cardEvents).toEqual(["card.deleted", "card.created", "card.rerouted"]);
+  });
+
+  it("does not reroute the same Epic a second time", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null });
+    seedMemory([epic]);
+    useProduct(
+      new StubProduct(async () => ({
+        ok: true,
+        value: { kind: "reroute", reason: "Small enough to be one ticket.", ticket: draftedTicket },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runProductAgent(PROJECT, epic.id, "Fix the footer link that 404s.");
+    await runProductAgent(PROJECT, epic.id, "Fix the footer link that 404s.");
+
+    const tickets = (await repository().boardCards(PROJECT)).filter((c) => c.kind === "ticket");
+    expect(tickets).toHaveLength(1);
+  });
+
+  it("passes the epic's attachments to the Product Agent", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null });
+    seedMemory([epic]);
+    await repository().createAttachment({
+      projectId: PROJECT,
+      epicId: epic.id,
+      filename: "screenshot.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 3,
+      bytes: new Uint8Array([4, 5, 6]),
+    });
+    let seen: AgentAttachment[] = [];
+    useProduct(
+      new StubProduct(async (input) => {
+        seen = input.attachments;
+        return { ok: true, value: { kind: "prd", title: "T", prd: PRD }, usage: NO_USAGE };
+      }),
+    );
+
+    await runProductAgent(PROJECT, epic.id, "Add x");
+
+    expect(seen).toEqual([
+      expect.objectContaining({ filename: "screenshot.png", kind: "image", base64: expect.any(String) }),
+    ]);
   });
 });
 
