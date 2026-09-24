@@ -13,6 +13,9 @@ import type { SoundEngine } from "./sound";
  * `canvas[data-trail]` of its own.
  */
 
+/** The largest crew a card gets: 13, the top of the story point scale. */
+export const MAX_CREW = 13;
+
 /** What a card's crew should be doing. */
 export type CrewPhase = "work" | "tunnel" | "buried" | "leave";
 
@@ -848,8 +851,9 @@ export class ColonyFx {
     return [x0, y0 + h - s];
   }
 
+  /** One ant per story point, up to the top of the scale. */
   private crewSize(sp: number) {
-    const n = 2 + Math.min(3, Math.floor(sp / 3)) + (this.world.level >= 7 ? 1 : 0);
+    const n = Math.min(MAX_CREW, Math.max(1, Math.round(sp)));
     return this.world.ants === "few" ? Math.min(2, n) : n;
   }
 
