@@ -4,6 +4,8 @@ import type {
   AgentPreset,
   AgentRole,
   AgentRunStatus,
+  AttachmentKind,
+  AttachmentSummary,
   BoardCard,
   ColumnAgents,
   PlanStep,
@@ -50,6 +52,36 @@ export interface MoveInput {
    * status above is then what is still true of it. Omitted clears it.
    */
   misplaced?: { in: ColumnId; reason: string } | null;
+}
+
+/** Where a request was rerouted from, and why. Null clears it. */
+export interface Reroute {
+  from: ColumnId;
+  reason: string;
+}
+
+export interface CreateAttachmentInput {
+  projectId: string;
+  /** Exactly one of these three should be set. */
+  epicId?: string | null;
+  ticketId?: string | null;
+  requestId?: string | null;
+  filename: string;
+  mimeType: string;
+  kind: AttachmentKind;
+  size: number;
+  bytes: Uint8Array;
+}
+
+/** What attachmentsFor and claimAttachments scope by. */
+export type AttachmentRef =
+  | { epicId: string }
+  | { ticketId: string }
+  | { requestId: string };
+
+export interface AttachmentContent {
+  bytes: Uint8Array;
+  mimeType: string;
 }
 
 /** One message in a board's assistant conversation. */
@@ -234,6 +266,20 @@ export interface Repository {
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   move(input: MoveInput): Promise<void>;
+  /** Epics only: whether it is a holder with no card of its own. */
+  setStandalone(epicId: string, standalone: boolean): Promise<void>;
+  /** Where a card was rerouted from, and why. Null clears both fields. */
+  setReroute(cardId: string, kind: "epic" | "ticket", reroute: Reroute | null): Promise<void>;
+  createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary>;
+  attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]>;
+  /** The stored bytes and mime type, or null when no such attachment exists. */
+  attachmentContent(id: string): Promise<AttachmentContent | null>;
+  /** Moves every attachment under requestId to a real card, once it exists. */
+  claimAttachments(
+    requestId: string,
+    ref: { epicId: string } | { ticketId: string },
+  ): Promise<void>;
+  deleteAttachments(ids: string[]): Promise<void>;
   /** Positions in a column, ascending, for fractional index placement. */
   columnPositions(projectId: string, column: ColumnId): Promise<number[]>;
   cardById(id: string): Promise<BoardCard | null>;
