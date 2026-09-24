@@ -9,11 +9,11 @@ import { env } from "@/lib/secrets/env";
  * Provider selection, and the one policy decision in PROT-07 worth arguing
  * about: what an agent is allowed to merge into.
  *
- * The PRD says the colony merges to the default branch unattended. That is
- * defensible on a throwaway repository and indefensible on one with users, so
- * the default here is an integration branch and promoting it to the base
- * branch is a human's click. MERGE_TARGET=base opts out, deliberately and in
- * one place.
+ * A ticket is Done when its code is on the project's base branch, so that is
+ * where agents merge, behind the Reviewer Agent and green CI. A deployment
+ * that wants a person between agents and the base branch sets
+ * MERGE_TARGET=integration: agents then merge into formic/integration, and
+ * promoting it is that person's click.
  */
 
 export const INTEGRATION_BRANCH = "formic/integration";
@@ -50,7 +50,7 @@ export function resetVcs(): void {
 
 /** The branch agents may merge into without a human. */
 export function mergeTarget(baseBranch: string): string {
-  return env().MERGE_TARGET === "base" ? baseBranch : INTEGRATION_BRANCH;
+  return env().MERGE_TARGET === "integration" ? INTEGRATION_BRANCH : baseBranch;
 }
 
 export function mergeNeedsPromotion(baseBranch: string): boolean {

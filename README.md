@@ -290,12 +290,13 @@ cycles and for scope overlap between tickets that could run at the same time,
 and a Coder Agent's diff is checked against its scope before it may commit. A
 prompt asking nicely for isolation is not a boundary.
 
-**Nothing reaches the base branch unattended.** The Reviewer Agent merges into
-`formic/integration`; promoting that to the base branch is a human's click.
-`MERGE_TARGET=base` turns that off, which is the PRD's original behaviour and
-should be a decision someone makes on purpose. Either way the merge lane is
-serialized: one merge in flight at a time, each rebased on the result of the
-last.
+**Done means merged into the base branch.** A ticket merges into its
+project's base branch only after the Reviewer Agent approves it and CI is
+green. To keep a person between agents and the base branch, set
+`MERGE_TARGET=integration`: agents then merge into `formic/integration`, which
+is kept up to date with the base branch before every ticket starts, and
+promoting it is that person's click. Either way the merge lane is serialized:
+one merge in flight at a time, each rebased on the result of the last.
 
 **The local sandbox provider is not isolation.** It runs child processes on the
 host with host network and filesystem access. It exists so the system can be
