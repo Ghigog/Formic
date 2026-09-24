@@ -208,7 +208,7 @@ export async function applyPrd(
  * repository's real layout when GitHub can be read, and otherwise the known
  * layout of this repository, which is a better prompt than nothing.
  */
-async function repoTree(projectId: string): Promise<string[]> {
+export async function repoTree(projectId: string): Promise<string[]> {
   const project = await projectFor(projectId);
   const { githubToken } = await credentialsForProject(project);
   const tree = githubToken
@@ -425,6 +425,119 @@ export async function runArchitectAgent(
   }
 
   await run.finish(outcome);
+}
+
+/**
+ * Stage 3, one ticket. A To Do request has no PRD to break down: the
+ * Architect Agent drafts the single ticket itself, straight from the raw
+ * text, as thoroughly as one out of a DAG.
+ */
+export async function runArchitectDraftTicket(
+  projectId: string,
+  epicId: string,
+  ticketId: string,
+  rawRequest: string,
+  repoTree: string[],
+): Promise<void> {
+  const run = startRun(projectId, "architect", {
+    epicId,
+    ticketId,
+    model: await modelFor(projectId, "architect"),
+  });
+
+  // No AnswerMode covers drafting a single ticket yet, so a CLI agent on
+  // this column cannot take the work; it fails the same way an unassigned
+  // one does rather than hanging on an answer that will never arrive.
+  const cli = await cliAgentFor(projectId, "todo");
+  const outcome = cli
+    ? {
+        ok: false as const,
+        blocked: true,
+        error: `${cli.info.label} runs in GitHub Actions and cannot draft a single ticket yet. Pick another agent for To Do.`,
+        usage: { model: cli.model ?? "", tokensIn: 0, tokensOut: 0, costCents: 0 },
+      }
+    : await (await agentFor(projectId, "architect")).draftTicket(run.ctx, {
+        rawRequest,
+        repoTree,
+        attachments: [],
+      });
+
+  if (outcome.ok) {
+    if (outcome.value.kind === "ticket") {
+      await applyDraftedTicket(projectId, epicId, ticketId, outcome.value.ticket);
+    } else {
+      // Rerouting is not wired up yet; a reroute outcome just stalls the ticket.
+      await stallDraftingTicket(projectId, ticketId, outcome.value.reason, true);
+    }
+  } else {
+    await stallDraftingTicket(projectId, ticketId, outcome.error, outcome.blocked);
+  }
+
+  await run.finish(outcome);
+}
+
+/**
+ * The drafted ticket replaces the placeholder in its same slot: no Epic
+ * update is needed to have made this one, because it never had a PRD.
+ */
+async function applyDraftedTicket(
+  projectId: string,
+  epicId: string,
+  ticketId: string,
+  ticket: DraftTicket,
+): Promise<void> {
+  const repo = repository();
+  const placeholder = await repo.cardById(ticketId);
+  const position = placeholder?.position ?? 0;
+
+  await repo.deleteTickets([ticketId]);
+  const created = (
+    await repo.createTickets([
+      {
+        epicId,
+        key: ticket.key,
+        title: ticket.title,
+        description: ticket.description,
+        acceptanceCriteria: ticket.acceptanceCriteria,
+        fileScope: ticket.fileScope,
+        size: ticket.size,
+        storyPoints: ticket.storyPoints ?? null,
+        position,
+        dependsOnKeys: [],
+      },
+    ])
+  )[0]!;
+  await repo.move({
+    cardId: created.id,
+    kind: "ticket",
+    status: created.status,
+    stalledIn: null,
+    position,
+    detached: true,
+  });
+
+  await publish(projectId, { type: "card.deleted", cardId: ticketId, kind: "ticket", issueNumbers: [] });
+  await publish(projectId, { type: "card.created", cardId: created.id, kind: "ticket", epicId });
+}
+
+/** A drafting ticket's run could not finish. It stays in To Do, blocked or failed. */
+async function stallDraftingTicket(
+  projectId: string,
+  ticketId: string,
+  reason: string,
+  blocked: boolean,
+): Promise<void> {
+  const status = blocked ? "blocked" : "failed";
+  await repository().updateTicket(ticketId, { status, stalledIn: "todo", blockedReason: reason });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticketId,
+    kind: "ticket",
+    status,
+    stalledIn: "todo",
+    stage: 3,
+    blockedReason: reason,
+  });
 }
 
 /**

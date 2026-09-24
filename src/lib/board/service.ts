@@ -15,7 +15,13 @@ import {
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import { positionForIndex } from "@/lib/ordering";
 import { publish } from "@/lib/events/bus";
-import { decomposeEpic, launch, runProductAgent } from "@/lib/agents/pipeline";
+import {
+  decomposeEpic,
+  launch,
+  repoTree,
+  runArchitectDraftTicket,
+  runProductAgent,
+} from "@/lib/agents/pipeline";
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { reviewPullRequest } from "@/lib/review/pipeline";
 import { projectFor } from "@/lib/board/project";
@@ -426,6 +432,73 @@ export async function createBacklogItem(
   );
 
   return card;
+}
+
+/**
+ * A raw request with no PRD and no breakdown needed: one ticket, drafted by
+ * the Architect Agent straight from the text. The Epic it sits under is a
+ * holder only — never its own card — so the board shows just the ticket,
+ * exactly as it would once a real Epic's breakdown left it on its own.
+ */
+export async function createTodoItem(
+  projectId: string,
+  rawRequest: string,
+  requestId?: string,
+): Promise<BoardCard> {
+  const repo = repository();
+  const trimmed = rawRequest.trim();
+  const title = trimmed.split(/[.\n]/)[0]?.slice(0, 80) || "New ticket";
+
+  const epic = await repo.createEpic({ projectId, title, rawRequest: trimmed, position: 0 });
+  await repo.setStandalone(epic.id, true);
+
+  const positions = await repo.columnPositions(projectId, "todo");
+  const position = positionForIndex(positions, positions.length);
+
+  const ticket = (
+    await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title,
+        description: trimmed,
+        acceptanceCriteria: [],
+        fileScope: [],
+        size: "M",
+        storyPoints: null,
+        position,
+        dependsOnKeys: [],
+      },
+    ])
+  )[0]!;
+
+  // Blocked from the start, so the card shows it is being drafted the moment
+  // it appears rather than flashing as ready before its content exists.
+  await repo.move({
+    cardId: ticket.id,
+    kind: "ticket",
+    status: "blocked",
+    stalledIn: "todo",
+    position,
+    detached: true,
+  });
+  await repo.updateTicket(ticket.id, { blockedReason: "Drafting the ticket…" });
+
+  if (requestId) await repo.claimAttachments(requestId, { ticketId: ticket.id });
+
+  await publish(projectId, {
+    type: "card.created",
+    cardId: ticket.id,
+    kind: "ticket",
+    epicId: epic.id,
+  });
+
+  launch(async () => {
+    const tree = await repoTree(projectId);
+    await runArchitectDraftTicket(projectId, epic.id, ticket.id, trimmed, tree);
+  }, `architect agent for ${ticket.key}`);
+
+  return (await repo.cardById(ticket.id))!;
 }
 
 /**
