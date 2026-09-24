@@ -67,6 +67,8 @@ export type FormicEvent =
   | {
       type: "run.log";
       runId: string;
+      /** The ticket the run works on, so the terminal can name it. */
+      ticketId?: string | null;
       stream: "stdout" | "stderr";
       line: string;
     }
@@ -76,6 +78,12 @@ export type FormicEvent =
       runId: string;
       ticketId: string | null;
       kind: "thinking" | "text";
+      text: string;
+    }
+  | {
+      /** A person's note to the agent working a ticket. */
+      type: "ticket.note";
+      ticketId: string;
       text: string;
     }
   | {

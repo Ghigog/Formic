@@ -25,6 +25,11 @@ export interface AgentContext {
    * that is only checked after the loop finishes is not a budget.
    */
   charge?: (usage: Usage) => Promise<void>;
+  /**
+   * Whether the person watching the ticket stopped the run, and the notes
+   * they sent it since it started. A loop asks between turns.
+   */
+  interrupts?: () => Promise<{ stopped: string | null; notes: string[] }>;
 }
 
 /**
@@ -132,6 +137,8 @@ export interface CoderTask {
   description: string;
   acceptanceCriteria: string[];
   fileScope: string[];
+  /** What the person watching the ticket told its agents, oldest first. */
+  notes?: string[];
 }
 
 export interface CodeChange {

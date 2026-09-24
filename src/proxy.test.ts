@@ -36,9 +36,9 @@ describe("proxy", () => {
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });
 
-  it("keeps sign-in, health and the webhook open", async () => {
+  it("keeps sign-in, health, the webhook and runner reports open", async () => {
     githubMode();
-    for (const path of ["/login", "/api/auth/github/login", "/api/health", "/api/webhooks/github"]) {
+    for (const path of ["/login", "/api/auth/github/login", "/api/health", "/api/webhooks/github", "/api/runner/report"]) {
       expect((await proxy(request(path))).headers.get("x-middleware-next")).toBe("1");
     }
   });

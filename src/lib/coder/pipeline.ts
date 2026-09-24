@@ -8,6 +8,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
+import { noteTexts } from "./notes";
 import { newBranchName } from "@/lib/sandbox";
 import { mergeTarget, vcs } from "@/lib/vcs";
 import {
@@ -34,7 +35,7 @@ import { cliPrompt, startCliRun } from "@/lib/runner/runner";
 const STAGE_CODE_RUN = 5;
 const STAGE_PR_OPEN = 6;
 
-export function taskFor(ticket: TicketDetail): CoderTask {
+export function taskFor(ticket: TicketDetail, notes: string[] = []): CoderTask {
   return {
     ticketId: ticket.id,
     key: ticket.key,
@@ -42,6 +43,7 @@ export function taskFor(ticket: TicketDetail): CoderTask {
     description: ticket.description,
     acceptanceCriteria: ticket.acceptanceCriteria,
     fileScope: ticket.fileScope,
+    notes,
   };
 }
 
@@ -121,8 +123,10 @@ export async function runCoderAgent(
       ticket: { ...ticket, branchName: branch },
       mode: "implement",
       agent: cli,
-      from: project.baseBranch,
-      prompt: cliPrompt(cli, "implement", ticket),
+      // Sent back with its pull request still open: the agent builds on that
+      // branch, so its work lands on the same pull request.
+      from: ticket.prNumber && ticket.branchName ? ticket.branchName : project.baseBranch,
+      prompt: cliPrompt(cli, "implement", ticket, undefined, await noteTexts(projectId, ticket.id)),
       run,
       stalledIn: "in_progress",
       stage: STAGE_CODE_RUN,
@@ -160,7 +164,7 @@ export async function runCoderAgent(
 
   try {
     const outcome = await (await agentFor(projectId, "coder")).implement(run.ctx, {
-      task: taskFor(ticket),
+      task: taskFor(ticket, await noteTexts(projectId, ticket.id)),
       workspace: checkout.workspace,
     });
 

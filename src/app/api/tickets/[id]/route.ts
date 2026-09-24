@@ -51,6 +51,7 @@ export async function GET(
     }),
     plan: detail.plan,
     activity,
+    canStop: card.status === "running" || !!detail.runnerJob || !!card.workingSince,
   };
   return Response.json(view);
 }

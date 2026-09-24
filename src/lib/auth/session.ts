@@ -30,7 +30,7 @@ export function gatePassword(): string | null {
 }
 
 /** Key material for signing. The same fallback chain as the vault. */
-function signingSecret(): string {
+export function signingSecret(): string {
   return (
     process.env.FORMIC_SECRET ||
     process.env.DATABASE_URL ||
@@ -38,6 +38,30 @@ function signingSecret(): string {
     process.env.POSTGRES_URL ||
     "formic-local-only"
   );
+}
+
+/** GitHub mode signs sessions people can't get any other way, so the secret has to be a real one. */
+const MIN_GITHUB_SECRET_BYTES = 32;
+
+/**
+ * Why GitHub sign-in can't run right now, or null when it can.
+ *
+ * Local mode always returns null: nobody it would protect exists, since
+ * there's one implicit user and no forgeable session. In GitHub mode, a
+ * missing or short FORMIC_SECRET would leave `signingSecret()` falling back
+ * to the database URL (or a fixed string), which anyone who can read the
+ * database connection string, or the source, could sign sessions with.
+ */
+export function secretProblem(): string | null {
+  if (authMode() !== "github") return null;
+  const secret = process.env.FORMIC_SECRET;
+  if (!secret) {
+    return "FORMIC_SECRET is not set. GitHub sign-in is disabled until it is: without it, sessions would be signed with the database URL, which anyone who can read it could forge.";
+  }
+  if (new TextEncoder().encode(secret).length < MIN_GITHUB_SECRET_BYTES) {
+    return `FORMIC_SECRET is shorter than ${MIN_GITHUB_SECRET_BYTES} bytes. GitHub sign-in is disabled until it is at least that long.`;
+  }
+  return null;
 }
 
 async function hmac(secret: string, message: string): Promise<string> {
