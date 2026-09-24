@@ -200,8 +200,10 @@ export function Board({
         // because `live` falls through to server state.
         settle();
         setError(result.reason);
-        // After the card has snapped back, so the reason lands on it.
-        requestAnimationFrame(() => colony?.reject(card.id, result.reason));
+        // After the card has snapped back, so the flash lands on it. The
+        // full reason is in the banner above and the card's "!"; the flash
+        // itself just needs to say something went wrong.
+        requestAnimationFrame(() => colony?.reject(card.id, "Error"));
         return;
       }
 
