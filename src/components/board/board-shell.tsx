@@ -123,6 +123,7 @@ export function BoardShell({
           columns: agentState.columns,
           onAssign: agentState.assign,
           onEdit: (column, preset) => setEditing({ column, preset }),
+          onClearLimit: agentState.clearLimit,
         }}
       />
 
