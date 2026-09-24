@@ -727,6 +727,18 @@ export class MemoryRepository implements Repository {
       .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
   }
 
+  async epicEvents(projectId: string, epicId: string, types: string[], limit = 200) {
+    return store()
+      .events.filter(
+        (e) =>
+          e.projectId === projectId &&
+          types.includes(e.type) &&
+          (e.payload as { epicId?: unknown } | null)?.epicId === epicId,
+      )
+      .slice(-limit)
+      .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
+  }
+
   async latestEventSeq(projectId: string): Promise<number> {
     const mine = store().events.filter((e) => e.projectId === projectId);
     return mine.at(-1)?.seq ?? 0;

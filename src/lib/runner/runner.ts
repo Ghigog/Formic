@@ -8,6 +8,7 @@ import {
   applyPrd,
   applyShowcase,
   applyTickets,
+  existingTicketsFor,
   stallEpic,
   startRun,
   type RunHandle,
@@ -16,6 +17,8 @@ import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { diagnose, lastWords } from "@/lib/agents/limits";
 import { planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo } from "@/lib/llm/providers";
+import { epicNoteTexts } from "@/lib/agents/epic-notes";
+import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
 import { reviewBrief, taskBrief } from "@/lib/agents/coder";
 import {
   ALREADY_DONE_RULE,
@@ -469,6 +472,8 @@ async function answerPrompt(
   const prd = prdSchema.safeParse(epic.prd);
   if (mode === "architect") {
     if (!prd.success) return null;
+    const instructions = await epicNoteTexts(projectId, epicId);
+    const existing = instructions.length ? await existingTicketsFor(epicId) : [];
     return [
       withPlanningConventions(agent.brief ?? ARCHITECT_BRIEF),
       "",
@@ -482,6 +487,7 @@ async function answerPrompt(
       "",
       "Existing top-level directories in the repository:",
       (await tree()).slice(0, 200).join("\n") || "(empty repository)",
+      decompositionGuidance(existing, instructions),
     ].join("\n");
   }
 

@@ -745,6 +745,20 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async epicEvents(projectId: string, epicId: string, types: string[], limit = 200) {
+    const rows = await prisma().event.findMany({
+      where: { projectId, type: { in: types }, payload: { path: ["epicId"], equals: epicId } },
+      orderBy: { seq: "desc" },
+      take: limit,
+    });
+    return rows.reverse().map((r) => ({
+      seq: Number(r.seq),
+      type: r.type,
+      payload: r.payload,
+      at: r.at,
+    }));
+  }
+
   async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
     const db = prisma();
     const row = await db.ticket.findUnique({

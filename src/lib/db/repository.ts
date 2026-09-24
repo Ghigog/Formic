@@ -357,6 +357,13 @@ export interface Repository {
     types: string[],
     limit?: number,
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
+  /** The same, but for events whose payload names an Epic. */
+  epicEvents(
+    projectId: string,
+    epicId: string,
+    types: string[],
+    limit?: number,
+  ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
   /** Highest event sequence number so far, or 0 with none. */
   latestEventSeq(projectId: string): Promise<number>;
   rebalanceColumn(projectId: string, column: ColumnId): Promise<void>;

@@ -1,8 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const launched = vi.hoisted(() => [] as string[]);
+
+// `launch` never runs the work it is given here: every assertion about what
+// a message triggers reads the label instead, the same way board/service's
+// tests do for a drag's own triggers.
+vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./pipeline")>()),
+  launch: (_work: unknown, label: string) => {
+    launched.push(label);
+  },
+}));
+
 import { answer, ask as send } from "./card-chat";
 import { savePreset } from "./presets";
 import { MAX_NOTE, noteTexts } from "@/lib/coder/notes";
+import { epicNoteTexts } from "./epic-notes";
 import { ACTIVITY_EVENTS, activityOf } from "@/lib/domain/ticket-view";
 import type { FormicEvent } from "@/lib/domain/events";
 import { resetAgents } from "./registry";
@@ -94,6 +107,7 @@ async function reload(id: string) {
 }
 
 beforeEach(() => {
+  launched.length = 0;
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
   MockVcsClient.reset();
   resetAgents();
@@ -202,6 +216,34 @@ describe("a ticket's chat", () => {
     await send(PROJECT, "ticket", ticket.id, long);
     expect(await noteTexts(PROJECT, ticket.id)).toEqual(["Use the existing helper.", long]);
   });
+
+  it("starts the Coder Agent again when its ticket is idle in In Progress", async () => {
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, {
+      status: "blocked",
+      stalledIn: "in_progress",
+      blockedReason: "Out of scope",
+    });
+    await assignAgent("in_progress", "claude-code");
+    const pending = await ask("ticket", ticket.id, "Only touch the button component.");
+    await answer("ticket", ticket.id, pending.id);
+
+    expect(await reload(pending.id)).toMatchObject({
+      status: "done",
+      content: "Starting the Coder Agent again with your note.",
+    });
+    expect(launched).toEqual([`coder agent for ${ticket.key}`]);
+  });
+
+  it("does not start a new run while the ticket is already running", async () => {
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, { status: "running" });
+    await assignAgent("in_progress", "claude-code");
+    const pending = await ask("ticket", ticket.id, "Only touch the button component.");
+    await answer("ticket", ticket.id, pending.id);
+
+    expect(launched).toEqual([]);
+  });
 });
 
 describe("an Epic's chat", () => {
@@ -228,7 +270,7 @@ describe("an Epic's chat", () => {
     expect(system).toContain("Let people export the board as CSV.");
   });
 
-  it("does not leave a note, since no agent works an Epic", async () => {
+  it("does not leave a ticket note, since no agent works an Epic that way", async () => {
     const epic = await repository().createEpic({
       projectId: PROJECT,
       title: "Export",
@@ -237,5 +279,60 @@ describe("an Epic's chat", () => {
     });
     await send(PROJECT, "epic", epic.id, "Keep it small.");
     expect(await noteTexts(PROJECT, epic.id)).toEqual([]);
+    expect(await epicNoteTexts(PROJECT, epic.id)).toEqual(["Keep it small."]);
+  });
+
+  const PRD = {
+    summary: "s",
+    problem: "p",
+    scope: ["x"],
+    outOfScope: [],
+    technicalContext: [],
+    userStories: [],
+    successCriteria: ["y"],
+  };
+
+  /** An Epic already broken down once, sitting idle in To Do. */
+  async function seedDecomposedEpic() {
+    const repo = repository();
+    const epic = await repo.createEpic({
+      projectId: PROJECT,
+      title: "Export",
+      rawRequest: "Export as CSV.",
+      position: 1,
+    });
+    await repo.setEpicPrd(epic.id, PRD, true);
+    await repo.move({ cardId: epic.id, kind: "epic", status: "ready", stalledIn: null, position: 1 });
+    return epic;
+  }
+
+  it("breaks an Epic down again when idle in To Do, instead of just answering", async () => {
+    const epic = await seedDecomposedEpic();
+    await assignAgent("todo", "claude-code");
+    const pending = await ask("epic", epic.id, "Split the 13-pointer.");
+
+    await answer("epic", epic.id, pending.id);
+
+    expect(await reload(pending.id)).toMatchObject({
+      status: "done",
+      content: "Breaking it down again with your note. Tickets already started stay; the rest follow it.",
+    });
+    expect(launched).toEqual([`architect agent for ${epic.key}`]);
+  });
+
+  it("does not start a second breakdown while the Architect Agent is already working", async () => {
+    const epic = await seedDecomposedEpic();
+    await assignAgent("todo", "claude-code");
+    await repository().setEpicRunnerJob(epic.id, "run-123");
+    const pending = await ask("epic", epic.id, "Split the 13-pointer.");
+
+    await answer("epic", epic.id, pending.id);
+
+    expect(await reload(pending.id)).toMatchObject({
+      status: "done",
+      content:
+        "The Architect Agent is already working on this Epic. Your note will be included in its next run.",
+    });
+    expect(launched).toEqual([]);
   });
 });
