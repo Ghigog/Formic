@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
 
@@ -37,7 +37,7 @@ import {
 } from "@/lib/agents/decomposition";
 import { productOutput } from "@/lib/agents/openai-agents";
 import { extractJson } from "@/lib/llm/openai-compat";
-import { prdSchema } from "@/lib/domain/entities";
+import { prdSchema, type PlanStep } from "@/lib/domain/entities";
 import { directoryTree } from "@/lib/vcs/repositories";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -45,6 +45,10 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
+import { signingSecret } from "@/lib/auth/session";
+import { abortTicketRuns } from "@/lib/budget/controller";
+import { ticketNotes } from "@/lib/coder/notes";
+import { readStream } from "./stream";
 import { STAGING_PREFIX, VcsError, vcs, type VcsClient } from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
@@ -247,9 +251,10 @@ export function cliPrompt(
   mode: CodeMode,
   ticket: TicketDetail,
   fix?: { checks: FailingCheck[]; attempt: number; maxAttempts: number },
+  notes: string[] = [],
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskBrief(taskFor(ticket));
+  const task = taskBrief(taskFor(ticket, notes));
   const work = fix
     ? [
         `This is fix attempt ${fix.attempt} of ${fix.maxAttempts}. After the last one the card stops and waits for a human.`,
@@ -308,6 +313,7 @@ async function dispatch(input: {
       from: input.from,
       secret,
       prompt: cap(input.prompt),
+      report: reportUrl(input.job, Date.now()) ?? "",
     });
     return { ok: true };
   } catch (e) {
@@ -319,10 +325,11 @@ function noUsage(agent: CliAgent) {
   return { model: agent.model ?? agent.info.label, tokensIn: 0, tokensOut: 0, costCents: 0 };
 }
 
-function working(agent: CliAgent, run: RunHandle): void {
+function working(agent: CliAgent, run: RunHandle, ticketId: string | null): void {
   run.ctx.emit({
     type: "run.log",
     runId: run.runId,
+    ticketId,
     stream: "stdout",
     line: `${agent.info.label} is working in GitHub Actions. This card moves on when it finishes.`,
   });
@@ -371,7 +378,7 @@ export async function startCliRun(input: {
     return;
   }
 
-  working(agent, run);
+  working(agent, run, ticket.id);
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
@@ -536,7 +543,7 @@ export async function startCliAnswer(input: {
     return;
   }
 
-  working(agent, run);
+  working(agent, run, null);
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
@@ -918,4 +925,163 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   } catch (e) {
     await stop(`Could not take the agent's work: ${explain(e)}`, false);
   }
+}
+
+/* ------------------------------------------------------------------------ */
+/* While it works: what it is doing, and a person stopping or steering it.  */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Where the board is, for the workflow to report to. Null when it has no
+ * public address, such as a laptop: the run then works as before, silently.
+ */
+export function formicOrigin(): string | null {
+  const explicit = process.env.FORMIC_URL?.trim().replace(/\/+$/, "");
+  if (explicit) return explicit;
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  return vercel ? `https://${vercel}` : null;
+}
+
+function reportToken(job: string, since: number): string {
+  return createHmac("sha256", signingSecret()).update(`runner-report:${job}:${since}`).digest("hex");
+}
+
+/**
+ * The address a run posts its output to. It carries its own proof: a token
+ * that is good for this one job only, and only while the job is the one its
+ * card waits on.
+ */
+export function reportUrl(job: string, since: number): string | null {
+  const origin = formicOrigin();
+  if (!origin) return null;
+  const q = new URLSearchParams({ job, since: String(since), token: reportToken(job, since) });
+  return `${origin}/api/runner/report?${q.toString()}`;
+}
+
+export function reportAllowed(job: string, since: string, token: string): boolean {
+  if (!/^\d+$/.test(since)) return false;
+  const expected = Buffer.from(reportToken(job, Number(since)));
+  const given = Buffer.from(token);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/** The most a batch publishes; a flood of output keeps its latest part. */
+const MAX_REPORT_ITEMS = 200;
+
+export interface ReportReply {
+  /** Notes the agent has not been sent yet, newest last. */
+  notes: Array<{ seq: number; text: string }>;
+  /** The card no longer waits on this job: stop reporting. */
+  stop: boolean;
+}
+
+/**
+ * A batch of a CLI agent's output, posted by the workflow while it works.
+ * Publishes it as the ticket's thoughts, actions, plan and terminal lines,
+ * and answers with any notes the person has left since `after`.
+ */
+export async function receiveReport(input: {
+  job: string;
+  since: number;
+  lines: string[];
+  after: number;
+}): Promise<ReportReply> {
+  const repo = repository();
+  const cardId = cardOfJob(input.job);
+  const ticket = cardId ? await repo.ticketDetail(cardId) : null;
+  if (!ticket || ticket.runnerJob !== input.job) {
+    // A planning column's run: its output is for the terminal only.
+    const epic = cardId ? await repo.epicDetail(cardId) : null;
+    if (epic && epic.runnerJob === input.job) {
+      const projectId = await repo.projectOfCard(cardId!);
+      if (projectId) {
+        for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
+          if (item.kind !== "log") continue;
+          await publish(projectId, { type: "run.log", runId: input.job, stream: item.stream, line: item.line });
+        }
+        return { notes: [], stop: false };
+      }
+    }
+    return { notes: [], stop: true };
+  }
+
+  const projectId = await repo.projectOfCard(ticket.id);
+  if (!projectId) return { notes: [], stop: true };
+
+  const runId = input.job;
+  let plan: PlanStep[] | null = null;
+  for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
+    switch (item.kind) {
+      case "thought":
+        await publish(projectId, { type: "run.thought", runId, ticketId: ticket.id, kind: item.thought, text: item.text });
+        break;
+      case "action":
+        await publish(projectId, {
+          type: "run.progress",
+          runId,
+          ticketId: ticket.id,
+          role: ticket.status === "review" ? "reviewer" : "coder",
+          label: item.label,
+          fraction: null,
+        });
+        break;
+      case "plan":
+        plan = item.steps;
+        await publish(projectId, { type: "ticket.plan", ticketId: ticket.id, steps: item.steps });
+        break;
+      case "log":
+        await publish(projectId, { type: "run.log", runId, ticketId: ticket.id, stream: item.stream, line: item.line });
+        break;
+    }
+  }
+  if (plan) await repo.updateTicket(ticket.id, { plan });
+
+  const notes = (await ticketNotes(projectId, ticket.id, new Date(input.since)))
+    .filter((n) => n.seq > input.after)
+    .map((n) => ({ seq: n.seq, text: n.text }));
+  return { notes, stop: false };
+}
+
+export const STOPPED_BY_PERSON =
+  "Stopped by you. Leave a note on what to do differently, then move it back to run it again.";
+
+/**
+ * A person stopped the agent working a ticket. The card stalls where it is,
+ * so nothing the agent still hands back is taken, and the agent is stopped
+ * wherever it runs: its GitHub Actions run is cancelled, and a built-in
+ * agent stops at its next turn. Returns whether there was anything to stop.
+ */
+export async function stopTicket(projectId: string, ticketId: string): Promise<boolean> {
+  const repo = repository();
+  const ticket = await repo.ticketDetail(ticketId);
+  if (!ticket) return false;
+  const card = await repo.cardById(ticketId);
+  const working = ticket.status === "running" || !!ticket.runnerJob || !!card?.workingSince;
+  if (!working) return false;
+
+  const job = ticket.runnerJob;
+  await repo.updateTicket(ticket.id, { runnerJob: null });
+  await stallTicket(projectId, ticket, STOPPED_BY_PERSON, {
+    blocked: true,
+    stalledIn: ticket.status === "review" ? "in_review" : "in_progress",
+  });
+  abortTicketRuns(ticket.id, STOPPED_BY_PERSON);
+
+  if (job) {
+    try {
+      const project = await projectFor(projectId);
+      const creds = await credentialsForProject(project);
+      const client = vcs(project.repoFullName, creds.githubToken);
+      for (const run of await client.recentRuns(RUNNER_WORKFLOW_FILE)) {
+        if (parseRunTitle(run.title)?.job === job && run.status !== "completed") {
+          await client.cancelRun(run.id);
+        }
+      }
+    } catch (e) {
+      // The card has stopped either way: whatever the run hands back is
+      // for a job nobody waits on, and is thrown away.
+      console.error("[formic] could not cancel the run:", explain(e));
+    }
+  }
+  return true;
 }

@@ -16,7 +16,13 @@ export interface AmbientStats {
   /** The PR currently holding the merge lock, if any. */
   mergeLockPr?: number | null;
   /** Most recent log lines across all live runs. */
-  logLines: Array<{ runId: string; stream: "stdout" | "stderr"; line: string }>;
+  logLines: Array<{
+    runId: string;
+    /** The ticket it is for, such as T-4, when there is one. */
+    label?: string;
+    stream: "stdout" | "stderr";
+    line: string;
+  }>;
 }
 
 function compact(n: number): string {
@@ -95,7 +101,7 @@ export function AmbientDrawer({
         <div className="border-drawer-line max-h-56 overflow-y-auto border-b px-6 py-3">
           {stats.logLines.length === 0 ? (
             <p className="text-drawer-muted font-mono text-[11px]">
-              No agents running.
+              Nothing yet. The commands agents run, and what they print, show here as they work.
             </p>
           ) : (
             <pre className="font-mono text-[11px] leading-[1.6] whitespace-pre-wrap">
@@ -106,7 +112,7 @@ export function AmbientDrawer({
                     l.stream === "stderr" ? "text-log-error" : "text-log-text"
                   }
                 >
-                  <span className="text-drawer-muted">{l.runId.slice(0, 7)} </span>
+                  <span className="text-drawer-muted">{l.label ?? l.runId.slice(0, 7)} </span>
                   {l.line}
                 </div>
               ))}

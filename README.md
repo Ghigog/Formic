@@ -31,6 +31,7 @@ Each credential unlocks one layer and nothing breaks without it:
 | `FORMIC_SECRET` | Encrypts saved tokens and keys and signs sessions. Set it before anyone signs in. |
 | `FORMIC_ALLOWED_USERS` | Only these GitHub usernames may sign in. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop. |
+| `FORMIC_URL` | The board's public address, for CLI agents in GitHub Actions to report what they do as they work and take notes. On Vercel, the production address is used without it. |
 | `SANDBOX_PROVIDER=e2b` | Isolated sandboxes, on each person's E2B key. Required on Vercel. |
 | `E2B_API_KEY` | Optional fallback sandbox key for people who have not added their own. |
 | `ANTHROPIC_API_KEY` (and `OPENAI_API_KEY`, `GEMINI_API_KEY`, …) | Local mode only: lets agents run in development without a saved template. |

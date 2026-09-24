@@ -22,6 +22,11 @@ export function useBoard(
     other.current = onOther;
   });
   const [cards, setCards] = useState(initialCards);
+  // For naming a terminal line by its ticket, without re-binding the stream.
+  const keys = useRef(new Map<string, string>());
+  useEffect(() => {
+    keys.current = new Map(cards.map((c) => [c.id, c.key]));
+  }, [cards]);
   const [extras, setExtras] = useState<Record<string, CardExtras | undefined>>({});
   const [stats, setStats] = useState(initialStats);
   /** Live PRD text per Epic while the Product Agent writes. */
@@ -77,7 +82,12 @@ export function useBoard(
             ...prev,
             logLines: [
               ...prev.logLines,
-              { runId: event.runId, stream: event.stream, line: event.line },
+              {
+                runId: event.runId,
+                label: event.ticketId ? keys.current.get(event.ticketId) : undefined,
+                stream: event.stream,
+                line: event.line,
+              },
             ].slice(-LOG_TAIL),
           }));
           break;

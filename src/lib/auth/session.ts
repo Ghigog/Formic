@@ -30,7 +30,7 @@ export function gatePassword(): string | null {
 }
 
 /** Key material for signing. The same fallback chain as the vault. */
-function signingSecret(): string {
+export function signingSecret(): string {
   return (
     process.env.FORMIC_SECRET ||
     process.env.DATABASE_URL ||

@@ -21,7 +21,7 @@ export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
 /** Bumped whenever the workflow changes, so old copies get replaced. */
-export const RUNNER_VERSION = "formic-runner: v3";
+export const RUNNER_VERSION = "formic-runner: v4";
 /** Where the setup pull request comes from. */
 export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 
@@ -83,6 +83,95 @@ export function attemptOfJob(job: string): number {
 }
 
 /**
+ * Runs beside the agent: every few seconds, posts what it printed since the
+ * last time to Formic, and writes any notes Formic answers with to the file
+ * the agent's hook reads. A report that fails is sent again with the next;
+ * one that keeps failing never fails the run.
+ */
+export const REPORTER_SCRIPT = String.raw`import json, os, time, urllib.request
+
+url = os.environ["REPORT"]
+stream = os.environ["FORMIC_STREAM"]
+notes = os.environ["FORMIC_NOTES"]
+done = os.environ["FORMIC_DONE"]
+sent = 0
+after = 0
+stopped = False
+
+
+def post(lines):
+    global after, stopped
+    body = json.dumps({"lines": lines, "after": after}).encode()
+    req = urllib.request.Request(url, data=body, method="POST", headers={"content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as res:
+        reply = json.load(res)
+    for note in reply.get("notes", []):
+        with open(notes, "a") as f:
+            f.write("A note from the person watching this ticket on Formic. Take it into account from here on:\n" + note["text"] + "\n\n")
+        after = max(after, int(note["seq"]))
+    stopped = bool(reply.get("stop"))
+
+
+def flush():
+    global sent
+    try:
+        with open(stream, "rb") as f:
+            f.seek(sent)
+            chunk = f.read()
+    except OSError:
+        return
+    lines = chunk[: chunk.rfind(b"\n") + 1].split(b"\n")[:-1]
+    if not lines:
+        post([])
+        return
+    for i in range(0, len(lines), 500):
+        batch = lines[i : i + 500]
+        post([line.decode("utf-8", "replace") for line in batch])
+        sent += sum(len(line) + 1 for line in batch)
+
+
+while not stopped:
+    last = os.path.exists(done)
+    try:
+        flush()
+    except Exception:
+        pass
+    if last:
+        break
+    time.sleep(4)
+`;
+
+/**
+ * Claude Code's hook that hands it a note between its steps: after each
+ * tool, if a note has come in, it is shown to the agent (exit code 2 makes
+ * Claude Code read what the hook printed) and taken off the pile.
+ */
+export const NOTES_HOOK = JSON.stringify({
+  hooks: {
+    PostToolUse: [
+      {
+        matcher: "*",
+        hooks: [
+          {
+            type: "command",
+            command:
+              'f="$FORMIC_NOTES"; if [ -s "$f" ] && mv "$f" "$f.taking" 2>/dev/null; then cat "$f.taking" >&2; rm -f "$f.taking"; exit 2; fi; exit 0',
+          },
+        ],
+      },
+    ],
+  },
+});
+
+function indent(text: string, spaces: number): string {
+  const pad = " ".repeat(spaces);
+  return text
+    .split("\n")
+    .map((line) => (line ? pad + line : line))
+    .join("\n");
+}
+
+/**
  * The workflow itself. Inputs reach the shell through `env:` only, never
  * through `${{ }}` inside a script: the prompt is ticket text, and ticket
  * text spliced into bash is a script injection. Each agent gets only its own
@@ -127,6 +216,10 @@ on:
       prompt:
         description: What to do
         required: true
+      report:
+        description: Where to post what the agent does as it works, or empty
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -167,20 +260,36 @@ jobs:
           CLI: \${{ inputs.cli }}
           MODEL: \${{ inputs.model }}
           PROMPT: \${{ inputs.prompt }}
+          REPORT: \${{ inputs.report }}
           FORMIC_SUMMARY: \${{ runner.temp }}/formic-summary.md
           FORMIC_OUTPUT: \${{ runner.temp }}/formic-answer.md
           FORMIC_STDOUT: \${{ runner.temp }}/formic-stdout.md
+          FORMIC_STREAM: \${{ runner.temp }}/formic-stream.jsonl
+          FORMIC_NOTES: \${{ runner.temp }}/formic-notes.md
+          FORMIC_DONE: \${{ runner.temp }}/formic-done
           CLAUDE_CODE_OAUTH_TOKEN: \${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
           CODEX_CREDENTIAL: \${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}
           GEMINI_API_KEY: \${{ inputs.cli == 'gemini' && startsWith(inputs.secret, 'FORMIC_GEMINI_API_KEY') && secrets[inputs.secret] || '' }}
         run: |
           set -euo pipefail
+          : > "$FORMIC_STREAM"
+          # What the agent does, posted to Formic as it works.
+          if [ -n "$REPORT" ]; then
+            cat > "$RUNNER_TEMP/formic-report.py" <<'FORMIC_REPORTER'
+${indent(REPORTER_SCRIPT, 10)}
+          FORMIC_REPORTER
+            python3 "$RUNNER_TEMP/formic-report.py" &
+            reporter=$!
+            trap 'touch "$FORMIC_DONE"; wait "$reporter" || true' EXIT
+          fi
           case "$CLI" in
             claude)
               if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then echo "No Claude Code token. Add it to the agent in Formic."; exit 1; fi
-              args=(-p "$PROMPT" --dangerously-skip-permissions)
+              printf '%s' '${NOTES_HOOK}' > "$RUNNER_TEMP/formic-hooks.json"
+              args=(-p "$PROMPT" --output-format stream-json --verbose --settings "$RUNNER_TEMP/formic-hooks.json" --dangerously-skip-permissions)
               if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
-              claude "\${args[@]}" | tee "$FORMIC_STDOUT"
+              claude "\${args[@]}" | tee -a "$FORMIC_STREAM"
+              jq -Rrj 'fromjson? | select(.type == "result") | (.result // empty)' "$FORMIC_STREAM" > "$FORMIC_STDOUT"
               ;;
             codex)
               if [ -z "$CODEX_CREDENTIAL" ]; then echo "No Codex sign-in. Add it to the agent in Formic."; exit 1; fi
@@ -191,15 +300,16 @@ jobs:
                 export CODEX_API_KEY="$CODEX_CREDENTIAL" OPENAI_API_KEY="$CODEX_CREDENTIAL"
               fi
               unset CODEX_CREDENTIAL
-              args=(exec --dangerously-bypass-approvals-and-sandbox)
+              args=(exec --json --output-last-message "$FORMIC_STDOUT" --dangerously-bypass-approvals-and-sandbox)
               if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
-              codex "\${args[@]}" "$PROMPT" | tee "$FORMIC_STDOUT"
+              codex "\${args[@]}" "$PROMPT" | tee -a "$FORMIC_STREAM"
               ;;
             gemini)
               if [ -z "$GEMINI_API_KEY" ]; then echo "No Gemini API key. Add it to the agent in Formic."; exit 1; fi
-              args=(-p "$PROMPT" --approval-mode yolo)
+              args=(-p "$PROMPT" --output-format stream-json --approval-mode yolo)
               if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
-              gemini "\${args[@]}" | tee "$FORMIC_STDOUT"
+              gemini "\${args[@]}" | tee -a "$FORMIC_STREAM"
+              jq -Rrj 'fromjson? | select(.type == "message" and .role == "assistant") | (.content // empty)' "$FORMIC_STREAM" > "$FORMIC_STDOUT"
               ;;
           esac
 
@@ -237,6 +347,10 @@ jobs:
           if git diff --cached --quiet && [ "$(git rev-parse HEAD)" = "$FORMIC_START" ]; then
             echo "The agent finished without changing anything."
             exit 1
+          fi
+          # No summary written: the agent's last words are the next best thing.
+          if [ ! -s "$FORMIC_SUMMARY" ] && [ -s "$FORMIC_STDOUT" ]; then
+            { printf '%s: %s\\n\\n' "$TICKET" "$(head -n 1 "$FORMIC_STDOUT" | cut -c 1-70)"; tail -n +2 "$FORMIC_STDOUT"; } > "$FORMIC_SUMMARY"
           fi
           if [ ! -s "$FORMIC_SUMMARY" ]; then
             printf '%s: changes from the agent\\n' "$TICKET" > "$FORMIC_SUMMARY"
