@@ -8,10 +8,12 @@ import type {
   AgentOutcome,
   ArchitectAgent,
   DraftTicket,
+  ExistingTicket,
   ProductAgent,
   ShowcaseAgent,
   Usage,
 } from "./ports";
+import { decompositionGuidance } from "./decomposition-guidance";
 import { type Prd, prdSchema } from "@/lib/domain/entities";
 import { estimateCostCents } from "@/lib/budget/limits";
 import {
@@ -182,7 +184,14 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
 
   async decompose(
     ctx: AgentContext,
-    input: { epicId: string; title: string; prd: Prd; repoTree: string[] },
+    input: {
+      epicId: string;
+      title: string;
+      prd: Prd;
+      repoTree: string[];
+      existing?: ExistingTicket[];
+      instructions?: string[];
+    },
   ): Promise<AgentOutcome<DraftTicket[]>> {
     const r = resolve(this.config);
     if (typeof r === "string") return failure(this.config.model ?? "", r, true);
@@ -205,6 +214,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
             "",
             "Existing top-level directories in the repository:",
             input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+            decompositionGuidance(input.existing, input.instructions),
           ].join("\n"),
         },
       ],

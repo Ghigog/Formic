@@ -182,6 +182,7 @@ async function finish(
     proposals: update.proposals ?? [],
     status: update.status,
     runnerJob: null,
+    runnerAgent: null,
   });
 }
 

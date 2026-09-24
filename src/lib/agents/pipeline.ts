@@ -3,10 +3,11 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 
-import type { AgentContext, AgentOutcome, DraftTicket, Usage } from "./ports";
+import type { AgentContext, AgentOutcome, DraftTicket, ExistingTicket, Usage } from "./ports";
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { ticketNotes } from "@/lib/coder/notes";
+import { epicNoteTexts } from "./epic-notes";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
@@ -225,13 +226,33 @@ export async function repoTree(projectId: string): Promise<string[]> {
   ];
 }
 
-/** Stage 3 from the Epic as saved: its PRD and the repository's layout. */
+/**
+ * Stage 3 from the Epic as saved: its PRD and the repository's layout, plus
+ * whatever the person has asked of this breakdown and, when there is
+ * anything to ask it about, the tickets that already exist under it.
+ */
 export async function decomposeEpic(projectId: string, epicId: string): Promise<void> {
   const detail = await repository().epicDetail(epicId);
   const prd = prdSchema.safeParse(detail?.prd);
   if (!detail || !prd.success) return;
   const tree = await repoTree(projectId);
-  await runArchitectAgent(projectId, epicId, detail.title, prd.data, tree);
+  const instructions = await epicNoteTexts(projectId, epicId);
+  const existing = instructions.length > 0 ? await existingTicketsFor(epicId) : undefined;
+  await runArchitectAgent(projectId, epicId, detail.title, prd.data, tree, { instructions, existing });
+}
+
+/** An Epic's current tickets, as the Architect Agent sees them when asked to revise its own work. */
+export async function existingTicketsFor(epicId: string): Promise<ExistingTicket[]> {
+  const tickets = await repository().ticketsForEpic(epicId);
+  return tickets.map((t) => ({
+    key: t.key,
+    title: t.title,
+    description: t.description,
+    acceptanceCriteria: t.acceptanceCriteria,
+    fileScope: t.fileScope,
+    storyPoints: t.storyPoints ?? undefined,
+    inFlight: !unstarted(t),
+  }));
 }
 
 /** Stage 3 done: the ticket graph goes on the board under its Epic. */
@@ -247,6 +268,7 @@ export async function applyTickets(
   // its keys is renamed so both can be told apart.
   const existing = await repo.ticketsForEpic(epicId);
   const replaced = existing.filter(unstarted);
+  const kept = existing.filter((t) => !unstarted(t));
   if (replaced.length > 0) {
     await repo.deleteTickets(replaced.map((t) => t.id));
     for (const t of replaced) {
@@ -258,7 +280,7 @@ export async function applyTickets(
       });
     }
   }
-  const taken = new Set(existing.filter((t) => !unstarted(t)).map((t) => t.key));
+  const taken = new Set(kept.map((t) => t.key));
   const keyFor = new Map<string, string>();
   for (const t of tickets) {
     let key = t.key;
@@ -291,6 +313,27 @@ export async function applyTickets(
     kind: "epic",
     epicId,
   });
+
+  // A record of what a re-decomposition changed: it deletes tickets outright,
+  // so this is the only trace of what they were, kept where a person already
+  // reads the Epic's chat.
+  if (existing.length > 0 && replaced.length > 0) {
+    await repo.addCardChatMessage({
+      projectId,
+      cardKind: "epic",
+      cardId: epicId,
+      role: "assistant",
+      content: [
+        `Broke it down again. Replaced ${replaced.map((t) => `${t.key} (${t.title})`).join(", ")}.`,
+        kept.length > 0
+          ? `Kept ${kept.map((t) => t.key).join(", ")}, already in flight.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      status: "done",
+    });
+  }
 }
 
 /** Stage 8. The Epic's closing showcase, once every ticket has merged. */
@@ -395,6 +438,7 @@ export async function runArchitectAgent(
   title: string,
   prd: Prd,
   repoTree: string[],
+  guidance?: { instructions: string[]; existing?: ExistingTicket[] },
 ): Promise<void> {
   const run = startRun(projectId, "architect", {
     epicId,
@@ -403,6 +447,9 @@ export async function runArchitectAgent(
 
   const cli = await cliAgentFor(projectId, "todo");
   if (cli) {
+    // A CLI agent builds its own prompt straight from the Epic and its
+    // notes when it runs (see answerPrompt in the runner), so it needs
+    // nothing passed through here.
     await startCliAnswer({ projectId, epicId, mode: "architect", agent: cli, run });
     return;
   }
@@ -412,6 +459,8 @@ export async function runArchitectAgent(
     title,
     prd,
     repoTree,
+    existing: guidance?.existing,
+    instructions: guidance?.instructions,
   });
 
   if (outcome.ok) {
@@ -547,8 +596,12 @@ async function stallDraftingTicket(
  * Inside a request it goes through `after()`: on Vercel a function is frozen
  * once its response is sent, so plain fire-and-forget work silently stopped
  * mid-run. `after()` keeps the function alive until the work settles, up to
- * the function's max duration. Outside a request (tests, scripts) there is
- * no such scope and `after()` throws, so it runs detached as before.
+ * the function's max duration — the `maxDuration` declared on the route that
+ * called this. DEFAULT_RUN_BUDGET (src/lib/budget/limits.ts) stays under that
+ * ceiling on purpose: a run notices its own budget and stops cleanly, rather
+ * than the platform cutting it off with no chance to report why. Outside a
+ * request (tests, scripts) there is no such scope and `after()` throws, so it
+ * runs detached as before.
  */
 export function launch(work: () => Promise<void>, label: string): void {
   const run = () =>

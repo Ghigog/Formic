@@ -410,6 +410,20 @@ describe("an agent out of usage", () => {
     });
     expect(saved.limitedUntil).toBeNull();
   });
+
+  it("can be cleared by hand, for a mark that was stale or set on the wrong agent", async () => {
+    const preset = await assignClaudeCode();
+    await repository().setPresetLimit(preset.id, {
+      until: new Date(Date.now() + 3_600_000),
+      note: "Claude Code hit its usage limit.",
+    });
+
+    await repository().setPresetLimit(preset.id, null);
+
+    const cleared = (await repository().presetForRun(preset.id))!.preset;
+    expect(cleared.limitedUntil).toBeNull();
+    expect(cleared.limitNote).toBeNull();
+  });
 });
 
 describe("taking a CLI agent's work", () => {
@@ -523,6 +537,48 @@ describe("taking a CLI agent's work", () => {
     const presetId = (await repository().columnAgents(PROJECT)).in_progress!;
     const { preset } = (await repository().presetForRun(presetId))!;
     expect(preset.limitedUntil).toBe("2026-09-23T18:30:00.000Z");
+  });
+
+  it("blames the agent the run actually used, not whichever one the column runs now", async () => {
+    const original = await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    await runCoderAgent(PROJECT, ticket.id);
+    const job = MockVcsClient.runner().dispatches[0]!.inputs.job!;
+
+    // A person swaps the column's agent while this run is still out on GitHub
+    // Actions, before its failure is ever processed.
+    const swapped = await savePreset({
+      name: "second-account",
+      provider: "claude-code",
+      model: "",
+      prompt: "Implement the ticket.",
+      apiKey: "another-token",
+    });
+    await repository().setColumnAgent(PROJECT, "in_progress", swapped.id);
+
+    const url = "https://github.com/acme/widgets/actions/runs/9";
+    MockVcsClient.runner().logs.set(
+      url,
+      [
+        "2026-09-23T15:40:38.4614765Z ##[group]Run set -euo pipefail",
+        "2026-09-23T15:40:38.4716567Z   PROMPT: Handle the rate limit",
+        "2026-09-23T15:40:38.4744084Z ##[endgroup]",
+        "2026-09-23T15:41:32.5220071Z You've hit your session limit · resets 6:30pm (UTC)",
+        "2026-09-23T15:41:32.7166259Z ##[error]Process completed with exit code 1.",
+      ].join("\n"),
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.blockedReason).toContain("Claude Code hit its usage limit");
+
+    const originalAfter = (await repository().presetForRun(original.id))!.preset;
+    expect(originalAfter.limitedUntil).toBe("2026-09-23T18:30:00.000Z");
+
+    const swappedAfter = (await repository().presetForRun(swapped.id))!.preset;
+    expect(swappedAfter.limitedUntil).toBeNull();
   });
 
   it("quotes the agent's last words when the failure is not one it knows", async () => {

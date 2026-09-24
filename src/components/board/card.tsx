@@ -560,6 +560,14 @@ function ReviewCard({
         )}
       </div>
 
+      {extras.progress && (
+        <ProgressBar
+          value={extras.progress.fraction}
+          label={`${card.key} progress`}
+          caption={extras.progress.label}
+        />
+      )}
+
       {/* A failure gets two lines of log on anthracite. Enough to recognise
           the error without opening the sandbox inspector. */}
       {extras.logExcerpt && (

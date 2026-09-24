@@ -60,7 +60,7 @@ function Heat({ c }: { c: ColonyApi }) {
   return (
     <span
       data-colony="heat"
-      title={`Heat: each merge adds a +0.5× stack that lasts ${HEAT_WINDOW_MS / 1000}s (max ${HEAT_MAX}). Stacks expire one at a time.`}
+      title={`Heat: each merge adds a +0.5× stack that lasts ${HEAT_WINDOW_MS / 60_000}m (max ${HEAT_MAX}). Stacks expire one at a time.`}
       className="oct inline-flex p-px transition-colors"
       style={{ background: look.edge }}
     >

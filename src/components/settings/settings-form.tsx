@@ -85,8 +85,62 @@ export function SettingsForm({
           a column&apos;s agent menu on the board, and give it the key for its
           provider.
         </p>
+
+        {account.signedIn && <DangerZone />}
       </main>
     </div>
+  );
+}
+
+function DangerZone() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function deleteAccount() {
+    if (
+      !window.confirm(
+        "Delete your account? This removes your boards, saved agents, keys and history from Formic, and cannot be undone. Issues, branches, pull requests and repo secrets already on GitHub are not touched — see docs/legal/privacy.md for how to remove those.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/account", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as { error?: string } | null;
+      setError(body?.error ?? "That did not work. Try again.");
+      setBusy(false);
+      return;
+    }
+    window.location.href = "/login";
+  }
+
+  return (
+    <Section title="Danger zone">
+      <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+        Deletes your account and everything Formic knows about you. Formic
+        does not touch GitHub itself: issues, branches, pull requests and
+        repo secrets stay behind (see{" "}
+        <Link href="/legal" className="text-ink underline">
+          the privacy policy
+        </Link>{" "}
+        for how to remove those too).
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void deleteAccount()}
+        className="text-crimson-text h-9 px-2 text-[13px] font-semibold disabled:opacity-50"
+      >
+        {busy ? "Deleting…" : "Delete my account"}
+      </button>
+      {error && <p className="text-crimson-text mt-1.5 text-[11px]">{error}</p>}
+    </Section>
   );
 }
 

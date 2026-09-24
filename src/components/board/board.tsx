@@ -63,6 +63,8 @@ export interface BoardProps {
     columns: ColumnAgents;
     onAssign: (column: ColumnId, presetId: string | null) => Promise<void>;
     onEdit: (column: ColumnId, preset: AgentPreset | null) => void;
+    /** Clears a preset's stale or wrongly attributed "out of usage" mark. */
+    onClearLimit: (presetId: string) => Promise<void>;
   };
 }
 
@@ -203,8 +205,10 @@ export function Board({
         // because `live` falls through to server state.
         settle();
         setError(result.reason);
-        // After the card has snapped back, so the reason lands on it.
-        requestAnimationFrame(() => colony?.reject(card.id, result.reason));
+        // After the card has snapped back, so the flash lands on it. The
+        // full reason is in the banner above and the card's "!"; the flash
+        // itself just needs to say something went wrong.
+        requestAnimationFrame(() => colony?.reject(card.id, "Error"));
         return;
       }
 
@@ -256,6 +260,7 @@ export function Board({
           selected: agents.presets.find((p) => p.id === agents.columns[col]),
           onAssign: (presetId) => agents.onAssign(col, presetId),
           onEdit: (preset) => agents.onEdit(col, preset),
+          onClearLimit: agents.onClearLimit,
         }
       }
       composer={col === "backlog" ? <NewRequestButton onClick={onNewItem} /> : undefined}

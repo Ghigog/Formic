@@ -136,6 +136,9 @@ model Epic {
   /// The GitHub Actions run a CLI agent is doing for this epic, if any.
   /// Only that run's answer is taken; any other is stale.
   runnerJob        String?
+  /// The preset that run was dispatched with, so a failure is blamed on the
+  /// agent that actually ran it, not whichever one the column has now.
+  runnerAgent      String?
   /// When that run was sent: how long the agent has been at it.
   runnerJobAt      DateTime?
   /// The GitHub issue that tracks this epic, once created.
@@ -214,6 +217,9 @@ model Ticket {
   /// The GitHub Actions run a CLI agent is doing for this ticket, if any.
   /// Only that run's result is taken; any other is stale.
   runnerJob     String?
+  /// The preset that run was dispatched with, so a failure is blamed on the
+  /// agent that actually ran it, not whichever one the column has now.
+  runnerAgent   String?
   /// When that run was sent: how long the agent has been at it.
   runnerJobAt   DateTime?
   /// The GitHub issue that tracks this ticket, a sub-issue of its epic's.
@@ -401,6 +407,9 @@ model AssistantMessage {
   status    String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.
   runnerJob String?
+  /// The preset that run was dispatched with, so a failure is blamed on the
+  /// agent that actually ran it, not whichever one the assistant runs now.
+  runnerAgent String?
   createdAt DateTime @default(now())
 
   @@index([projectId, createdAt])

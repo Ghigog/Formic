@@ -13,10 +13,12 @@ import type {
   AgentOutcome,
   ArchitectAgent,
   DraftTicket,
+  ExistingTicket,
   ProductAgent,
   ShowcaseAgent,
   Usage,
 } from "./ports";
+import { decompositionGuidance } from "./decomposition-guidance";
 import { type Prd, prdSchema } from "@/lib/domain/entities";
 import { estimateCostCents } from "@/lib/budget/limits";
 import { env } from "@/lib/secrets/env";
@@ -219,7 +221,14 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
 
   async decompose(
     ctx: AgentContext,
-    input: { epicId: string; title: string; prd: Prd; repoTree: string[] },
+    input: {
+      epicId: string;
+      title: string;
+      prd: Prd;
+      repoTree: string[];
+      existing?: ExistingTicket[];
+      instructions?: string[];
+    },
   ): Promise<AgentOutcome<DraftTicket[]>> {
     const model = this.config.model ?? MODELS.architect;
     const shape = requestShape(model, { effort: "high" });
@@ -234,6 +243,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
           "",
           "Existing top-level directories in the repository:",
           input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+          decompositionGuidance(input.existing, input.instructions),
         ].join("\n"),
       },
     ];

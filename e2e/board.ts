@@ -92,7 +92,8 @@ export async function gotoBoard(page: Page): Promise<void> {
 
 /**
  * Drag a card into a column. Resolves once the board has re-rendered with the
- * card in its new home, or throws if it did not move.
+ * card in its new home and the drop's own animation has settled, or throws
+ * if it did not move.
  */
 export async function dragCardTo(
   page: Page,
@@ -110,6 +111,7 @@ export async function dragCardTo(
 
   await dragTo(page, from, into.x + into.width / 2, into.y + 40);
   await expect.poll(() => columnOf(page, cardId), { timeout }).toBe(to);
+  await waitForDragSettle(source);
 }
 
 /**
@@ -121,10 +123,42 @@ export async function dragCardToBottom(
   cardId: string,
   to: ColumnName,
 ): Promise<void> {
-  const from = await card(page, cardId).boundingBox();
+  const source = card(page, cardId);
+  const from = await source.boundingBox();
   const into = await dropzone(page, to).boundingBox();
   if (!from || !into) throw new Error(`Cannot drag ${cardId}: nothing to measure.`);
   await dragTo(page, from, into.x + into.width / 2, into.y + into.height - 12);
+  await waitForDragSettle(source);
+}
+
+/**
+ * @hello-pangea/dnd keeps animating a dropped card back into its resting
+ * slot for a beat after the column it lands in has already changed — the
+ * signal `columnOf` reads. Starting a second drag before that animation
+ * settles picks the card up mid-flight, at coordinates that go stale before
+ * the pointer gets there, and the drag is lost with no request ever sent.
+ * Waiting for its box to stop moving is what a person's next drag waits on
+ * without noticing; this makes the wait explicit instead of racing it.
+ */
+async function waitForDragSettle(locator: Locator, timeout = 2_000): Promise<void> {
+  const page = locator.page();
+  const start = Date.now();
+  let last = await locator.boundingBox();
+  while (Date.now() - start < timeout) {
+    await page.waitForTimeout(50);
+    const next = await locator.boundingBox();
+    if (
+      last &&
+      next &&
+      last.x === next.x &&
+      last.y === next.y &&
+      last.width === next.width &&
+      last.height === next.height
+    ) {
+      return;
+    }
+    last = next;
+  }
 }
 
 async function dragTo(

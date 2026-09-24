@@ -5,6 +5,7 @@ import type {
   AgentOutcome,
   ArchitectAgent,
   DraftTicket,
+  ExistingTicket,
 } from "@/lib/agents/ports";
 import {
   MockCoderAgent,
@@ -23,7 +24,7 @@ vi.stubEnv("DATABASE_URL", "");
 vi.stubEnv("POSTGRES_PRISMA_URL", "");
 vi.stubEnv("POSTGRES_URL", "");
 
-const { applyPrd, applyTickets, runArchitectDraftTicket } = await import("./pipeline");
+const { applyPrd, applyTickets, decomposeEpic, runArchitectDraftTicket } = await import("./pipeline");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
 const { resetAgents, setAgents } = await import("./registry");
@@ -134,6 +135,31 @@ describe("applyTickets on an Epic broken down again", () => {
     const first = tickets.find((t) => t.key === "T-1")!;
     expect(renamed.dependsOn).toEqual([first.id]);
   });
+
+  it("leaves a record in the Epic's chat of what it replaced and kept", async () => {
+    const [epic, idle, busy] = makeEpicWithChildren({ status: "ready" }, [
+      { key: "T-1", status: "ready" },
+      { key: "T-2", status: "review", prNumber: 7 },
+    ]);
+    seedMemory([epic!, idle!, busy!]);
+
+    await applyTickets(PROJECT, epic!.id, [draft("T-1"), draft("T-2", ["T-1"])]);
+
+    const messages = await repository().cardChatMessages(epic!.id);
+    const record = messages.find((m) => m.role === "assistant");
+    expect(record?.status).toBe("done");
+    expect(record?.content).toContain("Replaced T-1 (");
+    expect(record?.content).toContain("Kept T-2, already in flight.");
+  });
+
+  it("leaves no record on the very first decomposition", async () => {
+    const [epic] = makeEpicWithChildren({ status: "ready" }, []);
+    seedMemory([epic!]);
+
+    await applyTickets(PROJECT, epic!.id, [draft("T-1")]);
+
+    expect(await repository().cardChatMessages(epic!.id)).toEqual([]);
+  });
 });
 
 describe("applyPrd on an Epic already broken down in To Do", () => {
@@ -223,5 +249,71 @@ describe("runArchitectDraftTicket", () => {
     expect(card?.status).toBe("blocked");
     expect(card?.stalledIn).toBe("todo");
     expect(card?.blockedReason).toBe("The model declined to draft this ticket.");
+  });
+});
+
+describe("decomposeEpic, asked to break an Epic down again", () => {
+  it("passes the person's notes and the current tickets to the Architect Agent", async () => {
+    const [epic, idle] = makeEpicWithChildren({ status: "ready" }, [{ key: "T-1", status: "ready" }]);
+    seedMemory([epic!, idle!]);
+    await repository().setEpicPrd(epic!.id, PRD, true);
+    // publish() is mocked in this file, so the note is appended directly
+    // rather than through addEpicNote, which would otherwise call it.
+    await repository().appendEvent(PROJECT, "epic.note", {
+      type: "epic.note",
+      epicId: epic!.id,
+      text: "Split T-1 into two.",
+    });
+
+    let seen: { existing?: ExistingTicket[]; instructions?: string[] } = {};
+    setAgents({
+      product: new MockProductAgent(),
+      architect: {
+        async decompose(_ctx, input) {
+          seen = { existing: input.existing, instructions: input.instructions };
+          return { ok: true, value: [], usage: NO_USAGE };
+        },
+        async draftTicket(): Promise<never> {
+          throw new Error("not used");
+        },
+      },
+      coder: new MockCoderAgent(),
+      reviewer: new MockReviewerAgent(),
+      showcase: new MockShowcaseAgent(),
+    });
+
+    await decomposeEpic(PROJECT, epic!.id);
+
+    expect(seen.instructions).toEqual(["Split T-1 into two."]);
+    expect(seen.existing?.map((t) => t.key)).toEqual(["T-1"]);
+    expect(seen.existing?.[0]?.inFlight).toBe(false);
+  });
+
+  it("asks nothing extra on a first decomposition, with no notes yet", async () => {
+    const [epic] = makeEpicWithChildren({ status: "ready" }, []);
+    seedMemory([epic!]);
+    await repository().setEpicPrd(epic!.id, PRD, true);
+
+    let seen: { existing?: ExistingTicket[]; instructions?: string[] } = {};
+    setAgents({
+      product: new MockProductAgent(),
+      architect: {
+        async decompose(_ctx, input) {
+          seen = { existing: input.existing, instructions: input.instructions };
+          return { ok: true, value: [], usage: NO_USAGE };
+        },
+        async draftTicket(): Promise<never> {
+          throw new Error("not used");
+        },
+      },
+      coder: new MockCoderAgent(),
+      reviewer: new MockReviewerAgent(),
+      showcase: new MockShowcaseAgent(),
+    });
+
+    await decomposeEpic(PROJECT, epic!.id);
+
+    expect(seen.instructions).toEqual([]);
+    expect(seen.existing).toBeUndefined();
   });
 });

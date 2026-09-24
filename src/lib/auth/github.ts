@@ -129,6 +129,35 @@ export async function storeTokens(userId: string, tokens: TokenSet): Promise<Use
 }
 
 /**
+ * Revokes a GitHub App user-to-server token, so it stops working at GitHub's
+ * end too, not only in Formic's database. Best-effort: account deletion goes
+ * ahead either way, since the token is deleted here regardless.
+ */
+export async function revokeToken(token: string): Promise<void> {
+  const config = appConfig();
+  if (!config) return;
+  const auth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
+  try {
+    const res = await fetch(`${API}/applications/${config.clientId}/token`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({ access_token: token }),
+      cache: "no-store",
+    });
+    if (!res.ok && res.status !== 404) {
+      console.error(`[formic] could not revoke a GitHub token (${res.status}).`);
+    }
+  } catch (e) {
+    console.error("[formic] could not revoke a GitHub token:", e);
+  }
+}
+
+/**
  * A working GitHub token for this person, refreshed if it is about to
  * expire. Null when they have none, or it lapsed past its refresh window:
  * they need to sign in again.

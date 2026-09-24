@@ -87,6 +87,12 @@ export type FormicEvent =
       text: string;
     }
   | {
+      /** A person's instruction to the Architect Agent breaking down an Epic. */
+      type: "epic.note";
+      epicId: string;
+      text: string;
+    }
+  | {
       /** The column's agent answering a person's note on a ticket's chat. */
       type: "ticket.reply";
       ticketId: string;
