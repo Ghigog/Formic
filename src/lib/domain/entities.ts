@@ -196,6 +196,11 @@ export interface BoardCard {
   startedAt?: string | null;
   /** ISO time it last changed. */
   updatedAt?: string;
+  /**
+   * ISO time the agent working on it now started, or null when none is.
+   * Drives the timer on a card while it is being worked on, and only then.
+   */
+  workingSince?: string | null;
   /** Tickets: when it merged, and what the merge scored. Null before then. */
   mergedAt?: string | null;
   mergePoints?: number | null;

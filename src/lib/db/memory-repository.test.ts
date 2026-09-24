@@ -137,3 +137,22 @@ describe("Epic numbers on the in-memory store", () => {
     expect(await repo.cardById(two.id)).toBeNull();
   });
 });
+
+describe("how long an agent has been at a card", () => {
+  it("dates an Epic's work from when its job was sent, and clears it after", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({ projectId: project.id, title: "e", rawRequest: "e", position: 1 });
+    const read = async () => (await repo.boardCards(project.id)).find((c) => c.id === epic.id)!;
+
+    expect((await read()).workingSince ?? null).toBeNull();
+
+    await repo.setEpicRunnerJob(epic.id, "job-1");
+    const working = await read();
+    expect(working.agentRole).toBe("product");
+    expect(Date.parse(working.workingSince!)).toBeLessThanOrEqual(Date.now());
+
+    await repo.setEpicRunnerJob(epic.id, null);
+    expect(await read()).toMatchObject({ agentRole: null, workingSince: null });
+  });
+});

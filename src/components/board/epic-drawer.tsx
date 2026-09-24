@@ -6,7 +6,7 @@ import { StepIndicator } from "@/components/ui/step-indicator";
 import { StatusPill } from "@/components/ui/status-pill";
 import { DagPane } from "./dag-pane";
 import { PrdPane } from "./prd-pane";
-import { ProblemNotice } from "./card";
+import { ProblemNotice, WorkTimer } from "./card";
 import type { BoardCard, Prd } from "@/lib/domain/entities";
 import { isStalled } from "@/lib/domain/status";
 import { epicProgress } from "@/lib/domain/stages";
@@ -170,6 +170,11 @@ export function EpicDrawer({
               {epic && (
                 <div className="mt-1 flex items-center gap-2">
                   <StatusPill status={epic.status} />
+                  {epic.workingSince && (
+                    <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
+                      Working for <WorkTimer since={epic.workingSince} className="text-ochre-text" />
+                    </span>
+                  )}
                   {epic.childCount > 0 && (
                     <span className="text-fg-subtle text-[11px]">
                       {epic.doneCount} of {epic.childCount} merged

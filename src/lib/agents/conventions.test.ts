@@ -88,3 +88,19 @@ describe("the engineering practices", () => {
     expect(withProductConventions("x")).toContain("As a <role>, I'd like to <capability>, so that <benefit>.");
   });
 });
+
+describe("sizing plans to the request", () => {
+  it("tells every Product Agent, custom brief or not, to keep a small PRD small", () => {
+    const prompt = withProductConventions("A custom brief.");
+    expect(prompt).toContain("size the PRD to the request");
+    expect(prompt).toContain("Do not restate the request");
+  });
+
+  it("tells every Architect Agent to use as few tickets as the change allows", () => {
+    expect(withPlanningConventions("A custom brief.")).toContain("a small change is one ticket");
+  });
+
+  it("accepts a breakdown into a single ticket", () => {
+    expect(checkDecomposition({ tickets: [spec] }).ok).toBe(true);
+  });
+});

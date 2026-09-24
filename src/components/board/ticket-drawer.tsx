@@ -10,7 +10,7 @@ import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
 import { cardProblem } from "@/lib/domain/status";
-import { ProblemNotice } from "./card";
+import { ProblemNotice, WorkTimer } from "./card";
 import {
   activityOf,
   appendActivity,
@@ -137,6 +137,11 @@ export function TicketDrawer({
               {card && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <StatusPill status={card.status} />
+                  {card.workingSince && (
+                    <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
+                      Working for <WorkTimer since={card.workingSince} className="text-ochre-text" />
+                    </span>
+                  )}
                   {card.storyPoints != null && (
                     <CoinBadge title={`${card.storyPoints} story points`} className="tabular-nums">
                       {card.storyPoints} pt

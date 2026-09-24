@@ -48,11 +48,12 @@ type EpicRow = {
   misplacedIn: ColumnId | null;
   misplacedReason: string | null;
   runnerJob: string | null;
+  runnerJobAt: Date | null;
   position: number;
   createdAt: Date;
   updatedAt: Date;
   tickets: Array<{ id: string; status: TicketStatus }>;
-  runs: Array<{ role: AgentRole; model: string | null }>;
+  runs: Array<{ role: AgentRole; model: string | null; startedAt: Date | null; createdAt: Date }>;
 };
 
 /**
@@ -60,13 +61,15 @@ type EpicRow = {
  * or a CLI agent's job still out on GitHub Actions, whose Formic run ended
  * at dispatch. Which planning agent that is follows from how far it got.
  */
-function epicAgent(epic: EpicRow): { role: AgentRole; model: string | null } | null {
+function epicAgent(
+  epic: EpicRow,
+): { role: AgentRole; model: string | null; since: Date | null } | null {
   const live = epic.runs[0];
-  if (live) return live;
+  if (live) return { ...live, since: live.startedAt ?? live.createdAt };
   if (!epic.runnerJob) return null;
   const role: AgentRole =
     epic.status === "merged" ? "pm" : epic.stage >= 2 ? "architect" : "product";
-  return { role, model: null };
+  return { role, model: null, since: epic.runnerJobAt };
 }
 
 function epicKey(number: number): string {
@@ -209,7 +212,7 @@ export class PrismaRepository implements Repository {
         runs: {
           where: { status: { in: ["queued", "running"] } },
           orderBy: { createdAt: "desc" },
-          select: { role: true, model: true },
+          select: { role: true, model: true, startedAt: true, createdAt: true },
         },
       },
     });
@@ -242,6 +245,7 @@ export class PrismaRepository implements Repository {
       size: null,
       agentRole: epicAgent(epic)?.role ?? null,
       model: epicAgent(epic)?.model ?? null,
+      workingSince: epicAgent(epic)?.since?.toISOString() ?? null,
       fileScope: [],
       dependsOn: [],
       prNumber: null,
@@ -259,6 +263,14 @@ export class PrismaRepository implements Repository {
     const ticketCards: BoardCard[] = tickets.map((t) => {
       const live = t.runs.find((r) => r.status === "queued" || r.status === "running");
       const started = t.runs.map((r) => r.startedAt).filter((d): d is Date => !!d);
+      // A CLI agent's Formic run ends at dispatch; its job on GitHub Actions
+      // is the agent still at work.
+      const jobRole: AgentRole | null = t.runnerJob
+        ? t.status === "review"
+          ? "reviewer"
+          : "coder"
+        : null;
+      const since = live ? live.startedAt : t.runnerJob ? t.runnerJobAt : null;
       return {
       id: t.id,
       kind: "ticket" as const,
@@ -272,8 +284,9 @@ export class PrismaRepository implements Repository {
       detached: t.detached,
       size: t.size,
       storyPoints: t.storyPoints,
-      agentRole: live?.role ?? null,
+      agentRole: live?.role ?? jobRole,
       model: live?.model ?? null,
+      workingSince: since?.toISOString() ?? null,
       fileScope: t.fileScope,
       dependsOn: t.dependsOn.map((d) => d.dependsOnTicketId),
       prNumber: t.prNumber,
@@ -504,7 +517,10 @@ export class PrismaRepository implements Repository {
   }
 
   async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
-    await prisma().epic.update({ where: { id: epicId }, data: { runnerJob: job } });
+    await prisma().epic.update({
+      where: { id: epicId },
+      data: { runnerJob: job, runnerJobAt: job ? new Date() : null },
+    });
   }
 
   async setEpicIssue(epicId: string, issueNumber: number): Promise<void> {
@@ -673,6 +689,9 @@ export class PrismaRepository implements Repository {
         ...rest,
         ...merge,
         ...(plan !== undefined ? { plan: plan as never } : {}),
+        ...(rest.runnerJob !== undefined
+          ? { runnerJobAt: rest.runnerJob ? new Date() : null }
+          : {}),
         // A merged ticket joins its epic's group in Done, wherever it sat.
         ...(rest.status === "merged" ? { detached: false } : {}),
         // An agent moved it on: it goes where its status says.
