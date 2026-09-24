@@ -51,6 +51,11 @@ enum TicketSize {
   XL
 }
 
+enum AttachmentKind {
+  image
+  file
+}
+
 /// A person, signed in with GitHub. Their tokens and keys are sealed with
 /// FORMIC_SECRET; see src/lib/secrets/vault.ts.
 model User {
@@ -142,6 +147,16 @@ model Epic {
   /// stays what is true. Cleared by its next move or status change.
   misplacedIn     ColumnId?
   misplacedReason String?
+  /// A holder for a ticket with no Epic of its own: a To Do request. Never
+  /// its own card on the board; its one child ticket renders alone instead,
+  /// exactly as a detached ticket does today.
+  standalone Boolean @default(false)
+  /// The column a request was rerouted from, and why. Set together with
+  /// rerouteReason by setReroute; rerouting is just flipping standalone and
+  /// the child ticket, so the rawRequest, its id and its attachments never
+  /// move.
+  rerouteFrom     ColumnId?
+  rerouteReason   String?
   /// Fractional index. A drag writes one row instead of renumbering a column.
   position  Float
 
@@ -179,6 +194,9 @@ model Ticket {
   /// stays what is true. Cleared by its next move or status change.
   misplacedIn     ColumnId?
   misplacedReason String?
+  /// The column a request was rerouted from, and why. See Epic.rerouteFrom.
+  rerouteFrom     ColumnId?
+  rerouteReason   String?
 
   branchName    String?
   /// One line describing what the Coder Agent actually changed. Feeds the
@@ -280,6 +298,30 @@ model WebhookDelivery {
 
   @@index([receivedAt])
   @@map("webhook_delivery")
+}
+
+/// A file attached to a raw request. Stored as bytes in Postgres, not on
+/// disk or in a blob store: Vercel gives the app no persistent disk and none
+/// is wired up yet. Keyed at upload time to a client-generated requestId so a
+/// dialog can upload before the card exists, then linked to the real card in
+/// one claimAttachments call.
+model Attachment {
+  id        String         @id @default(cuid())
+  projectId String
+  epicId    String?
+  ticketId  String?
+  requestId String?
+  filename  String
+  mimeType  String
+  kind      AttachmentKind
+  size      Int
+  bytes     Bytes
+  createdAt DateTime       @default(now())
+
+  @@index([requestId])
+  @@index([epicId])
+  @@index([ticketId])
+  @@map("attachment")
 }
 
 /// Append-only event log. Backs SSE replay: a reconnecting client asks for

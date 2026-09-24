@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import type {
+  AgentAttachment,
   AgentConfig,
   AgentContext,
   AgentOutcome,
@@ -20,7 +21,13 @@ import {
   withPlanningConventions,
   withProductConventions,
 } from "./prompts";
-import { MAX_DECOMPOSITION_ATTEMPTS, checkDecomposition, decompositionSchema } from "./decomposition";
+import {
+  MAX_DECOMPOSITION_ATTEMPTS,
+  checkDecomposition,
+  decompositionSchema,
+  ticketSpecSchema,
+  toDraftTicket,
+} from "./decomposition";
 import { type ChatMessage, chat, extractJson } from "@/lib/llm/openai-compat";
 import { type ProviderInfo, provider } from "@/lib/llm/providers";
 
@@ -133,8 +140,13 @@ export class OpenAiProductAgent implements ProductAgent {
 
   async draftPrd(
     ctx: AgentContext,
-    input: { epicId: string; rawRequest: string },
-  ): Promise<AgentOutcome<{ title: string; prd: Prd }>> {
+    input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<
+      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "reroute"; reason: string; ticket: DraftTicket }
+    >
+  > {
     const r = resolve(this.config);
     if (typeof r === "string") return failure(this.config.model ?? "", r, true);
 
@@ -161,7 +173,7 @@ export class OpenAiProductAgent implements ProductAgent {
     if (!result.ok) {
       return failure(r.model, `The Product Agent returned a malformed PRD: ${result.error}`, false, result.usage);
     }
-    return { ok: true, value: result.value, usage: result.usage };
+    return { ok: true, value: { kind: "prd", ...result.value }, usage: result.usage };
   }
 }
 
@@ -221,6 +233,52 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       );
     }
     return { ok: true, value: result.value, usage: result.usage };
+  }
+
+  async draftTicket(
+    ctx: AgentContext,
+    input: { rawRequest: string; repoTree: string[]; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
+  > {
+    const r = resolve(this.config);
+    if (typeof r === "string") return failure(this.config.model ?? "", r, true);
+
+    const result = await askForJson(
+      r,
+      ctx,
+      [
+        {
+          role: "system",
+          content: jsonSystem(withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF), ticketSpecSchema),
+        },
+        {
+          role: "user",
+          content: [
+            "Raw feature request:",
+            input.rawRequest,
+            "",
+            "Existing top-level directories in the repository:",
+            input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+          ].join("\n"),
+        },
+      ],
+      (raw) => {
+        const parsed = ticketSpecSchema.safeParse(raw);
+        return parsed.success
+          ? { ok: true, value: parsed.data }
+          : {
+              ok: false,
+              correction: `That ticket does not match the schema: ${parsed.error.issues[0]?.path.join(".")}: ${parsed.error.issues[0]?.message}. Return the corrected JSON object.`,
+            };
+      },
+      2,
+    );
+
+    if (!result.ok) {
+      return failure(r.model, `The Architect Agent returned a malformed ticket: ${result.error}`, false, result.usage);
+    }
+    return { ok: true, value: { kind: "ticket", ticket: toDraftTicket(result.value) }, usage: result.usage };
   }
 }
 

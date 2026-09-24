@@ -138,6 +138,139 @@ describe("Epic numbers on the in-memory store", () => {
   });
 });
 
+describe("standalone Epics on the in-memory store", () => {
+  it("hides a standalone Epic from boardCards() while its detached ticket still renders", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({
+      projectId: project.id,
+      title: "A lone request",
+      rawRequest: "A lone request",
+      position: 1,
+    });
+    const [ticket] = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "W-1",
+        title: "Do the thing",
+        description: "Do the thing",
+        acceptanceCriteria: [],
+        fileScope: ["src"],
+        size: "S",
+        position: 2,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.setStandalone(epic.id, true);
+    await repo.move({
+      cardId: ticket!.id,
+      kind: "ticket",
+      status: ticket!.status,
+      stalledIn: null,
+      position: ticket!.position,
+      detached: true,
+    });
+
+    const cards = await repo.boardCards(project.id);
+    expect(cards.find((c) => c.id === epic.id)).toBeUndefined();
+    const ticketCard = cards.find((c) => c.id === ticket!.id);
+    expect(ticketCard).toBeTruthy();
+    expect(ticketCard!.detached).toBe(true);
+  });
+});
+
+describe("attachments on the in-memory store", () => {
+  it("moves attachments from a requestId to a real card with claimAttachments", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const a = await repo.createAttachment({
+      projectId: project.id,
+      requestId: "req-1",
+      filename: "a.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+    const b = await repo.createAttachment({
+      projectId: project.id,
+      requestId: "req-1",
+      filename: "b.txt",
+      mimeType: "text/plain",
+      kind: "file",
+      size: 4,
+      bytes: new Uint8Array([4, 5, 6, 7]),
+    });
+
+    await repo.claimAttachments("req-1", { ticketId: "ticket-1" });
+
+    expect(await repo.attachmentsFor({ requestId: "req-1" })).toEqual([]);
+    const claimed = await repo.attachmentsFor({ ticketId: "ticket-1" });
+    expect(claimed.map((x) => x.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it("round-trips the exact bytes and mime type through attachmentContent", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const bytes = new Uint8Array([9, 8, 7, 6, 5]);
+    const attachment = await repo.createAttachment({
+      projectId: project.id,
+      requestId: "req-2",
+      filename: "c.bin",
+      mimeType: "application/octet-stream",
+      kind: "file",
+      size: bytes.length,
+      bytes,
+    });
+
+    const content = await repo.attachmentContent(attachment.id);
+    expect(content?.mimeType).toBe("application/octet-stream");
+    expect(Array.from(content!.bytes)).toEqual(Array.from(bytes));
+    expect(await repo.attachmentContent("nope")).toBeNull();
+  });
+});
+
+describe("rerouting on the in-memory store", () => {
+  it("sets exactly rerouteFrom and rerouteReason, leaving everything else as it was", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({
+      projectId: project.id,
+      title: "Reroute me",
+      rawRequest: "Reroute me",
+      position: 1,
+    });
+    const before = await repo.cardById(epic.id);
+
+    await repo.setReroute(epic.id, "epic", { from: "todo", reason: "belongs in the backlog" });
+
+    const after = await repo.cardById(epic.id);
+    expect(after).toMatchObject({ ...before, rerouteFrom: "todo", rerouteReason: "belongs in the backlog" });
+
+    const viaBoard = (await repo.boardCards(project.id)).find((c) => c.id === epic.id);
+    expect(viaBoard).toMatchObject({ rerouteFrom: "todo", rerouteReason: "belongs in the backlog" });
+
+    await repo.setReroute(epic.id, "epic", null);
+    expect(await repo.cardById(epic.id)).toMatchObject({ ...before, rerouteFrom: null, rerouteReason: null });
+  });
+
+  it("flips only standalone, leaving the rest of the Epic card untouched", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({
+      projectId: project.id,
+      title: "Flip me",
+      rawRequest: "Flip me",
+      position: 1,
+    });
+    const before = await repo.cardById(epic.id);
+
+    await repo.setStandalone(epic.id, true);
+
+    expect(await repo.cardById(epic.id)).toMatchObject({ ...before, standalone: true });
+  });
+});
+
 describe("how long an agent has been at a card", () => {
   it("dates an Epic's work from when its job was sent, and clears it after", async () => {
     const repo = new MemoryRepository();

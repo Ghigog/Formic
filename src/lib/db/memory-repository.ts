@@ -3,6 +3,9 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 
 import type {
+  AttachmentContent,
+  AttachmentRef,
+  CreateAttachmentInput,
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
@@ -10,6 +13,7 @@ import type {
   OwnerScope,
   PresetRecord,
   ProjectSummary,
+  Reroute,
   UserRecord,
   UserSecrets,
   Repository,
@@ -23,6 +27,7 @@ import type {
 import type {
   AgentPreset,
   AgentRunStatus,
+  AttachmentSummary,
   BoardCard,
   ColumnAgents,
   PlanStep,
@@ -61,6 +66,21 @@ interface TicketExtras {
   reviewedSha?: string | null;
 }
 
+/** A stored file, kept alongside its bytes until fetched or claimed. */
+interface AttachmentRow {
+  id: string;
+  projectId: string;
+  epicId: string | null;
+  ticketId: string | null;
+  requestId: string | null;
+  filename: string;
+  mimeType: string;
+  kind: AttachmentSummary["kind"];
+  size: number;
+  bytes: Uint8Array;
+  createdAt: Date;
+}
+
 interface Store {
   /** The project the demo board belongs to, and the fallback. */
   project: ProjectSummary;
@@ -93,6 +113,7 @@ interface Store {
   columnAgents: Map<string, string>;
   assistant: AssistantMessage[];
   cardChat: CardChatMessage[];
+  attachments: Map<string, AttachmentRow>;
 }
 
 declare global {
@@ -109,6 +130,7 @@ function store(): Store {
     existing.epicNumbers ??= new Map();
     existing.prdTimes ??= new Map();
     existing.epicJobTimes ??= new Map();
+    existing.attachments ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -140,6 +162,7 @@ function store(): Store {
     columnAgents: new Map(),
     assistant: [],
     cardChat: [],
+    attachments: new Map(),
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -316,7 +339,9 @@ export class MemoryRepository implements Repository {
       card.childCount = children.length;
       card.doneCount = children.filter((c) => c.status === "merged").length;
     }
-    return cards.sort(byPosition);
+    // A standalone Epic is a holder, not its own card: its child ticket
+    // renders alone, detached, exactly as today.
+    return cards.filter((c) => !(c.kind === "epic" && c.standalone)).sort(byPosition);
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
@@ -340,6 +365,9 @@ export class MemoryRepository implements Repository {
       stage: 1,
       position: input.position,
       epicId: null,
+      standalone: false,
+      rerouteFrom: null,
+      rerouteReason: null,
       size: null,
       agentRole: null,
       model: null,
@@ -384,6 +412,8 @@ export class MemoryRepository implements Repository {
         prNumber: null,
         prUrl: null,
         blockedReason: null,
+        rerouteFrom: null,
+        rerouteReason: null,
         costCents: 0,
         childCount: 0,
         doneCount: 0,
@@ -430,6 +460,68 @@ export class MemoryRepository implements Repository {
     // Out of a stall, the reason goes with it.
     if (input.stalledIn === null) card.blockedReason = null;
     if (input.detached !== undefined) card.detached = input.detached;
+  }
+
+  async setStandalone(epicId: string, standalone: boolean): Promise<void> {
+    const card = store().cards.get(epicId);
+    if (card) card.standalone = standalone;
+  }
+
+  async setReroute(
+    cardId: string,
+    _kind: "epic" | "ticket",
+    reroute: Reroute | null,
+  ): Promise<void> {
+    const card = store().cards.get(cardId);
+    if (!card) return;
+    card.rerouteFrom = reroute?.from ?? null;
+    card.rerouteReason = reroute?.reason ?? null;
+  }
+
+  async createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary> {
+    const row: AttachmentRow = {
+      id: id("attachment"),
+      projectId: input.projectId,
+      epicId: input.epicId ?? null,
+      ticketId: input.ticketId ?? null,
+      requestId: input.requestId ?? null,
+      filename: input.filename,
+      mimeType: input.mimeType,
+      kind: input.kind,
+      size: input.size,
+      bytes: input.bytes,
+      createdAt: new Date(),
+    };
+    store().attachments.set(row.id, row);
+    return toAttachmentSummary(row);
+  }
+
+  async attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]> {
+    return [...store().attachments.values()]
+      .filter((a) => matchesAttachmentRef(a, ref))
+      .map(toAttachmentSummary);
+  }
+
+  async attachmentContent(id: string): Promise<AttachmentContent | null> {
+    const row = store().attachments.get(id);
+    return row ? { bytes: row.bytes, mimeType: row.mimeType } : null;
+  }
+
+  async claimAttachments(
+    requestId: string,
+    ref: { epicId: string } | { ticketId: string },
+  ): Promise<void> {
+    for (const row of store().attachments.values()) {
+      if (row.requestId !== requestId) continue;
+      row.requestId = null;
+      if ("epicId" in ref) row.epicId = ref.epicId;
+      else row.ticketId = ref.ticketId;
+    }
+  }
+
+  async deleteAttachments(ids: string[]): Promise<void> {
+    const s = store();
+    for (const id of ids) s.attachments.delete(id);
   }
 
   async columnPositions(projectId: string, column: ColumnId): Promise<number[]> {
@@ -908,6 +1000,23 @@ function toDetail(
     plan: extras?.plan ?? [],
     handoff: extras?.handoff ?? [],
     reviewedSha: extras?.reviewedSha ?? null,
+  };
+}
+
+function matchesAttachmentRef(row: AttachmentRow, ref: AttachmentRef): boolean {
+  if ("epicId" in ref) return row.epicId === ref.epicId;
+  if ("ticketId" in ref) return row.ticketId === ref.ticketId;
+  return row.requestId === ref.requestId;
+}
+
+function toAttachmentSummary(row: AttachmentRow): AttachmentSummary {
+  return {
+    id: row.id,
+    filename: row.filename,
+    mimeType: row.mimeType,
+    kind: row.kind,
+    size: row.size,
+    url: `/api/attachments/${row.id}`,
   };
 }
 
