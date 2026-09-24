@@ -436,6 +436,34 @@ describe("taking a CLI agent's work", () => {
     expect(branches.has(staging)).toBe(false);
   });
 
+  it("takes a re-run's work onto the pull request that is still open", async () => {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    // Sent back to In Progress with its pull request from an earlier run open.
+    const branch = "formic/t-1-earlier";
+    const pull = await new MockVcsClient("acme/widgets").openPullRequest({
+      headBranch: branch,
+      baseBranch: "formic/integration",
+      title: "T-1: first try",
+      body: "",
+    });
+    await repository().updateTicket(ticket.id, { branchName: branch, prNumber: pull.number, prUrl: pull.url });
+
+    await runCoderAgent(PROJECT, ticket.id);
+    const inputs = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    // It builds on that branch, so its work is a fast-forward of it.
+    expect(inputs.from).toBe(branch);
+
+    const sha = MockVcsClient.stage(`${STAGING_PREFIX}${inputs.job}`, ["src/lib/feature/thing.ts"], "T-1: Do it again");
+    await completeCliRun(PROJECT, { job: inputs.job!, mode: "implement", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after).toMatchObject({ prNumber: pull.number, runnerJob: null, summary: "Do it again" });
+    expect(after.status).not.toBe("running");
+    expect(MockVcsClient.runner().branches.get(branch)).toBe(sha);
+  });
+
   it("throws out work outside the file scope, and pushes nothing", async () => {
     const { ticket, job, staging } = await dispatched();
     MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
