@@ -53,6 +53,13 @@ describe("canUserMove", () => {
     expect(canUserMove("in_review", "todo").ok).toBe(true);
   });
 
+  // AUD-07: an Epic in To Do, with the Architect Agent already decomposing
+  // it, still has to go back to Backlog on a person's say-so — the round
+  // trip this rule has to keep allowing.
+  it("allows pulling an Epic back to Backlog before the Architect's work lands", () => {
+    expect(canUserMove("todo", "backlog").ok).toBe(true);
+  });
+
   it("refuses to move anything out of Done", () => {
     expect(canUserMove("done", "in_review").ok).toBe(false);
   });

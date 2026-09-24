@@ -109,6 +109,17 @@ export function Board({
   const colony = useColony();
   /** The column under a dragged card, for its sounds. Not state: a drag must not re-render the board. */
   const dragOver = useRef<ColumnId | null>(null);
+  /**
+   * The columns as last rendered before a drag began, held until it ends.
+   * A running agent streams progress over SSE every couple hundred
+   * milliseconds; each tick lands in `extras`/`stats` state a few components
+   * up and re-renders the board. Off a drag, that is harmless. Mid-drag, it
+   * can land inside the pointer's synthetic move sequence and cost
+   * @hello-pangea/dnd the gesture — it sees no destination and no transition
+   * is ever sent. Rendering this snapshot instead while one is set keeps that
+   * unrelated state change from touching the dragged card's subtree at all.
+   */
+  const [dragSnapshot, setDragSnapshot] = useState<React.ReactNode[] | null>(null);
 
   // Server state wins whenever it changes; optimistic state only bridges the
   // gap between a drop and its response.
@@ -215,12 +226,48 @@ export function Board({
     [agents],
   );
 
+  const visibleColumns = isMobile ? [activeTab] : COLUMNS;
+
+  const columnElements = visibleColumns.map((col) => (
+    <Column
+      key={col}
+      id={col}
+      cards={byColumn[col]}
+      extras={extras}
+      bare={isMobile}
+      collapsed={collapsed[col]}
+      accepts={(cardId) => {
+        const card = live.find((c) => c.id === cardId);
+        // Where it can work: its own column, or a move the rules allow
+        // from there. Anywhere else still takes it, with a warning.
+        return (
+          !card ||
+          col === columnOf(card) ||
+          accepts(columnFor(card.status, card.stalledIn), col)
+        );
+      }}
+      onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
+      agent={
+        agents && {
+          presets: agents.presets,
+          selected: agents.presets.find((p) => p.id === agents.columns[col]),
+          onAssign: (presetId) => agents.onAssign(col, presetId),
+          onEdit: (preset) => agents.onEdit(col, preset),
+        }
+      }
+      composer={col === "backlog" ? <NewRequestButton onClick={onNewItem} /> : undefined}
+      onOpen={onOpenCard}
+      onShowcase={onShowcase}
+    />
+  ));
+
   const onDragStart = useCallback(
     (start: DragStart) => {
       dragOver.current = start.source.droppableId as ColumnId;
       colony?.sfx("pickup");
+      setDragSnapshot(columnElements);
     },
-    [colony],
+    [colony, columnElements],
   );
 
   const onDragUpdate = useCallback(
@@ -237,6 +284,7 @@ export function Board({
   const onDragEnd = useCallback(
     (result: DropResult) => {
       dragOver.current = null;
+      setDragSnapshot(null);
       const { source, destination, draggableId } = result;
       if (!destination) {
         colony?.sfx("drop");
@@ -302,8 +350,6 @@ export function Board({
     return card ? { card, to } : null;
   }, [activeTab, byColumn, nextLimited]);
 
-  const visibleColumns = isMobile ? [activeTab] : COLUMNS;
-
   return (
     <>
       <BoardHeader
@@ -368,40 +414,7 @@ export function Board({
             isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6",
           )}
         >
-          {visibleColumns.map((col) => (
-            <Column
-              key={col}
-              id={col}
-              cards={byColumn[col]}
-              extras={extras}
-              bare={isMobile}
-              collapsed={collapsed[col]}
-              accepts={(cardId) => {
-                const card = live.find((c) => c.id === cardId);
-                // Where it can work: its own column, or a move the rules allow
-                // from there. Anywhere else still takes it, with a warning.
-                return (
-                  !card ||
-                  col === columnOf(card) ||
-                  accepts(columnFor(card.status, card.stalledIn), col)
-                );
-              }}
-              onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
-              agent={
-                agents && {
-                  presets: agents.presets,
-                  selected: agents.presets.find((p) => p.id === agents.columns[col]),
-                  onAssign: (presetId) => agents.onAssign(col, presetId),
-                  onEdit: (preset) => agents.onEdit(col, preset),
-                }
-              }
-              composer={
-                col === "backlog" ? <NewRequestButton onClick={onNewItem} /> : undefined
-              }
-              onOpen={onOpenCard}
-              onShowcase={onShowcase}
-            />
-          ))}
+          {dragSnapshot ?? columnElements}
 
           {isMobile && advanceTarget && (
             <button
