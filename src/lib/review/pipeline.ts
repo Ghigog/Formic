@@ -4,7 +4,7 @@ import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck } from "@/lib/agents/ports";
 import { DEFAULT_RUN_BUDGET } from "@/lib/budget/limits";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
-import { stallTicket, taskFor } from "@/lib/coder/pipeline";
+import { runCoderAgent, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -12,32 +12,38 @@ import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { type CheckSummary, mergeNeedsPromotion, vcs } from "@/lib/vcs";
+import { type CheckSummary, type PullRequestDetail, mergeNeedsPromotion, vcs } from "@/lib/vcs";
 import { inMergeLane, inTicketLane } from "./lane";
-import { noteTexts } from "@/lib/coder/notes";
+import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
 import { cliPrompt, showcaseSummaries, startCliAnswer, startCliRun } from "@/lib/runner/runner";
 
 /**
- * PROT-07. CI results drive a fix-or-merge loop.
+ * PROT-07. Every pull request is reviewed before it merges.
+ *
+ * Once CI has finished on a head, the Reviewer Agent reads the diff against
+ * the ticket's acceptance criteria and approves it, fixes it, or sends the
+ * ticket back to the Coder Agent with a reason. Red CI is one more thing it
+ * deals with: it is never approved. Only green CI on the exact commit the
+ * reviewer approved or pushed merges.
  *
  * Every path out of here is terminal or waiting on a named event. A card that
- * is neither merged, nor being fixed, nor waiting for a check, is parked with
- * a reason on it — "still going" is not a state this system is allowed to sit
- * in indefinitely.
+ * is neither merged, nor being reviewed, nor waiting for a check, is parked
+ * with a reason on it — "still going" is not a state this system is allowed
+ * to sit in indefinitely.
  */
 
 const STAGE_MERGE = 7;
 
-/** After this many fix attempts the card stops and waits for a human. */
-export const MAX_FIX_ATTEMPTS = DEFAULT_RUN_BUDGET.maxAttempts;
+/** After this many reviews the card stops and waits for a human. */
+export const MAX_REVIEWS = DEFAULT_RUN_BUDGET.maxAttempts;
 
 /** A green-enough result. Skipped and neutral checks block nothing. */
 const GREEN = ["success", "neutral", "skipped"];
 
 /**
  * A cancelled or stale check is not a failing test — nothing ran. Spending a
- * fix attempt on one is how a queue full of superseded jobs turns into a bill,
+ * review on one is how a queue full of superseded jobs turns into a bill,
  * so they count as unresolved and the card waits for a real result.
  */
 const NOT_A_RESULT = ["cancelled", "stale"];
@@ -83,7 +89,7 @@ export async function reviewPullRequest(
 /**
  * One reaction per ticket at a time, and only to the commit that is currently
  * at the head. Webhooks arrive at least once and out of order, so an event
- * about a commit the fix loop has already replaced is not history worth
+ * about a commit the reviewer has already replaced is not history worth
  * repeating.
  */
 async function react(
@@ -118,27 +124,24 @@ async function react(
   }
 
   const red = failing(checks);
-
-  if (red.length === 0) {
-    await publish(projectId, {
-      type: "ci.status",
-      ticketId: ticket.id,
-      prNumber,
-      state: "passing",
-      checkName: null,
-    });
-    await inMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber));
-    return;
-  }
-
   await publish(projectId, {
     type: "ci.status",
     ticketId: ticket.id,
     prNumber,
-    state: "failing",
-    checkName: red[0]!.name,
+    state: red.length === 0 ? "passing" : "failing",
+    checkName: red[0]?.name ?? null,
   });
-  await fixTicket(projectId, ticket, prNumber, red);
+
+  // A reviewer is already on this pull request in GitHub Actions. More
+  // reports about the same head are not a reason to start another.
+  if (ticket.runnerJob) return;
+
+  if (red.length === 0 && ticket.reviewedSha === headSha) {
+    await inMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber));
+    return;
+  }
+
+  await reviewTicket(projectId, ticket, pull, red);
 }
 
 /**
@@ -362,30 +365,28 @@ async function maybeShowcase(projectId: string, epicId: string): Promise<void> {
 }
 
 /**
- * The fix loop, under a hard ceiling. An agent iterating on a failing test is
- * the most expensive failure mode in this system, so the attempt counter is
- * persisted on the ticket rather than held in memory where a restart would
- * reset it to zero.
+ * The review, under a hard ceiling. A ticket going round between the Coder
+ * and the Reviewer, or a reviewer iterating on a failing test, is the most
+ * expensive failure mode in this system, so the count is persisted on the
+ * ticket rather than held in memory where a restart would reset it to zero.
  */
-async function fixTicket(
+async function reviewTicket(
   projectId: string,
   ticket: TicketDetail,
-  prNumber: number,
+  pull: PullRequestDetail,
   red: CheckSummary[],
 ): Promise<void> {
   const repo = repository();
-  // A CLI agent is already fixing this head in GitHub Actions. More reports
-  // of the same red checks are not a reason to start another.
-  if (ticket.runnerJob) return;
-
   const attempt = ticket.attempts + 1;
   const names = red.map((c) => c.name).join(", ");
 
-  if (attempt > MAX_FIX_ATTEMPTS) {
+  if (attempt > MAX_REVIEWS) {
     await stallTicket(
       projectId,
       ticket,
-      `${names} is still failing after ${MAX_FIX_ATTEMPTS} attempts. This needs a human.`,
+      red.length
+        ? `${names} is still failing after ${MAX_REVIEWS} reviews. This needs a human.`
+        : `${ticket.key} has been reviewed ${MAX_REVIEWS} times without being approved. This needs a human.`,
       { blocked: true, stalledIn: "in_review" },
     );
     return;
@@ -395,7 +396,7 @@ async function fixTicket(
     await stallTicket(
       projectId,
       ticket,
-      `${ticket.key} has no branch recorded, so its pull request cannot be fixed automatically.`,
+      `${ticket.key} has no branch recorded, so its pull request cannot be reviewed automatically.`,
       { blocked: true, stalledIn: "in_review" },
     );
     return;
@@ -413,6 +414,17 @@ async function fixTicket(
       log ?? { name: check.name, summary: "No log was available.", annotations: [] },
     );
   }
+  const changedFiles = await client
+    .compare(pull.baseBranch, ticket.branchName)
+    .then((c) => c.files)
+    .catch(() => []);
+  const review = {
+    baseBranch: pull.baseBranch,
+    changedFiles,
+    checks: logs,
+    attempt,
+    maxAttempts: MAX_REVIEWS,
+  };
 
   const run = startRun(projectId, "reviewer", {
     model: await modelFor(projectId, "reviewer"),
@@ -428,11 +440,7 @@ async function fixTicket(
       mode: "fix",
       agent: cli,
       from: ticket.branchName,
-      prompt: cliPrompt(cli, "fix", ticket, {
-        checks: logs,
-        attempt,
-        maxAttempts: MAX_FIX_ATTEMPTS,
-      }, await noteTexts(projectId, ticket.id)),
+      prompt: cliPrompt(cli, "fix", ticket, review, await noteTexts(projectId, ticket.id)),
       run,
       stalledIn: "in_review",
     });
@@ -467,12 +475,10 @@ async function fixTicket(
   if (checkout.sandboxId) await run.attachSandbox(checkout.sandboxId);
 
   try {
-    const outcome = await (await agentFor(projectId, "reviewer")).fix(run.ctx, {
+    const outcome = await (await agentFor(projectId, "reviewer")).review(run.ctx, {
       task: taskFor(ticket, await noteTexts(projectId, ticket.id)),
       workspace: checkout.workspace,
-      checks: logs,
-      attempt,
-      maxAttempts: MAX_FIX_ATTEMPTS,
+      ...review,
     });
 
     if (!outcome.ok) {
@@ -484,21 +490,37 @@ async function fixTicket(
       return;
     }
 
+    const verdict = outcome.value;
+    await repo.updateTicket(ticket.id, {
+      costCents: outcome.usage.costCents,
+      tokensIn: outcome.usage.tokensIn,
+      tokensOut: outcome.usage.tokensOut,
+    });
+
+    if (verdict.sendBack) {
+      // Whatever it edited on the way to deciding this is not pushed.
+      await sendBack(projectId, ticket, verdict.sendBack);
+      await run.finish(outcome);
+      return;
+    }
+
     const changed = await checkout.raw.changedFiles();
     if (changed.length === 0) {
-      const reason = `${names} is failing and the agent had no fix to offer.`;
-      await stallTicket(projectId, ticket, reason, {
-        blocked: true,
-        stalledIn: "in_review",
-      });
-      await run.finish({ ...outcome, ok: false, error: reason, blocked: true });
+      if (red.length > 0) {
+        const reason = `${names} is failing and the Reviewer Agent had no fix to offer.`;
+        await stallTicket(projectId, ticket, reason, { blocked: true, stalledIn: "in_review" });
+        await run.finish({ ...outcome, ok: false, error: reason, blocked: true });
+        return;
+      }
+      await run.finish(outcome);
+      await approve(projectId, ticket, pull.number, pull.headSha, verdict);
       return;
     }
 
     const violations = violationsInDiff(changed, ticket.fileScope);
     if (violations.length > 0) {
       const reason =
-        `The fix touched ${violations.slice(0, 5).join(", ")}, outside ${ticket.key}'s ` +
+        `The review's fix touched ${violations.slice(0, 5).join(", ")}, outside ${ticket.key}'s ` +
         `file scope. Nothing was pushed.`;
       await stallTicket(projectId, ticket, reason, {
         blocked: true,
@@ -510,8 +532,8 @@ async function fixTicket(
 
     const pushed = await commitAndPush(checkout, {
       branch: ticket.branchName,
-      subject: `${ticket.key}: ${outcome.value.summary}`,
-      body: `${outcome.value.detail}\n\nFix attempt ${attempt} of ${MAX_FIX_ATTEMPTS} for ${names}.`,
+      subject: `${ticket.key}: ${verdict.summary}`,
+      body: `${verdict.detail}\n\nFrom review ${attempt} of ${MAX_REVIEWS}${names ? `, for ${names}` : ""}.`,
     });
 
     if (!pushed.ok) {
@@ -523,21 +545,115 @@ async function fixTicket(
       return;
     }
 
-    await repo.updateTicket(ticket.id, {
-      costCents: outcome.usage.costCents,
-      tokensIn: outcome.usage.tokensIn,
-      tokensOut: outcome.usage.tokensOut,
-    });
-    await publish(projectId, {
-      type: "ci.status",
-      ticketId: ticket.id,
-      prNumber,
-      state: "pending",
-      checkName: null,
-    });
-
     await run.finish(outcome);
+    await recordFix(projectId, ticket, pull.number, pushed.sha, verdict.handoff ?? []);
   } finally {
     await checkout.dispose();
   }
+}
+
+/**
+ * The reviewer approved the head it was given. Green CI on exactly that
+ * commit merges it; if CI is not green on it, the approval does not count.
+ */
+export async function approve(
+  projectId: string,
+  ticket: TicketDetail,
+  prNumber: number,
+  headSha: string,
+  verdict: { summary: string; detail: string; handoff?: string[] },
+): Promise<void> {
+  const repo = repository();
+  await repo.updateTicket(ticket.id, {
+    reviewedSha: headSha,
+    handoff: mergeHandoff(ticket.handoff, verdict.handoff),
+  });
+  await publish(projectId, {
+    type: "run.thought",
+    runId: "",
+    ticketId: ticket.id,
+    kind: "text",
+    text: `Approved: ${verdict.detail.trim() || verdict.summary}`.slice(0, 4_000),
+  });
+
+  // Re-read: a push could have landed while it reviewed, and a result could
+  // have changed. The lane decides again from what is true now.
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  const pull = await client.pullRequest(prNumber);
+  if (pull.merged || pull.state === "closed" || pull.headSha !== headSha) return;
+  const checks = await client.checksFor(headSha);
+  if (checks.length === 0 || pending(checks).length > 0) return;
+  const red = failing(checks);
+  if (red.length > 0) {
+    await stallTicket(
+      projectId,
+      ticket,
+      `The Reviewer Agent approved ${ticket.key}, but ${red.map((c) => c.name).join(", ")} is failing. Red CI does not merge.`,
+      { blocked: true, stalledIn: "in_review" },
+    );
+    return;
+  }
+  const fresh = await repo.ticketDetail(ticket.id);
+  if (!fresh || fresh.status === "merged") return;
+  await inMergeLane(projectId, () => mergeTicket(projectId, fresh, prNumber));
+}
+
+/**
+ * The reviewer pushed a fix. It vouches for that commit, so green CI on it
+ * merges without another review; red CI on it is reviewed again.
+ */
+export async function recordFix(
+  projectId: string,
+  ticket: TicketDetail,
+  prNumber: number,
+  sha: string,
+  handoff: string[],
+): Promise<void> {
+  await repository().updateTicket(ticket.id, {
+    reviewedSha: sha,
+    handoff: mergeHandoff(ticket.handoff, handoff),
+  });
+  await publish(projectId, {
+    type: "ci.status",
+    ticketId: ticket.id,
+    prNumber,
+    state: "pending",
+    checkName: null,
+  });
+
+  // A mock GitHub sends no webhook for the new head, so drive the next
+  // stage directly, as opening the pull request does.
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  const pull = client.name === "mock" ? await client.pullRequest(prNumber).catch(() => null) : null;
+  if (pull) {
+    await repository().updateTicket(ticket.id, { reviewedSha: pull.headSha });
+    launch(
+      () => reviewPullRequest(projectId, prNumber, pull.headSha),
+      `mock review for ${ticket.key}`,
+    );
+  }
+}
+
+/**
+ * The change misses the ticket. The reason goes on the ticket as a note,
+ * which briefs every later run of it, and the Coder Agent takes it again on
+ * the same pull request.
+ */
+export async function sendBack(
+  projectId: string,
+  ticket: TicketDetail,
+  reason: string,
+): Promise<void> {
+  await addNote(projectId, ticket.id, `Sent back by review: ${reason}`);
+  await repository().updateTicket(ticket.id, { reviewedSha: null });
+  launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
+}
+
+/** Steps outside the repository, from every run of the ticket, once each. */
+function mergeHandoff(had: string[], more: string[] = []): string[] {
+  return [...new Set([...had, ...more])];
 }

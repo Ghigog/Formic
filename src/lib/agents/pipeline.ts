@@ -11,6 +11,7 @@ import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
 import { agentFor, cliAgentFor, modelFor } from "./presets";
+import { handoffSection } from "./handoff";
 import { startCliAnswer } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
 import { unstarted } from "@/lib/domain/status";
@@ -291,7 +292,11 @@ export async function applyShowcase(
   epicId: string,
   markdown: string,
 ): Promise<void> {
-  await repository().setEpicShowcase(epicId, markdown);
+  // What only the person can do comes first: it has to happen before the
+  // walkthrough below it will work.
+  const tickets = await repository().ticketsForEpic(epicId);
+  const forYou = handoffSection(tickets.map((t) => ({ key: t.key, steps: t.handoff })));
+  await repository().setEpicShowcase(epicId, forYou ? `${forYou}\n\n${markdown}` : markdown);
   await publish(projectId, {
     type: "card.status",
     cardId: epicId,

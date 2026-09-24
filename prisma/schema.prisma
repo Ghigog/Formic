@@ -198,6 +198,12 @@ model Ticket {
   storyPoints   Int?
   /// The steps the agent is working the ticket through: [{ step, status }].
   plan          Json?
+  /// Steps outside the repository the person has to take, one per entry.
+  /// The Epic's showcase hands them over once everything has merged.
+  handoff       String[] @default([])
+  /// The head commit the Reviewer Agent last approved or pushed. Green CI on
+  /// exactly this commit merges; anything newer is reviewed again.
+  reviewedSha   String?
   /// When it merged, and what the merge scored: its story points times the
   /// project's heat at that moment (1 + 0.5 per merge in the 45s before,
   /// at most six). Set once, on the first move to merged.

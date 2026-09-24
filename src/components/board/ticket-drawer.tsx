@@ -254,6 +254,23 @@ function TicketBody({ view }: { view: TicketView }) {
         </div>
       )}
 
+      {view.handoff.length > 0 && (
+        <div>
+          <Heading>For you</Heading>
+          <p className="text-fg-muted mt-1 text-[12px]">
+            Steps outside the repository no agent can take. The Epic&apos;s showcase lists them again once
+            everything has merged.
+          </p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {view.handoff.map((s, i) => (
+              <li key={i}>
+                <MarkdownLite text={s} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div>
         <Heading>File scope</Heading>
         <p className="text-fg-muted mt-1 font-mono text-[11px]">

@@ -134,11 +134,14 @@ export async function runCoderAgent(
     return;
   }
 
+  // Sent back with its pull request still open: build on that branch, so
+  // the work lands on the same pull request instead of replacing it.
+  const continuing = !!ticket.prNumber && !!ticket.branchName;
   const checkout = await openCheckout({
     projectId,
     repoFullName: project.repoFullName,
-    fromBranch: project.baseBranch,
-    newBranch: branch,
+    fromBranch: continuing ? branch : project.baseBranch,
+    newBranch: continuing ? null : branch,
     ticket,
     ctx: run.ctx,
     githubToken: creds.githubToken,
@@ -275,6 +278,9 @@ export async function openTicketPullRequest(
     prNumber: pull.number,
     prUrl: pull.url,
     summary: input.change.summary,
+    handoff: input.change.handoff ?? [],
+    // Whatever the reviewer saw before, this is new work: it is reviewed again.
+    reviewedSha: null,
     blockedReason: null,
     ...(input.usage
       ? {

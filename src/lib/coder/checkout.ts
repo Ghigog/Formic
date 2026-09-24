@@ -156,7 +156,7 @@ export async function commitAndPush(
 /** The pull request body. Links back to the ticket that caused it. */
 export function pullRequestBody(
   ticket: TicketDetail,
-  change: { summary: string; detail: string; verifiedWith: string | null },
+  change: { summary: string; detail: string; verifiedWith: string | null; handoff?: string[] },
 ): string {
   return [
     change.detail,
@@ -179,6 +179,16 @@ export function pullRequestBody(
       ? `Verified with \`${change.verifiedWith}\`.`
       : "No verification command was run.",
     "",
+    ...(change.handoff?.length
+      ? [
+          "### For you",
+          "",
+          "Steps outside the repository no agent can take. The Epic's showcase lists them again once everything has merged.",
+          "",
+          ...change.handoff.map((s) => `- [ ] ${s}`),
+          "",
+        ]
+      : []),
     "---",
     "",
     "Opened by a Formic Coder Agent.",

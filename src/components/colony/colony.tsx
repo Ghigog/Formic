@@ -292,7 +292,7 @@ export function ColonyProvider({
       const b = extras[card.id]?.ci;
       if (a === b || !b || !a) continue;
       if (b === "passing") later.push(() => ciPassed(card));
-      if (b === "failing") later.push(() => mark(card, "CHECKS FAILED", "fix loop running", "var(--crimson)"));
+      if (b === "failing") later.push(() => mark(card, "CHECKS FAILED", "reviewer on it", "var(--crimson)"));
     }
 
     // Merged with nothing to show for it (it arrived merged, say): count it now.

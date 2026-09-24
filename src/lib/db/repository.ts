@@ -100,6 +100,10 @@ export interface TicketDetail {
   storyPoints: number | null;
   /** The plan the agent is working through, oldest step first. */
   plan: PlanStep[];
+  /** Steps outside the repository the person has to take. */
+  handoff: string[];
+  /** The head commit the Reviewer Agent last approved or pushed. */
+  reviewedSha: string | null;
 }
 
 export interface TicketUpdate {
@@ -115,6 +119,8 @@ export interface TicketUpdate {
   runnerJob?: string | null;
   issueNumber?: number | null;
   plan?: PlanStep[];
+  handoff?: string[];
+  reviewedSha?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
