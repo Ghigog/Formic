@@ -115,6 +115,10 @@ Other things worth knowing:
   Assert on the text of an alert, not the role alone.
 - The Done column leads with its epic group header, which is not draggable —
   the merged tickets underneath it are.
+- A card's effects must never animate its `transform` while the drag library
+  holds it (`heldByDrag` in `colony/fx.ts`). The library waits for its own
+  transform transition to end before it finishes a drop; an animation on the
+  same property cancels it and the drag hangs with the card where it started.
 
 **Chromium.** If it is pre-installed rather than downloaded by Playwright
 (CI images, sandboxes), point at it instead of running `playwright install`:
@@ -122,6 +126,9 @@ Other things worth knowing:
 ```bash
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npm run test:e2e
 ```
+
+CI runs the whole suite on every pull request, in its own `e2e` job, against
+the Chromium the runner image ships. A change that breaks a drag fails it.
 
 ## Gaps worth filling
 

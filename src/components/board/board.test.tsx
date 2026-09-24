@@ -114,6 +114,27 @@ describe("Board, on a wide screen", () => {
   });
 });
 
+describe("Board, as the server moves cards", () => {
+  it("shows a card where the server says it is now, not where it first rendered", () => {
+    const card = makeCard({ key: "T-2", status: "draft" });
+    const props = {
+      projectName: "Formic",
+      repoFullName: "formic-labs/formic-web",
+      baseBranch: "main",
+      onOpenCard: vi.fn(),
+      onNewItem: vi.fn(),
+      onTransition: vi.fn(),
+    };
+    const { rerender } = render(<Board cards={[card]} {...props} />);
+    const toDo = screen.getByRole("region", { name: "To Do" });
+    expect(toDo).not.toHaveTextContent("T-2");
+
+    // An Epic went back to To Do, and its parked ticket with it.
+    rerender(<Board cards={[{ ...card, status: "ready" }]} {...props} />);
+    expect(toDo).toHaveTextContent("T-2");
+  });
+});
+
 describe("Board, below 768px", () => {
   it("shows one column at a time, with the tab bar carrying the counts", async () => {
     setViewportMatches(true);
