@@ -154,6 +154,12 @@ export interface VcsClient {
    */
   runLog(runUrl: string): Promise<string | null>;
   compare(base: string, head: string): Promise<Comparison>;
+  /**
+   * Rewrites the commit at `sha` with its carried workflow changes (CARRY_DIR,
+   * CARRY_DELETED) put back at their real paths. Returns the new commit and
+   * the real paths it changed that way.
+   */
+  landCarried(sha: string): Promise<{ sha: string; files: string[] }>;
   /** Creates `branch` at `sha`, or fast-forwards it there. Never forces. */
   moveBranch(branch: string, sha: string): Promise<void>;
   /** Deletes a staging branch. Refuses any branch outside STAGING_PREFIX. */

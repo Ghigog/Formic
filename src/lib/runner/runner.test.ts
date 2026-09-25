@@ -14,6 +14,7 @@ import {
 import { addNote } from "@/lib/coder/notes";
 import {
   ANSWER_PATH,
+  CARRY_DELETED,
   RUNNER_SETUP_BRANCH,
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
@@ -481,6 +482,44 @@ describe("taking a CLI agent's work", () => {
     expect(after).toMatchObject({ prNumber: pull.number, runnerJob: null, summary: "Do it again" });
     expect(after.status).not.toBe("running");
     expect(MockVcsClient.runner().branches.get(branch)).toBe(sha);
+  });
+
+  it("lands carried workflow changes in place, judged by their real paths", async () => {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket(["src/lib/feature", ".github/workflows"]);
+    await runCoderAgent(PROJECT, ticket.id);
+    const job = MockVcsClient.runner().dispatches[0]!.inputs.job!;
+    const staged = MockVcsClient.stage(
+      `${STAGING_PREFIX}${job}`,
+      ["src/lib/feature/a.ts", ".formic/carry/.github/workflows/ci.yml", CARRY_DELETED],
+      "T-1: Change CI",
+    );
+    MockVcsClient.runner().files.set(`${staged}:${CARRY_DELETED}`, ".github/workflows/old.yml\n");
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.prNumber).toBeGreaterThan(0);
+    const head = MockVcsClient.runner().branches.get(after.branchName!)!;
+    expect(head).not.toBe(staged);
+    expect(MockVcsClient.runner().commits.get(head)!.files.sort()).toEqual([
+      ".github/workflows/ci.yml",
+      ".github/workflows/old.yml",
+      "src/lib/feature/a.ts",
+    ]);
+  });
+
+  it("holds carried workflow changes to the file scope too", async () => {
+    const { ticket, job, staging } = await dispatched();
+    MockVcsClient.stage(staging, ["src/lib/feature/a.ts", ".formic/carry/.github/workflows/ci.yml"], "T-1: stuff");
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain(".github/workflows/ci.yml");
+    expect(after.blockedReason).not.toContain(".formic/carry");
   });
 
   it("throws out work outside the file scope, and pushes nothing", async () => {

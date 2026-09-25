@@ -13,6 +13,7 @@ import {
   type WorkflowRunRef,
   STAGING_PREFIX,
 } from "./types";
+import { CARRY_DELETED, CARRY_DIR, isCarried } from "@/lib/runner/workflow";
 
 /**
  * A GitHub that only exists in this process.
@@ -277,6 +278,26 @@ export class MockVcsClient implements VcsClient {
     const sha = repo().branches.get(head) ?? head;
     const commit = repo().commits.get(sha);
     return { files: commit?.files ?? [], messages: commit ? [commit.message] : [], headSha: sha };
+  }
+
+  async landCarried(sha: string): Promise<{ sha: string; files: string[] }> {
+    const commit = repo().commits.get(sha);
+    if (!commit) return { sha, files: [] };
+    const files: string[] = [];
+    for (const f of commit.files) {
+      if (f === CARRY_DELETED) {
+        const listed = repo().files.get(`${sha}:${CARRY_DELETED}`) ?? "";
+        files.push(...listed.split("\n").map((l) => l.trim()).filter(Boolean));
+      } else if (f.startsWith(`${CARRY_DIR}/`)) {
+        files.push(f.slice(CARRY_DIR.length + 1));
+      }
+    }
+    const landed = fakeSha();
+    repo().commits.set(landed, {
+      files: [...commit.files.filter((f) => !isCarried(f)), ...files],
+      message: commit.message,
+    });
+    return { sha: landed, files };
   }
 
   async moveBranch(branch: string, sha: string): Promise<void> {
