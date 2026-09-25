@@ -82,7 +82,8 @@ export type CardAction = z.infer<typeof cardActionSchema>;
 /** What each action is for, for the agent deciding what to do. */
 export const CARD_ACTIONS_GUIDE = `What you can do, besides answering:
 - move: move the card to another column, as dragging it would. Moving a ticket into In Progress starts the Coder Agent on it.
-- close: tickets only. Put the ticket in Done without a pull request, with a one-line summary: for work the person did themselves, or work that is not needed after all. Whatever waits on it can go ahead.
+- move to done: for a ticket with a pull request, merges it (when CI is green) and the ticket goes to Done only once it has merged. "Merge it" asks for this.
+- close: tickets only. Put the ticket in Done without merging anything, with a one-line summary: for work the person did themselves, or work that is not needed after all. Never use it when the person asks to merge. Whatever waits on it can go ahead.
 - redo: start this column's work on the card again, doing what the person asks now (stopping any agent working it first). In Backlog it rewrites an Epic's PRD, in To Do it breaks an Epic down again, in In Progress it has the Coder Agent do what was asked, in In Review it has the Reviewer Agent review again. A ticket in To Do or Backlog has no work to redo: change the ticket with edit_ticket instead, or move it to In Progress to start it.
 - stop: stop the agent working on the card.
 - edit_ticket: tickets only. Rewrite the ticket's title, description, acceptance criteria or file scope, or add what the person reported doing or finding under Results.
@@ -157,6 +158,12 @@ async function untilIdle(ticketId: string, ms = 90_000): Promise<void> {
 }
 
 async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<string> {
+  // A ticket with a pull request reaches Done by merging it, never by being
+  // closed around it. That holds for one already in Done whose pull request
+  // is still open, too.
+  if (card.kind === "ticket" && to === "done" && card.prNumber) {
+    return mergeTicket(projectId, card, card.prNumber);
+  }
   const from = columnOf(card);
   if (to === from) return `${card.key} is already in ${COLUMN_LABELS[to]}.`;
   if (card.kind === "ticket" && to === "done") {
@@ -197,6 +204,14 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
   return `Moved ${card.key} to ${COLUMN_LABELS[to]}.${
     card.kind === "ticket" && to === "in_progress" ? " The Coder Agent is starting on it." : ""
   }`;
+}
+
+async function mergeTicket(projectId: string, card: BoardCard, prNumber: number): Promise<string> {
+  const ticket = await repository().ticketDetail(card.id);
+  if (!ticket) return "This ticket no longer exists.";
+  if (await working(card)) return `An agent is still working on ${card.key}. Stop it first, or wait for it to finish.`;
+  const { mergeByPerson } = await import("@/lib/review/pipeline");
+  return mergeByPerson(projectId, ticket, prNumber);
 }
 
 async function close(projectId: string, card: BoardCard, summary: string): Promise<string> {
