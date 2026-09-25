@@ -34,6 +34,11 @@ export const TICKET_STATUSES = [
   "ready",
   /** To Do. Held by an unsatisfied dependency. */
   "waiting",
+  /**
+   * In Progress. Waiting its turn: another ticket is already writing some of
+   * the same files. It starts on its own once that one stops running.
+   */
+  "queued",
   /** In Progress. A sandbox run is live. */
   "running",
   /** In Review. A PR is open, CI and merge are in flight. */
@@ -53,6 +58,7 @@ const STATUS_TO_COLUMN: Record<TicketStatus, ColumnId> = {
   specified: "backlog",
   ready: "todo",
   waiting: "todo",
+  queued: "in_progress",
   running: "in_progress",
   review: "in_review",
   merged: "done",

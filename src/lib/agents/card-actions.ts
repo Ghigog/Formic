@@ -12,6 +12,7 @@ import { MAX_NOTE, addNote } from "@/lib/coder/notes";
 import { answerScope, scopeAsked } from "@/lib/coder/scope-request";
 import { repository } from "@/lib/db";
 import { fileScopeSchema, prdSchema, type BoardCard } from "@/lib/domain/entities";
+import { runningConflict } from "@/lib/domain/queue";
 import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, isStalled, type ColumnId } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { cancelJob, stopTicket } from "@/lib/runner/runner";
@@ -205,6 +206,10 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
       actor: "agent",
     });
     return `Could not move ${card.key}: ${result.problem.replace(/\s*Drag it back to [^.]+ to undo this\./, "")}`;
+  }
+  if (result.status === "queued") {
+    const blocker = runningConflict(now, await repository().boardCards(projectId));
+    return `Moved ${card.key} to In Progress, queued behind ${blocker?.key ?? "a ticket writing the same files"}. The Coder Agent starts on it once that one is done.`;
   }
   return `Moved ${card.key} to ${COLUMN_LABELS[to]}.${
     card.kind === "ticket" && to === "in_progress" ? " The Coder Agent is starting on it." : ""
@@ -400,8 +405,8 @@ async function widenScope(projectId: string, card: BoardCard, allow: boolean): P
   const done = allow
     ? `Added ${asked.map((p) => `\`${p}\``).join(", ")} to ${card.key}'s scope.`
     : `${card.key} keeps to its scope and starts again.`;
-  // Back in To Do, it goes on the way any ticket does: only once nothing
-  // running overlaps its scope.
+  // Back in To Do, it goes on the way any ticket does: queued behind
+  // anything running in its scope.
   const moved = await move(projectId, (await repository().cardById(card.id)) ?? card, "in_progress");
   return moved.startsWith("Could not")
     ? `${done} It stays in To Do for now. ${moved.replace(/^Could not move [^:]+: /, "")}`
