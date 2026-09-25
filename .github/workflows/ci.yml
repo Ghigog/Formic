@@ -30,13 +30,14 @@ jobs:
       - run: npm run typecheck
       # Unit tests run on the in-memory store by design, so no DATABASE_URL.
       # The repository contract suite also runs against Postgres, through
-      # TEST_DATABASE_URL, once the schema is pushed.
+      # TEST_DATABASE_URL, once the schema is pushed. Its own database, so
+      # the boot check below still starts from an empty one.
       - run: npx prisma db push
         env:
-          DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
+          DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
       - run: npm test
         env:
-          TEST_DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
+          TEST_DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
 
       # A real database from here on, so the build's schema push and the
       # app's runtime queries run here first, not first in production.
