@@ -58,7 +58,7 @@ describe("POST /api/attachments", () => {
     const body = await res.json();
     expect(body.attachment).toMatchObject({ filename: "shot.png", kind: "image" });
     expect(body.attachment.id).toBeTruthy();
-    expect(body.attachment.url).toBe(`/api/attachments/${body.attachment.id}`);
+    expect(body.attachment.url).toBe(`/api/attachments/${body.attachment.id}?requestId=req-1`);
   });
 
   it("rejects a file over the size limit, naming the limit, and leaves nothing behind", async () => {

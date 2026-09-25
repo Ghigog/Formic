@@ -15,7 +15,7 @@ export async function upload(input: {
   file: File;
 }): Promise<AttachmentSummary> {
   const bytes = new Uint8Array(await input.file.arrayBuffer());
-  return repository().createAttachment({
+  const attachment = await repository().createAttachment({
     projectId: input.projectId,
     requestId: input.requestId,
     filename: input.file.name,
@@ -24,6 +24,11 @@ export async function upload(input: {
     size: bytes.length,
     bytes,
   });
+  // Until a card claims it, GET/DELETE only accept this attachment for the
+  // requestId it was uploaded under (see reachable() in [id]/route.ts) — so
+  // the url handed back must carry that proof, or the browser's own preview
+  // 404s on the very attachment it just uploaded.
+  return { ...attachment, url: `${attachment.url}?requestId=${encodeURIComponent(input.requestId)}` };
 }
 
 export async function remove(id: string): Promise<void> {
