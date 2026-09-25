@@ -58,7 +58,7 @@ export function AccountMenu({ account }: { account: Account }) {
       {open && (
         <div
           role="menu"
-          className="bg-card border-line shadow-lift absolute top-full right-0 z-40 mt-2 w-56 rounded-lg border p-1"
+          className="bg-card border-line shadow-lift absolute top-full right-0 z-50 mt-2 w-56 rounded-lg border p-1"
         >
           <div className="border-hairline mb-1 border-b px-2.5 pt-1.5 pb-2">
             <p className="text-ink truncate text-[13px] font-semibold">{label}</p>

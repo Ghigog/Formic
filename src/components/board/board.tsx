@@ -440,7 +440,7 @@ export function Board({
                 )
               }
               aria-label={`Advance ${advanceTarget.card.key} to ${COLUMN_LABELS[advanceTarget.to]}`}
-              className="bg-terracotta-cta fixed right-4 bottom-[72px] z-30 inline-flex h-13 items-center gap-2 rounded-[26px] px-5 text-[14px] font-semibold text-white shadow-fab"
+              className="bg-terracotta-cta fixed right-4 bottom-[72px] z-50 inline-flex h-13 items-center gap-2 rounded-[26px] px-5 text-[14px] font-semibold text-white shadow-fab"
             >
               Advance card
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
