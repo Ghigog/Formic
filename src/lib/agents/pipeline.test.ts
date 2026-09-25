@@ -6,6 +6,7 @@ import type {
   ArchitectAgent,
   DraftTicket,
   ExistingTicket,
+  ProductAgent,
 } from "@/lib/agents/ports";
 import {
   MockCoderAgent,
@@ -24,7 +25,8 @@ vi.stubEnv("DATABASE_URL", "");
 vi.stubEnv("POSTGRES_PRISMA_URL", "");
 vi.stubEnv("POSTGRES_URL", "");
 
-const { applyPrd, applyTickets, decomposeEpic, runArchitectDraftTicket } = await import("./pipeline");
+const { applyPrd, applyTickets, decomposeEpic, runArchitectDraftTicket, runProductAgent } =
+  await import("./pipeline");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
 const { resetAgents, setAgents } = await import("./registry");
@@ -59,6 +61,32 @@ function useArchitect(architect: ArchitectAgent) {
   setAgents({
     product: new MockProductAgent(),
     architect,
+    coder: new MockCoderAgent(),
+    reviewer: new MockReviewerAgent(),
+    showcase: new MockShowcaseAgent(),
+  });
+}
+
+/** A Product Agent whose draftPrd does whatever the test tells it to. */
+class StubProduct implements ProductAgent {
+  constructor(private readonly outcome: () => ReturnType<ProductAgent["draftPrd"]>) {}
+
+  async draftPrd(..._args: Parameters<ProductAgent["draftPrd"]>): ReturnType<ProductAgent["draftPrd"]> {
+    return this.outcome();
+  }
+}
+
+function useProduct(product: ProductAgent) {
+  setAgents({
+    product,
+    architect: new (class implements ArchitectAgent {
+      async decompose(): Promise<AgentOutcome<DraftTicket[]>> {
+        throw new Error("not used");
+      }
+      async draftTicket(): Promise<never> {
+        throw new Error("not used");
+      }
+    })(),
     coder: new MockCoderAgent(),
     reviewer: new MockReviewerAgent(),
     showcase: new MockShowcaseAgent(),
@@ -249,6 +277,77 @@ describe("runArchitectDraftTicket", () => {
     expect(card?.status).toBe("blocked");
     expect(card?.stalledIn).toBe("todo");
     expect(card?.blockedReason).toBe("The model declined to draft this ticket.");
+  });
+
+  it("reroutes back to Backlog for a PRD when the Architect Agent answers reroute", async () => {
+    const { epic, ticket } = seedDrafting();
+    useArchitect(
+      new StubArchitect(async () => ({
+        ok: true,
+        value: { kind: "reroute", reason: "Too big for one ticket; needs a PRD." },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, "raw request text", []);
+
+    const cards = await repository().boardCards(PROJECT);
+    expect(cards.some((c) => c.id === ticket.id)).toBe(false);
+    const rerouted = cards.find((c) => c.id === epic.id)!;
+    expect(rerouted).toMatchObject({
+      kind: "epic",
+      status: "draft",
+      rerouteFrom: "todo",
+      rerouteReason: "Too big for one ticket; needs a PRD.",
+      standalone: false,
+    });
+    expect(rerouted.blockedReason).toBeNull();
+  });
+});
+
+describe("runProductAgent, given a reroute answer", () => {
+  const draftedTicket: DraftTicket = {
+    key: "T-1",
+    title: "Add the missing button",
+    description: "Add the button the raw request asked for.",
+    acceptanceCriteria: ["The button appears where the request says"],
+    fileScope: ["src/components/button"],
+    size: "S",
+    storyPoints: 2,
+    dependsOn: [],
+  };
+
+  it("moves a Backlog request into To Do as the drafted ticket, not stalled", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null });
+    seedMemory([epic]);
+    useProduct(
+      new StubProduct(async () => ({
+        ok: true,
+        value: { kind: "reroute", reason: "Small enough for one ticket.", ticket: draftedTicket },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runProductAgent(PROJECT, epic.id, "Add the missing button please");
+
+    const cards = await repository().boardCards(PROJECT);
+    expect(cards.some((c) => c.id === epic.id)).toBe(false);
+    const drafted = cards.find((c) => c.epicId === epic.id && c.kind === "ticket")!;
+    expect(drafted).toMatchObject({
+      title: draftedTicket.title,
+      fileScope: draftedTicket.fileScope,
+      size: draftedTicket.size,
+      storyPoints: draftedTicket.storyPoints,
+      status: "ready",
+      rerouteFrom: "backlog",
+      rerouteReason: "Small enough for one ticket.",
+      detached: true,
+    });
+    expect(drafted.blockedReason).toBeNull();
+
+    const detail = await repository().ticketDetail(drafted.id);
+    expect(detail?.description).toBe(draftedTicket.description);
+    expect(detail?.acceptanceCriteria).toEqual(draftedTicket.acceptanceCriteria);
   });
 });
 
