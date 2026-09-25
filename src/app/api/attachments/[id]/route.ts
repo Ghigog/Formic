@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { repository } from "@/lib/db";
 import { activeProject, noProject } from "@/lib/board/project";
 import { read, remove } from "@/lib/attachments/store";
+import { attachmentUrlAllowed } from "@/lib/runner/runner";
 
 const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
 
@@ -39,11 +40,19 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const project = await activeProject();
-  if (!project) return noProject();
 
-  const requestId = req.nextUrl.searchParams.get("requestId");
-  if (!(await reachable(project.id, id, requestId))) return notFound();
+  const expires = req.nextUrl.searchParams.get("expires");
+  const token = req.nextUrl.searchParams.get("token");
+  const signed = expires !== null && token !== null;
+  if (signed) {
+    if (!attachmentUrlAllowed(id, expires, token)) return notFound();
+  } else {
+    const project = await activeProject();
+    if (!project) return noProject();
+
+    const requestId = req.nextUrl.searchParams.get("requestId");
+    if (!(await reachable(project.id, id, requestId))) return notFound();
+  }
 
   const content = await read(id);
   if (!content) return notFound();

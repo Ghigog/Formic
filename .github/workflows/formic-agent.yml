@@ -1,4 +1,4 @@
-# formic-runner: v6
+# formic-runner: v7
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -57,6 +57,11 @@ jobs:
 
       - name: Remember where the agent started
         run: echo "FORMIC_START=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # Only matters when the job actually has attachments; harmless
+      # otherwise, and nothing later in the job depends on it.
+      - name: Make room for downloaded attachments
+        run: mkdir -p "$RUNNER_TEMP/formic-attachments"
 
       - uses: actions/setup-node@v4
         with:
@@ -117,6 +122,7 @@ jobs:
           # plan and progress bar are read from it.
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "true"
           CLAUDE_CODE_ENABLE_TASKS: "false"
+          FORMIC_ATTACHMENTS: ${{ runner.temp }}/formic-attachments
           CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
           CODEX_CREDENTIAL: ${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}
           GEMINI_API_KEY: ${{ inputs.cli == 'gemini' && startsWith(inputs.secret, 'FORMIC_GEMINI_API_KEY') && secrets[inputs.secret] || '' }}
