@@ -31,10 +31,11 @@ export const RANKS = [
   "Queen",
 ] as const;
 
-export type BugShape = "beetle" | "ladybird" | "spider" | "moth" | "stag";
+export type BugShape = "ant" | "beetle" | "ladybird" | "spider" | "moth" | "stag";
 export type BugColor = "umber" | "crimson" | "ochre" | "jade" | "anthracite" | "terracotta";
 
 export const SHAPE_UNLOCKS: ReadonlyArray<{ key: BugShape; label: string; lv: number }> = [
+  { key: "ant", label: "Ant", lv: 1 },
   { key: "beetle", label: "Beetle", lv: 1 },
   { key: "ladybird", label: "Ladybird", lv: 3 },
   { key: "spider", label: "Spider", lv: 5 },

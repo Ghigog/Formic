@@ -133,7 +133,7 @@ export function ColonyPopover() {
 
         <div className="flex flex-col gap-2">
           <h3 className="text-ink m-0 text-[11px] font-semibold tracking-[0.1em] uppercase">Bug shape</h3>
-          <div className="grid grid-cols-5 gap-1.5">
+          <div className="grid grid-cols-6 gap-1.5">
             {SHAPE_UNLOCKS.map((u) => {
               const locked = s.level < u.lv;
               const on = c.shape === u.key;
@@ -152,7 +152,7 @@ export function ColonyPopover() {
                   }}
                 >
                   <BugPreview shape={u.key} locked={locked} on={on && !locked} c={c} />
-                  <span className={`text-[10px] font-semibold whitespace-nowrap ${locked ? "text-muted" : "text-ink"}`}>
+                  <span className={`text-center text-[10px] leading-tight font-semibold ${locked ? "text-muted" : "text-ink"}`}>
                     {u.label}
                   </span>
                   <span className="text-muted min-h-3 font-mono text-[9px]">

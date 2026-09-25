@@ -13,7 +13,7 @@ export interface Saved {
   sound: boolean;
 }
 
-export const DEFAULTS: Saved = { shape: "beetle", color: "umber", sound: true };
+export const DEFAULTS: Saved = { shape: "ant", color: "umber", sound: true };
 
 const listeners = new Set<() => void>();
 let cache: { key: string; value: Saved } | null = null;
