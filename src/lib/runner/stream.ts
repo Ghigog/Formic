@@ -130,6 +130,17 @@ function codexPlan(items: unknown): PlanStep[] | null {
   return steps.length ? steps : null;
 }
 
+function geminiPlan(input: Json): PlanStep[] | null {
+  if (!Array.isArray(input.todos)) return null;
+  const steps = input.todos.flatMap((t): PlanStep[] => {
+    if (!isObject(t) || t.status === "cancelled") return [];
+    const step = short(str(t.description), 300);
+    const status = t.status === "completed" ? "done" : t.status === "in_progress" ? "in_progress" : "pending";
+    return step ? [{ step, status }] : [];
+  });
+  return steps.length ? steps : null;
+}
+
 function claudeLine(event: Json): StreamItem[] {
   const message = isObject(event.message) ? event.message : null;
   const content = Array.isArray(message?.content) ? message.content : [];
@@ -210,6 +221,10 @@ function geminiLine(event: Json): StreamItem[] {
   }
   if (event.type === "tool_use") {
     const input = isObject(event.parameters) ? event.parameters : {};
+    if (str(event.tool_name) === "write_todos") {
+      const steps = geminiPlan(input);
+      return steps ? [{ kind: "plan", steps }] : [];
+    }
     const label = toolLabel(str(event.tool_name), input);
     return [{ kind: "action", label }, ...(label.startsWith("$ ") ? [{ kind: "log" as const, stream: "stdout" as const, line: label }] : [])];
   }

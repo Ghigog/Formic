@@ -84,6 +84,34 @@ describe("reading a CLI agent's stream", () => {
     ]);
   });
 
+  it("reads Gemini CLI's todo list as its plan", () => {
+    const items = readStream([
+      line({
+        type: "tool_use",
+        tool_name: "write_todos",
+        tool_id: "1",
+        parameters: {
+          todos: [
+            { description: "One", status: "completed" },
+            { description: "Two", status: "in_progress" },
+            { description: "Dropped", status: "cancelled" },
+            { description: "Three", status: "pending" },
+          ],
+        },
+      }),
+    ]);
+    expect(items).toEqual([
+      {
+        kind: "plan",
+        steps: [
+          { step: "One", status: "done" },
+          { step: "Two", status: "in_progress" },
+          { step: "Three", status: "pending" },
+        ],
+      },
+    ]);
+  });
+
   it("reads Gemini CLI, joining the pieces of what it says", () => {
     const items = readStream([
       line({ type: "init", model: "gemini" }),
