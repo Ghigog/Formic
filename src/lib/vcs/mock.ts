@@ -61,6 +61,8 @@ interface MockRepo {
   merges: Array<{ base: string; head: string }>;
   /** Heads made by bringing the base into a PR, to the head they were made on. */
   baseMerges: Map<string, string>;
+  /** Merge commits Formic recorded, to the commit each merged in. */
+  recordedMerges: Map<string, string>;
 }
 
 export interface MockIssue {
@@ -89,6 +91,7 @@ function repo(): MockRepo {
     conflicts: new Set(),
     merges: [],
     baseMerges: new Map(),
+    recordedMerges: new Map(),
   };
   return g.__formicMockRepo;
 }
@@ -169,8 +172,16 @@ export class MockVcsClient implements VcsClient {
     };
   }
 
-  async updateBranch(): Promise<UpdateOutcome> {
-    return { ok: true, updated: false };
+  async updateBranch(number: number): Promise<UpdateOutcome> {
+    // A conflicted mock PR stands for one an agent just resolved: bringing
+    // the base in now succeeds, as it would on GitHub.
+    const pull = pulls().get(number);
+    if (pull?.mergeable !== false) return { ok: true, updated: false };
+    pull.mergeable = true;
+    const sha = fakeSha();
+    repo().baseMerges.set(sha, pull.headSha);
+    pull.headSha = sha;
+    return { ok: true, updated: true };
   }
 
   async bringsInBase(from: string, to: string): Promise<boolean> {
@@ -305,6 +316,13 @@ export class MockVcsClient implements VcsClient {
       message: commit.message,
     });
     return { sha: landed, files };
+  }
+
+  async recordMerge(sha: string, merged: string): Promise<string> {
+    const merge = fakeSha();
+    repo().commits.set(merge, repo().commits.get(sha) ?? { files: [], message: "" });
+    repo().recordedMerges.set(merge, merged);
+    return merge;
   }
 
   async moveBranch(branch: string, sha: string): Promise<void> {

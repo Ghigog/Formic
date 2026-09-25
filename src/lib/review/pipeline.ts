@@ -1,7 +1,7 @@
 import "server-only";
 
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
-import type { FailingCheck } from "@/lib/agents/ports";
+import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
 import { DEFAULT_RUN_BUDGET } from "@/lib/budget/limits";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
 import { runCoderAgent, stallTicket, taskFor } from "@/lib/coder/pipeline";
@@ -13,7 +13,14 @@ import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
-import { type CheckSummary, type PullRequestDetail, mergeNeedsPromotion, vcs } from "@/lib/vcs";
+import {
+  AGENT_COMMIT_AUTHOR,
+  type CheckSummary,
+  type PullRequestDetail,
+  mergeNeedsPromotion,
+  vcs,
+} from "@/lib/vcs";
+import { type Workspace, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inMergeLane, inTicketLane } from "./lane";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
@@ -115,6 +122,10 @@ async function react(
 
   const pull = await client.pullRequest(prNumber);
   if (pull.merged) return;
+  if (!ticket.runnerJob && pull.state === "open" && pull.mergeable === false) {
+    await resolveConflicts(projectId, ticket, pull);
+    return;
+  }
   const stuck = ticket.runnerJob ? null : whyStuck(ticket.key, pull);
   if (stuck) {
     await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
@@ -185,10 +196,12 @@ function whyStuck(key: string, pull: PullRequestDetail): string | null {
   if (pull.state === "closed") {
     return `${key}'s pull request #${pull.number} was closed without merging. Move ${key} to To Do, then In Progress, to start it over on the current code.`;
   }
-  if (pull.mergeable === false) {
-    return `${key}'s pull request #${pull.number} conflicts with ${pull.baseBranch}, so CI cannot run on it. Resolve the conflict on GitHub and it carries on once CI passes, or close the pull request and move ${key} to To Do, then In Progress, to redo it on the current code.`;
-  }
+  if (pull.mergeable === false) return conflictReason(key, pull, "");
   return null;
+}
+
+function conflictReason(key: string, pull: PullRequestDetail, why: string): string {
+  return `${key}'s pull request #${pull.number} conflicts with ${pull.baseBranch}, so CI cannot run on it.${why ? ` ${why}` : ""} Resolve the conflict on GitHub and it carries on once CI passes, or close the pull request and move ${key} to To Do, then In Progress, to redo it on the current code.`;
 }
 
 /** When each board's open pull requests were last looked at, to go easy on the API. */
@@ -233,6 +246,16 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
     if (!pull) continue;
     if (pull.merged) {
       await markMergedExternally(projectId, pull.number);
+      continue;
+    }
+    if (pull.state === "open" && pull.mergeable === false) {
+      // Detached: resolving is an agent's run, and the sweep has other
+      // cards to look at meanwhile.
+      const prNumber = pull.number;
+      launch(
+        () => inTicketLane(ticket.id, () => resolveIfStillConflicted(projectId, ticket.id, prNumber)),
+        `conflict resolution for ${ticket.key}`,
+      );
       continue;
     }
     const stuck = whyStuck(ticket.key, pull);
@@ -415,13 +438,12 @@ async function mergeTicket(
 
   const update = await client.updateBranch(prNumber);
   if (!update.ok && update.conflict) {
-    await stallTicket(
-      projectId,
-      ticket,
-      `${ticket.key} conflicts with its base branch and needs a human to resolve it.`,
-      { blocked: true, stalledIn: "in_review" },
+    // The In Review agent resolves it, once this lane and the ticket's are free.
+    launch(
+      () => inTicketLane(ticket.id, () => resolveIfStillConflicted(projectId, ticket.id, prNumber)),
+      `conflict resolution for ${ticket.key}`,
     );
-    return { merged: false, reason: `${ticket.key} conflicts with its base branch and needs a human to resolve it.` };
+    return { merged: false, reason: `${ticket.key} conflicts with ${before.baseBranch}; the Reviewer Agent is resolving it.` };
   }
 
   // GitHub brings the base in after it answers, so the new head, its
@@ -792,6 +814,246 @@ async function reviewTicket(
   } finally {
     await checkout.dispose();
   }
+}
+
+/**
+ * Re-read under the ticket's lane: by the time a queued resolution runs,
+ * one before it may have resolved the conflict, or a person moved the card.
+ */
+async function resolveIfStillConflicted(
+  projectId: string,
+  ticketId: string,
+  prNumber: number,
+): Promise<void> {
+  const ticket = await repository().ticketDetail(ticketId);
+  if (!ticket || ticket.status !== "review" || ticket.runnerJob || ticket.prNumber !== prNumber) return;
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  const pull =
+    (await settle(client, prNumber, (p) => p.mergeable !== null)) ??
+    (await client.pullRequest(prNumber));
+  if (pull.merged || pull.state !== "open" || pull.mergeable === true) return;
+  await resolveConflicts(projectId, ticket, pull);
+}
+
+const NO_USAGE = { model: "none", tokensIn: 0, tokensOut: 0, costCents: 0 };
+
+/**
+ * The pull request conflicts with its base, so CI cannot run and nothing
+ * merges. The In Review column's agent resolves it: the base is merged into
+ * the branch with its conflicts left in, the agent resolves them, and the
+ * merge is pushed as a merge. Only a conflict it cannot resolve, or one that
+ * keeps coming back, waits for a person. It counts against the same ceiling
+ * as reviews.
+ */
+async function resolveConflicts(
+  projectId: string,
+  ticket: TicketDetail,
+  pull: PullRequestDetail,
+): Promise<void> {
+  const repo = repository();
+  const attempt = ticket.attempts + 1;
+  const stall = (why: string) =>
+    stallTicket(projectId, ticket, conflictReason(ticket.key, pull, why), {
+      blocked: true,
+      stalledIn: "in_review",
+    });
+
+  if (!ticket.branchName) return stall("It has no branch recorded to resolve it on.");
+  if (attempt > MAX_REVIEWS) {
+    return stall(`The Reviewer Agent has already had ${MAX_REVIEWS} goes at this pull request.`);
+  }
+  const branch = ticket.branchName;
+
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  await repo.updateTicket(ticket.id, { attempts: attempt });
+
+  const changedFiles = await client
+    .compare(pull.baseBranch, branch)
+    .then((c) => c.files)
+    .catch(() => []);
+  const review = {
+    baseBranch: pull.baseBranch,
+    changedFiles,
+    checks: [],
+    attempt,
+    maxAttempts: MAX_REVIEWS,
+  };
+  const notes = await noteTexts(projectId, ticket.id);
+
+  const run = startRun(projectId, "reviewer", {
+    model: await modelFor(projectId, "reviewer"),
+    epicId: ticket.epicId,
+    ticketId: ticket.id,
+  });
+
+  // In GitHub Actions the workflow merges the base in before the agent
+  // starts, and the run's result is recorded as the merge when it lands.
+  const cli = await cliAgentFor(projectId, "in_review");
+  if (cli) {
+    await startCliRun({
+      projectId,
+      ticket,
+      mode: "fix",
+      agent: cli,
+      from: branch,
+      merge: pull.baseBranch,
+      prompt: cliPrompt(cli, "fix", ticket, { ...review, conflicts: [] }, notes),
+      run,
+      stalledIn: "in_review",
+    });
+    return;
+  }
+
+  const checkout = await openCheckout({
+    projectId,
+    repoFullName: project.repoFullName,
+    fromBranch: branch,
+    newBranch: null,
+    ticket,
+    ctx: run.ctx,
+    githubToken: creds.githubToken,
+    e2bKey: creds.e2bKey,
+  }).catch((e: unknown) => e as Error);
+
+  if (checkout instanceof Error) {
+    await stallTicket(projectId, ticket, `Could not open a sandbox: ${checkout.message}`, {
+      blocked: false,
+      stalledIn: "in_review",
+    });
+    await run.finish({ ok: false, error: checkout.message, blocked: false, usage: NO_USAGE });
+    return;
+  }
+  if (checkout.sandboxId) await run.attachSandbox(checkout.sandboxId);
+
+  const fail = async (why: string) => {
+    await stall(why);
+    await run.finish({ ok: false, error: why, blocked: true, usage: NO_USAGE });
+  };
+
+  try {
+    // With no real checkout (a board with no GitHub token) there is nothing
+    // to merge here: the agent is pointed at the files the pull request
+    // changes (or its scope), and GitHub brings the base in.
+    const real = checkout.sandboxId !== null;
+    let conflicts = changedFiles.length ? changedFiles : ticket.fileScope;
+    if (real) {
+      const merged = await mergeInBase(checkout.raw, pull.baseBranch);
+      if (!merged.ok) return await fail(merged.reason);
+      conflicts = merged.conflicts;
+    }
+
+    let resolved: ReviewVerdict | null = null;
+    let usage = NO_USAGE;
+    if (conflicts.length > 0) {
+      const outcome = await (await agentFor(projectId, "reviewer")).review(run.ctx, {
+        task: taskFor(ticket, notes),
+        // The conflicted files are the job, whatever the ticket's scope says.
+        workspace: scopedWorkspace(checkout.raw, [...ticket.fileScope, ...conflicts]),
+        ...review,
+        conflicts,
+      });
+      if (!outcome.ok) {
+        await stallTicket(projectId, ticket, outcome.error, { blocked: outcome.blocked, stalledIn: "in_review" });
+        await run.finish(outcome);
+        return;
+      }
+      if (outcome.value.sendBack) {
+        await sendBack(projectId, ticket, outcome.value.sendBack);
+        await run.finish(outcome);
+        return;
+      }
+      resolved = outcome.value;
+      usage = outcome.usage;
+    }
+    const said = resolved ? resolved.detail.trim() || resolved.summary : "";
+
+    if (!real) {
+      const update = await client.updateBranch(pull.number);
+      if (!update.ok) return await fail(said ? `The Reviewer Agent could not resolve it: ${said}` : "");
+      const after = await client.pullRequest(pull.number);
+      await run.finish({ ok: true, value: null, usage });
+      await recordFix(projectId, ticket, pull.number, after.headSha, resolved?.handoff ?? []);
+      return;
+    }
+
+    const { raw } = checkout;
+    const left = await raw.exec(
+      `git add -A && git diff --cached HEAD | grep -qE '^\\+(<<<<<<<|>>>>>>>)( |$)'`,
+    );
+    if (left.exitCode === 0) {
+      return await fail(`The Reviewer Agent could not resolve it${said ? `: ${said}` : "."}`);
+    }
+
+    // What the base brought is not the agent's change: only the rest is
+    // held to the scope.
+    const brought = new Set(lines((await raw.exec(`git diff --name-only HEAD...${BASE_REF}`)).stdout));
+    const changed = lines((await raw.exec("git diff --cached --name-only HEAD")).stdout);
+    const violations = violationsInDiff(
+      changed.filter((f) => !brought.has(f)),
+      ticket.fileScope,
+    );
+    if (violations.length > 0) {
+      return await fail(
+        `Resolving it touched ${violations.slice(0, 5).join(", ")}, outside ${ticket.key}'s file scope. Nothing was pushed.`,
+      );
+    }
+
+    // Committed with the merge still in progress, so it lands as the merge.
+    const pushed = await commitAndPush(checkout, {
+      branch,
+      subject: `${ticket.key}: bring ${pull.baseBranch} in`,
+      body: said || `${pull.baseBranch} merged in cleanly.`,
+    });
+    if (!pushed.ok) {
+      await stallTicket(projectId, ticket, pushed.reason, { blocked: false, stalledIn: "in_review" });
+      await run.finish({ ok: false, error: pushed.reason, blocked: false, usage });
+      return;
+    }
+
+    await run.finish({ ok: true, value: null, usage });
+    await recordFix(projectId, ticket, pull.number, pushed.sha, resolved?.handoff ?? []);
+  } finally {
+    await checkout.dispose();
+  }
+}
+
+/** Where the base branch is fetched to in a checkout, to merge it from. */
+const BASE_REF = "refs/formic/base";
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function lines(text: string): string[] {
+  return text.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+/**
+ * Merges `base` into the checkout's branch, leaving any conflicts in place
+ * for the agent. The clone is shallow, and a merge needs the history both
+ * sides share, so that comes first.
+ */
+async function mergeInBase(
+  raw: Workspace,
+  base: string,
+): Promise<{ ok: true; conflicts: string[] } | { ok: false; reason: string }> {
+  const long = { timeoutMs: 5 * 60 * 1000 };
+  await raw.exec("git fetch -q --unshallow origin", long);
+  const fetched = await raw.exec(`git fetch -q origin ${shellQuote(`+refs/heads/${base}:${BASE_REF}`)}`, long);
+  if (fetched.exitCode !== 0) {
+    return { ok: false, reason: `Could not fetch ${base}: ${fetched.stderr.trim() || fetched.stdout.trim()}` };
+  }
+  const identity = `-c user.name=${shellQuote(AGENT_COMMIT_AUTHOR.name)} -c user.email=${shellQuote(AGENT_COMMIT_AUTHOR.email)}`;
+  const merge = await raw.exec(`git ${identity} merge --no-commit --no-ff ${BASE_REF}`);
+  const conflicts = lines((await raw.exec("git diff --name-only --diff-filter=U")).stdout);
+  if (merge.exitCode !== 0 && conflicts.length === 0) {
+    return { ok: false, reason: `Could not merge ${base}: ${merge.stderr.trim() || merge.stdout.trim()}` };
+  }
+  return { ok: true, conflicts };
 }
 
 /**

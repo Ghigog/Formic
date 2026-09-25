@@ -4,6 +4,7 @@ import {
   STOPPED_BY_PERSON,
   attachmentUrlAllowed,
   cliPrompt,
+  mergedFrom,
   PLAN_FIRST_RULE,
   collectCliRuns,
   completeCliRun,
@@ -27,6 +28,7 @@ import {
   runnerWorkflow,
 } from "./workflow";
 import { runCoderAgent } from "@/lib/coder/pipeline";
+import { reviewPullRequest } from "@/lib/review/pipeline";
 import { cliAgentFor, savePreset } from "@/lib/agents/presets";
 import { runArchitectAgent, runProductAgent } from "@/lib/agents/pipeline";
 import type { ColumnId } from "@/lib/domain/status";
@@ -780,6 +782,88 @@ describe("taking a CLI agent's work", () => {
   });
 });
 
+describe("a CLI agent resolving a conflict", () => {
+  /** A conflicted pull request, handed to the In Review agent in Actions. */
+  async function conflicted() {
+    await assignClaudeCode("in_review");
+    await installRunner();
+    const ticket = await seedTicket();
+    const client = new MockVcsClient("acme/widgets");
+    setVcs(client);
+    const pull = await client.openPullRequest({
+      headBranch: "formic/t-1-abc",
+      baseBranch: "main",
+      title: "T-1",
+      body: "",
+    });
+    await repository().updateTicket(ticket.id, {
+      status: "review",
+      prNumber: pull.number,
+      branchName: pull.headBranch,
+    });
+    MockVcsClient.runner().branches.set(pull.headBranch, pull.headSha);
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    const job = (await repository().ticketDetail(ticket.id))!.runnerJob!;
+    // What main brought since the branch was cut.
+    const merged = MockVcsClient.stage("formic-test/main", ["src/other/brought.ts"], "main's work");
+    return { ticket, pull, job, merged };
+  }
+
+  it("merges the base in first and asks the agent to resolve it, instead of parking the card", async () => {
+    const { ticket, job } = await conflicted();
+
+    const inputs = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    expect(inputs).toMatchObject({ mode: "fix", merge: "main", from: "formic/t-1-abc" });
+    expect(inputs.prompt).toContain("conflicts with main");
+    expect(inputs.prompt).toContain("Do not commit");
+    expect(job).toBeTruthy();
+    expect((await repository().ticketDetail(ticket.id))!.status).toBe("review");
+  });
+
+  it("records the resolution as the merge, holding only the agent's own change to the scope", async () => {
+    const { ticket, job, merged } = await conflicted();
+    MockVcsClient.stage(
+      `${STAGING_PREFIX}${job}`,
+      ["src/lib/feature/a.ts", "src/other/brought.ts"],
+      `T-1: bring main in\n\nKept both sides.\n\nFormic-Merged: ${merged}`,
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "fix", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    const head = MockVcsClient.runner().branches.get("formic/t-1-abc")!;
+    expect(after.status).toBe("review");
+    expect(MockVcsClient.runner().recordedMerges.get(head)).toBe(merged);
+    expect(after.reviewedSha).toBe(head);
+  });
+
+  it("refuses a resolution that changes files neither side brought, outside the scope", async () => {
+    const { ticket, job, merged } = await conflicted();
+    MockVcsClient.stage(
+      `${STAGING_PREFIX}${job}`,
+      ["src/lib/feature/a.ts", "src/elsewhere/z.ts"],
+      `T-1: bring main in\n\nFormic-Merged: ${merged}`,
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "fix", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("src/elsewhere/z.ts");
+    expect(MockVcsClient.runner().recordedMerges.size).toBe(0);
+  });
+
+  it("reads which commit a run merged in from its trailer", () => {
+    const sha = "a".repeat(40);
+    expect(mergedFrom([`T-1: x\n\nbody\n\nFormic-Merged: ${sha}\n`])).toBe(sha);
+    expect(mergedFrom(["T-1: x\n\nFormic-Merged: not-a-sha"])).toBeNull();
+    expect(mergedFrom([])).toBeNull();
+  });
+});
+
 describe("a CLI agent fixing red CI", () => {
   it("fast-forwards the pull request's branch with the fix", async () => {
     await assignClaudeCode("in_review");
@@ -946,12 +1030,24 @@ describe("collecting a run whose webhook never came", () => {
 });
 
 describe("the runner workflow", () => {
+  it("is versioned by its own content, so no two changes can share a version", () => {
+    expect(RUNNER_VERSION).toMatch(/^formic-runner: [0-9a-f]{12}$/);
+    expect(runnerWorkflow().startsWith(`# ${RUNNER_VERSION}\n`)).toBe(true);
+  });
+
+  it("merges another branch in before the agent starts, when asked, leaving its conflicts", () => {
+    const yaml = runnerWorkflow();
+    expect(yaml).toContain("merge --no-commit --no-ff");
+    expect(yaml).toContain("fetch-depth: ${{ inputs.merge != '' && '0' || '1' }}");
+    expect(yaml).toContain("Conflict markers are still in the change.");
+  });
+
   it("never splices inputs into a script", () => {
     const yaml = runnerWorkflow();
     for (const line of yaml.split("\n")) {
       if (!line.includes("${{ inputs.")) continue;
-      // Allowed: env values, the checkout ref, the title and the concurrency key.
-      expect(line).toMatch(/^\s+([A-Z_]+|ref|group):\s|^run-name:/);
+      // Allowed: env values, the checkout's ref and depth, the title and the concurrency key.
+      expect(line).toMatch(/^\s+([A-Z_]+|ref|fetch-depth|group):\s|^run-name:/);
     }
     expect(yaml).toContain("persist-credentials: false");
   });

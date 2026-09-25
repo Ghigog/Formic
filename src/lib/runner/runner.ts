@@ -65,6 +65,7 @@ import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipelin
 import {
   ANSWER_PATH,
   ATTACHMENTS_DIR_VAR,
+  MERGED_TRAILER,
   RUNNER_SETUP_BRANCH,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_FILE,
@@ -124,6 +125,15 @@ export const ALREADY_DONE_TRAILER = "Formic-Already-Done: true";
 
 const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
+
+/** The commit a run merged in before its agent started, from its commit's trailer. */
+export function mergedFrom(messages: string[]): string | null {
+  for (const line of (messages.at(-1) ?? "").split("\n")) {
+    const m = new RegExp(`^${MERGED_TRAILER}\\s+([0-9a-f]{40})\\s*$`).exec(line.trim());
+    if (m) return m[1]!;
+  }
+  return null;
+}
 
 /** Whether a CLI agent's commits report the ticket as already done. */
 export function reportsAlreadyDone(messages: string[]): boolean {
@@ -277,6 +287,8 @@ const CLI_REVIEW = `How to finish your review. Do exactly one of these:
 To approve or send back, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
 
+const CLI_RESOLVE = `The conflicted files are the ones \`git diff --name-only --diff-filter=U\` lists. When every conflict is resolved, write the summary file as usual: what each conflict was and how you kept both sides. Do not commit.`;
+
 /** What a CLI reviewer decided when it changed nothing, if it said. */
 export function reviewVerdictOf(messages: string[]): "approved" | "send-back" | null {
   for (const line of messages.flatMap((m) => m.split("\n")).reverse()) {
@@ -308,7 +320,7 @@ export function cliPrompt(
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
   const task = taskFor(ticket, notes, instruction);
   const work = review
-    ? [reviewBrief({ ...review, task }), "", CLI_REVIEW]
+    ? [reviewBrief({ ...review, task }), "", review.conflicts ? CLI_RESOLVE : CLI_REVIEW]
     : [
         taskBrief(task),
         "",
@@ -335,6 +347,8 @@ async function dispatch(input: {
   cardKey: string;
   from: string;
   prompt: string;
+  /** A branch to merge in before the agent starts, its conflicts left for it. */
+  merge?: string;
   /** Recorded before the dispatch: only this job's result is taken. */
   record: (job: string) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
@@ -367,6 +381,7 @@ async function dispatch(input: {
       secret,
       prompt: cap(input.prompt),
       report: reportUrl(input.job, Date.now()) ?? "",
+      ...(input.merge ? { merge: input.merge } : {}),
     });
     return { ok: true };
   } catch (e) {
@@ -400,6 +415,8 @@ export async function startCliRun(input: {
   /** The branch the agent starts from. */
   from: string;
   prompt: string;
+  /** A branch to merge in first, for the agent to resolve its conflicts. */
+  merge?: string;
   run: RunHandle;
   stalledIn: "in_progress" | "in_review";
   stage?: number;
@@ -417,6 +434,7 @@ export async function startCliRun(input: {
     cardKey: ticket.key,
     from: input.from,
     prompt: input.prompt,
+    merge: input.merge,
     record: (job) => repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
   });
 
@@ -1050,6 +1068,14 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       files = [...new Set([...files.filter((f) => !isCarried(f)), ...landed.files])];
     }
 
+    // It merged another branch in: what came with that branch is not the
+    // agent's change, so only the rest is held to the scope.
+    const merged = result.mode === "fix" ? mergedFrom(change.messages) : null;
+    if (merged) {
+      const brought = new Set((await client.compare(branch, merged)).files);
+      files = files.filter((f) => !brought.has(f));
+    }
+
     const violations = violationsInDiff(files, ticket.fileScope);
     // A new ticket's work that needed more is kept on its own branch, which
     // no other ticket reads, while the person is asked for the files. With
@@ -1070,6 +1096,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       );
       return;
     }
+
+    // Recorded as the merge it was, so GitHub counts the branch as brought in.
+    if (merged) head = await client.recordMerge(head, merged);
 
     // Fast-forward only. If the branch moved while the agent worked, this
     // refuses rather than overwrite what moved it.

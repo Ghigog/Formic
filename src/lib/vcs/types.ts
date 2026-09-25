@@ -167,6 +167,12 @@ export interface VcsClient {
    * the real paths it changed that way.
    */
   landCarried(sha: string): Promise<{ sha: string; files: string[] }>;
+  /**
+   * Rewrites the commit at `sha` as a merge of `merged`: the same tree and
+   * message, with `merged` added as its second parent. That is what makes
+   * GitHub count a conflict an agent resolved by hand as brought in.
+   */
+  recordMerge(sha: string, merged: string): Promise<string>;
   /** Creates `branch` at `sha`, or fast-forwards it there. Never forces. */
   moveBranch(branch: string, sha: string): Promise<void>;
   /** Deletes a staging branch. Refuses any branch outside STAGING_PREFIX. */
