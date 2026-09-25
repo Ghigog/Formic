@@ -94,7 +94,7 @@ import {
  * The ticket's plan and its progress bar are read live from the agent's todo
  * tool, so the plan comes first and is kept current, not only in the summary.
  */
-export const PLAN_FIRST_RULE = `Your first action, before you read or change anything, is to write your plan with your todo tool (TodoWrite in Claude Code, the plan tool in Codex, write_todos in Gemini CLI): the steps you expect to take, one per item. Formic shows it on the ticket and tracks progress by it. Mark each step in progress when you start it and done when you finish it, and add, split or drop steps as you learn more.`;
+export const PLAN_FIRST_RULE = `Your first action, before you read or change anything, is to write your plan with your todo tool (TodoWrite in Claude Code, the plan tool in Codex, write_todos in Gemini CLI): the steps you expect to take, one per item. Formic shows it on the ticket and tracks progress by it. Mark each step in progress when you start it and done when you finish it, and add, split or drop steps as you learn more. If you have no todo tool, write the plan in your message as a checklist, one "- [ ] step" per line, and post the whole checklist again, with "- [x]" for done steps, each time a step's status changes.`;
 
 /** Dispatch inputs are capped at 65,535 characters in total. */
 const MAX_PROMPT = 50_000;
