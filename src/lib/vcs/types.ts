@@ -110,6 +110,13 @@ export interface VcsClient {
   checkLog(checkRunId: number): Promise<CheckLog>;
   /** Merges the base branch into the PR head. Never rewrites history. */
   updateBranch(number: number): Promise<UpdateOutcome>;
+  /**
+   * Whether `to` is `from` with only `base` merged in: a merge commit whose
+   * first parent is `from` and whose second is already on `base`. That is
+   * what bringing a pull request up to date makes, and it adds nothing a
+   * reviewer of `from` has not seen.
+   */
+  bringsInBase(from: string, to: string, base: string): Promise<boolean>;
   /** Merges `head` into the branch `base` with a merge commit. Never rewrites history. */
   mergeBranch(base: string, head: string): Promise<UpdateOutcome>;
   /** `expectedHeadSha` guards against merging a commit nobody reviewed. */

@@ -59,6 +59,8 @@ interface MockRepo {
   conflicts: Set<string>;
   /** Every branch merge asked for, in order. */
   merges: Array<{ base: string; head: string }>;
+  /** Heads made by bringing the base into a PR, to the head they were made on. */
+  baseMerges: Map<string, string>;
 }
 
 export interface MockIssue {
@@ -86,6 +88,7 @@ function repo(): MockRepo {
     comments: new Map(),
     conflicts: new Set(),
     merges: [],
+    baseMerges: new Map(),
   };
   return g.__formicMockRepo;
 }
@@ -168,6 +171,10 @@ export class MockVcsClient implements VcsClient {
 
   async updateBranch(): Promise<UpdateOutcome> {
     return { ok: true, updated: false };
+  }
+
+  async bringsInBase(from: string, to: string): Promise<boolean> {
+    return repo().baseMerges.get(to) === from;
   }
 
   async mergeBranch(base: string, head: string): Promise<UpdateOutcome> {
@@ -342,6 +349,16 @@ export class MockVcsClient implements VcsClient {
   /** Test seam: make merging `head` into `base` conflict. */
   static conflictOn(base: string, head: string): void {
     repo().conflicts.add(`${base}<-${head}`);
+  }
+
+  /** Test seam: bring the base into a mock PR, as GitHub's update-branch does, and hand back the new head. */
+  static bringBaseIn(number: number): string {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    const sha = fakeSha();
+    repo().baseMerges.set(sha, pull.headSha);
+    pull.headSha = sha;
+    return sha;
   }
 
   /** Test seam: change what GitHub says about a mock PR. */

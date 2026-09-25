@@ -123,6 +123,19 @@ async function react(
   if (pull.merged || pull.state === "closed") return;
   if (pull.headSha !== headSha) return;
 
+  // Bringing the base in moves the head without changing the work, so the
+  // approval of the head it was made on still stands. CI on the new head
+  // decides the merge, rather than a second review of the same change.
+  let reviewedSha = ticket.reviewedSha;
+  if (
+    reviewedSha &&
+    reviewedSha !== headSha &&
+    (await client.bringsInBase(reviewedSha, headSha, pull.baseBranch))
+  ) {
+    reviewedSha = headSha;
+    await repo.updateTicket(ticket.id, { reviewedSha });
+  }
+
   const checks = await client.checksFor(headSha);
   const red = failing(checks);
 
@@ -137,7 +150,7 @@ async function react(
     // The review reads the diff while CI runs, rather than after it, and
     // the merge waits for both. Once it has approved this head, or once a
     // check has already failed, the rest of CI is worth waiting for.
-    if (ticket.runnerJob || ticket.reviewedSha === headSha || red.length > 0) return;
+    if (ticket.runnerJob || reviewedSha === headSha || red.length > 0) return;
     await reviewTicket(projectId, ticket, pull, [], { ciRunning: true });
     return;
   }
@@ -154,7 +167,7 @@ async function react(
   // reports about the same head are not a reason to start another.
   if (ticket.runnerJob) return;
 
-  if (red.length === 0 && ticket.reviewedSha === headSha) {
+  if (red.length === 0 && reviewedSha === headSha) {
     await inMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber));
     return;
   }
@@ -350,6 +363,9 @@ async function mergeTicket(
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
 
+  const before = await client.pullRequest(prNumber);
+  if (before.merged) return;
+
   const update = await client.updateBranch(prNumber);
   if (!update.ok && update.conflict) {
     await stallTicket(
@@ -361,17 +377,33 @@ async function mergeTicket(
     return;
   }
 
-  // Re-read: bringing the base branch in moves the head, and merging a sha
-  // that no longer exists is how a serialized lane quietly stops being one.
-  const pull = await client.pullRequest(prNumber);
+  // GitHub brings the base in after it answers, so the new head, its
+  // mergeability and its CI all arrive later. Merging straight away races
+  // that and GitHub refuses with "not mergeable". Once the head has moved,
+  // CI on it merges it, under the approval react() carries across.
+  if (update.ok && update.updated) {
+    const moved = await settle(client, prNumber, (p) => p.headSha !== before.headSha);
+    if (moved) return;
+  }
+
+  // Re-read: merging a sha that no longer exists is how a serialized lane
+  // quietly stops being one. GitHub works out mergeability lazily, and a
+  // merge asked for while it is still null is refused.
+  const pull =
+    (await settle(client, prNumber, (p) => p.mergeable !== null)) ??
+    (await client.pullRequest(prNumber));
   if (pull.merged) return;
 
   const merged = await client.merge(prNumber, pull.headSha);
   if (!merged.ok) {
+    // A 405 means a conflict only when GitHub says so; otherwise it is a
+    // refusal worth reporting as what it was.
+    const after = await client.pullRequest(prNumber).catch(() => null);
+    const conflict = merged.conflict && after?.mergeable === false;
     await stallTicket(
       projectId,
       ticket,
-      merged.conflict
+      conflict
         ? `${ticket.key} could not be merged cleanly: ${merged.reason}`
         : `GitHub refused the merge: ${merged.reason}`,
       { blocked: true, stalledIn: "in_review" },
@@ -404,6 +436,26 @@ async function mergeTicket(
 
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
+}
+
+const SETTLE_TRIES = 10;
+const SETTLE_EVERY_MS = 1_000;
+
+/**
+ * Re-reads a pull request until `ready` holds, for the few seconds GitHub
+ * takes to catch up after a write. Null when it never did.
+ */
+async function settle(
+  client: ReturnType<typeof vcs>,
+  prNumber: number,
+  ready: (pull: PullRequestDetail) => boolean,
+): Promise<PullRequestDetail | null> {
+  for (let i = 0; i < SETTLE_TRIES; i++) {
+    const pull = await client.pullRequest(prNumber);
+    if (pull.merged || ready(pull)) return pull;
+    await new Promise((r) => setTimeout(r, SETTLE_EVERY_MS));
+  }
+  return null;
 }
 
 /**
