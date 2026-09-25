@@ -7,7 +7,13 @@ import type { AgentContext, AgentOutcome, CodeChange, Usage } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
 import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens } from "@/lib/budget/limits";
-import { anthropicClient, describeError } from "./anthropic";
+import {
+  anthropicClient,
+  billedInputTokens,
+  cachedSystem,
+  cachedToHere,
+  describeError,
+} from "./anthropic";
 import { requestShape } from "./models";
 import { MAX_PLAN_STEPS, checkPlan } from "./plan";
 import { checkHandoff } from "./handoff";
@@ -45,6 +51,7 @@ const MAX_THOUGHT = 4_000;
  */
 const PLANNING_RULES = `Working in the open:
 - Before you change anything, call update_plan with every step you intend to take. Keep it current: mark a step in_progress when you start it and done when it is finished, and add or drop steps as you learn more.
+- Send each plan update in the same turn as the action it goes with, alongside that tool call, not in a turn of its own.
 - Before each action, say in a sentence or two what you are about to do and why. The person watching the board reads it.`;
 
 
@@ -285,13 +292,18 @@ function addUsage(a: Usage, b: Usage): Usage {
   };
 }
 
-function usageFrom(model: string, tokensIn: number, tokensOut: number): Usage {
-  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, tokensIn, tokensOut) };
+function usageFrom(
+  model: string,
+  tokensIn: number,
+  tokensOut: number,
+  costTokensIn = tokensIn,
+): Usage {
+  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, costTokensIn, tokensOut) };
 }
 
 function claudeConversation(input: LoopInput, model: string): Conversation {
   const shape = requestShape(model, {
-    effort: "xhigh",
+    effort: "medium",
     taskBudgetTokens: taskBudgetTokens(DEFAULT_RUN_BUDGET),
   });
   const messages: Anthropic.Beta.BetaMessageParam[] = [
@@ -304,13 +316,13 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
         const stream = anthropicClient(input.apiKey).beta.messages.stream({
           model,
           max_tokens: 64_000,
-          system: input.system,
+          system: cachedSystem(input.system),
           ...(shape.thinking ? { thinking: shape.thinking } : {}),
           ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
           output_config: shape.outputConfig,
           betas: shape.betas,
           tools: toolsFor(input.role),
-          messages,
+          messages: cachedToHere(messages),
         });
         message = await stream.finalMessage();
       } catch (e) {
@@ -338,7 +350,10 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
             : message.stop_reason === "max_tokens"
               ? "max_tokens"
               : "done",
-        usage: usageFrom(model, message.usage.input_tokens, message.usage.output_tokens),
+        usage: (() => {
+          const { tokensIn, costTokensIn } = billedInputTokens(message.usage);
+          return usageFrom(model, tokensIn, message.usage.output_tokens, costTokensIn);
+        })(),
       };
     },
     toolResults(results) {

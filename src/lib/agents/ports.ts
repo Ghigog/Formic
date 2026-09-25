@@ -208,8 +208,10 @@ export interface ReviewTask {
   baseBranch: string;
   /** The files the pull request changes. */
   changedFiles: string[];
-  /** Red CI on the head. Empty when it is green. */
+  /** Red CI on the head. Empty when it is green or still running. */
   checks: FailingCheck[];
+  /** CI has not finished on the head: the review runs alongside it. */
+  ciRunning?: boolean;
   attempt: number;
   maxAttempts: number;
 }

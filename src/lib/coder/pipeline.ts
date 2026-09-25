@@ -347,14 +347,12 @@ export async function openTicketPullRequest(
     checkName: null,
   });
 
-  // With a mock GitHub no webhook will ever arrive, so the card would sit
-  // in In Review forever. Drive the next stage directly instead, which is
+  // The review starts now, alongside CI, rather than on CI's first webhook.
+  // With a mock GitHub no webhook will ever arrive at all, so this is also
   // what makes the no-credential demo reach Done.
-  if (client.name === "mock") {
-    const { reviewPullRequest } = await import("@/lib/review/pipeline");
-    launch(
-      () => reviewPullRequest(projectId, pull.number, pull.headSha),
-      `mock review for ${ticket.key}`,
-    );
-  }
+  const { reviewPullRequest } = await import("@/lib/review/pipeline");
+  launch(
+    () => reviewPullRequest(projectId, pull.number, pull.headSha),
+    `review for ${ticket.key}`,
+  );
 }

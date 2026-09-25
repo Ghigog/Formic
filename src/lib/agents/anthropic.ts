@@ -79,6 +79,58 @@ export function anthropicClient(apiKey?: string | null): Anthropic {
   return c;
 }
 
+const EPHEMERAL = { type: "ephemeral" } as const;
+
+/**
+ * A system prompt the API caches, along with the tools ahead of it. The
+ * request is stateless, so the prompt is sent every turn; cached, it is not
+ * processed again until it changes, which is also when the cache refreshes.
+ */
+export function cachedSystem(text: string): Array<{
+  type: "text";
+  text: string;
+  cache_control: typeof EPHEMERAL;
+}> {
+  return [{ type: "text", text, cache_control: EPHEMERAL }];
+}
+
+/**
+ * The conversation with a cache breakpoint on its last block, so the next
+ * turn reads everything before it from the cache instead of reprocessing a
+ * transcript that only ever grows. Only the copy sent carries the marker:
+ * the API allows four, and an agentic loop runs for dozens of turns.
+ */
+export function cachedToHere<M extends { content: unknown }>(messages: M[]): M[] {
+  const last = messages.at(-1);
+  if (!last) return messages;
+  const blocks =
+    typeof last.content === "string"
+      ? [{ type: "text", text: last.content }]
+      : (last.content as Array<Record<string, unknown>>);
+  if (blocks.length === 0) return messages;
+  const marked = [...blocks.slice(0, -1), { ...blocks.at(-1), cache_control: EPHEMERAL }];
+  return [...messages.slice(0, -1), { ...last, content: marked }];
+}
+
+/**
+ * Input tokens as billed with caching: a cache write costs a quarter more
+ * than plain input, a cache read a tenth. `input_tokens` alone leaves both
+ * out, which would make every cached turn look nearly free to the budget.
+ */
+export function billedInputTokens(usage: {
+  input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}): { tokensIn: number; costTokensIn: number } {
+  const plain = usage.input_tokens ?? 0;
+  const written = usage.cache_creation_input_tokens ?? 0;
+  const read = usage.cache_read_input_tokens ?? 0;
+  return {
+    tokensIn: plain + written + read,
+    costTokensIn: plain + written * 1.25 + read * 0.1,
+  };
+}
+
 function usageFrom(
   model: string,
   usage: { input_tokens?: number; output_tokens?: number } | null | undefined,
@@ -141,7 +193,7 @@ export class AnthropicProductAgent implements ProductAgent {
     >
   > {
     const model = this.config.model ?? MODELS.product;
-    const shape = requestShape(model);
+    const shape = requestShape(model, { effort: "medium" });
 
     const outputSchema = z.object({
       title: z.string().describe("A short imperative Epic title, under 80 characters."),
@@ -231,7 +283,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
     },
   ): Promise<AgentOutcome<DraftTicket[]>> {
     const model = this.config.model ?? MODELS.architect;
-    const shape = requestShape(model, { effort: "high" });
+    const shape = requestShape(model, { effort: "medium" });
     const messages: Anthropic.Beta.BetaMessageParam[] = [
       {
         role: "user",
@@ -330,7 +382,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
     AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
   > {
     const model = this.config.model ?? MODELS.architect;
-    const shape = requestShape(model, { effort: "high" });
+    const shape = requestShape(model, { effort: "medium" });
 
     try {
       const message = await anthropicClient(this.config.apiKey).beta.messages.create({
@@ -396,7 +448,7 @@ export class AnthropicShowcaseAgent implements ShowcaseAgent {
     },
   ): Promise<AgentOutcome<string>> {
     const model = this.config.model ?? MODELS.showcase;
-    const shape = requestShape(model);
+    const shape = requestShape(model, { effort: "medium" });
 
     try {
       // Per-PR summaries are written at merge time, so this aggregates short

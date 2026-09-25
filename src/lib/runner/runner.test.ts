@@ -719,7 +719,7 @@ describe("a CLI agent fixing red CI", () => {
     expect(prompt).toContain("Formic-Review: approved");
     expect(prompt).toContain("Formic-Review: send-back");
     expect(prompt).toContain("whatever the ticket says");
-    expect(prompt).toContain("CI is green.");
+    expect(prompt).toContain("CI is green on this head.");
   });
 });
 
