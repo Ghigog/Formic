@@ -21,7 +21,7 @@ export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
 /** Bumped whenever the workflow changes, so old copies get replaced. */
-export const RUNNER_VERSION = "formic-runner: v4";
+export const RUNNER_VERSION = "formic-runner: v5";
 /** Where the setup pull request comes from. */
 export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 
@@ -244,6 +244,19 @@ jobs:
         with:
           node-version: 22
 
+      # Every run is a fresh machine. The package caches carry the agent's
+      # own install and the project's dependencies from one run to the next,
+      # so neither is downloaded from scratch each time.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/pip
+            ~/.cache/yarn
+            ~/.local/share/pnpm/store
+          key: formic-\${{ runner.os }}-\${{ hashFiles('**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/requirements*.txt') }}
+          restore-keys: formic-\${{ runner.os }}-
+
       - name: Install the agent
         env:
           CLI: \${{ inputs.cli }}
@@ -254,6 +267,21 @@ jobs:
             gemini) npm install -g @google/gemini-cli ;;
             *) echo "Unknown agent: $CLI"; exit 1 ;;
           esac
+
+      # Ready before the agent starts, so it spends its turns on the ticket.
+      # Only the coding modes need them, and a failure here is not fatal:
+      # the agent can still install what it needs itself.
+      - name: Install the project's dependencies
+        if: inputs.mode == 'implement' || inputs.mode == 'fix'
+        continue-on-error: true
+        run: |
+          # Installed, never handed back: kept out of what the agent commits.
+          echo "node_modules/" >> .git/info/exclude
+          if [ -f package-lock.json ]; then npm ci --prefer-offline --no-audit --fund=false
+          elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then corepack enable && yarn install
+          elif [ -f requirements.txt ]; then pip install -r requirements.txt
+          fi
 
       - name: Run the agent
         env:

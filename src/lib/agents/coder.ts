@@ -132,7 +132,9 @@ export function reviewBrief(input: Omit<ReviewTask, "workspace">): string {
     "",
     input.checks.length
       ? ["CI is red. Failing checks:", "", failuresBrief(input.checks)].join("\n")
-      : "CI is green.",
+      : input.ciRunning
+        ? "CI is still running on this head. Do not run the checks yourself: if one fails, the pull request comes back to you with the failure."
+        : "CI is green on this head. That is the verification; do not run the checks again.",
     "",
     `This is review ${input.attempt} of ${input.maxAttempts}. After the last one the card stops and waits for a human.`,
   ].join("\n");

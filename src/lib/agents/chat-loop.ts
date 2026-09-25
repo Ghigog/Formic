@@ -2,7 +2,7 @@ import "server-only";
 
 import type Anthropic from "@anthropic-ai/sdk";
 
-import { anthropicClient } from "./anthropic";
+import { anthropicClient, cachedSystem, cachedToHere } from "./anthropic";
 import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
 import type { ProviderInfo } from "@/lib/llm/providers";
 
@@ -57,9 +57,9 @@ export function claudeSpeak(
     const message = await anthropicClient(apiKey).messages.create({
       model,
       max_tokens: 8_000,
-      system,
+      system: cachedSystem(system),
       tools: claudeTools,
-      messages,
+      messages: cachedToHere(messages),
     });
     messages.push({ role: "assistant", content: message.content });
     return {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCoderAgent } from "./pipeline";
 import { setCheckoutFactory } from "./checkout";
 import {
+  MAX_REVIEWS,
   resetPullRequestSweep,
   reviewPullRequest,
   sweepOpenPullRequests,
@@ -481,8 +482,8 @@ describe("the Reviewer Agent pipeline", () => {
     const ticket = await seedTicket();
     const pull = await openPullRequestFor(ticket, false);
 
-    // Four red results on the same commit: three fixes, then the card stops.
-    for (let i = 0; i < 4; i++) {
+    // Red results on the same commit: a fix each time, then the card stops.
+    for (let i = 0; i <= MAX_REVIEWS; i++) {
       await reviewPullRequest(PROJECT, pull.number, pull.headSha);
     }
     await until(
@@ -491,7 +492,7 @@ describe("the Reviewer Agent pipeline", () => {
     );
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.attempts).toBe(3);
+    expect(after.attempts).toBe(MAX_REVIEWS);
     expect(after.status).toBe("blocked");
     expect(after.stalledIn).toBe("in_review");
     expect(after.blockedReason).toContain("ci / test");
@@ -562,18 +563,23 @@ describe("the Reviewer Agent pipeline", () => {
     expect((await repository().ticketDetail(ticket.id))!.prNumber).toBe(pull.number);
   });
 
-  it("does not spend a fix attempt on a cancelled check", async () => {
+  it("does not treat a cancelled check as a failure", async () => {
     useAgents(new StubCoder(writesInScope()), new StubReviewer());
     const ticket = await seedTicket();
     const pull = await openPullRequestFor(ticket, false);
 
-    // Nothing ran, so there is nothing to fix and nothing to merge.
+    // Nothing ran, so there is nothing to fix and nothing to merge: the
+    // diff is reviewed as it would be alongside running CI, and waits.
     MockVcsClient.setChecks(pull.number, "cancelled");
     await reviewPullRequest(PROJECT, pull.number, pull.headSha);
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.attempts).toBe(0);
     expect(after.status).toBe("review");
+    expect(after.reviewedSha).toBe(pull.headSha);
+
+    // Another report on the same head does not review it again.
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+    expect((await repository().ticketDetail(ticket.id))!.attempts).toBe(after.attempts);
   });
 
   it("releases a dependent ticket when the one it waits on merges", async () => {

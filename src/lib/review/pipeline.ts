@@ -36,8 +36,12 @@ import { cliPrompt, showcaseSummaries, startCliAnswer, startCliRun } from "@/lib
 
 const STAGE_MERGE = 7;
 
-/** After this many reviews the card stops and waits for a human. */
-export const MAX_REVIEWS = DEFAULT_RUN_BUDGET.maxAttempts;
+/**
+ * After this many reviews the card stops and waits for a human. One more
+ * than the attempt budget: the review that reads the diff alongside CI
+ * should not cost a fix attempt when CI then comes back red.
+ */
+export const MAX_REVIEWS = DEFAULT_RUN_BUDGET.maxAttempts + 1;
 
 /** A green-enough result. Skipped and neutral checks block nothing. */
 const GREEN = ["success", "neutral", "skipped"];
@@ -102,6 +106,8 @@ async function react(
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket || ticket.status === "merged") return;
+  // Sent back: the Coder Agent has it, and its push is what gets reviewed.
+  if (ticket.status === "running") return;
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
@@ -118,6 +124,7 @@ async function react(
   if (pull.headSha !== headSha) return;
 
   const checks = await client.checksFor(headSha);
+  const red = failing(checks);
 
   if (checks.length === 0 || pending(checks).length > 0) {
     await publish(projectId, {
@@ -127,10 +134,14 @@ async function react(
       state: "pending",
       checkName: pending(checks)[0]?.name ?? null,
     });
+    // The review reads the diff while CI runs, rather than after it, and
+    // the merge waits for both. Once it has approved this head, or once a
+    // check has already failed, the rest of CI is worth waiting for.
+    if (ticket.runnerJob || ticket.reviewedSha === headSha || red.length > 0) return;
+    await reviewTicket(projectId, ticket, pull, [], { ciRunning: true });
     return;
   }
 
-  const red = failing(checks);
   await publish(projectId, {
     type: "ci.status",
     ticketId: ticket.id,
@@ -506,6 +517,7 @@ async function reviewTicket(
   ticket: TicketDetail,
   pull: PullRequestDetail,
   red: CheckSummary[],
+  options: { ciRunning?: boolean } = {},
 ): Promise<void> {
   const repo = repository();
   const attempt = ticket.attempts + 1;
@@ -553,6 +565,7 @@ async function reviewTicket(
     baseBranch: pull.baseBranch,
     changedFiles,
     checks: logs,
+    ciRunning: options.ciRunning ?? false,
     attempt,
     maxAttempts: MAX_REVIEWS,
   };
@@ -780,7 +793,9 @@ export async function sendBack(
   reason: string,
 ): Promise<void> {
   await addNote(projectId, ticket.id, `Sent back by review: ${reason}`);
-  await repository().updateTicket(ticket.id, { reviewedSha: null });
+  // Running from here, not from when the Coder Agent gets going: a CI
+  // result arriving in between would otherwise review the same head again.
+  await repository().updateTicket(ticket.id, { reviewedSha: null, status: "running" });
   launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
 }
 
