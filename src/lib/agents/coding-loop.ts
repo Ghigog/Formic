@@ -50,7 +50,7 @@ const MAX_THOUGHT = 4_000;
  * it: the plan up front, kept current, and a word before each action.
  */
 const PLANNING_RULES = `Working in the open:
-- Before you change anything, call update_plan with every step you intend to take. Keep it current: mark a step in_progress when you start it and done when it is finished, and add or drop steps as you learn more.
+- Your first call, before you read or change anything, is update_plan with every step you intend to take. Keep it current: mark a step in_progress when you start it and done when it is finished, and add or drop steps as you learn more.
 - Send each plan update in the same turn as the action it goes with, alongside that tool call, not in a turn of its own.
 - Before each action, say in a sentence or two what you are about to do and why. The person watching the board reads it.`;
 
