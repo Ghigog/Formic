@@ -111,7 +111,7 @@ export function AgentSelect({
         <div
           role="menu"
           aria-label={`Agents for ${COLUMN_LABELS[column]}`}
-          className="bg-card border-line shadow-lift absolute top-full right-0 left-0 z-30 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-lg border p-1"
+          className="bg-card border-line shadow-lift absolute top-full right-0 left-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-lg border p-1"
         >
           <button
             type="button"

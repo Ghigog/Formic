@@ -219,7 +219,12 @@ export function spRadius(sp: number): number {
   return 1.5 + Math.sqrt(sp) * 0.85;
 }
 
-/** Draws one bug. Shared with the colony's style previews. */
+/**
+ * Draws one bug. Shared with the colony's style previews, and with the
+ * ants themselves: `opts.rotate` turns a bug drawn head-up into one drawn
+ * head-forward, and `opts.legSwing` drives its legs from a walk cycle
+ * instead of the clock, so a walking ant can wear it as a skin.
+ */
 export function drawBug(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -229,12 +234,14 @@ export function drawBug(
   shape: BugShape,
   color: string,
   ink = cssAlpha("var(--text)", 0.82),
+  opts?: { rotate?: number; legSwing?: number },
 ) {
   color = css(color);
   ink = css(ink);
-  const w = Math.sin(t * 60) * 0.9;
+  const w = opts?.legSwing ?? Math.sin(t * 60) * 0.9;
   ctx.save();
   ctx.translate(x, y);
+  if (opts?.rotate) ctx.rotate(opts.rotate);
   ctx.scale(s, s);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -797,33 +804,14 @@ export class ColonyFx {
     ctx.translate(x, y);
     ctx.rotate(a);
     if (sc !== 1) ctx.scale(sc, sc);
-    ctx.strokeStyle = cssAlpha("var(--text)", 0.7);
-    ctx.fillStyle = cssAlpha("var(--text)", 0.82);
-    ctx.lineWidth = 0.8;
-    ctx.lineCap = "round";
+    // Ants wear whatever bug style the colony has equipped: same shapes and
+    // colours as the picker, just rotated head-forward and leg-driven by the
+    // walk cycle instead of the clock. Squashed bugs never take this path.
     const sw = Math.sin(ph) * 1.3;
-    ctx.beginPath();
-    for (let i = -1; i <= 1; i++) {
-      const s = i === 0 ? -sw : sw;
-      ctx.moveTo(i * 1.2, 0);
-      ctx.lineTo(i * 2.6 + s, -3.3);
-      ctx.moveTo(i * 1.2, 0);
-      ctx.lineTo(i * 2.6 - s, 3.3);
-    }
-    ctx.moveTo(3, -0.5);
-    ctx.lineTo(5.2, -2);
-    ctx.moveTo(3, 0.5);
-    ctx.lineTo(5.2, 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(-3.3, 0, 2.3, 1.6, 0, 0, TAU);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(-0.2, 0, 1.3, 0.95, 0, 0, TAU);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(2.3, 0, 1.25, 1.15, 0, 0, TAU);
-    ctx.fill();
+    drawBug(ctx, 0, 0, 0.62, 0, this.world.bugShape, this.world.bugHex, undefined, {
+      rotate: Math.PI / 2,
+      legSwing: sw,
+    });
     if (carry && typeof carry === "object") {
       const r = spRadius(carry.sp);
       ctx.translate(4.4 + r * 0.9, Math.sin(ph * 0.5) * 0.3);

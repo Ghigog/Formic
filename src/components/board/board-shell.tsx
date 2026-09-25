@@ -184,7 +184,7 @@ export function BoardShell({
       {connection === "reconnecting" && (
         <div
           role="status"
-          className="bg-rust/12 text-ink fixed bottom-16 left-4 z-40 rounded-md px-2 py-1 text-[11px]"
+          className="bg-rust/12 text-ink fixed bottom-16 left-4 z-50 rounded-md px-2 py-1 text-[11px]"
         >
           Reconnecting to the agent stream…
         </div>
