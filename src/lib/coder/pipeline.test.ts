@@ -582,6 +582,28 @@ describe("the Reviewer Agent pipeline", () => {
     expect((await repository().ticketDetail(ticket.id))!.attempts).toBe(after.attempts);
   });
 
+  it("merges an approved pull request once its base is brought in, without reviewing it again", async () => {
+    const reviewer = new StubReviewer();
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+
+    // Approved while CI runs.
+    MockVcsClient.setChecks(pull.number, "cancelled");
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+    expect(reviewer.reviews).toHaveLength(1);
+
+    // Bringing the base in moves the head; CI on the new head passes.
+    const head = MockVcsClient.bringBaseIn(pull.number);
+    MockVcsClient.setChecks(pull.number, "success");
+    await reviewPullRequest(PROJECT, pull.number, head);
+
+    expect(reviewer.reviews).toHaveLength(1);
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("merged");
+    expect(after.reviewedSha).toBe(head);
+  });
+
   it("releases a dependent ticket when the one it waits on merges", async () => {
     useAgents(new StubCoder(writesInScope()), new StubReviewer());
 

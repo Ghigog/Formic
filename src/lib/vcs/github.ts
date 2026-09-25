@@ -210,6 +210,26 @@ export class GitHubClient implements VcsClient {
     }
   }
 
+  async bringsInBase(from: string, to: string, base: string): Promise<boolean> {
+    try {
+      const { data: commit } = await this.request<{ parents: Array<{ sha: string }> }>(
+        "GET",
+        `/commits/${to}`,
+      );
+      const [first, second] = commit.parents.map((p) => p.sha);
+      if (commit.parents.length !== 2 || first !== from) return false;
+      // "behind" or "identical": the other parent is already on base.
+      const { data } = await this.request<{ status: string }>(
+        "GET",
+        `/compare/${encodeURIComponent(base)}...${second}`,
+      );
+      return data.status === "behind" || data.status === "identical";
+    } catch (e) {
+      if (e instanceof VcsError) return false;
+      throw e;
+    }
+  }
+
   async mergeBranch(base: string, head: string): Promise<UpdateOutcome> {
     try {
       const { status } = await this.request("POST", "/merges", {
