@@ -63,14 +63,5 @@ export function useAgents(initialPresets: AgentPreset[], initialColumns: ColumnA
     );
   }, []);
 
-  /** Clears a stale or wrongly attributed "out of usage" mark by hand. */
-  const clearLimit = useCallback(
-    async (presetId: string) => {
-      await send(`/api/agents/presets/${presetId}/limit`, "DELETE");
-      markLimited(presetId, null, null);
-    },
-    [markLimited],
-  );
-
-  return { presets, columns, assign, save, remove, markLimited, clearLimit };
+  return { presets, columns, assign, save, remove, markLimited };
 }

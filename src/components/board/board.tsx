@@ -64,8 +64,6 @@ export interface BoardProps {
     columns: ColumnAgents;
     onAssign: (column: ColumnId, presetId: string | null) => Promise<void>;
     onEdit: (column: ColumnId, preset: AgentPreset | null) => void;
-    /** Clears a preset's stale or wrongly attributed "out of usage" mark. */
-    onClearLimit: (presetId: string) => Promise<void>;
   };
 }
 
@@ -265,7 +263,6 @@ export function Board({
           selected: agents.presets.find((p) => p.id === agents.columns[col]),
           onAssign: (presetId) => agents.onAssign(col, presetId),
           onEdit: (preset) => agents.onEdit(col, preset),
-          onClearLimit: agents.onClearLimit,
         }
       }
       composer={
