@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   STOPPED_BY_PERSON,
   cliPrompt,
+  PLAN_FIRST_RULE,
   collectCliRuns,
   completeCliRun,
   receiveReport,
@@ -808,6 +809,7 @@ describe("a CLI agent fixing red CI", () => {
     expect(prompt).toContain("Formic-Review: send-back");
     expect(prompt).toContain("whatever the ticket says");
     expect(prompt).toContain("CI is green on this head.");
+    expect(prompt).toContain(PLAN_FIRST_RULE);
   });
 });
 

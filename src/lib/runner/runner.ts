@@ -90,6 +90,12 @@ import {
  * work: the file scope first, then the pull request, CI, and the merge loop.
  */
 
+/**
+ * The ticket's plan and its progress bar are read live from the agent's todo
+ * tool, so the plan comes first and is kept current, not only in the summary.
+ */
+export const PLAN_FIRST_RULE = `Your first action, before you read or change anything, is to write your plan with your todo tool (TodoWrite in Claude Code, the plan tool in Codex, write_todos in Gemini CLI): the steps you expect to take, one per item. Formic shows it on the ticket and tracks progress by it. Mark each step in progress when you start it and done when you finish it, and add, split or drop steps as you learn more.`;
+
 /** Dispatch inputs are capped at 65,535 characters in total. */
 const MAX_PROMPT = 50_000;
 
@@ -97,6 +103,7 @@ const MAX_PROMPT = 50_000;
 const MAX_REPORT = 20_000;
 
 const cliRules = (scopeRule: string) => `Rules that are enforced, not advisory:
+- ${PLAN_FIRST_RULE}
 - ${scopeRule}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${VERIFY_RULE}
