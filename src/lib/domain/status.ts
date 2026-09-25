@@ -34,6 +34,11 @@ export const TICKET_STATUSES = [
   "ready",
   /** To Do. Held by an unsatisfied dependency. */
   "waiting",
+  /**
+   * In Progress. Waiting its turn: another ticket is already writing some of
+   * the same files. It starts on its own once that one stops running.
+   */
+  "queued",
   /** In Progress. A sandbox run is live. */
   "running",
   /** In Review. A PR is open, CI and merge are in flight. */
@@ -53,6 +58,7 @@ const STATUS_TO_COLUMN: Record<TicketStatus, ColumnId> = {
   specified: "backlog",
   ready: "todo",
   waiting: "todo",
+  queued: "in_progress",
   running: "in_progress",
   review: "in_review",
   merged: "done",
@@ -132,14 +138,15 @@ export function isTerminal(status: TicketStatus): boolean {
 
 /**
  * Column moves a human may perform. Backwards moves are permitted for
- * recovery (pulling a failed card back to To Do), forwards moves only one
- * column at a time so a card cannot skip its agent.
+ * recovery (pulling a failed card back to To Do, or a reviewed card back to
+ * In Progress so its Coder Agent continues on the open pull request),
+ * forwards moves only one column at a time so a card cannot skip its agent.
  */
 const ALLOWED_USER_MOVES: Record<ColumnId, readonly ColumnId[]> = {
   backlog: ["todo"],
   todo: ["backlog", "in_progress"],
   in_progress: ["todo"],
-  in_review: ["todo"],
+  in_review: ["todo", "in_progress"],
   done: [],
 };
 
@@ -157,6 +164,11 @@ export function canUserMove(from: ColumnId, to: ColumnId): MoveRejection {
     };
   }
   return { ok: true };
+}
+
+/** Where a human may drag a card from `from`, for messages that explain a rejection. */
+export function allowedUserMoves(from: ColumnId): readonly ColumnId[] {
+  return ALLOWED_USER_MOVES[from];
 }
 
 /** The status a card lands in when a human drops it into a column. */

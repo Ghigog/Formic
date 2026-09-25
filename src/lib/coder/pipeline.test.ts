@@ -30,6 +30,7 @@ import {
 } from "@/lib/sandbox/workspace";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
 import { applyCardAction } from "@/lib/agents/card-actions";
+import { publish } from "@/lib/events/bus";
 import { noteTexts } from "./notes";
 import { resetEnvCache } from "@/lib/secrets/env";
 import {
@@ -681,8 +682,9 @@ describe("work that needs files outside the ticket's scope", () => {
     expect(coder.tasks).toHaveLength(1);
   });
 
-  it("waits in To Do while a running ticket works in those files", async () => {
-    useAgents(new StubCoder(writesOutside), new StubReviewer());
+  it("queues in In Progress while a running ticket works in those files, then starts", async () => {
+    const coder = new StubCoder(writesOutside);
+    useAgents(coder, new StubReviewer());
     const ticket = await asked();
     const repo = repository();
     const [other] = await repo.createTickets([
@@ -702,12 +704,28 @@ describe("work that needs files outside the ticket's scope", () => {
 
     const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "widen_scope", allow: true });
 
-    expect(said).toContain("stays in To Do");
-    expect(said).toContain("T-2");
+    expect(said).toContain("queued behind T-2");
     const after = (await repo.ticketDetail(ticket.id))!;
-    expect(after.status).toBe("ready");
+    expect(after.status).toBe("queued");
     expect(after.fileScope).toContain("src/app/page.tsx");
     expect(after.prNumber).toBeNull();
+    const runs = coder.tasks.length;
+
+    // T-2 stops running: T-1's turn comes, with no one moving it.
+    await repo.updateTicket(other!.id, { status: "review" });
+    await publish(PROJECT, {
+      type: "card.status",
+      cardId: other!.id,
+      kind: "ticket",
+      status: "review",
+      stalledIn: null,
+      stage: 0,
+      blockedReason: null,
+    });
+
+    // Its kept work goes on to a pull request.
+    await until(async () => (await repo.ticketDetail(ticket.id))!.prNumber !== null, "the queued run");
+    expect(coder.tasks).toHaveLength(runs);
   });
 
   it("drops the kept work and starts again within the scope when the person says no", async () => {

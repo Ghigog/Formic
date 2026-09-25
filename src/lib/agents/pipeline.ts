@@ -205,6 +205,88 @@ export async function applyPrd(
 }
 
 /**
+ * A Product or Architect Agent decided the request belongs in the other
+ * column instead of doing what its own stage does: a Backlog request small
+ * enough to skip the PRD becomes the one ticket it really is, in To Do; a To
+ * Do request too big for one ticket goes back to Backlog for a PRD and a
+ * real breakdown. Either way the move is recorded — where it came from, and
+ * why — so the card explains itself rather than looking hand-moved.
+ */
+export async function applyReroute(
+  projectId: string,
+  input:
+    | { from: "backlog"; epicId: string; reason: string; ticket: DraftTicket }
+    | { from: "todo"; epicId: string; ticketId: string; reason: string },
+): Promise<void> {
+  const repo = repository();
+
+  if (input.from === "backlog") {
+    // The Epic becomes a holder only: its one ticket is the request now.
+    await repo.setStandalone(input.epicId, true);
+    const positions = await repo.columnPositions(projectId, "todo");
+    const position = positionForIndex(positions, positions.length);
+    const created = (
+      await repo.createTickets([
+        {
+          epicId: input.epicId,
+          key: input.ticket.key,
+          title: input.ticket.title,
+          description: input.ticket.description,
+          acceptanceCriteria: input.ticket.acceptanceCriteria,
+          fileScope: input.ticket.fileScope,
+          size: input.ticket.size,
+          storyPoints: input.ticket.storyPoints ?? null,
+          needsHuman: input.ticket.needsHuman ?? null,
+          position,
+          dependsOnKeys: [],
+        },
+      ])
+    )[0]!;
+    await repo.move({
+      cardId: created.id,
+      kind: "ticket",
+      status: "ready",
+      stalledIn: null,
+      position,
+      detached: true,
+    });
+    await repo.setReroute(created.id, "ticket", { from: "backlog", reason: input.reason });
+
+    await publish(projectId, { type: "card.deleted", cardId: input.epicId, kind: "epic", issueNumbers: [] });
+    await publish(projectId, { type: "card.created", cardId: created.id, kind: "ticket", epicId: input.epicId });
+    await publish(projectId, {
+      type: "card.rerouted",
+      cardId: created.id,
+      kind: "ticket",
+      from: "backlog",
+      to: "todo",
+      reason: input.reason,
+    });
+    return;
+  }
+
+  // The drafting placeholder was standing in for the request; the request is
+  // the Epic now, back where a PRD and a real breakdown can be written for it.
+  await repo.deleteTickets([input.ticketId]);
+  await repo.setStandalone(input.epicId, false);
+  const positions = await repo.columnPositions(projectId, "backlog");
+  const position = positionForIndex(positions, positions.length);
+  await repo.move({ cardId: input.epicId, kind: "epic", status: "draft", stalledIn: null, position });
+  await repo.setReroute(input.epicId, "epic", { from: "todo", reason: input.reason });
+
+  await publish(projectId, { type: "card.deleted", cardId: input.ticketId, kind: "ticket", issueNumbers: [] });
+  await publish(projectId, { type: "card.created", cardId: input.epicId, kind: "epic", epicId: null });
+  await publish(projectId, {
+    type: "card.rerouted",
+    cardId: input.epicId,
+    kind: "epic",
+    from: "todo",
+    to: "backlog",
+    reason: input.reason,
+  });
+}
+
+/**
  * Directories the Architect Agent uses to ground its file scopes: the picked
  * repository's real layout when GitHub can be read, and otherwise the known
  * layout of this repository, which is a better prompt than nothing.
@@ -414,11 +496,11 @@ export async function runProductAgent(
     if (outcome.value.kind === "prd") {
       await applyPrd(projectId, epicId, outcome.value.prd);
     } else {
-      // Rerouting is not wired up yet; a reroute outcome just stalls the Epic.
-      await stallEpic(projectId, epicId, outcome.value.reason, {
-        blocked: true,
-        stalledIn: "backlog",
-        stage: 2,
+      await applyReroute(projectId, {
+        from: "backlog",
+        epicId,
+        reason: outcome.value.reason,
+        ticket: outcome.value.ticket,
       });
     }
   } else {
@@ -516,8 +598,7 @@ export async function runArchitectDraftTicket(
     if (outcome.value.kind === "ticket") {
       await applyDraftedTicket(projectId, epicId, ticketId, outcome.value.ticket);
     } else {
-      // Rerouting is not wired up yet; a reroute outcome just stalls the ticket.
-      await stallDraftingTicket(projectId, ticketId, outcome.value.reason, true);
+      await applyReroute(projectId, { from: "todo", epicId, ticketId, reason: outcome.value.reason });
     }
   } else {
     await stallDraftingTicket(projectId, ticketId, outcome.error, outcome.blocked);

@@ -8,6 +8,7 @@ on:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Wait for this commit to be live, then check it
         env:
@@ -20,9 +21,9 @@ jobs:
           base="${PROD_URL%/}"
 
           # Checking right after a merge would test the previous deploy, so
-          # first wait until /api/health reports this commit. Vercel builds
-          # take about a minute; give it six.
-          deadline=$((SECONDS + 360))
+          # first wait until /api/health reports this commit. Deploys now wait
+          # on CI (build, e2e) before the Vercel build starts; give it twenty.
+          deadline=$((SECONDS + 1200))
           while :; do
             status=$(curl -s -o health.json -w '%{http_code}' --max-time 15 "$base/api/health" || echo 000)
             live=$(jq -r '.commit // "unknown"' health.json 2>/dev/null || echo unknown)

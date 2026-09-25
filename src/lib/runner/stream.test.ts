@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readStream, readStreamLine, toolLabel } from "./stream";
+import { checklistPlan, readStream, readStreamLine, toolLabel } from "./stream";
 
 const line = (event: unknown) => JSON.stringify(event);
 
@@ -81,6 +81,54 @@ describe("reading a CLI agent's stream", () => {
         ],
       },
       { kind: "thought", thought: "text", text: "All done." },
+    ]);
+  });
+
+  it("reads a checklist in what an agent says as its plan", () => {
+    const text = "No todo tool, so here is my plan:\n- [x] Read the drawers\n- [ ] Add the banner\n- [ ] Run the checks";
+    const items = readStream([line({ type: "item.completed", item: { type: "agent_message", text } })]);
+    expect(items).toEqual([
+      { kind: "thought", thought: "text", text },
+      {
+        kind: "plan",
+        steps: [
+          { step: "Read the drawers", status: "done" },
+          { step: "Add the banner", status: "in_progress" },
+          { step: "Run the checks", status: "pending" },
+        ],
+      },
+    ]);
+  });
+
+  it("finds no plan in text without a checklist", () => {
+    expect(checklistPlan("- a bullet\n[ ] not a list item")).toBeNull();
+  });
+
+  it("reads Gemini CLI's todo list as its plan", () => {
+    const items = readStream([
+      line({
+        type: "tool_use",
+        tool_name: "write_todos",
+        tool_id: "1",
+        parameters: {
+          todos: [
+            { description: "One", status: "completed" },
+            { description: "Two", status: "in_progress" },
+            { description: "Dropped", status: "cancelled" },
+            { description: "Three", status: "pending" },
+          ],
+        },
+      }),
+    ]);
+    expect(items).toEqual([
+      {
+        kind: "plan",
+        steps: [
+          { step: "One", status: "done" },
+          { step: "Two", status: "in_progress" },
+          { step: "Three", status: "pending" },
+        ],
+      },
     ]);
   });
 

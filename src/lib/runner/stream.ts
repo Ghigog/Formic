@@ -130,6 +130,17 @@ function codexPlan(items: unknown): PlanStep[] | null {
   return steps.length ? steps : null;
 }
 
+function geminiPlan(input: Json): PlanStep[] | null {
+  if (!Array.isArray(input.todos)) return null;
+  const steps = input.todos.flatMap((t): PlanStep[] => {
+    if (!isObject(t) || t.status === "cancelled") return [];
+    const step = short(str(t.description), 300);
+    const status = t.status === "completed" ? "done" : t.status === "in_progress" ? "in_progress" : "pending";
+    return step ? [{ step, status }] : [];
+  });
+  return steps.length ? steps : null;
+}
+
 function claudeLine(event: Json): StreamItem[] {
   const message = isObject(event.message) ? event.message : null;
   const content = Array.isArray(message?.content) ? message.content : [];
@@ -210,6 +221,10 @@ function geminiLine(event: Json): StreamItem[] {
   }
   if (event.type === "tool_use") {
     const input = isObject(event.parameters) ? event.parameters : {};
+    if (str(event.tool_name) === "write_todos") {
+      const steps = geminiPlan(input);
+      return steps ? [{ kind: "plan", steps }] : [];
+    }
     const label = toolLabel(str(event.tool_name), input);
     return [{ kind: "action", label }, ...(label.startsWith("$ ") ? [{ kind: "log" as const, stream: "stdout" as const, line: label }] : [])];
   }
@@ -274,5 +289,29 @@ export function readStream(lines: string[]): StreamItem[] {
     }
   }
   for (const item of out) if (item.kind === "thought") item.text = item.text.trim();
-  return out.filter((item) => item.kind !== "thought" || item.text);
+  return out
+    .filter((item) => item.kind !== "thought" || item.text)
+    .flatMap((item) => {
+      if (item.kind !== "thought" || item.thought !== "text") return [item];
+      const steps = checklistPlan(item.text);
+      return steps ? [item, { kind: "plan" as const, steps }] : [item];
+    });
+}
+
+/**
+ * A plan written as a checklist in what the agent says, for an agent with no
+ * todo tool: "- [ ] step", "- [x] step". The first step not done is in hand.
+ */
+export function checklistPlan(text: string): PlanStep[] | null {
+  let current = false;
+  const steps = text.split("\n").flatMap((line): PlanStep[] => {
+    const m = /^\s*(?:[-*]|\d+[.)])\s+\[([ xX~])\]\s+(.+)$/.exec(line);
+    if (!m) return [];
+    const step = short((m[2] ?? "").trim(), 300);
+    if ((m[1] ?? "").toLowerCase() === "x") return [{ step, status: "done" }];
+    const status = current ? "pending" : "in_progress";
+    current = true;
+    return [{ step, status }];
+  });
+  return steps.length ? steps : null;
 }

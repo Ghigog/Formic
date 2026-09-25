@@ -348,6 +348,53 @@ async function closeWithoutMerge(
   await completeEpic(projectId, ticket.epicId);
 }
 
+type MergeResult = { merged: true } | { merged: false; reason: string };
+
+/**
+ * A person asks for the ticket's pull request to merge, in its chat. Their
+ * word stands in for the review, but red CI still does not merge, and a
+ * merge GitHub refuses leaves the ticket in In Review saying why. It never
+ * reaches Done without the merge. Returns what happened, in a line.
+ */
+export async function mergeByPerson(
+  projectId: string,
+  ticket: TicketDetail,
+  prNumber: number,
+): Promise<string> {
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+
+  const pull = await client.pullRequest(prNumber);
+  if (pull.merged) {
+    await markMergedExternally(projectId, prNumber);
+    return `Pull request #${prNumber} has already merged; ${ticket.key} is in Done.`;
+  }
+  if (pull.state === "closed") {
+    return `Pull request #${prNumber} is closed on GitHub, so there is nothing to merge. Reopen it there, or close ${ticket.key} if the work is not needed.`;
+  }
+  const checks = await client.checksFor(pull.headSha);
+  const red = failing(checks);
+  if (red.length > 0) {
+    return `${red.map((c) => c.name).join(", ")} is failing on pull request #${prNumber}. Red CI does not merge.`;
+  }
+  if (checks.length === 0 || pending(checks).length > 0) {
+    return `CI is still running on pull request #${prNumber}. Ask again once it passes.`;
+  }
+
+  // The person vouches for this head, so bringing the base in carries it
+  // across exactly as a review's approval would.
+  await repository().updateTicket(ticket.id, { reviewedSha: pull.headSha });
+  const result = await inMergeLane(projectId, async () => {
+    const fresh = (await repository().ticketDetail(ticket.id)) ?? ticket;
+    return mergeTicket(projectId, fresh, prNumber);
+  });
+  if (!result.merged) return `Did not merge pull request #${prNumber}: ${result.reason}`;
+  // Merged already, or just now by the lane: either way the card says so.
+  await markMergedExternally(projectId, prNumber);
+  return `Merged pull request #${prNumber}; ${ticket.key} is in Done, and anything waiting on it can go ahead.`;
+}
+
 /**
  * One merge at a time, each rebased on the result of the last. Conflicts the
  * agent cannot resolve cleanly park the card rather than being forced
@@ -357,14 +404,14 @@ async function mergeTicket(
   projectId: string,
   ticket: TicketDetail,
   prNumber: number,
-): Promise<void> {
+): Promise<MergeResult> {
   const repo = repository();
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
 
   const before = await client.pullRequest(prNumber);
-  if (before.merged) return;
+  if (before.merged) return { merged: true };
 
   const update = await client.updateBranch(prNumber);
   if (!update.ok && update.conflict) {
@@ -374,7 +421,7 @@ async function mergeTicket(
       `${ticket.key} conflicts with its base branch and needs a human to resolve it.`,
       { blocked: true, stalledIn: "in_review" },
     );
-    return;
+    return { merged: false, reason: `${ticket.key} conflicts with its base branch and needs a human to resolve it.` };
   }
 
   // GitHub brings the base in after it answers, so the new head, its
@@ -383,7 +430,9 @@ async function mergeTicket(
   // CI on it merges it, under the approval react() carries across.
   if (update.ok && update.updated) {
     const moved = await settle(client, prNumber, (p) => p.headSha !== before.headSha);
-    if (moved) return;
+    if (moved) {
+      return { merged: false, reason: `Brought ${before.baseBranch} into it first; it merges once CI passes on the new head.` };
+    }
   }
 
   // Re-read: merging a sha that no longer exists is how a serialized lane
@@ -392,7 +441,7 @@ async function mergeTicket(
   const pull =
     (await settle(client, prNumber, (p) => p.mergeable !== null)) ??
     (await client.pullRequest(prNumber));
-  if (pull.merged) return;
+  if (pull.merged) return { merged: true };
 
   const merged = await client.merge(prNumber, pull.headSha);
   if (!merged.ok) {
@@ -400,15 +449,11 @@ async function mergeTicket(
     // refusal worth reporting as what it was.
     const after = await client.pullRequest(prNumber).catch(() => null);
     const conflict = merged.conflict && after?.mergeable === false;
-    await stallTicket(
-      projectId,
-      ticket,
-      conflict
-        ? `${ticket.key} could not be merged cleanly: ${merged.reason}`
-        : `GitHub refused the merge: ${merged.reason}`,
-      { blocked: true, stalledIn: "in_review" },
-    );
-    return;
+    const reason = conflict
+      ? `${ticket.key} could not be merged cleanly: ${merged.reason}`
+      : `GitHub refused the merge: ${merged.reason}`;
+    await stallTicket(projectId, ticket, reason, { blocked: true, stalledIn: "in_review" });
+    return { merged: false, reason };
   }
 
   await repo.updateTicket(ticket.id, {
@@ -436,6 +481,7 @@ async function mergeTicket(
 
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
+  return { merged: true };
 }
 
 const SETTLE_TRIES = 10;

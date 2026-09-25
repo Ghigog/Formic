@@ -4,6 +4,7 @@ import {
   STOPPED_BY_PERSON,
   attachmentUrlAllowed,
   cliPrompt,
+  PLAN_FIRST_RULE,
   collectCliRuns,
   completeCliRun,
   receiveReport,
@@ -345,6 +346,68 @@ describe("a CLI agent planning an Epic", () => {
     expect(after.prd).toBeNull();
     expect(after.runnerJob).toBe(lastDispatch().job);
   });
+
+  const REROUTE_TICKET = {
+    key: "T-1",
+    title: "Export button",
+    userStory: { as: "a board owner", want: "export my board as CSV", soThat: "I can report on it elsewhere" },
+    context: "Boards cannot leave Formic.",
+    description: "Add a button that downloads the board as CSV.",
+    requirements: ["Covered by a test"],
+    acceptanceCriteria: [{ given: "the board", when: "I click export", then: "a CSV downloads" }],
+    fileScope: ["src/components/export"],
+    size: "S",
+    storyPoints: 3,
+    dependsOn: [],
+  };
+
+  it("answers reroute in Actions and moves the request into To Do as that ticket", async () => {
+    await assignClaudeCode("backlog");
+    await installRunner();
+    const epic = await seedEpic();
+
+    await runProductAgent(PROJECT, epic.id, "Let me export my board as CSV");
+    const { job } = lastDispatch();
+
+    await answer(
+      job!,
+      JSON.stringify({ kind: "reroute", reason: "Small enough for one ticket.", ticket: REROUTE_TICKET }),
+    );
+    await completeCliRun(PROJECT, { job: job!, mode: "product", conclusion: "success", url: null });
+
+    const cards = await repository().boardCards(PROJECT);
+    expect(cards.some((c) => c.id === epic.id)).toBe(false);
+    const drafted = cards.find((c) => c.epicId === epic.id && c.kind === "ticket")!;
+    expect(drafted).toMatchObject({
+      title: REROUTE_TICKET.title,
+      fileScope: REROUTE_TICKET.fileScope,
+      status: "ready",
+      rerouteFrom: "backlog",
+      rerouteReason: "Small enough for one ticket.",
+    });
+    expect(drafted.blockedReason).toBeNull();
+  });
+
+  it("sends an answer matching neither shape back as a correction, without moving the card", async () => {
+    await assignClaudeCode("backlog");
+    await installRunner();
+    const epic = await seedEpic();
+
+    await runProductAgent(PROJECT, epic.id, "Let me export my board as CSV");
+    const first = lastDispatch();
+
+    await answer(first.job!, JSON.stringify({ nonsense: true }));
+    await completeCliRun(PROJECT, { job: first.job!, mode: "product", conclusion: "success", url: null });
+
+    const second = lastDispatch();
+    expect(second.job).not.toBe(first.job);
+    expect(second.prompt).toContain("attempt 2 of 2");
+
+    const card = (await repository().boardCards(PROJECT)).find((c) => c.id === epic.id)!;
+    expect(card.status).not.toBe("blocked");
+    expect(card.status).not.toBe("failed");
+    expect((await repository().epicDetail(epic.id))!.runnerJob).toBe(second.job);
+  });
 });
 
 describe("starting a CLI agent", () => {
@@ -460,19 +523,6 @@ describe("an agent out of usage", () => {
     expect(saved.limitedUntil).toBeNull();
   });
 
-  it("can be cleared by hand, for a mark that was stale or set on the wrong agent", async () => {
-    const preset = await assignClaudeCode();
-    await repository().setPresetLimit(preset.id, {
-      until: new Date(Date.now() + 3_600_000),
-      note: "Claude Code hit its usage limit.",
-    });
-
-    await repository().setPresetLimit(preset.id, null);
-
-    const cleared = (await repository().presetForRun(preset.id))!.preset;
-    expect(cleared.limitedUntil).toBeNull();
-    expect(cleared.limitNote).toBeNull();
-  });
 });
 
 describe("taking a CLI agent's work", () => {
@@ -807,6 +857,7 @@ describe("a CLI agent fixing red CI", () => {
     expect(prompt).toContain("Formic-Review: send-back");
     expect(prompt).toContain("whatever the ticket says");
     expect(prompt).toContain("CI is green on this head.");
+    expect(prompt).toContain(PLAN_FIRST_RULE);
   });
 });
 

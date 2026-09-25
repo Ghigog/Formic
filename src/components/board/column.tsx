@@ -170,7 +170,6 @@ export function Column({
           until={agent.selected.limitedUntil!}
           left={limitedFor}
           note={agent.selected.limitNote}
-          onClear={() => agent.onClearLimit(agent.selected!.id)}
         />
       )}
 
@@ -240,14 +239,11 @@ function LimitBanner({
   until,
   left,
   note,
-  onClear,
 }: {
   agentName: string;
   until: string;
   left: number;
   note: string | null;
-  /** For a mark that is stale or was set on the wrong agent. */
-  onClear: () => void;
 }) {
   const at = new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return (
@@ -266,13 +262,6 @@ function LimitBanner({
       >
         {formatCountdown(left)}
       </span>
-      <button
-        type="button"
-        onClick={onClear}
-        className="text-muted hover:text-ink shrink-0 text-[10px] underline decoration-dotted underline-offset-2"
-      >
-        Wrong? Clear
-      </button>
     </div>
   );
 }

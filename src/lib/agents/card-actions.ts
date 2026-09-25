@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { decomposeEpic, launch, runProductAgent } from "./pipeline";
 import { projectFor } from "@/lib/board/project";
-import { applyTransition } from "@/lib/board/service";
+import { applyTransition, retryEpic } from "@/lib/board/service";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { stopEpic } from "@/lib/budget/controller";
 import { runCoderAgent } from "@/lib/coder/pipeline";
@@ -12,7 +12,8 @@ import { MAX_NOTE, addNote } from "@/lib/coder/notes";
 import { answerScope, scopeAsked } from "@/lib/coder/scope-request";
 import { repository } from "@/lib/db";
 import { fileScopeSchema, prdSchema, type BoardCard } from "@/lib/domain/entities";
-import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, type ColumnId } from "@/lib/domain/status";
+import { runningConflict } from "@/lib/domain/queue";
+import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, isStalled, type ColumnId } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { cancelJob, stopTicket } from "@/lib/runner/runner";
 import { vcs } from "@/lib/vcs";
@@ -81,8 +82,9 @@ export type CardAction = z.infer<typeof cardActionSchema>;
 
 /** What each action is for, for the agent deciding what to do. */
 export const CARD_ACTIONS_GUIDE = `What you can do, besides answering:
-- move: move the card to another column, as dragging it would. Moving a ticket into In Progress starts the Coder Agent on it.
-- close: tickets only. Put the ticket in Done without a pull request, with a one-line summary: for work the person did themselves, or work that is not needed after all. Whatever waits on it can go ahead.
+- move: move the card to another column, as dragging it would. Moving a ticket into In Progress starts the Coder Agent on it. A card that stopped (failed or blocked) is resumed by moving it to the column it is already in: that starts its column's agent again.
+- move to done: for a ticket with a pull request, merges it (when CI is green) and the ticket goes to Done only once it has merged. "Merge it" asks for this.
+- close: tickets only. Put the ticket in Done without merging anything, with a one-line summary: for work the person did themselves, or work that is not needed after all. Never use it when the person asks to merge. Whatever waits on it can go ahead.
 - redo: start this column's work on the card again, doing what the person asks now (stopping any agent working it first). In Backlog it rewrites an Epic's PRD, in To Do it breaks an Epic down again, in In Progress it has the Coder Agent do what was asked, in In Review it has the Reviewer Agent review again. A ticket in To Do or Backlog has no work to redo: change the ticket with edit_ticket instead, or move it to In Progress to start it.
 - stop: stop the agent working on the card.
 - edit_ticket: tickets only. Rewrite the ticket's title, description, acceptance criteria or file scope, or add what the person reported doing or finding under Results.
@@ -157,8 +159,19 @@ async function untilIdle(ticketId: string, ms = 90_000): Promise<void> {
 }
 
 async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<string> {
+  // A ticket with a pull request reaches Done by merging it, never by being
+  // closed around it. That holds for one already in Done whose pull request
+  // is still open, too.
+  if (card.kind === "ticket" && to === "done" && card.prNumber) {
+    return mergeTicket(projectId, card, card.prNumber);
+  }
   const from = columnOf(card);
-  if (to === from) return `${card.key} is already in ${COLUMN_LABELS[to]}.`;
+  if (to === from) {
+    // A stalled card sits in the column it stopped in. Moving it back there
+    // is how a person says "go again", so its agent starts over.
+    if (isStalled(card.status) && !card.misplacedIn) return resume(projectId, card);
+    return `${card.key} is already in ${COLUMN_LABELS[to]}.`;
+  }
   if (card.kind === "ticket" && to === "done") {
     return close(projectId, card, "Done, as you said in its chat.");
   }
@@ -194,9 +207,51 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
     });
     return `Could not move ${card.key}: ${result.problem.replace(/\s*Drag it back to [^.]+ to undo this\./, "")}`;
   }
+  if (result.status === "queued") {
+    const blocker = runningConflict(now, await repository().boardCards(projectId));
+    return `Moved ${card.key} to In Progress, queued behind ${blocker?.key ?? "a ticket writing the same files"}. The Coder Agent starts on it once that one is done.`;
+  }
   return `Moved ${card.key} to ${COLUMN_LABELS[to]}.${
     card.kind === "ticket" && to === "in_progress" ? " The Coder Agent is starting on it." : ""
   }`;
+}
+
+/** Starts a stalled card's column agent again, where it stopped. */
+async function resume(projectId: string, card: BoardCard): Promise<string> {
+  if (card.kind === "epic") {
+    const result = await retryEpic(projectId, card.id);
+    return result.ok ? `Starting ${card.key} again where it stopped.` : `Could not restart ${card.key}: ${result.reason}`;
+  }
+  const home = columnFor(card.status, card.stalledIn);
+  if (home !== "in_progress" || card.needsHuman) return redoTicket(projectId, card, undefined);
+
+  if (await working(card)) {
+    await stopTicket(projectId, card.id);
+    await untilIdle(card.id);
+  }
+  // Out of its stall at once, so the board shows it working while the
+  // Coder Agent gets going.
+  const repo = repository();
+  await repo.updateTicket(card.id, { status: "running", stalledIn: null, blockedReason: null, attempts: 0 });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: card.id,
+    kind: "ticket",
+    status: "running",
+    stalledIn: null,
+    stage: card.stage,
+    blockedReason: null,
+  });
+  launch(() => runCoderAgent(projectId, card.id), `coder agent for ${card.key}, from its chat`);
+  return `Starting the Coder Agent on ${card.key} again, from where it left off.`;
+}
+
+async function mergeTicket(projectId: string, card: BoardCard, prNumber: number): Promise<string> {
+  const ticket = await repository().ticketDetail(card.id);
+  if (!ticket) return "This ticket no longer exists.";
+  if (await working(card)) return `An agent is still working on ${card.key}. Stop it first, or wait for it to finish.`;
+  const { mergeByPerson } = await import("@/lib/review/pipeline");
+  return mergeByPerson(projectId, ticket, prNumber);
 }
 
 async function close(projectId: string, card: BoardCard, summary: string): Promise<string> {
@@ -212,7 +267,7 @@ async function close(projectId: string, card: BoardCard, summary: string): Promi
   return `Closed ${card.key}: it is in Done, and anything waiting on it can go ahead.${pull}`;
 }
 
-async function redoTicket(projectId: string, card: BoardCard, instruction: string): Promise<string> {
+async function redoTicket(projectId: string, card: BoardCard, instruction: string | undefined): Promise<string> {
   const home = columnFor(card.status, card.stalledIn);
   if (home === "in_progress") {
     if (card.needsHuman) {
@@ -257,7 +312,7 @@ async function redoTicket(projectId: string, card: BoardCard, instruction: strin
       const { reviewPullRequest } = await import("@/lib/review/pipeline");
       await reviewPullRequest(projectId, prNumber, pull.headSha);
     }, `review for ${card.key}, from its chat`);
-    return `The Reviewer Agent is looking at ${card.key} again, with what you asked. It starts once CI has a result.`;
+    return `The Reviewer Agent is looking at ${card.key} again${instruction ? ", with what you asked" : ""}. It starts once CI has a result.`;
   }
 
   if (home === "done") return `${card.key} is done. Move it back to To Do, then In Progress, to work on it again.`;
@@ -350,8 +405,8 @@ async function widenScope(projectId: string, card: BoardCard, allow: boolean): P
   const done = allow
     ? `Added ${asked.map((p) => `\`${p}\``).join(", ")} to ${card.key}'s scope.`
     : `${card.key} keeps to its scope and starts again.`;
-  // Back in To Do, it goes on the way any ticket does: only once nothing
-  // running overlaps its scope.
+  // Back in To Do, it goes on the way any ticket does: queued behind
+  // anything running in its scope.
   const moved = await move(projectId, (await repository().cardById(card.id)) ?? card, "in_progress");
   return moved.startsWith("Could not")
     ? `${done} It stays in To Do for now. ${moved.replace(/^Could not move [^:]+: /, "")}`
