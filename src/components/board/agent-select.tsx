@@ -24,8 +24,6 @@ export interface ColumnAgentControls {
   onAssign: (presetId: string | null) => Promise<void>;
   /** Opens the editor: an existing preset, or null for a new one. */
   onEdit: (preset: AgentPreset | null) => void;
-  /** Clears a preset's stale or wrongly attributed "out of usage" mark. */
-  onClearLimit: (presetId: string) => Promise<void>;
 }
 
 /**
@@ -38,7 +36,6 @@ export function AgentSelect({
   selected,
   onAssign,
   onEdit,
-  onClearLimit,
 }: ColumnAgentControls & { column: ColumnId }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,15 +65,6 @@ export function AgentSelect({
       await onAssign(presetId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not change the agent.");
-    }
-  }
-
-  async function handleClear(presetId: string) {
-    setError(null);
-    try {
-      await onClearLimit(presetId);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not clear the limit.");
     }
   }
 
@@ -159,7 +147,7 @@ export function AgentSelect({
                 </button>
               </div>
               {p.limitedUntil && (
-                <LimitNote until={p.limitedUntil} onClear={() => void handleClear(p.id)} />
+                <LimitNote until={p.limitedUntil} />
               )}
             </div>
           ))}
@@ -221,26 +209,14 @@ function Pencil() {
   );
 }
 
-/** "Out of usage until 6:30 PM", while it is, with a way to clear a stale mark. */
-function LimitNote({ until, onClear }: { until: string | null; onClear: () => void }) {
+/** "Out of usage until 6:30 PM", while it is. */
+function LimitNote({ until }: { until: string | null }) {
   const left = useCountdown(until);
   if (left === null || !until) return null;
   return (
-    <span className="flex items-center gap-1.5 px-2 pb-1.5 text-[10px]">
-      <span className="text-rust min-w-0 flex-1 truncate">
-        Out of usage until{" "}
-        {new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-      </span>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onClear();
-        }}
-        className="text-muted hover:text-ink shrink-0 underline decoration-dotted underline-offset-2"
-      >
-        Not this one? Clear
-      </button>
+    <span className="text-rust block truncate px-2 pb-1.5 text-[10px]">
+      Out of usage until{" "}
+      {new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
     </span>
   );
 }
