@@ -53,6 +53,10 @@ describe("canUserMove", () => {
     expect(canUserMove("in_review", "todo").ok).toBe(true);
   });
 
+  it("allows sending a reviewed card back to its Coder Agent", () => {
+    expect(canUserMove("in_review", "in_progress").ok).toBe(true);
+  });
+
   // AUD-07: an Epic in To Do, with the Architect Agent already decomposing
   // it, still has to go back to Backlog on a person's say-so — the round
   // trip this rule has to keep allowing.
