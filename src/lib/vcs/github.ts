@@ -16,6 +16,7 @@ import {
   type IssueRef,
   type WorkflowRunRef,
 } from "./types";
+import { CARRY_DELETED, CARRY_DIR } from "@/lib/runner/workflow";
 
 /**
  * GitHub REST over fetch.
@@ -420,6 +421,54 @@ export class GitHubClient implements VcsClient {
       messages: data.commits.map((c) => c.commit.message),
       headSha: data.commits.at(-1)?.sha ?? "",
     };
+  }
+
+  async landCarried(sha: string): Promise<{ sha: string; files: string[] }> {
+    const { data: commit } = await this.request<{
+      message: string;
+      tree: { sha: string };
+      parents: Array<{ sha: string }>;
+      author: { name: string; email: string; date: string };
+    }>("GET", `/git/commits/${sha}`);
+    const { data: tree } = await this.request<{
+      tree: Array<{ path: string; mode: string; type: string; sha: string }>;
+    }>("GET", `/git/trees/${commit.tree.sha}?recursive=1`);
+
+    type Entry = { path: string; mode: string; type: "blob"; sha: string | null };
+    const entries: Entry[] = [];
+    const files: string[] = [];
+    for (const t of tree.tree) {
+      if (t.type !== "blob") continue;
+      if (t.path === CARRY_DELETED) {
+        entries.push({ path: t.path, mode: t.mode, type: "blob", sha: null });
+        const { data: blob } = await this.request<{ content: string }>("GET", `/git/blobs/${t.sha}`);
+        for (const line of Buffer.from(blob.content, "base64").toString("utf8").split("\n")) {
+          const path = line.trim();
+          if (!path) continue;
+          entries.push({ path, mode: "100644", type: "blob", sha: null });
+          files.push(path);
+        }
+      } else if (t.path.startsWith(`${CARRY_DIR}/`)) {
+        const path = t.path.slice(CARRY_DIR.length + 1);
+        // The same blob, moved: nothing to upload again.
+        entries.push({ path: t.path, mode: t.mode, type: "blob", sha: null });
+        entries.push({ path, mode: t.mode, type: "blob", sha: t.sha });
+        files.push(path);
+      }
+    }
+    if (entries.length === 0) return { sha, files };
+
+    const { data: landed } = await this.request<{ sha: string }>("POST", "/git/trees", {
+      base_tree: commit.tree.sha,
+      tree: entries,
+    });
+    const { data: rewritten } = await this.request<{ sha: string }>("POST", "/git/commits", {
+      message: commit.message,
+      tree: landed.sha,
+      parents: commit.parents.map((p) => p.sha),
+      author: commit.author,
+    });
+    return { sha: rewritten.sha, files };
   }
 
   async moveBranch(branch: string, sha: string): Promise<void> {

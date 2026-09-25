@@ -65,6 +65,7 @@ import {
   attemptOfJob,
   cardOfJob,
   isAnswerMode,
+  isCarried,
   jobId,
   parseRunTitle,
   runnerResultKey,
@@ -1010,7 +1011,17 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       return;
     }
 
-    const violations = violationsInDiff(change.files, ticket.fileScope);
+    // Workflow changes come carried, not in place: land them, then judge
+    // the change by where its files will really be.
+    let head = change.headSha;
+    let files = change.files;
+    if (files.some(isCarried)) {
+      const landed = await client.landCarried(head);
+      head = landed.sha;
+      files = [...new Set([...files.filter((f) => !isCarried(f)), ...landed.files])];
+    }
+
+    const violations = violationsInDiff(files, ticket.fileScope);
     if (violations.length > 0) {
       await stop(
         `Out of scope: ${violations.slice(0, 5).join(", ")}` +
@@ -1023,14 +1034,14 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
 
     // Fast-forward only. If the branch moved while the agent worked, this
     // refuses rather than overwrite what moved it.
-    await client.moveBranch(branch, change.headSha);
+    await client.moveBranch(branch, head);
     await cleanUp();
 
     if (result.mode === "fix") {
       const message = change.messages.at(-1) ?? "";
       await recordCliWork(projectId, ticket.id, message);
       const { recordFix } = await import("@/lib/review/pipeline");
-      await recordFix(projectId, ticket, ticket.prNumber!, change.headSha, handoffFromSummary(message));
+      await recordFix(projectId, ticket, ticket.prNumber!, head, handoffFromSummary(message));
       return;
     }
 

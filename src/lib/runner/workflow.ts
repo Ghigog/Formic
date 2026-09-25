@@ -28,6 +28,21 @@ export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 /** Where a planning agent's answer sits on its staging branch. */
 export const ANSWER_PATH = ".formic/answer.md";
 
+/**
+ * GitHub refuses any push from the workflow's own token that changes a file
+ * under .github/workflows. So an agent's changes there travel on the staging
+ * branch under CARRY_DIR (at the same path below it), with the workflow files
+ * it deleted listed in CARRY_DELETED, and Formic puts them back in place with
+ * the owner's token when it takes the work.
+ */
+export const CARRY_DIR = ".formic/carry";
+export const CARRY_DELETED = ".formic/carry-deleted";
+
+/** Whether a path is part of how workflow changes are carried, not a change itself. */
+export function isCarried(path: string): boolean {
+  return path === CARRY_DELETED || path.startsWith(`${CARRY_DIR}/`);
+}
+
 export const CODE_MODES = ["implement", "fix"] as const;
 export const ANSWER_MODES = ["product", "architect", "showcase"] as const;
 export type CodeMode = (typeof CODE_MODES)[number];
@@ -375,6 +390,18 @@ ${indent(REPORTER_SCRIPT, 10)}
           if git diff --cached --quiet && [ "$(git rev-parse HEAD)" = "$FORMIC_START" ]; then
             echo "The agent finished without changing anything."
             exit 1
+          fi
+          # This token may not push workflow changes: carry them for Formic.
+          if [ -n "$(git diff --cached --name-only "$FORMIC_START" -- .github/workflows)" ]; then
+            git reset -q --soft "$FORMIC_START"
+            mkdir -p "${CARRY_DIR}"
+            git diff --cached --no-renames --name-only --diff-filter=d -- .github/workflows | while IFS= read -r f; do
+              mkdir -p "$(dirname "${CARRY_DIR}/$f")"
+              git show ":$f" > "${CARRY_DIR}/$f"
+            done
+            git diff --cached --no-renames --name-only --diff-filter=D -- .github/workflows > "${CARRY_DELETED}"
+            git reset -q "$FORMIC_START" -- .github/workflows
+            git add -f "${CARRY_DIR}" "${CARRY_DELETED}"
           fi
           # No summary written: the agent's last words are the next best thing.
           if [ ! -s "$FORMIC_SUMMARY" ] && [ -s "$FORMIC_STDOUT" ]; then
