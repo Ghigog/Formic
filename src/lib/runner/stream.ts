@@ -289,5 +289,29 @@ export function readStream(lines: string[]): StreamItem[] {
     }
   }
   for (const item of out) if (item.kind === "thought") item.text = item.text.trim();
-  return out.filter((item) => item.kind !== "thought" || item.text);
+  return out
+    .filter((item) => item.kind !== "thought" || item.text)
+    .flatMap((item) => {
+      if (item.kind !== "thought" || item.thought !== "text") return [item];
+      const steps = checklistPlan(item.text);
+      return steps ? [item, { kind: "plan" as const, steps }] : [item];
+    });
+}
+
+/**
+ * A plan written as a checklist in what the agent says, for an agent with no
+ * todo tool: "- [ ] step", "- [x] step". The first step not done is in hand.
+ */
+export function checklistPlan(text: string): PlanStep[] | null {
+  let current = false;
+  const steps = text.split("\n").flatMap((line): PlanStep[] => {
+    const m = /^\s*(?:[-*]|\d+[.)])\s+\[([ xX~])\]\s+(.+)$/.exec(line);
+    if (!m) return [];
+    const step = short((m[2] ?? "").trim(), 300);
+    if ((m[1] ?? "").toLowerCase() === "x") return [{ step, status: "done" }];
+    const status = current ? "pending" : "in_progress";
+    current = true;
+    return [{ step, status }];
+  });
+  return steps.length ? steps : null;
 }
