@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import {
   applyPrd,
+  applyReroute,
   applyShowcase,
   applyTickets,
   existingTicketsFor,
@@ -42,6 +43,7 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  toDraftTicket,
 } from "@/lib/agents/decomposition";
 import { productOutput } from "@/lib/agents/openai-agents";
 import { extractJson } from "@/lib/llm/openai-compat";
@@ -684,7 +686,17 @@ async function completeCliAnswer(
   let checked: Checked<unknown>;
   if (result.mode === "product") {
     const product = checkProduct(answer);
-    if (product.ok) return applyPrd(projectId, epicId, product.value.prd);
+    if (product.ok) {
+      const value = product.value;
+      return "kind" in value
+        ? applyReroute(projectId, {
+            from: "backlog",
+            epicId,
+            reason: value.reason,
+            ticket: toDraftTicket(value.ticket),
+          })
+        : applyPrd(projectId, epicId, value.prd);
+    }
     checked = product;
   } else if (result.mode === "architect") {
     const tickets = checkTickets(answer);

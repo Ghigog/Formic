@@ -132,10 +132,22 @@ async function askForJson<T>(
   return { ok: false, error: lastProblem, usage: total };
 }
 
-export const productOutput = z.object({
+const productPrdAnswer = z.object({
   title: z.string().describe("A short imperative Epic title, under 80 characters."),
   prd: prdSchema,
 });
+
+const productRerouteAnswer = z.object({
+  kind: z.literal("reroute"),
+  reason: z
+    .string()
+    .min(1)
+    .describe("Why this belongs in To Do as one ticket instead of an Epic with a PRD."),
+  ticket: ticketSpecSchema,
+});
+
+/** The PRD shape, unchanged so an existing answer still parses, or a reroute to To Do. */
+export const productOutput = z.union([productRerouteAnswer, productPrdAnswer]);
 
 export class OpenAiProductAgent implements ProductAgent {
   constructor(private readonly config: AgentConfig) {}
@@ -174,6 +186,13 @@ export class OpenAiProductAgent implements ProductAgent {
 
     if (!result.ok) {
       return failure(r.model, `The Product Agent returned a malformed PRD: ${result.error}`, false, result.usage);
+    }
+    if ("kind" in result.value) {
+      return {
+        ok: true,
+        value: { kind: "reroute", reason: result.value.reason, ticket: toDraftTicket(result.value.ticket) },
+        usage: result.usage,
+      };
     }
     return { ok: true, value: { kind: "prd", ...result.value }, usage: result.usage };
   }
