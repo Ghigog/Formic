@@ -96,3 +96,31 @@ jobs:
           name: e2e-results
           path: e2e/.results
           retention-days: 7
+
+  # Production deploys only once build and e2e pass on main. vercel.json turns
+  # off Vercel's own Git deploy for main, so this is the only path to prod.
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, e2e]
+    runs-on: ubuntu-latest
+    # One deploy at a time, in merge order; never cancel one mid-flight.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the Vercel secrets are set
+        run: |
+          for v in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!v}" ]; then
+              echo "::error::$v secret is not set, so main can't deploy."
+              exit 1
+            fi
+          done
+      # Builds on Vercel with the project's own env vars, as the Git
+      # integration did, and carries this commit's SHA for /api/health.
+      - run: npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
