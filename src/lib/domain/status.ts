@@ -159,6 +159,11 @@ export function canUserMove(from: ColumnId, to: ColumnId): MoveRejection {
   return { ok: true };
 }
 
+/** Where a human may drag a card from `from`, for messages that explain a rejection. */
+export function allowedUserMoves(from: ColumnId): readonly ColumnId[] {
+  return ALLOWED_USER_MOVES[from];
+}
+
 /** The status a card lands in when a human drops it into a column. */
 export function statusForUserDrop(
   to: ColumnId,
