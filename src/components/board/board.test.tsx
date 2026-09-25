@@ -49,18 +49,26 @@ describe("Board, on a wide screen", () => {
     }
   });
 
-  it("starts new requests from the Backlog, and nowhere else on a wide screen", async () => {
+  it("starts new requests from Backlog and To Do, and nowhere else on a wide screen", async () => {
     const onNewItem = vi.fn();
     renderBoard([makeCard({ status: "draft" })], { onNewItem });
 
     const buttons = screen.getAllByRole("button", { name: "New request" });
-    expect(buttons).toHaveLength(1);
-    expect(
-      screen.getByRole("region", { name: "Backlog" }).contains(buttons[0]!),
-    ).toBe(true);
+    expect(buttons).toHaveLength(2);
 
-    await userEvent.setup().click(buttons[0]!);
-    expect(onNewItem).toHaveBeenCalledOnce();
+    const backlog = screen.getByRole("region", { name: "Backlog" });
+    const todo = screen.getByRole("region", { name: "To Do" });
+    const backlogButton = buttons.find((b) => backlog.contains(b));
+    const todoButton = buttons.find((b) => todo.contains(b));
+    expect(backlogButton).toBeDefined();
+    expect(todoButton).toBeDefined();
+
+    const user = userEvent.setup();
+    await user.click(backlogButton!);
+    expect(onNewItem).toHaveBeenCalledWith("backlog");
+
+    await user.click(todoButton!);
+    expect(onNewItem).toHaveBeenCalledWith("todo");
   });
 
   it("sends a card on with its arrow: one typed transition", async () => {
@@ -110,7 +118,7 @@ describe("Board, on a wide screen", () => {
     expect(ctas).toHaveLength(1);
 
     await userEvent.setup().click(ctas[0]!);
-    expect(onNewItem).toHaveBeenCalledOnce();
+    expect(onNewItem).toHaveBeenCalledWith("backlog");
   });
 });
 

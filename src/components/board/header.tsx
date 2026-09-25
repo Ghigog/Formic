@@ -7,6 +7,7 @@ import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AccountMenu, type Account } from "./account-menu";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
 import { ColonyHeaderStats, ColonyMobileStats } from "@/components/colony/header-stats";
+import type { CaptureColumn } from "./new-item-dialog";
 
 function LogoMark({ size }: { size: 26 | 28 }) {
   return (
@@ -64,8 +65,8 @@ export function BoardHeader({
   inSync: boolean;
   /** Relative time since the last fetch, e.g. "2m". */
   syncedLabel?: string;
-  /** The mobile app bar's CTA. On a wide screen, Backlog has its own. */
-  onNewItem: () => void;
+  /** The mobile app bar's CTA. Always opens Backlog's dialog; on a wide screen, Backlog has its own. */
+  onNewItem: (column: CaptureColumn) => void;
   account?: Account;
   /** The board's assistant. Omitted, the header has no ask box. */
   assistant?: AssistantControls;
@@ -170,7 +171,7 @@ export function BoardHeader({
         {assistant && isMobile && <AskButton a={assistant} repoName={repo ?? repoFullName} />}
         <button
           type="button"
-          onClick={onNewItem}
+          onClick={() => onNewItem("backlog")}
           aria-label="New backlog item"
           className="bg-terracotta-cta inline-flex size-11 items-center justify-center rounded-[10px] text-white"
         >

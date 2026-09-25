@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { Board } from "./board";
-import { NewItemDialog } from "./new-item-dialog";
+import { NewItemDialog, type CaptureColumn } from "./new-item-dialog";
 import { EpicDrawer } from "./epic-drawer";
 import { TicketDrawer, type SubscribeToEvents } from "./ticket-drawer";
 import type { FormicEvent } from "@/lib/domain/events";
@@ -61,12 +61,12 @@ export function BoardShell({
     listeners.current.add(listener);
     return () => listeners.current.delete(listener);
   }, []);
-  const { cards, extras, stats, prdStreams, connection, transition, createEpic } =
+  const { cards, extras, stats, prdStreams, connection, transition, createEpic, createTicket } =
     useBoard(initialCards, initialStats, (event, seq) => {
       if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
       for (const listener of listeners.current) listener(event, seq);
     });
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialog, setDialog] = useState<{ column: CaptureColumn } | null>(null);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
   /** The agent editor: which column it was opened from, and what it edits. */
@@ -107,7 +107,7 @@ export function BoardShell({
           card.kind === "epic" ? setOpenEpicId(card.id) : setOpenTicketId(card.id)
         }
         onShowcase={(epic) => setOpenEpicId(epic.id)}
-        onNewItem={() => setDialogOpen(true)}
+        onNewItem={(column) => setDialog({ column })}
         onTransition={transition}
         account={account}
         assistant={{
@@ -145,9 +145,14 @@ export function BoardShell({
       )}
 
       <NewItemDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onSubmit={createEpic}
+        open={dialog !== null}
+        column={dialog?.column ?? "backlog"}
+        onClose={() => setDialog(null)}
+        onSubmit={(rawRequest, requestId) =>
+          dialog?.column === "todo"
+            ? createTicket(rawRequest, requestId)
+            : createEpic(rawRequest, requestId)
+        }
       />
 
       <EpicDrawer
