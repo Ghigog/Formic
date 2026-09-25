@@ -163,16 +163,32 @@ export function useBoard(
   );
 
   const createEpic = useCallback(
-    async (rawRequest: string) => {
+    async (rawRequest: string, requestId?: string) => {
       const res = await fetch("/api/epics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawRequest }),
+        body: JSON.stringify({ rawRequest, requestId }),
       });
       await refetch();
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(body?.error ?? "Could not create that backlog item.");
+      }
+    },
+    [refetch],
+  );
+
+  const createTicket = useCallback(
+    async (rawRequest: string, requestId?: string) => {
+      const res = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawRequest, requestId }),
+      });
+      await refetch();
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Could not create that ticket.");
       }
     },
     [refetch],
@@ -186,6 +202,7 @@ export function useBoard(
     connection,
     transition,
     createEpic,
+    createTicket,
     refetch,
   };
 }

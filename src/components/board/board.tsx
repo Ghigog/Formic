@@ -29,6 +29,7 @@ import type { CardTransition, TransitionResult } from "@/lib/domain/transitions"
 import { byPosition } from "@/lib/ordering";
 import { placeDrop } from "./placement";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import type { CaptureColumn } from "./new-item-dialog";
 
 /** The next column a card can advance to, for the mobile action. */
 const NEXT_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
@@ -46,8 +47,8 @@ export interface BoardProps {
   syncedLabel?: string;
   onOpenCard: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
-  /** Opens the capture dialog: Backlog's "New request" and the mobile CTA. */
-  onNewItem: () => void;
+  /** Opens the capture dialog: a column's "New request" button, and the mobile CTA. */
+  onNewItem: (column: CaptureColumn) => void;
   /**
    * The single trigger. Returns the server's verdict; a rejection rolls the
    * card back to where it came from.
@@ -267,7 +268,11 @@ export function Board({
           onClearLimit: agents.onClearLimit,
         }
       }
-      composer={col === "backlog" ? <NewRequestButton onClick={onNewItem} /> : undefined}
+      composer={
+        col === "backlog" || col === "todo" ? (
+          <NewRequestButton onClick={() => onNewItem(col)} />
+        ) : undefined
+      }
       onOpen={onOpenCard}
       onShowcase={onShowcase}
     />
