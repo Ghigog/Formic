@@ -24,7 +24,24 @@ fi
 # Migrations need a direct connection: Supabase's pooled URLs (pgbouncer,
 # transaction mode) don't support the advisory locks `migrate deploy` needs.
 if [ -n "${POSTGRES_URL_NON_POOLING:-}" ]; then
-  DATABASE_URL="$POSTGRES_URL_NON_POOLING" npx prisma migrate deploy
-else
+  export DATABASE_URL="$POSTGRES_URL_NON_POOLING"
+fi
+
+# A database first built with `db push` has the schema but no migration
+# history, and `migrate deploy` refuses it (P3005). Its schema is exactly
+# the baseline migration, so mark that one applied, once, and go on. From
+# then on the history exists and this never runs again.
+BASELINE=20260925000000_init
+set +e
+out=$(npx prisma migrate deploy 2>&1)
+status=$?
+set -e
+echo "$out"
+if [ $status -ne 0 ]; then
+  if ! grep -q "P3005" <<<"$out"; then
+    exit $status
+  fi
+  echo "Database predates migrations: marking $BASELINE as applied."
+  npx prisma migrate resolve --applied "$BASELINE"
   npx prisma migrate deploy
 fi
