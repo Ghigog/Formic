@@ -18,8 +18,13 @@
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
     "db:seed": "tsx prisma/seed.ts",
     "db:local": "./scripts/local-db.sh",
+    "db:backup": "./scripts/backup.sh",
+    "db:restore": "./scripts/restore.sh",
     "serve": "./scripts/serve.sh"
   },
   "dependencies": {
