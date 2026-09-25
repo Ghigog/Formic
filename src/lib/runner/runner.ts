@@ -36,6 +36,7 @@ import {
   withProductConventions,
 } from "@/lib/agents/prompts";
 import type { DraftTicket, ReviewTask } from "@/lib/agents/ports";
+import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { askForScope } from "@/lib/coder/scope-request";
 import {
@@ -61,6 +62,7 @@ import { STAGING_PREFIX, VcsError, mergeTarget, vcs, type VcsClient } from "@/li
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ANSWER_PATH,
+  ATTACHMENTS_DIR_VAR,
   RUNNER_SETUP_BRANCH,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_FILE,
@@ -472,6 +474,7 @@ async function answerPrompt(
   if (!epic) return null;
 
   if (mode === "product") {
+    const attachments = attachmentsPrompt(await repo.attachmentsFor({ epicId }));
     return [
       withProductConventions(agent.brief ?? PRODUCT_BRIEF),
       "",
@@ -481,6 +484,7 @@ async function answerPrompt(
       "Raw feature request:",
       "",
       withEpicNotes(epic.rawRequest, await epicNoteTexts(projectId, epicId)),
+      ...(attachments ? ["", attachments] : []),
     ].join("\n");
   }
 
@@ -489,6 +493,7 @@ async function answerPrompt(
     if (!prd.success) return null;
     const instructions = await epicNoteTexts(projectId, epicId);
     const existing = instructions.length ? await existingTicketsFor(epicId) : [];
+    const attachments = attachmentsPrompt(await repo.attachmentsFor({ epicId }));
     return [
       withPlanningConventions(agent.brief ?? ARCHITECT_BRIEF),
       "",
@@ -503,6 +508,7 @@ async function answerPrompt(
       "Existing top-level directories in the repository:",
       (await tree()).slice(0, 200).join("\n") || "(empty repository)",
       decompositionGuidance(existing, instructions),
+      ...(attachments ? ["", attachments] : []),
     ].join("\n");
   }
 
@@ -1116,6 +1122,57 @@ export function reportAllowed(job: string, since: string, token: string): boolea
   const expected = Buffer.from(reportToken(job, Number(since)));
   const given = Buffer.from(token);
   return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/** How long a signed attachment URL stays good: past the workflow's own 60-minute timeout, so a job that is slow to start never finds it expired. */
+const ATTACHMENT_URL_TTL_MS = 90 * 60 * 1000;
+
+function attachmentToken(id: string, expires: number): string {
+  return createHmac("sha256", signingSecret()).update(`attachment:${id}:${expires}`).digest("hex");
+}
+
+/**
+ * A time-limited URL for one attachment's bytes, for a CLI agent with no
+ * Formic session to curl into its own workspace: the same signed-token
+ * machinery as reportUrl, over the attachment id and its expiry instead of a
+ * job. Null with no public origin to build one from, same as reportUrl.
+ */
+export function signedAttachmentUrl(id: string): string | null {
+  const origin = formicOrigin();
+  if (!origin) return null;
+  const expires = Date.now() + ATTACHMENT_URL_TTL_MS;
+  const q = new URLSearchParams({ expires: String(expires), token: attachmentToken(id, expires) });
+  return `${origin}/api/attachments/${id}?${q.toString()}`;
+}
+
+/** Whether a signed attachment URL's token is genuine and has not expired. */
+export function attachmentUrlAllowed(id: string, expires: string, token: string): boolean {
+  if (!/^\d+$/.test(expires) || Date.now() > Number(expires)) return false;
+  const expected = Buffer.from(attachmentToken(id, Number(expires)));
+  const given = Buffer.from(token);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/**
+ * The prompt text for an epic or ticket's attachments: one line per
+ * attachment with its filename, kind and a signed URL, since a CLI agent
+ * running in someone else's GitHub Actions cannot reach Formic's database to
+ * read the bytes directly the way an API agent does. Null with nothing to
+ * say, whether there are no attachments or no public origin to sign a URL
+ * from.
+ */
+export function attachmentsPrompt(attachments: AttachmentSummary[]): string | null {
+  const lines = attachments
+    .map((a) => {
+      const url = signedAttachmentUrl(a.id);
+      return url ? `- ${a.filename} (${a.kind}): ${url}` : null;
+    })
+    .filter((line): line is string => line !== null);
+  if (lines.length === 0) return null;
+  return [
+    `Attachments. Download each with curl into the directory named by the ${ATTACHMENTS_DIR_VAR} environment variable, and read them from there. Do not commit that directory.`,
+    ...lines,
+  ].join("\n");
 }
 
 /** The most a batch publishes; a flood of output keeps its latest part. */

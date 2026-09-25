@@ -21,12 +21,20 @@ export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
 /** Bumped whenever the workflow changes, so old copies get replaced. */
-export const RUNNER_VERSION = "formic-runner: v5";
+export const RUNNER_VERSION = "formic-runner: v6";
 /** Where the setup pull request comes from. */
 export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 
 /** Where a planning agent's answer sits on its staging branch. */
 export const ANSWER_PATH = ".formic/answer.md";
+
+/**
+ * The environment variable that names the directory a job's downloaded
+ * attachments live in: a CLI agent with no Formic session fetches them with
+ * curl from the signed URLs in its prompt (see attachmentsPrompt in
+ * ./runner) and reads them from here, but never commits it.
+ */
+export const ATTACHMENTS_DIR_VAR = "FORMIC_ATTACHMENTS";
 
 /**
  * GitHub refuses any push from the workflow's own token that changes a file
@@ -255,6 +263,11 @@ jobs:
       - name: Remember where the agent started
         run: echo "FORMIC_START=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
+      # Only matters when the job actually has attachments; harmless
+      # otherwise, and nothing later in the job depends on it.
+      - name: Make room for downloaded attachments
+        run: mkdir -p "$RUNNER_TEMP/formic-attachments"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -310,6 +323,7 @@ jobs:
           FORMIC_STREAM: \${{ runner.temp }}/formic-stream.jsonl
           FORMIC_NOTES: \${{ runner.temp }}/formic-notes.md
           FORMIC_DONE: \${{ runner.temp }}/formic-done
+          ${ATTACHMENTS_DIR_VAR}: \${{ runner.temp }}/formic-attachments
           CLAUDE_CODE_OAUTH_TOKEN: \${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
           CODEX_CREDENTIAL: \${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}
           GEMINI_API_KEY: \${{ inputs.cli == 'gemini' && startsWith(inputs.secret, 'FORMIC_GEMINI_API_KEY') && secrets[inputs.secret] || '' }}

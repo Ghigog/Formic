@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   STOPPED_BY_PERSON,
+  attachmentUrlAllowed,
   cliPrompt,
   collectCliRuns,
   completeCliRun,
@@ -9,6 +10,7 @@ import {
   reportAllowed,
   reviewVerdictOf,
   secretNameFor,
+  signedAttachmentUrl,
   stopTicket,
 } from "./runner";
 import { addNote } from "@/lib/coder/notes";
@@ -16,6 +18,7 @@ import {
   ANSWER_PATH,
   CARRY_DELETED,
   RUNNER_SETUP_BRANCH,
+  RUNNER_VERSION,
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
   parseRunTitle,
@@ -216,6 +219,29 @@ describe("a CLI agent planning an Epic", () => {
     expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${inputs.job}`)).toBe(false);
   });
 
+  it("gives a CLI agent a signed URL for each attachment, with its filename and kind", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    await assignClaudeCode("backlog");
+    await installRunner();
+    const epic = await seedEpic();
+    const attachment = await repository().createAttachment({
+      projectId: PROJECT,
+      epicId: epic.id,
+      filename: "mockup.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+
+    await runProductAgent(PROJECT, epic.id, "Let me export my board as CSV");
+
+    const { prompt } = lastDispatch();
+    expect(prompt).toContain("mockup.png (image):");
+    expect(prompt).toContain(`https://formic.example/api/attachments/${attachment.id}?`);
+    expect(prompt).toContain("FORMIC_ATTACHMENTS");
+  });
+
   it("keeps a stalled Epic stalled, with why, across a reload", async () => {
     await assignClaudeCode("backlog");
     await installRunner();
@@ -264,6 +290,28 @@ describe("a CLI agent planning an Epic", () => {
     const tickets = await repository().ticketsForEpic(epic.id);
     expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2"]);
     expect((await repository().epicDetail(epic.id))!.runnerJob).toBeNull();
+  });
+
+  it("gives a To Do CLI agent the same signed attachment URLs", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    await assignClaudeCode("todo");
+    await installRunner();
+    const epic = await seedEpic(PRD);
+    const attachment = await repository().createAttachment({
+      projectId: PROJECT,
+      epicId: epic.id,
+      filename: "notes.txt",
+      mimeType: "text/plain",
+      kind: "file",
+      size: 5,
+      bytes: new Uint8Array([1, 2, 3, 4, 5]),
+    });
+
+    await runArchitectAgent(PROJECT, epic.id, "Export", PRD, ["src"]);
+
+    const { prompt } = lastDispatch();
+    expect(prompt).toContain("notes.txt (file):");
+    expect(prompt).toContain(`https://formic.example/api/attachments/${attachment.id}?`);
   });
 
   it("gives up after the last attempt instead of asking forever", async () => {
@@ -887,6 +935,12 @@ describe("the runner workflow", () => {
     expect(yaml).toContain(`git add -f "${ANSWER_PATH}"`);
   });
 
+  it("makes room for downloaded attachments and names it for the agent", () => {
+    const yaml = runnerWorkflow();
+    expect(yaml).toContain('mkdir -p "$RUNNER_TEMP/formic-attachments"');
+    expect(yaml).toContain("FORMIC_ATTACHMENTS: ${{ runner.temp }}/formic-attachments");
+  });
+
   it("reports back as a runner signal, not as CI", () => {
     // As GitHub sends it: a run's name is its run-name, not the workflow's.
     const title = runTitle("implement", "T-1", "tkt--abcd1234");
@@ -913,6 +967,64 @@ describe("the runner workflow", () => {
         key: "runner:tkt--abcd1234:7",
       },
     ]);
+  });
+
+  it("reopens the setup pull request when an older runner version is installed", async () => {
+    await assignClaudeCode();
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await new MockVcsClient("acme/widgets").commitFile(
+      base,
+      RUNNER_WORKFLOW_PATH,
+      "# formic-runner: v1\nname: Formic agent\n",
+      "install an old copy",
+    );
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.blockedReason).toContain("Merge the setup pull request");
+    const runner = MockVcsClient.runner();
+    expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(RUNNER_VERSION);
+  });
+});
+
+describe("signed attachment URLs for a CLI agent with no Formic session", () => {
+  it("signs a URL that verifies, and refuses another attachment's id or a wrong token", () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    const url = signedAttachmentUrl("att_1")!;
+    const parsed = new URL(url);
+    expect(parsed.origin + parsed.pathname).toBe("https://formic.example/api/attachments/att_1");
+    const expires = parsed.searchParams.get("expires")!;
+    const token = parsed.searchParams.get("token")!;
+
+    expect(attachmentUrlAllowed("att_1", expires, token)).toBe(true);
+    expect(attachmentUrlAllowed("att_2", expires, token)).toBe(false);
+    expect(attachmentUrlAllowed("att_1", expires, "0".repeat(64))).toBe(false);
+  });
+
+  it("refuses a URL past its expiry", () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const url = signedAttachmentUrl("att_1")!;
+      const parsed = new URL(url);
+      const expires = parsed.searchParams.get("expires")!;
+      const token = parsed.searchParams.get("token")!;
+      expect(attachmentUrlAllowed("att_1", expires, token)).toBe(true);
+
+      vi.setSystemTime(Number(expires) + 1);
+      expect(attachmentUrlAllowed("att_1", expires, token)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("has no URL to sign without a public origin", () => {
+    vi.stubEnv("FORMIC_URL", "");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
+    expect(signedAttachmentUrl("att_1")).toBeNull();
   });
 });
 
