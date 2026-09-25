@@ -977,7 +977,8 @@ export class MemoryRepository implements Repository {
     const out: ColumnAgents = {};
     for (const [k, v] of store().columnAgents) {
       const [p, column] = k.split(":");
-      if (p === projectId) out[column as ColumnId] = v;
+      // The assistant's preset shares this map but is not a column.
+      if (p === projectId && column !== "assistant") out[column as ColumnId] = v;
     }
     return out;
   }
