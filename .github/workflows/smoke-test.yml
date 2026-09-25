@@ -19,10 +19,12 @@ jobs:
           fi
           base="${PROD_URL%/}"
 
-          # Checking right after a merge would test the previous deploy, so
-          # first wait until /api/health reports this commit. Vercel builds
-          # take about a minute; give it six.
-          deadline=$((SECONDS + 360))
+          # Checking right after a push would test the previous deploy, so
+          # first wait until /api/health reports this commit. Deploy is now
+          # gated behind CI (build + e2e) rather than firing on push, so the
+          # commit can take a while longer than a bare Vercel build to go
+          # live; give it fifteen minutes.
+          deadline=$((SECONDS + 900))
           while :; do
             status=$(curl -s -o health.json -w '%{http_code}' --max-time 15 "$base/api/health" || echo 000)
             live=$(jq -r '.commit // "unknown"' health.json 2>/dev/null || echo unknown)
