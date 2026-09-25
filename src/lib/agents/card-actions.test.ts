@@ -108,3 +108,40 @@ describe("moving a ticket with a pull request to Done", () => {
     expect((await new MockVcsClient("acme/widgets").pullRequest(prNumber)).merged).toBe(true);
   });
 });
+
+describe("moving a stopped card to the column it stopped in", () => {
+  it("starts the Coder Agent again on a ticket that failed in In Progress", async () => {
+    const { ticket } = await seedInReview();
+    await repository().updateTicket(ticket.id, {
+      status: "failed",
+      stalledIn: "in_progress",
+      blockedReason: "Claude Code hit its usage limit.",
+    });
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "move", to: "in_progress" });
+
+    expect(said).toContain("Starting the Coder Agent on T-1 again");
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).not.toBe("failed");
+    expect(after.blockedReason).toBeNull();
+  });
+
+  it("starts the Product Agent again on an Epic that failed in Backlog", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "An epic", rawRequest: "Do a thing", position: 1 });
+    await repo.move({ cardId: epic.id, kind: "epic", status: "failed", stalledIn: "backlog", position: 1 });
+
+    const said = await applyCardAction(PROJECT, "epic", epic.id, { type: "move", to: "backlog" });
+
+    expect(said).toContain("again");
+    expect((await repo.cardById(epic.id))!.status).toBe("draft");
+  });
+
+  it("still says a working card is already there", async () => {
+    const { ticket } = await seedInReview();
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "move", to: "in_review" });
+
+    expect(said).toBe("T-1 is already in In Review.");
+  });
+});
