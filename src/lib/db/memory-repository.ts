@@ -3,6 +3,9 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 
 import type {
+  AttachmentContent,
+  AttachmentRef,
+  CreateAttachmentInput,
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
@@ -10,6 +13,7 @@ import type {
   OwnerScope,
   PresetRecord,
   ProjectSummary,
+  Reroute,
   UserRecord,
   UserSecrets,
   Repository,
@@ -18,16 +22,20 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
+  CardChatMessage,
 } from "./repository";
 import type {
   AgentPreset,
   AgentRunStatus,
+  AttachmentSummary,
   BoardCard,
   ColumnAgents,
+  PlanStep,
 } from "@/lib/domain/entities";
-import { type ColumnId, columnFor } from "@/lib/domain/status";
+import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
+import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 /**
  * Runs the whole board with no database. Used when DATABASE_URL is unset so a
@@ -50,7 +58,30 @@ interface TicketExtras {
   attempts: number;
   summary: string | null;
   runnerJob: string | null;
+  /** The preset that job was dispatched with. */
+  runnerAgent?: string | null;
+  /** When that job was sent. */
+  runnerJobAt?: Date | null;
   issueNumber: number | null;
+  plan?: PlanStep[];
+  handoff?: string[];
+  reviewedSha?: string | null;
+  scopeRequest?: string[];
+}
+
+/** A stored file, kept alongside its bytes until fetched or claimed. */
+interface AttachmentRow {
+  id: string;
+  projectId: string;
+  epicId: string | null;
+  ticketId: string | null;
+  requestId: string | null;
+  filename: string;
+  mimeType: string;
+  kind: AttachmentSummary["kind"];
+  size: number;
+  bytes: Uint8Array;
+  createdAt: Date;
 }
 
 interface Store {
@@ -62,10 +93,15 @@ interface Store {
   cards: Map<string, BoardCard>;
   ticketExtras: Map<string, TicketExtras>;
   prds: Map<string, unknown>;
+  prdTimes: Map<string, Date>;
   rawRequests: Map<string, string>;
   showcases: Map<string, string>;
   epicJobs: Map<string, string>;
+  epicJobAgents: Map<string, string | null>;
+  epicJobTimes: Map<string, Date>;
   epicIssues: Map<string, number>;
+  /** The highest Epic number each project has used, deleted ones included. */
+  epicNumbers: Map<string, number>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -73,17 +109,21 @@ interface Store {
     payload: unknown;
     at: Date;
   }>;
-  runs: Map<string, RunRecord & { status: AgentRunStatus; startedAt: Date }>;
+  runs: Map<
+    string,
+    RunRecord & { status: AgentRunStatus; startedAt: Date; costCents: number; error: string | null }
+  >;
   deliveries: Set<string>;
   presets: Map<string, AgentPreset & { apiKeyCipher: string | null }>;
   users: Map<string, UserRecord>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
   assistant: AssistantMessage[];
+  cardChat: CardChatMessage[];
+  attachments: Map<string, AttachmentRow>;
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicMemoryStore: Store | undefined;
 }
 
@@ -94,6 +134,11 @@ function store(): Store {
     existing.presets ??= new Map();
     existing.columnAgents ??= new Map();
     existing.users ??= new Map();
+    existing.epicNumbers ??= new Map();
+    existing.prdTimes ??= new Map();
+    existing.epicJobTimes ??= new Map();
+    existing.epicJobAgents ??= new Map();
+    existing.attachments ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -110,10 +155,14 @@ function store(): Store {
     cards: new Map(),
     ticketExtras: new Map(),
     prds: new Map(),
+    prdTimes: new Map(),
     rawRequests: new Map(),
     showcases: new Map(),
     epicJobs: new Map(),
+    epicJobAgents: new Map(),
+    epicJobTimes: new Map(),
     epicIssues: new Map(),
+    epicNumbers: new Map(),
     events: [],
     runs: new Map(),
     deliveries: new Set(),
@@ -121,6 +170,8 @@ function store(): Store {
     users: new Map(),
     columnAgents: new Map(),
     assistant: [],
+    cardChat: [],
+    attachments: new Map(),
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -132,11 +183,36 @@ function projectOf(s: Store, card: BoardCard): string {
   return (epicId && s.epicProject.get(epicId)) || s.project.id;
 }
 
-export function seedMemory(cards: BoardCard[]): void {
+/** The project a run belongs to, by its Epic or, failing that, its ticket's. */
+function projectOfRun(s: Store, run: { epicId: string | null; ticketId: string | null }): string | null {
+  const epicId = run.epicId ?? (run.ticketId ? s.cards.get(run.ticketId)?.epicId : undefined);
+  return (epicId && s.epicProject.get(epicId)) || null;
+}
+
+export function seedMemory(
+  cards: BoardCard[],
+  /** What a demo ticket says and the plan its agent is on, by card id. */
+  details: Record<string, { description: string; acceptanceCriteria: string[]; plan?: PlanStep[] }> = {},
+): void {
   const s = store();
   if (s.cards.size > 0) return;
   for (const card of cards) s.cards.set(card.id, { ...card });
+  for (const [cardId, d] of Object.entries(details)) {
+    s.ticketExtras.set(cardId, {
+      description: d.description,
+      acceptanceCriteria: d.acceptanceCriteria,
+      plan: d.plan,
+      branchName: null,
+      attempts: 0,
+      summary: null,
+      runnerJob: null,
+      issueNumber: null,
+    });
+  }
 }
+
+/** Cards whose agent was set from a run or a runner job, to clear when it ends. */
+const fromJob = new WeakSet<BoardCard>();
 
 export class MemoryRepository implements Repository {
   async defaultProject(): Promise<ProjectSummary> {
@@ -175,6 +251,7 @@ export class MemoryRepository implements Repository {
       e2bKeyHint: null,
       anthropicKeyCipher: null,
       anthropicKeyHint: null,
+      termsAcceptedVersion: null,
     };
     s.users.set(user.id, user);
     return user;
@@ -187,6 +264,13 @@ export class MemoryRepository implements Repository {
     return user;
   }
 
+  async acceptTerms(userId: string, version: string): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    user.termsAcceptedVersion = version;
+    return user;
+  }
+
   async countUsers(): Promise<number> {
     return store().users.size;
   }
@@ -195,6 +279,32 @@ export class MemoryRepository implements Repository {
     const s = store();
     for (const p of s.projects.values()) if (p.ownerId === null) p.ownerId = userId;
     for (const p of s.presets.values()) if (p.ownerId === null) p.ownerId = userId;
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    const s = store();
+    const projectIds = [...s.projects.values()]
+      .filter((p) => p.ownerId === userId)
+      .map((p) => p.id);
+    for (const projectId of projectIds) {
+      for (const card of [...s.cards.values()]) {
+        if (card.kind === "epic" && projectOf(s, card) === projectId) {
+          await this.deleteEpic(card.id);
+        }
+      }
+      for (const key of [...s.columnAgents.keys()]) {
+        if (key.startsWith(`${projectId}:`)) s.columnAgents.delete(key);
+      }
+      s.events = s.events.filter((e) => e.projectId !== projectId);
+      s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
+      s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
+      s.epicNumbers.delete(projectId);
+      s.projects.delete(projectId);
+    }
+    for (const preset of [...s.presets.values()]) {
+      if (preset.ownerId === userId) await this.deletePreset(preset.id);
+    }
+    s.users.delete(userId);
   }
 
   async projectById(projectId: string): Promise<ProjectSummary | null> {
@@ -235,20 +345,65 @@ export class MemoryRepository implements Repository {
     const cards = [...s.cards.values()].filter(
       (c) => projectId === undefined || projectOf(s, c) === projectId,
     );
+    // Runs still going here, by the card they are for.
+    const live = new Map<string, { role: BoardCard["agentRole"]; since: Date }>();
+    for (const run of s.runs.values()) {
+      if (run.status !== "running" && run.status !== "queued") continue;
+      const id = run.ticketId ?? run.epicId;
+      if (id) live.set(id, { role: run.role, since: run.startedAt });
+    }
     for (const card of cards) {
+      // An agent at work: a run here, or a CLI agent's job on GitHub Actions,
+      // whose run here ends at dispatch.
+      const job =
+        card.kind === "epic"
+          ? s.epicJobs.has(card.id)
+            ? {
+                role:
+                  card.status === "merged"
+                    ? ("pm" as const)
+                    : card.stage >= 2
+                      ? ("architect" as const)
+                      : ("product" as const),
+                since: s.epicJobTimes.get(card.id) ?? null,
+              }
+            : null
+          : s.ticketExtras.get(card.id)?.runnerJob
+            ? {
+                role: card.status === "review" ? ("reviewer" as const) : ("coder" as const),
+                since: s.ticketExtras.get(card.id)?.runnerJobAt ?? null,
+              }
+            : null;
+      const working = live.get(card.id) ?? job;
+      if (working) {
+        card.agentRole = working.role;
+        card.workingSince = working.since?.toISOString() ?? null;
+        fromJob.add(card);
+      } else if (fromJob.delete(card)) {
+        card.agentRole = null;
+        card.workingSince = null;
+      }
       if (card.kind !== "epic") continue;
       const children = cards.filter((c) => c.epicId === card.id);
       card.childCount = children.length;
       card.doneCount = children.filter((c) => c.status === "merged").length;
     }
-    return cards.sort(byPosition);
+    // A standalone Epic is a holder, not its own card: its child ticket
+    // renders alone, detached, exactly as today.
+    return cards.filter((c) => !(c.kind === "epic" && c.standalone)).sort(byPosition);
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
     const s = store();
+    // One past the highest ever used, so a deleted Epic's key is never reused.
     const n =
-      (await this.boardCards(input.projectId)).filter((c) => c.kind === "epic")
-        .length + 1;
+      Math.max(
+        s.epicNumbers.get(input.projectId) ?? 0,
+        ...(await this.boardCards(input.projectId))
+          .filter((c) => c.kind === "epic")
+          .map((c) => Number(c.key.replace(/^EPIC-/, "")) || 0),
+      ) + 1;
+    s.epicNumbers.set(input.projectId, n);
     const card: BoardCard = {
       id: id("epic"),
       kind: "epic",
@@ -259,6 +414,9 @@ export class MemoryRepository implements Repository {
       stage: 1,
       position: input.position,
       epicId: null,
+      standalone: false,
+      rerouteFrom: null,
+      rerouteReason: null,
       size: null,
       agentRole: null,
       model: null,
@@ -270,6 +428,8 @@ export class MemoryRepository implements Repository {
       costCents: 0,
       childCount: 0,
       doneCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     s.cards.set(card.id, card);
     s.epicProject.set(card.id, input.projectId);
@@ -293,6 +453,8 @@ export class MemoryRepository implements Repository {
         position: input.position,
         epicId: input.epicId,
         size: input.size,
+        storyPoints: input.storyPoints ?? null,
+        needsHuman: input.needsHuman ?? null,
         agentRole: null,
         model: null,
         fileScope: normalizeScope(input.fileScope),
@@ -300,9 +462,14 @@ export class MemoryRepository implements Repository {
         prNumber: null,
         prUrl: null,
         blockedReason: null,
+        rerouteFrom: null,
+        rerouteReason: null,
         costCents: 0,
         childCount: 0,
         doneCount: 0,
+        createdAt: new Date().toISOString(),
+        startedAt: null,
+        updatedAt: new Date().toISOString(),
       };
       made.set(input.key, card);
       s.ticketExtras.set(card.id, {
@@ -331,15 +498,85 @@ export class MemoryRepository implements Repository {
   async move(input: MoveInput): Promise<void> {
     const card = store().cards.get(input.cardId);
     if (!card) return;
+    if (card.status !== input.status) {
+      card.updatedAt = new Date().toISOString();
+      if (input.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
+    }
     card.status = input.status;
     card.stalledIn = input.stalledIn;
     card.position = input.position;
+    card.misplacedIn = input.misplaced?.in ?? null;
+    card.misplacedReason = input.misplaced?.reason ?? null;
+    // Out of a stall, the reason goes with it.
+    if (input.stalledIn === null) card.blockedReason = null;
     if (input.detached !== undefined) card.detached = input.detached;
+  }
+
+  async setStandalone(epicId: string, standalone: boolean): Promise<void> {
+    const card = store().cards.get(epicId);
+    if (card) card.standalone = standalone;
+  }
+
+  async setReroute(
+    cardId: string,
+    _kind: "epic" | "ticket",
+    reroute: Reroute | null,
+  ): Promise<void> {
+    const card = store().cards.get(cardId);
+    if (!card) return;
+    card.rerouteFrom = reroute?.from ?? null;
+    card.rerouteReason = reroute?.reason ?? null;
+  }
+
+  async createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary> {
+    const row: AttachmentRow = {
+      id: id("attachment"),
+      projectId: input.projectId,
+      epicId: input.epicId ?? null,
+      ticketId: input.ticketId ?? null,
+      requestId: input.requestId ?? null,
+      filename: input.filename,
+      mimeType: input.mimeType,
+      kind: input.kind,
+      size: input.size,
+      bytes: input.bytes,
+      createdAt: new Date(),
+    };
+    store().attachments.set(row.id, row);
+    return toAttachmentSummary(row);
+  }
+
+  async attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]> {
+    return [...store().attachments.values()]
+      .filter((a) => matchesAttachmentRef(a, ref))
+      .map(toAttachmentSummary);
+  }
+
+  async attachmentContent(id: string): Promise<AttachmentContent | null> {
+    const row = store().attachments.get(id);
+    return row ? { bytes: row.bytes, mimeType: row.mimeType } : null;
+  }
+
+  async claimAttachments(
+    requestId: string,
+    ref: { epicId: string } | { ticketId: string },
+  ): Promise<void> {
+    for (const row of store().attachments.values()) {
+      if (row.requestId !== requestId) continue;
+      row.requestId = null;
+      if ("epicId" in ref) row.epicId = ref.epicId;
+      else row.ticketId = ref.ticketId;
+    }
+  }
+
+  async deleteAttachments(ids: string[]): Promise<void> {
+    const s = store();
+    for (const id of ids) s.attachments.delete(id);
   }
 
   async columnPositions(projectId: string, column: ColumnId): Promise<number[]> {
     return (await this.boardCards(projectId))
-      .filter((c) => columnFor(c.status, c.stalledIn) === column)
+      .filter((c) => columnOf(c) === column)
       .map((c) => c.position)
       .sort((a, b) => a - b);
   }
@@ -356,8 +593,11 @@ export class MemoryRepository implements Repository {
       title: card.title,
       rawRequest: s.rawRequests.get(epicId) ?? card.title,
       prd: s.prds.get(epicId) ?? null,
+      prdUpdatedAt: s.prdTimes.get(epicId) ?? null,
       runnerJob: s.epicJobs.get(epicId) ?? null,
+      runnerAgent: s.epicJobAgents.get(epicId) ?? null,
       issueNumber: s.epicIssues.get(epicId) ?? null,
+      showcase: s.showcases.get(epicId) ?? null,
     };
   }
 
@@ -365,19 +605,31 @@ export class MemoryRepository implements Repository {
     store().epicIssues.set(epicId, issueNumber);
   }
 
-  async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
+  async setEpicRunnerJob(epicId: string, job: string | null, agentId: string | null = null): Promise<void> {
     const s = store();
-    if (job) s.epicJobs.set(epicId, job);
-    else s.epicJobs.delete(epicId);
+    if (job) {
+      s.epicJobs.set(epicId, job);
+      s.epicJobAgents.set(epicId, agentId);
+      s.epicJobTimes.set(epicId, new Date());
+    } else {
+      s.epicJobs.delete(epicId);
+      s.epicJobAgents.delete(epicId);
+      s.epicJobTimes.delete(epicId);
+    }
   }
 
   async setEpicPrd(epicId: string, prd: unknown): Promise<void> {
     const s = store();
     s.prds.set(epicId, prd);
+    s.prdTimes.set(epicId, new Date());
     const card = s.cards.get(epicId);
     if (card) {
       card.status = "specified";
       card.stage = 2;
+      card.stalledIn = null;
+      card.blockedReason = null;
+      card.misplacedIn = null;
+      card.misplacedReason = null;
     }
   }
 
@@ -385,7 +637,65 @@ export class MemoryRepository implements Repository {
     const s = store();
     s.showcases.set(epicId, markdown);
     const card = s.cards.get(epicId);
-    if (card) card.stage = 8;
+    if (card) {
+      card.stage = 8;
+      card.stalledIn = null;
+      card.blockedReason = null;
+      card.misplacedIn = null;
+      card.misplacedReason = null;
+    }
+  }
+
+  async deleteTickets(ticketIds: string[]): Promise<void> {
+    const s = store();
+    for (const id of ticketIds) {
+      s.cards.delete(id);
+      s.ticketExtras.delete(id);
+    }
+    for (const card of s.cards.values()) {
+      card.dependsOn = card.dependsOn.filter((id) => s.cards.has(id));
+    }
+    for (const [runId, run] of s.runs) {
+      if (run.ticketId && !s.cards.has(run.ticketId)) s.runs.delete(runId);
+    }
+  }
+
+  async deleteEpic(epicId: string): Promise<void> {
+    const s = store();
+    for (const card of [...s.cards.values()]) {
+      if (card.epicId !== epicId) continue;
+      s.cards.delete(card.id);
+      s.ticketExtras.delete(card.id);
+    }
+    for (const card of s.cards.values()) {
+      card.dependsOn = card.dependsOn.filter((id) => s.cards.has(id));
+    }
+    for (const [runId, run] of s.runs) {
+      if (run.epicId === epicId || (run.ticketId && !s.cards.has(run.ticketId))) {
+        s.runs.delete(runId);
+      }
+    }
+    s.cards.delete(epicId);
+    s.epicProject.delete(epicId);
+    s.rawRequests.delete(epicId);
+    s.prds.delete(epicId);
+    s.showcases.delete(epicId);
+    s.epicJobs.delete(epicId);
+    s.epicIssues.delete(epicId);
+  }
+
+  async stallEpic(
+    epicId: string,
+    stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
+  ): Promise<void> {
+    const card = store().cards.get(epicId);
+    if (!card) return;
+    card.status = stall.status;
+    card.stalledIn = stall.stalledIn;
+    card.stage = stall.stage;
+    card.blockedReason = stall.reason;
+    card.misplacedIn = null;
+    card.misplacedReason = null;
   }
 
   async appendEvent(
@@ -405,6 +715,30 @@ export class MemoryRepository implements Repository {
     return store()
       .events.filter((e) => e.projectId === projectId && e.seq > after)
       .slice(0, limit)
+      .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
+  }
+
+  async ticketEvents(projectId: string, ticketId: string, types: string[], limit = 200) {
+    return store()
+      .events.filter(
+        (e) =>
+          e.projectId === projectId &&
+          types.includes(e.type) &&
+          (e.payload as { ticketId?: unknown } | null)?.ticketId === ticketId,
+      )
+      .slice(-limit)
+      .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
+  }
+
+  async epicEvents(projectId: string, epicId: string, types: string[], limit = 200) {
+    return store()
+      .events.filter(
+        (e) =>
+          e.projectId === projectId &&
+          types.includes(e.type) &&
+          (e.payload as { epicId?: unknown } | null)?.epicId === epicId,
+      )
+      .slice(-limit)
       .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
   }
 
@@ -442,11 +776,38 @@ export class MemoryRepository implements Repository {
     const card = s.cards.get(ticketId);
     if (!card) return;
 
-    if (update.status !== undefined) card.status = update.status;
+    if (update.status !== undefined && update.status !== card.status) {
+      card.updatedAt = new Date().toISOString();
+      if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
+    }
+    // The first move to merged is scored against the project's heat then.
+    if (update.status === "merged" && !card.mergedAt) {
+      const now = Date.now();
+      const project = projectOf(s, card);
+      const recent = [...s.cards.values()].filter(
+        (c) =>
+          c.mergedAt &&
+          projectOf(s, c) === project &&
+          new Date(c.mergedAt).getTime() > now - HEAT_WINDOW_MS,
+      ).length;
+      const { pts, mult } = mergeScore(card.storyPoints, recent);
+      card.mergedAt = new Date(now).toISOString();
+      card.mergePoints = pts;
+      card.mergeMultiplier = mult;
+    }
+    if (update.status !== undefined) {
+      card.status = update.status;
+      // An agent moved it on: it goes where its status says.
+      card.misplacedIn = null;
+      card.misplacedReason = null;
+    }
     // A merged ticket joins its epic's group in Done, wherever it sat.
     if (update.status === "merged") card.detached = false;
     if (update.stalledIn !== undefined) card.stalledIn = update.stalledIn;
     if (update.stage !== undefined) card.stage = update.stage;
+    if (update.title !== undefined) card.title = update.title;
+    if (update.fileScope !== undefined) card.fileScope = normalizeScope(update.fileScope);
+    if (update.needsHuman !== undefined) card.needsHuman = update.needsHuman;
     if (update.prNumber !== undefined) card.prNumber = update.prNumber;
     if (update.prUrl !== undefined) card.prUrl = update.prUrl;
     if (update.blockedReason !== undefined) {
@@ -456,11 +817,21 @@ export class MemoryRepository implements Repository {
 
     const extras = s.ticketExtras.get(ticketId);
     if (!extras) return;
+    if (update.description !== undefined) extras.description = update.description;
+    if (update.acceptanceCriteria !== undefined) extras.acceptanceCriteria = update.acceptanceCriteria;
     if (update.branchName !== undefined) extras.branchName = update.branchName;
     if (update.attempts !== undefined) extras.attempts = update.attempts;
     if (update.summary !== undefined) extras.summary = update.summary;
-    if (update.runnerJob !== undefined) extras.runnerJob = update.runnerJob;
+    if (update.runnerJob !== undefined) {
+      extras.runnerJob = update.runnerJob;
+      extras.runnerJobAt = update.runnerJob ? new Date() : null;
+    }
+    if (update.runnerAgent !== undefined) extras.runnerAgent = update.runnerAgent;
     if (update.issueNumber !== undefined) extras.issueNumber = update.issueNumber;
+    if (update.plan !== undefined) extras.plan = update.plan;
+    if (update.handoff !== undefined) extras.handoff = update.handoff;
+    if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
+    if (update.scopeRequest !== undefined) extras.scopeRequest = update.scopeRequest;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
@@ -472,12 +843,27 @@ export class MemoryRepository implements Repository {
   }
 
   async startRun(run: RunRecord): Promise<void> {
-    store().runs.set(run.id, { ...run, status: "running", startedAt: new Date() });
+    const s = store();
+    // Called again to attach a sandbox once the run is under way: its
+    // already-accrued spend and start time must survive that, or a restart
+    // of the same call resets an Epic's running total to zero.
+    const existing = s.runs.get(run.id);
+    s.runs.set(run.id, {
+      ...run,
+      status: "running",
+      startedAt: existing?.startedAt ?? new Date(),
+      costCents: existing?.costCents ?? 0,
+      error: existing?.error ?? null,
+    });
   }
 
   async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
     const run = store().runs.get(runId);
-    if (run) run.status = outcome.status;
+    if (run) {
+      run.status = outcome.status;
+      run.error = outcome.error;
+      run.costCents = outcome.costCents;
+    }
   }
 
   async unfinishedRuns(
@@ -488,6 +874,46 @@ export class MemoryRepository implements Repository {
         (r.status === "queued" || r.status === "running") &&
         r.startedAt < startedBefore,
     );
+  }
+
+  async recordRunSpend(runId: string, costCents: number): Promise<void> {
+    const run = store().runs.get(runId);
+    if (run) run.costCents = costCents;
+  }
+
+  async epicSpentCents(epicId: string): Promise<number> {
+    let total = 0;
+    for (const run of store().runs.values()) {
+      if (run.epicId === epicId) total += run.costCents;
+    }
+    return total;
+  }
+
+  async cancelRuns(
+    scope: { runId: string } | { epicId: string } | { projectId: string },
+    reason: string,
+  ): Promise<Array<{ id: string; sandboxId: string | null }>> {
+    const s = store();
+    const cancelled: Array<{ id: string; sandboxId: string | null }> = [];
+    for (const run of s.runs.values()) {
+      if (run.status !== "queued" && run.status !== "running") continue;
+      const matches =
+        "runId" in scope
+          ? run.id === scope.runId
+          : "epicId" in scope
+            ? run.epicId === scope.epicId
+            : projectOfRun(s, run) === scope.projectId;
+      if (!matches) continue;
+      run.status = "cancelled";
+      run.error = reason;
+      cancelled.push({ id: run.id, sandboxId: run.sandboxId });
+    }
+    return cancelled;
+  }
+
+  async runCancelReason(runId: string): Promise<string | null> {
+    const run = store().runs.get(runId);
+    return run && run.status === "cancelled" ? (run.error ?? "Stopped.") : null;
   }
 
   async claimDelivery(key: string): Promise<boolean> {
@@ -527,10 +953,20 @@ export class MemoryRepository implements Repository {
       apiKeyCipher: keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
       keyHint: keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
       hasKey: false,
+      // A new key is likely a new account, with its own usage.
+      limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,
+      limitNote: keep ? (existing?.limitNote ?? null) : null,
     };
     row.hasKey = row.apiKeyCipher !== null;
     s.presets.set(row.id, row);
     return publicPreset(row);
+  }
+
+  async setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void> {
+    const row = store().presets.get(presetId);
+    if (!row) return;
+    row.limitedUntil = limit ? limit.until.toISOString() : null;
+    row.limitNote = limit ? limit.note : null;
   }
 
   async deletePreset(presetId: string): Promise<void> {
@@ -543,7 +979,8 @@ export class MemoryRepository implements Repository {
     const out: ColumnAgents = {};
     for (const [k, v] of store().columnAgents) {
       const [p, column] = k.split(":");
-      if (p === projectId) out[column as ColumnId] = v;
+      // The assistant's preset shares this map but is not a column.
+      if (p === projectId && column !== "assistant") out[column as ColumnId] = v;
     }
     return out;
   }
@@ -587,6 +1024,7 @@ export class MemoryRepository implements Repository {
       id: `msg_${Math.random().toString(36).slice(2, 10)}`,
       proposals: [],
       runnerJob: null,
+      runnerAgent: null,
       createdAt: new Date(),
       ...input,
       status: input.status ?? "done",
@@ -608,9 +1046,59 @@ export class MemoryRepository implements Repository {
     s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
   }
 
+  async cardChatMessages(cardId: string): Promise<CardChatMessage[]> {
+    return store()
+      .cardChat.filter((m) => m.cardId === cardId)
+      .map((m) => ({ ...m }));
+  }
+
+  async cardChatMessage(id: string): Promise<CardChatMessage | null> {
+    const found = store().cardChat.find((m) => m.id === id);
+    return found ? { ...found } : null;
+  }
+
+  async addCardChatMessage(input: {
+    projectId: string;
+    cardKind: "epic" | "ticket";
+    cardId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: CardChatMessage["status"];
+  }): Promise<CardChatMessage> {
+    const message: CardChatMessage = {
+      id: `cchat_${Math.random().toString(36).slice(2, 10)}`,
+      runnerJob: null,
+      runnerAgent: null,
+      createdAt: new Date(),
+      ...input,
+      status: input.status ?? "done",
+    };
+    store().cardChat.push(message);
+    return { ...message };
+  }
+
+  async updateCardChatMessage(
+    id: string,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
+  ): Promise<void> {
+    const found = store().cardChat.find((m) => m.id === id);
+    if (found) Object.assign(found, update);
+  }
+
+  async clearCardChat(cardId: string): Promise<void> {
+    const s = store();
+    s.cardChat = s.cardChat.filter((m) => m.cardId !== cardId);
+  }
+
+  async pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]> {
+    return store()
+      .cardChat.filter((m) => m.projectId === projectId && m.status === "pending" && !!m.runnerJob)
+      .map((m) => ({ ...m }));
+  }
+
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
     const cards = (await this.boardCards(projectId))
-      .filter((c) => columnFor(c.status, c.stalledIn) === column)
+      .filter((c) => columnOf(c) === column)
       .sort(byPosition);
     if (!needsRebalance(cards.map((c) => c.position))) return;
     const fresh = rebalance(cards.length);
@@ -634,6 +1122,7 @@ function toDetail(
     description: extras?.description ?? card.title,
     acceptanceCriteria: extras?.acceptanceCriteria ?? [],
     fileScope: card.fileScope,
+    scopeRequest: extras?.scopeRequest ?? [],
     status: card.status,
     stalledIn: card.stalledIn,
     stage: card.stage,
@@ -644,7 +1133,30 @@ function toDetail(
     attempts: extras?.attempts ?? 0,
     summary: extras?.summary ?? null,
     runnerJob: extras?.runnerJob ?? null,
+    runnerAgent: extras?.runnerAgent ?? null,
     issueNumber: extras?.issueNumber ?? null,
+    storyPoints: card.storyPoints ?? null,
+    plan: extras?.plan ?? [],
+    handoff: extras?.handoff ?? [],
+    reviewedSha: extras?.reviewedSha ?? null,
+    needsHuman: card.needsHuman ?? null,
+  };
+}
+
+function matchesAttachmentRef(row: AttachmentRow, ref: AttachmentRef): boolean {
+  if ("epicId" in ref) return row.epicId === ref.epicId;
+  if ("ticketId" in ref) return row.ticketId === ref.ticketId;
+  return row.requestId === ref.requestId;
+}
+
+function toAttachmentSummary(row: AttachmentRow): AttachmentSummary {
+  return {
+    id: row.id,
+    filename: row.filename,
+    mimeType: row.mimeType,
+    kind: row.kind,
+    size: row.size,
+    url: `/api/attachments/${row.id}`,
   };
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Prd } from "@/lib/domain/entities";
 
 /**
@@ -14,22 +14,28 @@ export function PrdPane({
   prd,
   rawRequest,
   streaming,
+  writing = false,
   onSave,
 }: {
   prd: Prd | null;
   rawRequest: string;
   /** Partial text while the Product Agent writes. */
   streaming?: string;
+  /** The Product Agent is on it, somewhere this page cannot stream from. */
+  writing?: boolean;
   onSave: (prd: Prd) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => (prd ? JSON.stringify(prd, null, 2) : ""));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  // The draft follows the stored PRD whenever that changes.
+  const [draftOf, setDraftOf] = useState(prd);
+  if (prd !== draftOf) {
+    setDraftOf(prd);
     if (prd) setDraft(JSON.stringify(prd, null, 2));
-  }, [prd]);
+  }
 
   if (!prd) {
     return (
@@ -48,6 +54,12 @@ export function PrdPane({
               {streaming.slice(-1200)}
             </pre>
           </>
+        ) : writing ? (
+          <p className="text-ochre-text mt-4 inline-flex items-center gap-1.5 text-[12px]">
+            <span aria-hidden className="bg-ochre pulse-dot size-[5px] shrink-0 rounded-full" />
+            Product Agent is writing the PRD. It usually takes a minute or two, and appears
+            here when it is done.
+          </p>
         ) : (
           <p className="text-fg-subtle mt-4 text-[12px]">
             No PRD yet.

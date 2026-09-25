@@ -20,7 +20,6 @@ import { syncIssues } from "@/lib/issues/sync";
 type Subscriber = (event: SequencedEvent) => void;
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicSubscribers: Map<string, Set<Subscriber>> | undefined;
 }
 
@@ -75,7 +74,7 @@ export async function publish(
   // Card changes are mirrored onto GitHub issues, after the board has them.
   // Awaited, because a serverless function may stop once this returns; it
   // never throws.
-  if (event.type === "card.status" || event.type === "card.created") {
+  if (event.type === "card.status" || event.type === "card.created" || event.type === "card.deleted") {
     await syncIssues(projectId, event);
   }
   return seq;

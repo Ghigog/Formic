@@ -10,8 +10,13 @@ export function StepIndicator({
   current,
   failedAt,
   working = false,
+  stages = LIFECYCLE_STAGES,
+  label = "Epic lifecycle",
   className,
 }: {
+  /** The stages shown, in order. The Epic's eight unless given. */
+  stages?: ReadonlyArray<{ n: number; key: string; label: string }>;
+  label?: string;
   /** 1-8. Stages below this are complete, this one is active. */
   current: number;
   /** When set, this stage renders failed and nothing after it is active. */
@@ -33,17 +38,18 @@ export function StepIndicator({
   return (
     <ol
       className={cn("flex w-full items-start gap-0", className)}
-      aria-label="Epic lifecycle"
+      aria-label={label}
     >
-      {LIFECYCLE_STAGES.map((stage, i) => {
+      {stages.map((stage, i) => {
         const state = stateOf(stage.n);
-        const isLast = i === LIFECYCLE_STAGES.length - 1;
+        const isLast = i === stages.length - 1;
+        const lastN = stages.at(-1)?.n ?? 0;
         // The line leaving the active stage; on the last stage, the one into it.
         const marching =
           working &&
           failedAt == null &&
           (stage.n === current ||
-            (current === LIFECYCLE_STAGES.length && stage.n === current - 1));
+            (current === lastN && stage.n === current - 1));
         return (
           <li key={stage.key} className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-center gap-1">
@@ -57,7 +63,7 @@ export function StepIndicator({
                   state === "pending" && "bg-sunken text-fg-subtle",
                 )}
               >
-                {stage.n}
+                {i + 1}
               </span>
               {!isLast && (
                 <span

@@ -5,6 +5,7 @@ import {
   addSpend,
   checkBudget,
   estimateCostCents,
+  priceForModel,
   taskBudgetTokens,
 } from "./limits";
 
@@ -22,7 +23,7 @@ describe("checkBudget", () => {
 
   it("stops at the time ceiling", () => {
     const v = checkBudget(
-      { ...ZERO_SPEND, elapsedMs: 15 * 60 * 1000 },
+      { ...ZERO_SPEND, elapsedMs: DEFAULT_RUN_BUDGET.maxDurationMs },
       DEFAULT_RUN_BUDGET,
     );
     expect(v.ok).toBe(false);
@@ -64,8 +65,67 @@ describe("estimateCostCents", () => {
     expect(sonnet).toBeLessThan(opus);
   });
 
-  it("returns zero for an unknown model rather than guessing", () => {
-    expect(estimateCostCents("mock", 1_000_000, 1_000_000)).toBe(0);
+  it("prices an OpenAI model by family", () => {
+    expect(estimateCostCents("gpt-4o", 1_000_000, 1_000_000)).toBeGreaterThan(0);
+  });
+
+  it("prices a Gemini model by family", () => {
+    expect(estimateCostCents("gemini-2.5-flash", 1_000_000, 1_000_000)).toBeGreaterThan(0);
+  });
+
+  it("prices a DeepSeek model by family", () => {
+    expect(estimateCostCents("deepseek-chat", 1_000_000, 1_000_000)).toBeGreaterThan(0);
+  });
+
+  it("prices a Groq model by family", () => {
+    expect(estimateCostCents("llama-3.3-70b-versatile", 1_000_000, 1_000_000)).toBeGreaterThan(0);
+  });
+
+  it("prices an OpenRouter id by the vendor after the slash", () => {
+    const direct = estimateCostCents("gpt-4o", 1_000_000, 1_000_000);
+    const routed = estimateCostCents("openai/gpt-4o", 1_000_000, 1_000_000);
+    expect(routed).toBe(direct);
+  });
+
+  it("prices a dated Claude id as its family, not as $0", () => {
+    const dated = estimateCostCents("claude-sonnet-5-20260101", 1_000_000, 1_000_000);
+    const family = estimateCostCents("claude-sonnet-5", 1_000_000, 1_000_000);
+    expect(dated).toBe(family);
+    expect(dated).toBeGreaterThan(0);
+  });
+
+  it("never returns zero for an unknown model: it charges a conservative default", () => {
+    const cost = estimateCostCents("some-brand-new-model-nobody-has-priced-yet", 1_000_000, 1_000_000);
+    expect(cost).toBeGreaterThan(0);
+  });
+
+  it("prices an unknown model at least as high as any known family, so the ceiling still trips", () => {
+    const unknown = estimateCostCents("totally-unknown-model", 1_000_000, 1_000_000);
+    const opus = estimateCostCents("claude-opus-5", 1_000_000, 1_000_000);
+    const gpt4o = estimateCostCents("gpt-4o", 1_000_000, 1_000_000);
+    expect(unknown).toBeGreaterThanOrEqual(opus);
+    expect(unknown).toBeGreaterThanOrEqual(gpt4o);
+  });
+});
+
+describe("priceForModel", () => {
+  it("reports a known family for an exact id", () => {
+    const p = priceForModel("claude-opus-5");
+    expect(p.known).toBe(true);
+    expect(p.family).toBe("claude-opus-5");
+  });
+
+  it("reports a known family for a dated id by prefix match", () => {
+    const p = priceForModel("claude-sonnet-5-20260101");
+    expect(p.known).toBe(true);
+    expect(p.family).toBe("claude-sonnet-5");
+  });
+
+  it("reports unknown, with a conservative default price, for an unrecognised id", () => {
+    const p = priceForModel("some-brand-new-model-nobody-has-priced-yet");
+    expect(p.known).toBe(false);
+    expect(p.price.in).toBeGreaterThan(0);
+    expect(p.price.out).toBeGreaterThan(0);
   });
 });
 

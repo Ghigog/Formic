@@ -137,3 +137,48 @@ describe("Column", () => {
     expect(container.firstElementChild!.className).not.toContain("bg-column");
   });
 });
+
+describe("Column with an agent out of usage", () => {
+  const preset = {
+    id: "p1",
+    ownerId: null,
+    name: "Claude (work)",
+    provider: "claude-code" as const,
+    model: "",
+    prompt: "",
+    hasKey: true,
+    keyHint: "1234",
+    limitedUntil: new Date(Date.now() + 2 * 3_600_000 + 5 * 60_000).toISOString(),
+    limitNote: "Claude Code hit its usage limit.",
+  };
+
+  it("counts down to when it is back, at the front of the column", () => {
+    renderInDnd(
+      <Column
+        id="in_progress"
+        cards={[]}
+        extras={{}}
+        onOpen={noop}
+        agent={{ presets: [preset], selected: preset, onAssign: vi.fn(), onEdit: vi.fn() }}
+      />,
+    );
+    const region = screen.getByRole("region", { name: "In Progress" });
+    expect(region).toHaveAttribute("data-limited", "true");
+    expect(within(region).getByRole("status")).toHaveTextContent("Claude (work) is out of usage");
+    expect(within(region).getByLabelText(/^Available in 2:0[45]:\d\d$/)).toBeInTheDocument();
+  });
+
+  it("is open again once the time has passed", () => {
+    const back = { ...preset, limitedUntil: new Date(Date.now() - 1000).toISOString() };
+    renderInDnd(
+      <Column
+        id="in_progress"
+        cards={[]}
+        extras={{}}
+        onOpen={noop}
+        agent={{ presets: [back], selected: back, onAssign: vi.fn(), onEdit: vi.fn() }}
+      />,
+    );
+    expect(screen.getByRole("region", { name: "In Progress" })).not.toHaveAttribute("data-limited");
+  });
+});

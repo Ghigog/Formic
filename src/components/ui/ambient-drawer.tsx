@@ -16,7 +16,13 @@ export interface AmbientStats {
   /** The PR currently holding the merge lock, if any. */
   mergeLockPr?: number | null;
   /** Most recent log lines across all live runs. */
-  logLines: Array<{ runId: string; stream: "stdout" | "stderr"; line: string }>;
+  logLines: Array<{
+    runId: string;
+    /** The ticket it is for, such as T-4, when there is one. */
+    label?: string;
+    stream: "stdout" | "stderr";
+    line: string;
+  }>;
 }
 
 function compact(n: number): string {
@@ -74,9 +80,15 @@ function Chevron({ open }: { open: boolean }) {
 export function AmbientDrawer({
   stats,
   onStopAll,
+  bugsSquashed,
+  nest,
 }: {
   stats: AmbientStats;
   onStopAll?: () => void;
+  /** Bugs handed to the agents so far. Omitted, the bar does not count them. */
+  bugsSquashed?: number;
+  /** The colony's nest, at the bar's end. */
+  nest?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const busy = stats.activeSandboxes > 0;
@@ -89,7 +101,7 @@ export function AmbientDrawer({
         <div className="border-drawer-line max-h-56 overflow-y-auto border-b px-6 py-3">
           {stats.logLines.length === 0 ? (
             <p className="text-drawer-muted font-mono text-[11px]">
-              No agents running.
+              Nothing yet. The commands agents run, and what they print, show here as they work.
             </p>
           ) : (
             <pre className="font-mono text-[11px] leading-[1.6] whitespace-pre-wrap">
@@ -100,7 +112,7 @@ export function AmbientDrawer({
                     l.stream === "stderr" ? "text-log-error" : "text-log-text"
                   }
                 >
-                  <span className="text-drawer-muted">{l.runId.slice(0, 7)} </span>
+                  <span className="text-drawer-muted">{l.label ?? l.runId.slice(0, 7)} </span>
                   {l.line}
                 </div>
               ))}
@@ -131,12 +143,22 @@ export function AmbientDrawer({
         </span>
 
         <Divider />
-        <span className="text-drawer-muted font-mono text-[11px]">
-          queue {stats.queueDepth ?? 0} ·{" "}
-          {stats.mergeLockPr
-            ? `merge lock held by PR #${stats.mergeLockPr}`
-            : "merge lock free"}
+        <span
+          className="text-drawer-muted font-mono text-[11px]"
+          title={stats.mergeLockPr ? `Merge lock held by PR #${stats.mergeLockPr}` : "Merge lock free"}
+        >
+          {stats.queueDepth ?? 0} in merge queue
+          {stats.mergeLockPr ? ` · lock PR #${stats.mergeLockPr}` : ""}
         </span>
+
+        {bugsSquashed !== undefined && (
+          <>
+            <Divider />
+            <span className="text-drawer-muted font-mono text-[11px]">
+              {bugsSquashed === 1 ? "1 bug squashed" : `${bugsSquashed} bugs squashed`}
+            </span>
+          </>
+        )}
 
         <div className="flex-grow" />
 
@@ -163,6 +185,7 @@ export function AmbientDrawer({
           Terminal
           <Chevron open={open} />
         </button>
+        {nest}
       </div>
 
       {/* Mobile: icon and count only. */}
@@ -188,6 +211,7 @@ export function AmbientDrawer({
         >
           <Chevron open={open} />
         </button>
+        {nest}
       </div>
     </footer>
   );

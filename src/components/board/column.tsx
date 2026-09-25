@@ -9,6 +9,7 @@ import type { BoardCard } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { layout } from "./placement";
 import { AgentSelect, type ColumnAgentControls } from "./agent-select";
+import { formatCountdown, useCountdown } from "@/lib/hooks/use-countdown";
 
 /** The one-word description of what happens to a card while it sits here. */
 export const COLUMN_HINT: Record<ColumnId, string> = {
@@ -49,6 +50,7 @@ export function Column({
   bare = false,
   collapsed: controlledCollapsed,
   onToggleCollapse,
+  accepts,
   agent,
   onOpen,
   onShowcase,
@@ -70,6 +72,11 @@ export function Column({
    */
   collapsed?: ReadonlySet<string>;
   onToggleCollapse?: (epicId: string) => void;
+  /**
+   * Whether this column would take the card being dragged. Drawn as a dashed
+   * edge under the pointer: terracotta for yes, crimson for no.
+   */
+  accepts?: (cardId: string) => boolean;
   /** Which agent works this column, and the controls to change it. */
   agent?: ColumnAgentControls;
   onOpen: (card: BoardCard) => void;
@@ -77,6 +84,10 @@ export function Column({
   className?: string;
 }) {
   const dot = COLUMN_DOT[id];
+  // The column's agent is out of usage on its plan: nothing can land here
+  // until it resets. Picking another agent lifts it at once.
+  const limitedFor = useCountdown(agent?.selected?.limitedUntil);
+  const limited = limitedFor !== null;
   const [ownCollapsed, setOwnCollapsed] = useState<Set<string>>(new Set());
   const collapsed = controlledCollapsed ?? ownCollapsed;
 
@@ -93,15 +104,23 @@ export function Column({
    * allotted here rather than inside the group: a collapsed epic contributes
    * one index, an expanded one contributes itself plus a child each.
    */
+  const rendered: Array<{
+    item: (typeof items)[number];
+    index: number;
+    shown: BoardCard[];
+    isCollapsed?: boolean;
+  }> = [];
   let next = 0;
-  const rendered = items.map((item) => {
-    if (item.kind === "card") return { item, index: next++, shown: [] as BoardCard[] };
-    const index = next++;
+  for (const item of items) {
+    if (item.kind === "card") {
+      rendered.push({ item, index: next++, shown: [] });
+      continue;
+    }
     const isCollapsed = collapsed.has(item.epic.id);
     const shown = isCollapsed ? [] : item.children;
-    next += shown.length;
-    return { item, index, shown, isCollapsed };
-  });
+    rendered.push({ item, index: next, shown, isCollapsed });
+    next += 1 + shown.length;
+  }
 
   const toggle = (epicId: string) =>
     onToggleCollapse
@@ -115,6 +134,7 @@ export function Column({
   return (
     <section
       aria-label={COLUMN_LABELS[id]}
+      data-limited={limited || undefined}
       className={cn(
         "flex min-h-0 min-w-0 flex-1 flex-col gap-2.5",
         !bare && "bg-column border-column-line rounded-xl border p-3",
@@ -144,6 +164,15 @@ export function Column({
       </div>
       )}
 
+      {limited && agent?.selected && (
+        <LimitBanner
+          agentName={agent.selected.name}
+          until={agent.selected.limitedUntil!}
+          left={limitedFor}
+          note={agent.selected.limitNote}
+        />
+      )}
+
       {agent && <AgentSelect column={id} {...agent} />}
 
       {composer}
@@ -154,8 +183,13 @@ export function Column({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              "flex min-h-16 flex-1 flex-col overflow-x-hidden overflow-y-auto rounded-lg transition-colors [&>li:not(:last-child)]:mb-2.5",
-              snapshot.isDraggingOver && "bg-clay/8",
+              // Room around the cards for their lift, tilt and ants.
+              "scroll-area -mx-2 flex min-h-16 flex-1 flex-col overflow-x-hidden rounded-lg px-2 pt-1.5 pb-3 transition-colors [&>li:not(:last-child)]:mb-2",
+              snapshot.isDraggingOver &&
+                (snapshot.draggingOverWith && accepts && !accepts(snapshot.draggingOverWith)
+                  ? "bg-crimson/5 outline-crimson outline-[1.5px] -outline-offset-[1.5px] outline-dashed"
+                  : "bg-terracotta/6 outline-terracotta outline-[1.5px] -outline-offset-[1.5px] outline-dashed"),
+              limited && "opacity-50 grayscale",
             )}
           >
             {rendered.map(({ item, index, shown, isCollapsed }) =>
@@ -185,11 +219,49 @@ export function Column({
             )}
             {provided.placeholder}
             {items.length === 0 && !snapshot.isDraggingOver && (
-              <li className="text-muted px-0.5 py-2 text-[11px]">Nothing here.</li>
+              <li className="border-line-dashed text-muted flex h-[72px] shrink-0 items-center justify-center rounded-lg border border-dashed text-[11px]">
+                Nothing here.
+              </li>
             )}
           </ul>
         )}
       </Droppable>
     </section>
+  );
+}
+
+/**
+ * The front of a column whose agent is out of usage: when it can work
+ * again, counting down, and what the agent said.
+ */
+function LimitBanner({
+  agentName,
+  until,
+  left,
+  note,
+}: {
+  agentName: string;
+  until: string;
+  left: number;
+  note: string | null;
+}) {
+  const at = new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return (
+    <div
+      role="status"
+      title={note ?? undefined}
+      className="border-line bg-card flex items-center gap-2 rounded-md border px-2 py-1.5"
+    >
+      <span aria-hidden className="bg-idle size-1.5 shrink-0 rounded-full" />
+      <span className="text-muted min-w-0 flex-1 truncate text-[11px]">
+        {agentName} is out of usage · back at {at}
+      </span>
+      <span
+        aria-label={`Available in ${formatCountdown(left)}`}
+        className="text-ink shrink-0 font-mono text-[11px] font-semibold tabular-nums"
+      >
+        {formatCountdown(left)}
+      </span>
+    </div>
   );
 }

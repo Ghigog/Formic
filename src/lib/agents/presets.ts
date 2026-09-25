@@ -1,7 +1,8 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
-import type { AgentPresetInput } from "@/lib/domain/entities";
+import type { AgentPreset, AgentPresetInput } from "@/lib/domain/entities";
+import { formatReset } from "./limits";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { hintFor, open, seal } from "@/lib/secrets/vault";
 import {
@@ -57,9 +58,18 @@ export async function savePreset(
  * ANTHROPIC_API_KEY if there is one, the mock agents if not.
  */
 type Resolution =
-  | { kind: "configured"; config: AgentConfig }
+  | { kind: "configured"; config: AgentConfig; presetId: string | null }
   | { kind: "mock" }
-  | { kind: "unassigned" };
+  | { kind: "unassigned" }
+  | { kind: "limited"; reason: string };
+
+/** The reason a preset takes no work right now, or null when it can. */
+export function limitReason(preset: AgentPreset, where: string, now = Date.now()): string | null {
+  if (!preset.limitedUntil) return null;
+  const until = new Date(preset.limitedUntil);
+  if (until.getTime() <= now) return null;
+  return `${preset.name} is out of usage until ${formatReset(until)}. Wait for it, or pick an agent on another account for ${where}.`;
+}
 
 function envKey(id: ProviderId): string | null {
   const name = providerInfo(id)?.envKey;
@@ -73,9 +83,12 @@ async function resolveColumn(projectId: string, column: ColumnId): Promise<Resol
   const presetId = (await repo.columnAgents(projectId))[column];
   const found = presetId ? await repo.presetForRun(presetId) : null;
   if (found) {
+    const limited = limitReason(found.preset, COLUMN_LABELS[column]);
+    if (limited) return { kind: "limited", reason: limited };
     const provider = found.preset.provider;
     return {
       kind: "configured",
+      presetId: found.preset.id,
       config: {
         provider,
         model: found.preset.model,
@@ -92,9 +105,20 @@ async function resolveColumn(projectId: string, column: ColumnId): Promise<Resol
 
   if (!local) return { kind: "unassigned" };
   if (process.env.AGENT_PROVIDER !== "mock" && envKey("anthropic")) {
-    return { kind: "configured", config: { provider: "anthropic", apiKey: envKey("anthropic") } };
+    return {
+      kind: "configured",
+      config: { provider: "anthropic", apiKey: envKey("anthropic") },
+      presetId: null,
+    };
   }
   return { kind: "mock" };
+}
+
+/** Why a column takes no work right now: its agent is out of usage. */
+export async function columnLimit(projectId: string, column: ColumnId): Promise<string | null> {
+  if (agentsOverridden()) return null;
+  const resolved = await resolveColumn(projectId, column);
+  return resolved.kind === "limited" ? resolved.reason : null;
 }
 
 /** Kept for callers that only need the configuration, and for tests. */
@@ -141,7 +165,7 @@ function refusing(error: string): AgentRegistry[keyof AgentRegistry] {
     decompose: refuse,
     summarize: refuse,
     implement: refuse,
-    fix: refuse,
+    review: refuse,
   } as unknown as AgentRegistry[keyof AgentRegistry];
 }
 
@@ -161,6 +185,7 @@ export async function agentFor<K extends keyof AgentRegistry>(
   const { column, make } = BUILD[role];
   const resolved = await resolveColumn(projectId, column);
   if (resolved.kind === "unassigned") return unassigned(column) as AgentRegistry[K];
+  if (resolved.kind === "limited") return refusing(resolved.reason) as AgentRegistry[K];
   if (resolved.kind === "mock") return agents()[role];
   const info = providerInfo(resolved.config.provider ?? "anthropic");
   if (info?.kind === "cli") {
@@ -198,6 +223,8 @@ export async function modelFor(
 
 /** A CLI agent's settings, as the runner needs them. */
 export interface CliAgent {
+  /** The saved agent, so a usage limit it hits can be recorded on it. */
+  presetId: string | null;
   info: ProviderInfo & { kind: "cli"; cli: NonNullable<ProviderInfo["cli"]>; secretName: string };
   model: string | null;
   brief: string | null;
@@ -216,6 +243,7 @@ export async function cliAgentFor(
   const info = providerInfo(resolved.config.provider ?? "anthropic");
   if (info?.kind !== "cli" || !info.cli || !info.secretName) return null;
   return {
+    presetId: resolved.presetId,
     info: info as CliAgent["info"],
     model: resolved.config.model || null,
     brief: resolved.config.brief || null,
@@ -226,6 +254,7 @@ export async function cliAgentFor(
 /** The agent the board's assistant runs on, however it is reached. */
 export type AssistantAgent =
   | { kind: "none" }
+  | { kind: "limited"; reason: string }
   | { kind: "api"; info: ProviderInfo; model: string | null; apiKey: string | null; brief: string | null }
   | { kind: "cli"; agent: CliAgent };
 
@@ -237,6 +266,8 @@ export async function assistantAgentFor(projectId: string): Promise<AssistantAge
 
   const info = providerInfo(found.preset.provider);
   if (!info) return { kind: "none" };
+  const limited = limitReason(found.preset, "the assistant");
+  if (limited) return { kind: "limited", reason: limited };
   const apiKey =
     (found.apiKeyCipher ? open(found.apiKeyCipher) : null) ??
     (authMode() === "local" ? envKey(info.id) : null);
@@ -247,8 +278,43 @@ export async function assistantAgentFor(projectId: string): Promise<AssistantAge
     if (!info.cli || !info.secretName) return { kind: "none" };
     return {
       kind: "cli",
-      agent: { info: info as CliAgent["info"], model, brief, credential: apiKey },
+      agent: { presetId: found.preset.id, info: info as CliAgent["info"], model, brief, credential: apiKey },
     };
   }
   return { kind: "api", info, model, apiKey, brief };
+}
+
+/** The agent that answers a card's chat, however it is reached. */
+export type ColumnChatAgent =
+  | { kind: "none"; reason: string }
+  | { kind: "limited"; reason: string }
+  | { kind: "api"; info: ProviderInfo; model: string | null; apiKey: string | null; brief: string | null }
+  | { kind: "cli"; info: ProviderInfo; column: ColumnId; agent: CliAgent };
+
+/**
+ * The agent to chat with about a card in this column: the same agent the
+ * column runs its pipeline stage on. A CLI agent answers from GitHub Actions,
+ * a minute or two later, the same way it does the column's work.
+ */
+export async function columnChatAgentFor(projectId: string, column: ColumnId): Promise<ColumnChatAgent> {
+  const unavailable: ColumnChatAgent = {
+    kind: "none",
+    reason: `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
+  };
+  const resolved = await resolveColumn(projectId, column);
+  if (resolved.kind === "unassigned" || resolved.kind === "mock") return unavailable;
+  if (resolved.kind === "limited") return { kind: "limited", reason: resolved.reason };
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (!info) return unavailable;
+  if (info.kind === "cli") {
+    const agent = await cliAgentFor(projectId, column);
+    return agent ? { kind: "cli", info, column, agent } : unavailable;
+  }
+  return {
+    kind: "api",
+    info,
+    model: resolved.config.model || null,
+    apiKey: resolved.config.apiKey || null,
+    brief: resolved.config.brief || null,
+  };
 }

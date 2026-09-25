@@ -94,6 +94,8 @@ export interface IssuePatch {
   title?: string;
   body?: string;
   state?: "open" | "closed";
+  /** Why it closed. GitHub's own field name. */
+  state_reason?: "completed" | "not_planned";
   /** Replaces every label on the issue. */
   labels?: string[];
 }
@@ -108,6 +110,15 @@ export interface VcsClient {
   checkLog(checkRunId: number): Promise<CheckLog>;
   /** Merges the base branch into the PR head. Never rewrites history. */
   updateBranch(number: number): Promise<UpdateOutcome>;
+  /**
+   * Whether `to` is `from` with only `base` merged in: a merge commit whose
+   * first parent is `from` and whose second is already on `base`. That is
+   * what bringing a pull request up to date makes, and it adds nothing a
+   * reviewer of `from` has not seen.
+   */
+  bringsInBase(from: string, to: string, base: string): Promise<boolean>;
+  /** Merges `head` into the branch `base` with a merge commit. Never rewrites history. */
+  mergeBranch(base: string, head: string): Promise<UpdateOutcome>;
   /** `expectedHeadSha` guards against merging a commit nobody reviewed. */
   merge(number: number, expectedHeadSha: string): Promise<MergeOutcome>;
   /** Comments on a pull request or an issue: they share numbers. */
@@ -140,7 +151,22 @@ export interface VcsClient {
    * webhook that reports it finishing never arrives.
    */
   findRun(file: string, title: string): Promise<WorkflowRunRef | null>;
+  /** The workflow's recent dispatched runs, newest first, with their titles. */
+  recentRuns(file: string): Promise<Array<WorkflowRunRef & { id: number; title: string }>>;
+  /** Cancels a workflow run that has not finished. */
+  cancelRun(runId: number): Promise<void>;
+  /**
+   * The log of a finished run's failed job, by the run's URL, or null when
+   * there is none to read.
+   */
+  runLog(runUrl: string): Promise<string | null>;
   compare(base: string, head: string): Promise<Comparison>;
+  /**
+   * Rewrites the commit at `sha` with its carried workflow changes (CARRY_DIR,
+   * CARRY_DELETED) put back at their real paths. Returns the new commit and
+   * the real paths it changed that way.
+   */
+  landCarried(sha: string): Promise<{ sha: string; files: string[] }>;
   /** Creates `branch` at `sha`, or fast-forwards it there. Never forces. */
   moveBranch(branch: string, sha: string): Promise<void>;
   /** Deletes a staging branch. Refuses any branch outside STAGING_PREFIX. */

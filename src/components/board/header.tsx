@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { CoinBadge } from "@/components/ui/coin-badge";
-import { ProgressBar } from "@/components/ui/progress-bar";
 import { RepoPicker } from "./repo-picker";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AccountMenu, type Account } from "./account-menu";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
+import { ColonyHeaderStats, ColonyMobileStats } from "@/components/colony/header-stats";
+import type { CaptureColumn } from "./new-item-dialog";
 
 function LogoMark({ size }: { size: 26 | 28 }) {
   return (
@@ -42,7 +43,8 @@ function PlusIcon({ size = 12 }: { size?: 12 | 16 }) {
 
 /**
  * The 64px board header: who you are looking at, whether the base branch has
- * moved, how far the epics have got, and the one primary action.
+ * moved, the assistant, and the colony: level, points, heat and the way into
+ * the timeline. New work starts from the Backlog's own button.
  *
  * Below 768px it collapses to a 56px app bar — project and branch stacked,
  * the CTA reduced to a 44px icon button.
@@ -53,8 +55,6 @@ export function BoardHeader({
   baseBranch,
   inSync,
   syncedLabel,
-  epicsTotal,
-  epicsDone,
   onNewItem,
   account,
   assistant,
@@ -65,9 +65,8 @@ export function BoardHeader({
   inSync: boolean;
   /** Relative time since the last fetch, e.g. "2m". */
   syncedLabel?: string;
-  epicsTotal: number;
-  epicsDone: number;
-  onNewItem: () => void;
+  /** The mobile app bar's CTA. Always opens Backlog's dialog; on a wide screen, Backlog has its own. */
+  onNewItem: (column: CaptureColumn) => void;
   account?: Account;
   /** The board's assistant. Omitted, the header has no ask box. */
   assistant?: AssistantControls;
@@ -83,7 +82,7 @@ export function BoardHeader({
   return (
     <>
       {/* Desktop */}
-      <header className="border-line bg-card hidden h-16 shrink-0 items-center gap-4 border-b px-6 md:flex">
+      <header className="border-line bg-card relative z-[2] hidden h-16 shrink-0 items-center gap-4 border-b px-6 md:flex">
         <div className="flex items-center gap-[10px]">
           <LogoMark size={28} />
           <span className="font-serif text-[19px] font-semibold tracking-[-0.01em]">
@@ -93,13 +92,13 @@ export function BoardHeader({
 
         <span aria-hidden className="bg-line h-6 w-px" />
 
-        <div className="relative">
+        <div className="relative shrink-0">
         <button
           type="button"
           onClick={() => setPicker((v) => !v)}
           aria-expanded={picker}
           aria-label={`Project: ${projectName}. Choose another project`}
-          className="border-line bg-cream text-ink inline-flex h-[34px] items-center gap-2 rounded-lg border px-[10px] text-[13px] font-medium"
+          className="border-line bg-cream text-ink inline-flex h-[34px] items-center gap-2 rounded-lg border px-[10px] text-[13px] font-medium whitespace-nowrap"
         >
           {owner} / {repo}
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -123,6 +122,7 @@ export function BoardHeader({
 
         <CoinBadge
           ground="cream"
+          outerClassName="shrink-0 max-lg:hidden"
           title={inSync ? "Base branch in sync" : "Base branch has moved ahead"}
           className="text-ink px-[10px] py-[5px] text-[10px] tracking-[0.04em]"
         >
@@ -137,32 +137,7 @@ export function BoardHeader({
           {assistant && !isMobile && <AskBox a={assistant} repoName={repo ?? repoFullName} />}
         </div>
 
-        {epicsTotal > 0 && (
-          <div className="flex items-center gap-[10px]">
-            <span className="text-muted text-[11px] font-semibold tracking-[0.06em] uppercase">
-              Epic progress
-            </span>
-            <ProgressBar
-              value={epicsDone / epicsTotal}
-              label="Epic progress"
-              height={6}
-              track="bg-line"
-              className="w-[148px]"
-            />
-            <span className="text-ink font-mono text-[11px] tabular-nums">
-              {epicsDone}/{epicsTotal}
-            </span>
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={onNewItem}
-          className="bg-terracotta-cta inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          <PlusIcon />
-          New backlog item
-        </button>
+        <ColonyHeaderStats />
         {account && <AccountMenu account={account} />}
       </header>
 
@@ -176,7 +151,7 @@ export function BoardHeader({
           className="flex min-h-11 min-w-0 flex-col justify-center gap-px text-left"
         >
           <span className="truncate text-[13px] font-semibold">{repo} ▾</span>
-          <span className="text-muted inline-flex items-center gap-[5px] font-mono text-[9px]">
+          <span className="text-muted inline-flex max-w-full items-center gap-[5px] overflow-hidden font-mono text-[9px] whitespace-nowrap">
             <span
               aria-hidden
               className={`size-[5px] rounded-full ${inSync ? "bg-jade" : "bg-rust"}`}
@@ -192,10 +167,11 @@ export function BoardHeader({
           />
         )}
         <div className="flex-grow" />
+        <ColonyMobileStats />
         {assistant && isMobile && <AskButton a={assistant} repoName={repo ?? repoFullName} />}
         <button
           type="button"
-          onClick={onNewItem}
+          onClick={() => onNewItem("backlog")}
           aria-label="New backlog item"
           className="bg-terracotta-cta inline-flex size-11 items-center justify-center rounded-[10px] text-white"
         >

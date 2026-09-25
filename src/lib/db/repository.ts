@@ -4,8 +4,11 @@ import type {
   AgentPreset,
   AgentRole,
   AgentRunStatus,
+  AttachmentKind,
+  AttachmentSummary,
   BoardCard,
   ColumnAgents,
+  PlanStep,
 } from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
@@ -31,8 +34,11 @@ export interface CreateTicketInput {
   acceptanceCriteria: string[];
   fileScope: string[];
   size: "S" | "M" | "L" | "XL";
+  storyPoints?: number | null;
   position: number;
   dependsOnKeys: string[];
+  /** Work for a person, not an agent: why. */
+  needsHuman?: string | null;
 }
 
 export interface MoveInput {
@@ -43,6 +49,41 @@ export interface MoveInput {
   position: number;
   /** Tickets only. Omitted leaves it as it was. */
   detached?: boolean;
+  /**
+   * Dropped somewhere it cannot work: that column, and what is wrong. The
+   * status above is then what is still true of it. Omitted clears it.
+   */
+  misplaced?: { in: ColumnId; reason: string } | null;
+}
+
+/** Where a request was rerouted from, and why. Null clears it. */
+export interface Reroute {
+  from: ColumnId;
+  reason: string;
+}
+
+export interface CreateAttachmentInput {
+  projectId: string;
+  /** Exactly one of these three should be set. */
+  epicId?: string | null;
+  ticketId?: string | null;
+  requestId?: string | null;
+  filename: string;
+  mimeType: string;
+  kind: AttachmentKind;
+  size: number;
+  bytes: Uint8Array;
+}
+
+/** What attachmentsFor and claimAttachments scope by. */
+export type AttachmentRef =
+  | { epicId: string }
+  | { ticketId: string }
+  | { requestId: string };
+
+export interface AttachmentContent {
+  bytes: Uint8Array;
+  mimeType: string;
 }
 
 /** One message in a board's assistant conversation. */
@@ -55,6 +96,8 @@ export interface AssistantMessage {
   proposals: AssistantProposal[];
   status: "done" | "pending" | "failed";
   runnerJob: string | null;
+  /** The preset that job was dispatched with, so a failure is blamed on it. */
+  runnerAgent: string | null;
   createdAt: Date;
 }
 
@@ -67,6 +110,21 @@ export interface AssistantProposal {
   error?: string;
 }
 
+/** One message in a card's chat with its column's agent. */
+export interface CardChatMessage {
+  id: string;
+  projectId: string;
+  cardKind: "epic" | "ticket";
+  cardId: string;
+  role: "user" | "assistant";
+  content: string;
+  status: "done" | "pending" | "failed";
+  runnerJob: string | null;
+  /** The preset that job was dispatched with, so a failure is blamed on it. */
+  runnerAgent: string | null;
+  createdAt: Date;
+}
+
 /** Everything a coding agent and its pipeline need about one ticket. */
 export interface TicketDetail {
   id: string;
@@ -77,6 +135,12 @@ export interface TicketDetail {
   description: string;
   acceptanceCriteria: string[];
   fileScope: string[];
+  /**
+   * Files outside the scope its agent needed, asked of the person. Kept
+   * until the work that needed them goes on or is dropped; see
+   * src/lib/coder/scope-request.ts.
+   */
+  scopeRequest: string[];
   status: TicketStatus;
   stalledIn: ColumnId | null;
   stage: number;
@@ -88,11 +152,29 @@ export interface TicketDetail {
   summary: string | null;
   /** The cloud runner job this ticket is waiting on, if any. */
   runnerJob: string | null;
+  /** The preset that job was dispatched with, so a failure is blamed on it. */
+  runnerAgent: string | null;
   /** The GitHub issue that tracks it, once created. */
   issueNumber: number | null;
+  storyPoints: number | null;
+  /** The plan the agent is working through, oldest step first. */
+  plan: PlanStep[];
+  /** Steps outside the repository the person has to take. */
+  handoff: string[];
+  /** The head commit the Reviewer Agent last approved or pushed. */
+  reviewedSha: string | null;
+  /** Work for a person, not an agent: why. Null when an agent can do it. */
+  needsHuman: string | null;
 }
 
 export interface TicketUpdate {
+  /** The ticket as written, when its column's agent rewrites it. */
+  title?: string;
+  description?: string;
+  acceptanceCriteria?: string[];
+  fileScope?: string[];
+  scopeRequest?: string[];
+  needsHuman?: string | null;
   status?: TicketStatus;
   stalledIn?: ColumnId | null;
   stage?: number;
@@ -103,7 +185,11 @@ export interface TicketUpdate {
   attempts?: number;
   summary?: string | null;
   runnerJob?: string | null;
+  runnerAgent?: string | null;
   issueNumber?: number | null;
+  plan?: PlanStep[];
+  handoff?: string[];
+  reviewedSha?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -157,6 +243,8 @@ export interface UserRecord {
   e2bKeyHint: string | null;
   anthropicKeyCipher: string | null;
   anthropicKeyHint: string | null;
+  /** The terms/privacy version last agreed to, or null if never. */
+  termsAcceptedVersion: string | null;
 }
 
 export type UserSecrets = Partial<
@@ -214,15 +302,33 @@ export interface Repository {
   /** Creates or refreshes someone from their GitHub profile. */
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
   updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
+  /** Records that this person agreed to a version of the terms, now. */
+  acceptTerms(userId: string, version: string): Promise<UserRecord>;
   countUsers(): Promise<number>;
   /** Gives a user every unowned project and preset. */
   adoptUnowned(userId: string): Promise<void>;
+  /** Removes a person and everything they own: projects, presets, and all that cascades from those. */
+  deleteUser(userId: string): Promise<void>;
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   move(input: MoveInput): Promise<void>;
+  /** Epics only: whether it is a holder with no card of its own. */
+  setStandalone(epicId: string, standalone: boolean): Promise<void>;
+  /** Where a card was rerouted from, and why. Null clears both fields. */
+  setReroute(cardId: string, kind: "epic" | "ticket", reroute: Reroute | null): Promise<void>;
+  createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary>;
+  attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]>;
+  /** The stored bytes and mime type, or null when no such attachment exists. */
+  attachmentContent(id: string): Promise<AttachmentContent | null>;
+  /** Moves every attachment under requestId to a real card, once it exists. */
+  claimAttachments(
+    requestId: string,
+    ref: { epicId: string } | { ticketId: string },
+  ): Promise<void>;
+  deleteAttachments(ids: string[]): Promise<void>;
   /** Positions in a column, ascending, for fractional index placement. */
   columnPositions(projectId: string, column: ColumnId): Promise<number[]>;
   cardById(id: string): Promise<BoardCard | null>;
@@ -232,19 +338,51 @@ export interface Repository {
     title: string;
     rawRequest: string;
     prd: unknown;
+    /** When the PRD last changed, or null for none or from before this was kept. */
+    prdUpdatedAt: Date | null;
     runnerJob: string | null;
+    /** The preset that job was dispatched with, so a failure is blamed on it. */
+    runnerAgent: string | null;
     issueNumber: number | null;
+    /** The PM Agent's closing write-up, once every ticket has merged. */
+    showcase: string | null;
   } | null>;
   /** The GitHub issue that tracks this epic. */
   setEpicIssue(epicId: string, issueNumber: number): Promise<void>;
-  /** The Actions run a CLI agent is doing for this epic, or null. */
-  setEpicRunnerJob(epicId: string, job: string | null): Promise<void>;
+  /** The Actions run a CLI agent is doing for this epic, or null, and the preset dispatched with it. */
+  setEpicRunnerJob(epicId: string, job: string | null, agentId?: string | null): Promise<void>;
   setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
+  /** Removes tickets, with their runs and dependencies both ways. */
+  deleteTickets(ticketIds: string[]): Promise<void>;
+  /** Removes an Epic with its tickets, runs and dependencies. */
+  deleteEpic(epicId: string): Promise<void>;
+  /** A planning stage stalled: the Epic stays in its column, with why. */
+  stallEpic(
+    epicId: string,
+    stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
+  ): Promise<void>;
   appendEvent(projectId: string, type: string, payload: unknown): Promise<number>;
   eventsAfter(
     projectId: string,
     seq: number,
+    limit?: number,
+  ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
+  /**
+   * What agents said and did on one ticket, oldest first: the events of the
+   * given types whose payload names it. At most `limit`, the latest ones.
+   */
+  ticketEvents(
+    projectId: string,
+    ticketId: string,
+    types: string[],
+    limit?: number,
+  ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
+  /** The same, but for events whose payload names an Epic. */
+  epicEvents(
+    projectId: string,
+    epicId: string,
+    types: string[],
     limit?: number,
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
   /** Highest event sequence number so far, or 0 with none. */
@@ -272,6 +410,28 @@ export interface Repository {
   unfinishedRuns(
     startedBefore: Date,
   ): Promise<Array<RunRecord & { status: AgentRunStatus }>>;
+  /**
+   * Persists a run's running cost so it survives the process that is
+   * driving it, and so an Epic's total can be summed from here instead of
+   * from memory only one instance holds. Called as spend accrues, not only
+   * once the run finishes.
+   */
+  recordRunSpend(runId: string, costCents: number): Promise<void>;
+  /** Every run's spend under an Epic, finished or still running, summed. */
+  epicSpentCents(epicId: string): Promise<number>;
+  /**
+   * Marks every run in scope that is still queued or running cancelled,
+   * with a reason: the durable form of a stop, so a run driven by any
+   * instance sees it on its next poll rather than only the one that
+   * happened to receive the request. Returns which of them had a sandbox,
+   * so the caller can dispose it.
+   */
+  cancelRuns(
+    scope: { runId: string } | { epicId: string } | { projectId: string },
+    reason: string,
+  ): Promise<Array<{ id: string; sandboxId: string | null }>>;
+  /** Why a run was cancelled, from this instance or another; null if it has not been. */
+  runCancelReason(runId: string): Promise<string | null>;
 
   /* Agent presets, and which one each column runs. */
 
@@ -283,6 +443,8 @@ export interface Repository {
   savePreset(record: PresetRecord): Promise<AgentPreset>;
   /** Also unassigns it from every column it ran. */
   deletePreset(presetId: string): Promise<void>;
+  /** Marks a preset out of usage until a time, or clears that. */
+  setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void>;
   columnAgents(projectId: string): Promise<ColumnAgents>;
   /** The saved agent the board's assistant runs on, or null. */
   assistantAgent(projectId: string): Promise<string | null>;
@@ -298,9 +460,27 @@ export interface Repository {
   }): Promise<AssistantMessage>;
   updateAssistantMessage(
     id: string,
-    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void>;
   clearAssistant(projectId: string): Promise<void>;
+  /** One card's chat, oldest first. */
+  cardChatMessages(cardId: string): Promise<CardChatMessage[]>;
+  cardChatMessage(id: string): Promise<CardChatMessage | null>;
+  addCardChatMessage(input: {
+    projectId: string;
+    cardKind: "epic" | "ticket";
+    cardId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: CardChatMessage["status"];
+  }): Promise<CardChatMessage>;
+  updateCardChatMessage(
+    id: string,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
+  ): Promise<void>;
+  clearCardChat(cardId: string): Promise<void>;
+  /** A board's card chat answers a CLI agent is still writing in GitHub Actions. */
+  pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,

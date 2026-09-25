@@ -1,25 +1,24 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
-import {
-  APIConnectionError,
-  APIError,
-  AuthenticationError,
-  RateLimitError,
-} from "@anthropic-ai/sdk/error";
+import { APIConnectionError, APIError } from "@anthropic-ai/sdk/error";
+import { describeProviderError } from "./limits";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
 import type {
+  AgentAttachment,
   AgentConfig,
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
   DraftTicket,
+  ExistingTicket,
   ProductAgent,
   ShowcaseAgent,
   Usage,
 } from "./ports";
+import { decompositionGuidance } from "./decomposition-guidance";
 import { type Prd, prdSchema } from "@/lib/domain/entities";
 import { estimateCostCents } from "@/lib/budget/limits";
 import { env } from "@/lib/secrets/env";
@@ -35,6 +34,8 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  ticketSpecSchema,
+  toDraftTicket,
 } from "./decomposition";
 import { requestShape } from "./models";
 
@@ -78,6 +79,58 @@ export function anthropicClient(apiKey?: string | null): Anthropic {
   return c;
 }
 
+const EPHEMERAL = { type: "ephemeral" } as const;
+
+/**
+ * A system prompt the API caches, along with the tools ahead of it. The
+ * request is stateless, so the prompt is sent every turn; cached, it is not
+ * processed again until it changes, which is also when the cache refreshes.
+ */
+export function cachedSystem(text: string): Array<{
+  type: "text";
+  text: string;
+  cache_control: typeof EPHEMERAL;
+}> {
+  return [{ type: "text", text, cache_control: EPHEMERAL }];
+}
+
+/**
+ * The conversation with a cache breakpoint on its last block, so the next
+ * turn reads everything before it from the cache instead of reprocessing a
+ * transcript that only ever grows. Only the copy sent carries the marker:
+ * the API allows four, and an agentic loop runs for dozens of turns.
+ */
+export function cachedToHere<M extends { content: unknown }>(messages: M[]): M[] {
+  const last = messages.at(-1);
+  if (!last) return messages;
+  const blocks =
+    typeof last.content === "string"
+      ? [{ type: "text", text: last.content }]
+      : (last.content as Array<Record<string, unknown>>);
+  if (blocks.length === 0) return messages;
+  const marked = [...blocks.slice(0, -1), { ...blocks.at(-1), cache_control: EPHEMERAL }];
+  return [...messages.slice(0, -1), { ...last, content: marked }];
+}
+
+/**
+ * Input tokens as billed with caching: a cache write costs a quarter more
+ * than plain input, a cache read a tenth. `input_tokens` alone leaves both
+ * out, which would make every cached turn look nearly free to the budget.
+ */
+export function billedInputTokens(usage: {
+  input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}): { tokensIn: number; costTokensIn: number } {
+  const plain = usage.input_tokens ?? 0;
+  const written = usage.cache_creation_input_tokens ?? 0;
+  const read = usage.cache_read_input_tokens ?? 0;
+  return {
+    tokensIn: plain + written + read,
+    costTokensIn: plain + written * 1.25 + read * 0.1,
+  };
+}
+
 function usageFrom(
   model: string,
   usage: { input_tokens?: number; output_tokens?: number } | null | undefined,
@@ -107,22 +160,21 @@ function failure(
 }
 
 /**
- * Turns an SDK error into something a card can display. Most specific first:
- * a single broad catch would lose the retryable / not-retryable distinction
- * that decides whether a run is worth another attempt.
+ * Turns an SDK error into something a card can display: a rejected key, an
+ * account out of credit, a rate limit and until when, an overloaded API.
+ * Shared with the coding loop, so every Claude agent says it the same way.
  */
-function describeError(e: unknown): string {
-  if (e instanceof RateLimitError) {
-    return "Rate limited by the Anthropic API. This run will need to be retried.";
-  }
-  if (e instanceof AuthenticationError) {
-    return "The Anthropic API key was rejected.";
-  }
+export function describeError(e: unknown): string {
   if (e instanceof APIConnectionError) {
     return "Could not reach the Anthropic API.";
   }
   if (e instanceof APIError) {
-    return `Anthropic API error ${e.status ?? ""}: ${e.message}`.trim();
+    return describeProviderError({
+      label: "The Anthropic API",
+      status: e.status ?? null,
+      message: e.message,
+      retryAfter: e.headers?.get("retry-after") ?? null,
+    });
   }
   if (e instanceof Error) return e.message;
   return "Unknown agent failure.";
@@ -133,10 +185,15 @@ export class AnthropicProductAgent implements ProductAgent {
 
   async draftPrd(
     ctx: AgentContext,
-    input: { epicId: string; rawRequest: string },
-  ): Promise<AgentOutcome<{ title: string; prd: Prd }>> {
+    input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<
+      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "reroute"; reason: string; ticket: DraftTicket }
+    >
+  > {
     const model = this.config.model ?? MODELS.product;
-    const shape = requestShape(model);
+    const shape = requestShape(model, { effort: "medium" });
 
     const outputSchema = z.object({
       title: z.string().describe("A short imperative Epic title, under 80 characters."),
@@ -204,7 +261,7 @@ export class AnthropicProductAgent implements ProductAgent {
         );
       }
 
-      return { ok: true, value: parsed.data, usage };
+      return { ok: true, value: { kind: "prd", ...parsed.data }, usage };
     } catch (e) {
       return failure(model, describeError(e));
     }
@@ -216,10 +273,17 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
 
   async decompose(
     ctx: AgentContext,
-    input: { epicId: string; title: string; prd: Prd; repoTree: string[] },
+    input: {
+      epicId: string;
+      title: string;
+      prd: Prd;
+      repoTree: string[];
+      existing?: ExistingTicket[];
+      instructions?: string[];
+    },
   ): Promise<AgentOutcome<DraftTicket[]>> {
     const model = this.config.model ?? MODELS.architect;
-    const shape = requestShape(model, { effort: "high" });
+    const shape = requestShape(model, { effort: "medium" });
     const messages: Anthropic.Beta.BetaMessageParam[] = [
       {
         role: "user",
@@ -231,6 +295,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
           "",
           "Existing top-level directories in the repository:",
           input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+          decompositionGuidance(input.existing, input.instructions),
         ].join("\n"),
       },
     ];
@@ -309,6 +374,65 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
       total,
     );
   }
+
+  async draftTicket(
+    ctx: AgentContext,
+    input: { rawRequest: string; repoTree: string[]; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
+  > {
+    const model = this.config.model ?? MODELS.architect;
+    const shape = requestShape(model, { effort: "medium" });
+
+    try {
+      const message = await anthropicClient(this.config.apiKey).beta.messages.create({
+        model,
+        max_tokens: 8_000,
+        system: withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF),
+        ...(shape.thinking ? { thinking: shape.thinking } : {}),
+        ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
+        output_config: { ...shape.outputConfig, format: zodOutputFormat(ticketSpecSchema) },
+        betas: shape.betas,
+        messages: [
+          {
+            role: "user",
+            content: [
+              "Raw feature request:",
+              input.rawRequest,
+              "",
+              "Existing top-level directories in the repository:",
+              input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+            ].join("\n"),
+          },
+        ],
+      });
+
+      const usage = usageFrom(model, message.usage);
+
+      if (message.stop_reason === "refusal") {
+        return failure(model, "The model declined to draft this ticket.", true, usage);
+      }
+
+      const text = message.content
+        .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+
+      const parsed = ticketSpecSchema.safeParse(JSON.parse(text));
+      if (!parsed.success) {
+        return failure(
+          model,
+          `The Architect Agent returned a malformed ticket: ${parsed.error.issues[0]?.message}`,
+          false,
+          usage,
+        );
+      }
+
+      return { ok: true, value: { kind: "ticket", ticket: toDraftTicket(parsed.data) }, usage };
+    } catch (e) {
+      return failure(model, describeError(e));
+    }
+  }
 }
 
 export class AnthropicShowcaseAgent implements ShowcaseAgent {
@@ -324,7 +448,7 @@ export class AnthropicShowcaseAgent implements ShowcaseAgent {
     },
   ): Promise<AgentOutcome<string>> {
     const model = this.config.model ?? MODELS.showcase;
-    const shape = requestShape(model);
+    const shape = requestShape(model, { effort: "medium" });
 
     try {
       // Per-PR summaries are written at merge time, so this aggregates short

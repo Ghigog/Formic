@@ -10,6 +10,7 @@ import {
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { modelLabel } from "@/lib/agents/models";
 import { provider as providerInfo, shortModelName } from "@/lib/llm/providers";
+import { useCountdown } from "@/lib/hooks/use-countdown";
 
 /** "Sonnet 5" for a known Claude model, the bare id for anything else. */
 function modelName(model: string): string {
@@ -98,7 +99,7 @@ export function AgentSelect({
         <div
           role="menu"
           aria-label={`Agents for ${COLUMN_LABELS[column]}`}
-          className="bg-card border-line shadow-lift absolute top-full right-0 left-0 z-30 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-lg border p-1"
+          className="bg-card border-line shadow-lift absolute top-full right-0 left-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-lg border p-1"
         >
           <button
             type="button"
@@ -115,34 +116,39 @@ export function AgentSelect({
           </button>
 
           {presets.map((p) => (
-            <div key={p.id} className="group flex items-center">
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected?.id === p.id}
-                className={item}
-                onClick={() => void pick(p.id)}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="text-ink block truncate font-medium">{p.name}</span>
-                  <span className="text-muted block font-mono text-[10px]">
-                    {providerInfo(p.provider)?.label ?? p.provider}
-                    {p.model ? ` · ${modelName(p.model)}` : ""}
+            <div key={p.id} className="group flex flex-col">
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected?.id === p.id}
+                  className={item}
+                  onClick={() => void pick(p.id)}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="text-ink block truncate font-medium">{p.name}</span>
+                    <span className="text-muted block font-mono text-[10px]">
+                      {providerInfo(p.provider)?.label ?? p.provider}
+                      {p.model ? ` · ${modelName(p.model)}` : ""}
+                    </span>
                   </span>
-                </span>
-                {selected?.id === p.id && <Check />}
-              </button>
-              <button
-                type="button"
-                aria-label={`Edit ${p.name}`}
-                onClick={() => {
-                  setOpen(false);
-                  onEdit(p);
-                }}
-                className="text-muted hover:text-ink hover:bg-cream ml-0.5 inline-flex size-11 shrink-0 md:size-7 items-center justify-center rounded-md"
-              >
-                <Pencil />
-              </button>
+                  {selected?.id === p.id && <Check />}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Edit ${p.name}`}
+                  onClick={() => {
+                    setOpen(false);
+                    onEdit(p);
+                  }}
+                  className="text-muted hover:text-ink hover:bg-cream ml-0.5 inline-flex size-11 shrink-0 md:size-7 items-center justify-center rounded-md"
+                >
+                  <Pencil />
+                </button>
+              </div>
+              {p.limitedUntil && (
+                <LimitNote until={p.limitedUntil} />
+              )}
             </div>
           ))}
 
@@ -200,5 +206,17 @@ function Pencil() {
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <path d="M8 2.5 9.5 4 4.5 9H3V7.5L8 2.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/** "Out of usage until 6:30 PM", while it is. */
+function LimitNote({ until }: { until: string | null }) {
+  const left = useCountdown(until);
+  if (left === null || !until) return null;
+  return (
+    <span className="text-rust block truncate px-2 pb-1.5 text-[10px]">
+      Out of usage until{" "}
+      {new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+    </span>
   );
 }

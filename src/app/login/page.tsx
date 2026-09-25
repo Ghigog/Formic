@@ -1,4 +1,4 @@
-import { authMode, safeNext } from "@/lib/auth/session";
+import { authMode, safeNext, secretProblem } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,7 @@ export default async function LoginPage({
   const { next: rawNext, error } = await searchParams;
   const next = safeNext(rawNext);
   const github = authMode() === "github";
+  const problem = github ? secretProblem() : null;
 
   return (
     <main className="bg-cream flex min-h-dvh items-center justify-center p-4">
@@ -17,19 +18,25 @@ export default async function LoginPage({
         <h1 className="font-serif text-[22px] font-semibold">Formic</h1>
 
         {github ? (
-          <>
-            <p className="text-muted text-[13px]">
-              Sign in with GitHub. Your agents work on the repositories you give
-              the Formic app access to, as you.
+          problem ? (
+            <p role="alert" className="text-crimson-text text-[13px]">
+              Sign-in is refused: {problem}
             </p>
-            <a
-              href={`/api/auth/github/login?next=${encodeURIComponent(next)}`}
-              className="bg-anthracite text-cream inline-flex h-10 items-center justify-center gap-2 rounded-lg text-[14px] font-semibold"
-            >
-              <GitHubMark />
-              Sign in with GitHub
-            </a>
-          </>
+          ) : (
+            <>
+              <p className="text-muted text-[13px]">
+                Sign in with GitHub. Your agents work on the repositories you give
+                the Formic app access to, as you.
+              </p>
+              <a
+                href={`/api/auth/github/login?next=${encodeURIComponent(next)}`}
+                className="bg-anthracite text-cream inline-flex h-10 items-center justify-center gap-2 rounded-lg text-[14px] font-semibold"
+              >
+                <GitHubMark />
+                Sign in with GitHub
+              </a>
+            </>
+          )
         ) : (
           <form method="post" action="/api/login" className="flex flex-col gap-3">
             <p className="text-muted text-[13px]">This board is private. Enter its password.</p>

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ProviderInfo } from "./providers";
+import { describeProviderError } from "@/lib/agents/limits";
 
 /**
  * OpenAI's chat completions format, spoken at whichever address a provider
@@ -48,11 +49,13 @@ function endpoint(p: ProviderInfo, path: string): string {
   return `${p.baseUrl}${path}`;
 }
 
-function describeStatus(p: ProviderInfo, status: number, body: string): string {
-  if (status === 401 || status === 403) return `${p.label} rejected the API key.`;
-  if (status === 429) return `Rate limited by ${p.label}. This run will need to be retried.`;
-  const detail = body.slice(0, 300).replace(/\s+/g, " ").trim();
-  return `${p.label} error ${status}${detail ? `: ${detail}` : ""}`;
+function describeStatus(p: ProviderInfo, res: Response, body: string): string {
+  return describeProviderError({
+    label: p.label,
+    status: res.status,
+    message: body,
+    retryAfter: res.headers.get("retry-after"),
+  });
 }
 
 export async function chat(
@@ -95,7 +98,7 @@ export async function chat(
   // asks for JSON anyway, so without it the answer is still parseable.
   if (!res.ok && request.json && res.status === 400) res = await send(false);
   if (!res.ok) {
-    throw new ProviderError(describeStatus(p, res.status, await res.text()), res.status);
+    throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
   }
 
   const body = (await res.json()) as {
@@ -119,7 +122,7 @@ export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise
     cache: "no-store",
   }).catch(() => null);
   if (!res) throw new ProviderError(`Could not reach ${p.label}.`, null);
-  if (!res.ok) throw new ProviderError(describeStatus(p, res.status, await res.text()), res.status);
+  if (!res.ok) throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
   const body = (await res.json()) as { data?: Array<{ id: string }> };
   return (body.data ?? []).map((m) => m.id.replace(/^models\//, "")).sort();
 }

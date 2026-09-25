@@ -54,12 +54,23 @@
   --jade-chip: #edf4ed;
   --jade-chip-text: #1e5620;
   --jade-wash: #f7faf7; /* the merged-epic group header */
+  --jade-line: #a5c8a7; /* a review card whose checks passed */
+  --crimson-chip: #fbeaea; /* bug badges, penalties, a hot multiplier */
+  --crimson-chip-text: #7f1d1d;
+  --clay-chip: #fbf0da; /* a warm multiplier, an S grade */
+  --clay-chip-text: #6b4200;
+  --terracotta-lit: #ee9a62; /* the bright stripe on an in-review bar */
+  --done-card: #e7e3dc; /* a merged ticket standing on its own */
+  --done-card-line: #d6d0c6;
+  --on-accent: #ffffff; /* marks drawn on a filled status colour */
 
   /* --- Terminal and ambient drawer -------------------------------------- */
   --drawer-line: #3b3734;
   --drawer-muted: #c6c0ba;
   --log-text: #e7e5e4;
   --log-error: #f0a58a; /* crimson is 3.1:1 on anthracite; this is 6.9:1 */
+  --drawer-hover: #292524;
+  --nest-hole: #0c0a09;
 
   --focus: var(--terracotta-cta);
 }
@@ -96,6 +107,13 @@
   --jade-chip: #1b2a1c;
   --jade-chip-text: #66bb6a;
   --jade-wash: #17201a;
+  --jade-line: #2f5a33;
+  --crimson-chip: #2e1a1a;
+  --crimson-chip-text: #f28b82;
+  --clay-chip: #2e2412;
+  --clay-chip-text: #e0a33c;
+  --done-card: #24201d;
+  --done-card-line: #37322e;
 }
 
 @theme inline {
@@ -132,6 +150,17 @@
   --color-jade-chip: var(--jade-chip);
   --color-jade-chip-text: var(--jade-chip-text);
   --color-jade-wash: var(--jade-wash);
+  --color-jade-line: var(--jade-line);
+  --color-crimson-chip: var(--crimson-chip);
+  --color-crimson-chip-text: var(--crimson-chip-text);
+  --color-clay-chip: var(--clay-chip);
+  --color-clay-chip-text: var(--clay-chip-text);
+  --color-terracotta-lit: var(--terracotta-lit);
+  --color-done-card: var(--done-card);
+  --color-done-card-line: var(--done-card-line);
+  --color-on-accent: var(--on-accent);
+  --color-drawer-hover: var(--drawer-hover);
+  --color-nest-hole: var(--nest-hole);
 
   --color-drawer-line: var(--drawer-line);
   --color-drawer-muted: var(--drawer-muted);
@@ -298,6 +327,18 @@
     animation: dotPulse 1.6s ease-in-out infinite;
   }
 
+  /*
+   * A scroll area that looks like one. macOS hides scrollbars until you
+   * scroll, which leaves a full column looking like it simply ends; a thin
+   * bar that is always there says there is more.
+   */
+  .scroll-area {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
   .pulse-trail {
     animation: trailPulse 2.4s ease-in-out infinite;
   }
@@ -368,8 +409,81 @@
   }
 }
 
+/* The same march, downward: between the steps of a ticket's plan. */
+.ant-trail-vertical {
+  width: 3px;
+  background-image: radial-gradient(circle, var(--clay) 1.1px, transparent 1.6px);
+  background-size: 3px 7px;
+  background-repeat: repeat-y;
+  animation: ant-march-down 0.9s linear infinite;
+}
+
+@keyframes ant-march-down {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 7px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ant-trail {
+  .ant-trail,
+  .ant-trail-vertical {
+    animation: none;
+  }
+}
+
+/*
+ * The colony layer (design/artboards/ColonyBoard.html): a green glow on work
+ * ready to move on, the timeline's marching stripes and its "now" ping.
+ */
+@keyframes readyGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(46 125 50 / 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(46 125 50 / 0);
+  }
+}
+
+@keyframes tlStripe {
+  to {
+    background-position: 17px 0;
+  }
+}
+
+@keyframes tlPing {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+@keyframes reqFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes reqPop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+.glow-ready {
+  animation: readyGlow 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-ready {
     animation: none;
   }
 }

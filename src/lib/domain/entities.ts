@@ -42,6 +42,37 @@ export type CardKind = (typeof CARD_KINDS)[number];
 export const TICKET_SIZES = ["S", "M", "L", "XL"] as const;
 export type TicketSize = (typeof TICKET_SIZES)[number];
 
+export const ATTACHMENT_KINDS = ["image", "file"] as const;
+export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
+
+/**
+ * What the client and drawers see of a stored file: never the raw bytes,
+ * which stay behind attachmentContent so a board payload never carries them.
+ */
+export interface AttachmentSummary {
+  id: string;
+  filename: string;
+  mimeType: string;
+  kind: AttachmentKind;
+  size: number;
+  url: string;
+}
+
+/** Story points: the Fibonacci scale from 1 to 13. */
+export const STORY_POINTS = [1, 2, 3, 5, 8, 13] as const;
+export type StoryPoints = (typeof STORY_POINTS)[number];
+
+/** One step of the plan an agent works a ticket through. */
+export interface PlanStep {
+  step: string;
+  status: "pending" | "in_progress" | "done";
+}
+
+export const planStepSchema = z.object({
+  step: z.string().trim().min(1).max(300),
+  status: z.enum(["pending", "in_progress", "done"]),
+});
+
 /** A directory prefix. Validated further by normalizeScopePath. */
 export const filePathSchema = z
   .string()
@@ -86,6 +117,10 @@ export const epicSchema = z.object({
   stage: z.number().int().min(1).max(8),
   position: z.number(),
   showcase: z.string().nullable().default(null),
+  /** A holder for a ticket with no Epic of its own. See BoardCard.standalone. */
+  standalone: z.boolean().default(false),
+  rerouteFrom: z.enum(COLUMNS).nullable().default(null),
+  rerouteReason: z.string().nullable().default(null),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
@@ -109,6 +144,8 @@ export const ticketSchema = z.object({
   prNumber: z.number().int().nullable().default(null),
   prUrl: z.string().nullable().default(null),
   blockedReason: z.string().nullable().default(null),
+  rerouteFrom: z.enum(COLUMNS).nullable().default(null),
+  rerouteReason: z.string().nullable().default(null),
   attempts: z.number().int().min(0).default(0),
   costCents: z.number().min(0).default(0),
   tokensIn: z.number().int().min(0).default(0),
@@ -154,7 +191,23 @@ export interface BoardCard {
   epicId: string | null;
   /** A ticket the user pulled out of its epic's group. Renders on its own. */
   detached?: boolean;
+  /**
+   * Epics only: a holder for a ticket with no Epic of its own. Never its own
+   * card on the board — boardCards() excludes it, and its one child ticket
+   * renders alone, marked detached, exactly as today.
+   */
+  standalone?: boolean;
+  /** The column a request was rerouted from, and why. Null outside a reroute. */
+  rerouteFrom?: (typeof COLUMNS)[number] | null;
+  rerouteReason?: string | null;
   size: TicketSize | null;
+  /** Tickets only: the estimate, 1 to 13. Null when none was given. */
+  storyPoints?: number | null;
+  /**
+   * Tickets only: work for a person, not an agent, and why. No agent starts
+   * it; the person does it and closes it from its chat.
+   */
+  needsHuman?: string | null;
   agentRole: AgentRole | null;
   model: string | null;
   fileScope: string[];
@@ -162,9 +215,32 @@ export interface BoardCard {
   prNumber: number | null;
   prUrl: string | null;
   blockedReason: string | null;
+  /**
+   * Where a person put it when that was not somewhere it can be. It shows
+   * there, with `misplacedReason` saying what is wrong and how to fix it,
+   * while its status stays what is really true of it. Null when it is where
+   * its status says.
+   */
+  misplacedIn?: (typeof COLUMNS)[number] | null;
+  misplacedReason?: string | null;
   costCents: number;
   childCount: number;
   doneCount: number;
+  /** ISO time the card was made. Drives the timeline. */
+  createdAt?: string;
+  /** ISO time its first agent run started, or null before any has. */
+  startedAt?: string | null;
+  /** ISO time it last changed. */
+  updatedAt?: string;
+  /**
+   * ISO time the agent working on it now started, or null when none is.
+   * Drives the timer on a card while it is being worked on, and only then.
+   */
+  workingSince?: string | null;
+  /** Tickets: when it merged, and what the merge scored. Null before then. */
+  mergedAt?: string | null;
+  mergePoints?: number | null;
+  mergeMultiplier?: number | null;
 }
 
 export const STAGE_COUNT = LIFECYCLE_STAGES.length;
@@ -189,6 +265,13 @@ export interface AgentPreset {
   /** False means runs use the server's ANTHROPIC_API_KEY. */
   hasKey: boolean;
   keyHint: string | null;
+  /**
+   * ISO time this agent's plan is out of usage until, or null. A column
+   * running it takes no work until then.
+   */
+  limitedUntil: string | null;
+  /** What the agent said when it ran out. */
+  limitNote: string | null;
 }
 
 export const agentPresetInputSchema = z

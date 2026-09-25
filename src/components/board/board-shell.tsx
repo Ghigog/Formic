@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Board } from "./board";
-import { NewItemDialog } from "./new-item-dialog";
+import { NewItemDialog, type CaptureColumn } from "./new-item-dialog";
 import { EpicDrawer } from "./epic-drawer";
+import { TicketDrawer, type SubscribeToEvents } from "./ticket-drawer";
+import type { FormicEvent } from "@/lib/domain/events";
 import {
   AmbientDrawer,
   type AmbientStats,
@@ -17,6 +19,10 @@ import { AgentEditor } from "./agent-editor";
 import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
+import { ColonyProvider, useColony } from "@/components/colony/colony";
+import { ColonyTimeline } from "@/components/colony/timeline";
+import { ColonyPopover, NestButton } from "@/components/colony/nest";
+import { ColonyToast, EpicWinDialog } from "@/components/colony/overlays";
 
 /**
  * Client shell: owns the live board state, the capture dialog and the ambient
@@ -48,11 +54,21 @@ export function BoardShell({
   initialColumnAgents?: ColumnAgents;
   account?: Account;
 }) {
-  const { cards, extras, stats, prdStreams, connection, transition, createEpic } =
-    useBoard(initialCards, initialStats);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [openEpicId, setOpenEpicId] = useState<string | null>(null);
   const agentState = useAgents(initialPresets, initialColumnAgents);
+  // Views that follow the event stream themselves, such as an open ticket.
+  const listeners = useRef(new Set<(event: FormicEvent, seq: number) => void>());
+  const subscribe = useCallback<SubscribeToEvents>((listener) => {
+    listeners.current.add(listener);
+    return () => listeners.current.delete(listener);
+  }, []);
+  const { cards, extras, stats, prdStreams, connection, transition, createEpic, createTicket } =
+    useBoard(initialCards, initialStats, (event, seq) => {
+      if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
+      for (const listener of listeners.current) listener(event, seq);
+    });
+  const [dialog, setDialog] = useState<{ column: CaptureColumn } | null>(null);
+  const [openEpicId, setOpenEpicId] = useState<string | null>(null);
+  const [openTicketId, setOpenTicketId] = useState<string | null>(null);
   /** The agent editor: which column it was opened from, and what it edits. */
   const [editing, setEditing] = useState<{
     column: ColumnId | "assistant";
@@ -76,7 +92,10 @@ export function BoardShell({
     merged[id] = { ...merged[id], ...live };
   }
 
+  const repoName = repoFullName.split("/")[1] ?? repoFullName;
+
   return (
+    <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
     <div className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={cards}
@@ -85,11 +104,10 @@ export function BoardShell({
         repoFullName={repoFullName}
         baseBranch={baseBranch}
         onOpenCard={(card) =>
-          setOpenEpicId(card.kind === "epic" ? card.id : card.epicId)
+          card.kind === "epic" ? setOpenEpicId(card.id) : setOpenTicketId(card.id)
         }
         onShowcase={(epic) => setOpenEpicId(epic.id)}
-        onNewItem={() => setDialogOpen(true)}
-        onCapture={createEpic}
+        onNewItem={(column) => setDialog({ column })}
         onTransition={transition}
         account={account}
         assistant={{
@@ -126,27 +144,63 @@ export function BoardShell({
       )}
 
       <NewItemDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onSubmit={createEpic}
+        open={dialog !== null}
+        column={dialog?.column ?? "backlog"}
+        onClose={() => setDialog(null)}
+        onSubmit={(rawRequest, requestId) =>
+          dialog?.column === "todo"
+            ? createTicket(rawRequest, requestId)
+            : createEpic(rawRequest, requestId)
+        }
       />
 
       <EpicDrawer
         epicId={openEpicId}
         onClose={() => setOpenEpicId(null)}
+        onOpenTicket={(ticketId) => {
+          setOpenEpicId(null);
+          setOpenTicketId(ticketId);
+        }}
         streamingPrd={openEpicId ? prdStreams[openEpicId] : undefined}
       />
 
-      <AmbientDrawer stats={stats} onStopAll={() => void stopAll()} />
+      <TicketDrawer
+        ticketId={openTicketId}
+        onClose={() => setOpenTicketId(null)}
+        onOpenEpic={(epicId) => {
+          setOpenTicketId(null);
+          setOpenEpicId(epicId);
+        }}
+        subscribe={subscribe}
+      />
+
+      <ColonyAmbient stats={stats} onStopAll={() => void stopAll()} />
+      <ColonyTimeline repoName={repoName} />
+      <ColonyPopover />
+      <ColonyToast />
+      <EpicWinDialog onShowcase={(epic) => setOpenEpicId(epic.id)} />
 
       {connection === "reconnecting" && (
         <div
           role="status"
-          className="bg-rust/12 text-ink fixed bottom-16 left-4 z-40 rounded-md px-2 py-1 text-[11px]"
+          className="bg-rust/12 text-ink fixed bottom-16 left-4 z-50 rounded-md px-2 py-1 text-[11px]"
         >
           Reconnecting to the agent stream…
         </div>
       )}
     </div>
+    </ColonyProvider>
+  );
+}
+
+/** The ambient bar, with the colony's bug count and its nest. */
+function ColonyAmbient(props: { stats: AmbientStats; onStopAll: () => void }) {
+  const colony = useColony();
+  return (
+    <AmbientDrawer
+      {...props}
+      bugsSquashed={colony?.score.squashed}
+      nest={<NestButton />}
+    />
   );
 }

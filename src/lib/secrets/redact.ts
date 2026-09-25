@@ -34,10 +34,6 @@ const SECRET_ENV_KEYS = [
   "DATABASE_URL",
 ] as const;
 
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /** Values short enough to appear by accident are not worth substring-matching. */
 const MIN_SECRET_LENGTH = 8;
 

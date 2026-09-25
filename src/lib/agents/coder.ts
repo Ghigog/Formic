@@ -8,11 +8,13 @@ import type {
   CoderAgent,
   CoderTask,
   FailingCheck,
+  ReviewTask,
+  ReviewVerdict,
   ReviewerAgent,
 } from "./ports";
 import { runCodingLoop } from "./coding-loop";
 import type { Workspace } from "@/lib/sandbox/workspace";
-import { CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
+import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
 
 /**
  * The two agents that write code. Same loop, different brief, and any
@@ -21,6 +23,16 @@ import { CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
 
 export function taskBrief(task: CoderTask): string {
   return [
+    ...(task.instruction
+      ? [
+          "The person asked for this run from the ticket's chat. Do what they ask here; the ticket below is the background it belongs to. Do not start the ticket over, and do not redo work that is already there.",
+          "",
+          task.instruction,
+          "",
+          "---",
+          "",
+        ]
+      : []),
     `Ticket ${task.key}: ${task.title}`,
     "",
     task.description,
@@ -28,7 +40,14 @@ export function taskBrief(task: CoderTask): string {
     "Acceptance criteria:",
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
     "",
-    `File scope (you may write only inside these paths): ${task.fileScope.join(", ")}`,
+    `File scope (where this change is expected to go): ${task.fileScope.join(", ")}`,
+    ...(task.notes?.length
+      ? [
+          "",
+          "Notes on this ticket, from the person watching it or from its review. Follow them; where they disagree, the newest wins:",
+          ...task.notes.map((n) => `- ${n}`),
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -49,6 +68,10 @@ export function failuresBrief(checks: FailingCheck[]): string {
     .join("\n\n");
 }
 
+function withoutSendBack({ sendBack: _, ...change }: CodeChange & { sendBack: string | null }): CodeChange {
+  return change;
+}
+
 export class LoopCoderAgent implements CoderAgent {
   constructor(private readonly config: AgentConfig = {}) {}
 
@@ -61,48 +84,58 @@ export class LoopCoderAgent implements CoderAgent {
       workspace: input.workspace,
       ticketId: input.task.ticketId,
       role: "coder",
-      system: withCodingRules(this.config.brief ?? CODER_BRIEF),
-      provider: this.config.provider,
-      model: this.config.model,
-      apiKey: this.config.apiKey,
-      prompt: `${taskBrief(input.task)}\n\nImplement it.`,
-    });
-  }
-}
-
-export class LoopReviewerAgent implements ReviewerAgent {
-  constructor(private readonly config: AgentConfig = {}) {}
-
-  fix(
-    ctx: AgentContext,
-    input: {
-      task: CoderTask;
-      workspace: Workspace;
-      checks: FailingCheck[];
-      attempt: number;
-      maxAttempts: number;
-    },
-  ): Promise<AgentOutcome<CodeChange>> {
-    const failures = failuresBrief(input.checks);
-
-    return runCodingLoop({
-      ctx,
-      workspace: input.workspace,
-      ticketId: input.task.ticketId,
-      role: "reviewer",
-      system: withCodingRules(this.config.brief ?? REVIEWER_BRIEF),
+      system: withCodingRules(this.config.brief ?? CODER_BRIEF, "coder"),
       provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
       prompt: [
         taskBrief(input.task),
         "",
-        `This is fix attempt ${input.attempt} of ${input.maxAttempts}. After the last one the card stops and waits for a human.`,
+        "Implement it.",
         "",
-        "Failing checks:",
-        "",
-        failures,
+        `${ALREADY_DONE_RULE} To report it, call finish with already_done set to true and the evidence in detail.`,
       ].join("\n"),
+    }).then((outcome) =>
+      outcome.ok ? { ...outcome, value: withoutSendBack(outcome.value) } : outcome,
+    );
+  }
+}
+
+export class LoopReviewerAgent implements ReviewerAgent {
+  constructor(private readonly config: AgentConfig = {}) {}
+
+  review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
+    return runCodingLoop({
+      ctx,
+      workspace: input.workspace,
+      ticketId: input.task.ticketId,
+      role: "reviewer",
+      system: withCodingRules(this.config.brief ?? REVIEWER_BRIEF, "reviewer"),
+      provider: this.config.provider,
+      model: this.config.model,
+      apiKey: this.config.apiKey,
+      prompt: reviewBrief(input),
     });
   }
+}
+
+/** What the Reviewer Agent is told about the pull request in front of it. */
+export function reviewBrief(input: Omit<ReviewTask, "workspace">): string {
+  return [
+    taskBrief(input.task),
+    "",
+    `The checkout is the pull request's branch. It merges into ${input.baseBranch}. To see the diff:`,
+    `git fetch --depth 50 origin ${input.baseBranch} && git diff FETCH_HEAD...HEAD`,
+    "",
+    "Files it changes:",
+    ...(input.changedFiles.length ? input.changedFiles.map((f) => `- ${f}`) : ["(none listed)"]),
+    "",
+    input.checks.length
+      ? ["CI is red. Failing checks:", "", failuresBrief(input.checks)].join("\n")
+      : input.ciRunning
+        ? "CI is still running on this head. Do not run the checks yourself: if one fails, the pull request comes back to you with the failure."
+        : "CI is green on this head. That is the verification; do not run the checks again.",
+    "",
+    `This is review ${input.attempt} of ${input.maxAttempts}. After the last one the card stops and waits for a human.`,
+  ].join("\n");
 }

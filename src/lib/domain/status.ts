@@ -76,10 +76,50 @@ export function columnFor(
   return STATUS_TO_COLUMN[status];
 }
 
-/** A card the user is allowed to pick up. Running cards are not draggable. */
-export function isDraggable(status: TicketStatus): boolean {
-  return status !== "running" && status !== "review";
+/** A ticket no agent has touched yet: no branch, no pull request. */
+export function unstarted(t: {
+  status: TicketStatus;
+  branchName: string | null;
+  prNumber: number | null;
+}): boolean {
+  return (
+    !t.branchName &&
+    !t.prNumber &&
+    (t.status === "draft" || t.status === "ready" || t.status === "waiting")
+  );
 }
+
+/**
+ * What a person needs to know or do about a card: why it cannot work where
+ * they put it, why its agent stopped, or the work on it that is theirs, not
+ * an agent's. Null when there is nothing.
+ */
+export function cardProblem(card: {
+  status: TicketStatus;
+  blockedReason?: string | null;
+  misplacedReason?: string | null;
+  needsHuman?: string | null;
+}): string | null {
+  if (card.misplacedReason) return card.misplacedReason;
+  if (isStalled(card.status) && card.blockedReason) return card.blockedReason;
+  if (card.needsHuman && card.status !== "merged") {
+    return `${card.needsHuman.replace(/\.?\s*$/, ".")} No agent does this one. When you have, tell its chat what you did or found, and it closes.`;
+  }
+  return null;
+}
+
+/**
+ * Where a card shows: where a person put it, when that was somewhere it
+ * cannot really be, and otherwise where its status says.
+ */
+export function columnOf(card: {
+  status: TicketStatus;
+  stalledIn?: ColumnId | null;
+  misplacedIn?: ColumnId | null;
+}): ColumnId {
+  return card.misplacedIn ?? columnFor(card.status, card.stalledIn);
+}
+
 
 /** Terminal states an agent will not move on from without a human. */
 export function isStalled(status: TicketStatus): status is "blocked" | "failed" {
@@ -117,6 +157,11 @@ export function canUserMove(from: ColumnId, to: ColumnId): MoveRejection {
     };
   }
   return { ok: true };
+}
+
+/** Where a human may drag a card from `from`, for messages that explain a rejection. */
+export function allowedUserMoves(from: ColumnId): readonly ColumnId[] {
+  return ALLOWED_USER_MOVES[from];
 }
 
 /** The status a card lands in when a human drops it into a column. */

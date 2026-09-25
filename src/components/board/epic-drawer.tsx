@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { StepIndicator } from "@/components/ui/step-indicator";
+import { SideBySide, WithChat } from "@/components/ui/split";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { StatusPill } from "@/components/ui/status-pill";
+import { CardChat } from "./card-chat";
 import { DagPane } from "./dag-pane";
 import { PrdPane } from "./prd-pane";
-import type { BoardCard, Prd } from "@/lib/domain/entities";
-import { isStalled } from "@/lib/domain/status";
+import { ProblemNotice, WorkTimer } from "./card";
+import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type BoardCard, type Prd } from "@/lib/domain/entities";
+import { columnFor, isStalled } from "@/lib/domain/status";
 import { epicProgress } from "@/lib/domain/stages";
 
 interface EpicDetail {
@@ -15,8 +19,15 @@ interface EpicDetail {
   title: string;
   rawRequest: string;
   prd: Prd | null;
+  /** The PM Agent's write-up, once every ticket has merged. */
+  showcase: string | null;
   children: BoardCard[];
+  /** Its planning stopped, and a person can start it again. */
+  canRetry: boolean;
 }
+
+const ACTION =
+  "border-line rounded border px-1.5 py-0.5 text-[12px] disabled:opacity-50";
 
 /**
  * Dual-pane Epic drawer: the PRD on the left in editorial serif, the child
@@ -27,38 +38,59 @@ interface EpicDetail {
 export function EpicDrawer({
   epicId,
   onClose,
+  onOpenTicket,
   streamingPrd,
 }: {
   epicId: string | null;
   onClose: () => void;
+  /** Opens one of its tickets in its own view. */
+  onOpenTicket?: (ticketId: string) => void;
   /** Live PRD text while the Product Agent writes. */
   streamingPrd?: string;
 }) {
   const [detail, setDetail] = useState<EpicDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [tab, setTab] = useState<"prd" | "dag">("prd");
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Another Epic: nothing of the last one's stays on screen.
+  const [shownFor, setShownFor] = useState(epicId);
+  if (epicId !== shownFor) {
+    setShownFor(epicId);
+    setDetail(null);
+    setFailed(false);
+    setConfirming(false);
+    setActionError(null);
+  }
+  const loading = !!epicId && !detail && !failed;
 
   const load = useCallback(async () => {
     if (!epicId) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/epics/${epicId}`, { cache: "no-store" });
-      if (res.ok) setDetail((await res.json()) as EpicDetail);
-    } finally {
-      setLoading(false);
-    }
+    return fetch(`/api/epics/${epicId}`, { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<EpicDetail>) : null))
+      .then(
+        (found) => (found ? setDetail(found) : setFailed(true)),
+        () => setFailed(true),
+      );
   }, [epicId]);
 
+  // Load on open, and again when the Product Agent finishes writing, so the
+  // streamed draft is replaced by the stored document.
+  const prdWritten = streamingPrd === "";
   useEffect(() => {
-    setDetail(null);
     void load();
-  }, [load]);
+  }, [load, prdWritten]);
 
-  // Reload when the Product Agent finishes writing, so the streamed draft is
-  // replaced by the stored document.
+  // While an agent works on it, look again now and then: its answer may
+  // come from GitHub Actions, which streams nothing here.
+  const working = !!detail?.epic?.agentRole;
   useEffect(() => {
-    if (streamingPrd === "") void load();
-  }, [streamingPrd, load]);
+    if (!working) return;
+    const timer = setInterval(() => void load(), 10_000);
+    return () => clearInterval(timer);
+  }, [working, load]);
 
   useEffect(() => {
     if (!epicId) return;
@@ -86,6 +118,30 @@ export function EpicDrawer({
     [epicId, load],
   );
 
+  const act = useCallback(
+    async (method: "POST" | "DELETE") => {
+      if (!epicId) return;
+      setBusy(true);
+      setActionError(null);
+      try {
+        const res = await fetch(`/api/epics/${epicId}`, { method });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          setActionError(body?.error ?? "That did not work. Try again in a moment.");
+          return;
+        }
+        if (method === "DELETE") onClose();
+        else await load();
+      } catch {
+        setActionError("That did not work. Try again in a moment.");
+      } finally {
+        setBusy(false);
+        setConfirming(false);
+      }
+    },
+    [epicId, load, onClose],
+  );
+
   if (!epicId) return null;
 
   const epic = detail?.epic;
@@ -107,6 +163,7 @@ export function EpicDrawer({
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
+          {epic && <ProblemNotice card={epic} className="mb-3" />}
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <span className="text-fg-subtle font-mono text-[10px]">
@@ -118,6 +175,11 @@ export function EpicDrawer({
               {epic && (
                 <div className="mt-1 flex items-center gap-2">
                   <StatusPill status={epic.status} />
+                  {epic.workingSince && (
+                    <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
+                      Working for <WorkTimer since={epic.workingSince} className="text-ochre-text" />
+                    </span>
+                  )}
                   {epic.childCount > 0 && (
                     <span className="text-fg-subtle text-[11px]">
                       {epic.doneCount} of {epic.childCount} merged
@@ -126,15 +188,68 @@ export function EpicDrawer({
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="text-fg-muted hover:text-fg border-line rounded border px-1.5 py-0.5 text-[12px]"
-            >
-              Close
-            </button>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {detail?.canRetry && !confirming && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void act("POST")}
+                  className={cn(ACTION, "text-fg hover:border-line-strong")}
+                >
+                  Retry
+                </button>
+              )}
+              {epic && !confirming && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirming(true)}
+                  className={cn(ACTION, "text-fg-muted hover:text-crimson-text")}
+                >
+                  Delete
+                </button>
+              )}
+              {confirming && (
+                <>
+                  <span className="text-fg-muted text-[12px]">
+                    {epic && epic.childCount > 0
+                      ? `Delete it and its ${epic.childCount} ticket${epic.childCount === 1 ? "" : "s"}?`
+                      : "Delete it?"}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void act("DELETE")}
+                    className={cn(ACTION, "bg-crimson text-on-crimson border-transparent")}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirming(false)}
+                    className={cn(ACTION, "text-fg-muted hover:text-fg")}
+                  >
+                    Keep
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="text-fg-muted hover:text-fg border-line rounded border px-1.5 py-0.5 text-[12px]"
+              >
+                Close
+              </button>
+            </div>
           </div>
+
+          {actionError && (
+            <p role="alert" className="text-crimson-text mt-2 text-[12px] leading-[1.5]">
+              {actionError}
+            </p>
+          )}
 
           <StepIndicator
             className="mt-3"
@@ -161,30 +276,44 @@ export function EpicDrawer({
           ))}
         </div>
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-2">
-          <div
-            className={cn(
-              "border-line min-h-0 overflow-y-auto lg:border-r",
-              tab === "prd" ? "block" : "hidden lg:block",
-            )}
-          >
-            <PrdPane
-              prd={detail?.prd ?? null}
-              rawRequest={detail?.rawRequest ?? ""}
-              streaming={streamingPrd}
-              onSave={save}
-            />
-          </div>
-
-          <div
-            className={cn(
-              "bg-sunken min-h-0 overflow-y-auto",
-              tab === "dag" ? "block" : "hidden lg:block",
-            )}
-          >
-            <DagPane children={detail?.children ?? []} />
-          </div>
-        </div>
+        <SideBySide
+          storageKey="epic"
+          first={
+            <div className={cn("min-h-0 overflow-y-auto", tab === "prd" ? "block" : "hidden lg:block")}>
+              {detail?.showcase && (
+                <section aria-label="Showcase" className="border-line bg-jade-wash border-b p-4">
+                  <span className="text-jade-chip-text font-mono text-[10px] tracking-[0.12em]">SHOWCASE · PM AGENT</span>
+                  <MarkdownLite text={detail.showcase} className="text-fg mt-2 text-[13px] leading-[1.6]" />
+                </section>
+              )}
+              <PrdPane
+                prd={detail?.prd ?? null}
+                rawRequest={detail?.rawRequest ?? ""}
+                streaming={streamingPrd}
+                writing={epic?.agentRole === "product"}
+                onSave={save}
+              />
+            </div>
+          }
+          second={
+            <div className={cn("bg-sunken min-h-0 flex-col", tab === "dag" ? "flex" : "hidden lg:flex")}>
+              <WithChat
+                storageKey="epic"
+                chat={
+                  epic && (
+                    <CardChat
+                      kind="epic"
+                      cardId={epicId}
+                      agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(epic.status, epic.stalledIn)]]}
+                    />
+                  )
+                }
+              >
+                <DagPane tickets={detail?.children ?? []} onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))} />
+              </WithChat>
+            </div>
+          }
+        />
       </div>
     </div>
   );

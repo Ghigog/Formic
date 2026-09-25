@@ -208,7 +208,13 @@ function epicNote(event: FormicEvent & { type: "card.status" }): string | null {
   }
 }
 
-async function syncTicket(ctx: Context, ticketId: string, event?: FormicEvent & { type: "card.status" }) {
+async function syncTicket(
+  ctx: Context,
+  ticketId: string,
+  event?: FormicEvent & { type: "card.status" },
+  /** The ticket itself changed, say its agent rewrote it: so does its issue. */
+  rewritten = false,
+) {
   const repo = repository();
   await inLane(`ticket:${ticketId}`, async () => {
     const ticket = await repo.ticketDetail(ticketId);
@@ -220,6 +226,7 @@ async function syncTicket(ctx: Context, ticketId: string, event?: FormicEvent & 
       await ctx.client.updateIssue(number, {
         labels: labelsFor(card),
         state: card.status === "merged" ? "closed" : "open",
+        ...(rewritten ? { title: `${ticket.key}: ${ticket.title}`, body: await ticketBody(ticket, card) } : {}),
       });
     } else if (card.status === "merged") {
       await ctx.client.updateIssue(number, { state: "closed" });
@@ -250,7 +257,9 @@ async function syncEpic(ctx: Context, epicId: string, event?: FormicEvent & { ty
 }
 
 async function sync(projectId: string, event: FormicEvent): Promise<void> {
-  if (event.type !== "card.status" && event.type !== "card.created") return;
+  if (event.type !== "card.status" && event.type !== "card.created" && event.type !== "card.deleted") {
+    return;
+  }
 
   const project = await projectFor(projectId);
   if (project.id !== projectId) return;
@@ -259,6 +268,16 @@ async function sync(projectId: string, event: FormicEvent): Promise<void> {
     client: vcs(project.repoFullName, creds.githubToken),
     repoFullName: project.repoFullName,
   };
+
+  // Deleted on the board: its issues close as not planned, rather than
+  // staying open for work that is no longer coming.
+  if (event.type === "card.deleted") {
+    for (const number of event.issueNumbers) {
+      await ctx.client.updateIssue(number, { state: "closed", state_reason: "not_planned" });
+    }
+    return;
+  }
+
   await ensureLabels(ctx.client, ctx.repoFullName);
 
   if (event.type === "card.status") {
@@ -274,7 +293,7 @@ async function sync(projectId: string, event: FormicEvent): Promise<void> {
       await syncTicket(ctx, ticket.id);
     }
   } else {
-    await syncTicket(ctx, event.cardId);
+    await syncTicket(ctx, event.cardId, undefined, true);
   }
 }
 

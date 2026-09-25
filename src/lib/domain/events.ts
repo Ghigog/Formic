@@ -1,4 +1,5 @@
-import { AGENT_ROLES } from "./entities";
+import { AGENT_ROLES, type PlanStep } from "./entities";
+import type { ColumnId } from "./status";
 
 /**
  * Everything the client learns about asynchronously. Delivered over SSE by
@@ -21,6 +22,26 @@ export type FormicEvent =
       cardId: string;
       kind: "epic" | "ticket";
       epicId: string | null;
+    }
+  | {
+      /**
+       * A card is gone: an Epic a person deleted, with every ticket under
+       * it, or a ticket replaced when its Epic was broken down again.
+       */
+      type: "card.deleted";
+      cardId: string;
+      kind: "epic" | "ticket";
+      /** The GitHub issues that tracked it and its tickets, to close. */
+      issueNumbers: number[];
+    }
+  | {
+      /** A request moved to another column: rerouteFrom/rerouteReason changed. */
+      type: "card.rerouted";
+      cardId: string;
+      kind: "epic" | "ticket";
+      from: ColumnId;
+      to: ColumnId;
+      reason: string;
     }
   | {
       type: "epic.prd";
@@ -46,8 +67,47 @@ export type FormicEvent =
   | {
       type: "run.log";
       runId: string;
+      /** The ticket the run works on, so the terminal can name it. */
+      ticketId?: string | null;
       stream: "stdout" | "stderr";
       line: string;
+    }
+  | {
+      /** What an agent thought or said between its actions on a ticket. */
+      type: "run.thought";
+      runId: string;
+      ticketId: string | null;
+      kind: "thinking" | "text";
+      text: string;
+    }
+  | {
+      /** A person's note to the agent working a ticket. */
+      type: "ticket.note";
+      ticketId: string;
+      text: string;
+    }
+  | {
+      /** A person's instruction to the Architect Agent breaking down an Epic. */
+      type: "epic.note";
+      epicId: string;
+      text: string;
+    }
+  | {
+      /** The column's agent answering a person's note on a ticket's chat. */
+      type: "ticket.reply";
+      ticketId: string;
+      /**
+       * The agent that answered, such as "Architect Agent". Null for a notice
+       * about the message itself, such as no agent being set for the column.
+       */
+      agent: string | null;
+      text: string;
+    }
+  | {
+      /** The plan an agent is working a ticket through, as it stands now. */
+      type: "ticket.plan";
+      ticketId: string;
+      steps: PlanStep[];
     }
   | {
       type: "run.diff";
@@ -80,6 +140,14 @@ export type FormicEvent =
       type: "sandbox.count";
       active: number;
       provider: string;
+    }
+  | {
+      /** A saved agent ran out of usage on its plan, or got it back. */
+      type: "agent.limited";
+      presetId: string;
+      /** ISO time it can work again; null when it can now. */
+      until: string | null;
+      note: string | null;
     }
   | {
       type: "budget.exhausted";

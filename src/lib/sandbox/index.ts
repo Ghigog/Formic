@@ -21,7 +21,6 @@ import { publish } from "@/lib/events/bus";
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicSandboxes: Map<string, SandboxHandle> | undefined;
 }
 
@@ -65,12 +64,33 @@ export async function spawnSandbox(
   return handle;
 }
 
-export async function disposeAllSandboxes(projectId: string): Promise<number> {
-  const handles = [...live().values()];
-  await Promise.allSettled(handles.map((h) => h.dispose()));
-  live().clear();
-  await announce(projectId, env().SANDBOX_PROVIDER);
-  return handles.length;
+/**
+ * Disposes exactly the sandboxes named by id, not everything this process
+ * happens to be holding: the ids a stop is told to dispose come from the
+ * database, so a run driven by another instance is reached too, by asking
+ * its provider to kill that id directly rather than through a local handle.
+ */
+export async function disposeSandboxes(
+  projectId: string,
+  ids: string[],
+  e2bApiKey?: string | null,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const provider = sandboxProvider();
+  await Promise.allSettled(
+    ids.map(async (id) => {
+      const handle = live().get(id);
+      if (handle) {
+        // The wrapped dispose in spawnSandbox already removes it from the
+        // registry and announces the new count.
+        await handle.dispose();
+        return;
+      }
+      await provider.disposeById(id, e2bApiKey);
+    }),
+  );
+  await announce(projectId, provider.name);
+  return ids.length;
 }
 
 async function announce(projectId: string, provider: string): Promise<void> {

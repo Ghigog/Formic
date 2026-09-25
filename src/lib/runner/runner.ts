@@ -1,38 +1,53 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
 
 import {
   applyPrd,
+  applyReroute,
   applyShowcase,
   applyTickets,
+  existingTicketsFor,
   stallEpic,
   startRun,
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
-import { failuresBrief, taskBrief } from "@/lib/agents/coder";
+import { diagnose, lastWords } from "@/lib/agents/limits";
+import { planFraction, planFromSummary } from "@/lib/agents/plan";
+import { provider as providerInfo } from "@/lib/llm/providers";
+import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
+import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
+import { reviewBrief, taskBrief } from "@/lib/agents/coder";
 import {
+  ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
   CODER_BRIEF,
+  CODER_SCOPE_RULE,
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
+  REVIEWER_SCOPE_RULE,
   SHOWCASE_BRIEF,
   ENGINEERING_PRACTICES,
+  HANDOFF_RULE,
+  VERIFY_RULE,
   withPlanningConventions,
   withProductConventions,
 } from "@/lib/agents/prompts";
-import type { DraftTicket, FailingCheck } from "@/lib/agents/ports";
+import type { DraftTicket, ReviewTask } from "@/lib/agents/ports";
+import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
+import { askForScope } from "@/lib/coder/scope-request";
 import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  toDraftTicket,
 } from "@/lib/agents/decomposition";
 import { productOutput } from "@/lib/agents/openai-agents";
 import { extractJson } from "@/lib/llm/openai-compat";
-import { prdSchema } from "@/lib/domain/entities";
+import { prdSchema, type PlanStep } from "@/lib/domain/entities";
 import { directoryTree } from "@/lib/vcs/repositories";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -40,7 +55,11 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { STAGING_PREFIX, VcsError, vcs, type VcsClient } from "@/lib/vcs";
+import { signingSecret } from "@/lib/auth/session";
+import { abortTicketRuns } from "@/lib/budget/controller";
+import { ticketNotes } from "@/lib/coder/notes";
+import { readStream } from "./stream";
+import { STAGING_PREFIX, VcsError, mergeTarget, vcs, type VcsClient } from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ANSWER_PATH,
@@ -51,8 +70,10 @@ import {
   attemptOfJob,
   cardOfJob,
   isAnswerMode,
+  isCarried,
   jobId,
-  runTitle,
+  parseRunTitle,
+  runnerResultKey,
   runnerWorkflow,
   type AnswerMode,
   type CodeMode,
@@ -69,16 +90,43 @@ import {
  * work: the file scope first, then the pull request, CI, and the merge loop.
  */
 
+/**
+ * The ticket's plan and its progress bar are read live from the agent's todo
+ * tool, so the plan comes first and is kept current, not only in the summary.
+ */
+export const PLAN_FIRST_RULE = `Your first action, before you read or change anything, is to write your plan with your todo tool (TodoWrite in Claude Code, the plan tool in Codex, write_todos in Gemini CLI): the steps you expect to take, one per item. Formic shows it on the ticket and tracks progress by it. Mark each step in progress when you start it and done when you finish it, and add, split or drop steps as you learn more. If you have no todo tool, write the plan in your message as a checklist, one "- [ ] step" per line, and post the whole checklist again, with "- [x]" for done steps, each time a step's status changes.`;
+
 /** Dispatch inputs are capped at 65,535 characters in total. */
 const MAX_PROMPT = 50_000;
 
-const CLI_RULES = `Rules that are enforced, not advisory:
-- Only change files inside the ticket's file scope. Formic compares your changes to it, and throws the whole run away if anything outside it changed.
+/** How much of an agent's report the ticket view shows. */
+const MAX_REPORT = 20_000;
+
+const cliRules = (scopeRule: string) => `Rules that are enforced, not advisory:
+- ${PLAN_FIRST_RULE}
+- ${scopeRule}
 - Match the surrounding code. Read neighbouring files before you write.
-- Verify before you finish. Find the project's own check command and run it.
+- ${VERIFY_RULE}
+- The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
-- When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why.`;
+- When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.
+- ${HANDOFF_RULE} Put them in the summary as a "For you:" section, one "- step" per line, before the plan.`;
+
+/**
+ * The trailer that marks a CLI agent's report that the ticket was already
+ * done. The workflow only hands work back when there is a commit, so the
+ * agent makes an empty one; that keeps the installed workflow unchanged.
+ */
+export const ALREADY_DONE_TRAILER = "Formic-Already-Done: true";
+
+const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:
+git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
+
+/** Whether a CLI agent's commits report the ticket as already done. */
+export function reportsAlreadyDone(messages: string[]): boolean {
+  return messages.some((m) => m.split("\n").some((line) => line.trim() === ALREADY_DONE_TRAILER));
+}
 
 export type RunnerState =
   | { ready: true }
@@ -133,30 +181,143 @@ function explain(e: unknown): string {
   return message;
 }
 
+/**
+ * Why a run did not succeed, in words a card can show. GitHub only says
+ * "failure"; the agent's reason is in the log, so this reads it. A usage
+ * limit with a reset time also marks the agent out until then, which greys
+ * its column out on the board.
+ *
+ * `presetId` is the agent the failed run was actually dispatched with,
+ * recorded at dispatch time. It is never re-derived from the column's
+ * current agent: by the time a run's failure is processed, a person may
+ * already have switched that column to a different agent, and blaming the
+ * new one for the old run's limit would mark it out of usage it never used.
+ */
+async function whyItFailed(
+  projectId: string,
+  client: VcsClient,
+  result: RunnerResult,
+  presetId: string | null,
+): Promise<string> {
+  const log = result.url ? ` Its log: ${result.url}` : "";
+  if (result.conclusion === "cancelled") return `The agent's GitHub Actions run was cancelled.${log}`;
+  if (result.conclusion === "timed_out") {
+    return `The agent ran past the workflow's 60-minute limit and was stopped.${log}`;
+  }
+  const plain = `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`;
+  const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
+  if (!text) return plain;
+
+  const repo = repository();
+  const found = presetId ? await repo.presetForRun(presetId) : null;
+  const label = found
+    ? (providerInfo(found.preset.provider)?.label ?? "The agent").split(" (")[0]!
+    : "The agent";
+
+  const diagnosis = diagnose(text, label);
+  if (!diagnosis) {
+    const last = lastWords(text);
+    return last ? `The agent's GitHub Actions run failed: "${last}".${log}` : plain;
+  }
+  if (diagnosis.kind === "limit" && diagnosis.until && found) {
+    await repo.setPresetLimit(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
+    await publish(projectId, {
+      type: "agent.limited",
+      presetId: found.preset.id,
+      until: diagnosis.until.toISOString(),
+      note: diagnosis.message,
+    });
+  }
+  return `${diagnosis.message}${log}`;
+}
+
+/**
+ * The Actions secret a saved agent's sign-in lives in: its own, so two
+ * Claude accounts on one repository never swap tokens between runs.
+ */
+export function secretNameFor(agent: Pick<CliAgent, "presetId" | "info">): string {
+  if (!agent.presetId) return agent.info.secretName;
+  return `${agent.info.secretName}_${agent.presetId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}
+
+/**
+ * What a CLI agent's run leaves for the ticket view: it works out of sight
+ * in GitHub Actions, so its plan and its account of the work are read from
+ * its summary once it is done.
+ */
+async function recordCliWork(projectId: string, ticketId: string, summary: string): Promise<void> {
+  const steps = planFromSummary(summary);
+  if (steps.length > 0) {
+    await repository().updateTicket(ticketId, { plan: steps });
+    await publish(projectId, { type: "ticket.plan", ticketId, steps });
+  }
+  const text = summary.trim();
+  if (text) {
+    const shown =
+      text.length > MAX_REPORT
+        ? `${text.slice(0, MAX_REPORT)}…\n\n[Cut short here. The full report is on the pull request.]`
+        : text;
+    await publish(projectId, { type: "run.thought", runId: "", ticketId, kind: "text", text: shown });
+  }
+}
+
 function cap(text: string): string {
   return text.length > MAX_PROMPT ? `${text.slice(0, MAX_PROMPT)}\n\n[cut short]` : text;
+}
+
+/** The trailer that ends a CLI reviewer's summary when it changed nothing. */
+export const REVIEW_TRAILER = "Formic-Review:";
+
+const CLI_REVIEW = `How to finish your review. Do exactly one of these:
+- Fix: change the files, then write the summary file as usual.
+- Approve: change no files. Write the summary file with your review, criterion by criterion, as its body and \`${REVIEW_TRAILER} approved\` as its last line.
+- Send back: change no files. Write the summary file with what is wrong and what the Coder Agent should do about it as its body and \`${REVIEW_TRAILER} send-back\` as its last line.
+To approve or send back, then run exactly this, the one commit you may make:
+git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
+
+/** What a CLI reviewer decided when it changed nothing, if it said. */
+export function reviewVerdictOf(messages: string[]): "approved" | "send-back" | null {
+  for (const line of messages.flatMap((m) => m.split("\n")).reverse()) {
+    const m = /^\s*Formic-Review:\s*(approved|send-back)\s*$/i.exec(line);
+    if (m) return m[1]!.toLowerCase() as "approved" | "send-back";
+  }
+  return null;
+}
+
+/** A commit message's body, without its subject and without Formic's trailers. */
+function bodyOf(message: string): string {
+  return message
+    .split("\n")
+    .slice(1)
+    .filter((l) => !l.trim().startsWith(REVIEW_TRAILER) && l.trim() !== ALREADY_DONE_TRAILER)
+    .join("\n")
+    .trim();
 }
 
 export function cliPrompt(
   agent: CliAgent,
   mode: CodeMode,
   ticket: TicketDetail,
-  fix?: { checks: FailingCheck[]; attempt: number; maxAttempts: number },
+  review?: Omit<ReviewTask, "task" | "workspace">,
+  notes: string[] = [],
+  /** What the person asked this run to do, from the ticket's chat. */
+  instruction?: string,
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskBrief(taskFor(ticket));
-  const work = fix
-    ? [
-        `This is fix attempt ${fix.attempt} of ${fix.maxAttempts}. After the last one the card stops and waits for a human.`,
+  const task = taskFor(ticket, notes, instruction);
+  const work = review
+    ? [reviewBrief({ ...review, task }), "", CLI_REVIEW]
+    : [
+        taskBrief(task),
         "",
-        "Failing checks:",
+        instruction ? "Do what the person asked." : "Implement it.",
         "",
-        failuresBrief(fix.checks),
-      ].join("\n")
-    : "Implement it.";
-  return cap(
-    [brief.trim(), "", CLI_RULES, "", ENGINEERING_PRACTICES, "", task, "", work].join("\n"),
-  );
+        ALREADY_DONE_RULE,
+        "",
+        CLI_ALREADY_DONE,
+      ];
+  const scopeRule = mode === "implement" ? CODER_SCOPE_RULE : REVIEWER_SCOPE_RULE;
+  return cap([brief.trim(), "", cliRules(scopeRule), "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
 }
 
 /**
@@ -190,7 +351,8 @@ async function dispatch(input: {
     }
 
     // Set on every run, so a replaced token takes effect on the next one.
-    await client.setSecret(agent.info.secretName, agent.credential);
+    const secret = secretNameFor(agent);
+    await client.setSecret(secret, agent.credential);
 
     await input.record(input.job);
     await client.dispatchWorkflow(RUNNER_WORKFLOW_FILE, input.baseBranch, {
@@ -200,7 +362,9 @@ async function dispatch(input: {
       cli: agent.info.cli,
       model: agent.model ?? "",
       from: input.from,
+      secret,
       prompt: cap(input.prompt),
+      report: reportUrl(input.job, Date.now()) ?? "",
     });
     return { ok: true };
   } catch (e) {
@@ -212,10 +376,11 @@ function noUsage(agent: CliAgent) {
   return { model: agent.model ?? agent.info.label, tokensIn: 0, tokensOut: 0, costCents: 0 };
 }
 
-function working(agent: CliAgent, run: RunHandle): void {
+function working(agent: CliAgent, run: RunHandle, ticketId: string | null): void {
   run.ctx.emit({
     type: "run.log",
     runId: run.runId,
+    ticketId,
     stream: "stdout",
     line: `${agent.info.label} is working in GitHub Actions. This card moves on when it finishes.`,
   });
@@ -250,11 +415,11 @@ export async function startCliRun(input: {
     cardKey: ticket.key,
     from: input.from,
     prompt: input.prompt,
-    record: (job) => repository().updateTicket(ticket.id, { runnerJob: job }),
+    record: (job) => repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
   });
 
   if (!started.ok) {
-    await repository().updateTicket(ticket.id, { runnerJob: null });
+    await repository().updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
     await stallTicket(projectId, ticket, started.reason, {
       blocked: started.blocked,
       stalledIn: input.stalledIn,
@@ -264,7 +429,7 @@ export async function startCliRun(input: {
     return;
   }
 
-  working(agent, run);
+  working(agent, run, ticket.id);
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
@@ -324,13 +489,15 @@ async function answerPrompt(
       "",
       "Raw feature request:",
       "",
-      epic.rawRequest,
+      withEpicNotes(epic.rawRequest, await epicNoteTexts(projectId, epicId)),
     ].join("\n");
   }
 
   const prd = prdSchema.safeParse(epic.prd);
   if (mode === "architect") {
     if (!prd.success) return null;
+    const instructions = await epicNoteTexts(projectId, epicId);
+    const existing = instructions.length ? await existingTicketsFor(epicId) : [];
     return [
       withPlanningConventions(agent.brief ?? ARCHITECT_BRIEF),
       "",
@@ -344,6 +511,7 @@ async function answerPrompt(
       "",
       "Existing top-level directories in the repository:",
       (await tree()).slice(0, 200).join("\n") || "(empty repository)",
+      decompositionGuidance(existing, instructions),
     ].join("\n");
   }
 
@@ -422,14 +590,14 @@ export async function startCliAnswer(input: {
     cardKey: card.key,
     from: project.baseBranch,
     prompt,
-    record: (job) => repo.setEpicRunnerJob(epicId, job),
+    record: (job) => repo.setEpicRunnerJob(epicId, job, agent.presetId),
   });
   if (!started.ok) {
     await fail(started.reason, started.blocked);
     return;
   }
 
-  working(agent, run);
+  working(agent, run, null);
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
@@ -505,7 +673,7 @@ async function completeCliAnswer(
 
   if (result.conclusion !== "success") {
     await cleanUp();
-    await stall(`The agent's GitHub Actions run ended as ${result.conclusion}.${log}`, false);
+    await stall(await whyItFailed(projectId, client, result, epic.runnerAgent), false);
     return;
   }
 
@@ -525,7 +693,17 @@ async function completeCliAnswer(
   let checked: Checked<unknown>;
   if (result.mode === "product") {
     const product = checkProduct(answer);
-    if (product.ok) return applyPrd(projectId, epicId, product.value.prd);
+    if (product.ok) {
+      const value = product.value;
+      return "kind" in value
+        ? applyReroute(projectId, {
+            from: "backlog",
+            epicId,
+            reason: value.reason,
+            ticket: toDraftTicket(value.ticket),
+          })
+        : applyPrd(projectId, epicId, value.prd);
+    }
     checked = product;
   } else if (result.mode === "architect") {
     const tickets = checkTickets(answer);
@@ -600,7 +778,8 @@ export async function startCliAsk(input: {
     cardKey: "assistant",
     from: project.baseBranch,
     prompt: input.prompt,
-    record: (job) => repo.updateAssistantMessage(input.messageId, { runnerJob: job }),
+    record: (job) =>
+      repo.updateAssistantMessage(input.messageId, { runnerJob: job, runnerAgent: input.agent.presetId }),
   });
   if (!started.ok) {
     const { finishCliAnswer } = await import("@/lib/assistant/turn");
@@ -608,37 +787,88 @@ export async function startCliAsk(input: {
   }
 }
 
-/** When each pending answer was last looked up on GitHub, to go easy on the API. */
+/**
+ * Starts a CLI agent answering a card's chat, in the "ask" mode the board's
+ * assistant uses: an answer, not a change. Returns why it could not start,
+ * or null once it is on its way.
+ */
+export async function startCliCardChat(input: {
+  projectId: string;
+  messageId: string;
+  cardKey: string;
+  agent: CliAgent;
+  prompt: string;
+}): Promise<string | null> {
+  const repo = repository();
+  const project = await projectFor(input.projectId);
+  const creds = await credentialsForProject(project);
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent: input.agent,
+    job: jobId(input.messageId, randomUUID().slice(0, 8)),
+    mode: "ask",
+    cardKey: input.cardKey,
+    from: project.baseBranch,
+    prompt: input.prompt,
+    record: (job) =>
+      repo.updateCardChatMessage(input.messageId, { runnerJob: job, runnerAgent: input.agent.presetId }),
+  });
+  return started.ok ? null : started.reason;
+}
+
+/** When each board's runs were last looked up on GitHub, to go easy on the API. */
 const lastLooked = new Map<string, number>();
 const LOOK_EVERY_MS = 15_000;
 
 /**
- * Collects a CLI agent's answer without waiting for the webhook: asks
- * GitHub whether its run has finished. The webhook is the fast path; this
- * is the one that cannot be missed, so a lost delivery or an app that is
- * not subscribed to workflow runs never leaves a question hanging.
+ * Collects finished CLI agent runs without waiting for the webhook: asks
+ * GitHub which of the runs this board is waiting on have finished. The
+ * webhook is the fast path; this is the one that cannot be missed, so a lost
+ * delivery or an app not subscribed to workflow runs never leaves a card,
+ * an Epic or a question hanging. Each result is claimed under the webhook's
+ * own key, so whichever arrives first takes it and the other does nothing.
  */
-export async function collectCliAsk(projectId: string, messageId: string): Promise<void> {
-  const message = await repository().assistantMessage(messageId);
-  if (!message?.runnerJob || message.status !== "pending") return;
+export async function collectCliRuns(projectId: string): Promise<void> {
   const now = Date.now();
-  if (now - (lastLooked.get(messageId) ?? 0) < LOOK_EVERY_MS) return;
-  lastLooked.set(messageId, now);
+  if (now - (lastLooked.get(projectId) ?? 0) < LOOK_EVERY_MS) return;
+  lastLooked.set(projectId, now);
+
+  const repo = repository();
+  const waiting = new Set<string>();
+  for (const card of await repo.boardCards(projectId)) {
+    const job =
+      card.kind === "epic"
+        ? (await repo.epicDetail(card.id))?.runnerJob
+        : card.status === "running" || card.status === "review"
+          ? (await repo.ticketDetail(card.id))?.runnerJob
+          : null;
+    if (job) waiting.add(job);
+  }
+  for (const m of await repo.assistantMessages(projectId)) {
+    if (m.status === "pending" && m.runnerJob) waiting.add(m.runnerJob);
+  }
+  for (const m of await repo.pendingCardChatJobs(projectId)) {
+    if (m.runnerJob) waiting.add(m.runnerJob);
+  }
+  if (waiting.size === 0) return;
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
-  const run = await client
-    .findRun(RUNNER_WORKFLOW_FILE, runTitle("ask", "assistant", message.runnerJob))
-    .catch(() => null);
-  if (!run || run.status !== "completed") return;
-  lastLooked.delete(messageId);
-  await completeCliRun(projectId, {
-    job: message.runnerJob,
-    mode: "ask",
-    conclusion: run.conclusion ?? "failure",
-    url: run.url,
-  });
+  const runs = await vcs(project.repoFullName, creds.githubToken)
+    .recentRuns(RUNNER_WORKFLOW_FILE)
+    .catch(() => []);
+  for (const run of runs) {
+    const parsed = parseRunTitle(run.title);
+    if (!parsed || !waiting.has(parsed.job) || run.status !== "completed") continue;
+    if (!(await repo.claimDelivery(runnerResultKey(parsed.job, run.id)))) continue;
+    await completeCliRun(projectId, {
+      job: parsed.job,
+      mode: parsed.mode,
+      conclusion: run.conclusion ?? "failure",
+      url: run.url,
+    });
+  }
 }
 
 async function completeCliAsk(projectId: string, result: RunnerResult): Promise<void> {
@@ -651,7 +881,11 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
-  if (!message || message.projectId !== projectId || message.runnerJob !== result.job) {
+  if (!message) {
+    await completeCliCardChat(projectId, result, messageId, client);
+    return;
+  }
+  if (message.projectId !== projectId || message.runnerJob !== result.job) {
     await cleanUp();
     return;
   }
@@ -659,8 +893,7 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const { finishCliAnswer } = await import("@/lib/assistant/turn");
   if (result.conclusion !== "success") {
     await cleanUp();
-    const log = result.url ? ` Its log: ${result.url}` : "";
-    await finishCliAnswer(message.id, null, `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`);
+    await finishCliAnswer(message.id, null, await whyItFailed(projectId, client, result, message.runnerAgent));
     return;
   }
   const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
@@ -669,6 +902,33 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
     projectId,
     attempt: attemptOfJob(result.job),
   });
+}
+
+/** A card chat's answer from a CLI agent arrived, or its run failed. */
+async function completeCliCardChat(
+  projectId: string,
+  result: RunnerResult,
+  messageId: string | null,
+  client: VcsClient,
+): Promise<void> {
+  const repo = repository();
+  const message = messageId ? await repo.cardChatMessage(messageId) : null;
+  const staging = `${STAGING_PREFIX}${result.job}`;
+  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+  if (!message || message.projectId !== projectId || message.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+
+  const { finishCliCardChat } = await import("@/lib/agents/card-chat");
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    await finishCliCardChat(message.id, null, await whyItFailed(projectId, client, result, message.runnerAgent));
+    return;
+  }
+  const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
+  await cleanUp();
+  await finishCliCardChat(message.id, answer);
 }
 
 export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
@@ -701,13 +961,13 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     ticket.runnerJob === result.job &&
     !!ticket.branchName &&
     (result.mode === "implement"
-      ? ticket.status === "running" && !ticket.prNumber
+      ? ticket.status === "running"
       : ticket.status === "review" && !!ticket.prNumber);
   if (!waiting) {
     await cleanUp();
     return;
   }
-  await repo.updateTicket(ticket.id, { runnerJob: null });
+  await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
 
   const stalledIn = result.mode === "implement" ? "in_progress" : "in_review";
   const log = result.url ? ` Its log: ${result.url}` : "";
@@ -717,21 +977,84 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   };
 
   if (result.conclusion !== "success") {
-    await stop(`The agent's GitHub Actions run ended as ${result.conclusion}.${log}`, false);
+    await stop(await whyItFailed(projectId, client, result, ticket.runnerAgent), false);
     return;
   }
 
   const branch = ticket.branchName!;
-  const from = result.mode === "implement" ? project.baseBranch : branch;
+  // A new ticket started from the branch it merges into; a re-run with its
+  // pull request open started from the ticket's own branch.
+  const from = result.mode === "implement" && !ticket.prNumber ? mergeTarget(project.baseBranch) : branch;
 
   try {
     const change = await client.compare(from, staging);
+    if (
+      result.mode === "implement" &&
+      change.files.length === 0 &&
+      reportsAlreadyDone(change.messages)
+    ) {
+      await cleanUp();
+      const message = change.messages.find((m) => m.includes(ALREADY_DONE_TRAILER)) ?? "";
+      const [first, ...rest] = message.split("\n");
+      const line = (first ?? "").trim();
+      const { closeAlreadyDone } = await import("@/lib/review/pipeline");
+      await closeAlreadyDone(projectId, ticket, {
+        summary:
+          (line.startsWith(`${ticket.key}:`) ? line.slice(ticket.key.length + 1).trim() : line) ||
+          ticket.title,
+        detail: rest
+          .filter((l) => l.trim() !== ALREADY_DONE_TRAILER)
+          .join("\n")
+          .trim(),
+      });
+      return;
+    }
+    if (result.mode === "fix" && change.files.length === 0) {
+      const verdict = reviewVerdictOf(change.messages);
+      const message = change.messages.at(-1) ?? "";
+      if (verdict) {
+        await cleanUp();
+        const review = await import("@/lib/review/pipeline");
+        const reason = bodyOf(message) || "The Reviewer Agent sent it back without a reason.";
+        if (verdict === "send-back") {
+          await review.sendBack(projectId, ticket, reason);
+          return;
+        }
+        const pull = await client.pullRequest(ticket.prNumber!);
+        await review.approve(projectId, ticket, pull.number, pull.headSha, {
+          summary: "Approved",
+          detail: withoutHandoff(bodyOf(message)),
+          handoff: handoffFromSummary(message),
+        });
+        return;
+      }
+    }
     if (change.files.length === 0 || !change.headSha) {
       await stop(`The agent finished without changing anything.${log}`, result.mode === "fix");
       return;
     }
 
-    const violations = violationsInDiff(change.files, ticket.fileScope);
+    // Workflow changes come carried, not in place: land them, then judge
+    // the change by where its files will really be.
+    let head = change.headSha;
+    let files = change.files;
+    if (files.some(isCarried)) {
+      const landed = await client.landCarried(head);
+      head = landed.sha;
+      files = [...new Set([...files.filter((f) => !isCarried(f)), ...landed.files])];
+    }
+
+    const violations = violationsInDiff(files, ticket.fileScope);
+    // A new ticket's work that needed more is kept on its own branch, which
+    // no other ticket reads, while the person is asked for the files. With
+    // a pull request open, that branch is the pull request: nothing is kept.
+    if (violations.length > 0 && result.mode === "implement") {
+      const keep = !ticket.prNumber;
+      if (keep) await client.moveBranch(branch, head);
+      await cleanUp();
+      await askForScope(projectId, ticket, violations, { kept: keep });
+      return;
+    }
     if (violations.length > 0) {
       await stop(
         `Out of scope: ${violations.slice(0, 5).join(", ")}` +
@@ -744,21 +1067,19 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
 
     // Fast-forward only. If the branch moved while the agent worked, this
     // refuses rather than overwrite what moved it.
-    await client.moveBranch(branch, change.headSha);
+    await client.moveBranch(branch, head);
     await cleanUp();
 
     if (result.mode === "fix") {
-      await publish(projectId, {
-        type: "ci.status",
-        ticketId: ticket.id,
-        prNumber: ticket.prNumber!,
-        state: "pending",
-        checkName: null,
-      });
+      const message = change.messages.at(-1) ?? "";
+      await recordCliWork(projectId, ticket.id, message);
+      const { recordFix } = await import("@/lib/review/pipeline");
+      await recordFix(projectId, ticket, ticket.prNumber!, head, handoffFromSummary(message));
       return;
     }
 
     const message = change.messages.at(-1) ?? "";
+    await recordCliWork(projectId, ticket.id, message);
     const [first, ...rest] = message.split("\n");
     const line = (first ?? "").trim();
     const summary =
@@ -766,9 +1087,180 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       ticket.title;
     await openTicketPullRequest(projectId, ticket, client, {
       branch,
-      change: { summary, detail: rest.join("\n").trim(), verifiedWith: null },
+      change: {
+        summary,
+        detail: withoutHandoff(rest.join("\n").trim()),
+        verifiedWith: null,
+        handoff: handoffFromSummary(message),
+      },
     });
   } catch (e) {
     await stop(`Could not take the agent's work: ${explain(e)}`, false);
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/* While it works: what it is doing, and a person stopping or steering it.  */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Where the board is, for the workflow to report to. Null when it has no
+ * public address, such as a laptop: the run then works as before, silently.
+ */
+export function formicOrigin(): string | null {
+  const explicit = process.env.FORMIC_URL?.trim().replace(/\/+$/, "");
+  if (explicit) return explicit;
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  return vercel ? `https://${vercel}` : null;
+}
+
+function reportToken(job: string, since: number): string {
+  return createHmac("sha256", signingSecret()).update(`runner-report:${job}:${since}`).digest("hex");
+}
+
+/**
+ * The address a run posts its output to. It carries its own proof: a token
+ * that is good for this one job only, and only while the job is the one its
+ * card waits on.
+ */
+export function reportUrl(job: string, since: number): string | null {
+  const origin = formicOrigin();
+  if (!origin) return null;
+  const q = new URLSearchParams({ job, since: String(since), token: reportToken(job, since) });
+  return `${origin}/api/runner/report?${q.toString()}`;
+}
+
+export function reportAllowed(job: string, since: string, token: string): boolean {
+  if (!/^\d+$/.test(since)) return false;
+  const expected = Buffer.from(reportToken(job, Number(since)));
+  const given = Buffer.from(token);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/** The most a batch publishes; a flood of output keeps its latest part. */
+const MAX_REPORT_ITEMS = 200;
+
+export interface ReportReply {
+  /** Notes the agent has not been sent yet, newest last. */
+  notes: Array<{ seq: number; text: string }>;
+  /** The card no longer waits on this job: stop reporting. */
+  stop: boolean;
+}
+
+/**
+ * A batch of a CLI agent's output, posted by the workflow while it works.
+ * Publishes it as the ticket's thoughts, actions, plan and terminal lines,
+ * and answers with any notes the person has left since `after`.
+ */
+export async function receiveReport(input: {
+  job: string;
+  since: number;
+  lines: string[];
+  after: number;
+}): Promise<ReportReply> {
+  const repo = repository();
+  const cardId = cardOfJob(input.job);
+  const ticket = cardId ? await repo.ticketDetail(cardId) : null;
+  if (!ticket || ticket.runnerJob !== input.job) {
+    // A planning column's run: its output is for the terminal only.
+    const epic = cardId ? await repo.epicDetail(cardId) : null;
+    if (epic && epic.runnerJob === input.job) {
+      const projectId = await repo.projectOfCard(cardId!);
+      if (projectId) {
+        for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
+          if (item.kind !== "log") continue;
+          await publish(projectId, { type: "run.log", runId: input.job, stream: item.stream, line: item.line });
+        }
+        return { notes: [], stop: false };
+      }
+    }
+    return { notes: [], stop: true };
+  }
+
+  const projectId = await repo.projectOfCard(ticket.id);
+  if (!projectId) return { notes: [], stop: true };
+
+  const runId = input.job;
+  // Seeded from the ticket's last known plan, so early actions in a batch
+  // still get a real fraction instead of falling back to indeterminate.
+  let plan: PlanStep[] = ticket.plan;
+  let planChanged = false;
+  for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
+    switch (item.kind) {
+      case "thought":
+        await publish(projectId, { type: "run.thought", runId, ticketId: ticket.id, kind: item.thought, text: item.text });
+        break;
+      case "action":
+        await publish(projectId, {
+          type: "run.progress",
+          runId,
+          ticketId: ticket.id,
+          role: ticket.status === "review" ? "reviewer" : "coder",
+          label: item.label,
+          fraction: planFraction(plan),
+        });
+        break;
+      case "plan":
+        plan = item.steps;
+        planChanged = true;
+        await publish(projectId, { type: "ticket.plan", ticketId: ticket.id, steps: item.steps });
+        break;
+      case "log":
+        await publish(projectId, { type: "run.log", runId, ticketId: ticket.id, stream: item.stream, line: item.line });
+        break;
+    }
+  }
+  if (planChanged) await repo.updateTicket(ticket.id, { plan });
+
+  const notes = (await ticketNotes(projectId, ticket.id, new Date(input.since)))
+    .filter((n) => n.seq > input.after)
+    .map((n) => ({ seq: n.seq, text: n.text }));
+  return { notes, stop: false };
+}
+
+export const STOPPED_BY_PERSON =
+  "Stopped by you. Leave a note on what to do differently, then move it back to run it again.";
+
+/**
+ * A person stopped the agent working a ticket. The card stalls where it is,
+ * so nothing the agent still hands back is taken, and the agent is stopped
+ * wherever it runs: its GitHub Actions run is cancelled, and a built-in
+ * agent stops at its next turn. Returns whether there was anything to stop.
+ */
+export async function stopTicket(projectId: string, ticketId: string): Promise<boolean> {
+  const repo = repository();
+  const ticket = await repo.ticketDetail(ticketId);
+  if (!ticket) return false;
+  const card = await repo.cardById(ticketId);
+  const working = ticket.status === "running" || !!ticket.runnerJob || !!card?.workingSince;
+  if (!working) return false;
+
+  const job = ticket.runnerJob;
+  await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
+  await stallTicket(projectId, ticket, STOPPED_BY_PERSON, {
+    blocked: true,
+    stalledIn: ticket.status === "review" ? "in_review" : "in_progress",
+  });
+  abortTicketRuns(ticket.id, STOPPED_BY_PERSON);
+
+  // The card has stopped either way: whatever the run hands back is for a
+  // job nobody waits on, and is thrown away.
+  if (job) await cancelJob(projectId, job);
+  return true;
+}
+
+/** Cancels a CLI agent's GitHub Actions run, if it is still going. Never throws. */
+export async function cancelJob(projectId: string, job: string): Promise<void> {
+  try {
+    const project = await projectFor(projectId);
+    const creds = await credentialsForProject(project);
+    const client = vcs(project.repoFullName, creds.githubToken);
+    for (const run of await client.recentRuns(RUNNER_WORKFLOW_FILE)) {
+      if (parseRunTitle(run.title)?.job === job && run.status !== "completed") {
+        await client.cancelRun(run.id);
+      }
+    }
+  } catch (e) {
+    console.error("[formic] could not cancel the run:", explain(e));
   }
 }

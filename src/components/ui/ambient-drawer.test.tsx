@@ -42,13 +42,13 @@ describe("AmbientDrawer", () => {
 
   it("says the merge lock is free rather than showing a blank", () => {
     render(<AmbientDrawer stats={stats({ queueDepth: 0 })} />);
-    expect(screen.getByText("queue 0 · merge lock free")).toBeInTheDocument();
+    expect(screen.getByText("0 in merge queue")).toHaveAttribute("title", "Merge lock free");
   });
 
   it("names the PR holding the merge lock", () => {
     render(<AmbientDrawer stats={stats({ queueDepth: 2, mergeLockPr: 117 })} />);
     expect(
-      screen.getByText("queue 2 · merge lock held by PR #117"),
+      screen.getByText("2 in merge queue · lock PR #117"),
     ).toBeInTheDocument();
   });
 
@@ -61,7 +61,7 @@ describe("AmbientDrawer", () => {
 
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("No agents running.")).toBeInTheDocument();
+    expect(screen.getByText(/^Nothing yet\./)).toBeInTheDocument();
   });
 
   it("marks stderr apart from stdout in the terminal", async () => {
@@ -70,7 +70,7 @@ describe("AmbientDrawer", () => {
       <AmbientDrawer
         stats={stats({
           logLines: [
-            { runId: "run_abc1234", stream: "stdout", line: "cloning" },
+            { runId: "run_abc1234", label: "T-4", stream: "stdout", line: "cloning" },
             { runId: "run_abc1234", stream: "stderr", line: "fatal: no such ref" },
           ],
         })}
@@ -79,6 +79,7 @@ describe("AmbientDrawer", () => {
 
     await user.click(screen.getByRole("button", { name: "Terminal" }));
     expect(screen.getByText(/cloning/).className).toContain("text-log-text");
+    expect(screen.getByText(/cloning/).textContent).toBe("T-4 cloning");
     expect(screen.getByText(/fatal: no such ref/).className).toContain("text-log-error");
   });
 

@@ -54,6 +54,16 @@ describe("containsPath", () => {
     expect(containsPath("src/components", "src/components/ui")).toBe(true);
     expect(containsPath("src/components", "src/components")).toBe(true);
   });
+
+  it("reads a name without an extension as that module's files", () => {
+    expect(containsPath("src/lib/auth/session", "src/lib/auth/session.ts")).toBe(true);
+    expect(containsPath("src/lib/auth/session", "src/lib/auth/session.test.ts")).toBe(true);
+    expect(containsPath("src/lib/auth/session", "src/lib/auth/session/cookie.ts")).toBe(true);
+    // Not its neighbours, nor anything a file with an extension would.
+    expect(containsPath("src/lib/auth/session", "src/lib/auth/sessions.ts")).toBe(false);
+    expect(containsPath("src/lib/auth/session.ts", "src/lib/auth/session.ts.bak")).toBe(false);
+    expect(containsPath("src/lib/auth", "src/lib/auth.d/x.ts")).toBe(false);
+  });
 });
 
 describe("scopesOverlap", () => {
@@ -65,6 +75,10 @@ describe("scopesOverlap", () => {
 
   it("is true when one contains the other", () => {
     expect(scopesOverlap(["src/components"], ["src/components/ui"])).toBe(true);
+  });
+
+  it("overlaps a module named with and without its extension", () => {
+    expect(scopesOverlap(["src/lib/auth/session"], ["src/lib/auth/session.ts"])).toBe(true);
   });
 
   it("is not fooled by a shared string prefix", () => {
@@ -95,6 +109,15 @@ describe("diff enforcement", () => {
 
   it("rejects a file outside it", () => {
     expect(pathInScope("src/app/page.tsx", scope)).toBe(false);
+  });
+
+  it("accepts a module's files when the scope names it without an extension", () => {
+    // AUD-04: "src/lib/auth/session" was meant as the session module.
+    const aud = ["src/app/api/health", "src/lib/auth/session", "src/lib/secrets/vault"];
+    expect(
+      violationsInDiff(["src/lib/auth/session.ts", "src/lib/auth/session.test.ts", "src/lib/secrets/vault.ts"], aud),
+    ).toEqual([]);
+    expect(violationsInDiff(["src/lib/auth/user.ts"], aud)).toEqual(["src/lib/auth/user.ts"]);
   });
 
   it("reports every violating path in a diff", () => {

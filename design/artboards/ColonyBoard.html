@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;background:#FBF9F5;color:#1C1917;-webkit-font-smoothing:antialiased}
+a{color:#B5511A}a:hover{color:#8F3F12}
+@keyframes reqFade { from { opacity: 0; } }
+@keyframes reqPop { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
+@keyframes clayPulse{0%,100%{box-shadow:0 0 0 0 rgba(194,120,3,0.28);border-color:#C27803}50%{box-shadow:0 0 0 4px rgba(194,120,3,0);border-color:#E0A33C}}
+@keyframes readyGlow{0%,100%{box-shadow:0 0 0 0 rgba(46,125,50,0.28)}50%{box-shadow:0 0 0 4px rgba(46,125,50,0)}}
+@keyframes tlStripe{to{background-position:17px 0}}
+@keyframes tlPing{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.8);opacity:0}}
+@keyframes dotPulse{0%,100%{opacity:1}50%{opacity:0.25}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:0.01ms!important;animation-iteration-count:1!important}}
+</style>
+</helmet>
+
+<div style="height: 100vh; min-height: 820px; min-width: 1200px; box-sizing: border-box; display: flex; flex-direction: column; background: #FBF9F5; overflow: hidden;">
+
+  <header style="height: 64px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 16px; padding: 0 24px; border-bottom: 1px solid #E7E5E4; background: #FFFFFF; position: relative; z-index: 2;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); width: 28px; height: 28px; background: #1C1917; display: inline-flex; align-items: center; justify-content: center; color: #FBF9F5; font-family: Newsreader, Georgia, serif; font-size: 16px; font-weight: 600;">F</span>
+      <span style="font-family: Newsreader, Georgia, serif; font-size: 19px; font-weight: 600; letter-spacing: -0.01em;">Formic</span>
+    </div>
+    <span style="width: 1px; height: 24px; background: #E7E5E4;"></span>
+    <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; font: inherit; font-size: 13px; font-weight: 500; color: #1C1917; cursor: pointer;">
+      formic-labs / formic-web
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" stroke="#57534E" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </button>
+    <span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #E7E5E4; padding: 1px;">
+      <span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; align-items: center; gap: 6px; background: #FBF9F5; padding: 5px 10px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #1C1917; letter-spacing: 0.04em;">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: #2E7D32;"></span>main · synced 2m
+      </span>
+    </span>
+
+    <div style="flex-grow: 1;"></div>
+
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span ref="{{ levelRef }}" style="clip-path: polygon(9px 0,calc(100% - 9px) 0,100% 9px,100% calc(100% - 9px),calc(100% - 9px) 100%,9px 100%,0 calc(100% - 9px),0 9px); width: 36px; height: 36px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: #1C1917; color: #FBF9F5;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #C6C0BA;">LV</span>
+        <span style="font-family: Newsreader, Georgia, serif; font-size: 16px; font-weight: 600; line-height: 1;">{{ level }}</span>
+      </span>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #1C1917;">Colony · {{ rank }}</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ xpText }}</span>
+        </div>
+        <span style="width: 148px; height: 4px; border-radius: 2px; background: #E7E5E4; display: block; overflow: hidden;"><span style="display: block; height: 4px; width: {{ xpPct }}; background: #C27803; transition: width 700ms cubic-bezier(.2,.8,.2,1);"></span></span>
+      </div>
+    </div>
+
+    <span style="width: 1px; height: 24px; background: #E7E5E4;"></span>
+
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.12em; color: #57534E;">POINTS</span>
+        <span ref="{{ scoreRef }}" style="display: inline-block; min-width: 72px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 500; line-height: 1; color: #1C1917; font-variant-numeric: tabular-nums; transform-origin: right center;"></span>
+      </div>
+      <span ref="{{ multRef }}" title="Heat: each merge adds a +0.5× stack that lasts 45s (max 6). Stacks expire one at a time." style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: {{ multBorder }}; padding: 1px; transition: background 200ms;">
+        <span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; flex-direction: column; align-items: center; gap: 4px; min-width: 44px; background: {{ multBg }}; padding: 6px 8px 5px; transition: background 200ms;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 500; line-height: 1; color: {{ multInk }};">{{ multText }}</span>
+          <span ref="{{ stackRef }}" style="display: flex; gap: 2px;"><span style="width: 4px; height: 3px; background: rgba(28,25,23,0.12); display: block; overflow: hidden;"><span style="display: block; height: 3px; width: 0%; background: #D96B27;"></span></span><span style="width: 4px; height: 3px; background: rgba(28,25,23,0.12); display: block; overflow: hidden;"><span style="display: block; height: 3px; width: 0%; background: #D96B27;"></span></span><span style="width: 4px; height: 3px; background: rgba(28,25,23,0.12); display: block; overflow: hidden;"><span style="display: block; height: 3px; width: 0%; background: #D96B27;"></span></span><span style="width: 4px; height: 3px; background: rgba(28,25,23,0.12); display: block; overflow: hidden;"><span style="display: block; height: 3px; width: 0%; background: #D96B27;"></span></span><span style="width: 4px; height: 3px; background: rgba(28,25,23,0.12); display: block; overflow: hidden;"><span style="display: block; height: 3px; width: 0%; background: #D96B27;"></span></span><span style="width: 4px; height: 3px; background: rgba(28,25,23,0.12); display: block; overflow: hidden;"><span style="display: block; height: 3px; width: 0%; background: #D96B27;"></span></span></span>
+        </span>
+      </span>
+    </div>
+
+    <sc-if value="{{ soundOn }}" hint-placeholder-val="{{ true }}">
+      <button type="button" aria-label="Mute sounds" onClick="{{ toggleSound }}" style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; cursor: pointer;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z" stroke="#1C1917" stroke-width="1.4" stroke-linejoin="round"></path><path d="M11 5.8c.9.9.9 3.5 0 4.4M12.8 4.2c1.9 1.9 1.9 5.7 0 7.6" stroke="#1C1917" stroke-width="1.4" stroke-linecap="round"></path></svg>
+      </button>
+    </sc-if>
+    <sc-if value="{{ soundOff }}">
+      <button type="button" aria-label="Unmute sounds" onClick="{{ toggleSound }}" style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; cursor: pointer;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z" stroke="#57534E" stroke-width="1.4" stroke-linejoin="round"></path><path d="M11 6l3.5 4M14.5 6 11 10" stroke="#57534E" stroke-width="1.4" stroke-linecap="round"></path></svg>
+      </button>
+    </sc-if>
+
+    <button type="button" data-tlbtn="1" onClick="{{ openTl }}" aria-label="{{ tlBtnLabel }}" style="display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px 0 10px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 600; color: #1C1917; cursor: pointer; transition: border-color 140ms, box-shadow 140ms;" style-hover="border-color: #D96B27; box-shadow: 0 6px 14px -10px rgba(28,25,23,0.4);" style-active="transform: scale(0.97);">
+      <sc-if value="{{ tlClosed }}" hint-placeholder-val="{{ true }}">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="1" y="2" width="7" height="2.4" rx="1.2" fill="#1C1917"></rect><rect x="4" y="5.8" width="8" height="2.4" rx="1.2" fill="#C27803"></rect><rect x="6.5" y="9.6" width="6" height="2.4" rx="1.2" fill="none" stroke="#A8A29E" stroke-width="1" stroke-dasharray="1.6 1.2"></rect></svg>
+        Timeline
+        <span style="display: flex; gap: 3px;">
+          <sc-for list="{{ epics }}" as="e" hint-placeholder-count="3">
+            <span title="{{ e.title }}" style="width: 14px; height: 4px; border-radius: 2px; background: #E7E5E4; display: block; overflow: hidden;"><span style="display: block; height: 4px; width: {{ e.pct }}; background: {{ e.pipInk }}; transition: width 600ms cubic-bezier(.2,.8,.2,1);"></span></span>
+          </sc-for>
+        </span>
+      </sc-if>
+      <sc-if value="{{ tlOpen }}">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="1" y="1.5" width="3.4" height="11" rx="1.2" fill="#1C1917"></rect><rect x="5.3" y="1.5" width="3.4" height="7.5" rx="1.2" fill="#C27803"></rect><rect x="9.6" y="1.5" width="3.4" height="4.5" rx="1.2" fill="#D96B27"></rect><circle cx="11.3" cy="10.6" r="1.4" fill="#57534E"></circle></svg>
+        Board
+        <span style="padding: 2px 5px; border: 1px solid #E7E5E4; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 500; color: #57534E;">ESC</span>
+      </sc-if>
+    </button>
+  </header>
+
+  <div ref="{{ boardRef }}" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+
+    
+
+    <main style="flex: 1; min-height: 0; box-sizing: border-box; display: flex; gap: 16px; padding: 16px 24px 24px;">
+      <sc-for list="{{ columns }}" as="col" hint-placeholder-count="5">
+        <section data-col="{{ col.key }}" style="flex: 1; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #F4F1EB; border: 1px solid #EAE6DE; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 0 2px;">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: {{ col.dot }}; animation: {{ col.dotAnim }};"></span>
+            <h2 style="margin: 0; white-space: nowrap; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">{{ col.label }}</h2>
+            <span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #E7E5E4; padding: 1px;"><span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #FBF9F5; padding: 2px 7px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ col.count }}</span></span>
+            <div style="flex-grow: 1;"></div>
+            <span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 500; color: #57534E;">{{ col.sub }}</span>
+          </div>
+
+          <sc-if value="{{ col.isBacklog }}">
+            <button type="button" onClick="{{ openReq }}" style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; background: #FFFFFF; border: 1px dashed #D6D3D1; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 500; color: #57534E; cursor: pointer; transition: border-color 140ms, color 140ms;" style-hover="border-color: #D96B27; color: #1C1917;" style-active="transform: scale(0.98);"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 2.5v7M2.5 6h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>New request</button>
+          </sc-if>
+
+          <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; margin: 0 -8px; padding: 6px 8px 12px;">
+            <sc-for list="{{ col.tickets }}" as="t" hint-placeholder-count="2">
+              <article data-tid="{{ t.id }}" data-running="{{ t.runningAttr }}" data-spv="{{ t.spVal }}" onPointerDown="{{ cardDown }}" onPointerMove="{{ cardTilt }}" onPointerEnter="{{ cardEnter }}" onPointerLeave="{{ cardLeave }}" style="flex-shrink: 0; position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: {{ t.bg }}; border: 1px solid {{ t.border }}; border-radius: 8px; cursor: grab; user-select: none; touch-action: none; isolation: isolate; transition: transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 160ms, background-color 600ms ease, border-color 600ms ease; animation: {{ t.anim }};" style-hover="box-shadow: 0 12px 24px -14px rgba(28,25,23,0.35);">
+                <canvas data-trail="1" aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; border-radius: 7px;"></canvas>
+                <div style="display: flex; align-items: center; gap: 6px; min-height: 18px;">
+                  <sc-if value="{{ t.isBugLive }}">
+                    <span data-bugicon="1" style="flex-shrink: 0; clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #C62828; padding: 1px;"><span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; background: #FBEAEA; padding: 2px 7px 2px 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: #7F1D1D;"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true"><ellipse cx="5" cy="6" rx="2.4" ry="3" fill="#7F1D1D"></ellipse><circle cx="5" cy="2.2" r="1.3" fill="#7F1D1D"></circle><path d="M2.6 4.5 1 3.6M2.6 6.2H.8M2.6 7.9 1 8.8M7.4 4.5 9 3.6M7.4 6.2h1.8M7.4 7.9 9 8.8" stroke="#7F1D1D" stroke-width="0.8" stroke-linecap="round"></path></svg>BUG</span></span>
+                  </sc-if>
+                  <sc-if value="{{ t.isBugSquashed }}">
+                    <span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #A8A29E; padding: 1px;"><span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; background: #F0EEEA; padding: 2px 7px 2px 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: #57534E;"><svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden="true"><ellipse cx="6" cy="6.5" rx="5" ry="1.6" fill="#57534E"></ellipse><circle cx="1.5" cy="4.5" r="0.8" fill="#57534E"></circle><circle cx="10.2" cy="4" r="0.6" fill="#57534E"></circle></svg>SQUASHED</span></span>
+                  </sc-if>
+                  <span style="flex-shrink: 0; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ t.id }}</span>
+                  <div style="flex-grow: 1;"></div>
+                  <sc-if value="{{ t.hasPr }}">
+                    <span style="flex-shrink: 0; clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #E7E5E4; padding: 1px;"><span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; white-space: nowrap; background: #FFFFFF; padding: 2px 7px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;">{{ t.prText }}</span></span>
+                  </sc-if>
+                  <span data-sp="1" style="flex-shrink: 0; clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #E7E5E4; padding: 1px;"><span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; background: #FFFFFF; padding: 2px 7px 2px 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: #57534E;"><sc-if value="{{ t.hasSp }}"><svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><polygon points="{{ t.spPts }}" fill="{{ t.spFill }}" stroke="#8F3F12" stroke-width="0.8" stroke-linejoin="round"></polygon></svg></sc-if>{{ t.spText }}</span></span>
+                  <sc-if value="{{ t.canAdvance }}">
+                    <button type="button" data-adv="{{ t.id }}" aria-label="{{ t.advanceLabel }}" onClick="{{ advance }}" style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: -2px -4px -2px 0; padding: 0; border: none; border-radius: 6px; background: transparent; cursor: pointer;" style-hover="background: #F4F1EB;">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 6h7M7 3.5 9.5 6 7 8.5" stroke="#57534E" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                    </button>
+                  </sc-if>
+                </div>
+
+                <h3 style="margin: 0; font-size: 13px; font-weight: 500; line-height: 1.35; color: {{ t.titleInk }}; text-wrap: pretty;">{{ t.title }}</h3>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ t.epicLabel }}</span>
+
+                <sc-if value="{{ t.isBlocked }}">
+                  <span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #A8A29E;"></span>blocked by {{ t.blockedBy }}</span>
+                </sc-if>
+
+                <sc-if value="{{ t.isRunning }}">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; background: rgba(194,120,3,0.12); font-size: 10px; font-weight: 600; color: #1C1917;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #C27803; animation: dotPulse 1.6s ease-in-out infinite;"></span>Coder Agent</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ t.elapsedText }}</span>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <span style="height: 4px; border-radius: 2px; background: #F0EBE2; display: block; overflow: hidden;"><span style="display: block; height: 4px; width: {{ t.pct }}; background: #C27803; transition: width 950ms linear;"></span></span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ t.progressLabel }}</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 6px; padding-top: 8px; border-top: 1px solid #F0EEEA;">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><rect x="1.5" y="2.5" width="9" height="7" rx="1.5" stroke="#57534E" stroke-width="1.2"></rect><path d="M3.5 5.5 5 6.75 3.5 8" stroke="#57534E" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">E2B · {{ t.sandbox }}</span>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ t.isReady }}">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; background: rgba(46,125,50,0.12); font-size: 10px; font-weight: 600; color: #1C1917;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #2E7D32;"></span>Tests green</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ t.elapsedText }} · ready for review</span>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ t.isReview }}">
+                  <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                    <sc-for list="{{ t.chips }}" as="c" hint-placeholder-count="1">
+                      <span style="display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; background: {{ c.bg }}; font-size: 10px; font-weight: 600; color: #1C1917;"><span style="width: 5px; height: 5px; border-radius: 50%; background: {{ c.dot }}; animation: {{ c.anim }};"></span>{{ c.label }}</span>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ t.showLog }}">
+                  <div style="padding: 8px; border-radius: 6px; background: #1C1917;">
+                    <span style="display: block; font-family: 'JetBrains Mono', monospace; font-size: 9px; line-height: 1.6; color: #E7E5E4;">FAIL app/api/epics/route.test.ts</span>
+                    <span style="display: block; font-family: 'JetBrains Mono', monospace; font-size: 9px; line-height: 1.6; color: #F0A58A;">expected 200, received 500</span>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ t.isDone }}">
+                  <span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #2E7D32;"></span>{{ t.mergedText }}</span>
+                </sc-if>
+              </article>
+            </sc-for>
+            <sc-if value="{{ col.empty }}">
+              <div style="flex-shrink: 0; height: 72px; display: flex; align-items: center; justify-content: center; border: 1px dashed #D6D3D1; border-radius: 8px; font-size: 11px; color: #57534E;">Drop a card here</div>
+            </sc-if>
+          </div>
+        </section>
+      </sc-for>
+    </main>
+  </div>
+
+  <footer style="height: 56px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: #1C1917; color: #E7E5E4; position: relative; z-index: 2;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      
+      <span style="display: inline-flex; gap: 3px;">
+        <span style="width: 5px; height: 5px; border-radius: 50%; background: #E0A33C; animation: dotPulse 1.6s ease-in-out infinite;"></span>
+        <span style="width: 5px; height: 5px; border-radius: 50%; background: #E0A33C; animation: dotPulse 1.6s ease-in-out 0.2s infinite;"></span>
+        <span style="width: 5px; height: 5px; border-radius: 50%; background: #E0A33C; animation: dotPulse 1.6s ease-in-out 0.4s infinite;"></span>
+      </span>
+      <span style="font-size: 12px; font-weight: 600; color: #FBF9F5;">{{ activeAgents }} agents active in E2B</span>
+    </div>
+    <span style="width: 1px; height: 20px; background: #3B3734;"></span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #C6C0BA;">{{ tokens }} tokens · {{ tps }}</span>
+    <span style="width: 1px; height: 20px; background: #3B3734;"></span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #C6C0BA;">{{ queueText }}</span>
+    <span style="width: 1px; height: 20px; background: #3B3734;"></span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #C6C0BA;">{{ squashedText }}</span>
+    <div style="flex-grow: 1;"></div>
+    <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid #3B3734; border-radius: 8px; background: transparent; font: inherit; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #FBF9F5; cursor: pointer;">
+      Terminal
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 7.5 6 4.5 9 7.5" stroke="#FBF9F5" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </button>
+    <button type="button" ref="{{ nestRef }}" onClick="{{ toggleColony }}" aria-label="Open colony: levels and bug styles" aria-expanded="{{ colonyOpenStr }}" style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 36px; margin: 0 -8px 0 0; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; cursor: pointer;" style-hover="background: #292524; border-color: #3B3734;"><svg width="24" height="14" viewBox="0 0 24 14" fill="none" aria-hidden="true"><path d="M1 13.5C3.5 5 7.5 1.5 12 1.5S20.5 5 23 13.5Z" fill="#3B3734" stroke="#57534E"></path><ellipse cx="12" cy="11" rx="2.6" ry="2.1" fill="#0C0A09"></ellipse></svg></button>
+  </footer>
+  <sc-if value="{{ tlOpen }}" hint-placeholder-val="{{ false }}">
+    <div ref="{{ tlRef }}" role="region" aria-label="Timeline" style="position: fixed; top: 64px; bottom: 56px; left: 0; right: 0; z-index: 60; overflow: auto; box-sizing: border-box; padding: 20px 24px 32px; background: #FBF9F5;">
+      <div style="max-width: 1520px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #57534E;">ROADMAP · FORMIC-WEB</span>
+            <h1 style="margin: 0; font-family: Newsreader, Georgia, serif; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; line-height: 1;">Timeline</h1>
+          </div>
+          <span style="padding-bottom: 3px; font-size: 13px; color: #57534E;">{{ tlRange }}</span>
+          <div style="flex-grow: 1;"></div>
+          <div style="display: flex; align-items: center; gap: 14px; padding-bottom: 4px; font-size: 11px; color: #57534E;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 16px; height: 8px; border-radius: 3px; background: #57534E;"></span>Merged</span>
+            <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 16px; height: 8px; border-radius: 3px; background: repeating-linear-gradient(45deg,#D96B27 0 4px,#EE9A62 4px 8px);"></span>In review</span>
+            <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 16px; height: 8px; border-radius: 3px; background: repeating-linear-gradient(45deg,#C27803 0 4px,#E0A33C 4px 8px);"></span>In progress</span>
+            <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="box-sizing: border-box; width: 16px; height: 8px; border-radius: 3px; border: 1.5px dashed #A8A29E;"></span>Planned</span>
+            <span title="Grade = points earned ÷ story points merged. S ≥ 2.5×, A ≥ 2.0×, B ≥ 1.5×, C below." style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 2px; height: 12px; background: rgba(28,25,23,0.35);"></span>Level up</span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 300px minmax(0,1fr); background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px; overflow: hidden;">
+          <div style="display: flex; flex-direction: column; border-right: 1px solid #E7E5E4; min-width: 0;">
+            <div style="height: 44px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #E7E5E4;">
+              <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;">Burndown</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ tlScope }}</span>
+            </div>
+            <div style="height: 232px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-bottom: 1px solid #E7E5E4;">
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.12em; color: #57534E;">FORECAST FINISH</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span data-tlforecast="1" style="display: inline-block; font-family: Newsreader, Georgia, serif; font-size: 30px; font-weight: 600; line-height: 1; letter-spacing: -0.01em;">{{ tlForecast }}</span>
+                  <span style="clip-path: polygon(6px 0,calc(100% - 6px) 0,100% 6px,100% calc(100% - 6px),calc(100% - 6px) 100%,6px 100%,0 calc(100% - 6px),0 6px); display: inline-flex; background: {{ tlPaceInk }}; padding: 1px;"><span style="clip-path: polygon(6px 0,calc(100% - 6px) 0,100% 6px,100% calc(100% - 6px),calc(100% - 6px) 100%,6px 100%,0 calc(100% - 6px),0 6px); display: inline-flex; background: {{ tlPaceBg }}; padding: 3px 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.04em; color: {{ tlPaceInk }};">{{ tlPace }}</span></span>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <sc-for list="{{ tlStats }}" as="st" hint-placeholder-count="3">
+                  <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
+                    <span style="font-size: 12px; color: #57534E;">{{ st.k }}</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1C1917;">{{ st.v }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ tlHasBoost }}">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #FDF1E8; font-size: 11px; line-height: 1.35; color: #8F3F12; text-wrap: pretty;">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style="flex-shrink: 0;"><path d="M6.8 1 2.5 7h3l-.6 4L9.5 5h-3z" fill="#D96B27"></path></svg>
+                  <span>{{ tlBoost }}</span>
+                </div>
+              </sc-if>
+            </div>
+            <sc-for list="{{ tlRows }}" as="r" hint-placeholder-count="6">
+              <sc-if value="{{ r.isEpic }}">
+                <div style="height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 8px; border-top: 1px solid #EFEDE9; background: #FFFFFF;">
+                  <button type="button" onClick="{{ r.toggle }}" aria-label="{{ r.toggleLabel }}" style="flex-shrink: 0; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 6px; background: transparent; cursor: pointer;" style-hover="background: #F3F1ED;"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" style="transform: rotate({{ r.chev }}); transition: transform 180ms cubic-bezier(.2,.8,.2,1);"><path d="M3.5 2 6.5 5 3.5 8" stroke="#1C1917" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+                  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.06em; color: #57534E;">{{ r.id }} · {{ r.frac }}</span>
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Newsreader, Georgia, serif; font-size: 15px; font-weight: 600;">{{ r.title }}</span>
+                  </div>
+                  <sc-if value="{{ r.hasGrade }}">
+                    <div style="flex-shrink: 0; display: flex; align-items: center; gap: 6px;">
+                      <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;">{{ r.gradeText }}</span>
+                      <span data-tlstamp="1" data-color="{{ r.gradeBg }}" title="{{ r.gradeTitle }}" style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; background: {{ r.gradeBg }}; color: #FFFFFF; font-family: Newsreader, Georgia, serif; font-size: 16px; font-weight: 600; transform: rotate(-6deg);">{{ r.grade }}</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ r.hasPace }}">
+                    <span style="flex-shrink: 0; white-space: nowrap; padding: 3px 7px; border-radius: 999px; background: {{ r.paceBg }}; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: {{ r.paceInk }};">{{ r.pace }}</span>
+                  </sc-if>
+                </div>
+              </sc-if>
+              <sc-if value="{{ r.isTicket }}">
+                <div style="height: 34px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 42px;">
+                  <span style="flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: {{ r.dot }};"></span>
+                  <span style="flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ r.id }}</span>
+                  <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: {{ r.ink }};">{{ r.title }}</span>
+                  <span style="flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ r.spText }}</span>
+                </div>
+              </sc-if>
+            </sc-for>
+            <div style="height: 88px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 16px; border-top: 1px solid #E7E5E4;">
+              <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;">Daily merges</span>
+              <span style="font-size: 12px; line-height: 1.35; color: #57534E; text-wrap: pretty;">{{ tlStreak }}</span>
+            </div>
+          </div>
+
+          <div onPointerMove="{{ tlMove }}" onPointerLeave="{{ tlLeave }}" style="position: relative; min-width: 0; display: flex; flex-direction: column;">
+            <div aria-hidden="true" style="position: absolute; inset: 0; display: grid; grid-template-columns: repeat(25, minmax(0,1fr)); pointer-events: none;">
+              <sc-for list="{{ tlDays }}" as="d" hint-placeholder-count="25">
+                <span style="background: {{ d.bg }}; border-right: 1px solid #F3F1ED; transition: background 120ms;"></span>
+              </sc-for>
+            </div>
+            <div style="position: relative; height: 44px; flex-shrink: 0; box-sizing: border-box; display: grid; grid-template-columns: repeat(25, minmax(0,1fr)); border-bottom: 1px solid #E7E5E4;">
+              <sc-for list="{{ tlDays }}" as="d" hint-placeholder-count="25">
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: 0.08em; color: {{ d.subInk }};">{{ d.sub }}</span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: {{ d.weight }}; color: {{ d.ink }};">{{ d.num }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="position: relative; height: 232px; flex-shrink: 0; box-sizing: border-box; border-bottom: 1px solid #E7E5E4;">
+              <span style="position: absolute; left: 6px; top: 12px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;">{{ tlTotal }}</span>
+              <span style="position: absolute; left: 6px; bottom: 12px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;">0</span>
+              <div style="position: absolute; top: 12px; bottom: 12px; left: {{ tlPlanX }}; width: 0; border-left: 1px dashed #A8A29E;"></div>
+              <span style="position: absolute; top: 14px; left: {{ tlPlanX }}; transform: translateX(-50%); padding: 1px 5px; border-radius: 4px; background: #FFFFFF; font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #57534E;">PLAN</span>
+              <div data-tlreveal="1" style="position: absolute; top: 20px; bottom: 20px; left: 0; right: 0;">
+                <svg viewBox="0 0 1000 200" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" style="display: block; overflow: visible;">
+                  <polygon points="{{ tlArea }}" fill="rgba(194,120,3,0.09)"></polygon>
+                  <polyline points="{{ tlIdeal }}" fill="none" stroke="#A8A29E" stroke-width="1.5" stroke-dasharray="4 5" vector-effect="non-scaling-stroke"></polyline>
+                  <polyline points="{{ tlFc }}" fill="none" stroke="#D96B27" stroke-width="2" stroke-dasharray="1 6" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline>
+                  <polyline points="{{ tlActual }}" fill="none" stroke="#1C1917" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></polyline>
+                </svg>
+                <sc-for list="{{ tlFlags }}" as="f" hint-placeholder-count="1">
+                  <span title="{{ f.title }}" style="position: absolute; left: {{ f.x }}; top: {{ f.y }}; transform: translate(-50%, calc(-100% - 6px)); display: flex; flex-direction: column; align-items: center;">
+                    <span style="clip-path: polygon(5px 0,calc(100% - 5px) 0,100% 5px,100% calc(100% - 5px),calc(100% - 5px) 100%,5px 100%,0 calc(100% - 5px),0 5px); width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; background: {{ f.bg }}; color: #FFFFFF; font-family: Newsreader, Georgia, serif; font-size: 12px; font-weight: 600;">{{ f.grade }}</span>
+                    <span style="width: 1px; height: 6px; background: {{ f.bg }};"></span>
+                  </span>
+                </sc-for>
+                <span style="position: absolute; left: {{ tlFcX }}; top: {{ tlFcY }}; transform: translate(-50%, -50%); width: 9px; height: 9px; box-sizing: border-box; border: 2px solid #D96B27; border-radius: 50%; background: #FFFFFF;"></span>
+                <span style="position: absolute; left: {{ tlFcX }}; top: {{ tlFcY }}; transform: translate(-50%, -150%); padding: 2px 6px; border-radius: 4px; background: #FDF1E8; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #8F3F12;">{{ tlFcLabel }}</span>
+                <span style="position: absolute; left: {{ tlHeadX }}; top: {{ tlHeadY }}; width: 0; height: 0;">
+                  <span style="position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; background: #C27803; animation: tlPing 1.8s ease-out infinite;"></span>
+                  <span style="position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; box-sizing: border-box; border: 2px solid #FFFFFF; border-radius: 50%; background: #1C1917; box-shadow: 0 1px 3px rgba(28,25,23,0.4);"></span>
+                </span>
+              </div>
+            </div>
+            <sc-for list="{{ tlRows }}" as="r" hint-placeholder-count="6">
+              <sc-if value="{{ r.isEpic }}">
+                <div style="position: relative; height: 52px; box-sizing: border-box; border-top: 1px solid #EFEDE9;">
+                  <span style="position: absolute; top: 11px; height: 28px; left: {{ r.planL }}; width: {{ r.planW }}; box-sizing: border-box; border: 1px dashed #C9C3BB; border-radius: 8px;"></span>
+                  <span data-tlbar="1" style="position: absolute; top: 17px; height: 16px; left: {{ r.l }}; width: {{ r.w }}; border-radius: 6px; background: #EDE9E3; overflow: hidden; transform-origin: left center;"><span style="display: block; height: 100%; width: {{ r.fill }}; border-radius: 6px; background: {{ r.fillBg }}; transition: width 700ms cubic-bezier(.2,.8,.2,1);"></span></span>
+                  <sc-if value="{{ r.merged }}">
+                    <span style="position: absolute; top: 15px; left: {{ r.endX }}; transform: translateX(-50%); clip-path: polygon(5px 0,calc(100% - 5px) 0,100% 5px,100% calc(100% - 5px),calc(100% - 5px) 100%,5px 100%,0 calc(100% - 5px),0 5px); width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; background: #2E7D32;"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="m2.2 5.2 1.8 1.8 3.8-4" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+                  </sc-if>
+                </div>
+              </sc-if>
+              <sc-if value="{{ r.isTicket }}">
+                <div style="position: relative; height: 34px; box-sizing: border-box;">
+                  <span data-tlbar="1" title="{{ r.barTitle }}" style="position: absolute; top: 11px; height: 12px; left: {{ r.l }}; width: {{ r.w }}; box-sizing: border-box; border-radius: 4px; background: {{ r.bg }}; background-size: 17px 17px; border: {{ r.bd }}; animation: {{ r.anim }}; transform-origin: left center;"></span>
+                </div>
+              </sc-if>
+            </sc-for>
+            <div style="position: relative; height: 88px; flex-shrink: 0; box-sizing: border-box; display: grid; grid-template-columns: repeat(25, minmax(0,1fr)); align-items: end; padding-bottom: 14px; border-top: 1px solid #E7E5E4;">
+              <sc-for list="{{ tlMounds }}" as="m" hint-placeholder-count="25">
+                <div title="{{ m.title }}" style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: {{ m.ink }};">{{ m.label }}</span>
+                  <span data-tlmound="1" style="display: block; width: 72%; height: {{ m.h }}; border-radius: 999px 999px 2px 2px; background: {{ m.bg }}; transform-origin: bottom center; transition: height 500ms cubic-bezier(.2,.9,.3,1.3);"></span>
+                </div>
+              </sc-for>
+            </div>
+            <sc-for list="{{ tlLevels }}" as="lv" hint-placeholder-count="1">
+              <div aria-hidden="true" style="position: absolute; top: 44px; bottom: 0; left: {{ lv.x }}; width: 0; border-left: 1.5px solid rgba(28,25,23,0.22); pointer-events: none;"></div>
+              <span title="{{ lv.title }}" style="position: absolute; top: 250px; left: {{ lv.x }}; transform: translateX(-50%); clip-path: polygon(5px 0,calc(100% - 5px) 0,100% 5px,100% calc(100% - 5px),calc(100% - 5px) 100%,5px 100%,0 calc(100% - 5px),0 5px); padding: 3px 7px; background: #1C1917; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: #FBF9F5;">{{ lv.label }}</span>
+            </sc-for>
+            <div aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: {{ tlTodayX }}; width: 2px; margin-left: -1px; background: rgba(194,120,3,0.55); pointer-events: none;"></div>
+            <span aria-hidden="true" style="position: absolute; top: 48px; left: {{ tlTodayX }}; transform: translateX(-50%); padding: 2px 6px; border-radius: 4px; background: #C27803; font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #FFFFFF; pointer-events: none;">NOW</span>
+            <sc-if value="{{ tlHasHover }}">
+              <div aria-hidden="true" style="position: absolute; top: 44px; bottom: 0; left: {{ tlHoverX }}; width: 1px; background: rgba(28,25,23,0.3); pointer-events: none;"></div>
+              <div style="position: absolute; top: 72px; left: {{ tlHoverX }}; transform: {{ tlTipShift }}; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: #1C1917; color: #FBF9F5; white-space: nowrap; pointer-events: none; box-shadow: 0 10px 20px -12px rgba(28,25,23,0.6);">
+                <span style="font-size: 12px; font-weight: 600;">{{ tlHoverDate }}</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #D6D3D1;">{{ tlHoverA }}</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #E0A33C;">{{ tlHoverB }}</span>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ reqOpen }}" hint-placeholder-val="{{ false }}">
+    <div onPointerDown="{{ closeReqBackdrop }}" onKeyDown="{{ reqKey }}" style="position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(28,25,23,0.32); backdrop-filter: blur(3px); animation: reqFade 160ms ease-out;">
+      <form role="dialog" aria-modal="true" aria-labelledby="req-title" onSubmit="{{ submitDraft }}" style="box-sizing: border-box; width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 14px; padding: 20px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px; box-shadow: 0 30px 60px -24px rgba(28,25,23,0.45); animation: reqPop 240ms cubic-bezier(.2,.9,.3,1.15);">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+          <h2 id="req-title" style="margin: 0; font-size: 16px; font-weight: 600; color: #1C1917;">New request</h2>
+          <span style="font-size: 11px; color: #57534E;">{{ draftHint }}</span>
+        </div>
+        <textarea id="idea" ref="{{ inputRef }}" value="{{ draft }}" onChange="{{ onDraft }}" placeholder="Describe a feature or a bug" rows="5" style="box-sizing: border-box; width: 100%; resize: vertical; min-height: 110px; padding: 10px 12px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; font: inherit; font-size: 14px; line-height: 1.5; color: #1C1917; outline-color: #D96B27;"></textarea>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">⌘↵ to draft · Esc to close</span>
+          <div style="flex-grow: 1;"></div>
+          <button type="button" onClick="{{ closeReq }}" style="height: 34px; padding: 0 12px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500; color: #1C1917; cursor: pointer;" style-active="transform: scale(0.96);">Cancel</button>
+          <button type="submit" style="height: 34px; padding: 0 14px; border: none; border-radius: 8px; background: #B5511A; font: inherit; font-size: 13px; font-weight: 600; color: #FFFFFF; cursor: pointer;" style-active="transform: scale(0.96);">Draft PRD</button>
+        </div>
+      </form>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ hasToast }}">
+    <div style="position: fixed; top: 76px; left: 0; right: 0; z-index: 70; display: flex; justify-content: center; pointer-events: none;">
+      <div ref="{{ toastRef }}" role="status" style="display: flex; align-items: center; gap: 10px; padding: 10px 16px 10px 10px; border-radius: 999px; background: #1C1917; color: #FBF9F5; font-size: 12px; font-weight: 600; box-shadow: 0 16px 32px -14px rgba(28,25,23,0.55);">
+        <span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; background: #C27803; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #1C1917;">{{ level }}</span>
+        {{ toast }}
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ hasWin }}">
+    <div style="position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: rgba(28,25,23,0.32); backdrop-filter: blur(2px);">
+      <div ref="{{ winRef }}" role="dialog" aria-modal="true" aria-labelledby="win-title" style="width: 420px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 40px 32px 32px; background: #FFFFFF; border-radius: 12px; box-shadow: 0 40px 80px -24px rgba(28,25,23,0.5); text-align: center;">
+        <span ref="{{ coinRef }}" style="clip-path: polygon(26px 0,calc(100% - 26px) 0,100% 26px,100% calc(100% - 26px),calc(100% - 26px) 100%,26px 100%,0 calc(100% - 26px),0 26px); display: inline-flex; background: #2E7D32; padding: 2px; margin-bottom: 8px;">
+          <span style="clip-path: polygon(25px 0,calc(100% - 25px) 0,100% 25px,100% calc(100% - 25px),calc(100% - 25px) 100%,25px 100%,0 calc(100% - 25px),0 25px); width: 88px; height: 88px; display: inline-flex; align-items: center; justify-content: center; background: #EDF4ED;">
+            <svg width="36" height="36" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 6.2 5 8.2 9 3.8" stroke="#2E7D32" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          </span>
+        </span>
+        <span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #2E7D32; padding: 1px;"><span style="clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px); display: inline-flex; background: #EDF4ED; padding: 3px 9px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #1E5620;">EPIC MERGED · {{ winId }}</span></span>
+        <h2 id="win-title" style="margin: 0; font-family: Newsreader, Georgia, serif; font-size: 30px; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; color: #1C1917;">{{ winTitle }}</h2>
+        <p style="margin: 0; max-width: 320px; font-size: 13px; line-height: 1.55; color: #57534E; text-wrap: pretty;">{{ winBody }}</p>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 500; color: #B5511A;">+{{ winPts }} epic bonus</span>
+        <div style="display: flex; gap: 8px; width: 100%; margin-top: 8px;">
+          <a href="Showcase.dc.html" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; border-radius: 8px; background: #B5511A; font-size: 13px; font-weight: 600; color: #FFFFFF; text-decoration: none;">View showcase</a>
+          <button type="button" onClick="{{ closeWin }}" style="flex: 1; height: 40px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; font: inherit; font-size: 13px; font-weight: 600; color: #1C1917; cursor: pointer;">Keep building</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ colonyOpen }}">
+    <div onClick="{{ closeColony }}" style="position: fixed; inset: 0; z-index: 74;"></div>
+    <div ref="{{ colonyRef }}" role="dialog" aria-label="Colony" style="position: fixed; right: 16px; bottom: 64px; z-index: 75; width: 400px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 20px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px; box-shadow: 0 28px 56px -24px rgba(28,25,23,0.5); transform-origin: bottom right;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="clip-path: polygon(10px 0,calc(100% - 10px) 0,100% 10px,100% calc(100% - 10px),calc(100% - 10px) 100%,10px 100%,0 calc(100% - 10px),0 10px); width: 42px; height: 42px; flex-shrink: 0; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: #1C1917; color: #FBF9F5;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #C6C0BA;">LV</span>
+          <span style="font-family: Newsreader, Georgia, serif; font-size: 18px; font-weight: 600; line-height: 1;">{{ level }}</span>
+        </span>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;">
+          <span style="font-family: Newsreader, Georgia, serif; font-size: 20px; font-weight: 600; line-height: 1.1; color: #1C1917;">{{ rank }}</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #57534E;">{{ earnedText }} XP earned · {{ xpText }} this level</span>
+        </div>
+        <button type="button" aria-label="Close colony" onClick="{{ closeColony }}" style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; padding: 0; border: 1px solid #E7E5E4; border-radius: 8px; background: #FBF9F5; cursor: pointer;">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="#1C1917" stroke-width="1.5" stroke-linecap="round"></path></svg>
+        </button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: #F7F4EE; border-radius: 8px;">
+        <span style="font-size: 12px; font-weight: 600; color: #1C1917;">{{ nextText }}</span>
+        <span style="height: 4px; border-radius: 2px; background: #E7E5E4; display: block; overflow: hidden;"><span style="display: block; height: 4px; width: {{ xpPct }}; background: #C27803; transition: width 700ms cubic-bezier(.2,.8,.2,1);"></span></span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h3 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Bug shape</h3>
+        <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px;">
+          <sc-for list="{{ shapes }}" as="sh" hint-placeholder-count="5">
+            <button type="button" data-shape="{{ sh.key }}" onClick="{{ pickShape }}" aria-label="{{ sh.aria }}" aria-pressed="{{ sh.pressed }}" style="min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border: 1.5px solid {{ sh.border }}; border-radius: 8px; background: {{ sh.bg }}; font: inherit; cursor: {{ sh.cursor }};">
+              <canvas data-bugprev="{{ sh.key }}" width="80" height="80" style="width: 40px; height: 40px;"></canvas>
+              <span style="font-size: 10px; font-weight: 600; color: {{ sh.ink }}; white-space: nowrap;">{{ sh.label }}</span>
+              <span style="min-height: 12px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E;">{{ sh.lockText }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h3 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #1C1917;">Bug colour</h3>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px;">
+          <sc-for list="{{ colors }}" as="c" hint-placeholder-count="6">
+            <button type="button" data-color="{{ c.key }}" onClick="{{ pickColor }}" aria-label="{{ c.aria }}" aria-pressed="{{ c.pressed }}" style="min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 2px; border: 1.5px solid {{ c.border }}; border-radius: 8px; background: #FFFFFF; font: inherit; cursor: {{ c.cursor }};">
+              <span style="position: relative; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;">
+                <span style="position: absolute; inset: 0; clip-path: polygon(8px 0,calc(100% - 8px) 0,100% 8px,100% calc(100% - 8px),calc(100% - 8px) 100%,8px 100%,0 calc(100% - 8px),0 8px); background: {{ c.hex }}; opacity: {{ c.op }};"></span>
+                <sc-if value="{{ c.locked }}">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" style="position: relative;"><rect x="2" y="4.5" width="6" height="4.5" rx="1" fill="#1C1917"></rect><path d="M3.3 4.5V3.3a1.7 1.7 0 0 1 3.4 0v1.2" stroke="#1C1917" stroke-width="1"></path></svg>
+                </sc-if>
+              </span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #57534E; white-space: nowrap;">{{ c.lockText }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <p style="margin: 0; font-size: 11px; line-height: 1.5; color: #57534E; text-wrap: pretty;">Levels come from points earned, so a bug penalty lowers your score but never your level. Pick a style to test-squash it.</p>
+    </div>
+  </sc-if>
+
+  <canvas ref="{{ canvasRef }}" aria-hidden="true" style="position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 90;"></canvas>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;sound&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Feel&quot;},&quot;ants&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Busy&quot;,&quot;Few&quot;,&quot;Off&quot;],&quot;default&quot;:&quot;Busy&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Feel&quot;},&quot;juice&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Full&quot;,&quot;Subtle&quot;],&quot;default&quot;:&quot;Full&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Feel&quot;}}">
+class Component extends DCLogic {
+  static COLS = [
+    { key: 'backlog', label: 'Backlog', sub: 'Ideation', dot: '#A8A29E' },
+    { key: 'todo', label: 'To Do', sub: 'Decomposition', dot: '#C27803' },
+    { key: 'progress', label: 'In Progress', sub: 'Execution', dot: '#D96B27' },
+    { key: 'review', label: 'In Review', sub: 'CI & merge', dot: '#E65100' },
+    { key: 'done', label: 'Done', sub: 'Showcase ready', dot: '#2E7D32' },
+  ];
+  static ORDER = { backlog: 0, todo: 1, progress: 2, review: 3, done: 4 };
+  static EPICS = [
+    { id: 'EPIC-01', title: 'Board foundations' },
+    { id: 'EPIC-02', title: 'Agent pipelines' },
+    { id: 'EPIC-03', title: 'Agentic execution loop' },
+  ];
+  static TL = {
+    N: 25, TODAY: 9, PLAN_END: 19,
+    PLAN: { 'EPIC-01': [0, 7], 'EPIC-02': [3, 11], 'EPIC-03': [7, 19] },
+    ARCHIVE: [
+      { id: 'SET-01', title: 'Repo scaffold + CI', sp: 3, epic: 'EPIC-01', s: 0, e: 1, m: 1 },
+      { id: 'SET-02', title: 'GitHub App auth', sp: 5, epic: 'EPIC-01', s: 1, e: 3, m: 2 },
+      { id: 'SET-03', title: 'Design tokens + type scale', sp: 3, epic: 'EPIC-01', s: 2, e: 4, m: 2.5 },
+      { id: 'SET-04', title: 'Seed data fixtures', sp: 2, epic: 'EPIC-01', s: 4, e: 5, m: 3 },
+      { id: 'SET-05', title: 'Agent prompt registry', sp: 3, epic: 'EPIC-02', s: 4, e: 7, m: 1.5 },
+      { id: 'SET-06', title: 'Webhook relay', sp: 2, epic: 'EPIC-02', s: 6, e: 8, m: 2 },
+    ],
+    MULT: { 'PROT-01': 2.5, 'PROT-02': 3 }, PEN: { 'EPIC-01': 5 }, BONUS: { 5: 21 }, XP0: 153,
+    GRADES: [[2.5, 'S', '#C27803'], [2, 'A', '#2E7D32'], [1.5, 'B', '#57534E'], [0, 'C', '#C62828']],
+    SPAN: { 'PROT-01': [0, 3], 'PROT-02': [2, 5], 'PROT-03': [5], 'PROT-04': [5], 'PROT-05': [8], 'PROT-06': [7] },
+  };
+  static RANKS = ['Scout', 'Forager', 'Worker', 'Nurse', 'Soldier', 'Architect', 'Tunneler', 'Queen’s Guard', 'Matriarch', 'Queen'];
+  static WINDOW = 45000;
+  static BUG_COST = 5;
+  static BUG_TITLES = ['Drag ghost sticks after a fast drop', 'Sandbox timer resets on tab switch', 'Merge queue shows a stale lock holder', 'Diff view drops the last line', 'Toast overlaps the header on narrow screens'];
+  static UNLOCKS = {
+    shapes: [{ key: 'beetle', label: 'Beetle', lv: 1 }, { key: 'ladybird', label: 'Ladybird', lv: 3 }, { key: 'spider', label: 'Spider', lv: 5 }, { key: 'moth', label: 'Moth', lv: 6 }, { key: 'stag', label: 'Stag beetle', lv: 8 }],
+    colors: [{ key: 'umber', label: 'Umber', hex: '#4A2F22', lv: 1 }, { key: 'crimson', label: 'Crimson', hex: '#B3261E', lv: 2 }, { key: 'ochre', label: 'Ochre', hex: '#A86A04', lv: 4 }, { key: 'jade', label: 'Jade', hex: '#2E6B31', lv: 6 }, { key: 'anthracite', label: 'Anthracite', hex: '#1C1917', lv: 7 }, { key: 'terracotta', label: 'Terracotta', hex: '#C4561A', lv: 9 }],
+  };
+  static CHIP = { clay: ['rgba(194,120,3,0.12)', '#C27803'], jade: ['rgba(46,125,50,0.12)', '#2E7D32'], rust: ['rgba(230,81,0,0.12)', '#E65100'], crimson: ['rgba(198,40,40,0.12)', '#C62828'] };
+  static seed() {
+    return [
+      { id: 'RAW-31', title: 'Swipe between columns on mobile instead of drag-and-drop', type: 'feat', size: 'S', col: 'backlog' },
+      { id: 'BUG-21', title: 'Ambient drawer flickers when the terminal opens', type: 'bug', size: 'S', col: 'backlog' },
+      { id: 'BUG-19', title: 'Column count badge is off by one after a drag', type: 'bug', size: 'S', sp: 2, col: 'todo' },
+      { id: 'PROT-07', title: 'Reviewer webhook', type: 'feat', size: 'M', sp: 3, col: 'todo', epic: 'EPIC-03', blockedBy: 'PROT-06' },
+      { id: 'PROT-08', title: 'Showcase aggregator', type: 'feat', size: 'M', sp: 5, col: 'todo', epic: 'EPIC-03', blockedBy: 'PROT-07' },
+      { id: 'PROT-06', title: 'Implement Coder Agent execution loop', type: 'feat', size: 'M', sp: 5, col: 'progress', epic: 'EPIC-03', progress: 62, elapsed: 252, sandbox: 'sbx_8f2a41' },
+      { id: 'PROT-05', title: 'Set up E2B sandbox environment', type: 'feat', size: 'S', sp: 3, col: 'progress', epic: 'EPIC-03', progress: 28, elapsed: 48, sandbox: 'sbx_3c19d0' },
+      { id: 'PROT-03', title: 'Build Backlog “Product Agent” pipeline', type: 'feat', size: 'M', sp: 5, col: 'review', epic: 'EPIC-02', pr: 118, ci: { state: 'failed', passed: 10, total: 12, fixIn: 12, attempt: 2 } },
+      { id: 'PROT-04', title: 'Build To Do “Architect Agent” pipeline', type: 'feat', size: 'L', sp: 8, col: 'review', epic: 'EPIC-02', pr: 117, ci: { state: 'passed', passed: 12, total: 12 } },
+      { id: 'PROT-01', title: 'Next.js + Kanban UI', type: 'feat', size: 'M', sp: 5, col: 'done', epic: 'EPIC-01', pr: 114, merged: '4a91c07' },
+      { id: 'PROT-02', title: 'Database + persistence', type: 'feat', size: 'M', sp: 3, col: 'done', epic: 'EPIC-01', pr: 116, merged: '8d3e2b1' },
+    ];
+  }
+
+  state = { tlOpen: false, tlHover: null, tlLive: {}, tlOpenEpics: { 'EPIC-02': true, 'EPIC-03': true }, tickets: Component.seed(), score: 232, earned: 232, stackN: 1, colonyOpen: false, bugShape: 'beetle', bugColor: 'umber', soundOn: null, draft: '', toast: null, win: null, tokens: 182400, tps: 1900, squashed: 0, doneEpics: ['EPIC-01'], seq: 32, prSeq: 119 };
+
+  canvasRef = React.createRef(); boardRef = React.createRef(); scoreRef = React.createRef(); multRef = React.createRef();
+  timerRef = React.createRef(); levelRef = React.createRef(); nestRef = React.createRef(); inputRef = React.createRef();
+  toastRef = React.createRef(); winRef = React.createRef(); coinRef = React.createRef(); stackRef = React.createRef(); colonyRef = React.createRef();
+  stacks = [];
+  fx = { ants: [], carriers: [], parts: [], pops: [], rings: [], flyers: [], bugs: [] };
+  runRects = []; rectAt = 0; shown = 0;
+
+  componentDidMount() {
+    this.reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    this.shown = this.state.score; this.paintScore();
+    this.stacks = [performance.now() + 30000];
+    this.onResize = () => { const c = this.canvasRef.current; if (!c) return; this.dpr = Math.min(2, window.devicePixelRatio || 1); c.width = innerWidth * this.dpr; c.height = innerHeight * this.dpr; };
+    this.onResize(); window.addEventListener('resize', this.onResize);
+    this.onGesture = () => { this.gestured = true; };
+    window.addEventListener('pointerdown', this.onGesture, true); window.addEventListener('keydown', this.onGesture, true);
+    this.last = performance.now(); this.raf = requestAnimationFrame(this.frame);
+    this.iv = setInterval(this.tick, 1000);
+    this.onTlKey = (e) => { if (e.key === 'Escape' && this.state.tlOpen && !this.state.reqOpen && !this.state.win) this.closeTl(); };
+    window.addEventListener('keydown', this.onTlKey);
+  }
+  componentWillUnmount() {
+    cancelAnimationFrame(this.raf); clearInterval(this.iv);
+    window.removeEventListener('resize', this.onResize); window.removeEventListener('keydown', this.onTlKey);
+    window.removeEventListener('pointerdown', this.onGesture, true); window.removeEventListener('keydown', this.onGesture, true);
+    window.removeEventListener('pointermove', this.onMove); window.removeEventListener('pointerup', this.onUp);
+  }
+
+  // ---------- helpers
+  full() { return (this.props.juice ?? 'Full') === 'Full' && !this.reduced; }
+  soundEnabled() { return this.state.soundOn ?? this.props.sound ?? true; }
+  level(e = this.state.earned) { return Math.floor(e / 50) + 1; }
+  bugHex() { const c = Component.UNLOCKS.colors.find(x => x.key === this.state.bugColor); return c ? c.hex : '#4A2F22'; }
+  estimate(size) { const o = { S: [1, 2, 3], M: [3, 5], L: [8, 13] }[size] || [2, 3]; return o[Math.floor(Math.random() * o.length)]; }
+  find(id) { return this.state.tickets.find(t => t.id === id); }
+  card(id) { return document.querySelector(`article[data-tid="${id}"]`); }
+  center(el) { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r]; }
+  paintScore() { const el = this.scoreRef.current; if (el) el.textContent = Math.round(this.shown).toLocaleString('en-US'); }
+  fmt(s) { return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }
+
+  // ---------- sound
+  audio() {
+    if (!this.soundEnabled() || !this.gestured) return null;
+    if (!this.ac) {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+      this.ac = new AC(); const comp = this.ac.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 4;
+      this.out = this.ac.createGain(); this.out.gain.value = 0.9; this.out.connect(comp); comp.connect(this.ac.destination);
+    }
+    if (this.ac.state === 'suspended') this.ac.resume();
+    return this.ac;
+  }
+  tone(f, dur, o = {}) {
+    const a = this.audio(); if (!a) return;
+    const t = a.currentTime + (o.delay || 0); const osc = a.createOscillator(); const g = a.createGain();
+    osc.type = o.type || 'sine'; osc.frequency.setValueAtTime(f, t); if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(o.gain ?? 0.06, t + (o.attack || 0.004)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g); g.connect(this.out); osc.start(t); osc.stop(t + dur + 0.05);
+  }
+  noise(dur, o = {}) {
+    const a = this.audio(); if (!a) return;
+    const t = a.currentTime + (o.delay || 0);
+    if (!this.nbuf) { const len = Math.floor(a.sampleRate * 0.5); this.nbuf = a.createBuffer(1, len, a.sampleRate); const d = this.nbuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1; }
+    const src = a.createBufferSource(); src.buffer = this.nbuf; const f = a.createBiquadFilter();
+    f.type = o.hp ? 'highpass' : 'lowpass'; f.frequency.setValueAtTime(o.freq || 2000, t); if (o.to) f.frequency.exponentialRampToValueAtTime(o.to, t + dur); f.Q.value = o.q || 0.8;
+    const g = a.createGain(); g.gain.setValueAtTime(o.gain ?? 0.1, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.out); src.start(t); src.stop(t + dur + 0.05);
+  }
+  sfx(n, v = 0) {
+    switch (n) {
+      case 'pickup': this.tone(620, 0.07, { to: 940, gain: 0.045 }); this.noise(0.03, { freq: 5000, hp: true, gain: 0.03 }); break;
+      case 'hover': this.tone(1500, 0.022, { gain: 0.014, type: 'triangle' }); break;
+      case 'deny': this.tone(220, 0.06, { type: 'square', gain: 0.018 }); break;
+      case 'drop': this.noise(0.05, { freq: 2600, to: 500, gain: 0.07 }); this.tone(260, 0.12, { to: 150, type: 'triangle', gain: 0.1 }); break;
+      case 'blip': this.tone(660 * Math.pow(2, v / 12), 0.05, { type: 'square', gain: 0.016 }); break;
+      case 'ding': this.noise(0.02, { freq: 7000, hp: true, gain: 0.05 }); this.tone(1318.5, 0.55, { gain: 0.07 }); this.tone(1975.5, 0.45, { gain: 0.045, delay: 0.012 }); this.tone(2637, 0.22, { gain: 0.02, delay: 0.012, type: 'triangle' }); break;
+      case 'squash': this.noise(0.14, { freq: 2200, to: 140, gain: 0.28, q: 2 }); this.tone(170, 0.14, { to: 55, gain: 0.18 }); this.tone(2349, 0.2, { type: 'triangle', gain: 0.05, delay: 0.03 }); this.tone(3136, 0.14, { gain: 0.03, delay: 0.05 }); break;
+      case 'reject': this.tone(196, 0.09, { type: 'square', gain: 0.035 }); this.tone(147, 0.12, { type: 'square', gain: 0.035, delay: 0.1 }); break;
+      case 'unlock': this.tone(988, 0.16, { gain: 0.05, type: 'triangle' }); this.tone(1480, 0.28, { gain: 0.05, delay: 0.08, type: 'triangle' }); break;
+      case 'ready': this.tone(880, 0.12, { gain: 0.035 }); this.tone(1175, 0.2, { gain: 0.035, delay: 0.07 }); break;
+      case 'green': this.tone(1047, 0.12, { gain: 0.03, type: 'triangle' }); this.tone(1568, 0.22, { gain: 0.03, delay: 0.06, type: 'triangle' }); break;
+      case 'mult': { const b = 523 * Math.pow(2, (v * 4) / 12); this.tone(b, 0.18, { type: 'sawtooth', gain: 0.02, to: b * 1.5 }); break; }
+      case 'mint': this.tone(440, 0.1, { to: 660, gain: 0.03, type: 'triangle' }); break;
+      case 'bad': this.tone(523, 0.14, { type: 'triangle', gain: 0.05 }); this.tone(370, 0.26, { type: 'triangle', gain: 0.05, delay: 0.11, to: 330 }); this.noise(0.06, { freq: 900, gain: 0.05, delay: 0.11 }); break;
+      case 'emerge': { const f = 880 * Math.pow(2, (v * 2) / 12); this.tone(f, 0.07, { to: f * 1.45, gain: 0.022, type: 'triangle' }); break; }
+      case 'attach': this.tone(1900 + v * 140, 0.03, { gain: 0.024, type: 'triangle' }); this.noise(0.015, { freq: 6000, hp: true, gain: 0.015 }); break;
+      case 'grab': this.tone(1200, 0.06, { to: 1700, gain: 0.03, type: 'triangle' }); this.noise(0.02, { freq: 6000, hp: true, gain: 0.02 }); break;
+      case 'burrow': this.noise(0.16, { freq: 800, to: 180, gain: 0.06 }); this.tone(220, 0.1, { to: 130, gain: 0.02 }); break;
+      case 'detach': { const f = 1700 - v * 90; this.tone(f, 0.05, { to: f * 0.68, gain: 0.022, type: 'triangle' }); break; }
+      case 'enter': { const f = 1050 * Math.pow(2, -v / 12); this.tone(f, 0.09, { to: f * 0.6, gain: 0.024 }); break; }
+      case 'decay': this.tone(700, 0.12, { to: 520, gain: 0.02, type: 'triangle' }); break;
+      case 'level': [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.3, { type: 'triangle', gain: 0.05, delay: i * 0.07 })); break;
+      case 'scrub': this.tone(520 * Math.pow(2, v / 24), 0.03, { type: 'triangle', gain: 0.016 }); break;
+      case 'stamp': this.noise(0.08, { freq: 1400, to: 200, gain: 0.16 }); this.tone(150, 0.14, { to: 70, gain: 0.14 }); this.tone(1568, 0.18, { type: 'triangle', gain: 0.03, delay: 0.04 }); break;
+      case 'epic': [392, 523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.5, { type: 'triangle', gain: 0.05, delay: i * 0.09 })); setTimeout(() => this.sfx('ding'), 520); break;
+    }
+  }
+
+  // ---------- fx primitives
+  burst(x, y, colors, n, o = {}) {
+    if (!this.full()) n = Math.ceil(n / 3);
+    for (let i = 0; i < n; i++) {
+      const a = (o.angle ?? -Math.PI / 2) + (Math.random() - 0.5) * (o.spread ?? Math.PI * 2);
+      const sp = (o.speed ?? 220) * (0.4 + Math.random() * 0.8); const life = (o.life ?? 0.8) * (0.7 + Math.random() * 0.5);
+      this.fx.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: o.g ?? 520, life, max: life, size: (o.size ?? 3) * (0.6 + Math.random() * 0.8), color: colors[i % colors.length], rot: Math.random() * 6, vr: (Math.random() - 0.5) * 12, shape: o.shape || 'oct' });
+    }
+  }
+  ring(x, y, color, r1 = 42, dur = 0.45, w = 2) { this.fx.rings.push({ x, y, r1, color, life: dur, max: dur, w }); }
+  pop(x, y, text, sub, color, size = 20) { this.fx.pops.push({ x, y, text, sub, color, size, life: 1.15, max: 1.15 }); }
+  fly(x0, y0, x1, y1, n, color, onEach) {
+    for (let i = 0; i < n; i++) {
+      const cx = (x0 + x1) / 2 + (Math.random() - 0.5) * 240; const cy = Math.min(y0, y1) - 40 - Math.random() * 120;
+      this.fx.flyers.push({ x0: x0 + (Math.random() - 0.5) * 30, y0, x1, y1, cx, cy, t: 0, dur: 0.5 + Math.random() * 0.2, delay: i * 0.055, color, i, onEach, trail: [] });
+    }
+  }
+  shake(m = 3) {
+    if (!this.full()) return; const el = this.boardRef.current; if (!el) return;
+    el.animate([{ transform: 'none' }, { transform: `translate(${-m}px,${m * 0.6}px)` }, { transform: `translate(${m}px,${-m * 0.5}px)` }, { transform: `translate(${-m * 0.5}px,${m * 0.3}px)` }, { transform: 'none' }], { duration: 240, easing: 'ease-out' });
+  }
+  squish(el) {
+    el.animate([{ transform: 'translateY(-6px) scale(1.03,0.97)' }, { transform: 'scale(1.05,0.93)', offset: 0.35 }, { transform: 'scale(0.98,1.03)', offset: 0.65 }, { transform: 'none' }], { duration: this.full() ? 320 : 160, easing: 'ease-out' });
+  }
+  carriers(x, y, n, color) {
+    if ((this.props.ants ?? 'Busy') === 'Off' || this.reduced) return;
+    for (let i = 0; i < n; i++) this.fx.carriers.push({ x: x + (Math.random() - 0.5) * 30, y: y + 4, a: Math.PI / 2, ph: Math.random() * 6, wait: i * 0.18, carry: color });
+  }
+  toast(text) {
+    clearTimeout(this.toastTo);
+    this.setState({ toast: { text, k: Date.now() } }, () => { const t = this.toastRef.current; t && t.animate([{ opacity: 0, transform: 'translateY(-10px) scale(0.96)' }, { opacity: 1, transform: 'none' }], { duration: 280, easing: 'cubic-bezier(.2,.9,.3,1.25)' }); });
+    this.toastTo = setTimeout(() => this.setState({ toast: null }), 3200);
+  }
+
+  // ---------- scoring
+  scoreMerge(t, el) {
+    const now = performance.now(); const n = this.stacks.length; const mult = 1 + 0.5 * n; const sp = t.sp || 1;
+    const pts = Math.round(sp * mult);
+    this.setState(s => ({ tlLive: { ...s.tlLive, [t.id]: { ...(s.tlLive[t.id] || {}), pts, mult } } }));
+    if (this.stacks.length >= 6) this.stacks.shift();
+    this.stacks.push(now + Component.WINDOW); this.stacks.sort((a, b) => a - b);
+    this.setState({ stackN: this.stacks.length }, () => {
+      const m = this.multRef.current;
+      m && m.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.4) rotate(-8deg)' }, { transform: 'scale(0.94) rotate(3deg)' }, { transform: 'none' }], { duration: 420, easing: 'ease-out' });
+      this.sfx('mult', this.stacks.length - 1);
+    });
+    const r = el.getBoundingClientRect(); const cx = r.left + r.width / 2;
+    this.pop(cx, r.top + 4, `+${pts}`, `MERGED · ${sp} SP × ${mult.toFixed(1)}`, '#B5511A', 22);
+    const s = this.scoreRef.current; if (!s) return this.bump(pts);
+    const [sx, sy] = this.center(s); let got = false;
+    this.fly(cx, r.top + 10, sx, sy, this.full() ? 6 : 2, '#D96B27', (i) => { this.sfx('blip', i * 2 + n * 3); if (!got) { got = true; this.bump(pts); } });
+  }
+  penalty(pts, el, label) {
+    const r = el.getBoundingClientRect(); const cx = r.left + r.width / 2;
+    this.sfx('bad'); this.pop(cx, r.top + 4, `−${pts}`, label, '#C62828', 20);
+    const s = this.scoreRef.current;
+    if (s) { const [sx, sy] = this.center(s); this.fly(sx, sy, cx, r.top + 10, this.full() ? 4 : 1, '#C62828', (i) => { if (i === 0) this.ring(cx, r.top + 10, '#C62828', 36, 0.35); }); }
+    this.bump(-pts);
+  }
+  mark(el, label, sub, color = '#57534E') { const r = el.getBoundingClientRect(); this.pop(r.left + r.width / 2, r.top + 4, label, sub, color, 14); }
+  bump(pts) {
+    const after = Math.max(0, this.state.score + pts); const e0 = this.state.earned, e1 = e0 + Math.max(0, pts);
+    this.countFrom = this.shown; this.countTo = after; this.countT0 = performance.now();
+    this.setState({ score: after, earned: e1 });
+    const s = this.scoreRef.current;
+    if (s && pts >= 0) s.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.28)', color: '#B5511A' }, { transform: 'scale(1)' }], { duration: 380, easing: 'ease-out' });
+    if (s && pts < 0) s.animate([{ transform: 'none', color: '#C62828' }, { transform: 'translateX(-5px)', color: '#C62828' }, { transform: 'translateX(4px)', color: '#C62828' }, { transform: 'none' }], { duration: 420 });
+    if (this.level(e1) > this.level(e0)) setTimeout(() => this.levelUp(this.level(e1)), 380);
+  }
+  levelUp(lv) {
+    this.sfx('level');
+    const b = this.levelRef.current;
+    if (b) { b.animate([{ transform: 'rotateY(0) scale(1)' }, { transform: 'rotateY(360deg) scale(1.3)' }, { transform: 'rotateY(360deg) scale(1)' }], { duration: 700, easing: 'cubic-bezier(.2,.8,.2,1)' }); const [x, y] = this.center(b); this.ring(x, y, '#C27803', 60, 0.6, 2.5); this.burst(x, y, ['#C27803', '#E0A33C', '#1C1917'], 18, { speed: 240, size: 3 }); }
+    const rank = Component.RANKS[Math.min(lv - 1, Component.RANKS.length - 1)];
+    const U = Component.UNLOCKS; const got = [...U.shapes, ...U.colors].filter(u => u.lv === lv).map(u => u.label);
+    this.toast(got.length ? `Lv ${lv} ${rank} · unlocked ${got.join(' and ')}. Tap the nest to equip` : `Lv ${lv} ${rank} reached`);
+    const nEl = this.nestRef.current;
+    if (got.length && nEl) { const [x, y] = this.center(nEl); this.ring(x, y, '#E0A33C', 40, 0.8, 2); nEl.animate([{ transform: 'none' }, { transform: 'translateY(-4px) scale(1.25)' }, { transform: 'none' }], { duration: 520, easing: 'ease-out' }); }
+  }
+
+  // ---------- rules
+  rejectReason(t, to) {
+    if (!t || to === t.col) return null;
+    const O = Component.ORDER;
+    if (O[to] < O[t.col]) return null;
+    const blocker = t.blockedBy && this.find(t.blockedBy);
+    if (blocker && blocker.col !== 'done' && O[to] >= 2) return `Blocked by ${t.blockedBy}`;
+    if (to === 'review') { if (t.col !== 'progress') return 'Needs an agent run first'; if (!t.ready) return `Agent still working · ${Math.round(t.progress)}%`; }
+    if (to === 'done') {
+      if (t.col !== 'review') return 'Merges happen from In Review';
+      if (t.ci && t.ci.state === 'failed') return 'CI failing · fix loop running';
+      if (t.ci && t.ci.state === 'running') return `CI running · ${t.ci.passed}/${t.ci.total}`;
+    }
+    return null;
+  }
+
+  // ---------- drag
+  makeGhost(el, r) {
+    const g = el.cloneNode(true);
+    [g, ...g.querySelectorAll('[data-tid],[data-running],[data-bugicon],[data-adv]')].forEach(n => { ['data-tid', 'data-running', 'data-bugicon', 'data-adv'].forEach(a => n.removeAttribute(a)); });
+    Object.assign(g.style, { position: 'fixed', left: '0', top: '0', margin: '0', width: r.width + 'px', height: r.height + 'px', boxSizing: 'border-box', zIndex: '60', pointerEvents: 'none', animation: 'none', transition: 'none', cursor: 'grabbing', boxShadow: '0 28px 48px -18px rgba(28,25,23,0.45), 0 2px 6px rgba(28,25,23,0.08)', transform: `translate(${r.left}px,${r.top}px)`, willChange: 'transform' });
+    const src = el.querySelectorAll('canvas'); g.querySelectorAll('canvas').forEach((c, i) => { const s = src[i]; if (!s || !s.width) return; c.width = s.width; c.height = s.height; c.getContext('2d').drawImage(s, 0, 0); });
+    document.body.appendChild(g); return g;
+  }
+  cardDown = (e) => {
+    if (e.button !== 0 || e.target.closest('button,a,input')) return;
+    const el = e.currentTarget; const r = el.getBoundingClientRect();
+    this.drag = { id: el.getAttribute('data-tid'), el, r, sx: e.clientX, sy: e.clientY, offX: e.clientX - r.left, offY: e.clientY - r.top, x: r.left, y: r.top, lastX: e.clientX, rot: 0, tr: 0, active: false, over: null };
+    window.addEventListener('pointermove', this.onMove); window.addEventListener('pointerup', this.onUp); window.addEventListener('pointercancel', this.onUp);
+  };
+  onMove = (e) => {
+    const d = this.drag; if (!d) return;
+    if (!d.active) {
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return;
+      d.active = true; d.el.style.transform = ''; d.ghost = this.makeGhost(d.el, d.el.getBoundingClientRect()); d.el.style.opacity = '0.3';
+      this.sfx('pickup'); document.body.style.cursor = 'grabbing';
+    }
+    d.tr = Math.max(-14, Math.min(14, (e.clientX - d.lastX) * 1.2)); d.lastX = e.clientX;
+    d.x = e.clientX - d.offX; d.y = e.clientY - d.offY;
+    const hit = document.elementFromPoint(e.clientX, e.clientY); const colEl = hit && hit.closest('[data-col]');
+    const key = colEl ? colEl.getAttribute('data-col') : null;
+    if (key !== d.over) {
+      d.over = key; const t = this.find(d.id);
+      const ok = key && t && key !== t.col ? !this.rejectReason(t, key) : null;
+      this.highlight(key, ok);
+      if (ok !== null) this.sfx(ok ? 'hover' : 'deny');
+    }
+  };
+  onUp = (e) => {
+    const d = this.drag;
+    window.removeEventListener('pointermove', this.onMove); window.removeEventListener('pointerup', this.onUp); window.removeEventListener('pointercancel', this.onUp);
+    this.drag = null; document.body.style.cursor = '';
+    if (!d || !d.active) return;
+    this.highlight(null, null);
+    const t = this.find(d.id);
+    if (!d.over || !t || d.over === t.col) return this.returnGhost(d.ghost, d.el, false);
+    this.tryMove(d.id, d.over, d.ghost, d.el, [e.clientX, e.clientY]);
+  };
+  highlight(key, ok) {
+    document.querySelectorAll('[data-col]').forEach(c => {
+      if (ok !== null && c.getAttribute('data-col') === key) {
+        const col = ok ? '#D96B27' : '#C62828';
+        c.style.outline = `1.5px dashed ${col}`; c.style.outlineOffset = '-1.5px';
+        c.style.boxShadow = `inset 0 0 0 999px ${ok ? 'rgba(217,107,39,0.06)' : 'rgba(198,40,40,0.05)'}`;
+      } else { c.style.outline = ''; c.style.boxShadow = ''; }
+    });
+  }
+  returnGhost(ghost, el, bad) {
+    const r = el.getBoundingClientRect();
+    const a = ghost.animate([{ transform: ghost.style.transform }, { transform: `translate(${r.left}px,${r.top}px) rotate(0deg) scale(1)` }], { duration: 260, easing: 'cubic-bezier(.2,1.2,.4,1)', fill: 'forwards' });
+    a.onfinish = () => {
+      ghost.remove(); el.style.opacity = '';
+      if (bad) el.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'none' }], { duration: 280 });
+      else this.sfx('drop');
+    };
+  }
+  advance = (e) => {
+    e.stopPropagation();
+    const id = e.currentTarget.getAttribute('data-adv'); const t = this.find(id); if (!t) return;
+    const next = Component.COLS[Component.ORDER[t.col] + 1]; if (!next) return;
+    const el = this.card(id); if (!el) return; el.style.transform = '';
+    const r = el.getBoundingClientRect(); const ghost = this.makeGhost(el, r); el.style.opacity = '0.3';
+    this.sfx('pickup'); this.tryMove(id, next.key, ghost, el, [r.left + r.width / 2, r.top]);
+  };
+  tryMove(id, to, ghost, el, pt) {
+    const t = this.find(id); const why = this.rejectReason(t, to);
+    if (why) { this.sfx('reject'); this.pop(pt[0], pt[1] - 12, why, null, '#C62828', 13); return this.returnGhost(ghost, el, true); }
+    const from = t.col; const fwd = Component.ORDER[to] > Component.ORDER[from];
+    const first = fwd && !(t.scored || []).includes(to);
+    const est = !t.sp && to !== 'backlog';
+    this.setState(s => {
+      const cur = s.tickets.find(x => x.id === id); const nt = { ...cur, col: to }; let prSeq = s.prSeq;
+      if (first) nt.scored = [...(cur.scored || []), to];
+      if (!nt.sp && to !== 'backlog') nt.sp = this.estimate(cur.size);
+      if (to === 'progress') Object.assign(nt, { progress: 0, elapsed: 0, ready: false, sandbox: 'sbx_' + Math.random().toString(16).slice(2, 8), ci: null });
+      if (to === 'review') { if (!cur.pr) nt.pr = prSeq++; nt.ci = { state: 'running', passed: 0, total: 12 }; }
+      if (to === 'done') nt.merged = Math.random().toString(16).slice(2, 9);
+      if (to === 'todo' || to === 'backlog') Object.assign(nt, { progress: 0, ready: false, ci: null });
+      const rest = s.tickets.filter(x => x.id !== id); const idx = rest.findIndex(x => x.col === to);
+      if (idx < 0) rest.push(nt); else rest.splice(idx, 0, nt);
+      return { tickets: rest, prSeq };
+    }, () => this.settle(id, from, to, first, ghost, est));
+  }
+  settle(id, from, to, first, ghost, est) {
+    document.querySelectorAll('article[data-tid]').forEach(n => { n.style.opacity = ''; n.style.transform = ''; });
+    const el = this.card(id); if (!el) { ghost.remove(); return; }
+    el.style.opacity = '0'; const r = el.getBoundingClientRect();
+    const a = ghost.animate([{ transform: ghost.style.transform }, { transform: `translate(${r.left}px,${r.top}px) rotate(0deg) scale(1)` }], { duration: 230, easing: 'cubic-bezier(.25,1.25,.45,1)', fill: 'forwards' });
+    a.onfinish = () => { ghost.remove(); el.style.opacity = ''; this.landed(id, el, to, first, est); };
+  }
+  landed(id, el, to, first, est) {
+    const t = this.find(id); const r = el.getBoundingClientRect(); const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    this.sfx('drop'); this.squish(el);
+    this.burst(cx, r.bottom, ['#D6D3D1', '#E7E5E4', '#A8A29E'], 10, { angle: -Math.PI / 2, spread: Math.PI * 0.9, speed: 120, g: 300, size: 1.8, life: 0.5, shape: 'dot' });
+    if (!t) return;
+    if (est) {
+      const b = el.querySelector('[data-sp]');
+      b && b.animate([{ transform: 'rotateY(540deg) scale(0.4)' }, { transform: 'rotateY(0deg) scale(1.35)', offset: 0.7 }, { transform: 'none' }], { duration: 620, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      [0, 1, 2].forEach(i => setTimeout(() => this.sfx('blip', 7 + i * 5), 120 + i * 70));
+    }
+    if (!first) { if (est) this.mark(el, 'ESTIMATED', `${t.sp} SP · Architect Agent`, '#8F3F12'); return; }
+    if (to === 'todo') {
+      this.mark(el, 'ESTIMATED', `${t.sp} SP · Architect Agent`, '#8F3F12');
+    } else if (to === 'progress') {
+      this.tlMark(id, 's');
+      this.sfx('mint'); this.ring(cx, cy, '#C27803', 70, 0.5);
+      if (t.type === 'bug' && !t.squashed) return this.squashBug(id, el);
+      this.mark(el, 'AGENT DISPATCHED', est ? `estimated ${t.sp} SP` : t.sandbox, '#8F3F12');
+    } else if (to === 'review') {
+      this.mark(el, `PR #${t.pr} OPENED`, 'Reviewer Agent');
+    } else if (to === 'done') {
+      this.tlMark(id, 'e');
+      setTimeout(() => this.sfx('ding'), 40); this.shake(2);
+      this.ring(cx, cy, '#2E7D32', 100, 0.6, 3);
+      this.burst(cx, cy, ['#2E7D32', '#D96B27', '#C27803', '#1C1917'], 26, { speed: 300, size: 3.2 });
+      this.scoreMerge(t, el);
+      
+      this.toEpic(t, cx, r.top);
+      this.unlocks(id);
+      this.checkEpic(t.epic);
+    }
+  }
+  squashBug(id, el, chips) {
+    const ic = el.querySelector('[data-bugicon]'); const [x, y] = this.center(ic || el);
+    const blobs = Array.from({ length: 9 }, () => ({ dx: (Math.random() - 0.5) * 26, dy: (Math.random() - 0.5) * 9, r: 0.8 + Math.random() * 1.8 }));
+    this.fx.bugs.push({ x, y: y - 2, t: 0, blobs, onSquash: () => {
+      this.sfx('squash'); this.shake(5);
+      this.ring(x, y, '#C62828', 56, 0.4, 3); this.ring(x, y, '#1C1917', 26, 0.25, 1.5);
+      this.burst(x, y, [this.bugHex(), '#C62828', '#1C1917'], 16, { speed: 200, g: 600, size: 2.2, life: 0.6, shape: 'dot' });
+      el.animate([{ transform: 'none' }, { transform: 'scale(1.03,0.92)' }, { transform: 'none' }], { duration: 200 });
+      const firstEver = this.state.squashed === 0;
+      this.setState(s => ({ squashed: s.squashed + 1, tickets: s.tickets.map(k => k.id === id ? { ...k, squashed: true } : k) }));
+      this.pop(x + 20, y - 16, 'SQUASHED', null, '#C62828', 15);
+      const hex = this.bugHex(); setTimeout(() => this.carriers(x, y, 2, hex), 700);
+      if (firstEver) setTimeout(() => this.toast('First bug of the session squashed'), 1100);
+    } });
+  }
+  toEpic(t, x, y) {
+    if (!t.epic || this.state.tlOpen) return; const tile = document.querySelector('[data-tlbtn]'); if (!tile) return;
+    const [ex, ey] = this.center(tile);
+    this.fly(x, y, ex, ey, 3, '#1C1917', (i) => {
+      if (i === 0) { tile.animate([{ transform: 'none' }, { transform: 'scale(1.08)' }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.9,.3,1.4)' }); this.ring(ex, ey, '#C27803', 50, 0.45); }
+      this.sfx('blip', 12 + i * 3);
+    });
+  }
+  unlocks(id) {
+    this.state.tickets.filter(k => k.blockedBy === id).forEach((k, i) => setTimeout(() => {
+      const el = this.card(k.id); if (!el) return; const [x, y, r] = this.center(el);
+      this.sfx('unlock'); this.ring(x, y, '#2E7D32', 80, 0.6, 2.5); this.pop(x, r.top, 'UNLOCKED', `${k.id} ready to run`, '#2E7D32', 16);
+      el.animate([{ boxShadow: '0 0 0 0 rgba(46,125,50,0.55)', borderColor: '#2E7D32' }, { boxShadow: '0 0 0 10px rgba(46,125,50,0)', borderColor: '#2E7D32' }], { duration: 900, easing: 'ease-out' });
+    }, 700 + i * 220));
+  }
+  checkEpic(eid) {
+    if (!eid || this.state.doneEpics.includes(eid)) return;
+    const ts = this.state.tickets.filter(k => k.epic === eid); if (!ts.length || ts.some(k => k.col !== 'done')) return;
+    const ep = Component.EPICS.find(e => e.id === eid); const bonus = ts.reduce((a, k) => a + (k.sp || 0), 0);
+    setTimeout(() => {
+      this.sfx('epic');
+      this.setState(s => ({ doneEpics: [...s.doneEpics, eid], win: { id: eid, title: ep.title, body: `${ts.length} tickets merged by the colony. The PM Agent has drafted a showcase for your review.`, pts: bonus } }), () => {
+        const w = this.winRef.current, c = this.coinRef.current;
+        w && w.animate([{ opacity: 0, transform: 'translateY(18px) scale(0.95)' }, { opacity: 1, transform: 'none' }], { duration: 360, easing: 'cubic-bezier(.2,.9,.3,1.2)' });
+        c && c.animate([{ transform: 'rotateY(900deg) scale(0.3)' }, { transform: 'rotateY(0deg) scale(1.15)', offset: 0.75 }, { transform: 'none' }], { duration: 950, easing: 'cubic-bezier(.2,.8,.2,1)' });
+        setTimeout(() => {
+          if (!this.coinRef.current) return; const [x, y] = this.center(this.coinRef.current);
+          this.ring(x, y, '#2E7D32', 130, 0.8, 3);
+          if (this.full()) this.burst(x, y, ['#D96B27', '#C27803', '#2E7D32', '#1C1917', '#E0A33C'], 80, { speed: 560, g: 700, size: 4, life: 1.7 });
+          this.shake(3); this.bump(bonus);
+        }, 720);
+      });
+    }, 900);
+  }
+  closeWin = () => this.setState({ win: null });
+
+  // ---------- simulation
+  tick = () => {
+    const ev = new Map();
+    this.setState(s => {
+      let busy = 0;
+      const tickets = s.tickets.map(t => {
+        if (t.col === 'progress' && !t.ready) {
+          busy++;
+          const rate = ({ S: 4.6, M: 2.8, L: 1.8 })[t.size] * (0.6 + Math.random() * 0.8) * (t.type === 'bug' ? 1.4 : 1);
+          const p = Math.min(100, (t.progress || 0) + rate); const nt = { ...t, progress: p, elapsed: (t.elapsed || 0) + 1 };
+          if (p >= 100) { nt.ready = true; ev.set(t.id, 'ready'); }
+          return nt;
+        }
+        if (t.col === 'review' && t.ci && t.ci.state !== 'passed') {
+          busy++; const ci = { ...t.ci };
+          if (ci.state === 'running') { ci.passed = Math.min(ci.total, ci.passed + (Math.random() < 0.8 ? 1 : 0)); if (ci.passed >= ci.total) { ci.state = 'passed'; ev.set(t.id, 'green'); } }
+          else if (ci.state === 'failed') { ci.fixIn -= 1; if (ci.fixIn <= 0) { ci.state = 'running'; ci.passed = 8; ev.set(t.id, 'fixing'); } }
+          return { ...t, ci };
+        }
+        return t;
+      });
+      return { tickets, tokens: Math.round(s.tokens + busy * (600 + Math.random() * 1400)), tps: busy ? Math.round(1200 + Math.random() * 1400) : 0 };
+    }, () => ev.forEach((k, id) => this.onEvent(k, id)));
+    const now = Date.now(); if (!this.nextBugAt) this.nextBugAt = now + 35000;
+    if (now > this.nextBugAt) { this.nextBugAt = now + 45000 + Math.random() * 30000; if (this.state.tickets.filter(t => t.type === 'bug' && t.col === 'backlog').length < 3) this.reportBug(); }
+  };
+  reportBug(title) {
+    const id = 'BUG-' + this.state.seq; const T = Component.BUG_TITLES; const text = title || T[this.state.seq % T.length];
+    this.setState(s => ({ seq: s.seq + 1, tickets: [{ id, title: text, type: 'bug', size: 'S', col: 'backlog' }, ...s.tickets] }), () => {
+      const el = this.card(id); if (!el) return;
+      el.animate([{ opacity: 0, transform: 'translateY(-14px) scale(0.92)' }, { opacity: 1, transform: 'translateY(2px) scale(1.02)', offset: 0.6 }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2,.9,.3,1)' });
+      this.penalty(Component.BUG_COST, el, 'BUG REPORTED');
+    });
+  }
+  onEvent(k, id) {
+    const el = this.card(id); if (!el) return; const [x, y, r] = this.center(el);
+    if (k === 'ready') { this.sfx('ready'); this.ring(x, y, '#2E7D32', 70, 0.6); this.pop(x, r.top, 'TESTS GREEN', 'drag to In Review', '#2E7D32', 15); }
+    if (k === 'green') { this.sfx('green'); this.ring(x, y, '#2E7D32', 60, 0.5); this.pop(x, r.top, 'CI PASSED', 'ready to merge', '#2E7D32', 15); }
+    if (k === 'fixing') { this.sfx('mint'); this.pop(x, r.top, 'FIX PUSHED', 'rerunning checks', '#E65100', 14); }
+  }
+
+  // ---------- canvas loop
+  frame = (now) => {
+    const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now;
+    const d = this.drag;
+    if (d && d.ghost && d.active) { d.rot += (d.tr - d.rot) * 0.22; d.tr *= 0.86; d.ghost.style.transform = `translate(${d.x}px,${d.y}px) rotate(${d.rot.toFixed(2)}deg) scale(1.04)`; }
+    if (this.countT0 != null) { const k = Math.min(1, (now - this.countT0) / 700); const e = 1 - Math.pow(1 - k, 3); this.shown = this.countFrom + (this.countTo - this.countFrom) * e; this.paintScore(); if (k >= 1) this.countT0 = null; }
+    if (this.stacks.length && this.stacks[0] < now) { this.stacks.shift(); this.setState({ stackN: this.stacks.length }); this.sfx('decay'); }
+    const sr = this.stackRef.current;
+    if (sr) for (let i = 0; i < sr.children.length; i++) { const f = sr.children[i].firstChild; const exp = this.stacks[i]; const k = exp ? Math.max(0, (exp - now) / Component.WINDOW) : 0; if (f) f.style.width = (k * 100).toFixed(1) + '%'; }
+    this.draw(dt, now);
+    this.raf = requestAnimationFrame(this.frame);
+  };
+  oct(ctx, x, y, r, rot) { ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = rot + Math.PI / 8 + i * Math.PI / 4; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } ctx.closePath(); }
+  backOut(k) { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); }
+  antWant() { const d = this.props.ants ?? 'Busy'; if (this.reduced || d === 'Off') return 0; return Math.min(34, (d === 'Few' ? 5 : 12) + (this.level() - 1) * 2); }
+  nest() { const el = this.nestRef.current; if (!el) return [30, innerHeight - 28]; const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2 + 4]; }
+  perim(r, t) {
+    const d = 5, x0 = r.left - d, y0 = r.top - d, w = r.width + 2 * d, h = r.height + 2 * d, P = 2 * (w + h);
+    let s = ((t % P) + P) % P;
+    if (s < w) return [x0 + s, y0]; s -= w; if (s < h) return [x0 + w, y0 + s]; s -= h; if (s < w) return [x0 + w - s, y0 + h]; s -= w; return [x0, y0 + h - s];
+  }
+  stepAnt(ant, tx, ty, speed, dt) {
+    const dx = tx - ant.x, dy = ty - ant.y, dist = Math.hypot(dx, dy); const step = Math.min(dist, speed * dt);
+    if (dist > 0.01) {
+      ant.x += dx / dist * step; ant.y += dy / dist * step;
+      let da = Math.atan2(dy, dx) - ant.a; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+      ant.a += da * Math.min(1, dt * 14); ant.ph += step * 0.9;
+    }
+    return dist < 2;
+  }
+  drawAnt(ctx, x, y, a, ph, carry, sc = 1) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a); if (sc !== 1) ctx.scale(sc, sc);
+    ctx.strokeStyle = 'rgba(28,25,23,0.7)'; ctx.fillStyle = 'rgba(28,25,23,0.82)'; ctx.lineWidth = 0.8; ctx.lineCap = 'round';
+    const sw = Math.sin(ph) * 1.3; ctx.beginPath();
+    for (let i = -1; i <= 1; i++) { const s = i === 0 ? -sw : sw; ctx.moveTo(i * 1.2, 0); ctx.lineTo(i * 2.6 + s, -3.3); ctx.moveTo(i * 1.2, 0); ctx.lineTo(i * 2.6 - s, 3.3); }
+    ctx.moveTo(3, -0.5); ctx.lineTo(5.2, -2); ctx.moveTo(3, 0.5); ctx.lineTo(5.2, 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(-3.3, 0, 2.3, 1.6, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-0.2, 0, 1.3, 0.95, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(2.3, 0, 1.25, 1.15, 0, 0, 7); ctx.fill();
+    if (carry && carry.sp) {
+      const r = this.spR(carry.sp); ctx.translate(4.4 + r * 0.9, Math.sin(ph * 0.5) * 0.3); ctx.rotate(-a);
+      this.spPath(ctx, 0, 0, r, carry.sp); ctx.fillStyle = '#C27803'; ctx.fill(); ctx.strokeStyle = '#8F3F12'; ctx.lineWidth = 0.7; ctx.stroke();
+    } else if (carry) { ctx.fillStyle = carry; ctx.beginPath(); ctx.arc(5.6, 0, 1.8, 0, 7); ctx.fill(); }
+    ctx.restore();
+  }
+  drawBug(ctx, x, y, s, t, shape, color, ink) {
+    shape = shape || this.state.bugShape; color = color || this.bugHex(); ink = ink || 'rgba(28,25,23,0.82)';
+    const w = Math.sin(t * 60) * 0.9;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 0.9;
+    const E = (cx, cy, rx, ry, rot = 0) => { ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, rot, 0, 7); ctx.fill(); };
+    if (shape === 'spider') {
+      ctx.strokeStyle = color; ctx.beginPath();
+      for (let i = 0; i < 4; i++) { const ly = -2.4 + i * 1.6, o = i % 2 ? w : -w; ctx.moveTo(-1.2, ly * 0.4); ctx.lineTo(-4.4, ly - 2.2 + o); ctx.lineTo(-6.6, ly + 1.8 + o); ctx.moveTo(1.2, ly * 0.4); ctx.lineTo(4.4, ly - 2.2 - o); ctx.lineTo(6.6, ly + 1.8 - o); }
+      ctx.stroke(); ctx.fillStyle = color; E(0, -1.6, 2, 2); E(0, 2.6, 3, 3.4);
+      ctx.fillStyle = 'rgba(251,249,245,0.45)'; E(0, 2.2, 0.8, 1.2);
+    } else if (shape === 'moth') {
+      const f = 0.7 + Math.abs(Math.sin(t * 28)) * 0.3; ctx.fillStyle = color;
+      E(-3.4 * f, -1.4, 3.6 * f, 2.6, -0.5); E(3.4 * f, -1.4, 3.6 * f, 2.6, 0.5);
+      const ga = ctx.globalAlpha; ctx.globalAlpha = ga * 0.75; E(-2.6 * f, 2.4, 2.4 * f, 1.8, 0.4); E(2.6 * f, 2.4, 2.4 * f, 1.8, -0.4); ctx.globalAlpha = ga;
+      ctx.fillStyle = ink; E(0, 0.6, 1, 4);
+      ctx.strokeStyle = ink; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(-0.4, -3.2); ctx.quadraticCurveTo(-1.6, -5.6, -2.8, -6); ctx.moveTo(0.4, -3.2); ctx.quadraticCurveTo(1.6, -5.6, 2.8, -6); ctx.stroke();
+    } else {
+      ctx.strokeStyle = ink; ctx.beginPath();
+      [-2, 0.2, 2.4].forEach((ly, i) => { const o = i % 2 ? w : -w; ctx.moveTo(-2.4, ly); ctx.lineTo(-5, ly - 1.2 + o); ctx.moveTo(2.4, ly); ctx.lineTo(5, ly - 1.2 - o); });
+      if (shape === 'stag') { ctx.moveTo(-0.9, -5.2); ctx.quadraticCurveTo(-3, -7, -1.2, -8.8); ctx.moveTo(0.9, -5.2); ctx.quadraticCurveTo(3, -7, 1.2, -8.8); }
+      else { ctx.moveTo(-0.8, -5.4); ctx.lineTo(-2, -7.4 + w * 0.5); ctx.moveTo(0.8, -5.4); ctx.lineTo(2, -7.4 - w * 0.5); }
+      ctx.stroke();
+      if (shape === 'ladybird') {
+        ctx.fillStyle = ink; E(0, -3.6, 1.9, 1.6);
+        ctx.fillStyle = color; E(0, 1, 4.1, 4.1);
+        ctx.fillStyle = ink; [[-1.8, -0.4], [1.8, -0.4], [-2.2, 2.4], [2.2, 2.4], [0, 3.8]].forEach(([a, b]) => E(a, b, 0.75, 0.75));
+        ctx.strokeStyle = ink; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(0, -2.8); ctx.lineTo(0, 5); ctx.stroke();
+      } else {
+        ctx.fillStyle = color; E(0, 0.8, 3.1, 3.9); E(0, -4, 1.7, 1.7);
+        ctx.strokeStyle = 'rgba(251,249,245,0.4)'; ctx.beginPath(); ctx.moveTo(0, -2.6); ctx.lineTo(0, 4.4); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  spR(sp) { return 1.5 + Math.sqrt(sp) * 0.85; }
+  spVerts(n, cx, cy, r) {
+    const pts = [];
+    if (n <= 2) { const rx = n === 1 ? r * 0.75 : r, ry = n === 1 ? r * 0.75 : r * 0.48; for (let i = 0; i < 16; i++) { const t = i / 16 * Math.PI * 2; pts.push([cx + Math.cos(t) * rx, cy + Math.sin(t) * ry]); } }
+    else { const off = n === 8 ? Math.PI / 8 : 0; for (let i = 0; i < n; i++) { const t = -Math.PI / 2 + off + i / n * Math.PI * 2; pts.push([cx + Math.cos(t) * r, cy + Math.sin(t) * r]); } }
+    return pts;
+  }
+  spPath(ctx, x, y, r, n) { const p = this.spVerts(n, x, y, r); ctx.beginPath(); p.forEach(([a, b], i) => i ? ctx.lineTo(a, b) : ctx.moveTo(a, b)); ctx.closePath(); }
+  drawPreviews(time = 0.26) {
+    const lv = this.level();
+    document.querySelectorAll('canvas[data-bugprev]').forEach(cv => {
+      const key = cv.getAttribute('data-bugprev'); const u = Component.UNLOCKS.shapes.find(x => x.key === key); if (!u) return;
+      const locked = lv < u.lv; const ctx = cv.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+      const on = !locked && this.state.bugShape === key;
+      this.drawBug(ctx, cv.width / 2, cv.height / 2 + 2, cv.width / 20, on ? time * 0.12 : 0.26, key, locked ? '#D6D3D1' : this.bugHex(), locked ? '#D6D3D1' : null);
+    });
+  }
+  draw(dt, now) {
+    const c = this.canvasRef.current; if (!c) return; const ctx = c.getContext('2d'); const dpr = this.dpr || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, c.width / dpr, c.height / dpr);
+    const [nx, ny] = this.nest();
+    if (this.state.colonyOpen) this.drawPreviews(now / 1000);
+
+    // splats under everything
+    const B = this.fx.bugs;
+    for (let i = B.length - 1; i >= 0; i--) {
+      const b = B[i]; b.t += dt; if (b.t > 2.2) { B.splice(i, 1); continue; }
+      if (b.t < 0.42) {
+        const k = Math.min(1, b.t / 0.22); const hop = -Math.sin(Math.min(1, b.t / 0.42) * Math.PI) * 12;
+        this.drawBug(ctx, b.x, b.y + hop, Math.max(0.01, this.backOut(k) * 2.1), b.t);
+      } else {
+        if (!b.hit) { b.hit = true; b.onSquash(); }
+        const k = (b.t - 0.42) / 1.78; ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k * k) * 0.85;
+        const bh = b.color || this.bugHex(); ctx.fillStyle = bh; ctx.beginPath(); ctx.ellipse(b.x, b.y + 2, 10, 2.6, 0, 0, 7); ctx.fill();
+        ctx.globalAlpha *= 0.7; b.blobs.forEach(o => { ctx.beginPath(); ctx.arc(b.x + o.dx, b.y + 2 + o.dy, o.r, 0, 7); ctx.fill(); });
+        ctx.restore();
+      }
+    }
+
+    this.updateCrews(dt, ctx, nx, ny);
+    this.blitTrails();
+    const K = this.fx.carriers;
+    for (let i = K.length - 1; i >= 0; i--) { const k = K[i]; if ((k.wait -= dt) > 0) continue; if (this.stepAnt(k, nx, ny, 100, dt)) { K.splice(i, 1); this.sfx('enter', i); continue; } this.drawAnt(ctx, k.x, k.y, k.a, k.ph, k.carry); }
+
+    // rings
+    const G = this.fx.rings;
+    for (let i = G.length - 1; i >= 0; i--) {
+      const g = G[i]; g.life -= dt; if (g.life <= 0) { G.splice(i, 1); continue; }
+      const t = 1 - g.life / g.max; const e = 1 - Math.pow(1 - t, 3);
+      ctx.globalAlpha = 1 - t; ctx.strokeStyle = g.color; ctx.lineWidth = g.w * (1 - t) + 0.5;
+      this.oct(ctx, g.x, g.y, 6 + g.r1 * e, 0); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // particles
+    const P = this.fx.parts;
+    for (let i = P.length - 1; i >= 0; i--) {
+      const p = P[i]; p.life -= dt; if (p.life <= 0) { P.splice(i, 1); continue; }
+      p.vy += p.g * dt; p.vx *= 0.985; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      ctx.globalAlpha = Math.min(1, (p.life / p.max) * 1.6); ctx.fillStyle = p.color;
+      if (p.shape === 'dot') { ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 7); ctx.fill(); } else { this.oct(ctx, p.x, p.y, p.size, p.rot); ctx.fill(); }
+    }
+    ctx.globalAlpha = 1;
+
+    // flyers
+    const F = this.fx.flyers;
+    for (let i = F.length - 1; i >= 0; i--) {
+      const f = F[i]; if ((f.delay -= dt) > 0) continue;
+      f.t += dt / f.dur; const t = Math.min(1, f.t); const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; const u = 1 - e;
+      const x = u * u * f.x0 + 2 * u * e * f.cx + e * e * f.x1, y = u * u * f.y0 + 2 * u * e * f.cy + e * e * f.y1;
+      f.trail.push([x, y]); if (f.trail.length > 7) f.trail.shift();
+      ctx.fillStyle = f.color;
+      f.trail.forEach(([tx, ty], j) => { ctx.globalAlpha = ((j + 1) / f.trail.length) * 0.3; this.oct(ctx, tx, ty, 1.5 + j * 0.3, 0); ctx.fill(); });
+      ctx.globalAlpha = 1; this.oct(ctx, x, y, 3.8, t * 9); ctx.fill();
+      if (f.t >= 1) { F.splice(i, 1); f.onEach && f.onEach(f.i, x, y); }
+    }
+
+    // score pops
+    const Q = this.fx.pops;
+    for (let i = Q.length - 1; i >= 0; i--) {
+      const p = Q[i]; p.life -= dt; if (p.life <= 0) { Q.splice(i, 1); continue; }
+      const t = 1 - p.life / p.max;
+      const sc = t < 0.1 ? 0.5 + (t / 0.1) * 0.85 : t < 0.2 ? 1.35 - ((t - 0.1) / 0.1) * 0.35 : 1;
+      const a = t > 0.72 ? 1 - (t - 0.72) / 0.28 : 1; const yy = p.y - 34 * (1 - Math.pow(1 - t, 2));
+      ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.translate(p.x, yy); ctx.rotate(Math.sin(t * 22) * 0.07 * (1 - t)); ctx.scale(sc, sc);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+      ctx.font = `700 ${p.size}px "Plus Jakarta Sans", system-ui, sans-serif`; ctx.lineWidth = 5; ctx.strokeStyle = '#FFFFFF';
+      ctx.strokeText(p.text, 0, 0); ctx.fillStyle = p.color; ctx.fillText(p.text, 0, 0);
+      if (p.sub) { ctx.font = '500 10px "JetBrains Mono", monospace'; ctx.lineWidth = 4; ctx.strokeText(p.sub, 0, p.size * 0.9); ctx.fillStyle = '#1C1917'; ctx.fillText(p.sub, 0, p.size * 0.9); }
+      ctx.restore();
+    }
+  }
+
+  // ---------- small handlers
+  cardTilt = (e) => {
+    if ((this.drag && this.drag.active) || !this.full() || e.pointerType === 'touch') return;
+    const el = e.currentTarget; const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5, py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = `perspective(700px) rotateX(${(-py * 5).toFixed(2)}deg) rotateY(${(px * 7).toFixed(2)}deg) translateY(-2px)`;
+  };
+  cardEnter = () => { if (this.drag && this.drag.active) return; const n = performance.now(); if (n - (this.hoverAt || 0) > 70) { this.hoverAt = n; this.sfx('hover'); } };
+  cardLeave = (e) => { if (e.currentTarget.style.opacity !== '0.3') e.currentTarget.style.transform = ''; };
+  toggleSound = () => { const on = !this.soundEnabled(); this.setState({ soundOn: on }, () => on && this.sfx('ready')); };
+  onDraft = (e) => this.setState({ draft: e.target.value });
+  openReq = () => { this.sfx('pickup'); this.setState({ reqOpen: true }, () => { const i = this.inputRef.current; i && i.focus(); }); };
+  closeReq = () => this.setState({ reqOpen: false });
+  closeReqBackdrop = (e) => { if (e.target === e.currentTarget) this.closeReq(); };
+  reqKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); this.closeReq(); } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) this.submitDraft(e); };
+  focusComposer = () => { const i = this.inputRef.current; if (!i) return; i.focus(); i.animate([{ boxShadow: '0 0 0 0 rgba(217,107,39,0.5)' }, { boxShadow: '0 0 0 6px rgba(217,107,39,0)' }], { duration: 600 }); };
+  submitDraft = (e) => {
+    e.preventDefault(); const text = this.state.draft.trim(); const input = this.inputRef.current;
+    if (!text) { this.sfx('reject'); input && input.animate([{ transform: 'none' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(5px)' }, { transform: 'none' }], { duration: 240 }); return; }
+    const bug = /\b(bug|fix|broken|crash|flicker|error|wrong|fails?)\b/i.test(text);
+    this.setState({ reqOpen: false });
+    if (bug) { this.setState({ draft: '' }); return this.reportBug(text); }
+    const id = 'RAW-' + this.state.seq;
+    this.setState(s => ({ draft: '', seq: s.seq + 1, tickets: [{ id, title: text, type: bug ? 'bug' : 'feat', size: 'S', col: 'backlog' }, ...s.tickets] }), () => {
+      const el = this.card(id); if (!el) return;
+      el.animate([{ opacity: 0, transform: 'translateY(-14px) scale(0.92)' }, { opacity: 1, transform: 'translateY(2px) scale(1.02)', offset: 0.6 }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2,.9,.3,1)' });
+      this.sfx('pickup'); setTimeout(() => this.sfx('drop'), 200); this.mark(el, 'IDEA LOGGED', 'estimated in To Do');
+    });
+  };
+
+  // ---------- crews
+  crews = new Map(); trails = new Map();
+  antsOn() { return (this.props.ants ?? 'Busy') !== 'Off' && !this.reduced; }
+  crewSize(t) { const n = 2 + Math.min(3, Math.floor((t.sp || 1) / 3)) + (this.level() >= 7 ? 1 : 0); return (this.props.ants ?? 'Busy') === 'Few' ? Math.min(2, n) : n; }
+  desired(t) { if (t.col === 'progress') return t.ready ? 'buried' : 'work'; if (t.col === 'review') return t.ci && t.ci.state === 'passed' ? 'buried' : 'tunnel'; return 'leave'; }
+  badgePos(el, r) { const b = el && el.querySelector('[data-sp]'); if (!b) return [r.right - 20, r.top + 14]; const q = b.getBoundingClientRect(); return [q.left + 10, q.top + q.height / 2]; }
+  puff(x, y) { this.burst(x, y, ['#A8A29E', '#D6D3D1'], 5, { speed: 50, g: 0, life: 0.35, size: 1.3, shape: 'dot' }); }
+  spawnCrew(t, phase) {
+    const [nx, ny] = this.nest(); const n = this.crewSize(t);
+    const ants = Array.from({ length: n }, (_, i) => ({ x: nx, y: ny, a: Math.PI, ph: Math.random() * 6, mode: 'wait', wait: i * 0.38, idx: i, leader: i === 0, t: Math.random() * 600, sp: 16 + Math.random() * 12 }));
+    this.crews.set(t.id, { id: t.id, sp: t.sp || 1, phase, ants });
+  }
+  edgeOut(r, lx, ly) { const dl = lx, dr = r.width - lx, dt = ly, db = r.height - ly, m = Math.min(dl, dr, dt, db); if (m === dl) return [r.left - 5, r.top + ly]; if (m === dr) return [r.right + 5, r.top + ly]; if (m === dt) return [r.left + lx, r.top - 5]; return [r.left + lx, r.bottom + 5]; }
+  toLocalInside(ant, r) { ant.lx = Math.max(10, Math.min(r.width - 10, ant.x - r.left)); ant.ly = Math.max(10, Math.min(r.height - 10, ant.y - r.top)); }
+  transition(c, d, r) {
+    const prev = c.phase; c.phase = d; let k = 0;
+    c.ants.forEach(ant => {
+      if (ant.mode === 'wait') { if (d === 'buried' || d === 'leave') ant.gone = true; return; }
+      if (d === 'buried') {
+        if (ant.mode === 'buried' || ant.mode === 'home' || ant.mode === 'out') return;
+        if (r) { ant.lx = ant.x - r.left; ant.ly = ant.y - r.top; }
+        ant.mode = 'dig'; ant.anim = -k * 0.1; ant.puffed = false; ant.carry = false; k++;
+      } else if (d === 'tunnel') {
+        if (['buried', 'perim', 'dig'].includes(ant.mode)) { if (r) { if (ant.mode !== 'buried') { ant.lx = ant.x - r.left; ant.ly = ant.y - r.top; } ant.lx = Math.max(10, Math.min(r.width - 10, ant.lx)); ant.ly = Math.max(10, Math.min(r.height - 10, ant.ly)); } ant.mode = 'rise'; ant.anim = -k * 0.14; ant.puffed = false; ant.carry = false; k++; }
+      } else if (d === 'work') {
+        if (['buried', 'tunnel', 'rise', 'dig'].includes(ant.mode)) ant.mode = 'walk';
+      } else if (d === 'leave') {
+        if (ant.mode === 'home' || ant.mode === 'out') return;
+        ant.hidden = ['buried', 'dig'].includes(ant.mode) || (ant.mode === 'rise' && ant.anim < 0);
+        ant.mode = 'out'; ant.wait = k * 0.22; ant.carry = ant.leader; k++;
+      }
+    });
+    if (d === 'buried' && prev !== 'buried' && k) this.sfx('burrow');
+  }
+  updateCrews(dt, ctx, nx, ny) {
+    const T = this.state.tickets;
+    if (this.antsOn()) T.forEach(t => { const d = this.desired(t); if ((d === 'work' || d === 'tunnel') && !this.crews.has(t.id)) this.spawnCrew(t, d); });
+    this.crews.forEach((c, id) => {
+      const t = T.find(x => x.id === id); const d = t ? this.desired(t) : 'leave';
+      const el = this.card(id); const rr = el ? el.getBoundingClientRect() : null; const r = rr && rr.width > 0 ? rr : null;
+      if (t && t.sp) c.sp = t.sp;
+      if (d !== c.phase) this.transition(c, d, r);
+      c.ants.forEach(ant => this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx));
+      c.ants = c.ants.filter(a => !a.gone);
+      if (el) { const pg = el.querySelector('[data-sp] polygon'); if (pg) pg.style.fill = c.ants.some(a => a.carry) && c.phase === 'work' ? 'transparent' : ''; }
+      if (!c.ants.length) this.crews.delete(id);
+    });
+  }
+  stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx) {
+    const follow = () => { if (r) { ant.x = r.left + ant.lx; ant.y = r.top + ant.ly; } };
+    let sc = 1;
+    switch (ant.mode) {
+      case 'wait':
+        if ((ant.wait -= dt) > 0) return;
+        if (c.phase === 'leave' || c.phase === 'buried' || !r) { ant.gone = true; return; }
+        ant.mode = 'walk'; ant.x = nx; ant.y = ny; this.sfx('emerge', ant.idx); this.puff(nx, ny); break;
+      case 'walk': {
+        if (!r) { ant.mode = 'home'; break; }
+        if (ant.leader && c.phase === 'work' && !ant.carry) {
+          const [bx, by] = this.badgePos(el, r);
+          if (this.stepAnt(ant, bx, by, 170, dt)) { ant.carry = true; this.sfx('grab'); this.ring(bx, by, '#C27803', 14, 0.3, 1.5); }
+        } else {
+          const [tx, ty] = this.perim(r, ant.t);
+          if (this.stepAnt(ant, tx, ty, 170, dt)) {
+            this.sfx('attach', ant.idx);
+            if (c.phase === 'tunnel') { this.toLocalInside(ant, r); ant.mode = 'rise'; ant.anim = 0; ant.puffed = false; } else ant.mode = 'perim';
+          }
+        }
+        break;
+      }
+      case 'perim': { if (!r) { ant.mode = 'home'; break; } ant.t += ant.sp * dt; const [tx, ty] = this.perim(r, ant.t); this.stepAnt(ant, tx, ty, 9999, dt); break; }
+      case 'dig':
+        follow(); ant.anim += ant.anim < 0 ? dt : dt / 0.3;
+        if (ant.anim >= 0 && !ant.puffed) { ant.puffed = true; this.puff(ant.x, ant.y); }
+        if (ant.anim >= 1) { ant.mode = 'buried'; return; }
+        sc = ant.anim < 0 ? 1 : 1 - ant.anim; break;
+      case 'buried': follow(); return;
+      case 'rise':
+        follow(); ant.anim += ant.anim < 0 ? dt : dt / 0.3;
+        if (ant.anim < 0) return;
+        if (!ant.puffed) { ant.puffed = true; this.puff(ant.x, ant.y); }
+        if (ant.anim >= 1) { ant.mode = 'tunnel'; ant.h = Math.random() * Math.PI * 2; ant.th = ant.h; ant.choose = 0; }
+        sc = Math.min(1, ant.anim); ant.a = ant.h || ant.a; break;
+      case 'tunnel': if (!r) { ant.mode = 'home'; break; } this.tunnelStep(c.id, ant, r, dt); break;
+      case 'out':
+        if (ant.hidden) follow();
+        if ((ant.wait -= dt) > 0) { if (ant.hidden) return; break; }
+        if (ant.hidden && r) { const p = this.edgeOut(r, ant.lx, ant.ly); ant.x = p[0]; ant.y = p[1]; this.puff(ant.x, ant.y); }
+        ant.hidden = false; ant.mode = 'home'; this.sfx('detach', ant.idx); break;
+      case 'home':
+        if (this.stepAnt(ant, nx, ny, 120, dt)) { ant.gone = true; this.sfx('enter', ant.idx); this.puff(nx, ny); return; }
+        break;
+    }
+    if (!this.state.tlOpen) this.drawAnt(ctx, ant.x, ant.y, ant.a, ant.ph, ant.carry ? { sp: c.sp } : null, sc);
+  }
+  trail(id, r) {
+    let tr = this.trails.get(id);
+    if (!tr) { const cv = document.createElement('canvas'); cv.width = Math.max(40, Math.round(r.width * 2)); cv.height = Math.max(40, Math.round(r.height * 2)); tr = { cv, ctx: cv.getContext('2d'), grid: new Uint8Array(32 * 16), ver: 0 }; tr.ctx.fillStyle = '#1C1917'; this.trails.set(id, tr); }
+    return tr;
+  }
+  cell(u, v) { return Math.min(15, Math.max(0, Math.floor(v * 16))) * 32 + Math.min(31, Math.max(0, Math.floor(u * 32))); }
+  tunnelStep(id, ant, r, dt) {
+    const tr = this.trail(id, r); const W = r.width, H = r.height;
+    ant.choose -= dt;
+    if (ant.choose <= 0) {
+      ant.choose = 0.16 + Math.random() * 0.2; let best = ant.h, bs = -1e9;
+      for (let k = -2; k <= 2; k++) {
+        const hh = ant.h + k * 0.6 + (Math.random() - 0.5) * 0.3; const px = ant.lx + Math.cos(hh) * 16, py = ant.ly + Math.sin(hh) * 16;
+        let s = Math.random() * 0.6 + (k === 0 ? 0.4 : 0);
+        if (px < 7 || py < 7 || px > W - 7 || py > H - 7) s -= 5; else if (!tr.grid[this.cell(px / W, py / H)]) s += 2;
+        if (s > bs) { bs = s; best = hh; }
+      }
+      ant.th = best;
+    }
+    let da = ant.th - ant.h; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+    ant.h += da * Math.min(1, dt * 6);
+    const step = 42 * dt; ant.lx += Math.cos(ant.h) * step; ant.ly += Math.sin(ant.h) * step;
+    if (ant.lx < 6 || ant.lx > W - 6) { ant.h = Math.PI - ant.h; ant.th = ant.h; ant.lx = Math.max(6, Math.min(W - 6, ant.lx)); }
+    if (ant.ly < 6 || ant.ly > H - 6) { ant.h = -ant.h; ant.th = ant.h; ant.ly = Math.max(6, Math.min(H - 6, ant.ly)); }
+    const u = ant.lx / W, v = ant.ly / H; tr.grid[this.cell(u, v)] = 1;
+    tr.ctx.beginPath(); tr.ctx.arc(u * tr.cv.width, v * tr.cv.height, 7, 0, 7); tr.ctx.fill(); tr.ver++;
+    ant.x = r.left + ant.lx; ant.y = r.top + ant.ly; ant.a = ant.h; ant.ph += step * 0.9;
+  }
+  presim(id, r) {
+    const ants = Array.from({ length: 4 }, () => { const h = Math.random() * 6.28; return { lx: 10 + Math.random() * (r.width - 20), ly: 10 + Math.random() * (r.height - 20), h, th: h, choose: 0, ph: 0 }; });
+    for (let i = 0; i < 300; i++) ants.forEach(a => this.tunnelStep(id, a, r, 1 / 30));
+  }
+  blitTrails() {
+    const dpr = this.dpr || 1; const on = this.antsOn();
+    document.querySelectorAll('article[data-tid]').forEach(el => {
+      const id = el.getAttribute('data-tid'); const cv = el.querySelector('canvas[data-trail]'); if (!cv) return;
+      const tk = this.find(id); let tr = tk && tk.col === 'done' ? null : this.trails.get(id);
+      if (!tr && on) { const t = tk; if (t && ((t.col === 'review' && t.ci && t.ci.state === 'passed'))) { const r = el.getBoundingClientRect(); if (r.width > 0) { this.presim(id, r); tr = this.trails.get(id); } } }
+      if (!tr) { if (cv.__id) { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); cv.__id = null; } return; }
+      const w = Math.round(el.clientWidth * dpr), hh = Math.round(el.clientHeight * dpr);
+      if (cv.width !== w || cv.height !== hh) { cv.width = w; cv.height = hh; cv.__v = -1; }
+      if (cv.__v === tr.ver && cv.__id === id) return;
+      cv.__v = tr.ver; cv.__id = id;
+      const x = cv.getContext('2d'); x.clearRect(0, 0, w, hh); x.globalAlpha = 0.075; x.drawImage(tr.cv, 0, 0, w, hh); x.globalAlpha = 1;
+    });
+  }
+
+  // ---------- colony
+  componentDidUpdate(pp, ps) {
+    const s = this.state; if (!ps) return;
+
+  }
+  toggleColony = () => {
+    const open = !this.state.colonyOpen; this.sfx(open ? 'pickup' : 'drop');
+    this.setState({ colonyOpen: open }, () => {
+      if (!open) return;
+      const c = this.colonyRef.current; c && c.animate([{ opacity: 0, transform: 'translateY(12px) scale(0.96)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.9,.3,1.2)' });
+    });
+  };
+  // ---------- timeline
+  tlRef = React.createRef();
+  tlMark(id, k) { const T = Component.TL.TODAY; this.setState(s => { const cur = s.tlLive[id] || {}; if (k === 's' && (cur.s != null || (Component.TL.SPAN[id] || [])[0] != null)) return null; return { tlLive: { ...s.tlLive, [id]: { ...cur, [k]: T } } }; }); }
+  openTl = () => { if (this.state.tlOpen) return this.closeTl(); this.sfx('pickup'); this.setState({ tlOpen: true, colonyOpen: false, tlHover: null }, () => this.animateTl()); };
+  closeTl = () => {
+    const el = this.tlRef.current; this.sfx('drop');
+    if (!el || this.reduced) return this.setState({ tlOpen: false, tlHover: null });
+    const a = el.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(8px)' }], { duration: 160, easing: 'ease-in', fill: 'forwards' });
+    a.onfinish = () => this.setState({ tlOpen: false, tlHover: null });
+  };
+  toggleTlEpic(id) { const open = !this.state.tlOpenEpics[id]; this.sfx(open ? 'pickup' : 'drop'); this.setState(s => ({ tlOpenEpics: { ...s.tlOpenEpics, [id]: open } })); }
+  tlMove = (e) => {
+    const r = e.currentTarget.getBoundingClientRect(); const N = Component.TL.N;
+    const d = Math.max(0, Math.min(N - 1, Math.floor(((e.clientX - r.left) / r.width) * N)));
+    if (d !== this.state.tlHover) { this.setState({ tlHover: d }); this.sfx('scrub', d); }
+  };
+  tlLeave = () => this.state.tlHover != null && this.setState({ tlHover: null });
+  animateTl() {
+    const root = this.tlRef.current; if (!root) return;
+    root.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    if (this.reduced) return;
+    const scale = [0, 2, 4, 7, 9];
+    root.querySelectorAll('[data-tlbar]').forEach((b, i) => {
+      const d = 140 + i * 38;
+      b.animate([{ transform: 'scaleX(0)', opacity: 0.4 }, { transform: 'scaleX(1.04)', opacity: 1, offset: 0.75 }, { transform: 'scaleX(1)' }], { duration: 420, delay: d, easing: 'cubic-bezier(.2,.9,.3,1)', fill: 'backwards' });
+      setTimeout(() => this.sfx('blip', scale[i % 5] + 12 * Math.floor(i / 5) - 5), d + 60);
+    });
+    const rv = root.querySelector('[data-tlreveal]');
+    rv && rv.animate([{ clipPath: 'inset(-40px 100% -40px 0)' }, { clipPath: 'inset(-40px 0 -40px 0)' }], { duration: 1000, delay: 120, easing: 'cubic-bezier(.45,0,.2,1)', fill: 'backwards' });
+    root.querySelectorAll('[data-tlmound]').forEach((m, i) => m.animate([{ transform: 'scaleY(0)' }, { transform: 'scaleY(1.15)', offset: 0.7 }, { transform: 'scaleY(1)' }], { duration: 380, delay: 260 + i * 22, easing: 'ease-out', fill: 'backwards' }));
+    const stamps = [...root.querySelectorAll('[data-tlstamp]')];
+    const t0 = 180 + root.querySelectorAll('[data-tlbar]').length * 38 + 200;
+    stamps.forEach((st, i) => {
+      const d = t0 + i * 220;
+      st.animate([{ transform: 'rotate(-24deg) scale(2.6)', opacity: 0 }, { transform: 'rotate(-4deg) scale(0.9)', opacity: 1, offset: 0.6 }, { transform: 'rotate(-6deg) scale(1)' }], { duration: 300, delay: d, easing: 'cubic-bezier(.5,0,.8,.4)', fill: 'backwards' });
+      setTimeout(() => { if (!this.state.tlOpen) return; this.sfx('stamp'); this.shake(2); const [x, y] = this.center(st); this.ring(x, y, st.getAttribute('data-color') || '#C27803', 36, 0.35, 2); this.burst(x, y, [st.getAttribute('data-color') || '#C27803', '#1C1917'], 8, { speed: 120, g: 200, size: 1.6, life: 0.45, shape: 'dot' }); }, d + 180);
+    });
+    const fc = root.querySelector('[data-tlforecast]');
+    fc && setTimeout(() => { if (!this.state.tlOpen) return; fc.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.12)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(.2,.9,.3,1.4)' }); this.sfx('blip', 19); }, t0 + stamps.length * 220 + 80);
+  }
+  timeline(s) {
+    const C = Component, TL = C.TL, N = TL.N, T = TL.TODAY, now = T + 0.55;
+    const day = (d) => new Date(2026, 8, 14 + d);
+    const fmt = (d) => day(Math.floor(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const items = [
+      ...TL.ARCHIVE.map(a => ({ ...a, col: 'done', archived: true, pts: Math.round(a.sp * a.m) })),
+      ...s.tickets.filter(t => t.epic).map(t => {
+        const sp = TL.SPAN[t.id] || [], L = s.tlLive[t.id] || {};
+        const inflight = t.col === 'progress' || t.col === 'review';
+        return { id: t.id, title: t.title, sp: t.sp || 0, epic: t.epic, col: t.col, blockedBy: t.blockedBy, pts: t.col === 'done' ? (L.pts ?? Math.round((t.sp || 0) * (TL.MULT[t.id] || 1))) : 0, s: sp[0] ?? L.s ?? (inflight || t.col === 'done' ? T : null), e: t.col === 'done' ? (sp[1] ?? L.e ?? T) : null };
+      }),
+    ];
+    const total = items.reduce((a, t) => a + t.sp, 0);
+    const byDay = Array(N).fill(0); items.forEach(t => { if (t.e != null) byDay[t.e] += t.sp; });
+    const doneSP = byDay.reduce((a, b) => a + b, 0), rem = total - doneSP;
+    const vel = doneSP / now, forecast = vel > 0 ? now + rem / vel : N;
+    const endMap = {};
+    const endOf = (t) => {
+      if (endMap[t.id] != null) return endMap[t.id];
+      let v;
+      if (t.e != null) v = t.e + 1;
+      else if (t.col === 'progress' || t.col === 'review') v = T + 1 + Math.ceil(t.sp / 4);
+      else { const b = t.blockedBy && items.find(k => k.id === t.blockedBy); const st = Math.max(T + 1, b ? endOf(b) : 0); t.s = st; v = st + Math.max(1, Math.round(t.sp / 2)); }
+      return (endMap[t.id] = v);
+    };
+    items.forEach(endOf);
+    const X = (d) => (Math.max(0, Math.min(N, d)) / N) * 1000, Y = (r) => (1 - r / total) * 200;
+    const pct = (d) => `${(Math.max(0, Math.min(N, d)) / N) * 100}%`;
+    let r0 = total; const pts = [[0, total]];
+    for (let d = 0; d < T; d++) { r0 -= byDay[d]; pts.push([d + 1, r0]); }
+    r0 -= byDay[T]; pts.push([now, r0]);
+    const poly = (p) => p.map(([d, r]) => `${X(d).toFixed(1)},${Y(r).toFixed(1)}`).join(' ');
+    const fEnd = forecast <= N ? [forecast, 0] : [N, Math.max(0, rem - vel * (N - now))];
+    const remAfter = (d) => total - byDay.slice(0, d + 1).reduce((a, b) => a + b, 0);
+    const paceOf = (diff) => diff >= 0.5 ? [`${Math.round(diff)}d ahead`, '#EDF4ED', '#1E5620'] : diff > -0.5 ? ['On pace', '#F3F1ED', '#1C1917'] : [`${Math.round(-diff)}d late`, '#FBEAEA', '#7F1D1D'];
+    const [pace, paceBg, paceInk] = paceOf(TL.PLAN_END - forecast);
+    const gradeOf = (y) => { const g = TL.GRADES.find(x => y >= x[0]); return [g[1], g[2]]; };
+    const ptsDay = Array(N).fill(0); items.forEach(t => { if (t.e != null) ptsDay[t.e] += t.pts || 0; });
+    const lvOf = (xp) => this.level(xp);
+    const lvLines = []; let xp = TL.XP0; const lv0 = lvOf(xp);
+    for (let d = 0; d < T; d++) { const a = lvOf(xp); xp += ptsDay[d] + (TL.BONUS[d] || 0); for (let L = a + 1; L <= lvOf(xp); L++) lvLines.push({ d: d + 0.7, L }); }
+    { const a = lvOf(xp); for (let L = a + 1; L <= lvOf(s.earned); L++) lvLines.push({ d: now, L }); }
+    const allPts = items.reduce((a, t) => a + (t.pts || 0), 0) - Object.values(TL.PEN).reduce((a, b) => a + b, 0);
+    const yAll = doneSP ? allPts / doneSP : 0; const [gAll] = gradeOf(yAll);
+    const rows = [], flags = [];
+    C.EPICS.forEach(E => {
+      const its = items.filter(t => t.epic === E.id).sort((a, b) => (a.s ?? 99) - (b.s ?? 99));
+      const [ps, pe] = TL.PLAN[E.id]; const st = Math.min(...its.map(t => t.s ?? 99)); const en = Math.max(...its.map(t => endMap[t.id]));
+      const eSP = its.reduce((a, t) => a + t.sp, 0), eDone = its.filter(t => t.e != null).reduce((a, t) => a + t.sp, 0);
+      const merged = s.doneEpics.includes(E.id) || its.every(t => t.e != null);
+      const md = merged ? Math.max(...its.map(t => t.e)) : null;
+      const open = !!s.tlOpenEpics[E.id];
+      const row = { isEpic: true, isTicket: false, id: E.id, title: E.title, frac: `${eDone}/${eSP} SP`, merged,
+        chev: open ? '90deg' : '0deg', toggle: () => this.toggleTlEpic(E.id), toggleLabel: `${open ? 'Collapse' : 'Expand'} ${E.id}`,
+        l: pct(st), w: pct(en - st), planL: pct(ps), planW: pct(pe - ps), fill: `${eSP ? (eDone / eSP) * 100 : 0}%`, fillBg: merged ? '#2E7D32' : '#1C1917', endX: pct(en),
+        hasGrade: false, hasPace: false };
+      const ePts = its.reduce((a, t) => a + (t.pts || 0), 0) - (TL.PEN[E.id] || 0); const yl = eDone ? ePts / eDone : 0;
+      if (merged) {
+        const [g, bg] = gradeOf(yl);
+        Object.assign(row, { hasGrade: true, grade: g, gradeBg: bg, gradeText: `${yl.toFixed(1)}× yield`, gradeTitle: `${ePts} pts from ${eDone} SP${TL.PEN[E.id] ? ` (−${TL.PEN[E.id]} bug penalty)` : ''} · merged ${fmt(md)}` });
+        const fx = md >= T ? now : md + 1;
+        flags.push({ x: pct(fx), y: `${(Y(md >= T ? r0 : remAfter(md)) / 200) * 100}%`, grade: g, bg, title: `${E.id} merged ${fmt(md)}` });
+      } else {
+        const [g] = gradeOf(yl);
+        const look = { S: ['#FDF3E1', '#8A5402'], A: ['#EDF4ED', '#1E5620'], B: ['#F3F1ED', '#1C1917'], C: ['#FBEAEA', '#7F1D1D'] }[g];
+        Object.assign(row, { hasPace: true, pace: eDone ? `${yl.toFixed(1)}× · ${g} pace` : 'No merges yet', paceBg: eDone ? look[0] : '#F3F1ED', paceInk: eDone ? look[1] : '#57534E' });
+      }
+      rows.push(row);
+      if (open) its.forEach(t => {
+        const s0 = t.s ?? T + 1, e0 = t.col === 'progress' || t.col === 'review' ? now : endMap[t.id];
+        const k = t.e != null ? 'done' : t.col === 'review' ? 'review' : t.col === 'progress' ? 'progress' : 'planned';
+        const look = {
+          done: ['#57534E', '0', 'none', '#57534E'],
+          review: ['repeating-linear-gradient(45deg,#D96B27 0 6px,#EE9A62 6px 12px)', '0', 'tlStripe 1.4s linear infinite', '#D96B27'],
+          progress: ['repeating-linear-gradient(45deg,#C27803 0 6px,#E0A33C 6px 12px)', '0', 'tlStripe 0.8s linear infinite', '#C27803'],
+          planned: ['transparent', '1.5px dashed #A8A29E', 'none', '#D6D3D1'],
+        }[k];
+        const label = { done: `Merged ${fmt(t.e)}`, review: 'In review', progress: 'In progress', planned: `Planned ${fmt(s0)} – ${fmt(e0 - 1)}` }[k];
+        rows.push({ isEpic: false, isTicket: true, id: t.id, title: t.title, spText: `${t.sp || '?'} SP`, dot: look[3], ink: k === 'planned' ? '#57534E' : '#1C1917',
+          l: pct(s0), w: pct(Math.max(0.35, e0 - s0)), bg: look[0], bd: look[1] === '0' ? 'none' : look[1], anim: look[2], barTitle: `${t.id} · ${label}` });
+      });
+    });
+    let k = 0, dd = byDay[T] > 0 ? T : T - 1; while (dd >= 0 && byDay[dd] > 0) { k++; dd--; }
+    const streakFrom = dd + 1, streakTo = byDay[T] > 0 ? T : T - 1;
+    let best = 0, bestD = 0; byDay.forEach((v, i) => { if (v > best) { best = v; bestD = i; } });
+    const days = Array.from({ length: N }, (_, d) => {
+      const dt = day(d), wk = dt.getDay() === 0 || dt.getDay() === 6, isT = d === T, hov = s.tlHover === d;
+      return { num: String(dt.getDate()), sub: d === 0 || dt.getDate() === 1 ? dt.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() : 'SMTWTFS'[dt.getDay()],
+        subInk: isT ? '#8F3F12' : '#57534E', ink: isT ? '#8F3F12' : d > T ? '#57534E' : '#1C1917', weight: isT ? '700' : '500',
+        bg: hov ? 'rgba(28,25,23,0.05)' : isT ? 'rgba(194,120,3,0.08)' : wk ? 'rgba(28,25,23,0.025)' : 'transparent' };
+    });
+    const mounds = byDay.map((v, d) => {
+      const inStreak = d >= streakFrom && d <= streakTo;
+      return { h: v ? `${Math.min(46, 8 + v * 3.8)}px` : d <= T ? '3px' : '0px', label: v ? String(v) : '', ink: inStreak ? '#8F3F12' : '#57534E',
+        bg: !v ? '#E7E5E4' : d === T ? '#D96B27' : inStreak ? '#C27803' : '#A8A29E', title: v ? `${fmt(d)} · ${v} SP → +${ptsDay[d]} pts` : fmt(d) };
+    });
+    const cand = s.tickets.filter(t => t.epic && t.col === 'review').sort((a, b) => ((b.ci && b.ci.state === 'passed') - (a.ci && a.ci.state === 'passed')) || (b.sp || 0) - (a.sp || 0))[0];
+    let boost = null;
+    if (cand && vel > 0) { const nv = (doneSP + (cand.sp || 0)) / now; const nf = now + (rem - (cand.sp || 0)) / nv; const g = forecast - nf; if (g >= 0.1) boost = `Merge ${cand.id} to pull the finish in by ${g.toFixed(1)} days`; }
+    const hv = s.tlHover;
+    let hoverA = '', hoverB = '';
+    if (hv != null) {
+      if (hv < T) { hoverA = `${remAfter(hv)} SP left`; hoverB = byDay[hv] ? `${byDay[hv]} SP → +${ptsDay[hv] + (TL.BONUS[hv] || 0)} pts` : 'No merges'; }
+      else if (hv === T) { hoverA = `${r0} SP left · today`; hoverB = byDay[T] ? `${byDay[T]} SP merged so far` : 'Nothing merged yet'; }
+      else { hoverA = `~${Math.max(0, Math.round(rem - vel * (hv + 1 - now)))} SP left`; hoverB = 'Projected at current pace'; }
+    }
+    return {
+      tlOpen: s.tlOpen, tlClosed: !s.tlOpen, tlBtnLabel: s.tlOpen ? 'Back to board' : 'Open timeline', tlRef: this.tlRef, openTl: this.openTl, closeTl: this.closeTl, tlMove: this.tlMove, tlLeave: this.tlLeave,
+      tlRange: `${fmt(0)} – ${fmt(N - 1)} · ${C.EPICS.length} epics`, tlScope: `${total} SP`, tlTotal: String(total),
+      tlForecast: fmt(forecast), tlPace: pace, tlPaceBg: paceBg, tlPaceInk: paceInk,
+      tlStats: [{ k: 'Velocity', v: `${vel.toFixed(1)} SP/day` }, { k: 'Remaining', v: `${rem} of ${total} SP` }, { k: 'Colony yield', v: `${yAll.toFixed(2)}× · ${gAll}` }, { k: 'Level', v: lvOf(s.earned) > lv0 ? `Lv ${lv0} → Lv ${lvOf(s.earned)}` : `Lv ${lv0}` }],
+      tlHasBoost: !!boost, tlBoost: boost || '',
+      tlLevels: lvLines.map(o => ({ x: pct(o.d), label: `LV ${o.L}`, title: `Reached Lv ${o.L} · ${C.RANKS[Math.min(o.L - 1, C.RANKS.length - 1)]}` })),
+      tlRows: rows, tlDays: days, tlMounds: mounds, tlFlags: flags,
+      tlStreak: byDay[T] > 0 ? `${k}-day merge streak. Best day was ${fmt(bestD)}.` : k ? `${k}-day merge streak. Merge today to make it ${k + 1}.` : 'No streak yet. Merge today to start one.',
+      tlArea: poly(pts) + ` ${X(now).toFixed(1)},200 0,200`,
+      tlIdeal: poly([[0, total], [TL.PLAN_END, 0]]), tlActual: poly(pts), tlFc: poly([[now, r0], fEnd]),
+      tlHeadX: pct(now), tlHeadY: `${(Y(r0) / 200) * 100}%`, tlFcX: pct(fEnd[0]), tlFcY: `${(Y(fEnd[1]) / 200) * 100}%`,
+      tlFcLabel: forecast <= N ? `DONE ${fmt(forecast).toUpperCase()}` : 'PAST RANGE', tlPlanX: pct(TL.PLAN_END), tlTodayX: pct(now),
+      tlHasHover: hv != null, tlHoverX: pct(hv == null ? 0 : hv + 0.5), tlHoverDate: hv == null ? '' : day(hv).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+      tlHoverA: hoverA, tlHoverB: hoverB, tlTipShift: hv != null && hv > N - 7 ? 'translateX(calc(-100% - 10px))' : 'translateX(10px)',
+    };
+  }
+  closeColony = () => { this.sfx('drop'); this.setState({ colonyOpen: false }); };
+  tryOn(btn, patch, u) {
+    if (this.level() < u.lv) { this.sfx('reject'); btn.animate([{ transform: 'none' }, { transform: 'translateX(-4px)' }, { transform: 'translateX(3px)' }, { transform: 'none' }], { duration: 240 }); return; }
+    this.setState(patch, () => {
+      const [x, y] = this.center(btn);
+      this.fx.bugs.push({ x, y: y - 6, t: 0, blobs: Array.from({ length: 7 }, () => ({ dx: (Math.random() - 0.5) * 20, dy: (Math.random() - 0.5) * 7, r: 0.7 + Math.random() * 1.5 })), onSquash: () => { this.sfx('squash'); this.ring(x, y - 6, '#C62828', 36, 0.35, 2); this.burst(x, y - 6, [this.bugHex(), '#1C1917'], 10, { speed: 150, size: 2, life: 0.5, shape: 'dot' }); } });
+    });
+  }
+  pickShape = (e) => { const k = e.currentTarget.getAttribute('data-shape'); const u = Component.UNLOCKS.shapes.find(x => x.key === k); u && this.tryOn(e.currentTarget, { bugShape: k }, u); };
+  pickColor = (e) => { const k = e.currentTarget.getAttribute('data-color'); const u = Component.UNLOCKS.colors.find(x => x.key === k); u && this.tryOn(e.currentTarget, { bugColor: k }, u); };
+
+  // ---------- view
+  view(t, s) {
+    const C = Component;
+    const blocker = t.blockedBy && s.tickets.find(x => x.id === t.blockedBy);
+    const blocked = !!(blocker && blocker.col !== 'done') && C.ORDER[t.col] < 2;
+    const running = t.col === 'progress' && !t.ready, ready = t.col === 'progress' && !!t.ready;
+    const review = t.col === 'review', done = t.col === 'done';
+    const epic = t.epic && C.EPICS.find(e => e.id === t.epic);
+    const chip = (k, label, pulse) => ({ bg: C.CHIP[k][0], dot: C.CHIP[k][1], label, anim: pulse ? 'dotPulse 1.6s ease-in-out infinite' : 'none' });
+    let chips = [], showLog = false, passed = false;
+    if (review && t.ci) {
+      const c = t.ci;
+      if (c.state === 'failed') { chips = [chip('crimson', `${c.total - c.passed} checks failed`), chip('rust', `Fix loop · try ${c.attempt || 2} · ${c.fixIn}s`)]; showLog = true; }
+      else if (c.state === 'running') chips = [chip('clay', `CI running · ${c.passed}/${c.total}`, true)];
+      else { passed = true; chips = [chip('jade', `${c.total} checks passed`), chip('jade', 'Ready to merge')]; }
+    }
+    const p = Math.round(t.progress || 0);
+    const progressLabel = p < 15 ? `Cloning formic-web · ${p}%` : p < 50 ? `Writing ${Math.max(1, Math.round(p / 6))} files` : p < 88 ? `Running vitest · ${Math.round((p - 50) / 38 * 21)}/21 files` : 'Type-checking';
+    const next = C.COLS[C.ORDER[t.col] + 1];
+    return {
+      id: t.id, title: t.title, size: t.size, spText: t.sp ? `${t.sp} SP` : '? SP', hasSp: !!t.sp, spFill: done ? 'none' : '#C27803', spVal: String(t.sp || 1), spPts: t.sp ? this.spVerts(t.sp, 6, 6, Math.min(5.6, this.spR(t.sp) * 1.15)).map(p => p.map(v => v.toFixed(2)).join(',')).join(' ') : '', runningAttr: running ? '1' : '0',
+      isBugLive: t.type === 'bug' && !t.squashed, isBugSquashed: t.type === 'bug' && !!t.squashed,
+      epicLabel: epic ? `${epic.id} · ${epic.title}` : t.type === 'bug' ? 'Triage' : 'Raw idea',
+      isBlocked: blocked, blockedBy: t.blockedBy,
+      isRunning: running, isReady: ready, elapsedText: this.fmt(t.elapsed || 0), pct: `${p}%`, progressLabel, sandbox: t.sandbox,
+      isReview: review, chips, showLog, isDone: done, mergedText: `merged ${t.merged}${t.pr ? ` · PR #${t.pr}` : ''}`,
+      hasPr: !!t.pr && (review || done), prText: `PR #${t.pr}`,
+      canAdvance: !!next, advanceLabel: next ? `Move ${t.id} to ${next.label}` : '',
+      bg: done ? '#E7E3DC' : blocked ? '#FAF8F4' : '#FFFFFF', titleInk: blocked ? '#57534E' : '#1C1917',
+      border: running ? '#C27803' : ready ? '#2E7D32' : passed ? '#A5C8A7' : done ? '#D6D0C6' : '#E7E5E4',
+      anim: running ? 'clayPulse 2.4s ease-in-out infinite' : ready ? 'readyGlow 2.4s ease-in-out infinite' : 'none',
+    };
+  }
+
+  renderVals() {
+    const s = this.state, C = Component;
+    const running = s.tickets.filter(t => t.col === 'progress' && !t.ready).length;
+    const ciBusy = s.tickets.filter(t => t.col === 'review' && t.ci && t.ci.state !== 'passed').length;
+    const lv = this.level(s.score);
+    const sn = s.stackN;
+    const mc = sn === 0 ? ['#E7E5E4', '#FBF9F5', '#57534E'] : sn <= 2 ? ['#D96B27', '#FDF1E8', '#8F3F12'] : sn <= 4 ? ['#C27803', '#FBF0DA', '#6B4200'] : ['#C62828', '#FBEAEA', '#7F1D1D'];
+    const U = C.UNLOCKS; const hex = this.bugHex();
+    const nextU = [...U.shapes, ...U.colors].filter(u => u.lv > lv).sort((a, b) => a.lv - b.lv);
+    const nextLv = nextU.length ? nextU[0].lv : null;
+    const nextText = nextLv ? `Lv ${nextLv} unlocks ${nextU.filter(u => u.lv === nextLv).map(u => u.label).join(' + ')} · ${(nextLv - 1) * 50 - s.earned} XP to go` : 'Every style unlocked';
+    const shapes = U.shapes.map(u => { const locked = lv < u.lv, on = s.bugShape === u.key; return { key: u.key, label: u.label, lockText: locked ? `Lv ${u.lv}` : on ? 'Equipped' : '', border: on ? '#D96B27' : '#E7E5E4', bg: on ? '#FDF1E8' : locked ? '#FAF8F4' : '#FFFFFF', ink: locked ? '#57534E' : '#1C1917', cursor: locked ? 'not-allowed' : 'pointer', aria: locked ? `${u.label}, unlocks at level ${u.lv}` : `Use ${u.label} bugs`, pressed: on ? 'true' : 'false' }; });
+    const colors = U.colors.map(u => { const locked = lv < u.lv, on = s.bugColor === u.key; return { key: u.key, label: u.label, hex: u.hex, locked, op: locked ? '0.28' : '1', lockText: locked ? `Lv ${u.lv}` : u.label, border: on ? '#D96B27' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', aria: locked ? `${u.label}, unlocks at level ${u.lv}` : `Use ${u.label} bugs`, pressed: on ? 'true' : 'false' }; });
+    const soundOn = this.soundEnabled();
+    const rank = (t) => ({ done: 0, review: 1, progress: 2 })[t.col] ?? 3;
+    const epics = C.EPICS.map(e => {
+      const ts = s.tickets.filter(t => t.epic === e.id).sort((a, b) => rank(a) - rank(b));
+      const d = ts.filter(t => t.col === 'done').length; const merged = s.doneEpics.includes(e.id); const left = ts.length - d;
+      return {
+        id: e.id, pct: `${ts.reduce((a, t) => a + (t.sp || 0), 0) ? (ts.filter(t => t.col === 'done').reduce((a, t) => a + (t.sp || 0), 0) / ts.reduce((a, t) => a + (t.sp || 0), 0)) * 100 : 0}%`, pipInk: merged ? '#2E7D32' : '#C27803', title: e.title, frac: `${ts.filter(t => t.col === 'done').reduce((a, t) => a + (t.sp || 0), 0)}/${ts.reduce((a, t) => a + (t.sp || 0), 0)} SP`,
+        badge: merged ? 'MERGED' : 'EPIC', badgeBorder: merged ? '#2E7D32' : '#D96B27', badgeBg: merged ? '#EDF4ED' : '#FDF1E8', badgeInk: merged ? '#1E5620' : '#8F3F12',
+        border: merged ? '#CFE3D0' : left === 1 ? '#D96B27' : '#E7E5E4',
+        hint: merged ? 'Showcase ready' : `${left === 1 ? 'Last ticket' : `${left} to go`} · +${ts.reduce((a, t) => a + (t.sp || 0), 0)} bonus`,
+        hintInk: merged ? '#1E5620' : left === 1 ? '#8F3F12' : '#57534E',
+        pips: ts.map(t => ({ bg: merged ? '#2E7D32' : t.col === 'done' ? '#1C1917' : t.col === 'review' ? '#D96B27' : t.col === 'progress' ? '#C27803' : '#E7E5E4', anim: t.col === 'progress' && !t.ready ? 'dotPulse 1.6s ease-in-out infinite' : 'none' })),
+      };
+    });
+    const draftBug = /\b(bug|fix|broken|crash|flicker|error|wrong|fails?)\b/i.test(s.draft);
+    return {
+      columns: C.COLS.map(c => {
+        const ts = s.tickets.filter(t => t.col === c.key).map(t => this.view(t, s));
+        return { ...c, tickets: ts, count: String(ts.length).padStart(2, '0'), empty: ts.length === 0, isBacklog: c.key === 'backlog', dotAnim: c.key === 'progress' && running ? 'dotPulse 1.6s ease-in-out infinite' : 'none' };
+      }),
+      epics, ...this.timeline(s),
+      level: lv, rank: C.RANKS[Math.min(lv - 1, C.RANKS.length - 1)], xpText: `${s.earned % 50}/50`, xpPct: `${(s.earned % 50) * 2}%`,
+      multText: `×${(1 + 0.5 * sn).toFixed(1)}`, multBorder: mc[0], multBg: mc[1], multInk: mc[2],
+      colonyOpen: s.colonyOpen, colonyOpenStr: s.colonyOpen ? 'true' : 'false', toggleColony: this.toggleColony, closeColony: this.closeColony,
+      shapes, colors, pickShape: this.pickShape, pickColor: this.pickColor, nextText, earnedText: s.earned.toLocaleString('en-US'), bugHexNow: hex,
+      soundOn, soundOff: !soundOn, toggleSound: this.toggleSound,
+      activeAgents: running + ciBusy, tokens: `${(s.tokens / 1000).toFixed(1)}k`, tps: s.tps ? `${(s.tps / 1000).toFixed(1)}k tok/s` : 'idle',
+      queueText: `${s.tickets.filter(t => t.col === 'review').length} in merge queue`,
+      squashedText: s.squashed === 1 ? '1 bug squashed' : `${s.squashed} bugs squashed`,
+      draft: s.draft, onDraft: this.onDraft, submitDraft: this.submitDraft, focusComposer: this.focusComposer, reqOpen: !!s.reqOpen, openReq: this.openReq, closeReq: this.closeReq, closeReqBackdrop: this.closeReqBackdrop, reqKey: this.reqKey,
+      draftHint: draftBug ? `Tagged as bug · −${C.BUG_COST} points` : 'Product Agent',
+      hasToast: !!s.toast, toast: s.toast ? s.toast.text : '',
+      hasWin: !!s.win, winId: s.win ? s.win.id : '', winTitle: s.win ? s.win.title : '', winBody: s.win ? s.win.body : '', winPts: s.win ? s.win.pts : 0, closeWin: this.closeWin,
+      cardDown: this.cardDown, cardTilt: this.cardTilt, cardEnter: this.cardEnter, cardLeave: this.cardLeave, advance: this.advance,
+      canvasRef: this.canvasRef, boardRef: this.boardRef, scoreRef: this.scoreRef, multRef: this.multRef, timerRef: this.timerRef,
+      levelRef: this.levelRef, nestRef: this.nestRef, inputRef: this.inputRef, toastRef: this.toastRef, winRef: this.winRef, coinRef: this.coinRef, stackRef: this.stackRef, colonyRef: this.colonyRef,
+    };
+  }
+}
+</script>
+</body>
+</html>

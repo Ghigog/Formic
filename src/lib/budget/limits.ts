@@ -18,9 +18,17 @@ export interface Budget {
   maxAttempts: number;
 }
 
+/**
+ * A run's own ceiling stays under the `maxDuration` declared on the routes
+ * that start one (see src/app/api/{epics,tickets,transitions}), which mirror
+ * the serverless platform's own cap (300s on Vercel's Hobby plan). A run that
+ * checks this between turns and stops itself, with margin for the turn
+ * already in flight, reports "ran out of time" and is retryable; a run the
+ * platform kills outright never gets the chance to say anything.
+ */
 export const DEFAULT_RUN_BUDGET: Budget = {
   maxCents: 200,
-  maxDurationMs: 15 * 60 * 1000,
+  maxDurationMs: 4 * 60 * 1000,
   maxAttempts: 3,
 };
 
@@ -54,7 +62,7 @@ export function checkBudget(spend: Spend, budget: Budget): BudgetVerdict {
     return {
       ok: false,
       exceeded: "time",
-      reason: `Time ceiling reached (${Math.round(budget.maxDurationMs / 60000)} minutes).`,
+      reason: `Ran out of time (${Math.round(budget.maxDurationMs / 60000)} minute budget).`,
     };
   }
   if (spend.attempts >= budget.maxAttempts) {
@@ -88,24 +96,115 @@ export function addSpend(a: Spend, b: Partial<Spend>): Spend {
   };
 }
 
-/** Anthropic list prices in cents per million tokens. */
-const PRICING: Record<string, { in: number; out: number }> = {
-  "claude-opus-5": { in: 500, out: 2500 },
-  "claude-sonnet-5": { in: 200, out: 1000 },
-  "claude-haiku-4-5": { in: 100, out: 500 },
-  "claude-fable-5-1": { in: 1000, out: 5000 },
-};
+export interface ModelPrice {
+  /** Cents per million input tokens. */
+  in: number;
+  /** Cents per million output tokens. */
+  out: number;
+}
+
+interface PriceFamily {
+  /** A model id in this family starts with this prefix, not just equals it: it also catches dated and versioned ids such as `claude-sonnet-5-20260101`. */
+  prefix: string;
+  provider: string;
+  price: ModelPrice;
+}
+
+/**
+ * List prices in cents per million tokens, one entry per model family, not
+ * per exact id. New dated snapshots (`claude-sonnet-5-20260101`) and ids
+ * pulled from a provider's live model list match their family by prefix
+ * instead of falling through to free.
+ */
+const PRICE_FAMILIES: readonly PriceFamily[] = [
+  // Anthropic
+  { provider: "Anthropic", prefix: "claude-opus-5", price: { in: 500, out: 2500 } },
+  { provider: "Anthropic", prefix: "claude-sonnet-5", price: { in: 200, out: 1000 } },
+  { provider: "Anthropic", prefix: "claude-haiku-4-5", price: { in: 100, out: 500 } },
+  { provider: "Anthropic", prefix: "claude-fable-5-1", price: { in: 1000, out: 5000 } },
+  // OpenAI
+  { provider: "OpenAI", prefix: "gpt-4o-mini", price: { in: 15, out: 60 } },
+  { provider: "OpenAI", prefix: "gpt-4o", price: { in: 250, out: 1000 } },
+  { provider: "OpenAI", prefix: "gpt-4.1-nano", price: { in: 10, out: 40 } },
+  { provider: "OpenAI", prefix: "gpt-4.1-mini", price: { in: 40, out: 160 } },
+  { provider: "OpenAI", prefix: "gpt-4.1", price: { in: 200, out: 800 } },
+  { provider: "OpenAI", prefix: "o4-mini", price: { in: 110, out: 440 } },
+  { provider: "OpenAI", prefix: "o3-mini", price: { in: 110, out: 440 } },
+  { provider: "OpenAI", prefix: "o3", price: { in: 200, out: 800 } },
+  { provider: "OpenAI", prefix: "gpt-5", price: { in: 500, out: 1500 } },
+  // Google Gemini
+  { provider: "Gemini", prefix: "gemini-2.5-flash-lite", price: { in: 10, out: 40 } },
+  { provider: "Gemini", prefix: "gemini-2.5-flash", price: { in: 30, out: 250 } },
+  { provider: "Gemini", prefix: "gemini-2.5-pro", price: { in: 125, out: 1000 } },
+  { provider: "Gemini", prefix: "gemini-2.0-flash", price: { in: 10, out: 40 } },
+  // DeepSeek
+  { provider: "DeepSeek", prefix: "deepseek-reasoner", price: { in: 55, out: 219 } },
+  { provider: "DeepSeek", prefix: "deepseek-chat", price: { in: 27, out: 110 } },
+  // Groq
+  { provider: "Groq", prefix: "llama-3.3-70b", price: { in: 59, out: 79 } },
+  { provider: "Groq", prefix: "llama-3.1-8b", price: { in: 5, out: 8 } },
+  { provider: "Groq", prefix: "mixtral-8x7b", price: { in: 24, out: 24 } },
+  { provider: "Groq", prefix: "gemma2-9b", price: { in: 20, out: 20 } },
+];
+
+/**
+ * Charged to a model that matches no family above, such as an OpenRouter id
+ * for a model nobody has priced here yet. Set to the priciest family known,
+ * on purpose: an unpriced model is assumed expensive, not free, so it still
+ * trips the run and Epic ceilings instead of running unmetered.
+ */
+const CONSERVATIVE_DEFAULT_PRICE: ModelPrice = PRICE_FAMILIES.reduce(
+  (max, family) => (family.price.out > max.out ? family.price : max),
+  { in: 0, out: 0 } as ModelPrice,
+);
+
+function matchFamily(model: string): PriceFamily | undefined {
+  // OpenRouter ids are "vendor/model" (e.g. "openai/gpt-4o"); the part after
+  // the slash matches the same families as calling that vendor directly.
+  const candidates = model.includes("/") ? [model, model.slice(model.indexOf("/") + 1)] : [model];
+  let best: PriceFamily | undefined;
+  for (const candidate of candidates) {
+    for (const family of PRICE_FAMILIES) {
+      if (candidate.startsWith(family.prefix)) {
+        if (!best || family.prefix.length > best.prefix.length) best = family;
+      }
+    }
+  }
+  return best;
+}
+
+export interface ModelPricing {
+  price: ModelPrice;
+  /** False when the id matched no known family, and the conservative default is used instead. */
+  known: boolean;
+  /** The matched family's provider, only set when known. */
+  provider?: string;
+  /** The matched family's prefix, only set when known. */
+  family?: string;
+}
+
+export function priceForModel(model: string): ModelPricing {
+  const family = matchFamily(model);
+  if (family) return { price: family.price, known: true, provider: family.provider, family: family.prefix };
+  return { price: CONSERVATIVE_DEFAULT_PRICE, known: false };
+}
+
+/** How the agent editor tells someone what an unpriced model will cost. */
+export function pricingNote(model: string): string {
+  const { known, provider, family } = priceForModel(model);
+  if (known) return `Billed as ${provider} ${family} for the spend ceiling.`;
+  return (
+    `No known price for "${model}". It will be charged against the spend ceiling at a conservative ` +
+    `default of $${(CONSERVATIVE_DEFAULT_PRICE.in / 100).toFixed(2)} / $${(CONSERVATIVE_DEFAULT_PRICE.out / 100).toFixed(2)} ` +
+    `per million tokens (in/out) until it is priced by name.`
+  );
+}
 
 export function estimateCostCents(
   model: string,
   tokensIn: number,
   tokensOut: number,
 ): number {
-  const price = PRICING[model];
-  if (!price) return 0;
+  const { price } = priceForModel(model);
   return (tokensIn / 1_000_000) * price.in + (tokensOut / 1_000_000) * price.out;
-}
-
-export function knownModels(): string[] {
-  return Object.keys(PRICING);
 }

@@ -24,11 +24,11 @@ const schema = z.object({
   /** Shared secret for the GitHub webhook receiver. See PROT-07. */
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
   /**
-   * Where the Reviewer Agent is allowed to merge. "integration" keeps the
-   * base branch behind a human click; "base" is the PRD's original
-   * behaviour and an explicit decision to turn it on.
+   * Where the Reviewer Agent merges. "base" is each project's own base
+   * branch, so Done means the code is there; "integration" holds agent work
+   * on formic/integration until a person promotes it.
    */
-  MERGE_TARGET: z.enum(["integration", "base"]).default("integration"),
+  MERGE_TARGET: z.enum(["integration", "base"]).default("base"),
   E2B_API_KEY: z.string().optional(),
   SANDBOX_PROVIDER: z.enum(["e2b", "local"]).default("local"),
   AGENT_PROVIDER: z.enum(["anthropic", "mock"]).optional(),

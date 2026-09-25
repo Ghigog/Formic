@@ -22,6 +22,8 @@ export interface Workspace {
   changedFiles(): Promise<string[]>;
   /** Unified diff for one path, or for everything when omitted. */
   diff(path?: string): Promise<string>;
+  /** Whether a path is outside the ticket's file scope, when it has one. */
+  outsideScope?(path: string): boolean;
 }
 
 /** Single-quote for bash, escaping embedded quotes. */
@@ -123,11 +125,31 @@ export function scopedWorkspace(
       if (!pathInScope(target, fileScope)) {
         throw new ScopeError(
           `${target} is outside this ticket's file scope (${fileScope.join(", ")}). ` +
-            `Confine the change to the declared scope; another ticket owns that file.`,
+            `Keep the fix inside it; if the right fix needs that file, send the ticket back saying so.`,
         );
       }
       return inner.writeFile(target, contents);
     },
+  };
+}
+
+/**
+ * The file scope, as guidance. A write outside it goes through, and the
+ * workspace says so, so the agent can tell the person why; the pipeline asks
+ * for the files before any of that work goes further.
+ */
+export function guidedWorkspace(
+  inner: Workspace,
+  fileScope: readonly string[],
+): Workspace {
+  return {
+    id: inner.id,
+    exec: (command, options) => inner.exec(command, options),
+    readFile: (path) => inner.readFile(path),
+    changedFiles: () => inner.changedFiles(),
+    diff: (path) => inner.diff(path),
+    writeFile: async (path, contents) => inner.writeFile(safeRelativePath(path), contents),
+    outsideScope: (path) => !pathInScope(safeRelativePath(path), fileScope),
   };
 }
 

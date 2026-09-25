@@ -1,4 +1,5 @@
 import type {
+  AgentAttachment,
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
@@ -6,12 +7,14 @@ import type {
   CoderAgent,
   CoderTask,
   DraftTicket,
-  FailingCheck,
   ProductAgent,
+  ReviewTask,
+  ReviewVerdict,
   ReviewerAgent,
   ShowcaseAgent,
   Usage,
 } from "./ports";
+import type { PlanStep } from "@/lib/domain/entities";
 import type { Prd } from "@/lib/domain/entities";
 import type { Workspace } from "@/lib/sandbox/workspace";
 
@@ -55,8 +58,13 @@ function titleFrom(raw: string): string {
 export class MockProductAgent implements ProductAgent {
   async draftPrd(
     ctx: AgentContext,
-    input: { epicId: string; rawRequest: string },
-  ): Promise<AgentOutcome<{ title: string; prd: Prd }>> {
+    input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<
+      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "reroute"; reason: string; ticket: DraftTicket }
+    >
+  > {
     const title = titleFrom(input.rawRequest);
     const prd: Prd = {
       summary: `Deliver "${title}" end to end, from data model through UI, behind the existing project conventions.`,
@@ -101,7 +109,7 @@ export class MockProductAgent implements ProductAgent {
     }
     ctx.emit({ type: "epic.prd", epicId: input.epicId, delta: "", done: true });
 
-    return { ok: true, value: { title, prd }, usage: MOCK_USAGE };
+    return { ok: true, value: { kind: "prd", title, prd }, usage: MOCK_USAGE };
   }
 }
 
@@ -136,6 +144,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["prisma"],
         size: "S",
+        storyPoints: 2,
         dependsOn: [],
       },
       {
@@ -148,6 +157,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["src/app/api"],
         size: "M",
+        storyPoints: 5,
         dependsOn: ["T-1"],
       },
       {
@@ -160,6 +170,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         ],
         fileScope: ["src/components/feature"],
         size: "M",
+        storyPoints: 5,
         dependsOn: ["T-1"],
       },
       {
@@ -169,11 +180,46 @@ export class MockArchitectAgent implements ArchitectAgent {
         acceptanceCriteria: ["Tests pass", "Edge cases covered"],
         fileScope: ["src/lib/feature"],
         size: "S",
+        storyPoints: 3,
         dependsOn: ["T-2", "T-3"],
       },
     ];
 
     return { ok: true, value: tickets, usage: MOCK_USAGE };
+  }
+
+  async draftTicket(
+    ctx: AgentContext,
+    input: { rawRequest: string; repoTree: string[]; attachments: AgentAttachment[] },
+  ): Promise<
+    AgentOutcome<{ kind: "ticket"; ticket: DraftTicket } | { kind: "reroute"; reason: string }>
+  > {
+    const title = titleFrom(input.rawRequest);
+    ctx.emit({
+      type: "run.progress",
+      runId: ctx.runId,
+      ticketId: null,
+      role: "architect",
+      label: "Drafting ticket",
+      fraction: 1,
+    });
+    await sleep(300, ctx.signal);
+
+    const ticket: DraftTicket = {
+      key: "T-1",
+      title,
+      description: `Implement "${title}" as described in the raw request.`,
+      acceptanceCriteria: [
+        "The behaviour described in the request works end to end",
+        "Existing tests still pass",
+      ],
+      fileScope: ["src"],
+      size: "M",
+      storyPoints: 3,
+      dependsOn: [],
+    };
+
+    return { ok: true, value: { kind: "ticket", ticket }, usage: MOCK_USAGE };
   }
 }
 
@@ -189,21 +235,12 @@ export class MockShowcaseAgent implements ShowcaseAgent {
   ): Promise<AgentOutcome<string>> {
     await sleep(400, ctx.signal);
     const body = [
-      `# ${input.title}`,
+      `${input.title} is live: ${input.prd?.summary ?? "the board does what you asked for"}`,
       "",
-      input.prd?.summary ?? "",
+      "## See it",
       "",
-      "## What shipped",
-      "",
-      ...input.ticketSummaries.map(
-        (t) => `- **${t.key} ${t.title}** — ${t.summary}`,
-      ),
-      "",
-      "## Try it",
-      "",
-      "1. Pull the base branch.",
-      "2. Run the app.",
-      "3. Exercise the new surface from the board.",
+      "1. Open the board.",
+      ...input.ticketSummaries.slice(0, 2).map((t, i) => `${i + 2}. Look for ${t.title.toLowerCase()}.`),
     ].join("\n");
 
     ctx.emit({ type: "epic.showcase", epicId: input.epicId, markdown: body });
@@ -243,8 +280,21 @@ export class MockCoderAgent implements CoderAgent {
       "Writing the change",
       "Running the checks",
     ];
+    const plan = (done: number): PlanStep[] =>
+      steps.map((step, i) => ({
+        step,
+        status: i < done ? "done" : i === done ? "in_progress" : "pending",
+      }));
 
     for (const [i, label] of steps.entries()) {
+      ctx.emit({ type: "ticket.plan", ticketId: task.ticketId, steps: plan(i) });
+      ctx.emit({
+        type: "run.thought",
+        runId: ctx.runId,
+        ticketId: task.ticketId,
+        kind: "text",
+        text: `${label}. (The mock agent only pretends; add a real agent to this column for real work.)`,
+      });
       ctx.emit({
         type: "run.progress",
         runId: ctx.runId,
@@ -261,6 +311,8 @@ export class MockCoderAgent implements CoderAgent {
       });
       await sleep(350, ctx.signal);
     }
+
+    ctx.emit({ type: "ticket.plan", ticketId: task.ticketId, steps: plan(steps.length) });
 
     const note = noteFor(task);
     await workspace.writeFile(note.path, note.contents);
@@ -285,38 +337,44 @@ export class MockCoderAgent implements CoderAgent {
 }
 
 export class MockReviewerAgent implements ReviewerAgent {
-  async fix(
-    ctx: AgentContext,
-    input: {
-      task: CoderTask;
-      workspace: Workspace;
-      checks: FailingCheck[];
-      attempt: number;
-      maxAttempts: number;
-    },
-  ): Promise<AgentOutcome<CodeChange>> {
+  async review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
+    const red = input.checks[0]?.name;
     ctx.emit({
       type: "run.progress",
       runId: ctx.runId,
       ticketId: input.task.ticketId,
       role: "reviewer",
-      label: `Fixing ${input.checks[0]?.name ?? "CI"} (attempt ${input.attempt})`,
+      label: red ? `Fixing ${red} (review ${input.attempt})` : "Reading the diff against the ticket",
       fraction: input.attempt / input.maxAttempts,
     });
     await sleep(400, ctx.signal);
 
+    if (!red) {
+      return {
+        ok: true,
+        value: {
+          summary: "Approved (mock run)",
+          detail: "Placeholder approval from the mock Reviewer Agent.",
+          verifiedWith: null,
+          sendBack: null,
+        },
+        usage: MOCK_USAGE,
+      };
+    }
+
     const note = noteFor(input.task);
     await input.workspace.writeFile(
       note.path,
-      `${note.contents}\n_Fix attempt ${input.attempt}._\n`,
+      `${note.contents}\n_Fix from review ${input.attempt}._\n`,
     );
 
     return {
       ok: true,
       value: {
-        summary: `Fix ${input.checks[0]?.name ?? "CI"} (mock run)`,
+        summary: `Fix ${red} (mock run)`,
         detail: "Placeholder fix written by the mock Reviewer Agent.",
         verifiedWith: null,
+        sendBack: null,
       },
       usage: MOCK_USAGE,
     };

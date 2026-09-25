@@ -14,6 +14,7 @@ import {
   type ProviderId,
   provider as providerInfo,
 } from "@/lib/llm/providers";
+import { pricingNote } from "@/lib/budget/limits";
 
 /** What Formic always adds after a column's prompt, whatever the provider. */
 const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
@@ -66,7 +67,7 @@ export function AgentEditor({
   const [prompt, setPrompt] = useState(preset?.prompt ?? defaultPrompt);
   /** Undefined keeps the saved key, null removes it, a string replaces it. */
   const [apiKey, setApiKey] = useState<string | null | undefined>(undefined);
-  const [models, setModels] = useState<ModelList>({ state: "idle" });
+  const [fetched, setFetched] = useState<ModelList>({ state: "idle" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -88,14 +89,13 @@ export function AgentEditor({
   const typedKey = typeof apiKey === "string" ? apiKey.trim() : "";
 
   // Ask the provider which models this key can use, once there is a key.
+  const noKey = cli || (!typedKey && !savedKey);
+  const models: ModelList = noKey ? { state: "idle" } : fetched;
   useEffect(() => {
-    if (cli || (!typedKey && !savedKey)) {
-      setModels({ state: "idle" });
-      return;
-    }
+    if (noKey) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      setModels({ state: "loading" });
+      setFetched({ state: "loading" });
       fetch("/api/providers/models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -107,7 +107,7 @@ export function AgentEditor({
       })
         .then((r) => r.json())
         .then((d: { ok: boolean; models?: string[]; reason?: string }) =>
-          setModels(
+          setFetched(
             d.ok
               ? { state: "ready", models: d.models ?? [] }
               : { state: "error", reason: d.reason ?? "Could not list models." },
@@ -115,7 +115,7 @@ export function AgentEditor({
         )
         .catch(() => {
           if (!controller.signal.aborted) {
-            setModels({ state: "error", reason: "Could not list models." });
+            setFetched({ state: "error", reason: "Could not list models." });
           }
         });
     }, 400);
@@ -123,7 +123,7 @@ export function AgentEditor({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [provider, cli, typedKey, savedKey, preset?.id]);
+  }, [provider, noKey, typedKey, preset?.id]);
 
   async function submit() {
     if (!hasSavedKey && !typedKey) {
@@ -303,6 +303,9 @@ export function AgentEditor({
                     ? models.reason
                     : "Add the key above to see the models it can use."}
             </span>
+            {!cli && model.trim() && (
+              <span className="text-muted text-[11px]">{pricingNote(model.trim())}</span>
+            )}
           </label>
 
           <label className="flex flex-col gap-1">

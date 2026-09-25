@@ -51,6 +51,11 @@ enum TicketSize {
   XL
 }
 
+enum AttachmentKind {
+  image
+  file
+}
+
 /// A person, signed in with GitHub. Their tokens and keys are sealed with
 /// FORMIC_SECRET; see src/lib/secrets/vault.ts.
 model User {
@@ -70,6 +75,11 @@ model User {
   e2bKeyHint         String?
   anthropicKeyCipher String?
   anthropicKeyHint   String?
+
+  /// The terms/privacy version this person last agreed to, and when. Null
+  /// means never accepted. See CURRENT_TERMS_VERSION in src/lib/auth/user.ts.
+  termsAcceptedVersion String?
+  termsAcceptedAt      DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -92,11 +102,15 @@ model Project {
   /// The saved agent the board's assistant runs on. Not a relation: a
   /// deleted template simply leaves the assistant without one.
   assistantPresetId String?
+  /// The highest Epic number this project has given out, deleted Epics
+  /// included, so a number is never handed out twice.
+  lastEpicNumber Int @default(0)
 
   epics        Epic[]
   events       Event[]
   columnAgents ColumnAgent[]
   assistantMessages AssistantMessage[]
+  cardChatMessages  CardChatMessage[]
 
   @@index([ownerId])
   @@map("project")
@@ -107,15 +121,26 @@ model Epic {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  /// Its number on the board, EPIC-<number>. Given once, never reused, so
+  /// a key keeps meaning the same Epic when others move or are deleted.
+  number           Int?
   title            String
   rawRequest       String
   /// Structured PRD from the Product Agent. Null until stage 2 completes.
   prd              Json?
   prdEditedByHuman Boolean @default(false)
+  /// When the PRD last changed. Tickets made before it were made from an
+  /// older PRD, so the Epic is broken down again.
+  prdUpdatedAt     DateTime?
   showcase         String?
   /// The GitHub Actions run a CLI agent is doing for this epic, if any.
   /// Only that run's answer is taken; any other is stale.
   runnerJob        String?
+  /// The preset that run was dispatched with, so a failure is blamed on the
+  /// agent that actually ran it, not whichever one the column has now.
+  runnerAgent      String?
+  /// When that run was sent: how long the agent has been at it.
+  runnerJobAt      DateTime?
   /// The GitHub issue that tracks this epic, once created.
   issueNumber      Int?
 
@@ -123,6 +148,23 @@ model Epic {
   /// Set only for blocked/failed cards, so a stalled card keeps its column.
   stalledIn ColumnId?
   stage     Int          @default(1)
+  /// Why a planning stage stalled. Cleared when the Epic moves on.
+  blockedReason String?
+  /// Where a person dropped it when it cannot work there. It shows there,
+  /// with misplacedReason saying what is wrong and how to fix it; its status
+  /// stays what is true. Cleared by its next move or status change.
+  misplacedIn     ColumnId?
+  misplacedReason String?
+  /// A holder for a ticket with no Epic of its own: a To Do request. Never
+  /// its own card on the board; its one child ticket renders alone instead,
+  /// exactly as a detached ticket does today.
+  standalone Boolean @default(false)
+  /// The column a request was rerouted from, and why. Set together with
+  /// rerouteReason by setReroute; rerouting is just flipping standalone and
+  /// the child ticket, so the rawRequest, its id and its attachments never
+  /// move.
+  rerouteFrom     ColumnId?
+  rerouteReason   String?
   /// Fractional index. A drag writes one row instead of renumbering a column.
   position  Float
 
@@ -147,6 +189,10 @@ model Ticket {
   acceptanceCriteria String[]
   /// Normalised directory prefixes. The concurrency boundary.
   fileScope          String[]
+  /// Files outside the scope its agent needed, asked of the person. Kept
+  /// until the work that needed them goes on (or is dropped), so a ticket
+  /// that has it and a branch but no pull request has its work kept there.
+  scopeRequest       String[]   @default([])
   size               TicketSize @default(M)
 
   status    TicketStatus @default(waiting)
@@ -155,6 +201,14 @@ model Ticket {
   position  Float
   /// Pulled out of its epic's group by a human. Only To Do reads it.
   detached  Boolean      @default(false)
+  /// Where a person dropped it when it cannot work there. It shows there,
+  /// with misplacedReason saying what is wrong and how to fix it; its status
+  /// stays what is true. Cleared by its next move or status change.
+  misplacedIn     ColumnId?
+  misplacedReason String?
+  /// The column a request was rerouted from, and why. See Epic.rerouteFrom.
+  rerouteFrom     ColumnId?
+  rerouteReason   String?
 
   branchName    String?
   /// One line describing what the Coder Agent actually changed. Feeds the
@@ -167,8 +221,33 @@ model Ticket {
   /// The GitHub Actions run a CLI agent is doing for this ticket, if any.
   /// Only that run's result is taken; any other is stale.
   runnerJob     String?
+  /// The preset that run was dispatched with, so a failure is blamed on the
+  /// agent that actually ran it, not whichever one the column has now.
+  runnerAgent   String?
+  /// When that run was sent: how long the agent has been at it.
+  runnerJobAt   DateTime?
   /// The GitHub issue that tracks this ticket, a sub-issue of its epic's.
   issueNumber   Int?
+  /// The estimate on the Fibonacci scale, 1 to 13.
+  storyPoints   Int?
+  /// The steps the agent is working the ticket through: [{ step, status }].
+  plan          Json?
+  /// Steps outside the repository the person has to take, one per entry.
+  /// The Epic's showcase hands them over once everything has merged.
+  handoff       String[] @default([])
+  /// Set when the ticket is work for a person, not an agent (an account to
+  /// set up, a manual test on production): why. Agents do not start it; the
+  /// person does it and closes it from its chat.
+  needsHuman    String?
+  /// The head commit the Reviewer Agent last approved or pushed. Green CI on
+  /// exactly this commit merges; anything newer is reviewed again.
+  reviewedSha   String?
+  /// When it merged, and what the merge scored: its story points times the
+  /// project's heat at that moment (1 + 0.5 per merge in the 45s before,
+  /// at most six). Set once, on the first move to merged.
+  mergedAt        DateTime?
+  mergePoints     Int?
+  mergeMultiplier Float?
 
   costCents Float @default(0)
   tokensIn  Int   @default(0)
@@ -183,6 +262,7 @@ model Ticket {
 
   @@unique([epicId, key])
   @@index([epicId, status])
+  @@index([mergedAt])
   @@index([prNumber])
   @@map("ticket")
 }
@@ -224,6 +304,7 @@ model AgentRun {
 
   @@index([status])
   @@index([ticketId])
+  @@index([epicId])
   @@map("agent_run")
 }
 
@@ -237,6 +318,30 @@ model WebhookDelivery {
 
   @@index([receivedAt])
   @@map("webhook_delivery")
+}
+
+/// A file attached to a raw request. Stored as bytes in Postgres, not on
+/// disk or in a blob store: Vercel gives the app no persistent disk and none
+/// is wired up yet. Keyed at upload time to a client-generated requestId so a
+/// dialog can upload before the card exists, then linked to the real card in
+/// one claimAttachments call.
+model Attachment {
+  id        String         @id @default(cuid())
+  projectId String
+  epicId    String?
+  ticketId  String?
+  requestId String?
+  filename  String
+  mimeType  String
+  kind      AttachmentKind
+  size      Int
+  bytes     Bytes
+  createdAt DateTime       @default(now())
+
+  @@index([requestId])
+  @@index([epicId])
+  @@index([ticketId])
+  @@map("attachment")
 }
 
 /// Append-only event log. Backs SSE replay: a reconnecting client asks for
@@ -269,6 +374,10 @@ model AgentPreset {
   apiKeyCipher String?
   /// Last four characters, so the editor can say which key is saved.
   apiKeyHint   String?
+  /// Out of usage on its plan until then. Cleared by a new key.
+  limitedUntil DateTime?
+  /// What the agent said when it ran out, for the board to show.
+  limitNote    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -306,8 +415,36 @@ model AssistantMessage {
   status    String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.
   runnerJob String?
+  /// The preset that run was dispatched with, so a failure is blamed on the
+  /// agent that actually ran it, not whichever one the assistant runs now.
+  runnerAgent String?
   createdAt DateTime @default(now())
 
   @@index([projectId, createdAt])
   @@map("assistant_message")
+}
+
+/// A card's chat with its column's agent: a conversation per Epic or
+/// ticket, not tied to a relation since either table can own one.
+model CardChatMessage {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "epic" or "ticket".
+  cardKind  String
+  cardId    String
+  /// "user" or "assistant".
+  role      String
+  content   String
+  /// "done", "pending" while the agent works, or "failed".
+  status    String   @default("done")
+  /// The Actions run a CLI agent is answering this in, if any.
+  runnerJob String?
+  /// The preset that run was dispatched with, so a failure is blamed on the
+  /// agent that actually ran it.
+  runnerAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([cardId, createdAt])
+  @@map("card_chat_message")
 }

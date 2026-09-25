@@ -205,6 +205,13 @@ export class LocalSandboxProvider implements SandboxProvider {
     sandbox.markReady();
     return sandbox;
   }
+
+  async disposeById(): Promise<void> {
+    // A local sandbox is a child process and a temp directory inside this
+    // one OS process: there is no id to reach it by from another instance,
+    // and nothing to leak once this process exits. See LOCAL_SANDBOX_ON_VERCEL
+    // — this provider never runs where that would matter.
+  }
 }
 
 /** Single-quote for bash, escaping embedded quotes. */

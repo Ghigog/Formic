@@ -13,6 +13,7 @@ import {
   type WorkflowRunRef,
   STAGING_PREFIX,
 } from "./types";
+import { CARRY_DELETED, CARRY_DIR, isCarried } from "@/lib/runner/workflow";
 
 /**
  * A GitHub that only exists in this process.
@@ -28,7 +29,6 @@ interface MockPull extends PullRequestDetail {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __formicMockPulls: Map<number, MockPull> | undefined;
 }
 
@@ -50,9 +50,17 @@ interface MockRepo {
   issues: Map<number, MockIssue>;
   /** Workflow runs by title, as a test says they ended. */
   runs: Map<string, WorkflowRunRef>;
+  /** Failed runs' logs by run URL. */
+  logs: Map<string, string>;
   labels: Set<string>;
   /** Comments by pull request or issue number. */
   comments: Map<number, string[]>;
+  /** `${base}<-${head}` pairs that conflict when merged, as a test says. */
+  conflicts: Set<string>;
+  /** Every branch merge asked for, in order. */
+  merges: Array<{ base: string; head: string }>;
+  /** Heads made by bringing the base into a PR, to the head they were made on. */
+  baseMerges: Map<string, string>;
 }
 
 export interface MockIssue {
@@ -75,8 +83,12 @@ function repo(): MockRepo {
     commits: new Map(),
     issues: new Map(),
     runs: new Map(),
+    logs: new Map(),
     labels: new Set(),
     comments: new Map(),
+    conflicts: new Set(),
+    merges: [],
+    baseMerges: new Map(),
   };
   return g.__formicMockRepo;
 }
@@ -161,6 +173,18 @@ export class MockVcsClient implements VcsClient {
     return { ok: true, updated: false };
   }
 
+  async bringsInBase(from: string, to: string): Promise<boolean> {
+    return repo().baseMerges.get(to) === from;
+  }
+
+  async mergeBranch(base: string, head: string): Promise<UpdateOutcome> {
+    repo().merges.push({ base, head });
+    if (repo().conflicts.has(`${base}<-${head}`)) {
+      return { ok: false, reason: "Merge conflict", conflict: true };
+    }
+    return { ok: true, updated: false };
+  }
+
   async merge(number: number, expectedHeadSha: string): Promise<MergeOutcome> {
     const pull = pulls().get(number);
     if (!pull) return { ok: false, reason: "Unknown pull request.", conflict: false };
@@ -200,6 +224,27 @@ export class MockVcsClient implements VcsClient {
 
   async findRun(_file: string, title: string): Promise<WorkflowRunRef | null> {
     return repo().runs.get(title) ?? null;
+  }
+
+  async recentRuns(_file: string): Promise<Array<WorkflowRunRef & { id: number; title: string }>> {
+    return [...repo().runs.entries()].map(([title, run], i) => ({
+      ...run,
+      title,
+      id: Number(/\/runs\/(\d+)/.exec(run.url)?.[1] ?? i + 1),
+    }));
+  }
+
+  async cancelRun(runId: number): Promise<void> {
+    for (const run of repo().runs.values()) {
+      if (run.url.endsWith(`/runs/${runId}`) && run.status !== "completed") {
+        run.status = "completed";
+        run.conclusion = "cancelled";
+      }
+    }
+  }
+
+  async runLog(runUrl: string): Promise<string | null> {
+    return repo().logs.get(runUrl) ?? null;
   }
 
   async ensureLabel(name: string): Promise<void> {
@@ -242,6 +287,26 @@ export class MockVcsClient implements VcsClient {
     return { files: commit?.files ?? [], messages: commit ? [commit.message] : [], headSha: sha };
   }
 
+  async landCarried(sha: string): Promise<{ sha: string; files: string[] }> {
+    const commit = repo().commits.get(sha);
+    if (!commit) return { sha, files: [] };
+    const files: string[] = [];
+    for (const f of commit.files) {
+      if (f === CARRY_DELETED) {
+        const listed = repo().files.get(`${sha}:${CARRY_DELETED}`) ?? "";
+        files.push(...listed.split("\n").map((l) => l.trim()).filter(Boolean));
+      } else if (f.startsWith(`${CARRY_DIR}/`)) {
+        files.push(f.slice(CARRY_DIR.length + 1));
+      }
+    }
+    const landed = fakeSha();
+    repo().commits.set(landed, {
+      files: [...commit.files.filter((f) => !isCarried(f)), ...files],
+      message: commit.message,
+    });
+    return { sha: landed, files };
+  }
+
   async moveBranch(branch: string, sha: string): Promise<void> {
     repo().branches.set(branch, sha);
     // A PR from this branch now points at the new head, as on GitHub.
@@ -279,6 +344,28 @@ export class MockVcsClient implements VcsClient {
       conclusion,
     }));
     return pull.headSha;
+  }
+
+  /** Test seam: make merging `head` into `base` conflict. */
+  static conflictOn(base: string, head: string): void {
+    repo().conflicts.add(`${base}<-${head}`);
+  }
+
+  /** Test seam: bring the base into a mock PR, as GitHub's update-branch does, and hand back the new head. */
+  static bringBaseIn(number: number): string {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    const sha = fakeSha();
+    repo().baseMerges.set(sha, pull.headSha);
+    pull.headSha = sha;
+    return sha;
+  }
+
+  /** Test seam: change what GitHub says about a mock PR. */
+  static setPull(number: number, patch: Partial<Pick<PullRequestDetail, "state" | "merged" | "mergeable">>): void {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    Object.assign(pull, patch);
   }
 
   static reset(): void {

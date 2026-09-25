@@ -11,8 +11,22 @@ import { useBoardEvents } from "./use-board-events";
 /** Most recent log lines kept for the ambient terminal. */
 const LOG_TAIL = 200;
 
-export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) {
+export function useBoard(
+  initialCards: BoardCard[],
+  initialStats: AmbientStats,
+  /** Every event, after the board has taken what it needs from it. */
+  onOther?: (event: FormicEvent, seq: number) => void,
+) {
+  const other = useRef(onOther);
+  useEffect(() => {
+    other.current = onOther;
+  });
   const [cards, setCards] = useState(initialCards);
+  // For naming a terminal line by its ticket, without re-binding the stream.
+  const keys = useRef(new Map<string, string>());
+  useEffect(() => {
+    keys.current = new Map(cards.map((c) => [c.id, c.key]));
+  }, [cards]);
   const [extras, setExtras] = useState<Record<string, CardExtras | undefined>>({});
   const [stats, setStats] = useState(initialStats);
   /** Live PRD text per Epic while the Product Agent writes. */
@@ -34,10 +48,12 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
   }, [refetch]);
 
   const onEvent = useCallback(
-    (event: FormicEvent) => {
+    (event: FormicEvent, seq: number) => {
+      other.current?.(event, seq);
       switch (event.type) {
         case "card.status":
         case "card.created":
+        case "card.deleted":
           scheduleRefetch();
           break;
 
@@ -66,7 +82,12 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
             ...prev,
             logLines: [
               ...prev.logLines,
-              { runId: event.runId, stream: event.stream, line: event.line },
+              {
+                runId: event.runId,
+                label: event.ticketId ? keys.current.get(event.ticketId) : undefined,
+                stream: event.stream,
+                line: event.line,
+              },
             ].slice(-LOG_TAIL),
           }));
           break;
@@ -142,16 +163,32 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
   );
 
   const createEpic = useCallback(
-    async (rawRequest: string) => {
+    async (rawRequest: string, requestId?: string) => {
       const res = await fetch("/api/epics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawRequest }),
+        body: JSON.stringify({ rawRequest, requestId }),
       });
       await refetch();
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(body?.error ?? "Could not create that backlog item.");
+      }
+    },
+    [refetch],
+  );
+
+  const createTicket = useCallback(
+    async (rawRequest: string, requestId?: string) => {
+      const res = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawRequest, requestId }),
+      });
+      await refetch();
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Could not create that ticket.");
       }
     },
     [refetch],
@@ -165,6 +202,7 @@ export function useBoard(initialCards: BoardCard[], initialStats: AmbientStats) 
     connection,
     transition,
     createEpic,
+    createTicket,
     refetch,
   };
 }

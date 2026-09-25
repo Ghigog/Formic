@@ -7,8 +7,16 @@ import type { AgentContext, AgentOutcome, CodeChange, Usage } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
 import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens } from "@/lib/budget/limits";
-import { anthropicClient } from "./anthropic";
+import {
+  anthropicClient,
+  billedInputTokens,
+  cachedSystem,
+  cachedToHere,
+  describeError,
+} from "./anthropic";
 import { requestShape } from "./models";
+import { MAX_PLAN_STEPS, checkPlan } from "./plan";
+import { checkHandoff } from "./handoff";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
 import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
 
@@ -34,6 +42,17 @@ const MAX_ITERATIONS = 40;
 
 /** Tool output past this is padding; the middle is what gets dropped. */
 const MAX_TOOL_OUTPUT = 16_000;
+/** Longest thought the board is sent in one piece. */
+const MAX_THOUGHT = 4_000;
+
+/**
+ * Asked of every coding agent, so the person watching a ticket can follow
+ * it: the plan up front, kept current, and a word before each action.
+ */
+const PLANNING_RULES = `Working in the open:
+- Your first call, before you read or change anything, is update_plan with every step you intend to take. Keep it current: mark a step in_progress when you start it and done when it is finished, and add or drop steps as you learn more.
+- Send each plan update in the same turn as the action it goes with, alongside that tool call, not in a turn of its own.
+- Before each action, say in a sentence or two what you are about to do and why. The person watching the board reads it.`;
 
 
 export function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
@@ -58,9 +77,14 @@ const finishInput = z.object({
   summary: z.string().min(1),
   detail: z.string().min(1),
   verified_with: z.string().nullable(),
+  // Optional here: a model that leaves it out has changed something.
+  already_done: z.boolean().optional(),
+  send_back: z.string().nullable().optional(),
+  for_you: z.array(z.string()).optional(),
+  blocked_reason: z.string().nullable().optional(),
 });
 
-const TOOLS: Anthropic.Beta.BetaTool[] = [
+const WORK_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "bash",
     description:
@@ -90,7 +114,7 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "write_file",
     description:
-      "Write a file in full, relative to the repository root. Creates parent directories. Writes outside the ticket's file scope are rejected.",
+      "Write a file in full, relative to the repository root. Creates parent directories.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -116,22 +140,101 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: "update_plan",
+    description:
+      "Share your plan for this ticket and keep it current. Call it before you change anything, with every step you intend to take, and again whenever a step starts or finishes. The person watching the board sees it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        steps: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              step: { type: "string" },
+              status: { type: "string", enum: ["pending", "in_progress", "done"] },
+            },
+            required: ["step", "status"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["steps"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+];
+
+const FOR_YOU = {
+  type: "array",
+  items: { type: "string" },
+  description:
+    "Steps outside the repository the person has to take themselves, one instruction each. Empty when there are none.",
+};
+
+const BLOCKED = {
+  type: ["string", "null"],
+  description:
+    "Only when you cannot finish without something only the person can give, such as a credential or a decision: what it is and why. Null otherwise.",
+};
+
+/** How each role ends its run. */
+const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
+  coder: {
     name: "finish",
     description:
-      "Call this once the change is complete and verified. Ends the run.",
+      "Call this once the change is complete and verified, or once you have confirmed the ticket was already done. Ends the run.",
     input_schema: {
       type: "object",
       properties: {
         summary: { type: "string" },
         detail: { type: "string" },
         verified_with: { type: ["string", "null"] },
+        already_done: {
+          type: "boolean",
+          description:
+            "True only when the repository already met every acceptance criterion and you changed nothing.",
+        },
+        for_you: FOR_YOU,
+        blocked_reason: BLOCKED,
       },
-      required: ["summary", "detail", "verified_with"],
+      required: ["summary", "detail", "verified_with", "already_done", "for_you", "blocked_reason"],
       additionalProperties: false,
     },
     strict: true,
   },
-];
+  reviewer: {
+    name: "finish",
+    description:
+      "Call this once you have approved the pull request, fixed it and verified the fix, or decided to send it back. Ends the run.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+        detail: {
+          type: "string",
+          description: "Your review, criterion by criterion, and what you fixed if you fixed anything.",
+        },
+        verified_with: { type: ["string", "null"] },
+        send_back: {
+          type: ["string", "null"],
+          description:
+            "To send the ticket back to the Coder Agent: what is wrong and what to do about it. Change nothing when you send it back. Null to approve or fix.",
+        },
+        for_you: FOR_YOU,
+        blocked_reason: BLOCKED,
+      },
+      required: ["summary", "detail", "verified_with", "send_back", "for_you", "blocked_reason"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+function toolsFor(role: LoopInput["role"]): Anthropic.Beta.BetaTool[] {
+  return [...WORK_TOOLS, FINISH[role]];
+}
 
 interface LoopInput {
   ctx: AgentContext;
@@ -155,6 +258,8 @@ interface LoopCall {
 
 interface Turn {
   calls: LoopCall[];
+  /** What the model thought and said this turn, besides its tool calls. */
+  thoughts: Array<{ kind: "thinking" | "text"; text: string }>;
   stop: "done" | "refusal" | "max_tokens";
   usage: Usage;
 }
@@ -171,6 +276,11 @@ interface Conversation {
   next(): Promise<Turn>;
   toolResults(results: Array<{ id: string; content: string; isError: boolean }>): void;
   say(text: string): void;
+  /**
+   * Adds a person's words to the turn about to be sent. For Claude they join
+   * the tool results' message: two user messages in a row are refused.
+   */
+  note(text: string): void;
 }
 
 function addUsage(a: Usage, b: Usage): Usage {
@@ -182,30 +292,18 @@ function addUsage(a: Usage, b: Usage): Usage {
   };
 }
 
-function usageFrom(model: string, tokensIn: number, tokensOut: number): Usage {
-  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, tokensIn, tokensOut) };
-}
-
-function describeError(e: unknown): string {
-  if (e instanceof Anthropic.RateLimitError) {
-    return "Rate limited by the Anthropic API. This run will need to be retried.";
-  }
-  if (e instanceof Anthropic.AuthenticationError) {
-    return "The Anthropic API key was rejected.";
-  }
-  if (e instanceof Anthropic.APIConnectionError) {
-    return "Could not reach the Anthropic API.";
-  }
-  if (e instanceof Anthropic.APIError) {
-    return `Anthropic API error ${e.status ?? ""}: ${e.message}`.trim();
-  }
-  if (e instanceof Error) return e.message;
-  return "Unknown agent failure.";
+function usageFrom(
+  model: string,
+  tokensIn: number,
+  tokensOut: number,
+  costTokensIn = tokensIn,
+): Usage {
+  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, costTokensIn, tokensOut) };
 }
 
 function claudeConversation(input: LoopInput, model: string): Conversation {
   const shape = requestShape(model, {
-    effort: "xhigh",
+    effort: "medium",
     taskBudgetTokens: taskBudgetTokens(DEFAULT_RUN_BUDGET),
   });
   const messages: Anthropic.Beta.BetaMessageParam[] = [
@@ -218,13 +316,13 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
         const stream = anthropicClient(input.apiKey).beta.messages.stream({
           model,
           max_tokens: 64_000,
-          system: input.system,
+          system: cachedSystem(input.system),
           ...(shape.thinking ? { thinking: shape.thinking } : {}),
           ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
           output_config: shape.outputConfig,
           betas: shape.betas,
-          tools: TOOLS,
-          messages,
+          tools: toolsFor(input.role),
+          messages: cachedToHere(messages),
         });
         message = await stream.finalMessage();
       } catch (e) {
@@ -236,6 +334,13 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
       }
       messages.push({ role: "assistant", content: message.content });
       return {
+        thoughts: message.content.flatMap((b): Turn["thoughts"] =>
+          b.type === "thinking" && b.thinking.trim()
+            ? [{ kind: "thinking" as const, text: b.thinking }]
+            : b.type === "text" && b.text.trim()
+              ? [{ kind: "text" as const, text: b.text }]
+              : [],
+        ),
         calls: message.content
           .filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use")
           .map((b) => ({ id: b.id, name: b.name, input: b.input })),
@@ -245,7 +350,10 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
             : message.stop_reason === "max_tokens"
               ? "max_tokens"
               : "done",
-        usage: usageFrom(model, message.usage.input_tokens, message.usage.output_tokens),
+        usage: (() => {
+          const { tokensIn, costTokensIn } = billedInputTokens(message.usage);
+          return usageFrom(model, tokensIn, message.usage.output_tokens, costTokensIn);
+        })(),
       };
     },
     toolResults(results) {
@@ -262,14 +370,24 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
     say(text) {
       messages.push({ role: "user", content: text });
     },
+    note(text) {
+      const last = messages.at(-1);
+      if (last?.role === "user" && Array.isArray(last.content)) {
+        last.content.push({ type: "text", text });
+      } else {
+        messages.push({ role: "user", content: text });
+      }
+    },
   };
 }
 
 /** The same tools, in OpenAI's function format. */
-const OPENAI_TOOLS: ToolSpec[] = TOOLS.map((t) => ({
-  type: "function",
-  function: { name: t.name, description: t.description ?? "", parameters: t.input_schema },
-}));
+function openAiTools(role: LoopInput["role"]): ToolSpec[] {
+  return toolsFor(role).map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description ?? "", parameters: t.input_schema },
+  }));
+}
 
 function openAiConversation(
   input: LoopInput,
@@ -286,7 +404,7 @@ function openAiConversation(
       const result = await chat(info, apiKey, {
         model,
         messages,
-        tools: OPENAI_TOOLS,
+        tools: openAiTools(input.role),
         signal: input.ctx.signal,
       }).catch((e: unknown) => {
         throw new Error(e instanceof Error ? e.message : String(e));
@@ -297,6 +415,9 @@ function openAiConversation(
         ...(result.message.tool_calls?.length ? { tool_calls: result.message.tool_calls } : {}),
       });
       return {
+        thoughts: result.message.content?.trim()
+          ? [{ kind: "text" as const, text: result.message.content }]
+          : [],
         calls: (result.message.tool_calls ?? []).map((c) => {
           let parsed: unknown;
           try {
@@ -324,8 +445,14 @@ function openAiConversation(
     say(text) {
       messages.push({ role: "user", content: text });
     },
+    note(text) {
+      messages.push({ role: "user", content: text });
+    },
   };
 }
+
+/** What the agent reported. A reviewer's `sendBack` is null for a coder. */
+export type LoopResult = CodeChange & { sendBack: string | null };
 
 /**
  * Runs the loop until the agent calls `finish`, the budget stops it, or it
@@ -334,26 +461,27 @@ function openAiConversation(
  */
 export async function runCodingLoop(
   input: LoopInput,
-): Promise<AgentOutcome<CodeChange>> {
+): Promise<AgentOutcome<LoopResult>> {
   const { ctx, workspace, role, ticketId } = input;
   const info = provider(input.provider ?? "anthropic")!;
   const model = input.model ?? CODER_MODEL;
   let total: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
   let retries = 0;
 
-  const fail = (error: string, blocked = false): AgentOutcome<CodeChange> => ({
+  const fail = (error: string, blocked = false): AgentOutcome<LoopResult> => ({
     ok: false,
     error,
     blocked,
     usage: total,
   });
 
+  const briefed = { ...input, system: `${input.system.trim()}\n\n${PLANNING_RULES}` };
   let conversation: Conversation;
   if (info.kind === "anthropic") {
-    conversation = claudeConversation(input, model);
+    conversation = claudeConversation(briefed, model);
   } else {
     if (!input.apiKey) return fail(`This agent has no ${info.label} API key. Edit it and add one.`, true);
-    conversation = openAiConversation(input, info, model, input.apiKey);
+    conversation = openAiConversation(briefed, info, model, input.apiKey);
   }
 
   const progress = (label: string, iteration: number) => {
@@ -369,7 +497,11 @@ export async function runCodingLoop(
 
   for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     if (ctx.signal.aborted) {
-      return fail("Run stopped before the change was finished.", true);
+      const { reason } = ctx.signal;
+      return fail(
+        reason instanceof Error ? reason.message : "Run stopped before the change was finished.",
+        true,
+      );
     }
 
     let turn: Turn;
@@ -383,6 +515,16 @@ export async function runCodingLoop(
 
     total = addUsage(total, turn.usage);
     await ctx.charge?.(turn.usage);
+
+    for (const thought of turn.thoughts) {
+      ctx.emit({
+        type: "run.thought",
+        runId: ctx.runId,
+        ticketId,
+        kind: thought.kind,
+        text: truncate(thought.text.trim(), MAX_THOUGHT),
+      });
+    }
 
     if (turn.stop === "refusal") {
       return fail("The model declined to work on this ticket.", true);
@@ -407,13 +549,18 @@ export async function runCodingLoop(
       if (call.name === "finish") {
         const parsed = finishInput.safeParse(call.input);
         if (parsed.success) {
-          progress("Change complete", MAX_ITERATIONS);
+          const blocked = parsed.data.blocked_reason?.trim();
+          if (blocked) return fail(blocked, true);
+          progress(role === "reviewer" ? "Review complete" : "Change complete", MAX_ITERATIONS);
           return {
             ok: true,
             value: {
               summary: parsed.data.summary,
               detail: parsed.data.detail,
               verifiedWith: parsed.data.verified_with,
+              alreadyDone: parsed.data.already_done ?? false,
+              handoff: checkHandoff(parsed.data.for_you),
+              sendBack: parsed.data.send_back?.trim() || null,
             },
             usage: total,
           };
@@ -426,12 +573,34 @@ export async function runCodingLoop(
         continue;
       }
 
-      const outcome = await runTool(call, workspace, ctx, ticketId);
+      if (call.name === "update_plan") {
+        const steps = checkPlan(call.input);
+        if (steps) ctx.emit({ type: "ticket.plan", ticketId, steps });
+        results.push({
+          id: call.id,
+          isError: !steps,
+          content: steps
+            ? "Plan updated."
+            : `update_plan needs 1 to ${MAX_PLAN_STEPS} steps, each with a step and a status.`,
+        });
+        continue;
+      }
+
+      const outcome = await runTool(call, workspace, ctx);
       progress(outcome.label, iteration);
       results.push({ id: call.id, isError: outcome.isError, content: truncate(outcome.content) });
     }
 
     conversation.toolResults(results);
+
+    // The person watching can stop the run or steer it between turns.
+    const heard = await ctx.interrupts?.().catch(() => null);
+    if (heard?.stopped) return fail(heard.stopped, true);
+    for (const note of heard?.notes ?? []) {
+      conversation.note(
+        `A note from the person watching this ticket. Take it into account from here on:\n\n${note}`,
+      );
+    }
   }
 
   return fail(
@@ -450,7 +619,6 @@ async function runTool(
   call: LoopCall,
   workspace: Workspace,
   ctx: AgentContext,
-  ticketId: string,
 ): Promise<ToolOutcome> {
   try {
     switch (call.name) {
@@ -505,7 +673,7 @@ async function runTool(
         await workspace.writeFile(parsed.data.path, parsed.data.contents);
         await emitDiff(workspace, ctx, parsed.data.path);
         return {
-          content: `Wrote ${parsed.data.path}.`,
+          content: `Wrote ${parsed.data.path}.${outsideNote(workspace, parsed.data.path)}`,
           isError: false,
           label: `Writing ${parsed.data.path}`,
         };
@@ -538,7 +706,7 @@ async function runTool(
           before.slice(0, first) + new_text + before.slice(first + old_text.length),
         );
         await emitDiff(workspace, ctx, path);
-        return { content: `Edited ${path}.`, isError: false, label: `Editing ${path}` };
+        return { content: `Edited ${path}.${outsideNote(workspace, path)}`, isError: false, label: `Editing ${path}` };
       }
 
       default:
@@ -556,6 +724,12 @@ async function runTool(
       label: call.name,
     };
   }
+}
+
+/** What a write outside the ticket's file scope means, told as it happens. */
+function outsideNote(workspace: Workspace, path: string): string {
+  if (!workspace.outsideScope?.(path)) return "";
+  return " It is outside this ticket's file scope. That is fine when the right change needs it: Formic asks the person to add it to the scope before your work goes further. Where an equally good change fits inside the scope, prefer that.";
 }
 
 function invalid(detail: string | undefined, tool: string): ToolOutcome {

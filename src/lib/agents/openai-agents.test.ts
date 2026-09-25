@@ -103,6 +103,74 @@ describe("the coding loop on an OpenAI-format provider", () => {
     expect(second.at(-1)).toMatchObject({ role: "tool", tool_call_id: "call_1" });
   });
 
+  it("shares its plan and its thinking with the board as it works", async () => {
+    fakeProvider([
+      {
+        role: "assistant",
+        content: "I'll plan this first.",
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: {
+              name: "update_plan",
+              arguments: JSON.stringify({
+                steps: [
+                  { step: "Read the handler", status: "in_progress" },
+                  { step: "Write the fix", status: "pending" },
+                ],
+              }),
+            },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_2",
+            type: "function",
+            function: {
+              name: "finish",
+              arguments: JSON.stringify({ summary: "done", detail: "d", verified_with: null }),
+            },
+          },
+        ],
+      },
+    ]);
+    const events: unknown[] = [];
+
+    const outcome = await runCodingLoop({
+      ctx: { ...ctx(), emit: (e) => events.push(e) },
+      workspace: new MemoryWorkspace(),
+      ticketId: "t-9",
+      role: "coder",
+      system: "sys",
+      prompt: "do it",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      apiKey: "sk-deepseek",
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(events).toContainEqual({
+      type: "run.thought",
+      runId: "run_1",
+      ticketId: "t-9",
+      kind: "text",
+      text: "I'll plan this first.",
+    });
+    expect(events).toContainEqual({
+      type: "ticket.plan",
+      ticketId: "t-9",
+      steps: [
+        { step: "Read the handler", status: "in_progress" },
+        { step: "Write the fix", status: "pending" },
+      ],
+    });
+  });
+
   it("refuses to start without a key rather than trying someone else's", async () => {
     const outcome = await runCodingLoop({
       ctx: ctx(),
@@ -132,7 +200,11 @@ describe("structured answers from OpenAI-format providers", () => {
       apiKey: "AIza",
     });
 
-    const outcome = await agent.draftPrd(ctx(), { epicId: "e", rawRequest: "add x" });
+    const outcome = await agent.draftPrd(ctx(), {
+      epicId: "e",
+      rawRequest: "add x",
+      attachments: [],
+    });
 
     expect(outcome).toMatchObject({ ok: true, value: { title: "Add x" } });
     expect(sent).toHaveLength(2);
@@ -148,7 +220,11 @@ describe("structured answers from OpenAI-format providers", () => {
       { role: "assistant", content: JSON.stringify({ title: "Add x", prd: PRD }) },
     ]);
     const agent = new OpenAiProductAgent({ provider: "groq", model: "m", apiKey: "gsk" });
-    const outcome = await agent.draftPrd(ctx(), { epicId: "e", rawRequest: "add x" });
+    const outcome = await agent.draftPrd(ctx(), {
+      epicId: "e",
+      rawRequest: "add x",
+      attachments: [],
+    });
     expect(outcome.ok).toBe(true);
     expect(sent[1]!.body.response_format).toBeUndefined();
   });
@@ -164,6 +240,7 @@ describe("structured answers from OpenAI-format providers", () => {
       acceptanceCriteria: [{ given: "the board", when: "it runs", then: "a" }],
       fileScope: ["src/lib"],
       size: "S",
+      storyPoints: 3,
       dependsOn,
     });
     const sent = fakeProvider([

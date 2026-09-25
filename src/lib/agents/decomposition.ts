@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fileScopeSchema } from "@/lib/domain/entities";
+import { STORY_POINTS, fileScopeSchema } from "@/lib/domain/entities";
 import { validateDag } from "@/lib/domain/dag";
 import { describeProblems } from "@/lib/domain/problems";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -44,7 +44,16 @@ export const ticketSpecSchema = z.object({
     .describe("Gherkin scenarios: Given <context>, When <action>, Then <outcome>."),
   fileScope: fileScopeSchema,
   size: z.enum(["S", "M", "L", "XL"]),
+  storyPoints: z
+    .literal(STORY_POINTS)
+    .describe("The estimate in story points, on the Fibonacci scale: 1, 2, 3, 5, 8 or 13."),
   dependsOn: z.array(z.string()),
+  needsHuman: z
+    .string()
+    .optional()
+    .describe(
+      "Only for a ticket no coding agent can do, such as setting up an account, a manual test on production, or a decision: why it needs a person. Leave it out for every ticket an agent can do in the repository.",
+    ),
 });
 
 export type TicketSpec = z.infer<typeof ticketSpecSchema>;
@@ -81,12 +90,14 @@ export function toDraftTicket(spec: TicketSpec): DraftTicket {
     acceptanceCriteria: spec.acceptanceCriteria.map(gherkin),
     fileScope: normalizeScope(spec.fileScope),
     size: spec.size,
+    storyPoints: spec.storyPoints,
     dependsOn: spec.dependsOn,
+    ...(spec.needsHuman?.trim() ? { needsHuman: spec.needsHuman.trim() } : {}),
   };
 }
 
 export const decompositionSchema = z.object({
-  tickets: z.array(ticketSpecSchema).min(2).max(12),
+  tickets: z.array(ticketSpecSchema).min(1).max(12),
 });
 
 /** Attempts before the Architect Agent gives up and asks for a human. */

@@ -5,6 +5,9 @@ import { isProviderId } from "@/lib/llm/providers";
 
 import { prisma } from "./client";
 import type {
+  AttachmentContent,
+  AttachmentRef,
+  CreateAttachmentInput,
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
@@ -12,6 +15,7 @@ import type {
   OwnerScope,
   PresetRecord,
   ProjectSummary,
+  Reroute,
   UserRecord,
   UserSecrets,
   Repository,
@@ -21,30 +25,74 @@ import type {
   TicketUpdate,
   AssistantMessage,
   AssistantProposal,
+  CardChatMessage,
 } from "./repository";
 import type {
+  AgentRole,
   AgentRunStatus,
+  AttachmentSummary,
   BoardCard,
   AgentPreset,
   ColumnAgents,
+  PlanStep,
 } from "@/lib/domain/entities";
-import { type ColumnId, type TicketStatus, columnFor } from "@/lib/domain/status";
+import { planStepSchema } from "@/lib/domain/entities";
+import { z } from "zod";
+import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
+import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 type EpicRow = {
   id: string;
+  number: number | null;
   title: string;
   status: TicketStatus;
   stalledIn: ColumnId | null;
   stage: number;
+  blockedReason: string | null;
+  misplacedIn: ColumnId | null;
+  misplacedReason: string | null;
+  standalone: boolean;
+  rerouteFrom: ColumnId | null;
+  rerouteReason: string | null;
+  runnerJob: string | null;
+  runnerJobAt: Date | null;
   position: number;
   createdAt: Date;
+  updatedAt: Date;
   tickets: Array<{ id: string; status: TicketStatus }>;
+  runs: Array<{ role: AgentRole; model: string | null; startedAt: Date | null; createdAt: Date }>;
 };
 
-function epicKey(index: number): string {
-  return `EPIC-${index + 1}`;
+/**
+ * The agent working on an Epic right now, if one is: a run still going here,
+ * or a CLI agent's job still out on GitHub Actions, whose Formic run ended
+ * at dispatch. Which planning agent that is follows from how far it got.
+ */
+function epicAgent(
+  epic: EpicRow,
+): { role: AgentRole; model: string | null; since: Date | null } | null {
+  const live = epic.runs[0];
+  if (live) return { ...live, since: live.startedAt ?? live.createdAt };
+  if (!epic.runnerJob) return null;
+  const role: AgentRole =
+    epic.status === "merged" ? "pm" : epic.stage >= 2 ? "architect" : "product";
+  return { role, model: null, since: epic.runnerJobAt };
+}
+
+function epicKey(number: number): string {
+  return `EPIC-${number}`;
+}
+
+/**
+ * Each Epic's number. A stored one is kept; an Epic from before numbers
+ * were stored takes its place in creation order, which is what it showed
+ * before, so nothing on an existing board is renamed.
+ */
+function epicNumbers(epics: Array<{ id: string; number: number | null; createdAt: Date }>) {
+  const byAge = [...epics].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return new Map(byAge.map((e, i) => [e.id, e.number ?? i + 1]));
 }
 
 export class PrismaRepository implements Repository {
@@ -136,6 +184,13 @@ export class PrismaRepository implements Repository {
     return prisma().user.update({ where: { id: userId }, data: secrets });
   }
 
+  async acceptTerms(userId: string, version: string): Promise<UserRecord> {
+    return prisma().user.update({
+      where: { id: userId },
+      data: { termsAcceptedVersion: version, termsAcceptedAt: new Date() },
+    });
+  }
+
   async countUsers(): Promise<number> {
     return prisma().user.count();
   }
@@ -146,6 +201,13 @@ export class PrismaRepository implements Repository {
       db.project.updateMany({ where: { ownerId: null }, data: { ownerId: userId } }),
       db.agentPreset.updateMany({ where: { ownerId: null }, data: { ownerId: userId } }),
     ]);
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    // Their projects and presets cascade to everything under them: epics,
+    // tickets, runs, dependencies, events, column agents, and both kinds of
+    // chat message. See onDelete: Cascade in schema.prisma.
+    await prisma().user.delete({ where: { id: userId } });
   }
 
   async projectOfCard(cardId: string): Promise<string | null> {
@@ -168,7 +230,14 @@ export class PrismaRepository implements Repository {
     const epics = await db.epic.findMany({
       where: { projectId },
       orderBy: { position: "asc" },
-      include: { tickets: { select: { id: true, status: true } } },
+      include: {
+        tickets: { select: { id: true, status: true } },
+        runs: {
+          where: { status: { in: ["queued", "running"] } },
+          orderBy: { createdAt: "desc" },
+          select: { role: true, model: true, startedAt: true, createdAt: true },
+        },
+      },
     });
 
     const tickets = await db.ticket.findMany({
@@ -176,39 +245,63 @@ export class PrismaRepository implements Repository {
       orderBy: { position: "asc" },
       include: {
         dependsOn: { select: { dependsOnTicketId: true } },
+        // Every run, newest first: the live one names the agent, the
+        // oldest says when work started.
         runs: {
-          where: { status: { in: ["queued", "running"] } },
           orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { role: true, model: true },
+          select: { role: true, model: true, status: true, startedAt: true },
         },
       },
     });
 
-    const epicCards: BoardCard[] = epics.map((epic: EpicRow, i: number) => ({
-      id: epic.id,
-      kind: "epic" as const,
-      key: epicKey(i),
-      title: epic.title,
-      status: epic.status,
-      stalledIn: epic.stalledIn,
-      stage: epic.stage,
-      position: epic.position,
-      epicId: null,
-      size: null,
-      agentRole: null,
-      model: null,
-      fileScope: [],
-      dependsOn: [],
-      prNumber: null,
-      prUrl: null,
-      blockedReason: null,
-      costCents: 0,
-      childCount: epic.tickets.length,
-      doneCount: epic.tickets.filter((t) => t.status === "merged").length,
-    }));
+    const numbers = epicNumbers(epics);
+    // A standalone Epic is a holder, not its own card: its child ticket
+    // renders alone, detached, exactly as today.
+    const epicCards: BoardCard[] = epics
+      .filter((epic: EpicRow) => !epic.standalone)
+      .map((epic: EpicRow) => ({
+        id: epic.id,
+        kind: "epic" as const,
+        key: epicKey(numbers.get(epic.id)!),
+        title: epic.title,
+        status: epic.status,
+        stalledIn: epic.stalledIn,
+        stage: epic.stage,
+        position: epic.position,
+        epicId: null,
+        standalone: epic.standalone,
+        rerouteFrom: epic.rerouteFrom,
+        rerouteReason: epic.rerouteReason,
+        size: null,
+        agentRole: epicAgent(epic)?.role ?? null,
+        model: epicAgent(epic)?.model ?? null,
+        workingSince: epicAgent(epic)?.since?.toISOString() ?? null,
+        fileScope: [],
+        dependsOn: [],
+        prNumber: null,
+        prUrl: null,
+        blockedReason: epic.blockedReason,
+        misplacedIn: epic.misplacedIn,
+        misplacedReason: epic.misplacedReason,
+        costCents: 0,
+        childCount: epic.tickets.length,
+        doneCount: epic.tickets.filter((t) => t.status === "merged").length,
+        createdAt: epic.createdAt.toISOString(),
+        updatedAt: epic.updatedAt.toISOString(),
+      }));
 
-    const ticketCards: BoardCard[] = tickets.map((t) => ({
+    const ticketCards: BoardCard[] = tickets.map((t) => {
+      const live = t.runs.find((r) => r.status === "queued" || r.status === "running");
+      const started = t.runs.map((r) => r.startedAt).filter((d): d is Date => !!d);
+      // A CLI agent's Formic run ends at dispatch; its job on GitHub Actions
+      // is the agent still at work.
+      const jobRole: AgentRole | null = t.runnerJob
+        ? t.status === "review"
+          ? "reviewer"
+          : "coder"
+        : null;
+      const since = live ? live.startedAt : t.runnerJob ? t.runnerJobAt : null;
+      return {
       id: t.id,
       kind: "ticket" as const,
       key: t.key,
@@ -220,26 +313,44 @@ export class PrismaRepository implements Repository {
       epicId: t.epicId,
       detached: t.detached,
       size: t.size,
-      agentRole: t.runs[0]?.role ?? null,
-      model: t.runs[0]?.model ?? null,
+      storyPoints: t.storyPoints,
+      needsHuman: t.needsHuman,
+      agentRole: live?.role ?? jobRole,
+      model: live?.model ?? null,
+      workingSince: since?.toISOString() ?? null,
       fileScope: t.fileScope,
       dependsOn: t.dependsOn.map((d) => d.dependsOnTicketId),
       prNumber: t.prNumber,
       prUrl: t.prUrl,
       blockedReason: t.blockedReason,
+      misplacedIn: t.misplacedIn,
+      misplacedReason: t.misplacedReason,
+      rerouteFrom: t.rerouteFrom,
+      rerouteReason: t.rerouteReason,
       costCents: t.costCents,
       childCount: 0,
       doneCount: 0,
-    }));
+      createdAt: t.createdAt.toISOString(),
+      startedAt: started.length
+        ? new Date(Math.min(...started.map((d) => d.getTime()))).toISOString()
+        : null,
+      updatedAt: t.updatedAt.toISOString(),
+      mergedAt: t.mergedAt?.toISOString() ?? null,
+      mergePoints: t.mergePoints,
+      mergeMultiplier: t.mergeMultiplier,
+      };
+    });
 
     return [...epicCards, ...ticketCards].sort(byPosition);
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
     const db = prisma();
+    const number = await this.nextEpicNumber(input.projectId);
     const epic = await db.epic.create({
       data: {
         projectId: input.projectId,
+        number,
         title: input.title,
         rawRequest: input.rawRequest,
         position: input.position,
@@ -247,18 +358,20 @@ export class PrismaRepository implements Repository {
         stage: 1,
       },
     });
-    const count = await db.epic.count({ where: { projectId: input.projectId } });
 
     return {
       id: epic.id,
       kind: "epic",
-      key: epicKey(count - 1),
+      key: epicKey(number),
       title: epic.title,
       status: epic.status,
       stalledIn: epic.stalledIn,
       stage: epic.stage,
       position: epic.position,
       epicId: null,
+      standalone: false,
+      rerouteFrom: null,
+      rerouteReason: null,
       size: null,
       agentRole: null,
       model: null,
@@ -271,6 +384,40 @@ export class PrismaRepository implements Repository {
       childCount: 0,
       doneCount: 0,
     };
+  }
+
+  /**
+   * One past the highest number the project has ever given out, deleted
+   * Epics included, so a new one never repeats a key. Epics from before
+   * numbers were stored are numbered first.
+   */
+  private async nextEpicNumber(projectId: string): Promise<number> {
+    const db = prisma();
+    const epics = await db.epic.findMany({
+      where: { projectId },
+      select: { id: true, number: true, createdAt: true },
+    });
+    const numbers = epicNumbers(epics);
+    const unnumbered = epics.filter((e) => e.number === null);
+    if (unnumbered.length > 0) {
+      await db.$transaction(
+        unnumbered.map((e) =>
+          db.epic.update({ where: { id: e.id }, data: { number: numbers.get(e.id)! } }),
+        ),
+      );
+    }
+    const floor = Math.max(0, ...numbers.values());
+    // Claimed atomically: two Epics made at once still get different numbers.
+    await db.project.updateMany({
+      where: { id: projectId, lastEpicNumber: { lt: floor } },
+      data: { lastEpicNumber: floor },
+    });
+    const project = await db.project.update({
+      where: { id: projectId },
+      data: { lastEpicNumber: { increment: 1 } },
+      select: { lastEpicNumber: true },
+    });
+    return project.lastEpicNumber;
   }
 
   async createTickets(inputs: CreateTicketInput[]): Promise<BoardCard[]> {
@@ -288,6 +435,8 @@ export class PrismaRepository implements Repository {
             acceptanceCriteria: input.acceptanceCriteria,
             fileScope: normalizeScope(input.fileScope),
             size: input.size,
+            storyPoints: input.storyPoints ?? null,
+            needsHuman: input.needsHuman ?? null,
             position: input.position,
             status: input.dependsOnKeys.length === 0 ? "ready" : "waiting",
             stage: 3,
@@ -322,6 +471,8 @@ export class PrismaRepository implements Repository {
         position: t.position,
         epicId: t.epicId,
         size: t.size,
+        storyPoints: t.storyPoints,
+        needsHuman: t.needsHuman,
         agentRole: null,
         model: null,
         fileScope: t.fileScope,
@@ -344,6 +495,10 @@ export class PrismaRepository implements Repository {
       status: input.status,
       stalledIn: input.stalledIn,
       position: input.position,
+      misplacedIn: input.misplaced?.in ?? null,
+      misplacedReason: input.misplaced?.reason ?? null,
+      // Out of a stall, the reason goes with it.
+      ...(input.stalledIn === null ? { blockedReason: null } : {}),
     };
     if (input.kind === "epic") {
       await db.epic.update({ where: { id: input.cardId }, data });
@@ -358,20 +513,91 @@ export class PrismaRepository implements Repository {
     }
   }
 
+  async setStandalone(epicId: string, standalone: boolean): Promise<void> {
+    await prisma().epic.updateMany({ where: { id: epicId }, data: { standalone } });
+  }
+
+  async setReroute(
+    cardId: string,
+    kind: "epic" | "ticket",
+    reroute: Reroute | null,
+  ): Promise<void> {
+    const data = {
+      rerouteFrom: reroute?.from ?? null,
+      rerouteReason: reroute?.reason ?? null,
+    };
+    if (kind === "epic") {
+      await prisma().epic.updateMany({ where: { id: cardId }, data });
+    } else {
+      await prisma().ticket.updateMany({ where: { id: cardId }, data });
+    }
+  }
+
+  async createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary> {
+    const row = await prisma().attachment.create({
+      data: {
+        projectId: input.projectId,
+        epicId: input.epicId ?? null,
+        ticketId: input.ticketId ?? null,
+        requestId: input.requestId ?? null,
+        filename: input.filename,
+        mimeType: input.mimeType,
+        kind: input.kind,
+        size: input.size,
+        bytes: Buffer.from(input.bytes),
+      },
+    });
+    return toAttachmentSummary(row);
+  }
+
+  async attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]> {
+    const rows = await prisma().attachment.findMany({
+      where: attachmentRefWhere(ref),
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toAttachmentSummary);
+  }
+
+  async attachmentContent(id: string): Promise<AttachmentContent | null> {
+    const row = await prisma().attachment.findUnique({
+      where: { id },
+      select: { bytes: true, mimeType: true },
+    });
+    return row ? { bytes: row.bytes, mimeType: row.mimeType } : null;
+  }
+
+  async claimAttachments(
+    requestId: string,
+    ref: { epicId: string } | { ticketId: string },
+  ): Promise<void> {
+    await prisma().attachment.updateMany({
+      where: { requestId },
+      data:
+        "epicId" in ref
+          ? { epicId: ref.epicId, requestId: null }
+          : { ticketId: ref.ticketId, requestId: null },
+    });
+  }
+
+  async deleteAttachments(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await prisma().attachment.deleteMany({ where: { id: { in: ids } } });
+  }
+
   async columnPositions(projectId: string, column: ColumnId): Promise<number[]> {
     const cards = await this.boardCards(projectId);
     return cards
-      .filter((c) => columnFor(c.status, c.stalledIn) === column)
+      .filter((c) => columnOf(c) === column)
       .map((c) => c.position)
       .sort((a, b) => a - b);
   }
 
   async cardById(id: string): Promise<BoardCard | null> {
     const db = prisma();
-    const epic = await db.epic.findUnique({ where: { id } });
+    const epic = await db.epic.findUnique({ where: { id }, select: { projectId: true } });
     if (epic) {
-      const project = await this.defaultProject();
-      const cards = await this.boardCards(project.id);
+      // Its own project's board: any other has no such card.
+      const cards = await this.boardCards(epic.projectId);
       return cards.find((c) => c.id === id) ?? null;
     }
     const ticket = await db.ticket.findUnique({
@@ -387,13 +613,25 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const epic = await db.epic.findUnique({
       where: { id: epicId },
-      select: { title: true, rawRequest: true, prd: true, runnerJob: true, issueNumber: true },
+      select: {
+        title: true,
+        rawRequest: true,
+        prd: true,
+        prdUpdatedAt: true,
+        runnerJob: true,
+        runnerAgent: true,
+        issueNumber: true,
+        showcase: true,
+      },
     });
     return epic ?? null;
   }
 
-  async setEpicRunnerJob(epicId: string, job: string | null): Promise<void> {
-    await prisma().epic.update({ where: { id: epicId }, data: { runnerJob: job } });
+  async setEpicRunnerJob(epicId: string, job: string | null, agentId: string | null = null): Promise<void> {
+    await prisma().epic.update({
+      where: { id: epicId },
+      data: { runnerJob: job, runnerAgent: job ? agentId : null, runnerJobAt: job ? new Date() : null },
+    });
   }
 
   async setEpicIssue(epicId: string, issueNumber: number): Promise<void> {
@@ -407,8 +645,13 @@ export class PrismaRepository implements Repository {
       data: {
         prd: prd as never,
         prdEditedByHuman: byHuman,
+        prdUpdatedAt: new Date(),
         status: "specified",
         stage: 2,
+        stalledIn: null,
+        blockedReason: null,
+        misplacedIn: null,
+        misplacedReason: null,
       },
     });
   }
@@ -417,7 +660,41 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     await db.epic.update({
       where: { id: epicId },
-      data: { showcase: markdown, stage: 8 },
+      data: {
+        showcase: markdown,
+        stage: 8,
+        stalledIn: null,
+        blockedReason: null,
+        misplacedIn: null,
+        misplacedReason: null,
+      },
+    });
+  }
+
+  async deleteTickets(ticketIds: string[]): Promise<void> {
+    if (ticketIds.length === 0) return;
+    await prisma().ticket.deleteMany({ where: { id: { in: ticketIds } } });
+  }
+
+  async deleteEpic(epicId: string): Promise<void> {
+    // Tickets, their dependencies and every run cascade with it.
+    await prisma().epic.deleteMany({ where: { id: epicId } });
+  }
+
+  async stallEpic(
+    epicId: string,
+    stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
+  ): Promise<void> {
+    await prisma().epic.updateMany({
+      where: { id: epicId },
+      data: {
+        status: stall.status,
+        stalledIn: stall.stalledIn,
+        stage: stall.stage,
+        blockedReason: stall.reason,
+        misplacedIn: null,
+        misplacedReason: null,
+      },
     });
   }
 
@@ -458,6 +735,34 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async ticketEvents(projectId: string, ticketId: string, types: string[], limit = 200) {
+    const rows = await prisma().event.findMany({
+      where: { projectId, type: { in: types }, payload: { path: ["ticketId"], equals: ticketId } },
+      orderBy: { seq: "desc" },
+      take: limit,
+    });
+    return rows.reverse().map((r) => ({
+      seq: Number(r.seq),
+      type: r.type,
+      payload: r.payload,
+      at: r.at,
+    }));
+  }
+
+  async epicEvents(projectId: string, epicId: string, types: string[], limit = 200) {
+    const rows = await prisma().event.findMany({
+      where: { projectId, type: { in: types }, payload: { path: ["epicId"], equals: epicId } },
+      orderBy: { seq: "desc" },
+      take: limit,
+    });
+    return rows.reverse().map((r) => ({
+      seq: Number(r.seq),
+      type: r.type,
+      payload: r.payload,
+      at: r.at,
+    }));
+  }
+
   async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
     const db = prisma();
     const row = await db.ticket.findUnique({
@@ -481,14 +786,42 @@ export class PrismaRepository implements Repository {
 
   async updateTicket(ticketId: string, update: TicketUpdate): Promise<void> {
     const db = prisma();
-    const { costCents, tokensIn, tokensOut, ...rest } = update;
+    const { costCents, tokensIn, tokensOut, plan, ...rest } = update;
+
+    // The first move to merged is scored against the project's heat then.
+    let merge = {};
+    if (rest.status === "merged") {
+      const ticket = await db.ticket.findUnique({
+        where: { id: ticketId },
+        select: { mergedAt: true, storyPoints: true, epic: { select: { projectId: true } } },
+      });
+      if (ticket && !ticket.mergedAt) {
+        const now = new Date();
+        const recent = await db.ticket.count({
+          where: {
+            epic: { projectId: ticket.epic.projectId },
+            mergedAt: { gt: new Date(now.getTime() - HEAT_WINDOW_MS) },
+          },
+        });
+        const { pts, mult } = mergeScore(ticket.storyPoints, recent);
+        merge = { mergedAt: now, mergePoints: pts, mergeMultiplier: mult };
+      }
+    }
 
     await db.ticket.update({
       where: { id: ticketId },
       data: {
         ...rest,
+        ...merge,
+        ...(rest.fileScope !== undefined ? { fileScope: normalizeScope(rest.fileScope) } : {}),
+        ...(plan !== undefined ? { plan: plan as never } : {}),
+        ...(rest.runnerJob !== undefined
+          ? { runnerJobAt: rest.runnerJob ? new Date() : null }
+          : {}),
         // A merged ticket joins its epic's group in Done, wherever it sat.
         ...(rest.status === "merged" ? { detached: false } : {}),
+        // An agent moved it on: it goes where its status says.
+        ...(rest.status !== undefined ? { misplacedIn: null, misplacedReason: null } : {}),
         // Spend accumulates across a ticket's runs; everything else is a set.
         ...(costCents !== undefined ? { costCents: { increment: costCents } } : {}),
         ...(tokensIn !== undefined ? { tokensIn: { increment: tokensIn } } : {}),
@@ -561,6 +894,61 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async recordRunSpend(runId: string, costCents: number): Promise<void> {
+    const db = prisma();
+    await db.agentRun.updateMany({ where: { id: runId }, data: { costCents } });
+  }
+
+  async epicSpentCents(epicId: string): Promise<number> {
+    const db = prisma();
+    const result = await db.agentRun.aggregate({
+      where: { epicId },
+      _sum: { costCents: true },
+    });
+    return result._sum.costCents ?? 0;
+  }
+
+  async cancelRuns(
+    scope: { runId: string } | { epicId: string } | { projectId: string },
+    reason: string,
+  ): Promise<Array<{ id: string; sandboxId: string | null }>> {
+    const db = prisma();
+    const live = { in: ["queued", "running"] as AgentRunStatus[] };
+    const where =
+      "runId" in scope
+        ? { id: scope.runId, status: live }
+        : "epicId" in scope
+          ? { epicId: scope.epicId, status: live }
+          : {
+              status: live,
+              OR: [
+                { epic: { projectId: scope.projectId } },
+                { ticket: { epic: { projectId: scope.projectId } } },
+              ],
+            };
+
+    const rows = await db.agentRun.findMany({
+      where,
+      select: { id: true, sandboxId: true },
+    });
+    if (rows.length === 0) return [];
+
+    await db.agentRun.updateMany({
+      where: { id: { in: rows.map((r: { id: string }) => r.id) } },
+      data: { status: "cancelled", error: reason, finishedAt: new Date() },
+    });
+    return rows;
+  }
+
+  async runCancelReason(runId: string): Promise<string | null> {
+    const db = prisma();
+    const row = await db.agentRun.findUnique({
+      where: { id: runId },
+      select: { status: true, error: true },
+    });
+    return row?.status === "cancelled" ? (row.error ?? "Stopped.") : null;
+  }
+
   async listPresets(scope: OwnerScope): Promise<AgentPreset[]> {
     const rows = await prisma().agentPreset.findMany({
       where: ownerWhere(scope),
@@ -581,14 +969,27 @@ export class PrismaRepository implements Repository {
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
+      // A new key is likely a new account, with its own usage.
       ...(record.apiKeyCipher !== undefined
-        ? { apiKeyCipher: record.apiKeyCipher, apiKeyHint: record.apiKeyHint ?? null }
+        ? {
+            apiKeyCipher: record.apiKeyCipher,
+            apiKeyHint: record.apiKeyHint ?? null,
+            limitedUntil: null,
+            limitNote: null,
+          }
         : {}),
     };
     const row = record.id
       ? await db.agentPreset.update({ where: { id: record.id }, data })
       : await db.agentPreset.create({ data: { ...data, ownerId: record.ownerId ?? null } });
     return toPreset(row);
+  }
+
+  async setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void> {
+    await prisma().agentPreset.updateMany({
+      where: { id: presetId },
+      data: { limitedUntil: limit?.until ?? null, limitNote: limit?.note ?? null },
+    });
   }
 
   async deletePreset(presetId: string): Promise<void> {
@@ -656,7 +1057,7 @@ export class PrismaRepository implements Repository {
 
   async updateAssistantMessage(
     id: string,
-    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void> {
     const { proposals, ...rest } = update;
     await prisma().assistantMessage.update({
@@ -667,6 +1068,51 @@ export class PrismaRepository implements Repository {
 
   async clearAssistant(projectId: string): Promise<void> {
     await prisma().assistantMessage.deleteMany({ where: { projectId } });
+  }
+
+  async cardChatMessages(cardId: string): Promise<CardChatMessage[]> {
+    const rows = await prisma().cardChatMessage.findMany({
+      where: { cardId },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toCardChatMessage);
+  }
+
+  async cardChatMessage(id: string): Promise<CardChatMessage | null> {
+    const row = await prisma().cardChatMessage.findUnique({ where: { id } });
+    return row ? toCardChatMessage(row) : null;
+  }
+
+  async addCardChatMessage(input: {
+    projectId: string;
+    cardKind: "epic" | "ticket";
+    cardId: string;
+    role: "user" | "assistant";
+    content: string;
+    status?: CardChatMessage["status"];
+  }): Promise<CardChatMessage> {
+    const row = await prisma().cardChatMessage.create({
+      data: { ...input, status: input.status ?? "done" },
+    });
+    return toCardChatMessage(row);
+  }
+
+  async updateCardChatMessage(
+    id: string,
+    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
+  ): Promise<void> {
+    await prisma().cardChatMessage.update({ where: { id }, data: update });
+  }
+
+  async clearCardChat(cardId: string): Promise<void> {
+    await prisma().cardChatMessage.deleteMany({ where: { cardId } });
+  }
+
+  async pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]> {
+    const rows = await prisma().cardChatMessage.findMany({
+      where: { projectId, status: "pending", runnerJob: { not: null } },
+    });
+    return rows.map(toCardChatMessage);
   }
 
   async claimDelivery(key: string): Promise<boolean> {
@@ -684,7 +1130,7 @@ export class PrismaRepository implements Repository {
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
     const db = prisma();
     const cards = (await this.boardCards(projectId))
-      .filter((c) => columnFor(c.status, c.stalledIn) === column)
+      .filter((c) => columnOf(c) === column)
       .sort(byPosition);
 
     if (!needsRebalance(cards.map((c) => c.position))) return;
@@ -708,6 +1154,7 @@ type TicketRow = {
   description: string;
   acceptanceCriteria: string[];
   fileScope: string[];
+  scopeRequest: string[];
   status: TicketStatus;
   stalledIn: ColumnId | null;
   stage: number;
@@ -718,7 +1165,13 @@ type TicketRow = {
   blockedReason: string | null;
   attempts: number;
   runnerJob: string | null;
+  runnerAgent: string | null;
   issueNumber: number | null;
+  storyPoints: number | null;
+  plan: unknown;
+  handoff: string[];
+  reviewedSha: string | null;
+  needsHuman: string | null;
   epic: { projectId: string };
 };
 
@@ -740,6 +1193,7 @@ function toAssistantMessage(row: {
   proposals: unknown;
   status: string;
   runnerJob: string | null;
+  runnerAgent: string | null;
   createdAt: Date;
 }): AssistantMessage {
   return {
@@ -748,6 +1202,32 @@ function toAssistantMessage(row: {
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
   };
+}
+
+function toCardChatMessage(row: {
+  id: string;
+  projectId: string;
+  cardKind: string;
+  cardId: string;
+  role: string;
+  content: string;
+  status: string;
+  runnerJob: string | null;
+  runnerAgent: string | null;
+  createdAt: Date;
+}): CardChatMessage {
+  return {
+    ...row,
+    cardKind: row.cardKind === "epic" ? "epic" : "ticket",
+    role: row.role === "user" ? "user" : "assistant",
+    status: row.status === "pending" || row.status === "failed" ? row.status : "done",
+  };
+}
+
+/** A stored plan, read defensively: it is JSON an agent wrote. */
+function planOf(value: unknown): PlanStep[] {
+  const parsed = z.array(planStepSchema).safeParse(value);
+  return parsed.success ? parsed.data : [];
 }
 
 function toTicketDetail(row: TicketRow): TicketDetail {
@@ -760,6 +1240,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     description: row.description,
     acceptanceCriteria: row.acceptanceCriteria,
     fileScope: row.fileScope,
+    scopeRequest: row.scopeRequest,
     status: row.status,
     stalledIn: row.stalledIn,
     stage: row.stage,
@@ -770,7 +1251,36 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     attempts: row.attempts,
     summary: row.summary,
     runnerJob: row.runnerJob,
+    runnerAgent: row.runnerAgent,
     issueNumber: row.issueNumber,
+    storyPoints: row.storyPoints,
+    plan: planOf(row.plan),
+    handoff: row.handoff,
+    reviewedSha: row.reviewedSha,
+    needsHuman: row.needsHuman,
+  };
+}
+
+function attachmentRefWhere(ref: AttachmentRef) {
+  if ("epicId" in ref) return { epicId: ref.epicId };
+  if ("ticketId" in ref) return { ticketId: ref.ticketId };
+  return { requestId: ref.requestId };
+}
+
+function toAttachmentSummary(row: {
+  id: string;
+  filename: string;
+  mimeType: string;
+  kind: string;
+  size: number;
+}): AttachmentSummary {
+  return {
+    id: row.id,
+    filename: row.filename,
+    mimeType: row.mimeType,
+    kind: row.kind === "image" ? "image" : "file",
+    size: row.size,
+    url: `/api/attachments/${row.id}`,
   };
 }
 
@@ -790,6 +1300,8 @@ function toPreset(row: {
   prompt: string;
   apiKeyCipher: string | null;
   apiKeyHint: string | null;
+  limitedUntil: Date | null;
+  limitNote: string | null;
 }): AgentPreset {
   return {
     id: row.id,
@@ -801,5 +1313,7 @@ function toPreset(row: {
     prompt: row.prompt,
     hasKey: row.apiKeyCipher !== null,
     keyHint: row.apiKeyHint,
+    limitedUntil: row.limitedUntil?.toISOString() ?? null,
+    limitNote: row.limitNote,
   };
 }

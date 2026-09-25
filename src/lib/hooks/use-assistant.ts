@@ -47,7 +47,7 @@ const POLL_MS = 2_000;
  */
 export function useAssistant(enabled: boolean) {
   const [state, setState] = useState<State>({ presetId: null, messages: [] });
-  const [loaded, setLoaded] = useState(false);
+  const loaded = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
 
@@ -59,20 +59,21 @@ export function useAssistant(enabled: boolean) {
   }, []);
 
   const run = useCallback(async (work: () => Promise<State>) => {
-    setError(null);
     try {
       const next = await work();
-      if (alive.current) setState(next);
+      if (!alive.current) return;
+      setError(null);
+      setState(next);
     } catch (e) {
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
   useEffect(() => {
-    if (!enabled || loaded) return;
-    setLoaded(true);
+    if (!enabled || loaded.current) return;
+    loaded.current = true;
     void run(() => send("/api/assistant", "GET"));
-  }, [enabled, loaded, run]);
+  }, [enabled, run]);
 
   const pending = state.messages.some((m) => m.status === "pending");
   useEffect(() => {
