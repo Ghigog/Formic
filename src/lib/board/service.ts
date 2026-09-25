@@ -5,6 +5,7 @@ import type { BoardCard } from "@/lib/domain/entities";
 import {
   type ColumnId,
   COLUMN_LABELS,
+  allowedUserMoves,
   canUserMove,
   columnFor,
   columnOf,
@@ -104,7 +105,12 @@ async function whatIsWrong(
 
   const verdict = canUserMove(home, to);
   if (!verdict.ok) {
-    return `${verdict.reason} Cards move one column at a time so each agent gets its turn. ${back}`;
+    const options = allowedUserMoves(home);
+    const where =
+      options.length > 0
+        ? `From ${COLUMN_LABELS[home]}, drag it only to ${options.map((c) => COLUMN_LABELS[c]).join(" or ")}.`
+        : `${COLUMN_LABELS[home]} is final; it cannot be dragged anywhere.`;
+    return `${verdict.reason} ${where} ${back}`;
   }
 
   const limited = await columnLimit(projectId, to);
