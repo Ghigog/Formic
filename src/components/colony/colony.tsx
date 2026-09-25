@@ -126,6 +126,7 @@ export function ColonyProvider({
   const [win, setWin] = useState<EpicWin | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const topRef = useRef<HTMLCanvasElement>(null);
 
   const score = useMemo(() => scoreOf(cards), [cards]);
   const stacks = useMemo(() => heatStacks(cards, now), [cards, now]);
@@ -168,7 +169,7 @@ export function ColonyProvider({
   useEffect(() => sound.attach(), [sound]);
   useEffect(() => {
     const canvas = canvasRef.current;
-    return canvas ? fx.mount(canvas) : undefined;
+    return canvas ? fx.mount(canvas, topRef.current ?? undefined) : undefined;
   }, [fx]);
 
   // Heat decays a stack at a time; a second's resolution is plenty.
@@ -649,6 +650,13 @@ export function ColonyProvider({
         ref={canvasRef}
         aria-hidden
         className="pointer-events-none fixed inset-0 z-[45] h-full w-full"
+      />
+      {/* Squashes and bursts land over everything, the colony menu included,
+          so a test squash on a style button is never hidden behind it. */}
+      <canvas
+        ref={topRef}
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-[90] h-full w-full"
       />
     </Ctx.Provider>
   );

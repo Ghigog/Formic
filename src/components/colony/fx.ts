@@ -251,7 +251,28 @@ export function drawBug(
     ctx.ellipse(cx, cy, rx, ry, rot, 0, TAU);
     ctx.fill();
   };
-  if (shape === "spider") {
+  if (shape === "ant") {
+    // The colony's own ant: three segments, six legs, two antennae.
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (let i = -1; i <= 1; i++) {
+      const o = i === 0 ? -w : w;
+      ctx.moveTo(0, -i * 1.2);
+      ctx.lineTo(-3.3, -i * 2.6 - o);
+      ctx.moveTo(0, -i * 1.2);
+      ctx.lineTo(3.3, -i * 2.6 + o);
+    }
+    ctx.moveTo(-0.5, -3);
+    ctx.lineTo(-2, -5.2);
+    ctx.moveTo(0.5, -3);
+    ctx.lineTo(2, -5.2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    E(0, 3.3, 1.6, 2.3);
+    E(0, 0.2, 0.95, 1.3);
+    E(0, -2.3, 1.15, 1.25);
+  } else if (shape === "spider") {
     ctx.strokeStyle = color;
     ctx.beginPath();
     for (let i = 0; i < 4; i++) {
@@ -370,6 +391,8 @@ function wrap(a: number) {
 
 export class ColonyFx {
   private canvas: HTMLCanvasElement | null = null;
+  /** Over every menu and dialog: squashes, rings and bursts, never ants. */
+  private topCanvas: HTMLCanvasElement | null = null;
   private dpr = 1;
   private raf = 0;
   private last = 0;
@@ -390,7 +413,7 @@ export class ColonyFx {
     level: 1,
     ants: "busy",
     full: true,
-    bugShape: "beetle",
+    bugShape: "ant",
     bugHex: COLOR_UNLOCKS[0]!.hex,
     covered: false,
   };
@@ -410,13 +433,17 @@ export class ColonyFx {
     this.sound.play(n, v);
   }
 
-  mount(canvas: HTMLCanvasElement): () => void {
+  mount(canvas: HTMLCanvasElement, top?: HTMLCanvasElement): () => void {
     this.canvas = canvas;
+    this.topCanvas = top ?? null;
     this.reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     const resize = () => {
       this.dpr = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = window.innerWidth * this.dpr;
-      canvas.height = window.innerHeight * this.dpr;
+      for (const cv of [canvas, top]) {
+        if (!cv) continue;
+        cv.width = window.innerWidth * this.dpr;
+        cv.height = window.innerHeight * this.dpr;
+      }
     };
     resize();
     window.addEventListener("resize", resize);
@@ -434,6 +461,7 @@ export class ColonyFx {
       window.removeEventListener("resize", resize);
       theme.disconnect();
       this.canvas = null;
+      this.topCanvas = null;
     };
   }
 
@@ -609,6 +637,11 @@ export class ColonyFx {
     const dpr = this.dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, c.width / dpr, c.height / dpr);
+    const top = this.topCanvas?.getContext("2d") ?? ctx;
+    if (top !== ctx) {
+      top.setTransform(dpr, 0, 0, dpr, 0, 0);
+      top.clearRect(0, 0, c.width / dpr, c.height / dpr);
+    }
     const [nx, ny] = this.nestPoint();
 
     for (let i = this.splats.length - 1; i >= 0; i--) {
@@ -621,26 +654,26 @@ export class ColonyFx {
       if (b.t < 0.42) {
         const k = Math.min(1, b.t / 0.22);
         const hop = -Math.sin(Math.min(1, b.t / 0.42) * Math.PI) * 12;
-        drawBug(ctx, b.x, b.y + hop, Math.max(0.01, backOut(k) * 2.1), b.t, this.world.bugShape, this.world.bugHex);
+        drawBug(top, b.x, b.y + hop, Math.max(0.01, backOut(k) * 2.1), b.t, this.world.bugShape, this.world.bugHex);
       } else {
         if (!b.hit) {
           b.hit = true;
           b.onSquash();
         }
         const k = (b.t - 0.42) / 1.78;
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, 1 - k * k) * 0.85;
-        ctx.fillStyle = this.world.bugHex;
-        ctx.beginPath();
-        ctx.ellipse(b.x, b.y + 2, 10, 2.6, 0, 0, TAU);
-        ctx.fill();
-        ctx.globalAlpha *= 0.7;
+        top.save();
+        top.globalAlpha = Math.max(0, 1 - k * k) * 0.85;
+        top.fillStyle = this.world.bugHex;
+        top.beginPath();
+        top.ellipse(b.x, b.y + 2, 10, 2.6, 0, 0, TAU);
+        top.fill();
+        top.globalAlpha *= 0.7;
         for (const o of b.blobs) {
-          ctx.beginPath();
-          ctx.arc(b.x + o.dx, b.y + 2 + o.dy, o.r, 0, TAU);
-          ctx.fill();
+          top.beginPath();
+          top.arc(b.x + o.dx, b.y + 2 + o.dy, o.r, 0, TAU);
+          top.fill();
         }
-        ctx.restore();
+        top.restore();
       }
     }
 
@@ -668,13 +701,13 @@ export class ColonyFx {
       }
       const t = 1 - g.life / g.max;
       const e = 1 - Math.pow(1 - t, 3);
-      ctx.globalAlpha = 1 - t;
-      ctx.strokeStyle = g.color;
-      ctx.lineWidth = g.w * (1 - t) + 0.5;
-      oct(ctx, g.x, g.y, 6 + g.r1 * e, 0);
-      ctx.stroke();
+      top.globalAlpha = 1 - t;
+      top.strokeStyle = g.color;
+      top.lineWidth = g.w * (1 - t) + 0.5;
+      oct(top, g.x, g.y, 6 + g.r1 * e, 0);
+      top.stroke();
     }
-    ctx.globalAlpha = 1;
+    top.globalAlpha = 1;
 
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i]!;
@@ -688,18 +721,18 @@ export class ColonyFx {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.rot += p.vr * dt;
-      ctx.globalAlpha = Math.min(1, (p.life / p.max) * 1.6);
-      ctx.fillStyle = p.color;
+      top.globalAlpha = Math.min(1, (p.life / p.max) * 1.6);
+      top.fillStyle = p.color;
       if (p.shape === "dot") {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, TAU);
-        ctx.fill();
+        top.beginPath();
+        top.arc(p.x, p.y, p.size, 0, TAU);
+        top.fill();
       } else {
-        oct(ctx, p.x, p.y, p.size, p.rot);
-        ctx.fill();
+        oct(top, p.x, p.y, p.size, p.rot);
+        top.fill();
       }
     }
-    ctx.globalAlpha = 1;
+    top.globalAlpha = 1;
 
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i]!;
@@ -808,7 +841,7 @@ export class ColonyFx {
     // colours as the picker, just rotated head-forward and leg-driven by the
     // walk cycle instead of the clock. Squashed bugs never take this path.
     const sw = Math.sin(ph) * 1.3;
-    drawBug(ctx, 0, 0, 0.62, 0, this.world.bugShape, this.world.bugHex, undefined, {
+    drawBug(ctx, 0, 0, this.world.bugShape === "ant" ? 1 : 0.62, 0, this.world.bugShape, this.world.bugHex, undefined, {
       rotate: Math.PI / 2,
       legSwing: sw,
     });
