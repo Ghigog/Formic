@@ -40,7 +40,7 @@ export function taskBrief(task: CoderTask): string {
     "Acceptance criteria:",
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
     "",
-    `File scope (you may write only inside these paths): ${task.fileScope.join(", ")}`,
+    `File scope (where this change is expected to go): ${task.fileScope.join(", ")}`,
     ...(task.notes?.length
       ? [
           "",
@@ -84,7 +84,7 @@ export class LoopCoderAgent implements CoderAgent {
       workspace: input.workspace,
       ticketId: input.task.ticketId,
       role: "coder",
-      system: withCodingRules(this.config.brief ?? CODER_BRIEF),
+      system: withCodingRules(this.config.brief ?? CODER_BRIEF, "coder"),
       provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
@@ -110,7 +110,7 @@ export class LoopReviewerAgent implements ReviewerAgent {
       workspace: input.workspace,
       ticketId: input.task.ticketId,
       role: "reviewer",
-      system: withCodingRules(this.config.brief ?? REVIEWER_BRIEF),
+      system: withCodingRules(this.config.brief ?? REVIEWER_BRIEF, "reviewer"),
       provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,

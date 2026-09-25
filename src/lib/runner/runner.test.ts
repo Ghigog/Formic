@@ -522,18 +522,18 @@ describe("taking a CLI agent's work", () => {
     expect(after.blockedReason).not.toContain(".formic/carry");
   });
 
-  it("throws out work outside the file scope, and pushes nothing", async () => {
+  it("keeps work outside the file scope on the ticket's branch and asks for the files", async () => {
     const { ticket, job, staging } = await dispatched();
-    MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
+    const sha = MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
 
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.status).toBe("blocked");
+    expect(after).toMatchObject({ status: "blocked", stalledIn: "todo", scopeRequest: ["package.json"] });
     expect(after.blockedReason).toContain("package.json");
     expect(after.prNumber).toBeNull();
     const branches = MockVcsClient.runner().branches;
-    expect(branches.has(after.branchName!)).toBe(false);
+    expect(branches.get(after.branchName!)).toBe(sha);
     expect(branches.has(staging)).toBe(false);
   });
 

@@ -24,8 +24,10 @@ import {
   ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
   CODER_BRIEF,
+  CODER_SCOPE_RULE,
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
+  REVIEWER_SCOPE_RULE,
   SHOWCASE_BRIEF,
   ENGINEERING_PRACTICES,
   HANDOFF_RULE,
@@ -35,6 +37,7 @@ import {
 } from "@/lib/agents/prompts";
 import type { DraftTicket, ReviewTask } from "@/lib/agents/ports";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
+import { askForScope } from "@/lib/coder/scope-request";
 import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
@@ -91,11 +94,11 @@ const MAX_PROMPT = 50_000;
 /** How much of an agent's report the ticket view shows. */
 const MAX_REPORT = 20_000;
 
-const CLI_RULES = `Rules that are enforced, not advisory:
-- Only change files inside the ticket's file scope. Formic compares your changes to it, and throws the whole run away if anything outside it changed.
+const cliRules = (scopeRule: string) => `Rules that are enforced, not advisory:
+- ${scopeRule}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${VERIFY_RULE}
-- The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that. If they cannot pass without touching files outside the file scope, stop: undo your changes, and end by saying what is failing and which files it needs.
+- The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
 - When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.
@@ -304,7 +307,8 @@ export function cliPrompt(
         "",
         CLI_ALREADY_DONE,
       ];
-  return cap([brief.trim(), "", CLI_RULES, "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
+  const scopeRule = mode === "implement" ? CODER_SCOPE_RULE : REVIEWER_SCOPE_RULE;
+  return cap([brief.trim(), "", cliRules(scopeRule), "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
 }
 
 /**
@@ -1022,6 +1026,16 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     }
 
     const violations = violationsInDiff(files, ticket.fileScope);
+    // A new ticket's work that needed more is kept on its own branch, which
+    // no other ticket reads, while the person is asked for the files. With
+    // a pull request open, that branch is the pull request: nothing is kept.
+    if (violations.length > 0 && result.mode === "implement") {
+      const keep = !ticket.prNumber;
+      if (keep) await client.moveBranch(branch, head);
+      await cleanUp();
+      await askForScope(projectId, ticket, violations, { kept: keep });
+      return;
+    }
     if (violations.length > 0) {
       await stop(
         `Out of scope: ${violations.slice(0, 5).join(", ")}` +

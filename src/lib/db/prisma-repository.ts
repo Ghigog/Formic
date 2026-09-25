@@ -1154,6 +1154,7 @@ type TicketRow = {
   description: string;
   acceptanceCriteria: string[];
   fileScope: string[];
+  scopeRequest: string[];
   status: TicketStatus;
   stalledIn: ColumnId | null;
   stage: number;
@@ -1239,6 +1240,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     description: row.description,
     acceptanceCriteria: row.acceptanceCriteria,
     fileScope: row.fileScope,
+    scopeRequest: row.scopeRequest,
     status: row.status,
     stalledIn: row.stalledIn,
     stage: row.stage,

@@ -8,7 +8,8 @@ import { applyTransition } from "@/lib/board/service";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { stopEpic } from "@/lib/budget/controller";
 import { runCoderAgent } from "@/lib/coder/pipeline";
-import { MAX_NOTE } from "@/lib/coder/notes";
+import { MAX_NOTE, addNote } from "@/lib/coder/notes";
+import { answerScope, scopeAsked } from "@/lib/coder/scope-request";
 import { repository } from "@/lib/db";
 import { fileScopeSchema, prdSchema, type BoardCard } from "@/lib/domain/entities";
 import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, type ColumnId } from "@/lib/domain/status";
@@ -60,6 +61,12 @@ export const cardActionSchema = z.discriminatedUnion("type", [
       .describe("What the person reported doing or finding, added to the description under Results."),
   }),
   z.object({
+    type: z.literal("widen_scope"),
+    allow: z
+      .boolean()
+      .describe("True when the person lets the ticket have the files outside its scope it asked for, false when they say no."),
+  }),
+  z.object({
     type: z.literal("needs_human"),
     reason: z
       .string()
@@ -79,10 +86,11 @@ export const CARD_ACTIONS_GUIDE = `What you can do, besides answering:
 - redo: start this column's work on the card again, doing what the person asks now (stopping any agent working it first). In Backlog it rewrites an Epic's PRD, in To Do it breaks an Epic down again, in In Progress it has the Coder Agent do what was asked, in In Review it has the Reviewer Agent review again. A ticket in To Do or Backlog has no work to redo: change the ticket with edit_ticket instead, or move it to In Progress to start it.
 - stop: stop the agent working on the card.
 - edit_ticket: tickets only. Rewrite the ticket's title, description, acceptance criteria or file scope, or add what the person reported doing or finding under Results.
+- widen_scope: tickets only, when the ticket is asking for files outside its file scope. With allow true, the files join its scope and it goes back to In Progress, carrying on from its kept work, as soon as nothing running uses them. With allow false, its kept work is dropped and it starts again within its scope.
 - needs_human: tickets only. Mark the ticket as work for the person, not an agent, with what they have to do; or null to hand it back to agents.
 
 When to act:
-- Act when the person asks for something, in whatever words. "This has already been done" asks you to close the ticket. "Change it to use X" asks you to redo, or on a ticket nobody has started, to edit_ticket.
+- Act when the person asks for something, in whatever words. "This has already been done" asks you to close the ticket. "Yes", "go ahead" or "ok" to a ticket asking for files outside its scope is widen_scope with allow true; "no" is allow false. "Change it to use X" asks you to redo, or on a ticket nobody has started, to edit_ticket.
 - Advice to take into account is already saved as a note that every run of this card reads, and any agent working it now reads it too. Do not redo for advice alone; say it will be taken into account.
 - Do nothing the person did not ask for. When you are unsure what they want, ask.
 - After acting, say in a line or two what you did. Never say you did something you did not.`;
@@ -114,6 +122,8 @@ export async function applyCardAction(
         return cardKind === "ticket" ? await stopWork(projectId, card) : await stopEpicWork(projectId, card);
       case "edit_ticket":
         return cardKind === "ticket" ? await edit(projectId, card, action) : "Only a ticket can be edited this way.";
+      case "widen_scope":
+        return cardKind === "ticket" ? await widenScope(projectId, card, action.allow) : "Only a ticket has a file scope.";
       case "needs_human":
         return cardKind === "ticket" ? await markNeedsHuman(projectId, card, action.reason) : "Only a ticket can be marked.";
     }
@@ -326,6 +336,26 @@ async function edit(
   });
   await publish(projectId, { type: "card.created", cardId: card.id, kind: "ticket", epicId: card.epicId });
   return `Updated ${card.key}'s ${list(changed)}.`;
+}
+
+async function widenScope(projectId: string, card: BoardCard, allow: boolean): Promise<string> {
+  const ticket = await repository().ticketDetail(card.id);
+  if (!ticket) return "This ticket no longer exists.";
+  const asked = scopeAsked(ticket);
+  if (asked.length === 0) return `${card.key} is not asking for any files outside its scope.`;
+  await answerScope(projectId, ticket, allow);
+  if (!allow) {
+    await addNote(projectId, card.id, `Keep this change inside the file scope (${ticket.fileScope.join(", ")}).`);
+  }
+  const done = allow
+    ? `Added ${asked.map((p) => `\`${p}\``).join(", ")} to ${card.key}'s scope.`
+    : `${card.key} keeps to its scope and starts again.`;
+  // Back in To Do, it goes on the way any ticket does: only once nothing
+  // running overlaps its scope.
+  const moved = await move(projectId, (await repository().cardById(card.id)) ?? card, "in_progress");
+  return moved.startsWith("Could not")
+    ? `${done} It stays in To Do for now. ${moved.replace(/^Could not move [^:]+: /, "")}`
+    : `${done} ${moved}`;
 }
 
 async function markNeedsHuman(projectId: string, card: BoardCard, reason: string | null): Promise<string> {

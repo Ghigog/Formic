@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MemoryWorkspace,
+  guidedWorkspace,
   safeRelativePath,
   scopedWorkspace,
 } from "./workspace";
@@ -63,5 +64,26 @@ describe("scopedWorkspace", () => {
     // An agent has to be able to read the code it is fitting into; the scope
     // is a write boundary, not a visibility one.
     expect(await scoped.readFile("src/app/page.tsx")).toBe("hello");
+  });
+});
+
+describe("guidedWorkspace", () => {
+  const scope = ["src/lib/feature"];
+
+  it("lets a write outside the scope through, and says it is outside", async () => {
+    const memory = new MemoryWorkspace();
+    const guided = guidedWorkspace(memory, scope);
+
+    await guided.writeFile("src/app/page.tsx", "export default null;");
+
+    expect(await memory.changedFiles()).toEqual(["src/app/page.tsx"]);
+    expect(guided.outsideScope?.("src/app/page.tsx")).toBe(true);
+    expect(guided.outsideScope?.("src/lib/feature/thing.ts")).toBe(false);
+  });
+
+  it("still refuses a path that climbs out of the checkout", async () => {
+    const guided = guidedWorkspace(new MemoryWorkspace(), scope);
+
+    await expect(guided.writeFile("../outside", "x")).rejects.toThrow(ScopeError);
   });
 });

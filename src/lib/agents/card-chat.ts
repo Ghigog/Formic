@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { MODELS } from "./anthropic";
 import { applyCardAction, cardActionSchema, CARD_ACTIONS_GUIDE, type CardAction } from "./card-actions";
+import { scopeAsked } from "@/lib/coder/scope-request";
 import { claudeSpeak, openAiSpeak, type Speak, type ToolDef } from "./chat-loop";
 import { truncate } from "./coding-loop";
 import { launch } from "./pipeline";
@@ -127,6 +128,11 @@ async function ticketContext(card: BoardCard): Promise<string> {
     ...(epic ? [`In Epic ${epic.key}: ${epic.title}`] : []),
     ...whereItIs(card),
     ...(detail.needsHuman ? [`It is marked as work for the person, not an agent: ${detail.needsHuman}`] : []),
+    ...(scopeAsked(detail).length
+      ? [
+          `It asks the person for files outside its file scope: ${scopeAsked(detail).join(", ")}. Their yes or no to that is widen_scope.`,
+        ]
+      : []),
     ...(detail.prNumber ? [`Pull request: #${detail.prNumber} ${detail.prUrl ?? ""}`.trim()] : []),
     ...(detail.branchName ? [`Branch: ${detail.branchName}`] : []),
     ...(detail.summary ? [`What was done: ${detail.summary}`] : []),

@@ -114,7 +114,7 @@ const WORK_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "write_file",
     description:
-      "Write a file in full, relative to the repository root. Creates parent directories. Writes outside the ticket's file scope are rejected.",
+      "Write a file in full, relative to the repository root. Creates parent directories.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -176,7 +176,7 @@ const FOR_YOU = {
 const BLOCKED = {
   type: ["string", "null"],
   description:
-    "Only when the project's checks cannot pass without changing files outside the file scope: what is failing and which files it needs. Null otherwise.",
+    "Only when you cannot finish without something only the person can give, such as a credential or a decision: what it is and why. Null otherwise.",
 };
 
 /** How each role ends its run. */
@@ -673,7 +673,7 @@ async function runTool(
         await workspace.writeFile(parsed.data.path, parsed.data.contents);
         await emitDiff(workspace, ctx, parsed.data.path);
         return {
-          content: `Wrote ${parsed.data.path}.`,
+          content: `Wrote ${parsed.data.path}.${outsideNote(workspace, parsed.data.path)}`,
           isError: false,
           label: `Writing ${parsed.data.path}`,
         };
@@ -706,7 +706,7 @@ async function runTool(
           before.slice(0, first) + new_text + before.slice(first + old_text.length),
         );
         await emitDiff(workspace, ctx, path);
-        return { content: `Edited ${path}.`, isError: false, label: `Editing ${path}` };
+        return { content: `Edited ${path}.${outsideNote(workspace, path)}`, isError: false, label: `Editing ${path}` };
       }
 
       default:
@@ -724,6 +724,12 @@ async function runTool(
       label: call.name,
     };
   }
+}
+
+/** What a write outside the ticket's file scope means, told as it happens. */
+function outsideNote(workspace: Workspace, path: string): string {
+  if (!workspace.outsideScope?.(path)) return "";
+  return " It is outside this ticket's file scope. That is fine when the right change needs it: Formic asks the person to add it to the scope before your work goes further. Where an equally good change fits inside the scope, prefer that.";
 }
 
 function invalid(detail: string | undefined, tool: string): ToolOutcome {
