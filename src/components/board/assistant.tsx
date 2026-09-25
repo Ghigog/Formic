@@ -360,7 +360,7 @@ function Shade({
       inert={!a.open}
       data-open={a.open}
       className={cn(
-        "assistant-shade border-line bg-card z-30 flex flex-col rounded-b-2xl border border-t-0 shadow-[0_18px_40px_-12px_rgba(28,25,23,0.28)]",
+        "assistant-shade border-line bg-card z-50 flex flex-col rounded-b-2xl border border-t-0 shadow-[0_18px_40px_-12px_rgba(28,25,23,0.28)]",
         className,
       )}
       style={{ height: "min(60vh, 620px)" }}
