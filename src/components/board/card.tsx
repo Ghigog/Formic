@@ -648,11 +648,19 @@ function PlainTicket({
       <EpicLine card={card} />
       {card.blockedReason &&
         (failed ? (
-          <StatusChip tone="crimson">{card.blockedReason}</StatusChip>
+          // Failure reasons can be raw CLI output; keep them to one line so
+          // they never push the card wider than its column.
+          <StatusChip tone="crimson" className="max-w-full self-start">
+            <span className="truncate" title={card.blockedReason}>
+              {card.blockedReason}
+            </span>
+          </StatusChip>
         ) : (
-          <span className="text-muted inline-flex items-center gap-1.5 font-mono text-[9px]">
+          <span className="text-muted inline-flex min-w-0 items-center gap-1.5 font-mono text-[9px]">
             <span aria-hidden className="bg-idle size-[5px] shrink-0 rounded-full" />
-            {card.blockedReason}
+            <span className="truncate" title={card.blockedReason}>
+              {card.blockedReason}
+            </span>
           </span>
         ))}
       {extras.progress && (
