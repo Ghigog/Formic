@@ -92,6 +92,8 @@ export function useColony(): ColonyApi | null {
 function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null {
   if (card.kind !== "ticket") return null;
   if (card.status === "running") return "work";
+  // Out of the nest, but crowded round its timer until the way is clear.
+  if (card.status === "queued") return "queue";
   if (card.status === "review") return extras[card.id]?.ci === "passing" ? "buried" : "tunnel";
   return null;
 }
@@ -338,6 +340,8 @@ export function ColonyProvider({
         later.push(() => epicMerged(card, epicTally(card, cards)));
       } else if (card.status === "running") {
         later.push(() => dispatched(card));
+      } else if (card.status === "queued") {
+        later.push(() => mark(card, "QUEUED", "waiting its turn"));
       } else if (card.status === "review") {
         later.push(() => fx.mark(el(card) ?? document.body, card.prNumber ? `PR #${card.prNumber} OPENED` : "PR OPENED", "Reviewer Agent"));
       } else if (was.status === "waiting" && card.status === "ready") {
