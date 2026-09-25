@@ -132,14 +132,15 @@ export function isTerminal(status: TicketStatus): boolean {
 
 /**
  * Column moves a human may perform. Backwards moves are permitted for
- * recovery (pulling a failed card back to To Do), forwards moves only one
- * column at a time so a card cannot skip its agent.
+ * recovery (pulling a failed card back to To Do, or a reviewed card back to
+ * In Progress so its Coder Agent continues on the open pull request),
+ * forwards moves only one column at a time so a card cannot skip its agent.
  */
 const ALLOWED_USER_MOVES: Record<ColumnId, readonly ColumnId[]> = {
   backlog: ["todo"],
   todo: ["backlog", "in_progress"],
   in_progress: ["todo"],
-  in_review: ["todo"],
+  in_review: ["todo", "in_progress"],
   done: [],
 };
 
