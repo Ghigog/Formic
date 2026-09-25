@@ -66,6 +66,7 @@ interface TicketExtras {
   plan?: PlanStep[];
   handoff?: string[];
   reviewedSha?: string | null;
+  scopeRequest?: string[];
 }
 
 /** A stored file, kept alongside its bytes until fetched or claimed. */
@@ -830,6 +831,7 @@ export class MemoryRepository implements Repository {
     if (update.plan !== undefined) extras.plan = update.plan;
     if (update.handoff !== undefined) extras.handoff = update.handoff;
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
+    if (update.scopeRequest !== undefined) extras.scopeRequest = update.scopeRequest;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
@@ -1120,6 +1122,7 @@ function toDetail(
     description: extras?.description ?? card.title,
     acceptanceCriteria: extras?.acceptanceCriteria ?? [],
     fileScope: card.fileScope,
+    scopeRequest: extras?.scopeRequest ?? [],
     status: card.status,
     stalledIn: card.stalledIn,
     stage: card.stage,

@@ -76,7 +76,7 @@ describe("the ticket template", () => {
 
 describe("the engineering practices", () => {
   it("reach the coding agents and the Architect, whatever their prompt", () => {
-    for (const prompt of [withCodingRules("Custom coder."), withPlanningConventions("Custom architect.")]) {
+    for (const prompt of [withCodingRules("Custom coder.", "coder"), withPlanningConventions("Custom architect.")]) {
       expect(prompt).toContain(ENGINEERING_PRACTICES);
       expect(prompt).toContain("TDD");
     }
@@ -95,7 +95,7 @@ describe("the engineering practices", () => {
 
 describe("verifying", () => {
   it("runs each check once, whatever the coding agent's prompt", () => {
-    expect(withCodingRules("Custom coder.")).toContain(VERIFY_RULE);
+    expect(withCodingRules("Custom coder.", "coder")).toContain(VERIFY_RULE);
     expect(VERIFY_RULE).toContain("Run each check once");
   });
 

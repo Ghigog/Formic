@@ -135,6 +135,12 @@ export interface TicketDetail {
   description: string;
   acceptanceCriteria: string[];
   fileScope: string[];
+  /**
+   * Files outside the scope its agent needed, asked of the person. Kept
+   * until the work that needed them goes on or is dropped; see
+   * src/lib/coder/scope-request.ts.
+   */
+  scopeRequest: string[];
   status: TicketStatus;
   stalledIn: ColumnId | null;
   stage: number;
@@ -167,6 +173,7 @@ export interface TicketUpdate {
   description?: string;
   acceptanceCriteria?: string[];
   fileScope?: string[];
+  scopeRequest?: string[];
   needsHuman?: string | null;
   status?: TicketStatus;
   stalledIn?: ColumnId | null;

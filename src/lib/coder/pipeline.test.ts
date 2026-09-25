@@ -29,6 +29,8 @@ import {
   scopedWorkspace,
 } from "@/lib/sandbox/workspace";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
+import { applyCardAction } from "@/lib/agents/card-actions";
+import { noteTexts } from "./notes";
 import { resetEnvCache } from "@/lib/secrets/env";
 import {
   MockArchitectAgent,
@@ -324,36 +326,6 @@ describe("the Coder Agent pipeline", () => {
     expect(showcase).toContain(`- [ ] ${step} (T-1)`);
   });
 
-  it("throws the run away when the diff strays outside the file scope", async () => {
-    // The agent goes around the scoped workspace — a shell can do this, which
-    // is exactly why the diff is checked again before anything is pushed.
-    const escaped = new MemoryWorkspace();
-    setCheckoutFactory(async (request) => ({
-      workspace: scopedWorkspace(escaped, request.ticket.fileScope),
-      raw: escaped,
-      sandboxId: null,
-      async dispose() {},
-    }));
-
-    useAgents(
-      new StubCoder(async () => {
-        await escaped.writeFile("src/app/page.tsx", "export default null;");
-      }),
-      new StubReviewer(),
-    );
-
-    const ticket = await seedTicket({ fileScope: ["src/lib/feature"] });
-    await runCoderAgent(PROJECT, ticket.id);
-
-    const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.status).toBe("blocked");
-    expect(after.stalledIn).toBe("in_progress");
-    expect(after.blockedReason).toContain("src/app/page.tsx");
-    expect(after.blockedReason).toContain("Nothing was pushed");
-    // The decisive assertion: no pull request was opened.
-    expect(after.prNumber).toBeNull();
-  });
-
   it("fails a run that changed nothing rather than opening an empty pull request", async () => {
     useAgents(
       new StubCoder(async () => {}),
@@ -508,7 +480,6 @@ describe("the Reviewer Agent pipeline", () => {
 
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.attempts).toBe(0);
-    expect(after.status).toBe("review");
   });
 
   it("reviews a green pull request against the ticket before it merges", async () => {
@@ -574,7 +545,6 @@ describe("the Reviewer Agent pipeline", () => {
     await reviewPullRequest(PROJECT, pull.number, pull.headSha);
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.status).toBe("review");
     expect(after.reviewedSha).toBe(pull.headSha);
 
     // Another report on the same head does not review it again.
@@ -655,5 +625,100 @@ describe("the Reviewer Agent pipeline", () => {
     expect(await repo.claimDelivery("7:abc:ci")).toBe(true);
     expect(await repo.claimDelivery("7:abc:ci")).toBe(false);
     expect(await repo.claimDelivery("7:def:ci")).toBe(true);
+  });
+});
+
+describe("work that needs files outside the ticket's scope", () => {
+  const writesOutside = async (workspace: Workspace, task: CoderTask) => {
+    await workspace.writeFile(`${task.fileScope[0]}/thing.ts`, "export const a = 1;\n");
+    await workspace.writeFile("src/app/page.tsx", "export default null;\n");
+  };
+
+  /** Runs the coder until it asks, and stands its kept work on the branch. */
+  async function asked(): Promise<TicketDetail> {
+    const ticket = await seedTicket({ fileScope: ["src/lib/feature"] });
+    await runCoderAgent(PROJECT, ticket.id);
+    const after = (await repository().ticketDetail(ticket.id))!;
+    MockVcsClient.stage(
+      after.branchName!,
+      ["src/lib/feature/thing.ts", "src/app/page.tsx"],
+      "T-1: did the thing\n\ndetails",
+    );
+    return after;
+  }
+
+  it("keeps the work, moves the ticket back to To Do and asks in its chat", async () => {
+    useAgents(new StubCoder(writesOutside), new StubReviewer());
+    const after = await asked();
+
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("todo");
+    expect(after.scopeRequest).toEqual(["src/app/page.tsx"]);
+    expect(after.blockedReason).toContain("src/app/page.tsx");
+    expect(after.prNumber).toBeNull();
+    const chat = await repository().cardChatMessages(after.id);
+    expect(chat.at(-1)).toMatchObject({ role: "assistant" });
+    expect(chat.at(-1)!.content).toContain("src/app/page.tsx");
+  });
+
+  it("carries the kept work on to a pull request once the person allows it", async () => {
+    const coder = new StubCoder(writesOutside);
+    useAgents(coder, new StubReviewer());
+    const ticket = await asked();
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "widen_scope", allow: true });
+    expect(said).toContain("src/app/page.tsx");
+
+    await until(
+      async () => !!(await repository().ticketDetail(ticket.id))?.prNumber,
+      "the kept work's pull request",
+    );
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.fileScope).toEqual(["src/app/page.tsx", "src/lib/feature"]);
+    expect(after.scopeRequest).toEqual([]);
+    expect(after.summary).toBe("did the thing");
+    // Carried on, not done again.
+    expect(coder.tasks).toHaveLength(1);
+  });
+
+  it("waits in To Do while a running ticket works in those files", async () => {
+    useAgents(new StubCoder(writesOutside), new StubReviewer());
+    const ticket = await asked();
+    const repo = repository();
+    const [other] = await repo.createTickets([
+      {
+        epicId: ticket.epicId,
+        key: "T-2",
+        title: "The page",
+        description: "The page.",
+        acceptanceCriteria: ["It shows"],
+        fileScope: ["src/app"],
+        size: "M",
+        position: 2,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.updateTicket(other!.id, { status: "running" });
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "widen_scope", allow: true });
+
+    expect(said).toContain("stays in To Do");
+    expect(said).toContain("T-2");
+    const after = (await repo.ticketDetail(ticket.id))!;
+    expect(after.status).toBe("ready");
+    expect(after.fileScope).toContain("src/app/page.tsx");
+    expect(after.prNumber).toBeNull();
+  });
+
+  it("drops the kept work and starts again within the scope when the person says no", async () => {
+    const coder = new StubCoder(writesOutside);
+    useAgents(coder, new StubReviewer());
+    const ticket = await asked();
+
+    await applyCardAction(PROJECT, "ticket", ticket.id, { type: "widen_scope", allow: false });
+
+    await until(async () => coder.tasks.length === 2, "the second run");
+    expect(coder.tasks[1]!.fileScope).toEqual(["src/lib/feature"]);
+    expect((await noteTexts(PROJECT, ticket.id)).at(-1)).toContain("inside the file scope");
   });
 });

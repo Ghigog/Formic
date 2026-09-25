@@ -189,6 +189,10 @@ model Ticket {
   acceptanceCriteria String[]
   /// Normalised directory prefixes. The concurrency boundary.
   fileScope          String[]
+  /// Files outside the scope its agent needed, asked of the person. Kept
+  /// until the work that needed them goes on (or is dropped), so a ticket
+  /// that has it and a branch but no pull request has its work kept there.
+  scopeRequest       String[]   @default([])
   size               TicketSize @default(M)
 
   status    TicketStatus @default(waiting)
