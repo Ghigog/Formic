@@ -9,7 +9,7 @@ vi.mock("@/lib/board/project", () => ({
   noProject: () => Response.json({ error: "Pick a repository first." }, { status: 409 }),
 }));
 
-const { POST } = await import("./route");
+const { POST, GET } = await import("./route");
 const { repository } = await import("@/lib/db");
 
 const PROJECT = "project-a";
@@ -124,5 +124,58 @@ describe("POST /api/attachments", () => {
   it("rejects a request with no file", async () => {
     const res = await POST(request(form({ requestId: "req-1", projectId: PROJECT })));
     expect(res.status).toBe(400);
+  });
+});
+
+function listReq(qs: string): NextRequest {
+  return new NextRequest(`http://localhost/api/attachments?${qs}`);
+}
+
+describe("GET /api/attachments", () => {
+  it("fails the way an unpicked repository does when no project is active", async () => {
+    activeProject.mockResolvedValue(null);
+    const res = await GET(listReq("epicId=e-1"));
+    expect(res.status).toBe(409);
+  });
+
+  it("rejects a request with neither an epicId nor a ticketId", async () => {
+    const res = await GET(listReq(""));
+    expect(res.status).toBe(400);
+  });
+
+  it("lists the attachments claimed by an epic the caller's project owns", async () => {
+    const epic = await repository().createEpic({
+      projectId: PROJECT,
+      title: "Epic",
+      rawRequest: "Do the thing.",
+      position: 1000,
+    });
+    await POST(
+      request(form({ requestId: "req-9", projectId: PROJECT, file: file("shot.png", "image/png") })),
+    );
+    await repository().claimAttachments("req-9", { epicId: epic.id });
+
+    const res = await GET(listReq(`epicId=${epic.id}`));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { attachments: Array<{ filename: string }> };
+    expect(body.attachments).toHaveLength(1);
+    expect(body.attachments[0]).toMatchObject({ filename: "shot.png", kind: "image" });
+  });
+
+  it("returns nothing for a card belonging to another project", async () => {
+    const epic = await repository().createEpic({
+      projectId: PROJECT,
+      title: "Epic",
+      rawRequest: "Do the thing.",
+      position: 1000,
+    });
+
+    activeProject.mockResolvedValue({ id: "some-other-project" });
+    const res = await GET(listReq(`epicId=${epic.id}`));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { attachments: unknown[] };
+    expect(body.attachments).toEqual([]);
   });
 });

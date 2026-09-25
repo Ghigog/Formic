@@ -22,7 +22,7 @@ import type { Account } from "./account-menu";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyTimeline } from "@/components/colony/timeline";
 import { ColonyPopover, NestButton } from "@/components/colony/nest";
-import { ColonyToast, EpicWinDialog } from "@/components/colony/overlays";
+import { ColonyToast, EpicWinDialog, RerouteToast, type RerouteNotice } from "@/components/colony/overlays";
 
 /**
  * Client shell: owns the live board state, the capture dialog and the ambient
@@ -61,9 +61,16 @@ export function BoardShell({
     listeners.current.add(listener);
     return () => listeners.current.delete(listener);
   }, []);
+  const [rerouteToast, setRerouteToast] = useState<RerouteNotice | null>(null);
+  const rerouteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { cards, extras, stats, prdStreams, connection, transition, createEpic, createTicket } =
     useBoard(initialCards, initialStats, (event, seq) => {
       if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
+      if (event.type === "card.rerouted") {
+        if (rerouteTimer.current) clearTimeout(rerouteTimer.current);
+        setRerouteToast({ key: seq, to: event.to, reason: event.reason });
+        rerouteTimer.current = setTimeout(() => setRerouteToast(null), 3200);
+      }
       for (const listener of listeners.current) listener(event, seq);
     });
   const [dialog, setDialog] = useState<{ column: CaptureColumn } | null>(null);
@@ -178,6 +185,7 @@ export function BoardShell({
       <ColonyTimeline repoName={repoName} />
       <ColonyPopover />
       <ColonyToast />
+      <RerouteToast toast={rerouteToast} />
       <EpicWinDialog onShowcase={(epic) => setOpenEpicId(epic.id)} />
 
       {connection === "reconnecting" && (

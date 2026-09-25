@@ -5,6 +5,7 @@ import { PlanSteps } from "@/components/ui/plan-steps";
 import { makeCard } from "@/test/cards";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { TicketView } from "@/lib/domain/ticket-view";
+import type { AttachmentSummary } from "@/lib/domain/entities";
 
 const card = makeCard({
   id: "t-1",
@@ -44,8 +45,15 @@ const VIEW: TicketView = {
 
 afterEach(() => vi.unstubAllGlobals());
 
-function open() {
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json(VIEW)));
+function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/attachments")) return Response.json({ attachments });
+      return Response.json(view);
+    }),
+  );
   const listeners = new Set<(e: FormicEvent, seq: number) => void>();
   const subscribe = (l: (e: FormicEvent, seq: number) => void) => {
     listeners.add(l);
@@ -103,6 +111,49 @@ describe("TicketDrawer", () => {
     const { onOpenEpic } = open();
     (await screen.findByRole("button", { name: /EPIC-1: Board export/ })).click();
     expect(onOpenEpic).toHaveBeenCalledWith("e-1");
+  });
+
+  it("says nothing about a reroute for a ticket that was never moved", async () => {
+    open();
+    await screen.findByRole("region", { name: "Ticket" });
+    expect(screen.queryByText(/Moved from/)).not.toBeInTheDocument();
+  });
+
+  it("shows where a rerouted ticket came from and why, so it survives after the toast is gone", async () => {
+    const rerouted: TicketView = {
+      ...VIEW,
+      card: { ...VIEW.card, rerouteFrom: "todo", rerouteReason: "Too big for one ticket; needs a PRD." },
+    };
+    open(rerouted);
+    await screen.findByRole("region", { name: "Ticket" });
+    expect(screen.getByText("Moved from To Do: Too big for one ticket; needs a PRD.")).toBeInTheDocument();
+  });
+
+  it("shows an image thumbnail and a downloadable file chip for its attachments", async () => {
+    const attachments: AttachmentSummary[] = [
+      { id: "a-1", filename: "mock.png", mimeType: "image/png", kind: "image", size: 2048, url: "/api/attachments/a-1" },
+      { id: "a-2", filename: "notes.txt", mimeType: "text/plain", kind: "file", size: 512, url: "/api/attachments/a-2" },
+    ];
+    open(VIEW, attachments);
+    const ticket = await screen.findByRole("region", { name: "Ticket" });
+
+    const thumb = await within(ticket).findByRole("button", { name: "Enlarge mock.png" });
+    expect(within(ticket).getByText("notes.txt")).toBeInTheDocument();
+    expect(within(ticket).getByText("512 B")).toBeInTheDocument();
+    expect(within(ticket).getByRole("link", { name: "Download" })).toHaveAttribute(
+      "href",
+      "/api/attachments/a-2",
+    );
+
+    thumb.click();
+    const lightbox = await screen.findByRole("dialog", { name: "mock.png" });
+    expect(within(lightbox).getByAltText("mock.png")).toHaveAttribute("src", "/api/attachments/a-1");
+  });
+
+  it("shows nothing where a ticket has no attachments", async () => {
+    open();
+    await screen.findByRole("region", { name: "Ticket" });
+    expect(screen.queryByText("Attachments")).not.toBeInTheDocument();
   });
 });
 

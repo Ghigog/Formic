@@ -131,6 +131,36 @@ test("Backlog's New request captures a request", async ({ page }) => {
   await expect(page.getByText("Rate-limit the merge queue")).toBeVisible();
 });
 
+/*
+ * The mock Product Agent's deterministic reroute trigger (see mock.ts): a
+ * raw request that says "reroute" is small enough to skip the PRD, so it
+ * becomes the one ticket it really is, straight in To Do. Drives the whole
+ * path this ticket adds: the toast that announces the move, and the note
+ * that keeps saying so in the drawer once the toast is long gone.
+ */
+test("a Backlog request the mock Product Agent reroutes announces the move, then keeps saying so", async ({ page }) => {
+  const title = "Reroute this tiny header fix";
+
+  await column(page, "Backlog").getByRole("button", { name: "New request" }).click();
+  await page.getByLabel("New feature request").fill(title);
+  await page.getByRole("button", { name: "Draft PRD" }).click();
+
+  const toast = page.getByRole("status").filter({ hasText: "Moved to To Do" });
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Small enough for one ticket");
+
+  await expect(dropzone(page, "To Do").getByText(title)).toBeVisible();
+
+  // The toast clears itself well within this; the drawer must keep saying it.
+  await expect(toast).toBeHidden({ timeout: 6000 });
+
+  await page.getByText(title).click();
+  const dialog = page.getByRole("dialog", { name: "Ticket detail" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/Moved from Backlog: Small enough for one ticket/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Close" }).click();
+});
+
 test("a ticket dragged out of its epic stays out, in To Do", async ({ page }) => {
   const id = await idForKey(page, "PROT-07");
   const standalone = dropzone(page, "To Do").locator(
