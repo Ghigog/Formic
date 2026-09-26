@@ -94,7 +94,10 @@ function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null {
   if (card.status === "running") return "work";
   // Out of the nest, but crowded round its timer until the way is clear.
   if (card.status === "queued") return "queue";
-  if (card.status === "review") return extras[card.id]?.ci === "passing" ? "buried" : "tunnel";
+  // Tunnelling while CI runs or the Reviewer Agent works; buried once both rest.
+  if (card.status === "review") {
+    return extras[card.id]?.ci === "passing" && !card.workingSince ? "buried" : "tunnel";
+  }
   return null;
 }
 
