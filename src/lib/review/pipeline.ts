@@ -1058,7 +1058,8 @@ async function mergeInBase(
 
 /**
  * The reviewer approved the head it was given. Green CI on exactly that
- * commit merges it; if CI is not green on it, the approval does not count.
+ * commit merges it. Red CI on it goes straight back to the reviewer, now
+ * with the failing logs, to fix: the approval covers the diff, not the build.
  */
 export async function approve(
   projectId: string,
@@ -1091,11 +1092,13 @@ export async function approve(
   if (checks.length === 0 || pending(checks).length > 0) return;
   const red = failing(checks);
   if (red.length > 0) {
-    await stallTicket(
-      projectId,
-      ticket,
-      `The Reviewer Agent approved ${ticket.key}, but ${red.map((c) => c.name).join(", ")} is failing. Red CI does not merge.`,
-      { blocked: true, stalledIn: "in_review" },
+    // CI failed while it read the diff, and that report was not a reason to
+    // start a second reviewer alongside the first. Now it is: queued behind
+    // this lane, it reviews the same head again with the logs in hand, under
+    // the same ceiling as every other review.
+    launch(
+      () => reviewPullRequest(projectId, prNumber, headSha),
+      `fix of red CI for ${ticket.key}`,
     );
     return;
   }
