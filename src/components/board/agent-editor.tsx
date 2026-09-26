@@ -54,7 +54,7 @@ export function AgentEditor({
   /** Null creates a new agent. */
   preset: AgentPreset | null;
   onClose: () => void;
-  onSave: (input: AgentPresetInput) => Promise<void>;
+  onSave: (input: Omit<AgentPresetInput, "column">) => Promise<void>;
   onDelete: (presetId: string) => Promise<void>;
 }) {
   const forAssistant = column === "assistant";

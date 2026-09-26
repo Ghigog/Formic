@@ -273,6 +273,8 @@ export interface PresetRecord {
   id?: string;
   /** Set on create; an update keeps the owner it had. */
   ownerId?: string | null;
+  /** Set on create; an update keeps the column it had. */
+  column?: ColumnId | null;
   provider: ProviderId;
   name: string;
   model: string;

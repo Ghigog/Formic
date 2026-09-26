@@ -946,6 +946,7 @@ export class MemoryRepository implements Repository {
     const row = {
       id: existing?.id ?? id("preset"),
       ownerId: existing ? existing.ownerId : (record.ownerId ?? null),
+      column: existing ? existing.column : (record.column ?? null),
       name: record.name,
       provider: record.provider,
       model: record.model,
