@@ -17,16 +17,24 @@
  * No server imports: the webhook parser reads the names below too.
  */
 
+import { createHash } from "node:crypto";
+
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
-/** Bumped whenever the workflow changes, so old copies get replaced. */
-export const RUNNER_VERSION = "formic-runner: v6";
 /** Where the setup pull request comes from. */
 export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 
 /** Where a planning agent's answer sits on its staging branch. */
 export const ANSWER_PATH = ".formic/answer.md";
+
+/**
+ * The environment variable that names the directory a job's downloaded
+ * attachments live in: a CLI agent with no Formic session fetches them with
+ * curl from the signed URLs in its prompt (see attachmentsPrompt in
+ * ./runner) and reads them from here, but never commits it.
+ */
+export const ATTACHMENTS_DIR_VAR = "FORMIC_ATTACHMENTS";
 
 /**
  * GitHub refuses any push from the workflow's own token that changes a file
@@ -42,6 +50,12 @@ export const CARRY_DELETED = ".formic/carry-deleted";
 export function isCarried(path: string): boolean {
   return path === CARRY_DELETED || path.startsWith(`${CARRY_DIR}/`);
 }
+
+/**
+ * The last line of a run's commit when it merged another branch in first,
+ * followed by the commit it merged. Formic records that merge itself.
+ */
+export const MERGED_TRAILER = "Formic-Merged:";
 
 export const CODE_MODES = ["implement", "fix"] as const;
 export const ANSWER_MODES = ["product", "architect", "showcase"] as const;
@@ -195,8 +209,11 @@ function indent(text: string, spaces: number): string {
  * that CLI's FORMIC_ secrets can be named, never the repository's others.
  */
 export function runnerWorkflow(): string {
-  return `# ${RUNNER_VERSION}
-# Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
+  return `# ${RUNNER_VERSION}\n${workflowBody()}`;
+}
+
+function workflowBody(): string {
+  return `# Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
 # its version changes.
@@ -235,6 +252,10 @@ on:
         description: Where to post what the agent does as it works, or empty
         required: false
         default: ""
+      merge:
+        description: A branch to merge in first, its conflicts left for the agent, or empty
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -251,9 +272,28 @@ jobs:
         with:
           ref: \${{ inputs.from }}
           persist-credentials: false
+          # Merging needs the history both sides share.
+          fetch-depth: \${{ inputs.merge != '' && '0' || '1' }}
 
       - name: Remember where the agent started
         run: echo "FORMIC_START=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # Conflicts and all: resolving them is the agent's work.
+      - name: Bring the other branch in
+        if: inputs.merge != ''
+        env:
+          MERGE: \${{ inputs.merge }}
+        run: |
+          merged="$(git rev-parse "origin/$MERGE")"
+          if ! git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com merge --no-commit --no-ff "$merged"; then
+            if [ -z "$(git diff --name-only --diff-filter=U)" ]; then echo "Could not merge $MERGE."; exit 1; fi
+          fi
+          echo "FORMIC_MERGED=$merged" >> "$GITHUB_ENV"
+
+      # Only matters when the job actually has attachments; harmless
+      # otherwise, and nothing later in the job depends on it.
+      - name: Make room for downloaded attachments
+        run: mkdir -p "$RUNNER_TEMP/formic-attachments"
 
       - uses: actions/setup-node@v4
         with:
@@ -314,6 +354,7 @@ jobs:
           # plan and progress bar are read from it.
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "true"
           CLAUDE_CODE_ENABLE_TASKS: "false"
+          ${ATTACHMENTS_DIR_VAR}: \${{ runner.temp }}/formic-attachments
           CLAUDE_CODE_OAUTH_TOKEN: \${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
           CODEX_CREDENTIAL: \${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}
           GEMINI_API_KEY: \${{ inputs.cli == 'gemini' && startsWith(inputs.secret, 'FORMIC_GEMINI_API_KEY') && secrets[inputs.secret] || '' }}
@@ -390,6 +431,17 @@ ${indent(REPORTER_SCRIPT, 10)}
               exit 0
               ;;
           esac
+          if [ -n "\${FORMIC_MERGED:-}" ]; then
+            git add -A
+            if git diff --cached "$FORMIC_START" | grep -qE '^\\+(<<<<<<<|>>>>>>>)( |$)'; then
+              echo "Conflict markers are still in the change."
+              exit 1
+            fi
+            # One plain commit on the branch for now. Formic makes it the
+            # merge, with the owner's token, once it has checked it.
+            rm -f .git/MERGE_HEAD .git/MERGE_MSG .git/MERGE_MODE .git/AUTO_MERGE
+            git reset -q --soft "$FORMIC_START"
+          fi
           git add -A
           if git diff --cached --quiet && [ "$(git rev-parse HEAD)" = "$FORMIC_START" ]; then
             echo "The agent finished without changing anything."
@@ -414,7 +466,21 @@ ${indent(REPORTER_SCRIPT, 10)}
           if [ ! -s "$FORMIC_SUMMARY" ]; then
             printf '%s: changes from the agent\\n' "$TICKET" > "$FORMIC_SUMMARY"
           fi
+          if [ -n "\${FORMIC_MERGED:-}" ]; then
+            printf '\\n${MERGED_TRAILER} %s\\n' "$FORMIC_MERGED" >> "$FORMIC_SUMMARY"
+          fi
           git commit --allow-empty -F "$FORMIC_SUMMARY"
           git push "https://x-access-token:\${GH_TOKEN}@github.com/\${REPO}.git" "HEAD:refs/heads/formic-staging/\${JOB}"
 `;
 }
+
+/**
+ * Which workflow a repository has, so old copies get replaced. Worked out
+ * from the workflow's own text rather than bumped by hand: two changes made
+ * at once can never land on the same version, and there is no constant for
+ * them to conflict over. The checked-in copy under .github/workflows is
+ * Formic's own install, refreshed by its setup pull request like any other
+ * repository's: never edit it by hand. Last in the file: it reads the whole
+ * workflow, which reads everything above.
+ */
+export const RUNNER_VERSION = `formic-runner: ${createHash("sha256").update(workflowBody()).digest("hex").slice(0, 12)}`;

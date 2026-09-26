@@ -77,6 +77,17 @@ export async function publish(
   if (event.type === "card.status" || event.type === "card.created" || event.type === "card.deleted") {
     await syncIssues(projectId, event);
   }
+
+  // A ticket that stopped running may free files a queued one is waiting
+  // on. Every way a run ends says so here, so the queue is moved on here.
+  // Imported late: the queue starts agents, and they publish.
+  if (
+    (event.type === "card.status" && event.kind === "ticket" && event.status !== "running") ||
+    event.type === "card.deleted"
+  ) {
+    const { startQueued } = await import("@/lib/board/queue");
+    await startQueued(projectId);
+  }
   return seq;
 }
 

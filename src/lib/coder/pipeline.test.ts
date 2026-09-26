@@ -30,6 +30,7 @@ import {
 } from "@/lib/sandbox/workspace";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
 import { applyCardAction } from "@/lib/agents/card-actions";
+import { publish } from "@/lib/events/bus";
 import { noteTexts } from "./notes";
 import { resetEnvCache } from "@/lib/secrets/env";
 import {
@@ -409,18 +410,22 @@ describe("the Reviewer Agent pipeline", () => {
     return pull;
   }
 
-  it("parks a conflicted pull request instead of waiting for CI that cannot run", async () => {
-    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+  it("has the Reviewer Agent resolve a conflicted pull request instead of parking it", async () => {
+    const reviewer = new StubReviewer();
+    useAgents(new StubCoder(writesInScope()), reviewer);
     const ticket = await seedTicket();
     const pull = await openPullRequestFor(ticket, true);
     MockVcsClient.setPull(pull.number, { mergeable: false });
 
     await sweepOpenPullRequests(PROJECT);
+    await until(async () => reviewer.reviews.length > 0, "the Reviewer Agent to be handed the conflict");
+    await until(
+      async () => (await new MockVcsClient(REPO).pullRequest(pull.number)).mergeable === true,
+      "the base to be brought in",
+    );
 
-    const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.status).toBe("blocked");
-    expect(after.stalledIn).toBe("in_review");
-    expect(after.blockedReason).toContain(`#${pull.number} conflicts with formic/integration`);
+    expect(reviewer.reviews[0]!.conflicts).toBeDefined();
+    expect((await repository().ticketDetail(ticket.id))!.status).not.toBe("blocked");
   });
 
   it("parks a pull request that was closed without merging", async () => {
@@ -436,7 +441,7 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.blockedReason).toContain("was closed without merging");
   });
 
-  it("notices a conflict when CI reports, too", async () => {
+  it("resolves a conflict noticed when CI reports, too", async () => {
     const reviewer = new StubReviewer();
     useAgents(new StubCoder(writesInScope()), reviewer);
     const ticket = await seedTicket();
@@ -445,8 +450,40 @@ describe("the Reviewer Agent pipeline", () => {
 
     await reviewPullRequest(PROJECT, pull.number, pull.headSha);
 
-    expect((await repository().ticketDetail(ticket.id))!.status).toBe("blocked");
+    expect(reviewer.reviews).toHaveLength(1);
+    expect(reviewer.reviews[0]!.conflicts).toBeDefined();
+    expect((await new MockVcsClient(REPO).pullRequest(pull.number)).mergeable).toBe(true);
+  });
+
+  it("parks a conflict for a person once the Reviewer Agent is out of goes", async () => {
+    const reviewer = new StubReviewer();
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    await repository().updateTicket(ticket.id, { attempts: MAX_REVIEWS });
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
     expect(reviewer.reviews).toHaveLength(0);
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("in_review");
+    expect(after.blockedReason).toContain(`#${pull.number} conflicts with formic/integration`);
+  });
+
+  it("sends the ticket back when the Reviewer Agent says the conflict needs the work redone", async () => {
+    const reviewer = new StubReviewer(async () => "Both sides rewrote the same function.");
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    expect(await noteTexts(PROJECT, ticket.id)).toContain(
+      "Sent back by review: Both sides rewrote the same function.",
+    );
   });
 
   it("stops after the retry ceiling and says which check is failing", async () => {
@@ -681,8 +718,9 @@ describe("work that needs files outside the ticket's scope", () => {
     expect(coder.tasks).toHaveLength(1);
   });
 
-  it("waits in To Do while a running ticket works in those files", async () => {
-    useAgents(new StubCoder(writesOutside), new StubReviewer());
+  it("queues in In Progress while a running ticket works in those files, then starts", async () => {
+    const coder = new StubCoder(writesOutside);
+    useAgents(coder, new StubReviewer());
     const ticket = await asked();
     const repo = repository();
     const [other] = await repo.createTickets([
@@ -702,12 +740,28 @@ describe("work that needs files outside the ticket's scope", () => {
 
     const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "widen_scope", allow: true });
 
-    expect(said).toContain("stays in To Do");
-    expect(said).toContain("T-2");
+    expect(said).toContain("queued behind T-2");
     const after = (await repo.ticketDetail(ticket.id))!;
-    expect(after.status).toBe("ready");
+    expect(after.status).toBe("queued");
     expect(after.fileScope).toContain("src/app/page.tsx");
     expect(after.prNumber).toBeNull();
+    const runs = coder.tasks.length;
+
+    // T-2 stops running: T-1's turn comes, with no one moving it.
+    await repo.updateTicket(other!.id, { status: "review" });
+    await publish(PROJECT, {
+      type: "card.status",
+      cardId: other!.id,
+      kind: "ticket",
+      status: "review",
+      stalledIn: null,
+      stage: 0,
+      blockedReason: null,
+    });
+
+    // Its kept work goes on to a pull request.
+    await until(async () => (await repo.ticketDetail(ticket.id))!.prNumber !== null, "the queued run");
+    expect(coder.tasks).toHaveLength(runs);
   });
 
   it("drops the kept work and starts again within the scope when the person says no", async () => {

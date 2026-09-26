@@ -37,6 +37,7 @@ import {
   withProductConventions,
 } from "@/lib/agents/prompts";
 import type { DraftTicket, ReviewTask } from "@/lib/agents/ports";
+import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { askForScope } from "@/lib/coder/scope-request";
 import {
@@ -63,6 +64,8 @@ import { STAGING_PREFIX, VcsError, mergeTarget, vcs, type VcsClient } from "@/li
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ANSWER_PATH,
+  ATTACHMENTS_DIR_VAR,
+  MERGED_TRAILER,
   RUNNER_SETUP_BRANCH,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_FILE,
@@ -122,6 +125,15 @@ export const ALREADY_DONE_TRAILER = "Formic-Already-Done: true";
 
 const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
+
+/** The commit a run merged in before its agent started, from its commit's trailer. */
+export function mergedFrom(messages: string[]): string | null {
+  for (const line of (messages.at(-1) ?? "").split("\n")) {
+    const m = new RegExp(`^${MERGED_TRAILER}\\s+([0-9a-f]{40})\\s*$`).exec(line.trim());
+    if (m) return m[1]!;
+  }
+  return null;
+}
 
 /** Whether a CLI agent's commits report the ticket as already done. */
 export function reportsAlreadyDone(messages: string[]): boolean {
@@ -275,6 +287,8 @@ const CLI_REVIEW = `How to finish your review. Do exactly one of these:
 To approve or send back, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
 
+const CLI_RESOLVE = `The conflicted files are the ones \`git diff --name-only --diff-filter=U\` lists. When every conflict is resolved, write the summary file as usual: what each conflict was and how you kept both sides. Do not commit.`;
+
 /** What a CLI reviewer decided when it changed nothing, if it said. */
 export function reviewVerdictOf(messages: string[]): "approved" | "send-back" | null {
   for (const line of messages.flatMap((m) => m.split("\n")).reverse()) {
@@ -306,7 +320,7 @@ export function cliPrompt(
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
   const task = taskFor(ticket, notes, instruction);
   const work = review
-    ? [reviewBrief({ ...review, task }), "", CLI_REVIEW]
+    ? [reviewBrief({ ...review, task }), "", review.conflicts ? CLI_RESOLVE : CLI_REVIEW]
     : [
         taskBrief(task),
         "",
@@ -333,6 +347,8 @@ async function dispatch(input: {
   cardKey: string;
   from: string;
   prompt: string;
+  /** A branch to merge in before the agent starts, its conflicts left for it. */
+  merge?: string;
   /** Recorded before the dispatch: only this job's result is taken. */
   record: (job: string) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
@@ -365,6 +381,7 @@ async function dispatch(input: {
       secret,
       prompt: cap(input.prompt),
       report: reportUrl(input.job, Date.now()) ?? "",
+      ...(input.merge ? { merge: input.merge } : {}),
     });
     return { ok: true };
   } catch (e) {
@@ -398,6 +415,8 @@ export async function startCliRun(input: {
   /** The branch the agent starts from. */
   from: string;
   prompt: string;
+  /** A branch to merge in first, for the agent to resolve its conflicts. */
+  merge?: string;
   run: RunHandle;
   stalledIn: "in_progress" | "in_review";
   stage?: number;
@@ -415,6 +434,7 @@ export async function startCliRun(input: {
     cardKey: ticket.key,
     from: input.from,
     prompt: input.prompt,
+    merge: input.merge,
     record: (job) => repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
   });
 
@@ -481,6 +501,7 @@ async function answerPrompt(
   if (!epic) return null;
 
   if (mode === "product") {
+    const attachments = attachmentsPrompt(await repo.attachmentsFor({ epicId }));
     return [
       withProductConventions(agent.brief ?? PRODUCT_BRIEF),
       "",
@@ -490,6 +511,7 @@ async function answerPrompt(
       "Raw feature request:",
       "",
       withEpicNotes(epic.rawRequest, await epicNoteTexts(projectId, epicId)),
+      ...(attachments ? ["", attachments] : []),
     ].join("\n");
   }
 
@@ -498,6 +520,7 @@ async function answerPrompt(
     if (!prd.success) return null;
     const instructions = await epicNoteTexts(projectId, epicId);
     const existing = instructions.length ? await existingTicketsFor(epicId) : [];
+    const attachments = attachmentsPrompt(await repo.attachmentsFor({ epicId }));
     return [
       withPlanningConventions(agent.brief ?? ARCHITECT_BRIEF),
       "",
@@ -512,6 +535,7 @@ async function answerPrompt(
       "Existing top-level directories in the repository:",
       (await tree()).slice(0, 200).join("\n") || "(empty repository)",
       decompositionGuidance(existing, instructions),
+      ...(attachments ? ["", attachments] : []),
     ].join("\n");
   }
 
@@ -1044,6 +1068,14 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       files = [...new Set([...files.filter((f) => !isCarried(f)), ...landed.files])];
     }
 
+    // It merged another branch in: what came with that branch is not the
+    // agent's change, so only the rest is held to the scope.
+    const merged = result.mode === "fix" ? mergedFrom(change.messages) : null;
+    if (merged) {
+      const brought = new Set((await client.compare(branch, merged)).files);
+      files = files.filter((f) => !brought.has(f));
+    }
+
     const violations = violationsInDiff(files, ticket.fileScope);
     // A new ticket's work that needed more is kept on its own branch, which
     // no other ticket reads, while the person is asked for the files. With
@@ -1064,6 +1096,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       );
       return;
     }
+
+    // Recorded as the merge it was, so GitHub counts the branch as brought in.
+    if (merged) head = await client.recordMerge(head, merged);
 
     // Fast-forward only. If the branch moved while the agent worked, this
     // refuses rather than overwrite what moved it.
@@ -1135,6 +1170,57 @@ export function reportAllowed(job: string, since: string, token: string): boolea
   const expected = Buffer.from(reportToken(job, Number(since)));
   const given = Buffer.from(token);
   return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/** How long a signed attachment URL stays good: past the workflow's own 60-minute timeout, so a job that is slow to start never finds it expired. */
+const ATTACHMENT_URL_TTL_MS = 90 * 60 * 1000;
+
+function attachmentToken(id: string, expires: number): string {
+  return createHmac("sha256", signingSecret()).update(`attachment:${id}:${expires}`).digest("hex");
+}
+
+/**
+ * A time-limited URL for one attachment's bytes, for a CLI agent with no
+ * Formic session to curl into its own workspace: the same signed-token
+ * machinery as reportUrl, over the attachment id and its expiry instead of a
+ * job. Null with no public origin to build one from, same as reportUrl.
+ */
+export function signedAttachmentUrl(id: string): string | null {
+  const origin = formicOrigin();
+  if (!origin) return null;
+  const expires = Date.now() + ATTACHMENT_URL_TTL_MS;
+  const q = new URLSearchParams({ expires: String(expires), token: attachmentToken(id, expires) });
+  return `${origin}/api/attachments/${id}?${q.toString()}`;
+}
+
+/** Whether a signed attachment URL's token is genuine and has not expired. */
+export function attachmentUrlAllowed(id: string, expires: string, token: string): boolean {
+  if (!/^\d+$/.test(expires) || Date.now() > Number(expires)) return false;
+  const expected = Buffer.from(attachmentToken(id, Number(expires)));
+  const given = Buffer.from(token);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/**
+ * The prompt text for an epic or ticket's attachments: one line per
+ * attachment with its filename, kind and a signed URL, since a CLI agent
+ * running in someone else's GitHub Actions cannot reach Formic's database to
+ * read the bytes directly the way an API agent does. Null with nothing to
+ * say, whether there are no attachments or no public origin to sign a URL
+ * from.
+ */
+export function attachmentsPrompt(attachments: AttachmentSummary[]): string | null {
+  const lines = attachments
+    .map((a) => {
+      const url = signedAttachmentUrl(a.id);
+      return url ? `- ${a.filename} (${a.kind}): ${url}` : null;
+    })
+    .filter((line): line is string => line !== null);
+  if (lines.length === 0) return null;
+  return [
+    `Attachments. Download each with curl into the directory named by the ${ATTACHMENTS_DIR_VAR} environment variable, and read them from there. Do not commit that directory.`,
+    ...lines,
+  ].join("\n");
 }
 
 /** The most a batch publishes; a flood of output keeps its latest part. */

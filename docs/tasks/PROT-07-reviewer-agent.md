@@ -73,8 +73,13 @@ branch on first use, and promoting it is a human's click. `MERGE_TARGET=base`
 restores the PRD's behaviour, in one place, as a deliberate choice.
 
 - Conflicts are never forced. The branch is brought up to date with a merge,
-  never a rebase or a force-push, and anything that does not apply cleanly
-  parks the card as blocked.
+  never a rebase or a force-push. When that conflicts, the In Review agent
+  resolves it: the base is merged into the branch with its conflicts left
+  in, the agent resolves them, and the result is pushed as a merge commit
+  (in a sandbox, or in GitHub Actions for a CLI agent, where Formic records
+  the merge itself). A resolution that leaves markers, strays outside the
+  ticket's scope beyond what the base brought, or keeps coming back past the
+  review ceiling parks the card as blocked.
 - Idempotency is keyed on `(pull request, head sha, check)` rather than the
   delivery id, so a redelivery under a new id is still the same result. A
   result about a commit that is no longer the head is dropped, which is what

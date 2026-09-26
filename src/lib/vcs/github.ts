@@ -491,6 +491,22 @@ export class GitHubClient implements VcsClient {
     return { sha: rewritten.sha, files };
   }
 
+  async recordMerge(sha: string, merged: string): Promise<string> {
+    const { data: commit } = await this.request<{
+      message: string;
+      tree: { sha: string };
+      parents: Array<{ sha: string }>;
+      author: { name: string; email: string; date: string };
+    }>("GET", `/git/commits/${sha}`);
+    const { data: merge } = await this.request<{ sha: string }>("POST", "/git/commits", {
+      message: commit.message,
+      tree: commit.tree.sha,
+      parents: [...commit.parents.map((p) => p.sha), merged],
+      author: commit.author,
+    });
+    return merge.sha;
+  }
+
   async moveBranch(branch: string, sha: string): Promise<void> {
     try {
       await this.request("PATCH", `/git/refs/heads/${encodeURIComponent(branch)}`, {
