@@ -13,7 +13,19 @@ jobs:
       - name: Wait for this commit to be live, then check it
         env:
           PROD_URL: ${{ vars.PRODUCTION_URL }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         run: |
+          alert() {
+            echo "::error::$1"
+            if [ -z "$ALERT_WEBHOOK_URL" ]; then
+              echo "No ALERT_WEBHOOK_URL secret set, alert stayed in this log only."
+              return 0
+            fi
+            local text="$1 (run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+            curl -s -X POST -H 'content-type: application/json' \
+              -d "$(jq -n --arg text "$text" '{text: $text}')" "$ALERT_WEBHOOK_URL" >/dev/null || true
+          }
+
           if [ -z "$PROD_URL" ]; then
             echo "No PRODUCTION_URL repository variable set, skipping."
             exit 0
@@ -24,14 +36,20 @@ jobs:
           # first wait until /api/health reports this commit. Deploys now wait
           # on CI (build, e2e) before the Vercel build starts; give it twenty.
           deadline=$((SECONDS + 1200))
+          alerted_unhealthy=""
           while :; do
             status=$(curl -s -o health.json -w '%{http_code}' --max-time 15 "$base/api/health" || echo 000)
             live=$(jq -r '.commit // "unknown"' health.json 2>/dev/null || echo unknown)
+            ok=$(jq -r '.ok // false' health.json 2>/dev/null || echo false)
             if [ "$live" = "$GITHUB_SHA" ] || [ "$live" = "unknown" ] || [ "$live" = "null" ]; then
               [ "$status" = "200" ] && break
+              if [ "$ok" = "false" ] && [ -z "$alerted_unhealthy" ]; then
+                alerted_unhealthy=1
+                alert "/api/health reports ok: false on $GITHUB_SHA: $(cat health.json 2>/dev/null)"
+              fi
             fi
             if [ $SECONDS -ge $deadline ]; then
-              echo "::error::Production never became healthy on $GITHUB_SHA (serving: $live, /api/health: HTTP $status)"
+              alert "Production never became healthy on $GITHUB_SHA (serving: $live, /api/health: HTTP $status)"
               cat health.json 2>/dev/null
               exit 1
             fi
@@ -48,7 +66,7 @@ jobs:
           # With GitHub sign-in on, / redirects to the sign-in page; follow it.
           page=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$base/")
           if [ "$page" != "200" ]; then
-            echo "::error::/ returned HTTP $page"
+            alert "/ returned HTTP $page on $GITHUB_SHA"
             exit 1
           fi
           echo "Production is healthy on $live."

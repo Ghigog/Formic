@@ -32,4 +32,14 @@ describe("env", () => {
     vi.stubEnv("MERGE_TARGET", '"base"');
     expect(env().MERGE_TARGET).toBe("base");
   });
+
+  it("drops a malformed ALERT_WEBHOOK_URL but keeps a valid one", () => {
+    vi.stubEnv("ALERT_WEBHOOK_URL", "not a url");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(env().ALERT_WEBHOOK_URL).toBeUndefined();
+
+    resetEnvCache();
+    vi.stubEnv("ALERT_WEBHOOK_URL", "https://hooks.example.com/incoming");
+    expect(env().ALERT_WEBHOOK_URL).toBe("https://hooks.example.com/incoming");
+  });
 });
