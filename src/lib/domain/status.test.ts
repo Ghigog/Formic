@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canUserMove,
+  cardProblem,
   columnFor,
   columnOf,
   isStalled,
@@ -86,5 +87,22 @@ describe("isStalled", () => {
     expect(isStalled("failed")).toBe(true);
     expect(isStalled("running")).toBe(false);
     expect(isStalled("merged")).toBe(false);
+  });
+});
+
+describe("cardProblem", () => {
+  it("surfaces a blocked reason once no agent is working the card", () => {
+    expect(
+      cardProblem({ status: "blocked", blockedReason: "Needs files outside its scope.", workingSince: null }),
+    ).toBe("Needs files outside its scope.");
+  });
+
+  // The Architect Agent marks a placeholder ticket blocked the moment it is
+  // created, before it has run, so the card never flashes as ready. That is
+  // narration for an agent actively drafting it, not a real stall.
+  it("does not surface a blocked reason while an agent is still working it", () => {
+    expect(
+      cardProblem({ status: "blocked", blockedReason: "Drafting the ticket…", workingSince: "2026-01-01T00:00:00.000Z" }),
+    ).toBeNull();
   });
 });
