@@ -301,7 +301,7 @@ export function ColonyProvider({
 
   /* --------------------------------------------------------- reactions */
 
-  const prev = useRef<Map<string, { status: string; col: string }> | null>(null);
+  const prev = useRef<Map<string, { status: string; col: string; working: boolean }> | null>(null);
   const prevCi = useRef<Record<string, string | undefined>>({});
   const savedRef = useRef(saved);
   useEffect(() => {
@@ -311,7 +311,9 @@ export function ColonyProvider({
   useEffect(() => {
     if (!loaded) return;
     const before = prev.current;
-    prev.current = new Map(cards.map((c) => [c.id, { status: c.status, col: columnOf(c) }]));
+    prev.current = new Map(
+      cards.map((c) => [c.id, { status: c.status, col: columnOf(c), working: Boolean(c.workingSince) }]),
+    );
     const ciBefore = prevCi.current;
     prevCi.current = Object.fromEntries(Object.entries(extras).map(([k, v]) => [k, v?.ci]));
     const mergedIds = cards.filter((c) => c.status === "merged").map((c) => c.id);
@@ -331,6 +333,21 @@ export function ColonyProvider({
         if (isBug(card) && col === "backlog") later.push(() => penalty(card));
         continue;
       }
+
+      // The Architect Agent clears workingSince when it finishes decomposing
+      // an Epic or rewriting a ticket, but the card's status (ready/waiting)
+      // usually doesn't change across the run, so this needs its own check
+      // rather than living in the status-change branches below.
+      if (
+        col === "todo" &&
+        was.working &&
+        !card.workingSince &&
+        card.status !== "blocked" &&
+        card.status !== "failed"
+      ) {
+        later.push(() => agentFinished(card));
+      }
+
       if (was.status === card.status) continue;
 
       if (!flights.current.has(card.id)) later.push(() => landed(card));
@@ -496,6 +513,14 @@ export function ColonyProvider({
         ],
         { duration: 900, easing: "ease-out" },
       );
+    }
+    function agentFinished(card: BoardCard) {
+      const e = el(card);
+      if (!e) return;
+      const [x, y, r] = centerOf(e);
+      sfx("reveal");
+      fx.ring(x, y, "var(--terracotta-deep)", 70, 0.5);
+      fx.pop(x, r.top, "READY", `${card.key} ready to move`, "var(--terracotta-deep)", 15);
     }
     function ciPassed(card: BoardCard) {
       const e = el(card);
