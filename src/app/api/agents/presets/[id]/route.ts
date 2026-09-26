@@ -16,7 +16,9 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!(await ownsPreset(user, id))) return gone();
   const body = await parsePreset(req);
   if (!body.ok) return Response.json({ error: body.error }, { status: 400 });
-  const preset = await savePreset({ ...body.data, id });
+  // A preset's column is permanently set on create; an update never moves it.
+  const { column, ...data } = body.data;
+  const preset = await savePreset({ ...data, id });
   return Response.json({ preset });
 }
 

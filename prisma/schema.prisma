@@ -366,6 +366,9 @@ model AgentPreset {
   /// Null for presets saved before accounts existed.
   ownerId      String?
   owner        User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  /// The column it was made for, set once on create. Null shows it in every
+  /// column's picker, matching presets from before this field existed.
+  column       ColumnId?
   name         String
   provider     String   @default("anthropic")
   model        String
