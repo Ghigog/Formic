@@ -4,8 +4,53 @@ import { useEffect, useRef, useState } from "react";
 import type { BoardCard } from "@/lib/domain/entities";
 import { XP_PER_LEVEL } from "@/lib/colony/game";
 import { showcaseHeadline } from "@/lib/domain/showcase";
+import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { useColony } from "./colony";
 import { centerOf } from "./fx";
+
+/** What card.rerouted leaves for RerouteToast to show, until it clears itself. */
+export interface RerouteNotice {
+  key: number;
+  to: ColumnId;
+  reason: string;
+}
+
+/**
+ * A request just moved on its own: which column it landed in, and the
+ * agent's one-line reason. Sits beside ColonyToast rather than inside it —
+ * a reroute is not a score event, and the two can land at once.
+ */
+export function RerouteToast({ toast }: { toast: RerouteNotice | null }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!toast) return;
+    ref.current?.animate(
+      [
+        { opacity: 0, transform: "translateY(-10px) scale(0.96)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 280, easing: "cubic-bezier(.2,.9,.3,1.25)" },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast?.key]);
+  if (!toast) return null;
+  return (
+    <div className="pointer-events-none fixed top-[124px] right-0 left-0 z-[70] flex justify-center">
+      <div
+        ref={ref}
+        role="status"
+        className="bg-anthracite text-cream flex max-w-[min(90vw,420px)] items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
+      >
+        <span className="oct bg-clay text-anthracite inline-flex shrink-0 items-center justify-center px-2 py-1 font-mono text-[9px] tracking-[0.08em]">
+          MOVED
+        </span>
+        <span className="min-w-0 truncate">
+          Moved to {COLUMN_LABELS[toast.to]}: {toast.reason}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /** Level-ups and firsts: a pill under the header for a few seconds. */
 export function ColonyToast() {

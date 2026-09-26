@@ -49,6 +49,7 @@ export function useBoardEvents(
       "card.status",
       "card.created",
       "card.deleted",
+      "card.rerouted",
       "epic.prd",
       "epic.showcase",
       "run.progress",
