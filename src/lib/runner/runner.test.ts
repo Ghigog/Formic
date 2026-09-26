@@ -30,10 +30,11 @@ import {
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { reviewPullRequest } from "@/lib/review/pipeline";
 import { cliAgentFor, savePreset } from "@/lib/agents/presets";
-import { runArchitectAgent, runProductAgent } from "@/lib/agents/pipeline";
+import { runArchitectAgent, runArchitectDraftTicket, runProductAgent } from "@/lib/agents/pipeline";
 import type { ColumnId } from "@/lib/domain/status";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
+import { redraftTicket } from "@/lib/board/service";
 import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { resetMergeLanes } from "@/lib/review/lane";
@@ -409,6 +410,106 @@ describe("a CLI agent planning an Epic", () => {
     expect(card.status).not.toBe("blocked");
     expect(card.status).not.toBe("failed");
     expect((await repository().epicDetail(epic.id))!.runnerJob).toBe(second.job);
+  });
+});
+
+describe("a CLI agent drafting a To Do request's single ticket", () => {
+  const REQUEST = "Each column's agent picker should only show its own agents";
+  const SPEC = {
+    key: "T-1",
+    title: "Keep reviewer agents out of To Do",
+    userStory: { as: "a board owner", want: "see only To Do agents there", soThat: "picking one is quick" },
+    context: "Every agent shows in every column.",
+    description: "Scope each agent to the column it was made for.",
+    requirements: ["Covered by a test"],
+    acceptanceCriteria: [{ given: "a reviewer agent", when: "I open To Do's picker", then: "it is not there" }],
+    fileScope: ["src/components/agents"],
+    size: "S",
+    storyPoints: 3,
+    dependsOn: [],
+  };
+
+  async function seedDrafting() {
+    const repo = repository();
+    const epic = await repo.createEpic({
+      projectId: PROJECT,
+      title: "Scope agents",
+      rawRequest: REQUEST,
+      position: 0,
+    });
+    await repo.setStandalone(epic.id, true);
+    const [ticket] = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "Scope agents",
+        description: REQUEST,
+        acceptanceCriteria: [],
+        fileScope: [],
+        size: "M",
+        storyPoints: null,
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.move({ cardId: ticket!.id, kind: "ticket", status: "blocked", stalledIn: "todo", position: 1, detached: true });
+    return { epic, ticket: ticket! };
+  }
+
+  function answer(job: string, text: string) {
+    return new MockVcsClient("acme/widgets").commitFile(`${STAGING_PREFIX}${job}`, ANSWER_PATH, text, "answer");
+  }
+
+  function lastDispatch() {
+    return MockVcsClient.runner().dispatches.at(-1)!.inputs;
+  }
+
+  it("drafts it in Actions and replaces the placeholder with it", async () => {
+    await assignClaudeCode("todo");
+    await installRunner();
+    const { epic, ticket } = await seedDrafting();
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, REQUEST, ["src"]);
+
+    const inputs = lastDispatch();
+    expect(inputs.mode).toBe("architect");
+    expect(inputs.prompt).toContain("Each column's agent picker should only show its own agents");
+    expect(inputs.prompt).toContain("FORMIC_OUTPUT");
+    expect((await repository().ticketDetail(ticket.id))!.runnerJob).toBe(inputs.job);
+
+    await answer(inputs.job!, JSON.stringify(SPEC));
+    await completeCliRun(PROJECT, { job: inputs.job!, mode: "architect", conclusion: "success", url: null });
+
+    const [drafted] = await repository().ticketsForEpic(epic.id);
+    expect(drafted).toMatchObject({ title: SPEC.title, fileScope: SPEC.fileScope, status: "ready" });
+    expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${inputs.job}`)).toBe(false);
+  });
+
+  it("sends a malformed ticket back once, then stalls it in To Do", async () => {
+    await assignClaudeCode("todo");
+    await installRunner();
+    const { epic, ticket } = await seedDrafting();
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, REQUEST, []);
+    const first = lastDispatch();
+    await answer(first.job!, JSON.stringify({ title: "no" }));
+    await completeCliRun(PROJECT, { job: first.job!, mode: "architect", conclusion: "success", url: null });
+
+    const second = lastDispatch();
+    expect(second.job).not.toBe(first.job);
+    expect(second.prompt).toContain("attempt 2 of 2");
+    await answer(second.job!, JSON.stringify({ title: "still no" }));
+    await completeCliRun(PROJECT, { job: second.job!, mode: "architect", conclusion: "success", url: null });
+
+    const card = (await repository().cardById(ticket.id))!;
+    expect(card).toMatchObject({ status: "failed", stalledIn: "todo" });
+    expect(card.blockedReason).toContain("could not be used");
+    expect(MockVcsClient.runner().dispatches).toHaveLength(2);
+
+    // Asking again drafts it afresh.
+    expect(await redraftTicket(PROJECT, ticket.id)).toBe(true);
+    await vi.waitFor(() => expect(MockVcsClient.runner().dispatches).toHaveLength(3));
+    expect((await repository().cardById(ticket.id))!.blockedReason).toBe("Drafting the ticket…");
   });
 });
 

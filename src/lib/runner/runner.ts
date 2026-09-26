@@ -8,8 +8,10 @@ import {
   applyPrd,
   applyReroute,
   applyShowcase,
+  applyDraftedTicket,
   applyTickets,
   existingTicketsFor,
+  stallDraftingTicket,
   stallEpic,
   startRun,
   type RunHandle,
@@ -44,6 +46,7 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  ticketSpecSchema,
   toDraftTicket,
 } from "@/lib/agents/decomposition";
 import { productOutput } from "@/lib/agents/openai-agents";
@@ -625,6 +628,92 @@ export async function startCliAnswer(input: {
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
+/** Attempts a CLI agent gets at drafting a To Do request's single ticket. */
+const DRAFT_ATTEMPTS = 2;
+
+/**
+ * Starts a CLI agent drafting a To Do request's single ticket: the Architect
+ * Agent's work, with no PRD, straight from the raw text. The job hangs off
+ * the placeholder ticket, whose standalone Epic is never a card of its own.
+ */
+export async function startCliDraftTicket(input: {
+  projectId: string;
+  ticketId: string;
+  agent: CliAgent;
+  run: RunHandle;
+  /** A second attempt: the previous answer and what was wrong. */
+  retry?: { attempt: number; answer: string; correction: string };
+}): Promise<void> {
+  const { projectId, ticketId, agent, run } = input;
+  const repo = repository();
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const ticket = await repo.ticketDetail(ticketId);
+  const epic = ticket ? await repo.epicDetail(ticket.epicId) : null;
+
+  const fail = async (reason: string, blocked: boolean) => {
+    await repo.updateTicket(ticketId, { runnerJob: null, runnerAgent: null });
+    await stallDraftingTicket(projectId, ticketId, reason, blocked);
+    await run.finish({ ok: false, error: reason, blocked, usage: noUsage(agent) });
+  };
+
+  if (!ticket || !epic?.rawRequest.trim()) {
+    await fail("This ticket has nothing to work from yet.", true);
+    return;
+  }
+
+  const tree = creds.githubToken
+    ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.githubToken)) ?? [])
+    : [];
+  const attachments = attachmentsPrompt(await repo.attachmentsFor({ ticketId }));
+  const base = [
+    withPlanningConventions(agent.brief ?? ARCHITECT_BRIEF),
+    "",
+    ANSWER_RULES,
+    "Draft exactly one ticket for the request below: it needs no breakdown.",
+    jsonShape(ticketSpecSchema),
+    "",
+    "Raw feature request:",
+    "",
+    epic.rawRequest,
+    "",
+    "Existing top-level directories in the repository:",
+    tree.slice(0, 200).join("\n") || "(empty repository)",
+    ...(attachments ? ["", attachments] : []),
+  ].join("\n");
+
+  const prompt = input.retry
+    ? [
+        base,
+        "",
+        `This is attempt ${input.retry.attempt} of ${DRAFT_ATTEMPTS}. Your previous answer was:`,
+        "",
+        input.retry.answer.slice(0, 20_000),
+        "",
+        input.retry.correction,
+      ].join("\n")
+    : base;
+
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent,
+    job: jobId(ticketId, randomUUID().slice(0, 8), input.retry?.attempt ?? 1),
+    mode: "architect",
+    cardKey: ticket.key,
+    from: project.baseBranch,
+    prompt,
+    record: (job) => repo.updateTicket(ticketId, { runnerJob: job, runnerAgent: agent.presetId }),
+  });
+  if (!started.ok) {
+    await fail(started.reason, started.blocked);
+    return;
+  }
+
+  working(agent, run, ticketId);
+  await run.finish({ ok: true, value: null, usage: noUsage(agent) });
+}
+
 type Checked<T> = { ok: true; value: T } | { ok: false; correction: string };
 
 function readJson(text: string): unknown {
@@ -646,6 +735,20 @@ function checkProduct(text: string): Checked<z.infer<typeof productOutput>> {
   return {
     ok: false,
     correction: `That PRD does not match the schema: ${issue?.path.join(".")}: ${issue?.message}. Answer with the corrected JSON object.`,
+  };
+}
+
+function checkDraft(text: string): Checked<DraftTicket> {
+  const raw = readJson(text);
+  if (raw === null) {
+    return { ok: false, correction: "That was not a JSON object. Answer with only the JSON object." };
+  }
+  const parsed = ticketSpecSchema.safeParse(raw);
+  if (parsed.success) return { ok: true, value: toDraftTicket(parsed.data) };
+  const issue = parsed.error.issues[0];
+  return {
+    ok: false,
+    correction: `That ticket does not match the schema: ${issue?.path.join(".")}: ${issue?.message}. Answer with the corrected JSON object.`,
   };
 }
 
@@ -672,6 +775,11 @@ async function completeCliAnswer(
   const epicId = cardOfJob(result.job);
   if (!epicId) return;
   if ((await repo.projectOfCard(epicId)) !== projectId) return;
+  // A To Do request's single ticket: the job hangs off the ticket itself.
+  if (result.mode === "architect" && (await repo.cardById(epicId))?.kind === "ticket") {
+    await completeCliDraft(projectId, result);
+    return;
+  }
   const epic = await repo.epicDetail(epicId);
   if (!epic) return;
 
@@ -760,6 +868,72 @@ async function completeCliAnswer(
     mode: result.mode,
     agent,
     run: startRun(projectId, stage.role, { epicId, model: agent.model ?? agent.info.label }),
+    retry: { attempt: attempt + 1, answer, correction: checked.correction },
+  });
+}
+
+/**
+ * A CLI agent finished drafting a To Do request's single ticket. A right
+ * answer replaces the placeholder; a wrong one goes back once as a
+ * correction, then the ticket stalls in To Do.
+ */
+async function completeCliDraft(projectId: string, result: RunnerResult): Promise<void> {
+  const repo = repository();
+  const ticketId = cardOfJob(result.job);
+  const ticket = ticketId ? await repo.ticketDetail(ticketId) : null;
+  if (!ticketId || !ticket) return;
+
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  const staging = `${STAGING_PREFIX}${result.job}`;
+  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+
+  if (ticket.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+  await repo.updateTicket(ticketId, { runnerJob: null, runnerAgent: null });
+
+  const log = result.url ? ` Its log: ${result.url}` : "";
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    const reason = await whyItFailed(projectId, client, result, ticket.runnerAgent);
+    await stallDraftingTicket(projectId, ticketId, reason, false);
+    return;
+  }
+
+  const answer = await client.readFile(ANSWER_PATH, staging).catch((e: unknown) => {
+    console.error("[formic] could not read the agent's answer:", e);
+    return null;
+  });
+  await cleanUp();
+  if (!answer?.trim()) {
+    await stallDraftingTicket(projectId, ticketId, `The agent finished without an answer.${log}`, false);
+    return;
+  }
+
+  const checked = checkDraft(answer);
+  if (checked.ok) {
+    await applyDraftedTicket(projectId, ticket.epicId, ticketId, checked.value);
+    return;
+  }
+
+  const attempt = attemptOfJob(result.job);
+  const agent = attempt < DRAFT_ATTEMPTS ? await cliAgentFor(projectId, "todo") : null;
+  if (!agent) {
+    await stallDraftingTicket(projectId, ticketId, `The agent's answer could not be used: ${checked.correction}`, false);
+    return;
+  }
+  await startCliDraftTicket({
+    projectId,
+    ticketId,
+    agent,
+    run: startRun(projectId, "architect", {
+      epicId: ticket.epicId,
+      ticketId,
+      model: agent.model ?? agent.info.label,
+    }),
     retry: { attempt: attempt + 1, answer, correction: checked.correction },
   });
 }
@@ -864,7 +1038,7 @@ export async function collectCliRuns(projectId: string): Promise<void> {
     const job =
       card.kind === "epic"
         ? (await repo.epicDetail(card.id))?.runnerJob
-        : card.status === "running" || card.status === "review"
+        : card.status === "running" || card.status === "review" || card.stalledIn === "todo"
           ? (await repo.ticketDetail(card.id))?.runnerJob
           : null;
     if (job) waiting.add(job);
@@ -1281,7 +1455,7 @@ export async function receiveReport(input: {
           type: "run.progress",
           runId,
           ticketId: ticket.id,
-          role: ticket.status === "review" ? "reviewer" : "coder",
+          role: ticket.status === "review" ? "reviewer" : ticket.stalledIn === "todo" ? "architect" : "coder",
           label: item.label,
           fraction: planFraction(plan),
         });

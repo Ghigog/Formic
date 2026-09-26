@@ -503,6 +503,38 @@ export async function createTodoItem(
 }
 
 /**
+ * Drafts a To Do request's single ticket again after its drafting stalled.
+ * Only the placeholder qualifies: it has no acceptance criteria until the
+ * Architect Agent writes it. Returns false for any other ticket.
+ */
+export async function redraftTicket(projectId: string, ticketId: string): Promise<boolean> {
+  const repo = repository();
+  const card = await repo.cardById(ticketId);
+  const ticket = await repo.ticketDetail(ticketId);
+  if (!card || !ticket || card.stalledIn !== "todo" || !isStalled(card.status)) return false;
+  if (ticket.acceptanceCriteria.length > 0 || ticket.runnerJob) return false;
+  const epic = await repo.epicDetail(ticket.epicId);
+  if (!epic) return false;
+
+  await repo.updateTicket(ticketId, { status: "blocked", stalledIn: "todo", blockedReason: "Drafting the ticket…" });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticketId,
+    kind: "ticket",
+    status: "blocked",
+    stalledIn: "todo",
+    stage: 3,
+    blockedReason: "Drafting the ticket…",
+  });
+
+  launch(async () => {
+    const tree = await repoTree(projectId);
+    await runArchitectDraftTicket(projectId, ticket.epicId, ticketId, epic.rawRequest, tree);
+  }, `architect agent for ${card.key}`);
+  return true;
+}
+
+/**
  * How long a planning agent may go quiet before its Epic counts as stuck.
  * An API agent finishes well inside a function's lifetime; a CLI agent has
  * a runner job, and is waited on for as long as that runs.

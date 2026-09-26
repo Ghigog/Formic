@@ -298,7 +298,9 @@ export class PrismaRepository implements Repository {
       const jobRole: AgentRole | null = t.runnerJob
         ? t.status === "review"
           ? "reviewer"
-          : "coder"
+          : t.stalledIn === "todo"
+            ? "architect"
+            : "coder"
         : null;
       const since = live ? live.startedAt : t.runnerJob ? t.runnerJobAt : null;
       return {
