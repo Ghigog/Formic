@@ -13,7 +13,7 @@ import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
 import { agentFor, cliAgentFor, modelFor } from "./presets";
 import { handoffSection } from "./handoff";
-import { startCliAnswer } from "@/lib/runner/runner";
+import { startCliAnswer, startCliDraftTicket } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
 import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
@@ -577,22 +577,19 @@ export async function runArchitectDraftTicket(
     model: await modelFor(projectId, "architect"),
   });
 
-  // No AnswerMode covers drafting a single ticket yet, so a CLI agent on
-  // this column cannot take the work; it fails the same way an unassigned
-  // one does rather than hanging on an answer that will never arrive.
   const cli = await cliAgentFor(projectId, "todo");
-  const outcome = cli
-    ? {
-        ok: false as const,
-        blocked: true,
-        error: `${cli.info.label} runs in GitHub Actions and cannot draft a single ticket yet. Pick another agent for To Do.`,
-        usage: { model: cli.model ?? "", tokensIn: 0, tokensOut: 0, costCents: 0 },
-      }
-    : await (await agentFor(projectId, "architect")).draftTicket(run.ctx, {
-        rawRequest,
-        repoTree,
-        attachments: [],
-      });
+  if (cli) {
+    // A CLI agent drafts it in GitHub Actions and the answer comes back on
+    // the workflow_run webhook (see startCliDraftTicket in the runner).
+    await startCliDraftTicket({ projectId, ticketId, agent: cli, run });
+    return;
+  }
+
+  const outcome = await (await agentFor(projectId, "architect")).draftTicket(run.ctx, {
+    rawRequest,
+    repoTree,
+    attachments: [],
+  });
 
   if (outcome.ok) {
     if (outcome.value.kind === "ticket") {
@@ -611,7 +608,7 @@ export async function runArchitectDraftTicket(
  * The drafted ticket replaces the placeholder in its same slot: no Epic
  * update is needed to have made this one, because it never had a PRD.
  */
-async function applyDraftedTicket(
+export async function applyDraftedTicket(
   projectId: string,
   epicId: string,
   ticketId: string,
@@ -652,7 +649,7 @@ async function applyDraftedTicket(
 }
 
 /** A drafting ticket's run could not finish. It stays in To Do, blocked or failed. */
-async function stallDraftingTicket(
+export async function stallDraftingTicket(
   projectId: string,
   ticketId: string,
   reason: string,

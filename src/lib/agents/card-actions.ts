@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { decomposeEpic, launch, runProductAgent } from "./pipeline";
 import { projectFor } from "@/lib/board/project";
-import { applyTransition, retryEpic } from "@/lib/board/service";
+import { applyTransition, redraftTicket, retryEpic } from "@/lib/board/service";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { stopEpic } from "@/lib/budget/controller";
 import { runCoderAgent } from "@/lib/coder/pipeline";
@@ -313,6 +313,10 @@ async function redoTicket(projectId: string, card: BoardCard, instruction: strin
       await reviewPullRequest(projectId, prNumber, pull.headSha);
     }, `review for ${card.key}, from its chat`);
     return `The Reviewer Agent is looking at ${card.key} again${instruction ? ", with what you asked" : ""}. It starts once CI has a result.`;
+  }
+
+  if (home === "todo" && (await redraftTicket(projectId, card.id))) {
+    return `The Architect Agent is drafting ${card.key} again.`;
   }
 
   if (home === "done") return `${card.key} is done. Move it back to To Do, then In Progress, to work on it again.`;
