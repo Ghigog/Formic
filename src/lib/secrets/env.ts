@@ -32,6 +32,8 @@ const schema = z.object({
   E2B_API_KEY: z.string().optional(),
   SANDBOX_PROVIDER: z.enum(["e2b", "local"]).default("local"),
   AGENT_PROVIDER: z.enum(["anthropic", "mock"]).optional(),
+  /** Where alerts (error spikes, smoke-test and health failures) are posted. See AUD-10. */
+  ALERT_WEBHOOK_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

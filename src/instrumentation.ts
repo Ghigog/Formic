@@ -1,3 +1,5 @@
+import type { Instrumentation } from "next";
+
 /**
  * Startup hook. Runs once per server process, before the first request.
  *
@@ -21,6 +23,21 @@ export async function register(): Promise<void> {
 
   await seedIfEmpty();
 }
+
+/**
+ * Every server error Next.js catches — a thrown route handler, a failed
+ * render, a server action — comes through here. See AUD-10: the operator
+ * should see this before a beta user reports it, with the route and the
+ * commit that produced it, and nothing secret.
+ */
+export const onRequestError: Instrumentation.onRequestError = async (error, _request, context) => {
+  const { trackThrown } = await import("@/lib/observability/error-tracking");
+  const digest =
+    typeof error === "object" && error !== null && "digest" in error
+      ? String((error as { digest: unknown }).digest)
+      : undefined;
+  trackThrown(error, { route: context.routePath, digest, source: "server" });
+};
 
 /**
  * A configured database starts with no tables' worth of data behind it, and
