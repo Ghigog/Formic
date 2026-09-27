@@ -528,6 +528,8 @@ describe("starting a CLI agent", () => {
     expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(
       RUNNER_WORKFLOW_NAME,
     );
+    // A branch per version, so each setup starts from the base as it is now.
+    expect(RUNNER_SETUP_BRANCH).toBe(`formic/setup-runner-${RUNNER_VERSION.split(": ")[1]}`);
     expect(runner.dispatches).toHaveLength(0);
     expect(runner.secrets.size).toBe(0);
   });
