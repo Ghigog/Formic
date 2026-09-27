@@ -404,7 +404,7 @@ test("a ticket opens its own view, not its Epic's", async ({ page }) => {
 
 test("a summoned sentinel reports, and its stars count toward the grade", async ({ page }) => {
   await gotoBoard(page);
-  await page.getByRole("button", { name: /^Grade F,/ }).click();
+  await page.getByRole("button", { name: "Open sentinels", exact: true }).click();
   const sentinels = page.getByRole("region", { name: "Sentinels" });
   await expect(sentinels.getByRole("heading", { name: "Sentinels" })).toBeVisible();
 
