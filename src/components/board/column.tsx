@@ -11,15 +11,6 @@ import { layout } from "./placement";
 import { AgentSelect, type ColumnAgentControls } from "./agent-select";
 import { formatCountdown, useCountdown } from "@/lib/hooks/use-countdown";
 
-/** The one-word description of what happens to a card while it sits here. */
-export const COLUMN_HINT: Record<ColumnId, string> = {
-  backlog: "Ideation",
-  todo: "Decomposition",
-  in_progress: "Execution",
-  in_review: "CI & merge",
-  done: "Showcase ready",
-};
-
 /** The header dot. Only In Progress breathes: it is the only live column. */
 const COLUMN_DOT: Record<ColumnId, { color: string; live: boolean }> = {
   backlog: { color: "bg-idle", live: false },
@@ -157,10 +148,6 @@ export function Column({
         >
           {String(count).padStart(2, "0")}
         </CoinBadge>
-        <div className="flex-grow" />
-        <span className="text-muted text-[10px] font-medium">
-          {COLUMN_HINT[id]}
-        </span>
       </div>
       )}
 

@@ -53,6 +53,13 @@ describe("Column", () => {
     expect(screen.getByTitle("2 cards")).toHaveTextContent("02");
   });
 
+  it("shows only the stage name and count in the header, no subtitle", () => {
+    column("backlog", [makeCard(), makeCard()]);
+    expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+    expect(screen.getByTitle("2 cards")).toHaveTextContent("02");
+    expect(screen.queryByText("Ideation")).toBeNull();
+  });
+
   it("says so plainly when there is nothing here", () => {
     column("done", []);
     expect(screen.getByText("Nothing here.")).toBeInTheDocument();
