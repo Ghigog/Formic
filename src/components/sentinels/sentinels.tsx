@@ -551,8 +551,8 @@ function Section({ title, ink, items }: { title: string; ink: string; items: Aud
 }
 
 /**
- * The project's grade in the header, beside the level: an octagon in the
- * grade's colour. Opens the Sentinels.
+ * The project's grade in the header, before the level: an outlined octagon
+ * in the grade's colour. Opens the Sentinels.
  */
 export function GradeBadge({ compact = false }: { compact?: boolean }) {
   const c = useColony();
@@ -566,18 +566,59 @@ export function GradeBadge({ compact = false }: { compact?: boolean }) {
       data-colony="grade"
       onClick={() => c.setSentinelsOpen(!c.sentinelsOpen)}
       aria-expanded={c.sentinelsOpen}
-      aria-label={`Grade ${g.grade}, ${g.avg.toFixed(1)} of 5 from ${g.done} of ${g.total} sentinels. ${c.sentinelsOpen ? "Back to board" : "Open sentinels"}`}
+      aria-label={`Audit grade ${g.grade}, ${g.avg.toFixed(1)} of 5 from ${g.done} of ${g.total} sentinels. ${c.sentinelsOpen ? "Back to board" : "Open sentinels"}`}
       title={`Sentinels · grade ${g.grade} · ${g.avg.toFixed(2)} avg`}
-      className={cn(
-        "oct-lg text-cream relative inline-flex shrink-0 flex-col items-center justify-center gap-px transition-[background,transform] active:scale-[0.94]",
-        compact ? "size-8" : "size-9",
-      )}
+      className="oct-lg relative inline-flex shrink-0 p-[1.5px] transition-transform hover:scale-[1.06] active:scale-[0.94]"
       style={{ background: g.ink }}
     >
-      <span className={cn("font-mono tracking-[0.1em] opacity-80", compact ? "text-[6px]" : "text-[7px]")}>GRADE</span>
-      <span className={cn("font-serif leading-none font-semibold", compact ? "text-[14px]" : "text-[16px]")}>{g.grade}</span>
+      <span
+        className={cn(
+          "oct-lg bg-cream inline-flex flex-col items-center justify-center gap-px",
+          compact ? "size-[29px]" : "size-[33px]",
+        )}
+        style={{ color: g.ink }}
+      >
+        <span className={cn("font-mono tracking-[0.1em]", compact ? "text-[6px]" : "text-[7px]")}>AUDIT</span>
+        <span className={cn("font-serif leading-none font-semibold", compact ? "text-[14px]" : "text-[16px]")}>{g.grade}</span>
+      </span>
       {busy && (
         <span className="bg-clay-lit absolute top-1 right-1 size-1.5 animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
+      )}
+    </button>
+  );
+}
+
+/** The labelled way into the Sentinels, beside the Timeline's. */
+export function SentinelsButton() {
+  const c = useColony();
+  const s = useSentinels();
+  if (!c || !s) return null;
+  const open = c.sentinelsOpen;
+  const busy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
+  return (
+    <button
+      type="button"
+      onClick={() => c.setSentinelsOpen(!open)}
+      aria-label={open ? "Back to board" : "Open sentinels"}
+      aria-expanded={open}
+      className="border-line bg-card text-ink hover:border-terracotta inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border pr-3 pl-2.5 text-[13px] font-semibold transition-[border-color,box-shadow] hover:shadow-[0_6px_14px_-10px_color-mix(in_srgb,var(--anthracite)_40%,transparent)] active:scale-[0.97] max-lg:hidden"
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <path d="M7 1.2 12 3v3.6c0 3-2.1 5.2-5 6.2-2.9-1-5-3.2-5-6.2V3z" fill="var(--text)" />
+        <path d="m4.8 7 1.5 1.5L9.4 5.4" stroke="var(--clay-lit)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {open ? "Board" : "Sentinels"}
+      {open ? (
+        <span className="border-line text-muted rounded border px-[5px] py-0.5 font-mono text-[9px] font-medium">ESC</span>
+      ) : busy ? (
+        <span className="text-terracotta-deep flex items-center gap-1 font-mono text-[10px] font-medium">
+          <span className="bg-terracotta size-1.5 animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
+          {busy}
+        </span>
+      ) : (
+        <span className="font-serif text-[14px] leading-none" style={{ color: s.grade.ink }}>
+          {s.grade.grade}
+        </span>
       )}
     </button>
   );
