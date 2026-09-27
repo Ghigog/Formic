@@ -697,10 +697,37 @@ describe("work that needs files outside the ticket's scope", () => {
     await workspace.writeFile("src/app/page.tsx", "export default null;\n");
   };
 
-  /** Runs the coder until it asks, and stands its kept work on the branch. */
+  /** Another ticket, running in src/app for as long as it takes `work`. */
+  async function whileRunningInApp<T>(epicId: string, work: () => Promise<T>): Promise<T> {
+    const repo = repository();
+    const [other] = await repo.createTickets([
+      {
+        epicId,
+        key: "T-9",
+        title: "The app shell",
+        description: "The app shell.",
+        acceptanceCriteria: ["It renders"],
+        fileScope: ["src/app"],
+        size: "M",
+        position: 9,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.updateTicket(other!.id, { status: "running" });
+    try {
+      return await work();
+    } finally {
+      await repo.updateTicket(other!.id, { status: "review" });
+    }
+  }
+
+  /**
+   * Runs the coder until it asks, and stands its kept work on the branch.
+   * It only asks when a running ticket is using the files it needs.
+   */
   async function asked(): Promise<TicketDetail> {
     const ticket = await seedTicket({ fileScope: ["src/lib/feature"] });
-    await runCoderAgent(PROJECT, ticket.id);
+    await whileRunningInApp(ticket.epicId, () => runCoderAgent(PROJECT, ticket.id));
     const after = (await repository().ticketDetail(ticket.id))!;
     MockVcsClient.stage(
       after.branchName!,
@@ -709,6 +736,20 @@ describe("work that needs files outside the ticket's scope", () => {
     );
     return after;
   }
+
+  it("takes the files into its scope when no running ticket is using them, and carries on", async () => {
+    useAgents(new StubCoder(writesOutside), new StubReviewer());
+    const ticket = await seedTicket({ fileScope: ["src/lib/feature"] });
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.fileScope).toEqual(["src/app/page.tsx", "src/lib/feature"]);
+    expect(after.scopeRequest).toEqual([]);
+    expect(after.prNumber).not.toBeNull();
+    const chat = await repository().cardChatMessages(after.id);
+    expect(chat.at(-1)!.content).toContain("src/app/page.tsx");
+  });
 
   it("keeps the work, moves the ticket back to To Do and asks in its chat", async () => {
     useAgents(new StubCoder(writesOutside), new StubReviewer());
