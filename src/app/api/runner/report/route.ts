@@ -5,9 +5,21 @@ import { receiveReport, reportAllowed } from "@/lib/runner/runner";
 
 export const dynamic = "force-dynamic";
 
+const path = z.string().min(1).max(1_000);
+
 const body = z.object({
   lines: z.array(z.string()).max(2_000).default([]),
   after: z.number().int().min(0).default(0),
+  checkpoint: z
+    .object({
+      base: z.string().regex(/^[0-9a-f]{40}$/),
+      files: z
+        .array(z.object({ path, mode: z.enum(["100644", "100755", "120000"]), content: z.string() }))
+        .max(5_000),
+      deleted: z.array(path).max(5_000),
+      note: z.string().max(20_000).default(""),
+    })
+    .optional(),
 });
 
 /**

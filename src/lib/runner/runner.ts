@@ -26,7 +26,9 @@ import { reviewBrief, taskBrief } from "@/lib/agents/coder";
 import {
   ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
+  CHECKPOINT_RULE,
   CODER_BRIEF,
+  CODER_DESIGN_RULE,
   CODER_SCOPE_RULE,
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
@@ -41,7 +43,7 @@ import {
 import type { DraftTicket, ReviewTask } from "@/lib/agents/ports";
 import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
-import { askForScope } from "@/lib/coder/scope-request";
+import { askForScope, widenScope } from "@/lib/coder/scope-request";
 import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
@@ -63,11 +65,20 @@ import { signingSecret } from "@/lib/auth/session";
 import { abortTicketRuns } from "@/lib/budget/controller";
 import { ticketNotes } from "@/lib/coder/notes";
 import { readStream } from "./stream";
-import { STAGING_PREFIX, VcsError, mergeTarget, vcs, type VcsClient } from "@/lib/vcs";
+import {
+  STAGING_PREFIX,
+  VcsError,
+  mergeTarget,
+  vcs,
+  type Checkpoint,
+  type CheckpointFile,
+  type VcsClient,
+} from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ANSWER_PATH,
   ATTACHMENTS_DIR_VAR,
+  CHECKPOINT_TRAILER,
   MERGED_TRAILER,
   RUNNER_SETUP_BRANCH,
   RUNNER_VERSION,
@@ -108,9 +119,10 @@ const MAX_PROMPT = 50_000;
 /** How much of an agent's report the ticket view shows. */
 const MAX_REPORT = 20_000;
 
-const cliRules = (scopeRule: string) => `Rules that are enforced, not advisory:
+const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${PLAN_FIRST_RULE}
-- ${scopeRule}
+- ${CHECKPOINT_RULE}
+- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}` : REVIEWER_SCOPE_RULE}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
@@ -333,8 +345,56 @@ export function cliPrompt(
         "",
         CLI_ALREADY_DONE,
       ];
-  const scopeRule = mode === "implement" ? CODER_SCOPE_RULE : REVIEWER_SCOPE_RULE;
-  return cap([brief.trim(), "", cliRules(scopeRule), "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
+  return cap([brief.trim(), "", cliRules(mode), "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
+}
+
+/** A checkpoint's commit message: the agent's progress notes, then the trailer. */
+export function checkpointMessage(key: string, job: string, note: string): string {
+  const body = note.trim();
+  return `${key}: checkpoint\n\n${body ? `${body}\n\n` : ""}${CHECKPOINT_TRAILER} ${job}`;
+}
+
+/** The progress notes a checkpoint carries, from its commit message. */
+export function checkpointNote(message: string): string {
+  return message
+    .split("\n")
+    .slice(1)
+    .filter((line) => !line.startsWith(CHECKPOINT_TRAILER))
+    .join("\n")
+    .trim()
+    .slice(0, 6_000);
+}
+
+/** What a run carrying on from a checkpoint is told: where the last one got to. */
+export function resumeBrief(checkpoint: Checkpoint, plan: PlanStep[]): string {
+  const note = checkpointNote(checkpoint.message);
+  const steps = plan.map((s) => `- [${s.status === "done" ? "x" : " "}] ${s.step}`);
+  return [
+    "Carrying on. An earlier run on this ticket stopped before it finished. Its work is already in your checkout, uncommitted: git status and git diff show it.",
+    ...(steps.length > 0 ? ["", "Its plan, as it left it:", ...steps] : []),
+    ...(note ? ["", "Its progress notes, which are also in your progress file to keep current:", note] : []),
+    "",
+    "Write your plan from its plan, then start at the first step not done. Trust the finished steps: check them only as far as the next step needs, and do not do them again. Where a note from the person asks for something different, the note wins: undo what does not fit it.",
+  ].join("\n");
+}
+
+/**
+ * The checkpoint a run carries on from, if it has one it can. A new ticket's
+ * work starts on the branch it merges into, which moves as other work lands,
+ * and its checkpoint stays good; a branch Formic only ever fast-forwards has
+ * to be where the checkpoint left it, or the work would not land on it.
+ */
+async function carryOnFrom(
+  client: VcsClient,
+  ticket: TicketDetail,
+  mode: CodeMode,
+  from: string,
+): Promise<Checkpoint | null> {
+  const saved = await client.checkpoint(ticket.id);
+  if (!saved) return null;
+  if ((mode === "implement" && !ticket.prNumber) || (await client.branchHead(from)) === saved.parent) return saved;
+  await client.deleteCheckpoint(ticket.id);
+  return null;
 }
 
 /**
@@ -427,16 +487,22 @@ export async function startCliRun(input: {
   const { projectId, ticket, agent, run } = input;
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+
+  // Resolving merge conflicts starts over: the merge is the work.
+  const resumed = input.merge
+    ? null
+    : await carryOnFrom(client, ticket, input.mode, input.from).catch(() => null);
 
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client,
     baseBranch: project.baseBranch,
     agent,
     job: jobId(ticket.id, randomUUID().slice(0, 8)),
     mode: input.mode,
     cardKey: ticket.key,
-    from: input.from,
-    prompt: input.prompt,
+    from: resumed?.sha ?? input.from,
+    prompt: resumed ? `${input.prompt}\n\n${resumeBrief(resumed, ticket.plan)}` : input.prompt,
     merge: input.merge,
     record: (job) => repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
   });
@@ -453,6 +519,15 @@ export async function startCliRun(input: {
   }
 
   working(agent, run, ticket.id);
+  if (resumed) {
+    run.ctx.emit({
+      type: "run.log",
+      runId: run.runId,
+      ticketId: ticket.id,
+      stream: "stdout",
+      line: "It carries on from where the last run stopped.",
+    });
+  }
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
@@ -1184,6 +1259,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   // pull request open started from the ticket's own branch.
   const from = result.mode === "implement" && !ticket.prNumber ? mergeTarget(project.baseBranch) : branch;
 
+  // The run finished and handed its work back whole: its checkpoint has
+  // nothing more to give, unless taking the work fails and loses it.
+  let lost = false;
   try {
     const change = await client.compare(from, staging);
     if (
@@ -1250,7 +1328,10 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       files = files.filter((f) => !brought.has(f));
     }
 
-    const violations = violationsInDiff(files, ticket.fileScope);
+    let violations = violationsInDiff(files, ticket.fileScope);
+    if (violations.length > 0 && result.mode === "implement" && (await widenScope(projectId, ticket, violations))) {
+      violations = [];
+    }
     // A new ticket's work that needed more is kept on its own branch, which
     // no other ticket reads, while the person is asked for the files. With
     // a pull request open, that branch is the pull request: nothing is kept.
@@ -1304,7 +1385,10 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       },
     });
   } catch (e) {
+    lost = true;
     await stop(`Could not take the agent's work: ${explain(e)}`, false);
+  } finally {
+    if (!lost) await client.deleteCheckpoint(ticket.id).catch(() => undefined);
   }
 }
 
@@ -1405,6 +1489,38 @@ export interface ReportReply {
   notes: Array<{ seq: number; text: string }>;
   /** The card no longer waits on this job: stop reporting. */
   stop: boolean;
+  /** The checkpoint that came with the report was saved. */
+  checkpointed?: boolean;
+}
+
+export interface ReportedCheckpoint {
+  base: string;
+  files: CheckpointFile[];
+  deleted: string[];
+  note: string;
+}
+
+/** Saves a run's checkpoint on the repository. Says whether it could. */
+async function saveCheckpoint(
+  projectId: string,
+  ticket: TicketDetail,
+  job: string,
+  checkpoint: ReportedCheckpoint,
+): Promise<boolean> {
+  try {
+    const project = await projectFor(projectId);
+    const creds = await credentialsForProject(project);
+    await vcs(project.repoFullName, creds.githubToken).saveCheckpoint(ticket.id, {
+      base: checkpoint.base,
+      files: checkpoint.files,
+      deleted: checkpoint.deleted,
+      message: checkpointMessage(ticket.key, job, checkpoint.note),
+    });
+    return true;
+  } catch (e) {
+    console.error("[formic] could not save a checkpoint:", explain(e));
+    return false;
+  }
 }
 
 /**
@@ -1417,6 +1533,7 @@ export async function receiveReport(input: {
   since: number;
   lines: string[];
   after: number;
+  checkpoint?: ReportedCheckpoint;
 }): Promise<ReportReply> {
   const repo = repository();
   const cardId = cardOfJob(input.job);
@@ -1472,10 +1589,14 @@ export async function receiveReport(input: {
   }
   if (planChanged) await repo.updateTicket(ticket.id, { plan });
 
+  const checkpointed = input.checkpoint
+    ? await saveCheckpoint(projectId, ticket, input.job, input.checkpoint)
+    : undefined;
+
   const notes = (await ticketNotes(projectId, ticket.id, new Date(input.since)))
     .filter((n) => n.seq > input.after)
     .map((n) => ({ seq: n.seq, text: n.text }));
-  return { notes, stop: false };
+  return { notes, stop: false, ...(checkpointed === undefined ? {} : { checkpointed }) };
 }
 
 export const STOPPED_BY_PERSON =
