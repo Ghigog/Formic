@@ -1,4 +1,4 @@
-# formic-runner: v6
+# formic-runner: 866ff5e11670
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -38,6 +38,10 @@ on:
         description: Where to post what the agent does as it works, or empty
         required: false
         default: ""
+      merge:
+        description: A branch to merge in first, its conflicts left for the agent, or empty
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -54,9 +58,40 @@ jobs:
         with:
           ref: ${{ inputs.from }}
           persist-credentials: false
+          # Merging needs the history both sides share; a checkpoint, the
+          # commit it was saved on.
+          fetch-depth: ${{ inputs.merge != '' && '0' || '2' }}
 
+      # Started on a checkpoint (Formic names one by its commit, never by a
+      # branch): carry on from it, its work uncommitted in the checkout and
+      # its notes in the progress file, as it was left.
       - name: Remember where the agent started
-        run: echo "FORMIC_START=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+        env:
+          FROM: ${{ inputs.from }}
+        run: |
+          if [[ "$FROM" =~ ^[0-9a-f]{40}$ ]] && git log -1 --format=%B | grep -q '^Formic-Checkpoint:'; then
+            git log -1 --format=%b | grep -v '^Formic-Checkpoint:' > "$RUNNER_TEMP/formic-progress.md" || true
+            git reset -q HEAD~1
+            echo "Carrying on from the checkpoint of a run that stopped."
+          fi
+          echo "FORMIC_START=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # Conflicts and all: resolving them is the agent's work.
+      - name: Bring the other branch in
+        if: inputs.merge != ''
+        env:
+          MERGE: ${{ inputs.merge }}
+        run: |
+          merged="$(git rev-parse "origin/$MERGE")"
+          if ! git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com merge --no-commit --no-ff "$merged"; then
+            if [ -z "$(git diff --name-only --diff-filter=U)" ]; then echo "Could not merge $MERGE."; exit 1; fi
+          fi
+          echo "FORMIC_MERGED=$merged" >> "$GITHUB_ENV"
+
+      # Only matters when the job actually has attachments; harmless
+      # otherwise, and nothing later in the job depends on it.
+      - name: Make room for downloaded attachments
+        run: mkdir -p "$RUNNER_TEMP/formic-attachments"
 
       - uses: actions/setup-node@v4
         with:
@@ -113,10 +148,15 @@ jobs:
           FORMIC_STREAM: ${{ runner.temp }}/formic-stream.jsonl
           FORMIC_NOTES: ${{ runner.temp }}/formic-notes.md
           FORMIC_DONE: ${{ runner.temp }}/formic-done
+          FORMIC_PROGRESS: ${{ runner.temp }}/formic-progress.md
+          # Coding runs save checkpoints; a run resolving merge conflicts is
+          # short, and its merge could not be carried on from one.
+          FORMIC_CHECKPOINT: ${{ (inputs.mode == 'implement' || inputs.mode == 'fix') && inputs.merge == '' && 'on' || '' }}
           # Claude Code turns its todo tool off when run with -p; the ticket's
           # plan and progress bar are read from it.
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "true"
           CLAUDE_CODE_ENABLE_TASKS: "false"
+          FORMIC_ATTACHMENTS: ${{ runner.temp }}/formic-attachments
           CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
           CODEX_CREDENTIAL: ${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}
           GEMINI_API_KEY: ${{ inputs.cli == 'gemini' && startsWith(inputs.secret, 'FORMIC_GEMINI_API_KEY') && secrets[inputs.secret] || '' }}
@@ -126,20 +166,31 @@ jobs:
           # What the agent does, posted to Formic as it works.
           if [ -n "$REPORT" ]; then
             cat > "$RUNNER_TEMP/formic-report.py" <<'FORMIC_REPORTER'
-          import json, os, time, urllib.request
+          import base64, hashlib, json, os, subprocess, time, urllib.request
 
           url = os.environ["REPORT"]
           stream = os.environ["FORMIC_STREAM"]
           notes = os.environ["FORMIC_NOTES"]
           done = os.environ["FORMIC_DONE"]
+          progress = os.environ.get("FORMIC_PROGRESS", "")
+          start = os.environ.get("FORMIC_START", "")
+          checkpointing = bool(os.environ.get("FORMIC_CHECKPOINT")) and bool(start)
+          index = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "formic-checkpoint-index")
+          CHECKPOINT_EVERY = 30
+          MAX_CHECKPOINT = 2500000
           sent = 0
           after = 0
           stopped = False
+          saved = None
+          saved_at = 0.0
 
 
-          def post(lines):
+          def post(lines, checkpoint=None):
               global after, stopped
-              body = json.dumps({"lines": lines, "after": after}).encode()
+              payload = {"lines": lines, "after": after}
+              if checkpoint:
+                  payload["checkpoint"] = checkpoint
+              body = json.dumps(payload).encode()
               req = urllib.request.Request(url, data=body, method="POST", headers={"content-type": "application/json"})
               with urllib.request.urlopen(req, timeout=20) as res:
                   reply = json.load(res)
@@ -148,6 +199,7 @@ jobs:
                       f.write("A note from the person watching this ticket on Formic. Take it into account from here on:\n" + note["text"] + "\n\n")
                   after = max(after, int(note["seq"]))
               stopped = bool(reply.get("stop"))
+              return reply
 
 
           def flush():
@@ -168,10 +220,60 @@ jobs:
                   sent += sum(len(line) + 1 for line in batch)
 
 
+          def git(*args):
+              env = dict(os.environ, GIT_INDEX_FILE=index)
+              return subprocess.run(["git", *args], env=env, check=True, capture_output=True).stdout
+
+
+          def progress_note():
+              try:
+                  with open(progress, encoding="utf-8", errors="replace") as f:
+                      return f.read()[-20000:]
+              except OSError:
+                  return ""
+
+
+          def checkpoint(final):
+              global saved, saved_at
+              if not checkpointing or (not final and time.time() - saved_at < CHECKPOINT_EVERY):
+                  return
+              git("add", "-A")
+              tree = git("write-tree").decode().strip()
+              note = progress_note()
+              key = tree + hashlib.sha256(note.encode()).hexdigest()
+              if key == saved:
+                  return
+              files, deleted, size = [], [], 0
+              parts = git("diff-tree", "-r", "-z", "--no-renames", start, tree).split(b"\0")
+              for meta, path in zip(parts[0::2], parts[1::2]):
+                  _, mode, _, sha, status = meta.decode().lstrip(":").split(" ")
+                  name = path.decode("utf-8", "replace")
+                  if status == "D":
+                      deleted.append(name)
+                  elif mode != "160000":
+                      data = git("cat-file", "blob", sha)
+                      size += len(data)
+                      files.append({"path": name, "mode": mode, "content": base64.b64encode(data).decode()})
+              saved_at = time.time()
+              if size > MAX_CHECKPOINT or post([], {"base": start, "files": files, "deleted": deleted, "note": note}).get("checkpointed"):
+                  saved = key
+
+
+          if checkpointing:
+              try:
+                  git("read-tree", start)
+                  saved = git("rev-parse", start + "^{tree}").decode().strip() + hashlib.sha256(b"").hexdigest()
+              except Exception:
+                  checkpointing = False
+
           while not stopped:
               last = os.path.exists(done)
               try:
                   flush()
+              except Exception:
+                  pass
+              try:
+                  checkpoint(last)
               except Exception:
                   pass
               if last:
@@ -244,6 +346,17 @@ jobs:
               exit 0
               ;;
           esac
+          if [ -n "${FORMIC_MERGED:-}" ]; then
+            git add -A
+            if git diff --cached "$FORMIC_START" | grep -qE '^\+(<<<<<<<|>>>>>>>)( |$)'; then
+              echo "Conflict markers are still in the change."
+              exit 1
+            fi
+            # One plain commit on the branch for now. Formic makes it the
+            # merge, with the owner's token, once it has checked it.
+            rm -f .git/MERGE_HEAD .git/MERGE_MSG .git/MERGE_MODE .git/AUTO_MERGE
+            git reset -q --soft "$FORMIC_START"
+          fi
           git add -A
           if git diff --cached --quiet && [ "$(git rev-parse HEAD)" = "$FORMIC_START" ]; then
             echo "The agent finished without changing anything."
@@ -267,6 +380,9 @@ jobs:
           fi
           if [ ! -s "$FORMIC_SUMMARY" ]; then
             printf '%s: changes from the agent\n' "$TICKET" > "$FORMIC_SUMMARY"
+          fi
+          if [ -n "${FORMIC_MERGED:-}" ]; then
+            printf '\nFormic-Merged: %s\n' "$FORMIC_MERGED" >> "$FORMIC_SUMMARY"
           fi
           git commit --allow-empty -F "$FORMIC_SUMMARY"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}"
