@@ -549,6 +549,32 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.blockedReason).toContain("had no fix");
   });
 
+  it("has the reviewer fix CI that went red while it approved the diff", async () => {
+    let reviews = 0;
+    const reviewer = new StubReviewer(async (workspace, input) => {
+      if (++reviews === 1) {
+        // CI fails while it reads the diff; it approves without a change.
+        MockVcsClient.setChecks(pull.number, "failure");
+        return;
+      }
+      await fixesInScope(workspace, input);
+      MockVcsClient.setChecks(pull.number, "success");
+    });
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+    MockVcsClient.setChecks(pull.number, "cancelled");
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    await until(
+      async () => (await repository().ticketDetail(ticket.id))?.status === "merged",
+      "the fixed ticket to merge",
+    );
+    expect(reviewer.reviews[0]!.ciRunning).toBe(true);
+    expect(reviewer.reviews[1]!.checks.map((c) => c.name)).toEqual(["ci / test"]);
+  });
+
   it("sends a ticket back to the Coder Agent with the reviewer's reason", async () => {
     let reviews = 0;
     const reviewer = new StubReviewer(async () =>
