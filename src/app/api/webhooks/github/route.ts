@@ -5,6 +5,7 @@ import { repository } from "@/lib/db";
 import { markMergedExternally, reviewPullRequest } from "@/lib/review/pipeline";
 import { interpret, verifySignature } from "@/lib/review/webhook";
 import { completeCliRun } from "@/lib/runner/runner";
+import { publish } from "@/lib/events/bus";
 import { env } from "@/lib/secrets/env";
 
 export const dynamic = "force-dynamic";
@@ -73,6 +74,8 @@ export async function POST(req: NextRequest) {
           () => completeCliRun(project.id, signal),
           `agent run ${signal.job} finishing`,
         );
+      } else if (signal.kind === "runner-setup") {
+        launch(async () => void (await publish(project.id, { type: "runner.ready" })), "announcing the runner is set up");
       } else if (signal.kind === "ci") {
         launch(
           () => reviewPullRequest(project.id, signal.prNumber, signal.headSha),

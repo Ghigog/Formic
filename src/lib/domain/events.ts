@@ -150,6 +150,10 @@ export type FormicEvent =
       note: string | null;
     }
   | {
+      /** The runner workflow's setup pull request was merged: CLI agents can run. */
+      type: "runner.ready";
+    }
+  | {
       type: "budget.exhausted";
       scope: "run" | "epic" | "global";
       id: string;

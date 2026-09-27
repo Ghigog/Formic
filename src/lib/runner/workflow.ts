@@ -488,6 +488,9 @@ ${indent(REPORTER_SCRIPT, 10)}
               ;;
             gemini)
               if [ -z "$GEMINI_API_KEY" ]; then echo "No Gemini API key. Add it to the agent in Formic."; exit 1; fi
+              # Reads the repository's AGENTS.md as well as its own GEMINI.md.
+              mkdir -p ~/.gemini
+              printf '%s' '{"context":{"fileName":["AGENTS.md","GEMINI.md"]}}' > ~/.gemini/settings.json
               args=(-p "$PROMPT" --output-format stream-json --approval-mode yolo)
               if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
               gemini "\${args[@]}" | tee -a "$FORMIC_STREAM"
