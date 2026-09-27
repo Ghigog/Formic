@@ -21,6 +21,9 @@ import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyTimeline } from "@/components/colony/timeline";
+import { SentinelsPage } from "@/components/sentinels/sentinels";
+import { SentinelsProvider } from "@/components/sentinels/store";
+import type { SentinelStates } from "@/lib/sentinels/view";
 import { ColonyPopover, NestButton } from "@/components/colony/nest";
 import { ColonyToast, EpicWinDialog, RerouteToast, type RerouteNotice } from "@/components/colony/overlays";
 
@@ -41,6 +44,7 @@ export function BoardShell({
   initialStats,
   initialPresets = [],
   initialColumnAgents = {},
+  initialSentinels = {},
   account,
 }: {
   initialCards: BoardCard[];
@@ -52,6 +56,8 @@ export function BoardShell({
   initialStats: AmbientStats;
   initialPresets?: AgentPreset[];
   initialColumnAgents?: ColumnAgents;
+  /** Each sentinel's last report on this project. */
+  initialSentinels?: SentinelStates;
   account?: Account;
 }) {
   const agentState = useAgents(initialPresets, initialColumnAgents);
@@ -103,6 +109,7 @@ export function BoardShell({
 
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
+    <SentinelsProvider initial={initialSentinels}>
     <div className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={cards}
@@ -183,6 +190,7 @@ export function BoardShell({
 
       <ColonyAmbient stats={stats} onStopAll={() => void stopAll()} />
       <ColonyTimeline repoName={repoName} />
+      <SentinelsPage repoName={repoName} />
       <ColonyPopover />
       <ColonyToast />
       <RerouteToast toast={rerouteToast} />
@@ -197,6 +205,7 @@ export function BoardShell({
         </div>
       )}
     </div>
+    </SentinelsProvider>
     </ColonyProvider>
   );
 }
