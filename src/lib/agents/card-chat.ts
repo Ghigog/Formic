@@ -18,7 +18,7 @@ import { repository } from "@/lib/db";
 import type { CardChatMessage } from "@/lib/db/repository";
 import { COLUMN_AGENT_ROLE, AGENT_ROLE_LABELS, type BoardCard } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
-import { COLUMN_LABELS, columnFor, columnOf } from "@/lib/domain/status";
+import { COLUMN_LABELS, columnFor, columnOf, isStalled } from "@/lib/domain/status";
 import { ACTIVITY_EVENTS, activityOf } from "@/lib/domain/ticket-view";
 import { extractJson } from "@/lib/llm/openai-compat";
 import { vcs, type VcsClient } from "@/lib/vcs";
@@ -38,6 +38,18 @@ import { vcs, type VcsClient } from "@/lib/vcs";
 const MAX_TURNS = 12;
 const MAX_FILES_LISTED = 400;
 const MAX_ACTIVITY = 25;
+
+/**
+ * A plain "go again" to a stopped card. It needs no agent to understand, and
+ * leaving it to one risks a reply that says the card is starting while
+ * nothing starts, or no answer at all when that agent is out of tokens.
+ */
+const GO_AGAIN =
+  /^(?:please\s+)?(?:continue|resume|retry|try again|go again|go ahead|carry on|keep going|restart|start again|pick (?:it )?(?:back )?up)(?:\s+please)?[\s.!]*$/i;
+
+export function isGoAgain(text: string): boolean {
+  return GO_AGAIN.test(text.trim());
+}
 
 const listInput = z.object({ prefix: z.string().optional() });
 const readInput = z.object({ path: z.string().min(1) });
@@ -326,6 +338,14 @@ async function reply(
       await finish(messageId, { content: "This card no longer exists.", status: "failed" });
       return "notice";
     }
+    const all = await repo.cardChatMessages(cardId);
+    const asked = all.filter((m) => m.role === "user").at(-1);
+    if (isStalled(card.status) && !card.misplacedIn && asked && isGoAgain(asked.content)) {
+      const done = await applyCardAction(projectId, cardKind, cardId, { type: "move", to: columnOf(card) });
+      await finish(messageId, { content: done, status: "done" });
+      return "notice";
+    }
+
     const column = columnFor(card.status, card.stalledIn);
     const agent = await columnChatAgentFor(projectId, column);
 
@@ -340,7 +360,6 @@ async function reply(
     }
 
     const project = await projectFor(projectId);
-    const all = await repo.cardChatMessages(cardId);
     const past = history(all.filter((m) => m.id !== messageId));
     const brief = agent.kind === "cli" ? agent.agent.brief : agent.brief;
     const system = await systemPrompt(card, project.repoFullName, brief);
@@ -435,6 +454,7 @@ export function cliPrompt(
     "- Do not change, create or delete any file in the repository. Nothing you change is kept.",
     "- Write your answer to the file named by the FORMIC_OUTPUT environment variable, as one JSON object and nothing else:",
     '  {"reply": "<your answer, in Markdown>", "actions": [<an action>, ...]}',
+    "- Your reply alone changes nothing on the board: only actions do. Never say the card is moving, starting or stopping unless the action that does it is in actions.",
     "- Formic carries out the actions in order once you finish, and adds what happened under your reply, so write the reply as what you are doing (\"Closing it now.\"), not as a question.",
     "- Leave actions empty unless the person asked for something to be done. Each action matches this JSON Schema:",
     JSON.stringify(z.toJSONSchema(cardActionSchema)),
