@@ -19,6 +19,7 @@ import { addNote } from "@/lib/coder/notes";
 import {
   ANSWER_PATH,
   CARRY_DELETED,
+  CHECKPOINT_TRAILER,
   RUNNER_SETUP_BRANCH,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_NAME,
@@ -527,6 +528,8 @@ describe("starting a CLI agent", () => {
     expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(
       RUNNER_WORKFLOW_NAME,
     );
+    // A branch per version, so each setup starts from the base as it is now.
+    expect(RUNNER_SETUP_BRANCH).toBe(`formic/setup-runner-${RUNNER_VERSION.split(": ")[1]}`);
     expect(runner.dispatches).toHaveLength(0);
     expect(runner.secrets.size).toBe(0);
   });
@@ -638,6 +641,36 @@ describe("taking a CLI agent's work", () => {
     return { ticket, job, staging: `${STAGING_PREFIX}${job}` };
   }
 
+  /** Another ticket, running in `fileScope`: the files it needs are in use. */
+  async function runningIn(epicId: string, fileScope: string[]) {
+    const repo = repository();
+    const [other] = await repo.createTickets([
+      {
+        epicId,
+        key: "T-9",
+        title: "Other work",
+        description: "Other work.",
+        acceptanceCriteria: ["It works"],
+        fileScope,
+        size: "M",
+        position: 9,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.updateTicket(other!.id, { status: "running" });
+  }
+
+  it("takes files outside the scope in when no running ticket uses them, and opens the pull request", async () => {
+    const { ticket, job, staging } = await dispatched();
+    MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.fileScope).toEqual(["package.json", "src/lib/feature"]);
+    expect(after.prNumber).toBeGreaterThan(0);
+  });
+
   it("opens the pull request from the staged work", async () => {
     const { ticket, job, staging } = await dispatched();
     const sha = MockVcsClient.stage(
@@ -713,6 +746,7 @@ describe("taking a CLI agent's work", () => {
 
   it("holds carried workflow changes to the file scope too", async () => {
     const { ticket, job, staging } = await dispatched();
+    await runningIn(ticket.epicId, [".github"]);
     MockVcsClient.stage(staging, ["src/lib/feature/a.ts", ".formic/carry/.github/workflows/ci.yml"], "T-1: stuff");
 
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
@@ -723,8 +757,9 @@ describe("taking a CLI agent's work", () => {
     expect(after.blockedReason).not.toContain(".formic/carry");
   });
 
-  it("keeps work outside the file scope on the ticket's branch and asks for the files", async () => {
+  it("keeps work outside the file scope on the ticket's branch and asks, when a running ticket uses the files", async () => {
     const { ticket, job, staging } = await dispatched();
+    await runningIn(ticket.epicId, ["package.json"]);
     const sha = MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
 
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
@@ -1139,7 +1174,7 @@ describe("the runner workflow", () => {
   it("merges another branch in before the agent starts, when asked, leaving its conflicts", () => {
     const yaml = runnerWorkflow();
     expect(yaml).toContain("merge --no-commit --no-ff");
-    expect(yaml).toContain("fetch-depth: ${{ inputs.merge != '' && '0' || '1' }}");
+    expect(yaml).toContain("fetch-depth: ${{ inputs.merge != '' && '0' || '2' }}");
     expect(yaml).toContain("Conflict markers are still in the change.");
   });
 
@@ -1173,7 +1208,7 @@ describe("the runner workflow", () => {
     expect(yaml).toContain("exec --json --output-last-message");
     expect(yaml).toContain('python3 "$RUNNER_TEMP/formic-report.py" &');
     // The reporter's script sits at the block's own indent, as Python needs.
-    expect(yaml).toMatch(/\n {10}import json, os, time, urllib.request\n/);
+    expect(yaml).toMatch(/\n {10}import base64, hashlib, json, os, subprocess, time, urllib.request\n/);
   });
 
   it("keeps only the answer from a planning run", () => {
@@ -1352,6 +1387,90 @@ describe("a CLI agent seen while it works", () => {
     // A note it has been sent is not sent again.
     const again = await receiveReport({ job, since, after: reply.notes[0]!.seq, lines: [] });
     expect(again.notes).toEqual([]);
+  });
+
+  describe("checkpoints", () => {
+    const BASE = "a".repeat(40);
+    const checkpoint = {
+      base: BASE,
+      files: [{ path: "src/lib/feature/a.ts", mode: "100644" as const, content: Buffer.from("x\n").toString("base64") }],
+      deleted: ["src/lib/feature/old.ts"],
+      note: "The drop zone has to be mounted before the drag starts.",
+    };
+    const saved = (ticketId: string) => MockVcsClient.runner().checkpoints.get(ticketId);
+
+    it("saves the run's work in progress, with its notes, as the ticket's checkpoint", async () => {
+      const { ticket, job } = await dispatched();
+
+      const reply = await receiveReport({ job, since: Date.now(), after: 0, lines: [], checkpoint });
+
+      expect(reply.checkpointed).toBe(true);
+      expect(saved(ticket.id)).toMatchObject({ parent: BASE, input: { files: checkpoint.files, deleted: checkpoint.deleted } });
+      expect(saved(ticket.id)!.message).toBe(
+        `T-1: checkpoint\n\n${checkpoint.note}\n\n${CHECKPOINT_TRAILER} ${job}`,
+      );
+    });
+
+    it("takes no checkpoint from a run nobody waits on", async () => {
+      const { ticket, job } = await dispatched();
+      await repository().updateTicket(ticket.id, { runnerJob: null });
+
+      await receiveReport({ job, since: Date.now(), after: 0, lines: [], checkpoint });
+
+      expect(saved(ticket.id)).toBeUndefined();
+    });
+
+    it("carries the next run on from the checkpoint, told where the last one got to", async () => {
+      const { ticket, job } = await dispatched();
+      await receiveReport({ job, since: Date.now(), after: 0, lines: [], checkpoint });
+      await repository().updateTicket(ticket.id, {
+        plan: [
+          { step: "Add the status", status: "done" },
+          { step: "Wire the drop zone", status: "in_progress" },
+        ],
+      });
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "cancelled", url: null });
+      expect(saved(ticket.id)).toBeDefined();
+
+      await runCoderAgent(PROJECT, ticket.id);
+
+      const retry = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+      expect(retry.job).not.toBe(job);
+      expect(retry.from).toBe(saved(ticket.id)!.sha);
+      expect(retry.prompt).toContain("Carrying on.");
+      expect(retry.prompt).toContain("- [x] Add the status\n- [ ] Wire the drop zone");
+      expect(retry.prompt).toContain(checkpoint.note);
+    });
+
+    it("drops the checkpoint once the run's work is taken", async () => {
+      const { ticket, job, } = await dispatched();
+      await receiveReport({ job, since: Date.now(), after: 0, lines: [], checkpoint });
+      MockVcsClient.stage(`${STAGING_PREFIX}${job}`, ["src/lib/feature/a.ts"], "T-1: Add it");
+
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+      expect((await repository().ticketDetail(ticket.id))!.prNumber).toBeGreaterThan(0);
+      expect(saved(ticket.id)).toBeUndefined();
+    });
+
+    it("drops a checkpoint its branch has moved on from, and starts on the branch", async () => {
+      await assignClaudeCode();
+      await installRunner();
+      const ticket = await seedTicket();
+      await repository().updateTicket(ticket.id, { prNumber: 7, branchName: "formic/t-1" });
+      MockVcsClient.runner().branches.set("formic/t-1", "b".repeat(40));
+      await new MockVcsClient("acme/widgets").saveCheckpoint(ticket.id, {
+        base: BASE,
+        files: [],
+        deleted: [],
+        message: `T-1: checkpoint\n\n${CHECKPOINT_TRAILER} old`,
+      });
+
+      await runCoderAgent(PROJECT, ticket.id);
+
+      expect(MockVcsClient.runner().dispatches.at(-1)!.inputs.from).toBe("formic/t-1");
+      expect(saved(ticket.id)).toBeUndefined();
+    });
   });
 
   it("tells a run nobody waits on any more to stop reporting", async () => {

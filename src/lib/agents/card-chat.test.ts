@@ -331,6 +331,38 @@ describe("a ticket's chat", () => {
     expect((await replies(ticket.id)).at(-1)).toMatchObject({ agent: "Architect Agent" });
   });
 
+  it("starts a stopped ticket again on a plain \"continue\", without asking an agent", async () => {
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, {
+      status: "failed",
+      stalledIn: "in_progress",
+      blockedReason: "Claude Code hit its usage limit.",
+    });
+    await assignAgent("in_progress", "claude-code");
+    await installRunner();
+    const pending = await ask("ticket", ticket.id, "Continue");
+
+    await answer("ticket", ticket.id, pending.id);
+
+    expect(MockVcsClient.runner().dispatches).toEqual([]);
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after).toMatchObject({ status: "running", blockedReason: null });
+    expect(launched).toEqual([`coder agent for ${ticket.key}, from its chat`]);
+    expect(await reload(pending.id)).toMatchObject({
+      status: "done",
+      content: expect.stringContaining("Starting the Coder Agent on T-1 again"),
+    });
+  });
+
+  it("tells a CLI agent that its reply alone changes nothing", async () => {
+    const ticket = await seedTicket();
+    await assignAgent("todo", "claude-code");
+    await installRunner();
+    const pending = await ask("ticket", ticket.id, "Continue");
+    await answer("ticket", ticket.id, pending.id);
+    expect(lastDispatch().prompt).toContain("Your reply alone changes nothing on the board");
+  });
+
   it("says why a CLI agent's run failed", async () => {
     const ticket = await seedTicket();
     await assignAgent("todo", "claude-code");

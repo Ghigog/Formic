@@ -4,6 +4,7 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { normalizeScope, pathInScope, violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
+import { runningConflict } from "@/lib/domain/queue";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { VcsError, mergeTarget, type VcsClient } from "@/lib/vcs";
 import { projectFor } from "@/lib/board/project";
@@ -28,6 +29,30 @@ export function scopeAsked(ticket: Pick<TicketDetail, "scopeRequest" | "fileScop
 function listed(paths: string[]): string {
   const shown = paths.slice(0, 5).map((p) => `\`${p}\``).join(", ");
   return paths.length > 5 ? `${shown} and ${paths.length - 5} more` : shown;
+}
+
+/**
+ * Takes files outside a ticket's scope into it when no running ticket is
+ * writing them: the scope keeps parallel tickets apart, and with nothing
+ * running there, there is nothing to keep apart. Returns the wider scope, or
+ * null when a running ticket covers some of them and the person decides.
+ */
+export async function widenScope(
+  projectId: string,
+  ticket: TicketDetail,
+  outside: string[],
+): Promise<string[] | null> {
+  const requested = normalizeScope(outside);
+  const repo = repository();
+  const cards = await repo.boardCards(projectId);
+  if (runningConflict({ id: ticket.id, status: ticket.status, fileScope: requested }, cards)) return null;
+
+  const fileScope = normalizeScope([...ticket.fileScope, ...requested]);
+  await repo.updateTicket(ticket.id, { fileScope });
+  const text = `${ticket.key} needed files outside its scope, and no running ticket was using them, so I added them: ${listed(requested)}.`;
+  await repo.addCardChatMessage({ projectId, cardKind: "ticket", cardId: ticket.id, role: "assistant", content: text });
+  await publish(projectId, { type: "ticket.reply", ticketId: ticket.id, agent: "Coder Agent", text });
+  return fileScope;
 }
 
 /**
@@ -134,7 +159,7 @@ export async function takeKeptWork(
   }
 
   const outside = violationsInDiff(change.files, ticket.fileScope);
-  if (outside.length > 0) {
+  if (outside.length > 0 && !(await widenScope(projectId, ticket, outside))) {
     await askForScope(projectId, ticket, outside, { kept: true });
     return true;
   }

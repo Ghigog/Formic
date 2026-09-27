@@ -22,6 +22,8 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
+  AuditRecord,
+  AuditResult,
   CardChatMessage,
 } from "./repository";
 import type {
@@ -121,6 +123,7 @@ interface Store {
   assistant: AssistantMessage[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
+  audits: AuditRecord[];
 }
 
 declare global {
@@ -139,6 +142,7 @@ function store(): Store {
     existing.epicJobTimes ??= new Map();
     existing.epicJobAgents ??= new Map();
     existing.attachments ??= new Map();
+    existing.audits ??= [];
     return existing;
   }
   const project: ProjectSummary = {
@@ -172,6 +176,7 @@ function store(): Store {
     assistant: [],
     cardChat: [],
     attachments: new Map(),
+    audits: [],
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -298,6 +303,7 @@ export class MemoryRepository implements Repository {
       s.events = s.events.filter((e) => e.projectId !== projectId);
       s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
       s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
+      s.audits = s.audits.filter((a) => a.projectId !== projectId);
       s.epicNumbers.delete(projectId);
       s.projects.delete(projectId);
     }
@@ -914,6 +920,62 @@ export class MemoryRepository implements Repository {
   async runCancelReason(runId: string): Promise<string | null> {
     const run = store().runs.get(runId);
     return run && run.status === "cancelled" ? (run.error ?? "Stopped.") : null;
+  }
+
+  async auditsFor(projectId: string): Promise<AuditRecord[]> {
+    return store()
+      .audits.filter((a) => a.projectId === projectId)
+      .map((a) => ({ ...a, log: [...a.log], files: [...a.files] }));
+  }
+
+  async startAudit(projectId: string, sentinel: string): Promise<AuditRecord> {
+    const audit: AuditRecord = {
+      id: `audit_${Math.random().toString(36).slice(2, 10)}`,
+      projectId,
+      sentinel,
+      status: "running",
+      log: [],
+      stars: null,
+      quote: null,
+      summary: null,
+      report: null,
+      error: null,
+      model: null,
+      files: [],
+      startedAt: new Date(),
+      finishedAt: null,
+    };
+    store().audits.push(audit);
+    return { ...audit, log: [], files: [] };
+  }
+
+  async logAudit(id: string, step: string): Promise<void> {
+    store().audits.find((a) => a.id === id)?.log.push(step);
+  }
+
+  async finishAudit(id: string, result: AuditResult): Promise<void> {
+    const s = store();
+    const audit = s.audits.find((a) => a.id === id);
+    if (!audit) return;
+    Object.assign(audit, {
+      status: result.status,
+      stars: result.stars ?? null,
+      quote: result.quote ?? null,
+      summary: result.summary ?? null,
+      report: result.report ?? null,
+      error: result.error ?? null,
+      model: result.model ?? null,
+      files: result.files ?? [],
+      finishedAt: new Date(),
+    });
+    s.audits = s.audits.filter(
+      (a) =>
+        a === audit ||
+        a.projectId !== audit.projectId ||
+        a.sentinel !== audit.sentinel ||
+        a.status === "running" ||
+        (result.status === "failed" && a.status === "done"),
+    );
   }
 
   async claimDelivery(key: string): Promise<boolean> {

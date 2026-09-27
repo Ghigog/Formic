@@ -112,6 +112,7 @@ model Project {
   columnAgents ColumnAgent[]
   assistantMessages AssistantMessage[]
   cardChatMessages  CardChatMessage[]
+  audits            Audit[]
 
   @@index([ownerId])
   @@map("project")
@@ -452,3 +453,33 @@ model CardChatMessage {
   @@index([cardId, createdAt])
   @@map("card_chat_message")
 }
+
+/// One sentinel's audit of a project: its stars, its one line and its
+/// report. At most two per sentinel are kept, the last report and a newer
+/// run in progress or failed.
+model Audit {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The roster id, such as "secops". See src/lib/sentinels/roster.ts.
+  sentinel   String
+  /// "running", "done" or "failed".
+  status     String    @default("running")
+  /// Steps reached so far, oldest first.
+  log        String[]  @default([])
+  stars      Int?
+  quote      String?
+  summary    String?
+  /// likes, dislikes, wrong and missing: each a list of { text, ref }.
+  report     Json?
+  error      String?
+  model      String?
+  /// Files the sentinel read.
+  files      String[]  @default([])
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([projectId, sentinel])
+  @@map("audit")
+}
+

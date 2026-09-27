@@ -12,6 +12,8 @@ import {
   type IssueRef,
   type WorkflowRunRef,
   STAGING_PREFIX,
+  type Checkpoint,
+  type CheckpointInput,
 } from "./types";
 import { CARRY_DELETED, CARRY_DIR, isCarried } from "@/lib/runner/workflow";
 
@@ -63,6 +65,8 @@ interface MockRepo {
   baseMerges: Map<string, string>;
   /** Merge commits Formic recorded, to the commit each merged in. */
   recordedMerges: Map<string, string>;
+  /** Each card's checkpoint, with what it saved. */
+  checkpoints: Map<string, Checkpoint & { input: CheckpointInput }>;
 }
 
 export interface MockIssue {
@@ -92,6 +96,7 @@ function repo(): MockRepo {
     merges: [],
     baseMerges: new Map(),
     recordedMerges: new Map(),
+    checkpoints: new Map(),
   };
   return g.__formicMockRepo;
 }
@@ -336,6 +341,25 @@ export class MockVcsClient implements VcsClient {
   async deleteStagingBranch(branch: string): Promise<void> {
     if (!branch.startsWith(STAGING_PREFIX)) throw new Error(`Refusing to delete ${branch}.`);
     repo().branches.delete(branch);
+  }
+
+  async branchHead(branch: string): Promise<string | null> {
+    return repo().branches.get(branch) ?? null;
+  }
+
+  async saveCheckpoint(card: string, input: CheckpointInput): Promise<string> {
+    const sha = fakeSha();
+    repo().checkpoints.set(card, { sha, parent: input.base, message: input.message, input });
+    return sha;
+  }
+
+  async checkpoint(card: string): Promise<Checkpoint | null> {
+    const saved = repo().checkpoints.get(card);
+    return saved ? { sha: saved.sha, parent: saved.parent, message: saved.message } : null;
+  }
+
+  async deleteCheckpoint(card: string): Promise<void> {
+    repo().checkpoints.delete(card);
   }
 
   /* Test seams for the runner. */

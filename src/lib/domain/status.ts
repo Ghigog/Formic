@@ -99,15 +99,24 @@ export function unstarted(t: {
  * What a person needs to know or do about a card: why it cannot work where
  * they put it, why its agent stopped, or the work on it that is theirs, not
  * an agent's. Null when there is nothing.
+ *
+ * A card can carry a blocked/failed status with an agent still actively
+ * running on it — the Architect Agent drafts a ticket from that state so the
+ * card doesn't flash as ready before its content exists (see
+ * `createTodoItem`/`redraftTicket` in board/service.ts). That is
+ * narration, not a real stall: `workingSince` is how the board already knows
+ * an agent is live on a card, so a blocked/failed reason only counts as the
+ * person's problem once no agent is working it.
  */
 export function cardProblem(card: {
   status: TicketStatus;
   blockedReason?: string | null;
   misplacedReason?: string | null;
   needsHuman?: string | null;
+  workingSince?: string | null;
 }): string | null {
   if (card.misplacedReason) return card.misplacedReason;
-  if (isStalled(card.status) && card.blockedReason) return card.blockedReason;
+  if (isStalled(card.status) && card.blockedReason && !card.workingSince) return card.blockedReason;
   if (card.needsHuman && card.status !== "merged") {
     return `${card.needsHuman.replace(/\.?\s*$/, ".")} No agent does this one. When you have, tell its chat what you did or found, and it closes.`;
   }

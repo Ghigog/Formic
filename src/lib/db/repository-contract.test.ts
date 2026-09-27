@@ -361,6 +361,43 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("audits", () => {
+      const report = { likes: [{ text: "Good", ref: "a.ts" }], dislikes: [], wrong: [], missing: [] };
+
+      it("journals a run, then keeps only the newest report per sentinel", async () => {
+        const p = await project();
+        const first = await repo.startAudit(p.id, "secops");
+        await repo.logAudit(first.id, "Listing files");
+        await repo.logAudit(first.id, "Reading 3 files");
+        expect((await repo.auditsFor(p.id))[0]).toMatchObject({ status: "running", log: ["Listing files", "Reading 3 files"] });
+        await repo.finishAudit(first.id, { status: "done", stars: 3, quote: "q", summary: "s", report, files: ["a.ts"], model: "m" });
+
+        const second = await repo.startAudit(p.id, "secops");
+        await repo.finishAudit(second.id, { status: "done", stars: 5, quote: "q2", summary: "s2", report, files: [], model: "m" });
+        const audits = await repo.auditsFor(p.id);
+        expect(audits.map((a) => [a.status, a.stars])).toEqual([["done", 5]]);
+        expect(audits[0]!.report).toEqual(report);
+      });
+
+      it("keeps the last report when a newer run fails", async () => {
+        const p = await project();
+        const done = await repo.startAudit(p.id, "qa");
+        await repo.finishAudit(done.id, { status: "done", stars: 4, quote: "q", summary: "s", report, files: [] });
+        for (const error of ["first", "second"]) {
+          const failed = await repo.startAudit(p.id, "qa");
+          await repo.finishAudit(failed.id, { status: "failed", error });
+        }
+        const other = await repo.startAudit(p.id, "tester");
+        const audits = await repo.auditsFor(p.id);
+        expect(audits.map((a) => [a.sentinel, a.status, a.stars ?? a.error])).toEqual([
+          ["qa", "done", 4],
+          ["qa", "failed", "second"],
+          ["tester", "running", null],
+        ]);
+        expect(other.status).toBe("running");
+      });
+    });
+
     describe("webhook deliveries", () => {
       it("claims a delivery once", async () => {
         const key = `delivery-${randomUUID()}`;

@@ -22,8 +22,6 @@ import { createHash } from "node:crypto";
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
-/** Where the setup pull request comes from. */
-export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 
 /** Where a planning agent's answer sits on its staging branch. */
 export const ANSWER_PATH = ".formic/answer.md";
@@ -56,6 +54,14 @@ export function isCarried(path: string): boolean {
  * followed by the commit it merged. Formic records that merge itself.
  */
 export const MERGED_TRAILER = "Formic-Merged:";
+
+/**
+ * The last line of a checkpoint commit, followed by the job that saved it.
+ * A run that starts on one carries on from it: the workflow steps back to
+ * where that work started and leaves the work in the checkout, uncommitted,
+ * with the checkpoint's notes as the new run's progress file.
+ */
+export const CHECKPOINT_TRAILER = "Formic-Checkpoint:";
 
 export const CODE_MODES = ["implement", "fix"] as const;
 export const ANSWER_MODES = ["product", "architect", "showcase"] as const;
@@ -116,21 +122,40 @@ export function attemptOfJob(job: string): number {
  * last time to Formic, and writes any notes Formic answers with to the file
  * the agent's hook reads. A report that fails is sent again with the next;
  * one that keeps failing never fails the run.
+ *
+ * On a coding run it also sends a checkpoint whenever the checkout or the
+ * agent's progress file has changed, at most every CHECKPOINT_EVERY seconds
+ * and once more at the end: every file that differs from where the run
+ * started, whole. A run can stop at any moment, and the next one carries on
+ * from the last checkpoint. It stages into an index of its own, so the
+ * agent's git state is never touched. A checkpoint too big to post is
+ * skipped rather than sent in part.
  */
-export const REPORTER_SCRIPT = String.raw`import json, os, time, urllib.request
+export const REPORTER_SCRIPT = String.raw`import base64, hashlib, json, os, subprocess, time, urllib.request
 
 url = os.environ["REPORT"]
 stream = os.environ["FORMIC_STREAM"]
 notes = os.environ["FORMIC_NOTES"]
 done = os.environ["FORMIC_DONE"]
+progress = os.environ.get("FORMIC_PROGRESS", "")
+start = os.environ.get("FORMIC_START", "")
+checkpointing = bool(os.environ.get("FORMIC_CHECKPOINT")) and bool(start)
+index = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "formic-checkpoint-index")
+CHECKPOINT_EVERY = 30
+MAX_CHECKPOINT = 2500000
 sent = 0
 after = 0
 stopped = False
+saved = None
+saved_at = 0.0
 
 
-def post(lines):
+def post(lines, checkpoint=None):
     global after, stopped
-    body = json.dumps({"lines": lines, "after": after}).encode()
+    payload = {"lines": lines, "after": after}
+    if checkpoint:
+        payload["checkpoint"] = checkpoint
+    body = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=body, method="POST", headers={"content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as res:
         reply = json.load(res)
@@ -139,6 +164,7 @@ def post(lines):
             f.write("A note from the person watching this ticket on Formic. Take it into account from here on:\n" + note["text"] + "\n\n")
         after = max(after, int(note["seq"]))
     stopped = bool(reply.get("stop"))
+    return reply
 
 
 def flush():
@@ -159,10 +185,60 @@ def flush():
         sent += sum(len(line) + 1 for line in batch)
 
 
+def git(*args):
+    env = dict(os.environ, GIT_INDEX_FILE=index)
+    return subprocess.run(["git", *args], env=env, check=True, capture_output=True).stdout
+
+
+def progress_note():
+    try:
+        with open(progress, encoding="utf-8", errors="replace") as f:
+            return f.read()[-20000:]
+    except OSError:
+        return ""
+
+
+def checkpoint(final):
+    global saved, saved_at
+    if not checkpointing or (not final and time.time() - saved_at < CHECKPOINT_EVERY):
+        return
+    git("add", "-A")
+    tree = git("write-tree").decode().strip()
+    note = progress_note()
+    key = tree + hashlib.sha256(note.encode()).hexdigest()
+    if key == saved:
+        return
+    files, deleted, size = [], [], 0
+    parts = git("diff-tree", "-r", "-z", "--no-renames", start, tree).split(b"\0")
+    for meta, path in zip(parts[0::2], parts[1::2]):
+        _, mode, _, sha, status = meta.decode().lstrip(":").split(" ")
+        name = path.decode("utf-8", "replace")
+        if status == "D":
+            deleted.append(name)
+        elif mode != "160000":
+            data = git("cat-file", "blob", sha)
+            size += len(data)
+            files.append({"path": name, "mode": mode, "content": base64.b64encode(data).decode()})
+    saved_at = time.time()
+    if size > MAX_CHECKPOINT or post([], {"base": start, "files": files, "deleted": deleted, "note": note}).get("checkpointed"):
+        saved = key
+
+
+if checkpointing:
+    try:
+        git("read-tree", start)
+        saved = git("rev-parse", start + "^{tree}").decode().strip() + hashlib.sha256(b"").hexdigest()
+    except Exception:
+        checkpointing = False
+
 while not stopped:
     last = os.path.exists(done)
     try:
         flush()
+    except Exception:
+        pass
+    try:
+        checkpoint(last)
     except Exception:
         pass
     if last:
@@ -272,11 +348,23 @@ jobs:
         with:
           ref: \${{ inputs.from }}
           persist-credentials: false
-          # Merging needs the history both sides share.
-          fetch-depth: \${{ inputs.merge != '' && '0' || '1' }}
+          # Merging needs the history both sides share; a checkpoint, the
+          # commit it was saved on.
+          fetch-depth: \${{ inputs.merge != '' && '0' || '2' }}
 
+      # Started on a checkpoint (Formic names one by its commit, never by a
+      # branch): carry on from it, its work uncommitted in the checkout and
+      # its notes in the progress file, as it was left.
       - name: Remember where the agent started
-        run: echo "FORMIC_START=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+        env:
+          FROM: \${{ inputs.from }}
+        run: |
+          if [[ "$FROM" =~ ^[0-9a-f]{40}$ ]] && git log -1 --format=%B | grep -q '^${CHECKPOINT_TRAILER}'; then
+            git log -1 --format=%b | grep -v '^${CHECKPOINT_TRAILER}' > "$RUNNER_TEMP/formic-progress.md" || true
+            git reset -q HEAD~1
+            echo "Carrying on from the checkpoint of a run that stopped."
+          fi
+          echo "FORMIC_START=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       # Conflicts and all: resolving them is the agent's work.
       - name: Bring the other branch in
@@ -350,6 +438,10 @@ jobs:
           FORMIC_STREAM: \${{ runner.temp }}/formic-stream.jsonl
           FORMIC_NOTES: \${{ runner.temp }}/formic-notes.md
           FORMIC_DONE: \${{ runner.temp }}/formic-done
+          FORMIC_PROGRESS: \${{ runner.temp }}/formic-progress.md
+          # Coding runs save checkpoints; a run resolving merge conflicts is
+          # short, and its merge could not be carried on from one.
+          FORMIC_CHECKPOINT: \${{ (inputs.mode == 'implement' || inputs.mode == 'fix') && inputs.merge == '' && 'on' || '' }}
           # Claude Code turns its todo tool off when run with -p; the ticket's
           # plan and progress bar are read from it.
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "true"
@@ -483,4 +575,12 @@ ${indent(REPORTER_SCRIPT, 10)}
  * repository's: never edit it by hand. Last in the file: it reads the whole
  * workflow, which reads everything above.
  */
-export const RUNNER_VERSION = `formic-runner: ${createHash("sha256").update(workflowBody()).digest("hex").slice(0, 12)}`;
+const RUNNER_HASH = createHash("sha256").update(workflowBody()).digest("hex").slice(0, 12);
+export const RUNNER_VERSION = `formic-runner: ${RUNNER_HASH}`;
+
+/**
+ * Where the setup pull request comes from: a branch of its own per version,
+ * cut from the base branch as it is now. Reusing one branch left each new
+ * setup pull request on top of an old base, where it conflicted.
+ */
+export const RUNNER_SETUP_BRANCH = `formic/setup-runner-${RUNNER_HASH}`;

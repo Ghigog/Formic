@@ -11,6 +11,10 @@ describe("WorkTimer", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-23T12:02:05Z"));
     render(<WorkTimer since="2026-09-23T12:00:00Z" />);
+    // It reads the clock once mounted, so server and browser render alike.
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
     expect(screen.getByTitle(/agent has been working/)).toHaveTextContent("2:05");
 
     act(() => {

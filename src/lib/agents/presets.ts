@@ -127,6 +127,31 @@ export async function columnLimit(projectId: string, column: ColumnId): Promise<
   return resolved.kind === "limited" ? resolved.reason : null;
 }
 
+/**
+ * The agent the Sentinels audit with. They belong to no column, so they
+ * borrow the first column agent that can answer here rather than in GitHub
+ * Actions: In Review's first, since auditing is closest to reviewing.
+ */
+export async function sentinelAgent(
+  projectId: string,
+): Promise<{ kind: "configured"; config: AgentConfig } | { kind: "mock" } | { kind: "none"; reason: string }> {
+  let limited: string | null = null;
+  for (const column of ["in_review", "todo", "backlog", "done", "in_progress"] as const) {
+    const resolved = await resolveColumn(projectId, column);
+    if (resolved.kind === "mock") return { kind: "mock" };
+    if (resolved.kind === "limited") limited ??= resolved.reason;
+    if (resolved.kind !== "configured") continue;
+    if (providerInfo(resolved.config.provider ?? "anthropic")?.kind === "cli") continue;
+    return { kind: "configured", config: resolved.config };
+  }
+  return {
+    kind: "none",
+    reason:
+      limited ??
+      "Sentinels borrow a column's agent, and none can answer here. Give a column a Claude or OpenAI-compatible agent with its API key.",
+  };
+}
+
 /** Kept for callers that only need the configuration, and for tests. */
 export async function agentConfigFor(
   projectId: string,

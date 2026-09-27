@@ -69,6 +69,9 @@ export interface ColonyApi {
   tryStyle: (patch: { shape?: BugShape; color?: BugColor }, from: HTMLElement) => void;
   timelineOpen: boolean;
   setTimelineOpen: (open: boolean) => void;
+  /** The Sentinels page. Opening it closes the timeline, and the other way round. */
+  sentinelsOpen: boolean;
+  setSentinelsOpen: (open: boolean) => void;
   colonyOpen: boolean;
   setColonyOpen: (open: boolean) => void;
   toast: { text: string; key: number } | null;
@@ -89,14 +92,19 @@ export function useColony(): ColonyApi | null {
 }
 
 /** What a card's ant crew should be doing, if it has one. */
-function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null {
+export function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null {
   if (card.kind !== "ticket") return null;
-  if (card.status === "running") return "work";
+  // Only round a card an agent is really on: a card that says Running with
+  // nothing behind it gets no crew.
+  if (card.status === "running") return card.workingSince ? "work" : null;
   // Out of the nest, but crowded round its timer until the way is clear.
   if (card.status === "queued") return "queue";
-  // Tunnelling while CI runs or the Reviewer Agent works; buried once both rest.
+  // Tunnelling while CI runs or the Reviewer Agent works; buried once CI
+  // passes and nobody is on it. Red CI with no reviewer at work: no crew.
   if (card.status === "review") {
-    return extras[card.id]?.ci === "passing" && !card.workingSince ? "buried" : "tunnel";
+    const ci = extras[card.id]?.ci;
+    if (card.workingSince || ci === "pending") return "tunnel";
+    return ci === "passing" ? "buried" : null;
   }
   return null;
 }
@@ -126,6 +134,7 @@ export function ColonyProvider({
   /** Merges with a reaction on its way. */
   const flying = useRef(new Set<string>());
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [sentinelsOpen, setSentinelsOpen] = useState(false);
   const [colonyOpen, setColonyOpen] = useState(false);
   const [toast, setToast] = useState<ColonyApi["toast"]>(null);
   const [win, setWin] = useState<EpicWin | null>(null);
@@ -167,9 +176,9 @@ export function ColonyProvider({
       full: true,
       bugShape: saved.shape,
       bugHex,
-      covered: timelineOpen,
+      covered: timelineOpen || sentinelsOpen,
     });
-  }, [fx, crews, score.level, saved.shape, bugHex, timelineOpen]);
+  }, [fx, crews, score.level, saved.shape, bugHex, timelineOpen, sentinelsOpen]);
   useEffect(() => sound.setEnabled(saved.sound), [sound, saved.sound]);
   useEffect(() => sound.attach(), [sound]);
   useEffect(() => {
@@ -301,7 +310,7 @@ export function ColonyProvider({
 
   /* --------------------------------------------------------- reactions */
 
-  const prev = useRef<Map<string, { status: string; col: string }> | null>(null);
+  const prev = useRef<Map<string, { status: string; col: string; working: boolean }> | null>(null);
   const prevCi = useRef<Record<string, string | undefined>>({});
   const savedRef = useRef(saved);
   useEffect(() => {
@@ -311,7 +320,9 @@ export function ColonyProvider({
   useEffect(() => {
     if (!loaded) return;
     const before = prev.current;
-    prev.current = new Map(cards.map((c) => [c.id, { status: c.status, col: columnOf(c) }]));
+    prev.current = new Map(
+      cards.map((c) => [c.id, { status: c.status, col: columnOf(c), working: Boolean(c.workingSince) }]),
+    );
     const ciBefore = prevCi.current;
     prevCi.current = Object.fromEntries(Object.entries(extras).map(([k, v]) => [k, v?.ci]));
     const mergedIds = cards.filter((c) => c.status === "merged").map((c) => c.id);
@@ -331,6 +342,21 @@ export function ColonyProvider({
         if (isBug(card) && col === "backlog") later.push(() => penalty(card));
         continue;
       }
+
+      // The Architect Agent clears workingSince when it finishes decomposing
+      // an Epic or rewriting a ticket, but the card's status (ready/waiting)
+      // usually doesn't change across the run, so this needs its own check
+      // rather than living in the status-change branches below.
+      if (
+        col === "todo" &&
+        was.working &&
+        !card.workingSince &&
+        card.status !== "blocked" &&
+        card.status !== "failed"
+      ) {
+        later.push(() => agentFinished(card));
+      }
+
       if (was.status === card.status) continue;
 
       if (!flights.current.has(card.id)) later.push(() => landed(card));
@@ -497,6 +523,14 @@ export function ColonyProvider({
         { duration: 900, easing: "ease-out" },
       );
     }
+    function agentFinished(card: BoardCard) {
+      const e = el(card);
+      if (!e) return;
+      const [x, y, r] = centerOf(e);
+      sfx("reveal");
+      fx.ring(x, y, "var(--terracotta-deep)", 70, 0.5);
+      fx.pop(x, r.top, "READY", `${card.key} ready to move`, "var(--terracotta-deep)", 15);
+    }
     function ciPassed(card: BoardCard) {
       const e = el(card);
       if (!e) return;
@@ -632,7 +666,19 @@ export function ColonyProvider({
     setTimelineOpen: (open) => {
       sfx(open ? "pickup" : "drop");
       setTimelineOpen(open);
-      if (open) setColonyOpen(false);
+      if (open) {
+        setColonyOpen(false);
+        setSentinelsOpen(false);
+      }
+    },
+    sentinelsOpen,
+    setSentinelsOpen: (open) => {
+      sfx(open ? "pickup" : "drop");
+      setSentinelsOpen(open);
+      if (open) {
+        setColonyOpen(false);
+        setTimelineOpen(false);
+      }
     },
     colonyOpen,
     setColonyOpen: (open) => {
