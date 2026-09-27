@@ -117,7 +117,7 @@ describe("interpret", () => {
     expect(
       interpret("pull_request", {
         action: "closed",
-        pull_request: { number: 3, merged: true, merge_commit_sha: "bbb", head: { ref: "formic/setup-runner" } },
+        pull_request: { number: 3, merged: true, merge_commit_sha: "bbb", head: { ref: "formic/setup-runner-0123456789ab" } },
       }),
     ).toEqual([{ kind: "runner-setup", key: "runner-setup:bbb" }]);
   });

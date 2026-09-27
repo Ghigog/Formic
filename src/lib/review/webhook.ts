@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import {
-  RUNNER_SETUP_BRANCH,
+  RUNNER_SETUP_PREFIX,
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
   parseRunTitle,
@@ -157,7 +157,7 @@ export function interpret(event: string, payload: unknown): WebhookSignal[] {
       const prNumber = Number(pull.number);
       if (!Number.isFinite(prNumber)) return [];
       const head = pull.head as { ref?: unknown } | undefined;
-      if (head?.ref === RUNNER_SETUP_BRANCH) {
+      if (typeof head?.ref === "string" && head.ref.startsWith(RUNNER_SETUP_PREFIX)) {
         return [{ kind: "runner-setup", key: `runner-setup:${String(pull.merge_commit_sha ?? prNumber)}` }];
       }
       // Someone merged it by hand. The card should follow reality rather than
