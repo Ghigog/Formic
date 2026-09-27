@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { ColonyProvider } from "./colony";
+import { ColonyProvider, crewPhase } from "./colony";
 import { SoundEngine } from "./sound";
 import { makeCard } from "@/test/cards";
 
@@ -35,5 +35,22 @@ describe("ColonyProvider agent-finished cue", () => {
     await flushFrame();
 
     expect(play).toHaveBeenCalledWith("reveal", 0);
+  });
+});
+
+describe("crewPhase", () => {
+  const since = "2024-01-01T00:00:00.000Z";
+
+  it("sends a crew only to a running card an agent is really on", () => {
+    expect(crewPhase(makeCard({ status: "running", workingSince: since }), {})).toBe("work");
+    expect(crewPhase(makeCard({ status: "running", workingSince: null }), {})).toBeNull();
+  });
+
+  it("tunnels in review while CI runs or the reviewer works, and rests otherwise", () => {
+    const review = makeCard({ status: "review", prNumber: 1 });
+    expect(crewPhase({ ...review, workingSince: since }, {})).toBe("tunnel");
+    expect(crewPhase(review, { [review.id]: { ci: "pending" } })).toBe("tunnel");
+    expect(crewPhase(review, { [review.id]: { ci: "passing" } })).toBe("buried");
+    expect(crewPhase(review, { [review.id]: { ci: "failing" } })).toBeNull();
   });
 });

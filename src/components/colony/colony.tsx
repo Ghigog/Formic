@@ -89,14 +89,19 @@ export function useColony(): ColonyApi | null {
 }
 
 /** What a card's ant crew should be doing, if it has one. */
-function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null {
+export function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null {
   if (card.kind !== "ticket") return null;
-  if (card.status === "running") return "work";
+  // Only round a card an agent is really on: a card that says Running with
+  // nothing behind it gets no crew.
+  if (card.status === "running") return card.workingSince ? "work" : null;
   // Out of the nest, but crowded round its timer until the way is clear.
   if (card.status === "queued") return "queue";
-  // Tunnelling while CI runs or the Reviewer Agent works; buried once both rest.
+  // Tunnelling while CI runs or the Reviewer Agent works; buried once CI
+  // passes and nobody is on it. Red CI with no reviewer at work: no crew.
   if (card.status === "review") {
-    return extras[card.id]?.ci === "passing" && !card.workingSince ? "buried" : "tunnel";
+    const ci = extras[card.id]?.ci;
+    if (card.workingSince || ci === "pending") return "tunnel";
+    return ci === "passing" ? "buried" : null;
   }
   return null;
 }
