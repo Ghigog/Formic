@@ -304,6 +304,39 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.presetForRun(preset.id)).toBeNull();
         expect(await repo.columnAgents(p.id)).toEqual({});
       });
+
+      it("scopes a preset to the column it was made for, and keeps that column on update", async () => {
+        const preset = await repo.savePreset({
+          ownerId: null,
+          column: "in_review",
+          provider: "anthropic",
+          name: `contract-${randomUUID()}`,
+          model: "claude-opus-5",
+          prompt: "p",
+        });
+        expect(preset.column).toBe("in_review");
+
+        const updated = await repo.savePreset({
+          id: preset.id,
+          column: "in_progress",
+          provider: "anthropic",
+          name: preset.name,
+          model: preset.model,
+          prompt: "changed",
+        });
+        expect(updated.column).toBe("in_review");
+      });
+
+      it("leaves a preset unscoped when no column is given, so it shows in every column", async () => {
+        const preset = await repo.savePreset({
+          ownerId: null,
+          provider: "anthropic",
+          name: `contract-${randomUUID()}`,
+          model: "claude-opus-5",
+          prompt: "p",
+        });
+        expect(preset.column).toBeNull();
+      });
     });
 
     describe("card chat", () => {

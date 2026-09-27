@@ -115,7 +115,9 @@ export function AgentSelect({
             {!selected && <Check />}
           </button>
 
-          {presets.map((p) => (
+          {presets
+            .filter((p) => p.column === null || p.column === column)
+            .map((p) => (
             <div key={p.id} className="group flex flex-col">
               <div className="flex items-center">
                 <button

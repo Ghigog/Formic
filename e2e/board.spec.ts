@@ -235,11 +235,11 @@ test("a column runs a saved agent: create, pick, edit, remove", async ({ page })
   await expect(selector).toContainText("claude-worker");
   await page.screenshot({ path: "e2e/.results/agent-select.png" });
 
-  // Offered on other columns too, with its key hinted but never shown.
+  // Scoped to the column it was made from — not offered in In Review's picker.
   await column(page, "In Review").getByRole("button", { name: /Agent for In Review:/ }).click();
   await expect(
     column(page, "In Review").getByRole("menuitemradio", { name: /claude-worker.*Anthropic/ }),
-  ).toBeVisible();
+  ).not.toBeVisible();
   await page.keyboard.press("Escape");
 
   // Edit, then remove it and the column goes back to its built-in agent.

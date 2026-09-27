@@ -31,11 +31,17 @@ import {
  */
 
 export async function savePreset(
-  input: AgentPresetInput & { id?: string; ownerId?: string | null },
+  input: Omit<AgentPresetInput, "column"> & {
+    id?: string;
+    ownerId?: string | null;
+    /** The column it's scoped to. Ignored, and the existing one kept, on an update. */
+    column?: ColumnId | null;
+  },
 ) {
   return repository().savePreset({
     id: input.id,
     ownerId: input.ownerId,
+    column: input.column,
     provider: input.provider,
     name: input.name,
     model: input.model,

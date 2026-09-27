@@ -258,6 +258,8 @@ export const COLUMN_AGENT_ROLE: Record<(typeof COLUMNS)[number], AgentRole> = {
 export interface AgentPreset {
   id: string;
   ownerId: string | null;
+  /** The column it was made for, set once on create. Null shows everywhere. */
+  column: (typeof COLUMNS)[number] | null;
   name: string;
   provider: ProviderId;
   model: string;
@@ -277,6 +279,8 @@ export interface AgentPreset {
 export const agentPresetInputSchema = z
   .object({
     name: z.string().trim().min(1, "Give the agent a name.").max(60),
+    /** The column it's scoped to. Only honoured when creating a preset. */
+    column: z.enum(COLUMNS).nullable().default(null),
     provider: z.enum(PROVIDER_IDS).default("anthropic"),
     /** Empty for a CLI agent means its own default model. */
     model: z.string().trim().max(200).default(""),

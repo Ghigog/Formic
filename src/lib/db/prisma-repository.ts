@@ -986,7 +986,9 @@ export class PrismaRepository implements Repository {
     };
     const row = record.id
       ? await db.agentPreset.update({ where: { id: record.id }, data })
-      : await db.agentPreset.create({ data: { ...data, ownerId: record.ownerId ?? null } });
+      : await db.agentPreset.create({
+          data: { ...data, ownerId: record.ownerId ?? null, column: record.column ?? null },
+        });
     return toPreset(row);
   }
 
@@ -1342,6 +1344,7 @@ function ownerWhere(scope: OwnerScope) {
 function toPreset(row: {
   id: string;
   ownerId: string | null;
+  column: ColumnId | null;
   provider: string;
   name: string;
   model: string;
@@ -1354,6 +1357,7 @@ function toPreset(row: {
   return {
     id: row.id,
     ownerId: row.ownerId,
+    column: row.column,
     name: row.name,
     // Rows from before providers existed default to Claude in the schema.
     provider: isProviderId(row.provider) ? row.provider : "anthropic",

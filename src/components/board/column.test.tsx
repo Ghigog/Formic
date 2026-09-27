@@ -142,6 +142,7 @@ describe("Column with an agent out of usage", () => {
   const preset = {
     id: "p1",
     ownerId: null,
+    column: null,
     name: "Claude (work)",
     provider: "claude-code" as const,
     model: "",

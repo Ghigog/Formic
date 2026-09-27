@@ -31,12 +31,19 @@ export function useAgents(initialPresets: AgentPreset[], initialColumns: ColumnA
     setColumns(columns);
   }, []);
 
-  /** Creates or updates a preset. A new one is put on `column` straight away. */
+  /**
+   * Creates or updates a preset. A new one is scoped to `column` and put on
+   * it straight away; `column` is never sent on an update, which keeps
+   * whatever column the preset already had.
+   */
   const save = useCallback(
-    async (input: AgentPresetInput, options: { id?: string; column?: ColumnId }) => {
+    async (input: Omit<AgentPresetInput, "column">, options: { id?: string; column?: ColumnId }) => {
       const { preset } = options.id
         ? await send<{ preset: AgentPreset }>(`/api/agents/presets/${options.id}`, "PATCH", input)
-        : await send<{ preset: AgentPreset }>("/api/agents/presets", "POST", input);
+        : await send<{ preset: AgentPreset }>("/api/agents/presets", "POST", {
+            ...input,
+            column: options.column ?? null,
+          });
       setPresets((prev) =>
         prev.some((p) => p.id === preset.id)
           ? prev.map((p) => (p.id === preset.id ? preset : p))
