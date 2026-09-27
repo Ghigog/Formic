@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   STOPPED_BY_PERSON,
+  attachmentUrlAllowed,
   cliPrompt,
+  mergedFrom,
   PLAN_FIRST_RULE,
   collectCliRuns,
   completeCliRun,
@@ -10,13 +12,16 @@ import {
   reportAllowed,
   reviewVerdictOf,
   secretNameFor,
+  signedAttachmentUrl,
   stopTicket,
 } from "./runner";
 import { addNote } from "@/lib/coder/notes";
 import {
   ANSWER_PATH,
   CARRY_DELETED,
+  CHECKPOINT_TRAILER,
   RUNNER_SETUP_BRANCH,
+  RUNNER_VERSION,
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
   parseRunTitle,
@@ -24,11 +29,13 @@ import {
   runnerWorkflow,
 } from "./workflow";
 import { runCoderAgent } from "@/lib/coder/pipeline";
+import { reviewPullRequest } from "@/lib/review/pipeline";
 import { cliAgentFor, savePreset } from "@/lib/agents/presets";
-import { runArchitectAgent, runProductAgent } from "@/lib/agents/pipeline";
+import { runArchitectAgent, runArchitectDraftTicket, runProductAgent } from "@/lib/agents/pipeline";
 import type { ColumnId } from "@/lib/domain/status";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
+import { redraftTicket } from "@/lib/board/service";
 import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { resetMergeLanes } from "@/lib/review/lane";
@@ -217,6 +224,29 @@ describe("a CLI agent planning an Epic", () => {
     expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${inputs.job}`)).toBe(false);
   });
 
+  it("gives a CLI agent a signed URL for each attachment, with its filename and kind", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    await assignClaudeCode("backlog");
+    await installRunner();
+    const epic = await seedEpic();
+    const attachment = await repository().createAttachment({
+      projectId: PROJECT,
+      epicId: epic.id,
+      filename: "mockup.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+
+    await runProductAgent(PROJECT, epic.id, "Let me export my board as CSV");
+
+    const { prompt } = lastDispatch();
+    expect(prompt).toContain("mockup.png (image):");
+    expect(prompt).toContain(`https://formic.example/api/attachments/${attachment.id}?`);
+    expect(prompt).toContain("FORMIC_ATTACHMENTS");
+  });
+
   it("keeps a stalled Epic stalled, with why, across a reload", async () => {
     await assignClaudeCode("backlog");
     await installRunner();
@@ -265,6 +295,28 @@ describe("a CLI agent planning an Epic", () => {
     const tickets = await repository().ticketsForEpic(epic.id);
     expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2"]);
     expect((await repository().epicDetail(epic.id))!.runnerJob).toBeNull();
+  });
+
+  it("gives a To Do CLI agent the same signed attachment URLs", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    await assignClaudeCode("todo");
+    await installRunner();
+    const epic = await seedEpic(PRD);
+    const attachment = await repository().createAttachment({
+      projectId: PROJECT,
+      epicId: epic.id,
+      filename: "notes.txt",
+      mimeType: "text/plain",
+      kind: "file",
+      size: 5,
+      bytes: new Uint8Array([1, 2, 3, 4, 5]),
+    });
+
+    await runArchitectAgent(PROJECT, epic.id, "Export", PRD, ["src"]);
+
+    const { prompt } = lastDispatch();
+    expect(prompt).toContain("notes.txt (file):");
+    expect(prompt).toContain(`https://formic.example/api/attachments/${attachment.id}?`);
   });
 
   it("gives up after the last attempt instead of asking forever", async () => {
@@ -359,6 +411,106 @@ describe("a CLI agent planning an Epic", () => {
     expect(card.status).not.toBe("blocked");
     expect(card.status).not.toBe("failed");
     expect((await repository().epicDetail(epic.id))!.runnerJob).toBe(second.job);
+  });
+});
+
+describe("a CLI agent drafting a To Do request's single ticket", () => {
+  const REQUEST = "Each column's agent picker should only show its own agents";
+  const SPEC = {
+    key: "T-1",
+    title: "Keep reviewer agents out of To Do",
+    userStory: { as: "a board owner", want: "see only To Do agents there", soThat: "picking one is quick" },
+    context: "Every agent shows in every column.",
+    description: "Scope each agent to the column it was made for.",
+    requirements: ["Covered by a test"],
+    acceptanceCriteria: [{ given: "a reviewer agent", when: "I open To Do's picker", then: "it is not there" }],
+    fileScope: ["src/components/agents"],
+    size: "S",
+    storyPoints: 3,
+    dependsOn: [],
+  };
+
+  async function seedDrafting() {
+    const repo = repository();
+    const epic = await repo.createEpic({
+      projectId: PROJECT,
+      title: "Scope agents",
+      rawRequest: REQUEST,
+      position: 0,
+    });
+    await repo.setStandalone(epic.id, true);
+    const [ticket] = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "Scope agents",
+        description: REQUEST,
+        acceptanceCriteria: [],
+        fileScope: [],
+        size: "M",
+        storyPoints: null,
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.move({ cardId: ticket!.id, kind: "ticket", status: "blocked", stalledIn: "todo", position: 1, detached: true });
+    return { epic, ticket: ticket! };
+  }
+
+  function answer(job: string, text: string) {
+    return new MockVcsClient("acme/widgets").commitFile(`${STAGING_PREFIX}${job}`, ANSWER_PATH, text, "answer");
+  }
+
+  function lastDispatch() {
+    return MockVcsClient.runner().dispatches.at(-1)!.inputs;
+  }
+
+  it("drafts it in Actions and replaces the placeholder with it", async () => {
+    await assignClaudeCode("todo");
+    await installRunner();
+    const { epic, ticket } = await seedDrafting();
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, REQUEST, ["src"]);
+
+    const inputs = lastDispatch();
+    expect(inputs.mode).toBe("architect");
+    expect(inputs.prompt).toContain("Each column's agent picker should only show its own agents");
+    expect(inputs.prompt).toContain("FORMIC_OUTPUT");
+    expect((await repository().ticketDetail(ticket.id))!.runnerJob).toBe(inputs.job);
+
+    await answer(inputs.job!, JSON.stringify(SPEC));
+    await completeCliRun(PROJECT, { job: inputs.job!, mode: "architect", conclusion: "success", url: null });
+
+    const [drafted] = await repository().ticketsForEpic(epic.id);
+    expect(drafted).toMatchObject({ title: SPEC.title, fileScope: SPEC.fileScope, status: "ready" });
+    expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${inputs.job}`)).toBe(false);
+  });
+
+  it("sends a malformed ticket back once, then stalls it in To Do", async () => {
+    await assignClaudeCode("todo");
+    await installRunner();
+    const { epic, ticket } = await seedDrafting();
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, REQUEST, []);
+    const first = lastDispatch();
+    await answer(first.job!, JSON.stringify({ title: "no" }));
+    await completeCliRun(PROJECT, { job: first.job!, mode: "architect", conclusion: "success", url: null });
+
+    const second = lastDispatch();
+    expect(second.job).not.toBe(first.job);
+    expect(second.prompt).toContain("attempt 2 of 2");
+    await answer(second.job!, JSON.stringify({ title: "still no" }));
+    await completeCliRun(PROJECT, { job: second.job!, mode: "architect", conclusion: "success", url: null });
+
+    const card = (await repository().cardById(ticket.id))!;
+    expect(card).toMatchObject({ status: "failed", stalledIn: "todo" });
+    expect(card.blockedReason).toContain("could not be used");
+    expect(MockVcsClient.runner().dispatches).toHaveLength(2);
+
+    // Asking again drafts it afresh.
+    expect(await redraftTicket(PROJECT, ticket.id)).toBe(true);
+    await vi.waitFor(() => expect(MockVcsClient.runner().dispatches).toHaveLength(3));
+    expect((await repository().cardById(ticket.id))!.blockedReason).toBe("Drafting the ticket…");
   });
 });
 
@@ -487,6 +639,36 @@ describe("taking a CLI agent's work", () => {
     return { ticket, job, staging: `${STAGING_PREFIX}${job}` };
   }
 
+  /** Another ticket, running in `fileScope`: the files it needs are in use. */
+  async function runningIn(epicId: string, fileScope: string[]) {
+    const repo = repository();
+    const [other] = await repo.createTickets([
+      {
+        epicId,
+        key: "T-9",
+        title: "Other work",
+        description: "Other work.",
+        acceptanceCriteria: ["It works"],
+        fileScope,
+        size: "M",
+        position: 9,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.updateTicket(other!.id, { status: "running" });
+  }
+
+  it("takes files outside the scope in when no running ticket uses them, and opens the pull request", async () => {
+    const { ticket, job, staging } = await dispatched();
+    MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.fileScope).toEqual(["package.json", "src/lib/feature"]);
+    expect(after.prNumber).toBeGreaterThan(0);
+  });
+
   it("opens the pull request from the staged work", async () => {
     const { ticket, job, staging } = await dispatched();
     const sha = MockVcsClient.stage(
@@ -562,6 +744,7 @@ describe("taking a CLI agent's work", () => {
 
   it("holds carried workflow changes to the file scope too", async () => {
     const { ticket, job, staging } = await dispatched();
+    await runningIn(ticket.epicId, [".github"]);
     MockVcsClient.stage(staging, ["src/lib/feature/a.ts", ".formic/carry/.github/workflows/ci.yml"], "T-1: stuff");
 
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
@@ -572,8 +755,9 @@ describe("taking a CLI agent's work", () => {
     expect(after.blockedReason).not.toContain(".formic/carry");
   });
 
-  it("keeps work outside the file scope on the ticket's branch and asks for the files", async () => {
+  it("keeps work outside the file scope on the ticket's branch and asks, when a running ticket uses the files", async () => {
     const { ticket, job, staging } = await dispatched();
+    await runningIn(ticket.epicId, ["package.json"]);
     const sha = MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
 
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
@@ -729,6 +913,88 @@ describe("taking a CLI agent's work", () => {
     expect(after.status).toBe("running");
     expect(after.prNumber).toBeNull();
     expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${stale}`)).toBe(false);
+  });
+});
+
+describe("a CLI agent resolving a conflict", () => {
+  /** A conflicted pull request, handed to the In Review agent in Actions. */
+  async function conflicted() {
+    await assignClaudeCode("in_review");
+    await installRunner();
+    const ticket = await seedTicket();
+    const client = new MockVcsClient("acme/widgets");
+    setVcs(client);
+    const pull = await client.openPullRequest({
+      headBranch: "formic/t-1-abc",
+      baseBranch: "main",
+      title: "T-1",
+      body: "",
+    });
+    await repository().updateTicket(ticket.id, {
+      status: "review",
+      prNumber: pull.number,
+      branchName: pull.headBranch,
+    });
+    MockVcsClient.runner().branches.set(pull.headBranch, pull.headSha);
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    const job = (await repository().ticketDetail(ticket.id))!.runnerJob!;
+    // What main brought since the branch was cut.
+    const merged = MockVcsClient.stage("formic-test/main", ["src/other/brought.ts"], "main's work");
+    return { ticket, pull, job, merged };
+  }
+
+  it("merges the base in first and asks the agent to resolve it, instead of parking the card", async () => {
+    const { ticket, job } = await conflicted();
+
+    const inputs = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    expect(inputs).toMatchObject({ mode: "fix", merge: "main", from: "formic/t-1-abc" });
+    expect(inputs.prompt).toContain("conflicts with main");
+    expect(inputs.prompt).toContain("Do not commit");
+    expect(job).toBeTruthy();
+    expect((await repository().ticketDetail(ticket.id))!.status).toBe("review");
+  });
+
+  it("records the resolution as the merge, holding only the agent's own change to the scope", async () => {
+    const { ticket, job, merged } = await conflicted();
+    MockVcsClient.stage(
+      `${STAGING_PREFIX}${job}`,
+      ["src/lib/feature/a.ts", "src/other/brought.ts"],
+      `T-1: bring main in\n\nKept both sides.\n\nFormic-Merged: ${merged}`,
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "fix", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    const head = MockVcsClient.runner().branches.get("formic/t-1-abc")!;
+    expect(after.status).toBe("review");
+    expect(MockVcsClient.runner().recordedMerges.get(head)).toBe(merged);
+    expect(after.reviewedSha).toBe(head);
+  });
+
+  it("refuses a resolution that changes files neither side brought, outside the scope", async () => {
+    const { ticket, job, merged } = await conflicted();
+    MockVcsClient.stage(
+      `${STAGING_PREFIX}${job}`,
+      ["src/lib/feature/a.ts", "src/elsewhere/z.ts"],
+      `T-1: bring main in\n\nFormic-Merged: ${merged}`,
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "fix", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("src/elsewhere/z.ts");
+    expect(MockVcsClient.runner().recordedMerges.size).toBe(0);
+  });
+
+  it("reads which commit a run merged in from its trailer", () => {
+    const sha = "a".repeat(40);
+    expect(mergedFrom([`T-1: x\n\nbody\n\nFormic-Merged: ${sha}\n`])).toBe(sha);
+    expect(mergedFrom(["T-1: x\n\nFormic-Merged: not-a-sha"])).toBeNull();
+    expect(mergedFrom([])).toBeNull();
   });
 });
 
@@ -898,12 +1164,24 @@ describe("collecting a run whose webhook never came", () => {
 });
 
 describe("the runner workflow", () => {
+  it("is versioned by its own content, so no two changes can share a version", () => {
+    expect(RUNNER_VERSION).toMatch(/^formic-runner: [0-9a-f]{12}$/);
+    expect(runnerWorkflow().startsWith(`# ${RUNNER_VERSION}\n`)).toBe(true);
+  });
+
+  it("merges another branch in before the agent starts, when asked, leaving its conflicts", () => {
+    const yaml = runnerWorkflow();
+    expect(yaml).toContain("merge --no-commit --no-ff");
+    expect(yaml).toContain("fetch-depth: ${{ inputs.merge != '' && '0' || '2' }}");
+    expect(yaml).toContain("Conflict markers are still in the change.");
+  });
+
   it("never splices inputs into a script", () => {
     const yaml = runnerWorkflow();
     for (const line of yaml.split("\n")) {
       if (!line.includes("${{ inputs.")) continue;
-      // Allowed: env values, the checkout ref, the title and the concurrency key.
-      expect(line).toMatch(/^\s+([A-Z_]+|ref|group):\s|^run-name:/);
+      // Allowed: env values, the checkout's ref and depth, the title and the concurrency key.
+      expect(line).toMatch(/^\s+([A-Z_]+|ref|fetch-depth|group):\s|^run-name:/);
     }
     expect(yaml).toContain("persist-credentials: false");
   });
@@ -928,7 +1206,7 @@ describe("the runner workflow", () => {
     expect(yaml).toContain("exec --json --output-last-message");
     expect(yaml).toContain('python3 "$RUNNER_TEMP/formic-report.py" &');
     // The reporter's script sits at the block's own indent, as Python needs.
-    expect(yaml).toMatch(/\n {10}import json, os, time, urllib.request\n/);
+    expect(yaml).toMatch(/\n {10}import base64, hashlib, json, os, subprocess, time, urllib.request\n/);
   });
 
   it("keeps only the answer from a planning run", () => {
@@ -936,6 +1214,12 @@ describe("the runner workflow", () => {
     expect(yaml).toContain("product|architect|showcase|ask)");
     expect(yaml).toContain('git reset -q --hard "$FORMIC_START"');
     expect(yaml).toContain(`git add -f "${ANSWER_PATH}"`);
+  });
+
+  it("makes room for downloaded attachments and names it for the agent", () => {
+    const yaml = runnerWorkflow();
+    expect(yaml).toContain('mkdir -p "$RUNNER_TEMP/formic-attachments"');
+    expect(yaml).toContain("FORMIC_ATTACHMENTS: ${{ runner.temp }}/formic-attachments");
   });
 
   it("reports back as a runner signal, not as CI", () => {
@@ -964,6 +1248,64 @@ describe("the runner workflow", () => {
         key: "runner:tkt--abcd1234:7",
       },
     ]);
+  });
+
+  it("reopens the setup pull request when an older runner version is installed", async () => {
+    await assignClaudeCode();
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await new MockVcsClient("acme/widgets").commitFile(
+      base,
+      RUNNER_WORKFLOW_PATH,
+      "# formic-runner: v1\nname: Formic agent\n",
+      "install an old copy",
+    );
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.blockedReason).toContain("Merge the setup pull request");
+    const runner = MockVcsClient.runner();
+    expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(RUNNER_VERSION);
+  });
+});
+
+describe("signed attachment URLs for a CLI agent with no Formic session", () => {
+  it("signs a URL that verifies, and refuses another attachment's id or a wrong token", () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    const url = signedAttachmentUrl("att_1")!;
+    const parsed = new URL(url);
+    expect(parsed.origin + parsed.pathname).toBe("https://formic.example/api/attachments/att_1");
+    const expires = parsed.searchParams.get("expires")!;
+    const token = parsed.searchParams.get("token")!;
+
+    expect(attachmentUrlAllowed("att_1", expires, token)).toBe(true);
+    expect(attachmentUrlAllowed("att_2", expires, token)).toBe(false);
+    expect(attachmentUrlAllowed("att_1", expires, "0".repeat(64))).toBe(false);
+  });
+
+  it("refuses a URL past its expiry", () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const url = signedAttachmentUrl("att_1")!;
+      const parsed = new URL(url);
+      const expires = parsed.searchParams.get("expires")!;
+      const token = parsed.searchParams.get("token")!;
+      expect(attachmentUrlAllowed("att_1", expires, token)).toBe(true);
+
+      vi.setSystemTime(Number(expires) + 1);
+      expect(attachmentUrlAllowed("att_1", expires, token)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("has no URL to sign without a public origin", () => {
+    vi.stubEnv("FORMIC_URL", "");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
+    expect(signedAttachmentUrl("att_1")).toBeNull();
   });
 });
 
@@ -1043,6 +1385,90 @@ describe("a CLI agent seen while it works", () => {
     // A note it has been sent is not sent again.
     const again = await receiveReport({ job, since, after: reply.notes[0]!.seq, lines: [] });
     expect(again.notes).toEqual([]);
+  });
+
+  describe("checkpoints", () => {
+    const BASE = "a".repeat(40);
+    const checkpoint = {
+      base: BASE,
+      files: [{ path: "src/lib/feature/a.ts", mode: "100644" as const, content: Buffer.from("x\n").toString("base64") }],
+      deleted: ["src/lib/feature/old.ts"],
+      note: "The drop zone has to be mounted before the drag starts.",
+    };
+    const saved = (ticketId: string) => MockVcsClient.runner().checkpoints.get(ticketId);
+
+    it("saves the run's work in progress, with its notes, as the ticket's checkpoint", async () => {
+      const { ticket, job } = await dispatched();
+
+      const reply = await receiveReport({ job, since: Date.now(), after: 0, lines: [], checkpoint });
+
+      expect(reply.checkpointed).toBe(true);
+      expect(saved(ticket.id)).toMatchObject({ parent: BASE, input: { files: checkpoint.files, deleted: checkpoint.deleted } });
+      expect(saved(ticket.id)!.message).toBe(
+        `T-1: checkpoint\n\n${checkpoint.note}\n\n${CHECKPOINT_TRAILER} ${job}`,
+      );
+    });
+
+    it("takes no checkpoint from a run nobody waits on", async () => {
+      const { ticket, job } = await dispatched();
+      await repository().updateTicket(ticket.id, { runnerJob: null });
+
+      await receiveReport({ job, since: Date.now(), after: 0, lines: [], checkpoint });
+
+      expect(saved(ticket.id)).toBeUndefined();
+    });
+
+    it("carries the next run on from the checkpoint, told where the last one got to", async () => {
+      const { ticket, job } = await dispatched();
+      await receiveReport({ job, since: Date.now(), after: 0, lines: [], checkpoint });
+      await repository().updateTicket(ticket.id, {
+        plan: [
+          { step: "Add the status", status: "done" },
+          { step: "Wire the drop zone", status: "in_progress" },
+        ],
+      });
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "cancelled", url: null });
+      expect(saved(ticket.id)).toBeDefined();
+
+      await runCoderAgent(PROJECT, ticket.id);
+
+      const retry = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+      expect(retry.job).not.toBe(job);
+      expect(retry.from).toBe(saved(ticket.id)!.sha);
+      expect(retry.prompt).toContain("Carrying on.");
+      expect(retry.prompt).toContain("- [x] Add the status\n- [ ] Wire the drop zone");
+      expect(retry.prompt).toContain(checkpoint.note);
+    });
+
+    it("drops the checkpoint once the run's work is taken", async () => {
+      const { ticket, job, } = await dispatched();
+      await receiveReport({ job, since: Date.now(), after: 0, lines: [], checkpoint });
+      MockVcsClient.stage(`${STAGING_PREFIX}${job}`, ["src/lib/feature/a.ts"], "T-1: Add it");
+
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+      expect((await repository().ticketDetail(ticket.id))!.prNumber).toBeGreaterThan(0);
+      expect(saved(ticket.id)).toBeUndefined();
+    });
+
+    it("drops a checkpoint its branch has moved on from, and starts on the branch", async () => {
+      await assignClaudeCode();
+      await installRunner();
+      const ticket = await seedTicket();
+      await repository().updateTicket(ticket.id, { prNumber: 7, branchName: "formic/t-1" });
+      MockVcsClient.runner().branches.set("formic/t-1", "b".repeat(40));
+      await new MockVcsClient("acme/widgets").saveCheckpoint(ticket.id, {
+        base: BASE,
+        files: [],
+        deleted: [],
+        message: `T-1: checkpoint\n\n${CHECKPOINT_TRAILER} old`,
+      });
+
+      await runCoderAgent(PROJECT, ticket.id);
+
+      expect(MockVcsClient.runner().dispatches.at(-1)!.inputs.from).toBe("formic/t-1");
+      expect(saved(ticket.id)).toBeUndefined();
+    });
   });
 
   it("tells a run nobody waits on any more to stop reporting", async () => {

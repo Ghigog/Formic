@@ -10,6 +10,9 @@ import {
   type UpdateOutcome,
   type VcsClient,
   type Comparison,
+  type Checkpoint,
+  type CheckpointInput,
+  CHECKPOINT_REF_PREFIX,
   STAGING_PREFIX,
   VcsError,
   type IssuePatch,
@@ -491,6 +494,22 @@ export class GitHubClient implements VcsClient {
     return { sha: rewritten.sha, files };
   }
 
+  async recordMerge(sha: string, merged: string): Promise<string> {
+    const { data: commit } = await this.request<{
+      message: string;
+      tree: { sha: string };
+      parents: Array<{ sha: string }>;
+      author: { name: string; email: string; date: string };
+    }>("GET", `/git/commits/${sha}`);
+    const { data: merge } = await this.request<{ sha: string }>("POST", "/git/commits", {
+      message: commit.message,
+      tree: commit.tree.sha,
+      parents: [...commit.parents.map((p) => p.sha), merged],
+      author: commit.author,
+    });
+    return merge.sha;
+  }
+
   async moveBranch(branch: string, sha: string): Promise<void> {
     try {
       await this.request("PATCH", `/git/refs/heads/${encodeURIComponent(branch)}`, {
@@ -516,4 +535,91 @@ export class GitHubClient implements VcsClient {
       if (!(e instanceof VcsError) || e.status !== 422) throw e;
     }
   }
+
+  async branchHead(branch: string): Promise<string | null> {
+    try {
+      const { data } = await this.request<{ object: { sha: string } }>(
+        "GET",
+        `/git/ref/heads/${branch.split("/").map(encodeURIComponent).join("/")}`,
+      );
+      return data.object.sha;
+    } catch (e) {
+      if (e instanceof VcsError && e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  async saveCheckpoint(card: string, input: CheckpointInput): Promise<string> {
+    const { data: base } = await this.request<{ tree: { sha: string } }>("GET", `/git/commits/${input.base}`);
+    type Entry = { path: string; mode: string; type: "blob"; sha?: string | null; content?: string };
+    const entries: Entry[] = [];
+    for (const f of input.files) {
+      const bytes = Buffer.from(f.content, "base64");
+      const text = bytes.toString("utf8");
+      // Text goes inline with the tree; anything else needs a blob of its own.
+      if (!bytes.includes(0) && Buffer.from(text, "utf8").equals(bytes)) {
+        entries.push({ path: f.path, mode: f.mode, type: "blob", content: text });
+      } else {
+        const { data: blob } = await this.request<{ sha: string }>("POST", "/git/blobs", {
+          content: f.content,
+          encoding: "base64",
+        });
+        entries.push({ path: f.path, mode: f.mode, type: "blob", sha: blob.sha });
+      }
+    }
+    for (const path of input.deleted) entries.push({ path, mode: "100644", type: "blob", sha: null });
+
+    let tree = base.tree.sha;
+    if (entries.length > 0) {
+      const { data } = await this.request<{ sha: string }>("POST", "/git/trees", { base_tree: tree, tree: entries });
+      tree = data.sha;
+    }
+    const { data: commit } = await this.request<{ sha: string }>("POST", "/git/commits", {
+      message: input.message,
+      tree,
+      parents: [input.base],
+    });
+
+    const ref = `${CHECKPOINT_REF_PREFIX}${card}`;
+    try {
+      await this.request("PATCH", `/git/${checkpointPath(card)}`, { sha: commit.sha, force: true });
+    } catch (e) {
+      if (!(e instanceof VcsError) || (e.status !== 404 && e.status !== 422)) throw e;
+      await this.request("POST", "/git/refs", { ref, sha: commit.sha });
+    }
+    return commit.sha;
+  }
+
+  async checkpoint(card: string): Promise<Checkpoint | null> {
+    let sha: string;
+    try {
+      const { data } = await this.request<{ object: { sha: string } }>(
+        "GET",
+        `/git/${checkpointPath(card).replace(/^refs\//, "ref/")}`,
+      );
+      sha = data.object.sha;
+    } catch (e) {
+      if (e instanceof VcsError && e.status === 404) return null;
+      throw e;
+    }
+    const { data: commit } = await this.request<{ message: string; parents: Array<{ sha: string }> }>(
+      "GET",
+      `/git/commits/${sha}`,
+    );
+    const parent = commit.parents[0]?.sha;
+    return parent ? { sha, parent, message: commit.message } : null;
+  }
+
+  async deleteCheckpoint(card: string): Promise<void> {
+    try {
+      await this.request("DELETE", `/git/${checkpointPath(card)}`);
+    } catch (e) {
+      if (!(e instanceof VcsError) || (e.status !== 404 && e.status !== 422)) throw e;
+    }
+  }
+}
+
+/** A card's checkpoint ref as a REST path under /git/: `refs/formic/checkpoints/<card>`. */
+function checkpointPath(card: string): string {
+  return `${CHECKPOINT_REF_PREFIX}${encodeURIComponent(card)}`;
 }

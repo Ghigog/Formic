@@ -9,9 +9,10 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { CardChat } from "./card-chat";
 import { DagPane } from "./dag-pane";
 import { PrdPane } from "./prd-pane";
+import { AttachmentGallery } from "./attachment-gallery";
 import { ProblemNotice, WorkTimer } from "./card";
 import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type BoardCard, type Prd } from "@/lib/domain/entities";
-import { columnFor, isStalled } from "@/lib/domain/status";
+import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { epicProgress } from "@/lib/domain/stages";
 
 interface EpicDetail {
@@ -257,6 +258,13 @@ export function EpicDrawer({
             failedAt={failedAt}
             working={progress.working}
           />
+
+          {/* Survives the toast that announced it: where it came from, and why. */}
+          {epic?.rerouteFrom && (
+            <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
+              Moved from {COLUMN_LABELS[epic.rerouteFrom]}: {epic.rerouteReason}
+            </p>
+          )}
         </header>
 
         {/* Tabs below the dual-pane breakpoint, where two columns do not fit. */}
@@ -293,6 +301,11 @@ export function EpicDrawer({
                 writing={epic?.agentRole === "product"}
                 onSave={save}
               />
+              {epic && (
+                <div className="px-4 pb-4">
+                  <AttachmentGallery epicId={epic.id} />
+                </div>
+              )}
             </div>
           }
           second={

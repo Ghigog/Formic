@@ -212,6 +212,11 @@ export interface ReviewTask {
   checks: FailingCheck[];
   /** CI has not finished on the head: the review runs alongside it. */
   ciRunning?: boolean;
+  /**
+   * The pull request conflicts with its base. The base is already merged
+   * into the checkout, and these files hold the conflicts to resolve.
+   */
+  conflicts?: string[];
   attempt: number;
   maxAttempts: number;
 }

@@ -66,6 +66,32 @@ export class MockProductAgent implements ProductAgent {
     >
   > {
     const title = titleFrom(input.rawRequest);
+
+    // Deterministic trigger for demos and tests of the reroute path (see
+    // applyReroute in pipeline.ts): a real Product Agent occasionally decides
+    // a Backlog request needs no PRD at all. Nothing here can make that call,
+    // so a raw request that says "reroute" stands in for one that would.
+    if (/\breroute\b/i.test(input.rawRequest)) {
+      return {
+        ok: true,
+        value: {
+          kind: "reroute",
+          reason: "Small enough for one ticket; skipping the PRD.",
+          ticket: {
+            key: "T-1",
+            title,
+            description: `Implement "${title}" as described in the raw request.`,
+            acceptanceCriteria: ["The behaviour described in the request works end to end"],
+            fileScope: ["src"],
+            size: "M",
+            storyPoints: 3,
+            dependsOn: [],
+          },
+        },
+        usage: MOCK_USAGE,
+      };
+    }
+
     const prd: Prd = {
       summary: `Deliver "${title}" end to end, from data model through UI, behind the existing project conventions.`,
       problem: input.rawRequest.trim(),

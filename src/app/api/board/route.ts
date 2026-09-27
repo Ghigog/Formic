@@ -3,6 +3,7 @@ import { activeProject } from "@/lib/board/project";
 import { collectCliRuns } from "@/lib/runner/runner";
 import { launch } from "@/lib/agents/pipeline";
 import { sweepOpenPullRequests } from "@/lib/review/pipeline";
+import { sweepIdleCards } from "@/lib/board/idle";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export async function GET() {
   // Detached: the cards it moves arrive as events, not in this response.
   launch(() => collectCliRuns(project.id), "collecting agent runs");
   launch(() => sweepOpenPullRequests(project.id), "checking open pull requests");
+  launch(() => sweepIdleCards(project.id), "restarting idle cards");
   const cards = await repo.boardCards(project.id);
   return Response.json({ project, cards });
 }

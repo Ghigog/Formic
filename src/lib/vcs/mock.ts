@@ -12,6 +12,8 @@ import {
   type IssueRef,
   type WorkflowRunRef,
   STAGING_PREFIX,
+  type Checkpoint,
+  type CheckpointInput,
 } from "./types";
 import { CARRY_DELETED, CARRY_DIR, isCarried } from "@/lib/runner/workflow";
 
@@ -61,6 +63,10 @@ interface MockRepo {
   merges: Array<{ base: string; head: string }>;
   /** Heads made by bringing the base into a PR, to the head they were made on. */
   baseMerges: Map<string, string>;
+  /** Merge commits Formic recorded, to the commit each merged in. */
+  recordedMerges: Map<string, string>;
+  /** Each card's checkpoint, with what it saved. */
+  checkpoints: Map<string, Checkpoint & { input: CheckpointInput }>;
 }
 
 export interface MockIssue {
@@ -89,6 +95,8 @@ function repo(): MockRepo {
     conflicts: new Set(),
     merges: [],
     baseMerges: new Map(),
+    recordedMerges: new Map(),
+    checkpoints: new Map(),
   };
   return g.__formicMockRepo;
 }
@@ -169,8 +177,16 @@ export class MockVcsClient implements VcsClient {
     };
   }
 
-  async updateBranch(): Promise<UpdateOutcome> {
-    return { ok: true, updated: false };
+  async updateBranch(number: number): Promise<UpdateOutcome> {
+    // A conflicted mock PR stands for one an agent just resolved: bringing
+    // the base in now succeeds, as it would on GitHub.
+    const pull = pulls().get(number);
+    if (pull?.mergeable !== false) return { ok: true, updated: false };
+    pull.mergeable = true;
+    const sha = fakeSha();
+    repo().baseMerges.set(sha, pull.headSha);
+    pull.headSha = sha;
+    return { ok: true, updated: true };
   }
 
   async bringsInBase(from: string, to: string): Promise<boolean> {
@@ -307,6 +323,13 @@ export class MockVcsClient implements VcsClient {
     return { sha: landed, files };
   }
 
+  async recordMerge(sha: string, merged: string): Promise<string> {
+    const merge = fakeSha();
+    repo().commits.set(merge, repo().commits.get(sha) ?? { files: [], message: "" });
+    repo().recordedMerges.set(merge, merged);
+    return merge;
+  }
+
   async moveBranch(branch: string, sha: string): Promise<void> {
     repo().branches.set(branch, sha);
     // A PR from this branch now points at the new head, as on GitHub.
@@ -318,6 +341,25 @@ export class MockVcsClient implements VcsClient {
   async deleteStagingBranch(branch: string): Promise<void> {
     if (!branch.startsWith(STAGING_PREFIX)) throw new Error(`Refusing to delete ${branch}.`);
     repo().branches.delete(branch);
+  }
+
+  async branchHead(branch: string): Promise<string | null> {
+    return repo().branches.get(branch) ?? null;
+  }
+
+  async saveCheckpoint(card: string, input: CheckpointInput): Promise<string> {
+    const sha = fakeSha();
+    repo().checkpoints.set(card, { sha, parent: input.base, message: input.message, input });
+    return sha;
+  }
+
+  async checkpoint(card: string): Promise<Checkpoint | null> {
+    const saved = repo().checkpoints.get(card);
+    return saved ? { sha: saved.sha, parent: saved.parent, message: saved.message } : null;
+  }
+
+  async deleteCheckpoint(card: string): Promise<void> {
+    repo().checkpoints.delete(card);
   }
 
   /* Test seams for the runner. */

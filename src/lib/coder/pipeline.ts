@@ -23,7 +23,7 @@ import type { CodeChange, Usage } from "@/lib/agents/ports";
 import type { VcsClient } from "@/lib/vcs";
 import { cliPrompt, startCliRun } from "@/lib/runner/runner";
 import { guidedWorkspace } from "@/lib/sandbox/workspace";
-import { askForScope, hasKeptWork, takeKeptWork } from "./scope-request";
+import { askForScope, hasKeptWork, takeKeptWork, widenScope } from "./scope-request";
 
 /**
  * PROT-06. A ticket in In Progress becomes a pull request.
@@ -106,6 +106,7 @@ export async function runCoderAgent(
   if (ticket.prNumber) {
     const pull = await client.pullRequest(ticket.prNumber).catch(() => null);
     if (pull && pull.state === "closed" && !pull.merged) {
+      await client.deleteCheckpoint(ticket.id).catch(() => undefined);
       const fresh = { prNumber: null, prUrl: null, branchName: null, reviewedSha: null };
       await repo.updateTicket(ticket.id, fresh);
       ticket = { ...ticket, ...fresh };
@@ -272,7 +273,7 @@ export async function runCoderAgent(
     // for the files. On a branch with an open pull request, pushing would
     // put it in front of the reviewer unasked, so it is not kept there.
     const violations = violationsInDiff(changed, ticket.fileScope);
-    if (violations.length > 0) {
+    if (violations.length > 0 && !(await widenScope(projectId, ticket, violations))) {
       const kept = continuing
         ? null
         : await commitAndPush(checkout, {

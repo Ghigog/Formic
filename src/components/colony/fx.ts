@@ -17,7 +17,7 @@ import type { SoundEngine } from "./sound";
 export const MAX_CREW = 13;
 
 /** What a card's crew should be doing. */
-export type CrewPhase = "work" | "tunnel" | "buried" | "leave";
+export type CrewPhase = "work" | "queue" | "tunnel" | "buried" | "leave";
 
 /** The part of the board the canvas draws from, pushed in as it changes. */
 export interface FxWorld {
@@ -108,7 +108,7 @@ interface Splat {
   blobs: Array<{ dx: number; dy: number; r: number }>;
   onSquash: () => void;
 }
-type AntMode = "wait" | "walk" | "perim" | "dig" | "buried" | "rise" | "tunnel" | "out" | "home";
+type AntMode = "wait" | "walk" | "perim" | "crowd" | "dig" | "buried" | "rise" | "tunnel" | "out" | "home";
 interface Ant {
   x: number;
   y: number;
@@ -897,6 +897,21 @@ export class ColonyFx {
     return [q.left + 10, q.top + q.height / 2];
   }
 
+  /** The timer on a queued card, where its crew waits to get started. */
+  private queuePos(el: Element | null, r: DOMRect): [number, number] {
+    const q = el?.querySelector("[data-queue]")?.getBoundingClientRect();
+    if (!q) return [r.left + 20, r.top + 14];
+    return [q.left + q.width / 2, q.top + q.height / 2];
+  }
+
+  /** Where one ant of a waiting crew stands: jostling in a ring around the timer. */
+  private crowdPoint(ant: Ant, el: Element | null, r: DOMRect): [number, number] {
+    const [qx, qy] = this.queuePos(el, r);
+    const ang = ant.idx * 2.4 + Math.sin(ant.t * 0.9 + ant.idx) * 0.5;
+    const rad = 10 + (ant.idx % 3) * 2.5 + Math.sin(ant.t * 1.7 + ant.idx * 1.3) * 1.5;
+    return [qx + Math.cos(ang) * rad, qy + Math.sin(ang) * rad];
+  }
+
   private puff(x: number, y: number) {
     this.burst(x, y, ["var(--dot-idle)", "var(--border-dashed)"], 5, { speed: 50, g: 0, life: 0.35, size: 1.3, shape: "dot" });
   }
@@ -968,9 +983,20 @@ export class ColonyFx {
           k++;
         }
       } else if (d === "work") {
-        if (ant.mode === "buried" || ant.mode === "tunnel" || ant.mode === "rise" || ant.mode === "dig") {
+        if (
+          ant.mode === "buried" ||
+          ant.mode === "tunnel" ||
+          ant.mode === "rise" ||
+          ant.mode === "dig" ||
+          ant.mode === "crowd"
+        ) {
           ant.mode = "walk";
         }
+      } else if (d === "queue") {
+        if (ant.mode === "home" || ant.mode === "out") continue;
+        ant.hidden = false;
+        ant.carry = false;
+        ant.mode = "walk";
       } else {
         if (ant.mode === "home" || ant.mode === "out") continue;
         ant.hidden =
@@ -988,7 +1014,7 @@ export class ColonyFx {
     const want = this.world.crews;
     if (this.antsOn()) {
       for (const [id, w] of want) {
-        if ((w.phase === "work" || w.phase === "tunnel") && !this.crewMap.has(id)) {
+        if ((w.phase === "work" || w.phase === "queue" || w.phase === "tunnel") && !this.crewMap.has(id)) {
           this.spawnCrew(id, w.sp, w.phase);
         }
       }
@@ -1044,7 +1070,13 @@ export class ColonyFx {
           ant.mode = "home";
           break;
         }
-        if (ant.leader && c.phase === "work" && !ant.carry) {
+        if (c.phase === "queue") {
+          const [tx, ty] = this.crowdPoint(ant, el, r);
+          if (this.stepAnt(ant, tx, ty, 170, dt)) {
+            this.sfx("attach", ant.idx);
+            ant.mode = "crowd";
+          }
+        } else if (ant.leader && c.phase === "work" && !ant.carry) {
           const [bx, by] = this.badgePos(el, r);
           if (this.stepAnt(ant, bx, by, 170, dt)) {
             ant.carry = true;
@@ -1074,6 +1106,19 @@ export class ColonyFx {
         ant.t += ant.sp * dt;
         const [tx, ty] = this.perim(r, ant.t);
         this.stepAnt(ant, tx, ty, 9999, dt);
+        break;
+      }
+      case "crowd": {
+        if (!r) {
+          ant.mode = "home";
+          break;
+        }
+        // Milling about, facing the timer, waiting for it to go.
+        ant.t += dt;
+        const [tx, ty] = this.crowdPoint(ant, el, r);
+        this.stepAnt(ant, tx, ty, 40, dt);
+        const [qx, qy] = this.queuePos(el, r);
+        ant.a += wrap(Math.atan2(qy - ant.y, qx - ant.x) - ant.a) * Math.min(1, dt * 4);
         break;
       }
       case "dig":

@@ -119,6 +119,18 @@ export class LoopReviewerAgent implements ReviewerAgent {
   }
 }
 
+/** A pull request that conflicts with its base: resolving that is the whole job. */
+function conflictsBrief(baseBranch: string, files: string[]): string {
+  return [
+    `This pull request conflicts with ${baseBranch}, so CI cannot run on it. ${baseBranch} is already merged into the checkout, and the conflicted files still hold its conflict markers${files.length ? ":" : "."}`,
+    ...files.map((f) => `- ${f}`),
+    "",
+    "Your job this time is only to resolve them. For each conflict, read both sides and keep what each meant: usually both changes belong together. Remove every conflict marker. Change nothing else, and do not review the ticket's work again.",
+    "Do not commit, abort the merge, or run git merge yourself: Formic records the merge once you are done.",
+    "If the two sides cannot both be kept without redoing the ticket, leave the markers in place and say why in your summary: a person takes it from there.",
+  ].join("\n");
+}
+
 /** What the Reviewer Agent is told about the pull request in front of it. */
 export function reviewBrief(input: Omit<ReviewTask, "workspace">): string {
   return [
@@ -130,7 +142,9 @@ export function reviewBrief(input: Omit<ReviewTask, "workspace">): string {
     "Files it changes:",
     ...(input.changedFiles.length ? input.changedFiles.map((f) => `- ${f}`) : ["(none listed)"]),
     "",
-    input.checks.length
+    input.conflicts
+      ? conflictsBrief(input.baseBranch, input.conflicts)
+      : input.checks.length
       ? ["CI is red. Failing checks:", "", failuresBrief(input.checks)].join("\n")
       : input.ciRunning
         ? "CI is still running on this head. Do not run the checks yourself: if one fails, the pull request comes back to you with the failure."

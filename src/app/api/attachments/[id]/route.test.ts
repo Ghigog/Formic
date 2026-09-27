@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const { activeProject } = vi.hoisted(() => ({ activeProject: vi.fn() }));
@@ -10,6 +10,7 @@ vi.mock("@/lib/board/project", () => ({
 
 const { GET, DELETE } = await import("./route");
 const { repository } = await import("@/lib/db");
+const { signedAttachmentUrl } = await import("@/lib/runner/runner");
 
 const PROJECT_A = "project-a";
 const PROJECT_B = "project-b";
@@ -19,6 +20,11 @@ beforeEach(() => {
   delete process.env.DATABASE_URL;
   delete process.env.POSTGRES_PRISMA_URL;
   delete process.env.POSTGRES_URL;
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 function req(url: string): NextRequest {
@@ -113,6 +119,53 @@ describe("GET /api/attachments/[id]", () => {
     activeProject.mockResolvedValue({ id: PROJECT_B });
     const res = await GET(
       req(`http://localhost/api/attachments/${attachment.id}`),
+      params(attachment.id),
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it("streams the bytes for a valid signed URL, with no session or project needed", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    activeProject.mockResolvedValue(null);
+    const attachment = await createUnclaimed("req-8");
+
+    const url = signedAttachmentUrl(attachment.id)!;
+    const path = url.slice("https://formic.example".length);
+    const res = await GET(req(`http://localhost${path}`), params(attachment.id));
+
+    expect(res.status).toBe(200);
+    expect(activeProject).not.toHaveBeenCalled();
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("refuses a signed URL past its expiry", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const attachment = await createUnclaimed("req-9");
+    const url = signedAttachmentUrl(attachment.id)!;
+    const parsed = new URL(url);
+    vi.setSystemTime(Number(parsed.searchParams.get("expires")) + 1);
+
+    const res = await GET(
+      req(`http://localhost${parsed.pathname}${parsed.search}`),
+      params(attachment.id),
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it("refuses a signed URL with a tampered token", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    const attachment = await createUnclaimed("req-10");
+    const url = signedAttachmentUrl(attachment.id)!;
+    const parsed = new URL(url);
+    parsed.searchParams.set("token", "0".repeat(64));
+
+    const res = await GET(
+      req(`http://localhost${parsed.pathname}${parsed.search}`),
       params(attachment.id),
     );
 

@@ -34,6 +34,11 @@ export const TICKET_STATUSES = [
   "ready",
   /** To Do. Held by an unsatisfied dependency. */
   "waiting",
+  /**
+   * In Progress. Waiting its turn: another ticket is already writing some of
+   * the same files. It starts on its own once that one stops running.
+   */
+  "queued",
   /** In Progress. A sandbox run is live. */
   "running",
   /** In Review. A PR is open, CI and merge are in flight. */
@@ -53,6 +58,7 @@ const STATUS_TO_COLUMN: Record<TicketStatus, ColumnId> = {
   specified: "backlog",
   ready: "todo",
   waiting: "todo",
+  queued: "in_progress",
   running: "in_progress",
   review: "in_review",
   merged: "done",
@@ -93,15 +99,24 @@ export function unstarted(t: {
  * What a person needs to know or do about a card: why it cannot work where
  * they put it, why its agent stopped, or the work on it that is theirs, not
  * an agent's. Null when there is nothing.
+ *
+ * A card can carry a blocked/failed status with an agent still actively
+ * running on it — the Architect Agent drafts a ticket from that state so the
+ * card doesn't flash as ready before its content exists (see
+ * `createTodoItem`/`redraftTicket` in board/service.ts). That is
+ * narration, not a real stall: `workingSince` is how the board already knows
+ * an agent is live on a card, so a blocked/failed reason only counts as the
+ * person's problem once no agent is working it.
  */
 export function cardProblem(card: {
   status: TicketStatus;
   blockedReason?: string | null;
   misplacedReason?: string | null;
   needsHuman?: string | null;
+  workingSince?: string | null;
 }): string | null {
   if (card.misplacedReason) return card.misplacedReason;
-  if (isStalled(card.status) && card.blockedReason) return card.blockedReason;
+  if (isStalled(card.status) && card.blockedReason && !card.workingSince) return card.blockedReason;
   if (card.needsHuman && card.status !== "merged") {
     return `${card.needsHuman.replace(/\.?\s*$/, ".")} No agent does this one. When you have, tell its chat what you did or found, and it closes.`;
   }
@@ -132,14 +147,15 @@ export function isTerminal(status: TicketStatus): boolean {
 
 /**
  * Column moves a human may perform. Backwards moves are permitted for
- * recovery (pulling a failed card back to To Do), forwards moves only one
- * column at a time so a card cannot skip its agent.
+ * recovery (pulling a failed card back to To Do, or a reviewed card back to
+ * In Progress so its Coder Agent continues on the open pull request),
+ * forwards moves only one column at a time so a card cannot skip its agent.
  */
 const ALLOWED_USER_MOVES: Record<ColumnId, readonly ColumnId[]> = {
   backlog: ["todo"],
   todo: ["backlog", "in_progress"],
   in_progress: ["todo"],
-  in_review: ["todo"],
+  in_review: ["todo", "in_progress"],
   done: [],
 };
 

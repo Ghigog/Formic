@@ -44,14 +44,21 @@ export function formatCountdown(ms: number): string {
  */
 export function useElapsed(since: string | null | undefined): number | null {
   const start = since ? Date.parse(since) : NaN;
-  const [now, setNow] = useState(() => Date.now());
+  // Null until mounted: the server's clock and the browser's differ, and a
+  // time read during render on both would not hydrate.
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
     if (Number.isNaN(start)) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 1000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
   }, [start]);
 
-  if (Number.isNaN(start)) return null;
+  if (Number.isNaN(start) || now === null) return null;
   return Math.max(0, now - start);
 }

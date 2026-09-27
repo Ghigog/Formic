@@ -69,6 +69,8 @@ export interface CardEnv {
   /** Where a card's arrow sends it, or null when it has no arrow. */
   nextFor: (card: BoardCard, column: ColumnId) => ColumnId | null;
   onAdvance: (card: BoardCard, to: ColumnId) => void;
+  /** The running ticket a queued one is waiting on, or null when none is. */
+  queuedBehind?: (card: BoardCard) => BoardCard | null;
 }
 
 export const CardEnvContext = createContext<CardEnv | null>(null);
@@ -348,6 +350,33 @@ function CardShell({
   );
 }
 
+/**
+ * The timer on a queued ticket, top left. Hovered, it names the ticket it is
+ * waiting on; its ant crew gathers around it until that one is done.
+ */
+function QueueTimer({ card }: { card: BoardCard }) {
+  const env = useContext(CardEnvContext);
+  const blocker = env?.queuedBehind?.(card) ?? null;
+  const label = blocker
+    ? `Waiting for ${blocker.key} to finish. It starts on its own then.`
+    : "Up next. Starting now.";
+  return (
+    <span
+      data-queue
+      role="img"
+      aria-label={label}
+      title={label}
+      className="inline-flex size-4 shrink-0 items-center justify-center"
+    >
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <circle cx="7" cy="8" r="5" stroke="var(--clay)" strokeWidth="1.3" />
+        <path d="M5.5 1.5h3M7 1.5v1.5" stroke="var(--clay)" strokeWidth="1.3" strokeLinecap="round" />
+        <path d="M7 8V5.5M7 8l1.8 1.2" stroke="var(--terracotta-deep)" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 function TicketHead({
   card,
   column,
@@ -359,6 +388,7 @@ function TicketHead({
 }) {
   return (
     <div className="flex min-h-[18px] items-center gap-1.5">
+      {card.status === "queued" && <QueueTimer card={card} />}
       {isBug(card) && <BugBadge squashed={isSquashed(card)} />}
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
@@ -501,6 +531,17 @@ function RunningCard({
           </span>
         </div>
       )}
+    </CardShell>
+  );
+}
+
+/** In Progress, waiting its turn behind a ticket writing the same files. */
+function QueuedCard({ card, column }: { card: BoardCard; column: ColumnId }) {
+  return (
+    <CardShell card={card} className="bg-nested-muted border-line flex flex-col gap-2 p-3">
+      <TicketHead card={card} column={column} />
+      <Title muted>{card.title}</Title>
+      <EpicLine card={card} />
     </CardShell>
   );
 }
@@ -703,6 +744,9 @@ export function CardBody({
 
   if (column === "in_progress" && card.status === "running") {
     return <RunningCard card={card} column={column} extras={extras} agentLabel={agentLabel} />;
+  }
+  if (column === "in_progress" && card.status === "queued") {
+    return <QueuedCard card={card} column={column} />;
   }
   if (column === "in_review") {
     return <ReviewCard card={card} column={column} extras={extras} agentLabel={agentLabel} />;

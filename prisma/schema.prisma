@@ -12,6 +12,7 @@ enum TicketStatus {
   specified
   ready
   waiting
+  queued
   running
   review
   merged

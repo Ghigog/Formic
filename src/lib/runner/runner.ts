@@ -8,8 +8,10 @@ import {
   applyPrd,
   applyReroute,
   applyShowcase,
+  applyDraftedTicket,
   applyTickets,
   existingTicketsFor,
+  stallDraftingTicket,
   stallEpic,
   startRun,
   type RunHandle,
@@ -24,7 +26,9 @@ import { reviewBrief, taskBrief } from "@/lib/agents/coder";
 import {
   ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
+  CHECKPOINT_RULE,
   CODER_BRIEF,
+  CODER_DESIGN_RULE,
   CODER_SCOPE_RULE,
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
@@ -37,12 +41,14 @@ import {
   withProductConventions,
 } from "@/lib/agents/prompts";
 import type { DraftTicket, ReviewTask } from "@/lib/agents/ports";
+import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
-import { askForScope } from "@/lib/coder/scope-request";
+import { askForScope, widenScope } from "@/lib/coder/scope-request";
 import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  ticketSpecSchema,
   toDraftTicket,
 } from "@/lib/agents/decomposition";
 import { productOutput } from "@/lib/agents/openai-agents";
@@ -59,10 +65,21 @@ import { signingSecret } from "@/lib/auth/session";
 import { abortTicketRuns } from "@/lib/budget/controller";
 import { ticketNotes } from "@/lib/coder/notes";
 import { readStream } from "./stream";
-import { STAGING_PREFIX, VcsError, mergeTarget, vcs, type VcsClient } from "@/lib/vcs";
+import {
+  STAGING_PREFIX,
+  VcsError,
+  mergeTarget,
+  vcs,
+  type Checkpoint,
+  type CheckpointFile,
+  type VcsClient,
+} from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ANSWER_PATH,
+  ATTACHMENTS_DIR_VAR,
+  CHECKPOINT_TRAILER,
+  MERGED_TRAILER,
   RUNNER_SETUP_BRANCH,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_FILE,
@@ -102,9 +119,10 @@ const MAX_PROMPT = 50_000;
 /** How much of an agent's report the ticket view shows. */
 const MAX_REPORT = 20_000;
 
-const cliRules = (scopeRule: string) => `Rules that are enforced, not advisory:
+const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${PLAN_FIRST_RULE}
-- ${scopeRule}
+- ${CHECKPOINT_RULE}
+- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}` : REVIEWER_SCOPE_RULE}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
@@ -122,6 +140,15 @@ export const ALREADY_DONE_TRAILER = "Formic-Already-Done: true";
 
 const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
+
+/** The commit a run merged in before its agent started, from its commit's trailer. */
+export function mergedFrom(messages: string[]): string | null {
+  for (const line of (messages.at(-1) ?? "").split("\n")) {
+    const m = new RegExp(`^${MERGED_TRAILER}\\s+([0-9a-f]{40})\\s*$`).exec(line.trim());
+    if (m) return m[1]!;
+  }
+  return null;
+}
 
 /** Whether a CLI agent's commits report the ticket as already done. */
 export function reportsAlreadyDone(messages: string[]): boolean {
@@ -275,6 +302,8 @@ const CLI_REVIEW = `How to finish your review. Do exactly one of these:
 To approve or send back, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
 
+const CLI_RESOLVE = `The conflicted files are the ones \`git diff --name-only --diff-filter=U\` lists. When every conflict is resolved, write the summary file as usual: what each conflict was and how you kept both sides. Do not commit.`;
+
 /** What a CLI reviewer decided when it changed nothing, if it said. */
 export function reviewVerdictOf(messages: string[]): "approved" | "send-back" | null {
   for (const line of messages.flatMap((m) => m.split("\n")).reverse()) {
@@ -306,7 +335,7 @@ export function cliPrompt(
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
   const task = taskFor(ticket, notes, instruction);
   const work = review
-    ? [reviewBrief({ ...review, task }), "", CLI_REVIEW]
+    ? [reviewBrief({ ...review, task }), "", review.conflicts ? CLI_RESOLVE : CLI_REVIEW]
     : [
         taskBrief(task),
         "",
@@ -316,8 +345,56 @@ export function cliPrompt(
         "",
         CLI_ALREADY_DONE,
       ];
-  const scopeRule = mode === "implement" ? CODER_SCOPE_RULE : REVIEWER_SCOPE_RULE;
-  return cap([brief.trim(), "", cliRules(scopeRule), "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
+  return cap([brief.trim(), "", cliRules(mode), "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
+}
+
+/** A checkpoint's commit message: the agent's progress notes, then the trailer. */
+export function checkpointMessage(key: string, job: string, note: string): string {
+  const body = note.trim();
+  return `${key}: checkpoint\n\n${body ? `${body}\n\n` : ""}${CHECKPOINT_TRAILER} ${job}`;
+}
+
+/** The progress notes a checkpoint carries, from its commit message. */
+export function checkpointNote(message: string): string {
+  return message
+    .split("\n")
+    .slice(1)
+    .filter((line) => !line.startsWith(CHECKPOINT_TRAILER))
+    .join("\n")
+    .trim()
+    .slice(0, 6_000);
+}
+
+/** What a run carrying on from a checkpoint is told: where the last one got to. */
+export function resumeBrief(checkpoint: Checkpoint, plan: PlanStep[]): string {
+  const note = checkpointNote(checkpoint.message);
+  const steps = plan.map((s) => `- [${s.status === "done" ? "x" : " "}] ${s.step}`);
+  return [
+    "Carrying on. An earlier run on this ticket stopped before it finished. Its work is already in your checkout, uncommitted: git status and git diff show it.",
+    ...(steps.length > 0 ? ["", "Its plan, as it left it:", ...steps] : []),
+    ...(note ? ["", "Its progress notes, which are also in your progress file to keep current:", note] : []),
+    "",
+    "Write your plan from its plan, then start at the first step not done. Trust the finished steps: check them only as far as the next step needs, and do not do them again. Where a note from the person asks for something different, the note wins: undo what does not fit it.",
+  ].join("\n");
+}
+
+/**
+ * The checkpoint a run carries on from, if it has one it can. A new ticket's
+ * work starts on the branch it merges into, which moves as other work lands,
+ * and its checkpoint stays good; a branch Formic only ever fast-forwards has
+ * to be where the checkpoint left it, or the work would not land on it.
+ */
+async function carryOnFrom(
+  client: VcsClient,
+  ticket: TicketDetail,
+  mode: CodeMode,
+  from: string,
+): Promise<Checkpoint | null> {
+  const saved = await client.checkpoint(ticket.id);
+  if (!saved) return null;
+  if ((mode === "implement" && !ticket.prNumber) || (await client.branchHead(from)) === saved.parent) return saved;
+  await client.deleteCheckpoint(ticket.id);
+  return null;
 }
 
 /**
@@ -333,6 +410,8 @@ async function dispatch(input: {
   cardKey: string;
   from: string;
   prompt: string;
+  /** A branch to merge in before the agent starts, its conflicts left for it. */
+  merge?: string;
   /** Recorded before the dispatch: only this job's result is taken. */
   record: (job: string) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
@@ -365,6 +444,7 @@ async function dispatch(input: {
       secret,
       prompt: cap(input.prompt),
       report: reportUrl(input.job, Date.now()) ?? "",
+      ...(input.merge ? { merge: input.merge } : {}),
     });
     return { ok: true };
   } catch (e) {
@@ -398,6 +478,8 @@ export async function startCliRun(input: {
   /** The branch the agent starts from. */
   from: string;
   prompt: string;
+  /** A branch to merge in first, for the agent to resolve its conflicts. */
+  merge?: string;
   run: RunHandle;
   stalledIn: "in_progress" | "in_review";
   stage?: number;
@@ -405,16 +487,23 @@ export async function startCliRun(input: {
   const { projectId, ticket, agent, run } = input;
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+
+  // Resolving merge conflicts starts over: the merge is the work.
+  const resumed = input.merge
+    ? null
+    : await carryOnFrom(client, ticket, input.mode, input.from).catch(() => null);
 
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client,
     baseBranch: project.baseBranch,
     agent,
     job: jobId(ticket.id, randomUUID().slice(0, 8)),
     mode: input.mode,
     cardKey: ticket.key,
-    from: input.from,
-    prompt: input.prompt,
+    from: resumed?.sha ?? input.from,
+    prompt: resumed ? `${input.prompt}\n\n${resumeBrief(resumed, ticket.plan)}` : input.prompt,
+    merge: input.merge,
     record: (job) => repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
   });
 
@@ -430,6 +519,15 @@ export async function startCliRun(input: {
   }
 
   working(agent, run, ticket.id);
+  if (resumed) {
+    run.ctx.emit({
+      type: "run.log",
+      runId: run.runId,
+      ticketId: ticket.id,
+      stream: "stdout",
+      line: "It carries on from where the last run stopped.",
+    });
+  }
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
@@ -481,6 +579,7 @@ async function answerPrompt(
   if (!epic) return null;
 
   if (mode === "product") {
+    const attachments = attachmentsPrompt(await repo.attachmentsFor({ epicId }));
     return [
       withProductConventions(agent.brief ?? PRODUCT_BRIEF),
       "",
@@ -490,6 +589,7 @@ async function answerPrompt(
       "Raw feature request:",
       "",
       withEpicNotes(epic.rawRequest, await epicNoteTexts(projectId, epicId)),
+      ...(attachments ? ["", attachments] : []),
     ].join("\n");
   }
 
@@ -498,6 +598,7 @@ async function answerPrompt(
     if (!prd.success) return null;
     const instructions = await epicNoteTexts(projectId, epicId);
     const existing = instructions.length ? await existingTicketsFor(epicId) : [];
+    const attachments = attachmentsPrompt(await repo.attachmentsFor({ epicId }));
     return [
       withPlanningConventions(agent.brief ?? ARCHITECT_BRIEF),
       "",
@@ -512,6 +613,7 @@ async function answerPrompt(
       "Existing top-level directories in the repository:",
       (await tree()).slice(0, 200).join("\n") || "(empty repository)",
       decompositionGuidance(existing, instructions),
+      ...(attachments ? ["", attachments] : []),
     ].join("\n");
   }
 
@@ -601,6 +703,92 @@ export async function startCliAnswer(input: {
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
+/** Attempts a CLI agent gets at drafting a To Do request's single ticket. */
+const DRAFT_ATTEMPTS = 2;
+
+/**
+ * Starts a CLI agent drafting a To Do request's single ticket: the Architect
+ * Agent's work, with no PRD, straight from the raw text. The job hangs off
+ * the placeholder ticket, whose standalone Epic is never a card of its own.
+ */
+export async function startCliDraftTicket(input: {
+  projectId: string;
+  ticketId: string;
+  agent: CliAgent;
+  run: RunHandle;
+  /** A second attempt: the previous answer and what was wrong. */
+  retry?: { attempt: number; answer: string; correction: string };
+}): Promise<void> {
+  const { projectId, ticketId, agent, run } = input;
+  const repo = repository();
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const ticket = await repo.ticketDetail(ticketId);
+  const epic = ticket ? await repo.epicDetail(ticket.epicId) : null;
+
+  const fail = async (reason: string, blocked: boolean) => {
+    await repo.updateTicket(ticketId, { runnerJob: null, runnerAgent: null });
+    await stallDraftingTicket(projectId, ticketId, reason, blocked);
+    await run.finish({ ok: false, error: reason, blocked, usage: noUsage(agent) });
+  };
+
+  if (!ticket || !epic?.rawRequest.trim()) {
+    await fail("This ticket has nothing to work from yet.", true);
+    return;
+  }
+
+  const tree = creds.githubToken
+    ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.githubToken)) ?? [])
+    : [];
+  const attachments = attachmentsPrompt(await repo.attachmentsFor({ ticketId }));
+  const base = [
+    withPlanningConventions(agent.brief ?? ARCHITECT_BRIEF),
+    "",
+    ANSWER_RULES,
+    "Draft exactly one ticket for the request below: it needs no breakdown.",
+    jsonShape(ticketSpecSchema),
+    "",
+    "Raw feature request:",
+    "",
+    epic.rawRequest,
+    "",
+    "Existing top-level directories in the repository:",
+    tree.slice(0, 200).join("\n") || "(empty repository)",
+    ...(attachments ? ["", attachments] : []),
+  ].join("\n");
+
+  const prompt = input.retry
+    ? [
+        base,
+        "",
+        `This is attempt ${input.retry.attempt} of ${DRAFT_ATTEMPTS}. Your previous answer was:`,
+        "",
+        input.retry.answer.slice(0, 20_000),
+        "",
+        input.retry.correction,
+      ].join("\n")
+    : base;
+
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent,
+    job: jobId(ticketId, randomUUID().slice(0, 8), input.retry?.attempt ?? 1),
+    mode: "architect",
+    cardKey: ticket.key,
+    from: project.baseBranch,
+    prompt,
+    record: (job) => repo.updateTicket(ticketId, { runnerJob: job, runnerAgent: agent.presetId }),
+  });
+  if (!started.ok) {
+    await fail(started.reason, started.blocked);
+    return;
+  }
+
+  working(agent, run, ticketId);
+  await run.finish({ ok: true, value: null, usage: noUsage(agent) });
+}
+
 type Checked<T> = { ok: true; value: T } | { ok: false; correction: string };
 
 function readJson(text: string): unknown {
@@ -622,6 +810,20 @@ function checkProduct(text: string): Checked<z.infer<typeof productOutput>> {
   return {
     ok: false,
     correction: `That PRD does not match the schema: ${issue?.path.join(".")}: ${issue?.message}. Answer with the corrected JSON object.`,
+  };
+}
+
+function checkDraft(text: string): Checked<DraftTicket> {
+  const raw = readJson(text);
+  if (raw === null) {
+    return { ok: false, correction: "That was not a JSON object. Answer with only the JSON object." };
+  }
+  const parsed = ticketSpecSchema.safeParse(raw);
+  if (parsed.success) return { ok: true, value: toDraftTicket(parsed.data) };
+  const issue = parsed.error.issues[0];
+  return {
+    ok: false,
+    correction: `That ticket does not match the schema: ${issue?.path.join(".")}: ${issue?.message}. Answer with the corrected JSON object.`,
   };
 }
 
@@ -648,6 +850,11 @@ async function completeCliAnswer(
   const epicId = cardOfJob(result.job);
   if (!epicId) return;
   if ((await repo.projectOfCard(epicId)) !== projectId) return;
+  // A To Do request's single ticket: the job hangs off the ticket itself.
+  if (result.mode === "architect" && (await repo.cardById(epicId))?.kind === "ticket") {
+    await completeCliDraft(projectId, result);
+    return;
+  }
   const epic = await repo.epicDetail(epicId);
   if (!epic) return;
 
@@ -736,6 +943,72 @@ async function completeCliAnswer(
     mode: result.mode,
     agent,
     run: startRun(projectId, stage.role, { epicId, model: agent.model ?? agent.info.label }),
+    retry: { attempt: attempt + 1, answer, correction: checked.correction },
+  });
+}
+
+/**
+ * A CLI agent finished drafting a To Do request's single ticket. A right
+ * answer replaces the placeholder; a wrong one goes back once as a
+ * correction, then the ticket stalls in To Do.
+ */
+async function completeCliDraft(projectId: string, result: RunnerResult): Promise<void> {
+  const repo = repository();
+  const ticketId = cardOfJob(result.job);
+  const ticket = ticketId ? await repo.ticketDetail(ticketId) : null;
+  if (!ticketId || !ticket) return;
+
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.githubToken);
+  const staging = `${STAGING_PREFIX}${result.job}`;
+  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+
+  if (ticket.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+  await repo.updateTicket(ticketId, { runnerJob: null, runnerAgent: null });
+
+  const log = result.url ? ` Its log: ${result.url}` : "";
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    const reason = await whyItFailed(projectId, client, result, ticket.runnerAgent);
+    await stallDraftingTicket(projectId, ticketId, reason, false);
+    return;
+  }
+
+  const answer = await client.readFile(ANSWER_PATH, staging).catch((e: unknown) => {
+    console.error("[formic] could not read the agent's answer:", e);
+    return null;
+  });
+  await cleanUp();
+  if (!answer?.trim()) {
+    await stallDraftingTicket(projectId, ticketId, `The agent finished without an answer.${log}`, false);
+    return;
+  }
+
+  const checked = checkDraft(answer);
+  if (checked.ok) {
+    await applyDraftedTicket(projectId, ticket.epicId, ticketId, checked.value);
+    return;
+  }
+
+  const attempt = attemptOfJob(result.job);
+  const agent = attempt < DRAFT_ATTEMPTS ? await cliAgentFor(projectId, "todo") : null;
+  if (!agent) {
+    await stallDraftingTicket(projectId, ticketId, `The agent's answer could not be used: ${checked.correction}`, false);
+    return;
+  }
+  await startCliDraftTicket({
+    projectId,
+    ticketId,
+    agent,
+    run: startRun(projectId, "architect", {
+      epicId: ticket.epicId,
+      ticketId,
+      model: agent.model ?? agent.info.label,
+    }),
     retry: { attempt: attempt + 1, answer, correction: checked.correction },
   });
 }
@@ -840,7 +1113,7 @@ export async function collectCliRuns(projectId: string): Promise<void> {
     const job =
       card.kind === "epic"
         ? (await repo.epicDetail(card.id))?.runnerJob
-        : card.status === "running" || card.status === "review"
+        : card.status === "running" || card.status === "review" || card.stalledIn === "todo"
           ? (await repo.ticketDetail(card.id))?.runnerJob
           : null;
     if (job) waiting.add(job);
@@ -986,6 +1259,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   // pull request open started from the ticket's own branch.
   const from = result.mode === "implement" && !ticket.prNumber ? mergeTarget(project.baseBranch) : branch;
 
+  // The run finished and handed its work back whole: its checkpoint has
+  // nothing more to give, unless taking the work fails and loses it.
+  let lost = false;
   try {
     const change = await client.compare(from, staging);
     if (
@@ -1044,7 +1320,18 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       files = [...new Set([...files.filter((f) => !isCarried(f)), ...landed.files])];
     }
 
-    const violations = violationsInDiff(files, ticket.fileScope);
+    // It merged another branch in: what came with that branch is not the
+    // agent's change, so only the rest is held to the scope.
+    const merged = result.mode === "fix" ? mergedFrom(change.messages) : null;
+    if (merged) {
+      const brought = new Set((await client.compare(branch, merged)).files);
+      files = files.filter((f) => !brought.has(f));
+    }
+
+    let violations = violationsInDiff(files, ticket.fileScope);
+    if (violations.length > 0 && result.mode === "implement" && (await widenScope(projectId, ticket, violations))) {
+      violations = [];
+    }
     // A new ticket's work that needed more is kept on its own branch, which
     // no other ticket reads, while the person is asked for the files. With
     // a pull request open, that branch is the pull request: nothing is kept.
@@ -1064,6 +1351,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       );
       return;
     }
+
+    // Recorded as the merge it was, so GitHub counts the branch as brought in.
+    if (merged) head = await client.recordMerge(head, merged);
 
     // Fast-forward only. If the branch moved while the agent worked, this
     // refuses rather than overwrite what moved it.
@@ -1095,7 +1385,10 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       },
     });
   } catch (e) {
+    lost = true;
     await stop(`Could not take the agent's work: ${explain(e)}`, false);
+  } finally {
+    if (!lost) await client.deleteCheckpoint(ticket.id).catch(() => undefined);
   }
 }
 
@@ -1137,6 +1430,57 @@ export function reportAllowed(job: string, since: string, token: string): boolea
   return expected.length === given.length && timingSafeEqual(expected, given);
 }
 
+/** How long a signed attachment URL stays good: past the workflow's own 60-minute timeout, so a job that is slow to start never finds it expired. */
+const ATTACHMENT_URL_TTL_MS = 90 * 60 * 1000;
+
+function attachmentToken(id: string, expires: number): string {
+  return createHmac("sha256", signingSecret()).update(`attachment:${id}:${expires}`).digest("hex");
+}
+
+/**
+ * A time-limited URL for one attachment's bytes, for a CLI agent with no
+ * Formic session to curl into its own workspace: the same signed-token
+ * machinery as reportUrl, over the attachment id and its expiry instead of a
+ * job. Null with no public origin to build one from, same as reportUrl.
+ */
+export function signedAttachmentUrl(id: string): string | null {
+  const origin = formicOrigin();
+  if (!origin) return null;
+  const expires = Date.now() + ATTACHMENT_URL_TTL_MS;
+  const q = new URLSearchParams({ expires: String(expires), token: attachmentToken(id, expires) });
+  return `${origin}/api/attachments/${id}?${q.toString()}`;
+}
+
+/** Whether a signed attachment URL's token is genuine and has not expired. */
+export function attachmentUrlAllowed(id: string, expires: string, token: string): boolean {
+  if (!/^\d+$/.test(expires) || Date.now() > Number(expires)) return false;
+  const expected = Buffer.from(attachmentToken(id, Number(expires)));
+  const given = Buffer.from(token);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/**
+ * The prompt text for an epic or ticket's attachments: one line per
+ * attachment with its filename, kind and a signed URL, since a CLI agent
+ * running in someone else's GitHub Actions cannot reach Formic's database to
+ * read the bytes directly the way an API agent does. Null with nothing to
+ * say, whether there are no attachments or no public origin to sign a URL
+ * from.
+ */
+export function attachmentsPrompt(attachments: AttachmentSummary[]): string | null {
+  const lines = attachments
+    .map((a) => {
+      const url = signedAttachmentUrl(a.id);
+      return url ? `- ${a.filename} (${a.kind}): ${url}` : null;
+    })
+    .filter((line): line is string => line !== null);
+  if (lines.length === 0) return null;
+  return [
+    `Attachments. Download each with curl into the directory named by the ${ATTACHMENTS_DIR_VAR} environment variable, and read them from there. Do not commit that directory.`,
+    ...lines,
+  ].join("\n");
+}
+
 /** The most a batch publishes; a flood of output keeps its latest part. */
 const MAX_REPORT_ITEMS = 200;
 
@@ -1145,6 +1489,38 @@ export interface ReportReply {
   notes: Array<{ seq: number; text: string }>;
   /** The card no longer waits on this job: stop reporting. */
   stop: boolean;
+  /** The checkpoint that came with the report was saved. */
+  checkpointed?: boolean;
+}
+
+export interface ReportedCheckpoint {
+  base: string;
+  files: CheckpointFile[];
+  deleted: string[];
+  note: string;
+}
+
+/** Saves a run's checkpoint on the repository. Says whether it could. */
+async function saveCheckpoint(
+  projectId: string,
+  ticket: TicketDetail,
+  job: string,
+  checkpoint: ReportedCheckpoint,
+): Promise<boolean> {
+  try {
+    const project = await projectFor(projectId);
+    const creds = await credentialsForProject(project);
+    await vcs(project.repoFullName, creds.githubToken).saveCheckpoint(ticket.id, {
+      base: checkpoint.base,
+      files: checkpoint.files,
+      deleted: checkpoint.deleted,
+      message: checkpointMessage(ticket.key, job, checkpoint.note),
+    });
+    return true;
+  } catch (e) {
+    console.error("[formic] could not save a checkpoint:", explain(e));
+    return false;
+  }
 }
 
 /**
@@ -1157,6 +1533,7 @@ export async function receiveReport(input: {
   since: number;
   lines: string[];
   after: number;
+  checkpoint?: ReportedCheckpoint;
 }): Promise<ReportReply> {
   const repo = repository();
   const cardId = cardOfJob(input.job);
@@ -1195,7 +1572,7 @@ export async function receiveReport(input: {
           type: "run.progress",
           runId,
           ticketId: ticket.id,
-          role: ticket.status === "review" ? "reviewer" : "coder",
+          role: ticket.status === "review" ? "reviewer" : ticket.stalledIn === "todo" ? "architect" : "coder",
           label: item.label,
           fraction: planFraction(plan),
         });
@@ -1212,10 +1589,14 @@ export async function receiveReport(input: {
   }
   if (planChanged) await repo.updateTicket(ticket.id, { plan });
 
+  const checkpointed = input.checkpoint
+    ? await saveCheckpoint(projectId, ticket, input.job, input.checkpoint)
+    : undefined;
+
   const notes = (await ticketNotes(projectId, ticket.id, new Date(input.since)))
     .filter((n) => n.seq > input.after)
     .map((n) => ({ seq: n.seq, text: n.text }));
-  return { notes, stop: false };
+  return { notes, stop: false, ...(checkpointed === undefined ? {} : { checkpointed }) };
 }
 
 export const STOPPED_BY_PERSON =

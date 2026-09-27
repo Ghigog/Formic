@@ -370,7 +370,7 @@ export class MemoryRepository implements Repository {
             : null
           : s.ticketExtras.get(card.id)?.runnerJob
             ? {
-                role: card.status === "review" ? ("reviewer" as const) : ("coder" as const),
+                role: card.status === "review" ? ("reviewer" as const) : card.stalledIn === "todo" ? ("architect" as const) : ("coder" as const),
                 since: s.ticketExtras.get(card.id)?.runnerJobAt ?? null,
               }
             : null;

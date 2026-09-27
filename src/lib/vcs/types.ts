@@ -11,6 +11,9 @@
 /** Branches the cloud runner pushes to. The only ones Formic may delete. */
 export const STAGING_PREFIX = "formic-staging/";
 
+/** Where each card's checkpoint lives: a ref outside refs/heads, so no push trigger fires for it. */
+export const CHECKPOINT_REF_PREFIX = "refs/formic/checkpoints/";
+
 export interface Comparison {
   /** Paths changed between the two refs. */
   files: string[];
@@ -167,10 +170,53 @@ export interface VcsClient {
    * the real paths it changed that way.
    */
   landCarried(sha: string): Promise<{ sha: string; files: string[] }>;
+  /**
+   * Rewrites the commit at `sha` as a merge of `merged`: the same tree and
+   * message, with `merged` added as its second parent. That is what makes
+   * GitHub count a conflict an agent resolved by hand as brought in.
+   */
+  recordMerge(sha: string, merged: string): Promise<string>;
   /** Creates `branch` at `sha`, or fast-forwards it there. Never forces. */
   moveBranch(branch: string, sha: string): Promise<void>;
   /** Deletes a staging branch. Refuses any branch outside STAGING_PREFIX. */
   deleteStagingBranch(branch: string): Promise<void>;
+  /** The commit a branch points at, or null when there is no such branch. */
+  branchHead(branch: string): Promise<string | null>;
+
+  /*
+   * Checkpoints: an agent's work in progress, saved while it works, so a run
+   * that stops for any reason is carried on rather than done again. One per
+   * card, on a hidden ref that is not a branch, so saving one runs no CI.
+   */
+
+  /** Saves a card's work in progress as one commit on `base`, replacing its last. */
+  saveCheckpoint(card: string, input: CheckpointInput): Promise<string>;
+  /** A card's last checkpoint, or null when it has none. */
+  checkpoint(card: string): Promise<Checkpoint | null>;
+  /** Drops a card's checkpoint. Quiet when there is none. */
+  deleteCheckpoint(card: string): Promise<void>;
+}
+
+export interface CheckpointFile {
+  path: string;
+  mode: "100644" | "100755" | "120000";
+  /** The file's bytes, base64. */
+  content: string;
+}
+
+export interface CheckpointInput {
+  /** The commit the work started from. */
+  base: string;
+  files: CheckpointFile[];
+  deleted: string[];
+  message: string;
+}
+
+export interface Checkpoint {
+  sha: string;
+  /** The commit the work started from. */
+  parent: string;
+  message: string;
 }
 
 export class VcsError extends Error {

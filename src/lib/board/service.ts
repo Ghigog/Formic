@@ -30,7 +30,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
 import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
-import { scopesOverlap } from "@/lib/domain/scope";
+import { runningConflict } from "@/lib/domain/queue";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -49,26 +49,6 @@ function dependenciesMet(card: BoardCard, all: BoardCard[]): boolean {
     all.filter((c) => c.status === "merged").map((c) => c.id),
   );
   return card.dependsOn.every((id) => merged.has(id));
-}
-
-/**
- * The other card already writing these files, if there is one.
- *
- * Only running cards count. A card in review holds an open pull request, but
- * it is not editing a checkout, and treating it as a conflict would stall the
- * board for as long as CI takes — which is most of the time.
- */
-function scopeConflict(card: BoardCard, all: BoardCard[]): BoardCard | null {
-  if (card.fileScope.length === 0) return null;
-  return (
-    all.find(
-      (other) =>
-        other.id !== card.id &&
-        other.status === "running" &&
-        other.fileScope.length > 0 &&
-        scopesOverlap(card.fileScope, other.fileScope),
-    ) ?? null
-  );
 }
 
 /**
@@ -127,13 +107,6 @@ async function whatIsWrong(
       .map((c) => c!.key)
       .join(", ");
     return `${card.key} is waiting on ${blocking || "a dependency"} to merge first. Drag it back to To Do; it is ready to go once that merges.`;
-  }
-
-  if (to === "in_progress") {
-    const conflict = scopeConflict(card, cards);
-    if (conflict) {
-      return `${conflict.key} is already working in ${conflict.fileScope.join(", ")}, and two agents cannot write the same files at once. Drag this back to To Do and try again when ${conflict.key} is done.`;
-    }
   }
 
   return null;
@@ -256,12 +229,16 @@ export async function applyTransition(
   const breakDown = toArchitect && hasPrd && (parked.length === 0 || parked.some(madeBefore));
 
   // Back in Backlog, an Epic that has its PRD is still specified, not a draft.
+  // A ticket whose files another agent is writing waits its turn in In
+  // Progress, and starts once that one stops (see startQueued).
   const status =
     toArchitect && !hasPrd
       ? "waiting"
       : card.kind === "epic" && t.to === "backlog" && hasPrd
         ? "specified"
-        : statusForUserDrop(t.to, met);
+        : card.kind === "ticket" && t.to === "in_progress" && runningConflict(card, cards)
+          ? "queued"
+          : statusForUserDrop(t.to, met);
   const position = await placeAmong(projectId, t.to, card, t.position);
 
   await repo.move({
@@ -311,7 +288,7 @@ export async function applyTransition(
   if (card.kind === "ticket" && (t.to === "in_progress" || t.to === "in_review")) {
     await repo.updateTicket(card.id, { attempts: 0 });
   }
-  if (card.kind === "ticket" && t.to === "in_progress") {
+  if (card.kind === "ticket" && status === "running") {
     launch(
       () => runCoderAgent(projectId, card.id),
       `coder agent for ${card.key}`,
@@ -523,6 +500,38 @@ export async function createTodoItem(
   }, `architect agent for ${ticket.key}`);
 
   return (await repo.cardById(ticket.id))!;
+}
+
+/**
+ * Drafts a To Do request's single ticket again after its drafting stalled.
+ * Only the placeholder qualifies: it has no acceptance criteria until the
+ * Architect Agent writes it. Returns false for any other ticket.
+ */
+export async function redraftTicket(projectId: string, ticketId: string): Promise<boolean> {
+  const repo = repository();
+  const card = await repo.cardById(ticketId);
+  const ticket = await repo.ticketDetail(ticketId);
+  if (!card || !ticket || card.stalledIn !== "todo" || !isStalled(card.status)) return false;
+  if (ticket.acceptanceCriteria.length > 0 || ticket.runnerJob) return false;
+  const epic = await repo.epicDetail(ticket.epicId);
+  if (!epic) return false;
+
+  await repo.updateTicket(ticketId, { status: "blocked", stalledIn: "todo", blockedReason: "Drafting the ticket…" });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticketId,
+    kind: "ticket",
+    status: "blocked",
+    stalledIn: "todo",
+    stage: 3,
+    blockedReason: "Drafting the ticket…",
+  });
+
+  launch(async () => {
+    const tree = await repoTree(projectId);
+    await runArchitectDraftTicket(projectId, ticket.epicId, ticketId, epic.rawRequest, tree);
+  }, `architect agent for ${card.key}`);
+  return true;
 }
 
 /**

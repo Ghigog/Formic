@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { decomposeEpic, launch, runProductAgent } from "./pipeline";
 import { projectFor } from "@/lib/board/project";
-import { applyTransition, retryEpic } from "@/lib/board/service";
+import { applyTransition, redraftTicket, retryEpic } from "@/lib/board/service";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { stopEpic } from "@/lib/budget/controller";
 import { runCoderAgent } from "@/lib/coder/pipeline";
@@ -12,6 +12,7 @@ import { MAX_NOTE, addNote } from "@/lib/coder/notes";
 import { answerScope, scopeAsked } from "@/lib/coder/scope-request";
 import { repository } from "@/lib/db";
 import { fileScopeSchema, prdSchema, type BoardCard } from "@/lib/domain/entities";
+import { runningConflict } from "@/lib/domain/queue";
 import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, isStalled, type ColumnId } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { cancelJob, stopTicket } from "@/lib/runner/runner";
@@ -206,6 +207,10 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
     });
     return `Could not move ${card.key}: ${result.problem.replace(/\s*Drag it back to [^.]+ to undo this\./, "")}`;
   }
+  if (result.status === "queued") {
+    const blocker = runningConflict(now, await repository().boardCards(projectId));
+    return `Moved ${card.key} to In Progress, queued behind ${blocker?.key ?? "a ticket writing the same files"}. The Coder Agent starts on it once that one is done.`;
+  }
   return `Moved ${card.key} to ${COLUMN_LABELS[to]}.${
     card.kind === "ticket" && to === "in_progress" ? " The Coder Agent is starting on it." : ""
   }`;
@@ -310,6 +315,10 @@ async function redoTicket(projectId: string, card: BoardCard, instruction: strin
     return `The Reviewer Agent is looking at ${card.key} again${instruction ? ", with what you asked" : ""}. It starts once CI has a result.`;
   }
 
+  if (home === "todo" && (await redraftTicket(projectId, card.id))) {
+    return `The Architect Agent is drafting ${card.key} again.`;
+  }
+
   if (home === "done") return `${card.key} is done. Move it back to To Do, then In Progress, to work on it again.`;
   return `Nothing has been built for ${card.key} yet. Change the ticket with edit_ticket, or move it to In Progress to start it.`;
 }
@@ -400,8 +409,8 @@ async function widenScope(projectId: string, card: BoardCard, allow: boolean): P
   const done = allow
     ? `Added ${asked.map((p) => `\`${p}\``).join(", ")} to ${card.key}'s scope.`
     : `${card.key} keeps to its scope and starts again.`;
-  // Back in To Do, it goes on the way any ticket does: only once nothing
-  // running overlaps its scope.
+  // Back in To Do, it goes on the way any ticket does: queued behind
+  // anything running in its scope.
   const moved = await move(projectId, (await repository().cardById(card.id)) ?? card, "in_progress");
   return moved.startsWith("Could not")
     ? `${done} It stays in To Do for now. ${moved.replace(/^Could not move [^:]+: /, "")}`

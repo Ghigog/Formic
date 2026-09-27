@@ -27,6 +27,7 @@ import {
 } from "@/lib/domain/status";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import { byPosition } from "@/lib/ordering";
+import { runningConflict } from "@/lib/domain/queue";
 import { placeDrop } from "./placement";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
@@ -176,11 +177,18 @@ export function Board({
       const depsMet = card.dependsOn.every(
         (id) => live.find((c) => c.id === id)?.status === "merged",
       );
+      // Onto files another agent is writing, it queues behind that one.
+      const queues = card.kind === "ticket" && to === "in_progress" && !!runningConflict(card, live);
       const moved: BoardCard =
         fits
           ? {
               ...card,
-              status: to === from || to === home ? card.status : statusForUserDrop(to, depsMet),
+              status:
+                to === from || to === home
+                  ? card.status
+                  : queues
+                    ? "queued"
+                    : statusForUserDrop(to, depsMet),
               position,
               detached,
               stalledIn: to === from || to === home ? card.stalledIn : null,
@@ -339,8 +347,9 @@ export function Board({
         return accepts(column, to) ? to : null;
       },
       onAdvance: (card, to) => void commit(card, to, Number.MAX_SAFE_INTEGER),
+      queuedBehind: (card) => runningConflict(card, live),
     }),
-    [epicsById, accepts, commit],
+    [epicsById, accepts, commit, live],
   );
 
   /*

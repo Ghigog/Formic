@@ -162,6 +162,30 @@ describe("applyTransition of an epic into To Do", () => {
   });
 });
 
+describe("applyTransition onto files another agent is writing", () => {
+  it("queues the ticket in In Progress without starting its agent", async () => {
+    const [epic, running, next] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "running", fileScope: ["src/ui"] },
+      { status: "ready", fileScope: ["src/ui/button.tsx"] },
+    ]);
+    seedMemory([epic!, running!, next!]);
+
+    const result = await applyTransition(PROJECT, {
+      cardId: next!.id,
+      kind: "ticket",
+      from: "todo",
+      to: "in_progress",
+      position: 1e9,
+      actor: "user",
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "queued" });
+    expect(result.ok && result.problem).toBeFalsy();
+    expect(await repository().cardById(next!.id)).toMatchObject({ status: "queued", misplacedIn: null });
+    expect(launched).toEqual([]);
+  });
+});
+
 describe("applyTransition into a column whose agent is out of usage", () => {
   it("lands the card, marked with when the agent is back", async () => {
     const epic = makeCard({ kind: "epic", status: "specified", size: null });

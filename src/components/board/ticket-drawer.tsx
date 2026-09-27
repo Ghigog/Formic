@@ -11,8 +11,9 @@ import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
 import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE } from "@/lib/domain/entities";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
-import { columnFor, isStalled } from "@/lib/domain/status";
+import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
+import { AttachmentGallery } from "./attachment-gallery";
 import { ProblemNotice, WorkTimer } from "./card";
 import {
   activityOf,
@@ -190,6 +191,13 @@ export function TicketDrawer({
               {card.blockedReason}
             </p>
           )}
+
+          {/* Survives the toast that announced it: where it came from, and why. */}
+          {card?.rerouteFrom && (
+            <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
+              Moved from {COLUMN_LABELS[card.rerouteFrom]}: {card.rerouteReason}
+            </p>
+          )}
         </header>
 
         {/* Tabs below the dual-pane breakpoint, where two columns do not fit. */}
@@ -290,6 +298,8 @@ function TicketBody({ view }: { view: TicketView }) {
           {view.card.fileScope.join(" · ") || "(no scope)"}
         </p>
       </div>
+
+      <AttachmentGallery ticketId={view.card.id} />
 
       {view.dependsOn.length > 0 && (
         <div>

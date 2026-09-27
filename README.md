@@ -211,8 +211,8 @@ never force-pushes, and the only branches it deletes are its own
 - **Sandboxes.** The local provider can't run on Vercel. Use
   `SANDBOX_PROVIDER=e2b` with `E2B_API_KEY` for coder runs.
 - **Checks.** CI builds and boots the app against a real Postgres on every
-  PR. After each merge, the smoke test waits for that commit to go live and
-  checks `/api/health` and `/` (set the `PRODUCTION_URL` repo variable).
+  PR and gates the production deploy on `main`. After each merge, the smoke
+  test waits for that commit to go live and checks `/api/health` and `/` (set the `PRODUCTION_URL` repo variable).
 
 ## Scripts
 
@@ -246,10 +246,16 @@ the bug style and the sound switch.
 
 ## Deploys
 
-Vercel deploys `main` and nothing else. `vercel.json` turns deployments off
-for every branch with a slash in its name (`claude/…`, `formic/…`, and the
-like), so pull requests get no preview and each merge costs one deploy
-against the plan's daily limit. CI still builds and tests every pull request.
+Production deploys from CI, not Vercel's Git integration. `vercel.json` turns
+Git deployments off for `main` and for every branch with a slash in its name
+(`claude/…`, `formic/…`, and the like), so pull requests get no preview. On
+each push to `main`, CI's `deploy` job runs `vercel deploy --prod` once
+`build` and `e2e` pass, so a merge that breaks CI never goes live. Each merge
+still costs one deploy against the plan's daily limit.
+
+It needs three repository secrets: `VERCEL_TOKEN` (a Vercel access token),
+`VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` (from `.vercel/project.json` after
+`vercel link`).
 
 ## Layout
 

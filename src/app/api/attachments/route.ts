@@ -40,3 +40,22 @@ export async function POST(req: NextRequest) {
   const attachment = await upload({ projectId: project.id, requestId, file });
   return Response.json({ attachment }, { status: 201 });
 }
+
+/** Every attachment a card carries: what the Epic or Ticket drawer's gallery shows. */
+export async function GET(req: NextRequest) {
+  const project = await activeProject();
+  if (!project) return noProject();
+
+  const epicId = req.nextUrl.searchParams.get("epicId");
+  const ticketId = req.nextUrl.searchParams.get("ticketId");
+  if (!epicId && !ticketId) {
+    return Response.json({ error: "Expected an epicId or ticketId." }, { status: 400 });
+  }
+
+  const repo = repository();
+  const owner = (await repo.boardCards(project.id)).find((c) => c.id === (epicId ?? ticketId));
+  if (!owner) return Response.json({ attachments: [] });
+
+  const attachments = await repo.attachmentsFor(epicId ? { epicId } : { ticketId: ticketId! });
+  return Response.json({ attachments });
+}

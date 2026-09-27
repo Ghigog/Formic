@@ -1,5 +1,6 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 
@@ -13,7 +14,7 @@ import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
 import { agentFor, cliAgentFor, modelFor } from "./presets";
 import { handoffSection } from "./handoff";
-import { startCliAnswer } from "@/lib/runner/runner";
+import { startCliAnswer, startCliDraftTicket } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
 import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
@@ -577,22 +578,19 @@ export async function runArchitectDraftTicket(
     model: await modelFor(projectId, "architect"),
   });
 
-  // No AnswerMode covers drafting a single ticket yet, so a CLI agent on
-  // this column cannot take the work; it fails the same way an unassigned
-  // one does rather than hanging on an answer that will never arrive.
   const cli = await cliAgentFor(projectId, "todo");
-  const outcome = cli
-    ? {
-        ok: false as const,
-        blocked: true,
-        error: `${cli.info.label} runs in GitHub Actions and cannot draft a single ticket yet. Pick another agent for To Do.`,
-        usage: { model: cli.model ?? "", tokensIn: 0, tokensOut: 0, costCents: 0 },
-      }
-    : await (await agentFor(projectId, "architect")).draftTicket(run.ctx, {
-        rawRequest,
-        repoTree,
-        attachments: [],
-      });
+  if (cli) {
+    // A CLI agent drafts it in GitHub Actions and the answer comes back on
+    // the workflow_run webhook (see startCliDraftTicket in the runner).
+    await startCliDraftTicket({ projectId, ticketId, agent: cli, run });
+    return;
+  }
+
+  const outcome = await (await agentFor(projectId, "architect")).draftTicket(run.ctx, {
+    rawRequest,
+    repoTree,
+    attachments: [],
+  });
 
   if (outcome.ok) {
     if (outcome.value.kind === "ticket") {
@@ -611,7 +609,7 @@ export async function runArchitectDraftTicket(
  * The drafted ticket replaces the placeholder in its same slot: no Epic
  * update is needed to have made this one, because it never had a PRD.
  */
-async function applyDraftedTicket(
+export async function applyDraftedTicket(
   projectId: string,
   epicId: string,
   ticketId: string,
@@ -652,7 +650,7 @@ async function applyDraftedTicket(
 }
 
 /** A drafting ticket's run could not finish. It stays in To Do, blocked or failed. */
-async function stallDraftingTicket(
+export async function stallDraftingTicket(
   projectId: string,
   ticketId: string,
   reason: string,
@@ -669,6 +667,19 @@ async function stallDraftingTicket(
     stage: 3,
     blockedReason: reason,
   });
+}
+
+const streaming = new AsyncLocalStorage<true>();
+
+/**
+ * Runs work from inside a long-lived streaming response, such as the event
+ * stream. `after()` there waits for the stream to end, which is usually the
+ * platform cutting the function off, so anything launched would never start.
+ * Launched from here, it starts at once instead, while the stream keeps the
+ * function alive.
+ */
+export function fromStream<T>(work: () => T): T {
+  return streaming.run(true, work);
 }
 
 /**
@@ -691,6 +702,10 @@ export function launch(work: () => Promise<void>, label: string): void {
       console.error(`[formic] ${label} failed:`, e);
     });
 
+  if (streaming.getStore()) {
+    void run();
+    return;
+  }
   try {
     after(run);
   } catch {
