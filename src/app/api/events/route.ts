@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { fromStream } from "@/lib/agents/pipeline";
 import { repository } from "@/lib/db";
 import { isDroppable, replay, subscribe } from "@/lib/events/bus";
 import type { SequencedEvent } from "@/lib/domain/events";
@@ -89,10 +90,12 @@ export async function GET(req: NextRequest) {
         polling = true;
         // While someone watches the board, agent runs whose webhook never
         // came are found on GitHub. Throttled inside; never holds the tail.
-        void collectCliRuns(project.id).catch((e: unknown) =>
+        // What they find launches next steps (a sent-back ticket's Coder
+        // Agent, a review), which must start now, not when this stream ends.
+        void fromStream(() => collectCliRuns(project.id)).catch((e: unknown) =>
           console.warn("[formic] could not check the agents' runs:", e),
         );
-        void sweepOpenPullRequests(project.id).catch((e: unknown) =>
+        void fromStream(() => sweepOpenPullRequests(project.id)).catch((e: unknown) =>
           console.warn("[formic] could not check the open pull requests:", e),
         );
         try {

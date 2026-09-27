@@ -25,8 +25,15 @@ vi.stubEnv("DATABASE_URL", "");
 vi.stubEnv("POSTGRES_PRISMA_URL", "");
 vi.stubEnv("POSTGRES_URL", "");
 
-const { applyPrd, applyTickets, decomposeEpic, runArchitectDraftTicket, runProductAgent } =
-  await import("./pipeline");
+const {
+  applyPrd,
+  applyTickets,
+  decomposeEpic,
+  fromStream,
+  launch,
+  runArchitectDraftTicket,
+  runProductAgent,
+} = await import("./pipeline");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
 const { resetAgents, setAgents } = await import("./registry");
@@ -111,6 +118,25 @@ beforeEach(() => {
 
 afterEach(() => {
   resetAgents();
+});
+
+describe("launch", () => {
+  it("leaves work to after() inside a request", () => {
+    const work = vi.fn(async () => {});
+    launch(work, "work");
+    expect(deferred).toHaveLength(1);
+    expect(work).not.toHaveBeenCalled();
+  });
+
+  it("starts work at once from the event stream, which only ends when cut off", async () => {
+    const work = vi.fn(async () => {});
+    await fromStream(async () => {
+      await Promise.resolve();
+      launch(work, "work");
+    });
+    expect(deferred).toHaveLength(0);
+    expect(work).toHaveBeenCalledOnce();
+  });
 });
 
 describe("applyPrd", () => {

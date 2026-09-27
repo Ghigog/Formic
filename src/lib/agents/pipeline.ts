@@ -1,5 +1,6 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 
@@ -668,6 +669,19 @@ export async function stallDraftingTicket(
   });
 }
 
+const streaming = new AsyncLocalStorage<true>();
+
+/**
+ * Runs work from inside a long-lived streaming response, such as the event
+ * stream. `after()` there waits for the stream to end, which is usually the
+ * platform cutting the function off, so anything launched would never start.
+ * Launched from here, it starts at once instead, while the stream keeps the
+ * function alive.
+ */
+export function fromStream<T>(work: () => T): T {
+  return streaming.run(true, work);
+}
+
 /**
  * Detached launcher. A rejected promise here must not become an unhandled
  * rejection that takes the server down.
@@ -688,6 +702,10 @@ export function launch(work: () => Promise<void>, label: string): void {
       console.error(`[formic] ${label} failed:`, e);
     });
 
+  if (streaming.getStore()) {
+    void run();
+    return;
+  }
   try {
     after(run);
   } catch {
