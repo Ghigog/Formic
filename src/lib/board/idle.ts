@@ -1,6 +1,6 @@
 import "server-only";
 
-import { repository } from "@/lib/db";
+import { hasDatabase, repository } from "@/lib/db";
 import { launch } from "@/lib/agents/pipeline";
 import { startQueued } from "./queue";
 
@@ -16,6 +16,15 @@ import { startQueued } from "./queue";
 export const IDLE_AFTER_MS = 2 * 60_000;
 const SWEEP_EVERY_MS = 30_000;
 const lastSwept = new Map<string, number>();
+
+/**
+ * Only on a real database. The demo board's working cards are painted that
+ * way with no agent behind them, and an in-memory store lives in one process,
+ * where a start is not lost between instances.
+ */
+export async function sweepIdleCards(projectId: string): Promise<void> {
+  if (hasDatabase()) await restartIdleCards(projectId);
+}
 
 export async function restartIdleCards(projectId: string, now = Date.now()): Promise<void> {
   if (now - (lastSwept.get(projectId) ?? 0) < SWEEP_EVERY_MS) return;
