@@ -1,4 +1,4 @@
-# formic-runner: 866ff5e11670
+# formic-runner: 65ef4b6907ab
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -309,6 +309,9 @@ jobs:
               ;;
             gemini)
               if [ -z "$GEMINI_API_KEY" ]; then echo "No Gemini API key. Add it to the agent in Formic."; exit 1; fi
+              # Reads the repository's AGENTS.md as well as its own GEMINI.md.
+              mkdir -p ~/.gemini
+              printf '%s' '{"context":{"fileName":["AGENTS.md","GEMINI.md"]}}' > ~/.gemini/settings.json
               args=(-p "$PROMPT" --output-format stream-json --approval-mode yolo)
               if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
               gemini "${args[@]}" | tee -a "$FORMIC_STREAM"
