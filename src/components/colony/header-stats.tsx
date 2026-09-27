@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/components/ui/cn";
 import { HEAT_MAX, HEAT_WINDOW_MS, XP_PER_LEVEL, pointsOf } from "@/lib/colony/game";
+import { GradeBadge } from "@/components/sentinels/sentinels";
 import { useColony, type ColonyApi } from "./colony";
 
 /** Counts toward the value it is given rather than jumping to it. */
@@ -194,8 +195,8 @@ function TimelineButton({ c }: { c: ColonyApi }) {
 }
 
 /**
- * The colony's corner of the header: level and rank, points and heat, the
- * sound switch and the way into the timeline.
+ * The colony's corner of the header: level and the Sentinels' grade, rank,
+ * points and heat, the sound switch and the way into the timeline.
  */
 export function ColonyHeaderStats() {
   const c = useColony();
@@ -212,6 +213,7 @@ export function ColonyHeaderStats() {
           <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">LV</span>
           <span className="font-serif text-[16px] leading-none font-semibold">{s.level}</span>
         </span>
+        <GradeBadge />
         <div className="flex flex-col gap-1.5 max-xl:hidden">
           <div className="flex items-baseline gap-2">
             <span className="text-ink text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap uppercase">
@@ -262,6 +264,7 @@ export function ColonyMobileStats() {
   if (!c) return null;
   const s = c.score;
   return (
+    <>
     <button
       type="button"
       onClick={() => c.setTimelineOpen(!c.timelineOpen)}
@@ -281,5 +284,7 @@ export function ColonyMobileStats() {
         <span className="text-muted font-mono text-[9px]">×{c.multiplier.toFixed(1)}</span>
       </span>
     </button>
+    <GradeBadge compact />
+    </>
   );
 }

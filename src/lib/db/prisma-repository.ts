@@ -26,6 +26,9 @@ import type {
   AssistantMessage,
   AssistantProposal,
   CardChatMessage,
+  AuditRecord,
+  AuditReport,
+  AuditResult,
 } from "./repository";
 import type {
   AgentRole,
@@ -1117,6 +1120,49 @@ export class PrismaRepository implements Repository {
     return rows.map(toCardChatMessage);
   }
 
+  async auditsFor(projectId: string): Promise<AuditRecord[]> {
+    const rows = await prisma().audit.findMany({
+      where: { projectId },
+      orderBy: { startedAt: "asc" },
+    });
+    return rows.map(toAuditRecord);
+  }
+
+  async startAudit(projectId: string, sentinel: string): Promise<AuditRecord> {
+    const row = await prisma().audit.create({ data: { projectId, sentinel } });
+    return toAuditRecord(row);
+  }
+
+  async logAudit(id: string, step: string): Promise<void> {
+    await prisma().audit.update({ where: { id }, data: { log: { push: step } } });
+  }
+
+  async finishAudit(id: string, result: AuditResult): Promise<void> {
+    const db = prisma();
+    const row = await db.audit.update({
+      where: { id },
+      data: {
+        status: result.status,
+        stars: result.stars ?? null,
+        quote: result.quote ?? null,
+        summary: result.summary ?? null,
+        report: (result.report ?? undefined) as never,
+        error: result.error ?? null,
+        model: result.model ?? null,
+        files: result.files ?? [],
+        finishedAt: new Date(),
+      },
+    });
+    await db.audit.deleteMany({
+      where: {
+        projectId: row.projectId,
+        sentinel: row.sentinel,
+        id: { not: id },
+        status: result.status === "done" ? { not: "running" } : "failed",
+      },
+    });
+  }
+
   async claimDelivery(key: string): Promise<boolean> {
     const db = prisma();
     try {
@@ -1317,5 +1363,37 @@ function toPreset(row: {
     keyHint: row.apiKeyHint,
     limitedUntil: row.limitedUntil?.toISOString() ?? null,
     limitNote: row.limitNote,
+  };
+}
+
+const auditPoint = z.object({ text: z.string(), ref: z.string().nullable() });
+const auditReport = z.object({
+  likes: z.array(auditPoint),
+  dislikes: z.array(auditPoint),
+  wrong: z.array(auditPoint),
+  missing: z.array(auditPoint),
+});
+
+function toAuditRecord(row: {
+  id: string;
+  projectId: string;
+  sentinel: string;
+  status: string;
+  log: string[];
+  stars: number | null;
+  quote: string | null;
+  summary: string | null;
+  report: unknown;
+  error: string | null;
+  model: string | null;
+  files: string[];
+  startedAt: Date;
+  finishedAt: Date | null;
+}): AuditRecord {
+  const report = auditReport.safeParse(row.report);
+  return {
+    ...row,
+    status: row.status === "done" || row.status === "failed" ? row.status : "running",
+    report: report.success ? (report.data satisfies AuditReport) : null,
   };
 }
