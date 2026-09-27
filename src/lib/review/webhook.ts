@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import {
+  RUNNER_SETUP_PREFIX,
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
   parseRunTitle,
@@ -48,6 +49,8 @@ export type WebhookSignal =
       key: string;
     }
   | { kind: "merged"; prNumber: number; key: string }
+  /** The pull request that installs the runner workflow was merged. */
+  | { kind: "runner-setup"; key: string }
   | {
       /** A CLI agent's run in the repository's Actions finished. */
       kind: "runner";
@@ -153,6 +156,10 @@ export function interpret(event: string, payload: unknown): WebhookSignal[] {
       if (!pull || action !== "closed" || pull.merged !== true) return [];
       const prNumber = Number(pull.number);
       if (!Number.isFinite(prNumber)) return [];
+      const head = pull.head as { ref?: unknown } | undefined;
+      if (typeof head?.ref === "string" && head.ref.startsWith(RUNNER_SETUP_PREFIX)) {
+        return [{ kind: "runner-setup", key: `runner-setup:${String(pull.merge_commit_sha ?? prNumber)}` }];
+      }
       // Someone merged it by hand. The card should follow reality rather than
       // wait for a merge the platform is no longer going to perform.
       return [

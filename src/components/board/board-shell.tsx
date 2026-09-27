@@ -16,6 +16,9 @@ import { useBoard } from "@/lib/hooks/use-board";
 import { useAgents } from "@/lib/hooks/use-agents";
 import { useAssistant } from "@/lib/hooks/use-assistant";
 import { AgentEditor } from "./agent-editor";
+import { SetupDialog, type KeylessAgent } from "./setup-dialog";
+import { useRunnerSetup } from "@/lib/hooks/use-runner-setup";
+import { provider } from "@/lib/llm/providers";
 import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
@@ -79,6 +82,7 @@ export function BoardShell({
       }
       for (const listener of listeners.current) listener(event, seq);
     });
+  const runner = useRunnerSetup(subscribe);
   const [dialog, setDialog] = useState<{ column: CaptureColumn } | null>(null);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
@@ -106,6 +110,16 @@ export function BoardShell({
   }
 
   const repoName = repoFullName.split("/")[1] ?? repoFullName;
+
+  // CLI agents on a column that have no key yet: the other half of setup.
+  const keyless: KeylessAgent[] = [];
+  for (const [column, presetId] of Object.entries(agentState.columns) as Array<[ColumnId, string]>) {
+    const preset = agentState.presets.find((p) => p.id === presetId);
+    const info = preset && provider(preset.provider);
+    if (!preset || preset.hasKey || info?.kind !== "cli") continue;
+    if (keyless.some((k) => k.name === preset.name)) continue;
+    keyless.push({ name: preset.name, keyName: info.keyName, onAdd: () => setEditing({ column, preset }) });
+  }
 
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
@@ -186,6 +200,13 @@ export function BoardShell({
           setOpenEpicId(epicId);
         }}
         subscribe={subscribe}
+      />
+
+      <SetupDialog
+        setup={runner.setup}
+        repoName={repoName}
+        keyless={keyless}
+        onRetry={() => void runner.check()}
       />
 
       <ColonyAmbient stats={stats} onStopAll={() => void stopAll()} />

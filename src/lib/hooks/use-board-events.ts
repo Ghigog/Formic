@@ -65,6 +65,7 @@ export function useBoardEvents(
       "sandbox.count",
       "budget.exhausted",
       "agent.limited",
+      "runner.ready",
     ];
     for (const t of types) source.addEventListener(t, onMessage as EventListener);
 

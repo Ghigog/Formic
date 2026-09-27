@@ -67,6 +67,7 @@ Mid-run, you may receive a message starting "A note from the person watching thi
 
 Rules that are enforced, not advisory:
 - ${scopeRule}
+- Start by reading AGENTS.md at the repository root, or CLAUDE.md if there is no AGENTS.md: it is this repository's own guide for agents, and it wins over your defaults.
 - Match the surrounding code. Read neighbouring files before you write; the conventions in this repository are not the ones in your training data.
 - ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
@@ -112,10 +113,10 @@ Red CI is never approved.`;
  * Engineering practices every agent works to, whatever its prompt says.
  * Defaults with judgment, not rules: each is worth applying only where it
  * makes the code simpler to understand and change, and a repository's own
- * conventions (its CLAUDE.md, AGENTS.md, contributing guide, or simply how
+ * conventions (its AGENTS.md, CLAUDE.md, contributing guide, or simply how
  * the code around the change is written) win where they differ.
  */
-export const ENGINEERING_PRACTICES = `Engineering practices. Defaults, not dogma: use each one where it makes this code simpler to understand and change, and skip it where it does not. The repository's own conventions (a CLAUDE.md, AGENTS.md or contributing guide, or just how the surrounding code is written) win where they differ.
+export const ENGINEERING_PRACTICES = `Engineering practices. Defaults, not dogma: use each one where it makes this code simpler to understand and change, and skip it where it does not. The repository's own conventions (an AGENTS.md, CLAUDE.md or contributing guide, or just how the surrounding code is written) win where they differ.
 - Test first (TDD). Turn the acceptance criteria into failing tests, make them pass with the simplest change, then refactor while they stay green. Write the tests the criteria need and no more: one for each behaviour the ticket adds or changes, not extra tests for code it does not touch. Where the project has no test setup, verify another way rather than building one out of scope.
 - Test each behaviour at the lowest level that can see it. An acceptance criterion describes what a person sees; that does not make its test end-to-end. A rule or a calculation gets a unit test, a component's rendering and handlers a component test, a route or a query a test against its own boundary. Save end-to-end (browser) tests for what only a real browser shows, such as layout, a real drag or navigation between pages: usually one per feature, and none when the lower tests already cover it. They are the slowest to run and the hardest to debug.
 - Ubiquitous language. Name things the way the product and the tickets do, and use the same words in code, tests, UI and commits. One concept, one name.

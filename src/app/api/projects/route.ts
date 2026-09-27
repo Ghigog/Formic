@@ -7,6 +7,9 @@ import { credentialsFor } from "@/lib/auth/credentials";
 import { authMode, cookieHeader } from "@/lib/auth/session";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { getRepository } from "@/lib/vcs/repositories";
+import { launch } from "@/lib/agents/pipeline";
+import { addOnboardingTicket } from "@/lib/board/onboarding";
+import { runnerSetup } from "@/lib/runner/setup";
 
 export const dynamic = "force-dynamic";
 
@@ -67,11 +70,20 @@ export async function POST(req: NextRequest) {
         { status: 404 },
       );
     }
+    const repoFullName = remote?.fullName ?? fullName;
+    const existed = (await repo.projectsForRepo(repoFullName)).some((p) => p.ownerId === user.id);
     project = await repo.ensureProject({
       ownerId: user.id,
-      repoFullName: remote?.fullName ?? fullName,
+      repoFullName,
       baseBranch: remote?.defaultBranch ?? "main",
     });
+    if (!existed) {
+      // A new board starts with its AGENTS.md ticket, and its setup pull
+      // request already open by the time the board asks for it.
+      await addOnboardingTicket(project.id);
+      const created = project;
+      launch(async () => void (await runnerSetup(created)), `setting up ${created.repoFullName}`);
+    }
   }
 
   const res = Response.json({ project });

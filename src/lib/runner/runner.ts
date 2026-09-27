@@ -157,7 +157,8 @@ export function reportsAlreadyDone(messages: string[]): boolean {
 
 export type RunnerState =
   | { ready: true }
-  | { ready: false; setupUrl: string };
+  /** `update` when an older version of the workflow is already there. */
+  | { ready: false; setupUrl: string; update: boolean };
 
 /**
  * Whether the repository has the current runner workflow on its base
@@ -168,6 +169,7 @@ export type RunnerState =
 export async function ensureRunner(client: VcsClient, baseBranch: string): Promise<RunnerState> {
   const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch);
   if (current?.includes(RUNNER_VERSION)) return { ready: true };
+  const update = current !== null;
 
   await client.ensureBranch(RUNNER_SETUP_BRANCH, baseBranch);
   const onBranch = await client.readFile(RUNNER_WORKFLOW_PATH, RUNNER_SETUP_BRANCH);
@@ -196,11 +198,11 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
         "Merge this once, then retry the card.",
       ].join("\n"),
     }));
-  return { ready: false, setupUrl: pull.url };
+  return { ready: false, setupUrl: pull.url, update };
 }
 
 /** What a 403 or 404 from the runner's endpoints usually means. */
-function explain(e: unknown): string {
+export function explain(e: unknown): string {
   const message = e instanceof Error ? e.message : String(e);
   if (e instanceof VcsError && (e.status === 403 || e.status === 404)) {
     return `${message}. Formic's GitHub App needs Actions, Secrets and Workflows (read and write) on this repository, and the workflow must be on its default branch.`;

@@ -113,6 +113,15 @@ describe("interpret", () => {
     ).toEqual([{ kind: "merged", prNumber: 12, key: "12:merged:aaa" }]);
   });
 
+  it("tells the setup pull request's merge apart from a ticket's", () => {
+    expect(
+      interpret("pull_request", {
+        action: "closed",
+        pull_request: { number: 3, merged: true, merge_commit_sha: "bbb", head: { ref: "formic/setup-runner-0123456789ab" } },
+      }),
+    ).toEqual([{ kind: "runner-setup", key: "runner-setup:bbb" }]);
+  });
+
   it("ignores a pull request that was closed without merging", () => {
     expect(
       interpret("pull_request", {

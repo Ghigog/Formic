@@ -22,6 +22,8 @@ import { createHash } from "node:crypto";
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
+/** Every version's setup branch starts with this; see RUNNER_SETUP_BRANCH. */
+export const RUNNER_SETUP_PREFIX = "formic/setup-runner-";
 
 /** Where a planning agent's answer sits on its staging branch. */
 export const ANSWER_PATH = ".formic/answer.md";
@@ -486,6 +488,9 @@ ${indent(REPORTER_SCRIPT, 10)}
               ;;
             gemini)
               if [ -z "$GEMINI_API_KEY" ]; then echo "No Gemini API key. Add it to the agent in Formic."; exit 1; fi
+              # Reads the repository's AGENTS.md as well as its own GEMINI.md.
+              mkdir -p ~/.gemini
+              printf '%s' '{"context":{"fileName":["AGENTS.md","GEMINI.md"]}}' > ~/.gemini/settings.json
               args=(-p "$PROMPT" --output-format stream-json --approval-mode yolo)
               if [ -n "$MODEL" ]; then args+=(-m "$MODEL"); fi
               gemini "\${args[@]}" | tee -a "$FORMIC_STREAM"
@@ -583,4 +588,4 @@ export const RUNNER_VERSION = `formic-runner: ${RUNNER_HASH}`;
  * cut from the base branch as it is now. Reusing one branch left each new
  * setup pull request on top of an old base, where it conflicted.
  */
-export const RUNNER_SETUP_BRANCH = `formic/setup-runner-${RUNNER_HASH}`;
+export const RUNNER_SETUP_BRANCH = `${RUNNER_SETUP_PREFIX}${RUNNER_HASH}`;
