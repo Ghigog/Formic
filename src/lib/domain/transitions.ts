@@ -47,3 +47,10 @@ export const transitionResultSchema = z.discriminatedUnion("ok", [
 ]);
 
 export type TransitionResult = z.infer<typeof transitionResultSchema>;
+
+/**
+ * Dragging a ticket onto the "New request" button archives it. Not a
+ * `CardTransition`: there is no destination column to validate against
+ * COLUMNS, and nothing to revert to but where the card already sat.
+ */
+export type ArchiveDropResult = { ok: true } | { ok: false; reason: string };

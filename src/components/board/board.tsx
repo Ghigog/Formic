@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   DragDropContext,
+  Droppable,
   type DragStart,
   type DragUpdate,
   type DropResult,
@@ -25,7 +26,11 @@ import {
   columnOf,
   statusForUserDrop,
 } from "@/lib/domain/status";
-import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
+import type {
+  ArchiveDropResult,
+  CardTransition,
+  TransitionResult,
+} from "@/lib/domain/transitions";
 import { byPosition } from "@/lib/ordering";
 import { runningConflict } from "@/lib/domain/queue";
 import { placeDrop } from "./placement";
@@ -37,6 +42,18 @@ const NEXT_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
   backlog: "todo",
   todo: "in_progress",
 };
+
+/**
+ * Droppable ids for the "New request" buttons once they have turned into the
+ * Archive drop zone, one per column that carries a composer. Prefixed so
+ * they are easy to tell apart from a real column's droppableId.
+ */
+const ARCHIVE_DROP_PREFIX = "archive:";
+const archiveDroppableId = (column: ColumnId) => `${ARCHIVE_DROP_PREFIX}${column}`;
+const isArchiveDroppable = (id: string) => id.startsWith(ARCHIVE_DROP_PREFIX);
+
+/** How long the archived card fades and shrinks before it leaves the board. */
+const ARCHIVE_FADE_MS = 180;
 
 export interface BoardProps {
   cards: BoardCard[];
@@ -55,6 +72,8 @@ export interface BoardProps {
    * card back to where it came from.
    */
   onTransition: (t: CardTransition) => Promise<TransitionResult>;
+  /** Dropped a ticket onto the Archive zone. Rolls back on rejection. */
+  onArchive: (ticketId: string) => Promise<ArchiveDropResult>;
   /** Who is signed in, for the header's account menu. */
   account?: Account;
   /** The board's assistant, in the header. */
@@ -80,6 +99,7 @@ export function Board({
   onShowcase,
   onNewItem,
   onTransition,
+  onArchive,
   agents,
   account,
   assistant,
@@ -88,6 +108,10 @@ export function Board({
   // first rendered, so nothing the server said about it afterwards showed.
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The card under the pointer, for the whole life of the current drag: which composer turns into the Archive zone, and whether it would accept a drop right now. Null outside a drag. */
+  const [draggingCard, setDraggingCard] = useState<BoardCard | null>(null);
+  /** Cards mid-fade after a successful archive drop, purely for the CSS transition. */
+  const [archivingIds, setArchivingIds] = useState<ReadonlySet<string>>(new Set());
   const [activeTab, setActiveTab] = useState<ColumnId>("backlog");
   const [collapsed, setCollapsed] = useState<Record<ColumnId, Set<string>>>(
     () => ({
@@ -114,7 +138,7 @@ export function Board({
     [collapsed, colony],
   );
   /** The column under a dragged card, for its sounds. Not state: a drag must not re-render the board. */
-  const dragOver = useRef<ColumnId | null>(null);
+  const dragOver = useRef<string | null>(null);
   /**
    * The columns as last rendered before a drag began, held until it ends.
    * Agents stream status and progress over SSE while they work, and a tick
@@ -146,11 +170,23 @@ export function Board({
       done: [],
     };
     for (const card of live) {
+      // Closed tickets have no column (see columnFor()): a card just
+      // archived optimistically carries that status here before the server
+      // has confirmed it, so it must leave the board right away too.
+      if (card.status === "closed") continue;
       out[columnOf(card)].push(card);
     }
     for (const col of COLUMNS) out[col].sort(byPosition);
     return out;
   }, [live]);
+
+  /** `extras`, with a fade/shrink flag for any card mid-archive. */
+  const displayExtras = useMemo(() => {
+    if (archivingIds.size === 0) return extras;
+    const merged: ExtrasMap = { ...extras };
+    for (const id of archivingIds) merged[id] = { ...merged[id], archiving: true };
+    return merged;
+  }, [extras, archivingIds]);
 
   /** `index` is the drag library's: among the destination's rendered rows. */
   const commit = useCallback(
@@ -233,6 +269,47 @@ export function Board({
     [byColumn, collapsed, live, onTransition, colony],
   );
 
+  /**
+   * Whether the Archive zone would take this card right now: only a ticket,
+   * and only with no agent run in flight. An epic never gets this far — the
+   * zone disables itself for one — so this only predicts the queued/running
+   * rejection the server enforces for real.
+   */
+  const canArchive = useCallback(
+    (card: BoardCard) => card.kind === "ticket" && card.status !== "queued" && card.status !== "running",
+    [],
+  );
+
+  /** Drags a ticket onto the Archive zone: fades it, then closes it for good. */
+  const archiveCard = useCallback(
+    (card: BoardCard) => {
+      setError(null);
+      colony?.sfx("close");
+      setArchivingIds((prev) => new Set(prev).add(card.id));
+      setTimeout(() => {
+        const archived: BoardCard = { ...card, status: "closed" };
+        setOptimistic((prev) => [...prev.filter((c) => c.id !== card.id), archived]);
+        setArchivingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(card.id);
+          return next;
+        });
+        const settle = () => setOptimistic((prev) => prev.filter((c) => c !== archived));
+
+        void onArchive(card.id).then((result) => {
+          if (!result.ok) {
+            settle();
+            setError(result.reason);
+            requestAnimationFrame(() => colony?.reject(card.id, "Error"));
+            return;
+          }
+          settle();
+        });
+      }, ARCHIVE_FADE_MS);
+    },
+    [onArchive, colony],
+  );
+
   /** Whether a column would take a card dragged out of `from`. */
   const accepts = useCallback(
     (from: ColumnId, to: ColumnId) => {
@@ -246,70 +323,113 @@ export function Board({
 
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
 
-  const columnElements = visibleColumns.map((col) => (
-    <Column
-      key={col}
-      id={col}
-      cards={byColumn[col]}
-      extras={extras}
-      bare={isMobile}
-      collapsed={collapsed[col]}
-      accepts={(cardId) => {
-        const card = live.find((c) => c.id === cardId);
-        // Where it can work: its own column, or a move the rules allow
-        // from there. Anywhere else still takes it, with a warning.
-        return (
-          !card ||
-          col === columnOf(card) ||
-          accepts(columnFor(card.status, card.stalledIn), col)
-        );
-      }}
-      onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
-      agent={
-        agents && {
-          presets: agents.presets,
-          selected: agents.presets.find((p) => p.id === agents.columns[col]),
-          onAssign: (presetId) => agents.onAssign(col, presetId),
-          onEdit: (preset) => agents.onEdit(col, preset),
-        }
-      }
-      composer={
-        col === "backlog" || col === "todo" ? (
-          <NewRequestButton onClick={() => onNewItem(col)} />
-        ) : undefined
-      }
-      onOpen={onOpenCard}
-      onShowcase={onShowcase}
-    />
-  ));
+  /**
+   * Built as a function, not a plain memo: onDragStart needs the composer's
+   * Archive appearance baked into the very snapshot it freezes, and that has
+   * to reflect the card just picked up, not whatever `draggingCard` state
+   * happens to have committed by the time React re-renders.
+   */
+  const renderColumns = useCallback(
+    (dragging: BoardCard | null) =>
+      visibleColumns.map((col) => (
+        <Column
+          key={col}
+          id={col}
+          cards={byColumn[col]}
+          extras={displayExtras}
+          bare={isMobile}
+          collapsed={collapsed[col]}
+          accepts={(cardId) => {
+            const card = live.find((c) => c.id === cardId);
+            // Where it can work: its own column, or a move the rules allow
+            // from there. Anywhere else still takes it, with a warning.
+            return (
+              !card ||
+              col === columnOf(card) ||
+              accepts(columnFor(card.status, card.stalledIn), col)
+            );
+          }}
+          onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
+          agent={
+            agents && {
+              presets: agents.presets,
+              selected: agents.presets.find((p) => p.id === agents.columns[col]),
+              onAssign: (presetId) => agents.onAssign(col, presetId),
+              onEdit: (preset) => agents.onEdit(col, preset),
+            }
+          }
+          composer={
+            col === "backlog" || col === "todo" ? (
+              dragging?.kind === "ticket" ? (
+                <ArchiveDropZone column={col} denied={!canArchive(dragging)} />
+              ) : (
+                <NewRequestButton onClick={() => onNewItem(col)} />
+              )
+            ) : undefined
+          }
+          onOpen={onOpenCard}
+          onShowcase={onShowcase}
+        />
+      )),
+    [
+      visibleColumns,
+      byColumn,
+      displayExtras,
+      isMobile,
+      collapsed,
+      live,
+      accepts,
+      toggleCollapse,
+      agents,
+      canArchive,
+      onNewItem,
+      onOpenCard,
+      onShowcase,
+    ],
+  );
+
+  const columnElements = renderColumns(null);
 
   const onDragStart = useCallback(
     (start: DragStart) => {
       dragOver.current = start.source.droppableId as ColumnId;
       colony?.sfx("pickup");
-      setDragSnapshot(columnElements);
+      const card = live.find((c) => c.id === start.draggableId) ?? null;
+      setDraggingCard(card);
+      setDragSnapshot(renderColumns(card));
     },
-    [colony, columnElements],
+    [colony, live, renderColumns],
   );
 
   const onDragUpdate = useCallback(
     (update: DragUpdate) => {
-      const over = (update.destination?.droppableId as ColumnId | undefined) ?? null;
+      const over = update.destination?.droppableId ?? null;
       if (over === dragOver.current) return;
       dragOver.current = over;
+      if (over && isArchiveDroppable(over)) {
+        const card = live.find((c) => c.id === update.draggableId);
+        colony?.sfx(card && canArchive(card) ? "hover" : "deny");
+        return;
+      }
       const from = update.source.droppableId as ColumnId;
-      if (over && over !== from) colony?.sfx(accepts(from, over) ? "hover" : "deny");
+      if (over && over !== from) colony?.sfx(accepts(from, over as ColumnId) ? "hover" : "deny");
     },
-    [accepts, colony],
+    [accepts, canArchive, colony, live],
   );
 
   const onDragEnd = useCallback(
     (result: DropResult) => {
       dragOver.current = null;
       setDragSnapshot(null);
+      setDraggingCard(null);
       const { source, destination, draggableId } = result;
       if (!destination) {
         colony?.sfx("drop");
+        return;
+      }
+      if (isArchiveDroppable(destination.droppableId)) {
+        const card = live.find((c) => c.id === draggableId);
+        if (card) archiveCard(card);
         return;
       }
       if (
@@ -322,7 +442,7 @@ export function Board({
       if (!card) return;
       void commit(card, destination.droppableId as ColumnId, destination.index);
     },
-    [commit, live, colony],
+    [archiveCard, commit, live, colony],
   );
 
   const epicsById = useMemo(
@@ -485,5 +605,42 @@ function NewRequestButton({ onClick }: { onClick: () => void }) {
       </svg>
       New request
     </button>
+  );
+}
+
+/**
+ * What the "New request" button becomes for the life of a ticket drag: drop
+ * a card here and it closes for good. Denied styling predicts the
+ * queued/running rejection the server enforces; an epic never sees this at
+ * all; renderColumns() falls back to the plain button for one instead.
+ */
+function ArchiveDropZone({ column, denied }: { column: ColumnId; denied: boolean }) {
+  return (
+    <Droppable droppableId={archiveDroppableId(column)}>
+      {(provided, snapshot) => (
+        <div ref={provided.innerRef} {...provided.droppableProps}>
+          <div
+            className={cn(
+              "flex h-10 shrink-0 items-center gap-2 rounded-lg border border-dashed px-3 text-[12px] font-medium transition-colors",
+              denied
+                ? cn("border-crimson text-crimson", snapshot.isDraggingOver && "bg-crimson/8")
+                : cn("border-terracotta text-terracotta", snapshot.isDraggingOver && "bg-terracotta/10"),
+            )}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path
+                d="M2 3.5h8M2.5 3.5v6a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-6M5 6h2"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Archive
+          </div>
+          {provided.placeholder}
+        </div>
+      )}
+    </Droppable>
   );
 }

@@ -66,6 +66,9 @@ export function AccountMenu({ account }: { account: Account }) {
               <p className="text-muted truncate font-mono text-[11px]">@{account.login}</p>
             )}
           </div>
+          <a role="menuitem" href="/archive" className={item}>
+            Archive
+          </a>
           <a role="menuitem" href="/settings" className={item}>
             Settings
           </a>

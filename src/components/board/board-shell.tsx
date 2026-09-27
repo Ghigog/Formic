@@ -72,7 +72,7 @@ export function BoardShell({
   }, []);
   const [rerouteToast, setRerouteToast] = useState<RerouteNotice | null>(null);
   const rerouteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { cards, extras, stats, prdStreams, connection, transition, createEpic, createTicket } =
+  const { cards, extras, stats, prdStreams, connection, transition, archive, createEpic, createTicket } =
     useBoard(initialCards, initialStats, (event, seq) => {
       if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
       if (event.type === "card.rerouted") {
@@ -137,6 +137,7 @@ export function BoardShell({
         onShowcase={(epic) => setOpenEpicId(epic.id)}
         onNewItem={(column) => setDialog({ column })}
         onTransition={transition}
+        onArchive={archive}
         account={account}
         assistant={{
           ...assistant,

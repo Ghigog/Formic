@@ -5,6 +5,7 @@ import { normalizeRepo } from "@/lib/secrets/repo";
 import type {
   AttachmentContent,
   AttachmentRef,
+  ClosedTicketSummary,
   CreateAttachmentInput,
   CreateEpicInput,
   CreateTicketInput,
@@ -395,8 +396,32 @@ export class MemoryRepository implements Repository {
       card.doneCount = children.filter((c) => c.status === "merged").length;
     }
     // A standalone Epic is a holder, not its own card: its child ticket
-    // renders alone, detached, exactly as today.
-    return cards.filter((c) => !(c.kind === "epic" && c.standalone)).sort(byPosition);
+    // renders alone, detached, exactly as today. Closed tickets have no
+    // column (see columnFor()): they live only on the Archive view.
+    return cards
+      .filter((c) => !(c.kind === "epic" && c.standalone) && c.status !== "closed")
+      .sort(byPosition);
+  }
+
+  async closedTickets(projectId: string): Promise<ClosedTicketSummary[]> {
+    const s = store();
+    const cards = [...s.cards.values()].filter((c) => projectOf(s, c) === projectId);
+    const epicById = new Map(cards.filter((c) => c.kind === "epic").map((c) => [c.id, c]));
+    return cards
+      .filter((c) => c.kind === "ticket" && c.status === "closed")
+      .map((t) => {
+        const epic = t.epicId ? epicById.get(t.epicId) : undefined;
+        return {
+          id: t.id,
+          key: t.key,
+          title: t.title,
+          epicId: t.epicId ?? "",
+          epicKey: epic?.key ?? "",
+          epicTitle: epic?.title ?? "",
+          closedAt: t.updatedAt ?? new Date().toISOString(),
+        };
+      })
+      .sort((a, b) => (a.closedAt < b.closedAt ? 1 : -1));
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {

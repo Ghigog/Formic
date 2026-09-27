@@ -7,6 +7,7 @@ import { prisma } from "./client";
 import type {
   AttachmentContent,
   AttachmentRef,
+  ClosedTicketSummary,
   CreateAttachmentInput,
   CreateEpicInput,
   CreateTicketInput,
@@ -346,7 +347,34 @@ export class PrismaRepository implements Repository {
       };
     });
 
-    return [...epicCards, ...ticketCards].sort(byPosition);
+    // Closed tickets have no column (see columnFor()): they live only on the
+    // Archive view, not the board.
+    return [...epicCards, ...ticketCards]
+      .filter((c) => c.status !== "closed")
+      .sort(byPosition);
+  }
+
+  async closedTickets(projectId: string): Promise<ClosedTicketSummary[]> {
+    const db = prisma();
+    const epics = await db.epic.findMany({
+      where: { projectId },
+      select: { id: true, title: true, number: true, createdAt: true },
+    });
+    const numbers = epicNumbers(epics);
+    const epicById = new Map(epics.map((e) => [e.id, e]));
+    const tickets = await db.ticket.findMany({
+      where: { epic: { projectId }, status: "closed" },
+      orderBy: { updatedAt: "desc" },
+    });
+    return tickets.map((t) => ({
+      id: t.id,
+      key: t.key,
+      title: t.title,
+      epicId: t.epicId,
+      epicKey: epicKey(numbers.get(t.epicId)!),
+      epicTitle: epicById.get(t.epicId)?.title ?? "",
+      closedAt: t.updatedAt.toISOString(),
+    }));
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {

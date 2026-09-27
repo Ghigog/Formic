@@ -260,6 +260,18 @@ export interface RunOutcome {
   costCents: number;
 }
 
+/** One row on the Archive view: a closed ticket, with its epic for context. */
+export interface ClosedTicketSummary {
+  id: string;
+  key: string;
+  title: string;
+  epicId: string;
+  epicKey: string;
+  epicTitle: string;
+  /** ISO time it closed. */
+  closedAt: string;
+}
+
 export interface ProjectSummary {
   id: string;
   /** Null for the demo board, which belongs to no one. */
@@ -362,6 +374,8 @@ export interface Repository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
+  /** Every closed ticket in a project, newest first, for the Archive view. */
+  closedTickets(projectId: string): Promise<ClosedTicketSummary[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   move(input: MoveInput): Promise<void>;

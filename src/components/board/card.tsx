@@ -49,6 +49,8 @@ export interface CardExtras {
   diffstat?: string;
   /** Merge commit on a done ticket. */
   mergeCommit?: string;
+  /** Dropped on the Archive zone: fading and shrinking on its way off the board. */
+  archiving?: boolean;
 }
 
 export type ExtrasMap = Record<string, CardExtras | undefined>;
@@ -788,12 +790,13 @@ export function KanbanCard({
           onClick={() => onOpen(card)}
           className="cursor-grab rounded-lg outline-none active:cursor-grabbing"
         >
-          {/* Picked up, the card leans into the drag. */}
+          {/* Picked up, the card leans into the drag; archived, it fades and shrinks on its way out. */}
           <div
             className={cn(
-              "rounded-lg transition-transform duration-150",
+              "rounded-lg transition-[transform,opacity] duration-150",
               snapshot.isDragging &&
                 "scale-[1.04] rotate-[-2deg] shadow-[0_28px_48px_-18px_color-mix(in_srgb,var(--anthracite)_45%,transparent),0_2px_6px_color-mix(in_srgb,var(--anthracite)_8%,transparent)]",
+              extras[card.id]?.archiving && "scale-90 opacity-0 duration-200",
             )}
           >
             <CardBody card={card} column={column} extras={extras[card.id] ?? {}} />
@@ -1058,8 +1061,9 @@ export function EpicGroup({
                     {...provided.dragHandleProps}
                     onClick={() => onOpen(child)}
                     className={cn(
-                      "cursor-grab rounded-md outline-none active:cursor-grabbing",
+                      "cursor-grab rounded-md outline-none transition-[transform,opacity] duration-150 active:cursor-grabbing",
                       snapshot.isDragging && "shadow-lift",
+                      extras[child.id]?.archiving && "scale-90 opacity-0 duration-200",
                     )}
                   >
                     {done ? (

@@ -311,6 +311,42 @@ export async function applyTransition(
   return { ok: true, status, runId: null };
 }
 
+export type ArchiveResult = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Drags a ticket onto the "New request" button: it closes, for good. Only a
+ * ticket with no agent run in flight can go — an in-flight run holds a
+ * sandbox and a branch nothing else is watching once the card is gone, so it
+ * has to be stopped first, from the ticket itself.
+ */
+export async function archiveTicket(
+  projectId: string,
+  ticketId: string,
+): Promise<ArchiveResult> {
+  const repo = repository();
+  const ticket = await repo.ticketDetail(ticketId);
+  if (!ticket || ticket.projectId !== projectId) {
+    return { ok: false, reason: "That ticket no longer exists." };
+  }
+  if (ticket.status === "queued" || ticket.status === "running") {
+    return {
+      ok: false,
+      reason: "An agent is still working this ticket. Stop its run first, then archive it.",
+    };
+  }
+  await repo.updateTicket(ticketId, { status: "closed", stalledIn: null });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticketId,
+    kind: "ticket",
+    status: "closed",
+    stalledIn: null,
+    stage: ticket.stage,
+    blockedReason: null,
+  });
+  return { ok: true };
+}
+
 /** An Epic's tickets waiting with it in Backlog. */
 async function parkedTickets(epicId: string): Promise<BoardCard[]> {
   const repo = repository();

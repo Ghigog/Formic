@@ -46,6 +46,7 @@ export const STATUS_TONE: Record<TicketStatus, ToneName> = {
   merged: "jade",
   blocked: "rust",
   failed: "crimson",
+  closed: "neutral",
 };
 
 export const STATUS_LABEL: Record<TicketStatus, string> = {
@@ -59,6 +60,7 @@ export const STATUS_LABEL: Record<TicketStatus, string> = {
   merged: "Merged",
   blocked: "Blocked",
   failed: "Failed",
+  closed: "Closed",
 };
 
 export function toneFor(status: TicketStatus): Tone {

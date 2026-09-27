@@ -18,6 +18,7 @@ enum TicketStatus {
   merged
   blocked
   failed
+  closed
 }
 
 enum ColumnId {

@@ -5,6 +5,7 @@ import {
   columnFor,
   columnOf,
   isStalled,
+  isTerminal,
   statusForUserDrop,
 } from "./status";
 
@@ -24,6 +25,13 @@ describe("columnFor", () => {
 
   it("falls back when a stalled card has no recorded column", () => {
     expect(columnFor("failed", null)).toBe("todo");
+  });
+
+  // Archiving takes a ticket off the board entirely (see the Archive view):
+  // it has no column, so a caller that forgets to filter it out first is a
+  // bug, not something to render somewhere by guessing.
+  it("has no column for a closed ticket", () => {
+    expect(() => columnFor("closed")).toThrow();
   });
 });
 

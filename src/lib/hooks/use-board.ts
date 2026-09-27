@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BoardCard } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
-import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
+import type { ArchiveDropResult, CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import type { CardExtras } from "@/components/board/card";
 import type { AmbientStats } from "@/components/ui/ambient-drawer";
 import { useBoardEvents } from "./use-board-events";
@@ -162,6 +162,20 @@ export function useBoard(
     [refetch],
   );
 
+  /** Drags a ticket onto the "New request" button. Mirrors transition()'s shape, minus the column fields archiving has no use for. */
+  const archive = useCallback(
+    async (ticketId: string): Promise<ArchiveDropResult> => {
+      const res = await fetch(`/api/tickets/${ticketId}/archive`, { method: "POST" });
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      await refetch();
+      if (!res.ok) {
+        return { ok: false, reason: body?.error ?? "Could not archive that ticket." };
+      }
+      return { ok: true };
+    },
+    [refetch],
+  );
+
   const createEpic = useCallback(
     async (rawRequest: string, requestId?: string) => {
       const res = await fetch("/api/epics", {
@@ -201,6 +215,7 @@ export function useBoard(
     prdStreams,
     connection,
     transition,
+    archive,
     createEpic,
     createTicket,
     refetch,

@@ -49,11 +49,16 @@ export const TICKET_STATUSES = [
   "blocked",
   /** Terminal failure. Needs a human to retry or abandon. */
   "failed",
+  /**
+   * Tickets only. Archived off the board by dragging it onto the "New
+   * request" button; lives on in the Archive view. Never reopens.
+   */
+  "closed",
 ] as const;
 
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
 
-const STATUS_TO_COLUMN: Record<TicketStatus, ColumnId> = {
+const STATUS_TO_COLUMN: Record<Exclude<TicketStatus, "closed">, ColumnId> = {
   draft: "backlog",
   specified: "backlog",
   ready: "todo",
@@ -71,6 +76,12 @@ const STATUS_TO_COLUMN: Record<TicketStatus, ColumnId> = {
 /**
  * Where a card renders. Blocked and failed cards keep their position rather
  * than teleporting to a "blocked" column that does not exist in the design.
+ *
+ * A closed ticket has no column at all: it belongs to the Archive view, not
+ * the board. Callers must filter it out of a card list before asking where
+ * it renders (see boardCards() and Board's byColumn); this throws rather
+ * than guessing, so a caller that forgets fails loudly instead of showing a
+ * closed ticket somewhere on the board.
  */
 export function columnFor(
   status: TicketStatus,
@@ -78,6 +89,9 @@ export function columnFor(
 ): ColumnId {
   if ((status === "blocked" || status === "failed") && stalledIn) {
     return stalledIn;
+  }
+  if (status === "closed") {
+    throw new Error("closed tickets have no column");
   }
   return STATUS_TO_COLUMN[status];
 }
@@ -142,7 +156,7 @@ export function isStalled(status: TicketStatus): status is "blocked" | "failed" 
 }
 
 export function isTerminal(status: TicketStatus): boolean {
-  return status === "merged" || isStalled(status);
+  return status === "merged" || status === "closed" || isStalled(status);
 }
 
 /**
