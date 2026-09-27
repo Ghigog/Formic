@@ -6,6 +6,7 @@ import type { SequencedEvent } from "@/lib/domain/events";
 import { activeProject } from "@/lib/board/project";
 import { collectCliRuns } from "@/lib/runner/runner";
 import { sweepOpenPullRequests } from "@/lib/review/pipeline";
+import { restartIdleCards } from "@/lib/board/idle";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -97,6 +98,9 @@ export async function GET(req: NextRequest) {
         );
         void fromStream(() => sweepOpenPullRequests(project.id)).catch((e: unknown) =>
           console.warn("[formic] could not check the open pull requests:", e),
+        );
+        void fromStream(() => restartIdleCards(project.id)).catch((e: unknown) =>
+          console.warn("[formic] could not restart idle cards:", e),
         );
         try {
           for (const e of await replay(project.id, polledThrough)) {
