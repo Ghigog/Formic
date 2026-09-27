@@ -125,6 +125,54 @@ export interface CardChatMessage {
   createdAt: Date;
 }
 
+/** One point in a sentinel's report, with the file it is about if any. */
+export interface AuditPoint {
+  text: string;
+  ref: string | null;
+}
+
+export interface AuditReport {
+  likes: AuditPoint[];
+  dislikes: AuditPoint[];
+  wrong: AuditPoint[];
+  missing: AuditPoint[];
+}
+
+/**
+ * One sentinel's audit of a project. A project keeps at most two per
+ * sentinel: the last one that reported, and a newer one running or failed.
+ */
+export interface AuditRecord {
+  id: string;
+  projectId: string;
+  sentinel: string;
+  status: "running" | "done" | "failed";
+  /** Steps reached so far, oldest first. */
+  log: string[];
+  stars: number | null;
+  /** The sentinel's one line, in character. */
+  quote: string | null;
+  summary: string | null;
+  report: AuditReport | null;
+  error: string | null;
+  model: string | null;
+  /** Files the sentinel read. */
+  files: string[];
+  startedAt: Date;
+  finishedAt: Date | null;
+}
+
+export interface AuditResult {
+  status: "done" | "failed";
+  stars?: number;
+  quote?: string;
+  summary?: string;
+  report?: AuditReport;
+  error?: string;
+  model?: string | null;
+  files?: string[];
+}
+
 /** Everything a coding agent and its pipeline need about one ticket. */
 export interface TicketDetail {
   id: string;
@@ -486,6 +534,19 @@ export interface Repository {
     column: ColumnId,
     presetId: string | null,
   ): Promise<void>;
+
+  /* Sentinels. */
+
+  /** Every audit a project keeps, oldest first. */
+  auditsFor(projectId: string): Promise<AuditRecord[]>;
+  startAudit(projectId: string, sentinel: string): Promise<AuditRecord>;
+  /** Adds a step to a running audit's log. */
+  logAudit(id: string, step: string): Promise<void>;
+  /**
+   * Ends an audit. A report replaces the sentinel's earlier ones; a failure
+   * keeps the last report, so a bad run never costs the project its stars.
+   */
+  finishAudit(id: string, result: AuditResult): Promise<void>;
 
   /**
    * Records a webhook delivery, returning false when it has been seen before.

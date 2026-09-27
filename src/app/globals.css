@@ -487,3 +487,37 @@
     animation: none;
   }
 }
+
+/* Sentinels: a scan line over an auditing portrait, the portrait bobbing,
+   and log lines arriving. */
+@keyframes sentinelScan {
+  0% {
+    top: 0;
+  }
+  100% {
+    top: calc(100% - 3px);
+  }
+}
+
+@keyframes sentinelBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes sentinelLine {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sentinel-motion {
+    animation: none !important;
+  }
+}

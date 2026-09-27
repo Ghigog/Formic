@@ -69,6 +69,9 @@ export interface ColonyApi {
   tryStyle: (patch: { shape?: BugShape; color?: BugColor }, from: HTMLElement) => void;
   timelineOpen: boolean;
   setTimelineOpen: (open: boolean) => void;
+  /** The Sentinels page. Opening it closes the timeline, and the other way round. */
+  sentinelsOpen: boolean;
+  setSentinelsOpen: (open: boolean) => void;
   colonyOpen: boolean;
   setColonyOpen: (open: boolean) => void;
   toast: { text: string; key: number } | null;
@@ -131,6 +134,7 @@ export function ColonyProvider({
   /** Merges with a reaction on its way. */
   const flying = useRef(new Set<string>());
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [sentinelsOpen, setSentinelsOpen] = useState(false);
   const [colonyOpen, setColonyOpen] = useState(false);
   const [toast, setToast] = useState<ColonyApi["toast"]>(null);
   const [win, setWin] = useState<EpicWin | null>(null);
@@ -172,9 +176,9 @@ export function ColonyProvider({
       full: true,
       bugShape: saved.shape,
       bugHex,
-      covered: timelineOpen,
+      covered: timelineOpen || sentinelsOpen,
     });
-  }, [fx, crews, score.level, saved.shape, bugHex, timelineOpen]);
+  }, [fx, crews, score.level, saved.shape, bugHex, timelineOpen, sentinelsOpen]);
   useEffect(() => sound.setEnabled(saved.sound), [sound, saved.sound]);
   useEffect(() => sound.attach(), [sound]);
   useEffect(() => {
@@ -662,7 +666,19 @@ export function ColonyProvider({
     setTimelineOpen: (open) => {
       sfx(open ? "pickup" : "drop");
       setTimelineOpen(open);
-      if (open) setColonyOpen(false);
+      if (open) {
+        setColonyOpen(false);
+        setSentinelsOpen(false);
+      }
+    },
+    sentinelsOpen,
+    setSentinelsOpen: (open) => {
+      sfx(open ? "pickup" : "drop");
+      setSentinelsOpen(open);
+      if (open) {
+        setColonyOpen(false);
+        setTimelineOpen(false);
+      }
     },
     colonyOpen,
     setColonyOpen: (open) => {

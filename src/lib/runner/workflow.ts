@@ -22,8 +22,6 @@ import { createHash } from "node:crypto";
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
-/** Where the setup pull request comes from. */
-export const RUNNER_SETUP_BRANCH = "formic/setup-runner";
 
 /** Where a planning agent's answer sits on its staging branch. */
 export const ANSWER_PATH = ".formic/answer.md";
@@ -580,4 +578,12 @@ ${indent(REPORTER_SCRIPT, 10)}
  * repository's: never edit it by hand. Last in the file: it reads the whole
  * workflow, which reads everything above.
  */
-export const RUNNER_VERSION = `formic-runner: ${createHash("sha256").update(workflowBody()).digest("hex").slice(0, 12)}`;
+const RUNNER_HASH = createHash("sha256").update(workflowBody()).digest("hex").slice(0, 12);
+export const RUNNER_VERSION = `formic-runner: ${RUNNER_HASH}`;
+
+/**
+ * Where the setup pull request comes from: a branch of its own per version,
+ * cut from the base branch as it is now. Reusing one branch left each new
+ * setup pull request on top of an old base, where it conflicted.
+ */
+export const RUNNER_SETUP_BRANCH = `formic/setup-runner-${RUNNER_HASH}`;

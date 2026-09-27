@@ -131,7 +131,7 @@ export function billedInputTokens(usage: {
   };
 }
 
-function usageFrom(
+export function usageFrom(
   model: string,
   usage: { input_tokens?: number; output_tokens?: number } | null | undefined,
 ): Usage {
