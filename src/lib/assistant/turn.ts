@@ -16,6 +16,7 @@ import { extractJson } from "@/lib/llm/openai-compat";
 import { startCliAsk } from "@/lib/runner/runner";
 import { vcs, type VcsClient } from "@/lib/vcs";
 import { assistantActionSchema, checkAction } from "./actions";
+import { outOfRoundsMessage, readWindow } from "./reads";
 import { ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
 
 /**
@@ -32,7 +33,7 @@ const MAX_TURNS = 16;
 const MAX_FILES_LISTED = 400;
 
 const listInput = z.object({ prefix: z.string().optional() });
-const readInput = z.object({ path: z.string().min(1) });
+const readInput = z.object({ path: z.string().min(1), offset: z.number().int().min(0).optional() });
 const proposeInput = z.object({ summary: z.string().min(1), action: z.unknown() });
 
 const TOOL_DEFS: ToolDef[] = [
@@ -48,10 +49,17 @@ const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "read_file",
-    description: "Read one file from the repository's base branch, by its path from the root.",
+    description:
+      "Read one file from the repository's base branch, by its path from the root. A long file comes back in windows of 16,000 characters: the first line says which part you have, and the last line says the offset that continues it.",
     schema: {
       type: "object",
-      properties: { path: { type: "string" } },
+      properties: {
+        path: { type: "string" },
+        offset: {
+          type: "integer",
+          description: "Character to start at, for reading past the first window. Omit for the start of the file.",
+        },
+      },
       required: ["path"],
       additionalProperties: false,
     },
@@ -151,11 +159,12 @@ async function runTool(
       };
     }
     if (call.name === "read_file") {
-      const { path } = readInput.parse(call.input);
-      const text = await client.readFile(path.replace(/^\/+/, ""), ref);
+      const { path, offset } = readInput.parse(call.input);
+      const clean = path.replace(/^\/+/, "");
+      const text = await client.readFile(clean, ref);
       return text === null
         ? { content: `${path} does not exist on ${ref}.`, isError: true }
-        : { content: truncate(text), isError: false };
+        : { content: readWindow(clean, text, offset ?? 0), isError: false };
     }
     if (call.name === "propose") {
       const { summary, action } = proposeInput.parse(call.input);
@@ -232,6 +241,8 @@ export async function answer(projectId: string, messageId: string): Promise<void
     const proposals: AssistantProposal[] = [];
 
     let results: Array<{ id: string; content: string; isError: boolean }> | null = null;
+    const filesRead = new Set<string>();
+    let lastError: string | null = null;
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const { text, calls } = await speak(results);
       if (calls.length === 0) {
@@ -244,11 +255,17 @@ export async function answer(projectId: string, messageId: string): Promise<void
       }
       results = [];
       for (const call of calls) {
-        results.push({ id: call.id, ...(await runTool(call, client, project.baseBranch, proposals)) });
+        const done = await runTool(call, client, project.baseBranch, proposals);
+        if (call.name === "read_file" && !done.isError) {
+          const read = (call.input as { path?: unknown } | null)?.path;
+          if (typeof read === "string") filesRead.add(read);
+        }
+        if (done.isError) lastError = done.content;
+        results.push({ id: call.id, ...done });
       }
     }
     await finish(messageId, {
-      content: "I read a lot and did not reach an answer. Try a narrower question.",
+      content: outOfRoundsMessage([...filesRead], MAX_TURNS, lastError),
       proposals,
       status: "failed",
     });
