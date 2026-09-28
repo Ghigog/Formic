@@ -34,7 +34,7 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
-  ticketSpecSchema,
+  ticketOrRerouteSchema,
   toDraftTicket,
 } from "./decomposition";
 import { requestShape } from "./models";
@@ -391,7 +391,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         system: withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF),
         ...(shape.thinking ? { thinking: shape.thinking } : {}),
         ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
-        output_config: { ...shape.outputConfig, format: zodOutputFormat(ticketSpecSchema) },
+        output_config: { ...shape.outputConfig, format: zodOutputFormat(ticketOrRerouteSchema) },
         betas: shape.betas,
         messages: [
           {
@@ -418,7 +418,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         .map((b) => b.text)
         .join("");
 
-      const parsed = ticketSpecSchema.safeParse(JSON.parse(text));
+      const parsed = ticketOrRerouteSchema.safeParse(JSON.parse(text));
       if (!parsed.success) {
         return failure(
           model,
@@ -426,6 +426,10 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
           false,
           usage,
         );
+      }
+
+      if ("kind" in parsed.data) {
+        return { ok: true, value: { kind: "reroute", reason: parsed.data.reason }, usage };
       }
 
       return { ok: true, value: { kind: "ticket", ticket: toDraftTicket(parsed.data) }, usage };

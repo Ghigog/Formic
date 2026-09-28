@@ -27,6 +27,7 @@ import {
   MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
+  ticketOrRerouteSchema,
   ticketSpecSchema,
   toDraftTicket,
 } from "./decomposition";
@@ -279,7 +280,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       [
         {
           role: "system",
-          content: jsonSystem(withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF), ticketSpecSchema),
+          content: jsonSystem(withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF), ticketOrRerouteSchema),
         },
         {
           role: "user",
@@ -293,12 +294,12 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
         },
       ],
       (raw) => {
-        const parsed = ticketSpecSchema.safeParse(raw);
+        const parsed = ticketOrRerouteSchema.safeParse(raw);
         return parsed.success
           ? { ok: true, value: parsed.data }
           : {
               ok: false,
-              correction: `That ticket does not match the schema: ${parsed.error.issues[0]?.path.join(".")}: ${parsed.error.issues[0]?.message}. Return the corrected JSON object.`,
+              correction: `That answer does not match the schema: ${parsed.error.issues[0]?.path.join(".")}: ${parsed.error.issues[0]?.message}. Return the corrected JSON object: the whole ticket, or a reroute.`,
             };
       },
       2,
@@ -306,6 +307,9 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
 
     if (!result.ok) {
       return failure(r.model, `The Architect Agent returned a malformed ticket: ${result.error}`, false, result.usage);
+    }
+    if ("kind" in result.value) {
+      return { ok: true, value: { kind: "reroute", reason: result.value.reason }, usage: result.usage };
     }
     return { ok: true, value: { kind: "ticket", ticket: toDraftTicket(result.value) }, usage: result.usage };
   }

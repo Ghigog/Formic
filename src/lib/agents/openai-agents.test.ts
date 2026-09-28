@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCodingLoop } from "./coding-loop";
 import { OpenAiArchitectAgent, OpenAiProductAgent } from "./openai-agents";
+import { ticketOrRerouteSchema } from "./decomposition";
 import { MemoryWorkspace, scopedWorkspace } from "@/lib/sandbox/workspace";
 import type { AgentContext } from "./ports";
 
@@ -47,6 +48,69 @@ const PRD = {
   userStories: [],
   successCriteria: ["y"],
 };
+
+/** One ticket's worth of work, in the shape ticketSpecSchema requires. */
+const TICKET_SPEC = {
+  key: "T-1",
+  title: "Add a retry button to a failed run",
+  userStory: { as: "a board owner", want: "retry a failed run", soThat: "I do not have to ask again" },
+  context: "Runs fail and there is no way back.",
+  description: "Add a retry button to the run drawer.",
+  requirements: ["A button that restarts the run it belongs to."],
+  acceptanceCriteria: [{ given: "a failed run", when: "I click retry", then: "the run starts again" }],
+  fileScope: ["src/components/board"],
+  size: "S",
+  storyPoints: 2,
+  dependsOn: [],
+};
+
+describe("the ticket-or-reroute answer both Architect agents parse with", () => {
+  it("takes a reroute, and does not mistake it for a ticket", () => {
+    const parsed = ticketOrRerouteSchema.safeParse({ kind: "reroute", reason: "Needs a PRD." });
+    expect(parsed.success && "kind" in parsed.data).toBe(true);
+  });
+
+  it("takes a whole ticket, which carries no kind of its own", () => {
+    const parsed = ticketOrRerouteSchema.safeParse(TICKET_SPEC);
+    expect(parsed.success && "kind" in parsed.data).toBe(false);
+  });
+});
+
+describe("the Architect's draft from a raw request", () => {
+  it("is one ticket when the request is one ticket's work", async () => {
+    fakeProvider([{ role: "assistant", content: JSON.stringify(TICKET_SPEC) }]);
+    const agent = new OpenAiArchitectAgent({ provider: "groq", model: "m", apiKey: "gsk" });
+
+    const outcome = await agent.draftTicket(ctx(), {
+      rawRequest: "Add a retry button to a failed run.",
+      repoTree: [],
+      attachments: [],
+    });
+
+    expect(outcome).toMatchObject({ ok: true, value: { kind: "ticket", ticket: { key: "T-1", size: "S" } } });
+  });
+
+  it("reroutes to the Backlog when the request needs a PRD and a breakdown", async () => {
+    fakeProvider([
+      {
+        role: "assistant",
+        content: JSON.stringify({ kind: "reroute", reason: "Three distinct capabilities, each its own scope." }),
+      },
+    ]);
+    const agent = new OpenAiArchitectAgent({ provider: "groq", model: "m", apiKey: "gsk" });
+
+    const outcome = await agent.draftTicket(ctx(), {
+      rawRequest: "Add OAuth login, a settings page for connected accounts, and audit logging for sign-ins.",
+      repoTree: [],
+      attachments: [],
+    });
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      value: { kind: "reroute", reason: "Three distinct capabilities, each its own scope." },
+    });
+  });
+});
 
 describe("the coding loop on an OpenAI-format provider", () => {
   it("edits files through tool calls and finishes", async () => {
