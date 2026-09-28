@@ -58,6 +58,47 @@ function describeStatus(p: ProviderInfo, res: Response, body: string): string {
   });
 }
 
+/** A reply, in whichever envelope the provider chose to send it. */
+interface Completion {
+  choices?: Array<{ message?: ChatMessage; finish_reason?: string | null }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+}
+
+/**
+ * The completion inside a body, unwrapped. Not every endpoint sends the plain
+ * OpenAI shape: ClinePass answers a non-streamed request with the completion
+ * under `data`, beside a `success` flag, and no top-level `choices` — while its
+ * own documentation shows the plain one. Reading only the top level reports an
+ * answer that arrived as no answer at all.
+ */
+function completionIn(body: unknown): Completion | null {
+  if (typeof body !== "object" || body === null) return null;
+  for (const envelope of [body, (body as { data?: unknown }).data]) {
+    if (typeof envelope !== "object" || envelope === null) continue;
+    const choices = (envelope as Completion).choices;
+    if (Array.isArray(choices) && choices.length > 0) return envelope as Completion;
+  }
+  return null;
+}
+
+/**
+ * What the provider said instead, when a 200 carries an error rather than a
+ * completion. Cline's gateway sends its reason as a plain string beside
+ * `success`; OpenAI and DeepSeek nest it under `error.message`.
+ */
+function saidInstead(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  for (const envelope of [body, (body as { data?: unknown }).data]) {
+    if (typeof envelope !== "object" || envelope === null) continue;
+    const error = (envelope as { error?: unknown }).error;
+    const message = typeof error === "string" ? error : (error as { message?: unknown } | null)?.message;
+    if (typeof message === "string" && message.trim()) {
+      return message.replace(/\s+/g, " ").trim().slice(0, 300);
+    }
+  }
+  return null;
+}
+
 export async function chat(
   p: ProviderInfo,
   apiKey: string,
@@ -104,17 +145,21 @@ export async function chat(
     throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
   }
 
-  const body = (await res.json()) as {
-    choices?: Array<{ message?: ChatMessage; finish_reason?: string | null }>;
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
-  };
-  const choice = body.choices?.[0];
-  if (!choice?.message) throw new ProviderError(`${p.label} returned no answer.`, res.status);
+  const body: unknown = await res.json();
+  const completion = completionIn(body);
+  const choice = completion?.choices?.[0];
+  if (!choice?.message) {
+    const said = saidInstead(body);
+    throw new ProviderError(
+      said ? `${p.label} answered with an error: ${said}` : `${p.label} returned no answer.`,
+      res.status,
+    );
+  }
   return {
     message: choice.message,
     finishReason: choice.finish_reason ?? null,
-    tokensIn: body.usage?.prompt_tokens ?? 0,
-    tokensOut: body.usage?.completion_tokens ?? 0,
+    tokensIn: completion?.usage?.prompt_tokens ?? 0,
+    tokensOut: completion?.usage?.completion_tokens ?? 0,
   };
 }
 
