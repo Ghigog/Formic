@@ -140,7 +140,8 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     kind: "openai",
     baseUrl: "https://api.cline.bot/api/v1",
     keyUrl: "https://app.cline.bot",
-    keyPlaceholder: "cline_…",
+    // Cline does not publish a prefix for these, so do not suggest one.
+    keyPlaceholder: "…",
     note: "$9.99/mo flat rate for a curated set of open-weight models (DeepSeek, GLM, Kimi, Qwen and others). One key for all of them.",
     freeTier: false,
     keyName: "API key",
