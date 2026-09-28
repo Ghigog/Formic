@@ -13,7 +13,7 @@ const LOCAL_PROFILE = { githubId: 0, login: "local", name: "Local", avatarUrl: n
  * Bumped whenever the terms of service or privacy policy change materially
  * (see docs/legal). Everyone who accepted an older version is asked again.
  */
-export const CURRENT_TERMS_VERSION = "2026-09-24";
+export const CURRENT_TERMS_VERSION = "2026-09-28";
 
 /** Whether this person has not yet agreed to the terms now in force. */
 export function needsTermsAcceptance(user: UserRecord): boolean {

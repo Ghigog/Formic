@@ -148,8 +148,8 @@ the column's built-in one. Templates are saved once and can run any column
 on any board, so one board can use DeepSeek for Product, Gemini for the
 Architect, and Claude for the Coder.
 
-Providers: Anthropic, OpenAI, Google Gemini, DeepSeek, OpenRouter and Groq.
-Claude runs on Anthropic's own API; the rest share OpenAI's format, so
+Providers: Anthropic, OpenAI, Google Gemini, DeepSeek, OpenRouter, Groq and
+ClinePass. Claude runs on Anthropic's own API; the rest share OpenAI's format, so
 adding another is one entry in `src/lib/llm/providers.ts`. The model list in
 the editor is fetched live from the provider with the key you entered.
 

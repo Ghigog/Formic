@@ -1,6 +1,6 @@
 # Third parties
 
-**Version:** 2026-09-24 (matches `CURRENT_TERMS_VERSION` in
+**Version:** 2026-09-28 (matches `CURRENT_TERMS_VERSION` in
 `src/lib/auth/user.ts`)
 
 Formic is a coordination layer. To do its job it sends your repository's
@@ -28,6 +28,10 @@ Whichever you pick, per column, on your own account or key.
   underlying model you pick through it; that model's own data handling
   applies in addition to OpenRouter's.
 - **Groq** — same, for columns run on Groq. United States.
+- **ClinePass** — same, for columns run on ClinePass. A proxy: routes to
+  whichever underlying open-weight model you pick through it (DeepSeek, GLM,
+  Kimi, Qwen and others), on Cline's own infrastructure, under a flat
+  monthly subscription rather than per-token billing.
 
 ### Subscription and sign-in credentials
 
