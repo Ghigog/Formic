@@ -62,10 +62,11 @@ export const PRIVACY_MD = `
 
 ## Where it goes
 
-- **Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Groq** — whichever AI
-  provider you pick, per column: your code, files and prompts for that
-  column. **DeepSeek processes data in the People's Republic of China**,
-  under Chinese law.
+- **Anthropic, OpenAI, Google, DeepSeek, OpenRouter, Groq, ClinePass** —
+  whichever AI provider you pick, per column: your code, files and prompts
+  for that column. **DeepSeek processes data in the People's Republic of
+  China**, under Chinese law. ClinePass is a proxy: it routes to whichever
+  underlying model you pick through it, on Cline's own infrastructure.
 - **E2B** — runs Coder Agents in an isolated sandbox: your checkout and what
   the agent does there.
 - **GitHub** — your repository, issues, pull requests and Actions runs,

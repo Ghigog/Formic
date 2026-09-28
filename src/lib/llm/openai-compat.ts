@@ -80,6 +80,9 @@ export async function chat(
       body: JSON.stringify({
         model: request.model,
         messages: request.messages,
+        // Some endpoints stream by default (Cline's does), and this client
+        // reads one JSON body. Nothing here wants the stream.
+        stream: false,
         ...(request.tools?.length ? { tools: request.tools } : {}),
         ...(json ? { response_format: { type: "json_object" } } : {}),
       }),

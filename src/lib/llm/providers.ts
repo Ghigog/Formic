@@ -21,6 +21,7 @@ export const PROVIDER_IDS = [
   "deepseek",
   "openrouter",
   "groq",
+  "clinepass",
   "claude-code",
   "codex",
   "gemini-cli",
@@ -131,6 +132,20 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     freeTier: true,
     keyName: "API key",
     envKey: "GROQ_API_KEY",
+    suggestedModels: [],
+  },
+  {
+    id: "clinepass",
+    label: "ClinePass",
+    kind: "openai",
+    baseUrl: "https://api.cline.bot/api/v1",
+    keyUrl: "https://app.cline.bot",
+    // Cline does not publish a prefix for these, so do not suggest one.
+    keyPlaceholder: "…",
+    note: "$9.99/mo flat rate for a curated set of open-weight models (DeepSeek, GLM, Kimi, Qwen and others). One key for all of them.",
+    freeTier: false,
+    keyName: "API key",
+    envKey: "CLINE_API_KEY",
     suggestedModels: [],
   },
   {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agentConfigFor, agentFor, savePreset } from "./presets";
-import { LoopCoderAgent } from "./coder";
+import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
 import { AnthropicProductAgent } from "./anthropic";
 import { OpenAiArchitectAgent, OpenAiProductAgent } from "./openai-agents";
@@ -73,6 +73,34 @@ describe("agent templates", () => {
     expect((await agentConfigFor(PROJECT, "backlog"))?.apiKey).toBe("sk-deepseek");
     expect((await agentConfigFor(PROJECT, "todo"))?.apiKey).toBe("AIza-gemini");
     expect((await agentConfigFor(PROJECT, "in_review"))?.provider).toBe("anthropic");
+  });
+
+  it("runs one ClinePass key as all four roles on a board", async () => {
+    const flash = {
+      provider: "clinepass" as const,
+      model: "deepseek/deepseek-v4.1-flash",
+      prompt: "Keep it small.",
+    };
+    const coder = await savePreset({ ...flash, name: "cline-worker", apiKey: "cline-key-1234" });
+    const reviewer = await savePreset({ ...flash, name: "cline-reviewer" });
+    const product = await savePreset({ ...flash, name: "cline-po" });
+    const architect = await savePreset({ ...flash, name: "cline-arch" });
+    await repository().setColumnAgent(PROJECT, "in_progress", coder.id);
+    await repository().setColumnAgent(PROJECT, "in_review", reviewer.id);
+    await repository().setColumnAgent(PROJECT, "backlog", product.id);
+    await repository().setColumnAgent(PROJECT, "todo", architect.id);
+
+    // One OpenAI-format provider covers the whole board: the tool loop for
+    // the two coding columns, the JSON planners for the other two.
+    expect(await agentFor(PROJECT, "coder")).toBeInstanceOf(LoopCoderAgent);
+    expect(await agentFor(PROJECT, "reviewer")).toBeInstanceOf(LoopReviewerAgent);
+    expect(await agentFor(PROJECT, "product")).toBeInstanceOf(OpenAiProductAgent);
+    expect(await agentFor(PROJECT, "architect")).toBeInstanceOf(OpenAiArchitectAgent);
+    expect(await agentConfigFor(PROJECT, "in_progress")).toMatchObject({
+      provider: "clinepass",
+      model: "deepseek/deepseek-v4.1-flash",
+      apiKey: "cline-key-1234",
+    });
   });
 
   it("keeps a saved key through an edit that does not mention it", async () => {
