@@ -25,6 +25,11 @@ function fakeProvider(replies: Array<Record<string, unknown> | { status: number 
   return sent;
 }
 
+/** A stand-in that answers with a body of the test's own choosing. */
+function fakeBody(body: unknown) {
+  vi.stubGlobal("fetch", async () => Response.json(body));
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 const ask = {
@@ -62,5 +67,62 @@ describe("the OpenAI-format client", () => {
     expect(refused.map((r) => r.body.response_format)).toEqual([{ type: "json_object" }, undefined]);
     expect(refused.every((r) => r.body.stream === false)).toBe(true);
     expect(reply.message.content).toBe('{"a":1}');
+  });
+
+  /**
+   * ClinePass answers a request that is not streamed with the completion
+   * under `data`, beside a `success` flag, and no top-level `choices`. Reading
+   * only the top level called a good answer no answer.
+   */
+  it("reads a completion the provider wrapped in data", async () => {
+    fakeBody({
+      data: {
+        choices: [
+          { index: 0, message: { role: "assistant", content: "wrapped hello" }, finish_reason: "stop" },
+        ],
+        usage: { prompt_tokens: 12, completion_tokens: 4 },
+      },
+      success: true,
+    });
+
+    const reply = await chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
+
+    expect(reply.message.content).toBe("wrapped hello");
+    expect(reply.tokensIn).toBe(12);
+    expect(reply.tokensOut).toBe(4);
+  });
+
+  /** A top-level `choices` that is null is not a choice: the wrapped one is. */
+  it("reads the wrapped completion when the top level is empty", async () => {
+    fakeBody({
+      choices: null,
+      data: { choices: [{ index: 0, message: { role: "assistant", content: "nested" } }] },
+      success: true,
+    });
+
+    const reply = await chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
+
+    expect(reply.message.content).toBe("nested");
+  });
+
+  /**
+   * A 200 that carries the provider's reason rather than a completion is worth
+   * naming: Cline's gateway sends it as a plain string beside `success`.
+   */
+  it("names what the provider said when a 200 carries no completion", async () => {
+    fakeBody({ error: "Unauthorized: re-authenticate your Cline account." });
+
+    await expect(chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] })).rejects.toThrow(
+      "ClinePass answered with an error: Unauthorized: re-authenticate your Cline account.",
+    );
+  });
+
+  /** Neither shape, and nothing said: the plain report stands. */
+  it("still reports no answer when a 200 carries neither shape", async () => {
+    fakeBody({ object: "something.else" });
+
+    await expect(chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] })).rejects.toThrow(
+      "ClinePass returned no answer.",
+    );
   });
 });
