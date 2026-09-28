@@ -96,6 +96,26 @@ export function toDraftTicket(spec: TicketSpec): DraftTicket {
   };
 }
 
+/**
+ * A raw request that turns out to need a PRD and a breakdown rather than one
+ * ticket. The Architect Agent answers this instead of a ticket, and the card
+ * goes back to the Backlog for the Product Agent to scope properly. The
+ * pipeline path that handles it is the same one the Product Agent's reroute
+ * uses, so the two agree on the shape.
+ */
+export const ticketRerouteAnswer = z.object({
+  kind: z.literal("reroute"),
+  reason: z.string().min(1).describe("Why this needs a PRD and a breakdown, not one ticket."),
+});
+
+/**
+ * What a draft from a raw request must be: the one ticket asked for, or a
+ * reroute. The reroute comes first because a ticket spec has no `kind` field,
+ * so nothing that is a ticket can match it, and nothing that is a reroute can
+ * satisfy the ticket's required fields.
+ */
+export const ticketOrRerouteSchema = z.union([ticketRerouteAnswer, ticketSpecSchema]);
+
 export const decompositionSchema = z.object({
   tickets: z.array(ticketSpecSchema).min(1).max(12),
 });
