@@ -17,9 +17,10 @@ import {
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
+import { MINUTES_PER_POINT } from "@/lib/budget/limits";
 import { diagnose, lastWords } from "@/lib/agents/limits";
 import { planFraction, planFromSummary } from "@/lib/agents/plan";
-import { provider as providerInfo } from "@/lib/llm/providers";
+import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers";
 import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
 import { reviewBrief, taskBrief } from "@/lib/agents/coder";
@@ -40,7 +41,7 @@ import {
   withPlanningConventions,
   withProductConventions,
 } from "@/lib/agents/prompts";
-import type { DraftTicket, ReviewTask } from "@/lib/agents/ports";
+import type { DraftTicket, ReviewTask, Usage } from "@/lib/agents/ports";
 import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { askForScope, widenScope } from "@/lib/coder/scope-request";
@@ -65,6 +66,7 @@ import { signingSecret } from "@/lib/auth/session";
 import { abortTicketRuns } from "@/lib/budget/controller";
 import { ticketNotes } from "@/lib/coder/notes";
 import { readStream } from "./stream";
+import type { LoopEntryPayload } from "./loop-entry";
 import {
   STAGING_PREFIX,
   VcsError,
@@ -76,26 +78,34 @@ import {
 } from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
+  ALREADY_DONE_TRAILER,
   ANSWER_PATH,
   ATTACHMENTS_DIR_VAR,
   CHECKPOINT_TRAILER,
+  JOB_HEADROOM_MINUTES,
   MERGED_TRAILER,
+  RUNNER_JOB_MINUTES,
   RUNNER_SETUP_BRANCH,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_FILE,
   RUNNER_WORKFLOW_PATH,
+  USAGE_TRAILER,
   attemptOfJob,
   cardOfJob,
   isAnswerMode,
   isCarried,
+  isTicketImplementation,
   jobId,
   parseRunTitle,
   runnerResultKey,
   runnerWorkflow,
   type AnswerMode,
   type CodeMode,
+  type LoopMode,
   type RunnerMode,
 } from "./workflow";
+
+export { ALREADY_DONE_TRAILER, USAGE_TRAILER };
 
 /**
  * The cloud runner: a CLI agent on the person's own plan, working in their
@@ -131,13 +141,6 @@ const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.
 - ${HANDOFF_RULE} Put them in the summary as a "For you:" section, one "- step" per line, before the plan.`;
 
-/**
- * The trailer that marks a CLI agent's report that the ticket was already
- * done. The workflow only hands work back when there is a commit, so the
- * agent makes an empty one; that keeps the installed workflow unchanged.
- */
-export const ALREADY_DONE_TRAILER = "Formic-Already-Done: true";
-
 const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
 
@@ -153,6 +156,29 @@ export function mergedFrom(messages: string[]): string | null {
 /** Whether a CLI agent's commits report the ticket as already done. */
 export function reportsAlreadyDone(messages: string[]): boolean {
   return messages.some((m) => m.split("\n").some((line) => line.trim() === ALREADY_DONE_TRAILER));
+}
+
+const reportedUsage = z.object({
+  model: z.string().max(200),
+  tokensIn: z.number().nonnegative(),
+  tokensOut: z.number().nonnegative(),
+  costCents: z.number().nonnegative(),
+});
+
+/**
+ * What a run reported it used, from the trailer its summary carries. The loop
+ * entry reports its tokens and what they cost, because a run on a metered key
+ * is money spent and has to be counted; a CLI agent on a plan reports none,
+ * and none is what it gets. Null when nothing usable was reported.
+ */
+export function usageOf(messages: string[]): Usage | null {
+  for (const line of messages.flatMap((m) => m.split("\n")).reverse()) {
+    const m = new RegExp(`^${USAGE_TRAILER}\\s*(\\{.*\\})\\s*$`).exec(line.trim());
+    if (!m) continue;
+    const parsed = reportedUsage.safeParse(readJson(m[1]!));
+    if (parsed.success) return parsed.data;
+  }
+  return null;
 }
 
 export type RunnerState =
@@ -199,6 +225,19 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
       ].join("\n"),
     }));
   return { ready: false, setupUrl: pull.url, update };
+}
+
+/**
+ * Whether this repository can run Formic's own loop: it has the current
+ * workflow installed. A repository on an older one keeps running its API-key
+ * coders in-process, exactly as it did before, until a CLI run — or the
+ * person — brings the workflow up to date. That is deliberate: no card may
+ * start behaving differently, or start asking for a setup pull request,
+ * because a feature exists.
+ */
+export async function loopRunnerReady(client: VcsClient, baseBranch: string): Promise<boolean> {
+  const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch).catch(() => null);
+  return current !== null && current.includes(RUNNER_VERSION);
 }
 
 /** What a 403 or 404 from the runner's endpoints usually means. */
@@ -261,12 +300,85 @@ async function whyItFailed(
 }
 
 /**
- * The Actions secret a saved agent's sign-in lives in: its own, so two
- * Claude accounts on one repository never swap tokens between runs.
+ * The Actions secret an agent's credential lives in: its own, so two accounts
+ * on one repository never swap keys between runs. A CLI agent's sign-in and an
+ * API key both live here, because the job reads `secrets[inputs.secret]` —
+ * never a key in an input, which the run's own event keeps for anyone who can
+ * read the repository.
  */
-export function secretNameFor(agent: Pick<CliAgent, "presetId" | "info">): string {
-  if (!agent.presetId) return agent.info.secretName;
-  return `${agent.info.secretName}_${agent.presetId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+export function secretNameFor(agent: { presetId: string | null; info: ProviderInfo }): string {
+  const base =
+    agent.info.secretName ?? `FORMIC_API_KEY_${agent.info.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+  if (!agent.presetId) return base;
+  return `${base}_${agent.presetId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}
+
+/**
+ * The agent a job runs. A CLI tool loops itself on the person's plan; Formic's
+ * own loop runs there on an API key, which is what `mode: loop` is for. Both
+ * are dispatched, reported on and collected the same way.
+ */
+export type JobAgent = {
+  presetId: string | null;
+  info: ProviderInfo;
+  model: string | null;
+  credential: string | null;
+};
+
+/**
+ * How long the loop entry may work on a ticket: its size at ten minutes a
+ * point, and never past the job's own ceiling, which is the backstop. The
+ * entry stops on this and says which limit stopped it, so the card can tell
+ * the person; a job the platform kills says nothing at all.
+ */
+export function loopBudgetMs(storyPoints: number | null | undefined): number {
+  const points = Math.max(1, storyPoints ?? 1);
+  const planned = Math.min(points * MINUTES_PER_POINT, RUNNER_JOB_MINUTES - JOB_HEADROOM_MINUTES);
+  return planned * 60_000;
+}
+
+/**
+ * What a loop run hands the entry, from the ticket and the agent it runs.
+ *
+ * The key is deliberately not here. The job reads it from the repository's
+ * Actions secrets — `secrets[inputs.secret]`, the same place a CLI agent's
+ * sign-in lives — and puts it in itself, so it never travels in a dispatch
+ * input, which the run's own event keeps for anyone who can read the
+ * repository.
+ */
+export function loopPayload(input: {
+  runId: string;
+  projectId: string;
+  ticket: TicketDetail;
+  repoFullName: string;
+  baseBranch: string;
+  provider: string;
+  model: string;
+  /** What the person told this ticket, oldest first: it goes into the prompt. */
+  notes: string[];
+  /** What this run was asked to do from the ticket's chat, if anything. */
+  instruction?: string;
+}): Omit<LoopEntryPayload, "apiKey"> {
+  const { ticket } = input;
+  return {
+    runId: input.runId,
+    ticketId: ticket.id,
+    projectId: input.projectId,
+    ticket: {
+      key: ticket.key,
+      title: ticket.title,
+      description: ticket.description,
+      acceptanceCriteria: ticket.acceptanceCriteria,
+      fileScope: ticket.fileScope,
+      ...(input.notes.length ? { notes: input.notes } : {}),
+      ...(input.instruction ? { instruction: input.instruction } : {}),
+    },
+    repo: { fullName: input.repoFullName, baseBranch: input.baseBranch },
+    provider: input.provider,
+    model: input.model,
+    // The ticket's budget is the plan; the job's timeout is the backstop.
+    limits: { maxDurationMs: loopBudgetMs(ticket.storyPoints) },
+  };
 }
 
 /**
@@ -406,7 +518,7 @@ async function carryOnFrom(
 async function dispatch(input: {
   client: VcsClient;
   baseBranch: string;
-  agent: CliAgent;
+  agent: JobAgent;
   job: string;
   mode: RunnerMode;
   cardKey: string;
@@ -414,6 +526,8 @@ async function dispatch(input: {
   prompt: string;
   /** A branch to merge in before the agent starts, its conflicts left for it. */
   merge?: string;
+  /** `mode: loop`: where the job fetches Formic's loop entry from. */
+  bundle?: string;
   /** Recorded before the dispatch: only this job's result is taken. */
   record: (job: string) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
@@ -440,12 +554,15 @@ async function dispatch(input: {
       job: input.job,
       mode: input.mode,
       ticket: input.cardKey,
-      cli: agent.info.cli,
+      // There is no CLI to install for a loop run: the job fetches Formic's
+      // own loop entry instead.
+      cli: input.mode === "loop" ? "loop" : agent.info.cli ?? "",
       model: agent.model ?? "",
       from: input.from,
       secret,
       prompt: cap(input.prompt),
       report: reportUrl(input.job, Date.now()) ?? "",
+      ...(input.bundle ? { bundle: input.bundle } : {}),
       ...(input.merge ? { merge: input.merge } : {}),
     });
     return { ok: true };
@@ -454,11 +571,11 @@ async function dispatch(input: {
   }
 }
 
-function noUsage(agent: CliAgent) {
+function noUsage(agent: JobAgent) {
   return { model: agent.model ?? agent.info.label, tokensIn: 0, tokensOut: 0, costCents: 0 };
 }
 
-function working(agent: CliAgent, run: RunHandle, ticketId: string | null): void {
+function working(agent: JobAgent, run: RunHandle, ticketId: string | null): void {
   run.ctx.emit({
     type: "run.log",
     runId: run.runId,
@@ -469,17 +586,28 @@ function working(agent: CliAgent, run: RunHandle, ticketId: string | null): void
 }
 
 /**
- * Starts a CLI agent on a ticket. The Formic run records the dispatch and
- * ends there; the ticket stays running until the workflow reports back.
+ * Starts a job on a ticket: a CLI agent on the person's own plan, or Formic's
+ * own loop on an API key (`mode: loop`), which is what lets an API-model coder
+ * work for as long as a CLI agent instead of inside a serverless window. The
+ * Formic run records the dispatch and ends there; the ticket stays running
+ * until the workflow reports back on the workflow_run webhook.
  */
-export async function startCliRun(input: {
+export async function startJobRun(input: {
   projectId: string;
   ticket: TicketDetail;
-  mode: CodeMode;
-  agent: CliAgent;
+  mode: CodeMode | LoopMode;
+  agent: JobAgent;
   /** The branch the agent starts from. */
   from: string;
-  prompt: string;
+  /**
+   * What the job is handed: a CLI agent's brief, or — for a loop run — the
+   * JSON payload the loop entry reads (see src/lib/runner/loop-entry.ts).
+   *
+   * A function instead of a string when what the run is handed depends on
+   * where it starts: a loop run's payload carries a resumed run's notes in
+   * words, because its prompt is JSON and cannot have a paragraph appended.
+   */
+  prompt: string | ((resumed: Checkpoint | null) => string);
   /** A branch to merge in first, for the agent to resolve its conflicts. */
   merge?: string;
   run: RunHandle;
@@ -491,23 +619,43 @@ export async function startCliRun(input: {
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
 
-  // Resolving merge conflicts starts over: the merge is the work.
-  const resumed = input.merge
-    ? null
-    : await carryOnFrom(client, ticket, input.mode, input.from).catch(() => null);
+  // Resolving merge conflicts starts over: the merge is the work. A loop run
+  // is a fresh implementation, so it carries on the way one does.
+  const mode = input.mode === "loop" ? "implement" : input.mode;
+  const resumed = input.merge ? null : await carryOnFrom(client, ticket, mode, input.from).catch(() => null);
 
-  const started = await dispatch({
-    client,
-    baseBranch: project.baseBranch,
-    agent,
-    job: jobId(ticket.id, randomUUID().slice(0, 8)),
-    mode: input.mode,
-    cardKey: ticket.key,
-    from: resumed?.sha ?? input.from,
-    prompt: resumed ? `${input.prompt}\n\n${resumeBrief(resumed, ticket.plan)}` : input.prompt,
-    merge: input.merge,
-    record: (job) => repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
-  });
+  const job = jobId(ticket.id, randomUUID().slice(0, 8));
+  // A loop run fetches the entry itself, from the board, signed for this job
+  // alone and only while the card waits on it (see loopBundleUrl).
+  const bundle = input.mode === "loop" ? loopBundleUrl(job, Date.now()) : null;
+
+  const started =
+    input.mode === "loop" && !bundle
+      ? {
+          ok: false as const,
+          reason:
+            "This board has no public address, so a job cannot fetch Formic's loop entry. Set FORMIC_URL, then move this card back to try again.",
+          blocked: true,
+        }
+      : await dispatch({
+          client,
+          baseBranch: project.baseBranch,
+          agent,
+          job,
+          mode: input.mode,
+          cardKey: ticket.key,
+          from: resumed?.sha ?? input.from,
+          prompt:
+            typeof input.prompt === "string"
+              ? resumed
+                ? `${input.prompt}\n\n${resumeBrief(resumed, ticket.plan)}`
+                : input.prompt
+              : input.prompt(resumed),
+          merge: input.merge,
+          bundle: bundle ?? undefined,
+          record: (job) =>
+            repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
+        });
 
   if (!started.ok) {
     await repository().updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
@@ -1240,7 +1388,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   const waiting =
     ticket.runnerJob === result.job &&
     !!ticket.branchName &&
-    (result.mode === "implement"
+    (isTicketImplementation(result.mode)
       ? ticket.status === "running"
       : ticket.status === "review" && !!ticket.prNumber);
   if (!waiting) {
@@ -1249,7 +1397,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   }
   await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
 
-  const stalledIn = result.mode === "implement" ? "in_progress" : "in_review";
+  const stalledIn = isTicketImplementation(result.mode) ? "in_progress" : "in_review";
   const log = result.url ? ` Its log: ${result.url}` : "";
   const stop = async (reason: string, blocked: boolean) => {
     await cleanUp();
@@ -1264,7 +1412,8 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   const branch = ticket.branchName!;
   // A new ticket started from the branch it merges into; a re-run with its
   // pull request open started from the ticket's own branch.
-  const from = result.mode === "implement" && !ticket.prNumber ? mergeTarget(project.baseBranch) : branch;
+  const from =
+    isTicketImplementation(result.mode) && !ticket.prNumber ? mergeTarget(project.baseBranch) : branch;
 
   // The run finished and handed its work back whole: its checkpoint has
   // nothing more to give, unless taking the work fails and loses it.
@@ -1272,7 +1421,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   try {
     const change = await client.compare(from, staging);
     if (
-      result.mode === "implement" &&
+      isTicketImplementation(result.mode) &&
       change.files.length === 0 &&
       reportsAlreadyDone(change.messages)
     ) {
@@ -1336,13 +1485,13 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     }
 
     let violations = violationsInDiff(files, ticket.fileScope);
-    if (violations.length > 0 && result.mode === "implement" && (await widenScope(projectId, ticket, violations))) {
+    if (violations.length > 0 && isTicketImplementation(result.mode) && (await widenScope(projectId, ticket, violations))) {
       violations = [];
     }
     // A new ticket's work that needed more is kept on its own branch, which
     // no other ticket reads, while the person is asked for the files. With
     // a pull request open, that branch is the pull request: nothing is kept.
-    if (violations.length > 0 && result.mode === "implement") {
+    if (violations.length > 0 && isTicketImplementation(result.mode)) {
       const keep = !ticket.prNumber;
       if (keep) await client.moveBranch(branch, head);
       await cleanUp();
@@ -1382,6 +1531,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     const summary =
       (line.startsWith(`${ticket.key}:`) ? line.slice(ticket.key.length + 1).trim() : line) ||
       ticket.title;
+    // A loop run reports what it used, in the trailer its summary carries: on
+    // a metered key that is money spent, and it belongs on the ticket.
+    const usage = result.mode === "loop" ? usageOf(change.messages) : null;
     await openTicketPullRequest(projectId, ticket, client, {
       branch,
       change: {
@@ -1390,6 +1542,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
         verifiedWith: null,
         handoff: handoffFromSummary(message),
       },
+      ...(usage ? { usage } : {}),
     });
   } catch (e) {
     lost = true;

@@ -41,6 +41,11 @@ class LocalSandbox implements SandboxHandle {
     private readonly dir: string,
     ttlMs: number,
     private readonly onLog?: SpawnOptions["onLog"],
+    /**
+     * A directory that is not this handle's to remove: the job's own checkout,
+     * which the run's work and its commit both belong in.
+     */
+    private readonly keep = false,
   ) {
     // Guaranteed disposal. An agent that hangs, a worker that dies mid-run, a
     // promise nobody awaited: the sandbox still goes away.
@@ -158,10 +163,32 @@ class LocalSandbox implements SandboxHandle {
     this.disposed = true;
     this.current = "disposed";
     if (this.timer) clearTimeout(this.timer);
+    if (this.keep) return;
     await rm(this.dir, { recursive: true, force: true }).catch(() => {
       // A sandbox that cannot be removed is a disk leak, not a failed run.
     });
   }
+}
+
+/**
+ * A directory that is already a checkout, as a sandbox. This is what the loop
+ * entry works in when it runs inside the job that checked the repository out:
+ * the same shell, the same tree, the same `git` — but the directory is not
+ * this handle's to delete, so disposing it only lets go of it.
+ */
+export async function localCheckout(
+  dir: string,
+  options: { ttlMs?: number; onLog?: SpawnOptions["onLog"] } = {},
+): Promise<SandboxHandle> {
+  const sandbox = new LocalSandbox(
+    `local_${randomUUID().slice(0, 8)}`,
+    path.resolve(dir),
+    options.ttlMs ?? DEFAULT_TTL_MS,
+    options.onLog,
+    true,
+  );
+  sandbox.markReady();
+  return sandbox;
 }
 
 export class LocalSandboxProvider implements SandboxProvider {

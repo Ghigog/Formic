@@ -18,10 +18,10 @@ import {
   prepareMergeTarget,
   pullRequestBody,
 } from "./checkout";
-import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
+import { agentFor, cliAgentFor, loopAgentFor, runTargetFor } from "@/lib/agents/presets";
 import type { CodeChange, Usage } from "@/lib/agents/ports";
 import type { VcsClient } from "@/lib/vcs";
-import { cliPrompt, startCliRun } from "@/lib/runner/runner";
+import { cliPrompt, loopPayload, loopRunnerReady, resumeBrief, startJobRun } from "@/lib/runner/runner";
 import { guidedWorkspace } from "@/lib/sandbox/workspace";
 import { askForScope, hasKeptWork, takeKeptWork, widenScope } from "./scope-request";
 
@@ -179,7 +179,7 @@ export async function runCoderAgent(
   // a sandbox here, and reports back on the workflow_run webhook.
   const cli = await cliAgentFor(projectId, "in_progress");
   if (cli) {
-    await startCliRun({
+    await startJobRun({
       projectId,
       ticket: { ...ticket, branchName: branch },
       mode: "implement",
@@ -193,6 +193,46 @@ export async function runCoderAgent(
         await noteTexts(projectId, ticket.id),
         options.instruction,
       ),
+      run,
+      stalledIn: "in_progress",
+      stage: STAGE_CODE_RUN,
+    });
+    return;
+  }
+
+  // An agent on an API key runs in the job too, when this repository's
+  // workflow can run Formic's own loop: that is what gives it the ticket's
+  // budget — ten minutes a story point — instead of the four minutes a
+  // request has before the platform ends it. A repository on an older
+  // workflow, and a board that has never installed one (local mode), keeps
+  // the in-process path below exactly as it was: no card changes behaviour
+  // because a feature exists.
+  const loop = await loopAgentFor(projectId, "in_progress");
+  if (loop && (await loopRunnerReady(client, project.baseBranch))) {
+    const notes = await noteTexts(projectId, ticket.id);
+    await startJobRun({
+      projectId,
+      ticket: { ...ticket, branchName: branch },
+      mode: "loop",
+      agent: loop,
+      from: startFrom,
+      // Built here, serialized by the runner: a resumed run's notes go in as
+      // notes, because this prompt is JSON and cannot have a paragraph added
+      // to it.
+      prompt: (resumed) =>
+        JSON.stringify(
+          loopPayload({
+            runId: run.runId,
+            projectId,
+            ticket,
+            repoFullName: project.repoFullName,
+            baseBranch: project.baseBranch,
+            provider: loop.info.id,
+            model: loop.model,
+            notes: resumed ? [...notes, resumeBrief(resumed, ticket.plan)] : notes,
+            ...(options.instruction ? { instruction: options.instruction } : {}),
+          }),
+        ),
       run,
       stalledIn: "in_progress",
       stage: STAGE_CODE_RUN,

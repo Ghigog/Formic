@@ -86,7 +86,7 @@ Two things to be honest about:
 
 ## Where this stands
 
-Steps 1 and 2 are built.
+Steps 1, 2 and 3 are built, and step 4's default is in place.
 
 **Step 1** — `src/lib/runner/loop-entry.ts`, the entry: one JSON payload in,
 one JSON report out — with `src/lib/runner/loop-entry.test.ts` proving it runs
@@ -104,15 +104,32 @@ signed address `loopBundleUrl` builds — the same HMAC and the same claim as
 an empty script) where a build produced no bundle. The bundle is
 `outputFileTracingIncludes`d into that function's deployment.
 
+**Step 3** — `mode: loop` in `src/lib/runner/workflow.ts`, and the dispatch
+behind it. The job fetches the entry, hands it the job's own checkout
+(`repo.dir`) with the key injected from the repository's Actions secrets,
+appends its progress to the same stream a CLI agent's is read from, and writes
+the run's report as the commit: its summary and handoff, a `Formic-Usage:`
+trailer the runner counts on the ticket, and `Formic-Already-Done` when the
+ticket was already done. `startJobRun` dispatches it, `completeCliRun` collects
+it, and `loopRunnerReady` decides: a repository whose workflow is current runs
+its API-key coders this way, and one that is not keeps running them in-process
+until it is updated — no card changes behaviour because a feature exists.
+
+**Step 4, the default** — the ticket's budget is the plan: `loopBudgetMs` gives
+it ten minutes a story point (`MINUTES_PER_POINT`), capped at 55 so the job's
+60-minute `timeout-minutes` stays the backstop, and a run that reaches it stops
+and says which limit it was. The settings that let a person choose the budget —
+flat, per point, by hand, or off — are `docs/run-time-budgets.md`'s own work,
+and this default is what it says a missing setting means.
+
 One deploy's chain, end to end: build, serve on a signed URL, fetch with curl,
 run with plain `node`.
 
 Two things to know for the rest:
 
-- The loop's own turn ceiling and the in-process four-minute budget are
-  untouched: the entry does not use the budget controller. The job ceiling
-  becomes the real ceiling in step 3, and the ticket's budget becomes the plan
-  in step 4.
+- The loop's own turn ceiling (`MAX_ITERATIONS`, 40) still applies: a job may
+  run for fifty minutes but not for forty turns, which is a wall the budget was
+  meant to replace.
 - A bundle run by path must compare **real** paths when it decides whether
   node started it, not `argv[1]` to `import.meta.url`: node resolves the
   module it started while argv keeps the path as typed, and on macOS `/tmp` is

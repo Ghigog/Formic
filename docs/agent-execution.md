@@ -10,12 +10,12 @@ turns"). This is the record of why it is built this way and where it is going.
 
 | | In Formic's function | In GitHub Actions |
 | :-- | :-- | :-- |
-| Who runs there | every API provider: Anthropic, OpenAI, Gemini, DeepSeek, ClinePass | CLI agents: Claude Code, Codex, Gemini CLI |
-| The loop | `src/lib/agents/coding-loop.ts`, in-process | the CLI tool loops itself |
-| The tools | an E2B sandbox (`src/lib/sandbox/e2b.ts`) holding a checkout | the job's own checkout |
-| Started by | `launch()` → `after()` in the request (`src/lib/agents/pipeline.ts:707`) | `startCliAsk` / the runner dispatch (`src/lib/runner/runner.ts`) |
-| Ceiling | the platform's 300 s per invocation (`maxDuration = 300` on every route that starts a run) | the job's `timeout-minutes: 60` (`.github/workflows/formic-agent.yml:55`, written for each repository by `src/lib/runner/workflow.ts:347`) |
-| Bounded by Formic | `DEFAULT_RUN_BUDGET` (`src/lib/budget/limits.ts:31`): 4 minutes, 3 attempts | the same budget, but time is not charged between turns on this path |
+| Who runs there | every API provider: Anthropic, OpenAI, Gemini, DeepSeek, ClinePass | CLI agents: Claude Code, Codex, Gemini CLI — and, since `mode: loop`, the API providers too |
+| The loop | `src/lib/agents/coding-loop.ts`, in-process | the CLI tool loops itself, or the same `runCodingLoop` as a bundle (`src/lib/runner/loop-entry.ts`) |
+| The tools | an E2B sandbox (`src/lib/sandbox/e2b.ts`) holding a checkout | the job's own checkout (`repo.dir` hands it to the entry) |
+| Started by | `launch()` → `after()` in the request (`src/lib/agents/pipeline.ts:707`) | `startJobRun` (`src/lib/runner/runner.ts`), from `src/lib/coder/pipeline.ts` |
+| Ceiling | the platform's 300 s per invocation (`maxDuration = 300` on every route that starts a run) | the job's `timeout-minutes` (`RUNNER_JOB_MINUTES`, written for each repository by `src/lib/runner/workflow.ts`) |
+| Bounded by Formic | `DEFAULT_RUN_BUDGET` (`src/lib/budget/limits.ts:31`): 4 minutes, 3 attempts | the ticket's budget, from its size (`loopBudgetMs`, ten minutes a point), with the job as the backstop |
 
 ## Why those numbers are those numbers
 
@@ -43,20 +43,25 @@ because the job has an hour.
 
 Work moves to the job host and stays there:
 
-- **Now**: short work stays in-process. It has no job setup, so it is snappier —
-  but it must fit inside the roof.
-- **Next**: the same loop runs as an Actions job, so an API-model coder can work
-  for as long as a CLI agent, against the ticket's own time budget rather than a
-  serverless wall. The loop is already portable: `runCodingLoop` takes an injected
-  `Workspace`, an API key and a context with `emit`/`interrupts`, returns an
-  outcome with usage, and touches no database, repository or event bus — those
-  live around it, in `src/lib/coder/pipeline.ts` and `src/lib/agents/pipeline.ts`.
-  Its only Next-specific line is `import "server-only"`.
-- **Rejected for now**: running the loop inside the E2B sandbox. One continuous
+- **Now**: a repository whose workflow is current runs its API-key coders in a
+  job, through `mode: loop`: the job fetches the loop as one bundle, runs it in
+  its own checkout, and posts what it does back the way a CLI agent does
+  (`src/lib/runner/loop-entry.ts`, `/api/runner/bundle`). Such a run works for
+  the ticket's budget — ten minutes a story point — instead of four minutes,
+  and the key travels as a repository secret, never in a dispatch input.
+- **Now**: short work still runs in-process where a repository has not updated
+  its workflow, or has none: it has no job setup, so it is snappier, and it must
+  fit inside the roof. No card changes behaviour because a feature exists.
+- **Next**: the settings that let a person choose the budget (flat, per point,
+  by hand, or off) — `docs/run-time-budgets.md` is that spec, and the default
+  it describes is what loop runs use today. And the loop's own 40-turn cap
+  (`MAX_ITERATIONS`): a job may run for fifty minutes, but not for forty turns,
+  which is a wall the budget was meant to replace.
+- **Still rejected**: running the loop inside the E2B sandbox. One continuous
   process and no job setup, but the provider key would have to live in the very VM
   whose job is executing model-written code, and it adds a third host instead of
   removing one. Revisit only if a repository cannot run workflows.
-- **Rejected for now**: a queue plus an always-on worker. The most control and the
+- **Still rejected**: a queue plus an always-on worker. The most control and the
   most moving parts; nothing needs it while the job host works.
 
 ## Errors say what happened

@@ -24,7 +24,7 @@ import { type Workspace, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inMergeLane, inTicketLane } from "./lane";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
-import { cliPrompt, showcaseSummaries, startCliAnswer, startCliRun } from "@/lib/runner/runner";
+import { cliPrompt, showcaseSummaries, startCliAnswer, startJobRun } from "@/lib/runner/runner";
 
 /**
  * PROT-07. Every pull request is reviewed before it merges.
@@ -698,7 +698,7 @@ async function reviewTicket(
 
   const cli = await cliAgentFor(projectId, "in_review");
   if (cli) {
-    await startCliRun({
+    await startJobRun({
       projectId,
       ticket,
       mode: "fix",
@@ -894,7 +894,7 @@ async function resolveConflicts(
   // starts, and the run's result is recorded as the merge when it lands.
   const cli = await cliAgentFor(projectId, "in_review");
   if (cli) {
-    await startCliRun({
+    await startJobRun({
       projectId,
       ticket,
       mode: "fix",
