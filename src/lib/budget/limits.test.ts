@@ -173,6 +173,13 @@ describe("billingFor", () => {
     expect(billingFor("cline-pass/glm-5.3", "clinepass")).toBe("flat");
   });
 
+  it("calls a CLI agent on the person's own plan flat, whatever it bills them", () => {
+    expect(billingFor("Claude Code", "claude-code")).toBe("flat");
+    expect(billingFor("sonnet", "claude-code")).toBe("flat");
+    expect(billingFor("gpt-5-codex", "codex")).toBe("flat");
+    expect(billingFor("gemini-2.5-pro", "gemini-cli")).toBe("flat");
+  });
+
   it("meters a priced model on a provider that bills per token", () => {
     expect(billingFor("deepseek-v4.1-flash", "deepseek")).toBe("metered");
   });

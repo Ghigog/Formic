@@ -51,9 +51,11 @@ export interface ProviderInfo {
   /** Has a free tier, rate-limited. Terms change; the note says so. */
   freeTier: boolean;
   /**
-   * Bills as a subscription rather than per token, so the marginal cost of the
-   * next token is zero. The spend ceiling measures nothing real for a run on
-   * one of these: time and attempt limits are the guards that apply.
+   * Runs on the person's own plan rather than on a key Formic meters: a
+   * subscription, a free tier, or a CLI tool billed to their own account.
+   * No per-token price is knowable from here, and Formic does not guess one,
+   * so the spend ceiling does not apply to these runs. Time and attempt
+   * limits still do.
    */
   flatRate?: boolean;
   /** Local mode only: a key from the environment, for development. */
@@ -168,6 +170,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     howToGetKey:
       "On your computer, run `claude setup-token`, approve in the browser, and paste the token it prints. It lasts a year.",
     freeTier: false,
+    flatRate: true,
     envKey: "CLAUDE_CODE_OAUTH_TOKEN",
     suggestedModels: ["sonnet", "opus"],
   },
@@ -184,6 +187,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     howToGetKey:
       "On your computer, run `codex login` and sign in with ChatGPT, then paste the contents of ~/.codex/auth.json. Or paste an OpenAI API key. A ChatGPT sign-in can expire; paste it again if runs start failing to sign in.",
     freeTier: false,
+    flatRate: true,
     envKey: "CODEX_API_KEY",
     suggestedModels: [],
   },
@@ -199,6 +203,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     note: "Runs Google's Gemini CLI in your repo's GitHub Actions. A free Gemini API key works, within its daily limits.",
     howToGetKey: "Create a key at aistudio.google.com/apikey and paste it.",
     freeTier: true,
+    flatRate: true,
     envKey: "GEMINI_API_KEY",
     suggestedModels: [],
   },
