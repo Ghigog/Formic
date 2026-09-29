@@ -78,6 +78,44 @@ describe("diagnose", () => {
     expect(diagnose(stepLog("402 passing tests"), "Claude Code")).toBeNull();
   });
 
+  it("does not read a line count, or a file number, as a status code", () => {
+    // A real loop run: the agent's own `wc -l` came out in the log, and the
+    // run's ending was the turn ceiling, not the plan running out.
+    const log = stepLog(
+      "429 src/lib/db/repository-contract.test.ts\n401 src/lib/db/repository.ts\nThe agent did not converge in 40 turns. This needs a human.",
+    );
+    expect(diagnose(log, "ClinePass")).toBeNull();
+  });
+
+  it("still reads a status code where the log says it is one", () => {
+    expect(diagnose(stepLog("Request failed: status code 429"), "ClinePass")?.kind).toBe("limit");
+    expect(diagnose(stepLog('{"error":{"code":429}}'), "ClinePass")?.kind).toBe("limit");
+    expect(diagnose(stepLog("error 401 from the gateway"), "ClinePass")?.kind).toBe("auth");
+  });
+
+  it("does not read the line count inside a streamed envelope as a status code", () => {
+    // The same run as above, as the job actually reported it: every line is an
+    // envelope, and the number is still the agent's own `wc -l` output.
+    const log = stepLog(
+      '{"type":"run.log","runId":"r","stream":"stdout","line":"429 src/lib/db/repository-contract.test.ts"}',
+    );
+    expect(diagnose(log, "ClinePass")).toBeNull();
+  });
+
+  it("reads a mention of rate limiting as code, not as a refusal", () => {
+    // A real run: the agent was rewriting this test when its turns ran out,
+    // and the card said the account was out of usage while it was fine.
+    const log = stepLog(
+      'expect(onSubmit).toHaveBeenCalledWith("Rate-limit the merge queue", expect.any(String));',
+    );
+    expect(diagnose(log, "ClinePass")).toBeNull();
+    expect(diagnose(stepLog("Rate limit reached for gpt-4 in organization org-1"), "OpenAI")?.kind).toBe(
+      "limit",
+    );
+    expect(diagnose(stepLog('{"error":{"type":"rate_limit_error"}}'), "OpenAI")?.kind).toBe("limit");
+    expect(diagnose(stepLog("You've hit your rate limit"), "OpenAI")?.kind).toBe("limit");
+  });
+
   it("never reads the prompt as the agent's words", () => {
     const log = stepLog("Error: something unrelated broke", "Handle the 429 rate limit and usage limit errors");
     expect(diagnose(log, "Claude Code")).toBeNull();
@@ -93,6 +131,48 @@ describe("lastWords", () => {
     expect(lastWords(stepLog("Error: ENOSPC: no space left on device"))).toBe(
       "Error: ENOSPC: no space left on device",
     );
+  });
+
+  it("skips our own exit line, so the reason printed before it stays", () => {
+    const log = stepLog(
+      "The agent did not converge in 40 turns. This needs a human.\nThe loop stopped (exit 1).",
+    );
+    expect(lastWords(log)).toBe("The agent did not converge in 40 turns. This needs a human.");
+  });
+
+  it("keeps reading to the end when the run's own stream was annotated as errors", () => {
+    // A real run: the loop streams to stderr, GitHub annotates each of those
+    // lines as an error, and the first marker sat at 17:08 — the point where
+    // the agent happened to be running tsc. The reason is printed 90 seconds
+    // later, and this is the card that quoted `> tsc --noEmit` instead.
+    const log = [
+      "2026-09-29T17:06:10.6352459Z ##[group]Run set -euo pipefail",
+      "2026-09-29T17:06:10.6400000Z   PROMPT: Paste an image from the clipboard.",
+      "2026-09-29T17:06:10.6450000Z ##[endgroup]",
+      '2026-09-29T17:08:00.8925768Z ##[error]{"type":"run.log","runId":"r","stream":"stdout","line":"src/components/board/new-item-dialog.tsx(110,7): error TS2304: Cannot find name \'pasteRef\'."}',
+      '2026-09-29T17:09:33.9548403Z {"type":"run.log","runId":"r","stream":"stdout","line":"> tsc --noEmit"}',
+      "2026-09-29T17:09:33.9386970Z The agent did not converge in 40 turns. This needs a human.",
+      "2026-09-29T17:09:33.9552868Z The loop stopped (exit 1).",
+      "2026-09-29T17:09:40.9637688Z ##[error]Process completed with exit code 1.",
+      "2026-09-29T17:09:41.1439970Z ##[warning]Node.js 20 is deprecated.",
+    ].join("\n");
+    expect(lastWords(log)).toBe("The agent did not converge in 40 turns. This needs a human.");
+  });
+
+  it("prefers the job's own reason to the tool output that followed it", () => {
+    const log = stepLog(
+      [
+        "Ran out of time: this run's budget is 30 minutes. The job's own timeout is the backstop; raise the ticket's budget to give it longer.",
+        '{"type":"run.log","runId":"r","stream":"stdout","line":"changed src/lib/db/repository.ts"}',
+        "The loop stopped (exit 1).",
+      ].join("\n"),
+    );
+    expect(lastWords(log)).toContain("Ran out of time: this run's budget is 30 minutes.");
+  });
+
+  it("never quotes an envelope, only the line it carries", () => {
+    const log = stepLog('{"type":"run.log","runId":"r","stream":"stdout","line":"> tsc --noEmit"}');
+    expect(lastWords(log)).toBe("> tsc --noEmit");
   });
 });
 
