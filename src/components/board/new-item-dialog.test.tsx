@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NewItemDialog } from "./new-item-dialog";
 import { setViewportMatches } from "@/test/viewport";
@@ -8,10 +8,42 @@ function file(name: string, type: string, size = 1024): File {
   return new File([new Uint8Array(size)], name, { type });
 }
 
+/**
+ * Fires a paste on `target` as the browser would: a ClipboardEvent whose
+ * clipboardData holds one item per file. jsdom has no DataTransfer, so the
+ * list is the shape the handler reads — `kind`, `type`, `getAsFile()` —
+ * which is all the code touches.
+ */
+function pasteImages(target: HTMLElement, files: File[]) {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      items: files.map((f) => ({
+        kind: "file",
+        type: f.type,
+        getAsFile: () => f,
+      })),
+    },
+  });
+  fireEvent(target, event);
+  return event;
+}
+
+/** A paste with only text on the clipboard, as the textarea receives it. */
+function pasteText(target: HTMLElement, text: string) {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: { items: [{ kind: "string", type: "text/plain", getAsFile: () => null }], getData: () => text },
+  });
+  fireEvent(target, event);
+  return event;
+}
+
+
 /** Answers /api/projects and /api/attachments the way the real API does. */
 function serveUploads() {
   let n = 0;
-  vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
+  const fetchSpy = vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/api/projects")) {
       return Response.json({ active: { id: "project-1" }, projects: [] });
@@ -38,6 +70,8 @@ function serveUploads() {
     }
     throw new Error(`Unhandled fetch in test: ${url}`);
   });
+  vi.stubGlobal("fetch", fetchSpy);
+  return fetchSpy;
 }
 
 afterEach(() => {
@@ -146,6 +180,74 @@ describe("NewItemDialog", () => {
       setViewportMatches(true);
       render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
       expect(screen.getByLabelText("Take a photo")).toBeInTheDocument();
+    });
+
+    it("attaches a pasted image immediately, names it, and uploads it to /api/attachments", async () => {
+      const fetchSpy = serveUploads();
+      render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+      pasteImages(screen.getByLabelText("New ticket request"), [file("image.png", "image/png")]);
+
+      // Uploading right away: the thumbnail's own label says so.
+      expect(screen.getByText(/^Attaching pasted-image-\d+\.png…$/)).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText(/^pasted-image-\d+\.png$/)).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: /^Remove pasted-image-\d+\.png$/ })).toBeInTheDocument();
+
+      const posted = fetchSpy.mock.calls.find((c) => String(c[0]).includes("/api/attachments"));
+      expect(posted).toBeDefined();
+      const body = posted![1]!.body as FormData;
+      expect(body.get("requestId")).toEqual(expect.any(String));
+      expect((body.get("file") as File).name).toMatch(/^pasted-image-\d+\.png$/);
+    });
+
+    it("attaches a pasted image in the New request dialog too, since both share NewItemDialog", async () => {
+      serveUploads();
+      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+      pasteImages(screen.getByLabelText("New feature request"), [file("image.png", "image/png")]);
+
+      await waitFor(() => expect(screen.getByText(/^pasted-image-\d+\.png$/)).toBeInTheDocument());
+    });
+
+    it("shows the same inline error when a paste hits the per-request cap", async () => {
+      serveUploads();
+      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+      const input = screen.getByLabelText("Attach files");
+      const user = userEvent.setup();
+      for (let i = 0; i < 5; i++) {
+        await user.upload(input, file(`f${i}.png`, "image/png"));
+      }
+      await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(5));
+
+      pasteImages(screen.getByLabelText("New feature request"), [file("image.png", "image/png")]);
+      expect(await screen.findByRole("alert")).toHaveTextContent(/at most 5 attachments/);
+      expect(screen.getAllByRole("listitem")).toHaveLength(5); // Nothing was added.
+    });
+
+    it("shows the same inline error when a pasted image is over the size limit", async () => {
+      serveUploads();
+      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+      pasteImages(screen.getByLabelText("New feature request"), [
+        file("image.png", "image/png", 11 * 1024 * 1024),
+      ]);
+      expect(await screen.findByRole("alert")).toHaveTextContent(/larger than 10MB/);
+      expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    });
+
+    it("leaves a plain-text paste alone, so the browser inserts it into the textarea", async () => {
+      const user = userEvent.setup();
+      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+      const textarea = screen.getByLabelText("New feature request");
+      await user.type(textarea, "Already typing");
+      const event = pasteText(textarea, " more");
+      expect(event.defaultPrevented).toBe(false);
+
+      // jsdom does not implement default paste insertion; the un-intercepted
+      // event is the browser's contract that it will. No attachment either way.
+      expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
     });
   });
 });
