@@ -91,21 +91,34 @@ export function useColony(): ColonyApi | null {
   return useContext(Ctx);
 }
 
-/** What a card's ant crew should be doing, if it has one. */
+/**
+ * What a card's ant crew should be doing, if it has one. Epics get one too:
+ * an Epic in To Do is the Architect breaking it down, and in Backlog it is the
+ * Product Agent writing its PRD. Both are an agent on the card's words, which
+ * is the same work a ticket's crew is there for.
+ */
 export function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null {
-  if (card.kind !== "ticket") return null;
+  // Someone is on the card: a run behind it, or its own chat being answered.
+  // A chat answer moves nothing and sets no run, so without this the only
+  // sign of an agent working a card is inside that card's drawer.
+  const on = Boolean(card.workingSince) || Boolean(extras[card.id]?.answering);
   // Only round a card an agent is really on: a card that says Running with
   // nothing behind it gets no crew.
-  if (card.status === "running") return card.workingSince ? "work" : null;
+  if (card.status === "running") return on ? "work" : null;
   // Out of the nest, but crowded round its timer until the way is clear.
   if (card.status === "queued") return "queue";
   // Tunnelling while CI runs or the Reviewer Agent works; buried once CI
   // passes and nobody is on it. Red CI with no reviewer at work: no crew.
   if (card.status === "review") {
     const ci = extras[card.id]?.ci;
-    if (card.workingSince || ci === "pending") return "tunnel";
+    if (on || ci === "pending") return "tunnel";
     return ci === "passing" ? "buried" : null;
   }
+  // Backlog and To Do: the card's words are the work. Nothing is built and
+  // nothing is carried out of it, so the crew walks over the card and reads
+  // it — for an Epic as much as a ticket.
+  const column = columnOf(card);
+  if (column === "todo" || column === "backlog") return on ? "read" : null;
   return null;
 }
 

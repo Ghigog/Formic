@@ -57,6 +57,15 @@ export function useBoard(
           scheduleRefetch();
           break;
 
+        case "card.chat":
+          // A card's chat being answered is work on the card even though
+          // nothing about it moves: the colony reads that off here.
+          setExtras((prev) => ({
+            ...prev,
+            [event.cardId]: { ...prev[event.cardId], answering: event.state === "answering" },
+          }));
+          break;
+
         case "run.progress":
           if (event.ticketId) {
             const ticketId = event.ticketId;
