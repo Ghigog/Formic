@@ -57,9 +57,16 @@ export async function GET(
   const content = await read(id);
   if (!content) return notFound();
 
-  return new Response(Buffer.from(content.bytes), {
-    headers: { "Content-Type": content.mimeType },
-  });
+  // An HTML attachment must never render inline on Formic's own origin: a
+  // browser navigating to its URL would execute it, opening a stored-XSS
+  // hole. Every other type keeps the default so inline previews (e.g. <img
+  // src>) still work.
+  const headers: Record<string, string> = { "Content-Type": content.mimeType };
+  if (content.mimeType === "text/html") {
+    headers["Content-Disposition"] = "attachment";
+  }
+
+  return new Response(Buffer.from(content.bytes), { headers });
 }
 
 export async function DELETE(
