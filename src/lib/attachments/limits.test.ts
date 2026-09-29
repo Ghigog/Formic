@@ -31,6 +31,12 @@ describe("checkAttachment", () => {
     }
   });
 
+  it("allows an HTML file, so a design mockup export attaches like any other file", () => {
+    expect(
+      checkAttachment({ name: "mockup.html", type: "text/html", size: 4096 }),
+    ).toEqual({ ok: true });
+  });
+
   it("rejects a disallowed MIME type, naming the limit it broke", () => {
     const result = checkAttachment(png({ type: "application/zip" }));
     expect(result.ok).toBe(false);
