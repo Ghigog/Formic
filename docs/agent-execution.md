@@ -55,6 +55,20 @@ for an hour. `LIMIT` and `AUTH` now read a status code only where the log says
 it is one ("status code 429", `{"code":429}`), and the loop's own exit line no
 longer hides the reason printed before it.
 
+The same mistake came back that evening from the other side, on the ticket
+about scope requests: an agent exploring the repository opened
+`src/lib/agents/card-actions.test.ts`, whose fixture happens to be
+`blockedReason: "Claude Code hit its usage limit.",`, and the card told the
+person their plan was spent — while the run had actually died on Cline's own
+gateway, `ClinePass error 500: {"error":"empty response content"}`, three turns
+in and half a page into its plan. Formic's own tests are full of the phrases a
+card is looking for, so a line the agent read, ran or printed is not a provider
+speaking: `diagnose` now reads only the lines the job wrote itself, and passes
+over a `path:line:` search hit, a line of source, a statement and a patch
+(`QUOTED_CODE`). Where a verdict is passed over, the card falls back to the
+run's last words, which is the truth even when it is not a kind of failure
+Formic knows a remedy for.
+
 ## The decision
 
 Work moves to the job host and stays there:

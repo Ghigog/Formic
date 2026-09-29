@@ -824,6 +824,38 @@ describe("taking a CLI agent's work", () => {
     expect(preset.limitedUntil).toBe("2026-09-23T18:30:00.000Z");
   });
 
+  it("does not blame the plan for a failure the log never said was one", async () => {
+    // Run 36642551420: an agent three turns into the scope-request ticket read
+    // Formic's own `card-actions.test.ts`, whose fixture quotes "Claude Code
+    // hit its usage limit", while the run was dying on Cline's gateway. The
+    // card said the plan was spent; the log said this, on its last line.
+    const { ticket, job } = await dispatched();
+    const url = "https://github.com/acme/widgets/actions/runs/4";
+    MockVcsClient.runner().logs.set(
+      url,
+      [
+        "2026-09-29T22:59:40.0000000Z ##[group]Run set -euo pipefail",
+        "2026-09-29T22:59:40.1000000Z   PROMPT: Resolve a ticket's scope-request block.",
+        "2026-09-29T22:59:40.2000000Z ##[endgroup]",
+        JSON.stringify({
+          type: "run.log",
+          runId: "r",
+          stream: "stdout",
+          line: '      blockedReason: "Claude Code hit its usage limit.",',
+        }),
+        '2026-09-29T22:59:52.2819259Z ClinePass error 500: {"error":"empty response content","success":false}',
+        "2026-09-29T22:59:56.3309577Z The loop stopped (exit 1).",
+        "2026-09-29T22:59:56.5000000Z ##[error]Process completed with exit code 1.",
+      ].join("\n"),
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.blockedReason).toContain("empty response content");
+    expect(after.blockedReason).not.toContain("usage limit");
+  });
+
   it("blames the agent the run actually used, not whichever one the column runs now", async () => {
     const original = await assignClaudeCode();
     await installRunner();
