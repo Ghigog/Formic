@@ -9,6 +9,8 @@
  * Pure module: no I/O, so the arithmetic is testable on its own.
  */
 
+import { provider as providerInfo, type ProviderId } from "@/lib/llm/providers";
+
 export interface Budget {
   /** Hard ceiling on spend for this scope, in cents. */
   maxCents: number;
@@ -50,8 +52,12 @@ export type BudgetVerdict =
   | { ok: true; remainingCents: number }
   | { ok: false; reason: string; exceeded: "cost" | "time" | "attempts" };
 
-export function checkBudget(spend: Spend, budget: Budget): BudgetVerdict {
-  if (spend.cents >= budget.maxCents) {
+export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "metered"): BudgetVerdict {
+  // Money only stops a metered run. A flat-rate plan is not billed per token,
+  // and an id nobody has priced has no rate to hold a run to: stopping either
+  // on cents would park a card on a number that does not exist. Time and
+  // attempts are real for every run, so those ceilings always apply.
+  if (billing === "metered" && spend.cents >= budget.maxCents) {
     return {
       ok: false,
       exceeded: "cost",
@@ -113,8 +119,11 @@ interface PriceFamily {
 /**
  * List prices in cents per million tokens, one entry per model family, not
  * per exact id. New dated snapshots (`claude-sonnet-5-20260101`) and ids
- * pulled from a provider's live model list match their family by prefix
- * instead of falling through to free.
+ * pulled from a provider's live model list match their family by prefix.
+ *
+ * Only a starting point: what a provider charges is the provider's to tell us,
+ * and CL-5 in docs/cline-audit.md is the work to read it from the metadata
+ * they already publish instead of maintaining this by hand.
  */
 const PRICE_FAMILIES: readonly PriceFamily[] = [
   // Anthropic
@@ -137,9 +146,15 @@ const PRICE_FAMILIES: readonly PriceFamily[] = [
   { provider: "Gemini", prefix: "gemini-2.5-flash", price: { in: 30, out: 250 } },
   { provider: "Gemini", prefix: "gemini-2.5-pro", price: { in: 125, out: 1000 } },
   { provider: "Gemini", prefix: "gemini-2.0-flash", price: { in: 10, out: 40 } },
-  // DeepSeek
-  { provider: "DeepSeek", prefix: "deepseek-reasoner", price: { in: 55, out: 219 } },
-  { provider: "DeepSeek", prefix: "deepseek-chat", price: { in: 27, out: 110 } },
+  // DeepSeek. Peak rates; off-peak is half, and peak is only 01:00-04:00 and
+  // 06:00-10:00 UTC on weekdays, so peak is the conservative end of the range.
+  // The live ids are `deepseek-flash` (V4.1-Flash) and `deepseek-v4-pro`
+  // (V4-Pro-0813); `deepseek-v4-flash` and its vision variant are legacy names
+  // still billed at the Flash price.
+  { provider: "DeepSeek", prefix: "deepseek-flash", price: { in: 30, out: 120 } },
+  { provider: "DeepSeek", prefix: "deepseek-v4.1-flash", price: { in: 30, out: 120 } },
+  { provider: "DeepSeek", prefix: "deepseek-v4-flash", price: { in: 30, out: 120 } },
+  { provider: "DeepSeek", prefix: "deepseek-v4-pro", price: { in: 132, out: 396 } },
   // Groq
   { provider: "Groq", prefix: "llama-3.3-70b", price: { in: 59, out: 79 } },
   { provider: "Groq", prefix: "llama-3.1-8b", price: { in: 5, out: 8 } },
@@ -148,15 +163,20 @@ const PRICE_FAMILIES: readonly PriceFamily[] = [
 ];
 
 /**
- * Charged to a model that matches no family above, such as an OpenRouter id
- * for a model nobody has priced here yet. Set to the priciest family known,
- * on purpose: an unpriced model is assumed expensive, not free, so it still
- * trips the run and Epic ceilings instead of running unmetered.
+ * How a run's model bills, which decides whether a dollar ceiling means
+ * anything to it.
+ *
+ * - "metered": the provider charges per token and a family below knows what.
+ *   The spend ceiling is money, so it applies.
+ * - "flat": a subscription such as ClinePass, or the person's own plan behind a
+ *   CLI agent. The next token costs nothing extra, so a dollar ceiling would
+ *   measure a number nobody is billed. Time and attempt limits still apply.
+ * - "unknown": nothing here has priced this id. Guessing a price and parking a
+ *   card on the guess is worse than not guarding dollars at all — the run was
+ *   stopped by a rate that does not exist — so an unpriced model is not charged
+ *   against the ceiling either, and the agent editor says so.
  */
-const CONSERVATIVE_DEFAULT_PRICE: ModelPrice = PRICE_FAMILIES.reduce(
-  (max, family) => (family.price.out > max.out ? family.price : max),
-  { in: 0, out: 0 } as ModelPrice,
-);
+export type Billing = "metered" | "flat" | "unknown";
 
 function matchFamily(model: string): PriceFamily | undefined {
   // OpenRouter ids are "vendor/model" (e.g. "openai/gpt-4o"); the part after
@@ -173,38 +193,61 @@ function matchFamily(model: string): PriceFamily | undefined {
   return best;
 }
 
+/**
+ * How this run bills: the provider decides when we know it, the model id
+ * otherwise. The provider wins, because ClinePass serves model ids that look
+ * exactly like calling DeepSeek directly, and only one of the two is a
+ * subscription.
+ */
+export function billingFor(model: string | null | undefined, providerId?: string | null): Billing {
+  if (providerId && providerInfo(providerId as ProviderId)?.flatRate) return "flat";
+  if (!model || !matchFamily(model)) return "unknown";
+  return "metered";
+}
+
 export interface ModelPricing {
+  /** Cents per million tokens. Zero when nothing is billed per token. */
   price: ModelPrice;
-  /** False when the id matched no known family, and the conservative default is used instead. */
+  /** Whether the spend ceiling may stop a run on money at all. */
+  billing: Billing;
+  /** False when this is an id nobody has priced. */
   known: boolean;
-  /** The matched family's provider, only set when known. */
+  /** The matched family's provider, only set when a family matched. */
   provider?: string;
-  /** The matched family's prefix, only set when known. */
+  /** The matched family's prefix, only set when a family matched. */
   family?: string;
 }
 
-export function priceForModel(model: string): ModelPricing {
-  const family = matchFamily(model);
-  if (family) return { price: family.price, known: true, provider: family.provider, family: family.prefix };
-  return { price: CONSERVATIVE_DEFAULT_PRICE, known: false };
+export function priceForModel(model: string, providerId?: string | null): ModelPricing {
+  const billing = billingFor(model, providerId);
+  const family = billing === "flat" ? undefined : matchFamily(model);
+  if (family) return { price: family.price, billing, known: true, provider: family.provider, family: family.prefix };
+  return { price: { in: 0, out: 0 }, billing, known: billing !== "unknown" };
 }
 
-/** How the agent editor tells someone what an unpriced model will cost. */
-export function pricingNote(model: string): string {
-  const { known, provider, family } = priceForModel(model);
-  if (known) return `Billed as ${provider} ${family} for the spend ceiling.`;
-  return (
-    `No known price for "${model}". It will be charged against the spend ceiling at a conservative ` +
-    `default of $${(CONSERVATIVE_DEFAULT_PRICE.in / 100).toFixed(2)} / $${(CONSERVATIVE_DEFAULT_PRICE.out / 100).toFixed(2)} ` +
-    `per million tokens (in/out) until it is priced by name.`
-  );
+/** What the agent editor tells someone about how this model is charged. */
+export function pricingNote(model: string, providerId?: string | null): string {
+  const { billing, provider, family } = priceForModel(model, providerId);
+  if (billing === "metered") return `Billed as ${provider} ${family} for the spend ceiling.`;
+  if (billing === "flat") {
+    return "Flat-rate plan: tokens cost nothing extra here, so a run is bounded by its time and attempt limits rather than by a spend ceiling.";
+  }
+  return `No price known for "${model}", so it is not counted against the spend ceiling. Its runs are bounded by their time and attempt limits instead.`;
 }
 
+/**
+ * What these tokens cost, in cents. Zero when nothing is billed per token: a
+ * flat-rate plan is not charged per token, and an id nobody has priced is not
+ * charged a guess. The ceiling counts money, so inventing a number would park
+ * runs on a rate that does not exist.
+ */
 export function estimateCostCents(
   model: string,
   tokensIn: number,
   tokensOut: number,
+  providerId?: string | null,
 ): number {
-  const { price } = priceForModel(model);
+  const { price, billing } = priceForModel(model, providerId);
+  if (billing !== "metered") return 0;
   return (tokensIn / 1_000_000) * price.in + (tokensOut / 1_000_000) * price.out;
 }

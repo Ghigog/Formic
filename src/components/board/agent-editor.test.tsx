@@ -34,7 +34,7 @@ describe("AgentEditor pricing note", () => {
     expect(screen.getByText(/Billed as OpenAI gpt-4o/)).toBeInTheDocument();
   });
 
-  it("says a model with no known price is charged a conservative default", async () => {
+  it("says a model with no known price is not counted against the ceiling", async () => {
     stubModelsFetch();
     render(
       <AgentEditor
@@ -55,7 +55,7 @@ describe("AgentEditor pricing note", () => {
       await user.type(screen.getByLabelText("Model"), "some-brand-new-model");
     });
 
-    expect(screen.getByText(/No known price for/)).toBeInTheDocument();
-    expect(screen.getByText(/conservative default/)).toBeInTheDocument();
+    expect(screen.getByText(/No price known for/)).toBeInTheDocument();
+    expect(screen.getByText(/not counted against the spend ceiling/)).toBeInTheDocument();
   });
 });

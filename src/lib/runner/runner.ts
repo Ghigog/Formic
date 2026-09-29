@@ -944,7 +944,11 @@ async function completeCliAnswer(
     epicId,
     mode: result.mode,
     agent,
-    run: startRun(projectId, stage.role, { epicId, model: agent.model ?? agent.info.label }),
+    run: startRun(projectId, stage.role, {
+      epicId,
+      model: agent.model ?? agent.info.label,
+      provider: agent.info.id,
+    }),
     retry: { attempt: attempt + 1, answer, correction: checked.correction },
   });
 }
@@ -1010,6 +1014,7 @@ async function completeCliDraft(projectId: string, result: RunnerResult): Promis
       epicId: ticket.epicId,
       ticketId,
       model: agent.model ?? agent.info.label,
+      provider: agent.info.id,
     }),
     retry: { attempt: attempt + 1, answer, correction: checked.correction },
   });
