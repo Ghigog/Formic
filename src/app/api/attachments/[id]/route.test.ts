@@ -75,6 +75,48 @@ describe("GET /api/attachments/[id]", () => {
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
   });
 
+  it("downloads an HTML attachment instead of rendering it inline, to close the stored-XSS gap", async () => {
+    activeProject.mockResolvedValue({ id: PROJECT_A });
+    const attachment = await repository().createAttachment({
+      projectId: PROJECT_A,
+      requestId: "req-html-1",
+      filename: "mockup.html",
+      mimeType: "text/html",
+      kind: "file",
+      size: 20,
+      bytes: new TextEncoder().encode("<h1>design mockup</h1>"),
+    });
+
+    const res = await GET(
+      req(`http://localhost/api/attachments/${attachment.id}?requestId=req-html-1`),
+      params(attachment.id),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Disposition")).toBe("attachment");
+  });
+
+  it("serves an image inline as before, with no Content-Disposition header", async () => {
+    activeProject.mockResolvedValue({ id: PROJECT_A });
+    const attachment = await repository().createAttachment({
+      projectId: PROJECT_A,
+      requestId: "req-html-2",
+      filename: "shot.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 5,
+      bytes: new Uint8Array([1, 2, 3, 4, 5]),
+    });
+
+    const res = await GET(
+      req(`http://localhost/api/attachments/${attachment.id}?requestId=req-html-2`),
+      params(attachment.id),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Disposition")).toBeNull();
+  });
+
   it("serves an attachment claimed by a card the caller's project owns, with no requestId needed", async () => {
     activeProject.mockResolvedValue({ id: PROJECT_A });
     const attachment = await createUnclaimed("req-2");

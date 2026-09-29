@@ -529,7 +529,11 @@ describe("starting a CLI agent", () => {
 
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.status).toBe("blocked");
-    expect(after.blockedReason).toContain("Merge the setup pull request");
+    // The pull request is in the reason, so the card can hand a person the
+    // address to merge rather than telling them to move the card and retry.
+    expect(after.blockedReason).toMatch(
+      /GitHub Actions\. Merge the setup pull request once \(https:\/\/\S+\), then try again\.$/,
+    );
     const runner = MockVcsClient.runner();
     expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(
       RUNNER_WORKFLOW_NAME,
@@ -1272,7 +1276,9 @@ describe("the runner workflow", () => {
     await runCoderAgent(PROJECT, ticket.id);
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.blockedReason).toContain("Merge the setup pull request");
+    expect(after.blockedReason).toMatch(
+      /GitHub Actions\. Merge the setup pull request once \(https:\/\/\S+\), then try again\.$/,
+    );
     const runner = MockVcsClient.runner();
     expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(RUNNER_VERSION);
   });
@@ -1637,6 +1643,7 @@ describe("an API-key coder running in a job", () => {
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.status).toBe("blocked");
     expect(after.blockedReason).toContain("no public address");
+    expect(after.blockedReason).toContain("Set FORMIC_URL, then try again.");
   });
 
   it("is not the agent a CLI column runs, and not one without a key", async () => {

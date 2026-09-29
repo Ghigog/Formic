@@ -7,6 +7,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { PheromoneTrail, TrailLayer } from "@/components/ui/pheromone-trail";
 import type { BoardCard } from "@/lib/domain/entities";
 import { topologicalOrder } from "@/lib/domain/dag";
+import { LinkifiedText } from "./linkified-text";
 
 interface Anchor {
   id: string;
@@ -189,7 +190,7 @@ export function DagPane({
 
             {card.blockedReason && (
               <p className="text-crimson-text mt-1 text-[11px] leading-4">
-                {card.blockedReason}
+                <LinkifiedText text={card.blockedReason} />
               </p>
             )}
           </li>

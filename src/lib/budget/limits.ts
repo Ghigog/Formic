@@ -89,6 +89,25 @@ export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "me
   return { ok: true, remainingCents: budget.maxCents - spend.cents };
 }
 
+/** Turns a minute of budget is worth, at the fast end of what a model does:
+ * a turn is a model call plus the tools it runs. */
+const TURNS_PER_MINUTE = 10;
+
+/**
+ * How many turns a run's time budget is worth.
+ *
+ * A second guard beside the time ceiling, not a plan: a loop that has not
+ * converged in this many turns is not about to, and the number exists so the
+ * loop ends and says so rather than spending a budget on a wall. It is
+ * derived from the budget instead of fixed, because a fixed one is the
+ * smaller wall: at ten turns a minute the ceiling stays out of the way of any
+ * budget that is the real limit, and the in-process default of four minutes
+ * comes out at the forty turns that have always guarded it.
+ */
+export function turnCeiling(maxDurationMs: number): number {
+  return Math.max(1, Math.round((maxDurationMs / 60_000) * TURNS_PER_MINUTE));
+}
+
 /**
  * The advisory ceiling handed to the model so it paces itself and finishes
  * gracefully, rather than being cut off mid-edit by the hard cap above.

@@ -9,6 +9,7 @@ import {
   priceForModel,
   pricingNote,
   taskBudgetTokens,
+  turnCeiling,
 } from "./limits";
 
 describe("checkBudget", () => {
@@ -220,5 +221,21 @@ describe("addSpend", () => {
   it("accumulates partial updates", () => {
     const s = addSpend(addSpend(ZERO_SPEND, { cents: 10 }), { attempts: 1 });
     expect(s).toEqual({ cents: 10, elapsedMs: 0, attempts: 1 });
+  });
+});
+
+describe("turnCeiling", () => {
+  it("leaves the in-process run the forty turns it always had", () => {
+    expect(turnCeiling(DEFAULT_RUN_BUDGET.maxDurationMs)).toBe(40);
+  });
+
+  it("gives a job's own budget room to be the limit that stops the run", () => {
+    // Ten minutes a story point on a two-point ticket: thirty minutes, which
+    // at forty turns was a wall four minutes in.
+    expect(turnCeiling(30 * 60_000)).toBe(300);
+  });
+
+  it("never returns a ceiling a run cannot take a turn under", () => {
+    expect(turnCeiling(1)).toBe(1);
   });
 });

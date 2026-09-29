@@ -38,8 +38,8 @@ import { z } from "zod";
 import { coderPrompt } from "@/lib/agents/coder";
 import { runCodingLoop } from "@/lib/agents/coding-loop";
 import type { AgentContext, CoderTask, Usage } from "@/lib/agents/ports";
-import { CODER_BRIEF, withCodingRules } from "@/lib/agents/prompts";
-import { billingFor } from "@/lib/budget/limits";
+import { CODER_BRIEF, CHECKPOINT_RULE, withCodingRules } from "@/lib/agents/prompts";
+import { billingFor, turnCeiling } from "@/lib/budget/limits";
 import type { PlanStep } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import { isProviderId, provider, type ProviderId } from "@/lib/llm/providers";
@@ -154,6 +154,19 @@ export interface LoopEntryOptions {
    * what a job's reporter posts back to Formic.
    */
   log?: (line: string) => void;
+}
+
+/**
+ * The brief this job's loop runs on: the Coder Agent's own, plus the
+ * checkpoint rule it can act on here and an in-process run cannot. A job
+ * saves the checkout and the progress file while the run works, and those
+ * notes are what a resumed run reads: with the files and no notes, the next
+ * run knows where the work got to but not why, and explores it all again.
+ * The rule is the same one a CLI agent's prompt carries.
+ */
+function jobBrief(): string {
+  const brief = withCodingRules(CODER_BRIEF, "coder");
+  return process.env.FORMIC_PROGRESS ? `${brief}\n\n${CHECKPOINT_RULE}` : brief;
 }
 
 /**
@@ -283,8 +296,12 @@ export async function runLoopEntry(
       workspace,
       ticketId,
       role: "coder",
-      system: withCodingRules(CODER_BRIEF, "coder"),
+      system: jobBrief(),
       prompt: coderPrompt(task),
+      // The ticket's budget is the run's ceiling; the loop's turn ceiling is
+      // derived from it, so the budget is what stops a run, not a wall of
+      // turns reached a fifth of the way in.
+      ...(maxDurationMs ? { maxTurns: turnCeiling(maxDurationMs) } : {}),
       provider: payload.provider as ProviderId,
       model: payload.model,
       apiKey: payload.apiKey,
