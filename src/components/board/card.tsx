@@ -781,23 +781,14 @@ export function KanbanCard({
   onOpen: (card: BoardCard) => void;
 }) {
   return (
-    <Draggable
-      draggableId={card.id}
-      index={index}
-      // A card's place in Done is derived from when it finished, so there is
-      // no reorder to offer. Moving it out is already barred by the rules.
-      isDragDisabled={column === "done"}
-    >
+    <Draggable draggableId={card.id} index={index}>
       {(provided, snapshot) => (
         <li
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={() => onOpen(card)}
-          className={cn(
-            "rounded-lg outline-none",
-            column !== "done" && "cursor-grab active:cursor-grabbing",
-          )}
+          className="cursor-grab rounded-lg outline-none active:cursor-grabbing"
         >
           {/* Picked up, the card leans into the drag. */}
           <div

@@ -169,19 +169,16 @@ describe("Board, ordering the Done column", () => {
     expect(within(done).getByText("Nothing here.")).toBeInTheDocument();
   });
 
-  it("gives no drag handle to a card sitting in Done", () => {
-    const done_ = makeCard({ key: "PROT-22", status: "merged", mergedAt: "2025-01-01T10:00:00Z" });
-    const backlog = makeCard({ key: "PROT-23", status: "draft" });
-    renderBoard([done_, backlog]);
+  it("keeps the drag handle on a card sitting in Done, so a mistaken merge can be dragged out", () => {
+    const merged = makeCard({ key: "PROT-22", status: "merged", mergedAt: "2025-01-01T10:00:00Z" });
+    renderBoard([merged]);
 
-    // A disabled Draggable leaves its handle off; other columns keep theirs.
+    // Done's order is derived (pinned above), but the card itself is still
+    // picked up by hand: a move the rules do not allow lands with a warning
+    // rather than being refused at the handle.
     const doneRegion = screen.getByRole("region", { name: "Done" });
     expect(
-      doneRegion.querySelector(`[data-rfd-drag-handle-draggable-id="${done_.id}"]`),
-    ).toBeNull();
-    const backlogRegion = screen.getByRole("region", { name: "Backlog" });
-    expect(
-      backlogRegion.querySelector(`[data-rfd-drag-handle-draggable-id="${backlog.id}"]`),
+      doneRegion.querySelector(`[data-rfd-drag-handle-draggable-id="${merged.id}"]`),
     ).not.toBeNull();
   });
 });
