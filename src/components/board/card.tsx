@@ -952,7 +952,12 @@ export function EpicGroup({
     // Never shrunk to fit: a full column scrolls instead. Without this an
     // overflowing column squeezed each group down to its border.
     <li className={cn(SHELL, "flex shrink-0 flex-col overflow-hidden")}>
-      <Draggable draggableId={epic.id} index={index}>
+      <Draggable
+        draggableId={epic.id}
+        index={index}
+        // Done's order is the epic's completion time, not the person's call.
+        isDragDisabled={done}
+      >
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}
