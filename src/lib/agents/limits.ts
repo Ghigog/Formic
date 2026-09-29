@@ -181,9 +181,19 @@ function epochReset(text: string): Date | null {
 /* ------------------------------------------------------------------------ */
 
 const LIMIT =
-  /(hit your (?:session |weekly |daily |usage |5-hour |monthly )?limit|usage limit|(?:session|weekly|daily|5-hour|opus|sonnet) limit reached|limit reached\||rate.?limit(?:ed)?|quota exceeded|exhausted your|resource_exhausted|too many requests|\b429\b)/i;
+  /(hit your (?:session |weekly |daily |usage |5-hour |monthly )?limit|usage limit|(?:session|weekly|daily|5-hour|opus|sonnet) limit reached|limit reached\||rate.?limit(?:ed)?|quota exceeded|insufficient[_ ]quota|exhausted your|resource_exhausted|too many requests|\b429\b)/i;
+/**
+ * A balance problem, narrowly read. A quota is an allowance, not a balance,
+ * so `insufficient_quota` belongs to LIMIT: proxies report a spent usage
+ * window with those exact words, and calling that "out of credit" sends a
+ * person to top up an account that is already paid for. The bare word
+ * `billing` and the digits `402` are not signals either — both turn up in
+ * ordinary log output (a step can print "402 passing") — so only phrases a
+ * provider uses about money are matched here. The HTTP status code is the
+ * real signal, and it is read first where there is one.
+ */
 const CREDIT =
-  /(credit balance is too low|insufficient[_ ]quota|out of credits?|billing|payment required|\b402\b)/i;
+  /(credit balance is too low|insufficient (?:credit|credits|balance|funds)|out of credits?|payment required|purchase credits|add (?:a )?payment|no credits? (?:left|remaining))/i;
 const AUTH =
   /(invalid api key|invalid (?:x-api-key|bearer token)|authentication[_ ]error|oauth token (?:has )?expired|token (?:has )?expired|please run \/login|not logged in|unauthori[sz]ed|\b401\b|api key not valid|permission denied|invalid_grant)/i;
 
@@ -262,21 +272,29 @@ export function describeProviderError(input: {
   const { label, status, message } = input;
   const now = input.now ?? new Date();
   const detail = message.replace(/\s+/g, " ").trim().slice(0, 300);
+  // The status code and the provider's own words both go into every message.
+  // The code is the only piece of evidence a person can hand to a provider,
+  // and the words are how a wrong guess here gets caught: a proxy that says
+  // "insufficient_quota" about a usage window, or a body that mentions
+  // billing for some unrelated reason, is visible instead of hidden behind
+  // our own sentence about it.
+  const code = status === null ? "" : ` (HTTP ${status})`;
+  const said = detail ? ` ${label} said: "${detail}"` : "";
 
   if (status === 401 || status === 403 || AUTH.test(detail)) {
-    return `${label} rejected the API key. Edit the agent and paste a valid one.`;
+    return `${label} rejected the API key${code}. Edit the agent and paste a valid one.${said}`;
   }
   if (status === 402 || CREDIT.test(detail)) {
-    return `${label} is out of credit. Top the account up, or switch this column to an agent on another account.`;
+    return `${label} is out of credit${code}. Top the account up, or switch this column to an agent on another account.${said}`;
   }
   if (status === 429 || LIMIT.test(detail)) {
     const wait = retryAfterDate(input.retryAfter ?? null, now);
     return wait
-      ? `${label} is rate limiting this key until ${formatReset(wait)}. Move the card back after that.`
-      : `${label} is rate limiting this key. Wait a minute, then move the card back to retry.`;
+      ? `${label} is rate limiting this key${code} until ${formatReset(wait)}. Move the card back after that.${said}`
+      : `${label} is rate limiting this key${code}. Wait a minute, then move the card back to retry.${said}`;
   }
   if (status === 529 || status === 503 || /overloaded/i.test(detail)) {
-    return `${label} is overloaded right now. Move the card back in a few minutes to retry.`;
+    return `${label} is overloaded right now${code}. Move the card back in a few minutes to retry.${said}`;
   }
   if (status === null) return `Could not reach ${label}${detail ? `: ${detail}` : "."}`;
   return `${label} error ${status}${detail ? `: ${detail}` : ""}`;

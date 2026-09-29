@@ -68,6 +68,16 @@ describe("diagnose", () => {
     expect(d?.kind).toBe("credit");
   });
 
+  it("reads insufficient_quota as a used-up allowance, not a balance", () => {
+    const d = diagnose(stepLog("Error: insufficient_quota"), "Claude Code");
+    expect(d?.kind).toBe("limit");
+  });
+
+  it("does not read the word billing, or a stray 402, as a balance problem", () => {
+    expect(diagnose(stepLog("Error: could not parse billing config"), "Claude Code")).toBeNull();
+    expect(diagnose(stepLog("402 passing tests"), "Claude Code")).toBeNull();
+  });
+
   it("never reads the prompt as the agent's words", () => {
     const log = stepLog("Error: something unrelated broke", "Handle the 429 rate limit and usage limit errors");
     expect(diagnose(log, "Claude Code")).toBeNull();
@@ -103,6 +113,28 @@ describe("describeProviderError", () => {
         message: "Your credit balance is too low to access the Anthropic API.",
       }),
     ).toContain("out of credit");
+  });
+
+  it("keeps the status code and the provider's own words, so a wrong guess is visible", () => {
+    const message = describeProviderError({
+      label: "ClinePass",
+      status: 402,
+      message: "Payment required: this key has no allowance",
+    });
+    expect(message).toContain("out of credit");
+    expect(message).toContain("HTTP 402");
+    expect(message).toContain("this key has no allowance");
+  });
+
+  it("calls insufficient_quota a limit, not a balance, and says the status", () => {
+    const message = describeProviderError({
+      label: "ClinePass",
+      status: 429,
+      message: '{"error":{"code":"insufficient_quota"}}',
+    });
+    expect(message).toContain("rate limiting");
+    expect(message).toContain("HTTP 429");
+    expect(message).not.toContain("out of credit");
   });
 
   it("says until when a rate limit lasts", () => {
