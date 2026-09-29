@@ -534,10 +534,12 @@ ${indent(REPORTER_SCRIPT, 10)}
               set +e
               # Its account of the run goes to Formic through the reporter, and
               # to this log as well: a step that shows nothing cannot be told
-              # apart from one that is stuck.
+              # apart from one that is stuck. tee writes the stream, and the
+              # pipeline is waited on, so every line is flushed before the step
+              # moves on; the loop's own exit code is PIPESTATUS[0].
               node "$RUNNER_TEMP/formic-loop.mjs" < "$payload" \
-                2> >(tee -a "$FORMIC_STREAM" >&2) > "$FORMIC_REPORT"
-              status=$?
+                2>&1 > "$FORMIC_REPORT" | tee -a "$FORMIC_STREAM"
+              status=\${PIPESTATUS[0]}
               set -e
               rm -f "$payload" "$RUNNER_TEMP/formic-loop.mjs"
               if [ "$status" -ne 0 ]; then
