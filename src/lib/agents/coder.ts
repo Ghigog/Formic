@@ -51,6 +51,23 @@ export function taskBrief(task: CoderTask): string {
   ].join("\n");
 }
 
+/**
+ * What the Coder Agent is told, whoever drives the loop. The prompt is part
+ * of the brief, so it lives here rather than at each call site: the in-process
+ * pipeline and the loop entry a GitHub Actions job runs (see
+ * `src/lib/runner/loop-entry.ts`) must not drift apart on what a coder is
+ * asked to do.
+ */
+export function coderPrompt(task: CoderTask): string {
+  return [
+    taskBrief(task),
+    "",
+    "Implement it.",
+    "",
+    `${ALREADY_DONE_RULE} To report it, call finish with already_done set to true and the evidence in detail.`,
+  ].join("\n");
+}
+
 /** What each red check reported, for the agent fixing it. */
 export function failuresBrief(checks: FailingCheck[]): string {
   return checks
@@ -88,13 +105,7 @@ export class LoopCoderAgent implements CoderAgent {
       provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
-      prompt: [
-        taskBrief(input.task),
-        "",
-        "Implement it.",
-        "",
-        `${ALREADY_DONE_RULE} To report it, call finish with already_done set to true and the evidence in detail.`,
-      ].join("\n"),
+      prompt: coderPrompt(input.task),
     }).then((outcome) =>
       outcome.ok ? { ...outcome, value: withoutSendBack(outcome.value) } : outcome,
     );
