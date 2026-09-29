@@ -53,4 +53,38 @@ describe("crewPhase", () => {
     expect(crewPhase(review, { [review.id]: { ci: "passing" } })).toBe("buried");
     expect(crewPhase(review, { [review.id]: { ci: "failing" } })).toBeNull();
   });
+
+  it("reads a To Do card whose agent is on its words, and leaves the rest of the column alone", () => {
+    expect(crewPhase(makeCard({ status: "ready", workingSince: since }), {})).toBe("read");
+    expect(crewPhase(makeCard({ status: "ready", workingSince: null }), {})).toBeNull();
+    // Held by a dependency, so no agent is on it: no crew.
+    expect(crewPhase(makeCard({ status: "waiting" }), {})).toBeNull();
+  });
+
+  it("counts a chat being answered as an agent on the card, in whatever column", () => {
+    const todo = makeCard({ status: "ready", workingSince: null });
+    expect(crewPhase(todo, { [todo.id]: { answering: true } })).toBe("read");
+    const running = makeCard({ status: "running", workingSince: null });
+    expect(crewPhase(running, { [running.id]: { answering: true } })).toBe("work");
+    // The reply landed: nothing is being worked, so the crew goes home.
+    expect(crewPhase(todo, { [todo.id]: { answering: false } })).toBeNull();
+  });
+
+  it("reads an Epic in To Do while the Architect breaks it down, and one in Backlog while its PRD is written", () => {
+    const todo = makeCard({ kind: "epic", status: "ready", childCount: 4 });
+    expect(crewPhase({ ...todo, workingSince: since }, {})).toBe("read");
+    expect(crewPhase(todo, { [todo.id]: { answering: true } })).toBe("read");
+    // Nobody on it: the Epics in the column stay still.
+    expect(crewPhase(todo, {})).toBeNull();
+
+    const backlog = makeCard({ kind: "epic", status: "draft" });
+    expect(crewPhase({ ...backlog, workingSince: since }, {})).toBe("read");
+    expect(crewPhase(backlog, { [backlog.id]: { answering: true } })).toBe("read");
+    expect(crewPhase(backlog, {})).toBeNull();
+  });
+
+  it("leaves a merged Epic alone, whoever is talking about it", () => {
+    const done = makeCard({ kind: "epic", status: "merged" });
+    expect(crewPhase(done, { [done.id]: { answering: true } })).toBeNull();
+  });
 });

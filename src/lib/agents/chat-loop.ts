@@ -25,8 +25,20 @@ export interface ToolCall {
   input: unknown;
 }
 
+export interface SpeakOptions {
+  /**
+   * Answer from what the conversation already holds, offering no tools. A
+   * loop that has spent every round reading can still answer: the rounds are
+   * gone, the reading is not. Without this the last thing a model does is ask
+   * for one more file, and the turn ends with nothing to show for the reading
+   * (see `outOfRoundsReply` in card-chat.ts).
+   */
+  answerOnly?: boolean;
+}
+
 export type Speak = (
   toolResults: Array<{ id: string; content: string; isError: boolean }> | null,
+  options?: SpeakOptions,
 ) => Promise<{ text: string; calls: ToolCall[] }>;
 
 export function claudeSpeak(
@@ -42,7 +54,7 @@ export function claudeSpeak(
     description: t.description,
     input_schema: t.schema as Anthropic.Tool.InputSchema,
   }));
-  return async (results) => {
+  return async (results, options) => {
     if (results) {
       messages.push({
         role: "user",
@@ -54,13 +66,16 @@ export function claudeSpeak(
         })),
       });
     }
-    const message = await anthropicClient(apiKey).messages.create({
+    const params: Anthropic.MessageCreateParamsNonStreaming = {
       model,
       max_tokens: 8_000,
       system: cachedSystem(system),
-      tools: claudeTools,
       messages: cachedToHere(messages),
-    });
+    };
+    // No tools at all, rather than an empty list: the model cannot reach for
+    // another file, so the turn ends in words.
+    if (!options?.answerOnly) params.tools = claudeTools;
+    const message = await anthropicClient(apiKey).messages.create(params);
     messages.push({ role: "assistant", content: message.content });
     return {
       text: message.content
@@ -88,11 +103,15 @@ export function openAiSpeak(
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.schema },
   }));
-  return async (results) => {
+  return async (results, options) => {
     for (const r of results ?? []) {
       messages.push({ role: "tool", tool_call_id: r.id, content: r.isError ? `Error: ${r.content}` : r.content });
     }
-    const result = await chat(info, apiKey, { model, messages, tools: toolSpecs });
+    const result = await chat(info, apiKey, {
+      model,
+      messages,
+      ...(options?.answerOnly ? {} : { tools: toolSpecs }),
+    });
     messages.push({
       role: "assistant",
       content: result.message.content ?? "",

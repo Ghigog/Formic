@@ -51,6 +51,29 @@ export function isGoAgain(text: string): boolean {
   return GO_AGAIN.test(text.trim());
 }
 
+const MAX_LISTED_FILES = 6;
+
+/**
+ * What the person is told when the answer used every round without closing.
+ * The old wording — "I read a lot and did not reach an answer" — hid the
+ * reading the model had just done, and the rounds it spent doing it. The last
+ * round is now spent on the answer instead (`Speak`'s `answerOnly`), and this
+ * says what that cost and what was read.
+ */
+export function outOfRoundsReply(rounds: number, files: string[], said: string): string {
+  const shown = files.slice(0, MAX_LISTED_FILES).join(", ");
+  const read = files.length
+    ? ` I read ${files.length === 1 ? "1 file" : `${files.length} files`}: ${shown}${
+        files.length > MAX_LISTED_FILES ? `, and ${files.length - MAX_LISTED_FILES} more` : ""
+      }.`
+    : "";
+  const body = said.trim();
+  if (!body) {
+    return `I used all ${rounds} rounds and did not reach an answer.${read} Ask me again, narrower, or name the file and section you mean.`;
+  }
+  return `${body}\n\nI used all ${rounds} rounds getting there.${read}`;
+}
+
 const listInput = z.object({ prefix: z.string().optional() });
 const readInput = z.object({ path: z.string().min(1) });
 const actInput = z.object({ action: z.unknown() });
@@ -292,12 +315,36 @@ export async function answer(
 ): Promise<void> {
   // Who answers is the column's agent when the message came in, even when
   // what it does moves the card on to another column's.
-  const card = await repository().cardById(cardId);
+  const repo = repository();
+  const card = await repo.cardById(cardId);
   const label = card ? agentLabelFor(card) : null;
-  const outcome = await reply(cardKind, cardId, messageId);
-  if (cardKind === "ticket" && outcome !== "later") {
-    await logReply(cardId, messageId, outcome === "agent" ? label : null);
+  const projectId = await repo.projectOfCard(cardId);
+  // The board puts a crew on a card whose chat is being answered, the way it
+  // does for a run: the drawer's "Answering…" is the only other sign, and it
+  // only exists inside the drawer.
+  await announcing(projectId, cardKind, cardId, "answering");
+  // A CLI agent answers from GitHub Actions minutes later. Its crew stays on
+  // the card until the answer lands, which is what finishCliCardChat says.
+  let answeredLater = false;
+  try {
+    const outcome = await reply(cardKind, cardId, messageId);
+    answeredLater = outcome === "later";
+    if (cardKind === "ticket" && !answeredLater) {
+      await logReply(cardId, messageId, outcome === "agent" ? label : null);
+    }
+  } finally {
+    if (!answeredLater) await announcing(projectId, cardKind, cardId, "idle");
   }
+}
+
+/** Tells the board a card's chat is being worked on, or that it has landed. */
+async function announcing(
+  projectId: string | null,
+  kind: "epic" | "ticket",
+  cardId: string,
+  state: "answering" | "idle",
+): Promise<void> {
+  if (projectId) await publish(projectId, { type: "card.chat", cardId, kind, state });
 }
 
 /**
@@ -398,6 +445,8 @@ async function reply(
     const creds = await credentialsForProject(project);
     const client = vcs(project.repoFullName, creds.githubToken);
     const done: string[] = [];
+    /** The files it read, so a turn that runs out of rounds can say which. */
+    const read = new Set<string>();
     const act = async (action: CardAction) => {
       const result = await applyCardAction(projectId, cardKind, cardId, action);
       done.push(result);
@@ -413,14 +462,21 @@ async function reply(
       }
       results = [];
       for (const call of calls) {
+        if (call.name === "read_file") {
+          const path = (call.input as { path?: unknown } | null)?.path;
+          if (typeof path === "string" && path.trim()) read.add(path.trim());
+        }
         results.push({ id: call.id, ...(await runTool(call, client, project.baseBranch, act)) });
       }
     }
+    // Every round went on reading, and the model never stopped to answer. It
+    // has what it read; give it one last turn with no tools, so the turn ends
+    // in an answer rather than in an apology for not giving one.
+    const closing = await speak(null, { answerOnly: true });
+    const said = closing.text.trim() || done.join("\n");
     await finish(messageId, {
-      content: done.length
-        ? done.join("\n")
-        : "I read a lot and did not reach an answer. Try a narrower question.",
-      status: done.length ? "done" : "failed",
+      content: outOfRoundsReply(MAX_TURNS, [...read], said),
+      status: said.trim() ? "done" : "failed",
     });
     return "agent";
   } catch (e) {
@@ -506,6 +562,8 @@ export async function finishCliCardChat(
     }
   }
   if (cardKind === "ticket") await logReply(cardId, messageId, label);
+  // The answer has landed, so the crew reading the card walks home.
+  await announcing(projectId, cardKind, cardId, "idle");
 }
 
 /* ------------------------------------------------------------------------ */

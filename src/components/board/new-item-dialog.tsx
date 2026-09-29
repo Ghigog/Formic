@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { BUG_COST, isBugText } from "@/lib/colony/game";
-import { AttachmentPicker } from "./attachment-picker";
+import { AttachmentPicker, pastedFileName } from "./attachment-picker";
 
 /** Which column's capture dialog this is: swaps its copy and submit target. */
 export type CaptureColumn = "backlog" | "todo";
@@ -59,6 +59,8 @@ export function NewItemDialog({
   const [error, setError] = useState<string | null>(null);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const ref = useRef<HTMLTextAreaElement>(null);
+  /** The AttachmentPicker's addFiles, wired in once it mounts. */
+  const pasteRef = useRef<(files: File[]) => void>(() => {});
   const titleId = useId();
   const inputId = useId();
   const copy = COPY[column];
@@ -87,6 +89,30 @@ export function NewItemDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Ctrl/Cmd+V with an image on the clipboard attaches it, without the
+  // person having to save it to disk first. Only image data is intercepted:
+  // pasting text into the textarea must keep the browser's default behavior.
+  useEffect(() => {
+    if (!open) return;
+    const listener = (e: Event) => {
+      const paste = e as ClipboardEvent;
+      const items = paste.clipboardData?.items;
+      if (!items) return;
+      const images: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) images.push(new File([file], pastedFileName(file.type || "image/png"), { type: file.type }));
+        }
+      }
+      if (images.length === 0) return; // Plain text (or nothing): let the browser paste it.
+      paste.preventDefault();
+      pasteRef.current?.(images);
+    };
+    window.addEventListener("paste", listener);
+    return () => window.removeEventListener("paste", listener);
+  }, [open]);
 
   if (!open) return null;
 
@@ -156,8 +182,12 @@ export function NewItemDialog({
           className="border-line bg-cream text-ink placeholder:text-muted focus:outline-terracotta box-border min-h-[110px] w-full resize-y rounded-lg border px-3 py-2.5 text-[14px] leading-[1.5]"
         />
 
-        <AttachmentPicker requestId={requestId} />
-
+        <AttachmentPicker
+          requestId={requestId}
+          onAddFilesReady={(add) => {
+            pasteRef.current = add;
+          }}
+        />
         {error && (
           <p role="alert" className="text-crimson -mt-1.5 text-[12px]">
             {error}

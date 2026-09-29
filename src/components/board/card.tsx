@@ -50,6 +50,12 @@ export interface CardExtras {
   diffstat?: string;
   /** Merge commit on a done ticket. */
   mergeCommit?: string;
+  /**
+   * The card's chat is being answered right now. A run puts `workingSince` on
+   * a card; a chat answer moves nothing, so this is how the board knows to put
+   * a crew on it and take the crew home when the reply lands.
+   */
+  answering?: boolean;
 }
 
 export type ExtrasMap = Record<string, CardExtras | undefined>;

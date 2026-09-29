@@ -93,6 +93,19 @@ export type FormicEvent =
       text: string;
     }
   | {
+      /**
+       * A card's chat is being answered: the column's agent is reading and
+       * writing. Nothing moves while it does, so this is the only thing the
+       * board has to put a crew on the card for (see `crewPhase` in
+       * components/colony/colony.tsx), the way a run's own state does.
+       */
+      type: "card.chat";
+      cardId: string;
+      kind: "epic" | "ticket";
+      /** "answering" while it writes, "idle" once its reply has landed. */
+      state: "answering" | "idle";
+    }
+  | {
       /** The column's agent answering a person's note on a ticket's chat. */
       type: "ticket.reply";
       ticketId: string;
