@@ -6,7 +6,8 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "next dev",
-    "build": "bash scripts/db-push.sh && node scripts/build-loop-entry.mjs && next build",
+    "build": "bash scripts/db-push.sh && node scripts/build-portraits.mjs && node scripts/build-loop-entry.mjs && next build",
+    "build:portraits": "node scripts/build-portraits.mjs",
     "build:loop-entry": "node scripts/build-loop-entry.mjs",
     "start": "next start",
     "lint": "eslint .",
