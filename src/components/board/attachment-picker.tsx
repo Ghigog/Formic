@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ALLOWED_ATTACHMENT_TYPES, checkBatch } from "@/lib/attachments/limits";
 import type { AttachmentSummary } from "@/lib/domain/entities";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
@@ -28,6 +28,16 @@ function objectUrlFor(file: File): string | null {
   }
 }
 
+/**
+ * Pasted clipboard images arrive without a filename, so give them one:
+ * `pasted-image-<timestamp>.<ext>`, with the extension taken from the MIME
+ * type (and `jpeg` spelled the way filenames usually spell it).
+ */
+export function pastedFileName(type: string): string {
+  const ext = type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+  return `pasted-image-${Date.now()}.${ext}`;
+}
+
 /** Turns a browser File into what /api/attachments's upload() expects. */
 async function post(requestId: string, projectId: string, file: File): Promise<AttachmentSummary> {
   const form = new FormData();
@@ -53,7 +63,21 @@ async function post(requestId: string, projectId: string, file: File): Promise<A
  * returns null while closed, which unmounts this along with the rest of the
  * form), so there is nothing here to reset by hand.
  */
-export function AttachmentPicker({ requestId }: { requestId: string }) {
+export function AttachmentPicker({
+  requestId,
+  onAddFilesReady,
+}: {
+  requestId: string;
+  /**
+   * Called once after mount with the function that adds files to this
+   * picker, so a parent can feed it files from elsewhere — a pasted
+   * clipboard image, for instance. It is a callback-style escape hatch
+   * rather than a prop, because AttachmentPicker owns the list and the
+   * upload state machine; anything handed in through it runs through the
+   * same limits as the file input does.
+   */
+  onAddFilesReady?: (addFiles: (files: FileList | File[]) => void) => void;
+}) {
   const [items, setItems] = useState<AttachmentItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const isMobile = useMediaQuery("(max-width: 767px)");
@@ -97,23 +121,35 @@ export function AttachmentPicker({ requestId }: { requestId: string }) {
     }
   }
 
-  function addFiles(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return;
-    let count = items.length;
-    for (const file of Array.from(fileList)) {
-      const check = checkBatch(count, [{ name: file.name, type: file.type, size: file.size }]);
-      if (!check.ok) {
-        setError(check.error);
-        continue;
+  const addFiles = useCallback(
+    (fileList: FileList | File[] | null) => {
+      if (!fileList || fileList.length === 0) return;
+      let count = items.length;
+      for (const file of Array.from(fileList)) {
+        const check = checkBatch(count, [{ name: file.name, type: file.type, size: file.size }]);
+        if (!check.ok) {
+          setError(check.error);
+          continue;
+        }
+        count += 1;
+        setError(null);
+        const clientId = crypto.randomUUID();
+        const previewUrl = file.type.startsWith("image/") ? objectUrlFor(file) : null;
+        setItems((prev) => [...prev, { clientId, name: file.name, previewUrl, status: "uploading" }]);
+        void upload(clientId, file);
       }
-      count += 1;
-      setError(null);
-      const clientId = crypto.randomUUID();
-      const previewUrl = file.type.startsWith("image/") ? objectUrlFor(file) : null;
-      setItems((prev) => [...prev, { clientId, name: file.name, previewUrl, status: "uploading" }]);
-      void upload(clientId, file);
-    }
-  }
+    },
+    // Only the latest addFiles matters; the parent stores it and calls it
+    // later. upload is a stable closure over the same state as addFiles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items.length, requestId, upload],
+  );
+  // Hand the parent this addFiles as soon as it exists, so a paste handled
+  // outside this component runs through the same limits and upload path as
+  // the file input does.
+  useEffect(() => {
+    onAddFilesReady?.(addFiles);
+  }, [addFiles, onAddFilesReady]);
 
   function remove(item: AttachmentItem) {
     setItems((prev) => prev.filter((i) => i.clientId !== item.clientId));
