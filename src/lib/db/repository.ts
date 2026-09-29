@@ -122,6 +122,15 @@ export interface CardChatMessage {
   runnerJob: string | null;
   /** The preset that job was dispatched with, so a failure is blamed on it. */
   runnerAgent: string | null;
+  /**
+   * What the answer spent. An answer made in this process is not a run, so
+   * there is no run row to carry this: the message is where it is written
+   * (see src/lib/agents/card-chat.ts). A person's message and a CLI agent's
+   * answer leave these at zero — the latter's spend is its job's run.
+   */
+  tokensIn: number;
+  tokensOut: number;
+  costCents: number;
   createdAt: Date;
 }
 
@@ -526,11 +535,22 @@ export interface Repository {
   }): Promise<CardChatMessage>;
   updateCardChatMessage(
     id: string,
-    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
+    update: Partial<
+      Pick<
+        CardChatMessage,
+        "content" | "status" | "runnerJob" | "runnerAgent" | "tokensIn" | "tokensOut" | "costCents"
+      >
+    >,
   ): Promise<void>;
   clearCardChat(cardId: string): Promise<void>;
   /** A board's card chat answers a CLI agent is still writing in GitHub Actions. */
   pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]>;
+  /**
+   * A board's card chat answers nothing is behind any more: no job, and older
+   * than any function could still be writing one. What is left of an answer
+   * whose worker died. See recoverStaleCardChats.
+   */
+  orphanedCardChats(projectId: string, olderThan: Date): Promise<CardChatMessage[]>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,

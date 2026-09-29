@@ -359,6 +359,41 @@ function contract(name: string, make: () => Repository) {
         await repo.clearCardChat(epic.id);
         expect(await repo.cardChatMessages(epic.id)).toEqual([]);
       });
+
+      it("keeps what an answer spent on the message it landed on", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const base = { projectId: p.id, cardKind: "epic" as const, cardId: epic.id };
+
+        const answer = await repo.addCardChatMessage({ ...base, role: "assistant", content: "because" });
+        // A new message has spent nothing yet: the answer writes that in when it lands.
+        expect(answer).toMatchObject({ tokensIn: 0, tokensOut: 0, costCents: 0 });
+
+        await repo.updateCardChatMessage(answer.id, { tokensIn: 1_200, tokensOut: 340, costCents: 7 });
+        expect(await repo.cardChatMessage(answer.id)).toMatchObject({
+          tokensIn: 1_200,
+          tokensOut: 340,
+          costCents: 7,
+        });
+      });
+
+      it("lists an answer nothing is behind, once it is older than any function could write it", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const base = { projectId: p.id, cardKind: "epic" as const, cardId: epic.id };
+
+        const orphan = await repo.addCardChatMessage({ ...base, role: "assistant", content: "", status: "pending" });
+        const inActions = await repo.addCardChatMessage({ ...base, role: "assistant", content: "", status: "pending" });
+        await repo.updateCardChatMessage(inActions.id, { runnerJob: "job-9" });
+
+        // Past any function's lifetime: the one with no job is what is left of
+        // an answer whose worker died. A CLI agent's has a job behind it.
+        expect((await repo.orphanedCardChats(p.id, new Date(Date.now() + 60_000))).map((m) => m.id)).toEqual([
+          orphan.id,
+        ]);
+        // A cutoff before it was written: it may be being written right now.
+        expect(await repo.orphanedCardChats(p.id, new Date(Date.now() - 60_000))).toEqual([]);
+      });
     });
 
     describe("audits", () => {

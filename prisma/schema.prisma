@@ -448,6 +448,12 @@ model CardChatMessage {
   /// The preset that run was dispatched with, so a failure is blamed on the
   /// agent that actually ran it.
   runnerAgent String?
+  /// What the answer spent, when Formic made it in-process rather than in
+  /// GitHub Actions: an answer is not a run, so no run row carries this.
+  /// Zero on a person's message and on a CLI agent's answer.
+  tokensIn    Int      @default(0)
+  tokensOut   Int      @default(0)
+  costCents   Float    @default(0)
   createdAt DateTime @default(now())
 
   @@index([cardId, createdAt])

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "./cn";
+import { compact } from "./compact-number";
 
 export interface AmbientStats {
   activeSandboxes: number;
@@ -23,12 +24,6 @@ export interface AmbientStats {
     stream: "stdout" | "stderr";
     line: string;
   }>;
-}
-
-function compact(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
 function Divider() {
