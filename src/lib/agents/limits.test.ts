@@ -102,6 +102,57 @@ describe("diagnose", () => {
     expect(diagnose(log, "ClinePass")).toBeNull();
   });
 
+  it("does not read the agent's own reading of this repository as a refusal", () => {
+    // Run 36642551420: an agent three turns into the scope-request ticket read
+    // Formic's own `card-actions.test.ts`, whose fixture quotes this very
+    // phrase, and the card told the person their plan was spent. The run had
+    // died on Cline's gateway, and the log's own last line said so.
+    const read = JSON.stringify({
+      type: "run.log",
+      runId: "r",
+      stream: "stdout",
+      line: '      blockedReason: "Claude Code hit its usage limit.",',
+    });
+    const log = stepLog(
+      [
+        read,
+        'ClinePass error 500: {"error":"empty response content","success":false}',
+        "The loop stopped (exit 1).",
+      ].join("\n"),
+    );
+
+    expect(diagnose(log, "ClinePass")).toBeNull();
+    expect(lastWords(log)).toBe(
+      'ClinePass error 500: {"error":"empty response content","success":false}',
+    );
+  });
+
+  it("does not read a fixture, or a search hit, as the provider's own words", () => {
+    // The same phrase the way an agent prints it without an envelope around
+    // it: straight from the file it opened, the search that found it, or the
+    // patch it made.
+    expect(diagnose(stepLog('      note: "Claude Code hit its usage limit.",'), "Claude Code")).toBeNull();
+    expect(
+      diagnose(
+        stepLog('src/lib/runner/runner.test.ts:620:      note: "Claude Code hit its usage limit.",'),
+        "Claude Code",
+      ),
+    ).toBeNull();
+    expect(
+      diagnose(
+        stepLog('expect(after.blockedReason).toContain("Claude Code hit its usage limit");'),
+        "Claude Code",
+      ),
+    ).toBeNull();
+    expect(
+      diagnose(stepLog('-      blockedReason: "Claude Code hit its usage limit.",'), "Claude Code"),
+    ).toBeNull();
+    // And the words still count, from the CLI that says them.
+    expect(diagnose(stepLog("You've hit your session limit · resets 6:30pm (UTC)"), "Claude Code")?.kind).toBe(
+      "limit",
+    );
+  });
+
   it("reads a mention of rate limiting as code, not as a refusal", () => {
     // A real run: the agent was rewriting this test when its turns ran out,
     // and the card said the account was out of usage while it was fine.

@@ -211,13 +211,19 @@ export async function applyTransition(
 
   // An Epic is broken down from its PRD. With none yet it waits in To Do for
   // one: the Product Agent already writing it, or, when none is (it stalled,
-  // or the Epic was somewhere else meanwhile), one started now. Either way
-  // the Architect Agent follows once the PRD lands.
+  // it was rerouted back here, or the Epic was somewhere else meanwhile), one
+  // started now. Either way the Architect Agent follows once the PRD lands.
+  //
+  // "Writing one" is the board's own answer to whether an agent is on the
+  // Epic — a live run, or a CLI job still out on GitHub Actions — rather than
+  // its status. A fresh Backlog item is `draft` with its Product Agent just
+  // started, but so is one whose Product Agent was rerouted to a PRD and
+  // never started, and that one waits forever if this guesses wrong.
   const met = dependenciesMet(card, cards);
   const toArchitect = card.kind === "epic" && t.to === "todo";
   const epicDetail = card.kind === "epic" ? await repo.epicDetail(card.id) : null;
   const hasPrd = prdSchema.safeParse(epicDetail?.prd).success;
-  const needsPrd = toArchitect && !hasPrd && card.status !== "draft";
+  const needsPrd = toArchitect && !hasPrd && !card.workingSince;
 
   // The tickets an Epic took with it to Backlog come back with it. Made
   // from the PRD it still has, they are simply ready again; made from an

@@ -293,6 +293,26 @@ export async function applyReroute(
     to: "backlog",
     reason: input.reason,
   });
+
+  // Back in Backlog is only half of it: the Epic has no PRD, and nothing else
+  // starts a Product Agent for one that arrives here. Without this the card
+  // sits in Backlog with nothing writing its PRD — or, dragged back into To
+  // Do, waits there on a PRD that is never coming (see needsPrd in
+  // board/service.ts).
+  //
+  // This start is detached, like every other one the board makes, so it can be
+  // lost the same way. Unlike the rest there is no sweep behind it — an Epic in
+  // Backlog is parked, and waking parked ones up is not the board's business —
+  // so the way back is the person's: into To Do, which starts an agent of its
+  // own for an Epic no agent is on, or Retry in the drawer once the card has
+  // gone quiet.
+  const [epic, detail] = await Promise.all([repo.cardById(input.epicId), repo.epicDetail(input.epicId)]);
+  if (!prdSchema.safeParse(detail?.prd).success) {
+    launch(
+      () => runProductAgent(projectId, input.epicId, detail?.rawRequest ?? epic?.title ?? ""),
+      `product agent for ${epic?.key ?? "the Epic"}`,
+    );
+  }
 }
 
 /**

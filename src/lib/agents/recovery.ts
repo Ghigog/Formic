@@ -77,3 +77,57 @@ export async function reconcileOrphanedRuns(now = new Date()): Promise<number> {
 
   return orphans.length;
 }
+
+/**
+ * How long a chat answer may sit pending before it is treated as lost. Past
+ * every route's `maxDuration` (300s on Vercel) with the same margin
+ * `ORPHAN_AFTER_MS` gives a run, so an answer still in flight is never failed
+ * out from under itself.
+ */
+export const CHAT_ORPHAN_AFTER_MS = 10 * 60 * 1000;
+
+const CHAT_REASON = "The agent stopped before it could answer. Ask it again.";
+
+/** How often a board's stale chats are looked for. The board's tail ticks every 2s. */
+const RECHECK_EVERY_MS = 30_000;
+const lastRechecked = new Map<string, number>();
+
+/**
+ * A card's chat answer runs in the same function that took the question, and
+ * nothing journals it. A function killed mid-answer — the platform's own
+ * limit, a hung provider call, a start that never ran — leaves its message
+ * pending for good, and that is not only a missing reply: `ask` refuses a card
+ * with a pending message and the drawer disables Clear chat while one is
+ * there, so the person cannot ask that agent anything else at all.
+ *
+ * The answer a chat answer now gets is bounded (see CHAT_ANSWER_BUDGET_MS in
+ * card-chat.ts), so this is the backstop for the ones that stop without
+ * saying so. A CLI agent's answer has a job behind it and is left to
+ * `collectCliRuns`. What is left is an answer with nothing behind it, older
+ * than any function could still be writing one: it is marked failed, so the
+ * chat takes questions again, and the crew the board put on the card walks
+ * home.
+ */
+export async function recoverStaleCardChats(projectId: string, now = new Date()): Promise<number> {
+  if (now.getTime() - (lastRechecked.get(projectId) ?? 0) < RECHECK_EVERY_MS) return 0;
+  lastRechecked.set(projectId, now.getTime());
+
+  const repo = repository();
+  const stale = await repo.orphanedCardChats(projectId, new Date(now.getTime() - CHAT_ORPHAN_AFTER_MS));
+  for (const message of stale) {
+    await repo.updateCardChatMessage(message.id, { content: CHAT_REASON, status: "failed" });
+    await publish(projectId, {
+      type: "card.chat",
+      cardId: message.cardId,
+      kind: message.cardKind,
+      state: "idle",
+    });
+  }
+  return stale.length;
+}
+
+/** Test seam, like resetIdleSweep in board/idle.ts. */
+export function resetChatRecovery(): void {
+  lastRechecked.clear();
+}
+

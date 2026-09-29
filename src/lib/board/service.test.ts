@@ -121,12 +121,34 @@ describe("applyTransition of an epic into To Do", () => {
   it("holds an epic whose PRD is still being written, without an agent yet", async () => {
     const epic = makeCard({ kind: "epic", status: "draft", size: null });
     seedMemory([epic]);
+    // The Product Agent that was started with it is still writing the PRD.
+    await repository().startRun({
+      id: "run-product",
+      role: "product",
+      epicId: epic.id,
+      ticketId: null,
+      model: null,
+      sandboxId: null,
+    });
 
     const result = await drop(epic.id);
 
     expect(result).toMatchObject({ ok: true, status: "waiting" });
     expect(launched).toEqual([]);
     expect((await repository().cardById(epic.id))?.status).toBe("waiting");
+  });
+
+  it("starts a Product Agent for an Epic dropped in To Do with nothing writing its PRD", async () => {
+    // A draft Epic nobody is working on: its Architect Agent answered reroute,
+    // so it came back to Backlog, and no Product Agent was ever started for
+    // it. Waiting here would be waiting forever.
+    const epic = makeCard({ kind: "epic", status: "draft", size: null, rerouteFrom: "todo", rerouteReason: "Too big for one ticket." });
+    seedMemory([epic]);
+
+    const result = await drop(epic.id);
+
+    expect(result).toMatchObject({ ok: true, status: "waiting" });
+    expect(launched).toEqual([`product agent for ${epic.key}`]);
   });
 
   it("writes the PRD again for an epic whose Product Agent stalled", async () => {

@@ -2,7 +2,26 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { cn } from "@/components/ui/cn";
+import { compact } from "@/components/ui/compact-number";
 import { useCardChat, type CardChatMessageView } from "@/lib/hooks/use-card-chat";
+
+/**
+ * What an answer spent, as a line to read under it, or null when it spent
+ * nothing worth saying: a person's own message, an answer a CLI agent gave
+ * (its cost is on the run behind it), or one that never got a reply out.
+ *
+ * The count is the tokens in and out together, as the drawer counts a run.
+ * The money half only appears when something was actually billed per token:
+ * a flat-rate plan and an unpriced model cost nothing here (see
+ * `estimateCostCents`), and "0¢" would say otherwise.
+ */
+function spendLine(m: CardChatMessageView): string | null {
+  const tokens = (m.tokensIn ?? 0) + (m.tokensOut ?? 0);
+  if (tokens === 0) return null;
+  const cents = m.costCents ?? 0;
+  const cost = cents >= 0.5 ? `${Math.round(cents).toLocaleString("en-US")}¢` : cents > 0 ? "under 1¢" : null;
+  return [`${compact(tokens)} tokens`, cost].filter(Boolean).join(" · ");
+}
 
 function Message({ m }: { m: CardChatMessageView }) {
   if (m.role === "user") {
@@ -23,6 +42,7 @@ function Message({ m }: { m: CardChatMessageView }) {
     );
   }
   if (!m.content) return null;
+  const spent = spendLine(m);
   return (
     <div
       className={cn(
@@ -31,6 +51,7 @@ function Message({ m }: { m: CardChatMessageView }) {
       )}
     >
       {m.content}
+      {spent && <p className="text-fg-subtle mt-1 font-mono text-[11px]">{spent}</p>}
     </div>
   );
 }

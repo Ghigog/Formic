@@ -28,6 +28,13 @@ const ANSI = /\u001b\[[0-9;]*m/g;
 interface Line {
   text: string;
   at: Date | null;
+  /**
+   * Whether the agent's own output carried this line, rather than the job
+   * printing it. A loop reports itself as JSON envelopes, and what they carry
+   * is what the agent read or ran; a diagnosis is read from the lines the job
+   * wrote itself (see `QUOTED_CODE`).
+   */
+  carried?: boolean;
 }
 
 function lines(log: string): Line[] {
@@ -85,7 +92,9 @@ function said(lines: Line[]): Line[] {
     if (!ENVELOPE.test(line.text)) return [line];
     try {
       const inner = (JSON.parse(line.text) as { line?: unknown }).line;
-      return typeof inner === "string" && inner.trim() ? [{ ...line, text: inner.trim() }] : [];
+      return typeof inner === "string" && inner.trim()
+        ? [{ ...line, text: inner.trim(), carried: true }]
+        : [];
     } catch {
       return [];
     }
@@ -278,6 +287,37 @@ const CREDIT =
 const AUTH =
   /(invalid api key|invalid (?:x-api-key|bearer token)|authentication[_ ]error|oauth token (?:has )?expired|token (?:has )?expired|please run \/login|not logged in|unauthori[sz]ed|api key not valid|permission denied|invalid_grant|(?:http|status|status_?code|error|response|code)\W{0,6}401\b)/i;
 
+/**
+ * A line of someone's own code, quoted back into the log.
+ *
+ * A run reads the repository it is working on, and Formic's own suite is full
+ * of the very phrases a card looks for. `blockedReason: "Claude Code hit its
+ * usage limit.",` is a fixture in `src/lib/agents/card-actions.test.ts`, and
+ * an agent that opens that file — as one did in run 36642551420, three turns
+ * into the scope-request ticket — puts a refusal in the log that no provider
+ * ever gave. The card then told the person their plan was spent, and hid the
+ * truth, which was in the log all along and was nobody's fault:
+ * `ClinePass error 500: {"error":"empty response content","success":false}`.
+ *
+ * So a verdict is only read from a line that reads like someone speaking:
+ * never from a `path:line:` search hit, a line of source, a statement, or a
+ * patch — the shapes a run's own reading of this repository comes out in. A
+ * provider that ever speaks in one of those shapes loses its countdown, not
+ * its honesty: the line is still what the card's last words quote.
+ */
+const QUOTED_CODE = new RegExp(
+  [
+    // A search hit: `src/lib/runner/runner.test.ts:620:      note: "…"`
+    "^[^\\s:]+\\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|swift|php|cs|sql|sh|ya?ml|json|md|txt):\\d+:",
+    // A line of source, like the fixture itself: `      blockedReason: "…",`
+    "^\\s*[A-Za-z_$][\\w$.]*\\s*:\\s*[\"'`]",
+    // A statement: `expect(after.blockedReason).toContain("… usage limit")`.
+    "^\\s*(?:expect|assert|it|describe|const|let|var|function|class|return|import|export|await|async)\\b",
+    // A patch line — or a bullet: someone writing about it, not saying it.
+    "^[+-]",
+  ].join("|"),
+);
+
 /** How a person fixes a rejected sign-in for each CLI. */
 function signInHelp(label: string): string {
   if (/claude/i.test(label)) return "Run `claude setup-token`, then paste the new token into the agent.";
@@ -302,12 +342,19 @@ export function formatReset(at: Date): string {
  * `label` names the agent ("Claude Code"). `now` is only a fallback: a line
  * with a timestamp is read against its own time, so a log collected late
  * still resolves "resets 6:30pm" to the right day.
+ *
+ * Only the lines the job wrote itself are read. The agent's own output — what
+ * it read, ran and printed — is passed over: a run working on this repository
+ * has Formic's own tests and fixtures in front of it, and those quote the
+ * words a plan running out is reported with, which is not the same thing as a
+ * provider saying them (see `QUOTED_CODE`).
  */
 export function diagnose(text: string, label: string, now = new Date()): Diagnosis | null {
   const all = stepOutput(text);
-  // The agent's own words sit at the end; read from there.
+  // The job's own words sit at the end; read from there.
   for (let i = all.length - 1; i >= 0; i--) {
-    const { text: line, at } = all[i]!;
+    const { text: line, at, carried } = all[i]!;
+    if (carried || QUOTED_CODE.test(line)) continue;
     const when = at ?? now;
     const quoted = `"${line.length > 200 ? `${line.slice(0, 200)}…` : line}"`;
 

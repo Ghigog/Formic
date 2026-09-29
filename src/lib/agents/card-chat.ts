@@ -40,6 +40,17 @@ const MAX_FILES_LISTED = 400;
 const MAX_ACTIVITY = 25;
 
 /**
+ * How long one chat answer may spend before it stops and writes what it
+ * reached. Under the chat routes' `maxDuration` (300s on Vercel) with room
+ * left for the call in flight, the way a run's own budget stays under it
+ * (see DEFAULT_RUN_BUDGET in budget/limits.ts): an answer that stops itself
+ * says what it read and did, and one the platform kills outright says
+ * nothing, leaving its message pending forever — which locks the chat, since
+ * `ask` refuses while an answer is pending.
+ */
+export const CHAT_ANSWER_BUDGET_MS = 4 * 60_000;
+
+/**
  * A plain "go again" to a stopped card. It needs no agent to understand, and
  * leaving it to one risks a reply that says the card is starting while
  * nothing starts, or no answer at all when that agent is out of tokens.
@@ -53,6 +64,15 @@ export function isGoAgain(text: string): boolean {
 
 const MAX_LISTED_FILES = 6;
 
+/** The files an answer read, as a sentence to append, or "" when it read none. */
+function readList(files: string[]): string {
+  if (files.length === 0) return "";
+  const shown = files.slice(0, MAX_LISTED_FILES).join(", ");
+  return ` I read ${files.length === 1 ? "1 file" : `${files.length} files`}: ${shown}${
+    files.length > MAX_LISTED_FILES ? `, and ${files.length - MAX_LISTED_FILES} more` : ""
+  }.`;
+}
+
 /**
  * What the person is told when the answer used every round without closing.
  * The old wording — "I read a lot and did not reach an answer" — hid the
@@ -61,17 +81,27 @@ const MAX_LISTED_FILES = 6;
  * says what that cost and what was read.
  */
 export function outOfRoundsReply(rounds: number, files: string[], said: string): string {
-  const shown = files.slice(0, MAX_LISTED_FILES).join(", ");
-  const read = files.length
-    ? ` I read ${files.length === 1 ? "1 file" : `${files.length} files`}: ${shown}${
-        files.length > MAX_LISTED_FILES ? `, and ${files.length - MAX_LISTED_FILES} more` : ""
-      }.`
-    : "";
+  const read = readList(files);
   const body = said.trim();
   if (!body) {
     return `I used all ${rounds} rounds and did not reach an answer.${read} Ask me again, narrower, or name the file and section you mean.`;
   }
   return `${body}\n\nI used all ${rounds} rounds getting there.${read}`;
+}
+
+/**
+ * What the person is told when the answer ran out of its clock rather than
+ * its rounds: what it reached, and what it read getting there. Its own words
+ * rather than an apology, and the same offer to be asked again.
+ */
+export function outOfTimeReply(limitMs: number, files: string[], said: string): string {
+  const read = readList(files);
+  const limit = `${Math.round(limitMs / 60_000)} minute limit`;
+  const body = said.trim();
+  if (!body) {
+    return `I ran out of time (${limit}) before I reached an answer.${read} Ask me again, narrower, or name the file and section you mean.`;
+  }
+  return `${body}\n\nI ran out of time (${limit}) before I finished.${read}`;
 }
 
 const listInput = z.object({ prefix: z.string().optional() });
@@ -294,13 +324,26 @@ async function runTool(
 
 async function finish(
   messageId: string,
-  update: { content: string; status: "done" | "failed" },
+  update: {
+    content: string;
+    status: "done" | "failed";
+    /**
+     * What the answer spent, for the one that was made here. A CLI agent's
+     * answer passes none: its spend is its job's run (see finishCliCardChat).
+     */
+    tokensIn?: number;
+    tokensOut?: number;
+    costCents?: number;
+  },
 ): Promise<void> {
   await repository().updateCardChatMessage(messageId, {
     content: update.content,
     status: update.status,
     runnerJob: null,
     runnerAgent: null,
+    ...(update.tokensIn === undefined
+      ? {}
+      : { tokensIn: update.tokensIn, tokensOut: update.tokensOut ?? 0, costCents: update.costCents ?? 0 }),
   });
 }
 
@@ -378,6 +421,14 @@ async function reply(
   messageId: string,
 ): Promise<"agent" | "notice" | "later"> {
   const repo = repository();
+  // What this answer spent, counted turn by turn. An answer is not a run — it
+  // moves no card and leaves no run row — so nothing else writes its tokens or
+  // its cost down: the message it lands on is the only record of it. Declared
+  // out here so a failure below still says what it cost before it failed.
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let costCents = 0;
+  const spent = () => ({ tokensIn, tokensOut, costCents });
   try {
     const card = await repo.cardById(cardId);
     const projectId = await repo.projectOfCard(cardId);
@@ -454,10 +505,26 @@ async function reply(
     };
 
     let results: Array<{ id: string; content: string; isError: boolean }> | null = null;
+    const startedAt = Date.now();
+    let ranOutOfTime = false;
     for (let turn = 0; turn < MAX_TURNS; turn++) {
-      const { text, calls } = await speak(results);
+      // Before the call, not after: the route's own maxDuration is the hard
+      // stop past this, and a killed function writes nothing at all — the
+      // message stays pending and the chat is locked against new questions.
+      if (Date.now() - startedAt >= CHAT_ANSWER_BUDGET_MS) {
+        ranOutOfTime = true;
+        break;
+      }
+      const { text, calls, usage } = await speak(results);
+      tokensIn += usage.tokensIn;
+      tokensOut += usage.tokensOut;
+      costCents += usage.costCents;
       if (calls.length === 0) {
-        await finish(messageId, { content: text || done.join("\n") || "I have nothing to add.", status: "done" });
+        await finish(messageId, {
+          content: text || done.join("\n") || "I have nothing to add.",
+          status: "done",
+          ...spent(),
+        });
         return "agent";
       }
       results = [];
@@ -469,18 +536,37 @@ async function reply(
         results.push({ id: call.id, ...(await runTool(call, client, project.baseBranch, act)) });
       }
     }
+    // Out of clock, so there is no last round to spend: say what was reached
+    // and what was read, and let the person ask again.
+    if (ranOutOfTime) {
+      const said = done.join("\n");
+      await finish(messageId, {
+        content: outOfTimeReply(CHAT_ANSWER_BUDGET_MS, [...read], said),
+        status: said.trim() ? "done" : "failed",
+        ...spent(),
+      });
+      return "agent";
+    }
     // Every round went on reading, and the model never stopped to answer. It
     // has what it read; give it one last turn with no tools, so the turn ends
     // in an answer rather than in an apology for not giving one.
     const closing = await speak(null, { answerOnly: true });
+    tokensIn += closing.usage.tokensIn;
+    tokensOut += closing.usage.tokensOut;
+    costCents += closing.usage.costCents;
     const said = closing.text.trim() || done.join("\n");
     await finish(messageId, {
       content: outOfRoundsReply(MAX_TURNS, [...read], said),
       status: said.trim() ? "done" : "failed",
+      ...spent(),
     });
     return "agent";
   } catch (e) {
-    await finish(messageId, { content: e instanceof Error ? e.message : String(e), status: "failed" });
+    await finish(messageId, {
+      content: e instanceof Error ? e.message : String(e),
+      status: "failed",
+      ...spent(),
+    });
     return "notice";
   }
 }
@@ -520,6 +606,9 @@ export function cliPrompt(
 /**
  * A CLI agent's answer arrived, or its run failed: carries out what it
  * decided and shows its reply with what happened.
+ *
+ * No tokens or cost are written on the message: the Actions job it ran in is
+ * its run, and that run is what its spend is counted against.
  */
 export async function finishCliCardChat(
   messageId: string,

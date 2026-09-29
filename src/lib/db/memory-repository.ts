@@ -1132,6 +1132,10 @@ export class MemoryRepository implements Repository {
       id: `cchat_${Math.random().toString(36).slice(2, 10)}`,
       runnerJob: null,
       runnerAgent: null,
+      // An answer made here writes its own counters when it lands.
+      tokensIn: 0,
+      tokensOut: 0,
+      costCents: 0,
       createdAt: new Date(),
       ...input,
       status: input.status ?? "done",
@@ -1142,7 +1146,12 @@ export class MemoryRepository implements Repository {
 
   async updateCardChatMessage(
     id: string,
-    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
+    update: Partial<
+      Pick<
+        CardChatMessage,
+        "content" | "status" | "runnerJob" | "runnerAgent" | "tokensIn" | "tokensOut" | "costCents"
+      >
+    >,
   ): Promise<void> {
     const found = store().cardChat.find((m) => m.id === id);
     if (found) Object.assign(found, update);
@@ -1156,6 +1165,14 @@ export class MemoryRepository implements Repository {
   async pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]> {
     return store()
       .cardChat.filter((m) => m.projectId === projectId && m.status === "pending" && !!m.runnerJob)
+      .map((m) => ({ ...m }));
+  }
+
+  async orphanedCardChats(projectId: string, olderThan: Date): Promise<CardChatMessage[]> {
+    return store()
+      .cardChat.filter(
+        (m) => m.projectId === projectId && m.status === "pending" && !m.runnerJob && m.createdAt < olderThan,
+      )
       .map((m) => ({ ...m }));
   }
 

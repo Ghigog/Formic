@@ -1106,7 +1106,12 @@ export class PrismaRepository implements Repository {
 
   async updateCardChatMessage(
     id: string,
-    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
+    update: Partial<
+      Pick<
+        CardChatMessage,
+        "content" | "status" | "runnerJob" | "runnerAgent" | "tokensIn" | "tokensOut" | "costCents"
+      >
+    >,
   ): Promise<void> {
     await prisma().cardChatMessage.update({ where: { id }, data: update });
   }
@@ -1118,6 +1123,13 @@ export class PrismaRepository implements Repository {
   async pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]> {
     const rows = await prisma().cardChatMessage.findMany({
       where: { projectId, status: "pending", runnerJob: { not: null } },
+    });
+    return rows.map(toCardChatMessage);
+  }
+
+  async orphanedCardChats(projectId: string, olderThan: Date): Promise<CardChatMessage[]> {
+    const rows = await prisma().cardChatMessage.findMany({
+      where: { projectId, status: "pending", runnerJob: null, createdAt: { lt: olderThan } },
     });
     return rows.map(toCardChatMessage);
   }
@@ -1264,6 +1276,9 @@ function toCardChatMessage(row: {
   status: string;
   runnerJob: string | null;
   runnerAgent: string | null;
+  tokensIn: number;
+  tokensOut: number;
+  costCents: number;
   createdAt: Date;
 }): CardChatMessage {
   return {
