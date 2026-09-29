@@ -781,14 +781,23 @@ export function KanbanCard({
   onOpen: (card: BoardCard) => void;
 }) {
   return (
-    <Draggable draggableId={card.id} index={index}>
+    <Draggable
+      draggableId={card.id}
+      index={index}
+      // A card's place in Done is derived from when it finished, so there is
+      // no reorder to offer. Moving it out is already barred by the rules.
+      isDragDisabled={column === "done"}
+    >
       {(provided, snapshot) => (
         <li
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={() => onOpen(card)}
-          className="cursor-grab rounded-lg outline-none active:cursor-grabbing"
+          className={cn(
+            "rounded-lg outline-none",
+            column !== "done" && "cursor-grab active:cursor-grabbing",
+          )}
         >
           {/* Picked up, the card leans into the drag. */}
           <div
@@ -946,7 +955,12 @@ export function EpicGroup({
     // Never shrunk to fit: a full column scrolls instead. Without this an
     // overflowing column squeezed each group down to its border.
     <li className={cn(SHELL, "flex shrink-0 flex-col overflow-hidden")}>
-      <Draggable draggableId={epic.id} index={index}>
+      <Draggable
+        draggableId={epic.id}
+        index={index}
+        // Done's order is the epic's completion time, not the person's call.
+        isDragDisabled={done}
+      >
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}
@@ -1052,6 +1066,8 @@ export function EpicGroup({
                 key={child.id}
                 draggableId={child.id}
                 index={index + 1 + i}
+                // Nested Done rows: ordered by their completion time too.
+                isDragDisabled={done}
               >
                 {(provided, snapshot) => (
                   <div
@@ -1060,7 +1076,8 @@ export function EpicGroup({
                     {...provided.dragHandleProps}
                     onClick={() => onOpen(child)}
                     className={cn(
-                      "cursor-grab rounded-md outline-none active:cursor-grabbing",
+                      "rounded-md outline-none",
+                      !done && "cursor-grab active:cursor-grabbing",
                       snapshot.isDragging && "shadow-lift",
                     )}
                   >

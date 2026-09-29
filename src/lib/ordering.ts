@@ -51,3 +51,21 @@ export function rebalance(count: number): number[] {
 export function byPosition<T extends { position: number }>(a: T, b: T): number {
   return a.position - b.position;
 }
+
+/**
+ * The Done column's default order: what finished last reads first.
+ *
+ * A card's completion instant is its `mergedAt` — set once, the first time it
+ * reaches merged — and for epics, which have none, its `updatedAt`, bumped the
+ * moment `completeEpic` marks them merged. ISO strings compare correctly
+ * lexically, so no parsing. This is the board's fallback ordering, not a
+ * chosen sort: a pure comparator with no knowledge of columns or settings, so
+ * a future custom sort can compose with or sit in front of it.
+ */
+export function byCompletion<
+  T extends { position: number; mergedAt?: string | null; updatedAt?: string },
+>(a: T, b: T): number {
+  const at = (c: T) => c.mergedAt ?? c.updatedAt ?? "";
+  const byTime = at(a).localeCompare(at(b));
+  return byTime !== 0 ? -byTime : byPosition(a, b);
+}

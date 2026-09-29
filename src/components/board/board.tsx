@@ -26,7 +26,7 @@ import {
   statusForUserDrop,
 } from "@/lib/domain/status";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
-import { byPosition } from "@/lib/ordering";
+import { byCompletion, byPosition } from "@/lib/ordering";
 import { runningConflict } from "@/lib/domain/queue";
 import { placeDrop } from "./placement";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
@@ -148,7 +148,10 @@ export function Board({
     for (const card of live) {
       out[columnOf(card)].push(card);
     }
-    for (const col of COLUMNS) out[col].sort(byPosition);
+    // Done is the one column whose order is not the person's: a card's place
+    // there is fully derived from when it finished. Everything else keeps
+    // `position`, the drag order the person owns.
+    for (const col of COLUMNS) out[col].sort(col === "done" ? byCompletion : byPosition);
     return out;
   }, [live]);
 
