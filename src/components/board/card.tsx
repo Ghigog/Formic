@@ -17,6 +17,7 @@ import { isBug, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
+import { LinkifiedText } from "./linkified-text";
 
 /**
  * Display-only detail that hangs off a card but is not part of the domain
@@ -262,7 +263,8 @@ export function ProblemBadge({ card }: { card: BoardCard }) {
 
 /**
  * The same problem, spelled out at the top of an opened card: what is wrong
- * and what to do about it.
+ * and what to do about it. Some of these reasons name a pull request to merge,
+ * so the address in them is a link a person can follow.
  */
 export function ProblemNotice({ card, className }: { card: BoardCard; className?: string }) {
   const problem = cardProblem(card);
@@ -282,7 +284,7 @@ export function ProblemNotice({ card, className }: { card: BoardCard; className?
         <span className="font-semibold">
           {card.misplacedReason ? "It can't work here. " : "This needs you. "}
         </span>
-        {problem}
+        <LinkifiedText text={problem} />
       </p>
     </div>
   );
