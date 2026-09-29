@@ -115,6 +115,11 @@ it, and `loopRunnerReady` decides: a repository whose workflow is current runs
 its API-key coders this way, and one that is not keeps running them in-process
 until it is updated — no card changes behaviour because a feature exists.
 
+A loop run can be watched while it works: the loop says what it is doing before
+its first model call, not only after its first tool call, and its own lines go
+to the job's log as well as to the board — a step that prints nothing cannot be
+told apart from one that is stuck.
+
 **Step 4, the default** — the ticket's budget is the plan: `loopBudgetMs` gives
 it ten minutes a story point (`MINUTES_PER_POINT`), capped at 55 so the job's
 60-minute `timeout-minutes` stays the backstop, and a run that reaches it stops

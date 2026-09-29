@@ -501,6 +501,12 @@ export async function runCodingLoop(
     });
   };
 
+  // Said before the first model call, not after the first tool call: a turn
+  // carries the whole brief and every tool, and a model that thinks takes a
+  // while over it. A run that says nothing for its first minute reads as
+  // stuck — in a job especially, where there is nothing else to look at.
+  progress(role === "reviewer" ? "Reading the pull request" : "Reading the ticket and the repository", 1);
+
   for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     if (ctx.signal.aborted) {
       const { reason } = ctx.signal;
