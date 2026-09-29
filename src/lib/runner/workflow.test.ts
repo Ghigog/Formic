@@ -147,6 +147,9 @@ describe("the installed workflow", () => {
       "GITHUB_TOKEN", "GITHUB_SHA", "GITHUB_REF", "GITHUB_REF_NAME", "GITHUB_HEAD_REF",
       "GITHUB_REPOSITORY", "GITHUB_REPOSITORY_OWNER", "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER",
       "GITHUB_JOB", "GITHUB_ACTOR", "GITHUB_EVENT_NAME", "GITHUB_SERVER_URL",
+      // Bash's own, which no workflow has to declare.
+      "PIPESTATUS", "BASH_REMATCH", "SECONDS", "RANDOM", "LINENO", "FUNCNAME",
+      "IFS", "OSTYPE", "HOSTNAME", "SHLVL", "OLDPWD",
     ]);
 
     // What one step hands the next: a step that writes to $GITHUB_ENV is how
