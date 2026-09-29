@@ -241,6 +241,33 @@ function geminiLine(event: Json): StreamItem[] {
   return [];
 }
 
+/**
+ * The loop entry's own events — one JSON event per line, as the job it runs
+ * in posts them. Null for anything else, so the CLI agents' formats are read
+ * as they always were.
+ */
+function formicEventLine(event: Json, type: string): StreamItem[] | null {
+  if (type === "run.thought") {
+    return thought(event.kind === "thinking" ? "thinking" : "text", str(event.text));
+  }
+  if (type === "run.progress") {
+    const label = str(event.label);
+    return label ? [{ kind: "action", label: short(label) }] : [];
+  }
+  if (type === "run.log") {
+    return [{ kind: "log", stream: event.stream === "stderr" ? "stderr" : "stdout", line: short(str(event.line), MAX_LOG_LINE) }];
+  }
+  if (type === "run.diff") {
+    const path = str(event.path);
+    return path ? [{ kind: "action", label: `Changed ${short(path)}` }] : [];
+  }
+  if (type === "ticket.plan") {
+    return Array.isArray(event.steps) ? [{ kind: "plan", steps: event.steps as PlanStep[] }] : [];
+  }
+  if (type.startsWith("run.")) return [];
+  return null;
+}
+
 /** One line of a CLI agent's output, as what a ticket shows. */
 export function readStreamLine(line: string): StreamItem[] {
   const trimmed = line.trim();
@@ -255,6 +282,11 @@ export function readStreamLine(line: string): StreamItem[] {
     return [{ kind: "log", stream: "stdout", line: short(line, MAX_LOG_LINE) }];
   }
   const type = str(event.type);
+  // The loop entry's own events, posted by the reporter of the job it runs
+  // in: one JSON event per line on stderr, read here exactly as the CLI
+  // agents' stream-json is. See src/lib/runner/loop-entry.ts.
+  const formic = formicEventLine(event, type);
+  if (formic !== null) return formic;
   if (type === "assistant" || type === "user" || type === "system" || type === "result") {
     return claudeLine(event);
   }

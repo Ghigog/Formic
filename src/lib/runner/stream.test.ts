@@ -168,3 +168,44 @@ describe("reading a CLI agent's stream", () => {
     expect(toolLabel("Write", { file_path: "/home/runner/work/_temp/formic-summary.md" })).toBe("Writing up what it did");
   });
 });
+
+describe("reading Formic's own loop, as the job that runs it posts it", () => {
+  it("turns the loop entry's events into what a ticket shows", () => {
+    const items = readStream([
+      line({ type: "run.thought", runId: "r", ticketId: "t", kind: "thinking", text: "Read it first." }),
+      line({ type: "run.progress", runId: "r", ticketId: "t", role: "coder", label: "Writing src/app/x.ts", fraction: null }),
+      line({ type: "run.log", runId: "r", ticketId: "t", stream: "stderr", line: "! npm ci" }),
+      line({ type: "run.diff", runId: "r", path: "src/app/x.ts", patch: "@@" }),
+      line({
+        type: "ticket.plan",
+        ticketId: "t",
+        steps: [
+          { step: "Read the file", status: "done" },
+          { step: "Write the fix", status: "in_progress" },
+        ],
+      }),
+      // Usage is counted, not narrated.
+      line({ type: "run.usage", runId: "r", tokensIn: 1, tokensOut: 2, costCents: 0 }),
+    ]);
+
+    expect(items).toEqual([
+      { kind: "thought", thought: "thinking", text: "Read it first." },
+      { kind: "action", label: "Writing src/app/x.ts" },
+      { kind: "log", stream: "stderr", line: "! npm ci" },
+      { kind: "action", label: "Changed src/app/x.ts" },
+      {
+        kind: "plan",
+        steps: [
+          { step: "Read the file", status: "done" },
+          { step: "Write the fix", status: "in_progress" },
+        ],
+      },
+    ]);
+  });
+
+  it("leaves a line that is not a Formic event to the CLI readers", () => {
+    expect(readStreamLine(line({ type: "assistant", message: { content: [] } }))).toEqual([]);
+    expect(readStreamLine("plain words")).toEqual([{ kind: "log", stream: "stdout", line: "plain words" }]);
+  });
+});
+

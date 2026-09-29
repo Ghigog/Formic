@@ -1,4 +1,4 @@
-# formic-runner: 65ef4b6907ab
+# formic-runner: bdd9d8b4845a
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -13,7 +13,7 @@ on:
         description: Formic job id
         required: true
       mode:
-        description: implement, fix, product, architect, showcase or ask
+        description: implement, fix, loop, product, architect, showcase or ask
         required: true
       ticket:
         description: Ticket key
@@ -34,6 +34,10 @@ on:
       prompt:
         description: What to do
         required: true
+      bundle:
+        description: Where to fetch Formic's loop entry from (mode loop), or empty
+        required: false
+        default: ""
       report:
         description: Where to post what the agent does as it works, or empty
         required: false
@@ -111,6 +115,7 @@ jobs:
           restore-keys: formic-${{ runner.os }}-
 
       - name: Install the agent
+        if: inputs.mode != 'loop'
         env:
           CLI: ${{ inputs.cli }}
         run: |
@@ -125,7 +130,7 @@ jobs:
       # Only the coding modes need them, and a failure here is not fatal:
       # the agent can still install what it needs itself.
       - name: Install the project's dependencies
-        if: inputs.mode == 'implement' || inputs.mode == 'fix'
+        if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop'
         continue-on-error: true
         run: |
           # Installed, never handed back: kept out of what the agent commits.
@@ -139,9 +144,16 @@ jobs:
       - name: Run the agent
         env:
           CLI: ${{ inputs.cli }}
+          MODE: ${{ inputs.mode }}
+          BUNDLE: ${{ inputs.bundle }}
           MODEL: ${{ inputs.model }}
           PROMPT: ${{ inputs.prompt }}
           REPORT: ${{ inputs.report }}
+          FORMIC_REPORT: ${{ runner.temp }}/formic-report.json
+          # The loop's key comes from the repository's Actions secrets, like a
+          # CLI agent's sign-in: never from an input, which the run's event
+          # keeps for anyone who can read it.
+          FORMIC_API_KEY: ${{ inputs.mode == 'loop' && startsWith(inputs.secret, 'FORMIC_API_KEY_') && secrets[inputs.secret] || '' }}
           FORMIC_SUMMARY: ${{ runner.temp }}/formic-summary.md
           FORMIC_OUTPUT: ${{ runner.temp }}/formic-answer.md
           FORMIC_STDOUT: ${{ runner.temp }}/formic-stdout.md
@@ -151,7 +163,7 @@ jobs:
           FORMIC_PROGRESS: ${{ runner.temp }}/formic-progress.md
           # Coding runs save checkpoints; a run resolving merge conflicts is
           # short, and its merge could not be carried on from one.
-          FORMIC_CHECKPOINT: ${{ (inputs.mode == 'implement' || inputs.mode == 'fix') && inputs.merge == '' && 'on' || '' }}
+          FORMIC_CHECKPOINT: ${{ (inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop') && inputs.merge == '' && 'on' || '' }}
           # Claude Code turns its todo tool off when run with -p; the ticket's
           # plan and progress bar are read from it.
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "true"
@@ -285,6 +297,48 @@ jobs:
             reporter=$!
             trap 'touch "$FORMIC_DONE"; wait "$reporter" || true' EXIT
           fi
+          case "$MODE" in
+            loop)
+              # Formic's own loop, fetched as one file: an agent on an API key
+              # working here, where a CLI agent works, until its budget says
+              # stop. It writes its progress to stderr as one JSON event per
+              # line, which the reporter above posts as it goes.
+              if [ -z "$BUNDLE" ]; then echo "This loop run came with no bundle URL."; exit 1; fi
+              if [ -z "$FORMIC_API_KEY" ]; then echo "No API key for this agent. Add it to the agent in Formic."; exit 1; fi
+              payload="$RUNNER_TEMP/formic-payload.json"
+              jq --arg key "$FORMIC_API_KEY" --arg dir "$PWD" '.apiKey = $key | .repo.dir = $dir' <<< "$PROMPT" > "$payload"
+              curl -fsSL -o "$RUNNER_TEMP/formic-loop.mjs" "$BUNDLE"
+              set +e
+              node "$RUNNER_TEMP/formic-loop.mjs" < "$payload" > "$FORMIC_REPORT" 2>> "$FORMIC_STREAM"
+              status=$?
+              set -e
+              rm -f "$payload" "$RUNNER_TEMP/formic-loop.mjs"
+              if [ "$status" -ne 0 ]; then
+                if [ -s "$FORMIC_REPORT" ]; then jq -r '.error // empty' "$FORMIC_REPORT" >&2 || true; fi
+                echo "The loop stopped (exit $status)."
+                exit "$status"
+              fi
+              # Its report becomes the commit's message: what it changed, what
+              # it hands to the person, and what it used.
+              {
+                printf '%s: %s\n\n' "$TICKET" "$(jq -r '.summary' "$FORMIC_REPORT")"
+                jq -r '.detail' "$FORMIC_REPORT"
+                if [ "$(jq -r '.handoff | length' "$FORMIC_REPORT")" -gt 0 ]; then
+                  printf '\nFor you:\n'
+                  jq -r '.handoff[] | "- " + .' "$FORMIC_REPORT"
+                fi
+                printf '\nFormic-Usage: %s\n' "$(jq -c '.usage | {model, tokensIn, tokensOut, costCents}' "$FORMIC_REPORT")"
+              } > "$FORMIC_SUMMARY"
+              if [ "$(jq -r '.alreadyDone' "$FORMIC_REPORT")" = "true" ]; then
+                printf 'Formic-Already-Done: true\n' >> "$FORMIC_SUMMARY"
+                # Nothing to change: an empty commit, so the step below hands
+                # back a report instead of calling it a run that failed.
+                if git diff --quiet && git diff --cached --quiet; then
+                  git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit -q --allow-empty -m "$TICKET: nothing to change"
+                fi
+              fi
+              ;;
+          esac
           case "$CLI" in
             claude)
               if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then echo "No Claude Code token. Add it to the agent in Formic."; exit 1; fi

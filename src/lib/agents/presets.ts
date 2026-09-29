@@ -300,6 +300,42 @@ export async function cliAgentFor(
   };
 }
 
+/** An API-key agent's settings, as the runner needs them to run a job. */
+export interface LoopAgent {
+  presetId: string | null;
+  info: ProviderInfo;
+  /** Never null: the entry has to name the model it calls. */
+  model: string;
+  brief: string | null;
+  /** The person's key. A job cannot ask the server for one, so null rules it out. */
+  credential: string | null;
+}
+
+/**
+ * The agent the loop entry can run for a column, or null when the column runs
+ * something else: a CLI tool, which has its own way into a job, or nothing at
+ * all. Only the presence of a key is judged here — whether this *repository*
+ * can run a job is the runner's question (see `loopRunnerReady` in ./runner).
+ */
+export async function loopAgentFor(
+  projectId: string,
+  column: ColumnId,
+): Promise<LoopAgent | null> {
+  if (agentsOverridden()) return null;
+  const resolved = await resolveColumn(projectId, column);
+  if (resolved.kind !== "configured") return null;
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  if (!info || info.kind === "cli") return null;
+  if (!resolved.config.apiKey) return null;
+  return {
+    presetId: resolved.presetId,
+    info,
+    model: resolved.config.model || CODER_MODEL,
+    brief: resolved.config.brief || null,
+    credential: resolved.config.apiKey,
+  };
+}
+
 /** The agent the board's assistant runs on, however it is reached. */
 export type AssistantAgent =
   | { kind: "none" }

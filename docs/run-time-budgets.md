@@ -43,11 +43,25 @@ what a path cannot deliver:
   repository. The job's `timeout-minutes` is its ceiling, and GitHub allows up to
   360 minutes per job, so a budget of 10 to 60 minutes is expressible. This is the
   path the budget is really for.
-- **An agent on an API key runs inside Formic's own function**, which the platform
-  terminates at 300 s (Hobby; 800 s on Pro) — every route that starts a run
-  declares `maxDuration = 300`. A budget larger than that window cannot be
-  honoured in one invocation, so that run's allowance is `min(the budget, the
-  window)` and the card must say which limit stopped it.
+- **An agent on an API key runs in the same kind of job**, through `mode: loop`
+  (`docs/long-runs.md`): Formic's own loop is fetched as a bundle, runs in the
+  job's checkout, and stops on the budget in its payload. Its allowance is
+  `min(the budget, the job's 60 minutes less headroom)` — `loopBudgetMs` — and
+  the job is the backstop. This is what a repository whose workflow is current
+  gets today; the default ten minutes a point is already the plan.
+- **An agent on an API key runs inside Formic's own function** where the
+  repository's workflow is not current, or has never been installed. The platform
+  terminates that invocation at 300 s (Hobby; 800 s on Pro) — every route that
+  starts a run declares `maxDuration = 300` — so that run's allowance is
+  `min(the budget, the window)` and the card must say which limit stopped it.
+
+## Where this stands
+
+The default this file describes is built: a loop run is given ten minutes a
+story point, capped under the job's ceiling (`loopBudgetMs`,
+`MINUTES_PER_POINT` in `src/lib/budget/limits.ts`), and a run that reaches it
+stops and names the limit. The four modes, the per-user storage, the settings
+screen and the "12 of 20 minutes used" line on a ticket are not built yet.
 
 ## Acceptance
 

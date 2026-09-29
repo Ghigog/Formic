@@ -29,6 +29,18 @@ export const RUNNER_SETUP_PREFIX = "formic/setup-runner-";
 export const ANSWER_PATH = ".formic/answer.md";
 
 /**
+ * How long a job may run: GitHub's own maximum is 360, and this is what Formic
+ * writes into every repository's workflow. It is the backstop, not the plan —
+ * the plan is the ticket's budget, which is always under this (see
+ * `loopBudgetMs` in ./runner), because a run that hits its own limit stops and
+ * says which limit it was, and a job the platform kills says nothing.
+ */
+export const RUNNER_JOB_MINUTES = 60;
+
+/** What the budget leaves a loop run for cloning, installing and reporting. */
+export const JOB_HEADROOM_MINUTES = 5;
+
+/**
  * The environment variable that names the directory a job's downloaded
  * attachments live in: a CLI agent with no Formic session fetches them with
  * curl from the signed URLs in its prompt (see attachmentsPrompt in
@@ -58,6 +70,21 @@ export function isCarried(path: string): boolean {
 export const MERGED_TRAILER = "Formic-Merged:";
 
 /**
+ * The last line of a run's summary when it reports what it used, followed by
+ * its usage as JSON. The loop entry writes it; the runner reads it back, so a
+ * run on a metered key spends money that gets counted.
+ */
+export const USAGE_TRAILER = "Formic-Usage:";
+
+/**
+ * The trailer that marks a run's report that the ticket was already done.
+ * The workflow only hands work back when there is a commit, so an agent makes
+ * an empty one; that keeps the installed workflow unchanged. It lives here,
+ * next to the other trailers, because the workflow's own script writes it.
+ */
+export const ALREADY_DONE_TRAILER = "Formic-Already-Done: true";
+
+/**
  * The last line of a checkpoint commit, followed by the job that saved it.
  * A run that starts on one carries on from it: the workflow steps back to
  * where that work started and leaves the work in the checkout, uncommitted,
@@ -71,10 +98,25 @@ export type CodeMode = (typeof CODE_MODES)[number];
 export type AnswerMode = (typeof ANSWER_MODES)[number];
 /** The board's assistant answering a question. */
 export type AskMode = "ask";
-export type RunnerMode = CodeMode | AnswerMode | AskMode;
+/**
+ * Formic's own loop running in the job: an agent on an API key, working where
+ * a CLI agent works instead of in a serverless window. The job fetches the
+ * bundle (`/api/runner/bundle`) and runs it; see docs/long-runs.md.
+ */
+export type LoopMode = "loop";
+export type RunnerMode = CodeMode | AnswerMode | AskMode | LoopMode;
 
 export function isAnswerMode(mode: RunnerMode): mode is AnswerMode {
   return (ANSWER_MODES as readonly string[]).includes(mode);
+}
+
+/**
+ * A run doing a ticket's work from the start: `implement`, and `loop`, which
+ * is the same work run in a job on an API key. `fix` is not one of these — it
+ * builds on a pull request that is already open — and neither is an answer.
+ */
+export function isTicketImplementation(mode: RunnerMode): boolean {
+  return mode === "implement" || mode === "loop";
 }
 
 /**
@@ -88,7 +130,7 @@ export function runTitle(mode: RunnerMode, ticketKey: string, job: string): stri
 export function parseRunTitle(
   title: string,
 ): { mode: RunnerMode; ticketKey: string; job: string } | null {
-  const m = /^Formic (implement|fix|product|architect|showcase|ask) (\S+) · (\S+)$/.exec(title.trim());
+  const m = /^Formic (implement|fix|loop|product|architect|showcase|ask) (\S+) · (\S+)$/.exec(title.trim());
   return m ? { mode: m[1] as RunnerMode, ticketKey: m[2]!, job: m[3]! } : null;
 }
 
@@ -305,7 +347,7 @@ on:
         description: Formic job id
         required: true
       mode:
-        description: implement, fix, product, architect, showcase or ask
+        description: implement, fix, loop, product, architect, showcase or ask
         required: true
       ticket:
         description: Ticket key
@@ -326,6 +368,10 @@ on:
       prompt:
         description: What to do
         required: true
+      bundle:
+        description: Where to fetch Formic's loop entry from (mode loop), or empty
+        required: false
+        default: ""
       report:
         description: Where to post what the agent does as it works, or empty
         required: false
@@ -344,7 +390,7 @@ concurrency:
 jobs:
   agent:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: ${RUNNER_JOB_MINUTES}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -403,6 +449,7 @@ jobs:
           restore-keys: formic-\${{ runner.os }}-
 
       - name: Install the agent
+        if: inputs.mode != 'loop'
         env:
           CLI: \${{ inputs.cli }}
         run: |
@@ -417,7 +464,7 @@ jobs:
       # Only the coding modes need them, and a failure here is not fatal:
       # the agent can still install what it needs itself.
       - name: Install the project's dependencies
-        if: inputs.mode == 'implement' || inputs.mode == 'fix'
+        if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop'
         continue-on-error: true
         run: |
           # Installed, never handed back: kept out of what the agent commits.
@@ -431,9 +478,16 @@ jobs:
       - name: Run the agent
         env:
           CLI: \${{ inputs.cli }}
+          MODE: \${{ inputs.mode }}
+          BUNDLE: \${{ inputs.bundle }}
           MODEL: \${{ inputs.model }}
           PROMPT: \${{ inputs.prompt }}
           REPORT: \${{ inputs.report }}
+          FORMIC_REPORT: \${{ runner.temp }}/formic-report.json
+          # The loop's key comes from the repository's Actions secrets, like a
+          # CLI agent's sign-in: never from an input, which the run's event
+          # keeps for anyone who can read it.
+          FORMIC_API_KEY: \${{ inputs.mode == 'loop' && startsWith(inputs.secret, 'FORMIC_API_KEY_') && secrets[inputs.secret] || '' }}
           FORMIC_SUMMARY: \${{ runner.temp }}/formic-summary.md
           FORMIC_OUTPUT: \${{ runner.temp }}/formic-answer.md
           FORMIC_STDOUT: \${{ runner.temp }}/formic-stdout.md
@@ -443,7 +497,7 @@ jobs:
           FORMIC_PROGRESS: \${{ runner.temp }}/formic-progress.md
           # Coding runs save checkpoints; a run resolving merge conflicts is
           # short, and its merge could not be carried on from one.
-          FORMIC_CHECKPOINT: \${{ (inputs.mode == 'implement' || inputs.mode == 'fix') && inputs.merge == '' && 'on' || '' }}
+          FORMIC_CHECKPOINT: \${{ (inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop') && inputs.merge == '' && 'on' || '' }}
           # Claude Code turns its todo tool off when run with -p; the ticket's
           # plan and progress bar are read from it.
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "true"
@@ -464,6 +518,48 @@ ${indent(REPORTER_SCRIPT, 10)}
             reporter=$!
             trap 'touch "$FORMIC_DONE"; wait "$reporter" || true' EXIT
           fi
+          case "$MODE" in
+            loop)
+              # Formic's own loop, fetched as one file: an agent on an API key
+              # working here, where a CLI agent works, until its budget says
+              # stop. It writes its progress to stderr as one JSON event per
+              # line, which the reporter above posts as it goes.
+              if [ -z "$BUNDLE" ]; then echo "This loop run came with no bundle URL."; exit 1; fi
+              if [ -z "$FORMIC_API_KEY" ]; then echo "No API key for this agent. Add it to the agent in Formic."; exit 1; fi
+              payload="$RUNNER_TEMP/formic-payload.json"
+              jq --arg key "$FORMIC_API_KEY" --arg dir "$PWD" '.apiKey = $key | .repo.dir = $dir' <<< "$PROMPT" > "$payload"
+              curl -fsSL -o "$RUNNER_TEMP/formic-loop.mjs" "$BUNDLE"
+              set +e
+              node "$RUNNER_TEMP/formic-loop.mjs" < "$payload" > "$FORMIC_REPORT" 2>> "$FORMIC_STREAM"
+              status=$?
+              set -e
+              rm -f "$payload" "$RUNNER_TEMP/formic-loop.mjs"
+              if [ "$status" -ne 0 ]; then
+                if [ -s "$FORMIC_REPORT" ]; then jq -r '.error // empty' "$FORMIC_REPORT" >&2 || true; fi
+                echo "The loop stopped (exit $status)."
+                exit "$status"
+              fi
+              # Its report becomes the commit's message: what it changed, what
+              # it hands to the person, and what it used.
+              {
+                printf '%s: %s\\n\\n' "$TICKET" "$(jq -r '.summary' "$FORMIC_REPORT")"
+                jq -r '.detail' "$FORMIC_REPORT"
+                if [ "$(jq -r '.handoff | length' "$FORMIC_REPORT")" -gt 0 ]; then
+                  printf '\\nFor you:\\n'
+                  jq -r '.handoff[] | "- " + .' "$FORMIC_REPORT"
+                fi
+                printf '\\n${USAGE_TRAILER} %s\\n' "$(jq -c '.usage | {model, tokensIn, tokensOut, costCents}' "$FORMIC_REPORT")"
+              } > "$FORMIC_SUMMARY"
+              if [ "$(jq -r '.alreadyDone' "$FORMIC_REPORT")" = "true" ]; then
+                printf '${ALREADY_DONE_TRAILER}\\n' >> "$FORMIC_SUMMARY"
+                # Nothing to change: an empty commit, so the step below hands
+                # back a report instead of calling it a run that failed.
+                if git diff --quiet && git diff --cached --quiet; then
+                  git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit -q --allow-empty -m "$TICKET: nothing to change"
+                fi
+              fi
+              ;;
+          esac
           case "$CLI" in
             claude)
               if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then echo "No Claude Code token. Add it to the agent in Formic."; exit 1; fi

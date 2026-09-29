@@ -43,7 +43,7 @@ import { billingFor } from "@/lib/budget/limits";
 import type { PlanStep } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import { isProviderId, provider, type ProviderId } from "@/lib/llm/providers";
-import { LocalSandboxProvider } from "@/lib/sandbox/local";
+import { LocalSandboxProvider, localCheckout } from "@/lib/sandbox/local";
 import { DEFAULT_TTL_MS, type SandboxHandle } from "@/lib/sandbox/types";
 import { sandboxWorkspace, scopedWorkspace, type Workspace } from "@/lib/sandbox/workspace";
 
@@ -76,6 +76,12 @@ export const loopEntryPayloadSchema = z.object({
     /** "owner/name". The clone URL is derived from it when none is given. */
     fullName: z.string().min(1),
     baseBranch: z.string().min(1),
+    /**
+     * An existing checkout to work in instead of cloning one: the job that
+     * runs this has already checked the repository out, at the commit the run
+     * starts from, and its work and its commit both belong there.
+     */
+    dir: z.string().min(1).optional(),
     /** A branch to cut for this run. Omitted works on the base branch. */
     branchName: z.string().min(1).optional(),
     /** An explicit clone URL, for a remote that is not github.com. */
@@ -142,7 +148,11 @@ export interface LoopEntryOptions {
   workspace?: Workspace;
   /** Every event the loop publishes, for a caller that reports them on. */
   onEvent?: (event: FormicEvent) => void;
-  /** One line per event, for a job log. Defaults to stderr. */
+  /**
+   * One human line per event, for a log someone reads by eye. Left out — as
+   * in a job — the default is one JSON event per line on stderr, which is
+   * what a job's reporter posts back to Formic.
+   */
   log?: (line: string) => void;
 }
 
@@ -179,7 +189,6 @@ export async function runLoopEntry(
   // id nobody has priced are bounded by time, exactly as in-process.
   const billing = billingFor(payload.model, payload.provider);
 
-  const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
   const controller = new AbortController();
   const limit: { hit: LoopEntryLimit } = { hit: null };
 
@@ -201,25 +210,38 @@ export async function runLoopEntry(
   let spentCents = 0;
   let sandbox: SandboxHandle | null = null;
 
-  /** Every event the loop publishes: out to the caller, and into the job log. */
+  /** Every event the loop publishes: out to the caller, then the log. */
   const emit = (event: FormicEvent): void => {
     options.onEvent?.(event);
-    const line = logLine(event);
-    if (line) log(line);
+    if (options.log) {
+      const line = logLine(event);
+      if (line) options.log(line);
+      return;
+    }
+    // No sink given: one JSON event per line on stderr, which is what the
+    // job's reporter reads back into the board (readStreamLine knows these),
+    // and what the job's own log shows — the same shape a CLI agent's
+    // stream-json arrives in.
+    process.stderr.write(`${JSON.stringify(event)}\n`);
   };
 
   try {
     let raw = options.workspace;
     if (!raw) {
-      sandbox = await new LocalSandboxProvider().spawn({
-        repoFullName: payload.repo.fullName,
-        ...(payload.repo.cloneUrl ? { cloneUrl: payload.repo.cloneUrl } : {}),
-        baseBranch: payload.repo.baseBranch,
-        ...(payload.repo.branchName ? { branchName: payload.repo.branchName } : {}),
-        ttlMs,
-        signal: controller.signal,
-        onLog: (stream, line) => emit({ type: "run.log", runId, ticketId, stream, line }),
-      });
+      const onLog = (stream: "stdout" | "stderr", line: string) =>
+        emit({ type: "run.log", runId, ticketId, stream, line });
+      // A job hands in its own checkout; anywhere else, one is cloned here.
+      sandbox = payload.repo.dir
+        ? await localCheckout(payload.repo.dir, { ttlMs, onLog })
+        : await new LocalSandboxProvider().spawn({
+            repoFullName: payload.repo.fullName,
+            ...(payload.repo.cloneUrl ? { cloneUrl: payload.repo.cloneUrl } : {}),
+            baseBranch: payload.repo.baseBranch,
+            ...(payload.repo.branchName ? { branchName: payload.repo.branchName } : {}),
+            ttlMs,
+            signal: controller.signal,
+            onLog,
+          });
       raw = sandboxWorkspace(sandbox);
     }
 

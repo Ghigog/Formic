@@ -8,15 +8,18 @@ import {
   PLAN_FIRST_RULE,
   collectCliRuns,
   completeCliRun,
+  loopBudgetMs,
   receiveReport,
   reportAllowed,
   reviewVerdictOf,
   secretNameFor,
   signedAttachmentUrl,
   stopTicket,
+  usageOf,
 } from "./runner";
 import { addNote } from "@/lib/coder/notes";
 import {
+  ALREADY_DONE_TRAILER,
   ANSWER_PATH,
   CARRY_DELETED,
   CHECKPOINT_TRAILER,
@@ -24,15 +27,17 @@ import {
   RUNNER_VERSION,
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
+  USAGE_TRAILER,
   parseRunTitle,
   runTitle,
   runnerWorkflow,
 } from "./workflow";
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { reviewPullRequest } from "@/lib/review/pipeline";
-import { cliAgentFor, savePreset } from "@/lib/agents/presets";
+import { cliAgentFor, loopAgentFor, savePreset } from "@/lib/agents/presets";
 import { runArchitectAgent, runArchitectDraftTicket, runProductAgent } from "@/lib/agents/pipeline";
 import type { ColumnId } from "@/lib/domain/status";
+import { provider } from "@/lib/llm/providers";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
 import { redraftTicket } from "@/lib/board/service";
@@ -114,6 +119,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   resetEnvCache();
 });
 
@@ -1538,3 +1544,202 @@ describe("a CLI agent seen while it works", () => {
     expect(MockVcsClient.runner().dispatches[0]!.inputs.prompt).toContain("- Keep the old API working.");
   });
 });
+
+describe("an API-key coder running in a job", () => {
+  const API_KEY = "sk-deepseek-key-1234";
+
+  async function assignApiAgent(column: ColumnId = "in_progress") {
+    const preset = await savePreset({
+      name: "my-deepseek",
+      provider: "deepseek",
+      model: "deepseek-v4.1-flash",
+      prompt: "Implement the ticket.",
+      apiKey: API_KEY,
+    });
+    await repository().setColumnAgent(PROJECT, column, preset.id);
+    return preset;
+  }
+
+  it("runs the same column in a job when the repository's workflow can", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    const preset = await assignApiAgent();
+    const base = await installRunner();
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const runner = MockVcsClient.runner();
+    const secret = secretNameFor({ presetId: preset.id, info: provider("deepseek")! });
+    expect(secret).toMatch(/^FORMIC_API_KEY_DEEPSEEK_[A-Z0-9_]+$/);
+    expect(runner.secrets.get(secret)).toBe(API_KEY);
+
+    const { inputs } = runner.dispatches[0]!;
+    expect(inputs).toMatchObject({ mode: "loop", cli: "loop", ticket: "T-1", from: base, secret });
+    // The entry is fetched from the board, signed for this one job.
+    expect(inputs.bundle).toContain("https://formic.example/api/runner/bundle?");
+    expect(inputs.bundle).toContain(`job=${inputs.job}`);
+    // The key is never in the payload: the job reads it from the repository's
+    // secrets, so the run's own event never carries it.
+    expect(JSON.stringify(inputs)).not.toContain(API_KEY);
+
+    const payload = JSON.parse(inputs.prompt!) as {
+      provider: string;
+      model: string;
+      repo: Record<string, unknown>;
+      ticket: { key: string; fileScope: string[] };
+      limits: { maxDurationMs: number };
+    };
+    expect(payload).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-v4.1-flash",
+      repo: { fullName: (await projectFor(PROJECT)).repoFullName, baseBranch: base },
+      ticket: { key: "T-1", fileScope: ["src/lib/feature"] },
+    });
+    // Three story points at ten minutes each: the ticket's own budget is the
+    // plan, and the job's 60 minutes is the backstop.
+    expect(payload.limits.maxDurationMs).toBe(30 * 60_000);
+    expect(payload).not.toHaveProperty("apiKey");
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("running");
+    expect(after.runnerJob).toBe(inputs.job);
+  });
+
+  it("leaves a repository on an older workflow running in-process", async () => {
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await assignApiAgent();
+    await new MockVcsClient("acme/widgets").commitFile(
+      base,
+      RUNNER_WORKFLOW_PATH,
+      "# formic-runner: 000000000000\n",
+      "an older install",
+    );
+    const ticket = await seedTicket();
+    // The in-process path calls the provider; this is only about it being the
+    // path taken, so the call itself is made to fail at once.
+    vi.stubGlobal("fetch", async () => new Response("no", { status: 500 }));
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    expect(MockVcsClient.runner().dispatches).toHaveLength(0);
+    expect(MockVcsClient.runner().secrets.size).toBe(0);
+    expect((await repository().ticketDetail(ticket.id))!.runnerJob).toBeNull();
+  });
+
+  it("says so, without dispatching, when the board has no public address", async () => {
+    await assignApiAgent();
+    await installRunner();
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    expect(MockVcsClient.runner().dispatches).toHaveLength(0);
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("no public address");
+  });
+
+  it("is not the agent a CLI column runs, and not one without a key", async () => {
+    await assignClaudeCode();
+    expect(await loopAgentFor(PROJECT, "in_progress")).toBeNull();
+
+    const preset = await savePreset({
+      name: "keyless",
+      provider: "deepseek",
+      model: "deepseek-v4.1-flash",
+      prompt: "",
+      apiKey: null,
+    });
+    await repository().setColumnAgent(PROJECT, "in_progress", preset.id);
+    expect(await loopAgentFor(PROJECT, "in_progress")).toBeNull();
+  });
+});
+
+
+describe("taking a loop run's work", () => {
+  it("records what it used, from the trailer its summary carries", async () => {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    await runCoderAgent(PROJECT, ticket.id);
+    const job = MockVcsClient.runner().dispatches[0]!.inputs.job!;
+
+    MockVcsClient.stage(
+      `${STAGING_PREFIX}${job}`,
+      ["src/lib/feature/thing.ts"],
+      `T-1: Add the thing\n\nIt adds the thing.\n\n${USAGE_TRAILER} ${JSON.stringify({
+        model: "deepseek-chat",
+        tokensIn: 1_200,
+        tokensOut: 400,
+        costCents: 7,
+      })}`,
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "loop", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.summary).toBe("Add the thing");
+    expect(after.prNumber).toBeGreaterThan(0);
+    // What it used is money, and it is counted on the card. (Tokens are on
+    // the run, not the card: see TicketUpdate and the repository.)
+    const card = (await repository().boardCards(PROJECT)).find((c) => c.id === ticket.id)!;
+    expect(card.costCents).toBe(7);
+  });
+
+  it("closes a ticket a loop run reports as already done", async () => {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    await runCoderAgent(PROJECT, ticket.id);
+    const job = MockVcsClient.runner().dispatches[0]!.inputs.job!;
+
+    MockVcsClient.stage(
+      `${STAGING_PREFIX}${job}`,
+      [],
+      `T-1: Nothing to change\n\nIt already does it, criterion by criterion.\n\n${ALREADY_DONE_TRAILER}`,
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "loop", conclusion: "success", url: null });
+
+    // Nothing to merge and nothing to review: it goes to Done like a merge,
+    // with what the run found as its summary.
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("merged");
+    expect(after.stalledIn).toBeNull();
+    expect(after.summary).toBe("Already done: Nothing to change");
+  });
+});
+
+describe("what a run reported it used", () => {
+  it("reads the usage trailer out of a summary", () => {
+    const messages = [
+      `T-1: Add the thing\n\nIt adds the thing.\n\n${USAGE_TRAILER} {"model":"deepseek-chat","tokensIn":120,"tokensOut":40,"costCents":3}`,
+    ];
+    expect(usageOf(messages)).toEqual({
+      model: "deepseek-chat",
+      tokensIn: 120,
+      tokensOut: 40,
+      costCents: 3,
+    });
+  });
+
+  it("says nothing for a run that reported nothing, or reported nonsense", () => {
+    expect(usageOf(["T-1: Add the thing\n\nIt adds the thing."])).toBeNull();
+    expect(usageOf([`${USAGE_TRAILER} {oops}`])).toBeNull();
+    expect(usageOf([`${USAGE_TRAILER} {"model":"x"}`])).toBeNull();
+    expect(usageOf([`${USAGE_TRAILER} {"model":"x","tokensIn":-1,"tokensOut":0,"costCents":0}`])).toBeNull();
+  });
+});
+
+describe("the budget a ticket's size gives it", () => {
+  it("is ten minutes a story point, and never past the job's own room", () => {
+    expect(loopBudgetMs(1)).toBe(10 * 60_000);
+    expect(loopBudgetMs(3)).toBe(30 * 60_000);
+    // Eight points would be eighty minutes; the job's ceiling is the backstop.
+    expect(loopBudgetMs(8)).toBe(55 * 60_000);
+    // A ticket nobody sized still gets one point's worth.
+    expect(loopBudgetMs(null)).toBe(10 * 60_000);
+    expect(loopBudgetMs(undefined)).toBe(10 * 60_000);
+  });
+});
+
