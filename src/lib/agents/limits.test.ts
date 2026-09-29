@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeProviderError, diagnose, lastWords } from "./limits";
+import { describeProviderError, diagnose, isTransientProviderError, lastWords } from "./limits";
 
 /** A failed "Run the agent" step as GitHub logs it. */
 function stepLog(output: string, prompt = "Turn these into tickets."): string {
@@ -227,5 +227,54 @@ describe("describeProviderError", () => {
     expect(describeProviderError({ label: "Anthropic API", status: 529, message: "Overloaded" })).toContain(
       "overloaded",
     );
+  });
+
+  /**
+   * A 500 from a gateway is the provider's own roof falling in. Cline's
+   * gateway reports a model that came back empty exactly this way, and
+   * reading it back as a fault in the ticket sent the person looking for one
+   * that was not there.
+   */
+  it("says whose side a server error is on", () => {
+    const message = describeProviderError({
+      label: "ClinePass",
+      status: 500,
+      message: '{"error":"empty response content","success":false}',
+    });
+    expect(message).toContain("server error");
+    expect(message).toContain("HTTP 500");
+    expect(message).toContain("not the ticket's");
+    expect(message).toContain("empty response content");
+    // The status is not an overload, and must not be reported as the run's fault.
+    expect(message).not.toContain("overloaded");
+  });
+});
+
+describe("isTransientProviderError", () => {
+  it("counts the provider's own roof falling in", () => {
+    expect(
+      isTransientProviderError({ status: 500, message: '{"error":"empty response content","success":false}' }),
+    ).toBe(true);
+    expect(isTransientProviderError({ status: 503, message: "Service Unavailable" })).toBe(true);
+    // Never reached it at all: the connection, not the request.
+    expect(isTransientProviderError({ status: null, message: "Could not reach ClinePass: fetch failed" })).toBe(true);
+  });
+
+  /** A gateway's empty answer does not always wear a 5xx. */
+  it("counts a gateway's own words for an answer that never came", () => {
+    expect(isTransientProviderError({ status: 200, message: "empty response content" })).toBe(true);
+    expect(isTransientProviderError({ status: 200, message: "ClinePass returned no answer." })).toBe(true);
+  });
+
+  it("leaves anything a person has to act on alone", () => {
+    // The card turns each of these into something to do: a time, a key, a top-up.
+    expect(isTransientProviderError({ status: 429, message: "Rate limit exceeded" })).toBe(false);
+    expect(isTransientProviderError({ status: 401, message: "Invalid API key" })).toBe(false);
+    expect(isTransientProviderError({ status: 402, message: "insufficient_credits" })).toBe(false);
+    // A 4xx is the provider saying the request itself is wrong.
+    expect(isTransientProviderError({ status: 400, message: "tools is not supported" })).toBe(false);
+    expect(
+      isTransientProviderError({ status: 400, message: "This model's maximum context length is 200000 tokens" }),
+    ).toBe(false);
   });
 });

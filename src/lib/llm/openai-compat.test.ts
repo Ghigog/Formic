@@ -6,7 +6,7 @@ import { PROVIDERS, provider } from "./providers";
  * A stand-in for any OpenAI-format provider: answers each request with the
  * next scripted reply, and records what was sent.
  */
-function fakeProvider(replies: Array<Record<string, unknown> | { status: number }>) {
+function fakeProvider(replies: Array<Record<string, unknown> | { status: number; body?: string }>) {
   const sent: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = [];
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     sent.push({
@@ -16,13 +16,27 @@ function fakeProvider(replies: Array<Record<string, unknown> | { status: number 
     });
     const next = replies.shift();
     if (!next) throw new Error("No scripted reply left.");
-    if ("status" in next) return new Response("bad request", { status: next.status as number });
+    if ("status" in next) {
+      return new Response(typeof next.body === "string" ? next.body : "bad request", {
+        status: next.status as number,
+      });
+    }
     return Response.json({
       choices: [{ message: next, finish_reason: "stop" }],
       usage: { prompt_tokens: 10, completion_tokens: 5 },
     });
   });
   return sent;
+}
+
+/**
+ * Runs out the client's own retry waits. They are real time — a second, then
+ * four — which a test must not spend: with `setTimeout` faked and the promise
+ * queue left real, each turn lets the mocked fetch settle and then fires
+ * whatever wait the client scheduled, until no wait is left.
+ */
+async function runOutTheWaits(turns = 6) {
+  for (let i = 0; i < turns; i++) await vi.advanceTimersByTimeAsync(30_000);
 }
 
 /** A stand-in that answers with a body of the test's own choosing. */
@@ -121,8 +135,79 @@ describe("the OpenAI-format client", () => {
   it("still reports no answer when a 200 carries neither shape", async () => {
     fakeBody({ object: "something.else" });
 
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // An answer that never arrived is worth asking for again; this body
+      // never becomes a completion, so the report is what survives the tries.
+      const refused = expect(
+        chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] }),
+      ).rejects.toThrow("ClinePass returned no answer.");
+      await runOutTheWaits();
+      await refused;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * Cline's gateway answers a model that came back empty with a 500 and
+   * `{"error":"empty response content","success":false}` — what killed a
+   * thirty-minute run on its third turn, mid-exploration, with the card then
+   * saying it needed a person. The request was fine; the answer never came.
+   * The same request a moment later is usually served.
+   */
+  it("asks again when the provider's own side falls over", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const sent = fakeProvider([
+        { status: 500, body: '{"error":"empty response content","success":false}' },
+        { role: "assistant", content: "after the hiccup" },
+      ]);
+
+      const answer = chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
+      await runOutTheWaits();
+
+      expect((await answer).message.content).toBe("after the hiccup");
+      expect(sent).toHaveLength(2);
+      // The same request, not a different one: nothing about it was wrong.
+      expect(sent[1]!.body).toEqual(sent[0]!.body);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * A provider that is telling the client to stop — a spent account, a
+   * rejected key — is not having a bad moment, and asking again only buries
+   * the reason a person has to read.
+   */
+  it("does not ask again when the provider is saying a person must act", async () => {
+    const sent = fakeProvider([
+      { status: 402, body: '{"error":{"code":"insufficient_credits"}}' },
+    ]);
+
     await expect(chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] })).rejects.toThrow(
-      "ClinePass returned no answer.",
+      "out of credit",
     );
+    expect(sent).toHaveLength(1);
+  });
+
+  /** Two tries after the first, and no more: a run stops with a reason. */
+  it("stops asking after its two tries", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const sent = fakeProvider([{ status: 500 }, { status: 500 }, { status: 500 }]);
+
+      // A fourth request would have no scripted reply left, and say so.
+      const refused = expect(
+        chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] }),
+      ).rejects.toThrow("server error");
+      await runOutTheWaits();
+      await refused;
+
+      expect(sent).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
