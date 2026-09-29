@@ -13,6 +13,7 @@ import {
   type BoardCard,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
+import { LinkifiedText } from "./linkified-text";
 import { isBug, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
@@ -282,7 +283,7 @@ export function ProblemNotice({ card, className }: { card: BoardCard; className?
         <span className="font-semibold">
           {card.misplacedReason ? "It can't work here. " : "This needs you. "}
         </span>
-        {problem}
+        <LinkifiedText text={problem} />
       </p>
     </div>
   );

@@ -540,7 +540,7 @@ async function dispatch(input: {
     if (!runner.ready) {
       return {
         ok: false,
-        reason: `${agent.info.label} runs in this repository's GitHub Actions. Merge the setup pull request once (${runner.setupUrl}), then move this card back to try again.`,
+        reason: `${agent.info.label} runs in this repository's GitHub Actions. Merge the setup pull request once (${runner.setupUrl}), then try again.`,
         blocked: true,
       };
     }

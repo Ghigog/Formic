@@ -129,6 +129,27 @@ describe("TicketDrawer", () => {
     expect(screen.getByText("Moved from To Do: Too big for one ticket; needs a PRD.")).toBeInTheDocument();
   });
 
+  it("links the setup pull request in the problem notice, so it can be merged from the drawer", async () => {
+    const blocked: TicketView = {
+      ...VIEW,
+      card: {
+        ...VIEW.card,
+        status: "blocked",
+        workingSince: null,
+        blockedReason:
+          "Claude Code (your Claude plan) runs in this repository's GitHub Actions. " +
+          "Merge the setup pull request once (https://github.com/acme/widgets/pull/1), then try again.",
+      },
+    };
+    open(blocked);
+    const notice = await screen.findByRole("alert");
+    expect(notice).toHaveTextContent("This needs you.");
+    const links = notice.querySelectorAll("a");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", "https://github.com/acme/widgets/pull/1");
+    expect(links[0]).toHaveAttribute("target", "_blank");
+  });
+
   it("shows an image thumbnail and a downloadable file chip for its attachments", async () => {
     const attachments: AttachmentSummary[] = [
       { id: "a-1", filename: "mock.png", mimeType: "image/png", kind: "image", size: 2048, url: "/api/attachments/a-1" },

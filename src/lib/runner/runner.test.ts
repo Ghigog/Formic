@@ -529,7 +529,12 @@ describe("starting a CLI agent", () => {
 
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.status).toBe("blocked");
-    expect(after.blockedReason).toContain("Merge the setup pull request");
+    // The whole sentence, so a regression to the old "move this card back"
+    // wording fails here, and the setup pull request's URL is in it.
+    expect(after.blockedReason).toBe(
+      "Claude Code (your Claude plan) runs in this repository's GitHub Actions. " +
+        "Merge the setup pull request once (https://github.com/acme/widgets/pull/1001), then try again.",
+    );
     const runner = MockVcsClient.runner();
     expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(
       RUNNER_WORKFLOW_NAME,
@@ -1273,6 +1278,7 @@ describe("the runner workflow", () => {
 
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.blockedReason).toContain("Merge the setup pull request");
+    expect(after.blockedReason).toContain("then try again.");
     const runner = MockVcsClient.runner();
     expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(RUNNER_VERSION);
   });
