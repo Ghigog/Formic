@@ -479,6 +479,8 @@ jobs:
         env:
           CLI: \${{ inputs.cli }}
           MODE: \${{ inputs.mode }}
+          # The card's own key, for the summary a loop run writes.
+          TICKET: \${{ inputs.ticket }}
           BUNDLE: \${{ inputs.bundle }}
           MODEL: \${{ inputs.model }}
           PROMPT: \${{ inputs.prompt }}
@@ -528,9 +530,13 @@ ${indent(REPORTER_SCRIPT, 10)}
               if [ -z "$FORMIC_API_KEY" ]; then echo "No API key for this agent. Add it to the agent in Formic."; exit 1; fi
               payload="$RUNNER_TEMP/formic-payload.json"
               jq --arg key "$FORMIC_API_KEY" --arg dir "$PWD" '.apiKey = $key | .repo.dir = $dir' <<< "$PROMPT" > "$payload"
-              curl -fsSL -o "$RUNNER_TEMP/formic-loop.mjs" "$BUNDLE"
+              curl -fsSL --max-time 60 --retry 2 -o "$RUNNER_TEMP/formic-loop.mjs" "$BUNDLE"
               set +e
-              node "$RUNNER_TEMP/formic-loop.mjs" < "$payload" > "$FORMIC_REPORT" 2>> "$FORMIC_STREAM"
+              # Its account of the run goes to Formic through the reporter, and
+              # to this log as well: a step that shows nothing cannot be told
+              # apart from one that is stuck.
+              node "$RUNNER_TEMP/formic-loop.mjs" < "$payload" \
+                2> >(tee -a "$FORMIC_STREAM" >&2) > "$FORMIC_REPORT"
               status=$?
               set -e
               rm -f "$payload" "$RUNNER_TEMP/formic-loop.mjs"
