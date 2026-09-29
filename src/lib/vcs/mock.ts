@@ -63,6 +63,8 @@ interface MockRepo {
   merges: Array<{ base: string; head: string }>;
   /** Heads made by bringing the base into a PR, to the head they were made on. */
   baseMerges: Map<string, string>;
+  /** Pull requests GitHub refuses to bring the base into, and what it says. */
+  refusals: Map<number, string>;
   /** Merge commits Formic recorded, to the commit each merged in. */
   recordedMerges: Map<string, string>;
   /** Each card's checkpoint, with what it saved. */
@@ -95,6 +97,7 @@ function repo(): MockRepo {
     conflicts: new Set(),
     merges: [],
     baseMerges: new Map(),
+    refusals: new Map(),
     recordedMerges: new Map(),
     checkpoints: new Map(),
   };
@@ -178,6 +181,8 @@ export class MockVcsClient implements VcsClient {
   }
 
   async updateBranch(number: number): Promise<UpdateOutcome> {
+    const refusal = repo().refusals.get(number);
+    if (refusal) return { ok: false, reason: refusal, conflict: true };
     // A conflicted mock PR stands for one an agent just resolved: bringing
     // the base in now succeeds, as it would on GitHub.
     const pull = pulls().get(number);
@@ -401,6 +406,11 @@ export class MockVcsClient implements VcsClient {
     repo().baseMerges.set(sha, pull.headSha);
     pull.headSha = sha;
     return sha;
+  }
+
+  /** Test seam: make GitHub refuse to bring the base into a mock PR. */
+  static refuseBaseUpdate(number: number, reason: string): void {
+    repo().refusals.set(number, reason);
   }
 
   /** Test seam: change what GitHub says about a mock PR. */
