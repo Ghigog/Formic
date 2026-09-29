@@ -15,8 +15,8 @@ import { repository } from "@/lib/db";
  * that means a GitHub session; without one, FORMIC_PASSWORD if it is set.
  *
  * Open regardless: sign-in itself, health checks, the GitHub webhook, which
- * authenticates with its own signature, and a runner's report, which carries
- * a token good for its one job.
+ * authenticates with its own signature, and a runner's report and bundle,
+ * which carry a token good for one job.
  */
 
 const OPEN = [
@@ -26,6 +26,7 @@ const OPEN = [
   /^\/api\/health$/,
   /^\/api\/webhooks\//,
   /^\/api\/runner\/report$/,
+  /^\/api\/runner\/bundle$/,
 ];
 
 /** Exempt from the terms gate below, so accepting them isn't itself gated on accepting them. */
