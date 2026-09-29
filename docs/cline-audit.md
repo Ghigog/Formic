@@ -129,6 +129,24 @@ $0, when the ceiling charges them at the priciest rate in the table. Anyone
 reading the audit would conclude the ceilings never trip, when in fact they trip
 almost immediately.
 
+**Fixed on this branch.** `PRICE_FAMILIES` carries the live DeepSeek ids at peak
+rates — Flash `30 / 120`, V4-Pro `132 / 396` cents per million — and every id
+shape CL-1 lists lands on one of them. The deeper change is that the ceiling no
+longer prices what it cannot price. A model is `metered`, `flat` or `unknown`,
+and only a metered one can be stopped on money:
+
+- **flat** — a subscription, declared on the provider (`providers.ts`,
+  `flatRate: true` for ClinePass). Tokens cost nothing extra, so a dollar ceiling
+  would measure a number nobody is billed.
+- **unknown** — nobody has priced the id. It is charged nothing rather than the
+  priciest guess, because stopping unattended work on a rate that does not exist
+  is exactly what this blocker was.
+
+Time and attempt limits still stop every run, and the agent editor says which
+case a model is in. The trade is deliberate and worth stating: an unpriced
+*metered* model now has no dollar guard, and CL-5 — read the price from the
+metadata a provider already publishes — is the real answer to that.
+
 ## Blocker 3 — `max_tokens` is never sent on the OpenAI path
 
 The Claude paths set an output ceiling: 64,000 (`coding-loop.ts:318`), 8,000
@@ -360,9 +378,23 @@ prices anyway, because the ceiling's job is to bound unattended token burn, and
 a zero price silently disables the only guard there is — but it is a policy
 call, not a bug fix. `pricingNote` (`limits.ts:193`) is where the user is told.
 
-Acceptance: a Coder run on `deepseek-flash` reaches its own `maxAttempts`
-rather than parking at $2, and a test asserts every id in that table prices
-below the conservative default.
+The flat-rate policy this ticket left open is now decided, by the person paying
+for it: a subscription's marginal cost is zero, so a run on one is **not charged
+against the spend ceiling**, and is bounded by time and attempts instead. A
+guessed price is not a ceiling either: an id nobody has priced is charged
+nothing rather than the priciest family in the table. `pricingNote` says which
+case a model is in. This supersedes the "recommend list prices anyway"
+suggestion above, which would have kept parking runs on money nobody is billed.
+
+**Landed.** Blocker 2 records what shipped: the live ids and their rates, the
+`metered` / `flat` / `unknown` distinction, `flatRate` declared on the ClinePass
+provider, the provider threaded through `startRun` so a run's ceiling knows what
+bills it, and tests pinning the four id shapes, both unmetered cases, and the
+metered ceiling.
+
+Acceptance: a Coder run on `deepseek-flash` reaches its own `maxAttempts` rather
+than parking at $2 — and a ClinePass run, whose ids are not priced at all by
+form, reaches its time or attempt limit the same way.
 
 ### CL-2 — Let the client carry reasoning and an output ceiling
 
@@ -648,7 +680,10 @@ Rejected for now, but it is a real option and worth revisiting:
 - Who pays for DeepSeek? Code leaves the user's repository for a Chinese
   provider, which `docs/audit.md:72` already flags as needing a liability
   clause. This epic makes that path the recommended cheap one.
-- ClinePass is flat-rate, so what does `estimateCostCents` mean there? See CL-1.
+- ClinePass is flat-rate, so what does `estimateCostCents` mean there? Answered
+  on this branch: nothing. A subscription's marginal cost is zero, so a run on
+  one is not charged against the spend ceiling at all and is bounded by its time
+  and attempt limits instead. See CL-1.
 - Concurrency: DeepSeek's limit is 500 for V4-Pro against 2,500 for Flash, so a
   board full of Pro agents serialises sooner than a board of Flash ones.
 - Is sixteen rounds the right ceiling now that a read is bounded? Measured, the

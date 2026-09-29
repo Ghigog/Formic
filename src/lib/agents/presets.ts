@@ -240,16 +240,34 @@ const BUILT_IN_MODEL: Record<keyof AgentRegistry, string> = {
  * The model a run for this role will use, for the card to show while it
  * works. Null for the mock agents, and for a column with no agent.
  */
+/**
+ * The model a column runs, and who bills for it.
+ *
+ * Both are needed at the same moment: the run's spend ceiling is only real
+ * money when the provider charges per token, and a flat-rate plan such as
+ * ClinePass serves ids that look exactly like calling DeepSeek directly. One
+ * lookup, so the two cannot come from different presets.
+ */
+export async function runTargetFor(
+  projectId: string,
+  role: keyof AgentRegistry,
+): Promise<{ model: string | null; provider: ProviderId | null }> {
+  if (agentsOverridden()) return { model: null, provider: null };
+  const resolved = await resolveColumn(projectId, BUILD[role].column);
+  if (resolved.kind !== "configured") return { model: null, provider: null };
+  const info = providerInfo(resolved.config.provider ?? "anthropic");
+  const model =
+    info?.kind === "cli"
+      ? resolved.config.model || info.label
+      : resolved.config.model || BUILT_IN_MODEL[role];
+  return { model, provider: resolved.config.provider ?? "anthropic" };
+}
+
 export async function modelFor(
   projectId: string,
   role: keyof AgentRegistry,
 ): Promise<string | null> {
-  if (agentsOverridden()) return null;
-  const resolved = await resolveColumn(projectId, BUILD[role].column);
-  if (resolved.kind !== "configured") return null;
-  const info = providerInfo(resolved.config.provider ?? "anthropic");
-  if (info?.kind === "cli") return resolved.config.model || info.label;
-  return resolved.config.model || BUILT_IN_MODEL[role];
+  return (await runTargetFor(projectId, role)).model;
 }
 
 /** A CLI agent's settings, as the runner needs them. */

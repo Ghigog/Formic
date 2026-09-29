@@ -23,7 +23,7 @@ import {
 import { type Workspace, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inMergeLane, inTicketLane } from "./lane";
 import { addNote, noteTexts } from "@/lib/coder/notes";
-import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
+import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
 import { cliPrompt, showcaseSummaries, startCliAnswer, startCliRun } from "@/lib/runner/runner";
 
 /**
@@ -603,7 +603,7 @@ export async function completeEpic(
   const prd = prdSchema.safeParse(detail.prd);
   const run = startRun(projectId, "pm", {
     epicId,
-    model: await modelFor(projectId, "showcase"),
+    ...(await runTargetFor(projectId, "showcase")),
   });
 
   launch(async () => {
@@ -691,7 +691,7 @@ async function reviewTicket(
   };
 
   const run = startRun(projectId, "reviewer", {
-    model: await modelFor(projectId, "reviewer"),
+    ...(await runTargetFor(projectId, "reviewer")),
     epicId: ticket.epicId,
     ticketId: ticket.id,
   });
@@ -885,7 +885,7 @@ async function resolveConflicts(
   const notes = await noteTexts(projectId, ticket.id);
 
   const run = startRun(projectId, "reviewer", {
-    model: await modelFor(projectId, "reviewer"),
+    ...(await runTargetFor(projectId, "reviewer")),
     epicId: ticket.epicId,
     ticketId: ticket.id,
   });

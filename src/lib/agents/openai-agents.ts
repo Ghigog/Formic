@@ -58,8 +58,8 @@ function resolve(config: AgentConfig): Resolved | string {
   return { info, model: config.model, apiKey: config.apiKey };
 }
 
-function usage(model: string, tokensIn: number, tokensOut: number): Usage {
-  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, tokensIn, tokensOut) };
+function usage(model: string, tokensIn: number, tokensOut: number, provider?: string | null): Usage {
+  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, tokensIn, tokensOut, provider) };
 }
 
 function add(a: Usage, b: Usage): Usage {
@@ -97,7 +97,7 @@ async function askForJson<T>(
   attempts: number,
   onAttempt?: (attempt: number) => void,
 ): Promise<{ ok: true; value: T; usage: Usage } | { ok: false; error: string; usage: Usage }> {
-  let total = usage(r.model, 0, 0);
+  let total = usage(r.model, 0, 0, r.info.id);
   let lastProblem = "";
   for (let attempt = 1; attempt <= attempts; attempt++) {
     if (ctx.signal.aborted) return { ok: false, error: "Run stopped before it finished.", usage: total };
@@ -113,7 +113,7 @@ async function askForJson<T>(
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e), usage: total };
     }
-    total = add(total, usage(r.model, result.tokensIn, result.tokensOut));
+    total = add(total, usage(r.model, result.tokensIn, result.tokensOut, r.info.id));
     const text = result.message.content ?? "";
 
     let raw: unknown = null;
@@ -348,7 +348,7 @@ export class OpenAiShowcaseAgent implements ShowcaseAgent {
           },
         ],
       });
-      const used = usage(r.model, result.tokensIn, result.tokensOut);
+      const used = usage(r.model, result.tokensIn, result.tokensOut, r.info.id);
       const markdown = (result.message.content ?? "").trim();
       if (!markdown) return failure(r.model, "The showcase came back empty.", false, used);
       ctx.emit({ type: "epic.showcase", epicId: input.epicId, markdown });

@@ -77,7 +77,7 @@ Tickets marked **P0** block the beta. **P1** should land during the beta.
 | :-- | :-- |
 | **Works** | Per-run and per-Epic ceilings exist, with attempt and time limits. |
 | **Doesn't work** | Ceilings are kept in process memory, so on Vercel an Epic's budget forgets finished runs and each instance counts only its own. |
-| **Broken** | `estimateCostCents` (`src/lib/budget/limits.ts`) prices only four exact Claude model ids. Every other model (OpenAI, Gemini, DeepSeek, OpenRouter, Groq, and dated or newer Claude ids from the live model list) costs $0, so the $2 run and $20 Epic caps never trip for them. |
+| **Broken** | `estimateCostCents` (`src/lib/budget/limits.ts`) knew four exact Claude ids and two retired DeepSeek ones. Every other model (OpenAI, Gemini, DeepSeek, OpenRouter, Groq, and dated or newer Claude ids from the live model list) was charged the priciest rate in the table, so the $2 run cap tripped after a file or two — the opposite of what this row used to claim. Fixed on this branch: the live DeepSeek ids are priced, a flat-rate plan costs nothing per token, an unpriced id is charged nothing rather than a guess, and only a metered run can be stopped on money. |
 | **Missing** | A per-user cap on the operator's fallback E2B key. Spend history and a monthly cap per user. Telling users that CLI agents use their own Actions minutes (up to 60 per run). |
 
 ### SecOps

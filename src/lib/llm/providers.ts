@@ -50,6 +50,12 @@ export interface ProviderInfo {
   note: string;
   /** Has a free tier, rate-limited. Terms change; the note says so. */
   freeTier: boolean;
+  /**
+   * Bills as a subscription rather than per token, so the marginal cost of the
+   * next token is zero. The spend ceiling measures nothing real for a run on
+   * one of these: time and attempt limits are the guards that apply.
+   */
+  flatRate?: boolean;
   /** Local mode only: a key from the environment, for development. */
   envKey: string;
   /** Suggestions shown until the live model list loads. */
@@ -144,6 +150,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPlaceholder: "…",
     note: "$9.99/mo flat rate for a curated set of open-weight models (DeepSeek, GLM, Kimi, Qwen and others). One key for all of them.",
     freeTier: false,
+    flatRate: true,
     keyName: "API key",
     envKey: "CLINE_API_KEY",
     suggestedModels: [],

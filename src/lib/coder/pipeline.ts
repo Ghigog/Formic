@@ -18,7 +18,7 @@ import {
   prepareMergeTarget,
   pullRequestBody,
 } from "./checkout";
-import { agentFor, cliAgentFor, modelFor } from "@/lib/agents/presets";
+import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
 import type { CodeChange, Usage } from "@/lib/agents/ports";
 import type { VcsClient } from "@/lib/vcs";
 import { cliPrompt, startCliRun } from "@/lib/runner/runner";
@@ -153,7 +153,7 @@ export async function runCoderAgent(
   }
 
   const run = startRun(projectId, "coder", {
-    model: await modelFor(projectId, "coder"),
+    ...(await runTargetFor(projectId, "coder")),
     epicId: ticket.epicId,
     ticketId: ticket.id,
   });

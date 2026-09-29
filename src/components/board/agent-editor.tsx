@@ -304,7 +304,7 @@ export function AgentEditor({
                     : "Add the key above to see the models it can use."}
             </span>
             {!cli && model.trim() && (
-              <span className="text-muted text-[11px]">{pricingNote(model.trim())}</span>
+              <span className="text-muted text-[11px]">{pricingNote(model.trim(), provider)}</span>
             )}
           </label>
 

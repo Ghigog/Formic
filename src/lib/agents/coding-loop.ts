@@ -296,9 +296,15 @@ function usageFrom(
   model: string,
   tokensIn: number,
   tokensOut: number,
+  provider?: ProviderId | null,
   costTokensIn = tokensIn,
 ): Usage {
-  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, costTokensIn, tokensOut) };
+  return {
+    model,
+    tokensIn,
+    tokensOut,
+    costCents: estimateCostCents(model, costTokensIn, tokensOut, provider),
+  };
 }
 
 function claudeConversation(input: LoopInput, model: string): Conversation {
@@ -352,7 +358,7 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
               : "done",
         usage: (() => {
           const { tokensIn, costTokensIn } = billedInputTokens(message.usage);
-          return usageFrom(model, tokensIn, message.usage.output_tokens, costTokensIn);
+          return usageFrom(model, tokensIn, message.usage.output_tokens, input.provider, costTokensIn);
         })(),
       };
     },
@@ -430,7 +436,7 @@ function openAiConversation(
           return { id: c.id, name: c.function.name, input: parsed };
         }),
         stop: result.finishReason === "length" ? "max_tokens" : "done",
-        usage: usageFrom(model, result.tokensIn, result.tokensOut),
+        usage: usageFrom(model, result.tokensIn, result.tokensOut, info.id),
       };
     },
     toolResults(results) {

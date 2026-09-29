@@ -1,12 +1,14 @@
 import "server-only";
 
 import {
+  type Billing,
   type Budget,
   type Spend,
   DEFAULT_EPIC_BUDGET,
   DEFAULT_RUN_BUDGET,
   ZERO_SPEND,
   addSpend,
+  billingFor,
   checkBudget,
 } from "./limits";
 import { publish } from "@/lib/events/bus";
@@ -40,6 +42,8 @@ interface LiveRun {
   controller: AbortController;
   budget: Budget;
   spend: Spend;
+  /** Whether this run's model is charged per token at all, decided at its start. */
+  billing: Billing;
   startedAt: number;
 }
 
@@ -58,6 +62,9 @@ export function beginRun(input: {
   epicId?: string | null;
   ticketId?: string | null;
   budget?: Budget;
+  /** The model this run will use, and who bills for it, for the spend ceiling. */
+  model?: string | null;
+  provider?: string | null;
 }): AbortSignal {
   const controller = new AbortController();
   runs().set(input.runId, {
@@ -68,6 +75,7 @@ export function beginRun(input: {
     controller,
     budget: input.budget ?? DEFAULT_RUN_BUDGET,
     spend: { ...ZERO_SPEND },
+    billing: billingFor(input.model, input.provider),
     startedAt: Date.now(),
   });
   return controller.signal;
@@ -103,7 +111,7 @@ export async function recordSpend(
     .recordRunSpend(runId, run.spend.cents)
     .catch((e) => console.error("[formic] could not persist run spend:", e));
 
-  const verdict = checkBudget(run.spend, run.budget);
+  const verdict = checkBudget(run.spend, run.budget, run.billing);
   if (!verdict.ok) {
     await stopRun(runId, `Run budget: ${verdict.reason}`, "run");
     return false;

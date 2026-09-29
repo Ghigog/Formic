@@ -12,7 +12,7 @@ import { epicNoteTexts, withEpicNotes } from "./epic-notes";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
-import { agentFor, cliAgentFor, modelFor } from "./presets";
+import { agentFor, cliAgentFor, runTargetFor } from "./presets";
 import { handoffSection } from "./handoff";
 import { startCliAnswer, startCliDraftTicket } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
@@ -40,7 +40,13 @@ export interface RunHandle {
 export function startRun(
   projectId: string,
   role: AgentRole,
-  ids: { epicId?: string | null; ticketId?: string | null; model?: string | null },
+  ids: {
+    epicId?: string | null;
+    ticketId?: string | null;
+    model?: string | null;
+    /** Who bills for the model, so the spend ceiling knows if it is money. */
+    provider?: string | null;
+  },
 ): RunHandle {
   const runId = randomUUID();
   const signal = beginRun({
@@ -48,6 +54,8 @@ export function startRun(
     projectId,
     epicId: ids.epicId ?? null,
     ticketId: ids.ticketId ?? null,
+    model: ids.model ?? null,
+    provider: ids.provider ?? null,
   });
 
   const record = {
@@ -476,7 +484,7 @@ export async function runProductAgent(
 ): Promise<void> {
   const run = startRun(projectId, "product", {
     epicId,
-    model: await modelFor(projectId, "product"),
+    ...(await runTargetFor(projectId, "product")),
   });
 
   // A CLI agent on the person's own plan answers from GitHub Actions, and
@@ -526,7 +534,7 @@ export async function runArchitectAgent(
 ): Promise<void> {
   const run = startRun(projectId, "architect", {
     epicId,
-    model: await modelFor(projectId, "architect"),
+    ...(await runTargetFor(projectId, "architect")),
   });
 
   const cli = await cliAgentFor(projectId, "todo");
@@ -575,7 +583,7 @@ export async function runArchitectDraftTicket(
   const run = startRun(projectId, "architect", {
     epicId,
     ticketId,
-    model: await modelFor(projectId, "architect"),
+    ...(await runTargetFor(projectId, "architect")),
   });
 
   const cli = await cliAgentFor(projectId, "todo");
