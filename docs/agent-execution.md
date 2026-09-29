@@ -23,10 +23,15 @@ turns"). This is the record of why it is built this way and where it is going.
   itself and says "ran out of time" rather than being killed mid-edit and going
   silent. It is AUD-03's second option (`docs/audit.md`); the first was to move
   long runs off the request function, which is where this is heading.
-- **40 turns** (`MAX_ITERATIONS`, `coding-loop.ts:41`) is a guard, not a plan: a
-  loop that has not converged in forty rounds is not about to. Its comment says
-  so, and the failure is blocked rather than retried, because a retry of the same
-  approach would fail the same way.
+- **40 turns** is a guard, not a plan: a loop that has not converged in forty
+  rounds is not about to. Its comment says so, and the failure is blocked rather
+  than retried, because a retry of the same approach would fail the same way.
+  Forty is the in-process ceiling specifically. A job's loop is handed the turns
+  its own budget is worth (`turnCeiling`, `src/lib/budget/limits.ts`: ten a
+  minute, which comes out at forty for the four-minute default), so an hour of
+  budget is an hour's worth of turns rather than a wall reached a fifth of the
+  way in. Two real loop runs died on the fixed forty while their budget had
+  twenty-five minutes left.
 - **60 minutes** is GitHub's, adjustable to 360, and has nothing to do with the
   model or the plan.
 
@@ -34,10 +39,21 @@ turns"). This is the record of why it is built this way and where it is going.
 
 A subscription plan — ClinePass — behaves like Claude Code's usage windows, but
 Formic executes it as if it were a metered API, because ClinePass arrived as an
-OpenAI-compatible endpoint and that is the single connector for endpoints. So its
-runs inherit the function's roof and the loop's turn cap, neither of which has
-anything to do with the plan. The same plan used through a CLI tool gets an hour,
-because the job has an hour.
+OpenAI-compatible endpoint and that is the single connector for endpoints. In a
+repository whose workflow is current it now runs in a job, on the ticket's
+budget, with the turn ceiling that budget is worth: the same shape a CLI tool
+gets. Where the workflow is older it still inherits the function's roof, which
+has nothing to do with the plan.
+
+One consequence of that shape, learned from a real run: a job's log is full of
+the project's own output, so a number that looks like an HTTP code is not one.
+A loop run that had spent five minutes of a thirty-minute budget and ended on
+its turn ceiling was reported as "ClinePass hit its usage limit", with the
+line `429 src/lib/db/repository-contract.test.ts` — a line count from the
+agent's own `wc -l` — quoted as the evidence, and the agent marked out of usage
+for an hour. `LIMIT` and `AUTH` now read a status code only where the log says
+it is one ("status code 429", `{"code":429}`), and the loop's own exit line no
+longer hides the reason printed before it.
 
 ## The decision
 
@@ -54,9 +70,7 @@ Work moves to the job host and stays there:
   fit inside the roof. No card changes behaviour because a feature exists.
 - **Next**: the settings that let a person choose the budget (flat, per point,
   by hand, or off) — `docs/run-time-budgets.md` is that spec, and the default
-  it describes is what loop runs use today. And the loop's own 40-turn cap
-  (`MAX_ITERATIONS`): a job may run for fifty minutes, but not for forty turns,
-  which is a wall the budget was meant to replace.
+  it describes is what loop runs use today.
 - **Still rejected**: running the loop inside the E2B sandbox. One continuous
   process and no job setup, but the provider key would have to live in the very VM
   whose job is executing model-written code, and it adds a third host instead of

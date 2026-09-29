@@ -155,6 +155,38 @@ describe("the loop entry a GitHub Actions job runs", () => {
     // The agent is told why, in words it can act on.
     expect(messages(sent, 1).at(-1)?.content).toContain("outside this ticket's file scope");
   });
+
+  it("gives the loop the checkpoint rule a job can act on, and only there", async () => {
+    // A job saves the checkout and the progress file while the run works, and
+    // the notes in that file are what a resumed run reads. Without them the
+    // next run has the files and what they were for nowhere.
+    const inJob = fakeProvider([finish()]);
+    vi.stubEnv("FORMIC_PROGRESS", "/home/runner/work/_temp/formic-progress.md");
+    await runLoopEntry(payload(), { workspace: new MemoryWorkspace(), log: () => {} });
+    vi.unstubAllEnvs();
+
+    const onItsOwn = fakeProvider([finish()]);
+    await runLoopEntry(payload(), { workspace: new MemoryWorkspace(), log: () => {} });
+
+    expect(messages(inJob, 0)[0]!.content).toContain("FORMIC_PROGRESS");
+    expect(messages(inJob, 0)[0]!.content).toContain("your progress file");
+    expect(messages(onItsOwn, 0)[0]!.content).not.toContain("FORMIC_PROGRESS");
+  });
+
+  it("turns the ticket's budget into the loop's own turn ceiling", async () => {
+    // Ten turns a minute, so a six-second budget is one turn: the loop ends
+    // and says which ceiling it hit, instead of being held to a wall of turns
+    // it could never reach inside the budget it was given.
+    fakeProvider([toolCall("call_1", "bash", { command: "echo working" }), finish()]);
+
+    const report = await runLoopEntry(payload({ limits: { maxDurationMs: 6_000 } }), {
+      workspace: new MemoryWorkspace(),
+      log: () => {},
+    });
+
+    expect(report.ok).toBe(false);
+    expect(!report.ok && report.error).toContain("did not converge in 1 turn");
+  });
 });
 
 describe("the run's own ceilings", () => {
