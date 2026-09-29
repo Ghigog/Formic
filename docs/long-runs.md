@@ -84,6 +84,29 @@ Two things to be honest about:
   job's timeout all still apply.
 - The bundle's commit is recorded on the run, so what ran is identifiable.
 
+## Where this stands
+
+Step 1 is built: `src/lib/runner/loop-entry.ts` — one JSON payload in, one
+JSON report out — with `src/lib/runner/loop-entry.test.ts` proving it runs the
+Coder Agent's loop against a checkout and produces a diff with no network and
+no database. The payload carries the ticket's budget as `limits`, and a run
+that hits one says which limit stopped it. Two things to know for the rest:
+
+- The loop's own turn ceiling and the in-process four-minute budget are
+  untouched: the entry does not use the budget controller. A job ceiling is
+  therefore not the real ceiling until step 3, and the ticket's budget is not
+  yet the plan until step 4.
+- The bundle has to alias `server-only` to a no-op, exactly as
+  `vitest.config.ts` does. Built with esbuild
+  (`--alias:server-only=./src/test/server-only-stub.ts`) the entry runs in
+  plain `node` against a fixture repository and reports in JSON, so the
+  bundling in step 2 is packaging rather than a port.
+- A bundle run by path must compare **real** paths when it decides whether
+  node started it, not `argv[1]` to `import.meta.url`: node resolves the
+  module it started while argv keeps the path as typed, and on macOS `/tmp` is
+  a symlink to `/private/tmp`. A plain comparison finds no match, and the entry
+  then does nothing and exits 0, which is the worst way for a job to fail.
+
 ## Not now
 
 - Idempotent per-turn state (route 2). Revisit only if turn-by-turn is forced on
