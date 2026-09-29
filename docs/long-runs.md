@@ -86,21 +86,33 @@ Two things to be honest about:
 
 ## Where this stands
 
-Step 1 is built: `src/lib/runner/loop-entry.ts` — one JSON payload in, one
-JSON report out — with `src/lib/runner/loop-entry.test.ts` proving it runs the
-Coder Agent's loop against a checkout and produces a diff with no network and
-no database. The payload carries the ticket's budget as `limits`, and a run
-that hits one says which limit stopped it. Two things to know for the rest:
+Steps 1 and 2 are built.
+
+**Step 1** — `src/lib/runner/loop-entry.ts`, the entry: one JSON payload in,
+one JSON report out — with `src/lib/runner/loop-entry.test.ts` proving it runs
+the Coder Agent's loop against a checkout and produces a diff with no network
+and no database. The payload carries the ticket's budget as `limits`, and a run
+that hits one says which limit stopped it.
+
+**Step 2** — the bundle and where to fetch it. `scripts/build-loop-entry.mjs`
+builds the entry into one file before `next build` (aliased `server-only` to a
+no-op, exactly as `vitest.config.ts` does), records the commit it was built
+from in a banner inside the file and in the sidecar, and leaves both in
+`src/generated/loop-entry/`. `/api/runner/bundle` serves them to a job at the
+signed address `loopBundleUrl` builds — the same HMAC and the same claim as
+`reportUrl`: this one job, while its card waits on it — and answers 503 (never
+an empty script) where a build produced no bundle. The bundle is
+`outputFileTracingIncludes`d into that function's deployment.
+
+One deploy's chain, end to end: build, serve on a signed URL, fetch with curl,
+run with plain `node`.
+
+Two things to know for the rest:
 
 - The loop's own turn ceiling and the in-process four-minute budget are
-  untouched: the entry does not use the budget controller. A job ceiling is
-  therefore not the real ceiling until step 3, and the ticket's budget is not
-  yet the plan until step 4.
-- The bundle has to alias `server-only` to a no-op, exactly as
-  `vitest.config.ts` does. Built with esbuild
-  (`--alias:server-only=./src/test/server-only-stub.ts`) the entry runs in
-  plain `node` against a fixture repository and reports in JSON, so the
-  bundling in step 2 is packaging rather than a port.
+  untouched: the entry does not use the budget controller. The job ceiling
+  becomes the real ceiling in step 3, and the ticket's budget becomes the plan
+  in step 4.
 - A bundle run by path must compare **real** paths when it decides whether
   node started it, not `argv[1]` to `import.meta.url`: node resolves the
   module it started while argv keeps the path as typed, and on macOS `/tmp` is

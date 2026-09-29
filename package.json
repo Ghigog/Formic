@@ -6,7 +6,8 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "next dev",
-    "build": "bash scripts/db-push.sh && next build",
+    "build": "bash scripts/db-push.sh && node scripts/build-loop-entry.mjs && next build",
+    "build:loop-entry": "node scripts/build-loop-entry.mjs",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -52,6 +53,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "eslint": "^9.39.5",
+    "esbuild": "^0.28.2",
     "eslint-config-next": "^16.3.6",
     "jsdom": "^30.1.1",
     "prisma": "^7.10.0",

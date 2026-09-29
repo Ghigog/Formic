@@ -1437,6 +1437,20 @@ export function reportAllowed(job: string, since: string, token: string): boolea
   return expected.length === given.length && timingSafeEqual(expected, given);
 }
 
+/**
+ * The address a job fetches the loop entry from: the coding loop built into
+ * one file, for an agent on an API key to run where a CLI agent runs. Signed
+ * exactly like the report address beside it, because it is the same claim —
+ * this is one job, and it is still the job its card waits on. Null with no
+ * public origin, same as reportUrl.
+ */
+export function loopBundleUrl(job: string, since: number): string | null {
+  const origin = formicOrigin();
+  if (!origin) return null;
+  const q = new URLSearchParams({ job, since: String(since), token: reportToken(job, since) });
+  return `${origin}/api/runner/bundle?${q.toString()}`;
+}
+
 /** How long a signed attachment URL stays good: past the workflow's own 60-minute timeout, so a job that is slow to start never finds it expired. */
 const ATTACHMENT_URL_TTL_MS = 90 * 60 * 1000;
 
