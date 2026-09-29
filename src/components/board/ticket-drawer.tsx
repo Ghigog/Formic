@@ -14,6 +14,7 @@ import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
+import { LinkifiedText } from "./linkified-text";
 import { ProblemNotice, WorkTimer } from "./card";
 import {
   activityOf,
@@ -185,10 +186,11 @@ export function TicketDrawer({
             working={progress.working}
           />
 
-          {/* A reason it waits that is not a problem, such as a dependency. */}
+          {/* A reason it waits that is not a problem, such as a dependency. A
+              reason that names a pull request is clickable. */}
           {card?.blockedReason && !card.misplacedReason && !isStalled(card.status) && (
             <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
-              {card.blockedReason}
+              <LinkifiedText text={card.blockedReason} />
             </p>
           )}
 

@@ -235,6 +235,96 @@ describe("the coding loop on an OpenAI-format provider", () => {
     });
   });
 
+  it("ends at the turn ceiling its run's budget is worth, and names it", async () => {
+    // A model that keeps calling tools and never finishes: only the ceiling
+    // ends this run, and the number it reports is the one it was handed.
+    fakeProvider(
+      Array.from({ length: 3 }, (_, i) => ({
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: `call_${i}`,
+            type: "function",
+            function: { name: "bash", arguments: JSON.stringify({ command: "echo working" }) },
+          },
+        ],
+      })),
+    );
+
+    const outcome = await runCodingLoop({
+      ctx: ctx(),
+      workspace: new MemoryWorkspace(),
+      ticketId: "t",
+      role: "coder",
+      system: "sys",
+      prompt: "do it",
+      maxTurns: 3,
+      provider: "deepseek",
+      model: "deepseek-chat",
+      apiKey: "sk-deepseek",
+    });
+
+    expect(outcome).toMatchObject({ ok: false, blocked: true });
+    expect(!outcome.ok && outcome.error).toContain("did not converge in 3 turns");
+  });
+
+  it("keeps the board's progress on the plan, and asks when the plan goes stale", async () => {
+    const stepCall = (id: string, name: string, input: unknown) => ({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { id, type: "function", function: { name, arguments: JSON.stringify(input) } },
+      ],
+    });
+    const plan = (id: string, steps: Array<{ step: string; status: string }>) =>
+      stepCall(id, "update_plan", { steps });
+    const sent = fakeProvider([
+      plan("call_plan_1", [
+        { step: "Read the handler", status: "in_progress" },
+        { step: "Write the fix", status: "pending" },
+      ]),
+      plan("call_plan_2", [
+        { step: "Read the handler", status: "done" },
+        { step: "Write the fix", status: "in_progress" },
+      ]),
+      // Six turns of work with the plan left where it was.
+      ...Array.from({ length: 6 }, (_, i) =>
+        stepCall(`call_bash_${i}`, "bash", { command: "echo working" }),
+      ),
+      stepCall("call_finish", "finish", { summary: "done", detail: "d", verified_with: null }),
+    ]);
+    const progress: Array<{ label: string; fraction: number | null }> = [];
+
+    const outcome = await runCodingLoop({
+      ctx: {
+        ...ctx(),
+        emit: (e) => {
+          if (e.type === "run.progress") progress.push({ label: e.label, fraction: e.fraction });
+        },
+      },
+      workspace: new MemoryWorkspace(),
+      ticketId: "t",
+      role: "coder",
+      system: "sys",
+      prompt: "do it",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      apiKey: "sk-deepseek",
+    });
+
+    expect(outcome.ok).toBe(true);
+    // The plan is the progress bar, as it is for a CLI agent's run, and each
+    // update says in the feed which step it is on.
+    expect(progress.map((p) => p.label)).toContain("Plan: Step 1 of 2: Read the handler");
+    expect(progress.map((p) => p.label)).toContain("Plan: Step 2 of 2: Write the fix");
+    expect(progress.some((p) => p.fraction === 0.5)).toBe(true);
+    // And a plan that stopped moving is asked about, rather than assumed.
+    const last = sent.at(-1)!.body.messages as Array<{ role: string; content: string }>;
+    expect(last.at(-1)).toMatchObject({ role: "user" });
+    expect(last.at(-1)!.content).toContain("Your plan has not moved in 6 turns");
+  });
+
   it("refuses to start without a key rather than trying someone else's", async () => {
     const outcome = await runCodingLoop({
       ctx: ctx(),
