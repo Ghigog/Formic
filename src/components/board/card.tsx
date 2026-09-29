@@ -1057,8 +1057,6 @@ export function EpicGroup({
                 key={child.id}
                 draggableId={child.id}
                 index={index + 1 + i}
-                // Nested Done rows: ordered by their completion time too.
-                isDragDisabled={done}
               >
                 {(provided, snapshot) => (
                   <div
@@ -1067,8 +1065,7 @@ export function EpicGroup({
                     {...provided.dragHandleProps}
                     onClick={() => onOpen(child)}
                     className={cn(
-                      "rounded-md outline-none",
-                      !done && "cursor-grab active:cursor-grabbing",
+                      "cursor-grab rounded-md outline-none active:cursor-grabbing",
                       snapshot.isDragging && "shadow-lift",
                     )}
                   >
