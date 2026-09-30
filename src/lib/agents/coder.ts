@@ -14,6 +14,7 @@ import type {
 } from "./ports";
 import { runCodingLoop } from "./coding-loop";
 import type { Workspace } from "@/lib/sandbox/workspace";
+import { isSpikeText } from "@/lib/colony/game";
 import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
 
 /**
@@ -101,7 +102,7 @@ export class LoopCoderAgent implements CoderAgent {
       workspace: input.workspace,
       ticketId: input.task.ticketId,
       role: "coder",
-      system: withCodingRules(this.config.brief ?? CODER_BRIEF, "coder"),
+      system: withCodingRules(this.config.brief ?? CODER_BRIEF, "coder", { spike: isSpikeText(input.task.title) }),
       provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,

@@ -195,8 +195,15 @@ export const DEFAULT_BRIEF: Record<ColumnId, string> = {
  */
 export const HANDOFF_RULE = `Some tickets need steps outside the repository that you cannot take: setting a secret or a setting in a service, running a command on the person's machine, creating an account. Do not fake them and do not skip them silently. Do everything the repository needs, then list each outside step for the person, one short instruction per step, exact enough to follow without reading the code. Leave the list empty when there are none.`;
 
+/** A spike ticket is research: the write-up is the deliverable, not a code change. */
+export const SPIKE_RULE = `This ticket is a spike: an investigation, not a change. Change no product code. Investigate the question, then write your findings to docs/spikes/<slug>.md, with a short slug from the ticket's title. The file has four sections: the question, what was examined, the findings, and a recommendation. That file is the only change you make.`;
+
 /** Coder and Reviewer briefs get the enforced rules and the practices appended. */
-export function withCodingRules(brief: string, role: "coder" | "reviewer"): string {
+export function withCodingRules(
+  brief: string,
+  role: "coder" | "reviewer",
+  options: { spike?: boolean } = {},
+): string {
   const rules = codingRules(role === "coder" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}` : REVIEWER_SCOPE_RULE);
-  return `${brief.trim()}\n\n${rules}\n\n${HANDOFF_RULE}\n\n${ENGINEERING_PRACTICES}`;
+  return `${brief.trim()}\n\n${rules}\n\n${HANDOFF_RULE}${options.spike ? `\n\n${SPIKE_RULE}` : ""}\n\n${ENGINEERING_PRACTICES}`;
 }
