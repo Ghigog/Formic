@@ -203,6 +203,9 @@ model Ticket {
   position  Float
   /// Pulled out of its epic's group by a human. Only To Do reads it.
   detached  Boolean      @default(false)
+  /// The ticket is in the archive, off the board. The sort/filter epic
+  /// reads it.
+  archived Boolean      @default(false)
   /// Where a person dropped it when it cannot work there. It shows there,
   /// with misplacedReason saying what is wrong and how to fix it; its status
   /// stays what is true. Cleared by its next move or status change.
