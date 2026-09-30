@@ -43,7 +43,6 @@ export const ticketSpecSchema = z.object({
     .min(1)
     .describe("Gherkin scenarios: Given <context>, When <action>, Then <outcome>."),
   fileScope: fileScopeSchema,
-  size: z.enum(["S", "M", "L", "XL"]),
   storyPoints: z
     .literal(STORY_POINTS)
     .describe("The estimate in story points, on the Fibonacci scale: 1, 2, 3, 5, 8 or 13."),
@@ -89,7 +88,6 @@ export function toDraftTicket(spec: TicketSpec): DraftTicket {
     description,
     acceptanceCriteria: spec.acceptanceCriteria.map(gherkin),
     fileScope: normalizeScope(spec.fileScope),
-    size: spec.size,
     storyPoints: spec.storyPoints,
     dependsOn: spec.dependsOn,
     ...(spec.needsHuman?.trim() ? { needsHuman: spec.needsHuman.trim() } : {}),

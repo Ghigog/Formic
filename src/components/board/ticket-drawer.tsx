@@ -152,7 +152,6 @@ export function TicketDrawer({
                       {card.storyPoints} pt
                     </CoinBadge>
                   )}
-                  {card.size && <CoinBadge title="Ticket size">{card.size}</CoinBadge>}
                   {card.prUrl && (
                     <a
                       href={card.prUrl}

@@ -521,7 +521,7 @@ export class MemoryRepository implements Repository {
         stage: 3,
         position: input.position,
         epicId: input.epicId,
-        size: input.size,
+        size: input.size ?? "M",
         storyPoints: input.storyPoints ?? null,
         needsHuman: input.needsHuman ?? null,
         agentRole: null,
@@ -607,7 +607,7 @@ export class MemoryRepository implements Repository {
       filename: input.filename,
       mimeType: input.mimeType,
       kind: input.kind,
-      size: input.size,
+      size: input.size ?? "M",
       bytes: input.bytes,
       createdAt: new Date(),
     };
@@ -876,6 +876,7 @@ export class MemoryRepository implements Repository {
     if (update.stage !== undefined) card.stage = update.stage;
     if (update.title !== undefined) card.title = update.title;
     if (update.fileScope !== undefined) card.fileScope = normalizeScope(update.fileScope);
+    if (update.storyPoints !== undefined) card.storyPoints = update.storyPoints;
     if (update.needsHuman !== undefined) card.needsHuman = update.needsHuman;
     if (update.archived !== undefined) card.archived = update.archived;
     if (update.prNumber !== undefined) card.prNumber = update.prNumber;

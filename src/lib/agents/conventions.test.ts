@@ -25,7 +25,6 @@ const spec: TicketSpec = {
     { given: "Given a board with two cards", when: "I export it", then: "Then the CSV has two rows." },
   ],
   fileScope: ["src/app/api/export/"],
-  size: "S",
   storyPoints: 3,
   dependsOn: [],
 };

@@ -39,6 +39,7 @@ export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 export const CARD_KINDS = ["epic", "ticket"] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
 
+/** @deprecated Tickets are estimated in story points only (STORY_POINTS). */
 export const TICKET_SIZES = ["S", "M", "L", "XL"] as const;
 export type TicketSize = (typeof TICKET_SIZES)[number];
 
@@ -135,6 +136,7 @@ export const ticketSchema = z.object({
   description: z.string().min(1),
   acceptanceCriteria: z.array(z.string().min(1)).default([]),
   fileScope: fileScopeSchema,
+  /** @deprecated Use storyPoints. */
   size: z.enum(TICKET_SIZES).default("M"),
   status: z.enum(TICKET_STATUSES),
   stalledIn: z.enum(COLUMNS).nullable().default(null),
@@ -200,6 +202,7 @@ export interface BoardCard {
   /** The column a request was rerouted from, and why. Null outside a reroute. */
   rerouteFrom?: (typeof COLUMNS)[number] | null;
   rerouteReason?: string | null;
+  /** @deprecated Use storyPoints; no longer shown or asked of agents. */
   size: TicketSize | null;
   /** Tickets only: the estimate, 1 to 13. Null when none was given. */
   storyPoints?: number | null;

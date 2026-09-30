@@ -59,7 +59,6 @@ const TICKET_SPEC = {
   requirements: ["A button that restarts the run it belongs to."],
   acceptanceCriteria: [{ given: "a failed run", when: "I click retry", then: "the run starts again" }],
   fileScope: ["src/components/board"],
-  size: "S",
   storyPoints: 2,
   dependsOn: [],
 };
@@ -87,7 +86,7 @@ describe("the Architect's draft from a raw request", () => {
       attachments: [],
     });
 
-    expect(outcome).toMatchObject({ ok: true, value: { kind: "ticket", ticket: { key: "T-1", size: "S" } } });
+    expect(outcome).toMatchObject({ ok: true, value: { kind: "ticket", ticket: { key: "T-1", storyPoints: 2 } } });
   });
 
   it("reroutes to the Backlog when the request needs a PRD and a breakdown", async () => {

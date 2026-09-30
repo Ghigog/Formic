@@ -522,7 +522,7 @@ export class PrismaRepository implements Repository {
             description: input.description,
             acceptanceCriteria: input.acceptanceCriteria,
             fileScope: normalizeScope(input.fileScope),
-            size: input.size,
+            size: input.size ?? "M",
             storyPoints: input.storyPoints ?? null,
             needsHuman: input.needsHuman ?? null,
             position: input.position,
@@ -631,7 +631,7 @@ export class PrismaRepository implements Repository {
         filename: input.filename,
         mimeType: input.mimeType,
         kind: input.kind,
-        size: input.size,
+        size: input.size ?? "M",
         bytes: Buffer.from(input.bytes),
       },
     });

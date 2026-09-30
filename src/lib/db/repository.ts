@@ -33,7 +33,8 @@ export interface CreateTicketInput {
   description: string;
   acceptanceCriteria: string[];
   fileScope: string[];
-  size: "S" | "M" | "L" | "XL";
+  /** @deprecated Story points are the estimate; left out, it is stored as "M". */
+  size?: "S" | "M" | "L" | "XL";
   storyPoints?: number | null;
   position: number;
   dependsOnKeys: string[];
@@ -234,6 +235,8 @@ export interface TicketUpdate {
   description?: string;
   acceptanceCriteria?: string[];
   fileScope?: string[];
+  /** 1, 2, 3, 5, 8 or 13; null clears the estimate. */
+  storyPoints?: number | null;
   scopeRequest?: string[];
   needsHuman?: string | null;
   status?: TicketStatus;

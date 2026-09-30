@@ -67,6 +67,12 @@ function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
 }
 
 describe("TicketDrawer", () => {
+  it("shows the story points and no T-shirt size", async () => {
+    open();
+    expect(await screen.findByTitle("5 story points")).toBeInTheDocument();
+    expect(screen.queryByTitle("Ticket size")).not.toBeInTheDocument();
+  });
+
   it("on mobile shows one full-width pane under the tabs, and switching swaps it", async () => {
     setViewportMatches(false);
     open();
