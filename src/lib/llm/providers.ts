@@ -107,14 +107,17 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     id: "deepseek",
     label: "DeepSeek",
     kind: "openai",
-    baseUrl: "https://api.deepseek.com/v1",
+    // The host DeepSeek's docs publish. Paths under /v1 also answer 401 when
+    // unauthenticated, but so does the host without it, so that 401 never
+    // showed /v1 was the documented route.
+    baseUrl: "https://api.deepseek.com",
     keyUrl: "https://platform.deepseek.com/api_keys",
     keyPlaceholder: "sk-…",
-    note: "Low-cost models.",
+    note: "Low-cost models with a thinking mode, 1M-token context and JSON output.",
     freeTier: false,
     keyName: "API key",
     envKey: "DEEPSEEK_API_KEY",
-    suggestedModels: [],
+    suggestedModels: ["deepseek-flash", "deepseek-v4-pro"],
   },
   {
     id: "openrouter",
