@@ -270,6 +270,8 @@ export class MemoryRepository implements Repository {
       anthropicKeyHint: null,
       termsAcceptedVersion: null,
       sessionVersion: 0,
+      fallbackSandboxSeconds: 0,
+      fallbackSandboxMonth: null,
     };
     s.users.set(user.id, user);
     return user;
@@ -293,6 +295,19 @@ export class MemoryRepository implements Repository {
     const user = store().users.get(userId);
     if (!user) throw new Error(`No user ${userId}.`);
     user.sessionVersion += 1;
+    return user;
+  }
+
+  async addFallbackSandboxSeconds(
+    userId: string,
+    seconds: number,
+    month: string,
+  ): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    const carried = user.fallbackSandboxMonth === month ? user.fallbackSandboxSeconds : 0;
+    user.fallbackSandboxSeconds = carried + seconds;
+    user.fallbackSandboxMonth = month;
     return user;
   }
 

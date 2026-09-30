@@ -9,6 +9,8 @@ interface KeyState {
   hint: string | null;
   /** The server has its own key that runs use when this person has none. */
   serverFallback: boolean;
+  /** Whole minutes left this month on the server's key, when that is what runs use. */
+  fallbackMinutesLeft?: number;
 }
 
 /**
@@ -201,9 +203,14 @@ function KeyField({
     setMessage({ ok: true, text: next === null ? "Key removed." : "Key saved." });
   }
 
-  const fallback = state.serverFallback
-    ? "Without one, runs use the server's key."
-    : "Without one, coding agents can't run.";
+  const left = state.fallbackMinutesLeft;
+  const fallback = !state.serverFallback
+    ? "Without one, coding agents can't run."
+    : left === undefined
+      ? "Without one, runs use the server's key."
+      : left > 0
+        ? `You're on the server's key: ${left} sandbox ${left === 1 ? "minute" : "minutes"} left this month. Add your own for no limit.`
+        : "You're on the server's key and have used this month's sandbox minutes. Add your own key to keep running.";
 
   return (
     <Section title={title}>

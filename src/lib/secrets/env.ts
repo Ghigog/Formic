@@ -30,6 +30,8 @@ const schema = z.object({
    */
   MERGE_TARGET: z.enum(["integration", "base"]).default("base"),
   E2B_API_KEY: z.string().optional(),
+  /** Sandbox minutes per person per month on E2B_API_KEY, for people with no key of their own. */
+  E2B_FALLBACK_MINUTES_PER_USER: z.coerce.number().int().min(0).default(30),
   SANDBOX_PROVIDER: z.enum(["e2b", "local"]).default("local"),
   AGENT_PROVIDER: z.enum(["anthropic", "mock"]).optional(),
   /** Where alerts (error spikes, smoke-test and health failures) are posted. See AUD-10. */

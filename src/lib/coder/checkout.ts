@@ -1,7 +1,7 @@
 import "server-only";
 
 import { AGENT_COMMIT_AUTHOR, mergeTarget, type VcsClient } from "@/lib/vcs";
-import { DEFAULT_TTL_MS, type SandboxHandle } from "@/lib/sandbox/types";
+import { DEFAULT_TTL_MS, SandboxError, type SandboxHandle } from "@/lib/sandbox/types";
 import { spawnSandbox } from "@/lib/sandbox";
 import {
   MemoryWorkspace,
@@ -10,7 +10,10 @@ import {
   scopedWorkspace,
 } from "@/lib/sandbox/workspace";
 import type { AgentContext } from "@/lib/agents/ports";
+import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
+import { env } from "@/lib/secrets/env";
+import { capMonth, FALLBACK_CAP_MESSAGE, fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
 
 /**
  * Getting a coding agent a checkout, and getting its work back out again.
@@ -41,6 +44,8 @@ export interface CheckoutRequest {
   /** The project owner's GitHub token. Null runs on an in-memory checkout. */
   githubToken: string | null;
   e2bKey: string | null;
+  /** Set when e2bKey is the operator's: whose monthly sandbox minutes it counts against. */
+  e2bFallbackUserId?: string | null;
 }
 
 type CheckoutFactory = (request: CheckoutRequest) => Promise<Checkout>;
@@ -74,6 +79,16 @@ export async function openCheckout(
     };
   }
 
+  // Only the operator's key is capped, and only E2B costs them anything.
+  const capped = env().SANDBOX_PROVIDER === "e2b" ? request.e2bFallbackUserId : null;
+  if (capped) {
+    const user = await repository().userById(capped);
+    if (user && fallbackSecondsLeft(user, env().E2B_FALLBACK_MINUTES_PER_USER) <= 0) {
+      throw new SandboxError(FALLBACK_CAP_MESSAGE);
+    }
+  }
+
+  const startedAt = Date.now();
   const sandbox: SandboxHandle = await spawnSandbox(request.projectId, {
     repoFullName: request.repoFullName,
     // Built here and never stored, so the token cannot end up in a database
@@ -88,12 +103,20 @@ export async function openCheckout(
       request.ctx.emit({ type: "run.log", runId: request.ctx.runId, stream, line }),
   });
 
+  let spent = false;
   const raw = sandboxWorkspace(sandbox);
   return {
     workspace: scopedWorkspace(raw, request.ticket.fileScope),
     raw,
     sandboxId: sandbox.id,
-    dispose: () => sandbox.dispose(),
+    async dispose() {
+      await sandbox.dispose();
+      if (capped && !spent) {
+        spent = true;
+        const seconds = Math.ceil((Date.now() - startedAt) / 1000);
+        await repository().addFallbackSandboxSeconds(capped, seconds, capMonth());
+      }
+    },
   };
 }
 
