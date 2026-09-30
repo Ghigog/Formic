@@ -139,20 +139,36 @@ const MIN_PANE = 120;
 
 /**
  * Two panes side by side from the dual-pane breakpoint up, with a divider
- * to set their widths. Below it the panes stack as tabs, full width, and
- * each pane's own classes decide which one shows.
+ * to set their widths. Below it only the `active` pane is rendered, full
+ * width; the other is left out of the layout altogether. The caller owns the
+ * tabs that choose it.
  */
-export function SideBySide({ storageKey, first, second }: { storageKey: string; first: ReactNode; second: ReactNode }) {
+export function SideBySide({
+  storageKey,
+  active,
+  first,
+  second,
+}: {
+  storageKey: string;
+  active: "first" | "second";
+  first: ReactNode;
+  second: ReactNode;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const wide = useMediaQuery("(min-width: 1024px)");
   const [percent, setPercent] = useStoredSize(`formic:${storageKey}:width`, 50);
 
+  if (!wide) {
+    return (
+      <div ref={box} className="flex min-h-0 flex-1 *:min-w-0 *:flex-1">
+        {active === "first" ? first : second}
+      </div>
+    );
+  }
+
   return (
     <div ref={box} className="flex min-h-0 flex-1">
-      <div
-        className="flex min-h-0 min-w-0 flex-1 *:min-w-0 *:flex-1 lg:flex-none"
-        style={wide ? { width: `${percent}%` } : undefined}
-      >
+      <div className="flex min-h-0 min-w-0 flex-none *:min-w-0 *:flex-1" style={{ width: `${percent}%` }}>
         {first}
       </div>
       <SplitHandle
@@ -164,7 +180,6 @@ export function SideBySide({ storageKey, first, second }: { storageKey: string; 
         onChange={setPercent}
         toValue={(offset, length) => (offset / length) * 100}
         label="Resize the panes"
-        className="hidden lg:block"
       />
       <div className="flex min-h-0 min-w-0 flex-1 *:min-w-0 *:flex-1">{second}</div>
     </div>
