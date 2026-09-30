@@ -54,6 +54,10 @@ export const cardActionSchema = z.discriminatedUnion("type", [
     description: z.string().trim().min(1).optional().describe("The whole new description, in Markdown."),
     acceptanceCriteria: z.array(z.string().trim().min(1)).min(1).optional(),
     fileScope: fileScopeSchema.optional(),
+    storyPoints: z
+      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(5), z.literal(8), z.literal(13)])
+      .optional()
+      .describe("The ticket's estimate in story points: 1, 2, 3, 5, 8 or 13."),
     results: z
       .string()
       .trim()
@@ -87,7 +91,7 @@ export const CARD_ACTIONS_GUIDE = `What you can do, besides answering:
 - close: tickets only. Put the ticket in Done without merging anything, with a one-line summary: for work the person did themselves, or work that is not needed after all. Never use it when the person asks to merge. Whatever waits on it can go ahead.
 - redo: start this column's work on the card again, doing what the person asks now (stopping any agent working it first). In Backlog it rewrites an Epic's PRD, in To Do it breaks an Epic down again, in In Progress it has the Coder Agent do what was asked, in In Review it has the Reviewer Agent review again. A ticket in To Do or Backlog has no work to redo: change the ticket with edit_ticket instead, or move it to In Progress to start it.
 - stop: stop the agent working on the card.
-- edit_ticket: tickets only. Rewrite the ticket's title, description, acceptance criteria or file scope, or add what the person reported doing or finding under Results. Widening its file scope this way also carries the ticket on if it was blocked waiting on exactly those files.
+- edit_ticket: tickets only. Rewrite the ticket's title, description, acceptance criteria, file scope or story points (1, 2, 3, 5, 8 or 13), or add what the person reported doing or finding under Results. Widening its file scope this way also carries the ticket on if it was blocked waiting on exactly those files.
 - widen_scope: tickets only, when the ticket is asking for files outside its file scope. With allow true, the files join its scope and it goes back to In Progress, carrying on from its kept work, as soon as nothing running uses them. With allow false, its kept work is dropped and it starts again within its scope.
 - needs_human: tickets only. Mark the ticket as work for the person, not an agent, with what they have to do; or null to hand it back to agents.
 
@@ -385,6 +389,7 @@ async function edit(
   if (action.title) changed.push("title");
   if (action.acceptanceCriteria) changed.push("acceptance criteria");
   if (action.fileScope) changed.push("file scope");
+  if (action.storyPoints !== undefined) changed.push("story points");
   if (changed.length === 0) return "Nothing to change.";
 
   // A scope the ticket was blocked asking for may be granted this way rather
@@ -400,6 +405,7 @@ async function edit(
     ...(description !== ticket.description ? { description } : {}),
     ...(action.acceptanceCriteria ? { acceptanceCriteria: action.acceptanceCriteria } : {}),
     ...(action.fileScope ? { fileScope: action.fileScope } : {}),
+    ...(action.storyPoints !== undefined ? { storyPoints: action.storyPoints } : {}),
     // Some of what it asked for is still not covered: it stays blocked, and
     // the request narrows to what the person has not granted yet.
     ...(asked.length > 0 && missing.length > 0 ? { scopeRequest: missing } : {}),

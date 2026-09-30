@@ -152,7 +152,6 @@ export function DagPane({
                 {card.storyPoints != null && (
                   <CoinBadge title={`${card.storyPoints} story points`}>{card.storyPoints} pt</CoinBadge>
                 )}
-                {card.size && <CoinBadge title="Ticket size">{card.size}</CoinBadge>}
               </span>
             </div>
 
