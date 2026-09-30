@@ -4,7 +4,7 @@ import { repository } from "@/lib/db";
 import { prdSchema } from "@/lib/domain/entities";
 import { applyPrd } from "@/lib/agents/pipeline";
 import { activeProject } from "@/lib/board/project";
-import { canRetryEpic, deleteEpic, retryEpic } from "@/lib/board/service";
+import { canGenerateShowcase, canRetryEpic, deleteEpic, retryEpic } from "@/lib/board/service";
 import { limited, RUN } from "@/lib/rate-limit";
 
 /** The active project, if this epic is on it. Anyone else's epic is a 404. */
@@ -45,6 +45,7 @@ export async function GET(
     showcase: detail.showcase,
     children,
     canRetry: epic ? canRetryEpic(epic, detail) : false,
+    canGenerateShowcase: epic ? canGenerateShowcase(epic, detail) : false,
   });
 }
 

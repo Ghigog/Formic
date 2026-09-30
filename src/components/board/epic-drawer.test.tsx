@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EpicDrawer } from "./epic-drawer";
 import { makeCard } from "@/test/cards";
 import type { AttachmentSummary, BoardCard, Prd } from "@/lib/domain/entities";
@@ -35,6 +35,7 @@ function detail(overrides: Partial<{ epic: BoardCard; children: BoardCard[] }> =
     showcase: null,
     children: overrides.children ?? [],
     canRetry: false,
+    canGenerateShowcase: false,
   };
 }
 
@@ -99,5 +100,70 @@ describe("EpicDrawer", () => {
     open();
     await screen.findByText("Board export");
     expect(screen.queryByText("Attachments")).not.toBeInTheDocument();
+  });
+
+  describe("generating a showcase", () => {
+    const done = makeCard({ kind: "epic", key: "EPIC-1", title: "Board export", status: "merged", stage: 8, size: null });
+
+    function openDone(
+      overrides: { canGenerateShowcase?: boolean; showcase?: string | null; epic?: BoardCard } = {},
+      post: () => Promise<Response> = async () => Response.json({ ok: true }),
+    ) {
+      const posts = vi.fn(post);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const url = typeof input === "string" ? input : input.toString();
+          if (url.includes("/api/attachments")) return Response.json({ attachments: [] });
+          if (url.endsWith("/showcase") && init?.method === "POST") return posts();
+          return Response.json({
+            ...detail({ epic: overrides.epic ?? done }),
+            showcase: overrides.showcase ?? null,
+            canGenerateShowcase: overrides.canGenerateShowcase ?? true,
+          });
+        }),
+      );
+      render(<EpicDrawer epicId="e-1" onClose={() => {}} />);
+      return posts;
+    }
+
+    it("offers the button on a done Epic with no showcase, and posts on click", async () => {
+      const posts = openDone();
+      fireEvent.click(await screen.findByRole("button", { name: "Generate showcase" }));
+      await waitFor(() => expect(posts).toHaveBeenCalledTimes(1));
+    });
+
+    it("hides the button once there is a showcase", async () => {
+      openDone({ canGenerateShowcase: false, showcase: "Shipped." });
+      await screen.findByText("Shipped.");
+      expect(screen.queryByRole("button", { name: "Generate showcase" })).not.toBeInTheDocument();
+    });
+
+    it("hides the button on an Epic that is not done", async () => {
+      openDone({ canGenerateShowcase: false, epic });
+      await screen.findByText("Board export");
+      expect(screen.queryByRole("button", { name: "Generate showcase" })).not.toBeInTheDocument();
+    });
+
+    it("disables the button while the request is in flight", async () => {
+      let finish: (res: Response) => void = () => {};
+      openDone({}, () => new Promise<Response>((resolve) => (finish = resolve)));
+      const button = await screen.findByRole("button", { name: "Generate showcase" });
+      fireEvent.click(button);
+      await waitFor(() => expect(button).toBeDisabled());
+      finish(Response.json({ ok: true }));
+      await waitFor(() => expect(button).toBeEnabled());
+    });
+
+    it("disables the button while the PM Agent is running", async () => {
+      openDone({ epic: { ...done, agentRole: "pm" } });
+      expect(await screen.findByRole("button", { name: "Generate showcase" })).toBeDisabled();
+    });
+
+    it("shows the error when the request fails", async () => {
+      openDone({}, async () => Response.json({ error: "EPIC-1 already has a showcase." }, { status: 409 }));
+      fireEvent.click(await screen.findByRole("button", { name: "Generate showcase" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("EPIC-1 already has a showcase.");
+    });
   });
 });

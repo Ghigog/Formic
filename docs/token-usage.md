@@ -33,7 +33,7 @@ person as a bill.
 
 | Work | Where the tokens land | Attribution |
 | :-- | :-- | :-- |
-| A run (Product, Architect, Coder, Reviewer, showcase, the loop entry) | `AgentRun.tokensIn`/`tokensOut`, written when the run finishes | `AgentRun.presetId`, from `runTargetFor` |
+| A run (Product, Architect, Coder, Reviewer, showcase, the loop entry). The showcase run only starts when someone clicks "Generate showcase" on a done Epic, never on its own | `AgentRun.tokensIn`/`tokensOut`, written when the run finishes | `AgentRun.presetId`, from `runTargetFor` |
 | A chat answer Formic makes itself | `CardChatMessage.tokensIn`/`tokensOut`, written when the answer lands | `CardChatMessage.agentPresetId` |
 | A chat answer a CLI agent gives in Actions | nothing: a plan reports no tokens (`usageOf` in `src/lib/runner/runner.ts`) | `agentPresetId` is still written, so the answer is known to be that agent's |
 

@@ -281,7 +281,7 @@ function TicketBody({ view }: { view: TicketView }) {
         <div>
           <Heading>For you</Heading>
           <p className="text-fg-muted mt-1 text-[12px]">
-            Steps outside the repository no agent can take. The Epic&apos;s showcase lists them again once
+            Steps outside the repository no agent can take. The Epic&apos;s showcase, if you generate it, lists them again once
             everything has merged.
           </p>
           <ul className="mt-1 list-disc space-y-1 pl-5">
