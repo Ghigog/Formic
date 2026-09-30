@@ -435,10 +435,14 @@ export function Board({
           )}
         >
           {dragSnapshot ?? columnElements}
+          {!isMobile && (
+            <ArchiveDropZone
+              dragging={dragSnapshot !== null}
+              dropped={dropped}
+              onArchived={(id) => onArchived?.(id)}
+            />
+          )}
         </main>
-        {!isMobile && (
-          <ArchiveDropZone dropped={dropped} onArchived={(id) => onArchived?.(id)} />
-        )}
       </DragDropContext>
       </CardEnvContext.Provider>
     </>
