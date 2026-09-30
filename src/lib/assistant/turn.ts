@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { MODELS } from "@/lib/agents/anthropic";
 import { claudeSpeak, openAiSpeak, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
+import { CHAT_ANSWER_BUDGET_MS, outOfTimeReply } from "@/lib/agents/card-chat";
 import { assistantAgentFor } from "@/lib/agents/presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
@@ -30,6 +31,8 @@ import { ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
  */
 
 const MAX_TURNS = 16;
+/** The answer stops itself here, inside the route's maxDuration, so the message never stays pending. */
+export const MAX_ANSWER_MS = CHAT_ANSWER_BUDGET_MS;
 const MAX_FILES_LISTED = 400;
 
 const listInput = z.object({ prefix: z.string().optional() });
@@ -243,8 +246,19 @@ export async function answer(projectId: string, messageId: string): Promise<void
     let results: Array<{ id: string; content: string; isError: boolean }> | null = null;
     const filesRead = new Set<string>();
     let lastError: string | null = null;
+    let said = "";
+    const startedAt = Date.now();
     for (let turn = 0; turn < MAX_TURNS; turn++) {
+      if (Date.now() - startedAt >= MAX_ANSWER_MS) {
+        await finish(messageId, {
+          content: outOfTimeReply(MAX_ANSWER_MS, [...filesRead], said),
+          proposals,
+          status: "done",
+        });
+        return;
+      }
       const { text, calls } = await speak(results);
+      if (text.trim()) said = text;
       if (calls.length === 0) {
         await finish(messageId, {
           content: text || (proposals.length ? "Here is what I propose." : "I have nothing to add."),
