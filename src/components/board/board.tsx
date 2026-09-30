@@ -168,6 +168,7 @@ export function Board({
         card,
         destination: byColumn[to],
         column: to,
+        from,
         collapsed: collapsed[to],
         index,
       });
