@@ -9,6 +9,7 @@ import { parse } from "yaml";
 import {
   ALREADY_DONE_TRAILER,
   RUNNER_WORKFLOW_PATH,
+  RUNNER_JOB_MINUTES,
   RUNNER_VERSION,
   USAGE_TRAILER,
   parseRunTitle,
@@ -93,7 +94,7 @@ interface Step {
 
 const doc = parse(text) as {
   on?: { workflow_dispatch?: { inputs?: Record<string, unknown> } };
-  jobs?: { agent?: { steps?: Step[] } };
+  jobs?: { agent?: { "timeout-minutes"?: number; steps?: Step[] } };
 };
 
 const steps = doc.jobs?.agent?.steps ?? [];
@@ -104,6 +105,11 @@ const step = (name: string): Step => {
 };
 
 describe("the installed workflow", () => {
+  it("gives the job 180 minutes, the ceiling loop runs are clamped to", () => {
+    expect(RUNNER_JOB_MINUTES).toBe(180);
+    expect(doc.jobs?.agent?.["timeout-minutes"]).toBe(RUNNER_JOB_MINUTES);
+  });
+
   it("parses as the YAML a runner will accept", () => {
     expect(() => parse(text)).not.toThrow();
     expect(text.startsWith(`# ${RUNNER_VERSION}`)).toBe(true);

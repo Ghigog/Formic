@@ -31,11 +31,11 @@ export const ANSWER_PATH = ".formic/answer.md";
 /**
  * How long a job may run: GitHub's own maximum is 360, and this is what Formic
  * writes into every repository's workflow. It is the backstop, not the plan —
- * the plan is the ticket's budget, which is always under this (see
- * `loopBudgetMs` in ./runner), because a run that hits its own limit stops and
+ * the plan is the ticket's budget, which a run is clamped to when it is
+ * over this less the headroom (see `loopBudgetMs` in ./runner), because a run that hits its own limit stops and
  * says which limit it was, and a job the platform kills says nothing.
  */
-export const RUNNER_JOB_MINUTES = 60;
+export const RUNNER_JOB_MINUTES = 180;
 
 /** What the budget leaves a loop run for cloning, installing and reporting. */
 export const JOB_HEADROOM_MINUTES = 5;
