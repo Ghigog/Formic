@@ -11,61 +11,61 @@ import { TRACED } from "./portraits.traced";
 
 /**
  * The only thing joining the roster, the portraits and the source art is a
- * name, and the way that fails is quiet: `PORTRAITS[pic]` renders an empty
+ * name, and the way that fails is quiet: `PORTRAITS[id]` renders an empty
  * card with no error, no type warning and no failing test. This file is what
- * makes the convention safe — in both directions, naming the key at fault.
+ * makes the convention safe — in both directions, naming the id at fault.
  */
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const artDir = path.join(root, "design/portraits");
 
-/** The pic keys that have source art in `design/portraits`. */
+/** The ids that have source art in `design/portraits`. */
 const traced = readdirSync(artDir)
   .filter((name) => name.endsWith(".svg"))
   .map((name) => path.basename(name, ".svg"))
   .sort();
 
-const rosterPics = [...new Set(SENTINELS.map((s) => s.pic))].sort();
+const rosterIds = [...new Set(SENTINELS.map((s) => s.id))].sort();
 
 describe("the roster and its portraits", () => {
-  it("draws a portrait for every pic the roster names", () => {
-    const missing = rosterPics.filter((pic) => !(pic in PORTRAITS));
+  it("draws a portrait for every id the roster has", () => {
+    const missing = rosterIds.filter((id) => !(id in PORTRAITS));
     expect(missing, `no portrait drawn for: ${missing.join(", ")}`).toEqual([]);
   });
 
-  it("claims no portrait the roster does not name", () => {
-    const named = new Set(rosterPics);
+  it("claims no portrait the roster does not have", () => {
+    const named = new Set(rosterIds);
     const orphans = Object.keys(PORTRAITS).filter((key) => !named.has(key));
     expect(orphans, `portraits no sentinel is keyed to: ${orphans.join(", ")}`).toEqual([]);
   });
 
-  it("keeps the source art and the roster's pics the same names", () => {
-    const stray = traced.filter((key) => !rosterPics.includes(key));
+  it("keeps the source art and the roster the same names", () => {
+    const stray = traced.filter((id) => !rosterIds.includes(id));
     expect(stray, `art no sentinel is keyed to: ${stray.join(", ")}`).toEqual([]);
   });
 
   it("paints every portrait on its sentinel's tint", () => {
     for (const sentinel of SENTINELS) {
-      expect(portraitGround(sentinel.pic), `${sentinel.pic}: no ground to paint`).toBe(
+      expect(portraitGround(sentinel.id), `${sentinel.id}: no ground to paint`).toBe(
         GROUP_GROUND[sentinel.group],
       );
       expect(
-        portraitGround(sentinel.pic),
-        `${sentinel.pic}: the ground is a colour, so it cannot follow the theme`,
+        portraitGround(sentinel.id),
+        `${sentinel.id}: the ground is a colour, so it cannot follow the theme`,
       ).toMatch(/^var\(--[\w-]+\)$/);
     }
   });
 
   it("draws no ground of its own, and leaves the figure to the app's ink", () => {
     for (const sentinel of SENTINELS) {
-      const picture = portraitFor(sentinel.pic);
-      expect(picture, `${sentinel.pic} draws its own ground`).not.toMatch(
+      const picture = portraitFor(sentinel.id);
+      expect(picture, `${sentinel.id} draws its own ground`).not.toMatch(
         /^<rect width="200" height="200"/,
       );
-      expect(picture, `${sentinel.pic} is not drawn in the app's ink`).toContain(
+      expect(picture, `${sentinel.id} is not drawn in the app's ink`).toContain(
         'fill="var(--text)"',
       );
-      expect(picture, `${sentinel.pic} is drawn white, which reads on nothing`).not.toMatch(
+      expect(picture, `${sentinel.id} is drawn white, which reads on nothing`).not.toMatch(
         /fill="#(?:fff|ffffff)"/i,
       );
     }
@@ -98,7 +98,7 @@ describe("the generated portraits", () => {
   });
 });
 
-describe("a pic nobody drew", () => {
+describe("an id nobody drew", () => {
   it("renders a marked placeholder rather than an empty card", () => {
     const picture = portraitFor("nobody");
     expect(picture).toContain(">N</text>");
@@ -112,9 +112,9 @@ describe("a pic nobody drew", () => {
     expect(portraitFor('<script>alert("x")</script>')).not.toContain("<script>");
   });
 
-  it("hands back the art for a pic that has some", () => {
-    for (const pic of rosterPics) {
-      expect(portraitFor(pic)).toBe(PORTRAITS[pic]);
+  it("hands back the art for an id that has some", () => {
+    for (const id of rosterIds) {
+      expect(portraitFor(id)).toBe(PORTRAITS[id]);
     }
   });
 });
