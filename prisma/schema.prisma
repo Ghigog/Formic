@@ -57,6 +57,16 @@ enum TicketSize {
   XL
 }
 
+/// How long a run may work on a ticket. See docs/run-time-budgets.md.
+/// PER_STORY_POINT is "per point" (minutes x story points, default 10);
+/// PER_POINT is "per point, by hand" (individual minutes for particular sizes).
+enum RunTimeBudgetMode {
+  OFF
+  PER_STORY_POINT
+  FLAT_MINUTES
+  PER_POINT
+}
+
 enum AttachmentKind {
   image
   file
@@ -95,6 +105,13 @@ model User {
   /// month named by fallbackSandboxMonth ("2026-09"). See src/lib/sandbox/fallback-cap.ts.
   fallbackSandboxSeconds Int     @default(0)
   fallbackSandboxMonth   String?
+
+  /// Run time budget. Null parameters mean the default, ten minutes per point;
+  /// OFF is an explicit choice. runTimeBudgetPerPointMinutes maps story points
+  /// to minutes, e.g. {"1":5,"2":15,"5":40}.
+  runTimeBudgetMode            RunTimeBudgetMode @default(PER_STORY_POINT)
+  runTimeBudgetFlatMinutes     Int?
+  runTimeBudgetPerPointMinutes Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
