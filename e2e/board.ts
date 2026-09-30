@@ -161,7 +161,7 @@ async function waitForDragSettle(locator: Locator, timeout = 2_000): Promise<voi
   }
 }
 
-async function dragTo(
+export async function dragTo(
   page: Page,
   from: { x: number; y: number; width: number; height: number },
   endX: number,

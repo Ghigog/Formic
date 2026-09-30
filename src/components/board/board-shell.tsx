@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Board } from "./board";
 import { NewItemDialog, type CaptureColumn } from "./new-item-dialog";
 import { EpicDrawer } from "./epic-drawer";
@@ -15,6 +15,7 @@ import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
 import { useAgents, type AgentUsage } from "@/lib/hooks/use-agents";
 import { useAssistant } from "@/lib/hooks/use-assistant";
+import { ArchiveButton, ArchiveGrid } from "./archive-grid";
 import { AgentEditor } from "./agent-editor";
 import { SetupDialog, type KeylessAgent } from "./setup-dialog";
 import { useRunnerSetup } from "@/lib/hooks/use-runner-setup";
@@ -75,7 +76,7 @@ export function BoardShell({
   }, []);
   const [rerouteToast, setRerouteToast] = useState<RerouteNotice | null>(null);
   const rerouteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { cards, extras, stats, prdStreams, connection, transition, createEpic, createTicket } =
+  const { cards: boardCards, extras, stats, prdStreams, connection, transition, createEpic, createTicket } =
     useBoard(initialCards, initialStats, (event, seq) => {
       if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
       if (event.type === "card.rerouted") {
@@ -85,6 +86,14 @@ export function BoardShell({
       }
       for (const listener of listeners.current) listener(event, seq);
     });
+  // Tickets archived from this board. The server leaves them out of the next
+  // fetch; this hides them in the meantime.
+  const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const cards = useMemo(
+    () => boardCards.filter((c) => !c.archived && !archivedIds.has(c.id)),
+    [boardCards, archivedIds],
+  );
   const runner = useRunnerSetup(subscribe);
   const [dialog, setDialog] = useState<{ column: CaptureColumn } | null>(null);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
@@ -140,6 +149,7 @@ export function BoardShell({
         onShowcase={(epic) => setOpenEpicId(epic.id)}
         onNewItem={(column) => setDialog({ column })}
         onTransition={transition}
+        onArchived={(id) => setArchivedIds((prev) => new Set(prev).add(id))}
         account={account}
         assistant={{
           ...assistant,
@@ -220,7 +230,17 @@ export function BoardShell({
         onRetry={() => void runner.check()}
       />
 
-      <ColonyAmbient stats={stats} onStopAll={() => void stopAll()} />
+      {archiveOpen && (
+        <div className="bg-paper fixed inset-0 z-40 overflow-y-auto">
+          <ArchiveGrid open onClose={() => setArchiveOpen(false)} />
+        </div>
+      )}
+
+      <ColonyAmbient
+        stats={stats}
+        onStopAll={() => void stopAll()}
+        archive={<ArchiveButton onClick={() => setArchiveOpen(true)} />}
+      />
       <ColonyTimeline repoName={repoName} />
       <SentinelsPage repoName={repoName} />
       <ColonyPopover />
@@ -243,7 +263,11 @@ export function BoardShell({
 }
 
 /** The ambient bar, with the colony's bug count and its nest. */
-function ColonyAmbient(props: { stats: AmbientStats; onStopAll: () => void }) {
+function ColonyAmbient(props: {
+  stats: AmbientStats;
+  onStopAll: () => void;
+  archive: React.ReactNode;
+}) {
   const colony = useColony();
   return (
     <AmbientDrawer

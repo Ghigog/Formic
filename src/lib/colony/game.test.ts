@@ -9,6 +9,7 @@ import {
   heatStacks,
   mergeScore,
   isBug,
+  isSquashed,
   levelOf,
   nextUnlock,
   rankOf,
@@ -107,14 +108,37 @@ describe("score", () => {
     expect(s.squashed).toBe(0);
   });
 
-  it("squashes a bug once it leaves the Backlog", () => {
+  it("squashes a bug report once it leaves the Backlog", () => {
     const bug = card({ id: "b", epicId: null, title: "Fix the broken badge", status: "ready" });
-    expect(isBug(bug)).toBe(true);
+    expect(isBug(bug, new Map())).toBe(true);
+    expect(isSquashed(bug)).toBe(true);
     expect(scoreOf([bug]).squashed).toBe(1);
   });
 
-  it("does not count an epic's own tickets as more bugs", () => {
-    expect(isBug(card({ id: "t", title: "Fix the badge", epicId: "e1" }))).toBe(false);
+  const bugEpic = card({ id: "e1", kind: "epic", title: "Fix the flickering board", epicId: null });
+  const featureEpic = card({ id: "e2", kind: "epic", title: "Add dark mode", epicId: null });
+  const epics = new Map([bugEpic, featureEpic].map((e) => [e.id, e]));
+
+  it("counts a ticket of a bug Epic as a bug, and of a feature Epic as not", () => {
+    expect(isBug(card({ id: "t1", title: "Add dark mode", epicId: "e1" }), epics)).toBe(true);
+    expect(isBug(card({ id: "t2", title: "Fix the badge", epicId: "e2" }), epics)).toBe(false);
+  });
+
+  it("falls back to its own title for a ticket with no Epic", () => {
+    expect(isBug(card({ id: "t3", title: "Fix the badge", epicId: null }), epics)).toBe(true);
+    expect(isBug(card({ id: "t4", title: "Add dark mode", epicId: null }), epics)).toBe(false);
+  });
+
+  it("squashes a bug ticket only once it is merged", () => {
+    expect(isSquashed(card({ id: "t", epicId: "e1", status: "review" }))).toBe(false);
+    expect(isSquashed(card({ id: "t", epicId: "e1", status: "merged" }))).toBe(true);
+  });
+
+  it("scores a bug Epic's tickets as one bug, the Epic", () => {
+    const tickets = ["a", "b", "c"].map((id) => card({ id, epicId: "e1" }));
+    const s = scoreOf([bugEpic, ...tickets]);
+    expect(s.bugs).toBe(1);
+    expect(s.points).toBe(0);
   });
 });
 
