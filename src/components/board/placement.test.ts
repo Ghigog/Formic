@@ -14,12 +14,14 @@ function renderedAfter(
   moved: BoardCard,
   index: number,
   collapsed: ReadonlySet<string> = none,
+  from: ColumnId = column,
 ): string[] {
   const sorted = [...cards].sort(byPosition);
   const { position, detached } = placeDrop({
     card: moved,
     destination: sorted,
     column,
+    from,
     collapsed,
     index,
   });
@@ -42,6 +44,59 @@ describe("layout", () => {
 });
 
 describe("placeDrop", () => {
+  it("returns a ticket to its epic's group when it comes back from In Progress", () => {
+    const [epic, a, b] = makeEpicWithChildren({ key: "E" }, [
+      { key: "A" },
+      { key: "B" },
+    ]);
+    // A is in In Progress, detached by the layout there. Rendered: E, B.
+    // Index 2 is below the group, which would detach a drag within To Do.
+    const moved = { ...a!, detached: true };
+    const cards = [epic!, b!];
+    const order = renderedAfter(cards, "todo", moved, 2, none, "in_progress");
+    expect(order).toEqual(["E", "B", "A"]);
+    const placed = placeDrop({
+      card: moved,
+      destination: cards,
+      column: "todo",
+      from: "in_progress",
+      collapsed: none,
+      index: 2,
+    });
+    expect(placed.detached).toBe(false);
+    expect(layout([...cards, { ...moved, position: placed.position }], "todo")[0]).toMatchObject({
+      kind: "group",
+    });
+  });
+
+  it("keeps a returning ticket among its siblings where it is dropped", () => {
+    const [epic, a, b] = makeEpicWithChildren({ key: "E" }, [
+      { key: "A" },
+      { key: "B" },
+    ]);
+    // Rendered, minus A: E, B. Index 1 is above B inside the accordion.
+    expect(renderedAfter([epic!, b!], "todo", a!, 1, none, "in_progress")).toEqual([
+      "E",
+      "A",
+      "B",
+    ]);
+  });
+
+  it("leaves a returning ticket on its own when its epic is not in the column", () => {
+    const epic = makeCard({ kind: "epic", key: "E", size: null, status: "running" });
+    const a = makeCard({ key: "A", epicId: epic.id });
+    const t = makeCard({ key: "T" });
+    const placed = placeDrop({
+      card: a,
+      destination: [t],
+      column: "todo",
+      from: "in_progress",
+      collapsed: none,
+      index: 1,
+    });
+    expect(placed.detached).toBe(false);
+  });
+
   it("pulls a ticket out of its epic when dropped below the group", () => {
     const [epic, a, b] = makeEpicWithChildren({ key: "E" }, [
       { key: "A" },
@@ -144,6 +199,7 @@ describe("placeDrop", () => {
     const epic = makeCard({ kind: "epic", key: "E", size: null, childCount: 4 });
     const idea = makeCard({ key: "RAW-1", position: epic.position + 5000 });
     const result = placeDrop({
+      from: "todo",
       card: epic,
       destination: [idea],
       column: "backlog",
@@ -162,6 +218,7 @@ describe("placeDrop", () => {
     const t = makeCard({ key: "T", epicId: epic!.id, detached: true });
     const collapsed = new Set([epic!.id]);
     const result = placeDrop({
+      from: "todo",
       card: t,
       destination: [epic!, a!, t].sort(byPosition),
       column: "todo",
@@ -183,6 +240,7 @@ describe("placeDrop", () => {
   it("clears the flag in a column that never groups", () => {
     const [epic, a] = makeEpicWithChildren({}, [{ detached: true }]);
     const result = placeDrop({
+      from: "todo",
       card: a!,
       destination: [epic!],
       column: "in_progress",
@@ -195,6 +253,7 @@ describe("placeDrop", () => {
   it("lands at the end of an empty column", () => {
     const card = makeCard();
     const result = placeDrop({
+      from: "todo",
       card,
       destination: [],
       column: "todo",
