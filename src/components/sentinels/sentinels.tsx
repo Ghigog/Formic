@@ -34,12 +34,12 @@ function Stars({ n, size, id }: { n: number; size: number; id?: string }) {
  * `portraits.ts` with the art, so the card, the report avatar and the tests
  * all inline the same markup.
  */
-function Portrait({ pic, className }: { pic: string; className?: string }) {
+function Portrait({ id, className }: { id: string; className?: string }) {
   return (
     <span
       aria-hidden
       className={cn("absolute inset-0 block", className)}
-      dangerouslySetInnerHTML={{ __html: portraitSvg(pic) }}
+      dangerouslySetInnerHTML={{ __html: portraitSvg(id) }}
     />
   );
 }
@@ -339,9 +339,9 @@ function Card({
         on ? "border-terracotta shadow-[0_0_0_3px_rgb(217_107_39/0.14)]" : "border-line",
       )}
     >
-      <div className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden" style={{ background: portraitGround(x.pic) }}>
+      <div className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden" style={{ background: portraitGround(x.id) }}>
         <div className={cn("absolute inset-0", running && "sentinel-motion animate-[sentinelBob_0.9s_ease-in-out_infinite]")}>
-          <Portrait pic={x.pic} />
+          <Portrait id={x.id} />
         </div>
         <span className="text-anthracite absolute top-2.5 left-2.5 rounded-full bg-white/90 px-2 py-1 font-mono text-[9px] font-medium tracking-[0.12em] uppercase">
           {x.name}
@@ -440,8 +440,8 @@ function Report({ x, st, now, onSummon }: { x: Sentinel; st: SentinelState; now:
       className="border-line bg-card box-border flex shrink-0 flex-col gap-[18px] rounded-[14px] border p-5 lg:min-h-0 lg:w-[420px] lg:overflow-auto"
     >
       <div className="flex items-center gap-3">
-        <span className="relative size-[52px] shrink-0 overflow-hidden rounded-full" style={{ background: portraitGround(x.pic) }}>
-          <Portrait pic={x.pic} />
+        <span className="relative size-[52px] shrink-0 overflow-hidden rounded-full" style={{ background: portraitGround(x.id) }}>
+          <Portrait id={x.id} />
         </span>
         <div className="flex min-w-0 grow flex-col gap-[3px]">
           <span className="font-serif text-[21px] leading-[1.1] font-semibold">{x.who}</span>
