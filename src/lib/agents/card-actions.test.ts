@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyCardAction } from "./card-actions";
-import { resetAgents } from "./registry";
+import { resetAgents, setAgents } from "./registry";
 import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
+import type { AgentContext, AgentOutcome, CodeChange, CoderAgent, CoderTask } from "@/lib/agents/ports";
+import type { Workspace } from "@/lib/sandbox/workspace";
+import { MockArchitectAgent, MockProductAgent, MockReviewerAgent, MockShowcaseAgent } from "@/lib/agents/mock";
 
 /**
  * "Merge it" in a ticket's chat merges its pull request. The ticket reaches
@@ -56,6 +59,63 @@ async function seedInReview(): Promise<{ ticket: TicketDetail; next: TicketDetai
     next: (await repo.ticketDetail(b!.id))!,
     prNumber: pull.number,
   };
+}
+
+/**
+ * A coder that does whatever the test tells it to, so a run started by an
+ * action can be seen to have started.
+ */
+class StubCoder implements CoderAgent {
+  tasks: CoderTask[] = [];
+
+  constructor(private readonly act: (workspace: Workspace, task: CoderTask) => Promise<void>) {}
+
+  async implement(_ctx: AgentContext, input: { task: CoderTask; workspace: Workspace }): Promise<AgentOutcome<CodeChange>> {
+    this.tasks.push(input.task);
+    await this.act(input.workspace, input.task);
+    return {
+      ok: true,
+      value: { summary: "did the thing", detail: "details", verifiedWith: "npm test", handoff: [] },
+      usage: { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 },
+    };
+  }
+}
+
+/** T-1 blocked in To Do, asking for a file outside its scope. */
+async function seedBlocked(): Promise<TicketDetail> {
+  const repo = repository();
+  const epic = await repo.createEpic({ projectId: PROJECT, title: "An epic", rawRequest: "Do a thing", position: 1 });
+  const [a] = await repo.createTickets([
+    {
+      epicId: epic.id,
+      key: "T-1",
+      title: "Do the thing",
+      description: "Ship it.",
+      acceptanceCriteria: ["It is done"],
+      fileScope: ["src/lib/feature"],
+      size: "M",
+      storyPoints: 3,
+      position: 1,
+      dependsOnKeys: [],
+    },
+  ]);
+  await repo.updateTicket(a!.id, {
+    status: "blocked",
+    stalledIn: "todo",
+    blockedReason: "Needs files outside its scope: `src/app/page.tsx`, `src/lib/other/thing.ts`.",
+    scopeRequest: ["src/app/page.tsx", "src/lib/other/thing.ts"],
+  });
+  return (await repo.ticketDetail(a!.id))!;
+}
+
+/** Waits for detached work (launch()) to reach a state, or gives up loudly. */
+async function until(predicate: () => Promise<boolean>, what: string, timeoutMs = 4000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`Timed out waiting for ${what}.`);
 }
 
 beforeEach(() => {
@@ -143,5 +203,123 @@ describe("moving a stopped card to the column it stopped in", () => {
     const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "move", to: "in_review" });
 
     expect(said).toBe("T-1 is already in In Review.");
+  });
+});
+
+describe("editing a ticket that is asking for files outside its scope", () => {
+  const useStubCoder = (): StubCoder => {
+    const coder = new StubCoder(async (workspace, task) => {
+      await workspace.writeFile(`${task.fileScope[0]}/thing.ts`, "export const a = 1;\n");
+    });
+    setAgents({
+      product: new MockProductAgent(),
+      architect: new MockArchitectAgent(),
+      coder,
+      reviewer: new MockReviewerAgent(),
+      showcase: new MockShowcaseAgent(),
+    });
+    return coder;
+  };
+
+  it("resolves the block and starts the Coder Agent when the new scope covers what it asked for", async () => {
+    const coder = useStubCoder();
+    const ticket = await seedBlocked();
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "edit_ticket",
+      fileScope: ["src/app/page.tsx", "src/lib/feature", "src/lib/other/thing.ts"],
+    });
+
+    expect(said).toContain("Updated T-1's file scope");
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).not.toBe("blocked");
+    expect(after.stalledIn).toBeNull();
+    expect(after.blockedReason).toBeNull();
+    expect(after.scopeRequest).toEqual([]);
+    await until(async () => coder.tasks.length > 0, "the Coder Agent to start");
+    expect((await repository().ticketDetail(ticket.id))!.status).not.toBe("ready");
+  });
+
+  it("queues it behind a ticket running in those files", async () => {
+    useStubCoder();
+    const ticket = await seedBlocked();
+    const repo = repository();
+    const [other] = await repo.createTickets([
+      {
+        epicId: ticket.epicId,
+        key: "T-2",
+        title: "The page",
+        description: "The page.",
+        acceptanceCriteria: ["It shows"],
+        fileScope: ["src/app"],
+        size: "M",
+        position: 2,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.updateTicket(other!.id, { status: "running" });
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "edit_ticket",
+      fileScope: ["src/app/page.tsx", "src/lib/feature", "src/lib/other/thing.ts"],
+    });
+
+    expect(said).toContain("queued behind T-2");
+    const after = (await repo.ticketDetail(ticket.id))!;
+    expect(after.status).toBe("queued");
+    expect(after.scopeRequest).toEqual([]);
+    expect(after.blockedReason).toBeNull();
+  });
+
+  it("carries kept work on rather than doing it again", async () => {
+    const coder = useStubCoder();
+    const ticket = await seedBlocked();
+    await repository().updateTicket(ticket.id, { branchName: "formic/t-1" });
+    MockVcsClient.stage("formic/t-1", ["src/lib/feature/thing.ts", "src/app/page.tsx"], "T-1: did the thing\n\ndetails");
+
+    await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "edit_ticket",
+      fileScope: ["src/app/page.tsx", "src/lib/feature", "src/lib/other/thing.ts"],
+    });
+
+    await until(
+      async () => !!(await repository().ticketDetail(ticket.id))?.prNumber,
+      "the kept work's pull request",
+    );
+    expect(coder.tasks).toHaveLength(0);
+  });
+
+  it("stays blocked when the new scope covers only part of what it asked for", async () => {
+    useStubCoder();
+    const ticket = await seedBlocked();
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "edit_ticket",
+      fileScope: ["src/lib/feature", "src/lib/other/thing.ts"],
+    });
+
+    expect(said).toContain("Updated T-1's file scope");
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.fileScope).toEqual(["src/lib/feature", "src/lib/other/thing.ts"]);
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("todo");
+    expect(after.scopeRequest).toEqual(["src/app/page.tsx"]);
+  });
+
+  it("leaves a ticket with no scope request working the way it always has", async () => {
+    const ticket = await seedBlocked();
+    await repository().updateTicket(ticket.id, { status: "ready", stalledIn: null, blockedReason: null, scopeRequest: [] });
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "edit_ticket",
+      fileScope: ["src/lib/wider"],
+    });
+
+    expect(said).toBe("Updated T-1's file scope.");
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.fileScope).toEqual(["src/lib/wider"]);
+    expect(after.status).toBe("ready");
+    expect(after.stalledIn).toBeNull();
+    expect(after.scopeRequest).toEqual([]);
   });
 });
