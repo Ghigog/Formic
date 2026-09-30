@@ -557,6 +557,14 @@ async function mergeTicket(
     // refusal worth reporting as what it was.
     const after = await client.pullRequest(prNumber).catch(() => null);
     const conflict = merged.conflict && after?.mergeable === false;
+    // Required checks still running on the head are not a refusal to park
+    // the card over: CI reporting in merges it, as above.
+    if (!conflict && after) {
+      const checks = await client.checksFor(after.headSha).catch(() => []);
+      if (checks.length === 0 || pending(checks).length > 0) {
+        return { merged: false, reason: `CI is still running on ${ticket.key}; it merges once it passes.` };
+      }
+    }
     const reason = conflict
       ? `${ticket.key} could not be merged cleanly: ${merged.reason}`
       : `GitHub refused the merge: ${merged.reason}`;
