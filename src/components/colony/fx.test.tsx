@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ColonyFx, heldByDrag, visibleRects } from "./fx";
+import { ColonyFx, clipSetFor, heldByDrag, visibleRects } from "./fx";
 import { SoundEngine } from "./sound";
 
 /**
@@ -189,5 +189,37 @@ describe("visibleRects", () => {
     const out = visibleRects(col, [a, b]);
     expect(area(out)).toBe(100 * 60 - 30 * 20);
     for (const r of out) expect(r.bottom <= 60 || r.right <= 50 || r.left >= 80 || r.top >= 70).toBe(true);
+  });
+});
+
+describe("clipSetFor", () => {
+  const col = { left: 100, top: 0, right: 200, bottom: 100 };
+
+  it("lets an emerging ant outside its column draw over the board", () => {
+    expect(clipSetFor("walk", false, 500, 500, col)).toBe("travel");
+  });
+
+  it("clips an emerging ant once it is inside the column, and after it has entered", () => {
+    expect(clipSetFor("walk", false, 150, 50, col)).toBe("column");
+    expect(clipSetFor("walk", true, 99, 50, col)).toBe("column");
+  });
+
+  it("lets an ant heading home draw over the board even inside its column", () => {
+    expect(clipSetFor("home", true, 500, 500, col)).toBe("travel");
+    expect(clipSetFor("home", true, 150, 50, col)).toBe("travel");
+  });
+
+  it("clips ants working in the column", () => {
+    expect(clipSetFor("read", false, 500, 500, col)).toBe("column");
+  });
+});
+
+describe("visibleRects with the viewport", () => {
+  const view = { left: 0, top: 0, right: 1000, bottom: 800 };
+
+  it("is the whole viewport without masks and minus a drawer mask", () => {
+    expect(visibleRects(view, [])).toEqual([view]);
+    const out = visibleRects(view, [{ left: 600, top: 0, right: 1000, bottom: 800 }]);
+    expect(out).toEqual([{ left: 0, top: 0, right: 600, bottom: 800 }]);
   });
 });
