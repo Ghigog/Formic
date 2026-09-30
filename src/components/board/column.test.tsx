@@ -129,7 +129,7 @@ describe("Column", () => {
   });
 
   it("labels a ticket of a bug Epic as a bug, and as squashed once merged", () => {
-    const [epic, todo, done] = makeEpicWithChildren({ title: "Fix the flickering board" }, [
+    const [epic, todo, done] = makeEpicWithChildren({ title: "Fix the flickering board", workType: "bug" }, [
       { title: "Stop the repaint", status: "ready" },
       { title: "Cache the layout", status: "merged" },
     ]);

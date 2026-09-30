@@ -42,6 +42,10 @@ export type CardKind = (typeof CARD_KINDS)[number];
 export const TICKET_SIZES = ["S", "M", "L", "XL"] as const;
 export type TicketSize = (typeof TICKET_SIZES)[number];
 
+/** What the owner chose a card to be, besides plain work. */
+export const WORK_TYPES = ["bug", "spike"] as const;
+export type WorkType = (typeof WORK_TYPES)[number];
+
 export const ATTACHMENT_KINDS = ["image", "file"] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 
@@ -119,6 +123,7 @@ export const epicSchema = z.object({
   showcase: z.string().nullable().default(null),
   /** A holder for a ticket with no Epic of its own. See BoardCard.standalone. */
   standalone: z.boolean().default(false),
+  workType: z.enum(WORK_TYPES).nullable().default(null),
   rerouteFrom: z.enum(COLUMNS).nullable().default(null),
   rerouteReason: z.string().nullable().default(null),
   createdAt: z.coerce.date(),
@@ -140,6 +145,7 @@ export const ticketSchema = z.object({
   stalledIn: z.enum(COLUMNS).nullable().default(null),
   stage: z.number().int().min(1).max(8),
   position: z.number(),
+  workType: z.enum(WORK_TYPES).nullable().default(null),
   branchName: z.string().nullable().default(null),
   prNumber: z.number().int().nullable().default(null),
   prUrl: z.string().nullable().default(null),
@@ -197,6 +203,8 @@ export interface BoardCard {
    * renders alone, marked detached, exactly as today.
    */
   standalone?: boolean;
+  /** Bug or spike, as the owner chose when creating it. Null for neither. */
+  workType?: WorkType | null;
   /** The column a request was rerouted from, and why. Null outside a reroute. */
   rerouteFrom?: (typeof COLUMNS)[number] | null;
   rerouteReason?: string | null;

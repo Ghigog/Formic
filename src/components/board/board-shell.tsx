@@ -196,10 +196,10 @@ export function BoardShell({
         open={dialog !== null}
         column={dialog?.column ?? "backlog"}
         onClose={() => setDialog(null)}
-        onSubmit={(rawRequest, requestId) =>
+        onSubmit={(rawRequest, requestId, workType) =>
           dialog?.column === "todo"
-            ? createTicket(rawRequest, requestId)
-            : createEpic(rawRequest, requestId)
+            ? createTicket(rawRequest, requestId, workType)
+            : createEpic(rawRequest, requestId, workType)
         }
       />
 
