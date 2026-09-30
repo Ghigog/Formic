@@ -20,7 +20,7 @@ import {
   mergeNeedsPromotion,
   vcs,
 } from "@/lib/vcs";
-import { type Workspace, scopedWorkspace } from "@/lib/sandbox/workspace";
+import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inMergeLane, inTicketLane } from "./lane";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
@@ -81,11 +81,17 @@ function pending(checks: CheckSummary[]): CheckSummary[] {
 /**
  * The entry point every CI signal funnels into. Idempotency is the caller's
  * (see ./deliveries.ts): by the time this runs, the event is known to be new.
+ *
+ * `startReview: false` is the sweep's ask rather than a report's: finish what
+ * is already decided — an approval to carry across a base GitHub brought in,
+ * a green head to merge — and begin nothing. A review begun from a sweep
+ * would spend an attempt of the ticket's review ceiling every half-minute.
  */
 export async function reviewPullRequest(
   projectId: string,
   prNumber: number,
   headSha: string,
+  options: { startReview?: boolean } = {},
 ): Promise<void> {
   const repo = repository();
   const ticket = await repo.ticketByPrNumber(projectId, prNumber);
@@ -95,7 +101,7 @@ export async function reviewPullRequest(
   if (!ticket) return;
   if (ticket.status === "merged") return;
 
-  await inTicketLane(ticket.id, () => react(projectId, ticket.id, prNumber, headSha));
+  await inTicketLane(ticket.id, () => react(projectId, ticket.id, prNumber, headSha, options));
 }
 
 /**
@@ -109,7 +115,12 @@ async function react(
   ticketId: string,
   prNumber: number,
   headSha: string,
+  options: { startReview?: boolean } = {},
 ): Promise<void> {
+  // Only a report starts a review or announces a status change. The sweep
+  // runs over every card in In Review every half-minute, and a tick that
+  // found nothing new should invent neither a review nor a board event.
+  const startReview = options.startReview ?? true;
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket || ticket.status === "merged") return;
@@ -151,28 +162,33 @@ async function react(
   const red = failing(checks);
 
   if (checks.length === 0 || pending(checks).length > 0) {
-    await publish(projectId, {
-      type: "ci.status",
-      ticketId: ticket.id,
-      prNumber,
-      state: "pending",
-      checkName: pending(checks)[0]?.name ?? null,
-    });
+    if (startReview) {
+      await publish(projectId, {
+        type: "ci.status",
+        ticketId: ticket.id,
+        prNumber,
+        state: "pending",
+        checkName: pending(checks)[0]?.name ?? null,
+      });
+    }
     // The review reads the diff while CI runs, rather than after it, and
     // the merge waits for both. Once it has approved this head, or once a
     // check has already failed, the rest of CI is worth waiting for.
     if (ticket.runnerJob || reviewedSha === headSha || red.length > 0) return;
+    if (!startReview) return;
     await reviewTicket(projectId, ticket, pull, [], { ciRunning: true });
     return;
   }
 
-  await publish(projectId, {
-    type: "ci.status",
-    ticketId: ticket.id,
-    prNumber,
-    state: red.length === 0 ? "passing" : "failing",
-    checkName: red[0]?.name ?? null,
-  });
+  if (startReview) {
+    await publish(projectId, {
+      type: "ci.status",
+      ticketId: ticket.id,
+      prNumber,
+      state: red.length === 0 ? "passing" : "failing",
+      checkName: red[0]?.name ?? null,
+    });
+  }
 
   // A reviewer is already on this pull request in GitHub Actions. More
   // reports about the same head are not a reason to start another.
@@ -183,6 +199,7 @@ async function react(
     return;
   }
 
+  if (!startReview) return;
   await reviewTicket(projectId, ticket, pull, red);
 }
 
@@ -200,8 +217,62 @@ function whyStuck(key: string, pull: PullRequestDetail): string | null {
   return null;
 }
 
+/** What a person can do about a conflict Formic could not resolve itself. */
+function conflictAdvice(key: string): string {
+  return `Resolve the conflict on GitHub and it carries on once CI passes, or close the pull request and move ${key} to To Do, then In Progress, to redo it on the current code.`;
+}
+
 function conflictReason(key: string, pull: PullRequestDetail, why: string): string {
-  return `${key}'s pull request #${pull.number} conflicts with ${pull.baseBranch}, so CI cannot run on it.${why ? ` ${why}` : ""} Resolve the conflict on GitHub and it carries on once CI passes, or close the pull request and move ${key} to To Do, then In Progress, to redo it on the current code.`;
+  return `${key}'s pull request #${pull.number} conflicts with ${pull.baseBranch}, so CI cannot run on it.${why ? ` ${why}` : ""} ${conflictAdvice(key)}`;
+}
+
+/**
+ * The conflict is real, but Formic could not get at it: the base would not
+ * come into a sandbox and GitHub would not bring it in either. Nothing has
+ * looked at the conflict, so the person is not being asked to settle one —
+ * they are being asked to unstick the two things that failed — and the reason
+ * says what each of them said.
+ */
+function unreachableConflictReason(
+  key: string,
+  pull: PullRequestDetail,
+  sandbox: string,
+  github: string,
+): string {
+  return (
+    `${key}'s pull request #${pull.number} conflicts with ${pull.baseBranch}, and the Reviewer Agent could not bring the base in to resolve it. ` +
+    `In the sandbox: ${sandbox} GitHub: ${github} ` +
+    `Say "resume" in ${key}'s chat and the Reviewer Agent tries again, or resolve the conflict on GitHub by hand; either way it carries on once CI passes.`
+  );
+}
+
+/**
+ * Why a card stops at the review ceiling, and what the person is being asked.
+ *
+ * A park that says only that a check fails hides the one thing the reviewer
+ * already worked out — whether the change itself is good — and leaves the
+ * person to guess which of the two the ticket is waiting on. When the failing
+ * commit is the one the reviewer approved, the check is the question, and the
+ * reason says so.
+ */
+function ceilingReason(
+  ticket: TicketDetail,
+  pull: PullRequestDetail,
+  red: CheckSummary[],
+): string {
+  if (red.length === 0) {
+    return `${ticket.key} has been reviewed ${MAX_REVIEWS} times without being approved. This needs a human.`;
+  }
+  const names = red.map((c) => c.name).join(", ");
+  if (ticket.reviewedSha === pull.headSha) {
+    return (
+      `${names} fails on the commit the Reviewer Agent approved on pull request #${pull.number}, ` +
+      `so the change is vouched for and the check is the question. Re-run ${names} on GitHub and the card carries on by itself if it passes, ` +
+      `or say "resume" in ${ticket.key}'s chat to give the reviews another go at it, ` +
+      `or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code. This needs a human.`
+    );
+  }
+  return `${names} is still failing after ${MAX_REVIEWS} reviews of pull request #${pull.number}. This needs a human.`;
 }
 
 /** When each board's open pull requests were last looked at, to go easy on the API. */
@@ -259,7 +330,22 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
       continue;
     }
     const stuck = whyStuck(ticket.key, pull);
-    if (stuck) await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
+    if (stuck) {
+      await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
+      continue;
+    }
+
+    // A card nothing else is driving is why the sweep looks at all. GitHub
+    // brings the base in by moving the head, and the report about that head is
+    // what carries an approval across it — but a `synchronize` is not an event
+    // this board acts on, and a head whose checks deliver nothing sends
+    // nothing either. Without this, a change the reviewer vouched for, with
+    // green CI, waits on a report that is never coming. Finishing that is the
+    // sweep's job; starting a review is not, and a report is what does it.
+    launch(
+      () => reviewPullRequest(projectId, pull.number, pull.headSha, { startReview: false }),
+      `the sweep of ${ticket.key}'s pull request`,
+    );
   }
 }
 
@@ -644,14 +730,10 @@ async function reviewTicket(
   const names = red.map((c) => c.name).join(", ");
 
   if (attempt > MAX_REVIEWS) {
-    await stallTicket(
-      projectId,
-      ticket,
-      red.length
-        ? `${names} is still failing after ${MAX_REVIEWS} reviews. This needs a human.`
-        : `${ticket.key} has been reviewed ${MAX_REVIEWS} times without being approved. This needs a human.`,
-      { blocked: true, stalledIn: "in_review" },
-    );
+    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red), {
+      blocked: true,
+      stalledIn: "in_review",
+    });
     return;
   }
 
@@ -771,7 +853,10 @@ async function reviewTicket(
     const changed = await checkout.raw.changedFiles();
     if (changed.length === 0) {
       if (red.length > 0) {
-        const reason = `${names} is failing and the Reviewer Agent had no fix to offer.`;
+        const reason =
+          `${names} is failing on pull request #${pull.number} and the Reviewer Agent had no fix to offer. ` +
+          `Re-run ${names} on GitHub if the check is the problem; if the change is, close the pull request and ` +
+          `move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`;
         await stallTicket(projectId, ticket, reason, { blocked: true, stalledIn: "in_review" });
         await run.finish({ ...outcome, ok: false, error: reason, blocked: true });
         return;
@@ -843,9 +928,11 @@ const NO_USAGE = { model: "none", tokensIn: 0, tokensOut: 0, costCents: 0 };
  * The pull request conflicts with its base, so CI cannot run and nothing
  * merges. The In Review column's agent resolves it: the base is merged into
  * the branch with its conflicts left in, the agent resolves them, and the
- * merge is pushed as a merge. Only a conflict it cannot resolve, or one that
- * keeps coming back, waits for a person. It counts against the same ceiling
- * as reviews.
+ * merge is pushed as a merge. When the base will not even come into the
+ * sandbox, GitHub is asked to bring it in first — the same move the path with
+ * no checkout makes — so that only a conflict nobody could resolve, or one
+ * that keeps coming back, waits for a person. It counts against the same
+ * ceiling as reviews.
  */
 async function resolveConflicts(
   projectId: string,
@@ -934,6 +1021,12 @@ async function resolveConflicts(
     await run.finish({ ok: false, error: why, blocked: true, usage: NO_USAGE });
   };
 
+  /** Parks the card with a reason that is already the whole sentence. */
+  const failWith = async (reason: string) => {
+    await stallTicket(projectId, ticket, reason, { blocked: true, stalledIn: "in_review" });
+    await run.finish({ ok: false, error: reason, blocked: true, usage: NO_USAGE });
+  };
+
   try {
     // With no real checkout (a board with no GitHub token) there is nothing
     // to merge here: the agent is pointed at the files the pull request
@@ -942,7 +1035,31 @@ async function resolveConflicts(
     let conflicts = changedFiles.length ? changedFiles : ticket.fileScope;
     if (real) {
       const merged = await mergeInBase(checkout.raw, pull.baseBranch);
-      if (!merged.ok) return await fail(merged.reason);
+      if (!merged.ok) {
+        // The base never arrived, so nothing here has seen a conflict to
+        // resolve. GitHub brings bases into branches for a living: ask it to,
+        // exactly as the path with no sandbox does, rather than send a person
+        // after a conflict Formic has not even looked at.
+        const update = await client.updateBranch(pull.number);
+        if (!update.ok) {
+          return await failWith(
+            unreachableConflictReason(ticket.key, pull, merged.reason, update.reason),
+          );
+        }
+        const after = await client.pullRequest(pull.number);
+        await run.finish({ ok: true, value: null, usage: NO_USAGE });
+        // The work did not change, so whoever vouched for it — a review's
+        // approval — still stands, and CI on the new head decides the merge.
+        // That is exactly the reaction a report about the new head gets; a
+        // mock GitHub sends none, so the next stage is driven from here.
+        if (client.name === "mock") {
+          launch(
+            () => reviewPullRequest(projectId, pull.number, after.headSha),
+            `reaction to the base brought in for ${ticket.key}`,
+          );
+        }
+        return;
+      }
       conflicts = merged.conflicts;
     }
 
@@ -1024,6 +1141,10 @@ async function resolveConflicts(
 /** Where the base branch is fetched to in a checkout, to merge it from. */
 const BASE_REF = "refs/formic/base";
 
+/** How many goes a fetch of the base gets before the column gives up on it. */
+const BASE_FETCH_TRIES = 3;
+const BASE_FETCH_EVERY_MS = 500;
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -1042,16 +1163,33 @@ async function mergeInBase(
   base: string,
 ): Promise<{ ok: true; conflicts: string[] } | { ok: false; reason: string }> {
   const long = { timeoutMs: 5 * 60 * 1000 };
+  // A clone that already has the history refuses --unshallow, which is not a
+  // failure worth reporting: the fetch below is what has to work.
   await raw.exec("git fetch -q --unshallow origin", long);
-  const fetched = await raw.exec(`git fetch -q origin ${shellQuote(`+refs/heads/${base}:${BASE_REF}`)}`, long);
+
+  // A sandbox's network is not the merge. One attempt at a refspec is a thin
+  // reed to stop a card on, and a second and third cost seconds where a
+  // person costs a day.
+  const refspec = `git fetch -q origin ${shellQuote(`+refs/heads/${base}:${BASE_REF}`)}`;
+  let fetched = await raw.exec(refspec, long);
+  for (let i = 1; i < BASE_FETCH_TRIES && fetched.exitCode !== 0; i++) {
+    await new Promise((r) => setTimeout(r, BASE_FETCH_EVERY_MS));
+    fetched = await raw.exec(refspec, long);
+  }
   if (fetched.exitCode !== 0) {
-    return { ok: false, reason: `Could not fetch ${base}: ${fetched.stderr.trim() || fetched.stdout.trim()}` };
+    return {
+      ok: false,
+      reason: `Could not fetch ${base}: ${commandFailure(`git fetch exited ${fetched.exitCode}`, fetched)}`,
+    };
   }
   const identity = `-c user.name=${shellQuote(AGENT_COMMIT_AUTHOR.name)} -c user.email=${shellQuote(AGENT_COMMIT_AUTHOR.email)}`;
   const merge = await raw.exec(`git ${identity} merge --no-commit --no-ff ${BASE_REF}`);
   const conflicts = lines((await raw.exec("git diff --name-only --diff-filter=U")).stdout);
   if (merge.exitCode !== 0 && conflicts.length === 0) {
-    return { ok: false, reason: `Could not merge ${base}: ${merge.stderr.trim() || merge.stdout.trim()}` };
+    return {
+      ok: false,
+      reason: `Could not merge ${base}: ${commandFailure(`git merge exited ${merge.exitCode}`, merge)}`,
+    };
   }
   return { ok: true, conflicts };
 }

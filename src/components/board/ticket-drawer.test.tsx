@@ -150,6 +150,44 @@ describe("TicketDrawer", () => {
     expect(within(lightbox).getByAltText("mock.png")).toHaveAttribute("src", "/api/attachments/a-1");
   });
 
+  it("links the setup pull request a blocked ticket's reason names, so it can be clicked through", async () => {
+    const url = "https://github.com/acme/widgets/pull/7";
+    open({
+      ...VIEW,
+      card: makeCard({
+        id: "t-1",
+        key: "T-1",
+        title: "Export endpoint",
+        status: "blocked",
+        blockedReason: `Claude Code runs in this repository's GitHub Actions. Merge the setup pull request once (${url}), then try again.`,
+      }),
+    });
+
+    const link = await screen.findByRole("link", { name: url });
+    expect(link).toHaveAttribute("href", url);
+    expect(link).toHaveAttribute("target", "_blank");
+    // The sentence around the link is still a sentence, under "This needs you."
+    expect(screen.getByText(/Merge the setup pull request once/)).toBeInTheDocument();
+    expect(screen.getByText(/This needs you\./)).toBeInTheDocument();
+  });
+
+  it("does the same for a reason that is a wait, not a stall, such as a dependency", async () => {
+    const url = "https://github.com/acme/widgets/pull/7";
+    open({
+      ...VIEW,
+      card: makeCard({
+        id: "t-1",
+        key: "T-1",
+        title: "Export endpoint",
+        status: "waiting",
+        blockedReason: `Waiting on the setup pull request (${url}) before it can start.`,
+      }),
+    });
+
+    const link = await screen.findByRole("link", { name: url });
+    expect(link).toHaveAttribute("href", url);
+  });
+
   it("shows nothing where a ticket has no attachments", async () => {
     open();
     await screen.findByRole("region", { name: "Ticket" });

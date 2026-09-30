@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
@@ -119,6 +119,67 @@ describe("Board, on a wide screen", () => {
 
     await userEvent.setup().click(ctas[0]!);
     expect(onNewItem).toHaveBeenCalledWith("backlog");
+  });
+});
+
+describe("Board, ordering the Done column", () => {
+  /*
+   * Done's order is not the person's: it is derived from when each card
+   * finished, so nothing in the column can be picked up to reorder it. The
+   * assertions below pin that default — newest completed first — for
+   * both the tickets standing alone and the epic groups Done shows.
+   */
+  it("orders the Done column by completion time, newest first, regardless of position", () => {
+    const older = makeCard({ key: "PROT-20", status: "merged", position: 1000, mergedAt: "2025-01-01T10:00:00Z" });
+    const newer = makeCard({ key: "PROT-21", status: "merged", position: 2000, mergedAt: "2025-01-02T10:00:00Z" });
+    renderBoard([older, newer]);
+
+    const done = screen.getByRole("region", { name: "Done" });
+    expect(
+      within(done)
+        .getAllByText(/^PROT-\d+$/)
+        .map((el) => el.textContent),
+    ).toEqual(["PROT-21", "PROT-20"]);
+  });
+
+  it("orders Done's epic groups by completion time too, with their tickets nested beneath", () => {
+    const [earlyEpic, ...earlyKids] = makeEpicWithChildren(
+      { key: "EPIC-1", title: "Early epic", status: "merged", position: 1000, updatedAt: "2025-01-01T10:00:00Z" },
+      [{ key: "PROT-30", status: "merged", mergedAt: "2025-01-01T09:00:00Z" }],
+    );
+    const [lateEpic, ...lateKids] = makeEpicWithChildren(
+      { key: "EPIC-2", title: "Late epic", status: "merged", position: 2000, updatedAt: "2025-01-02T10:00:00Z" },
+      [{ key: "PROT-31", status: "merged", mergedAt: "2025-01-02T09:00:00Z" }],
+    );
+    renderBoard([earlyEpic!, ...earlyKids, lateEpic!, ...lateKids]);
+
+    const done = screen.getByRole("region", { name: "Done" });
+    const groups = within(done).getAllByRole("listitem");
+    expect(groups).toHaveLength(2);
+    // The epic that finished later sits above, its own merged ticket nested.
+    expect(groups[0]).toHaveTextContent("Late epic");
+    expect(groups[0]).toHaveTextContent("PROT-31");
+    expect(groups[1]).toHaveTextContent("Early epic");
+    expect(groups[1]).toHaveTextContent("PROT-30");
+  });
+
+  it("renders an empty Done column without error", () => {
+    renderBoard([makeCard({ status: "draft" })]);
+    const done = screen.getByRole("region", { name: "Done" });
+    expect(within(done).getByText("Nothing here.")).toBeInTheDocument();
+  });
+
+  it("keeps the drag handle on a card sitting in Done, so a mistaken merge can be dragged out", () => {
+    const merged = makeCard({ key: "PROT-22", status: "merged", mergedAt: "2025-01-01T10:00:00Z" });
+    renderBoard([merged]);
+
+    // Done's order is derived (pinned above), but the card itself is still
+    // picked up by hand: a move the rules do not allow lands with a warning
+    // rather than being refused at the handle.
+    const doneRegion = screen.getByRole("region", { name: "Done" });
+    expect(
+      doneRegion.querySelector(`[data-rfd-drag-handle-draggable-id="${merged.id}"]`),
+    ).not.toBeNull();
   });
 });
 

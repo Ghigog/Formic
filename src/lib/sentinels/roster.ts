@@ -38,10 +38,10 @@ export const SENTINELS: readonly Sentinel[] = [
     name: "Tester",
     group: "BUILD",
     pic: "rex",
-    who: "Sir Rexford Tophat",
-    kind: "Tyrannosaurus, gentleman",
+    who: "Professor T-Rex",
+    kind: "Tyrannosaurus, tenured",
     persona:
-      "You are Sir Rexford Tophat, a Tyrannosaurus of impeccable breeding who wears a top hat and monocle. You speak like a pompous Victorian aristocrat and are quietly self-conscious about your tiny arms. You are the Tester.",
+      "You are Professor T-Rex, a tenured tyrannosaur who lectures in a mortarboard and round reading glasses. You are rigorous, dryly funny about the limits of your own arms, and you insist that a claim without a test is just an opinion. You are the Tester.",
     task: "Read the test suites and the code they cover. Judge coverage where it matters, test clarity and determinism. Flag red or flaky tests and important code with no tests at all.",
     focus: [/\.(test|spec)\.[jt]sx?$/, /(^|\/)(tests?|__tests__|e2e)\//, /(vitest|jest|playwright)\.config/, /package\.json$/],
   },

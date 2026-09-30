@@ -48,6 +48,33 @@ export function safeRelativePath(raw: string): string {
   return trimmed;
 }
 
+/** A stream's output as lines, whether it arrived as lines or as one string. */
+function asLines(value?: string | string[]): string[] {
+  if (value === undefined) return [];
+  return Array.isArray(value) ? value : value.split("\n");
+}
+
+/**
+ * What to say about a command that failed.
+ *
+ * A sandbox reports a non-zero exit as an error of its own — "exit status
+ * 128" — and leaves what the command actually printed in its output. A reason
+ * built from the error alone names an exit code, which is nothing a person
+ * can act on; the command's own words are.
+ */
+export function commandFailure(
+  message: string,
+  output: { stdout?: string | string[]; stderr?: string | string[] } = {},
+): string {
+  const said = [...asLines(output.stderr), ...asLines(output.stdout)]
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+  const head = message.trim();
+  if (!said) return head || "It failed without saying why.";
+  return head && !said.includes(head) ? `${head}: ${said}` : said;
+}
+
 class SandboxWorkspace implements Workspace {
   constructor(private readonly sandbox: SandboxHandle) {}
 

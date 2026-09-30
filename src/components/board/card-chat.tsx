@@ -2,7 +2,23 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { cn } from "@/components/ui/cn";
+import { compact } from "@/components/ui/compact-number";
 import { useCardChat, type CardChatMessageView } from "@/lib/hooks/use-card-chat";
+
+/**
+ * What an answer used, as a line to read under it, or null when there is
+ * nothing to say: a person's own message, an answer a CLI agent gave (a plan
+ * reports no tokens), or one that never got a reply out.
+ *
+ * Tokens, not money. Every provider reports tokens, and a chat's own cost in
+ * cents is an estimate from a price table this repo keeps by hand — worth
+ * having as a ceiling, not worth showing as a bill (see budget/limits.ts).
+ */
+function tokensLine(m: CardChatMessageView): string | null {
+  const tokens = (m.tokensIn ?? 0) + (m.tokensOut ?? 0);
+  if (tokens === 0) return null;
+  return `${compact(tokens)} tokens`;
+}
 
 function Message({ m }: { m: CardChatMessageView }) {
   if (m.role === "user") {
@@ -23,6 +39,7 @@ function Message({ m }: { m: CardChatMessageView }) {
     );
   }
   if (!m.content) return null;
+  const used = tokensLine(m);
   return (
     <div
       className={cn(
@@ -31,6 +48,7 @@ function Message({ m }: { m: CardChatMessageView }) {
       )}
     >
       {m.content}
+      {used && <p className="text-fg-subtle mt-1 font-mono text-[11px]">{used}</p>}
     </div>
   );
 }

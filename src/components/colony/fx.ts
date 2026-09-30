@@ -6,8 +6,8 @@ import type { SoundEngine } from "./sound";
  * that draws everything that is not a DOM element. Bursts and rings when
  * work lands, score pops, points flying to the counter, squashed bugs, and
  * the ants: a crew walks out of the nest to every running card, circles it
- * while its agent works, and tunnels through a card in review, leaving
- * trails in it.
+ * while its agent works, reads over a card in To Do while its agent is on its
+ * words, and tunnels through a card in review, leaving trails in it.
  *
  * Cards are found by `data-tid`; a card that wants trails carries a
  * `canvas[data-trail]` of its own.
@@ -16,8 +16,14 @@ import type { SoundEngine } from "./sound";
 /** The largest crew a card gets: 13, the top of the story point scale. */
 export const MAX_CREW = 13;
 
-/** What a card's crew should be doing. */
-export type CrewPhase = "work" | "queue" | "tunnel" | "buried" | "leave";
+/**
+ * What a card's crew should be doing. In Progress is labour — the crew rings
+ * the card and the lead ant carries its story points, the only thing there is
+ * to carry. To Do is words: there is nothing to carry yet, so the crew walks
+ * over the card and reads it. In Review is judgement — the crew tunnels
+ * through and eats into it, and its trails stay behind.
+ */
+export type CrewPhase = "work" | "queue" | "tunnel" | "buried" | "leave" | "read";
 
 /** The part of the board the canvas draws from, pushed in as it changes. */
 export interface FxWorld {
@@ -108,7 +114,7 @@ interface Splat {
   blobs: Array<{ dx: number; dy: number; r: number }>;
   onSquash: () => void;
 }
-type AntMode = "wait" | "walk" | "perim" | "crowd" | "dig" | "buried" | "rise" | "tunnel" | "out" | "home";
+type AntMode = "wait" | "walk" | "perim" | "crowd" | "dig" | "buried" | "rise" | "tunnel" | "read" | "out" | "home";
 interface Ant {
   x: number;
   y: number;
@@ -904,6 +910,21 @@ export class ColonyFx {
     return [q.left + q.width / 2, q.top + q.height / 2];
   }
 
+  /**
+   * Where one ant of a reading crew is heading: somewhere on the card's face.
+   * The spot is held as an offset from the card, not a screen position, so a
+   * column that reflows under a drag does not leave ants reading the air where
+   * the card used to be.
+   */
+  private readPoint(ant: Ant, r: DOMRect): [number, number] {
+    const pad = 12;
+    if (ant.lx === undefined || ant.ly === undefined) {
+      ant.lx = pad + Math.random() * Math.max(0, r.width - 2 * pad);
+      ant.ly = pad + Math.random() * Math.max(0, r.height - 2 * pad);
+    }
+    return [r.left + ant.lx, r.top + ant.ly];
+  }
+
   /** Where one ant of a waiting crew stands: jostling in a ring around the timer. */
   private crowdPoint(ant: Ant, el: Element | null, r: DOMRect): [number, number] {
     const [qx, qy] = this.queuePos(el, r);
@@ -988,10 +1009,18 @@ export class ColonyFx {
           ant.mode === "tunnel" ||
           ant.mode === "rise" ||
           ant.mode === "dig" ||
-          ant.mode === "crowd"
+          ant.mode === "crowd" ||
+          ant.mode === "read"
         ) {
           ant.mode = "walk";
         }
+      } else if (d === "read") {
+        // Same as taking up a queue: walk back onto the card and let the walk
+        // decide where on it this ant reads.
+        if (ant.mode === "home" || ant.mode === "out") continue;
+        ant.hidden = false;
+        ant.carry = false;
+        ant.mode = "walk";
       } else if (d === "queue") {
         if (ant.mode === "home" || ant.mode === "out") continue;
         ant.hidden = false;
@@ -1014,7 +1043,10 @@ export class ColonyFx {
     const want = this.world.crews;
     if (this.antsOn()) {
       for (const [id, w] of want) {
-        if ((w.phase === "work" || w.phase === "queue" || w.phase === "tunnel") && !this.crewMap.has(id)) {
+        if (
+          (w.phase === "work" || w.phase === "queue" || w.phase === "tunnel" || w.phase === "read") &&
+          !this.crewMap.has(id)
+        ) {
           this.spawnCrew(id, w.sp, w.phase);
         }
       }
@@ -1076,6 +1108,13 @@ export class ColonyFx {
             this.sfx("attach", ant.idx);
             ant.mode = "crowd";
           }
+        } else if (c.phase === "read") {
+          const [tx, ty] = this.readPoint(ant, r);
+          if (this.stepAnt(ant, tx, ty, 140, dt)) {
+            this.sfx("attach", ant.idx);
+            ant.mode = "read";
+            ant.wait = 0;
+          }
         } else if (ant.leader && c.phase === "work" && !ant.carry) {
           const [bx, by] = this.badgePos(el, r);
           if (this.stepAnt(ant, bx, by, 170, dt)) {
@@ -1119,6 +1158,23 @@ export class ColonyFx {
         this.stepAnt(ant, tx, ty, 40, dt);
         const [qx, qy] = this.queuePos(el, r);
         ant.a += wrap(Math.atan2(qy - ant.y, qx - ant.x) - ant.a) * Math.min(1, dt * 4);
+        break;
+      }
+      case "read": {
+        if (!r) {
+          ant.mode = "home";
+          break;
+        }
+        // Reading the card: a slow pace to a spot on its face, then a pause
+        // over it, then the next. No trails, no chewing, nothing carried —
+        // the ticket's words are the whole of the work at this point.
+        if ((ant.wait -= dt) > 0) break;
+        const [tx, ty] = this.readPoint(ant, r);
+        if (this.stepAnt(ant, tx, ty, 22, dt)) {
+          ant.lx = undefined;
+          ant.ly = undefined;
+          ant.wait = 0.7 + Math.random() * 1.9;
+        }
         break;
       }
       case "dig":

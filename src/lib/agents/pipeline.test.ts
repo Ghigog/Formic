@@ -328,6 +328,29 @@ describe("runArchitectDraftTicket", () => {
       standalone: false,
     });
     expect(rerouted.blockedReason).toBeNull();
+    // And the run that writes the PRD it was sent back for.
+    expect(deferred).toHaveLength(1);
+  });
+
+  it("gets its PRD written from the reroute, without a second drag", async () => {
+    const { epic, ticket } = seedDrafting();
+    useArchitect(
+      new StubArchitect(async () => ({
+        ok: true,
+        value: { kind: "reroute", reason: "Too big for one ticket; needs a PRD." },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket.id, "raw request text", []);
+
+    // The Product Agent's run, as after() would run it when the drag returns.
+    useProduct(new StubProduct(async () => ({ ok: true, value: { kind: "prd", title: "An Epic", prd: PRD }, usage: NO_USAGE })));
+    await (deferred.at(-1) as () => Promise<void>)();
+
+    const after = await repository().cardById(epic.id);
+    expect(after).toMatchObject({ status: "specified", stalledIn: null, blockedReason: null });
+    expect((await repository().epicDetail(epic.id))?.prd).toMatchObject({ summary: "s" });
   });
 });
 

@@ -132,9 +132,12 @@ run with plain `node`.
 
 Two things to know for the rest:
 
-- The loop's own turn ceiling (`MAX_ITERATIONS`, 40) still applies: a job may
-  run for fifty minutes but not for forty turns, which is a wall the budget was
-  meant to replace.
+- The loop's own turn ceiling is given to it rather than fixed: `turnCeiling`
+  (`src/lib/budget/limits.ts`) turns the ticket's budget into turns, ten a
+  minute, so a job's loop is bounded by its budget and the ceiling only ends a
+  run that has stopped converging. In-process runs keep the forty that matches
+  the four-minute default. A fixed forty was a wall the budget was meant to
+  replace: a real job run died on it four minutes into a thirty-minute budget.
 - A bundle run by path must compare **real** paths when it decides whether
   node started it, not `argv[1]` to `import.meta.url`: node resolves the
   module it started while argv keeps the path as typed, and on macOS `/tmp` is

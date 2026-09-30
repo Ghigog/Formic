@@ -17,6 +17,7 @@ import { isBug, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
+import { LinkifiedText } from "./linkified-text";
 
 /**
  * Display-only detail that hangs off a card but is not part of the domain
@@ -49,6 +50,12 @@ export interface CardExtras {
   diffstat?: string;
   /** Merge commit on a done ticket. */
   mergeCommit?: string;
+  /**
+   * The card's chat is being answered right now. A run puts `workingSince` on
+   * a card; a chat answer moves nothing, so this is how the board knows to put
+   * a crew on it and take the crew home when the reply lands.
+   */
+  answering?: boolean;
 }
 
 export type ExtrasMap = Record<string, CardExtras | undefined>;
@@ -262,7 +269,8 @@ export function ProblemBadge({ card }: { card: BoardCard }) {
 
 /**
  * The same problem, spelled out at the top of an opened card: what is wrong
- * and what to do about it.
+ * and what to do about it. Some of these reasons name a pull request to merge,
+ * so the address in them is a link a person can follow.
  */
 export function ProblemNotice({ card, className }: { card: BoardCard; className?: string }) {
   const problem = cardProblem(card);
@@ -282,7 +290,7 @@ export function ProblemNotice({ card, className }: { card: BoardCard; className?
         <span className="font-semibold">
           {card.misplacedReason ? "It can't work here. " : "This needs you. "}
         </span>
-        {problem}
+        <LinkifiedText text={problem} />
       </p>
     </div>
   );
@@ -944,7 +952,12 @@ export function EpicGroup({
     // Never shrunk to fit: a full column scrolls instead. Without this an
     // overflowing column squeezed each group down to its border.
     <li className={cn(SHELL, "flex shrink-0 flex-col overflow-hidden")}>
-      <Draggable draggableId={epic.id} index={index}>
+      <Draggable
+        draggableId={epic.id}
+        index={index}
+        // Done's order is the epic's completion time, not the person's call.
+        isDragDisabled={done}
+      >
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}

@@ -6,7 +6,8 @@ import { z } from "zod";
 import type { AgentContext, AgentOutcome, CodeChange, Usage } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
-import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens } from "@/lib/budget/limits";
+import type { PlanStep } from "@/lib/domain/entities";
+import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens, turnCeiling } from "@/lib/budget/limits";
 import {
   anthropicClient,
   billedInputTokens,
@@ -15,7 +16,7 @@ import {
   describeError,
 } from "./anthropic";
 import { requestShape } from "./models";
-import { MAX_PLAN_STEPS, checkPlan } from "./plan";
+import { MAX_PLAN_STEPS, checkPlan, currentStep, planFraction } from "./plan";
 import { checkHandoff } from "./handoff";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
 import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
@@ -37,8 +38,13 @@ import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
 export const CODER_MODEL = "claude-opus-5";
 
 
-/** A loop that has not converged in this many turns is not about to. */
-const MAX_ITERATIONS = 40;
+/**
+ * A loop that has not converged in this many turns is not about to. The
+ * in-process default: a job's own loop is given the ceiling its budget is
+ * worth instead (see `turnCeiling`), because a ticket with half an hour to
+ * spend should not be stopped by a wall meant for a four-minute run.
+ */
+const MAX_TURNS = turnCeiling(DEFAULT_RUN_BUDGET.maxDurationMs);
 
 /** Tool output past this is padding; the middle is what gets dropped. */
 const MAX_TOOL_OUTPUT = 16_000;
@@ -51,9 +57,32 @@ const MAX_THOUGHT = 4_000;
  */
 const PLANNING_RULES = `Working in the open:
 - Your first call, before you read or change anything, is update_plan with every step you intend to take. Keep it current: mark a step in_progress when you start it and done when it is finished, and add or drop steps as you learn more.
+- Exactly one step is in_progress, and it is the one you are working on. Mark the step you finished done in the same turn as the first action of the next one: a plan left on step one while you are on step four reads as a stalled run, and the person watching cannot tell the difference.
 - Send each plan update in the same turn as the action it goes with, alongside that tool call, not in a turn of its own.
 - Before each action, say in a sentence or two what you are about to do and why. The person watching the board reads it.`;
 
+/** Turns a plan may sit still before the agent is asked about it again. */
+const PLAN_NUDGE_TURNS = 6;
+
+/** The plan as one line: which step it is on, of how many. */
+function planLine(steps: readonly PlanStep[]): string {
+  const at = currentStep(steps);
+  const step = steps[at]?.step;
+  return step ? `Step ${at + 1} of ${steps.length}: ${step}` : `All ${steps.length} steps done`;
+}
+
+/**
+ * What is said when the plan has not moved. A model that is deep in its work
+ * stops sending them, and the board then shows the first step while the run
+ * is on the fourth: the person cannot tell that from a run that is stuck.
+ */
+function planNudge(steps: readonly PlanStep[], turns: number): string {
+  if (steps.length === 0) {
+    return "You have not sent a plan. Call update_plan now with every step you intend to take, marking the step you are on in_progress and the rest pending.";
+  }
+  const on = steps[currentStep(steps)];
+  return `Your plan has not moved in ${turns} turns, and the board still shows ${on ? `"${on.step}"` : "the step you started on"}. If you have moved on, call update_plan in this same turn, with the steps you finished marked done and the one you are on in_progress. If you have not, say what is holding you up.`;
+}
 
 export function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
   if (text.length <= limit) return text;
@@ -243,6 +272,11 @@ interface LoopInput {
   role: "coder" | "reviewer";
   system: string;
   prompt: string;
+  /**
+   * How many turns this run gets. Unset is the in-process default, forty; a
+   * job's loop is handed the ceiling its time budget is worth.
+   */
+  maxTurns?: number;
   /** Which provider, model and key; unset runs the built-in Claude coder. */
   provider?: ProviderId;
   model?: string;
@@ -471,8 +505,13 @@ export async function runCodingLoop(
   const { ctx, workspace, role, ticketId } = input;
   const info = provider(input.provider ?? "anthropic")!;
   const model = input.model ?? CODER_MODEL;
+  const maxTurns = Math.max(1, Math.round(input.maxTurns ?? MAX_TURNS));
   let total: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
   let retries = 0;
+  /** The plan as the agent last sent it: the board's progress while it works. */
+  let plan: PlanStep[] = [];
+  /** The turn the plan last moved, or was last asked about. */
+  let planTurn = 0;
 
   const fail = (error: string, blocked = false): AgentOutcome<LoopResult> => ({
     ok: false,
@@ -497,7 +536,9 @@ export async function runCodingLoop(
       ticketId,
       role,
       label,
-      fraction: Math.min(iteration / MAX_ITERATIONS, 0.95),
+      // The plan is the progress once there is one, exactly as it is for a CLI
+      // agent's run; the turn ceiling is the bar before the first plan lands.
+      fraction: planFraction(plan) ?? Math.min(iteration / maxTurns, 0.95),
     });
   };
 
@@ -507,7 +548,7 @@ export async function runCodingLoop(
   // stuck — in a job especially, where there is nothing else to look at.
   progress(role === "reviewer" ? "Reading the pull request" : "Reading the ticket and the repository", 1);
 
-  for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
+  for (let iteration = 1; iteration <= maxTurns; iteration++) {
     if (ctx.signal.aborted) {
       const { reason } = ctx.signal;
       return fail(
@@ -548,7 +589,7 @@ export async function runCodingLoop(
     if (turn.calls.length === 0) {
       // Ended its turn without finishing. One nudge, then give up: a model
       // that cannot say what it did probably did not do it.
-      if (iteration >= MAX_ITERATIONS - 1) break;
+      if (iteration >= maxTurns - 1) break;
       conversation.say(
         "Call finish with a summary once the change is complete, or keep working if it is not.",
       );
@@ -563,7 +604,7 @@ export async function runCodingLoop(
         if (parsed.success) {
           const blocked = parsed.data.blocked_reason?.trim();
           if (blocked) return fail(blocked, true);
-          progress(role === "reviewer" ? "Review complete" : "Change complete", MAX_ITERATIONS);
+          progress(role === "reviewer" ? "Review complete" : "Change complete", maxTurns);
           return {
             ok: true,
             value: {
@@ -587,7 +628,15 @@ export async function runCodingLoop(
 
       if (call.name === "update_plan") {
         const steps = checkPlan(call.input);
-        if (steps) ctx.emit({ type: "ticket.plan", ticketId, steps });
+        if (steps) {
+          plan = steps;
+          planTurn = iteration;
+          ctx.emit({ type: "ticket.plan", ticketId, steps });
+          // In the feed and the job log as well as the plan itself: without
+          // this a plan update is invisible, and a plan that stopped moving
+          // is the only sign a run has lost its way that is not a tool call.
+          progress(`Plan: ${planLine(steps)}`, iteration);
+        }
         results.push({
           id: call.id,
           isError: !steps,
@@ -613,10 +662,19 @@ export async function runCodingLoop(
         `A note from the person watching this ticket. Take it into account from here on:\n\n${note}`,
       );
     }
+
+    // A plan that stopped moving is how the person watching tells a slow run
+    // from a stuck one, and a model deep in its work forgets it. Asked as a
+    // fact about the board, not as the rule it already has.
+    const stale = iteration - planTurn;
+    if (stale >= PLAN_NUDGE_TURNS) {
+      planTurn = iteration;
+      conversation.note(planNudge(plan, stale));
+    }
   }
 
   return fail(
-    `The agent did not converge in ${MAX_ITERATIONS} turns. This needs a human.`,
+    `The agent did not converge in ${maxTurns} turn${maxTurns === 1 ? "" : "s"}. This needs a human.`,
     true,
   );
 }

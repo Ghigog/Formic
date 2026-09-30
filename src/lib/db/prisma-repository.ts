@@ -882,6 +882,7 @@ export class PrismaRepository implements Repository {
         epicId: run.epicId,
         ticketId: run.ticketId,
         model: run.model,
+        presetId: run.presetId ?? null,
         sandboxId: run.sandboxId,
         status: "running",
         startedAt: new Date(),
@@ -921,6 +922,7 @@ export class PrismaRepository implements Repository {
       epicId: r.epicId,
       ticketId: r.ticketId,
       model: r.model,
+      presetId: r.presetId,
       sandboxId: r.sandboxId,
       status: r.status,
     }));
@@ -938,6 +940,39 @@ export class PrismaRepository implements Repository {
       _sum: { costCents: true },
     });
     return result._sum.costCents ?? 0;
+  }
+
+  async agentTokensByPreset(
+    since?: Date | null,
+  ): Promise<Record<string, { tokensIn: number; tokensOut: number }>> {
+    const db = prisma();
+    const started = since ? { createdAt: { gte: since } } : {};
+    // Two grouped sums, because the two halves live in different tables: the
+    // runs each agent drove, and the chat answers it gave, which are not runs
+    // at all.
+    const [runs, answers] = await Promise.all([
+      db.agentRun.groupBy({
+        by: ["presetId"],
+        where: { presetId: { not: null }, ...started },
+        _sum: { tokensIn: true, tokensOut: true },
+      }),
+      db.cardChatMessage.groupBy({
+        by: ["agentPresetId"],
+        where: { agentPresetId: { not: null }, ...started },
+        _sum: { tokensIn: true, tokensOut: true },
+      }),
+    ]);
+
+    const used: Record<string, { tokensIn: number; tokensOut: number }> = {};
+    const add = (presetId: string | null, tokensIn: number, tokensOut: number) => {
+      if (!presetId) return;
+      const running = (used[presetId] ??= { tokensIn: 0, tokensOut: 0 });
+      running.tokensIn += tokensIn;
+      running.tokensOut += tokensOut;
+    };
+    for (const row of runs) add(row.presetId, row._sum?.tokensIn ?? 0, row._sum?.tokensOut ?? 0);
+    for (const row of answers) add(row.agentPresetId, row._sum?.tokensIn ?? 0, row._sum?.tokensOut ?? 0);
+    return used;
   }
 
   async cancelRuns(
@@ -1133,7 +1168,12 @@ export class PrismaRepository implements Repository {
 
   async updateCardChatMessage(
     id: string,
-    update: Partial<Pick<CardChatMessage, "content" | "status" | "runnerJob" | "runnerAgent">>,
+    update: Partial<
+      Pick<
+        CardChatMessage,
+        "content" | "status" | "runnerJob" | "agentPresetId" | "tokensIn" | "tokensOut" | "costCents"
+      >
+    >,
   ): Promise<void> {
     await prisma().cardChatMessage.update({ where: { id }, data: update });
   }
@@ -1145,6 +1185,13 @@ export class PrismaRepository implements Repository {
   async pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]> {
     const rows = await prisma().cardChatMessage.findMany({
       where: { projectId, status: "pending", runnerJob: { not: null } },
+    });
+    return rows.map(toCardChatMessage);
+  }
+
+  async orphanedCardChats(projectId: string, olderThan: Date): Promise<CardChatMessage[]> {
+    const rows = await prisma().cardChatMessage.findMany({
+      where: { projectId, status: "pending", runnerJob: null, createdAt: { lt: olderThan } },
     });
     return rows.map(toCardChatMessage);
   }
@@ -1258,6 +1305,7 @@ type RunRow = {
   epicId: string | null;
   ticketId: string | null;
   model: string | null;
+  presetId: string | null;
   sandboxId: string | null;
   status: AgentRunStatus;
 };
@@ -1290,7 +1338,10 @@ function toCardChatMessage(row: {
   content: string;
   status: string;
   runnerJob: string | null;
-  runnerAgent: string | null;
+  agentPresetId: string | null;
+  tokensIn: number;
+  tokensOut: number;
+  costCents: number;
   createdAt: Date;
 }): CardChatMessage {
   return {

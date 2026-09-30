@@ -17,10 +17,33 @@ async function send<T>(url: string, method: string, body?: unknown): Promise<T> 
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
+/** What one agent has used, in tokens, over its runs and the answers it gave. */
+export interface AgentTokens {
+  tokensIn: number;
+  tokensOut: number;
+}
+
+export type AgentUsage = Record<string, AgentTokens | undefined>;
+
 /** Saved agent presets and which column runs which, for the active board. */
-export function useAgents(initialPresets: AgentPreset[], initialColumns: ColumnAgents) {
+export function useAgents(
+  initialPresets: AgentPreset[],
+  initialColumns: ColumnAgents,
+  initialUsage: AgentUsage = {},
+) {
   const [presets, setPresets] = useState(initialPresets);
   const [columns, setColumns] = useState(initialColumns);
+  const [usage, setUsage] = useState(initialUsage);
+
+  /**
+   * Asks again what each agent has used. A run or an answer anyone started
+   * since this page loaded has moved the numbers, and a person opening an
+   * agent's settings is the moment it matters.
+   */
+  const refreshUsage = useCallback(async () => {
+    const next = await send<{ usage?: AgentUsage }>("/api/agents", "GET").catch(() => null);
+    if (next?.usage) setUsage(next.usage);
+  }, []);
 
   const assign = useCallback(async (column: ColumnId, presetId: string | null) => {
     const { columns } = await send<{ columns: ColumnAgents }>(
@@ -70,5 +93,5 @@ export function useAgents(initialPresets: AgentPreset[], initialColumns: ColumnA
     );
   }, []);
 
-  return { presets, columns, assign, save, remove, markLimited };
+  return { presets, columns, usage, assign, save, remove, markLimited, refreshUsage };
 }

@@ -12,7 +12,7 @@ vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
   },
 }));
 
-import { answer, ask as send, finishCliCardChat } from "./card-chat";
+import { answer, ask as send, finishCliCardChat, CHAT_ANSWER_BUDGET_MS } from "./card-chat";
 import { savePreset } from "./presets";
 import { MAX_NOTE, noteTexts } from "@/lib/coder/notes";
 import { epicNoteTexts } from "./epic-notes";
@@ -131,6 +131,14 @@ async function replies(ticketId: string) {
   return rows
     .map((r) => activityOf(r.payload as FormicEvent, ticketId, r.seq, r.at.toISOString()))
     .filter((a) => a?.kind === "reply");
+}
+
+/** Every "card.chat" state the board was told, oldest first. */
+async function chatStates(): Promise<string[]> {
+  const rows = await repository().eventsAfter(PROJECT, 0, 500);
+  return rows
+    .filter((r) => r.type === "card.chat")
+    .map((r) => (r.payload as Extract<FormicEvent, { type: "card.chat" }>).state);
 }
 
 async function ask(cardKind: "epic" | "ticket", cardId: string, text: string) {
@@ -390,6 +398,167 @@ describe("a ticket's chat", () => {
     await repository().clearCardChat(ticket.id);
     await send(PROJECT, "ticket", ticket.id, long);
     expect(await noteTexts(PROJECT, ticket.id)).toEqual(["Use the existing helper.", long]);
+  });
+
+  /** A model that reads one more file every round, forever. */
+  function alwaysReading(rounds: number) {
+    return Array.from({ length: rounds }, (_, i) => ({
+      role: "assistant",
+      content: null,
+      tool_calls: [call(`c${i}`, "read_file", { path: "src/lib/feature/index.ts" })],
+    }));
+  }
+
+  it("spends a last round on the answer when reading used the rounds up, then says what it read", async () => {
+    const ticket = await seedTicket();
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await new MockVcsClient("acme/widgets").commitFile(base, "src/lib/feature/index.ts", "// …", "seed");
+    await assignAgent("todo");
+    const sent = fakeProvider([
+      ...alwaysReading(12),
+      { role: "assistant", content: "Reuse lastStandaloneTicketNumber; the Epic counter already works that way." },
+    ]);
+    const pending = await ask("ticket", ticket.id, "Should standalone tickets get their own T-N keys?");
+
+    await answer("ticket", ticket.id, pending.id);
+
+    expect(await reload(pending.id)).toMatchObject({
+      status: "done",
+      content:
+        "Reuse lastStandaloneTicketNumber; the Epic counter already works that way.\n\n" +
+        "I used all 12 rounds getting there. I read 1 file: src/lib/feature/index.ts.",
+    });
+    // The last call offers no tools, so the turn has to end in words.
+    expect(sent).toHaveLength(13);
+    expect(sent[11]).toHaveProperty("tools");
+    expect(sent[12]).not.toHaveProperty("tools");
+  });
+
+  it("says what it read and that it got nowhere when even the last round has no answer", async () => {
+    const ticket = await seedTicket();
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await new MockVcsClient("acme/widgets").commitFile(base, "src/lib/feature/index.ts", "// …", "seed");
+    await assignAgent("todo");
+    fakeProvider([...alwaysReading(12), { role: "assistant", content: "" }]);
+    const pending = await ask("ticket", ticket.id, "Should standalone tickets get their own T-N keys?");
+
+    await answer("ticket", ticket.id, pending.id);
+
+    expect(await reload(pending.id)).toMatchObject({
+      status: "failed",
+      content: expect.stringContaining(
+        "I used all 12 rounds and did not reach an answer. I read 1 file: src/lib/feature/index.ts.",
+      ),
+    });
+  });
+
+  it("stops when its clock runs out, and says what it read", async () => {
+    const ticket = await seedTicket();
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await new MockVcsClient("acme/widgets").commitFile(base, "src/lib/feature/index.ts", "// …", "seed");
+    await assignAgent("todo");
+    // A provider slow enough that one round outlives the answer's whole
+    // budget: the answer must stop itself and say so, rather than run past
+    // the route's maxDuration and leave the message pending for good.
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", async () => {
+      vi.setSystemTime(Date.now() + CHAT_ANSWER_BUDGET_MS);
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [call("c1", "read_file", { path: "src/lib/feature/index.ts" })],
+            },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+    });
+    const pending = await ask("ticket", ticket.id, "Should standalone tickets get their own T-N keys?");
+
+    try {
+      await answer("ticket", ticket.id, pending.id);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(await reload(pending.id)).toMatchObject({
+      status: "failed",
+      content: expect.stringContaining(
+        "I ran out of time (4 minute limit) before I reached an answer. I read 1 file: src/lib/feature/index.ts.",
+      ),
+    });
+  });
+
+  it("writes down what the answer spent, on the answer itself", async () => {
+    const ticket = await seedTicket();
+    const preset = await assignAgent("todo");
+    // The scripted provider reports 10 tokens in and 5 out per call. A chat
+    // answer is not a run, so the message is the only place this can land:
+    // the person's own message spent nothing, and the answer records both.
+    const sent = fakeProvider([{ role: "assistant", content: "Yes, and here is why." }]);
+    const pending = await ask("ticket", ticket.id, "Does it?");
+
+    await answer("ticket", ticket.id, pending.id);
+
+    expect(sent).toHaveLength(1);
+    const answerMessage = await reload(pending.id);
+    expect(answerMessage).toMatchObject({ tokensIn: 10, tokensOut: 5 });
+    // And whose tokens they were, so they count against that agent, not the
+    // column's current one.
+    expect(answerMessage.agentPresetId).toBe(preset.id);
+    // llama-3.3-70b is a priced model, so the money half is counted too.
+    expect(answerMessage.costCents).toBeGreaterThan(0);
+    const asked = (await repository().cardChatMessages(ticket.id))[0]!;
+    expect(asked).toMatchObject({ role: "user", tokensIn: 0, tokensOut: 0, costCents: 0 });
+  });
+
+  it("counts every round of the answer, not only the round it ends on", async () => {
+    const ticket = await seedTicket();
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await new MockVcsClient("acme/widgets").commitFile(base, "src/lib/feature/index.ts", "// …", "seed");
+    await assignAgent("todo");
+    const sent = fakeProvider([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [call("c1", "read_file", { path: "src/lib/feature/index.ts" })],
+      },
+      { role: "assistant", content: "Yes, and here is why." },
+    ]);
+    const pending = await ask("ticket", ticket.id, "Does it?");
+
+    await answer("ticket", ticket.id, pending.id);
+
+    expect(sent).toHaveLength(2);
+    expect(await reload(pending.id)).toMatchObject({ tokensIn: 20, tokensOut: 10 });
+  });
+
+  it("tells the board the card's chat is being answered, and that the answer has landed", async () => {
+    const ticket = await seedTicket();
+    await assignAgent("todo");
+    fakeProvider([{ role: "assistant", content: "Yes, and here is why." }]);
+    const pending = await ask("ticket", ticket.id, "Does it?");
+
+    await answer("ticket", ticket.id, pending.id);
+
+    expect(await chatStates()).toEqual(["answering", "idle"]);
+  });
+
+  it("leaves the crew on the card while a CLI agent answers from Actions", async () => {
+    const ticket = await seedTicket();
+    await assignAgent("todo", "claude-code");
+    await installRunner();
+    const pending = await ask("ticket", ticket.id, "Split this?");
+
+    await answer("ticket", ticket.id, pending.id);
+    expect(await chatStates()).toEqual(["answering"]);
+
+    await answerFromActions(lastDispatch().job!, JSON.stringify({ reply: "Not splitting it.", actions: [] }));
+    expect(await chatStates()).toEqual(["answering", "idle"]);
   });
 });
 

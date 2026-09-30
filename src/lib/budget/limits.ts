@@ -89,6 +89,25 @@ export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "me
   return { ok: true, remainingCents: budget.maxCents - spend.cents };
 }
 
+/** Turns a minute of budget is worth, at the fast end of what a model does:
+ * a turn is a model call plus the tools it runs. */
+const TURNS_PER_MINUTE = 10;
+
+/**
+ * How many turns a run's time budget is worth.
+ *
+ * A second guard beside the time ceiling, not a plan: a loop that has not
+ * converged in this many turns is not about to, and the number exists so the
+ * loop ends and says so rather than spending a budget on a wall. It is
+ * derived from the budget instead of fixed, because a fixed one is the
+ * smaller wall: at ten turns a minute the ceiling stays out of the way of any
+ * budget that is the real limit, and the in-process default of four minutes
+ * comes out at the forty turns that have always guarded it.
+ */
+export function turnCeiling(maxDurationMs: number): number {
+  return Math.max(1, Math.round((maxDurationMs / 60_000) * TURNS_PER_MINUTE));
+}
+
 /**
  * The advisory ceiling handed to the model so it paces itself and finishes
  * gracefully, rather than being cut off mid-edit by the hard cap above.
@@ -128,6 +147,15 @@ interface PriceFamily {
  * List prices in cents per million tokens, one entry per model family, not
  * per exact id. New dated snapshots (`claude-sonnet-5-20260101`) and ids
  * pulled from a provider's live model list match their family by prefix.
+ *
+ * UNVERIFIED, and not verifiable from here: nobody has reconciled a number
+ * this table produces against a provider's invoice, and the person running
+ * Formic has no way to test the metered path at all — the agents they run are
+ * on a flat plan ($9.99 for all these models), where a per-token price is not
+ * a thing that is charged. So treat every cent below as an estimate for
+ * bounding unattended burn, never as a figure to show someone as a bill. What
+ * is counted and shown instead is tokens, per agent: see docs/token-usage.md
+ * and `estimateCostCents`'s own note.
  *
  * Only a starting point: what a provider charges is the provider's to tell us,
  * and CL-5 in docs/cline-audit.md is the work to read it from the metadata
@@ -248,6 +276,14 @@ export function pricingNote(model: string, providerId?: string | null): string {
  * flat-rate plan is not charged per token, and an id nobody has priced is not
  * charged a guess. The ceiling counts money, so inventing a number would park
  * runs on a rate that does not exist.
+ *
+ * This is the one place where a guessed rate can reach a real decision, and it
+ * is unverified: the prices are maintained by hand and have never been checked
+ * against a provider's invoice. The person running Formic runs flat-plan
+ * agents, so they cannot check the metered path either. What is counted and
+ * shown to a person is tokens, per agent (see docs/token-usage.md); cents stay
+ * a ceiling for unattended runs, and only for a provider that charges per
+ * token at all (`billingFor`).
  */
 export function estimateCostCents(
   model: string,

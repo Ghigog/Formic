@@ -540,7 +540,7 @@ async function dispatch(input: {
     if (!runner.ready) {
       return {
         ok: false,
-        reason: `${agent.info.label} runs in this repository's GitHub Actions. Merge the setup pull request once (${runner.setupUrl}), then move this card back to try again.`,
+        reason: `${agent.info.label} runs in this repository's GitHub Actions. Merge the setup pull request once (${runner.setupUrl}), then try again.`,
         blocked: true,
       };
     }
@@ -634,7 +634,7 @@ export async function startJobRun(input: {
       ? {
           ok: false as const,
           reason:
-            "This board has no public address, so a job cannot fetch Formic's loop entry. Set FORMIC_URL, then move this card back to try again.",
+            "This board has no public address, so a job cannot fetch Formic's loop entry. Set FORMIC_URL, then try again.",
           blocked: true,
         }
       : await dispatch({
@@ -1240,7 +1240,7 @@ export async function startCliCardChat(input: {
     from: project.baseBranch,
     prompt: input.prompt,
     record: (job) =>
-      repo.updateCardChatMessage(input.messageId, { runnerJob: job, runnerAgent: input.agent.presetId }),
+      repo.updateCardChatMessage(input.messageId, { runnerJob: job, agentPresetId: input.agent.presetId }),
   });
   return started.ok ? null : started.reason;
 }
@@ -1351,7 +1351,7 @@ async function completeCliCardChat(
   const { finishCliCardChat } = await import("@/lib/agents/card-chat");
   if (result.conclusion !== "success") {
     await cleanUp();
-    await finishCliCardChat(message.id, null, await whyItFailed(projectId, client, result, message.runnerAgent));
+    await finishCliCardChat(message.id, null, await whyItFailed(projectId, client, result, message.agentPresetId));
     return;
   }
   const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);

@@ -8,6 +8,14 @@ export interface CardChatMessageView {
   role: "user" | "assistant";
   content: string;
   status: "done" | "pending" | "failed";
+  /**
+   * What the answer spent, when Formic made it rather than a CLI agent in
+   * GitHub Actions: an answer is not a run, so this is the only record of it.
+   * Zero or absent means nothing to show.
+   */
+  tokensIn?: number;
+  tokensOut?: number;
+  costCents?: number;
 }
 
 interface State {

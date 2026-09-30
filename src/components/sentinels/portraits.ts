@@ -1,9 +1,15 @@
+import { TRACED } from "./portraits.traced";
+
 /**
  * Each sentinel's portrait: a 200x200 SVG body, drawn inline so the page
  * needs no image requests. Keyed by the roster's `pic`.
+ *
+ * The traced portraits are generated from `design/portraits/*.svg` by
+ * `npm run build:portraits`; the hand-drawn ones below have no source art
+ * yet. `portraits.test.ts` is what keeps this map, the roster and that
+ * directory in step — a `pic` with no portrait fails the suite by name.
  */
-export const PORTRAITS: Record<string, string> = {
-  rex: '<rect width="200" height="200" fill="#EFD9A7"/><path d="M46 200C46 150 66 124 96 120L132 120C154 122 158 170 160 200Z" fill="#4F7A3E"/><path d="M60 90C58 62 82 50 110 52L160 58C176 60 182 74 180 88L178 110C176 120 168 124 156 124L92 126C72 126 62 112 60 90Z" fill="#6B9B52"/><polygon points="112,110 117,118 122,110" fill="#FFF"/><polygon points="130,109 135,117 140,109" fill="#FFF"/><polygon points="148,108 153,116 158,108" fill="#FFF"/><path d="M104 110L174 106" stroke="#2D4A22" stroke-width="3.5" stroke-linecap="round"/><circle cx="100" cy="82" r="10" fill="#FFF"/><circle cx="103" cy="83" r="5" fill="#1C1917"/><circle cx="100" cy="82" r="13" fill="none" stroke="#C27803" stroke-width="2.5"/><path d="M88 94C84 110 86 124 94 132" stroke="#C27803" stroke-width="1.5" fill="none"/><circle cx="170" cy="72" r="2.5" fill="#2D4A22"/><g transform="rotate(-10 96 50)"><rect x="62" y="50" width="70" height="8" rx="4" fill="#1C1917"/><rect x="74" y="10" width="46" height="42" rx="3" fill="#1C1917"/><rect x="74" y="40" width="46" height="7" fill="#B5511A"/></g><path d="M100 140l-14-8v16zM100 140l14-8v16z" fill="#C62828"/><circle cx="100" cy="140" r="4" fill="#8F1D1D"/><path d="M128 150q14 2 14 14" stroke="#3F6630" stroke-width="8" stroke-linecap="round" fill="none"/>',
+const HAND_DRAWN: Record<string, string> = {
   zombie: '<rect width="200" height="200" fill="#CFDCC6"/><path d="M26 200C30 158 58 144 100 144C142 144 170 158 174 200Z" fill="#2F2A33"/><path d="M84 144L100 184L116 144Z" fill="#EDEAE4"/><path d="M92 150L100 162L108 150L100 146Z" fill="#8F1D1D"/><rect x="88" y="126" width="24" height="22" fill="#86A374"/><ellipse cx="100" cy="92" rx="44" ry="50" fill="#9DB88A"/><path d="M68 70L100 62" stroke="#4A5A40" stroke-width="2.5" stroke-linecap="round"/><path d="M75 63l2 10M85 61l2 10M94 59l2 10" stroke="#4A5A40" stroke-width="2"/><circle cx="82" cy="96" r="12" fill="#F3F0E6"/><circle cx="85" cy="99" r="4" fill="#1C1917"/><circle cx="120" cy="94" r="8" fill="#F3F0E6"/><circle cx="118" cy="93" r="3" fill="#1C1917"/><circle cx="120" cy="94" r="12" fill="none" stroke="#C27803" stroke-width="2.5"/><path d="M131 99C140 115 136 130 128 140" stroke="#C27803" stroke-width="1.5" fill="none"/><path d="M78 124L86 120L94 126L102 120L110 126L120 121" stroke="#3A4432" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><rect x="95" y="122" width="6" height="7" fill="#F3F0E6"/><path d="M64 54C66 26 134 26 136 54Z" fill="#1C1917"/><rect x="50" y="50" width="100" height="9" rx="4.5" fill="#1C1917"/><path d="M70 64C80 60 90 64 98 61" stroke="#3A3A2E" stroke-width="3" fill="none" stroke-linecap="round"/>',
   owl: '<rect width="200" height="200" fill="#E3D8EC"/><path d="M46 78L52 40L76 64ZM154 78L148 40L124 64Z" fill="#6E533D"/><ellipse cx="100" cy="132" rx="62" ry="72" fill="#8A6A4F"/><ellipse cx="100" cy="158" rx="38" ry="44" fill="#D8C2A2"/><path d="M86 144l6 6 6-6M102 144l6 6 6-6M94 160l6 6 6-6" stroke="#A8876A" stroke-width="2.5" fill="none"/><circle cx="76" cy="96" r="22" fill="#F4EDE0"/><circle cx="124" cy="96" r="22" fill="#F4EDE0"/><circle cx="78" cy="98" r="9" fill="#1C1917"/><circle cx="122" cy="98" r="9" fill="#1C1917"/><circle cx="81" cy="95" r="3" fill="#FFF"/><circle cx="125" cy="95" r="3" fill="#FFF"/><circle cx="76" cy="96" r="24" fill="none" stroke="#1C1917" stroke-width="3.5"/><circle cx="124" cy="96" r="24" fill="none" stroke="#1C1917" stroke-width="3.5"/><path d="M98 94h4" stroke="#1C1917" stroke-width="3.5"/><path d="M92 116L108 116L100 132Z" fill="#E0A33C"/><path d="M100 24L152 42L100 60L48 42Z" fill="#1C1917"/><rect x="78" y="46" width="44" height="18" fill="#1C1917"/><path d="M148 42V72" stroke="#C27803" stroke-width="2.5"/><circle cx="148" cy="74" r="4.5" fill="#C27803"/>',
   cat: '<rect width="200" height="200" fill="#243142"/><circle cx="158" cy="44" r="18" fill="#F3E9C6"/><circle cx="167" cy="38" r="16" fill="#243142"/><path d="M40 200C44 160 70 146 100 146C130 146 156 160 160 200Z" fill="#1C1917"/><path d="M50 90L56 36L92 64ZM150 90L144 36L108 64Z" fill="#1C1917"/><path d="M60 72L62 50L80 64ZM140 72L138 50L120 64Z" fill="#3A3340"/><ellipse cx="100" cy="104" rx="54" ry="48" fill="#1C1917"/><rect x="44" y="84" width="112" height="26" rx="6" fill="#C62828"/><path d="M152 90C170 86 180 98 190 92M152 102C168 106 176 118 188 118" stroke="#C62828" stroke-width="7" stroke-linecap="round" fill="none"/><ellipse cx="80" cy="98" rx="11" ry="7" fill="#F4D35E"/><ellipse cx="120" cy="98" rx="11" ry="7" fill="#F4D35E"/><rect x="78" y="91" width="4" height="14" rx="2" fill="#1C1917"/><rect x="118" y="91" width="4" height="14" rx="2" fill="#1C1917"/><path d="M68 88L92 94M132 88L108 94" stroke="#1C1917" stroke-width="4" stroke-linecap="round"/><path d="M95 120h10l-5 6z" fill="#E88AA0"/><path d="M70 126L36 120M70 132L38 136M130 126L164 120M130 132L162 136" stroke="#9AA3AE" stroke-width="1.5"/>',
@@ -17,7 +23,58 @@ export const PORTRAITS: Record<string, string> = {
   pirate: '<rect width="200" height="200" fill="#CBE3DE"/><path d="M30 200C34 160 62 146 100 146C138 146 166 160 170 200Z" fill="#8F1D1D"/><circle cx="84" cy="176" r="4" fill="#E0A33C"/><circle cx="116" cy="176" r="4" fill="#E0A33C"/><ellipse cx="100" cy="102" rx="40" ry="44" fill="#E0AC84"/><path d="M62 106C62 152 86 162 100 162C114 162 138 152 138 106C130 130 114 134 100 134C86 134 70 130 62 106Z" fill="#3A2418"/><path d="M84 124q16 12 32 0Z" fill="#FFF"/><rect x="104" y="124" width="6" height="6" fill="#E0A33C"/><circle cx="116" cy="98" r="5" fill="#1C1917"/><path d="M60 80L140 112" stroke="#1C1917" stroke-width="3"/><ellipse cx="84" cy="98" rx="12" ry="10" fill="#1C1917"/><path d="M98 102q7 10-2 13" stroke="#B57A55" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="140" cy="116" r="5" fill="none" stroke="#E0A33C" stroke-width="2.5"/><path d="M60 66C64 26 136 26 140 66Z" fill="#1C1917"/><path d="M36 72C58 46 142 46 164 72C142 62 58 62 36 72Z" fill="#1C1917"/><path d="M36 72C58 58 142 58 164 72" stroke="#E0A33C" stroke-width="3" fill="none"/><circle cx="100" cy="44" r="8" fill="#FBF9F5"/><circle cx="97" cy="43" r="2" fill="#1C1917"/><circle cx="103" cy="43" r="2" fill="#1C1917"/><path d="M90 58L110 52M90 52L110 58" stroke="#FBF9F5" stroke-width="2.5" stroke-linecap="round"/>',
 };
 
+/** Drawn by hand first, traced over it: art named for a pic wins over a literal. */
+export const PORTRAITS: Record<string, string> = { ...HAND_DRAWN, ...TRACED };
+
+/**
+ * A pic's portrait, or a marked placeholder when the roster names one nobody
+ * drew. The suite keeps that from happening, so this is the belt to its
+ * braces: a pic that slips through renders as a letter in the ground colour
+ * rather than as an empty card.
+ */
+export function portraitFor(pic: string): string {
+  return PORTRAITS[pic] ?? placeholder(pic);
+}
+
+/**
+ * A portrait as the page inlines it: the art inside the frame every portrait
+ * shares. The frame is fixed at 200 and slices to fill whatever box it is
+ * dropped into — a card's header band, or the round avatar — so art is drawn
+ * on its own canvas and scaled by the build, never redrawn for the frame.
+ */
+export function portraitSvg(pic: string): string {
+  return (
+    '<svg viewBox="0 0 200 200" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" ' +
+    `style="display:block">${portraitFor(pic)}</svg>`
+  );
+}
+
+/**
+ * The placeholder: the pic's initial in mono, inside a dashed ring, on the
+ * column ground. It is drawn for both crops at once — the card header shows
+ * at least y 32..168 of the 200 and the report avatar shows the inscribed
+ * circle — so it reads as *missing* at 264px and at 52px alike.
+ *
+ * It is the one portrait drawn in tokens rather than ink, because it is the
+ * app's own fallback rather than art: it is inlined into the page, where the
+ * tokens resolve, and it follows the theme like the frame behind it does.
+ */
+function placeholder(pic: string): string {
+  const initial = escaped((pic.trim()[0] ?? "?").toUpperCase());
+  return (
+    '<rect width="200" height="200" fill="var(--column)"/>' +
+    '<circle cx="100" cy="100" r="58" fill="none" stroke="var(--border-dashed)" stroke-width="3" stroke-dasharray="10 9"/>' +
+    '<text x="100" y="128" text-anchor="middle" font-size="76" font-weight="600" fill="var(--dot-idle)" ' +
+    `style="font-family:var(--font-mono)">${initial}</text>`
+  );
+}
+
+/** XML-escaped, for the one place a key of the roster reaches the markup. */
+function escaped(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** The portrait's ground colour: its first fill, for the frame behind it. */
-export function portraitGround(key: string): string {
-  return PORTRAITS[key]?.match(/fill="([^"]+)"/)?.[1] ?? "#F4F1EB";
+export function portraitGround(pic: string): string {
+  return portraitFor(pic).match(/fill="([^"]+)"/)?.[1] ?? "#F4F1EB";
 }

@@ -28,6 +28,13 @@ const ANSI = /\u001b\[[0-9;]*m/g;
 interface Line {
   text: string;
   at: Date | null;
+  /**
+   * Whether the agent's own output carried this line, rather than the job
+   * printing it. A loop reports itself as JSON envelopes, and what they carry
+   * is what the agent read or ran; a diagnosis is read from the lines the job
+   * wrote itself (see `QUOTED_CODE`).
+   */
+  carried?: boolean;
 }
 
 function lines(log: string): Line[] {
@@ -40,23 +47,88 @@ function lines(log: string): Line[] {
 
 /**
  * What the failing step printed: the lines between its header group and
- * GitHub's "##[error]" marker. The header echoes the step's script and
+ * GitHub's last "##[error]" marker. The header echoes the step's script and
  * environment, prompt included, and ticket text must never be mistaken for
  * the agent's own words. Plain text with no markers is taken whole.
+ *
+ * The last marker, not the first. A loop streams its output to stderr as it
+ * works and GitHub annotates each of those lines as an error, so the first
+ * marker can sit in the middle of a run. Reading it as the end of the log cut
+ * a real card's evidence off where the agent happened to be typing `tsc`, and
+ * the card quoted that banner instead of the reason the run stopped.
  */
 function stepOutput(log: string): Line[] {
   const all = lines(log);
-  if (!all.some((l) => l.text.startsWith("##["))) return all.filter((l) => l.text);
-  const end = all.findIndex((l) => l.text.startsWith("##[error]"));
+  if (!all.some((l) => l.text.startsWith("##["))) return said(all.filter((l) => l.text));
+  let end = -1;
+  for (let i = all.length - 1; i >= 0; i--) {
+    if (all[i]!.text.startsWith("##[error]")) {
+      end = i;
+      break;
+    }
+  }
   if (end === -1) return [];
   let start = end;
   while (start > 0 && !all[start - 1]!.text.startsWith("##[endgroup]")) start--;
-  return all.slice(start, end).filter((l) => l.text && !l.text.startsWith("##["));
+  return said(all.slice(start, end).filter((l) => l.text && !l.text.startsWith("##[")));
 }
 
-/** The last thing the agent said before its step failed. */
+/**
+ * Our own streamed envelope: a job reports itself by printing JSON lines.
+ * Narrow on purpose — a provider's error body is JSON too, and Anthropic's
+ * starts with `{"type":` (`{"type":"error","error":{…}}`), so only the job's
+ * own event types are unwrapped, and a provider's words stay its own.
+ */
+const ENVELOPE = /^\{"type":"(?:run\.|ticket\.)/;
+
+/**
+ * The lines a person or a tool wrote. A loop reports itself by printing JSON
+ * envelopes to stderr, and what they carry is the interesting part; one that
+ * carries no line of output is dropped rather than quoted, so a card can
+ * never show `{"type":"run.log",…}` where the agent's words belong.
+ */
+function said(lines: Line[]): Line[] {
+  return lines.flatMap((line) => {
+    if (!ENVELOPE.test(line.text)) return [line];
+    try {
+      const inner = (JSON.parse(line.text) as { line?: unknown }).line;
+      return typeof inner === "string" && inner.trim()
+        ? [{ ...line, text: inner.trim(), carried: true }]
+        : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * Our own line, not the agent's: a job prints the loop entry's reason, then
+ * this. Reading it as the last word hides the reason it was printed after,
+ * which is the one thing a card has to be able to say.
+ */
+const PLUMBING = /^The loop stopped \(exit \d+\)\.$/;
+
+/** The job's own account of why its loop stopped. */
+const STOP_REASON =
+  /^(?:The agent did not converge in \d+ turns?\.|Ran out of time: |Spend ceiling reached\b)/;
+
+/**
+ * The last thing the agent said before its step failed.
+ *
+ * The job's own reason comes first when there is one. A run stopped by a turn
+ * ceiling or a budget says why, and at that moment the agent's last words are
+ * whatever tool output it was reading — a `wc -l` line count, or the banner of
+ * the check it was halfway through — which tells a person nothing about what
+ * to do next, and is not even the thing that failed.
+ */
 export function lastWords(log: string): string | null {
-  const text = stepOutput(log).at(-1)?.text;
+  const spoken = stepOutput(log).filter((l) => l.text && !PLUMBING.test(l.text));
+  let reason: string | null = null;
+  for (let i = spoken.length - 1; i >= 0 && reason === null; i--) {
+    const text = spoken[i]!.text;
+    if (STOP_REASON.test(text)) reason = text;
+  }
+  const text = reason ?? spoken.at(-1)?.text;
   if (!text) return null;
   return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }
@@ -180,8 +252,26 @@ function epochReset(text: string): Date | null {
 /* What the line means.                                                      */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * A usage limit, in the words a provider or a CLI uses for one.
+ *
+ * A bare status code is not one of them. An agent runs the project's own
+ * tools, and their output is full of numbers that look like codes: a listing
+ * prints "429 src/lib/db/repository-contract.test.ts" — a line count — and a
+ * test run can print "402 passing". Reading either as a provider's refusal
+ * tells the person their plan is spent and marks the agent out of usage it
+ * never used, so a code counts only where the log says it is one: "status
+ * code 429", `{"code": 429}`, "error 429".
+ *
+ * A rate limit is a refusal, not a mention of one, for the same reason: an
+ * agent rewriting a test named "Rate-limit the merge queue" printed it, and
+ * the card reported a plan out of usage while the account was fine. So the
+ * phrase has to be one a provider refuses with — "rate limit exceeded",
+ * "rate_limit_error", "Rate Limit Reached" — or the words a person is told
+ * with, "hit your rate limit", "too many requests".
+ */
 const LIMIT =
-  /(hit your (?:session |weekly |daily |usage |5-hour |monthly )?limit|usage limit|(?:session|weekly|daily|5-hour|opus|sonnet) limit reached|limit reached\||rate.?limit(?:ed)?|quota exceeded|insufficient[_ ]quota|exhausted your|resource_exhausted|too many requests|\b429\b)/i;
+  /(hit your (?:session |weekly |daily |usage |5-hour |monthly |rate )?limit|usage limit|(?:session|weekly|daily|5-hour|opus|sonnet) limit reached|limit reached\||rate[ _-]?limit(?:s|ed|ing)?[ _-]?(?:error|reached|exceeded|hit|exhausted)|quota exceeded|insufficient[_ ]quota|exhausted your|resource_exhausted|too many requests|(?:http|status|status_?code|error|response|code)\W{0,6}429\b)/i;
 /**
  * A balance problem, narrowly read. A quota is an allowance, not a balance,
  * so `insufficient_quota` belongs to LIMIT: proxies report a spent usage
@@ -195,7 +285,38 @@ const LIMIT =
 const CREDIT =
   /(credit balance is too low|insufficient (?:credit|credits|balance|funds)|out of credits?|payment required|purchase credits|add (?:a )?payment|no credits? (?:left|remaining))/i;
 const AUTH =
-  /(invalid api key|invalid (?:x-api-key|bearer token)|authentication[_ ]error|oauth token (?:has )?expired|token (?:has )?expired|please run \/login|not logged in|unauthori[sz]ed|\b401\b|api key not valid|permission denied|invalid_grant)/i;
+  /(invalid api key|invalid (?:x-api-key|bearer token)|authentication[_ ]error|oauth token (?:has )?expired|token (?:has )?expired|please run \/login|not logged in|unauthori[sz]ed|api key not valid|permission denied|invalid_grant|(?:http|status|status_?code|error|response|code)\W{0,6}401\b)/i;
+
+/**
+ * A line of someone's own code, quoted back into the log.
+ *
+ * A run reads the repository it is working on, and Formic's own suite is full
+ * of the very phrases a card looks for. `blockedReason: "Claude Code hit its
+ * usage limit.",` is a fixture in `src/lib/agents/card-actions.test.ts`, and
+ * an agent that opens that file — as one did in run 36642551420, three turns
+ * into the scope-request ticket — puts a refusal in the log that no provider
+ * ever gave. The card then told the person their plan was spent, and hid the
+ * truth, which was in the log all along and was nobody's fault:
+ * `ClinePass error 500: {"error":"empty response content","success":false}`.
+ *
+ * So a verdict is only read from a line that reads like someone speaking:
+ * never from a `path:line:` search hit, a line of source, a statement, or a
+ * patch — the shapes a run's own reading of this repository comes out in. A
+ * provider that ever speaks in one of those shapes loses its countdown, not
+ * its honesty: the line is still what the card's last words quote.
+ */
+const QUOTED_CODE = new RegExp(
+  [
+    // A search hit: `src/lib/runner/runner.test.ts:620:      note: "…"`
+    "^[^\\s:]+\\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|swift|php|cs|sql|sh|ya?ml|json|md|txt):\\d+:",
+    // A line of source, like the fixture itself: `      blockedReason: "…",`
+    "^\\s*[A-Za-z_$][\\w$.]*\\s*:\\s*[\"'`]",
+    // A statement: `expect(after.blockedReason).toContain("… usage limit")`.
+    "^\\s*(?:expect|assert|it|describe|const|let|var|function|class|return|import|export|await|async)\\b",
+    // A patch line — or a bullet: someone writing about it, not saying it.
+    "^[+-]",
+  ].join("|"),
+);
 
 /** How a person fixes a rejected sign-in for each CLI. */
 function signInHelp(label: string): string {
@@ -221,12 +342,19 @@ export function formatReset(at: Date): string {
  * `label` names the agent ("Claude Code"). `now` is only a fallback: a line
  * with a timestamp is read against its own time, so a log collected late
  * still resolves "resets 6:30pm" to the right day.
+ *
+ * Only the lines the job wrote itself are read. The agent's own output — what
+ * it read, ran and printed — is passed over: a run working on this repository
+ * has Formic's own tests and fixtures in front of it, and those quote the
+ * words a plan running out is reported with, which is not the same thing as a
+ * provider saying them (see `QUOTED_CODE`).
  */
 export function diagnose(text: string, label: string, now = new Date()): Diagnosis | null {
   const all = stepOutput(text);
-  // The agent's own words sit at the end; read from there.
+  // The job's own words sit at the end; read from there.
   for (let i = all.length - 1; i >= 0; i--) {
-    const { text: line, at } = all[i]!;
+    const { text: line, at, carried } = all[i]!;
+    if (carried || QUOTED_CODE.test(line)) continue;
     const when = at ?? now;
     const quoted = `"${line.length > 200 ? `${line.slice(0, 200)}…` : line}"`;
 
@@ -256,6 +384,43 @@ export function diagnose(text: string, label: string, now = new Date()): Diagnos
     }
   }
   return null;
+}
+
+/**
+ * A gateway's own words for an answer that never came back. ClinePass sends
+ * `{"error":"empty response content","success":false}` when the model behind
+ * it returned nothing at all, which is its roof and not the request. A body
+ * that will not parse is the same answer wearing a 200 — an HTML error page
+ * from something sitting in front of the model, or nothing at all.
+ */
+const EMPTY_ANSWER =
+  /(empty response|empty completion|no response content|no content in response|returned no (?:answer|content)|upstream (?:error|failure|timeout)|overloaded|not json)/i;
+
+/**
+ * Whether a provider's refusal says nothing about the request, so the same
+ * request is worth making again.
+ *
+ * Cline's gateway answers a model that came back empty with a 500 and
+ * `{"error":"empty response content","success":false}`; that killed a
+ * thirty-minute run on its third turn, and the card then said it needed a
+ * person, when the request had been fine and the answer had simply not
+ * arrived. Anything under the provider's own roof is that same shape of
+ * failure, so every 5xx counts, and so does a fetch that never reached it at
+ * all — `status === null`. A gateway's words for an empty answer count too:
+ * it does not always wear a 5xx. So does a body that will not parse, which is
+ * how a gateway in front of the model usually reports the same thing.
+ *
+ * Three things are deliberately not here, however temporary they look. A
+ * rate limit is answered with the window it resets in, and the card turns
+ * that into a time a person can act on. A rejected key and an account out of
+ * credit are about the credential: the same request cannot change either. And
+ * a 4xx is the provider saying the request itself is wrong, which asking
+ * again only repeats.
+ */
+export function isTransientProviderError(input: { status: number | null; message: string }): boolean {
+  if (input.status === null) return true;
+  if (input.status >= 500) return true;
+  return EMPTY_ANSWER.test(input.message);
 }
 
 /**
@@ -295,6 +460,14 @@ export function describeProviderError(input: {
   }
   if (status === 529 || status === 503 || /overloaded/i.test(detail)) {
     return `${label} is overloaded right now${code}. Move the card back in a few minutes to retry.${said}`;
+  }
+  // A 5xx that is none of the above is the provider's own roof falling in: the
+  // request was fine and the answer never arrived. Cline's gateway reports an
+  // empty answer from the model behind it exactly this way. Saying "needs you"
+  // about it sends a person looking for a fault in their ticket that is not
+  // there, so this one says whose side it is on.
+  if (status !== null && status >= 500) {
+    return `${label} had a server error${code}. That is ${label}'s side, not the ticket's: move the card back in a minute to retry.${said}`;
   }
   if (status === null) return `Could not reach ${label}${detail ? `: ${detail}` : "."}`;
   return `${label} error ${status}${detail ? `: ${detail}` : ""}`;

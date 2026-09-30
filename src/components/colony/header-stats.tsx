@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/components/ui/cn";
 import { HEAT_MAX, HEAT_WINDOW_MS, XP_PER_LEVEL, pointsOf } from "@/lib/colony/game";
-import { GradeBadge, SentinelsButton } from "@/components/sentinels/sentinels";
+import { GradeBadge } from "@/components/sentinels/sentinels";
 import { useColony, type ColonyApi } from "./colony";
 
 /** Counts toward the value it is given rather than jumping to it. */
@@ -196,8 +196,7 @@ function TimelineButton({ c }: { c: ColonyApi }) {
 
 /**
  * The colony's corner of the header: the Sentinels' grade and the level,
- * rank, points and heat, the sound switch, and the ways into the Sentinels
- * and the timeline.
+ * rank, points and heat, the sound switch, and the way into the timeline.
  */
 export function ColonyHeaderStats() {
   const c = useColony();
@@ -251,7 +250,6 @@ export function ColonyHeaderStats() {
       </div>
 
       <SoundButton c={c} />
-      <SentinelsButton />
       <TimelineButton c={c} />
     </>
   );

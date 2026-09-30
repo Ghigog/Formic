@@ -26,6 +26,42 @@ export function scopeAsked(ticket: Pick<TicketDetail, "scopeRequest" | "fileScop
   return ticket.scopeRequest.filter((p) => !pathInScope(p, ticket.fileScope));
 }
 
+/** What of a scope request a new file scope still leaves uncovered. */
+export function stillAsked(scopeRequest: readonly string[], fileScope: readonly string[]): string[] {
+  return scopeRequest.filter((p) => !pathInScope(p, fileScope));
+}
+
+/**
+ * The scope now covers everything a ticket asked for: it is unblocked the
+ * way answerScope(true) unblocks it, ready in To Do for the caller to move
+ * on. `scopeRequest` is what settles the request: kept as it was when work
+ * is waiting on the ticket's branch for the run that follows to pick up
+ * (see hasKeptWork), emptied when nothing is kept and there is nothing left
+ * to ask for.
+ */
+export async function resolveScopeRequest(
+  projectId: string,
+  ticket: TicketDetail,
+  scopeRequest: readonly string[],
+): Promise<void> {
+  const repo = repository();
+  await repo.updateTicket(ticket.id, {
+    status: "ready",
+    stalledIn: null,
+    blockedReason: null,
+    scopeRequest: [...scopeRequest],
+  });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticket.id,
+    kind: "ticket",
+    status: "ready",
+    stalledIn: null,
+    stage: ticket.stage,
+    blockedReason: null,
+  });
+}
+
 function listed(paths: string[]): string {
   const shown = paths.slice(0, 5).map((p) => `\`${p}\``).join(", ");
   return paths.length > 5 ? `${shown} and ${paths.length - 5} more` : shown;

@@ -278,6 +278,54 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.runCancelReason(live)).toBe("stop");
         expect(await repo.runCancelReason(done)).toBeNull();
       });
+
+      it("sums an agent's tokens from its runs and its chat answers, and only its own", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const mine = `preset-${randomUUID()}`;
+        const theirs = `preset-${randomUUID()}`;
+        const run = (id: string, presetId: string) => ({
+          id,
+          role: "product" as const,
+          epicId: epic.id,
+          ticketId: null,
+          model: null,
+          presetId,
+          sandboxId: null,
+        });
+
+        const [one, two, other] = [randomUUID(), randomUUID(), randomUUID()];
+        await repo.startRun(run(one, mine));
+        await repo.finishRun(one, { status: "succeeded", error: null, tokensIn: 1_200, tokensOut: 300, costCents: 0 });
+        await repo.startRun(run(two, mine));
+        await repo.finishRun(two, { status: "succeeded", error: null, tokensIn: 800, tokensOut: 200, costCents: 0 });
+        // Another agent's run, which is counted to that agent and not to this one.
+        await repo.startRun(run(other, theirs));
+        await repo.finishRun(other, { status: "succeeded", error: null, tokensIn: 5_000, tokensOut: 5_000, costCents: 0 });
+
+        // An answer is not a run, so its tokens are on the message instead.
+        const answer = await repo.addCardChatMessage({
+          projectId: p.id,
+          cardKind: "epic",
+          cardId: epic.id,
+          role: "assistant",
+          content: "because",
+        });
+        await repo.updateCardChatMessage(answer.id, {
+          tokensIn: 400,
+          tokensOut: 100,
+          agentPresetId: mine,
+        });
+
+        expect(await repo.agentTokensByPreset()).toEqual({
+          [mine]: { tokensIn: 2_400, tokensOut: 600 },
+          [theirs]: { tokensIn: 5_000, tokensOut: 5_000 },
+        });
+        // A cutoff after the work leaves nothing in the window: what a plan
+        // that resets monthly would count itself from.
+        const cutoff = new Date(Date.now() + 60_000);
+        expect(await repo.agentTokensByPreset(cutoff)).toEqual({});
+      });
     });
 
     describe("presets and column agents", () => {
@@ -358,6 +406,41 @@ function contract(name: string, make: () => Repository) {
 
         await repo.clearCardChat(epic.id);
         expect(await repo.cardChatMessages(epic.id)).toEqual([]);
+      });
+
+      it("keeps what an answer spent on the message it landed on", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const base = { projectId: p.id, cardKind: "epic" as const, cardId: epic.id };
+
+        const answer = await repo.addCardChatMessage({ ...base, role: "assistant", content: "because" });
+        // A new message has spent nothing yet: the answer writes that in when it lands.
+        expect(answer).toMatchObject({ tokensIn: 0, tokensOut: 0, costCents: 0 });
+
+        await repo.updateCardChatMessage(answer.id, { tokensIn: 1_200, tokensOut: 340, costCents: 7 });
+        expect(await repo.cardChatMessage(answer.id)).toMatchObject({
+          tokensIn: 1_200,
+          tokensOut: 340,
+          costCents: 7,
+        });
+      });
+
+      it("lists an answer nothing is behind, once it is older than any function could write it", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const base = { projectId: p.id, cardKind: "epic" as const, cardId: epic.id };
+
+        const orphan = await repo.addCardChatMessage({ ...base, role: "assistant", content: "", status: "pending" });
+        const inActions = await repo.addCardChatMessage({ ...base, role: "assistant", content: "", status: "pending" });
+        await repo.updateCardChatMessage(inActions.id, { runnerJob: "job-9" });
+
+        // Past any function's lifetime: the one with no job is what is left of
+        // an answer whose worker died. A CLI agent's has a job behind it.
+        expect((await repo.orphanedCardChats(p.id, new Date(Date.now() + 60_000))).map((m) => m.id)).toEqual([
+          orphan.id,
+        ]);
+        // A cutoff before it was written: it may be being written right now.
+        expect(await repo.orphanedCardChats(p.id, new Date(Date.now() - 60_000))).toEqual([]);
       });
     });
 

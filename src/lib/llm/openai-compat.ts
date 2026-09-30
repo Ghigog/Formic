@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { ProviderInfo } from "./providers";
-import { describeProviderError } from "@/lib/agents/limits";
+import { describeProviderError, isTransientProviderError } from "@/lib/agents/limits";
 
 /**
  * OpenAI's chat completions format, spoken at whichever address a provider
@@ -99,6 +99,27 @@ function saidInstead(body: unknown): string | null {
   return null;
 }
 
+/** The tries after the first: how long each waits before making it. */
+const RETRY_WAITS_MS = [1_000, 4_000];
+
+/**
+ * Waits, unless the run is stopped first: a card pulled out of a run should
+ * not be held open by a retry waiting on a provider nobody is asking any more.
+ */
+async function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
 export async function chat(
   p: ProviderInfo,
   apiKey: string,
@@ -107,6 +128,39 @@ export async function chat(
     messages: ChatMessage[];
     tools?: ToolSpec[];
     /** Ask for a JSON object back. Dropped and retried if refused. */
+    json?: boolean;
+    signal?: AbortSignal;
+  },
+): Promise<ChatResult> {
+  // A provider's own roof falling in is not a run's ending. Cline's gateway
+  // answers a model that came back empty with a 500, and a loop that gave up
+  // there ended a thirty-minute job on its third turn; the same request a
+  // moment later is usually served. These waits are the tries after the
+  // first, and the run's own stop is never something to wait out. The Claude
+  // path already gets this from its SDK, which retries a 5xx twice by
+  // default; this client, over plain fetch, had nothing.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await chatOnce(p, apiKey, request);
+    } catch (e) {
+      const wait = RETRY_WAITS_MS[attempt];
+      if (wait === undefined || request.signal?.aborted) throw e;
+      if (!(e instanceof ProviderError) || !isTransientProviderError({ status: e.status, message: e.message })) {
+        throw e;
+      }
+      await pause(wait, request.signal);
+    }
+  }
+}
+
+/** One request, with the JSON-mode drop. `chat` is the call every caller makes. */
+async function chatOnce(
+  p: ProviderInfo,
+  apiKey: string,
+  request: {
+    model: string;
+    messages: ChatMessage[];
+    tools?: ToolSpec[];
     json?: boolean;
     signal?: AbortSignal;
   },
@@ -145,7 +199,21 @@ export async function chat(
     throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
   }
 
-  const body: unknown = await res.json();
+  // A body that will not parse is not an answer either. Left as the
+  // SyntaxError it is, it would slip past the retry in `chat` — which only
+  // asks again about the provider's own failures — and reach the card as a
+  // JavaScript message naming no provider and nothing a person can act on.
+  // An abort here is the run being stopped, which is not the provider's side.
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (e) {
+    if (request.signal?.aborted) throw e;
+    throw new ProviderError(
+      `${p.label} answered with something that is not JSON. That is ${p.label}'s side, not the ticket's: move the card back in a minute to retry.`,
+      res.status,
+    );
+  }
   const completion = completionIn(body);
   const choice = completion?.choices?.[0];
   if (!choice?.message) {

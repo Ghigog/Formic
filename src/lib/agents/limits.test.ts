@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeProviderError, diagnose, lastWords } from "./limits";
+import { describeProviderError, diagnose, isTransientProviderError, lastWords } from "./limits";
 
 /** A failed "Run the agent" step as GitHub logs it. */
 function stepLog(output: string, prompt = "Turn these into tickets."): string {
@@ -78,6 +78,95 @@ describe("diagnose", () => {
     expect(diagnose(stepLog("402 passing tests"), "Claude Code")).toBeNull();
   });
 
+  it("does not read a line count, or a file number, as a status code", () => {
+    // A real loop run: the agent's own `wc -l` came out in the log, and the
+    // run's ending was the turn ceiling, not the plan running out.
+    const log = stepLog(
+      "429 src/lib/db/repository-contract.test.ts\n401 src/lib/db/repository.ts\nThe agent did not converge in 40 turns. This needs a human.",
+    );
+    expect(diagnose(log, "ClinePass")).toBeNull();
+  });
+
+  it("still reads a status code where the log says it is one", () => {
+    expect(diagnose(stepLog("Request failed: status code 429"), "ClinePass")?.kind).toBe("limit");
+    expect(diagnose(stepLog('{"error":{"code":429}}'), "ClinePass")?.kind).toBe("limit");
+    expect(diagnose(stepLog("error 401 from the gateway"), "ClinePass")?.kind).toBe("auth");
+  });
+
+  it("does not read the line count inside a streamed envelope as a status code", () => {
+    // The same run as above, as the job actually reported it: every line is an
+    // envelope, and the number is still the agent's own `wc -l` output.
+    const log = stepLog(
+      '{"type":"run.log","runId":"r","stream":"stdout","line":"429 src/lib/db/repository-contract.test.ts"}',
+    );
+    expect(diagnose(log, "ClinePass")).toBeNull();
+  });
+
+  it("does not read the agent's own reading of this repository as a refusal", () => {
+    // Run 36642551420: an agent three turns into the scope-request ticket read
+    // Formic's own `card-actions.test.ts`, whose fixture quotes this very
+    // phrase, and the card told the person their plan was spent. The run had
+    // died on Cline's gateway, and the log's own last line said so.
+    const read = JSON.stringify({
+      type: "run.log",
+      runId: "r",
+      stream: "stdout",
+      line: '      blockedReason: "Claude Code hit its usage limit.",',
+    });
+    const log = stepLog(
+      [
+        read,
+        'ClinePass error 500: {"error":"empty response content","success":false}',
+        "The loop stopped (exit 1).",
+      ].join("\n"),
+    );
+
+    expect(diagnose(log, "ClinePass")).toBeNull();
+    expect(lastWords(log)).toBe(
+      'ClinePass error 500: {"error":"empty response content","success":false}',
+    );
+  });
+
+  it("does not read a fixture, or a search hit, as the provider's own words", () => {
+    // The same phrase the way an agent prints it without an envelope around
+    // it: straight from the file it opened, the search that found it, or the
+    // patch it made.
+    expect(diagnose(stepLog('      note: "Claude Code hit its usage limit.",'), "Claude Code")).toBeNull();
+    expect(
+      diagnose(
+        stepLog('src/lib/runner/runner.test.ts:620:      note: "Claude Code hit its usage limit.",'),
+        "Claude Code",
+      ),
+    ).toBeNull();
+    expect(
+      diagnose(
+        stepLog('expect(after.blockedReason).toContain("Claude Code hit its usage limit");'),
+        "Claude Code",
+      ),
+    ).toBeNull();
+    expect(
+      diagnose(stepLog('-      blockedReason: "Claude Code hit its usage limit.",'), "Claude Code"),
+    ).toBeNull();
+    // And the words still count, from the CLI that says them.
+    expect(diagnose(stepLog("You've hit your session limit · resets 6:30pm (UTC)"), "Claude Code")?.kind).toBe(
+      "limit",
+    );
+  });
+
+  it("reads a mention of rate limiting as code, not as a refusal", () => {
+    // A real run: the agent was rewriting this test when its turns ran out,
+    // and the card said the account was out of usage while it was fine.
+    const log = stepLog(
+      'expect(onSubmit).toHaveBeenCalledWith("Rate-limit the merge queue", expect.any(String));',
+    );
+    expect(diagnose(log, "ClinePass")).toBeNull();
+    expect(diagnose(stepLog("Rate limit reached for gpt-4 in organization org-1"), "OpenAI")?.kind).toBe(
+      "limit",
+    );
+    expect(diagnose(stepLog('{"error":{"type":"rate_limit_error"}}'), "OpenAI")?.kind).toBe("limit");
+    expect(diagnose(stepLog("You've hit your rate limit"), "OpenAI")?.kind).toBe("limit");
+  });
+
   it("never reads the prompt as the agent's words", () => {
     const log = stepLog("Error: something unrelated broke", "Handle the 429 rate limit and usage limit errors");
     expect(diagnose(log, "Claude Code")).toBeNull();
@@ -93,6 +182,48 @@ describe("lastWords", () => {
     expect(lastWords(stepLog("Error: ENOSPC: no space left on device"))).toBe(
       "Error: ENOSPC: no space left on device",
     );
+  });
+
+  it("skips our own exit line, so the reason printed before it stays", () => {
+    const log = stepLog(
+      "The agent did not converge in 40 turns. This needs a human.\nThe loop stopped (exit 1).",
+    );
+    expect(lastWords(log)).toBe("The agent did not converge in 40 turns. This needs a human.");
+  });
+
+  it("keeps reading to the end when the run's own stream was annotated as errors", () => {
+    // A real run: the loop streams to stderr, GitHub annotates each of those
+    // lines as an error, and the first marker sat at 17:08 — the point where
+    // the agent happened to be running tsc. The reason is printed 90 seconds
+    // later, and this is the card that quoted `> tsc --noEmit` instead.
+    const log = [
+      "2026-09-29T17:06:10.6352459Z ##[group]Run set -euo pipefail",
+      "2026-09-29T17:06:10.6400000Z   PROMPT: Paste an image from the clipboard.",
+      "2026-09-29T17:06:10.6450000Z ##[endgroup]",
+      '2026-09-29T17:08:00.8925768Z ##[error]{"type":"run.log","runId":"r","stream":"stdout","line":"src/components/board/new-item-dialog.tsx(110,7): error TS2304: Cannot find name \'pasteRef\'."}',
+      '2026-09-29T17:09:33.9548403Z {"type":"run.log","runId":"r","stream":"stdout","line":"> tsc --noEmit"}',
+      "2026-09-29T17:09:33.9386970Z The agent did not converge in 40 turns. This needs a human.",
+      "2026-09-29T17:09:33.9552868Z The loop stopped (exit 1).",
+      "2026-09-29T17:09:40.9637688Z ##[error]Process completed with exit code 1.",
+      "2026-09-29T17:09:41.1439970Z ##[warning]Node.js 20 is deprecated.",
+    ].join("\n");
+    expect(lastWords(log)).toBe("The agent did not converge in 40 turns. This needs a human.");
+  });
+
+  it("prefers the job's own reason to the tool output that followed it", () => {
+    const log = stepLog(
+      [
+        "Ran out of time: this run's budget is 30 minutes. The job's own timeout is the backstop; raise the ticket's budget to give it longer.",
+        '{"type":"run.log","runId":"r","stream":"stdout","line":"changed src/lib/db/repository.ts"}',
+        "The loop stopped (exit 1).",
+      ].join("\n"),
+    );
+    expect(lastWords(log)).toContain("Ran out of time: this run's budget is 30 minutes.");
+  });
+
+  it("never quotes an envelope, only the line it carries", () => {
+    const log = stepLog('{"type":"run.log","runId":"r","stream":"stdout","line":"> tsc --noEmit"}');
+    expect(lastWords(log)).toBe("> tsc --noEmit");
   });
 });
 
@@ -147,5 +278,67 @@ describe("describeProviderError", () => {
     expect(describeProviderError({ label: "Anthropic API", status: 529, message: "Overloaded" })).toContain(
       "overloaded",
     );
+  });
+
+  /**
+   * A 500 from a gateway is the provider's own roof falling in. Cline's
+   * gateway reports a model that came back empty exactly this way, and
+   * reading it back as a fault in the ticket sent the person looking for one
+   * that was not there.
+   */
+  it("says whose side a server error is on", () => {
+    const message = describeProviderError({
+      label: "ClinePass",
+      status: 500,
+      message: '{"error":"empty response content","success":false}',
+    });
+    expect(message).toContain("server error");
+    expect(message).toContain("HTTP 500");
+    expect(message).toContain("not the ticket's");
+    expect(message).toContain("empty response content");
+    // The status is not an overload, and must not be reported as the run's fault.
+    expect(message).not.toContain("overloaded");
+  });
+});
+
+describe("isTransientProviderError", () => {
+  it("counts the provider's own roof falling in", () => {
+    expect(
+      isTransientProviderError({ status: 500, message: '{"error":"empty response content","success":false}' }),
+    ).toBe(true);
+    expect(isTransientProviderError({ status: 503, message: "Service Unavailable" })).toBe(true);
+    // Never reached it at all: the connection, not the request.
+    expect(isTransientProviderError({ status: null, message: "Could not reach ClinePass: fetch failed" })).toBe(true);
+  });
+
+  /** A gateway's empty answer does not always wear a 5xx. */
+  it("counts a gateway's own words for an answer that never came", () => {
+    expect(isTransientProviderError({ status: 200, message: "empty response content" })).toBe(true);
+    expect(isTransientProviderError({ status: 200, message: "ClinePass returned no answer." })).toBe(true);
+  });
+
+  /**
+   * A body that will not parse is how a gateway in front of the model reports
+   * the same empty answer: it answered, and what it sent was not a completion.
+   */
+  it("counts an answer that is not JSON at all", () => {
+    expect(
+      isTransientProviderError({
+        status: 200,
+        message: "ClinePass answered with something that is not JSON.",
+      }),
+    ).toBe(true);
+  });
+
+  it("leaves anything a person has to act on alone", () => {
+    // The card turns each of these into something to do: a time, a key, a top-up.
+    expect(isTransientProviderError({ status: 429, message: "Rate limit exceeded" })).toBe(false);
+    expect(isTransientProviderError({ status: 401, message: "Invalid API key" })).toBe(false);
+    expect(isTransientProviderError({ status: 402, message: "insufficient_credits" })).toBe(false);
+    // A 4xx is the provider saying the request itself is wrong.
+    expect(isTransientProviderError({ status: 400, message: "tools is not supported" })).toBe(false);
+    expect(
+      isTransientProviderError({ status: 400, message: "This model's maximum context length is 200000 tokens" }),
+    ).toBe(false);
   });
 });

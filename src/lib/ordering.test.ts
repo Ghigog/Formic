@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  byCompletion,
   needsRebalance,
   positionBetween,
   positionForIndex,
@@ -62,5 +63,35 @@ describe("rebalance", () => {
 
   it("renumbers evenly", () => {
     expect(rebalance(3)).toEqual([1000, 2000, 3000]);
+  });
+});
+
+describe("byCompletion", () => {
+  const card = (partial: Partial<{ mergedAt: string | null; updatedAt: string; position: number }>) =>
+    ({ position: 1000, updatedAt: "", ...partial });
+
+  it("sorts most recently completed first, whatever the positions say", () => {
+    const older = card({ mergedAt: "2025-01-01T10:00:00Z", position: 1000 });
+    const newer = card({ mergedAt: "2025-01-02T10:00:00Z", position: 2000 });
+    expect([older, newer].sort(byCompletion)).toEqual([newer, older]);
+    expect([newer, older].sort(byCompletion)).toEqual([newer, older]);
+  });
+
+  it("prefers mergedAt over updatedAt", () => {
+    const merged = card({ mergedAt: "2025-01-01T10:00:00Z", updatedAt: "2025-01-03T10:00:00Z" });
+    const updated = card({ mergedAt: "2025-01-02T10:00:00Z", updatedAt: "2025-01-04T10:00:00Z" });
+    expect([merged, updated].sort(byCompletion)).toEqual([updated, merged]);
+  });
+
+  it("falls back to updatedAt when mergedAt is not set, as epics do", () => {
+    const epic = card({ mergedAt: null, updatedAt: "2025-01-05T10:00:00Z" });
+    const ticket = card({ mergedAt: "2025-01-04T10:00:00Z", updatedAt: "2025-01-01T10:00:00Z" });
+    expect([ticket, epic].sort(byCompletion)).toEqual([epic, ticket]);
+  });
+
+  it("breaks ties on position", () => {
+    const first = card({ mergedAt: "2025-01-01T10:00:00Z", position: 1000 });
+    const second = card({ mergedAt: "2025-01-01T10:00:00Z", position: 2000 });
+    expect([second, first].sort(byCompletion)).toEqual([first, second]);
   });
 });

@@ -8,7 +8,7 @@ import { GRADES, GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
 import { GROUP_INK, SENTINELS, promptFor, stepsFor, type Sentinel } from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditPoint } from "@/lib/db/repository";
-import { PORTRAITS, portraitGround } from "./portraits";
+import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
 
 /** The level badge's octagon, chamfered for an 84px grade. */
@@ -29,14 +29,17 @@ function Stars({ n, size, id }: { n: number; size: number; id?: string }) {
   );
 }
 
+/**
+ * A portrait in the frame the page gives it — the frame itself lives in
+ * `portraits.ts` with the art, so the card, the report avatar and the tests
+ * all inline the same markup.
+ */
 function Portrait({ pic, className }: { pic: string; className?: string }) {
   return (
     <span
       aria-hidden
       className={cn("absolute inset-0 block", className)}
-      dangerouslySetInnerHTML={{
-        __html: `<svg viewBox="0 0 200 200" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" style="display:block">${PORTRAITS[pic] ?? ""}</svg>`,
-      }}
+      dangerouslySetInnerHTML={{ __html: portraitSvg(pic) }}
     />
   );
 }
@@ -588,38 +591,3 @@ export function GradeBadge({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** The labelled way into the Sentinels, beside the Timeline's. */
-export function SentinelsButton() {
-  const c = useColony();
-  const s = useSentinels();
-  if (!c || !s) return null;
-  const open = c.sentinelsOpen;
-  const busy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
-  return (
-    <button
-      type="button"
-      onClick={() => c.setSentinelsOpen(!open)}
-      aria-label={open ? "Back to board" : "Open sentinels"}
-      aria-expanded={open}
-      className="border-line bg-card text-ink hover:border-terracotta inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border pr-3 pl-2.5 text-[13px] font-semibold transition-[border-color,box-shadow] hover:shadow-[0_6px_14px_-10px_color-mix(in_srgb,var(--anthracite)_40%,transparent)] active:scale-[0.97] max-lg:hidden"
-    >
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-        <path d="M7 1.2 12 3v3.6c0 3-2.1 5.2-5 6.2-2.9-1-5-3.2-5-6.2V3z" fill="var(--text)" />
-        <path d="m4.8 7 1.5 1.5L9.4 5.4" stroke="var(--clay-lit)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      {open ? "Board" : "Sentinels"}
-      {open ? (
-        <span className="border-line text-muted rounded border px-[5px] py-0.5 font-mono text-[9px] font-medium">ESC</span>
-      ) : busy ? (
-        <span className="text-terracotta-deep flex items-center gap-1 font-mono text-[10px] font-medium">
-          <span className="bg-terracotta size-1.5 animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
-          {busy}
-        </span>
-      ) : (
-        <span className="font-serif text-[14px] leading-none" style={{ color: s.grade.ink }}>
-          {s.grade.grade}
-        </span>
-      )}
-    </button>
-  );
-}

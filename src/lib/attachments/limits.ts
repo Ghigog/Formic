@@ -18,6 +18,7 @@ export const ALLOWED_ATTACHMENT_TYPES = [
   "text/markdown",
   "text/csv",
   "application/json",
+  "text/html",
 ] as const;
 
 export type AllowedAttachmentType = (typeof ALLOWED_ATTACHMENT_TYPES)[number];
