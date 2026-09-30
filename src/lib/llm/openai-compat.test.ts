@@ -341,4 +341,61 @@ describe("the OpenAI-format client", () => {
     expect(sent[1]!.body.max_tokens).toBe(4000);
     expect(sent[1]!.body.reasoning_effort).toBe("high");
   });
+
+  describe("ClinePass tool calls", () => {
+    const wrap = (message: Record<string, unknown>) => ({
+      data: { choices: [{ index: 0, message: { role: "assistant", ...message }, finish_reason: "tool_calls" }] },
+      success: true,
+    });
+    const call = (args: string) => ({
+      content: null,
+      tool_calls: [{ id: "c1", type: "function", function: { name: "read", arguments: args } }],
+    });
+
+    it("completes a two-turn tool loop from wrapped, non-streamed bodies", async () => {
+      const bodies = [wrap(call('{"path":"a.ts"}')), wrap({ content: "done" })];
+      const sent: Array<{ messages: unknown[] }> = [];
+      vi.stubGlobal("fetch", async (_u: string, init: RequestInit) => {
+        sent.push(JSON.parse(String(init.body)));
+        return Response.json(bodies.shift());
+      });
+      const cline = provider("clinepass")!;
+      const messages: Array<{ role: "user" | "assistant" | "tool"; content: string | null }> = [
+        { role: "user", content: "go" },
+      ];
+      const first = await chat(cline, "k", { ...ask, messages: messages as never });
+      expect(JSON.parse(first.message.tool_calls![0]!.function.arguments)).toEqual({ path: "a.ts" });
+      messages.push(first.message as never, { role: "tool", content: "file" });
+      const second = await chat(cline, "k", { ...ask, messages: messages as never });
+
+      expect(second.message.content).toBe("done");
+      expect(sent).toHaveLength(2);
+    });
+
+    it("strips DSML sentinels from content", async () => {
+      fakeBody(wrap({ content: "<｜DSML｜function_calls>ok<｜DSML｜/function_calls>" }));
+      const reply = await chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
+      expect(reply.message.content).toBe("ok");
+    });
+
+    it("fails naming DSML when the leak left the call's arguments empty", async () => {
+      fakeBody(wrap({ ...call("{}"), content: "<｜DSML｜function_calls>" }));
+      await expect(chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] })).rejects.toThrow(
+        /DSML/,
+      );
+    });
+
+    it("fails with the provider's own text when arguments do not parse", async () => {
+      fakeBody(wrap(call('{"path": "a.ts')));
+      await expect(chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] })).rejects.toThrow(
+        /not JSON: \{"path": "a\.ts/,
+      );
+    });
+
+    it("lets an empty-argument call through when nothing leaked", async () => {
+      fakeBody(wrap(call("{}")));
+      const reply = await chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
+      expect(reply.message.tool_calls).toHaveLength(1);
+    });
+  });
 });

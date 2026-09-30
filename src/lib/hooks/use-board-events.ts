@@ -51,6 +51,7 @@ export function useBoardEvents(
       "card.deleted",
       "card.rerouted",
       "card.chat",
+      "assistant.failed",
       "epic.prd",
       "epic.showcase",
       "run.progress",

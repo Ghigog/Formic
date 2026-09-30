@@ -9,6 +9,7 @@ import { repository } from "@/lib/db";
 import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const askSchema = z.object({ text: z.string().trim().min(1).max(20_000) });
 

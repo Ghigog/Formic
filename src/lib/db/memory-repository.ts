@@ -1282,6 +1282,19 @@ export class MemoryRepository implements Repository {
       .map((m) => ({ ...m }));
   }
 
+  async orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]> {
+    return store()
+      .assistant.filter(
+        (m) =>
+          m.projectId === projectId &&
+          m.role === "assistant" &&
+          m.status === "pending" &&
+          !m.runnerJob &&
+          m.createdAt < olderThan,
+      )
+      .map((m) => ({ ...m }));
+  }
+
   async rebalanceColumn(projectId: string, column: ColumnId): Promise<void> {
     const cards = (await this.boardCards(projectId))
       .filter((c) => columnOf(c) === column)

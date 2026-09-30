@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { answer, finishCliAnswer } from "./turn";
+import { answer, finishCliAnswer, MAX_ANSWER_MS } from "./turn";
 import { applyAction, checkAction } from "./actions";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
@@ -130,6 +130,44 @@ describe("the assistant", () => {
     const system = String((sent[0]!.messages as Array<{ content: string }>)[0]!.content);
     expect(system).toContain(`base branch ${base}`);
     expect(system).toContain("The board right now:");
+  });
+
+  it("stops when its clock runs out, finishing done with what it read", async () => {
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await new MockVcsClient("acme/widgets").commitFile(base, "docs/tickets.md", "1. Export endpoint", "x");
+    await useAgent("groq");
+    // A provider slow enough that one round outlives the whole budget.
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", async () => {
+      vi.setSystemTime(Date.now() + MAX_ANSWER_MS);
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [call("c1", "read_file", { path: "docs/tickets.md" })],
+            },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+    });
+    const pending = await ask("What is in the ticket list?");
+
+    try {
+      await answer(PROJECT, pending.id);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(await reload(pending.id)).toMatchObject({
+      status: "done",
+      content: expect.stringContaining(
+        "I ran out of time (4 minute limit) before I reached an answer. I read 1 file: docs/tickets.md.",
+      ),
+    });
   });
 
   it("proposes board changes without making them", async () => {

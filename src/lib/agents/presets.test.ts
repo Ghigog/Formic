@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agentConfigFor, agentFor, runTargetFor, savePreset } from "./presets";
+import { agentConfigFor, agentFor, runTargetFor, savePreset, sentinelAgent } from "./presets";
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
 import { AnthropicProductAgent } from "./anthropic";
@@ -142,5 +142,55 @@ describe("agent templates", () => {
     await repository().setColumnAgent(PROJECT, "in_progress", preset.id);
     await repository().deletePreset(preset.id);
     expect(await repository().columnAgents(PROJECT)).toEqual({});
+  });
+});
+
+describe("the sentinels' agent", () => {
+  async function assistantOn(input: Parameters<typeof savePreset>[0]) {
+    const preset = await savePreset(input);
+    await repository().setAssistantAgent(PROJECT, preset.id);
+    return preset;
+  }
+
+  it("is the assistant's agent, without its chat prompt", async () => {
+    await assistantOn({ ...worker, apiKey: "sk-ant-assistant" });
+    // A column's agent is not borrowed any more.
+    const other = await savePreset({ ...worker, name: "column-agent", apiKey: "sk-ant-column" });
+    await repository().setColumnAgent(PROJECT, "in_review", other.id);
+
+    const agent = await sentinelAgent(PROJECT);
+    expect(agent).toEqual({
+      kind: "configured",
+      config: { provider: "anthropic", model: "claude-sonnet-5", apiKey: "sk-ant-assistant" },
+    });
+    expect(JSON.stringify(agent)).not.toContain(worker.prompt);
+  });
+
+  it("says so when signed in and the assistant has no agent, whatever the columns have", async () => {
+    vi.stubEnv("GITHUB_APP_CLIENT_ID", "id");
+    vi.stubEnv("GITHUB_APP_CLIENT_SECRET", "secret");
+    const other = await savePreset({ ...worker, apiKey: "sk-ant-column" });
+    await repository().setColumnAgent(PROJECT, "in_review", other.id);
+    expect(await sentinelAgent(PROJECT)).toEqual({
+      kind: "none",
+      reason: "No agent is set for the assistant. Pick or create one above.",
+    });
+  });
+
+  it("gives the assistant agent's usage-limit reason", async () => {
+    const preset = await assistantOn({ ...worker, apiKey: "sk-ant-assistant" });
+    await repository().setPresetLimit(preset.id, { until: new Date(Date.now() + 3_600_000), note: "limit" });
+    const agent = await sentinelAgent(PROJECT);
+    expect(agent).toMatchObject({ kind: "none", reason: expect.stringContaining("out of usage") });
+  });
+
+  it("refuses a CLI agent, which runs in GitHub Actions", async () => {
+    await assistantOn({ name: "claude-code", provider: "claude-code", model: "", prompt: "", apiKey: "token" });
+    const agent = await sentinelAgent(PROJECT);
+    expect(agent).toMatchObject({ kind: "none", reason: expect.stringContaining("CLI agents run in GitHub Actions") });
+  });
+
+  it("runs the mock in local mode when the assistant has no agent", async () => {
+    expect(await sentinelAgent(PROJECT)).toEqual({ kind: "mock" });
   });
 });
