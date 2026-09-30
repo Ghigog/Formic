@@ -121,8 +121,8 @@ to the job's log as well as to the board — a step that prints nothing cannot b
 told apart from one that is stuck.
 
 **Step 4, the default** — the ticket's budget is the plan: `loopBudgetMs` gives
-it ten minutes a story point (`MINUTES_PER_POINT`), capped at 55 so the job's
-60-minute `timeout-minutes` stays the backstop, and a run that reaches it stops
+it ten minutes a story point (`MINUTES_PER_POINT`), capped at 175 so the job's
+180-minute `timeout-minutes` stays the backstop, and a run that reaches it stops
 and says which limit it was. The settings that let a person choose the budget —
 flat, per point, by hand, or off — are `docs/run-time-budgets.md`'s own work,
 and this default is what it says a missing setting means.
