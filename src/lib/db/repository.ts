@@ -363,6 +363,11 @@ export interface Repository {
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
+  /**
+   * The next standalone ticket's number, T-<number>. Claimed atomically and
+   * never reused, so a deleted ticket's key keeps meaning that ticket.
+   */
+  nextStandaloneTicketNumber(projectId: string): Promise<number>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   move(input: MoveInput): Promise<void>;
   /** Epics only: whether it is a holder with no card of its own. */

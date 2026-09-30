@@ -460,7 +460,7 @@ export async function createTodoItem(
     await repo.createTickets([
       {
         epicId: epic.id,
-        key: "T-1",
+        key: `T-${await repo.nextStandaloneTicketNumber(projectId)}`,
         title,
         description: trimmed,
         acceptanceCriteria: [],
