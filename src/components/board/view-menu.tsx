@@ -136,10 +136,10 @@ export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
             <span className="flex-1 truncate">
               {value.collapsed
                 ? scope === "board"
-                  ? "Expand board"
+                  ? "Expand all"
                   : "Expand column"
                 : scope === "board"
-                  ? "Collapse board"
+                  ? "Collapse all"
                   : "Collapse column"}
             </span>
           </button>
