@@ -13,7 +13,7 @@ import {
 import type { ExtrasMap } from "./card";
 import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
-import { useAgents } from "@/lib/hooks/use-agents";
+import { useAgents, type AgentUsage } from "@/lib/hooks/use-agents";
 import { useAssistant } from "@/lib/hooks/use-assistant";
 import { AgentEditor } from "./agent-editor";
 import { SetupDialog, type KeylessAgent } from "./setup-dialog";
@@ -47,6 +47,7 @@ export function BoardShell({
   initialStats,
   initialPresets = [],
   initialColumnAgents = {},
+  initialAgentUsage = {},
   initialSentinels = {},
   account,
 }: {
@@ -59,11 +60,13 @@ export function BoardShell({
   initialStats: AmbientStats;
   initialPresets?: AgentPreset[];
   initialColumnAgents?: ColumnAgents;
+  /** What each saved agent has used, in tokens, as of this render. */
+  initialAgentUsage?: AgentUsage;
   /** Each sentinel's last report on this project. */
   initialSentinels?: SentinelStates;
   account?: Account;
 }) {
-  const agentState = useAgents(initialPresets, initialColumnAgents);
+  const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage);
   // Views that follow the event stream themselves, such as an open ticket.
   const listeners = useRef(new Set<(event: FormicEvent, seq: number) => void>());
   const subscribe = useCallback<SubscribeToEvents>((listener) => {
@@ -144,13 +147,20 @@ export function BoardShell({
           setOpen: openAssistant,
           presets: agentState.presets,
           onNewAgent: () => setEditing({ column: "assistant", preset: null }),
-          onEditAgent: (preset) => setEditing({ column: "assistant", preset }),
+          onEditAgent: (preset) => {
+            setEditing({ column: "assistant", preset });
+            void agentState.refreshUsage();
+          },
         }}
         agents={{
           presets: agentState.presets,
           columns: agentState.columns,
           onAssign: agentState.assign,
-          onEdit: (column, preset) => setEditing({ column, preset }),
+          onEdit: (column, preset) => {
+            setEditing({ column, preset });
+            // Opening an agent asks what it has used since this page loaded.
+            if (preset) void agentState.refreshUsage();
+          },
         }}
       />
 
@@ -158,6 +168,7 @@ export function BoardShell({
         <AgentEditor
           column={editing.column}
           preset={editing.preset}
+          usage={editing.preset ? agentState.usage[editing.preset.id] : undefined}
           onClose={() => setEditing(null)}
           onSave={async (input) => {
             const { column } = editing;

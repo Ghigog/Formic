@@ -278,6 +278,54 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.runCancelReason(live)).toBe("stop");
         expect(await repo.runCancelReason(done)).toBeNull();
       });
+
+      it("sums an agent's tokens from its runs and its chat answers, and only its own", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const mine = `preset-${randomUUID()}`;
+        const theirs = `preset-${randomUUID()}`;
+        const run = (id: string, presetId: string) => ({
+          id,
+          role: "product" as const,
+          epicId: epic.id,
+          ticketId: null,
+          model: null,
+          presetId,
+          sandboxId: null,
+        });
+
+        const [one, two, other] = [randomUUID(), randomUUID(), randomUUID()];
+        await repo.startRun(run(one, mine));
+        await repo.finishRun(one, { status: "succeeded", error: null, tokensIn: 1_200, tokensOut: 300, costCents: 0 });
+        await repo.startRun(run(two, mine));
+        await repo.finishRun(two, { status: "succeeded", error: null, tokensIn: 800, tokensOut: 200, costCents: 0 });
+        // Another agent's run, which is counted to that agent and not to this one.
+        await repo.startRun(run(other, theirs));
+        await repo.finishRun(other, { status: "succeeded", error: null, tokensIn: 5_000, tokensOut: 5_000, costCents: 0 });
+
+        // An answer is not a run, so its tokens are on the message instead.
+        const answer = await repo.addCardChatMessage({
+          projectId: p.id,
+          cardKind: "epic",
+          cardId: epic.id,
+          role: "assistant",
+          content: "because",
+        });
+        await repo.updateCardChatMessage(answer.id, {
+          tokensIn: 400,
+          tokensOut: 100,
+          agentPresetId: mine,
+        });
+
+        expect(await repo.agentTokensByPreset()).toEqual({
+          [mine]: { tokensIn: 2_400, tokensOut: 600 },
+          [theirs]: { tokensIn: 5_000, tokensOut: 5_000 },
+        });
+        // A cutoff after the work leaves nothing in the window: what a plan
+        // that resets monthly would count itself from.
+        const cutoff = new Date(Date.now() + 60_000);
+        expect(await repo.agentTokensByPreset(cutoff)).toEqual({});
+      });
     });
 
     describe("presets and column agents", () => {

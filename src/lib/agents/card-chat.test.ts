@@ -495,7 +495,7 @@ describe("a ticket's chat", () => {
 
   it("writes down what the answer spent, on the answer itself", async () => {
     const ticket = await seedTicket();
-    await assignAgent("todo");
+    const preset = await assignAgent("todo");
     // The scripted provider reports 10 tokens in and 5 out per call. A chat
     // answer is not a run, so the message is the only place this can land:
     // the person's own message spent nothing, and the answer records both.
@@ -507,6 +507,9 @@ describe("a ticket's chat", () => {
     expect(sent).toHaveLength(1);
     const answerMessage = await reload(pending.id);
     expect(answerMessage).toMatchObject({ tokensIn: 10, tokensOut: 5 });
+    // And whose tokens they were, so they count against that agent, not the
+    // column's current one.
+    expect(answerMessage.agentPresetId).toBe(preset.id);
     // llama-3.3-70b is a priced model, so the money half is counted too.
     expect(answerMessage.costCents).toBeGreaterThan(0);
     const asked = (await repository().cardChatMessages(ticket.id))[0]!;

@@ -1240,7 +1240,7 @@ export async function startCliCardChat(input: {
     from: project.baseBranch,
     prompt: input.prompt,
     record: (job) =>
-      repo.updateCardChatMessage(input.messageId, { runnerJob: job, runnerAgent: input.agent.presetId }),
+      repo.updateCardChatMessage(input.messageId, { runnerJob: job, agentPresetId: input.agent.presetId }),
   });
   return started.ok ? null : started.reason;
 }
@@ -1351,7 +1351,7 @@ async function completeCliCardChat(
   const { finishCliCardChat } = await import("@/lib/agents/card-chat");
   if (result.conclusion !== "success") {
     await cleanUp();
-    await finishCliCardChat(message.id, null, await whyItFailed(projectId, client, result, message.runnerAgent));
+    await finishCliCardChat(message.id, null, await whyItFailed(projectId, client, result, message.agentPresetId));
     return;
   }
   const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);

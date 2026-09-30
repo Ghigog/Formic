@@ -113,7 +113,15 @@ interface Store {
   }>;
   runs: Map<
     string,
-    RunRecord & { status: AgentRunStatus; startedAt: Date; costCents: number; error: string | null }
+    RunRecord & {
+      status: AgentRunStatus;
+      startedAt: Date;
+      costCents: number;
+      error: string | null;
+      /** What it used, so an agent's own tokens can be summed from here. */
+      tokensIn: number;
+      tokensOut: number;
+    }
   >;
   deliveries: Set<string>;
   presets: Map<string, AgentPreset & { apiKeyCipher: string | null }>;
@@ -860,6 +868,10 @@ export class MemoryRepository implements Repository {
       startedAt: existing?.startedAt ?? new Date(),
       costCents: existing?.costCents ?? 0,
       error: existing?.error ?? null,
+      // What it used is only known when it finishes; the tokens it has
+      // already reported must not be reset by a second start call.
+      tokensIn: existing?.tokensIn ?? 0,
+      tokensOut: existing?.tokensOut ?? 0,
     });
   }
 
@@ -869,6 +881,8 @@ export class MemoryRepository implements Repository {
       run.status = outcome.status;
       run.error = outcome.error;
       run.costCents = outcome.costCents;
+      run.tokensIn = outcome.tokensIn;
+      run.tokensOut = outcome.tokensOut;
     }
   }
 
@@ -893,6 +907,28 @@ export class MemoryRepository implements Repository {
       if (run.epicId === epicId) total += run.costCents;
     }
     return total;
+  }
+
+  async agentTokensByPreset(
+    since?: Date | null,
+  ): Promise<Record<string, { tokensIn: number; tokensOut: number }>> {
+    const used: Record<string, { tokensIn: number; tokensOut: number }> = {};
+    const add = (presetId: string | null, tokensIn: number, tokensOut: number) => {
+      if (!presetId) return;
+      const running = (used[presetId] ??= { tokensIn: 0, tokensOut: 0 });
+      running.tokensIn += tokensIn;
+      running.tokensOut += tokensOut;
+    };
+    for (const run of store().runs.values()) {
+      if (since && run.startedAt < since) continue;
+      add(run.presetId ?? null, run.tokensIn, run.tokensOut);
+    }
+    // An answer is not a run, so what it used is on the message instead.
+    for (const message of store().cardChat) {
+      if (since && message.createdAt < since) continue;
+      add(message.agentPresetId, message.tokensIn, message.tokensOut);
+    }
+    return used;
   }
 
   async cancelRuns(
@@ -1131,7 +1167,7 @@ export class MemoryRepository implements Repository {
     const message: CardChatMessage = {
       id: `cchat_${Math.random().toString(36).slice(2, 10)}`,
       runnerJob: null,
-      runnerAgent: null,
+      agentPresetId: null,
       // An answer made here writes its own counters when it lands.
       tokensIn: 0,
       tokensOut: 0,
@@ -1149,7 +1185,7 @@ export class MemoryRepository implements Repository {
     update: Partial<
       Pick<
         CardChatMessage,
-        "content" | "status" | "runnerJob" | "runnerAgent" | "tokensIn" | "tokensOut" | "costCents"
+        "content" | "status" | "runnerJob" | "agentPresetId" | "tokensIn" | "tokensOut" | "costCents"
       >
     >,
   ): Promise<void> {

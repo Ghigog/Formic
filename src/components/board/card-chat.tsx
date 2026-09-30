@@ -6,21 +6,18 @@ import { compact } from "@/components/ui/compact-number";
 import { useCardChat, type CardChatMessageView } from "@/lib/hooks/use-card-chat";
 
 /**
- * What an answer spent, as a line to read under it, or null when it spent
- * nothing worth saying: a person's own message, an answer a CLI agent gave
- * (its cost is on the run behind it), or one that never got a reply out.
+ * What an answer used, as a line to read under it, or null when there is
+ * nothing to say: a person's own message, an answer a CLI agent gave (a plan
+ * reports no tokens), or one that never got a reply out.
  *
- * The count is the tokens in and out together, as the drawer counts a run.
- * The money half only appears when something was actually billed per token:
- * a flat-rate plan and an unpriced model cost nothing here (see
- * `estimateCostCents`), and "0¢" would say otherwise.
+ * Tokens, not money. Every provider reports tokens, and a chat's own cost in
+ * cents is an estimate from a price table this repo keeps by hand — worth
+ * having as a ceiling, not worth showing as a bill (see budget/limits.ts).
  */
-function spendLine(m: CardChatMessageView): string | null {
+function tokensLine(m: CardChatMessageView): string | null {
   const tokens = (m.tokensIn ?? 0) + (m.tokensOut ?? 0);
   if (tokens === 0) return null;
-  const cents = m.costCents ?? 0;
-  const cost = cents >= 0.5 ? `${Math.round(cents).toLocaleString("en-US")}¢` : cents > 0 ? "under 1¢" : null;
-  return [`${compact(tokens)} tokens`, cost].filter(Boolean).join(" · ");
+  return `${compact(tokens)} tokens`;
 }
 
 function Message({ m }: { m: CardChatMessageView }) {
@@ -42,7 +39,7 @@ function Message({ m }: { m: CardChatMessageView }) {
     );
   }
   if (!m.content) return null;
-  const spent = spendLine(m);
+  const used = tokensLine(m);
   return (
     <div
       className={cn(
@@ -51,7 +48,7 @@ function Message({ m }: { m: CardChatMessageView }) {
       )}
     >
       {m.content}
-      {spent && <p className="text-fg-subtle mt-1 font-mono text-[11px]">{spent}</p>}
+      {used && <p className="text-fg-subtle mt-1 font-mono text-[11px]">{used}</p>}
     </div>
   );
 }

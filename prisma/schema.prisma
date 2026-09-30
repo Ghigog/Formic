@@ -293,6 +293,12 @@ model AgentRun {
   status AgentRunStatus @default(queued)
   model  String?
 
+  /// The saved agent that ran this, when it was one: which preset's plan or
+  /// key paid for it. Null for the mock agents and for a server key. What
+  /// that agent has used is summed from here (see AgentRun and
+  /// repository.agentTokens).
+  presetId String?
+
   tokensIn  Int   @default(0)
   tokensOut Int   @default(0)
   costCents Float @default(0)
@@ -307,6 +313,7 @@ model AgentRun {
   @@index([status])
   @@index([ticketId])
   @@index([epicId])
+  @@index([presetId, createdAt])
   @@map("agent_run")
 }
 
@@ -445,18 +452,23 @@ model CardChatMessage {
   status    String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.
   runnerJob String?
-  /// The preset that run was dispatched with, so a failure is blamed on the
-  /// agent that actually ran it.
-  runnerAgent String?
+  /// The saved agent that answered: the preset whose plan or key paid for it,
+  /// whether it answered in this process or in GitHub Actions. A chat answer
+  /// is not a run, so this is what its tokens are counted by, and a failure
+  /// is blamed on it rather than on whichever agent the column has now.
+  agentPresetId String?
   /// What the answer spent, when Formic made it in-process rather than in
   /// GitHub Actions: an answer is not a run, so no run row carries this.
-  /// Zero on a person's message and on a CLI agent's answer.
+  /// Zero on a person's message and on a CLI agent's answer. `costCents` is
+  /// the same unverified estimate a run's is (see budget/limits.ts), unused
+  /// for now — what a person is shown is the token count.
   tokensIn    Int      @default(0)
   tokensOut   Int      @default(0)
   costCents   Float    @default(0)
   createdAt DateTime @default(now())
 
   @@index([cardId, createdAt])
+  @@index([agentPresetId, createdAt])
   @@map("card_chat_message")
 }
 

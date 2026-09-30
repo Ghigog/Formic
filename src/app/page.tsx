@@ -26,11 +26,14 @@ export default async function BoardPage() {
   const project = await activeProject();
   if (!project) return <Welcome account={account} />;
 
-  const [cards, presets, columnAgents, sentinels] = await Promise.all([
+  const [cards, presets, columnAgents, sentinels, agentUsage] = await Promise.all([
     repo.boardCards(project.id),
     repo.listPresets(ownerScope(user)),
     repo.columnAgents(project.id),
     sentinelsFor(project.id),
+    // What each agent has used, in tokens: counted per agent, from the runs
+    // and answers that agent did (see docs/token-usage.md).
+    repo.agentTokensByPreset(),
   ]);
   const provider = process.env.SANDBOX_PROVIDER ?? "local";
 
@@ -50,6 +53,7 @@ export default async function BoardPage() {
       baseBranch={project.baseBranch}
       initialPresets={presets}
       initialColumnAgents={columnAgents}
+      initialAgentUsage={agentUsage}
       initialSentinels={sentinels}
       initialStats={
         demo

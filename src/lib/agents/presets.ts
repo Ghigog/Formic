@@ -241,26 +241,27 @@ const BUILT_IN_MODEL: Record<keyof AgentRegistry, string> = {
  * works. Null for the mock agents, and for a column with no agent.
  */
 /**
- * The model a column runs, and who bills for it.
+ * The model a column runs, who bills for it, and which saved agent it is.
  *
- * Both are needed at the same moment: the run's spend ceiling is only real
- * money when the provider charges per token, and a flat-rate plan such as
- * ClinePass serves ids that look exactly like calling DeepSeek directly. One
- * lookup, so the two cannot come from different presets.
+ * All three are needed at the same moment: the run's spend ceiling is only real
+ * money when the provider charges per token, a flat-rate plan such as ClinePass
+ * serves ids that look exactly like calling DeepSeek directly, and what the
+ * agent has used is counted per agent, in tokens, from the run it drives. One
+ * lookup, so the three cannot come from different presets.
  */
 export async function runTargetFor(
   projectId: string,
   role: keyof AgentRegistry,
-): Promise<{ model: string | null; provider: ProviderId | null }> {
-  if (agentsOverridden()) return { model: null, provider: null };
+): Promise<{ model: string | null; provider: ProviderId | null; presetId: string | null }> {
+  if (agentsOverridden()) return { model: null, provider: null, presetId: null };
   const resolved = await resolveColumn(projectId, BUILD[role].column);
-  if (resolved.kind !== "configured") return { model: null, provider: null };
+  if (resolved.kind !== "configured") return { model: null, provider: null, presetId: null };
   const info = providerInfo(resolved.config.provider ?? "anthropic");
   const model =
     info?.kind === "cli"
       ? resolved.config.model || info.label
       : resolved.config.model || BUILT_IN_MODEL[role];
-  return { model, provider: resolved.config.provider ?? "anthropic" };
+  return { model, provider: resolved.config.provider ?? "anthropic", presetId: resolved.presetId };
 }
 
 export async function modelFor(
@@ -373,7 +374,15 @@ export async function assistantAgentFor(projectId: string): Promise<AssistantAge
 export type ColumnChatAgent =
   | { kind: "none"; reason: string }
   | { kind: "limited"; reason: string }
-  | { kind: "api"; info: ProviderInfo; model: string | null; apiKey: string | null; brief: string | null }
+  | {
+      kind: "api";
+      info: ProviderInfo;
+      model: string | null;
+      apiKey: string | null;
+      brief: string | null;
+      /** The saved agent answering, so its answer is counted to it. */
+      presetId: string | null;
+    }
   | { kind: "cli"; info: ProviderInfo; column: ColumnId; agent: CliAgent };
 
 /**
@@ -401,5 +410,6 @@ export async function columnChatAgentFor(projectId: string, column: ColumnId): P
     model: resolved.config.model || null,
     apiKey: resolved.config.apiKey || null,
     brief: resolved.config.brief || null,
+    presetId: resolved.presetId,
   };
 }

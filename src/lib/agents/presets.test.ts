@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agentConfigFor, agentFor, savePreset } from "./presets";
+import { agentConfigFor, agentFor, runTargetFor, savePreset } from "./presets";
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
 import { AnthropicProductAgent } from "./anthropic";
@@ -32,6 +32,20 @@ const worker = {
 };
 
 describe("agent templates", () => {
+  it("names the saved agent a column's work belongs to, so its tokens are counted to it", async () => {
+    const preset = await savePreset({ ...worker, name: "claude-worker" });
+    await repository().setColumnAgent(PROJECT, "in_progress", preset.id);
+
+    // Every run is attributed from here: the same lookup that decides model
+    // and provider also says which saved agent's plan or key pays for it.
+    expect(await runTargetFor(PROJECT, "coder")).toMatchObject({
+      model: "claude-sonnet-5",
+      presetId: preset.id,
+    });
+    // A column with no agent of its own has none to count against.
+    expect(await runTargetFor(PROJECT, "reviewer")).toMatchObject({ presetId: null });
+  });
+
   it("runs a column's template, with its provider, model, prompt and key", async () => {
     const preset = await savePreset({ ...worker, apiKey: "sk-ant-worker-1234" });
     await repository().setColumnAgent(PROJECT, "in_progress", preset.id);

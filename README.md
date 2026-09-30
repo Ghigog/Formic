@@ -284,6 +284,10 @@ Tests come in three layers — domain in node, components in jsdom, and the
 board end to end in a real browser. `docs/testing.md` says what belongs in
 each, and what is not covered yet.
 
+`docs/token-usage.md` covers what each agent has used: tokens counted per
+saved agent, and why money is a ceiling for unattended runs rather than a bill
+anyone is shown.
+
 `src/lib/domain` has no I/O and no framework imports. Everything that decides
 whether something is *allowed* lives there, which is why it is the part with
 the most tests.

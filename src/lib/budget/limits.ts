@@ -148,6 +148,15 @@ interface PriceFamily {
  * per exact id. New dated snapshots (`claude-sonnet-5-20260101`) and ids
  * pulled from a provider's live model list match their family by prefix.
  *
+ * UNVERIFIED, and not verifiable from here: nobody has reconciled a number
+ * this table produces against a provider's invoice, and the person running
+ * Formic has no way to test the metered path at all — the agents they run are
+ * on a flat plan ($9.99 for all these models), where a per-token price is not
+ * a thing that is charged. So treat every cent below as an estimate for
+ * bounding unattended burn, never as a figure to show someone as a bill. What
+ * is counted and shown instead is tokens, per agent: see docs/token-usage.md
+ * and `estimateCostCents`'s own note.
+ *
  * Only a starting point: what a provider charges is the provider's to tell us,
  * and CL-5 in docs/cline-audit.md is the work to read it from the metadata
  * they already publish instead of maintaining this by hand.
@@ -267,6 +276,14 @@ export function pricingNote(model: string, providerId?: string | null): string {
  * flat-rate plan is not charged per token, and an id nobody has priced is not
  * charged a guess. The ceiling counts money, so inventing a number would park
  * runs on a rate that does not exist.
+ *
+ * This is the one place where a guessed rate can reach a real decision, and it
+ * is unverified: the prices are maintained by hand and have never been checked
+ * against a provider's invoice. The person running Formic runs flat-plan
+ * agents, so they cannot check the metered path either. What is counted and
+ * shown to a person is tokens, per agent (see docs/token-usage.md); cents stay
+ * a ceiling for unattended runs, and only for a provider that charges per
+ * token at all (`billingFor`).
  */
 export function estimateCostCents(
   model: string,

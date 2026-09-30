@@ -30,9 +30,12 @@ describe("CardChat", () => {
     expect(screen.getByLabelText("Message the Architect Agent")).toBeInTheDocument();
   });
 
-  it("says what an answer spent, under the answer, and says nothing under the person's own message", () => {
+  it("says what an answer used, in tokens, and says nothing under the person's own message", () => {
     render(<CardChat kind="epic" cardId="e1" agentLabel="Architect" />);
-    expect(screen.getByText("182.4k tokens · 12¢")).toBeInTheDocument();
+    // Tokens only: the cents on the row are an estimate from a hand-kept
+    // price table, so they are not shown as if they were a bill.
+    expect(screen.getByText("182.4k tokens")).toBeInTheDocument();
+    expect(screen.queryByText(/¢/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/tokens/)).toHaveLength(1);
   });
 

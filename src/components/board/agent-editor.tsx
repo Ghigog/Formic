@@ -15,6 +15,8 @@ import {
   provider as providerInfo,
 } from "@/lib/llm/providers";
 import { pricingNote } from "@/lib/budget/limits";
+import { compact } from "@/components/ui/compact-number";
+import type { AgentTokens } from "@/lib/hooks/use-agents";
 
 /** What Formic always adds after a column's prompt, whatever the provider. */
 const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
@@ -45,6 +47,7 @@ type ModelList =
 export function AgentEditor({
   column,
   preset,
+  usage,
   onClose,
   onSave,
   onDelete,
@@ -53,6 +56,8 @@ export function AgentEditor({
   column: ColumnId | "assistant";
   /** Null creates a new agent. */
   preset: AgentPreset | null;
+  /** What this agent has used, in tokens, if it has been saved and run. */
+  usage?: AgentTokens | undefined;
   onClose: () => void;
   onSave: (input: Omit<AgentPresetInput, "column">) => Promise<void>;
   onDelete: (presetId: string) => Promise<void>;
@@ -307,6 +312,21 @@ export function AgentEditor({
               <span className="text-muted text-[11px]">{pricingNote(model.trim(), provider)}</span>
             )}
           </label>
+
+          {preset && (
+            /*
+             * What this agent has used, in tokens, over everything it ran and
+             * answered. Tokens rather than money: a flat-rate plan bills none
+             * of them, and the prices are a table this repo keeps by hand, so
+             * a token count is the one number that means the same on every
+             * provider (see docs/token-usage.md).
+             */
+            <p className="text-muted text-[11px]">
+              {usage
+                ? `${compact((usage.tokensIn ?? 0) + (usage.tokensOut ?? 0))} tokens used by this agent, over its finished runs and its answers.`
+                : "No tokens used by this agent yet."}
+            </p>
+          )}
 
           <label className="flex flex-col gap-1">
             <span className="flex items-center gap-2">

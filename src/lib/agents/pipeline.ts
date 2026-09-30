@@ -46,6 +46,8 @@ export function startRun(
     model?: string | null;
     /** Who bills for the model, so the spend ceiling knows if it is money. */
     provider?: string | null;
+    /** The saved agent running it, so what it uses is counted to that agent. */
+    presetId?: string | null;
   },
 ): RunHandle {
   const runId = randomUUID();
@@ -64,6 +66,7 @@ export function startRun(
     epicId: ids.epicId ?? null,
     ticketId: ids.ticketId ?? null,
     model: ids.model ?? null,
+    presetId: ids.presetId ?? null,
     sandboxId: null as string | null,
   };
   // Journalled so a restart can find the orphan; never awaited, because an

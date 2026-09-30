@@ -328,22 +328,25 @@ async function finish(
     content: string;
     status: "done" | "failed";
     /**
-     * What the answer spent, for the one that was made here. A CLI agent's
-     * answer passes none: its spend is its job's run (see finishCliCardChat).
+     * What the answer spent, and which agent spent it, for the one that was
+     * made here. A CLI agent's answer passes neither: its spend is its job's
+     * run, and the dispatcher has already written the agent (see
+     * finishCliCardChat).
      */
     tokensIn?: number;
     tokensOut?: number;
     costCents?: number;
+    agentPresetId?: string | null;
   },
 ): Promise<void> {
   await repository().updateCardChatMessage(messageId, {
     content: update.content,
     status: update.status,
     runnerJob: null,
-    runnerAgent: null,
     ...(update.tokensIn === undefined
       ? {}
       : { tokensIn: update.tokensIn, tokensOut: update.tokensOut ?? 0, costCents: update.costCents ?? 0 }),
+    ...(update.agentPresetId === undefined ? {} : { agentPresetId: update.agentPresetId }),
   });
 }
 
@@ -428,7 +431,9 @@ async function reply(
   let tokensIn = 0;
   let tokensOut = 0;
   let costCents = 0;
-  const spent = () => ({ tokensIn, tokensOut, costCents });
+  /** The saved agent answering, once it is known: whose tokens these are. */
+  let agentPresetId: string | null = null;
+  const spent = () => ({ tokensIn, tokensOut, costCents, agentPresetId });
   try {
     const card = await repo.cardById(cardId);
     const projectId = await repo.projectOfCard(cardId);
@@ -484,6 +489,7 @@ async function reply(
     }
 
     const { info } = agent;
+    agentPresetId = agent.presetId;
     let speak: Speak;
     if (info.kind === "anthropic") {
       speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, past, TOOL_DEFS);

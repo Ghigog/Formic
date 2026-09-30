@@ -120,8 +120,12 @@ export interface CardChatMessage {
   content: string;
   status: "done" | "pending" | "failed";
   runnerJob: string | null;
-  /** The preset that job was dispatched with, so a failure is blamed on it. */
-  runnerAgent: string | null;
+  /**
+   * The saved agent that answered, when one was on it: the preset whose plan
+   * or key paid. A chat answer is not a run, so it is this — not a run row —
+   * that says whose tokens the answer spent (see agentTokensByPreset).
+   */
+  agentPresetId: string | null;
   /**
    * What the answer spent. An answer made in this process is not a run, so
    * there is no run row to carry this: the message is where it is written
@@ -258,6 +262,8 @@ export interface RunRecord {
   epicId: string | null;
   ticketId: string | null;
   model: string | null;
+  /** The saved agent that ran it, when one did: whose plan or key paid. */
+  presetId?: string | null;
   sandboxId: string | null;
 }
 
@@ -479,6 +485,21 @@ export interface Repository {
   /** Every run's spend under an Epic, finished or still running, summed. */
   epicSpentCents(epicId: string): Promise<number>;
   /**
+   * What every saved agent has used, in tokens, keyed by preset id: its runs
+   * and the chat answers it gave, summed together. Tokens, not money: a
+   * flat-rate plan such as ClinePass costs nothing per token, and a direct
+   * key's prices are a table this repo maintains by hand, so tokens are the
+   * one number every provider reports and nobody has to trust a rate for
+   * (see budget/limits.ts).
+   *
+   * `since` narrows it to work done after a moment, for a plan that resets
+   * monthly; null or omitted counts everything the board still holds. An id
+   * with no work of its own is simply absent from the map.
+   */
+  agentTokensByPreset(
+    since?: Date | null,
+  ): Promise<Record<string, { tokensIn: number; tokensOut: number }>>;
+  /**
    * Marks every run in scope that is still queued or running cancelled,
    * with a reason: the durable form of a stop, so a run driven by any
    * instance sees it on its next poll rather than only the one that
@@ -538,7 +559,7 @@ export interface Repository {
     update: Partial<
       Pick<
         CardChatMessage,
-        "content" | "status" | "runnerJob" | "runnerAgent" | "tokensIn" | "tokensOut" | "costCents"
+        "content" | "status" | "runnerJob" | "agentPresetId" | "tokensIn" | "tokensOut" | "costCents"
       >
     >,
   ): Promise<void>;
