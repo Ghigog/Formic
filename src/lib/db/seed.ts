@@ -1,5 +1,17 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import { authMode } from "../auth/session";
 import { normalizeRepo } from "../secrets/repo";
+
+/**
+ * Whether an empty database may be given the demo board on startup. Not in
+ * production or GitHub mode, where the first person to sign in adopts whatever
+ * is there and should land on the repository picker instead. Setting
+ * FORMIC_SEED_DEMO=1 asks for it explicitly.
+ */
+export function demoSeedAllowed(): boolean {
+  if (process.env.FORMIC_SEED_DEMO === "1") return true;
+  return process.env.VERCEL_ENV !== "production" && authMode() !== "github";
+}
 
 /**
  * Loads the demo board into a real database: one Epic with a PRD and four
