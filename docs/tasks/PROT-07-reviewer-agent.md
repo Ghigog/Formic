@@ -21,7 +21,7 @@ resets it.
 
 Steps a ticket needs outside the repository (a secret in a service, a command
 on the person's machine) are listed by the agent as "For you" steps. They go on
-the ticket and its pull request, and the Epic's showcase opens with them.
+the ticket and its pull request, and the Epic's showcase, if someone generates it, opens with them.
 
 ## Scope
 

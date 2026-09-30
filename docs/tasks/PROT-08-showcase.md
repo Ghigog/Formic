@@ -11,7 +11,9 @@ what shipped.
 
 ## Scope
 
-- Triggered when the last child ticket reaches Done.
+- Generated on demand: a done Epic with no showcase shows a "Generate showcase"
+  button in its drawer, and finishing the Epic starts no agent, so no credits
+  are spent on a document nobody asked for.
 - Aggregate merged PR diffs and run a summarising call.
 - Output: markdown changelog, step-by-step feature walkthrough, unified list of
   changed files.
@@ -27,8 +29,11 @@ what shipped.
 
 ## Acceptance criteria
 
-- An Epic with all children merged produces a showcase document.
-- Re-running is idempotent and does not duplicate the document.
+- Finishing an Epic starts no PM Agent run.
+- A done Epic with no showcase produces one when "Generate showcase" is clicked;
+  the endpoint answers 409 for an Epic that is not done, already has one, or has
+  a PM run active.
+- Generating twice does not duplicate the document.
 - An Epic with a blocked child does not generate a showcase.
 
 ## Notes and risks
