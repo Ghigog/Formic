@@ -431,7 +431,7 @@ export function Board({
           data-colony="board"
           className={cn(
             "relative flex min-h-0 flex-1",
-            isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6",
+            isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
           )}
         >
           {dragSnapshot ?? columnElements}
