@@ -140,8 +140,9 @@ And two shapes that decide the design:
 ### Acceptance criteria
 
 - [ ] Given a ticket of 8 points with the default mode, when its run starts,
-      then its allowance is 80 minutes, clamped under the job's ceiling, and
-      the card says so.
+      then its allowance is 80 minutes in-process, and for a loop run the same
+      80 is clamped to the job's 55-minute ceiling, with the card saying which
+      limit stopped it.
 - [ ] Given a column whose agent has its own limit, when a ticket lands there,
       then the column's limit is used, not the per-point one.
 - [ ] Given a run that reaches its time or token ceiling, when it stops, then
@@ -186,6 +187,13 @@ And two shapes that decide the design:
 - `MAX_REVIEWS` is derived from `DEFAULT_RUN_BUDGET.maxAttempts`; moving that
   constant moves review iterations. Which number the reviews should follow is a
   decision, not a rename.
+- **The default rule already outgrows the job.** Ten minutes a point reaches
+  the 60-minute job ceiling at five points, so an 8-point ticket asks for 80
+  minutes and a 13-point one for 130 — and `loopBudgetMs` gives both 55. Either
+  `RUNNER_JOB_MINUTES` goes up (GitHub allows 360, and every repository's
+  workflow has to be updated with it), or the card has to say the job's ceiling
+  is what stopped the run. The spec's acceptance criteria already require the
+  second; the first is a decision.
 - The assistant and a card's chat are the same kind of loop with different
   budgets (16 turns with no clock, against 12 turns and 4 minutes). Whatever
   the modes become, those two should not disagree again.
