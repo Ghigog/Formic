@@ -19,6 +19,8 @@ function user(termsAcceptedVersion: string | null): UserRecord {
     anthropicKeyHint: null,
     termsAcceptedVersion,
     sessionVersion: 0,
+    fallbackSandboxSeconds: 0,
+    fallbackSandboxMonth: null,
   };
 }
 
