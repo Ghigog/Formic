@@ -106,6 +106,11 @@ export type FormicEvent =
       state: "answering" | "idle";
     }
   | {
+      /** An answer in the board assistant's conversation was marked failed. */
+      type: "assistant.failed";
+      messageId: string;
+    }
+  | {
       /** The column's agent answering a person's note on a ticket's chat. */
       type: "ticket.reply";
       ticketId: string;
