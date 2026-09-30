@@ -23,31 +23,35 @@ const FORBIDDEN = /<(?:animate|animateMotion|animateTransform|set|script|style|i
 
 describe("a portrait as the page inlines it", () => {
   for (const sentinel of SENTINELS) {
-    it(`is markup a browser will parse: ${sentinel.pic}`, () => {
-      const doc = new DOMParser().parseFromString(framed(sentinel.pic), "image/svg+xml");
+    it(`is markup a browser will parse: ${sentinel.id}`, () => {
+      const doc = new DOMParser().parseFromString(framed(sentinel.id), "image/svg+xml");
       expect(doc.querySelector("parsererror"), "the portrait is not well-formed").toBeNull();
       expect(doc.documentElement.tagName.toLowerCase()).toBe("svg");
     });
 
-    it(`fills its frame edge to edge: ${sentinel.pic}`, () => {
+    it(`leaves the ground to the page, and draws the figure in the app's ink: ${sentinel.id}`, () => {
       const host = document.createElement("div");
-      host.innerHTML = framed(sentinel.pic);
+      host.innerHTML = framed(sentinel.id);
       const svg = host.querySelector("svg")!;
       expect(svg.getAttribute("viewBox"), "the frame moved").toBe("0 0 200 200");
       expect(svg.getAttribute("preserveAspectRatio")).toBe("xMidYMid slice");
 
-      // The ground is the first thing drawn and it is the whole frame, so no
-      // crop — the header band or the round avatar — can show a gap behind it.
-      const ground = svg.firstElementChild!;
-      expect(ground.tagName.toLowerCase()).toBe("rect");
-      expect(ground.getAttribute("width")).toBe("200");
-      expect(ground.getAttribute("height")).toBe("200");
-      expect(ground.getAttribute("fill")).toBeTruthy();
-      expect(svg.querySelectorAll("rect")[0]).toBe(ground);
+      // The portrait draws no ground: the card and the avatar paint the
+      // sentinel's tint behind it, from `portraitGround`.
+      const body = svg.innerHTML;
+      expect(body, "the portrait draws a ground of its own").not.toMatch(
+        /^<rect width="200" height="200"/,
+      );
+      // And the figure is the app's ink, not the white the artist drew it in —
+      // white on a pale ground is a portrait nobody can see.
+      expect(body, "the figure is not painted by the app").toMatch(
+        /(?:fill|stroke)="var\(--text\)"/,
+      );
+      expect(body, "the figure is drawn white").not.toMatch(/(?:fill|stroke)="#(?:fff|ffffff)"/i);
     });
 
-    it(`brings no motion and no outside reference: ${sentinel.pic}`, () => {
-      const markup = framed(sentinel.pic);
+    it(`brings no motion and no outside reference: ${sentinel.id}`, () => {
+      const markup = framed(sentinel.id);
       expect(markup).not.toMatch(FORBIDDEN);
       expect(markup).not.toMatch(/@keyframes|animation\s*:/);
       expect(markup, "the art reaches outside itself").not.toMatch(
@@ -56,7 +60,7 @@ describe("a portrait as the page inlines it", () => {
     });
   }
 
-  it("renders a marked placeholder for a pic nobody drew", () => {
+  it("renders a marked placeholder for an id nobody drew", () => {
     const host = document.createElement("div");
     host.innerHTML = framed("nobody");
     const svg = host.querySelector("svg")!;
