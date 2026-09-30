@@ -303,6 +303,16 @@ export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise
   return (body.data ?? []).map(modelInfo).sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/**
+ * What DeepSeek advertises for `model`. A failed or empty answer is "not
+ * said": the request then carries the role's own choice, unheld.
+ */
+export async function advertisedModel(p: ProviderInfo, apiKey: string, model: string): Promise<ModelInfo | undefined> {
+  if (p.id !== "deepseek") return undefined;
+  const models = await listOpenAiModels(p, apiKey).catch(() => []);
+  return models.find((m) => m.id === model);
+}
+
 /** A reply ceiling held to what the model advertises; unchanged when it advertises none. */
 export function clampMaxTokens(asked: number | undefined, info?: ModelInfo): number | undefined {
   if (asked === undefined || !info?.maxOutputTokens) return asked;
