@@ -1,6 +1,13 @@
-# Handoff — the job's 60-minute ceiling caps what the per-point rule promises
+# Handoff — the job's ceiling caps what the per-point rule promises
 
-**Where it stands:** the arithmetic is built; the ceiling is a constant. The
+**Status: open — code pending.** The target is `RUNNER_JOB_MINUTES` 180 (clamp
+175, sandbox TTL `max(20 min, budget + 5)` unchanged), a card that names the
+ceiling and the ticket's budget, and a refresh pull request; a repository that
+declines it keeps its old 60-minute job. `src/lib/runner/workflow.ts:38` is
+still 60, so every figure of 55 and 60 below is what the code does today, and
+the docs describe the target.
+
+**Where it stood:** the arithmetic is built; the ceiling is a constant. The
 per-point rule is real (`loopBudgetMs`), `timeout-minutes: 60` is written into
 each repository's workflow by Formic, and the two disagree from the 8-point step
 up.
