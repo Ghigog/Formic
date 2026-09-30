@@ -6,11 +6,18 @@ import {
   safeEqual,
   safeNext,
 } from "@/lib/auth/session";
+import { limit, limited } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+/** Ten sign-in attempts a minute from one address: guessing isn't free. */
+const SIGN_IN = limit(10, 60_000);
+
 /** Local mode's shared password, from /login. Sets the session cookie. */
 export async function POST(req: Request) {
+  const refused = limited(req, SIGN_IN, "login");
+  if (refused) return refused;
+
   const form = await req.formData().catch(() => null);
   const given = String(form?.get("password") ?? "");
   const next = safeNext(String(form?.get("next") ?? "/"));

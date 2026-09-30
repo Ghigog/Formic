@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createTodoItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
+import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 // POST starts the Architect Agent drafting the ticket (see launch() in
@@ -15,6 +16,9 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const refused = limited(req, RUN, "run-start");
+  if (refused) return refused;
+
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(

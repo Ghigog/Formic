@@ -1,0 +1,20 @@
+version: 2
+
+# Every third-party action is pinned by commit SHA in .github/workflows/
+# (AUD-18), so a moved tag cannot change what runs with our secrets.
+# Dependabot is what keeps those pins current: when a new action release
+# lands, it opens a pull request that bumps the SHA and the `# vX.Y.Z`
+# comment beside it. Review the diff, then merge.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly

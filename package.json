@@ -63,5 +63,9 @@
     "typescript": "^5.9.0",
     "vitest": "^5.0.1",
     "yaml": "^2.9.1"
+  },
+  "overrides": {
+    "mysql2": "3.24.5",
+    "deepmerge-ts": "8.0.2"
   }
 }
