@@ -80,6 +80,13 @@ export function isBugText(text: string): boolean {
   return BUG_WORDS.test(text);
 }
 
+const SPIKE_WORDS = /\b(spike|investigate|investigation)\b/i;
+
+/** A request that reads as a spike: research to write up, not a change. Words, not a field. */
+export function isSpikeText(text: string): boolean {
+  return SPIKE_WORDS.test(text);
+}
+
 /** A ticket written for an Epic, as opposed to a raw idea or the Epic itself. */
 function isEpicTicket(card: BoardCard): boolean {
   return card.kind === "ticket" && Boolean(card.epicId);
@@ -102,6 +109,11 @@ export function isBug(card: BoardCard, epics: ReadonlyMap<string, BoardCard>): b
   if (!isEpicTicket(card)) return isBugText(card.title);
   const epic = epics.get(card.epicId!);
   return epic ? isBugText(epic.title) : false;
+}
+
+/** A card that is a spike. Like a bug report, only its own title counts: tickets under an Epic do not. */
+export function isSpike(card: BoardCard): boolean {
+  return !isEpicTicket(card) && isSpikeText(card.title);
 }
 
 /**
