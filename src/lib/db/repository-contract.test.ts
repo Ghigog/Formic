@@ -466,6 +466,19 @@ function contract(name: string, make: () => Repository) {
         // A cutoff before it was written: it may be being written right now.
         expect(await repo.orphanedCardChats(p.id, new Date(Date.now() - 60_000))).toEqual([]);
       });
+
+      it("lists a pending assistant answer with no job, once older than the cut-off", async () => {
+        const p = await project();
+        const base = { projectId: p.id, role: "assistant" as const, content: "", status: "pending" as const };
+        const orphan = await repo.addAssistantMessage(base);
+        const inActions = await repo.addAssistantMessage(base);
+        await repo.updateAssistantMessage(inActions.id, { runnerJob: "job-9" });
+
+        expect((await repo.orphanedAssistantAnswers(p.id, new Date(Date.now() + 60_000))).map((m) => m.id)).toEqual([
+          orphan.id,
+        ]);
+        expect(await repo.orphanedAssistantAnswers(p.id, new Date(Date.now() - 60_000))).toEqual([]);
+      });
     });
 
     describe("audits", () => {

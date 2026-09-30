@@ -9,6 +9,7 @@ const {
   CHAT_ORPHAN_AFTER_MS,
   ORPHAN_AFTER_MS,
   reconcileOrphanedRuns,
+  recoverStaleAssistantAnswers,
   recoverStaleCardChats,
   resetChatRecovery,
 } = await import("./recovery");
@@ -95,3 +96,33 @@ describe("recoverStaleCardChats", () => {
   });
 });
 
+
+describe("recoverStaleAssistantAnswers", () => {
+  const pending = () =>
+    repository().addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "", status: "pending" });
+  const later = () => new Date(Date.now() + CHAT_ORPHAN_AFTER_MS + 1_000);
+
+  it("leaves a young answer alone", async () => {
+    const message = await pending();
+    expect(await recoverStaleAssistantAnswers(PROJECT)).toBe(0);
+    expect((await repository().assistantMessage(message.id))?.status).toBe("pending");
+  });
+
+  it("fails an old orphan and publishes it", async () => {
+    const message = await pending();
+    expect(await recoverStaleAssistantAnswers(PROJECT, later())).toBe(1);
+    expect(await repository().assistantMessage(message.id)).toMatchObject({
+      status: "failed",
+      content: "The assistant stopped before it could answer. Ask it again.",
+    });
+    const events = await repository().eventsAfter(PROJECT, 0, 50);
+    expect(events.map((e) => e.payload)).toContainEqual({ type: "assistant.failed", messageId: message.id });
+  });
+
+  it("leaves an answer with a job behind it alone", async () => {
+    const message = await pending();
+    await repository().updateAssistantMessage(message.id, { runnerJob: "job-1" });
+    expect(await recoverStaleAssistantAnswers(PROJECT, later())).toBe(0);
+    expect((await repository().assistantMessage(message.id))?.status).toBe("pending");
+  });
+});

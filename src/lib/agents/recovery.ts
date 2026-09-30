@@ -126,6 +126,24 @@ export async function recoverStaleCardChats(projectId: string, now = new Date())
   return stale.length;
 }
 
+const ASSISTANT_REASON = "The assistant stopped before it could answer. Ask it again.";
+
+/**
+ * The board assistant's answer is lost the same way a card chat's is, and
+ * leaves the same lock: POST /api/assistant refuses a question while a message
+ * is pending. One with a job behind it is a CLI agent's, left to
+ * `collectCliRuns`.
+ */
+export async function recoverStaleAssistantAnswers(projectId: string, now = new Date()): Promise<number> {
+  const repo = repository();
+  const stale = await repo.orphanedAssistantAnswers(projectId, new Date(now.getTime() - CHAT_ORPHAN_AFTER_MS));
+  for (const message of stale) {
+    await repo.updateAssistantMessage(message.id, { content: ASSISTANT_REASON, status: "failed" });
+    await publish(projectId, { type: "assistant.failed", messageId: message.id });
+  }
+  return stale.length;
+}
+
 /** Test seam, like resetIdleSweep in board/idle.ts. */
 export function resetChatRecovery(): void {
   lastRechecked.clear();
