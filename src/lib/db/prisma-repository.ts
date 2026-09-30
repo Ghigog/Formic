@@ -459,6 +459,33 @@ export class PrismaRepository implements Repository {
     return project.lastEpicNumber;
   }
 
+  /**
+   * The next standalone ticket's number. One past the highest the project
+   * has ever given out, deleted tickets included, so a key is never reused.
+   * Claimed atomically: two tickets made at once still get different numbers.
+   */
+  async nextStandaloneTicketNumber(projectId: string): Promise<number> {
+    const db = prisma();
+    const numbers = await db.ticket.findMany({
+      where: { epic: { projectId, standalone: true } },
+      select: { key: true },
+    });
+    const floor = Math.max(
+      0,
+      ...numbers.map((t) => Number(/^T-(\d+)$/.exec(t.key)?.[1] ?? 0)),
+    );
+    await db.project.updateMany({
+      where: { id: projectId, lastStandaloneTicketNumber: { lt: floor } },
+      data: { lastStandaloneTicketNumber: floor },
+    });
+    const project = await db.project.update({
+      where: { id: projectId },
+      data: { lastStandaloneTicketNumber: { increment: 1 } },
+      select: { lastStandaloneTicketNumber: true },
+    });
+    return project.lastStandaloneTicketNumber;
+  }
+
   async createTickets(inputs: CreateTicketInput[]): Promise<BoardCard[]> {
     const db = prisma();
 
