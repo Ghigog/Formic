@@ -9,6 +9,7 @@ import type {
   BoardCard,
   ColumnAgents,
   PlanStep,
+  WorkType,
 } from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
@@ -24,6 +25,7 @@ export interface CreateEpicInput {
   title: string;
   rawRequest: string;
   position: number;
+  workType?: WorkType | null;
 }
 
 export interface CreateTicketInput {
@@ -38,6 +40,7 @@ export interface CreateTicketInput {
   storyPoints?: number | null;
   position: number;
   dependsOnKeys: string[];
+  workType?: WorkType | null;
   /** Work for a person, not an agent: why. */
   needsHuman?: string | null;
 }

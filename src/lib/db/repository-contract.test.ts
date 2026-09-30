@@ -87,6 +87,20 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.ticketDetail(t!.id))!.storyPoints).toBe(5);
       });
 
+      it("keeps the work type of an Epic and a ticket", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1, workType: "bug" });
+        const plain = await repo.createEpic({ projectId: p.id, title: "P", rawRequest: "P", position: 2 });
+        const [t, u] = await repo.createTickets([
+          ticket(epic.id, "W-1", { workType: "spike" }),
+          ticket(epic.id, "W-2", { position: 2 }),
+        ]);
+        expect([epic.workType, plain.workType ?? null, t!.workType, u!.workType ?? null]).toEqual(["bug", null, "spike", null]);
+        const cards = await repo.boardCards(p.id);
+        const typeOf = (id: string) => cards.find((c) => c.id === id)?.workType ?? null;
+        expect([typeOf(epic.id), typeOf(plain.id), typeOf(t!.id), typeOf(u!.id)]).toEqual(["bug", null, "spike", null]);
+      });
+
       it("updates a ticket and finds it by its pull request", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });

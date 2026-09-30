@@ -38,6 +38,7 @@ import type {
   AgentPreset,
   ColumnAgents,
   PlanStep,
+  WorkType,
 } from "@/lib/domain/entities";
 import { planStepSchema } from "@/lib/domain/entities";
 import { z } from "zod";
@@ -57,6 +58,7 @@ type EpicRow = {
   misplacedIn: ColumnId | null;
   misplacedReason: string | null;
   standalone: boolean;
+  workType: WorkType | null;
   rerouteFrom: ColumnId | null;
   rerouteReason: string | null;
   runnerJob: string | null;
@@ -295,6 +297,7 @@ export class PrismaRepository implements Repository {
         position: epic.position,
         epicId: null,
         standalone: epic.standalone,
+        workType: epic.workType,
         rerouteFrom: epic.rerouteFrom,
         rerouteReason: epic.rerouteReason,
         size: null,
@@ -343,6 +346,7 @@ export class PrismaRepository implements Repository {
       storyPoints: t.storyPoints,
       needsHuman: t.needsHuman,
       archived: t.archived,
+      workType: t.workType,
       agentRole: live?.role ?? jobRole,
       model: live?.model ?? null,
       workingSince: since?.toISOString() ?? null,
@@ -415,6 +419,7 @@ export class PrismaRepository implements Repository {
         title: input.title,
         rawRequest: input.rawRequest,
         position: input.position,
+        workType: input.workType ?? null,
         status: "draft",
         stage: 1,
       },
@@ -431,6 +436,7 @@ export class PrismaRepository implements Repository {
       position: epic.position,
       epicId: null,
       standalone: false,
+      workType: epic.workType,
       rerouteFrom: null,
       rerouteReason: null,
       size: null,
@@ -525,6 +531,7 @@ export class PrismaRepository implements Repository {
             size: input.size ?? "M",
             storyPoints: input.storyPoints ?? null,
             needsHuman: input.needsHuman ?? null,
+            workType: input.workType ?? null,
             position: input.position,
             status: input.dependsOnKeys.length === 0 ? "ready" : "waiting",
             stage: 3,
@@ -561,6 +568,7 @@ export class PrismaRepository implements Repository {
         size: t.size,
         storyPoints: t.storyPoints,
         needsHuman: t.needsHuman,
+        workType: t.workType,
         agentRole: null,
         model: null,
         fileScope: t.fileScope,

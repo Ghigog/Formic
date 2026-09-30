@@ -493,9 +493,32 @@ export class ColonyFx {
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+    // The canvas stays pointer-transparent so cards remain clickable; ants are
+    // hit-tested from the window instead, before anything underneath sees it.
+    const onDown = (e: PointerEvent) => {
+      const hit = this.antAt(e.clientX, e.clientY);
+      if (!hit) return;
+      e.stopPropagation();
+      e.preventDefault();
+      // The click that follows would open the card underneath.
+      const swallow = (c: Event) => {
+        c.stopPropagation();
+        c.preventDefault();
+        done();
+      };
+      const done = () => {
+        window.removeEventListener("click", swallow, true);
+        clearTimeout(timer);
+      };
+      const timer = setTimeout(done, 600);
+      window.addEventListener("click", swallow, true);
+      this.squashAnt(hit);
+    };
+    window.addEventListener("pointerdown", onDown, true);
     return () => {
       cancelAnimationFrame(this.raf);
       window.removeEventListener("resize", resize);
+      window.removeEventListener("pointerdown", onDown, true);
       theme.disconnect();
       this.canvas = null;
       this.topCanvas = null;
@@ -654,6 +677,85 @@ export class ColonyFx {
       t: 0,
       onSquash,
       blobs: Array.from({ length: blobs }, () => ({
+        dx: (Math.random() - 0.5) * 26,
+        dy: (Math.random() - 0.5) * 9,
+        r: 0.8 + Math.random() * 1.8,
+      })),
+    });
+  }
+
+  /** The topmost drawn ant within reach of the pointer, if any. */
+  antAt(x: number, y: number): Ant | Carrier | null {
+    if (!this.antsOn() || this.world.covered) return null;
+    const reach = 10;
+    const near = (a: { x: number; y: number }) => Math.hypot(a.x - x, a.y - y) <= reach;
+    // Drawn last is on top: carriers over crews, later crews over earlier.
+    for (let i = this.carriersList.length - 1; i >= 0; i--) {
+      const k = this.carriersList[i]!;
+      if (k.wait <= 0 && near(k)) return k;
+    }
+    const crews = [...this.crewMap.values()];
+    for (let i = crews.length - 1; i >= 0; i--) {
+      const ants = crews[i]!.ants;
+      for (let j = ants.length - 1; j >= 0; j--) {
+        const a = ants[j]!;
+        if (a.mode === "wait" || a.mode === "buried" || a.mode === "dig" || a.hidden) continue;
+        if (near(a)) return a;
+      }
+    }
+    return null;
+  }
+
+  /** An ant is squashed where it stands; its crew sends a replacement from the nest. */
+  squashAnt(ant: Ant | Carrier) {
+    const { x, y } = ant;
+    const k = this.carriersList.indexOf(ant as Carrier);
+    if (k >= 0) {
+      // Not replaced: it was already on its way home to the nest.
+      this.carriersList.splice(k, 1);
+    } else {
+      for (const c of this.crewMap.values()) {
+        const i = c.ants.indexOf(ant as Ant);
+        if (i < 0) continue;
+        c.ants.splice(i, 1);
+        // The wait logic sends it out of the nest, and drops it if the crew is leaving.
+        const crewAnt = ant as Ant;
+        const [nx, ny] = this.nestPoint();
+        c.ants.push({
+          x: nx,
+          y: ny,
+          a: Math.PI,
+          ph: Math.random() * 6,
+          mode: "wait",
+          wait: 0.4,
+          idx: crewAnt.idx,
+          leader: crewAnt.leader,
+          t: Math.random() * 600,
+          sp: 16 + Math.random() * 12,
+        });
+        if (c.phase === "leave" || c.phase === "buried") c.ants.pop();
+        break;
+      }
+    }
+    this.sfx("squash");
+    this.shake(5);
+    this.ring(x, y, "var(--crimson)", 56, 0.4, 3);
+    this.ring(x, y, "var(--text)", 26, 0.25, 1.5);
+    this.burst(x, y, [this.world.bugHex, "var(--crimson)", "var(--text)"], 16, {
+      speed: 200,
+      g: 600,
+      size: 2.2,
+      life: 0.6,
+      shape: "dot",
+    });
+    // Only the stain: no hop, the ant is already on screen.
+    this.splats.push({
+      x,
+      y,
+      t: 0.42,
+      hit: true,
+      onSquash: () => {},
+      blobs: Array.from({ length: 9 }, () => ({
         dx: (Math.random() - 0.5) * 26,
         dy: (Math.random() - 0.5) * 9,
         r: 0.8 + Math.random() * 1.8,

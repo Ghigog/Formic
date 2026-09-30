@@ -45,11 +45,26 @@ enum AgentRunStatus {
   cancelled
 }
 
+enum WorkType {
+  bug
+  spike
+}
+
 enum TicketSize {
   S
   M
   L
   XL
+}
+
+/// How long a run may work on a ticket. See docs/run-time-budgets.md.
+/// PER_STORY_POINT is "per point" (minutes x story points, default 10);
+/// PER_POINT is "per point, by hand" (individual minutes for particular sizes).
+enum RunTimeBudgetMode {
+  OFF
+  PER_STORY_POINT
+  FLAT_MINUTES
+  PER_POINT
 }
 
 enum AttachmentKind {
@@ -90,6 +105,13 @@ model User {
   /// month named by fallbackSandboxMonth ("2026-09"). See src/lib/sandbox/fallback-cap.ts.
   fallbackSandboxSeconds Int     @default(0)
   fallbackSandboxMonth   String?
+
+  /// Run time budget. Null parameters mean the default, ten minutes per point;
+  /// OFF is an explicit choice. runTimeBudgetPerPointMinutes maps story points
+  /// to minutes, e.g. {"1":5,"2":15,"5":40}.
+  runTimeBudgetMode            RunTimeBudgetMode @default(PER_STORY_POINT)
+  runTimeBudgetFlatMinutes     Int?
+  runTimeBudgetPerPointMinutes Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -143,6 +165,8 @@ model Epic {
   /// Structured PRD from the Product Agent. Null until stage 2 completes.
   prd              Json?
   prdEditedByHuman Boolean @default(false)
+  /// Bug or spike, as the owner chose. Null for neither.
+  workType         WorkType?
   /// When the PRD last changed. Tickets made before it were made from an
   /// older PRD, so the Epic is broken down again.
   prdUpdatedAt     DateTime?
@@ -218,6 +242,8 @@ model Ticket {
   /// The ticket is in the archive, off the board. The sort/filter epic
   /// reads it.
   archived Boolean      @default(false)
+  /// Bug or spike, as the owner chose. Null for neither.
+  workType WorkType?
   /// Where a person dropped it when it cannot work there. It shows there,
   /// with misplacedReason saying what is wrong and how to fix it; its status
   /// stays what is true. Cleared by its next move or status change.
