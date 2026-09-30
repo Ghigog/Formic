@@ -60,6 +60,11 @@ export type BudgetVerdict =
   | { ok: true; remainingCents: number }
   | { ok: false; reason: string; exceeded: "cost" | "time" | "attempts" };
 
+/** What a run is told when it hits the spend ceiling; the ceiling bounds tokens, not a bill. */
+export function spendCeilingNote(maxCents: number): string {
+  return `Spend ceiling reached ($${(maxCents / 100).toFixed(2)} of estimated token volume, not a bill).`;
+}
+
 export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "metered"): BudgetVerdict {
   // Money only stops a metered run. A flat-rate plan is not billed per token,
   // and an id nobody has priced has no rate to hold a run to: stopping either
@@ -69,7 +74,7 @@ export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "me
     return {
       ok: false,
       exceeded: "cost",
-      reason: `Spend ceiling reached ($${(budget.maxCents / 100).toFixed(2)} of estimated token volume, not a bill).`,
+      reason: spendCeilingNote(budget.maxCents),
     };
   }
   if (spend.elapsedMs >= budget.maxDurationMs) {
