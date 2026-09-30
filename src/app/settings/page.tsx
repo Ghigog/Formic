@@ -3,6 +3,7 @@ import { currentUser } from "@/lib/auth/user";
 import { authMode } from "@/lib/auth/session";
 import { installUrl } from "@/lib/auth/github";
 import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
+import { getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { env } from "@/lib/secrets/env";
 import { SettingsForm } from "@/components/settings/settings-form";
 
@@ -22,6 +23,7 @@ export default async function SettingsPage() {
         signedIn: authMode() === "github",
       }}
       installUrl={installUrl()}
+      runTimeBudget={await getRunTimeBudgetSettings(user.id)}
       e2b={{
         hint: user.e2bKeyHint,
         serverFallback: !!config.E2B_API_KEY,
