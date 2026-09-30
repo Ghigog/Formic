@@ -140,6 +140,9 @@ model Project {
   /// The highest standalone ticket number this project has given out, deleted
   /// tickets included, so a number is never handed out twice.
   lastStandaloneTicketNumber Int @default(0)
+  /// Whether Formic merges an approved pull request itself. Off, it waits in
+  /// Merging for a person to merge it.
+  autoMerge Boolean @default(true)
 
   epics        Epic[]
   events       Event[]

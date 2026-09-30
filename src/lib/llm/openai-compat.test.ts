@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chat } from "./openai-compat";
+import { chat, listOpenAiModels } from "./openai-compat";
 import { PROVIDERS, provider } from "./providers";
 
 /**
@@ -292,5 +292,110 @@ describe("the OpenAI-format client", () => {
     expect(sent[0]!.body.thinking).toEqual({ type: "enabled" });
     expect(sent[0]!.body.reasoning_effort).toBe("low");
     expect(sent[0]!.body).not.toHaveProperty("extra_body");
+  });
+
+  it("keeps the metadata a DeepSeek-shaped /models body carries", async () => {
+    fakeBody({
+      data: [
+        {
+          id: "deepseek-v4",
+          context_window: 131072,
+          max_output_tokens: 8192,
+          input_modalities: ["text"],
+          effort: { supported_levels: ["high", "max"], default_level: "high" },
+        },
+      ],
+    });
+    expect(await listOpenAiModels(provider("deepseek")!, "k")).toEqual([
+      {
+        id: "deepseek-v4",
+        contextWindow: 131072,
+        maxOutputTokens: 8192,
+        inputModalities: ["text"],
+        effort: { supportedLevels: ["high", "max"], defaultLevel: "high" },
+      },
+    ]);
+  });
+
+  it("invents nothing for a /models body carrying only ids", async () => {
+    fakeBody({ data: [{ id: "models/b" }, { id: "a" }] });
+    expect(await listOpenAiModels(provider("deepseek")!, "k")).toEqual([{ id: "a" }, { id: "b" }]);
+  });
+
+  it("asks for no more output than the model advertises, and only a supported effort", async () => {
+    const sent = fakeProvider([
+      { role: "assistant", content: "a" },
+      { role: "assistant", content: "b" },
+    ]);
+    const modelInfo = {
+      id: "m",
+      maxOutputTokens: 8192,
+      effort: { supportedLevels: ["high"] },
+    };
+    const deepseek = provider("deepseek")!;
+    await chat(deepseek, "k", { ...ask, messages: [...ask.messages], maxTokens: 32000, reasoningEffort: "max", modelInfo });
+    await chat(deepseek, "k", { ...ask, messages: [...ask.messages], maxTokens: 4000, reasoningEffort: "high", modelInfo });
+
+    expect(sent[0]!.body.max_tokens).toBe(8192);
+    expect(sent[0]!.body).not.toHaveProperty("reasoning_effort");
+    expect(sent[1]!.body.max_tokens).toBe(4000);
+    expect(sent[1]!.body.reasoning_effort).toBe("high");
+  });
+
+  describe("ClinePass tool calls", () => {
+    const wrap = (message: Record<string, unknown>) => ({
+      data: { choices: [{ index: 0, message: { role: "assistant", ...message }, finish_reason: "tool_calls" }] },
+      success: true,
+    });
+    const call = (args: string) => ({
+      content: null,
+      tool_calls: [{ id: "c1", type: "function", function: { name: "read", arguments: args } }],
+    });
+
+    it("completes a two-turn tool loop from wrapped, non-streamed bodies", async () => {
+      const bodies = [wrap(call('{"path":"a.ts"}')), wrap({ content: "done" })];
+      const sent: Array<{ messages: unknown[] }> = [];
+      vi.stubGlobal("fetch", async (_u: string, init: RequestInit) => {
+        sent.push(JSON.parse(String(init.body)));
+        return Response.json(bodies.shift());
+      });
+      const cline = provider("clinepass")!;
+      const messages: Array<{ role: "user" | "assistant" | "tool"; content: string | null }> = [
+        { role: "user", content: "go" },
+      ];
+      const first = await chat(cline, "k", { ...ask, messages: messages as never });
+      expect(JSON.parse(first.message.tool_calls![0]!.function.arguments)).toEqual({ path: "a.ts" });
+      messages.push(first.message as never, { role: "tool", content: "file" });
+      const second = await chat(cline, "k", { ...ask, messages: messages as never });
+
+      expect(second.message.content).toBe("done");
+      expect(sent).toHaveLength(2);
+    });
+
+    it("strips DSML sentinels from content", async () => {
+      fakeBody(wrap({ content: "<｜DSML｜function_calls>ok<｜DSML｜/function_calls>" }));
+      const reply = await chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
+      expect(reply.message.content).toBe("ok");
+    });
+
+    it("fails naming DSML when the leak left the call's arguments empty", async () => {
+      fakeBody(wrap({ ...call("{}"), content: "<｜DSML｜function_calls>" }));
+      await expect(chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] })).rejects.toThrow(
+        /DSML/,
+      );
+    });
+
+    it("fails with the provider's own text when arguments do not parse", async () => {
+      fakeBody(wrap(call('{"path": "a.ts')));
+      await expect(chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] })).rejects.toThrow(
+        /not JSON: \{"path": "a\.ts/,
+      );
+    });
+
+    it("lets an empty-argument call through when nothing leaked", async () => {
+      fakeBody(wrap(call("{}")));
+      const reply = await chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
+      expect(reply.message.tool_calls).toHaveLength(1);
+    });
   });
 });

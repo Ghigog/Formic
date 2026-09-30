@@ -140,11 +140,8 @@ export function openAiSpeak(
       messages,
       ...(options?.answerOnly ? {} : { tools: toolSpecs }),
     });
-    messages.push({
-      role: "assistant",
-      content: result.message.content ?? "",
-      ...(result.message.tool_calls?.length ? { tool_calls: result.message.tool_calls } : {}),
-    });
+    // Kept whole, reasoning included: DeepSeek rejects a turn without it.
+    messages.push(result.message);
     return {
       text: (result.message.content ?? "").trim(),
       calls: (result.message.tool_calls ?? []).map((c) => {

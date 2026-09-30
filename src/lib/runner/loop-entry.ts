@@ -40,7 +40,7 @@ import { runCodingLoop } from "@/lib/agents/coding-loop";
 import type { AgentContext, CoderTask, Usage } from "@/lib/agents/ports";
 import { isSpikeText } from "@/lib/colony/game";
 import { CODER_BRIEF, CHECKPOINT_RULE, withCodingRules } from "@/lib/agents/prompts";
-import { billingFor, turnCeiling } from "@/lib/budget/limits";
+import { billingFor, spendCeilingNote, turnCeiling } from "@/lib/budget/limits";
 import type { PlanStep } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import { isProviderId, provider, type ProviderId } from "@/lib/llm/providers";
@@ -99,6 +99,8 @@ export const loopEntryPayloadSchema = z.object({
   limits: z
     .object({
       maxDurationMs: z.number().int().positive().optional(),
+      /** The ticket's own budget, before the job's ceiling clamped it. */
+      budgetMs: z.number().int().positive().optional(),
       maxCents: z.number().nonnegative().optional(),
     })
     .optional(),
@@ -212,11 +214,11 @@ export async function runLoopEntry(
     controller.abort(reason);
   };
 
-  // The sandbox always outlives the budget: a 60-minute run on the default
+  // The sandbox always outlives the budget: a long run on the default
   // 20-minute TTL would lose its checkout halfway through its own work.
   const ttlMs = Math.max(DEFAULT_TTL_MS, (maxDurationMs ?? 0) + 5 * 60 * 1000);
   const deadline = maxDurationMs
-    ? setTimeout(() => stop("time", ranOutOfTime(maxDurationMs)), maxDurationMs)
+    ? setTimeout(() => stop("time", ranOutOfTime(maxDurationMs, payload.limits?.budgetMs)), maxDurationMs)
     : null;
   // A timer must not be the reason a job stays alive after its run is done.
   deadline?.unref?.();
@@ -316,7 +318,7 @@ export async function runLoopEntry(
       // The reason is ours, and it is what the card has to be able to say.
       const named =
         limit.hit === "time"
-          ? timeLimitNote(maxDurationMs)
+          ? timeLimitNote(maxDurationMs, payload.limits?.budgetMs)
           : limit.hit === "spend"
             ? spendNote(maxCents)
             : null;
@@ -393,13 +395,17 @@ async function readAll(input: NodeJS.ReadableStream): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function ranOutOfTime(maxDurationMs: number): Error {
-  return new Error(timeLimitNote(maxDurationMs));
+function ranOutOfTime(maxDurationMs: number, budgetMs?: number): Error {
+  return new Error(timeLimitNote(maxDurationMs, budgetMs));
 }
 
-function timeLimitNote(maxDurationMs: number | undefined): string {
+/** Says which ceiling stopped the run: the job's, when it clamped the ticket's budget, or the budget itself. */
+function timeLimitNote(maxDurationMs: number | undefined, budgetMs?: number): string {
   const minutes = Math.round((maxDurationMs ?? 0) / 60_000);
-  return `Ran out of time: this run's budget is ${minutes} minute${minutes === 1 ? "" : "s"}. The job's own timeout is the backstop; raise the ticket's budget to give it longer.`;
+  if (budgetMs !== undefined && maxDurationMs !== undefined && budgetMs > maxDurationMs) {
+    return `Ran out of time: stopped at the job's ${minutes}-minute ceiling; the ticket's budget is ${Math.round(budgetMs / 60_000)}.`;
+  }
+  return `Ran out of time: this run's budget is ${minutes} minute${minutes === 1 ? "" : "s"}. Raise the ticket's budget to give it longer.`;
 }
 
 function spendCeiling(maxCents: number): Error {
@@ -409,7 +415,7 @@ function spendCeiling(maxCents: number): Error {
 function spendNote(maxCents: number | undefined): string {
   return maxCents === undefined
     ? "Spend ceiling reached."
-    : `Spend ceiling reached ($${(maxCents / 100).toFixed(2)}). Raise the ticket's budget, or move the column to an agent on another account.`;
+    : `${spendCeilingNote(maxCents)} Raise the ticket's budget, or move the column to an agent on another account.`;
 }
 
 /** One line of progress for a job log, in the voice the board already uses. */

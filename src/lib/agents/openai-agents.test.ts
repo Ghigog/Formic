@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCodingLoop } from "./coding-loop";
+import { openAiSpeak } from "./chat-loop";
+import { provider } from "@/lib/llm/providers";
 import { OpenAiArchitectAgent, OpenAiProductAgent } from "./openai-agents";
 import { ticketOrRerouteSchema } from "./decomposition";
 import { MemoryWorkspace, scopedWorkspace } from "@/lib/sandbox/workspace";
@@ -427,5 +429,71 @@ describe("the server's Claude key", () => {
     expect(() => anthropicClient(null)).toThrow("has no Anthropic API key");
     vi.unstubAllEnvs();
     resetEnvCache();
+  });
+});
+
+/** A DeepSeek-shaped provider: turn 2 is refused unless turn 1's reasoning comes back. */
+function deepSeekProvider(reasoning: string | null) {
+  const toolTurn = {
+    role: "assistant",
+    content: "",
+    ...(reasoning ? { reasoning_content: reasoning } : {}),
+    tool_calls: [
+      {
+        id: "call_1",
+        type: "function",
+        function: { name: "finish", arguments: JSON.stringify({ summary: "s", detail: "d", verified_with: null }) },
+      },
+    ],
+  };
+  const sent: Array<Array<Record<string, unknown>>> = [];
+  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+    const messages = JSON.parse(String(init.body)).messages as Array<Record<string, unknown>>;
+    sent.push(messages);
+    if (sent.length === 1) {
+      return Response.json({ choices: [{ message: toolTurn, finish_reason: "tool_calls" }], usage: {} });
+    }
+    const echoed = messages.some((m) => m.role === "assistant" && m.reasoning_content);
+    if (reasoning && !echoed) return new Response("reasoning_content must be passed back", { status: 400 });
+    return Response.json({ choices: [{ message: { role: "assistant", content: "done" }, finish_reason: "stop" }], usage: {} });
+  });
+  return sent;
+}
+
+describe("reasoning on a tool turn", () => {
+  const speakArgs = ["sk", "deepseek-chat", "sys", [], [{ name: "finish", description: "d", schema: {} }]] as [string, string, string, [], Array<{ name: string; description: string; schema: Record<string, unknown> }>];
+
+  it("is echoed back by the chat loop, and content stays as returned", async () => {
+    const sent = deepSeekProvider("think hard");
+    const speak = openAiSpeak(provider("deepseek")!, ...speakArgs);
+    const first = await speak(null);
+    await speak(first.calls.map((c) => ({ id: c.id, content: "ok", isError: false })));
+    expect(sent[1]!.find((m) => m.role === "assistant")).toMatchObject({ reasoning_content: "think hard", content: "" });
+  });
+
+  it("is echoed back by the coding loop, and shown as a thinking thought", async () => {
+    deepSeekProvider("think hard");
+    const events: unknown[] = [];
+    const outcome = await runCodingLoop({
+      ctx: { ...ctx(), emit: (e) => events.push(e) },
+      workspace: new MemoryWorkspace(),
+      ticketId: "t-1",
+      role: "coder",
+      system: "sys",
+      prompt: "do it",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      apiKey: "sk",
+    });
+    expect(outcome.ok).toBe(true);
+    expect(events).toContainEqual(expect.objectContaining({ type: "run.thought", kind: "thinking", text: "think hard" }));
+  });
+
+  it("changes nothing for a provider that sends none", async () => {
+    const sent = deepSeekProvider(null);
+    const speak = openAiSpeak(provider("deepseek")!, ...speakArgs);
+    const first = await speak(null);
+    await speak(first.calls.map((c) => ({ id: c.id, content: "ok", isError: false })));
+    expect(sent[1]!.find((m) => m.role === "assistant")).not.toHaveProperty("reasoning_content");
   });
 });

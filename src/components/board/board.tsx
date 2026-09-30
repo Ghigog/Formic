@@ -9,6 +9,7 @@ import {
 } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
+import { EMPTY_VIEW, type ColumnView } from "./view";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
@@ -102,6 +103,47 @@ export function Board({
       in_review: new Set(),
       done: new Set(),
     }),
+  );
+
+  const [views, setViews] = useState<Record<ColumnId, ColumnView>>(() => ({
+    backlog: EMPTY_VIEW,
+    todo: EMPTY_VIEW,
+    in_progress: EMPTY_VIEW,
+    in_review: EMPTY_VIEW,
+    done: EMPTY_VIEW,
+  }));
+
+  // A field shows its value when every column agrees, otherwise the empty one.
+  const boardView = useMemo<ColumnView>(() => {
+    const all = COLUMNS.map((c) => views[c]);
+    const agreed = <K extends keyof ColumnView>(key: K): ColumnView[K] =>
+      all.every((v) => v[key] === all[0]![key]) ? all[0]![key] : EMPTY_VIEW[key];
+    return {
+      query: agreed("query"),
+      sort: agreed("sort"),
+      workType: agreed("workType"),
+      collapsed: all.every((v) => v.collapsed),
+    };
+  }, [views]);
+
+  // Write only what the menu changed to every column, so the other fields stay
+  // per-column. Clear resets everything.
+  const changeBoardView = useCallback(
+    (next: ColumnView) => {
+      setViews((prev) => {
+        const out = { ...prev };
+        for (const c of COLUMNS) {
+          out[c] = next === EMPTY_VIEW ? EMPTY_VIEW : { ...prev[c] };
+          if (next !== EMPTY_VIEW) {
+            for (const key of Object.keys(next) as (keyof ColumnView)[]) {
+              if (next[key] !== boardView[key]) Object.assign(out[c], { [key]: next[key] });
+            }
+          }
+        }
+        return out;
+      });
+    },
+    [boardView],
   );
 
   const isMobile = useMediaQuery("(max-width: 767px)");
@@ -263,6 +305,8 @@ export function Board({
       extras={extras}
       bare={isMobile}
       collapsed={collapsed[col]}
+      view={views[col]}
+      onViewChange={(view) => setViews((prev) => ({ ...prev, [col]: view }))}
       accepts={(cardId) => {
         const card = live.find((c) => c.id === cardId);
         // Where it can work: its own column, or a move the rules allow
@@ -381,6 +425,8 @@ export function Board({
         onNewItem={onNewItem}
         account={account}
         assistant={assistant}
+        boardView={boardView}
+        onBoardViewChange={changeBoardView}
       />
 
       {/* Sticky column tabs. Replaces the 5-column layout below 768px. */}

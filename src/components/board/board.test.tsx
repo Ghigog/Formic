@@ -41,6 +41,37 @@ function renderBoard(
   return { onTransition };
 }
 
+describe("Board column views", () => {
+  it("keeps a column's search when the cards update", async () => {
+    const cards = [
+      makeCard({ status: "ready", title: "Fix login" }),
+      makeCard({ status: "ready", title: "Add export" }),
+    ];
+    const onTransition = vi.fn();
+    const props = {
+      projectName: "Formic",
+      repoFullName: "formic-labs/formic-web",
+      baseBranch: "main",
+      onOpenCard: vi.fn(),
+      onNewItem: vi.fn(),
+      onTransition,
+    };
+    const { rerender } = render(<Board cards={cards} {...props} />);
+    const todo = screen.getByRole("region", { name: "To Do" });
+    const user = userEvent.setup();
+    await user.click(within(todo).getByRole("button", { name: "Column options" }));
+    await user.type(screen.getByPlaceholderText("Search key or title..."), "login");
+    expect(within(todo).queryByText("Add export")).toBeNull();
+
+    rerender(
+      <Board cards={[...cards, makeCard({ status: "ready", title: "Other" })]} {...props} />,
+    );
+    expect(within(todo).getByText("Fix login")).toBeInTheDocument();
+    expect(within(todo).queryByText("Add export")).toBeNull();
+    expect(within(todo).queryByText("Other")).toBeNull();
+  });
+});
+
 describe("Board, on a wide screen", () => {
   it("renders all five columns", () => {
     renderBoard([makeCard()]);
@@ -286,5 +317,58 @@ describe("Board, below 768px", () => {
     // Still in Backlog: the optimistic move was dropped, not kept.
     expect(screen.getByRole("button", { name: "Backlog 1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "To Do 0" })).toBeInTheDocument();
+  });
+});
+
+describe("Board menu", () => {
+  const cards = () => [
+    makeCard({ status: "ready", title: "Fix login", workType: "bug" }),
+    makeCard({ status: "ready", title: "Add export" }),
+    makeCard({ status: "draft", title: "Fix crash", workType: "bug" }),
+    makeCard({ status: "draft", title: "Add dark mode" }),
+  ];
+  const openBoardMenu = async () => {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Board options" }));
+    return user;
+  };
+
+  it("searches every column", async () => {
+    renderBoard(cards());
+    const user = await openBoardMenu();
+    await user.type(screen.getByPlaceholderText("Search key or title..."), "fix");
+    expect(screen.getAllByText(/^Fix /)).toHaveLength(2);
+    expect(screen.queryByText("Add export")).toBeNull();
+    expect(screen.queryByText("Add dark mode")).toBeNull();
+    await user.click(screen.getByRole("menuitem", { name: "Clear" }));
+    expect(screen.getByText("Add export")).toBeInTheDocument();
+    expect(screen.getByText("Add dark mode")).toBeInTheDocument();
+  });
+
+  it("filters by type across columns", async () => {
+    renderBoard(cards());
+    const user = await openBoardMenu();
+    await user.click(screen.getByRole("menuitemradio", { name: "Bugs" }));
+    expect(screen.getByText("Fix login")).toBeInTheDocument();
+    expect(screen.getByText("Fix crash")).toBeInTheDocument();
+    expect(screen.queryByText("Add export")).toBeNull();
+    expect(screen.queryByText("Add dark mode")).toBeNull();
+  });
+
+  it("collapses and expands every column, keeping other view fields", async () => {
+    renderBoard(cards());
+    const user = await openBoardMenu();
+    await user.click(screen.getByRole("menuitemradio", { name: "Bugs" }));
+    await user.click(screen.getByRole("menuitem", { name: "Collapse all" }));
+    expect(screen.queryByText("Fix login")).toBeNull();
+    expect(screen.queryByText("Fix crash")).toBeNull();
+    for (const name of ["Backlog", "To Do"]) {
+      const col = screen.getByRole("region", { name });
+      expect(within(col).getByRole("button", { name: "Column options" })).toBeInTheDocument();
+    }
+    await user.click(screen.getByRole("menuitem", { name: "Expand all" }));
+    expect(screen.getByText("Fix login")).toBeInTheDocument();
+    expect(screen.getByText("Fix crash")).toBeInTheDocument();
+    expect(screen.queryByText("Add export")).toBeNull();
   });
 });

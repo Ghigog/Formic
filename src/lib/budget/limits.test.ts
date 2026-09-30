@@ -200,8 +200,17 @@ describe("pricingNote", () => {
     expect(pricingNote("mystery-model", "openrouter")).toContain("No price known");
   });
 
-  it("names the family a metered model is billed as", () => {
-    expect(pricingNote("claude-opus-5", "anthropic")).toContain("claude-opus-5");
+  it("names the family a metered model is counted at, as a token bound and not a bill", () => {
+    const note = pricingNote("claude-opus-5", "anthropic");
+    expect(note).toContain("claude-opus-5");
+    expect(note).toContain("bounds token volume, not a bill");
+    expect(note).not.toMatch(/Billed as/i);
+  });
+
+  it("says a run stopped on the ceiling hit a token bound, not a bill", () => {
+    const verdict = checkBudget({ cents: 500, elapsedMs: 0, attempts: 0 }, { ...DEFAULT_RUN_BUDGET, maxCents: 500 });
+    expect(verdict).toMatchObject({ ok: false, exceeded: "cost" });
+    if (!verdict.ok) expect(verdict.reason).toMatch(/^Spend ceiling reached .*not a bill/);
   });
 });
 

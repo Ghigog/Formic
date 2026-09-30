@@ -105,6 +105,49 @@ function saidInstead(body: unknown): string | null {
   return null;
 }
 
+/**
+ * DeepSeek's tool-call markup, which ClinePass's gateway lets through into
+ * `content` — `<｜DSML｜function_calls>` and its kin, with a fullwidth or plain
+ * bar — while the real `tool_calls` come back with arguments of "{}" on roughly
+ * one tool-bearing reply in four.
+ */
+const DSML_TAG = /<\/?\s*[｜|]\s*DSML\s*[｜|][^>]*>/g;
+
+/**
+ * Decision (CL-8): ClinePass stays non-streamed and unwrapped. Its docs show
+ * streaming as OpenAI-compliant, but the wrapped envelope is what the gateway
+ * sends today and the reader for it already works; streaming would add an SSE
+ * parser to bet on a shape two open upstream issues are still changing, and
+ * would not fix the DSML leak, which is in the content either way.
+ *
+ * DSML: the sentinels are stripped from content so they never reach a card or
+ * the next turn. A leak that also emptied the tool call ("{}") has lost the
+ * call, so that turn fails naming DSML rather than running an empty attempt.
+ * Arguments that do not parse fail with the provider's own text.
+ */
+function checkToolCalls(p: ProviderInfo, message: ChatMessage): ChatMessage {
+  const leaked = typeof message.content === "string" && /[｜|]\s*DSML\s*[｜|]/.test(message.content);
+  for (const call of message.tool_calls ?? []) {
+    const args = call.function.arguments?.trim() ?? "";
+    if (args && args !== "{}") {
+      try {
+        JSON.parse(args);
+      } catch {
+        throw new ProviderError(
+          `${p.label} sent a call to ${call.function.name} whose arguments are not JSON: ${args.replace(/\s+/g, " ").slice(0, 200)}. That is ${p.label}'s side: move the card back to retry.`,
+          null,
+        );
+      }
+    } else if (leaked) {
+      throw new ProviderError(
+        `${p.label} leaked DSML markup into its answer and sent the call to ${call.function.name} with empty arguments. That is ${p.label}'s gateway, not the ticket's: move the card back to retry, or run it on another provider.`,
+        null,
+      );
+    }
+  }
+  return leaked ? { ...message, content: (message.content as string).replace(DSML_TAG, "").trim() } : message;
+}
+
 /** The tries after the first: how long each waits before making it. */
 const RETRY_WAITS_MS = [1_000, 4_000];
 
@@ -136,7 +179,9 @@ export interface ChatRequest {
   maxTokens?: number;
   /** Sent at the top level of the body: this client builds plain JSON, not an SDK's extra_body. */
   thinking?: { type: "enabled" | "disabled" };
-  reasoningEffort?: "low" | "high" | "max";
+  reasoningEffort?: ReasoningEffort;
+  /** What the provider advertises for `model`; the ceiling and effort are held to it. */
+  modelInfo?: ModelInfo;
   signal?: AbortSignal;
 }
 
@@ -172,6 +217,8 @@ async function chatOnce(
   apiKey: string,
   request: ChatRequest,
 ): Promise<ChatResult> {
+  const maxTokens = clampMaxTokens(request.maxTokens, request.modelInfo);
+  const reasoningEffort = supportedEffort(request.reasoningEffort, request.modelInfo);
   const send = async (json: boolean) => {
     const res = await fetch(endpoint(p, "/chat/completions"), {
       method: "POST",
@@ -186,9 +233,9 @@ async function chatOnce(
         // reads one JSON body. Nothing here wants the stream.
         stream: false,
         ...(request.tools?.length ? { tools: request.tools } : {}),
-        ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
+        ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
         ...(request.thinking ? { thinking: request.thinking } : {}),
-        ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+        ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
         ...(json ? { response_format: { type: "json_object" } } : {}),
       }),
       signal: request.signal,
@@ -234,23 +281,84 @@ async function chatOnce(
     );
   }
   return {
-    message: choice.message,
+    message: checkToolCalls(p, choice.message),
     finishReason: choice.finish_reason ?? null,
     tokensIn: completion?.usage?.prompt_tokens ?? 0,
     tokensOut: completion?.usage?.completion_tokens ?? 0,
   };
 }
 
-/** The model ids a key can use, for the agent editor. */
-export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise<string[]> {
+export type ReasoningEffort = "low" | "high" | "max";
+
+/**
+ * What a provider says about a model beyond its id. Every field is optional:
+ * DeepSeek sends them all, most providers send none, and a missing one means
+ * "not said", never a default made up here.
+ */
+export interface ModelInfo {
+  id: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  inputModalities?: string[];
+  effort?: { supportedLevels: string[]; defaultLevel?: string };
+}
+
+interface RawModel {
+  id: string;
+  context_window?: unknown;
+  max_output_tokens?: unknown;
+  input_modalities?: unknown;
+  effort?: { supported_levels?: unknown; default_level?: unknown } | null;
+}
+
+const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
+const strings = (v: unknown) =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined;
+
+function modelInfo(m: RawModel): ModelInfo {
+  const info: ModelInfo = { id: m.id.replace(/^models\//, "") };
+  const contextWindow = count(m.context_window);
+  if (contextWindow) info.contextWindow = contextWindow;
+  const maxOutputTokens = count(m.max_output_tokens);
+  if (maxOutputTokens) info.maxOutputTokens = maxOutputTokens;
+  const inputModalities = strings(m.input_modalities);
+  if (inputModalities?.length) info.inputModalities = inputModalities;
+  const supportedLevels = strings(m.effort?.supported_levels);
+  if (supportedLevels?.length) {
+    const d = m.effort?.default_level;
+    info.effort = {
+      supportedLevels,
+      ...(typeof d === "string" && supportedLevels.includes(d) ? { defaultLevel: d } : {}),
+    };
+  }
+  return info;
+}
+
+/** The models a key can use, for the agent editor, with what the provider says of each. */
+export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise<ModelInfo[]> {
   const res = await fetch(endpoint(p, "/models"), {
     headers: { Authorization: `Bearer ${apiKey}` },
     cache: "no-store",
   }).catch(() => null);
   if (!res) throw new ProviderError(`Could not reach ${p.label}.`, null);
   if (!res.ok) throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
-  const body = (await res.json()) as { data?: Array<{ id: string }> };
-  return (body.data ?? []).map((m) => m.id.replace(/^models\//, "")).sort();
+  const body = (await res.json()) as { data?: RawModel[] };
+  return (body.data ?? []).map(modelInfo).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** A reply ceiling held to what the model advertises; unchanged when it advertises none. */
+export function clampMaxTokens(asked: number | undefined, info?: ModelInfo): number | undefined {
+  if (asked === undefined || !info?.maxOutputTokens) return asked;
+  return Math.min(asked, info.maxOutputTokens);
+}
+
+/** The effort to send: the one asked for if the model supports it, else none. */
+export function supportedEffort(
+  asked: ReasoningEffort | undefined,
+  info?: ModelInfo,
+): ReasoningEffort | undefined {
+  if (!asked || !info?.effort) return asked;
+  return info.effort.supportedLevels.includes(asked) ? asked : undefined;
 }
 
 /**

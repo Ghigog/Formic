@@ -128,27 +128,28 @@ export async function columnLimit(projectId: string, column: ColumnId): Promise<
 }
 
 /**
- * The agent the Sentinels audit with. They belong to no column, so they
- * borrow the first column agent that can answer here rather than in GitHub
- * Actions: In Review's first, since auditing is closest to reviewing.
+ * The agent the Sentinels audit with: the one set for the board's assistant.
+ * Their persona and task come from the roster, so it only supplies provider,
+ * model and key; its own prompt is a chat brief and is left out.
  */
 export async function sentinelAgent(
   projectId: string,
 ): Promise<{ kind: "configured"; config: AgentConfig } | { kind: "mock" } | { kind: "none"; reason: string }> {
-  let limited: string | null = null;
-  for (const column of ["in_review", "todo", "backlog", "done", "in_progress"] as const) {
-    const resolved = await resolveColumn(projectId, column);
-    if (resolved.kind === "mock") return { kind: "mock" };
-    if (resolved.kind === "limited") limited ??= resolved.reason;
-    if (resolved.kind !== "configured") continue;
-    if (providerInfo(resolved.config.provider ?? "anthropic")?.kind === "cli") continue;
-    return { kind: "configured", config: resolved.config };
+  const agent = await assistantAgentFor(projectId);
+  if (agent.kind === "limited") return { kind: "none", reason: agent.reason };
+  if (agent.kind === "cli") {
+    return {
+      kind: "none",
+      reason: `${agent.agent.info.label} is a CLI agent. CLI agents run in GitHub Actions and cannot audit, so pick a Claude or OpenAI-compatible agent for the assistant.`,
+    };
+  }
+  if (agent.kind === "none") {
+    if (authMode() === "local") return { kind: "mock" };
+    return { kind: "none", reason: "No agent is set for the assistant. Pick or create one above." };
   }
   return {
-    kind: "none",
-    reason:
-      limited ??
-      "Sentinels borrow a column's agent, and none can answer here. Give a column a Claude or OpenAI-compatible agent with its API key.",
+    kind: "configured",
+    config: { provider: agent.info.id, model: agent.model ?? undefined, apiKey: agent.apiKey ?? undefined },
   };
 }
 

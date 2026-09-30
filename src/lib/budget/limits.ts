@@ -40,14 +40,6 @@ export const DEFAULT_EPIC_BUDGET: Budget = {
   maxAttempts: 12,
 };
 
-/**
- * What a ticket's size gives it, before any setting says otherwise: ten
- * minutes a story point. This is the default `docs/run-time-budgets.md`
- * describes; the settings that let a person choose (flat, per point, by hand,
- * or off) are that spec's own work, and a missing setting means this number.
- */
-export const MINUTES_PER_POINT = 10;
-
 export interface Spend {
   cents: number;
   elapsedMs: number;
@@ -60,6 +52,11 @@ export type BudgetVerdict =
   | { ok: true; remainingCents: number }
   | { ok: false; reason: string; exceeded: "cost" | "time" | "attempts" };
 
+/** What a run is told when it hits the spend ceiling; the ceiling bounds tokens, not a bill. */
+export function spendCeilingNote(maxCents: number): string {
+  return `Spend ceiling reached ($${(maxCents / 100).toFixed(2)} of estimated token volume, not a bill).`;
+}
+
 export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "metered"): BudgetVerdict {
   // Money only stops a metered run. A flat-rate plan is not billed per token,
   // and an id nobody has priced has no rate to hold a run to: stopping either
@@ -69,7 +66,7 @@ export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "me
     return {
       ok: false,
       exceeded: "cost",
-      reason: `Spend ceiling reached ($${(budget.maxCents / 100).toFixed(2)}).`,
+      reason: spendCeilingNote(budget.maxCents),
     };
   }
   if (spend.elapsedMs >= budget.maxDurationMs) {
@@ -261,10 +258,18 @@ export function priceForModel(model: string, providerId?: string | null): ModelP
   return { price: { in: 0, out: 0 }, billing, known: billing !== "unknown" };
 }
 
-/** What the agent editor tells someone about how this model is charged. */
+/**
+ * What the agent editor tells someone about how this model is counted.
+ *
+ * CL-7 decision: the ceiling stays a token-volume bound and the arithmetic in
+ * `estimateCostCents` is unchanged. Usage carries only two counts, so a cached
+ * prefix (DeepSeek's prompt_cache_hit_tokens, most of a tool loop's input)
+ * counts at the miss rate; modelling the hit split would add a third price to
+ * a hand-kept, unverified table. So the wording says "bound", never "bill".
+ */
 export function pricingNote(model: string, providerId?: string | null): string {
   const { billing, provider, family } = priceForModel(model, providerId);
-  if (billing === "metered") return `Billed as ${provider} ${family} for the spend ceiling.`;
+  if (billing === "metered") return `The spend ceiling bounds token volume, not a bill: tokens are counted at ${provider} ${family} list rates, and cached input is counted at the full input rate, so the real charge can be much lower.`;
   if (billing === "flat") {
     return "Flat-rate plan: tokens cost nothing extra here, so a run is bounded by its time and attempt limits rather than by a spend ceiling.";
   }

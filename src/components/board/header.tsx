@@ -8,6 +8,8 @@ import { AccountMenu, type Account } from "./account-menu";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
 import { ColonyHeaderStats, ColonyMobileStats } from "@/components/colony/header-stats";
 import type { CaptureColumn } from "./new-item-dialog";
+import { ViewMenu } from "./view-menu";
+import type { ColumnView } from "./view";
 
 function LogoMark({ size }: { size: 26 | 28 }) {
   return (
@@ -58,6 +60,8 @@ export function BoardHeader({
   onNewItem,
   account,
   assistant,
+  boardView,
+  onBoardViewChange,
 }: {
   projectName: string;
   repoFullName: string;
@@ -70,11 +74,17 @@ export function BoardHeader({
   account?: Account;
   /** The board's assistant. Omitted, the header has no ask box. */
   assistant?: AssistantControls;
+  /** Search, sort, filter and collapse for every column at once. Omitted, the header has no board menu. */
+  boardView?: ColumnView;
+  onBoardViewChange?: (view: ColumnView) => void;
 }) {
   const [owner, repo] = repoFullName.split("/");
   const [picker, setPicker] = useState(false);
   // One picker mounted at a time, in whichever header is showing.
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const boardMenu = boardView && onBoardViewChange && (
+    <ViewMenu value={boardView} onChange={onBoardViewChange} scope="board" />
+  );
   const sync = inSync
     ? `${baseBranch} · synced${syncedLabel ? ` ${syncedLabel}` : ""}`
     : `${baseBranch} · behind`;
@@ -137,6 +147,7 @@ export function BoardHeader({
           {assistant && !isMobile && <AskBox a={assistant} repoName={repo ?? repoFullName} />}
         </div>
 
+        {!isMobile && boardMenu}
         <ColonyHeaderStats />
         {account && <AccountMenu account={account} />}
       </header>
@@ -167,6 +178,7 @@ export function BoardHeader({
           />
         )}
         <div className="flex-grow" />
+        {isMobile && boardMenu}
         <ColonyMobileStats />
         {assistant && isMobile && <AskButton a={assistant} repoName={repo ?? repoFullName} />}
         <button
