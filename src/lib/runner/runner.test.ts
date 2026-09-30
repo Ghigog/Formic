@@ -1205,7 +1205,7 @@ describe("collecting a run whose webhook never came", () => {
 
     const card = (await repository().cardById(epic.id))!;
     expect(card).toMatchObject({ status: "failed", stalledIn: "backlog" });
-    expect(card.blockedReason).toContain("60-minute limit");
+    expect(card.blockedReason).toContain("180-minute limit");
   });
 });
 
@@ -1627,7 +1627,7 @@ describe("an API-key coder running in a job", () => {
       model: string;
       repo: Record<string, unknown>;
       ticket: { key: string; fileScope: string[] };
-      limits: { maxDurationMs: number };
+      limits: { maxDurationMs: number; budgetMs: number };
     };
     expect(payload).toMatchObject({
       provider: "deepseek",
@@ -1636,8 +1636,9 @@ describe("an API-key coder running in a job", () => {
       ticket: { key: "T-1", fileScope: ["src/lib/feature"] },
     });
     // Three story points at ten minutes each: the ticket's own budget is the
-    // plan, and the job's 60 minutes is the backstop.
+    // plan, and the job's 180 minutes is the backstop.
     expect(payload.limits.maxDurationMs).toBe(30 * 60_000);
+    expect(payload.limits.budgetMs).toBe(30 * 60_000);
     expect(payload).not.toHaveProperty("apiKey");
 
     const after = (await repository().ticketDetail(ticket.id))!;
@@ -1840,8 +1841,9 @@ describe("the time limit a run's budget gives the loop entry", () => {
   it("is the budget in milliseconds, and never past the job's own room", () => {
     expect(loopBudgetMs(30)).toBe(30 * 60_000);
     expect(loopBudgetMs(40)).toBe(40 * 60_000);
+    expect(loopBudgetMs(80)).toBe(80 * 60_000);
     // The job's ceiling is the backstop.
-    expect(loopBudgetMs(80)).toBe(55 * 60_000);
+    expect(loopBudgetMs(200)).toBe(175 * 60_000);
   });
 
   it("is none when the person has no budget", () => {

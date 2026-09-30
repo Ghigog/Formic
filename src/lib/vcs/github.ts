@@ -354,6 +354,16 @@ export class GitHubClient implements VcsClient {
     return data[0] ? toDetail(data[0]) : null;
   }
 
+  async closeSupersededPulls(prefix: string, keepBranch: string, reason: string): Promise<number[]> {
+    const { data } = await this.request<RawPull[]>("GET", "/pulls?state=open&per_page=100");
+    const stale = data.filter((p) => p.head.ref.startsWith(prefix) && p.head.ref !== keepBranch);
+    for (const pull of stale) {
+      await this.comment(pull.number, reason);
+      await this.request("PATCH", `/pulls/${pull.number}`, { state: "closed" });
+    }
+    return stale.map((p) => p.number);
+  }
+
   async setSecret(name: string, value: string): Promise<void> {
     const { data: key } = await this.request<{ key_id: string; key: string }>(
       "GET",

@@ -290,6 +290,8 @@ export interface ProjectSummary {
   name: string;
   repoFullName: string;
   baseBranch: string;
+  /** Whether Formic merges an approved pull request, or leaves it for a person. */
+  autoMerge: boolean;
 }
 
 /** Whose projects and presets a query sees. */
@@ -611,6 +613,11 @@ export interface Repository {
    * whose worker died. See recoverStaleCardChats.
    */
   orphanedCardChats(projectId: string, olderThan: Date): Promise<CardChatMessage[]>;
+  /**
+   * The board assistant's answers nothing is behind any more: pending, no
+   * job, older than the cut-off. See recoverStaleAssistantAnswers.
+   */
+  orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,
