@@ -85,6 +85,7 @@ import {
   MERGED_TRAILER,
   RUNNER_JOB_MINUTES,
   RUNNER_SETUP_BRANCH,
+  RUNNER_SETUP_PREFIX,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_FILE,
   RUNNER_WORKFLOW_PATH,
@@ -196,6 +197,13 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
   if (current?.includes(RUNNER_VERSION)) return { ready: true };
   const update = current !== null;
 
+  // A setup PR for an older version would install a stale workflow and fail
+  // the repository's own check that the file matches its generator.
+  await client.closeSupersededPulls(
+    RUNNER_SETUP_PREFIX,
+    RUNNER_SETUP_BRANCH,
+    "The Formic agent workflow changed since this was opened, so this version is out of date. Closing it in favour of a fresh pull request.",
+  );
   await client.ensureBranch(RUNNER_SETUP_BRANCH, baseBranch);
   const onBranch = await client.readFile(RUNNER_WORKFLOW_PATH, RUNNER_SETUP_BRANCH);
   if (!onBranch?.includes(RUNNER_VERSION)) {
