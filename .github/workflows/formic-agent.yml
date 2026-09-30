@@ -1,4 +1,4 @@
-# formic-runner: a0cc2d407176
+# formic-runner: 29e3f371b3f2
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
