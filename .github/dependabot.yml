@@ -19,7 +19,7 @@ updates:
     schedule:
       interval: weekly
     ignore:
-      # typescript-eslint doesn't support TypeScript 7 yet, so lint fails.
-      # Drop this once it does.
-      - dependency-name: typescript
+      # Majors break things here (TypeScript 7 and ESLint 10 both outrun
+      # typescript-eslint and eslint-config-next). Upgrade them by hand.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
