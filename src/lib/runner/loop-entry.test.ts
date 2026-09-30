@@ -122,8 +122,8 @@ describe("the loop entry a GitHub Actions job runs", () => {
 
     // The loop ran on the ticket's own key, and reached nothing else.
     expect(sent.map((s) => s.url)).toEqual([
-      "https://api.deepseek.com/v1/chat/completions",
-      "https://api.deepseek.com/v1/chat/completions",
+      "https://api.deepseek.com/chat/completions",
+      "https://api.deepseek.com/chat/completions",
     ]);
     expect(sent[0]!.auth).toBe("Bearer sk-deepseek");
 
