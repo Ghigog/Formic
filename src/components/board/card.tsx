@@ -13,7 +13,7 @@ import {
   type BoardCard,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
-import { isBug, isSquashed } from "@/lib/colony/game";
+import { isBug, isBugText, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
@@ -81,6 +81,8 @@ export interface CardEnv {
   /** The running ticket a queued one is waiting on, or null when none is. */
   queuedBehind?: (card: BoardCard) => BoardCard | null;
 }
+
+const NO_EPICS: ReadonlyMap<string, BoardCard> = new Map();
 
 export const CardEnvContext = createContext<CardEnv | null>(null);
 
@@ -186,6 +188,13 @@ function BugBadge({ squashed }: { squashed: boolean }) {
 }
 
 /** The arrow that sends a card on to the next column, where it may go. */
+/** The bug label, on any card that is a bug. */
+function CardBugBadge({ card }: { card: BoardCard }) {
+  const env = useContext(CardEnvContext);
+  if (!isBug(card, env?.epics ?? NO_EPICS)) return null;
+  return <BugBadge squashed={isSquashed(card)} />;
+}
+
 function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) {
   const env = useContext(CardEnvContext);
   const to = env?.nextFor(card, column) ?? null;
@@ -330,7 +339,7 @@ export function ProblemNotice({ card, className }: { card: BoardCard; className?
 function EpicLine({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
   const epic = card.epicId ? env?.epics.get(card.epicId) : undefined;
-  const text = epic ? `${epic.key} · ${epic.title}` : isBug(card) ? "Triage" : card.epicId ? null : "Raw idea";
+  const text = epic ? `${epic.key} · ${epic.title}` : isBug(card, env?.epics ?? NO_EPICS) ? "Triage" : card.epicId ? null : "Raw idea";
   if (!text) return null;
   return <span className="text-muted truncate font-mono text-[9px]">{text}</span>;
 }
@@ -428,7 +437,7 @@ function TicketHead({
     <div className="flex min-h-[18px] items-center gap-1.5">
       <ReturnButton card={card} column={column} />
       {card.status === "queued" && <QueueTimer card={card} />}
-      {isBug(card) && <BugBadge squashed={isSquashed(card)} />}
+      <CardBugBadge card={card} />
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
       <ProblemBadge card={card} />
@@ -470,7 +479,7 @@ function BacklogEpic({
         <CoinBadge tone="epic" className="tracking-[0.08em]">
           EPIC
         </CoinBadge>
-        {isBug(card) && <BugBadge squashed={isSquashed(card)} />}
+        <CardBugBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <div className="flex-grow" />
         <ProblemBadge card={card} />
@@ -508,7 +517,7 @@ function RawIdea({
       <TicketHead card={card} column={column} />
       <Title>{card.title}</Title>
       <span className="text-muted truncate font-mono text-[9px]">
-        {isBug(card) ? "Triage" : "Raw idea"}
+        {isBugText(card.title) ? "Triage" : "Raw idea"}
         {extras.age ? ` · ${extras.age}` : ""}
       </span>
     </CardShell>
@@ -872,6 +881,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
             card.status === "ready" && "pulse-dot",
           )}
         />
+        <CardBugBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <ProblemBadge card={card} />
         <h4
@@ -910,6 +920,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
     >
       <div className="flex items-center gap-1.5">
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
+        <CardBugBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <h4 className="text-ink truncate text-[12px] font-medium">
           {card.title}

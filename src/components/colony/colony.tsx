@@ -17,6 +17,7 @@ import {
   COLOR_UNLOCKS,
   heatStacks,
   isBug,
+  isBugReport,
   mergePoints,
   multiplierOf,
   pointsOf,
@@ -346,13 +347,14 @@ export function ColonyProvider({
     }
 
     const later: Array<() => void> = [];
+    const epics = new Map(cards.filter((c) => c.kind === "epic").map((c) => [c.id, c]));
 
     for (const card of cards) {
       const was = before.get(card.id);
       const col = columnOf(card);
 
       if (!was) {
-        if (isBug(card) && col === "backlog") later.push(() => penalty(card));
+        if (isBugReport(card) && col === "backlog") later.push(() => penalty(card));
         continue;
       }
 
@@ -396,7 +398,9 @@ export function ColonyProvider({
           mark(card, "NEEDS YOU", card.blockedReason ?? null, "var(--crimson)");
         });
       }
-      if (isBug(card) && was.col === "backlog" && col !== "backlog") later.push(() => squashBug(card));
+      // A bug report squashes when handed to the agents; a bug ticket, when it is merged.
+      const squashedNow = card.kind === "ticket" && card.epicId ? card.status === "merged" : was.col === "backlog" && col !== "backlog";
+      if (squashedNow && isBug(card, epics)) later.push(() => squashBug(card));
     }
 
     for (const card of cards) {
@@ -519,7 +523,7 @@ export function ColonyProvider({
       const [cx, cy] = centerOf(e);
       sfx("mint");
       fx.ring(cx, cy, "var(--clay)", 70, 0.5);
-      if (!isBug(card)) fx.mark(e, "AGENT DISPATCHED", card.model ?? null, "var(--terracotta-deep)");
+      if (!isBugReport(card)) fx.mark(e, "AGENT DISPATCHED", card.model ?? null, "var(--terracotta-deep)");
     }
     function unlocked(card: BoardCard) {
       const e = el(card);
