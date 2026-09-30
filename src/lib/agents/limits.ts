@@ -389,10 +389,12 @@ export function diagnose(text: string, label: string, now = new Date()): Diagnos
 /**
  * A gateway's own words for an answer that never came back. ClinePass sends
  * `{"error":"empty response content","success":false}` when the model behind
- * it returned nothing at all, which is its roof and not the request.
+ * it returned nothing at all, which is its roof and not the request. A body
+ * that will not parse is the same answer wearing a 200 — an HTML error page
+ * from something sitting in front of the model, or nothing at all.
  */
 const EMPTY_ANSWER =
-  /(empty response|empty completion|no response content|no content in response|returned no (?:answer|content)|upstream (?:error|failure|timeout)|overloaded)/i;
+  /(empty response|empty completion|no response content|no content in response|returned no (?:answer|content)|upstream (?:error|failure|timeout)|overloaded|not json)/i;
 
 /**
  * Whether a provider's refusal says nothing about the request, so the same
@@ -405,7 +407,8 @@ const EMPTY_ANSWER =
  * arrived. Anything under the provider's own roof is that same shape of
  * failure, so every 5xx counts, and so does a fetch that never reached it at
  * all — `status === null`. A gateway's words for an empty answer count too:
- * it does not always wear a 5xx.
+ * it does not always wear a 5xx. So does a body that will not parse, which is
+ * how a gateway in front of the model usually reports the same thing.
  *
  * Three things are deliberately not here, however temporary they look. A
  * rate limit is answered with the window it resets in, and the card turns
