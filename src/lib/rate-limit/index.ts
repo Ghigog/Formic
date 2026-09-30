@@ -21,6 +21,14 @@ export function limit(max: number, windowMs: number): Limit {
 export const RUN = limit(60, 60_000);
 
 /**
+ * The board's own budget. A refresh of the board also launches the sweeps
+ * (finished runs, open pull requests, idle cards), and the UI polls it —
+ * so it gets a more generous bucket than the shared run budget, or normal
+ * polling would starve it.
+ */
+export const REFRESH = limit(300, 60_000);
+
+/**
  * The public surface can't be a free guessing game: /api/login takes password
  * guesses, GitHub sign-in hands out OAuth state, and starting agent runs
  * spends real money. Each address gets a fixed budget of hits per window.
