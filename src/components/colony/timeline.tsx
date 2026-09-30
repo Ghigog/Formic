@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { levelOf, rankOf } from "@/lib/colony/game";
-import { WINDOW_DAYS as N, TODAY, buildTimeline, type TimelineTicket } from "@/lib/colony/timeline";
+import { WINDOW_DAYS as N, TODAY, buildTimeline, isEpicComplete, type TimelineTicket } from "@/lib/colony/timeline";
 import { useColony, type ColonyApi } from "./colony";
 import { centerOf } from "./fx";
 
@@ -61,10 +61,14 @@ export function ColonyTimeline({ repoName }: { repoName: string }) {
 function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
   const root = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
-  const [closed, setClosed] = useState<Set<string>>(new Set());
   // One "now" per opening, so the model does not churn under the animation.
   const [at] = useState(() => new Date());
   const tl = useMemo(() => buildTimeline(c.cards, at), [c.cards, at]);
+  // Completed epics start collapsed. Seeded once, so an epic that completes
+  // while the view is open is not collapsed under the person.
+  const [closed, setClosed] = useState<Set<string>>(
+    () => new Set(tl.epics.filter(isEpicComplete).map((e) => e.id)),
+  );
 
   const fmt = (d: number) => {
     const day = new Date(tl.start.getFullYear(), tl.start.getMonth(), tl.start.getDate() + Math.floor(d));
