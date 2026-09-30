@@ -1,0 +1,1 @@
+ALTER TABLE "project" ADD COLUMN "autoMerge" BOOLEAN NOT NULL DEFAULT true;

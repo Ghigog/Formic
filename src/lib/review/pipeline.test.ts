@@ -1,61 +1,127 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { makeEpicWithChildren } from "@/test/cards";
+import { beforeEach, describe, expect, it } from "vitest";
 
-const spent = vi.hoisted(() => ({
-  startRun: vi.fn(),
-  startCliAnswer: vi.fn(),
-  summarize: vi.fn(),
-  launch: vi.fn(),
-  publish: vi.fn(),
-}));
+import { markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
+import { resetMergeLanes } from "./lane";
+import { repository } from "@/lib/db";
+import { subscribe } from "@/lib/events/bus";
+import type { FormicEvent } from "@/lib/domain/events";
+import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
 
-vi.mock("@/lib/agents/pipeline", () => ({
-  startRun: spent.startRun,
-  launch: spent.launch,
-  applyShowcase: vi.fn(),
-}));
-vi.mock("@/lib/runner/runner", () => ({
-  cliPrompt: vi.fn(),
-  showcaseSummaries: vi.fn(() => []),
-  startCliAnswer: spent.startCliAnswer,
-  startJobRun: vi.fn(),
-}));
-vi.mock("@/lib/agents/presets", () => ({
-  agentFor: vi.fn(async () => ({ summarize: spent.summarize })),
-  cliAgentFor: vi.fn(async () => null),
-  runTargetFor: vi.fn(async () => ({})),
-}));
-vi.mock("@/lib/events/bus", () => ({ publish: spent.publish }));
-
-const { completeEpic } = await import("./pipeline");
-const { repository } = await import("@/lib/db");
-const { seedMemory } = await import("@/lib/db/memory-repository");
+/**
+ * The merge gate: what happens to an approved pull request with auto-merge
+ * off, when it is merged, and when a merge Formic attempts fails. On the
+ * in-memory store and a mock GitHub.
+ */
 
 const PROJECT = "project_default";
+const REPO = "acme/widgets";
+
+let vcs: MockVcsClient;
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  globalThis.__formicMemoryStore = undefined;
-  delete process.env.DATABASE_URL;
-  delete process.env.POSTGRES_PRISMA_URL;
-  delete process.env.POSTGRES_URL;
+  (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
+  MockVcsClient.reset();
+  resetMergeLanes();
+  resetVcs();
+  resetPullRequestSweep();
+  vcs = new MockVcsClient(REPO);
+  setVcs(vcs);
 });
 
-describe("completeEpic", () => {
-  it("moves the Epic to Done and starts no PM run, so no usage is spent", async () => {
-    const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [{ status: "merged" }, { status: "merged" }]);
-    seedMemory([epic!, ...kids]);
+/** An approved ticket in review with green CI, and one ticket waiting on it. */
+async function seedApproved(autoMerge: boolean) {
+  const repo = repository();
+  (await repo.projectById(PROJECT))!.autoMerge = autoMerge;
+  const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+  const base = {
+    epicId: epic.id,
+    description: "d",
+    acceptanceCriteria: ["c"],
+    fileScope: ["src"],
+    storyPoints: 3,
+    position: 1,
+  };
+  const [ticket, dependent] = await repo.createTickets([
+    { ...base, key: "T-1", title: "First", dependsOnKeys: [] },
+    { ...base, key: "T-2", title: "Second", dependsOnKeys: ["T-1"] },
+  ]);
+  const pull = await vcs.openPullRequest({ headBranch: "t-1", baseBranch: "main", title: "T-1", body: "" });
+  const headSha = MockVcsClient.setChecks(pull.number, "success");
+  await repo.updateTicket(ticket!.id, {
+    status: "review",
+    stage: 6,
+    prNumber: pull.number,
+    reviewedSha: headSha,
+  });
+  return { ticketId: ticket!.id, dependentId: dependent!.id, prNumber: pull.number, headSha };
+}
 
-    await completeEpic(PROJECT, epic!.id);
+function collectEvents() {
+  const events: FormicEvent[] = [];
+  subscribe(PROJECT, (e) => events.push(e.event));
+  return events;
+}
 
-    expect(await repository().cardById(epic!.id)).toMatchObject({ status: "merged" });
-    expect(spent.publish).toHaveBeenCalledWith(
-      PROJECT,
-      expect.objectContaining({ type: "card.status", cardId: epic!.id, status: "merged" }),
+describe("the manual-merge gate", () => {
+  it("leaves an approved pull request unmerged and shows the Merging stage", async () => {
+    const { ticketId, prNumber, headSha } = await seedApproved(false);
+    const events = collectEvents();
+
+    await reviewPullRequest(PROJECT, prNumber, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
+    const ticket = (await repository().ticketDetail(ticketId))!;
+    expect(ticket.status).toBe("review");
+    expect(ticket.stage).toBe(7);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "card.status", cardId: ticketId, status: "review", stage: 7 }),
     );
-    expect(spent.startRun).not.toHaveBeenCalled();
-    expect(spent.startCliAnswer).not.toHaveBeenCalled();
-    expect(spent.summarize).not.toHaveBeenCalled();
-    expect(spent.launch).not.toHaveBeenCalled();
+  });
+
+  it("merges, marks the ticket merged and releases dependents once a person merges", async () => {
+    const { ticketId, dependentId, prNumber, headSha } = await seedApproved(false);
+    await reviewPullRequest(PROJECT, prNumber, headSha);
+    expect((await repository().ticketDetail(dependentId))!.status).toBe("waiting");
+
+    MockVcsClient.setPull(prNumber, { merged: true, state: "closed" });
+    await markMergedExternally(PROJECT, prNumber);
+
+    const ticket = (await repository().ticketDetail(ticketId))!;
+    expect(ticket.status).toBe("merged");
+    expect((await repository().cardById(ticketId))!.mergePoints).toBeGreaterThan(0);
+    expect((await repository().ticketDetail(dependentId))!.status).toBe("ready");
+  });
+
+  it("merges by itself when auto-merge is on", async () => {
+    const { ticketId, prNumber, headSha } = await seedApproved(true);
+
+    await reviewPullRequest(PROJECT, prNumber, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(true);
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("merged");
+  });
+});
+
+describe("a merge that fails", () => {
+  it("rolls the ticket back with the reason, awarding nothing and releasing nothing", async () => {
+    const { ticketId, dependentId, prNumber, headSha } = await seedApproved(true);
+    vcs.merge = async () => ({ ok: false, reason: "Required review missing.", conflict: false });
+    const events = collectEvents();
+
+    await reviewPullRequest(PROJECT, prNumber, headSha);
+
+    const ticket = (await repository().ticketDetail(ticketId))!;
+    expect(ticket.status).toBe("blocked");
+    expect(ticket.stage).toBe(6);
+    expect(ticket.blockedReason).toContain("Required review missing.");
+    expect((await repository().cardById(ticketId))!.mergePoints ?? null).toBeNull();
+    expect((await repository().ticketDetail(dependentId))!.status).toBe("waiting");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "card.status",
+        cardId: ticketId,
+        blockedReason: expect.stringContaining("Required review missing."),
+      }),
+    );
   });
 });
