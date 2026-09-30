@@ -20,6 +20,10 @@ function put(body: unknown): Request {
   });
 }
 
+function get(query = ""): Request {
+  return new Request(`http://localhost/api/settings${query}`);
+}
+
 let userId: string;
 
 beforeEach(async () => {
@@ -37,7 +41,7 @@ beforeEach(async () => {
 
 describe("/api/settings run time budget", () => {
   it("returns the default with no stored setting", async () => {
-    const body = await (await GET()).json();
+    const body = await (await GET(get())).json();
     expect(body.mode).toBe("PER_STORY_POINT");
     expect(body.flatMinutes ?? null).toBeNull();
     expect(body.perPointMinutes ?? null).toBeNull();
@@ -47,13 +51,13 @@ describe("/api/settings run time budget", () => {
     const res = await PUT(put({ mode: "FLAT_MINUTES", flatMinutes: 30 }));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ mode: "FLAT_MINUTES", flatMinutes: 30 });
-    expect(await (await GET()).json()).toMatchObject({ mode: "FLAT_MINUTES", flatMinutes: 30 });
+    expect(await (await GET(get())).json()).toMatchObject({ mode: "FLAT_MINUTES", flatMinutes: 30 });
   });
 
   it("stores per-point values", async () => {
     const res = await PUT(put({ mode: "PER_POINT", perPointMinutes: { "1": 5, "3": 20 } }));
     expect(res.status).toBe(200);
-    expect((await (await GET()).json()).perPointMinutes).toEqual({ 1: 5, 3: 20 });
+    expect((await (await GET(get())).json()).perPointMinutes).toEqual({ 1: 5, 3: 20 });
   });
 
   it.each([
@@ -67,7 +71,7 @@ describe("/api/settings run time budget", () => {
     const res = await PUT(put(payload));
     expect(res.status).toBe(400);
     expect((await res.json()).errors[field]).toBeTruthy();
-    expect(await (await GET()).json()).toMatchObject({ mode: "FLAT_MINUTES", flatMinutes: 30 });
+    expect(await (await GET(get())).json()).toMatchObject({ mode: "FLAT_MINUTES", flatMinutes: 30 });
   });
 
   it("rejects an unknown mode", async () => {
@@ -76,7 +80,27 @@ describe("/api/settings run time budget", () => {
 
   it("refuses without a session", async () => {
     jar.clear();
-    expect((await GET()).status).toBe(401);
+    expect((await GET(get())).status).toBe(401);
     expect((await PUT(put({ mode: "OFF" }))).status).toBe(401);
+  });
+});
+
+describe("/api/settings autoMerge", () => {
+  async function project(ownerId: string) {
+    return repository().ensureProject({ ownerId, repoFullName: `a/${ownerId}`, baseBranch: "main" });
+  }
+
+  it("is off for a new project and saved on update for the owner", async () => {
+    const p = await project(userId);
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false });
+    expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(200);
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true });
+  });
+
+  it("refuses someone who does not own the project and leaves the flag", async () => {
+    const other = await repository().upsertUser({ githubId: 2, login: "b", name: null, avatarUrl: null });
+    const p = await project(other.id);
+    expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(403);
+    expect((await repository().projectById(p.id))?.autoMerge).toBe(false);
   });
 });
