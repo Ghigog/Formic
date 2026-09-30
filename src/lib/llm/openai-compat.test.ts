@@ -244,4 +244,53 @@ describe("the OpenAI-format client", () => {
       vi.useRealTimers();
     }
   });
+
+  it("sends the reasoning a provider returned, and the output ceiling, on the next turn", async () => {
+    const sent = fakeProvider([
+      {
+        role: "assistant",
+        content: null,
+        reasoning_content: "I should look it up.",
+        tool_calls: [{ id: "c1", type: "function", function: { name: "look", arguments: "{}" } }],
+      },
+      { role: "assistant", content: "done" },
+    ]);
+    const cline = provider("clinepass")!;
+    const first = await chat(cline, "k", { ...ask, messages: [...ask.messages], maxTokens: 4096 });
+    await chat(cline, "k", {
+      ...ask,
+      messages: [...ask.messages, first.message, { role: "tool", content: "ok", tool_call_id: "c1" }],
+      maxTokens: 4096,
+    });
+
+    const assistant = (sent[1]!.body.messages as Array<Record<string, unknown>>)[1]!;
+    expect(assistant.reasoning_content).toBe("I should look it up.");
+    expect(sent[1]!.body.max_tokens).toBe(4096);
+  });
+
+  it("does not invent reasoning_content for a provider that sent none", async () => {
+    const sent = fakeProvider([{ role: "assistant", content: "hi" }, { role: "assistant", content: "again" }]);
+    const cline = provider("clinepass")!;
+    const first = await chat(cline, "k", { ...ask, messages: [...ask.messages] });
+    await chat(cline, "k", { ...ask, messages: [...ask.messages, first.message] });
+
+    const assistant = (sent[1]!.body.messages as Array<Record<string, unknown>>)[1]!;
+    expect(assistant).not.toHaveProperty("reasoning_content");
+    expect(sent[1]!.body).not.toHaveProperty("max_tokens");
+    expect(sent[1]!.body).not.toHaveProperty("thinking");
+  });
+
+  it("puts thinking at the top level of the body with the reasoning effort", async () => {
+    const sent = fakeProvider([{ role: "assistant", content: "hi" }]);
+    await chat(provider("clinepass")!, "k", {
+      ...ask,
+      messages: [...ask.messages],
+      thinking: { type: "enabled" },
+      reasoningEffort: "low",
+    });
+
+    expect(sent[0]!.body.thinking).toEqual({ type: "enabled" });
+    expect(sent[0]!.body.reasoning_effort).toBe("low");
+    expect(sent[0]!.body).not.toHaveProperty("extra_body");
+  });
 });

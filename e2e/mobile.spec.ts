@@ -47,33 +47,33 @@ test("every tap target clears 44px", async ({ page }) => {
   }
 });
 
-/*
- * The card is taken from the button's own accessible name rather than from
- * the top of the column. The point of naming the card is that the action is
- * unambiguous, so the test should hold the button to what it says, not to
- * what the test guessed it meant.
- */
-test("the advance action moves the card it names", async ({ page }) => {
-  const advance = page.getByRole("button", { name: /^Advance/ });
-  const label = await advance.getAttribute("aria-label");
+test("there is no floating Advance button", async ({ page }) => {
+  await expect(page.getByRole("button", { name: /^Advance/ })).toHaveCount(0);
+});
 
-  const named = label?.match(/^Advance (\S+) to To Do$/);
-  expect(named, `unexpected advance label: ${label}`).not.toBeNull();
+/*
+ * The card is taken from the arrow's own accessible name rather than from
+ * the top of the column: the test holds the button to what it says.
+ */
+test("a card's arrow moves the card it names", async ({ page }) => {
+  const arrow = page.getByRole("button", { name: /^Move \S+ to To Do$/ }).first();
+  const label = await arrow.getAttribute("aria-label");
+
+  const named = label?.match(/^Move (\S+) to To Do$/);
+  expect(named, `unexpected arrow label: ${label}`).not.toBeNull();
 
   const cardId = await idForKey(page, named![1]!);
   expect(await columnOf(page, cardId)).toBe("Backlog");
 
-  await advance.click();
+  await arrow.click();
 
   // One column renders at a time here, so the card leaves the DOM when it
-  // moves. Follow it to the tab it landed on rather than looking for it in
-  // place — which is also what a user does.
+  // moves. Follow it to the tab it landed on, as a user does.
   await expect(card(page, cardId)).toHaveCount(0);
   await page.getByRole("button", { name: /^To Do/ }).click();
   await expect(card(page, cardId)).toBeVisible();
 
-  // Put the board back. The advance action only goes forward, so the undo
-  // goes through the API.
+  // Put the board back.
   await moveViaApi(page, cardId, ["To Do", "Backlog"]);
   await page.getByRole("button", { name: /^Backlog/ }).click();
   expect(await columnOf(page, cardId)).toBe("Backlog");
