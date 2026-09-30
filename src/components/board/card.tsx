@@ -189,10 +189,11 @@ function BugBadge({ squashed }: { squashed: boolean }) {
 
 function SpikeBadge() {
   return (
-    <span className="oct bg-line inline-flex shrink-0 p-px">
+    <span data-spikeicon className="oct bg-line inline-flex shrink-0 p-px">
       <span className="oct text-ink inline-flex items-center gap-1 bg-cream py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
         <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <circle cx="4" cy="4" r="2.8" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M6.2 6.2 9 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
         </svg>
         SPIKE
       </span>

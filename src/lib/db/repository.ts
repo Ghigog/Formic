@@ -240,6 +240,8 @@ export interface TicketUpdate {
   fileScope?: string[];
   /** 1, 2, 3, 5, 8 or 13; null clears the estimate. */
   storyPoints?: number | null;
+  /** Bug or spike; null clears it. */
+  workType?: WorkType | null;
   scopeRequest?: string[];
   needsHuman?: string | null;
   status?: TicketStatus;

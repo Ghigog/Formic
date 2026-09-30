@@ -860,6 +860,7 @@ export class MemoryRepository implements Repository {
     const card = s.cards.get(ticketId);
     if (!card) return;
 
+    if (update.workType !== undefined) card.workType = update.workType;
     if (update.status !== undefined && update.status !== card.status) {
       card.updatedAt = new Date().toISOString();
       if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
