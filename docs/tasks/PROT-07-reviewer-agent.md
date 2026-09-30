@@ -77,9 +77,14 @@ restores the PRD's behaviour, in one place, as a deliberate choice.
   resolves it: the base is merged into the branch with its conflicts left
   in, the agent resolves them, and the result is pushed as a merge commit
   (in a sandbox, or in GitHub Actions for a CLI agent, where Formic records
-  the merge itself). A resolution that leaves markers, strays outside the
-  ticket's scope beyond what the base brought, or keeps coming back past the
-  review ceiling parks the card as blocked.
+  the merge itself). Bringing the base in is retried before it is given up
+  on, and a base that will not come into the sandbox at all is brought in by
+  GitHub instead — the agent's approval carries across it, so the card keeps
+  moving without anyone being asked. A resolution that leaves markers,
+  strays outside the ticket's scope beyond what the base brought, or keeps
+  coming back past the review ceiling parks the card as blocked, and a card
+  parked for a conflict neither Formic nor GitHub could shift says what each
+  of them said.
 - Idempotency is keyed on `(pull request, head sha, check)` rather than the
   delivery id, so a redelivery under a new id is still the same result. A
   result about a commit that is no longer the head is dropped, which is what
@@ -89,4 +94,8 @@ restores the PRD's behaviour, in one place, as a deliberate choice.
   reactions are serialized per ticket so a commit finishing four checks does
   not open four sandboxes.
 - After the ceiling the card is parked in `blocked` with the failing check
-  named, in the column it stalled in.
+  named, in the column it stalled in. When that check fails on the very
+  commit the reviewer approved, the reason says so, because the person is
+  being asked to decide which of the two is wrong — the check or the change
+  — and only they can: Formic does not merge red CI, whoever vouched for the
+  commit.

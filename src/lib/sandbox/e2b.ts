@@ -11,6 +11,7 @@ import {
   type SpawnOptions,
 } from "./types";
 import { shellQuote } from "./local";
+import { commandFailure } from "./workspace";
 import { authenticatedCloneUrl, requireCredential } from "@/lib/secrets/env";
 import { redact } from "@/lib/secrets/redact";
 
@@ -40,6 +41,9 @@ type E2BSandbox = {
   kill(): Promise<unknown>;
   setTimeout(ms: number): Promise<unknown>;
 };
+
+/** How much of each stream is kept, in case the exit arrives without it. */
+const STREAM_TAIL_LINES = 8;
 
 class E2BSandboxHandle implements SandboxHandle {
   readonly provider = "e2b";
@@ -73,12 +77,22 @@ class E2BSandboxHandle implements SandboxHandle {
     }
     this.current = "running";
 
+    // The last of each stream is kept: envd reports a non-zero exit as an
+    // error of its own and leaves what the command printed in the stream, so
+    // without this the reason on the board is an exit code and nothing else.
+    const tail: { stdout: string[]; stderr: string[] } = { stdout: [], stderr: [] };
+    const keep = (stream: "stdout" | "stderr", line: string) => {
+      tail[stream].push(line);
+      if (tail[stream].length > STREAM_TAIL_LINES) tail[stream].shift();
+    };
+
     const emit = (stream: "stdout" | "stderr", data: string) => {
       for (const line of redact(data).split("\n")) {
         if (line.length === 0) continue;
         if (stream === "stdout") options.onStdout?.(line);
         else options.onStderr?.(line);
         this.onLog?.(stream, line);
+        keep(stream, line);
       }
     };
 
@@ -102,11 +116,13 @@ class E2BSandboxHandle implements SandboxHandle {
       this.current = "failed";
       const message = redact(e instanceof Error ? e.message : String(e));
       // E2B raises on a non-zero exit as well as on a genuine timeout, so the
-      // distinction is recovered from the message rather than assumed.
+      // distinction is recovered from the message rather than assumed. What
+      // the command printed is kept with it: "exit status 128" is an exit
+      // code, not a reason anyone can act on.
       return {
         exitCode: 1,
         stdout: "",
-        stderr: message,
+        stderr: commandFailure(message, tail),
         timedOut: /timeout/i.test(message),
       };
     }

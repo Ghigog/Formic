@@ -2,11 +2,33 @@ import { describe, expect, it } from "vitest";
 
 import {
   MemoryWorkspace,
+  commandFailure,
   guidedWorkspace,
   safeRelativePath,
   scopedWorkspace,
 } from "./workspace";
 import { ScopeError } from "@/lib/domain/scope";
+
+describe("commandFailure", () => {
+  it("keeps what the command printed, not only how it exited", () => {
+    expect(
+      commandFailure("exit status 128", {
+        stderr: ["fatal: could not read Username for 'https://github.com'", ""],
+      }),
+    ).toBe("exit status 128: fatal: could not read Username for 'https://github.com'");
+  });
+
+  it("does not say the same thing twice when the output already has it", () => {
+    expect(commandFailure("Permission denied", { stdout: ["Permission denied"] })).toBe(
+      "Permission denied",
+    );
+  });
+
+  it("falls back to the error when the command printed nothing at all", () => {
+    expect(commandFailure("exit status 128")).toBe("exit status 128");
+    expect(commandFailure("  ")).toBe("It failed without saying why.");
+  });
+});
 
 describe("safeRelativePath", () => {
   it("accepts an ordinary relative path", () => {

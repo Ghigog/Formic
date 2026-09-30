@@ -28,7 +28,7 @@ import {
   type Workspace,
   scopedWorkspace,
 } from "@/lib/sandbox/workspace";
-import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
+import { MockVcsClient, type VcsClient, resetVcs, setVcs } from "@/lib/vcs";
 import { applyCardAction } from "@/lib/agents/card-actions";
 import { publish } from "@/lib/events/bus";
 import { noteTexts } from "./notes";
@@ -410,6 +410,35 @@ describe("the Reviewer Agent pipeline", () => {
     return pull;
   }
 
+  /**
+   * A checkout in a sandbox where git can be told to fail, so the merge path
+   * that needs a real one is reachable. It hands back the raw workspaces it
+   * made, so a test can count the attempts made inside them.
+   */
+  function sandboxCheckouts(fail: (command: string) => boolean): MemoryWorkspace[] {
+    const raws: MemoryWorkspace[] = [];
+    setCheckoutFactory(async (request) => {
+      const raw = new MemoryWorkspace({}, (command) =>
+        fail(command)
+          ? {
+              exitCode: 128,
+              stdout: "",
+              stderr: "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+              timedOut: false,
+            }
+          : { exitCode: 0, stdout: "", stderr: "", timedOut: false },
+      );
+      raws.push(raw);
+      return {
+        workspace: scopedWorkspace(raw, request.ticket.fileScope),
+        raw,
+        sandboxId: "e2b_test",
+        async dispose() {},
+      };
+    });
+    return raws;
+  }
+
   it("has the Reviewer Agent resolve a conflicted pull request instead of parking it", async () => {
     const reviewer = new StubReviewer();
     useAgents(new StubCoder(writesInScope()), reviewer);
@@ -472,6 +501,63 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.blockedReason).toContain(`#${pull.number} conflicts with formic/integration`);
   });
 
+  it("brings the base in through GitHub when the sandbox cannot fetch it", async () => {
+    const reviewer = new StubReviewer();
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+    // The mock's pull request is a live object it moves the head of, so the
+    // head the review approved is read out before anything can move it.
+    const approved = pull.headSha;
+    await repository().updateTicket(ticket.id, { reviewedSha: approved });
+    // A sandbox that cannot reach GitHub: the fetch fails, and says why.
+    const raws = sandboxCheckouts((command) => command.includes("refs/formic/base"));
+
+    await reviewPullRequest(PROJECT, pull.number, approved);
+    // CI on the head GitHub made merges it, with nobody in the loop.
+    await until(
+      async () => (await repository().ticketDetail(ticket.id))!.status === "merged",
+      "the card to merge on its own",
+    );
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    // Nobody was handed a conflict nobody had looked at.
+    expect(reviewer.reviews.filter((r) => (r.conflicts?.length ?? 0) > 0)).toHaveLength(0);
+    // It went at the fetch more than once before going around the sandbox.
+    const tries = raws[0]!.commands.filter((c) => c.includes("refs/formic/base"));
+    expect(tries.length).toBeGreaterThan(1);
+    // GitHub brought the base in, and the approval carried across it.
+    expect(after.reviewedSha).not.toBe(approved);
+    const client: VcsClient = new MockVcsClient(REPO);
+    expect(await client.bringsInBase(approved, after.reviewedSha!, "formic/integration")).toBe(true);
+  });
+
+  it("parks a conflict it could not reach, saying what each side said", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+    MockVcsClient.refuseBaseUpdate(pull.number, "Branch cannot be updated. The head branch is behind.");
+    sandboxCheckouts(() => true);
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("in_review");
+    expect(after.blockedReason).toContain("could not bring the base in");
+    // The sandbox's own words reach the card, not just its exit code, and so
+    // does GitHub's: they are the two halves of why nobody could fix it.
+    expect(after.blockedReason).toContain("git fetch exited 128: fatal: could not read Username");
+    expect(after.blockedReason).toContain("The head branch is behind");
+    // And what a person can do about it.
+    expect(after.blockedReason).toContain('Say "resume"');
+    // A plain "resume" needs no agent to act on it, and lands the card back in
+    // the column whose agent re-runs — which is what clears the ceiling too.
+    expect(after.blockedReason).toContain("Reviewer Agent tries again");
+  });
+
   it("sends the ticket back when the Reviewer Agent says the conflict needs the work redone", async () => {
     const reviewer = new StubReviewer(async () => "Both sides rewrote the same function.");
     useAgents(new StubCoder(writesInScope()), reviewer);
@@ -505,6 +591,30 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.status).toBe("blocked");
     expect(after.stalledIn).toBe("in_review");
     expect(after.blockedReason).toContain("ci / test");
+    expect(after.blockedReason).toContain("needs a human");
+  });
+
+  it("says the failing commit was approved when a check fails on it at the ceiling", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+    // The reviewer approved this head, CI went red on exactly it, and the
+    // ceiling is reached before another review can be spent on it.
+    await repository().updateTicket(ticket.id, { attempts: MAX_REVIEWS, reviewedSha: pull.headSha });
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.stalledIn).toBe("in_review");
+    // Not "a check is failing": which check, on an approved commit, and what
+    // the person is being asked to decide.
+    expect(after.blockedReason).toContain("the commit the Reviewer Agent approved");
+    expect(after.blockedReason).toContain("ci / test");
+    expect(after.blockedReason).toContain("Re-run ci / test on GitHub");
+    // The cheap way out on the board is named too, since a plain "resume"
+    // lands the card back in In Review, which gives the reviews a fresh count.
+    expect(after.blockedReason).toContain('say "resume"');
     expect(after.blockedReason).toContain("needs a human");
   });
 
