@@ -81,11 +81,17 @@ function pending(checks: CheckSummary[]): CheckSummary[] {
 /**
  * The entry point every CI signal funnels into. Idempotency is the caller's
  * (see ./deliveries.ts): by the time this runs, the event is known to be new.
+ *
+ * `startReview: false` is the sweep's ask rather than a report's: finish what
+ * is already decided — an approval to carry across a base GitHub brought in,
+ * a green head to merge — and begin nothing. A review begun from a sweep
+ * would spend an attempt of the ticket's review ceiling every half-minute.
  */
 export async function reviewPullRequest(
   projectId: string,
   prNumber: number,
   headSha: string,
+  options: { startReview?: boolean } = {},
 ): Promise<void> {
   const repo = repository();
   const ticket = await repo.ticketByPrNumber(projectId, prNumber);
@@ -95,7 +101,7 @@ export async function reviewPullRequest(
   if (!ticket) return;
   if (ticket.status === "merged") return;
 
-  await inTicketLane(ticket.id, () => react(projectId, ticket.id, prNumber, headSha));
+  await inTicketLane(ticket.id, () => react(projectId, ticket.id, prNumber, headSha, options));
 }
 
 /**
@@ -109,7 +115,12 @@ async function react(
   ticketId: string,
   prNumber: number,
   headSha: string,
+  options: { startReview?: boolean } = {},
 ): Promise<void> {
+  // Only a report starts a review or announces a status change. The sweep
+  // runs over every card in In Review every half-minute, and a tick that
+  // found nothing new should invent neither a review nor a board event.
+  const startReview = options.startReview ?? true;
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket || ticket.status === "merged") return;
@@ -151,28 +162,33 @@ async function react(
   const red = failing(checks);
 
   if (checks.length === 0 || pending(checks).length > 0) {
-    await publish(projectId, {
-      type: "ci.status",
-      ticketId: ticket.id,
-      prNumber,
-      state: "pending",
-      checkName: pending(checks)[0]?.name ?? null,
-    });
+    if (startReview) {
+      await publish(projectId, {
+        type: "ci.status",
+        ticketId: ticket.id,
+        prNumber,
+        state: "pending",
+        checkName: pending(checks)[0]?.name ?? null,
+      });
+    }
     // The review reads the diff while CI runs, rather than after it, and
     // the merge waits for both. Once it has approved this head, or once a
     // check has already failed, the rest of CI is worth waiting for.
     if (ticket.runnerJob || reviewedSha === headSha || red.length > 0) return;
+    if (!startReview) return;
     await reviewTicket(projectId, ticket, pull, [], { ciRunning: true });
     return;
   }
 
-  await publish(projectId, {
-    type: "ci.status",
-    ticketId: ticket.id,
-    prNumber,
-    state: red.length === 0 ? "passing" : "failing",
-    checkName: red[0]?.name ?? null,
-  });
+  if (startReview) {
+    await publish(projectId, {
+      type: "ci.status",
+      ticketId: ticket.id,
+      prNumber,
+      state: red.length === 0 ? "passing" : "failing",
+      checkName: red[0]?.name ?? null,
+    });
+  }
 
   // A reviewer is already on this pull request in GitHub Actions. More
   // reports about the same head are not a reason to start another.
@@ -183,6 +199,7 @@ async function react(
     return;
   }
 
+  if (!startReview) return;
   await reviewTicket(projectId, ticket, pull, red);
 }
 
@@ -313,7 +330,22 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
       continue;
     }
     const stuck = whyStuck(ticket.key, pull);
-    if (stuck) await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
+    if (stuck) {
+      await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
+      continue;
+    }
+
+    // A card nothing else is driving is why the sweep looks at all. GitHub
+    // brings the base in by moving the head, and the report about that head is
+    // what carries an approval across it — but a `synchronize` is not an event
+    // this board acts on, and a head whose checks deliver nothing sends
+    // nothing either. Without this, a change the reviewer vouched for, with
+    // green CI, waits on a report that is never coming. Finishing that is the
+    // sweep's job; starting a review is not, and a report is what does it.
+    launch(
+      () => reviewPullRequest(projectId, pull.number, pull.headSha, { startReview: false }),
+      `the sweep of ${ticket.key}'s pull request`,
+    );
   }
 }
 
