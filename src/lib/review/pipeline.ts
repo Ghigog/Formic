@@ -654,9 +654,8 @@ async function releaseDependents(
 
 /**
  * PROT-08. Once every ticket under an Epic has merged, the Epic is done: it
- * moves to the top of Done on its own, and the PM Agent writes its showcase
- * if it has none yet. Saved before the showcase runs, so an Epic whose
- * showcase fails still leaves To Do.
+ * moves to the top of Done on its own. Its showcase is written only when
+ * someone asks for it (startShowcase), so no agent runs here.
  */
 export async function completeEpic(
   projectId: string,
@@ -691,8 +690,18 @@ export async function completeEpic(
     stage: card?.stage ?? 8,
     blockedReason: null,
   });
+}
 
-  if (detail.showcase) return;
+/**
+ * Starts the PM Agent on an Epic's showcase. Only ever on request: finishing
+ * an Epic spends nothing. The caller has checked the Epic is done, has no
+ * showcase and has no PM run active.
+ */
+export async function startShowcase(projectId: string, epicId: string): Promise<void> {
+  const repo = repository();
+  const detail = await repo.epicDetail(epicId);
+  if (!detail) return;
+  const siblings = await repo.ticketsForEpic(epicId);
 
   const prd = prdSchema.safeParse(detail.prd);
   const run = startRun(projectId, "pm", {
