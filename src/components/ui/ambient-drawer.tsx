@@ -94,7 +94,7 @@ export function AmbientDrawer({
   const provider = stats.provider.toUpperCase();
 
   return (
-    <footer className="bg-anthracite text-log-text shrink-0">
+    <footer data-colony-mask className="bg-anthracite text-log-text shrink-0">
       {open && (
         <div className="border-drawer-line max-h-56 overflow-y-auto border-b px-6 py-3">
           {stats.logLines.length === 0 ? (

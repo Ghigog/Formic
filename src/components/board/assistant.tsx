@@ -359,6 +359,7 @@ function Shade({
       aria-hidden={!a.open}
       inert={!a.open}
       data-open={a.open}
+      data-colony-mask={a.open ? "" : undefined}
       className={cn(
         "assistant-shade border-line bg-card z-50 flex flex-col rounded-b-2xl border border-t-0 shadow-[0_18px_40px_-12px_rgba(28,25,23,0.28)]",
         className,

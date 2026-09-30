@@ -195,6 +195,37 @@ export function heldByDrag(el: Element): boolean {
   return el.closest<HTMLElement>("[data-rfd-draggable-id]")?.style.position === "fixed";
 }
 
+export interface ClipRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** The parts of `clip` no mask covers, as disjoint rects: where an ant may be drawn. */
+export function visibleRects(clip: ClipRect, masks: ClipRect[]): ClipRect[] {
+  let pieces = [clip];
+  for (const m of masks) {
+    const next: ClipRect[] = [];
+    for (const p of pieces) {
+      const l = Math.max(p.left, m.left);
+      const t = Math.max(p.top, m.top);
+      const r = Math.min(p.right, m.right);
+      const b = Math.min(p.bottom, m.bottom);
+      if (l >= r || t >= b) {
+        next.push(p);
+        continue;
+      }
+      if (t > p.top) next.push({ left: p.left, top: p.top, right: p.right, bottom: t });
+      if (b < p.bottom) next.push({ left: p.left, top: b, right: p.right, bottom: p.bottom });
+      if (l > p.left) next.push({ left: p.left, top: t, right: l, bottom: b });
+      if (r < p.right) next.push({ left: r, top: t, right: p.right, bottom: b });
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
 export function centerOf(el: Element): [number, number, DOMRect] {
   const r = el.getBoundingClientRect();
   return [r.left + r.width / 2, r.top + r.height / 2, r];
@@ -1153,6 +1184,7 @@ export class ColonyFx {
         }
       }
     }
+    const masks = Array.from(document.querySelectorAll("[data-colony-mask]"), (m) => m.getBoundingClientRect());
     for (const [id, c] of this.crewMap) {
       const w = want.get(id);
       const d: CrewPhase = w ? w.phase : "leave";
@@ -1161,7 +1193,10 @@ export class ColonyFx {
       const r = rr && rr.width > 0 ? rr : null;
       if (w) c.sp = w.sp;
       if (d !== c.phase) this.transition(c, d, r);
-      for (const ant of c.ants) this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx);
+      const col = el?.closest("[data-colony-clip]")?.getBoundingClientRect();
+      const clip = col ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+      const visible = visibleRects(clip, masks);
+      for (const ant of c.ants) this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx, visible);
       c.ants = c.ants.filter((a) => !a.gone);
       const pg = el?.querySelector<SVGElement>("[data-sp] polygon");
       if (pg) pg.style.fill = c.phase === "work" && c.ants.some((a) => a.carry) ? "transparent" : "";
@@ -1178,6 +1213,7 @@ export class ColonyFx {
     nx: number,
     ny: number,
     ctx: CanvasRenderingContext2D,
+    visible: ClipRect[],
   ) {
     const follow = () => {
       if (r) {
@@ -1345,7 +1381,12 @@ export class ColonyFx {
         break;
     }
     if (!this.world.covered) {
+      ctx.save();
+      ctx.beginPath();
+      for (const v of visible) ctx.rect(v.left, v.top, v.right - v.left, v.bottom - v.top);
+      ctx.clip();
       this.drawAnt(ctx, ant.x, ant.y, ant.a, ant.ph, ant.carry ? { sp: c.sp } : null, sc);
+      ctx.restore();
     }
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ColonyFx, heldByDrag } from "./fx";
+import { ColonyFx, heldByDrag, visibleRects } from "./fx";
 import { SoundEngine } from "./sound";
 
 /**
@@ -166,5 +166,28 @@ describe("ColonyFx.antAt and squashAnt", () => {
     expect(onClick).toHaveBeenCalledOnce();
     document.body.removeEventListener("click", onClick);
     unmount();
+  });
+});
+
+describe("visibleRects", () => {
+  const col = { left: 0, top: 0, right: 100, bottom: 100 };
+  const area = (rs: { left: number; top: number; right: number; bottom: number }[]) =>
+    rs.reduce((a, r) => a + (r.right - r.left) * (r.bottom - r.top), 0);
+
+  it("is the column itself when nothing masks it", () => {
+    expect(visibleRects(col, [])).toEqual([col]);
+    expect(visibleRects(col, [{ left: 200, top: 0, right: 300, bottom: 50 }])).toEqual([col]);
+  });
+
+  it("leaves nothing when a mask covers the column", () => {
+    expect(visibleRects(col, [{ left: -10, top: -10, right: 110, bottom: 110 }])).toEqual([]);
+  });
+
+  it("cuts a mask out of the column, including one that overlaps another", () => {
+    const a = { left: 0, top: 60, right: 100, bottom: 200 };
+    const b = { left: 50, top: 40, right: 80, bottom: 70 };
+    const out = visibleRects(col, [a, b]);
+    expect(area(out)).toBe(100 * 60 - 30 * 20);
+    for (const r of out) expect(r.bottom <= 60 || r.right <= 50 || r.left >= 80 || r.top >= 70).toBe(true);
   });
 });
