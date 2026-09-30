@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { TicketDrawer } from "./ticket-drawer";
 import { PlanSteps } from "@/components/ui/plan-steps";
 import { makeCard } from "@/test/cards";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { TicketView } from "@/lib/domain/ticket-view";
 import type { AttachmentSummary } from "@/lib/domain/entities";
+import { setViewportMatches } from "@/test/viewport";
 
 const card = makeCard({
   id: "t-1",
@@ -66,6 +67,29 @@ function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
 }
 
 describe("TicketDrawer", () => {
+  it("on mobile shows one full-width pane under the tabs, and switching swaps it", async () => {
+    setViewportMatches(false);
+    open();
+    const ticket = await screen.findByRole("region", { name: "Ticket" });
+    expect(screen.queryByRole("region", { name: "Agent" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+    // The pane is the only child of the content area, so it takes the whole row.
+    expect(ticket.parentElement?.children).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent" }));
+    const agent = await screen.findByRole("region", { name: "Agent" });
+    expect(screen.queryByRole("region", { name: "Ticket" })).not.toBeInTheDocument();
+    expect(agent.parentElement?.children).toHaveLength(1);
+  });
+
+  it("on desktop keeps both panes side by side with a divider", async () => {
+    setViewportMatches(true);
+    open();
+    expect(await screen.findByRole("region", { name: "Ticket" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Agent" })).toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: "Resize the panes" })).toBeInTheDocument();
+  });
+
   it("shows the ticket as it was written, with its story points", async () => {
     open();
     const ticket = await screen.findByRole("region", { name: "Ticket" });
@@ -78,6 +102,7 @@ describe("TicketDrawer", () => {
   });
 
   it("shows the agent's plan and thinking, and follows them live", async () => {
+    setViewportMatches(true);
     const { send } = open();
     const agent = await screen.findByRole("region", { name: "Agent" });
     const plan = within(agent).getByRole("list", { name: "Agent's plan" });

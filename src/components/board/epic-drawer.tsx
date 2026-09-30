@@ -285,9 +285,10 @@ export function EpicDrawer({
         </div>
 
         <SideBySide
+          active={tab === "prd" ? "first" : "second"}
           storageKey="epic"
           first={
-            <div className={cn("min-h-0 overflow-y-auto", tab === "prd" ? "block" : "hidden lg:block")}>
+            <div className="min-h-0 overflow-y-auto">
               {detail?.showcase && (
                 <section aria-label="Showcase" className="border-line bg-jade-wash border-b p-4">
                   <span className="text-jade-chip-text font-mono text-[10px] tracking-[0.12em]">SHOWCASE · PM AGENT</span>
@@ -309,7 +310,7 @@ export function EpicDrawer({
             </div>
           }
           second={
-            <div className={cn("bg-sunken min-h-0 flex-col", tab === "dag" ? "flex" : "hidden lg:flex")}>
+            <div className="bg-sunken flex min-h-0 flex-col">
               <WithChat
                 storageKey="epic"
                 chat={
