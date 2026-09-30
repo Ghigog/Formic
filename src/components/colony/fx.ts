@@ -195,6 +195,37 @@ export function heldByDrag(el: Element): boolean {
   return el.closest<HTMLElement>("[data-rfd-draggable-id]")?.style.position === "fixed";
 }
 
+export interface ClipRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** The parts of `clip` no mask covers, as disjoint rects: where an ant may be drawn. */
+export function visibleRects(clip: ClipRect, masks: ClipRect[]): ClipRect[] {
+  let pieces = [clip];
+  for (const m of masks) {
+    const next: ClipRect[] = [];
+    for (const p of pieces) {
+      const l = Math.max(p.left, m.left);
+      const t = Math.max(p.top, m.top);
+      const r = Math.min(p.right, m.right);
+      const b = Math.min(p.bottom, m.bottom);
+      if (l >= r || t >= b) {
+        next.push(p);
+        continue;
+      }
+      if (t > p.top) next.push({ left: p.left, top: p.top, right: p.right, bottom: t });
+      if (b < p.bottom) next.push({ left: p.left, top: b, right: p.right, bottom: p.bottom });
+      if (l > p.left) next.push({ left: p.left, top: t, right: l, bottom: b });
+      if (r < p.right) next.push({ left: r, top: t, right: p.right, bottom: b });
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
 export function centerOf(el: Element): [number, number, DOMRect] {
   const r = el.getBoundingClientRect();
   return [r.left + r.width / 2, r.top + r.height / 2, r];
@@ -462,9 +493,32 @@ export class ColonyFx {
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+    // The canvas stays pointer-transparent so cards remain clickable; ants are
+    // hit-tested from the window instead, before anything underneath sees it.
+    const onDown = (e: PointerEvent) => {
+      const hit = this.antAt(e.clientX, e.clientY);
+      if (!hit) return;
+      e.stopPropagation();
+      e.preventDefault();
+      // The click that follows would open the card underneath.
+      const swallow = (c: Event) => {
+        c.stopPropagation();
+        c.preventDefault();
+        done();
+      };
+      const done = () => {
+        window.removeEventListener("click", swallow, true);
+        clearTimeout(timer);
+      };
+      const timer = setTimeout(done, 600);
+      window.addEventListener("click", swallow, true);
+      this.squashAnt(hit);
+    };
+    window.addEventListener("pointerdown", onDown, true);
     return () => {
       cancelAnimationFrame(this.raf);
       window.removeEventListener("resize", resize);
+      window.removeEventListener("pointerdown", onDown, true);
       theme.disconnect();
       this.canvas = null;
       this.topCanvas = null;
@@ -623,6 +677,85 @@ export class ColonyFx {
       t: 0,
       onSquash,
       blobs: Array.from({ length: blobs }, () => ({
+        dx: (Math.random() - 0.5) * 26,
+        dy: (Math.random() - 0.5) * 9,
+        r: 0.8 + Math.random() * 1.8,
+      })),
+    });
+  }
+
+  /** The topmost drawn ant within reach of the pointer, if any. */
+  antAt(x: number, y: number): Ant | Carrier | null {
+    if (!this.antsOn() || this.world.covered) return null;
+    const reach = 10;
+    const near = (a: { x: number; y: number }) => Math.hypot(a.x - x, a.y - y) <= reach;
+    // Drawn last is on top: carriers over crews, later crews over earlier.
+    for (let i = this.carriersList.length - 1; i >= 0; i--) {
+      const k = this.carriersList[i]!;
+      if (k.wait <= 0 && near(k)) return k;
+    }
+    const crews = [...this.crewMap.values()];
+    for (let i = crews.length - 1; i >= 0; i--) {
+      const ants = crews[i]!.ants;
+      for (let j = ants.length - 1; j >= 0; j--) {
+        const a = ants[j]!;
+        if (a.mode === "wait" || a.mode === "buried" || a.mode === "dig" || a.hidden) continue;
+        if (near(a)) return a;
+      }
+    }
+    return null;
+  }
+
+  /** An ant is squashed where it stands; its crew sends a replacement from the nest. */
+  squashAnt(ant: Ant | Carrier) {
+    const { x, y } = ant;
+    const k = this.carriersList.indexOf(ant as Carrier);
+    if (k >= 0) {
+      // Not replaced: it was already on its way home to the nest.
+      this.carriersList.splice(k, 1);
+    } else {
+      for (const c of this.crewMap.values()) {
+        const i = c.ants.indexOf(ant as Ant);
+        if (i < 0) continue;
+        c.ants.splice(i, 1);
+        // The wait logic sends it out of the nest, and drops it if the crew is leaving.
+        const crewAnt = ant as Ant;
+        const [nx, ny] = this.nestPoint();
+        c.ants.push({
+          x: nx,
+          y: ny,
+          a: Math.PI,
+          ph: Math.random() * 6,
+          mode: "wait",
+          wait: 0.4,
+          idx: crewAnt.idx,
+          leader: crewAnt.leader,
+          t: Math.random() * 600,
+          sp: 16 + Math.random() * 12,
+        });
+        if (c.phase === "leave" || c.phase === "buried") c.ants.pop();
+        break;
+      }
+    }
+    this.sfx("squash");
+    this.shake(5);
+    this.ring(x, y, "var(--crimson)", 56, 0.4, 3);
+    this.ring(x, y, "var(--text)", 26, 0.25, 1.5);
+    this.burst(x, y, [this.world.bugHex, "var(--crimson)", "var(--text)"], 16, {
+      speed: 200,
+      g: 600,
+      size: 2.2,
+      life: 0.6,
+      shape: "dot",
+    });
+    // Only the stain: no hop, the ant is already on screen.
+    this.splats.push({
+      x,
+      y,
+      t: 0.42,
+      hit: true,
+      onSquash: () => {},
+      blobs: Array.from({ length: 9 }, () => ({
         dx: (Math.random() - 0.5) * 26,
         dy: (Math.random() - 0.5) * 9,
         r: 0.8 + Math.random() * 1.8,
@@ -1051,6 +1184,7 @@ export class ColonyFx {
         }
       }
     }
+    const masks = Array.from(document.querySelectorAll("[data-colony-mask]"), (m) => m.getBoundingClientRect());
     for (const [id, c] of this.crewMap) {
       const w = want.get(id);
       const d: CrewPhase = w ? w.phase : "leave";
@@ -1059,7 +1193,10 @@ export class ColonyFx {
       const r = rr && rr.width > 0 ? rr : null;
       if (w) c.sp = w.sp;
       if (d !== c.phase) this.transition(c, d, r);
-      for (const ant of c.ants) this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx);
+      const col = el?.closest("[data-colony-clip]")?.getBoundingClientRect();
+      const clip = col ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+      const visible = visibleRects(clip, masks);
+      for (const ant of c.ants) this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx, visible);
       c.ants = c.ants.filter((a) => !a.gone);
       const pg = el?.querySelector<SVGElement>("[data-sp] polygon");
       if (pg) pg.style.fill = c.phase === "work" && c.ants.some((a) => a.carry) ? "transparent" : "";
@@ -1076,6 +1213,7 @@ export class ColonyFx {
     nx: number,
     ny: number,
     ctx: CanvasRenderingContext2D,
+    visible: ClipRect[],
   ) {
     const follow = () => {
       if (r) {
@@ -1243,7 +1381,12 @@ export class ColonyFx {
         break;
     }
     if (!this.world.covered) {
+      ctx.save();
+      ctx.beginPath();
+      for (const v of visible) ctx.rect(v.left, v.top, v.right - v.left, v.bottom - v.top);
+      ctx.clip();
       this.drawAnt(ctx, ant.x, ant.y, ant.a, ant.ph, ant.carry ? { sp: c.sp } : null, sc);
+      ctx.restore();
     }
   }
 

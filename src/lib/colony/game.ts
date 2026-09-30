@@ -73,16 +73,9 @@ export function nextUnlock(level: number): { level: number; labels: string[] } |
   return { level: lv, labels: unlocksAt(lv) };
 }
 
-const BUG_WORDS = /\b(bug|bugs|fix|fixes|broken|crash|crashes|flicker|flickers|error|errors|wrong|fail|fails)\b/i;
-
-/** A request that reads as a bug report. Words, not a field: the domain has no type. */
-export function isBugText(text: string): boolean {
-  return BUG_WORDS.test(text);
-}
-
 const SPIKE_WORDS = /\b(spike|investigate|investigation)\b/i;
 
-/** A request that reads as a spike: research to write up, not a change. Words, not a field. */
+/** Whether a task title reads as a spike. Only picks the coder's brief; it does not tag a card. */
 export function isSpikeText(text: string): boolean {
   return SPIKE_WORDS.test(text);
 }
@@ -92,13 +85,18 @@ function isEpicTicket(card: BoardCard): boolean {
   return card.kind === "ticket" && Boolean(card.epicId);
 }
 
+/** A ticket on its own (no Epic of its own to belong to) is a detached ticket of a holder Epic. */
+function isOwnCard(card: BoardCard): boolean {
+  return !isEpicTicket(card) || Boolean(card.detached);
+}
+
 /**
- * A card that reports a bug: its own title says so. Tickets an architect wrote
- * for a bug epic are bugs too (see isBug) but do not report another one.
- * This is what costs points.
+ * A card the owner marked as a bug, and that reports it itself. Tickets an
+ * architect wrote for a bug epic are bugs too (see isBug) but do not report
+ * another one. This is what costs points.
  */
 export function isBugReport(card: BoardCard): boolean {
-  return !isEpicTicket(card) && isBugText(card.title);
+  return isOwnCard(card) && card.workType === "bug";
 }
 
 /**
@@ -106,14 +104,14 @@ export function isBugReport(card: BoardCard): boolean {
  * ticket of a bug Epic.
  */
 export function isBug(card: BoardCard, epics: ReadonlyMap<string, BoardCard>): boolean {
-  if (!isEpicTicket(card)) return isBugText(card.title);
+  if (isOwnCard(card)) return card.workType === "bug";
   const epic = epics.get(card.epicId!);
-  return epic ? isBugText(epic.title) : false;
+  return epic ? epic.workType === "bug" : false;
 }
 
-/** A card that is a spike. Like a bug report, only its own title counts: tickets under an Epic do not. */
+/** A card the owner marked as a spike. Never costs points. */
 export function isSpike(card: BoardCard): boolean {
-  return !isEpicTicket(card) && isSpikeText(card.title);
+  return card.workType === "spike";
 }
 
 /**
