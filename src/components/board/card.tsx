@@ -75,6 +75,8 @@ export interface CardEnv {
   epics: ReadonlyMap<string, BoardCard>;
   /** Where a card's arrow sends it, or null when it has no arrow. */
   nextFor: (card: BoardCard, column: ColumnId) => ColumnId | null;
+  /** Where a card's left arrow sends it back to, or null when it has none. */
+  returnFor?: (card: BoardCard, column: ColumnId) => ColumnId | null;
   onAdvance: (card: BoardCard, to: ColumnId) => void;
   /** The running ticket a queued one is waiting on, or null when none is. */
   queuedBehind?: (card: BoardCard) => BoardCard | null;
@@ -201,6 +203,34 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path
           d="M2.5 6h7M7 3.5 9.5 6 7 8.5"
+          stroke="var(--text-muted)"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
+/** The arrow that sends a card back a column, on the left of its head. */
+function ReturnButton({ card, column }: { card: BoardCard; column: ColumnId }) {
+  const env = useContext(CardEnvContext);
+  const to = env?.returnFor?.(card, column) ?? null;
+  if (!env || !to) return null;
+  return (
+    <button
+      type="button"
+      aria-label={`Return ${card.key} to ${COLUMN_LABELS[to]}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        env.onAdvance(card, to);
+      }}
+      className="hover:bg-column -my-0.5 -ml-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path
+          d="M9.5 6h-7M5 3.5 2.5 6 5 8.5"
           stroke="var(--text-muted)"
           strokeWidth="1.4"
           strokeLinecap="round"
@@ -396,6 +426,7 @@ function TicketHead({
 }) {
   return (
     <div className="flex min-h-[18px] items-center gap-1.5">
+      <ReturnButton card={card} column={column} />
       {card.status === "queued" && <QueueTimer card={card} />}
       {isBug(card) && <BugBadge squashed={isSquashed(card)} />}
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
