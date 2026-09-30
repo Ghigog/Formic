@@ -30,6 +30,7 @@ import { runningConflict } from "@/lib/domain/queue";
 import { placeDrop } from "./placement";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
+import { ARCHIVE_DROPPABLE_ID, ArchiveDropZone } from "./archive-drop-zone";
 
 /** The next column a card can advance to with its arrow. */
 const NEXT_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
@@ -54,6 +55,8 @@ export interface BoardProps {
    * card back to where it came from.
    */
   onTransition: (t: CardTransition) => Promise<TransitionResult>;
+  /** A ticket was archived by dropping it on the archive drop zone. */
+  onArchived?: (ticketId: string) => void;
   /** Who is signed in, for the header's account menu. */
   account?: Account;
   /** The board's assistant, in the header. */
@@ -79,10 +82,13 @@ export function Board({
   onShowcase,
   onNewItem,
   onTransition,
+  onArchived,
   agents,
   account,
   assistant,
 }: BoardProps) {
+  /** The ticket last dropped on the archive zone, which does the archiving. */
+  const [dropped, setDropped] = useState<{ ticketId: string } | null>(null);
   // Empty until a drop. Seeded with the cards, it pinned every card to how it
   // first rendered, so nothing the server said about it afterwards showed.
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
@@ -168,6 +174,7 @@ export function Board({
         card,
         destination: byColumn[to],
         column: to,
+        from,
         collapsed: collapsed[to],
         index,
       });
@@ -322,6 +329,10 @@ export function Board({
       }
       const card = live.find((c) => c.id === draggableId);
       if (!card) return;
+      if (destination.droppableId === ARCHIVE_DROPPABLE_ID) {
+        if (card.kind === "ticket") setDropped({ ticketId: card.id });
+        return;
+      }
       void commit(card, destination.droppableId as ColumnId, destination.index);
     },
     [commit, live, colony],
@@ -425,6 +436,9 @@ export function Board({
         >
           {dragSnapshot ?? columnElements}
         </main>
+        {!isMobile && (
+          <ArchiveDropZone dropped={dropped} onArchived={(id) => onArchived?.(id)} />
+        )}
       </DragDropContext>
       </CardEnvContext.Provider>
     </>

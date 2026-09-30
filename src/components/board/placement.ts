@@ -119,6 +119,7 @@ export function placeDrop({
   card,
   destination,
   column,
+  from,
   collapsed,
   index,
 }: {
@@ -126,6 +127,8 @@ export function placeDrop({
   /** The destination column's cards, sorted by position. */
   destination: BoardCard[];
   column: ColumnId;
+  /** The column the card is leaving. */
+  from: ColumnId;
   collapsed: ReadonlySet<string>;
   index: number;
 }): Placement {
@@ -169,7 +172,15 @@ export function placeDrop({
   while (belowAt < flat.length && flat[belowAt]!.groupOf !== null) belowAt++;
   const topBelow = flat[belowAt]?.card ?? null;
 
-  const anchorAbove = topAbove ? others.find((c) => c.id === topAbove) : null;
+  // A ticket rejoining its epic stays attached, so its place is among the
+  // epic's children: below the group means after the last of them.
+  const rejoins = card.kind === "ticket" && !GROUPS_CHILDREN[from] && topAbove === card.epicId;
+  const lastChild = rejoins ? flat.filter((e) => e.groupOf === topAbove).pop() : undefined;
+  const anchorAbove = lastChild
+    ? lastChild.card
+    : topAbove
+      ? others.find((c) => c.id === topAbove)
+      : null;
   const position = anchorAbove
     ? after(anchorAbove.position)
     : topBelow
@@ -180,10 +191,13 @@ export function placeDrop({
 
   // Detached only means something where its epic would otherwise absorb it.
   // Anywhere else the flag is cleared, so a ticket an agent later carries
-  // into Done joins its epic's merged group there.
+  // into Done joins its epic's merged group there. A ticket coming from a
+  // column that does not group was never pulled out on purpose, so it
+  // rejoins its epic wherever it lands.
   const detached =
     card.kind === "ticket" &&
     GROUPS_CHILDREN[column] &&
+    GROUPS_CHILDREN[from] &&
     others.some((c) => c.id === card.epicId);
   return { position, detached };
 }

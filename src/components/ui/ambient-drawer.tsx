@@ -77,6 +77,7 @@ export function AmbientDrawer({
   onStopAll,
   bugsSquashed,
   nest,
+  archive,
 }: {
   stats: AmbientStats;
   onStopAll?: () => void;
@@ -84,6 +85,8 @@ export function AmbientDrawer({
   bugsSquashed?: number;
   /** The colony's nest, at the bar's end. */
   nest?: React.ReactNode;
+  /** The way into the archive, next to the terminal button. */
+  archive?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const busy = stats.activeSandboxes > 0;
@@ -171,6 +174,7 @@ export function AmbientDrawer({
           </button>
         )}
 
+        {archive}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -197,6 +201,7 @@ export function AmbientDrawer({
         <span className="text-drawer-muted font-mono text-[10px]">
           {compact(tokens)} tok
         </span>
+        {archive}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
