@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Account } from "@/components/board/account-menu";
 import { useSound } from "@/components/colony/store";
+import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
+import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
 interface KeyState {
   /** Last four characters of the saved key, or null with none saved. */
@@ -22,10 +24,13 @@ export function SettingsForm({
   account,
   installUrl,
   e2b,
+  runTimeBudget,
 }: {
   account: Account;
   installUrl: string | null;
   e2b: KeyState;
+  /** Saved run time budget; the default when omitted. */
+  runTimeBudget?: RunTimeBudgetSettings;
 }) {
   return (
     <div className="bg-cream min-h-dvh">
@@ -74,6 +79,8 @@ export function SettingsForm({
         </Section>
 
         <SoundSection />
+
+        <RunTimeBudgetSection initial={runTimeBudget} />
 
         <KeyField
           field="e2bKey"
