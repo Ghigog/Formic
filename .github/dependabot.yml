@@ -17,7 +17,12 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    # Majors are ignored below, so this is every minor and patch bump in one PR.
+    groups:
+      npm:
+        patterns:
+          - "*"
     ignore:
       # Majors break things here (TypeScript 7 and ESLint 10 both outrun
       # typescript-eslint and eslint-config-next). Upgrade them by hand.
