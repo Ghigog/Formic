@@ -1274,6 +1274,13 @@ export class PrismaRepository implements Repository {
     return rows.map(toCardChatMessage);
   }
 
+  async orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]> {
+    const rows = await prisma().assistantMessage.findMany({
+      where: { projectId, role: "assistant", status: "pending", runnerJob: null, createdAt: { lt: olderThan } },
+    });
+    return rows.map(toAssistantMessage);
+  }
+
   async auditsFor(projectId: string): Promise<AuditRecord[]> {
     const rows = await prisma().audit.findMany({
       where: { projectId },
