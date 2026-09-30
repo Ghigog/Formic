@@ -9,7 +9,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { stopEpic } from "@/lib/budget/controller";
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { MAX_NOTE, addNote } from "@/lib/coder/notes";
-import { answerScope, scopeAsked } from "@/lib/coder/scope-request";
+import { answerScope, hasKeptWork, resolveScopeRequest, scopeAsked, stillAsked } from "@/lib/coder/scope-request";
 import { repository } from "@/lib/db";
 import { fileScopeSchema, prdSchema, type BoardCard } from "@/lib/domain/entities";
 import { runningConflict } from "@/lib/domain/queue";
@@ -87,7 +87,7 @@ export const CARD_ACTIONS_GUIDE = `What you can do, besides answering:
 - close: tickets only. Put the ticket in Done without merging anything, with a one-line summary: for work the person did themselves, or work that is not needed after all. Never use it when the person asks to merge. Whatever waits on it can go ahead.
 - redo: start this column's work on the card again, doing what the person asks now (stopping any agent working it first). In Backlog it rewrites an Epic's PRD, in To Do it breaks an Epic down again, in In Progress it has the Coder Agent do what was asked, in In Review it has the Reviewer Agent review again. A ticket in To Do or Backlog has no work to redo: change the ticket with edit_ticket instead, or move it to In Progress to start it.
 - stop: stop the agent working on the card.
-- edit_ticket: tickets only. Rewrite the ticket's title, description, acceptance criteria or file scope, or add what the person reported doing or finding under Results.
+- edit_ticket: tickets only. Rewrite the ticket's title, description, acceptance criteria or file scope, or add what the person reported doing or finding under Results. Widening its file scope this way also carries the ticket on if it was blocked waiting on exactly those files.
 - widen_scope: tickets only, when the ticket is asking for files outside its file scope. With allow true, the files join its scope and it goes back to In Progress, carrying on from its kept work, as soon as nothing running uses them. With allow false, its kept work is dropped and it starts again within its scope.
 - needs_human: tickets only. Mark the ticket as work for the person, not an agent, with what they have to do; or null to hand it back to agents.
 
@@ -387,13 +387,37 @@ async function edit(
   if (action.fileScope) changed.push("file scope");
   if (changed.length === 0) return "Nothing to change.";
 
+  // A scope the ticket was blocked asking for may be granted this way rather
+  // than through widen_scope: the person said yes in whatever words, and the
+  // agent carried it out as an edit. What was asked for before this edit is
+  // what decides whether the block is over.
+  const asked = scopeAsked(ticket);
+  const fileScope = action.fileScope ?? ticket.fileScope;
+  const missing = stillAsked(ticket.scopeRequest, fileScope);
+
   await repo.updateTicket(card.id, {
     ...(action.title ? { title: action.title } : {}),
     ...(description !== ticket.description ? { description } : {}),
     ...(action.acceptanceCriteria ? { acceptanceCriteria: action.acceptanceCriteria } : {}),
     ...(action.fileScope ? { fileScope: action.fileScope } : {}),
+    // Some of what it asked for is still not covered: it stays blocked, and
+    // the request narrows to what the person has not granted yet.
+    ...(asked.length > 0 && missing.length > 0 ? { scopeRequest: missing } : {}),
   });
   await publish(projectId, { type: "card.created", cardId: card.id, kind: "ticket", epicId: card.epicId });
+
+  // The edit granted everything the ticket was blocked asking for: it goes
+  // back to In Progress and its agent starts again, the way widen_scope does.
+  if (asked.length > 0 && missing.length === 0) {
+    // Kept work waits on the ticket's branch: the run that follows picks it
+    // up from `scopeRequest`, so the request stays as widen_scope leaves it.
+    await resolveScopeRequest(projectId, ticket, hasKeptWork(ticket) ? ticket.scopeRequest : []);
+    const moved = await move(projectId, (await repository().cardById(card.id)) ?? card, "in_progress");
+    const done = moved.startsWith("Could not")
+      ? `Updated ${card.key}'s ${list(changed)}. It stays in To Do for now. ${moved.replace(/^Could not move [^:]+: /, "")}`
+      : `Updated ${card.key}'s ${list(changed)}, which covers everything it was asking for. ${moved}`;
+    return done;
+  }
   return `Updated ${card.key}'s ${list(changed)}.`;
 }
 
