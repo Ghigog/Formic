@@ -163,6 +163,7 @@ function store(): Store {
     name: "Formic",
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
+    autoMerge: true,
   };
   const s: Store = {
     project,
@@ -382,6 +383,7 @@ export class MemoryRepository implements Repository {
       name: input.repoFullName.split("/")[1] ?? input.repoFullName,
       repoFullName: input.repoFullName,
       baseBranch: input.baseBranch,
+      autoMerge: true,
     };
     s.projects.set(project.id, project);
     return project;

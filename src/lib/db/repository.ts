@@ -290,6 +290,8 @@ export interface ProjectSummary {
   name: string;
   repoFullName: string;
   baseBranch: string;
+  /** Whether Formic merges an approved pull request, or leaves it for a person. */
+  autoMerge: boolean;
 }
 
 /** Whose projects and presets a query sees. */
