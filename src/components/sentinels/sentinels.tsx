@@ -8,7 +8,7 @@ import { GRADES, GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
 import { GROUP_INK, SENTINELS, promptFor, stepsFor, type Sentinel } from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditPoint } from "@/lib/db/repository";
-import { PORTRAITS, portraitGround } from "./portraits";
+import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
 
 /** The level badge's octagon, chamfered for an 84px grade. */
@@ -29,14 +29,17 @@ function Stars({ n, size, id }: { n: number; size: number; id?: string }) {
   );
 }
 
+/**
+ * A portrait in the frame the page gives it — the frame itself lives in
+ * `portraits.ts` with the art, so the card, the report avatar and the tests
+ * all inline the same markup.
+ */
 function Portrait({ pic, className }: { pic: string; className?: string }) {
   return (
     <span
       aria-hidden
       className={cn("absolute inset-0 block", className)}
-      dangerouslySetInnerHTML={{
-        __html: `<svg viewBox="0 0 200 200" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" style="display:block">${PORTRAITS[pic] ?? ""}</svg>`,
-      }}
+      dangerouslySetInnerHTML={{ __html: portraitSvg(pic) }}
     />
   );
 }
