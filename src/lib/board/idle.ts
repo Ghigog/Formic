@@ -2,7 +2,7 @@ import "server-only";
 
 import { hasDatabase, repository } from "@/lib/db";
 import { launch, runProductAgent } from "@/lib/agents/pipeline";
-import { recoverStaleCardChats } from "@/lib/agents/recovery";
+import { recoverStaleAssistantAnswers, recoverStaleCardChats } from "@/lib/agents/recovery";
 import { prdSchema } from "@/lib/domain/entities";
 import { startQueued } from "./queue";
 
@@ -36,6 +36,7 @@ export async function sweepIdleCards(projectId: string): Promise<void> {
   // Not gated on the database: a chat answer is lost by a function being cut
   // off, which has nothing to do with where the board is stored.
   await recoverStaleCardChats(projectId);
+  await recoverStaleAssistantAnswers(projectId);
   if (hasDatabase()) await restartIdleCards(projectId);
 }
 
