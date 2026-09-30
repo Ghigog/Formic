@@ -3,6 +3,8 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isProviderId } from "@/lib/llm/providers";
 
+import { Prisma } from "@/generated/prisma/client";
+
 import { prisma } from "./client";
 import type {
   AttachmentContent,
@@ -16,6 +18,7 @@ import type {
   PresetRecord,
   ProjectSummary,
   Reroute,
+  RunTimeBudgetColumns,
   UserRecord,
   UserSecrets,
   Repository,
@@ -187,6 +190,16 @@ export class PrismaRepository implements Repository {
 
   async updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord> {
     return prisma().user.update({ where: { id: userId }, data: secrets });
+  }
+
+  async updateRunTimeBudget(userId: string, columns: RunTimeBudgetColumns): Promise<UserRecord> {
+    return prisma().user.update({
+      where: { id: userId },
+      data: {
+        ...columns,
+        runTimeBudgetPerPointMinutes: columns.runTimeBudgetPerPointMinutes ?? Prisma.DbNull,
+      },
+    });
   }
 
   async acceptTerms(userId: string, version: string): Promise<UserRecord> {
