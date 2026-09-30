@@ -112,7 +112,7 @@ describe("validateRunTimeBudgetSettings", () => {
   });
 
   it("rejects per-point values below 1", () => {
-    for (const v of [0, -3, "x"]) {
+    for (const v of [0, -3, 1.5, "x"]) {
       expect(
         validateRunTimeBudgetSettings({ mode: "PER_POINT" }, { "1": v })
           .perPointMinutes,

@@ -119,10 +119,10 @@ export function validateRunTimeBudgetSettings(
         "Story points must be whole numbers of at least 1.";
     } else if (
       entries.some(
-        ([, v]) => typeof v !== "number" || !Number.isFinite(v) || v < 1,
+        ([, v]) => typeof v !== "number" || !Number.isInteger(v) || v < 1,
       )
     ) {
-      errors.perPointMinutes = "Minutes must be at least 1.";
+      errors.perPointMinutes = "Minutes must be whole numbers of at least 1.";
     }
   }
   return errors;

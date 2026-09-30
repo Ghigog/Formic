@@ -14,6 +14,7 @@ import type {
   PresetRecord,
   ProjectSummary,
   Reroute,
+  RunTimeBudgetColumns,
   UserRecord,
   UserSecrets,
   Repository,
@@ -272,6 +273,9 @@ export class MemoryRepository implements Repository {
       sessionVersion: 0,
       fallbackSandboxSeconds: 0,
       fallbackSandboxMonth: null,
+      runTimeBudgetMode: "PER_STORY_POINT",
+      runTimeBudgetFlatMinutes: null,
+      runTimeBudgetPerPointMinutes: null,
     };
     s.users.set(user.id, user);
     return user;
@@ -281,6 +285,13 @@ export class MemoryRepository implements Repository {
     const user = store().users.get(userId);
     if (!user) throw new Error(`No user ${userId}.`);
     Object.assign(user, secrets);
+    return user;
+  }
+
+  async updateRunTimeBudget(userId: string, columns: RunTimeBudgetColumns): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    Object.assign(user, columns);
     return user;
   }
 
