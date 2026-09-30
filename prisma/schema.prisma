@@ -140,6 +140,8 @@ model Project {
   /// The highest standalone ticket number this project has given out, deleted
   /// tickets included, so a number is never handed out twice.
   lastStandaloneTicketNumber Int @default(0)
+  /// Formic merges approved, green pull requests only when the owner opts in.
+  autoMerge Boolean @default(false)
 
   epics        Epic[]
   events       Event[]

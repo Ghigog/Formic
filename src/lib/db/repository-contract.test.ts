@@ -377,6 +377,15 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.columnAgents(p.id)).toEqual({});
       });
 
+      it("keeps auto-merge off until switched on, per project", async () => {
+        const p = await project();
+        expect((await repo.projectById(p.id))?.autoMerge).toBe(false);
+        await repo.setAutoMerge(p.id, true);
+        expect((await repo.projectById(p.id))?.autoMerge).toBe(true);
+        await repo.setAutoMerge(p.id, false);
+        expect((await repo.projectById(p.id))?.autoMerge).toBe(false);
+      });
+
       it("scopes a preset to the column it was made for, and keeps that column on update", async () => {
         const preset = await repo.savePreset({
           ownerId: null,

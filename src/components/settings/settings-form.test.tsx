@@ -81,3 +81,54 @@ describe("Sandbox key", () => {
     expect(screen.getByText(/Add your own key to keep running/)).toBeInTheDocument();
   });
 });
+
+describe("Auto-merge", () => {
+  const projects = [{ id: "p1", name: "Formic", autoMerge: false }];
+
+  it("shows the saved state and saves a switch for that project", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ autoMerge: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <SettingsForm
+        account={account}
+        installUrl={null}
+        projects={projects}
+        e2b={{ hint: null, serverFallback: false }}
+      />,
+    );
+
+    const toggle = screen.getByRole("checkbox", { name: /Merge approved pull requests in Formic/ });
+    expect(toggle).not.toBeChecked();
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(toggle);
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ projectId: "p1", autoMerge: true }),
+      }),
+    );
+    expect(toggle).toBeChecked();
+  });
+
+  it("stays off and says so when the save is refused", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "no" }, { status: 403 })));
+    render(
+      <SettingsForm
+        account={account}
+        installUrl={null}
+        projects={projects}
+        e2b={{ hint: null, serverFallback: false }}
+      />,
+    );
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(screen.getByRole("checkbox"));
+    });
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    expect(screen.getByText("That did not save. Try again.")).toBeInTheDocument();
+  });
+});
