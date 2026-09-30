@@ -136,7 +136,9 @@ export interface ChatRequest {
   maxTokens?: number;
   /** Sent at the top level of the body: this client builds plain JSON, not an SDK's extra_body. */
   thinking?: { type: "enabled" | "disabled" };
-  reasoningEffort?: "low" | "high" | "max";
+  reasoningEffort?: ReasoningEffort;
+  /** What the provider advertises for `model`; the ceiling and effort are held to it. */
+  modelInfo?: ModelInfo;
   signal?: AbortSignal;
 }
 
@@ -172,6 +174,8 @@ async function chatOnce(
   apiKey: string,
   request: ChatRequest,
 ): Promise<ChatResult> {
+  const maxTokens = clampMaxTokens(request.maxTokens, request.modelInfo);
+  const reasoningEffort = supportedEffort(request.reasoningEffort, request.modelInfo);
   const send = async (json: boolean) => {
     const res = await fetch(endpoint(p, "/chat/completions"), {
       method: "POST",
@@ -186,9 +190,9 @@ async function chatOnce(
         // reads one JSON body. Nothing here wants the stream.
         stream: false,
         ...(request.tools?.length ? { tools: request.tools } : {}),
-        ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
+        ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
         ...(request.thinking ? { thinking: request.thinking } : {}),
-        ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+        ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
         ...(json ? { response_format: { type: "json_object" } } : {}),
       }),
       signal: request.signal,
@@ -241,16 +245,77 @@ async function chatOnce(
   };
 }
 
-/** The model ids a key can use, for the agent editor. */
-export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise<string[]> {
+export type ReasoningEffort = "low" | "high" | "max";
+
+/**
+ * What a provider says about a model beyond its id. Every field is optional:
+ * DeepSeek sends them all, most providers send none, and a missing one means
+ * "not said", never a default made up here.
+ */
+export interface ModelInfo {
+  id: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  inputModalities?: string[];
+  effort?: { supportedLevels: string[]; defaultLevel?: string };
+}
+
+interface RawModel {
+  id: string;
+  context_window?: unknown;
+  max_output_tokens?: unknown;
+  input_modalities?: unknown;
+  effort?: { supported_levels?: unknown; default_level?: unknown } | null;
+}
+
+const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
+const strings = (v: unknown) =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined;
+
+function modelInfo(m: RawModel): ModelInfo {
+  const info: ModelInfo = { id: m.id.replace(/^models\//, "") };
+  const contextWindow = count(m.context_window);
+  if (contextWindow) info.contextWindow = contextWindow;
+  const maxOutputTokens = count(m.max_output_tokens);
+  if (maxOutputTokens) info.maxOutputTokens = maxOutputTokens;
+  const inputModalities = strings(m.input_modalities);
+  if (inputModalities?.length) info.inputModalities = inputModalities;
+  const supportedLevels = strings(m.effort?.supported_levels);
+  if (supportedLevels?.length) {
+    const d = m.effort?.default_level;
+    info.effort = {
+      supportedLevels,
+      ...(typeof d === "string" && supportedLevels.includes(d) ? { defaultLevel: d } : {}),
+    };
+  }
+  return info;
+}
+
+/** The models a key can use, for the agent editor, with what the provider says of each. */
+export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise<ModelInfo[]> {
   const res = await fetch(endpoint(p, "/models"), {
     headers: { Authorization: `Bearer ${apiKey}` },
     cache: "no-store",
   }).catch(() => null);
   if (!res) throw new ProviderError(`Could not reach ${p.label}.`, null);
   if (!res.ok) throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
-  const body = (await res.json()) as { data?: Array<{ id: string }> };
-  return (body.data ?? []).map((m) => m.id.replace(/^models\//, "")).sort();
+  const body = (await res.json()) as { data?: RawModel[] };
+  return (body.data ?? []).map(modelInfo).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** A reply ceiling held to what the model advertises; unchanged when it advertises none. */
+export function clampMaxTokens(asked: number | undefined, info?: ModelInfo): number | undefined {
+  if (asked === undefined || !info?.maxOutputTokens) return asked;
+  return Math.min(asked, info.maxOutputTokens);
+}
+
+/** The effort to send: the one asked for if the model supports it, else none. */
+export function supportedEffort(
+  asked: ReasoningEffort | undefined,
+  info?: ModelInfo,
+): ReasoningEffort | undefined {
+  if (!asked || !info?.effort) return asked;
+  return info.effort.supportedLevels.includes(asked) ? asked : undefined;
 }
 
 /**
