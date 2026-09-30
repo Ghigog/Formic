@@ -188,12 +188,13 @@ And two shapes that decide the design:
   constant moves review iterations. Which number the reviews should follow is a
   decision, not a rename.
 - **The default rule already outgrows the job.** Ten minutes a point reaches
-  the 60-minute job ceiling at five points, so an 8-point ticket asks for 80
-  minutes and a 13-point one for 130 — and `loopBudgetMs` gives both 55. Either
-  `RUNNER_JOB_MINUTES` goes up (GitHub allows 360, and every repository's
-  workflow has to be updated with it), or the card has to say the job's ceiling
-  is what stopped the run. The spec's acceptance criteria already require the
-  second; the first is a decision.
+  the 55-minute cap between five and six points — a 5-point ticket still gets
+  its 50, an 8-point one asks 80 and gets 55, a 13-point one asks 130 and gets
+  55. Either `RUNNER_JOB_MINUTES` goes up (GitHub allows 360, and every
+  repository's workflow has to be updated with it), or the card has to say the
+  job's ceiling is what stopped the run. The spec's acceptance criteria already
+  require the second; the first is a decision. See
+  `docs/handoffs/job-timeout-ceiling.md`.
 - The assistant and a card's chat are the same kind of loop with different
   budgets (16 turns with no clock, against 12 turns and 4 minutes). Whatever
   the modes become, those two should not disagree again.
