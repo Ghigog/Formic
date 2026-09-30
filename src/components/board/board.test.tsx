@@ -226,54 +226,41 @@ describe("Board, below 768px", () => {
     expect(screen.queryByRole("region", { name: "Backlog" })).toBeNull();
   });
 
-  /*
-   * The artboard's floating button does not say which card it moves. Naming
-   * the card in the accessible name is the one addition: an action that moves
-   * "something" is not an action anybody can trust.
-   */
-  it("names the card the floating action will move", async () => {
-    setViewportMatches(true);
-    renderBoard([makeCard({ key: "PROT-09", status: "draft" })]);
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Advance PROT-09 to To Do" }),
-      ).toBeInTheDocument(),
-    );
-  });
-
-  it("offers no advance where nothing in the column can move", async () => {
-    setViewportMatches(true);
-    renderBoard([makeCard({ status: "merged" })]);
-
-    const user = userEvent.setup();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Done 1" })).toBeInTheDocument(),
-    );
-    await user.click(screen.getByRole("button", { name: "Done 1" }));
-
-    expect(screen.queryByRole("button", { name: /^Advance/ })).toBeNull();
-  });
-
-  it("emits one typed transition when a card advances", async () => {
+  it("has no floating Advance button; the card's own arrow takes it on", async () => {
     setViewportMatches(true);
     const card = makeCard({ key: "PROT-09", status: "draft" });
     const { onTransition } = renderBoard([card]);
 
-    const user = userEvent.setup();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^Advance/ })).toBeInTheDocument(),
+      expect(screen.getByRole("button", { name: "Move PROT-09 to To Do" })).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole("button", { name: /^Advance/ }));
+    expect(screen.queryByRole("button", { name: /^Advance/ })).toBeNull();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Move PROT-09 to To Do" }));
+    expect(onTransition.mock.calls[0]![0]).toMatchObject({ cardId: card.id, from: "backlog", to: "todo" });
+  });
+
+  it("gives an In Progress ticket a left arrow back to To Do", async () => {
+    setViewportMatches(true);
+    const card = makeCard({ key: "PROT-13", status: "running" });
+    const { onTransition } = renderBoard([card]);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^In Progress/ }));
+    await user.click(screen.getByRole("button", { name: "Return PROT-13 to To Do" }));
 
     expect(onTransition).toHaveBeenCalledOnce();
     expect(onTransition.mock.calls[0]![0]).toMatchObject({
       cardId: card.id,
-      kind: "ticket",
-      from: "backlog",
+      from: "in_progress",
       to: "todo",
       actor: "user",
     });
+  });
+
+  it("gives no return arrow on a wide screen", () => {
+    renderBoard([makeCard({ key: "PROT-14", status: "running" })]);
+    expect(screen.queryByRole("button", { name: /^Return/ })).toBeNull();
   });
 
   it("puts the card back and says why when the server refuses", async () => {
@@ -289,9 +276,9 @@ describe("Board, below 768px", () => {
 
     const user = userEvent.setup();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^Advance/ })).toBeInTheDocument(),
+      expect(screen.getByRole("button", { name: "Move PROT-09 to To Do" })).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole("button", { name: /^Advance/ }));
+    await user.click(screen.getByRole("button", { name: "Move PROT-09 to To Do" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "That epic has no PRD yet.",
