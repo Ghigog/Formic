@@ -194,6 +194,13 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async bumpSessionVersion(userId: string): Promise<UserRecord> {
+    return prisma().user.update({
+      where: { id: userId },
+      data: { sessionVersion: { increment: 1 } },
+    });
+  }
+
   async countUsers(): Promise<number> {
     return prisma().user.count();
   }

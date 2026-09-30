@@ -5,10 +5,9 @@ import {
   gatePassword,
   passwordToken,
   safeEqual,
-  verifySession,
 } from "@/lib/auth/session";
-import { needsTermsAcceptance } from "@/lib/auth/user";
-import { repository } from "@/lib/db";
+import { needsTermsAcceptance, userForSession } from "@/lib/auth/user";
+import type { UserRecord } from "@/lib/db/repository";
 
 /**
  * Nothing on the board without signing in. With a GitHub App configured
@@ -37,11 +36,11 @@ export async function proxy(req: NextRequest) {
   if (OPEN.some((re) => re.test(path))) return NextResponse.next();
 
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
-  let userId: string | null = null;
+  let user: UserRecord | null = null;
   let allowed: boolean;
   if (authMode() === "github") {
-    userId = await verifySession(cookie);
-    allowed = userId !== null;
+    user = await userForSession(cookie);
+    allowed = user !== null;
   } else {
     const password = gatePassword();
     allowed = !password || (!!cookie && safeEqual(cookie, await passwordToken(password)));
@@ -57,9 +56,8 @@ export async function proxy(req: NextRequest) {
 
   // GitHub accounts are real people who can be asked to agree to something;
   // local mode's one implicit user has no sign-in flow to hang this off.
-  if (userId && !LEGAL.test(path)) {
-    const user = await repository().userById(userId);
-    if (user && needsTermsAcceptance(user)) {
+  if (user && !LEGAL.test(path)) {
+    if (needsTermsAcceptance(user)) {
       if (path.startsWith("/api/")) {
         return NextResponse.json({ error: "Accept the current terms first." }, { status: 403 });
       }

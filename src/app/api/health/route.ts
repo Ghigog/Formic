@@ -86,6 +86,7 @@ async function trusted(req: Request): Promise<boolean> {
   }
 
   const cookie = cookieValue(req, SESSION_COOKIE);
+  // Signature only: the report has to stay readable when the database is down.
   if (authMode() === "github") return (await verifySession(cookie)) !== null;
   const password = gatePassword();
   if (!password) return false;

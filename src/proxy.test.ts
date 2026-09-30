@@ -38,7 +38,9 @@ describe("proxy", () => {
 
   it("lets a signed-in person through", async () => {
     githubMode();
-    const res = await proxy(request("/api/board", await signSession("user_1")));
+    const user = await repository().upsertUser({ githubId: 1, login: "octo", name: null, avatarUrl: null });
+    await repository().acceptTerms(user.id, CURRENT_TERMS_VERSION);
+    const res = await proxy(request("/api/board", await signSession(user.id)));
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });
 
