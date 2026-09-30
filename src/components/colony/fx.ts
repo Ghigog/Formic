@@ -136,6 +136,7 @@ interface Ant {
   carry?: boolean;
   hidden?: boolean;
   gone?: boolean;
+  entered?: boolean;
 }
 interface Crew {
   id: string;
@@ -224,6 +225,21 @@ export function visibleRects(clip: ClipRect, masks: ClipRect[]): ClipRect[] {
     pieces = next;
   }
   return pieces;
+}
+
+export function insideRect(x: number, y: number, r: ClipRect): boolean {
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+/**
+ * Which visible set an ant draws with. Ants in transit between the nest and
+ * their column (heading home, or emerging and not yet inside the column)
+ * draw over the whole board; once inside the column they stay clipped to it.
+ */
+export function clipSetFor(mode: AntMode, entered: boolean, x: number, y: number, column: ClipRect): "travel" | "column" {
+  if (mode === "home") return "travel";
+  if (mode === "walk" && !entered && !insideRect(x, y, column)) return "travel";
+  return "column";
 }
 
 export function centerOf(el: Element): [number, number, DOMRect] {
@@ -1196,7 +1212,8 @@ export class ColonyFx {
       const col = el?.closest("[data-colony-clip]")?.getBoundingClientRect();
       const clip = col ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
       const visible = visibleRects(clip, masks);
-      for (const ant of c.ants) this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx, visible);
+      const travelling = visibleRects({ left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }, masks);
+      for (const ant of c.ants) this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx, visible, travelling, clip);
       c.ants = c.ants.filter((a) => !a.gone);
       const pg = el?.querySelector<SVGElement>("[data-sp] polygon");
       if (pg) pg.style.fill = c.phase === "work" && c.ants.some((a) => a.carry) ? "transparent" : "";
@@ -1214,6 +1231,8 @@ export class ColonyFx {
     ny: number,
     ctx: CanvasRenderingContext2D,
     visible: ClipRect[],
+    travelling: ClipRect[],
+    column: ClipRect,
   ) {
     const follow = () => {
       if (r) {
@@ -1230,6 +1249,7 @@ export class ColonyFx {
           return;
         }
         ant.mode = "walk";
+        ant.entered = false;
         ant.x = nx;
         ant.y = ny;
         this.sfx("emerge", ant.idx);
@@ -1383,7 +1403,9 @@ export class ColonyFx {
     if (!this.world.covered) {
       ctx.save();
       ctx.beginPath();
-      for (const v of visible) ctx.rect(v.left, v.top, v.right - v.left, v.bottom - v.top);
+      if (ant.mode === "walk" && insideRect(ant.x, ant.y, column)) ant.entered = true;
+      const set = clipSetFor(ant.mode, !!ant.entered, ant.x, ant.y, column) === "travel" ? travelling : visible;
+      for (const v of set) ctx.rect(v.left, v.top, v.right - v.left, v.bottom - v.top);
       ctx.clip();
       this.drawAnt(ctx, ant.x, ant.y, ant.a, ant.ph, ant.carry ? { sp: c.sp } : null, sc);
       ctx.restore();

@@ -2,18 +2,35 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Column, columnCount } from "./column";
+import { EMPTY_VIEW, type ColumnView } from "./view";
 import { CardEnvContext } from "./card";
 import { renderInDnd } from "@/test/render";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
+const droppableProps = vi.hoisted(() => ({ disabled: [] as Array<boolean | undefined> }));
+vi.mock("@hello-pangea/dnd", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@hello-pangea/dnd")>();
+  return {
+    ...mod,
+    Droppable: (props: React.ComponentProps<typeof mod.Droppable>) => {
+      droppableProps.disabled.push(props.isDropDisabled);
+      return <mod.Droppable {...props} />;
+    },
+  };
+});
+
 const noop = vi.fn();
 
-function column(id: Parameters<typeof Column>[0]["id"], cards = [makeCard()]) {
+function column(
+  id: Parameters<typeof Column>[0]["id"],
+  cards = [makeCard()],
+  view: ColumnView = EMPTY_VIEW,
+) {
   const epics = new Map(cards.filter((c) => c.kind === "epic").map((c) => [c.id, c]));
   const env = { epics, nextFor: () => null, onAdvance: noop };
   return renderInDnd(
     <CardEnvContext.Provider value={env}>
-      <Column id={id} cards={cards} extras={{}} onOpen={noop} />
+      <Column id={id} cards={cards} extras={{}} view={view} onViewChange={noop} onOpen={noop} />
     </CardEnvContext.Provider>,
   );
 }
@@ -222,5 +239,46 @@ describe("Column with an agent out of usage", () => {
       />,
     );
     expect(screen.getByRole("region", { name: "In Progress" })).not.toHaveAttribute("data-limited");
+  });
+
+  describe("with a view", () => {
+    const cards = [
+      makeCard({ title: "Fix login", storyPoints: 2 }),
+      makeCard({ title: "Add export", storyPoints: 8 }),
+    ];
+
+    it("shows only the cards a search matches, and says how many of how many", () => {
+      column("todo", cards, { ...EMPTY_VIEW, query: "login" });
+      expect(screen.getByText("Fix login")).toBeInTheDocument();
+      expect(screen.queryByText("Add export")).toBeNull();
+      expect(screen.getByTitle("1 of 2 cards")).toHaveTextContent("01");
+    });
+
+    it("orders cards by the chosen sort", () => {
+      column("todo", cards, { ...EMPTY_VIEW, sort: "points" });
+      const titles = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+      expect(titles).toEqual(["Add export", "Fix login"]);
+    });
+
+    it("keeps the header and menu when collapsed, and hides the cards", () => {
+      const { container } = column("todo", cards, { ...EMPTY_VIEW, collapsed: true });
+      expect(screen.getByRole("heading", { name: "To Do" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Column options" })).toBeInTheDocument();
+      expect(screen.queryByText("Fix login")).toBeNull();
+      expect(container.querySelector("[data-rfd-droppable-id]")).toBeNull();
+    });
+
+    it("takes no drops while a view is active, and keeps its droppable", () => {
+      droppableProps.disabled.length = 0;
+      const { container } = column("todo", cards, { ...EMPTY_VIEW, query: "login" });
+      expect(container.querySelector("[data-rfd-droppable-id='todo']")).not.toBeNull();
+      expect(droppableProps.disabled.at(-1)).toBe(true);
+    });
+
+    it("accepts drops with no view", () => {
+      droppableProps.disabled.length = 0;
+      column("todo", cards);
+      expect(droppableProps.disabled.at(-1)).toBe(false);
+    });
   });
 });

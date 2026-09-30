@@ -21,6 +21,8 @@ import {
 import { agentFor, cliAgentFor, loopAgentFor, runTargetFor } from "@/lib/agents/presets";
 import type { CodeChange, Usage } from "@/lib/agents/ports";
 import type { VcsClient } from "@/lib/vcs";
+import { resolveRunTimeBudget } from "@/lib/run-time-budget";
+import { getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { cliPrompt, loopPayload, loopRunnerReady, resumeBrief, startJobRun } from "@/lib/runner/runner";
 import { guidedWorkspace } from "@/lib/sandbox/workspace";
 import { askForScope, hasKeptWork, takeKeptWork, widenScope } from "./scope-request";
@@ -202,7 +204,7 @@ export async function runCoderAgent(
 
   // An agent on an API key runs in the job too, when this repository's
   // workflow can run Formic's own loop: that is what gives it the ticket's
-  // budget — ten minutes a story point — instead of the four minutes a
+  // budget — the person's setting — instead of the four minutes a
   // request has before the platform ends it. A repository on an older
   // workflow, and a board that has never installed one (local mode), keeps
   // the in-process path below exactly as it was: no card changes behaviour
@@ -210,6 +212,11 @@ export async function runCoderAgent(
   const loop = await loopAgentFor(projectId, "in_progress");
   if (loop && (await loopRunnerReady(client, project.baseBranch))) {
     const notes = await noteTexts(projectId, ticket.id);
+    // Read once, here: a setting changed after this run starts is for the next.
+    const budgetMinutes = resolveRunTimeBudget(
+      project.ownerId ? await getRunTimeBudgetSettings(project.ownerId) : null,
+      ticket.storyPoints,
+    );
     await startJobRun({
       projectId,
       ticket: { ...ticket, branchName: branch },
@@ -229,6 +236,7 @@ export async function runCoderAgent(
             baseBranch: project.baseBranch,
             provider: loop.info.id,
             model: loop.model,
+            budgetMinutes,
             notes: resumed ? [...notes, resumeBrief(resumed, ticket.plan)] : notes,
             ...(options.instruction ? { instruction: options.instruction } : {}),
           }),

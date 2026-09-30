@@ -41,6 +41,37 @@ function renderBoard(
   return { onTransition };
 }
 
+describe("Board column views", () => {
+  it("keeps a column's search when the cards update", async () => {
+    const cards = [
+      makeCard({ status: "ready", title: "Fix login" }),
+      makeCard({ status: "ready", title: "Add export" }),
+    ];
+    const onTransition = vi.fn();
+    const props = {
+      projectName: "Formic",
+      repoFullName: "formic-labs/formic-web",
+      baseBranch: "main",
+      onOpenCard: vi.fn(),
+      onNewItem: vi.fn(),
+      onTransition,
+    };
+    const { rerender } = render(<Board cards={cards} {...props} />);
+    const todo = screen.getByRole("region", { name: "To Do" });
+    const user = userEvent.setup();
+    await user.click(within(todo).getByRole("button", { name: "Column options" }));
+    await user.type(screen.getByPlaceholderText("Search key or title..."), "login");
+    expect(within(todo).queryByText("Add export")).toBeNull();
+
+    rerender(
+      <Board cards={[...cards, makeCard({ status: "ready", title: "Other" })]} {...props} />,
+    );
+    expect(within(todo).getByText("Fix login")).toBeInTheDocument();
+    expect(within(todo).queryByText("Add export")).toBeNull();
+    expect(within(todo).queryByText("Other")).toBeNull();
+  });
+});
+
 describe("Board, on a wide screen", () => {
   it("renders all five columns", () => {
     renderBoard([makeCard()]);
