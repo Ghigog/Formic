@@ -38,7 +38,7 @@ Tickets marked **P0** block the beta. **P1** should land during the beta.
 
 | | |
 | :-- | :-- |
-| **Works** | CI runs lint, typecheck, unit tests, a build against real Postgres and a boot check. `/api/health` reports the commit and pings the database. A post-merge smoke test waits for the deploy and checks it. Only `main` deploys. |
+| **Works** | CI runs lint, typecheck, unit tests, a build with a boot check against real Postgres and e2e, as parallel jobs. `/api/health` reports the commit and pings the database. A post-merge smoke test waits for the deploy and checks it. Only `main` deploys. |
 | **Doesn't work** | End-to-end tests are not in CI, so the failing one below shipped unnoticed. |
 | **Broken** | Nothing found. |
 | **Missing** | Versioned migrations (`prisma db push` has no history and no rollback). A staging environment. Database backup and restore plan. Error tracking and alerting. An incident runbook. Actions pinned by SHA. |
