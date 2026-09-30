@@ -294,6 +294,18 @@ export class MockVcsClient implements VcsClient {
     return null;
   }
 
+  async closeSupersededPulls(prefix: string, keepBranch: string, reason: string): Promise<number[]> {
+    const closed: number[] = [];
+    for (const pull of pulls().values()) {
+      if (pull.state !== "open" || !pull.headBranch.startsWith(prefix)) continue;
+      if (pull.headBranch === keepBranch) continue;
+      pull.state = "closed";
+      await this.comment(pull.number, reason);
+      closed.push(pull.number);
+    }
+    return closed;
+  }
+
   async setSecret(name: string, value: string): Promise<void> {
     repo().secrets.set(name, value);
   }
