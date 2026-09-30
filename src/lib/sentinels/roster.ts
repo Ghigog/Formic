@@ -32,6 +32,19 @@ export const GROUP_INK: Record<SentinelGroup, string> = {
   BUSINESS: "var(--clay)",
 };
 
+/**
+ * The tint behind a sentinel's portrait, one per group. A portrait draws no
+ * ground of its own: the figure is a white marker the app paints in its text
+ * ink, so the tint has to be pale in the light theme and deep in the dark one
+ * for the figure to keep reading — see `portraitGround`.
+ */
+export const GROUP_GROUND: Record<SentinelGroup, string> = {
+  BUILD: "var(--clay-chip)",
+  OPS: "var(--jade-chip)",
+  PRODUCT: "var(--panel)",
+  BUSINESS: "var(--crimson-chip)",
+};
+
 export const SENTINELS: readonly Sentinel[] = [
   {
     id: "tester",

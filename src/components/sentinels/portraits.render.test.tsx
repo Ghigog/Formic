@@ -29,21 +29,25 @@ describe("a portrait as the page inlines it", () => {
       expect(doc.documentElement.tagName.toLowerCase()).toBe("svg");
     });
 
-    it(`fills its frame edge to edge: ${sentinel.pic}`, () => {
+    it(`leaves the ground to the page, and draws the figure in the app's ink: ${sentinel.pic}`, () => {
       const host = document.createElement("div");
       host.innerHTML = framed(sentinel.pic);
       const svg = host.querySelector("svg")!;
       expect(svg.getAttribute("viewBox"), "the frame moved").toBe("0 0 200 200");
       expect(svg.getAttribute("preserveAspectRatio")).toBe("xMidYMid slice");
 
-      // The ground is the first thing drawn and it is the whole frame, so no
-      // crop — the header band or the round avatar — can show a gap behind it.
-      const ground = svg.firstElementChild!;
-      expect(ground.tagName.toLowerCase()).toBe("rect");
-      expect(ground.getAttribute("width")).toBe("200");
-      expect(ground.getAttribute("height")).toBe("200");
-      expect(ground.getAttribute("fill")).toBeTruthy();
-      expect(svg.querySelectorAll("rect")[0]).toBe(ground);
+      // The portrait draws no ground: the card and the avatar paint the
+      // sentinel's tint behind it, from `portraitGround`.
+      const body = svg.innerHTML;
+      expect(body, "the portrait draws a ground of its own").not.toMatch(
+        /^<rect width="200" height="200"/,
+      );
+      // And the figure is the app's ink, not the white the artist drew it in —
+      // white on a pale ground is a portrait nobody can see.
+      expect(body, "the figure is not painted by the app").toMatch(
+        /(?:fill|stroke)="var\(--text\)"/,
+      );
+      expect(body, "the figure is drawn white").not.toMatch(/(?:fill|stroke)="#(?:fff|ffffff)"/i);
     });
 
     it(`brings no motion and no outside reference: ${sentinel.pic}`, () => {

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { SENTINELS } from "@/lib/sentinels/roster";
+import { GROUP_GROUND, SENTINELS } from "@/lib/sentinels/roster";
 import { PORTRAITS, portraitFor, portraitGround } from "./portraits";
 import { TRACED } from "./portraits.traced";
 
@@ -44,16 +44,30 @@ describe("the roster and its portraits", () => {
     expect(stray, `art no sentinel is keyed to: ${stray.join(", ")}`).toEqual([]);
   });
 
-  it("gives every portrait its ground first, since the frame reads it back", () => {
-    for (const pic of rosterPics) {
-      const ground = portraitGround(pic);
-      expect(ground, `${pic}: the frame has no ground colour to paint`).toMatch(
-        /^(?:#[0-9a-fA-F]{3,8}|var\(--[\w-]+\))$/,
+  it("paints every portrait on its sentinel's tint", () => {
+    for (const sentinel of SENTINELS) {
+      expect(portraitGround(sentinel.pic), `${sentinel.pic}: no ground to paint`).toBe(
+        GROUP_GROUND[sentinel.group],
       );
       expect(
-        portraitFor(pic).startsWith(`<rect width="200" height="200" fill="${ground}"/>`),
-        `${pic}: the ground is not its first fill`,
-      ).toBe(true);
+        portraitGround(sentinel.pic),
+        `${sentinel.pic}: the ground is a colour, so it cannot follow the theme`,
+      ).toMatch(/^var\(--[\w-]+\)$/);
+    }
+  });
+
+  it("draws no ground of its own, and leaves the figure to the app's ink", () => {
+    for (const sentinel of SENTINELS) {
+      const picture = portraitFor(sentinel.pic);
+      expect(picture, `${sentinel.pic} draws its own ground`).not.toMatch(
+        /^<rect width="200" height="200"/,
+      );
+      expect(picture, `${sentinel.pic} is not drawn in the app's ink`).toContain(
+        'fill="var(--text)"',
+      );
+      expect(picture, `${sentinel.pic} is drawn white, which reads on nothing`).not.toMatch(
+        /fill="#(?:fff|ffffff)"/i,
+      );
     }
   });
 });

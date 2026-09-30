@@ -14,24 +14,25 @@
  *
  * - **The canvas**, from the root `viewBox` (falling back to `width` and
  *   `height`). The drawing is made on whatever canvas Inkscape was set to —
- *   512 in `rex.svg` — and never on the 200 the page frames it in. A
- *   non-square canvas is scaled by its longer side, which is what
+ *   512 for every portrait here — and never on the 200 the page frames it in.
+ *   A non-square canvas is scaled by its longer side, which is what
  *   `preserveAspectRatio="… slice"` does with it, so the frame is never
  *   letterboxed.
- * - **The ground**, from the document's page colour (`sodipodi:namedview`'s
- *   `pagecolor`). It is written first, because `portraitGround()` reads the
- *   first `fill="…"` back to paint the frame behind the portrait.
- * - **Everything else as drawn**: fills, strokes and group structure survive,
- *   rounded to one decimal place — a tenth of a unit on a 512 canvas is a
- *   fiftieth of a pixel on the card. A portrait does not follow the theme;
- *   see rule 2 in `design/portraits/README.md`.
+ * - **The drawing**, as drawn: strokes, group structure and any colour the
+ *   artist chose survive, rounded to one decimal place — a tenth of a unit on
+ *   a 512 canvas is a fiftieth of a pixel where the card draws it.
+ * - **Nothing else.** The app paints what is around the figure. A white fill
+ *   is the marker that means "this is the figure": it ships as the app's ink
+ *   (`var(--text)`), so the figure reads on its ground in either theme, and a
+ *   colour the artist set deliberately ships as drawn. The ground behind a
+ *   portrait is the sentinel's own tint, painted by the page from the roster,
+ *   not from the art. Inkscape's page colour is not read at all.
  *
  * It refuses, loudly, rather than shipping something quiet and wrong: art
  * that would make the browser fetch a file or run code (`<image>`, `<script>`,
  * `<style>`, a `url(http…)` paint, an external `href`), art that moves
  * (`<animate…>`, `<set>`, an animation or transition in a style), art drawn on
- * no canvas, art that declares no page colour, and a `#id` reference with no
- * element behind it.
+ * no canvas, and a `#id` reference with no element behind it.
  *
  * ```
  * npm run build:portraits          write the module
@@ -324,6 +325,15 @@ const NUMERIC = new Set([
   "stop-opacity", "letter-spacing", "word-spacing",
 ]);
 
+/** Attributes that paint, and so may carry the marker colour. */
+const PAINT = new Set(["fill", "stroke", "stop-color", "flood-color", "lighting-color", "color"]);
+
+/** White: the marker meaning "this is the figure". The app paints it. */
+const WHITE = /^(?:#fff|#ffffff|white|rgb\(\s*255[\s,]+255[\s,]+255\s*\))$/i;
+
+/** The ink the app paints the figure in: dark on a light ground, light on a dark one. */
+const INK = "var(--text)";
+
 /**
  * Style properties that are also presentation attributes, so they can be
  * written as one instead of in a `style` string. Inkscape puts everything in
@@ -398,7 +408,7 @@ function reference(value, key, ids) {
   return `#${key}-${id}`;
 }
 
-/** One attribute's value, rounded and checked for what it reaches. */
+/** One attribute's value, rounded, painted, and checked for what it reaches. */
 function attributeValue(name, value, key, ids) {
   if (name === "d") return pathData(value);
   if (name === "points") return pointList(value);
@@ -409,6 +419,7 @@ function attributeValue(name, value, key, ids) {
       `url(${reference(target, key, ids)})`,
     );
   }
+  if (PAINT.has(name) && WHITE.test(value.trim())) return INK;
   if (NUMERIC.has(name)) return num(value);
   return value;
 }
@@ -492,29 +503,6 @@ function canvasOf(root, key) {
   );
 }
 
-/**
- * The ground: the document's page colour. Inkscape keeps it beside the page
- * in `sodipodi:namedview`, which is the only place the colour the artist drew
- * against survives into the file, since the page itself is not exported.
- */
-function groundOf(tokens, key) {
-  for (const token of tokens) {
-    if (token.kind !== "tag") continue;
-    const tag = parseTag(token.raw);
-    if (!DROPPED.has(tag.name)) continue;
-    const page = (tag.attrs.find(([name]) => name === "pagecolor") ?? [])[1];
-    if (!page) continue;
-    if (!/^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$/.test(page)) {
-      throw new Error(`${key}.svg declares a page colour that is not a hex colour: ${page}`);
-    }
-    return page;
-  }
-  throw new Error(
-    `${key}.svg declares no page colour, so the portrait has no ground. Set the document's ` +
-      `page colour in Inkscape: rule 3 in design/portraits/README.md.`,
-  );
-}
-
 /** Everything inside the root `<svg>`, stripped to what the page needs. */
 function bodyOf(tokens, rootTag, key) {
   const ids = idsOf(tokens);
@@ -559,9 +547,10 @@ function bodyOf(tokens, rootTag, key) {
 }
 
 /**
- * One portrait, ready to inline: the ground first, then the drawing scaled
- * from its own canvas to the 200 the page frames it in. The frame never
- * moves — the art is what has to fit it.
+ * One portrait, ready to inline: the drawing scaled from its own canvas to
+ * the 200 the page frames it in, with the figure in the app's ink. The frame
+ * never moves — the art is what has to fit it — and the ground is the page's
+ * to paint, so nothing here draws one.
  */
 function portraitString(svg, key) {
   const tokens = tokenize(svg);
@@ -572,7 +561,6 @@ function portraitString(svg, key) {
   const root = parseTag(rootTag.raw);
 
   const canvas = canvasOf(root, key);
-  const ground = groundOf(tokens, key);
   const body = bodyOf(tokens, rootTag, key);
   if (!body.trim()) throw new Error(`${key}.svg draws nothing`);
 
@@ -581,9 +569,7 @@ function portraitString(svg, key) {
   if (canvas.minX || canvas.minY) {
     into.push(`translate(${num(-canvas.minX)} ${num(-canvas.minY)})`);
   }
-  const scaled =
-    scale === 1 && into.length === 1 ? body : `<g transform="${into.join(" ")}">${body}</g>`;
-  return `<rect width="${CANVAS}" height="${CANVAS}" fill="${ground}"/>${scaled}`;
+  return scale === 1 && into.length === 1 ? body : `<g transform="${into.join(" ")}">${body}</g>`;
 }
 
 /* --------------------------------------------------------------------------
