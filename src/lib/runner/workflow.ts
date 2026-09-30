@@ -392,7 +392,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: ${RUNNER_JOB_MINUTES}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: \${{ inputs.from }}
           persist-credentials: false
@@ -431,14 +431,14 @@ jobs:
       - name: Make room for downloaded attachments
         run: mkdir -p "$RUNNER_TEMP/formic-attachments"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
       # Every run is a fresh machine. The package caches carry the agent's
       # own install and the project's dependencies from one run to the next,
       # so neither is downloaded from scratch each time.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.npm
