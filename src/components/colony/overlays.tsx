@@ -85,18 +85,29 @@ export function ColonyToast() {
   );
 }
 
-/** The PM Agent's showcase for an epic, looked for again until it is written. */
-function useShowcase(epicId: string | undefined): string | null {
-  const [found, setFound] = useState<{ id: string; text: string } | null>(null);
-  const text = found && found.id === epicId ? found.text : null;
+/**
+ * The PM Agent's showcase for an epic, looked for again until it is written.
+ * `offered` is set once it has none and is only written on request, so there
+ * is nothing to wait for.
+ */
+function useShowcase(epicId: string | undefined): { text: string | null; offered: boolean } {
+  const [found, setFound] = useState<{ id: string; text: string | null; offered: boolean } | null>(null);
+  const mine = found && found.id === epicId ? found : null;
+  const stop = !!mine && (!!mine.text || mine.offered);
   useEffect(() => {
-    if (!epicId || text) return;
+    if (!epicId || stop) return;
     let live = true;
     const look = () =>
       fetch(`/api/epics/${epicId}`, { cache: "no-store" })
-        .then((res) => (res.ok ? (res.json() as Promise<{ showcase?: string | null }>) : null))
+        .then((res) =>
+          res.ok
+            ? (res.json() as Promise<{ showcase?: string | null; canGenerateShowcase?: boolean }>)
+            : null,
+        )
         .then((body) => {
-          if (live && body?.showcase) setFound({ id: epicId, text: body.showcase });
+          if (!live || !body) return;
+          if (body.showcase) setFound({ id: epicId, text: body.showcase, offered: false });
+          else if (body.canGenerateShowcase) setFound({ id: epicId, text: null, offered: true });
         })
         .catch(() => undefined);
     void look();
@@ -105,8 +116,8 @@ function useShowcase(epicId: string | undefined): string | null {
       live = false;
       clearInterval(timer);
     };
-  }, [epicId, text]);
-  return text;
+  }, [epicId, stop]);
+  return { text: mine?.text ?? null, offered: mine?.offered ?? false };
 }
 
 /** When each beat of the win lands, in ms from the dialog opening. */
@@ -122,7 +133,7 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
   const summary = useRef<HTMLParagraphElement>(null);
   const keep = useRef<HTMLButtonElement>(null);
   const win = c?.win;
-  const showcase = useShowcase(win?.epic.id);
+  const { text: showcase, offered } = useShowcase(win?.epic.id);
   const reduced = !!c?.fx.reducedMotion;
   const fresh = () => ({ total: reduced ? (win?.tally.total ?? 0) : 0, filled: reduced, summary: reduced });
   const [shown, setShown] = useState(fresh);
@@ -345,8 +356,12 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
               {headline}
             </p>
           ) : (
-            <p className="text-muted m-0 mt-1.5 animate-pulse text-[13px] leading-[1.55]">
-              {shown.summary ? "The PM Agent is writing the showcase…" : "Tallying…"}
+            <p className={`text-muted m-0 mt-1.5 text-[13px] leading-[1.55]${offered ? "" : " animate-pulse"}`}>
+              {offered
+                ? "No showcase yet. Generate it from the Epic when you want one."
+                : shown.summary
+                  ? "The PM Agent is writing the showcase…"
+                  : "Tallying…"}
             </p>
           )}
           {visible && yours > 0 && (
@@ -368,7 +383,7 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
               }}
               className="bg-terracotta-cta inline-flex h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-transform hover:-translate-y-px active:translate-y-px"
             >
-              View showcase
+              {offered ? "Open Epic" : "View showcase"}
             </button>
           )}
           <button

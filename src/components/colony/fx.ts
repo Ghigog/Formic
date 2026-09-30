@@ -227,6 +227,11 @@ export function visibleRects(clip: ClipRect, masks: ClipRect[]): ClipRect[] {
   return pieces;
 }
 
+/** Where ants in transit between nest and column may be drawn: the whole viewport, masks included, so they are seen entering and leaving the nest. */
+export function travelRects(viewport: ClipRect): ClipRect[] {
+  return [viewport];
+}
+
 export function insideRect(x: number, y: number, r: ClipRect): boolean {
   return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
@@ -1212,7 +1217,7 @@ export class ColonyFx {
       const col = el?.closest("[data-colony-clip]")?.getBoundingClientRect();
       const clip = col ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
       const visible = visibleRects(clip, masks);
-      const travelling = visibleRects({ left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }, masks);
+      const travelling = travelRects({ left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight });
       for (const ant of c.ants) this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx, visible, travelling, clip);
       c.ants = c.ants.filter((a) => !a.gone);
       const pg = el?.querySelector<SVGElement>("[data-sp] polygon");
