@@ -249,6 +249,7 @@ export async function runCoderAgent(
     ctx: run.ctx,
     githubToken: creds.githubToken,
     e2bKey: creds.e2bKey,
+    e2bFallbackUserId: creds.e2bFallbackUserId,
   }).catch((e: unknown) => e as Error);
 
   if (checkout instanceof Error) {

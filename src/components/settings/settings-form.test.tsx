@@ -66,3 +66,18 @@ describe("Danger zone", () => {
     expect(screen.queryByRole("button", { name: "Delete my account" })).not.toBeInTheDocument();
   });
 });
+
+describe("Sandbox key", () => {
+  const form = (e2b: Parameters<typeof SettingsForm>[0]["e2b"]) =>
+    render(<SettingsForm account={account} installUrl={null} e2b={e2b} />);
+
+  it("says how many minutes are left on the server's key", () => {
+    form({ hint: null, serverFallback: true, fallbackMinutesLeft: 12 });
+    expect(screen.getByText(/12 sandbox minutes left this month/)).toBeInTheDocument();
+  });
+
+  it("asks for their own key once the minutes are used", () => {
+    form({ hint: null, serverFallback: true, fallbackMinutesLeft: 0 });
+    expect(screen.getByText(/Add your own key to keep running/)).toBeInTheDocument();
+  });
+});

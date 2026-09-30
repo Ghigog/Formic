@@ -24,25 +24,34 @@ export interface Credentials {
   /** An app user token lists repositories through its installations. */
   githubTokenKind: "app" | "pat" | null;
   e2bKey: string | null;
+  /** Set when e2bKey is the operator's: the person whose sandbox minutes are capped. */
+  e2bFallbackUserId: string | null;
 }
 
 export async function credentialsFor(user: UserRecord | null): Promise<Credentials> {
   const config = env();
-  const own = (cipher: string | null | undefined) => (cipher ? open(cipher) : null);
+  const e2bCredentials = (u: UserRecord | null) => {
+    const own = u?.e2bKeyCipher ? open(u.e2bKeyCipher) : null;
+    if (own) return { e2bKey: own, e2bFallbackUserId: null };
+    return {
+      e2bKey: config.E2B_API_KEY ?? null,
+      e2bFallbackUserId: config.E2B_API_KEY && u ? u.id : null,
+    };
+  };
 
   if (authMode() === "github" && user && user.githubId !== 0) {
     const githubToken = await githubTokenFor(user);
     return {
       githubToken,
       githubTokenKind: githubToken ? "app" : null,
-      e2bKey: own(user.e2bKeyCipher) ?? config.E2B_API_KEY ?? null,
+      ...e2bCredentials(user),
     };
   }
 
   return {
     githubToken: config.GITHUB_TOKEN ?? null,
     githubTokenKind: config.GITHUB_TOKEN ? "pat" : null,
-    e2bKey: own(user?.e2bKeyCipher) ?? config.E2B_API_KEY ?? null,
+    ...e2bCredentials(user),
   };
 }
 
