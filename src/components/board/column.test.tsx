@@ -2,14 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Column, columnCount } from "./column";
+import { CardEnvContext } from "./card";
 import { renderInDnd } from "@/test/render";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 const noop = vi.fn();
 
 function column(id: Parameters<typeof Column>[0]["id"], cards = [makeCard()]) {
+  const epics = new Map(cards.filter((c) => c.kind === "epic").map((c) => [c.id, c]));
+  const env = { epics, nextFor: () => null, onAdvance: noop };
   return renderInDnd(
-    <Column id={id} cards={cards} extras={{}} onOpen={noop} />,
+    <CardEnvContext.Provider value={env}>
+      <Column id={id} cards={cards} extras={{}} onOpen={noop} />
+    </CardEnvContext.Provider>,
   );
 }
 
@@ -121,6 +126,26 @@ describe("Column", () => {
     expect(
       screen.getByRole("button", { name: "Expand child tickets" }),
     ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("labels a ticket of a bug Epic as a bug, and as squashed once merged", () => {
+    const [epic, todo, done] = makeEpicWithChildren({ title: "Fix the flickering board" }, [
+      { title: "Stop the repaint", status: "ready" },
+      { title: "Cache the layout", status: "merged" },
+    ]);
+    const { unmount } = column("todo", [epic!, todo!]);
+    expect(screen.getByText("BUG")).toBeInTheDocument();
+    unmount();
+
+    column("done", [epic!, done!]);
+    expect(screen.queryByText("BUG")).toBeNull();
+    expect(screen.getByText("SQUASHED")).toBeInTheDocument();
+  });
+
+  it("gives a ticket of a feature Epic no bug label", () => {
+    const [epic, kid] = makeEpicWithChildren({ title: "Dark mode" }, [{ title: "Fix the palette" }]);
+    column("todo", [epic!, kid!]);
+    expect(screen.queryByText("BUG")).toBeNull();
   });
 
   it("renders the composer it is given, above the cards", () => {
