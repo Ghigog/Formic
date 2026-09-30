@@ -45,6 +45,11 @@ enum AgentRunStatus {
   cancelled
 }
 
+enum WorkType {
+  bug
+  spike
+}
+
 enum TicketSize {
   S
   M
@@ -143,6 +148,8 @@ model Epic {
   /// Structured PRD from the Product Agent. Null until stage 2 completes.
   prd              Json?
   prdEditedByHuman Boolean @default(false)
+  /// Bug or spike, as the owner chose. Null for neither.
+  workType         WorkType?
   /// When the PRD last changed. Tickets made before it were made from an
   /// older PRD, so the Epic is broken down again.
   prdUpdatedAt     DateTime?
@@ -218,6 +225,8 @@ model Ticket {
   /// The ticket is in the archive, off the board. The sort/filter epic
   /// reads it.
   archived Boolean      @default(false)
+  /// Bug or spike, as the owner chose. Null for neither.
+  workType WorkType?
   /// Where a person dropped it when it cannot work there. It shows there,
   /// with misplacedReason saying what is wrong and how to fix it; its status
   /// stays what is true. Cleared by its next move or status change.

@@ -40,11 +40,11 @@ describe("ColonyProvider agent-finished cue", () => {
 });
 
 describe("ColonyProvider bug squash", () => {
-  async function moveToDone(title: string) {
+  async function moveToDone(title: string, workType?: "bug") {
     // Reduced motion: the squash lands at once, and jsdom needs no animations.
     vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
     const play = vi.spyOn(SoundEngine.prototype, "play");
-    const [epic, ticket] = makeEpicWithChildren({ title }, [{ status: "review" }]);
+    const [epic, ticket] = makeEpicWithChildren({ title, workType }, [{ status: "review" }]);
     const tree = (cards: typeof ticket[]) => (
       <ColonyProvider storageKey={`colony-test-squash-${title}`} cards={cards as never} extras={{}}>
         <div data-tid={ticket!.id}>
@@ -63,7 +63,7 @@ describe("ColonyProvider bug squash", () => {
   }
 
   it("squashes a bug ticket once when it lands in Done", async () => {
-    expect(await moveToDone("Fix the flickering board")).toHaveLength(1);
+    expect(await moveToDone("Fix the flickering board", "bug")).toHaveLength(1);
   });
 
   it("does not squash a ticket of a feature Epic", async () => {

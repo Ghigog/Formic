@@ -1,7 +1,7 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
-import type { BoardCard } from "@/lib/domain/entities";
+import type { BoardCard, WorkType } from "@/lib/domain/entities";
 import {
   type ColumnId,
   COLUMN_LABELS,
@@ -410,6 +410,7 @@ async function placeAmong(
 export async function createBacklogItem(
   projectId: string,
   rawRequest: string,
+  workType?: WorkType,
 ): Promise<BoardCard> {
   const repo = repository();
   const positions = await repo.columnPositions(projectId, "backlog");
@@ -423,6 +424,7 @@ export async function createBacklogItem(
     title,
     rawRequest: rawRequest.trim(),
     position,
+    workType,
   });
 
   await publish(projectId, {
@@ -451,12 +453,13 @@ export async function createTodoItem(
   projectId: string,
   rawRequest: string,
   requestId?: string,
+  workType?: WorkType,
 ): Promise<BoardCard> {
   const repo = repository();
   const trimmed = rawRequest.trim();
   const title = trimmed.split(/[.\n]/)[0]?.slice(0, 80) || "New ticket";
 
-  const epic = await repo.createEpic({ projectId, title, rawRequest: trimmed, position: 0 });
+  const epic = await repo.createEpic({ projectId, title, rawRequest: trimmed, position: 0, workType });
   await repo.setStandalone(epic.id, true);
 
   const positions = await repo.columnPositions(projectId, "todo");
@@ -475,6 +478,7 @@ export async function createTodoItem(
         storyPoints: null,
         position,
         dependsOnKeys: [],
+        workType,
       },
     ])
   )[0]!;
