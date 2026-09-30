@@ -1,10 +1,11 @@
 # Handoff — the job's ceiling caps what the per-point rule promises
 
-**Status: done.** `RUNNER_JOB_MINUTES` is 180 (clamp 175, sandbox TTL
-`max(20 min, budget + 5)` unchanged), the card names the ceiling and the
-ticket's budget, and a repository that declines the refresh pull request keeps
-its old 60-minute job. The text below is the original brief, kept for history;
-its figures are the old ones.
+**Status: open — code pending.** The target is `RUNNER_JOB_MINUTES` 180 (clamp
+175, sandbox TTL `max(20 min, budget + 5)` unchanged), a card that names the
+ceiling and the ticket's budget, and a refresh pull request; a repository that
+declines it keeps its old 60-minute job. `src/lib/runner/workflow.ts:38` is
+still 60, so every figure of 55 and 60 below is what the code does today, and
+the docs describe the target.
 
 **Where it stood:** the arithmetic is built; the ceiling is a constant. The
 per-point rule is real (`loopBudgetMs`), `timeout-minutes: 60` is written into

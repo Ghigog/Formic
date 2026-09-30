@@ -32,7 +32,7 @@ turns"). This is the record of why it is built this way and where it is going.
   budget is an hour's worth of turns rather than a wall reached a fifth of the
   way in. Two real loop runs died on the fixed forty while their budget had
   twenty-five minutes left.
-- **180 minutes** is the job ceiling Formic writes (GitHub's maximum is 360), and has nothing to do with the
+- **180 minutes** is the job ceiling Formic will write (60 until the ceiling change merges) (GitHub's maximum is 360), and has nothing to do with the
   model or the plan.
 
 ## What a person feels

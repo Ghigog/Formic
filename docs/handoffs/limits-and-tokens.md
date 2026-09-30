@@ -26,8 +26,8 @@ places, wrong. Every row below is a real constant in the tree today:
 | limit | unit | default | scope | stops the work? |
 | :-- | :-- | :-- | :-- | :-- |
 | `DEFAULT_RUN_BUDGET.maxDurationMs` (`src/lib/budget/limits.ts:33`) | ms | 4 min | an in-function run | yes, between turns |
-| `loopBudgetMs(points)` (`src/lib/runner/runner.ts:334`) | ms | `10 × points`, ≤ 175 min | a loop run in Actions | yes, in the entry |
-| `RUNNER_JOB_MINUTES` (`src/lib/runner/workflow.ts:38`) | min | 180, written into each repo's workflow (60 on an older copy) | a CLI agent in Actions | yes, by GitHub |
+| `loopBudgetMs(points)` (`src/lib/runner/runner.ts:334`) | ms | `10 × points`, ≤ 175 min (55 until the ceiling change merges) | a loop run in Actions | yes, in the entry |
+| `RUNNER_JOB_MINUTES` (`src/lib/runner/workflow.ts:38`) | min | 180 target, written into each repo's workflow (60 today, and on an older copy) | a CLI agent in Actions | yes, by GitHub |
 | route `maxDuration` (e.g. `src/app/api/tickets/route.ts:10`) | s | 300 | the whole invocation | yes, by the platform |
 | `DEFAULT_TTL_MS` (`src/lib/sandbox/types.ts:85`) | ms | 20 min; `max(20, budget + 5)` for a loop | the checkout | yes, by the sandbox |
 | `DEFAULT_EPIC_BUDGET.maxDurationMs` (`limits.ts:39`) | ms | 2 h | the Epic | **no — never checked** |
@@ -178,7 +178,7 @@ And two shapes that decide the design:
   under what the repository actually carries, or a run dies at the job's limit
   with nothing said.
 - The loop entry's payload clamps at `RUNNER_JOB_MINUTES -
-  JOB_HEADROOM_MINUTES` (175); the sandbox TTL is `max(20 min, budget + 5)` (unchanged): 85 min for an
+  JOB_HEADROOM_MINUTES` (175 at the 180-minute target; 55 while the job is 60); the sandbox TTL is `max(20 min, budget + 5)` (unchanged): 85 min for an
   80-minute run, 180 for a 175-minute one. The clamp is conservative — do not
   widen it to fit a budget.
 - `taskBudgetTokens` tells the *model* to budget 64k tokens, derived from 160¢
@@ -189,8 +189,8 @@ And two shapes that decide the design:
 - `MAX_REVIEWS` is derived from `DEFAULT_RUN_BUDGET.maxAttempts`; moving that
   constant moves review iterations. Which number the reviews should follow is a
   decision, not a rename.
-- **The job ceiling was raised to fit the default rule** (done; see
-  `docs/handoffs/job-timeout-ceiling.md`). `RUNNER_JOB_MINUTES` is 180, so ten
+- **The job ceiling is to be raised to fit the default rule** (planned, not merged; see
+  `docs/handoffs/job-timeout-ceiling.md`). `RUNNER_JOB_MINUTES` is 60 in the code today; at 180 ten
   minutes a point is honoured up to 17 points: an 8-point ticket gets its 80, a
   13-point one its 130, and anything above 175 is clamped, with the card naming
   the ceiling and the ticket's budget. A repository on an older workflow keeps

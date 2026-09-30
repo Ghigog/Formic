@@ -10,9 +10,11 @@ Two numbers bound a run today, neither of them chosen by the person:
 
 - `DEFAULT_RUN_BUDGET.maxDurationMs` — four minutes — in
   `src/lib/budget/limits.ts`, which bounds an agent Formic calls itself.
-- `timeout-minutes: 180` on the Actions job that runs a CLI agent
-  (`.github/workflows/formic-agent.yml:55`, and `src/lib/runner/workflow.ts:347`
-  writes that same 180 into the workflow generated for each repository).
+- `timeout-minutes` on the Actions job that runs a CLI agent
+  (`.github/workflows/formic-agent.yml:59`, and `src/lib/runner/workflow.ts:393`
+  writes `RUNNER_JOB_MINUTES` into the workflow generated for each repository).
+  The target is 180; the code still says 60 until the ceiling change merges, and
+  the yml moves with it.
 
 What the tickets already know is their size: `Ticket.storyPoints`
 (`prisma/schema.prisma:234`), set by the Architect Agent when it breaks an Epic
@@ -59,10 +61,12 @@ what a path cannot deliver:
 
 ## Where this stands
 
-The default this file describes is built: a loop run is given ten minutes a
+The default this file describes is built except the ceiling: a loop run is given ten minutes a
 story point, capped under the job's ceiling (`loopBudgetMs`,
 `MINUTES_PER_POINT` in `src/lib/budget/limits.ts`), and a run that reaches it
-stops and names the limit: a budget above the clamp says the job's 180-minute
+stops and names the limit. Once the ceiling change merges (today the job is 60
+minutes, the clamp 55, and the card says "Ran out of time: this run's budget is
+N minutes"), a budget above the clamp says the job's 180-minute
 ceiling applied and gives both numbers ("stopped at the job's 180-minute
 ceiling; the ticket's budget is 200"), while a run that used its own budget says
 that one. A repository whose workflow is older keeps its old 60-minute job until
