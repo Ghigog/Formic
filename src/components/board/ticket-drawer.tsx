@@ -220,11 +220,12 @@ export function TicketDrawer({
         </div>
 
         <SideBySide
+          active={tab === "ticket" ? "first" : "second"}
           storageKey="ticket"
           first={
             <section
               aria-label="Ticket"
-              className={cn("min-h-0 overflow-y-auto p-4", tab === "ticket" ? "block" : "hidden lg:block")}
+              className="min-h-0 overflow-y-auto p-4"
             >
               {view && <TicketBody view={view} />}
             </section>
@@ -232,7 +233,7 @@ export function TicketDrawer({
           second={
             <section
               aria-label="Agent"
-              className={cn("bg-sunken min-h-0 flex-col", tab === "agent" ? "flex" : "hidden lg:flex")}
+              className="bg-sunken flex min-h-0 flex-col"
             >
               <WithChat
                 storageKey="ticket"
