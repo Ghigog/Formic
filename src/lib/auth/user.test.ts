@@ -21,6 +21,9 @@ function user(termsAcceptedVersion: string | null): UserRecord {
     sessionVersion: 0,
     fallbackSandboxSeconds: 0,
     fallbackSandboxMonth: null,
+    runTimeBudgetMode: "PER_STORY_POINT",
+    runTimeBudgetFlatMinutes: null,
+    runTimeBudgetPerPointMinutes: null,
   };
 }
 

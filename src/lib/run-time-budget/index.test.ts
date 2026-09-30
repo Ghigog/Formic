@@ -87,7 +87,7 @@ describe("validateRunTimeBudgetSettings", () => {
   });
 
   it("rejects flat minutes below 1 or missing", () => {
-    for (const flatMinutes of [0, -5, null, undefined, NaN]) {
+    for (const flatMinutes of [0, -5, null, undefined, NaN, 30.5]) {
       expect(
         validateRunTimeBudgetSettings({ mode: "FLAT_MINUTES", flatMinutes })
           .flatMinutes,
@@ -112,7 +112,7 @@ describe("validateRunTimeBudgetSettings", () => {
   });
 
   it("rejects per-point values below 1", () => {
-    for (const v of [0, -3, "x"]) {
+    for (const v of [0, -3, 1.5, "x"]) {
       expect(
         validateRunTimeBudgetSettings({ mode: "PER_POINT" }, { "1": v })
           .perPointMinutes,
