@@ -91,27 +91,43 @@ export async function passwordToken(password: string): Promise<string> {
   return hmac(password, "formic-session-v1");
 }
 
-/* GitHub mode's per-user session: `<userId>.<expiry>.<signature>`. */
+/**
+ * GitHub mode's per-user session: `<userId>.<version>.<expiry>.<signature>`.
+ * The version is the user's sessionVersion when this was issued; the caller
+ * compares it with the current one, so signing out can end a copied cookie.
+ */
 
-export async function signSession(userId: string, now = Date.now()): Promise<string> {
+export async function signSession(
+  userId: string,
+  now = Date.now(),
+  version = 0,
+): Promise<string> {
   const expires = Math.floor(now / 1000) + SESSION_MAX_AGE_S;
-  const body = `${userId}.${expires}`;
+  const body = `${userId}.${version}.${expires}`;
   return `${body}.${await hmac(signingSecret(), `session:${body}`)}`;
 }
 
-/** The user a session cookie names, or null if it is forged or expired. */
+/** Who a session cookie names and the version it was issued at, or null if it is forged or expired. */
+export async function readSession(
+  cookie: string | undefined,
+  now = Date.now(),
+): Promise<{ userId: string; version: number } | null> {
+  if (!cookie) return null;
+  const parts = cookie.split(".");
+  if (parts.length !== 4) return null;
+  const [userId, version, expires, sig] = parts as [string, string, string, string];
+  if (!userId || !/^\d+$/.test(version) || !/^\d+$/.test(expires)) return null;
+  if (Number(expires) * 1000 < now) return null;
+  const expected = await hmac(signingSecret(), `session:${userId}.${version}.${expires}`);
+  return safeEqual(sig, expected) ? { userId, version: Number(version) } : null;
+}
+
+/** The user a session cookie names, or null if it is forged or expired. Says nothing about sign-out: see userForSession. */
 export async function verifySession(
   cookie: string | undefined,
   now = Date.now(),
 ): Promise<string | null> {
-  if (!cookie) return null;
-  const parts = cookie.split(".");
-  if (parts.length !== 3) return null;
-  const [userId, expires, sig] = parts as [string, string, string];
-  if (!userId || !/^\d+$/.test(expires)) return null;
-  if (Number(expires) * 1000 < now) return null;
-  const expected = await hmac(signingSecret(), `session:${userId}.${expires}`);
-  return safeEqual(sig, expected) ? userId : null;
+  return (await readSession(cookie, now))?.userId ?? null;
 }
 
 /** Signs a short-lived value, for the OAuth state round trip. */

@@ -70,7 +70,7 @@ export async function GET(req: Request) {
   if (first) await repo.adoptUnowned(user.id);
 
   const res = new Response(null, { status: 303, headers: { Location: safeNext(next ?? "/") } });
-  res.headers.append("Set-Cookie", cookieHeader(SESSION_COOKIE, await signSession(user.id), SESSION_MAX_AGE_S));
+  res.headers.append("Set-Cookie", cookieHeader(SESSION_COOKIE, await signSession(user.id, Date.now(), user.sessionVersion), SESSION_MAX_AGE_S));
   res.headers.append("Set-Cookie", cookieHeader(OAUTH_COOKIE, "", 0));
   return res;
 }

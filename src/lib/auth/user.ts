@@ -3,7 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { repository } from "@/lib/db";
 import type { OwnerScope, UserRecord } from "@/lib/db/repository";
-import { SESSION_COOKIE, authMode, verifySession } from "./session";
+import { SESSION_COOKIE, authMode, readSession } from "./session";
 import { isAllowed } from "./github";
 
 /** The one person in local mode. GitHub ids start at 1, so 0 is free. */
@@ -23,6 +23,13 @@ export function needsTermsAcceptance(user: UserRecord): boolean {
 /** Found once per process, so an ordinary request reads rather than writes. */
 let localUserId: string | null = null;
 
+/** The user a session cookie is still good for: signed, unexpired, and not signed out since. */
+export async function userForSession(cookie: string | undefined): Promise<UserRecord | null> {
+  const session = await readSession(cookie);
+  const user = session ? await repository().userById(session.userId) : null;
+  return user && user.sessionVersion === session?.version ? user : null;
+}
+
 /** Who is making this request, or null when nobody is signed in. */
 export async function currentUser(): Promise<UserRecord | null> {
   const repo = repository();
@@ -33,8 +40,7 @@ export async function currentUser(): Promise<UserRecord | null> {
     localUserId = user.id;
     return user;
   }
-  const userId = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
-  const user = userId ? await repo.userById(userId) : null;
+  const user = await userForSession((await cookies()).get(SESSION_COOKIE)?.value);
   // Taking someone off FORMIC_ALLOWED_USERS takes effect now, not when their
   // session cookie runs out.
   return user && isAllowed(user.login) ? user : null;
