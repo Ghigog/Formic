@@ -248,6 +248,8 @@ export interface TicketUpdate {
   runnerJob?: string | null;
   runnerAgent?: string | null;
   issueNumber?: number | null;
+  /** Cleared from active view without being deleted; the archive epic reads it. */
+  archived?: boolean;
   plan?: PlanStep[];
   handoff?: string[];
   reviewedSha?: string | null;
@@ -377,7 +379,14 @@ export interface Repository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
+  /** The archive: a project's archived tickets, off the active board. */
+  archivedTickets(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
+  /**
+   * The next standalone ticket's number, T-<number>. Claimed atomically and
+   * never reused, so a deleted ticket's key keeps meaning that ticket.
+   */
+  nextStandaloneTicketNumber(projectId: string): Promise<number>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   move(input: MoveInput): Promise<void>;
   /** Epics only: whether it is a holder with no card of its own. */

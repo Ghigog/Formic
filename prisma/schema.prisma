@@ -106,6 +106,9 @@ model Project {
   /// The highest Epic number this project has given out, deleted Epics
   /// included, so a number is never handed out twice.
   lastEpicNumber Int @default(0)
+  /// The highest standalone ticket number this project has given out, deleted
+  /// tickets included, so a number is never handed out twice.
+  lastStandaloneTicketNumber Int @default(0)
 
   epics        Epic[]
   events       Event[]

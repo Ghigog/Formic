@@ -150,6 +150,44 @@ describe("Epic numbers on the in-memory store", () => {
   });
 });
 
+describe("standalone ticket numbers on the in-memory store", () => {
+  it("never gives a deleted ticket's number to a new one", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const make = async () => {
+      const epic = await repo.createEpic({
+        projectId: project.id,
+        title: "A lone request",
+        rawRequest: "A lone request",
+        position: 0,
+      });
+      await repo.setStandalone(epic.id, true);
+      const key = `T-${await repo.nextStandaloneTicketNumber(project.id)}`;
+      const [ticket] = await repo.createTickets([
+        {
+          epicId: epic.id,
+          key,
+          title: key,
+          description: key,
+          acceptanceCriteria: [],
+          fileScope: [],
+          size: "M",
+          position: 1,
+          dependsOnKeys: [],
+        },
+      ]);
+      return ticket!;
+    };
+    const one = await make();
+    const two = await make();
+    await repo.deleteTickets([two.id]);
+    const three = await make();
+
+    expect([one.key, three.key]).toEqual(["T-1", "T-3"]);
+    expect(await repo.cardById(two.id)).toBeNull();
+  });
+});
+
 describe("standalone Epics on the in-memory store", () => {
   it("hides a standalone Epic from boardCards() while its detached ticket still renders", async () => {
     const repo = new MemoryRepository();
