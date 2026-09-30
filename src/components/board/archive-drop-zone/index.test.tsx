@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
+import { DragDropContext } from "@hello-pangea/dnd";
 import { ArchiveDropZone } from ".";
 import { renderInDnd } from "@/test/render";
 
@@ -9,6 +10,20 @@ describe("ArchiveDropZone", () => {
   it("is labelled Archive", () => {
     renderInDnd(<ArchiveDropZone onArchived={vi.fn()} />);
     expect(screen.getByRole("region", { name: "Archive" })).toBeInTheDocument();
+  });
+
+  it("hides the bar at rest and reveals it while dragging", () => {
+    const { rerender } = renderInDnd(<ArchiveDropZone onArchived={vi.fn()} />);
+    const bar = () => screen.getByText("Archive").parentElement!;
+    expect(bar()).toHaveAttribute("data-hidden", "true");
+    expect(bar()).toHaveAttribute("aria-hidden", "true");
+    rerender(
+      <DragDropContext onDragEnd={() => {}}>
+        <ArchiveDropZone dragging onArchived={vi.fn()} />
+      </DragDropContext>,
+    );
+    expect(bar()).not.toHaveAttribute("data-hidden");
+    expect(bar()).not.toHaveAttribute("aria-hidden");
   });
 
   it("archives the dropped ticket and reports it", async () => {

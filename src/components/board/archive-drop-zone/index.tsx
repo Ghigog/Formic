@@ -17,9 +17,12 @@ export const ARCHIVE_DROPPABLE_ID = "archive";
  * failure is a new value and retries.
  */
 export function ArchiveDropZone({
+  dragging = false,
   dropped,
   onArchived,
 }: {
+  /** True while a ticket is being dragged: the bar slides up to be dropped on. */
+  dragging?: boolean;
   dropped?: { ticketId: string } | null;
   onArchived: (ticketId: string) => void;
 }) {
@@ -31,6 +34,9 @@ export function ArchiveDropZone({
   } | null>(null);
   const archiving = !!dropped && outcome?.drop !== dropped;
   const error = outcome && outcome.drop === dropped ? outcome.error : null;
+
+  // A failed archive happens after the drag ended; keep its message visible.
+  const revealed = dragging || !!error;
 
   useEffect(() => {
     if (!dropped) return;
@@ -65,26 +71,36 @@ export function ArchiveDropZone({
           ref={provided.innerRef}
           {...provided.droppableProps}
           aria-label="Archive"
-          data-over={snapshot.isDraggingOver || undefined}
           className={cn(
-            "flex shrink-0 items-center justify-center gap-2 border-t-2 border-dashed px-4 py-3 text-sm font-medium transition-colors",
-            snapshot.isDraggingOver
-              ? "border-terracotta bg-terracotta/10 text-terracotta"
-              : "border-clay/40 text-clay",
+            "pointer-events-none absolute inset-x-0 bottom-0 z-10 overflow-hidden",
+            revealed && "pointer-events-auto",
           )}
         >
-          <span>
-            {snapshot.isDraggingOver
-              ? "Drop to archive"
-              : archiving
-                ? "Archiving…"
-                : "Archive"}
-          </span>
-          {error && (
-            <span role="alert" className="text-log-error">
-              {error}
+          <div
+            data-hidden={!revealed || undefined}
+            data-over={snapshot.isDraggingOver || undefined}
+            aria-hidden={!revealed || undefined}
+            className={cn(
+              "bg-cream flex items-center justify-center gap-2 border-t-2 border-dashed px-4 py-3 text-sm font-medium transition-[transform,colors] duration-200 motion-reduce:transition-none",
+              revealed ? "translate-y-0" : "translate-y-full",
+              snapshot.isDraggingOver
+                ? "border-terracotta bg-terracotta/10 text-terracotta"
+                : "border-clay/40 text-clay",
+            )}
+          >
+            <span>
+              {snapshot.isDraggingOver
+                ? "Drop to archive"
+                : archiving
+                  ? "Archiving…"
+                  : "Archive"}
             </span>
-          )}
+            {error && (
+              <span role="alert" className="text-log-error">
+                {error}
+              </span>
+            )}
+          </div>
           <div className="hidden">{provided.placeholder}</div>
         </section>
       )}
