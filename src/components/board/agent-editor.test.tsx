@@ -92,7 +92,7 @@ describe("AgentEditor pricing note", () => {
       await user.type(screen.getByLabelText("Model"), "gpt-4o");
     });
 
-    expect(screen.getByText(/Billed as OpenAI gpt-4o/)).toBeInTheDocument();
+    expect(screen.getByText(/bounds token volume, not a bill.*OpenAI gpt-4o/)).toBeInTheDocument();
   });
 
   it("says a model with no known price is not counted against the ceiling", async () => {

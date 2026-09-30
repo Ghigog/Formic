@@ -40,7 +40,7 @@ import { runCodingLoop } from "@/lib/agents/coding-loop";
 import type { AgentContext, CoderTask, Usage } from "@/lib/agents/ports";
 import { isSpikeText } from "@/lib/colony/game";
 import { CODER_BRIEF, CHECKPOINT_RULE, withCodingRules } from "@/lib/agents/prompts";
-import { billingFor, turnCeiling } from "@/lib/budget/limits";
+import { billingFor, spendCeilingNote, turnCeiling } from "@/lib/budget/limits";
 import type { PlanStep } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import { isProviderId, provider, type ProviderId } from "@/lib/llm/providers";
@@ -409,7 +409,7 @@ function spendCeiling(maxCents: number): Error {
 function spendNote(maxCents: number | undefined): string {
   return maxCents === undefined
     ? "Spend ceiling reached."
-    : `Spend ceiling reached ($${(maxCents / 100).toFixed(2)}). Raise the ticket's budget, or move the column to an agent on another account.`;
+    : `${spendCeilingNote(maxCents)} Raise the ticket's budget, or move the column to an agent on another account.`;
 }
 
 /** One line of progress for a job log, in the voice the board already uses. */

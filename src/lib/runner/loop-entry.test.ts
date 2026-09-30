@@ -235,6 +235,18 @@ describe("the run's own ceilings", () => {
     expect(report.usage.costCents).toBe(0);
   });
 
+  it("says the spend ceiling bounds tokens, not a bill, when it stops a run", async () => {
+    fakeProvider([toolCall("call_1", "list_files", { path: "." }), finish()]);
+
+    const report = await runLoopEntry(payload({ model: "deepseek-flash", limits: { maxCents: 0 } }), {
+      workspace: new MemoryWorkspace(),
+      log: () => {},
+    });
+
+    expect(report.ok).toBe(false);
+    expect(!report.ok && report.error).toContain("token volume, not a bill");
+  });
+
   it("refuses a CLI agent, which belongs in an Actions job of its own", async () => {
     await expect(
       runLoopEntry(payload({ provider: "claude-code" }), { workspace: new MemoryWorkspace() }),
