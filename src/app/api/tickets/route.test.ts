@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const { createTodoItem, activeProject } = vi.hoisted(() => ({
@@ -13,6 +13,9 @@ vi.mock("@/lib/board/project", () => ({
 }));
 
 const { POST } = await import("./route");
+const { clearBuckets } = await import("@/lib/rate-limit");
+
+beforeEach(clearBuckets);
 
 function request(body: unknown): NextRequest {
   return new NextRequest("http://localhost/api/tickets", {
@@ -22,6 +25,23 @@ function request(body: unknown): NextRequest {
 }
 
 describe("POST /api/tickets", () => {
+  it("refuses the sixty-first run start from one address in a minute", async () => {
+    activeProject.mockResolvedValue({ id: "project_default" });
+    createTodoItem.mockResolvedValue({ id: "ticket-1", kind: "ticket" });
+    const post = () =>
+      POST(request({ rawRequest: "Fix the broken footer link." }));
+
+    // Starting a run costs real money: the budget is shared with every
+    // other route that starts one, and spent is spent.
+    for (let i = 0; i < 60; i++) expect((await post()).status).toBe(201);
+
+    const res = await post();
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toMatch(/^\d+$/);
+    expect(createTodoItem).toHaveBeenCalledTimes(60);
+  });
+
+
   it("rejects a request that is too short to be a ticket", async () => {
     const res = await POST(request({ rawRequest: "hi" }));
     expect(res.status).toBe(400);

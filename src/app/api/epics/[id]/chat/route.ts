@@ -5,6 +5,7 @@ import { ChatBusyError, ask } from "@/lib/agents/card-chat";
 import { activeProject } from "@/lib/board/project";
 import { MAX_NOTE } from "@/lib/coder/notes";
 import { repository } from "@/lib/db";
+import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 // POST starts the column agent's answer (see launch() in
@@ -43,6 +44,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const refused = limited(req, RUN, "run-start");
+  if (refused) return refused;
+
   const { id } = await params;
   const project = await projectOwning(id);
   if (!project) return notFound();

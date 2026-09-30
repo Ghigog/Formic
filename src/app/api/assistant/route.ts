@@ -6,6 +6,7 @@ import { collectCliRuns } from "@/lib/runner/runner";
 import { currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
+import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,9 @@ export async function GET() {
 
 /** Asks the assistant something. The answer arrives on a later GET. */
 export async function POST(req: Request) {
+  const refused = limited(req, RUN, "run-start");
+  if (refused) return refused;
+
   const found = await board();
   if ("error" in found) return found.error;
   const body = askSchema.safeParse(await req.json().catch(() => null));

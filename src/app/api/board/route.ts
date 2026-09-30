@@ -4,10 +4,16 @@ import { collectCliRuns } from "@/lib/runner/runner";
 import { launch } from "@/lib/agents/pipeline";
 import { sweepOpenPullRequests } from "@/lib/review/pipeline";
 import { sweepIdleCards } from "@/lib/board/idle";
+import { limited, REFRESH } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  // A refresh launches the sweeps, and the UI polls — so the board gets its
+  // own generous budget rather than the shared run-start one.
+  const refused = limited(req, REFRESH, "board-refresh");
+  if (refused) return refused;
+
   const repo = repository();
   const project = await activeProject();
   if (!project) return Response.json({ project: null, cards: [] });
