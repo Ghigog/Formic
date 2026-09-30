@@ -80,8 +80,6 @@ export function SettingsForm({
 
         <SoundSection />
 
-        <RunTimeBudgetSection initial={runTimeBudget} />
-
         <KeyField
           field="e2bKey"
           title="Sandbox (E2B)"
@@ -91,6 +89,8 @@ export function SettingsForm({
           placeholder="e2b_…"
           state={e2b}
         />
+
+        <RunTimeBudgetSection initial={runTimeBudget} />
 
         <p className="text-muted px-1 text-[12px] leading-[1.5]">
           AI provider keys live on each agent, not here: pick or create one from
