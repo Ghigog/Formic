@@ -269,7 +269,7 @@ async function whyItFailed(
   const log = result.url ? ` Its log: ${result.url}` : "";
   if (result.conclusion === "cancelled") return `The agent's GitHub Actions run was cancelled.${log}`;
   if (result.conclusion === "timed_out") {
-    return `The agent ran past the workflow's 60-minute limit and was stopped.${log}`;
+    return `The agent ran past the workflow's ${RUNNER_JOB_MINUTES}-minute limit and was stopped.${log}`;
   }
   const plain = `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`;
   const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
@@ -380,7 +380,12 @@ export function loopPayload(input: {
     provider: input.provider,
     model: input.model,
     // The person's budget is the plan; the job's timeout is the backstop.
-    limits: maxDurationMs === undefined ? {} : { maxDurationMs },
+    // The clamped value stops the run; the full budget lets the note say which
+    // ceiling it was.
+    limits:
+      maxDurationMs === undefined || input.budgetMinutes == null
+        ? {}
+        : { maxDurationMs, budgetMs: input.budgetMinutes * 60_000 },
   };
 }
 
@@ -1607,7 +1612,7 @@ export function loopBundleUrl(job: string, since: number): string | null {
   return `${origin}/api/runner/bundle?${q.toString()}`;
 }
 
-/** How long a signed attachment URL stays good: past the workflow's own 60-minute timeout, so a job that is slow to start never finds it expired. */
+/** How long a signed attachment URL stays good: past the workflow's own 180-minute timeout, so a job that is slow to start never finds it expired. */
 const ATTACHMENT_URL_TTL_MS = 90 * 60 * 1000;
 
 function attachmentToken(id: string, expires: number): string {
