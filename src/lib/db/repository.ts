@@ -248,6 +248,8 @@ export interface TicketUpdate {
   runnerJob?: string | null;
   runnerAgent?: string | null;
   issueNumber?: number | null;
+  /** Cleared from active view without being deleted; the archive epic reads it. */
+  archived?: boolean;
   plan?: PlanStep[];
   handoff?: string[];
   reviewedSha?: string | null;
@@ -377,6 +379,8 @@ export interface Repository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
+  /** The archive: a project's archived tickets, off the active board. */
+  archivedTickets(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   move(input: MoveInput): Promise<void>;

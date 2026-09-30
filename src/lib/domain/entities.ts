@@ -208,6 +208,8 @@ export interface BoardCard {
    * it; the person does it and closes it from its chat.
    */
   needsHuman?: string | null;
+  /** Tickets only: cleared from active view without being deleted. */
+  archived?: boolean;
   agentRole: AgentRole | null;
   model: string | null;
   fileScope: string[];
