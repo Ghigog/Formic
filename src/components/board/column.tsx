@@ -9,6 +9,8 @@ import type { BoardCard } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { layout } from "./placement";
 import { AgentSelect, type ColumnAgentControls } from "./agent-select";
+import { ViewMenu } from "./view-menu";
+import { applyView, EMPTY_VIEW, isViewActive, type ColumnView } from "./view";
 import { formatCountdown, useCountdown } from "@/lib/hooks/use-countdown";
 
 /** The header dot. Only In Progress breathes: it is the only live column. */
@@ -43,6 +45,8 @@ export function Column({
   onToggleCollapse,
   accepts,
   agent,
+  view = EMPTY_VIEW,
+  onViewChange,
   onOpen,
   onShowcase,
   className,
@@ -70,6 +74,9 @@ export function Column({
   accepts?: (cardId: string) => boolean;
   /** Which agent works this column, and the controls to change it. */
   agent?: ColumnAgentControls;
+  /** This column's search, sort, filter and fold. The board owns it. */
+  view?: ColumnView;
+  onViewChange?: (view: ColumnView) => void;
   onOpen: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
   className?: string;
@@ -82,7 +89,10 @@ export function Column({
   const [ownCollapsed, setOwnCollapsed] = useState<Set<string>>(new Set());
   const collapsed = controlledCollapsed ?? ownCollapsed;
 
-  const items = useMemo(() => layout(cards, id), [cards, id]);
+  const viewActive = isViewActive(view);
+  const shownCards = useMemo(() => applyView(cards, view), [cards, view]);
+  const items = useMemo(() => layout(shownCards, id), [shownCards, id]);
+  const total = useMemo(() => columnCount(cards, id), [cards, id]);
 
   const count = items.reduce(
     (n, item) =>
@@ -112,6 +122,9 @@ export function Column({
     rendered.push({ item, index: next, shown, isCollapsed });
     next += 1 + shown.length;
   }
+
+  const hidesSome = count !== total;
+  const menu = onViewChange && <ViewMenu value={view} onChange={onViewChange} />;
 
   const toggle = (epicId: string) =>
     onToggleCollapse
@@ -143,15 +156,18 @@ export function Column({
         </h2>
         <CoinBadge
           ground="cream"
-          title={`${count} cards`}
+          title={hidesSome ? `${count} of ${total} cards` : `${count} cards`}
           className="text-[10px] tabular-nums"
         >
           {String(count).padStart(2, "0")}
         </CoinBadge>
+        {menu && <div className="ml-auto">{menu}</div>}
       </div>
       )}
 
-      {limited && agent?.selected && (
+      {bare && menu && <div className="flex justify-end">{menu}</div>}
+
+      {!view.collapsed && limited && agent?.selected && (
         <LimitBanner
           agentName={agent.selected.name}
           until={agent.selected.limitedUntil!}
@@ -160,11 +176,12 @@ export function Column({
         />
       )}
 
-      {agent && <AgentSelect column={id} {...agent} />}
+      {!view.collapsed && agent && <AgentSelect column={id} {...agent} />}
 
-      {composer}
+      {!view.collapsed && composer}
 
-      <Droppable droppableId={id}>
+      {!view.collapsed && (
+      <Droppable droppableId={id} isDropDisabled={viewActive}>
         {(provided, snapshot) => (
           <ul
             ref={provided.innerRef}
@@ -214,6 +231,7 @@ export function Column({
           </ul>
         )}
       </Droppable>
+      )}
     </section>
   );
 }

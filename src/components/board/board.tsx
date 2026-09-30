@@ -9,6 +9,7 @@ import {
 } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
+import { EMPTY_VIEW, type ColumnView } from "./view";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
@@ -103,6 +104,14 @@ export function Board({
       done: new Set(),
     }),
   );
+
+  const [views, setViews] = useState<Record<ColumnId, ColumnView>>(() => ({
+    backlog: EMPTY_VIEW,
+    todo: EMPTY_VIEW,
+    in_progress: EMPTY_VIEW,
+    in_review: EMPTY_VIEW,
+    done: EMPTY_VIEW,
+  }));
 
   const isMobile = useMediaQuery("(max-width: 767px)");
   const colony = useColony();
@@ -263,6 +272,8 @@ export function Board({
       extras={extras}
       bare={isMobile}
       collapsed={collapsed[col]}
+      view={views[col]}
+      onViewChange={(view) => setViews((prev) => ({ ...prev, [col]: view }))}
       accepts={(cardId) => {
         const card = live.find((c) => c.id === cardId);
         // Where it can work: its own column, or a move the rules allow
