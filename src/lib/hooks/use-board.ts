@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { BoardCard } from "@/lib/domain/entities";
+import type { BoardCard, WorkType } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { CardTransition, TransitionResult } from "@/lib/domain/transitions";
 import type { CardExtras } from "@/components/board/card";
@@ -172,11 +172,11 @@ export function useBoard(
   );
 
   const createEpic = useCallback(
-    async (rawRequest: string, requestId?: string) => {
+    async (rawRequest: string, requestId?: string, workType?: WorkType) => {
       const res = await fetch("/api/epics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawRequest, requestId }),
+        body: JSON.stringify({ rawRequest, requestId, workType }),
       });
       await refetch();
       if (!res.ok) {
@@ -188,11 +188,11 @@ export function useBoard(
   );
 
   const createTicket = useCallback(
-    async (rawRequest: string, requestId?: string) => {
+    async (rawRequest: string, requestId?: string, workType?: WorkType) => {
       const res = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawRequest, requestId }),
+        body: JSON.stringify({ rawRequest, requestId, workType }),
       });
       await refetch();
       if (!res.ok) {

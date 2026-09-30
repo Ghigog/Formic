@@ -13,7 +13,7 @@ import {
   type BoardCard,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
-import { isBug, isBugText, isSpike, isSquashed } from "@/lib/colony/game";
+import { isBug, isSpike, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
@@ -189,8 +189,11 @@ function BugBadge({ squashed }: { squashed: boolean }) {
 
 function SpikeBadge() {
   return (
-    <span className="oct inline-flex shrink-0 bg-sky-600 p-px">
-      <span className="oct inline-flex items-center gap-1 bg-sky-100 py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap text-sky-900">
+    <span className="oct bg-line inline-flex shrink-0 p-px">
+      <span className="oct text-ink inline-flex items-center gap-1 bg-cream py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
+        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+          <path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
         SPIKE
       </span>
     </span>
@@ -534,7 +537,7 @@ function RawIdea({
       <TicketHead card={card} column={column} />
       <Title>{card.title}</Title>
       <span className="text-muted truncate font-mono text-[9px]">
-        {isBugText(card.title) ? "Triage" : "Raw idea"}
+        {isBug(card, NO_EPICS) ? "Triage" : "Raw idea"}
         {extras.age ? ` · ${extras.age}` : ""}
       </span>
     </CardShell>

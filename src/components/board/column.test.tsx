@@ -129,7 +129,7 @@ describe("Column", () => {
   });
 
   it("labels a ticket of a bug Epic as a bug, and as squashed once merged", () => {
-    const [epic, todo, done] = makeEpicWithChildren({ title: "Fix the flickering board" }, [
+    const [epic, todo, done] = makeEpicWithChildren({ title: "Fix the flickering board", workType: "bug" }, [
       { title: "Stop the repaint", status: "ready" },
       { title: "Cache the layout", status: "merged" },
     ]);
@@ -144,7 +144,7 @@ describe("Column", () => {
 
   it("labels a spike card SPIKE, and not as a bug; an ordinary card gets no SPIKE", () => {
     column("backlog", [
-      makeCard({ title: "Spike: how does the merge queue handle conflicts?" }),
+      makeCard({ title: "How does the merge queue handle conflicts?", workType: "spike" }),
       makeCard({ title: "Add CSV export" }),
     ]);
     expect(screen.getAllByText("SPIKE")).toHaveLength(1);

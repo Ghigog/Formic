@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { BUG_COST, isBugText } from "@/lib/colony/game";
+import { BUG_COST } from "@/lib/colony/game";
+import type { WorkType } from "@/lib/domain/entities";
 import { AttachmentPicker, pastedFileName } from "./attachment-picker";
 
 /** Which column's capture dialog this is: swaps its copy and submit target. */
@@ -52,9 +53,10 @@ export function NewItemDialog({
   column: CaptureColumn;
   onClose: () => void;
   /** `requestId` is the id its attachments were uploaded against. */
-  onSubmit: (rawRequest: string, requestId: string) => Promise<void>;
+  onSubmit: (rawRequest: string, requestId: string, workType?: WorkType) => Promise<void>;
 }) {
   const [value, setValue] = useState("");
+  const [workType, setWorkType] = useState<WorkType | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
@@ -71,6 +73,7 @@ export function NewItemDialog({
     setWasOpen(open);
     if (open) {
       setValue("");
+      setWorkType(null);
       setError(null);
       setRequestId(crypto.randomUUID());
     }
@@ -128,7 +131,7 @@ export function NewItemDialog({
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(value.trim(), requestId);
+      await onSubmit(value.trim(), requestId, workType ?? undefined);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -137,7 +140,7 @@ export function NewItemDialog({
     }
   }
 
-  const bug = isBugText(value);
+  const bug = workType === "bug";
 
   return (
     <div
@@ -181,6 +184,20 @@ export function NewItemDialog({
           placeholder={copy.placeholder}
           className="border-line bg-cream text-ink placeholder:text-muted focus:outline-terracotta box-border min-h-[110px] w-full resize-y rounded-lg border px-3 py-2.5 text-[14px] leading-[1.5]"
         />
+
+        <div role="group" aria-label="Work type" className="-mt-1 flex gap-2">
+          {(["bug", "spike"] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              aria-pressed={workType === type}
+              onClick={() => setWorkType(workType === type ? null : type)}
+              className="border-line bg-card text-ink aria-pressed:border-terracotta aria-pressed:bg-cream h-[28px] rounded-lg border px-2.5 text-[12px] font-medium capitalize"
+            >
+              {type}
+            </button>
+          ))}
+        </div>
 
         <AttachmentPicker
           requestId={requestId}
