@@ -87,7 +87,7 @@ describe("validateRunTimeBudgetSettings", () => {
   });
 
   it("rejects flat minutes below 1 or missing", () => {
-    for (const flatMinutes of [0, -5, null, undefined, NaN]) {
+    for (const flatMinutes of [0, -5, null, undefined, NaN, 30.5]) {
       expect(
         validateRunTimeBudgetSettings({ mode: "FLAT_MINUTES", flatMinutes })
           .flatMinutes,

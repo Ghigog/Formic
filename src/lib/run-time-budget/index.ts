@@ -104,8 +104,8 @@ export function validateRunTimeBudgetSettings(
   const errors: RunTimeBudgetErrors = {};
   if (settings.mode === "FLAT_MINUTES") {
     const m = settings.flatMinutes;
-    if (m == null || !Number.isFinite(m) || m < 1) {
-      errors.flatMinutes = "Flat minutes must be at least 1.";
+    if (m == null || !Number.isInteger(m) || m < 1) {
+      errors.flatMinutes = "Flat minutes must be a whole number of at least 1.";
     }
   }
   if (settings.mode === "PER_POINT") {
