@@ -449,15 +449,18 @@ function openAiConversation(
       }).catch((e: unknown) => {
         throw new Error(e instanceof Error ? e.message : String(e));
       });
-      messages.push({
-        role: "assistant",
-        content: result.message.content ?? "",
-        ...(result.message.tool_calls?.length ? { tool_calls: result.message.tool_calls } : {}),
-      });
+      // The provider's whole message goes back, reasoning included: DeepSeek
+      // rejects the next turn when a tool turn's reasoning is missing.
+      messages.push(result.message);
       return {
-        thoughts: result.message.content?.trim()
-          ? [{ kind: "text" as const, text: result.message.content }]
-          : [],
+        thoughts: [
+          ...(result.message.reasoning_content?.trim()
+            ? [{ kind: "thinking" as const, text: result.message.reasoning_content }]
+            : []),
+          ...(result.message.content?.trim()
+            ? [{ kind: "text" as const, text: result.message.content }]
+            : []),
+        ],
         calls: (result.message.tool_calls ?? []).map((c) => {
           let parsed: unknown;
           try {
