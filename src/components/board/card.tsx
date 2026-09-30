@@ -204,7 +204,6 @@ function SpikeBadge() {
 /** The bug label, on any card that is a bug. */
 function CardBugBadge({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
-  if (isSpike(card)) return <SpikeBadge />;
   if (!isBug(card, env?.epics ?? NO_EPICS)) return null;
   return <BugBadge squashed={isSquashed(card)} />;
 }

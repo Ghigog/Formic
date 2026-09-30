@@ -144,7 +144,7 @@ describe("Column", () => {
 
   it("labels a spike card SPIKE, and not as a bug; an ordinary card gets no SPIKE", () => {
     column("backlog", [
-      makeCard({ title: "Spike: how does the merge queue handle conflicts?" }),
+      makeCard({ title: "How does the merge queue handle conflicts?", workType: "spike" }),
       makeCard({ title: "Add CSV export" }),
     ]);
     expect(screen.getAllByText("SPIKE")).toHaveLength(1);
