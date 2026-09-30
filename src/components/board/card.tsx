@@ -13,7 +13,7 @@ import {
   type BoardCard,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
-import { isBug, isBugText, isSquashed } from "@/lib/colony/game";
+import { isBug, isBugText, isSpike, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
@@ -187,12 +187,27 @@ function BugBadge({ squashed }: { squashed: boolean }) {
   );
 }
 
+function SpikeBadge() {
+  return (
+    <span className="oct inline-flex shrink-0 bg-sky-600 p-px">
+      <span className="oct inline-flex items-center gap-1 bg-sky-100 py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap text-sky-900">
+        SPIKE
+      </span>
+    </span>
+  );
+}
+
 /** The arrow that sends a card on to the next column, where it may go. */
 /** The bug label, on any card that is a bug. */
 function CardBugBadge({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
   if (!isBug(card, env?.epics ?? NO_EPICS)) return null;
   return <BugBadge squashed={isSquashed(card)} />;
+}
+
+/** The spike label, on any card that is a spike. */
+function CardSpikeBadge({ card }: { card: BoardCard }) {
+  return isSpike(card) ? <SpikeBadge /> : null;
 }
 
 function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) {
@@ -438,6 +453,7 @@ function TicketHead({
       <ReturnButton card={card} column={column} />
       {card.status === "queued" && <QueueTimer card={card} />}
       <CardBugBadge card={card} />
+      <CardSpikeBadge card={card} />
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
       <ProblemBadge card={card} />
@@ -480,6 +496,7 @@ function BacklogEpic({
           EPIC
         </CoinBadge>
         <CardBugBadge card={card} />
+        <CardSpikeBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <div className="flex-grow" />
         <ProblemBadge card={card} />
@@ -882,6 +899,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
           )}
         />
         <CardBugBadge card={card} />
+        <CardSpikeBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <ProblemBadge card={card} />
         <h4
@@ -921,6 +939,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
       <div className="flex items-center gap-1.5">
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
         <CardBugBadge card={card} />
+        <CardSpikeBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <h4 className="text-ink truncate text-[12px] font-medium">
           {card.title}

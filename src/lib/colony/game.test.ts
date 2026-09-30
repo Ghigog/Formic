@@ -9,6 +9,7 @@ import {
   heatStacks,
   mergeScore,
   isBug,
+  isSpike,
   isSquashed,
   levelOf,
   nextUnlock,
@@ -122,6 +123,13 @@ describe("score", () => {
   it("counts a ticket of a bug Epic as a bug, and of a feature Epic as not", () => {
     expect(isBug(card({ id: "t1", title: "Add dark mode", epicId: "e1" }), epics)).toBe(true);
     expect(isBug(card({ id: "t2", title: "Fix the badge", epicId: "e2" }), epics)).toBe(false);
+  });
+
+  it("counts a card titled as an investigation as a spike, unless it is an Epic's ticket", () => {
+    expect(isSpike(card({ id: "s1", title: "Spike: merge queue conflicts", epicId: null }))).toBe(true);
+    expect(isSpike(card({ id: "s2", title: "Investigate slow loads", epicId: null }))).toBe(true);
+    expect(isSpike(card({ id: "s3", title: "Add CSV export", epicId: null }))).toBe(false);
+    expect(isSpike(card({ id: "s4", title: "Spike: merge queue", epicId: "e2" }))).toBe(false);
   });
 
   it("falls back to its own title for a ticket with no Epic", () => {

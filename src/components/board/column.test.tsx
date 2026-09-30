@@ -142,6 +142,15 @@ describe("Column", () => {
     expect(screen.getByText("SQUASHED")).toBeInTheDocument();
   });
 
+  it("labels a spike card SPIKE, and not as a bug; an ordinary card gets no SPIKE", () => {
+    column("backlog", [
+      makeCard({ title: "Spike: how does the merge queue handle conflicts?" }),
+      makeCard({ title: "Add CSV export" }),
+    ]);
+    expect(screen.getAllByText("SPIKE")).toHaveLength(1);
+    expect(screen.queryByText("BUG")).toBeNull();
+  });
+
   it("gives a ticket of a feature Epic no bug label", () => {
     const [epic, kid] = makeEpicWithChildren({ title: "Dark mode" }, [{ title: "Fix the palette" }]);
     column("todo", [epic!, kid!]);
