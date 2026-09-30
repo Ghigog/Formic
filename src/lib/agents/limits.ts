@@ -387,6 +387,40 @@ export function diagnose(text: string, label: string, now = new Date()): Diagnos
 }
 
 /**
+ * A gateway's own words for an answer that never came back. ClinePass sends
+ * `{"error":"empty response content","success":false}` when the model behind
+ * it returned nothing at all, which is its roof and not the request.
+ */
+const EMPTY_ANSWER =
+  /(empty response|empty completion|no response content|no content in response|returned no (?:answer|content)|upstream (?:error|failure|timeout)|overloaded)/i;
+
+/**
+ * Whether a provider's refusal says nothing about the request, so the same
+ * request is worth making again.
+ *
+ * Cline's gateway answers a model that came back empty with a 500 and
+ * `{"error":"empty response content","success":false}`; that killed a
+ * thirty-minute run on its third turn, and the card then said it needed a
+ * person, when the request had been fine and the answer had simply not
+ * arrived. Anything under the provider's own roof is that same shape of
+ * failure, so every 5xx counts, and so does a fetch that never reached it at
+ * all — `status === null`. A gateway's words for an empty answer count too:
+ * it does not always wear a 5xx.
+ *
+ * Three things are deliberately not here, however temporary they look. A
+ * rate limit is answered with the window it resets in, and the card turns
+ * that into a time a person can act on. A rejected key and an account out of
+ * credit are about the credential: the same request cannot change either. And
+ * a 4xx is the provider saying the request itself is wrong, which asking
+ * again only repeats.
+ */
+export function isTransientProviderError(input: { status: number | null; message: string }): boolean {
+  if (input.status === null) return true;
+  if (input.status >= 500) return true;
+  return EMPTY_ANSWER.test(input.message);
+}
+
+/**
  * What an API provider's error means. `retryAfter` is the response's
  * Retry-After header, in seconds or as a date.
  */
@@ -423,6 +457,14 @@ export function describeProviderError(input: {
   }
   if (status === 529 || status === 503 || /overloaded/i.test(detail)) {
     return `${label} is overloaded right now${code}. Move the card back in a few minutes to retry.${said}`;
+  }
+  // A 5xx that is none of the above is the provider's own roof falling in: the
+  // request was fine and the answer never arrived. Cline's gateway reports an
+  // empty answer from the model behind it exactly this way. Saying "needs you"
+  // about it sends a person looking for a fault in their ticket that is not
+  // there, so this one says whose side it is on.
+  if (status !== null && status >= 500) {
+    return `${label} had a server error${code}. That is ${label}'s side, not the ticket's: move the card back in a minute to retry.${said}`;
   }
   if (status === null) return `Could not reach ${label}${detail ? `: ${detail}` : "."}`;
   return `${label} error ${status}${detail ? `: ${detail}` : ""}`;
