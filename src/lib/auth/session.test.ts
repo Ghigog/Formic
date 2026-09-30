@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { safeNext, secretProblem, signSession, signValue, verifySession, verifyValue } from "./session";
+import { readSession, safeNext, secretProblem, signSession, signValue, verifySession, verifyValue } from "./session";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -28,6 +28,13 @@ describe("sessions", () => {
     const cookie = await signSession("user_1", now);
     expect(await verifySession(cookie, now + 29 * 86_400_000)).toBe("user_1");
     expect(await verifySession(cookie, now + 31 * 86_400_000)).toBeNull();
+  });
+
+  it("carries the version it was issued at", async () => {
+    vi.stubEnv("FORMIC_SECRET", "s");
+    const cookie = await signSession("user_1", Date.now(), 3);
+    expect((await readSession(cookie))?.version).toBe(3);
+    expect(await readSession(cookie.replace(".3.", ".4."))).toBeNull();
   });
 
   it("rejects junk", async () => {

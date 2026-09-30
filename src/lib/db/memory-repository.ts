@@ -269,6 +269,7 @@ export class MemoryRepository implements Repository {
       anthropicKeyCipher: null,
       anthropicKeyHint: null,
       termsAcceptedVersion: null,
+      sessionVersion: 0,
     };
     s.users.set(user.id, user);
     return user;
@@ -285,6 +286,13 @@ export class MemoryRepository implements Repository {
     const user = store().users.get(userId);
     if (!user) throw new Error(`No user ${userId}.`);
     user.termsAcceptedVersion = version;
+    return user;
+  }
+
+  async bumpSessionVersion(userId: string): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    user.sessionVersion += 1;
     return user;
   }
 

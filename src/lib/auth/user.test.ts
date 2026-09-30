@@ -18,6 +18,7 @@ function user(termsAcceptedVersion: string | null): UserRecord {
     anthropicKeyCipher: null,
     anthropicKeyHint: null,
     termsAcceptedVersion,
+    sessionVersion: 0,
   };
 }
 
