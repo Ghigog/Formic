@@ -32,4 +32,9 @@ describe("ColonyHeaderStats", () => {
     await userEvent.click(grade);
     expect(grade).toHaveAttribute("aria-expanded", "true");
   });
+
+  it("has no mute button", () => {
+    renderHeader();
+    expect(screen.queryByRole("button", { name: /mute sounds/i })).not.toBeInTheDocument();
+  });
 });
