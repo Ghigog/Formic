@@ -91,37 +91,6 @@ function Heat({ c }: { c: ColonyApi }) {
   );
 }
 
-function SoundButton({ c }: { c: ColonyApi }) {
-  return (
-    <button
-      type="button"
-      aria-label={c.sound ? "Mute sounds" : "Unmute sounds"}
-      aria-pressed={c.sound}
-      onClick={() => c.setSound(!c.sound)}
-      className="border-line bg-cream inline-flex size-9 shrink-0 items-center justify-center rounded-lg border max-lg:hidden"
-    >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path
-          d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z"
-          stroke={c.sound ? "var(--text)" : "var(--text-muted)"}
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        {c.sound ? (
-          <path
-            d="M11 5.8c.9.9.9 3.5 0 4.4M12.8 4.2c1.9 1.9 1.9 5.7 0 7.6"
-            stroke="var(--text)"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-          />
-        ) : (
-          <path d="M11 6l3.5 4M14.5 6 11 10" stroke="var(--text-muted)" strokeWidth="1.4" strokeLinecap="round" />
-        )}
-      </svg>
-    </button>
-  );
-}
-
 /** Each epic as a pip: how much of it has merged. */
 function epicPips(c: ColonyApi) {
   return c.cards
@@ -196,7 +165,7 @@ function TimelineButton({ c }: { c: ColonyApi }) {
 
 /**
  * The colony's corner of the header: the Sentinels' grade and the level,
- * rank, points and heat, the sound switch, and the way into the timeline.
+ * rank, points and heat, and the way into the timeline.
  */
 export function ColonyHeaderStats() {
   const c = useColony();
@@ -249,7 +218,6 @@ export function ColonyHeaderStats() {
         <Heat c={c} />
       </div>
 
-      <SoundButton c={c} />
       <TimelineButton c={c} />
     </>
   );

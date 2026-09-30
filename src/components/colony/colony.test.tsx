@@ -39,6 +39,22 @@ describe("ColonyProvider agent-finished cue", () => {
   });
 });
 
+describe("ColonyProvider sound preference", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("mutes the engine when the browser-wide preference is off", async () => {
+    window.localStorage.setItem("formic:sound", "off");
+    const setEnabled = vi.spyOn(SoundEngine.prototype, "setEnabled");
+    render(
+      <ColonyProvider storageKey="colony-test-sound-off" cards={[]} extras={{}}>
+        <div />
+      </ColonyProvider>,
+    );
+    await flushFrame();
+    expect(setEnabled).toHaveBeenLastCalledWith(false);
+  });
+});
+
 describe("ColonyProvider bug squash", () => {
   async function moveToDone(title: string, workType?: "bug") {
     // Reduced motion: the squash lands at once, and jsdom needs no animations.
