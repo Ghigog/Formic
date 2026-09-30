@@ -73,6 +73,13 @@ export function nextUnlock(level: number): { level: number; labels: string[] } |
   return { level: lv, labels: unlocksAt(lv) };
 }
 
+const SPIKE_WORDS = /\b(spike|investigate|investigation)\b/i;
+
+/** Whether a task title reads as a spike. Only picks the coder's brief; it does not tag a card. */
+export function isSpikeText(text: string): boolean {
+  return SPIKE_WORDS.test(text);
+}
+
 /** A ticket written for an Epic, as opposed to a raw idea or the Epic itself. */
 function isEpicTicket(card: BoardCard): boolean {
   return card.kind === "ticket" && Boolean(card.epicId);

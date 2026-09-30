@@ -3,6 +3,7 @@ import { checkDecomposition, gherkin, toDraftTicket, type TicketSpec } from "./d
 import {
   ALREADY_DONE_RULE,
   ENGINEERING_PRACTICES,
+  SPIKE_RULE,
   VERIFY_RULE,
   withCodingRules,
   withPlanningConventions,
@@ -102,6 +103,19 @@ describe("verifying", () => {
   it("stops at the report when the work is already done", () => {
     expect(ALREADY_DONE_RULE).toContain("Then stop.");
     expect(ALREADY_DONE_RULE).toContain("mention it in your report and change nothing");
+  });
+});
+
+describe("a spike ticket", () => {
+  it("tells the Coder to change no product code and write findings under docs/spikes", () => {
+    const prompt = withCodingRules("Custom coder.", "coder", { spike: true });
+    expect(prompt).toContain(SPIKE_RULE);
+    expect(SPIKE_RULE).toContain("Change no product code");
+    expect(SPIKE_RULE).toContain("docs/spikes/");
+  });
+
+  it("leaves the instruction out for an ordinary ticket", () => {
+    expect(withCodingRules("Custom coder.", "coder")).not.toContain(SPIKE_RULE);
   });
 });
 

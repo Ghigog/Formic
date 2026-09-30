@@ -203,6 +203,21 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async addFallbackSandboxSeconds(
+    userId: string,
+    seconds: number,
+    month: string,
+  ): Promise<UserRecord> {
+    return prisma().$transaction(async (tx) => {
+      const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+      const carried = user.fallbackSandboxMonth === month ? user.fallbackSandboxSeconds : 0;
+      return tx.user.update({
+        where: { id: userId },
+        data: { fallbackSandboxSeconds: carried + seconds, fallbackSandboxMonth: month },
+      });
+    });
+  }
+
   async countUsers(): Promise<number> {
     return prisma().user.count();
   }

@@ -209,6 +209,11 @@ function CardBugBadge({ card }: { card: BoardCard }) {
   return <BugBadge squashed={isSquashed(card)} />;
 }
 
+/** The spike label, on any card that is a spike. */
+function CardSpikeBadge({ card }: { card: BoardCard }) {
+  return isSpike(card) ? <SpikeBadge /> : null;
+}
+
 function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) {
   const env = useContext(CardEnvContext);
   const to = env?.nextFor(card, column) ?? null;
@@ -452,6 +457,7 @@ function TicketHead({
       <ReturnButton card={card} column={column} />
       {card.status === "queued" && <QueueTimer card={card} />}
       <CardBugBadge card={card} />
+      <CardSpikeBadge card={card} />
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
       <ProblemBadge card={card} />
@@ -494,6 +500,7 @@ function BacklogEpic({
           EPIC
         </CoinBadge>
         <CardBugBadge card={card} />
+        <CardSpikeBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <div className="flex-grow" />
         <ProblemBadge card={card} />
@@ -896,6 +903,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
           )}
         />
         <CardBugBadge card={card} />
+        <CardSpikeBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <ProblemBadge card={card} />
         <h4
@@ -935,6 +943,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
       <div className="flex items-center gap-1.5">
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
         <CardBugBadge card={card} />
+        <CardSpikeBadge card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <h4 className="text-ink truncate text-[12px] font-medium">
           {card.title}

@@ -91,6 +91,11 @@ model User {
   /// session that was issued before.
   sessionVersion Int @default(0)
 
+  /// Seconds of sandbox time spent on the operator's fallback E2B key in the
+  /// month named by fallbackSandboxMonth ("2026-09"). See src/lib/sandbox/fallback-cap.ts.
+  fallbackSandboxSeconds Int     @default(0)
+  fallbackSandboxMonth   String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

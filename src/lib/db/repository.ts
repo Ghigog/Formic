@@ -315,6 +315,10 @@ export interface UserRecord {
   termsAcceptedVersion: string | null;
   /** Sessions signed under an older version have been signed out. */
   sessionVersion: number;
+  /** Sandbox seconds on the operator's E2B key in `fallbackSandboxMonth`. */
+  fallbackSandboxSeconds: number;
+  /** "YYYY-MM" (UTC) that the seconds above were spent in. */
+  fallbackSandboxMonth: string | null;
 }
 
 export type UserSecrets = Partial<
@@ -378,6 +382,8 @@ export interface Repository {
   acceptTerms(userId: string, version: string): Promise<UserRecord>;
   /** Signs this person out everywhere: every session cookie issued so far stops working. */
   bumpSessionVersion(userId: string): Promise<UserRecord>;
+  /** Adds sandbox time spent on the operator's E2B key, starting over when `month` is new. */
+  addFallbackSandboxSeconds(userId: string, seconds: number, month: string): Promise<UserRecord>;
   countUsers(): Promise<number>;
   /** Gives a user every unowned project and preset. */
   adoptUnowned(userId: string): Promise<void>;
