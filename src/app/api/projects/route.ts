@@ -10,6 +10,7 @@ import { getRepository } from "@/lib/vcs/repositories";
 import { launch } from "@/lib/agents/pipeline";
 import { addOnboardingTicket } from "@/lib/board/onboarding";
 import { runnerSetup } from "@/lib/runner/setup";
+import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,9 @@ const chooseSchema = z.union([
  * repository by name, which creates their project for it the first time.
  */
 export async function POST(req: NextRequest) {
+  const refused = limited(req, RUN, "run-start");
+  if (refused) return refused;
+
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
 

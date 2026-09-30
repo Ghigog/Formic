@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { applyTransition } from "@/lib/board/service";
 import { cardTransitionSchema } from "@/lib/domain/transitions";
 import { activeProject, noProject } from "@/lib/board/project";
+import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 // A transition can start the Architect, Product, Coder or Reviewer Agent
@@ -10,6 +11,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const refused = limited(req, RUN, "run-start");
+  if (refused) return refused;
+
   const body = await req.json().catch(() => null);
   const parsed = cardTransitionSchema.safeParse(body);
 
