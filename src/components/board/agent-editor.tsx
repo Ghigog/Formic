@@ -111,10 +111,10 @@ export function AgentEditor({
         signal: controller.signal,
       })
         .then((r) => r.json())
-        .then((d: { ok: boolean; models?: string[]; reason?: string }) =>
+        .then((d: { ok: boolean; models?: Array<{ id: string }>; reason?: string }) =>
           setFetched(
             d.ok
-              ? { state: "ready", models: d.models ?? [] }
+              ? { state: "ready", models: (d.models ?? []).map((m) => m.id) }
               : { state: "error", reason: d.reason ?? "Could not list models." },
           ),
         )

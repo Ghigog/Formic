@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chat } from "./openai-compat";
+import { chat, listOpenAiModels } from "./openai-compat";
 import { PROVIDERS, provider } from "./providers";
 
 /**
@@ -292,5 +292,53 @@ describe("the OpenAI-format client", () => {
     expect(sent[0]!.body.thinking).toEqual({ type: "enabled" });
     expect(sent[0]!.body.reasoning_effort).toBe("low");
     expect(sent[0]!.body).not.toHaveProperty("extra_body");
+  });
+
+  it("keeps the metadata a DeepSeek-shaped /models body carries", async () => {
+    fakeBody({
+      data: [
+        {
+          id: "deepseek-v4",
+          context_window: 131072,
+          max_output_tokens: 8192,
+          input_modalities: ["text"],
+          effort: { supported_levels: ["high", "max"], default_level: "high" },
+        },
+      ],
+    });
+    expect(await listOpenAiModels(provider("deepseek")!, "k")).toEqual([
+      {
+        id: "deepseek-v4",
+        contextWindow: 131072,
+        maxOutputTokens: 8192,
+        inputModalities: ["text"],
+        effort: { supportedLevels: ["high", "max"], defaultLevel: "high" },
+      },
+    ]);
+  });
+
+  it("invents nothing for a /models body carrying only ids", async () => {
+    fakeBody({ data: [{ id: "models/b" }, { id: "a" }] });
+    expect(await listOpenAiModels(provider("deepseek")!, "k")).toEqual([{ id: "a" }, { id: "b" }]);
+  });
+
+  it("asks for no more output than the model advertises, and only a supported effort", async () => {
+    const sent = fakeProvider([
+      { role: "assistant", content: "a" },
+      { role: "assistant", content: "b" },
+    ]);
+    const modelInfo = {
+      id: "m",
+      maxOutputTokens: 8192,
+      effort: { supportedLevels: ["high"] },
+    };
+    const deepseek = provider("deepseek")!;
+    await chat(deepseek, "k", { ...ask, messages: [...ask.messages], maxTokens: 32000, reasoningEffort: "max", modelInfo });
+    await chat(deepseek, "k", { ...ask, messages: [...ask.messages], maxTokens: 4000, reasoningEffort: "high", modelInfo });
+
+    expect(sent[0]!.body.max_tokens).toBe(8192);
+    expect(sent[0]!.body).not.toHaveProperty("reasoning_effort");
+    expect(sent[1]!.body.max_tokens).toBe(4000);
+    expect(sent[1]!.body.reasoning_effort).toBe("high");
   });
 });
