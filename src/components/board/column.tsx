@@ -189,7 +189,7 @@ export function Column({
             data-colony-clip
             className={cn(
               // Room around the cards for their lift, tilt and ants.
-              "scroll-area -mx-2 flex min-h-16 flex-1 flex-col overflow-x-hidden rounded-lg px-2 pt-1.5 pb-3 transition-colors [&>li:not(:last-child)]:mb-2",
+              "scroll-area -mx-2 flex min-h-16 flex-1 flex-col overflow-x-hidden rounded-lg px-2 pt-2.5 pb-3 transition-colors [&>li:not(:last-child)]:mb-2",
               snapshot.isDraggingOver &&
                 (snapshot.draggingOverWith && accepts && !accepts(snapshot.draggingOverWith)
                   ? "bg-crimson/5 outline-crimson outline-[1.5px] -outline-offset-[1.5px] outline-dashed"
