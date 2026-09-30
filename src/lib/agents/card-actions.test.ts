@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyCardAction } from "./card-actions";
+import { applyCardAction, cardActionSchema } from "./card-actions";
 import { resetAgents, setAgents } from "./registry";
 import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
@@ -133,6 +133,25 @@ afterEach(() => {
   vi.unstubAllEnvs();
   resetEnvCache();
   resetVcs();
+});
+
+describe("editing a ticket's story points", () => {
+  it("sets them and says story points changed", async () => {
+    const { ticket } = await seedInReview();
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "edit_ticket", storyPoints: 5 });
+
+    expect(said).toContain("story points");
+    expect((await repository().ticketDetail(ticket.id))!.storyPoints).toBe(5);
+  });
+
+  it("rejects a value off the scale, so the ticket stays as it was", async () => {
+    const { ticket } = await seedInReview();
+
+    expect(cardActionSchema.safeParse({ type: "edit_ticket", storyPoints: 4 }).success).toBe(false);
+    expect(cardActionSchema.safeParse({ type: "edit_ticket", storyPoints: 13 }).success).toBe(true);
+    expect((await repository().ticketDetail(ticket.id))!.storyPoints).toBe(3);
+  });
 });
 
 describe("moving a ticket with a pull request to Done", () => {

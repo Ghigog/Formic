@@ -77,6 +77,16 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.epicDetail(epic.id))?.rawRequest).toBe("Do E");
       });
 
+      it("updates a ticket's story points", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "C-1", { storyPoints: 3 })]);
+
+        await repo.updateTicket(t!.id, { storyPoints: 5 });
+
+        expect((await repo.ticketDetail(t!.id))!.storyPoints).toBe(5);
+      });
+
       it("keeps the work type of an Epic and a ticket", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1, workType: "bug" });

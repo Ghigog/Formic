@@ -22,6 +22,8 @@ test("dragging a ticket onto the archive zone archives it", async ({ page }) => 
   const title = (await source.innerText()).split("\n").find((l) => l.length > 12) ?? "";
 
   const zone = page.getByRole("region", { name: "Archive", exact: true });
+  const bar = zone.locator("[data-hidden]");
+  await expect(bar).toHaveAttribute("data-hidden", "true");
   const from = await source.boundingBox();
   const into = await zone.boundingBox();
   if (!from || !into) throw new Error("Nothing to measure.");

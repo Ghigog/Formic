@@ -63,7 +63,6 @@ export async function addOnboardingTicket(projectId: string): Promise<void> {
         description,
         acceptanceCriteria,
         fileScope,
-        size: "S",
         storyPoints: 2,
         position,
         dependsOnKeys: [],
