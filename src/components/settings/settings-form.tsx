@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Account } from "@/components/board/account-menu";
+import { useSound } from "@/components/colony/store";
 
 interface KeyState {
   /** Last four characters of the saved key, or null with none saved. */
@@ -93,6 +94,8 @@ export function SettingsForm({
           </Section>
         )}
 
+        <SoundSection />
+
         <KeyField
           field="e2bKey"
           title="Sandbox (E2B)"
@@ -149,6 +152,27 @@ function AutoMergeToggle({ project }: { project: ProjectSetting }) {
       </label>
       {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>
+  );
+}
+
+function SoundSection() {
+  const [on, setOn] = useSound();
+  return (
+    <Section title="Sound">
+      <label className="flex items-center justify-between gap-3">
+        <span className="text-muted text-[12px] leading-[1.5]">
+          Play sounds when an agent finishes or an ant is squashed. Applies to every board in this browser.
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label="Sound"
+          checked={on}
+          onChange={(e) => setOn(e.target.checked)}
+          className="size-4 shrink-0"
+        />
+      </label>
+    </Section>
   );
 }
 

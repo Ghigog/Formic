@@ -10,6 +10,23 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("Sound", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("is on by default and saves the choice when toggled", async () => {
+    render(
+      <SettingsForm account={account} installUrl={null} e2b={{ hint: null, serverFallback: false }} />,
+    );
+    const sw = screen.getByRole("switch", { name: "Sound" });
+    expect(sw).toBeChecked();
+
+    await userEvent.click(sw);
+
+    expect(sw).not.toBeChecked();
+    expect(window.localStorage.getItem("formic:sound")).toBe("off");
+  });
+});
+
 describe("Danger zone", () => {
   it("deletes nothing when the confirmation is declined", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);

@@ -324,6 +324,19 @@ export interface UserRecord {
   fallbackSandboxSeconds: number;
   /** "YYYY-MM" (UTC) that the seconds above were spent in. */
   fallbackSandboxMonth: string | null;
+  /** Run time budget columns; read and written through src/lib/user-settings. */
+  runTimeBudgetMode: RunTimeBudgetColumns["runTimeBudgetMode"];
+  runTimeBudgetFlatMinutes: number | null;
+  /** Stored JSON: story points to minutes, e.g. {"1":5}. */
+  runTimeBudgetPerPointMinutes: unknown;
+}
+
+/** What a person's run time budget is stored as on their row. */
+export interface RunTimeBudgetColumns {
+  runTimeBudgetMode: "OFF" | "PER_STORY_POINT" | "FLAT_MINUTES" | "PER_POINT";
+  runTimeBudgetFlatMinutes: number | null;
+  /** A JSON object, or null for none. */
+  runTimeBudgetPerPointMinutes: Record<string, number> | null;
 }
 
 export type UserSecrets = Partial<
@@ -383,6 +396,7 @@ export interface Repository {
   /** Creates or refreshes someone from their GitHub profile. */
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
   updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
+  updateRunTimeBudget(userId: string, columns: RunTimeBudgetColumns): Promise<UserRecord>;
   /** Records that this person agreed to a version of the terms, now. */
   acceptTerms(userId: string, version: string): Promise<UserRecord>;
   /** Signs this person out everywhere: every session cookie issued so far stops working. */

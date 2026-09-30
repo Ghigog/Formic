@@ -36,7 +36,7 @@ import type { ExtrasMap } from "@/components/board/card";
 import { ColonyFx, cardEl, centerOf, colonyEl, heldByDrag, type CrewPhase } from "./fx";
 import { flyHome, ghostOf, ghostRect, groupOf, type Ghost } from "./epic-flight";
 import { SoundEngine, type Sfx } from "./sound";
-import { useHydrated, useSaved } from "./store";
+import { useHydrated, useSaved, useSound } from "./store";
 
 /**
  * The colony layer over the board: score, level, heat, sound and the canvas
@@ -64,8 +64,6 @@ export interface ColonyApi {
   shape: BugShape;
   color: BugColor;
   bugHex: string;
-  sound: boolean;
-  setSound: (on: boolean) => void;
   /** Equips a style, or refuses one the level has not reached. */
   tryStyle: (patch: { shape?: BugShape; color?: BugColor }, from: HTMLElement) => void;
   timelineOpen: boolean;
@@ -136,6 +134,7 @@ export function ColonyProvider({
   children: React.ReactNode;
 }) {
   const [saved, setSaved] = useSaved(storageKey);
+  const [soundOn] = useSound();
   const loaded = useHydrated();
 
   const [now, setNow] = useState(() => Date.now());
@@ -193,7 +192,7 @@ export function ColonyProvider({
       covered: timelineOpen || sentinelsOpen,
     });
   }, [fx, crews, score.level, saved.shape, bugHex, timelineOpen, sentinelsOpen]);
-  useEffect(() => sound.setEnabled(saved.sound), [sound, saved.sound]);
+  useEffect(() => sound.setEnabled(soundOn), [sound, soundOn]);
   useEffect(() => sound.attach(), [sound]);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -672,12 +671,6 @@ export function ColonyProvider({
     shape: saved.shape,
     color: saved.color,
     bugHex,
-    sound: saved.sound,
-    setSound: (on) => {
-      setSaved((s) => ({ ...s, sound: on }));
-      sound.setEnabled(on);
-      if (on) sfx("ready");
-    },
     tryStyle,
     timelineOpen,
     setTimelineOpen: (open) => {

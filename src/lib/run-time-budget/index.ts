@@ -104,8 +104,8 @@ export function validateRunTimeBudgetSettings(
   const errors: RunTimeBudgetErrors = {};
   if (settings.mode === "FLAT_MINUTES") {
     const m = settings.flatMinutes;
-    if (m == null || !Number.isFinite(m) || m < 1) {
-      errors.flatMinutes = "Flat minutes must be at least 1.";
+    if (m == null || !Number.isInteger(m) || m < 1) {
+      errors.flatMinutes = "Flat minutes must be a whole number of at least 1.";
     }
   }
   if (settings.mode === "PER_POINT") {
@@ -119,10 +119,10 @@ export function validateRunTimeBudgetSettings(
         "Story points must be whole numbers of at least 1.";
     } else if (
       entries.some(
-        ([, v]) => typeof v !== "number" || !Number.isFinite(v) || v < 1,
+        ([, v]) => typeof v !== "number" || !Number.isInteger(v) || v < 1,
       )
     ) {
-      errors.perPointMinutes = "Minutes must be at least 1.";
+      errors.perPointMinutes = "Minutes must be whole numbers of at least 1.";
     }
   }
   return errors;
