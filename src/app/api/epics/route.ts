@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { WORK_TYPES } from "@/lib/domain/entities";
 import { createBacklogItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
 import { limited, RUN } from "@/lib/rate-limit";
@@ -11,6 +12,7 @@ export const maxDuration = 300;
 
 const bodySchema = z.object({
   rawRequest: z.string().min(3, "Describe the feature in a sentence or two.").max(4000),
+  workType: z.enum(WORK_TYPES).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -27,6 +29,6 @@ export async function POST(req: NextRequest) {
 
   const project = await activeProject();
   if (!project) return noProject();
-  const card = await createBacklogItem(project.id, parsed.data.rawRequest);
+  const card = await createBacklogItem(project.id, parsed.data.rawRequest, parsed.data.workType);
   return Response.json({ card }, { status: 201 });
 }

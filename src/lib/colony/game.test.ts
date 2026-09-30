@@ -100,7 +100,7 @@ describe("score", () => {
   it("charges for bugs in points but never in XP", () => {
     const cards = [
       card({ id: "a", status: "merged", storyPoints: 8 }),
-      card({ id: "bug", kind: "epic", epicId: null, title: "Toast flickers on narrow screens", status: "draft" }),
+      card({ id: "bug", kind: "epic", epicId: null, title: "Toast flickers on narrow screens", status: "draft", workType: "bug" }),
     ];
     const s = scoreOf(cards);
     expect(s.earned).toBe(8);
@@ -110,13 +110,13 @@ describe("score", () => {
   });
 
   it("squashes a bug report once it leaves the Backlog", () => {
-    const bug = card({ id: "b", epicId: null, title: "Fix the broken badge", status: "ready" });
+    const bug = card({ id: "b", epicId: null, title: "Fix the broken badge", status: "ready", workType: "bug" });
     expect(isBug(bug, new Map())).toBe(true);
     expect(isSquashed(bug)).toBe(true);
     expect(scoreOf([bug]).squashed).toBe(1);
   });
 
-  const bugEpic = card({ id: "e1", kind: "epic", title: "Fix the flickering board", epicId: null });
+  const bugEpic = card({ id: "e1", kind: "epic", title: "Fix the flickering board", epicId: null, workType: "bug" });
   const featureEpic = card({ id: "e2", kind: "epic", title: "Add dark mode", epicId: null });
   const epics = new Map([bugEpic, featureEpic].map((e) => [e.id, e]));
 
@@ -125,16 +125,32 @@ describe("score", () => {
     expect(isBug(card({ id: "t2", title: "Fix the badge", epicId: "e2" }), epics)).toBe(false);
   });
 
-  it("counts a card titled as an investigation as a spike, unless it is an Epic's ticket", () => {
-    expect(isSpike(card({ id: "s1", title: "Spike: merge queue conflicts", epicId: null }))).toBe(true);
-    expect(isSpike(card({ id: "s2", title: "Investigate slow loads", epicId: null }))).toBe(true);
-    expect(isSpike(card({ id: "s3", title: "Add CSV export", epicId: null }))).toBe(false);
-    expect(isSpike(card({ id: "s4", title: "Spike: merge queue", epicId: "e2" }))).toBe(false);
+  it("reads a ticket with no Epic by its own work type", () => {
+    expect(isBug(card({ id: "t3", title: "Add dark mode", epicId: null, workType: "bug" }), epics)).toBe(true);
+    expect(isBug(card({ id: "t4", title: "Add dark mode", epicId: null }), epics)).toBe(false);
   });
 
-  it("falls back to its own title for a ticket with no Epic", () => {
-    expect(isBug(card({ id: "t3", title: "Fix the badge", epicId: null }), epics)).toBe(true);
-    expect(isBug(card({ id: "t4", title: "Add dark mode", epicId: null }), epics)).toBe(false);
+  it("does not read a bug from words in the title", () => {
+    const text = card({ id: "w", epicId: null, title: "Fix the error page" });
+    expect(isBug(text, new Map())).toBe(false);
+    expect(scoreOf([text]).bugs).toBe(0);
+  });
+
+  it("docks points only for cards marked as bugs, never for spikes", () => {
+    const base = { kind: "epic" as const, epicId: null, status: "draft" as const };
+    const earned = card({ id: "m", status: "merged", storyPoints: 8 });
+    expect(scoreOf([earned, card({ id: "p", ...base, title: "Fix the error page" })]).points).toBe(8);
+    expect(scoreOf([earned, card({ id: "b", ...base, workType: "bug" })]).points).toBe(8 - BUG_COST);
+    const spike = card({ id: "s", ...base, workType: "spike" });
+    expect(scoreOf([earned, spike]).points).toBe(8);
+    expect(isSpike(spike)).toBe(true);
+    expect(isBug(spike, new Map())).toBe(false);
+  });
+
+  it("counts a standalone ticket marked as a bug", () => {
+    const t = card({ id: "s1", epicId: "holder", detached: true, workType: "bug" });
+    expect(isBug(t, new Map())).toBe(true);
+    expect(scoreOf([t]).bugs).toBe(1);
   });
 
   it("squashes a bug ticket only once it is merged", () => {

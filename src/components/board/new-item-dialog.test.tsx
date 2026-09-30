@@ -79,12 +79,44 @@ afterEach(() => {
 });
 
 describe("NewItemDialog", () => {
-  it("says a request reads as a bug before it is filed", async () => {
-    render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+  it("tags nothing by words: a request that says 'error' is plain work", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={onSubmit} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("New feature request"), "Fix the error page");
     expect(screen.getByText("Product Agent")).toBeInTheDocument();
+    expect(screen.queryByText(/Tagged as bug/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Draft PRD" }));
+    expect(onSubmit).toHaveBeenCalledWith("Fix the error page", expect.any(String), undefined);
+  });
 
-    await userEvent.setup().type(screen.getByLabelText("New feature request"), "Fix the broken badge");
+  it("toggles Bug and Spike, one at a time, and submits the choice", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={onSubmit} />);
+    const user = userEvent.setup();
+    const bug = screen.getByRole("button", { name: "bug" });
+    const spike = screen.getByRole("button", { name: "spike" });
+    expect(bug).toHaveAttribute("aria-pressed", "false");
+    expect(spike).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(bug);
+    expect(bug).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Tagged as bug · −5 points")).toBeInTheDocument();
+
+    await user.click(spike);
+    expect(bug).toHaveAttribute("aria-pressed", "false");
+    expect(spike).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText(/Tagged as bug/)).toBeNull();
+
+    await user.click(bug);
+    await user.click(bug);
+    expect(bug).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByText(/Tagged as bug/)).toBeNull();
+
+    await user.click(bug);
+    await user.type(screen.getByLabelText("New ticket request"), "Crash on save");
+    await user.click(screen.getByRole("button", { name: "Draft ticket" }));
+    expect(onSubmit).toHaveBeenCalledWith("Crash on save", expect.any(String), "bug");
   });
 
   it("drafts on submit and closes", async () => {
@@ -96,7 +128,7 @@ describe("NewItemDialog", () => {
     await user.type(screen.getByLabelText("New feature request"), "Rate-limit the merge queue");
     await user.click(screen.getByRole("button", { name: "Draft PRD" }));
 
-    expect(onSubmit).toHaveBeenCalledWith("Rate-limit the merge queue", expect.any(String));
+    expect(onSubmit).toHaveBeenCalledWith("Rate-limit the merge queue", expect.any(String), undefined);
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -116,7 +148,7 @@ describe("NewItemDialog", () => {
     await user.type(screen.getByLabelText("New ticket request"), "Fix the flaky retry test");
     await user.click(screen.getByRole("button", { name: "Draft ticket" }));
 
-    expect(onSubmit).toHaveBeenCalledWith("Fix the flaky retry test", expect.any(String));
+    expect(onSubmit).toHaveBeenCalledWith("Fix the flaky retry test", expect.any(String), undefined);
   });
 
   describe("attachments", () => {
@@ -167,7 +199,7 @@ describe("NewItemDialog", () => {
 
       await user.type(screen.getByLabelText("New feature request"), "Ship it without the 6th file");
       await user.click(screen.getByRole("button", { name: "Draft PRD" }));
-      expect(onSubmit).toHaveBeenCalledWith("Ship it without the 6th file", expect.any(String));
+      expect(onSubmit).toHaveBeenCalledWith("Ship it without the 6th file", expect.any(String), undefined);
     });
 
     it("offers the device camera on a mobile viewport, and not on a wide one", () => {
