@@ -5,8 +5,40 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to a pull request replaces the run still going on the old one.
+# Pushes to main are keyed by commit, so a deploy is never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Every check below is its own job, and so its own check run on the commit:
+# the Reviewer Agent reads them by name, so a red `lint` or `test` says what
+# broke. Keep job ids stable; renaming one changes what the reviewer and any
+# branch protection rule see.
 jobs:
-  build:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  test:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -26,28 +58,82 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
       # Unit tests run on the in-memory store by design, so no DATABASE_URL.
       # The repository contract suite also runs against Postgres, through
-      # TEST_DATABASE_URL, once the schema is pushed. Its own database, so
-      # the boot check below still starts from an empty one.
+      # TEST_DATABASE_URL, once the schema is pushed.
       - run: npx prisma db push
         env:
           DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
-      - run: npm test
+      # The github-actions reporter turns a failing test into an annotation,
+      # which is what the Reviewer Agent reads to diagnose a red check.
+      - run: npm test -- --reporter=default --reporter=github-actions
         env:
           TEST_DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
 
-      # A real database from here on, so the build's schema push and the
-      # app's runtime queries run here first, not first in production.
+  # The one production build. Boot and e2e run on it rather than each
+  # compiling their own. No database here: every page is rendered on demand,
+  # so nothing in the output depends on one, and e2e runs on the in-memory
+  # store. The migrations run in `boot`, against the real database.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'scripts/**', 'next.config.ts', 'tsconfig.json') }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
       - run: npm run build
+      # `.next` is a hidden directory, so it has to be asked for by name;
+      # src/generated holds the loop entry the server reads at runtime.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build
+          path: |
+            .next
+            !.next/cache
+            src/generated
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: error
+
+  # The production build against a real database, so the migrations and the
+  # app's runtime queries run here first, not first in production.
+  boot:
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
         env:
-          DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
+          POSTGRES_USER: formic
+          POSTGRES_PASSWORD: formic
+          POSTGRES_DB: formic
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U formic"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build
+      - run: bash scripts/db-push.sh
 
       - name: Boot the production build and hit it
-        env:
-          DATABASE_URL: postgresql://formic:formic@localhost:5432/formic
         run: |
           npx next start -p 3111 > server.log 2>&1 &
           for i in $(seq 1 30); do
@@ -66,6 +152,7 @@ jobs:
   # The board in a real browser: drags, round trips, the production build.
   # Its own job, on the in-memory store the suite is written against.
   e2e:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -74,6 +161,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build
 
       # The runner image ships Chromium: point Playwright at it rather than
       # downloading one with `playwright install`.
@@ -87,7 +177,10 @@ jobs:
           echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE=$chromium" >> "$GITHUB_ENV"
           "$chromium" --version
 
+      # The build job's output, so the suite starts the server without building.
       - run: npm run test:e2e
+        env:
+          E2E_SKIP_BUILD: "1"
 
       - name: Keep what failed
         if: failure()
@@ -97,11 +190,11 @@ jobs:
           path: e2e/.results
           retention-days: 7
 
-  # Production deploys only once build and e2e pass on main. vercel.json turns
+  # Production deploys only once every job above passes on main. vercel.json turns
   # off Vercel's own Git deploy for main, so this is the only path to prod.
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build, e2e]
+    needs: [lint, typecheck, test, build, boot, e2e]
     runs-on: ubuntu-latest
     # One deploy at a time, in merge order; never cancel one mid-flight.
     concurrency:
@@ -123,4 +216,10 @@ jobs:
           done
       # Builds on Vercel with the project's own env vars, as the Git
       # integration did, and carries this commit's SHA for /api/health.
-      - run: npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
+      # Pinned, and its download cached, so a deploy does not fetch the CLI
+      # (or pick up a new release) every time. Dependabot does not track this.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: vercel-cli-${{ runner.os }}-61.1.0
+      - run: npx --yes vercel@61.1.0 deploy --prod --yes --token "$VERCEL_TOKEN"

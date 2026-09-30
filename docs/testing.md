@@ -129,6 +129,14 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npm run test:e2e
 
 CI runs the whole suite on every pull request, in its own `e2e` job, against
 the Chromium the runner image ships. A change that breaks a drag fails it.
+The job starts the server on the `build` job's output (`E2E_SKIP_BUILD=1`)
+instead of compiling again; locally the suite still builds first.
+
+CI is one job per check (`lint`, `typecheck`, `test`, `build`, `boot`, `e2e`),
+run in parallel where they can. Each is a separate check run on the commit, and
+that is what the Reviewer Agent reads, so keep the job ids stable. A newer push
+to a pull request cancels the run on the older commit; the reviewer already
+treats a cancelled check as "not a result" and only reacts to the current head.
 
 ## Gaps worth filling
 

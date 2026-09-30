@@ -11,6 +11,12 @@ const baseURL = `http://127.0.0.1:${PORT}`;
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 const launchOptions = executablePath ? { executablePath } : {};
 
+/**
+ * CI builds once, in its own job, and hands the output to this one: set
+ * E2E_SKIP_BUILD=1 to start the server on the `.next` already in place.
+ */
+const buildFirst = process.env.E2E_SKIP_BUILD === "1" ? "" : "npm run build && ";
+
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./e2e/.results",
@@ -60,7 +66,7 @@ export default defineConfig({
    * race, and it is not the artefact that ships.
    */
   webServer: {
-    command: `npm run build && npx next start -p ${PORT}`,
+    command: `${buildFirst}npx next start -p ${PORT}`,
     url: `${baseURL}/api/health`,
     /*
      * A fresh server, and therefore a fresh in-memory store, for every run.
