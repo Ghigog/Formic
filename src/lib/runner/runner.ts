@@ -17,7 +17,6 @@ import {
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
-import { MINUTES_PER_POINT } from "@/lib/budget/limits";
 import { diagnose, lastWords } from "@/lib/agents/limits";
 import { planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers";
@@ -326,15 +325,16 @@ export type JobAgent = {
 };
 
 /**
- * How long the loop entry may work on a ticket: its size at ten minutes a
- * point, and never past the job's own ceiling, which is the backstop. The
- * entry stops on this and says which limit stopped it, so the card can tell
- * the person; a job the platform kills says nothing at all.
+ * How long the loop entry may work on a ticket: the person's budget for it
+ * (see resolveRunTimeBudget), and never past the job's own ceiling, which is
+ * the backstop. The entry stops on this and says which limit stopped it, so
+ * the card can tell the person; a job the platform kills says nothing at all.
+ * With no budget (mode off) the entry gets no time limit, and the job's
+ * ceiling is all that bounds the run.
  */
-export function loopBudgetMs(storyPoints: number | null | undefined): number {
-  const points = Math.max(1, storyPoints ?? 1);
-  const planned = Math.min(points * MINUTES_PER_POINT, RUNNER_JOB_MINUTES - JOB_HEADROOM_MINUTES);
-  return planned * 60_000;
+export function loopBudgetMs(budgetMinutes: number | null): number | undefined {
+  if (budgetMinutes == null) return undefined;
+  return Math.min(budgetMinutes, RUNNER_JOB_MINUTES - JOB_HEADROOM_MINUTES) * 60_000;
 }
 
 /**
@@ -358,8 +358,11 @@ export function loopPayload(input: {
   notes: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
   instruction?: string;
+  /** The run's time budget in minutes, fixed when the run starts; null when there is none. */
+  budgetMinutes: number | null;
 }): Omit<LoopEntryPayload, "apiKey"> {
   const { ticket } = input;
+  const maxDurationMs = loopBudgetMs(input.budgetMinutes);
   return {
     runId: input.runId,
     ticketId: ticket.id,
@@ -376,8 +379,8 @@ export function loopPayload(input: {
     repo: { fullName: input.repoFullName, baseBranch: input.baseBranch },
     provider: input.provider,
     model: input.model,
-    // The ticket's budget is the plan; the job's timeout is the backstop.
-    limits: { maxDurationMs: loopBudgetMs(ticket.storyPoints) },
+    // The person's budget is the plan; the job's timeout is the backstop.
+    limits: maxDurationMs === undefined ? {} : { maxDurationMs },
   };
 }
 

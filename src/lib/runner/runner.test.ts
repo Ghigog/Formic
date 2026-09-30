@@ -46,6 +46,8 @@ import type { TicketDetail } from "@/lib/db/repository";
 import { resetMergeLanes } from "@/lib/review/lane";
 import { interpret } from "@/lib/review/webhook";
 import { resetEnvCache } from "@/lib/secrets/env";
+import { updateRunTimeBudgetSettings } from "@/lib/user-settings";
+import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
 
 /**
@@ -1643,6 +1645,70 @@ describe("an API-key coder running in a job", () => {
     expect(after.runnerJob).toBe(inputs.job);
   });
 
+  describe("budgets the run from the starting person's setting", () => {
+    async function ownProject(settings: RunTimeBudgetSettings) {
+      await projectFor(PROJECT);
+      const user = await repository().upsertUser({ githubId: 1, login: "ada", name: null, avatarUrl: null });
+      await repository().adoptUnowned(user.id);
+      await updateRunTimeBudgetSettings(user.id, settings);
+      return user.id;
+    }
+
+    /** Starts a run on a ticket of this size. */
+    async function startRun(storyPoints: number): Promise<TicketDetail> {
+      vi.stubEnv("FORMIC_URL", "https://formic.example");
+      await assignApiAgent();
+      await installRunner();
+      const ticket = await seedTicket();
+      await repository().updateTicket(ticket.id, { storyPoints });
+      await runCoderAgent(PROJECT, ticket.id);
+      return ticket;
+    }
+
+    /** The time limit the nth dispatched job was handed, if any. */
+    function limitOf(nth: number): number | undefined {
+      const payload = JSON.parse(MockVcsClient.runner().dispatches[nth]!.inputs.prompt!) as {
+        limits: { maxDurationMs?: number };
+      };
+      return payload.limits.maxDurationMs;
+    }
+
+    it("gives a 3-point ticket 30 minutes by default", async () => {
+      await ownProject({ mode: "PER_STORY_POINT" });
+      await startRun(3);
+      expect(limitOf(0)).toBe(30 * 60_000);
+    });
+
+    it("gives every ticket the flat minutes", async () => {
+      await ownProject({ mode: "FLAT_MINUTES", flatMinutes: 30 });
+      await startRun(1);
+      expect(limitOf(0)).toBe(30 * 60_000);
+    });
+
+    it("gives a ticket its size's minutes per point", async () => {
+      await ownProject({ mode: "PER_POINT", perPointMinutes: { 5: 40 } });
+      await startRun(5);
+      expect(limitOf(0)).toBe(40 * 60_000);
+    });
+
+    it("hands the job no time limit when the budget is off", async () => {
+      await ownProject({ mode: "OFF" });
+      await startRun(3);
+      expect(limitOf(0)).toBeUndefined();
+    });
+
+    it("keeps a run's budget when the setting changes afterwards", async () => {
+      const userId = await ownProject({ mode: "PER_STORY_POINT" });
+      const ticket = await startRun(3);
+
+      await updateRunTimeBudgetSettings(userId, { mode: "FLAT_MINUTES", flatMinutes: 7 });
+      await runCoderAgent(PROJECT, ticket.id);
+
+      expect(limitOf(0)).toBe(30 * 60_000);
+      expect(limitOf(1)).toBe(7 * 60_000);
+    });
+  });
+
   it("leaves a repository on an older workflow running in-process", async () => {
     const base = (await projectFor(PROJECT)).baseBranch;
     await assignApiAgent();
@@ -1770,15 +1836,16 @@ describe("what a run reported it used", () => {
   });
 });
 
-describe("the budget a ticket's size gives it", () => {
-  it("is ten minutes a story point, and never past the job's own room", () => {
-    expect(loopBudgetMs(1)).toBe(10 * 60_000);
-    expect(loopBudgetMs(3)).toBe(30 * 60_000);
-    // Eight points would be eighty minutes; the job's ceiling is the backstop.
-    expect(loopBudgetMs(8)).toBe(55 * 60_000);
-    // A ticket nobody sized still gets one point's worth.
-    expect(loopBudgetMs(null)).toBe(10 * 60_000);
-    expect(loopBudgetMs(undefined)).toBe(10 * 60_000);
+describe("the time limit a run's budget gives the loop entry", () => {
+  it("is the budget in milliseconds, and never past the job's own room", () => {
+    expect(loopBudgetMs(30)).toBe(30 * 60_000);
+    expect(loopBudgetMs(40)).toBe(40 * 60_000);
+    // The job's ceiling is the backstop.
+    expect(loopBudgetMs(80)).toBe(55 * 60_000);
+  });
+
+  it("is none when the person has no budget", () => {
+    expect(loopBudgetMs(null)).toBeUndefined();
   });
 });
 
