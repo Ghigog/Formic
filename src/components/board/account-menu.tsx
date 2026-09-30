@@ -10,6 +10,9 @@ export interface Account {
   signedIn: boolean;
 }
 
+export const SUPPORT_EMAIL = "support@formic.dev";
+export const BUG_REPORT_URL = "https://github.com/Ghigog/Formic/issues/new?labels=bug";
+
 /** Who is signed in, with the way to Settings and out. */
 export function AccountMenu({ account }: { account: Account }) {
   const [open, setOpen] = useState(false);
@@ -68,6 +71,18 @@ export function AccountMenu({ account }: { account: Account }) {
           </div>
           <a role="menuitem" href="/settings" className={item}>
             Settings
+          </a>
+          <a role="menuitem" href={`mailto:${SUPPORT_EMAIL}`} className={item}>
+            Contact support
+          </a>
+          <a
+            role="menuitem"
+            href={BUG_REPORT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={item}
+          >
+            Report a bug
           </a>
           {account.signedIn && (
             <form method="post" action="/api/auth/logout">
