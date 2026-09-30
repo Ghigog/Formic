@@ -8,7 +8,6 @@ import {
   type DropResult,
 } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
-import { useCountdown } from "@/lib/hooks/use-countdown";
 import { Column, columnCount } from "./column";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
@@ -32,7 +31,7 @@ import { placeDrop } from "./placement";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
 
-/** The next column a card can advance to, for the mobile action. */
+/** The next column a card can advance to with its arrow. */
 const NEXT_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
   backlog: "todo",
   todo: "in_progress",
@@ -349,32 +348,16 @@ export function Board({
         if (to === "in_progress" && (card.kind !== "ticket" || card.status !== "ready")) return null;
         return accepts(column, to) ? to : null;
       },
+      // Mobile only: drag is replaced there by the cards' own arrows.
+      returnFor: (card, column) =>
+        isMobile && column === "in_progress" && card.kind === "ticket" && !card.misplacedIn && accepts(column, "todo")
+          ? "todo"
+          : null,
       onAdvance: (card, to) => void commit(card, to, Number.MAX_SAFE_INTEGER),
       queuedBehind: (card) => runningConflict(card, live),
     }),
-    [epicsById, accepts, commit, live],
+    [epicsById, accepts, commit, live, isMobile],
   );
-
-  /*
-   * Mobile advance. @hello-pangea/dnd does not survive a touch scroll
-   * container, so small screens get an explicit action instead of a worse
-   * version of the same gesture. It acts on the first card in the visible
-   * column that can actually move, and says which one in its accessible name.
-   */
-  // A column whose agent is out of usage takes nothing until it resets.
-  const nextColumn = NEXT_COLUMN[activeTab];
-  const nextLimited =
-    useCountdown(
-      nextColumn && agents?.presets.find((p) => p.id === agents.columns[nextColumn])?.limitedUntil,
-    ) !== null;
-  const advanceTarget = useMemo(() => {
-    const to = NEXT_COLUMN[activeTab];
-    if (!to || nextLimited) return null;
-    const card = byColumn[activeTab].find(
-      (c) => !c.misplacedIn && c.status !== "running" && c.status !== "review",
-    );
-    return card ? { card, to } : null;
-  }, [activeTab, byColumn, nextLimited]);
 
   return (
     <>
@@ -441,33 +424,6 @@ export function Board({
           )}
         >
           {dragSnapshot ?? columnElements}
-
-          {isMobile && advanceTarget && (
-            <button
-              type="button"
-              onClick={() =>
-                void commit(
-                  advanceTarget.card,
-                  advanceTarget.to,
-                  // Past the last row: the end of the column.
-                  Number.MAX_SAFE_INTEGER,
-                )
-              }
-              aria-label={`Advance ${advanceTarget.card.key} to ${COLUMN_LABELS[advanceTarget.to]}`}
-              className="bg-terracotta-cta fixed right-4 bottom-[72px] z-50 inline-flex h-13 items-center gap-2 rounded-[26px] px-5 text-[14px] font-semibold text-white shadow-fab"
-            >
-              Advance card
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M3.5 8h9M9 4.5 12.5 8 9 11.5"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          )}
         </main>
       </DragDropContext>
       </CardEnvContext.Provider>
