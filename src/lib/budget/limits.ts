@@ -40,14 +40,6 @@ export const DEFAULT_EPIC_BUDGET: Budget = {
   maxAttempts: 12,
 };
 
-/**
- * What a ticket's size gives it, before any setting says otherwise: ten
- * minutes a story point. This is the default `docs/run-time-budgets.md`
- * describes; the settings that let a person choose (flat, per point, by hand,
- * or off) are that spec's own work, and a missing setting means this number.
- */
-export const MINUTES_PER_POINT = 10;
-
 export interface Spend {
   cents: number;
   elapsedMs: number;

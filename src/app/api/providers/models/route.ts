@@ -3,7 +3,7 @@ import { repository } from "@/lib/db";
 import { currentUser, canSee } from "@/lib/auth/user";
 import { authMode } from "@/lib/auth/session";
 import { PROVIDER_IDS, provider } from "@/lib/llm/providers";
-import { listOpenAiModels } from "@/lib/llm/openai-compat";
+import { listOpenAiModels, type ModelInfo } from "@/lib/llm/openai-compat";
 import { anthropicClient } from "@/lib/agents/anthropic";
 import { open } from "@/lib/secrets/vault";
 
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
 
   const info = provider(body.data.provider)!;
   // A CLI agent's models are whatever its CLI accepts; there is nothing to ask.
-  if (info.kind === "cli") return Response.json({ ok: true, models: info.suggestedModels });
+  if (info.kind === "cli") return Response.json({ ok: true, models: info.suggestedModels.map((id) => ({ id })) });
   let key = body.data.apiKey ?? null;
   if (!key && body.data.presetId) {
     const found = await repository().presetForRun(body.data.presetId);
@@ -43,10 +43,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    let models: string[];
+    let models: ModelInfo[];
     if (info.kind === "anthropic") {
       models = [];
-      for await (const m of anthropicClient(key).models.list()) models.push(m.id);
+      for await (const m of anthropicClient(key).models.list()) models.push({ id: m.id });
     } else {
       models = await listOpenAiModels(info, key);
     }
