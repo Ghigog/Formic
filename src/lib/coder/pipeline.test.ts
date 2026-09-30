@@ -470,6 +470,46 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.blockedReason).toContain("was closed without merging");
   });
 
+  it("merges a head no report is coming for, rather than waiting on one", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    // The review vouched for the head it was made on, and GitHub then brought
+    // the base in — which moves the head without a `synchronize` this board
+    // acts on. No check on the new head ever reports here, so the sweep is the
+    // only thing left looking at the card.
+    await repository().updateTicket(ticket.id, { reviewedSha: pull.headSha });
+    const moved = MockVcsClient.bringBaseIn(pull.number);
+    MockVcsClient.setChecks(pull.number, "success");
+
+    await sweepOpenPullRequests(PROJECT);
+    await until(
+      async () => (await repository().ticketDetail(ticket.id))!.status === "merged",
+      "the sweep to carry the approval and merge",
+    );
+
+    // The approval carried across the base GitHub brought in, and the green
+    // head merged on it: nobody was asked for anything.
+    expect((await repository().ticketDetail(ticket.id))!.reviewedSha).toBe(moved);
+  });
+
+  it("starts no review when a sweep asks and no report has", async () => {
+    const reviewer = new StubReviewer();
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+
+    // Green CI and nothing reviewed: a report is what starts a review. The
+    // sweep asks every half-minute, so an attempt spent per tick would park
+    // the card at its review ceiling within two minutes of waiting.
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha, { startReview: false });
+
+    expect(reviewer.reviews).toHaveLength(0);
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.attempts).toBe(0);
+    expect(after.status).toBe("review");
+  });
+
   it("resolves a conflict noticed when CI reports, too", async () => {
     const reviewer = new StubReviewer();
     useAgents(new StubCoder(writesInScope()), reviewer);

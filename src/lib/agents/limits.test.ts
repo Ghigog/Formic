@@ -317,6 +317,19 @@ describe("isTransientProviderError", () => {
     expect(isTransientProviderError({ status: 200, message: "ClinePass returned no answer." })).toBe(true);
   });
 
+  /**
+   * A body that will not parse is how a gateway in front of the model reports
+   * the same empty answer: it answered, and what it sent was not a completion.
+   */
+  it("counts an answer that is not JSON at all", () => {
+    expect(
+      isTransientProviderError({
+        status: 200,
+        message: "ClinePass answered with something that is not JSON.",
+      }),
+    ).toBe(true);
+  });
+
   it("leaves anything a person has to act on alone", () => {
     // The card turns each of these into something to do: a time, a key, a top-up.
     expect(isTransientProviderError({ status: 429, message: "Rate limit exceeded" })).toBe(false);

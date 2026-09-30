@@ -150,6 +150,40 @@ describe("the OpenAI-format client", () => {
   });
 
   /**
+   * A body that will not parse is not an answer either. It used to leave the
+   * client as a SyntaxError, which the retry does not recognise as the
+   * provider's own failure and so never asks again about — and which reached
+   * the card as a JavaScript message naming no provider and nothing to do.
+   */
+  it("asks again when the answer is not JSON at all, and says whose side that is", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const html = "<!DOCTYPE html><html><body>502 Bad Gateway</body></html>";
+      const sent = fakeProvider([
+        { status: 200, body: html },
+        { status: 200, body: html },
+        { status: 200, body: html },
+      ]);
+
+      const answer = chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
+      const message = answer.then(
+        () => "it answered",
+        (e: unknown) => (e instanceof Error ? e.message : String(e)),
+      );
+      await runOutTheWaits();
+
+      // Two tries after the first, and no more.
+      expect(sent).toHaveLength(3);
+      // And what a person is left with names the provider and whose side it is
+      // on, rather than a JavaScript parse error.
+      expect(await message).toContain("ClinePass answered with something that is not JSON");
+      expect(await message).toContain("ClinePass's side");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
    * Cline's gateway answers a model that came back empty with a 500 and
    * `{"error":"empty response content","success":false}` — what killed a
    * thirty-minute run on its third turn, mid-exploration, with the card then

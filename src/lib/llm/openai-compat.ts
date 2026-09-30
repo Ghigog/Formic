@@ -199,7 +199,21 @@ async function chatOnce(
     throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
   }
 
-  const body: unknown = await res.json();
+  // A body that will not parse is not an answer either. Left as the
+  // SyntaxError it is, it would slip past the retry in `chat` — which only
+  // asks again about the provider's own failures — and reach the card as a
+  // JavaScript message naming no provider and nothing a person can act on.
+  // An abort here is the run being stopped, which is not the provider's side.
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (e) {
+    if (request.signal?.aborted) throw e;
+    throw new ProviderError(
+      `${p.label} answered with something that is not JSON. That is ${p.label}'s side, not the ticket's: move the card back in a minute to retry.`,
+      res.status,
+    );
+  }
   const completion = completionIn(body);
   const choice = completion?.choices?.[0];
   if (!choice?.message) {
