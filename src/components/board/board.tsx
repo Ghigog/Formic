@@ -113,6 +113,39 @@ export function Board({
     done: EMPTY_VIEW,
   }));
 
+  // A field shows its value when every column agrees, otherwise the empty one.
+  const boardView = useMemo<ColumnView>(() => {
+    const all = COLUMNS.map((c) => views[c]);
+    const agreed = <K extends keyof ColumnView>(key: K): ColumnView[K] =>
+      all.every((v) => v[key] === all[0]![key]) ? all[0]![key] : EMPTY_VIEW[key];
+    return {
+      query: agreed("query"),
+      sort: agreed("sort"),
+      workType: agreed("workType"),
+      collapsed: all.every((v) => v.collapsed),
+    };
+  }, [views]);
+
+  // Write only what the menu changed to every column, so the other fields stay
+  // per-column. Clear resets everything.
+  const changeBoardView = useCallback(
+    (next: ColumnView) => {
+      setViews((prev) => {
+        const out = { ...prev };
+        for (const c of COLUMNS) {
+          out[c] = next === EMPTY_VIEW ? EMPTY_VIEW : { ...prev[c] };
+          if (next !== EMPTY_VIEW) {
+            for (const key of Object.keys(next) as (keyof ColumnView)[]) {
+              if (next[key] !== boardView[key]) Object.assign(out[c], { [key]: next[key] });
+            }
+          }
+        }
+        return out;
+      });
+    },
+    [boardView],
+  );
+
   const isMobile = useMediaQuery("(max-width: 767px)");
   const colony = useColony();
 
@@ -392,6 +425,8 @@ export function Board({
         onNewItem={onNewItem}
         account={account}
         assistant={assistant}
+        boardView={boardView}
+        onBoardViewChange={changeBoardView}
       />
 
       {/* Sticky column tabs. Replaces the 5-column layout below 768px. */}
