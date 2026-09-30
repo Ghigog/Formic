@@ -12,6 +12,12 @@ import { describeProviderError, isTransientProviderError } from "@/lib/agents/li
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
+  /**
+   * The model's reasoning, kept when the provider sent it. DeepSeek requires
+   * it echoed back on a turn with tool calls; Groq and Gemini have no such
+   * rule, so it is only ever present on a message the provider gave us.
+   */
+  reasoning_content?: string;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
 }
@@ -120,17 +126,24 @@ async function pause(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+export interface ChatRequest {
+  model: string;
+  messages: ChatMessage[];
+  tools?: ToolSpec[];
+  /** Ask for a JSON object back. Dropped and retried if refused. */
+  json?: boolean;
+  /** The ceiling on the reply, sent as max_tokens. */
+  maxTokens?: number;
+  /** Sent at the top level of the body: this client builds plain JSON, not an SDK's extra_body. */
+  thinking?: { type: "enabled" | "disabled" };
+  reasoningEffort?: "low" | "high" | "max";
+  signal?: AbortSignal;
+}
+
 export async function chat(
   p: ProviderInfo,
   apiKey: string,
-  request: {
-    model: string;
-    messages: ChatMessage[];
-    tools?: ToolSpec[];
-    /** Ask for a JSON object back. Dropped and retried if refused. */
-    json?: boolean;
-    signal?: AbortSignal;
-  },
+  request: ChatRequest,
 ): Promise<ChatResult> {
   // A provider's own roof falling in is not a run's ending. Cline's gateway
   // answers a model that came back empty with a 500, and a loop that gave up
@@ -157,13 +170,7 @@ export async function chat(
 async function chatOnce(
   p: ProviderInfo,
   apiKey: string,
-  request: {
-    model: string;
-    messages: ChatMessage[];
-    tools?: ToolSpec[];
-    json?: boolean;
-    signal?: AbortSignal;
-  },
+  request: ChatRequest,
 ): Promise<ChatResult> {
   const send = async (json: boolean) => {
     const res = await fetch(endpoint(p, "/chat/completions"), {
@@ -179,6 +186,9 @@ async function chatOnce(
         // reads one JSON body. Nothing here wants the stream.
         stream: false,
         ...(request.tools?.length ? { tools: request.tools } : {}),
+        ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
+        ...(request.thinking ? { thinking: request.thinking } : {}),
+        ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
         ...(json ? { response_format: { type: "json_object" } } : {}),
       }),
       signal: request.signal,
