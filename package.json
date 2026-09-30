@@ -30,7 +30,7 @@
     "serve": "./scripts/serve.sh"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.127.0",
+    "@anthropic-ai/sdk": "^0.128.0",
     "@e2b/code-interpreter": "^2.8.0",
     "@hello-pangea/dnd": "^18.0.1",
     "@prisma/adapter-pg": "^7.10.0",
