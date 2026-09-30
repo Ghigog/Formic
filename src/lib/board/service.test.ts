@@ -522,4 +522,11 @@ describe("createTodoItem", () => {
 
     expect(await repository().attachmentsFor({ ticketId: card.id })).toEqual([]);
   });
+
+  it("keys each new ticket one past the last, T-1 then T-2", async () => {
+    const first = await createTodoItem(PROJECT, "Fix the broken footer link.");
+    const second = await createTodoItem(PROJECT, "Add a retry button.");
+
+    expect([first.key, second.key]).toEqual(["T-1", "T-2"]);
+  });
 });

@@ -104,6 +104,8 @@ interface Store {
   epicIssues: Map<string, number>;
   /** The highest Epic number each project has used, deleted ones included. */
   epicNumbers: Map<string, number>;
+  /** The highest standalone ticket number each project has used, deleted ones included. */
+  standaloneTicketNumbers: Map<string, number>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -146,6 +148,7 @@ function store(): Store {
     existing.columnAgents ??= new Map();
     existing.users ??= new Map();
     existing.epicNumbers ??= new Map();
+    existing.standaloneTicketNumbers ??= new Map();
     existing.prdTimes ??= new Map();
     existing.epicJobTimes ??= new Map();
     existing.epicJobAgents ??= new Map();
@@ -175,6 +178,7 @@ function store(): Store {
     epicJobTimes: new Map(),
     epicIssues: new Map(),
     epicNumbers: new Map(),
+    standaloneTicketNumbers: new Map(),
     events: [],
     runs: new Map(),
     deliveries: new Set(),
@@ -313,6 +317,7 @@ export class MemoryRepository implements Repository {
       s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
       s.audits = s.audits.filter((a) => a.projectId !== projectId);
       s.epicNumbers.delete(projectId);
+      s.standaloneTicketNumbers.delete(projectId);
       s.projects.delete(projectId);
     }
     for (const preset of [...s.presets.values()]) {
@@ -449,6 +454,22 @@ export class MemoryRepository implements Repository {
     s.epicProject.set(card.id, input.projectId);
     s.rawRequests.set(card.id, input.rawRequest);
     return card;
+  }
+
+  /**
+   * The next standalone ticket's number. One past the highest ever used, so
+   * a deleted ticket's key is never reused.
+   */
+  async nextStandaloneTicketNumber(projectId: string): Promise<number> {
+    const s = store();
+    const n =
+      Math.max(
+        s.standaloneTicketNumbers.get(projectId) ?? 0,
+        ...(await this.boardCards(projectId))
+          .map((c) => Number(/^T-(\d+)$/.exec(c.key)?.[1] ?? 0)),
+      ) + 1;
+    s.standaloneTicketNumbers.set(projectId, n);
+    return n;
   }
 
   async createTickets(inputs: CreateTicketInput[]): Promise<BoardCard[]> {
