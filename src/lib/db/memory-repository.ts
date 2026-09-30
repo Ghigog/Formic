@@ -408,8 +408,19 @@ export class MemoryRepository implements Repository {
       card.doneCount = children.filter((c) => c.status === "merged").length;
     }
     // A standalone Epic is a holder, not its own card: its child ticket
-    // renders alone, detached, exactly as today.
-    return cards.filter((c) => !(c.kind === "epic" && c.standalone)).sort(byPosition);
+    // renders alone, detached, exactly as today. Archived tickets stay in
+    // the archive, off the board.
+    return cards
+      .filter((c) => !(c.kind === "epic" && c.standalone))
+      .filter((c) => !(c.kind === "ticket" && c.archived))
+      .sort(byPosition);
+  }
+
+  async archivedTickets(projectId: string): Promise<BoardCard[]> {
+    const s = store();
+    return [...s.cards.values()]
+      .filter((c) => c.kind === "ticket" && c.archived && projectOf(s, c) === projectId)
+      .sort(byPosition);
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
@@ -843,6 +854,7 @@ export class MemoryRepository implements Repository {
     if (update.title !== undefined) card.title = update.title;
     if (update.fileScope !== undefined) card.fileScope = normalizeScope(update.fileScope);
     if (update.needsHuman !== undefined) card.needsHuman = update.needsHuman;
+    if (update.archived !== undefined) card.archived = update.archived;
     if (update.prNumber !== undefined) card.prNumber = update.prNumber;
     if (update.prUrl !== undefined) card.prUrl = update.prUrl;
     if (update.blockedReason !== undefined) {

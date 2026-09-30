@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createBacklogItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
+import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 // Starts the Product Agent (see launch() in src/lib/agents/pipeline.ts).
@@ -13,6 +14,9 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const refused = limited(req, RUN, "run-start");
+  if (refused) return refused;
+
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(

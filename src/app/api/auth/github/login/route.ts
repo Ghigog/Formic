@@ -1,11 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { authorizeUrl, appConfig } from "@/lib/auth/github";
 import { OAUTH_COOKIE, cookieHeader, safeNext, signValue } from "@/lib/auth/session";
+import { limit, limited } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+/** Ten sign-ins a minute from one address: the state round trip isn't free. */
+const SIGN_IN = limit(10, 60_000);
+
 /** Starts sign-in: remembers where to come back to, then off to GitHub. */
 export async function GET(req: Request) {
+  const refused = limited(req, SIGN_IN, "github-login");
+  if (refused) return refused;
+
   const url = new URL(req.url);
   if (!appConfig()) return Response.redirect(new URL("/", url), 303);
 

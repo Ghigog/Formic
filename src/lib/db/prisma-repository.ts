@@ -244,7 +244,7 @@ export class PrismaRepository implements Repository {
     });
 
     const tickets = await db.ticket.findMany({
-      where: { epic: { projectId } },
+      where: { epic: { projectId }, archived: false },
       orderBy: { position: "asc" },
       include: {
         dependsOn: { select: { dependsOnTicketId: true } },
@@ -320,6 +320,7 @@ export class PrismaRepository implements Repository {
       size: t.size,
       storyPoints: t.storyPoints,
       needsHuman: t.needsHuman,
+      archived: t.archived,
       agentRole: live?.role ?? jobRole,
       model: live?.model ?? null,
       workingSince: since?.toISOString() ?? null,
@@ -347,6 +348,39 @@ export class PrismaRepository implements Repository {
     });
 
     return [...epicCards, ...ticketCards].sort(byPosition);
+  }
+
+  async archivedTickets(projectId: string): Promise<BoardCard[]> {
+    const db = prisma();
+    const tickets = await db.ticket.findMany({
+      where: { epic: { projectId }, archived: true },
+      orderBy: { position: "asc" },
+      select: { id: true, key: true, title: true, position: true, archived: true },
+    });
+    // The archive list is not the board: only what names the ticket.
+    return tickets.map((t) => ({
+      id: t.id,
+      kind: "ticket" as const,
+      key: t.key,
+      title: t.title,
+      status: "merged" as const,
+      stalledIn: null,
+      stage: 3,
+      position: t.position,
+      epicId: null,
+      size: null,
+      archived: t.archived,
+      agentRole: null,
+      model: null,
+      fileScope: [],
+      dependsOn: [],
+      prNumber: null,
+      prUrl: null,
+      blockedReason: null,
+      costCents: 0,
+      childCount: 0,
+      doneCount: 0,
+    }));
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
@@ -818,7 +852,7 @@ export class PrismaRepository implements Repository {
 
   async updateTicket(ticketId: string, update: TicketUpdate): Promise<void> {
     const db = prisma();
-    const { costCents, tokensIn, tokensOut, plan, ...rest } = update;
+    const { costCents, tokensIn, tokensOut, plan, archived, ...rest } = update;
 
     // The first move to merged is scored against the project's heat then.
     let merge = {};
@@ -847,6 +881,7 @@ export class PrismaRepository implements Repository {
         ...merge,
         ...(rest.fileScope !== undefined ? { fileScope: normalizeScope(rest.fileScope) } : {}),
         ...(plan !== undefined ? { plan: plan as never } : {}),
+        ...(archived !== undefined ? { archived } : {}),
         ...(rest.runnerJob !== undefined
           ? { runnerJobAt: rest.runnerJob ? new Date() : null }
           : {}),

@@ -5,6 +5,7 @@ import { prdSchema } from "@/lib/domain/entities";
 import { applyPrd } from "@/lib/agents/pipeline";
 import { activeProject } from "@/lib/board/project";
 import { canRetryEpic, deleteEpic, retryEpic } from "@/lib/board/service";
+import { limited, RUN } from "@/lib/rate-limit";
 
 /** The active project, if this epic is on it. Anyone else's epic is a 404. */
 async function projectOwning(epicId: string) {
@@ -54,6 +55,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const refused = limited(req, RUN, "run-start");
+  if (refused) return refused;
+
   const { id } = await params;
   const project = await projectOwning(id);
   if (!project) return notFound();
@@ -73,9 +77,12 @@ export async function PATCH(
 
 /** Starts a stalled Epic's planning again. */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const refused = limited(req, RUN, "run-start");
+  if (refused) return refused;
+
   const { id } = await params;
   const project = await projectOwning(id);
   if (!project) return notFound();
