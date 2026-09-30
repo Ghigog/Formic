@@ -80,17 +80,36 @@ export function isBugText(text: string): boolean {
   return BUG_WORDS.test(text);
 }
 
-/**
- * A card that is a bug: its own title says so. Tickets an architect wrote
- * for a bug epic are ordinary work and do not count again.
- */
-export function isBug(card: BoardCard): boolean {
-  if (card.kind === "ticket" && card.epicId) return false;
-  return isBugText(card.title);
+/** A ticket written for an Epic, as opposed to a raw idea or the Epic itself. */
+function isEpicTicket(card: BoardCard): boolean {
+  return card.kind === "ticket" && Boolean(card.epicId);
 }
 
-/** A bug that has been handed to the agents. */
+/**
+ * A card that reports a bug: its own title says so. Tickets an architect wrote
+ * for a bug epic are bugs too (see isBug) but do not report another one.
+ * This is what costs points.
+ */
+export function isBugReport(card: BoardCard): boolean {
+  return !isEpicTicket(card) && isBugText(card.title);
+}
+
+/**
+ * A card that is a bug, and so carries the bug label: a bug report, or a
+ * ticket of a bug Epic.
+ */
+export function isBug(card: BoardCard, epics: ReadonlyMap<string, BoardCard>): boolean {
+  if (!isEpicTicket(card)) return isBugText(card.title);
+  const epic = epics.get(card.epicId!);
+  return epic ? isBugText(epic.title) : false;
+}
+
+/**
+ * A bug that is done with. A bug report is squashed once handed to the
+ * agents; a bug ticket of an Epic, once it is merged.
+ */
 export function isSquashed(card: BoardCard): boolean {
+  if (isEpicTicket(card)) return card.status === "merged";
   return columnFor(card.status, card.stalledIn) !== "backlog";
 }
 
@@ -147,7 +166,7 @@ export function scoreOf(cards: BoardCard[]): Score {
   for (const card of cards) {
     if (card.kind === "ticket" && card.status === "merged") earned += mergePoints(card);
     if (card.kind === "epic" && card.status === "merged") earned += epicBonus(card, cards);
-    if (isBug(card)) {
+    if (isBugReport(card)) {
       bugs++;
       if (isSquashed(card)) squashed++;
     }

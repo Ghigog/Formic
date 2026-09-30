@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
 import { ColonyProvider, crewPhase } from "./colony";
 import { SoundEngine } from "./sound";
-import { makeCard } from "@/test/cards";
+import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function flushFrame() {
@@ -35,6 +36,38 @@ describe("ColonyProvider agent-finished cue", () => {
     await flushFrame();
 
     expect(play).toHaveBeenCalledWith("reveal", 0);
+  });
+});
+
+describe("ColonyProvider bug squash", () => {
+  async function moveToDone(title: string) {
+    // Reduced motion: the squash lands at once, and jsdom needs no animations.
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const play = vi.spyOn(SoundEngine.prototype, "play");
+    const [epic, ticket] = makeEpicWithChildren({ title }, [{ status: "review" }]);
+    const tree = (cards: typeof ticket[]) => (
+      <ColonyProvider storageKey={`colony-test-squash-${title}`} cards={cards as never} extras={{}}>
+        <div data-tid={ticket!.id}>
+          <span data-bugicon />
+        </div>
+      </ColonyProvider>
+    );
+    const { rerender } = render(tree([epic!, ticket!]));
+    await flushFrame();
+    rerender(tree([epic!, { ...ticket!, status: "merged" }]));
+    await flushFrame();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 1500));
+    });
+    return play.mock.calls.filter(([name]) => name === "squash");
+  }
+
+  it("squashes a bug ticket once when it lands in Done", async () => {
+    expect(await moveToDone("Fix the flickering board")).toHaveLength(1);
+  });
+
+  it("does not squash a ticket of a feature Epic", async () => {
+    expect(await moveToDone("Add dark mode")).toHaveLength(0);
   });
 });
 
