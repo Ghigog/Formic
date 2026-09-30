@@ -431,14 +431,18 @@ export function Board({
           data-colony="board"
           className={cn(
             "relative flex min-h-0 flex-1",
-            isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6",
+            isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
           )}
         >
           {dragSnapshot ?? columnElements}
+          {!isMobile && (
+            <ArchiveDropZone
+              dragging={dragSnapshot !== null}
+              dropped={dropped}
+              onArchived={(id) => onArchived?.(id)}
+            />
+          )}
         </main>
-        {!isMobile && (
-          <ArchiveDropZone dropped={dropped} onArchived={(id) => onArchived?.(id)} />
-        )}
       </DragDropContext>
       </CardEnvContext.Provider>
     </>
