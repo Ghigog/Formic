@@ -29,16 +29,23 @@ function attempt(): Promise<Response> {
 
 describe("POST /api/login", () => {
   it("lets ten wrong passwords through and refuses the eleventh", async () => {
-    for (let i = 0; i < 10; i++) {
-      // A wrong password lands back on /login; only the count matters here.
-      const res = await attempt();
-      expect(res.headers.get("location")).toContain("/login");
-    }
+    // Pin the clock so the calls cannot straddle a one-minute window boundary.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2025-01-01T00:00:00Z"));
+      for (let i = 0; i < 10; i++) {
+        // A wrong password lands back on /login; only the count matters here.
+        const res = await attempt();
+        expect(res.headers.get("location")).toContain("/login");
+      }
 
-    const res = await attempt();
-    expect(res.status).toBe(429);
-    expect(res.headers.get("retry-after")).toMatch(/^\d+$/);
-    expect(await res.json()).toMatchObject({ error: expect.stringMatching(/[Tt]oo many/) });
+      const res = await attempt();
+      expect(res.status).toBe(429);
+      expect(res.headers.get("retry-after")).toMatch(/^\d+$/);
+      expect(await res.json()).toMatchObject({ error: expect.stringMatching(/[Tt]oo many/) });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("starts the count over in the next window", async () => {

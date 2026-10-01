@@ -112,6 +112,15 @@ describe("Column", () => {
     expect(group.getByText("Coder Agent loop")).toBeInTheDocument();
   });
 
+  it("makes the epic header the Queen drop target and marks a placed Queen", () => {
+    const [epic, ...kids] = makeEpicWithChildren({ queen: true }, [{}, {}]);
+    const { container } = column("todo", [epic!, ...kids]);
+    const header = container.querySelector(`[data-tid="${epic!.id}"]`)!;
+    expect(within(header as HTMLElement).getByLabelText("Queen placed")).toBeInTheDocument();
+    // The child tickets sit outside the header, with ids of their own.
+    expect(header.querySelector(`[data-tid="${kids[0]!.id}"]`)).toBeNull();
+  });
+
   it("leaves tickets standing alone where the column does not group", () => {
     const [epic, ...kids] = makeEpicWithChildren({}, [{}, {}]);
     const { container } = column("in_progress", [epic!, ...kids]);
@@ -168,6 +177,15 @@ describe("Column", () => {
     expect(screen.queryByText("BUG")).toBeNull();
   });
 
+  it("marks the bug and spike badges with their own icons", () => {
+    const { container } = column("backlog", [
+      makeCard({ title: "Footer link is broken", workType: "bug", epicId: "holder", detached: true }),
+      makeCard({ title: "How does the merge queue work?", workType: "spike" }),
+    ]);
+    expect(container.querySelectorAll("[data-bugicon]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-spikeicon]")).toHaveLength(1);
+  });
+
   it("gives a ticket of a feature Epic no bug label", () => {
     const [epic, kid] = makeEpicWithChildren({ title: "Dark mode" }, [{ title: "Fix the palette" }]);
     column("todo", [epic!, kid!]);
@@ -193,6 +211,56 @@ describe("Column", () => {
     );
     expect(screen.queryByRole("heading", { name: "To Do" })).toBeNull();
     expect(container.firstElementChild!.className).not.toContain("bg-column");
+  });
+
+  describe("bare with a view menu", () => {
+    const preset = {
+      id: "p1",
+      ownerId: null,
+      column: null,
+      name: "Claude (work)",
+      provider: "claude-code" as const,
+      model: "",
+      prompt: "",
+      hasKey: true,
+      keyHint: "1234",
+      limitedUntil: null,
+      limitNote: null,
+    };
+    const renderBare = (withAgent: boolean) =>
+      renderInDnd(
+        <Column
+          id="todo"
+          cards={[makeCard()]}
+          extras={{}}
+          bare
+          view={EMPTY_VIEW}
+          onViewChange={noop}
+          onOpen={noop}
+          agent={
+            withAgent
+              ? { presets: [preset], selected: preset, onAssign: vi.fn(), onEdit: vi.fn() }
+              : undefined
+          }
+        />,
+      );
+
+    it("puts the options button after the agent select on one row", () => {
+      renderBare(true);
+      const agentButton = screen.getByRole("button", { name: /Claude \(work\)/ });
+      const options = screen.getByRole("button", { name: "Column options" });
+      const row = options.parentElement!.parentElement!;
+      expect(row.contains(agentButton)).toBe(true);
+      expect(
+        agentButton.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.getAllByRole("button", { name: /Claude \(work\)/ })).toHaveLength(1);
+    });
+
+    it("still renders the options button without an agent", () => {
+      renderBare(false);
+      expect(screen.getByRole("button", { name: "Column options" })).toBeInTheDocument();
+    });
   });
 });
 

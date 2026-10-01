@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
+import { saveBoardView, BOARD_VIEW_KEY } from "./view-setting";
+import { EMPTY_VIEW } from "./view";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 import { setViewportMatches } from "@/test/viewport";
 import type { BoardCard } from "@/lib/domain/entities";
@@ -30,7 +32,6 @@ function renderBoard(
       cards={cards}
       projectName="Formic"
       repoFullName="formic-labs/formic-web"
-      baseBranch="main"
       onOpenCard={vi.fn()}
       onNewItem={vi.fn()}
       onTransition={onTransition}
@@ -51,7 +52,6 @@ describe("Board column views", () => {
     const props = {
       projectName: "Formic",
       repoFullName: "formic-labs/formic-web",
-      baseBranch: "main",
       onOpenCard: vi.fn(),
       onNewItem: vi.fn(),
       onTransition,
@@ -69,6 +69,49 @@ describe("Board column views", () => {
     expect(within(todo).getByText("Fix login")).toBeInTheDocument();
     expect(within(todo).queryByText("Add export")).toBeNull();
     expect(within(todo).queryByText("Other")).toBeNull();
+  });
+});
+
+describe("Board seeded from the saved board view", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("filters and sorts every column by the saved view", async () => {
+    saveBoardView({ ...EMPTY_VIEW, sort: "title", types: ["bug"] });
+    renderBoard([
+      makeCard({ status: "ready", title: "Zed bug", workType: "bug" }),
+      makeCard({ status: "ready", title: "Alpha bug", workType: "bug" }),
+      makeCard({ status: "ready", title: "Plain" }),
+      makeCard({ status: "draft", title: "Backlog plain" }),
+    ]);
+    const todo = screen.getByRole("region", { name: "To Do" });
+    await waitFor(() => expect(within(todo).queryByText("Plain")).toBeNull());
+    expect(within(todo).getAllByText(/bug$/).map((e) => e.textContent)).toEqual(["Alpha bug", "Zed bug"]);
+    const backlog = screen.getByRole("region", { name: "Backlog" });
+    expect(within(backlog).queryByText("Backlog plain")).toBeNull();
+  });
+
+  it("filters every column by a saved search", async () => {
+    saveBoardView({ ...EMPTY_VIEW, query: "login" });
+    renderBoard([
+      makeCard({ status: "ready", title: "Fix login" }),
+      makeCard({ status: "ready", title: "Add export" }),
+    ]);
+    const todo = screen.getByRole("region", { name: "To Do" });
+    await waitFor(() => expect(within(todo).queryByText("Add export")).toBeNull());
+    expect(within(todo).getByText("Fix login")).toBeInTheDocument();
+  });
+
+  it("shows default views when the saved value is corrupt", () => {
+    window.localStorage.setItem(BOARD_VIEW_KEY, "{nope");
+    renderBoard([makeCard({ status: "ready", title: "Fix login" })]);
+    expect(screen.getByText("Fix login")).toBeInTheDocument();
+  });
+
+  it("asks for archived cards when Archived is saved", async () => {
+    saveBoardView({ ...EMPTY_VIEW, types: ["archived"] });
+    const onArchivedWanted = vi.fn();
+    renderBoard([makeCard()], { onArchivedWanted });
+    await waitFor(() => expect(onArchivedWanted).toHaveBeenLastCalledWith(true));
   });
 });
 
@@ -135,21 +178,12 @@ describe("Board, on a wide screen", () => {
     ).toBeInTheDocument();
   });
 
-  /*
-   * Both headers are in the DOM at once — the wide one and the app bar — and
-   * CSS hides whichever does not apply. A real browser drops the hidden one
-   * from the accessibility tree; jsdom loads no CSS, so it sees both. Only
-   * the app bar carries the CTA now: on a wide screen, Backlog has its own.
-   */
-  it("routes the app bar's CTA to the capture dialog", async () => {
-    const onNewItem = vi.fn();
-    renderBoard([makeCard()], { onNewItem });
-
-    const ctas = screen.getAllByRole("button", { name: "New backlog item" });
-    expect(ctas).toHaveLength(1);
-
-    await userEvent.setup().click(ctas[0]!);
-    expect(onNewItem).toHaveBeenCalledWith("backlog");
+  it("has no logo, sync badge, board options menu or app bar + button", () => {
+    renderBoard([makeCard()]);
+    expect(screen.queryByText("Formic")).toBeNull();
+    expect(screen.queryByText(/synced|behind/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Board options" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New backlog item" })).toBeNull();
   });
 });
 
@@ -220,7 +254,6 @@ describe("Board, as the server moves cards", () => {
     const props = {
       projectName: "Formic",
       repoFullName: "formic-labs/formic-web",
-      baseBranch: "main",
       onOpenCard: vi.fn(),
       onNewItem: vi.fn(),
       onTransition: vi.fn(),
@@ -236,7 +269,7 @@ describe("Board, as the server moves cards", () => {
 });
 
 describe("Board, below 768px", () => {
-  it("shows one column at a time, with the tab bar carrying the counts", async () => {
+  it("shows one column at a time, with an indicator carrying the counts", async () => {
     setViewportMatches(true);
     const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [
       { status: "ready" },
@@ -244,17 +277,47 @@ describe("Board, below 768px", () => {
     ]);
     renderBoard([makeCard({ status: "draft" }), epic!, ...kids]);
 
-    const user = userEvent.setup();
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^Backlog/ })).toBeInTheDocument(),
-    );
-    expect(screen.getByRole("button", { name: "To Do 2" })).toBeInTheDocument();
+    const bar = await screen.findByRole("list", { name: "Columns" });
+    expect(within(bar).queryAllByRole("button")).toHaveLength(0);
+    expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 2");
+    expect(within(bar).getByText("Backlog")).toHaveAttribute("aria-current", "true");
     expect(screen.queryByRole("region", { name: "To Do" })).toBeNull();
+  });
 
-    await user.click(screen.getByRole("button", { name: "To Do 2" }));
-    expect(screen.getByRole("region", { name: "To Do" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Backlog" })).toBeNull();
+  describe("swiping", () => {
+    const swipe = (dx: number, dy = 0) => {
+      const main = document.querySelector("main")!;
+      fireEvent.touchStart(main, { touches: [{ clientX: 200, clientY: 300 }] });
+      fireEvent.touchEnd(main, { changedTouches: [{ clientX: 200 + dx, clientY: 300 + dy }] });
+    };
+    const setup = async () => {
+      setViewportMatches(true);
+      renderBoard([makeCard({ status: "draft" })]);
+      await screen.findByRole("region", { name: "Backlog" });
+    };
+
+    it("moves to the next column on a left swipe and back on a right swipe", async () => {
+      await setup();
+      swipe(-100);
+      expect(screen.getByRole("region", { name: "To Do" })).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Backlog" })).toBeNull();
+      swipe(100);
+      expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+    });
+
+    it("stays put at Backlog and at Done", async () => {
+      await setup();
+      swipe(100);
+      expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+      for (let i = 0; i < 6; i++) swipe(-100);
+      expect(screen.getByRole("region", { name: "Done" })).toBeInTheDocument();
+    });
+
+    it("ignores a mostly vertical scroll with horizontal drift", async () => {
+      await setup();
+      swipe(-60, 150);
+      expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+    });
   });
 
   it("has no floating Advance button; the card's own arrow takes it on", async () => {
@@ -277,7 +340,12 @@ describe("Board, below 768px", () => {
     const { onTransition } = renderBoard([card]);
 
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /^In Progress/ }));
+    await screen.findByRole("region", { name: "Backlog" });
+    const main = document.querySelector("main")!;
+    for (let i = 0; i < 2; i++) {
+      fireEvent.touchStart(main, { touches: [{ clientX: 200, clientY: 300 }] });
+      fireEvent.touchEnd(main, { changedTouches: [{ clientX: 100, clientY: 300 }] });
+    }
     await user.click(screen.getByRole("button", { name: "Return PROT-13 to To Do" }));
 
     expect(onTransition).toHaveBeenCalledOnce();
@@ -315,7 +383,27 @@ describe("Board, below 768px", () => {
       "That epic has no PRD yet.",
     );
     // Still in Backlog: the optimistic move was dropped, not kept.
-    expect(screen.getByRole("button", { name: "Backlog 1" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "To Do 0" })).toBeInTheDocument();
+    const bar = screen.getByRole("list", { name: "Columns" });
+    expect(within(bar).getByText("Backlog")).toHaveTextContent("Backlog 1");
+    expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 0");
+  });
+});
+
+describe("Board archived filter", () => {
+  it("shows archived cards in Done once Archived is toggled on, and asks for them", async () => {
+    const onArchivedWanted = vi.fn();
+    const live = makeCard({ status: "merged", title: "Shipped one" });
+    const old = makeCard({ status: "merged", title: "Old archived", archived: true });
+    renderBoard([live, old], { onArchivedWanted });
+    expect(screen.queryByText("Old archived")).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    const done = screen.getByRole("region", { name: /done/i });
+    await user.click(within(done).getByRole("button", { name: "Column options" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Archived" }));
+
+    expect(screen.getByText("Old archived")).toBeInTheDocument();
+    expect(screen.queryByText("Shipped one")).not.toBeInTheDocument();
+    expect(onArchivedWanted).toHaveBeenLastCalledWith(true);
   });
 });

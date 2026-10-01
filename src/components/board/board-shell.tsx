@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board";
 import { NewItemDialog, type CaptureColumn } from "./new-item-dialog";
 import { EpicDrawer } from "./epic-drawer";
@@ -13,18 +13,19 @@ import {
 import type { ExtrasMap } from "./card";
 import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
-import { useAgents, type AgentUsage } from "@/lib/hooks/use-agents";
+import { useAgents, type AgentUsage, type TokenWindowView } from "@/lib/hooks/use-agents";
 import { useAssistant } from "@/lib/hooks/use-assistant";
 import { AgentEditor } from "./agent-editor";
 import { SetupDialog, type KeylessAgent } from "./setup-dialog";
 import { useRunnerSetup } from "@/lib/hooks/use-runner-setup";
 import { provider } from "@/lib/llm/providers";
-import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
+import type { AgentPreset, ColumnAgents, ColumnOverrides } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyTimeline } from "@/components/colony/timeline";
 import { SentinelsPage } from "@/components/sentinels/sentinels";
+import { scoreOf } from "@/lib/colony/game";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import type { SentinelStates } from "@/lib/sentinels/view";
 import { ColonyPopover, NestButton } from "@/components/colony/nest";
@@ -43,12 +44,13 @@ export function BoardShell({
   initialExtras = {},
   projectName,
   repoFullName,
-  baseBranch,
   initialStats,
   initialPresets = [],
   initialColumnAgents = {},
   initialAgentUsage = {},
+  initialTokenWindow,
   initialSentinels = {},
+  initialOverrides = {},
   account,
 }: {
   initialCards: BoardCard[];
@@ -56,17 +58,21 @@ export function BoardShell({
   initialExtras?: ExtrasMap;
   projectName: string;
   repoFullName: string;
-  baseBranch: string;
+  /** No longer shown; callers may still pass it. */
+  baseBranch?: string;
   initialStats: AmbientStats;
   initialPresets?: AgentPreset[];
   initialColumnAgents?: ColumnAgents;
   /** What each saved agent has used, in tokens, as of this render. */
   initialAgentUsage?: AgentUsage;
+  initialTokenWindow?: TokenWindowView;
   /** Each sentinel's last report on this project. */
   initialSentinels?: SentinelStates;
+  /** Each column agent's own limits. */
+  initialOverrides?: ColumnOverrides;
   account?: Account;
 }) {
-  const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage);
+  const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage, initialTokenWindow, initialOverrides);
   // Views that follow the event stream themselves, such as an open ticket.
   const listeners = useRef(new Set<(event: FormicEvent, seq: number) => void>());
   const subscribe = useCallback<SubscribeToEvents>((listener) => {
@@ -75,7 +81,7 @@ export function BoardShell({
   }, []);
   const [rerouteToast, setRerouteToast] = useState<RerouteNotice | null>(null);
   const rerouteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { cards: boardCards, extras, stats, prdStreams, connection, transition, createEpic, createTicket } =
+  const { cards: boardCards, extras, stats, prdStreams, connection, transition, createEpic, createTicket, refetch } =
     useBoard(initialCards, initialStats, (event, seq) => {
       if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
       if (event.type === "card.rerouted") {
@@ -92,6 +98,29 @@ export function BoardShell({
     () => boardCards.filter((c) => !c.archived && !archivedIds.has(c.id)),
     [boardCards, archivedIds],
   );
+  // The archive, fetched once the first time a filter asks for it.
+  const [archiveWanted, setArchiveWanted] = useState(false);
+  const [archive, setArchive] = useState<BoardCard[]>([]);
+  const fetchedArchive = useRef(false);
+  useEffect(() => {
+    if (!archiveWanted || fetchedArchive.current) return;
+    fetchedArchive.current = true;
+    fetch("/api/tickets/archived")
+      .then((res) => (res.ok ? res.json() : { tickets: [] }))
+      .then((body: { tickets: BoardCard[] }) => setArchive(body.tickets))
+      .catch(() => {
+        fetchedArchive.current = false;
+      });
+  }, [archiveWanted]);
+  // Cards archived this session stay in the list, marked archived.
+  const boardShown = useMemo(() => {
+    if (!archiveWanted) return cards;
+    const sessionArchived = boardCards
+      .filter((c) => archivedIds.has(c.id))
+      .map((c) => ({ ...c, archived: true }));
+    const have = new Set(sessionArchived.map((c) => c.id));
+    return [...cards, ...sessionArchived, ...archive.filter((c) => !have.has(c.id))];
+  }, [archiveWanted, cards, boardCards, archivedIds, archive]);
   const runner = useRunnerSetup(subscribe);
   const [dialog, setDialog] = useState<{ column: CaptureColumn } | null>(null);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
@@ -133,14 +162,14 @@ export function BoardShell({
 
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
-    <SentinelsProvider initial={initialSentinels}>
+    <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level}>
     <div className="flex h-dvh flex-col overflow-hidden">
       <Board
-        cards={cards}
+        cards={boardShown}
+        onArchivedWanted={setArchiveWanted}
         extras={merged}
         projectName={projectName}
         repoFullName={repoFullName}
-        baseBranch={baseBranch}
         onOpenCard={(card) =>
           card.kind === "epic" ? setOpenEpicId(card.id) : setOpenTicketId(card.id)
         }
@@ -177,6 +206,10 @@ export function BoardShell({
           column={editing.column}
           preset={editing.preset}
           usage={editing.preset ? agentState.usage[editing.preset.id] : undefined}
+          window={agentState.window}
+          onResetWindow={agentState.resetWindow}
+          override={editing.column === "assistant" ? null : (agentState.overrides[editing.column] ?? null)}
+          onSaveOverride={(override) => agentState.setOverride(editing.column as ColumnId, override)}
           onClose={() => setEditing(null)}
           onSave={async (input) => {
             const { column } = editing;
@@ -218,7 +251,9 @@ export function BoardShell({
           setOpenTicketId(null);
           setOpenEpicId(epicId);
         }}
+        onOpenTicket={setOpenTicketId}
         subscribe={subscribe}
+        onChanged={() => void refetch()}
       />
 
       <SetupDialog

@@ -118,9 +118,6 @@ export const decompositionSchema = z.object({
   tickets: z.array(ticketSpecSchema).min(1).max(12),
 });
 
-/** Attempts before the Architect Agent gives up and asks for a human. */
-export const MAX_DECOMPOSITION_ATTEMPTS = 3;
-
 export function checkDecomposition(
   raw: unknown,
 ): { ok: true; tickets: DraftTicket[] } | { ok: false; correction: string } {

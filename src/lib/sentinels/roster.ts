@@ -19,6 +19,8 @@ export interface Sentinel {
   /** The role, as a person would say it: "Tester", "SecOps". */
   name: string;
   group: SentinelGroup;
+  /** The colony level at which they can be summoned and count in the grade. */
+  unlockLevel: number;
   /** Who they are, as a name. */
   who: string;
   /** What they are, in a phrase: "Rock, friendly". */
@@ -56,6 +58,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "tester",
     name: "Tester",
     group: "BUILD",
+    unlockLevel: 1,
     who: "Professor O'Chumley",
     kind: "Tyrannosaurus, tenured",
     persona:
@@ -67,6 +70,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "qa",
     name: "QA",
     group: "BUILD",
+    unlockLevel: 2,
     who: "Nasty Toes",
     kind: "Zombie, doctor",
     persona:
@@ -78,6 +82,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "architect",
     name: "Architect",
     group: "BUILD",
+    unlockLevel: 3,
     who: "Collum",
     kind: "Column, classical",
     persona:
@@ -89,6 +94,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "secops",
     name: "SecOps",
     group: "OPS",
+    unlockLevel: 4,
     who: "Twodoodes",
     kind: "Hippie, assassin",
     persona:
@@ -100,6 +106,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "devops",
     name: "DevOps",
     group: "OPS",
+    unlockLevel: 5,
     who: "Waterwheel",
     kind: "Robot, weary",
     persona:
@@ -111,6 +118,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "techops",
     name: "TechOps",
     group: "OPS",
+    unlockLevel: 6,
     who: "Ground Pepper",
     kind: "Rock, friendly",
     persona:
@@ -122,6 +130,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "perf",
     name: "Performance",
     group: "OPS",
+    unlockLevel: 7,
     who: "Longfoot Jhan",
     kind: "Monkey, astronaut",
     persona:
@@ -133,6 +142,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "a11y",
     name: "Accessibility",
     group: "PRODUCT",
+    unlockLevel: 8,
     who: "Luca L'amico",
     kind: "Knight, seven years old",
     persona:
@@ -144,6 +154,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "design",
     name: "Designer",
     group: "PRODUCT",
+    unlockLevel: 9,
     who: "That Barbon",
     kind: "Caveman, steampunk",
     persona:
@@ -155,6 +166,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "legal",
     name: "Legal",
     group: "BUSINESS",
+    unlockLevel: 10,
     who: "Licio Maria",
     kind: "Demon, priest",
     persona:
@@ -166,6 +178,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "marketer",
     name: "Marketer",
     group: "BUSINESS",
+    unlockLevel: 11,
     who: "Ptoughneigh",
     kind: "Alien, farmer",
     persona:
@@ -177,6 +190,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "sales",
     name: "Sales",
     group: "BUSINESS",
+    unlockLevel: 12,
     who: "Turk",
     kind: "Rooster, cowboy",
     persona:
@@ -185,6 +199,11 @@ export const SENTINELS: readonly Sentinel[] = [
     focus: [/README\.md$/i, /seed|fixtures|demo/i, /settings|account|billing|plan|team/i, /auth/i, /PRD|docs\//i],
   },
 ];
+
+/** Whether a colony at this level can summon the sentinel. */
+export function isUnlocked(s: Sentinel, level: number): boolean {
+  return s.unlockLevel <= level;
+}
 
 export function sentinel(id: string): Sentinel | undefined {
   return SENTINELS.find((s) => s.id === id);

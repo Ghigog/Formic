@@ -107,14 +107,17 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     id: "deepseek",
     label: "DeepSeek",
     kind: "openai",
-    baseUrl: "https://api.deepseek.com/v1",
+    // The host DeepSeek's docs publish. Paths under /v1 also answer 401 when
+    // unauthenticated, but so does the host without it, so that 401 never
+    // showed /v1 was the documented route.
+    baseUrl: "https://api.deepseek.com",
     keyUrl: "https://platform.deepseek.com/api_keys",
     keyPlaceholder: "sk-…",
-    note: "Low-cost models.",
+    note: "Low-cost models with a thinking mode, 1M-token context and JSON output.",
     freeTier: false,
     keyName: "API key",
     envKey: "DEEPSEEK_API_KEY",
-    suggestedModels: [],
+    suggestedModels: ["deepseek-flash", "deepseek-v4-pro"],
   },
   {
     id: "openrouter",
@@ -150,12 +153,17 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyUrl: "https://app.cline.bot",
     // Cline does not publish a prefix for these, so do not suggest one.
     keyPlaceholder: "…",
-    note: "$9.99/mo flat rate for a curated set of open-weight models (DeepSeek, GLM, Kimi, Qwen and others). One key for all of them.",
+    note: "$9.99/mo flat rate for a curated set of open-weight models (DeepSeek, GLM, Kimi, Qwen and others). One key for all of them. Create a durable key at app.cline.bot under Settings > API Keys. A token copied from the Cline extension or CLI is an account auth token that expires in 60 minutes: /models still answers 200 with it, but chat calls start returning 401 an hour later.",
     freeTier: false,
     flatRate: true,
     keyName: "API key",
     envKey: "CLINE_API_KEY",
-    suggestedModels: [],
+    suggestedModels: [
+      "cline-pass/deepseek-v4.1-flash",
+      "cline-pass/glm-5.3",
+      "cline-pass/kimi-k3",
+      "cline-pass/qwen3.7-max",
+    ],
   },
   {
     id: "claude-code",
@@ -164,7 +172,8 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     cli: "claude",
     secretName: "FORMIC_CLAUDE_CODE_TOKEN",
     keyName: "Claude Code token",
-    keyUrl: "https://code.claude.com/docs/en/authentication#generate-a-long-lived-token",
+    keyUrl:
+      "https://code.claude.com/docs/en/authentication#generate-a-long-lived-token",
     keyPlaceholder: "sk-ant-oat01-…",
     note: "Runs Claude Code in your repo's GitHub Actions, on your Pro or Max plan. No API bill.",
     howToGetKey:
@@ -182,7 +191,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     secretName: "FORMIC_CODEX_AUTH",
     keyName: "Codex sign-in",
     keyUrl: "https://github.com/openai/codex",
-    keyPlaceholder: "{\"tokens\": …} or sk-…",
+    keyPlaceholder: '{"tokens": …} or sk-…',
     note: "Runs OpenAI's Codex in your repo's GitHub Actions, on your ChatGPT plan or an OpenAI key.",
     howToGetKey:
       "On your computer, run `codex login` and sign in with ChatGPT, then paste the contents of ~/.codex/auth.json. Or paste an OpenAI API key. A ChatGPT sign-in can expire; paste it again if runs start failing to sign in.",

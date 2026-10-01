@@ -105,6 +105,49 @@ function saidInstead(body: unknown): string | null {
   return null;
 }
 
+/**
+ * DeepSeek's tool-call markup, which ClinePass's gateway lets through into
+ * `content` — `<｜DSML｜function_calls>` and its kin, with a fullwidth or plain
+ * bar — while the real `tool_calls` come back with arguments of "{}" on roughly
+ * one tool-bearing reply in four.
+ */
+const DSML_TAG = /<\/?\s*[｜|]\s*DSML\s*[｜|][^>]*>/g;
+
+/**
+ * Decision (CL-8): ClinePass stays non-streamed and unwrapped. Its docs show
+ * streaming as OpenAI-compliant, but the wrapped envelope is what the gateway
+ * sends today and the reader for it already works; streaming would add an SSE
+ * parser to bet on a shape two open upstream issues are still changing, and
+ * would not fix the DSML leak, which is in the content either way.
+ *
+ * DSML: the sentinels are stripped from content so they never reach a card or
+ * the next turn. A leak that also emptied the tool call ("{}") has lost the
+ * call, so that turn fails naming DSML rather than running an empty attempt.
+ * Arguments that do not parse fail with the provider's own text.
+ */
+function checkToolCalls(p: ProviderInfo, message: ChatMessage): ChatMessage {
+  const leaked = typeof message.content === "string" && /[｜|]\s*DSML\s*[｜|]/.test(message.content);
+  for (const call of message.tool_calls ?? []) {
+    const args = call.function.arguments?.trim() ?? "";
+    if (args && args !== "{}") {
+      try {
+        JSON.parse(args);
+      } catch {
+        throw new ProviderError(
+          `${p.label} sent a call to ${call.function.name} whose arguments are not JSON: ${args.replace(/\s+/g, " ").slice(0, 200)}. That is ${p.label}'s side: move the card back to retry.`,
+          null,
+        );
+      }
+    } else if (leaked) {
+      throw new ProviderError(
+        `${p.label} leaked DSML markup into its answer and sent the call to ${call.function.name} with empty arguments. That is ${p.label}'s gateway, not the ticket's: move the card back to retry, or run it on another provider.`,
+        null,
+      );
+    }
+  }
+  return leaked ? { ...message, content: (message.content as string).replace(DSML_TAG, "").trim() } : message;
+}
+
 /** The tries after the first: how long each waits before making it. */
 const RETRY_WAITS_MS = [1_000, 4_000];
 
@@ -238,7 +281,7 @@ async function chatOnce(
     );
   }
   return {
-    message: choice.message,
+    message: checkToolCalls(p, choice.message),
     finishReason: choice.finish_reason ?? null,
     tokensIn: completion?.usage?.prompt_tokens ?? 0,
     tokensOut: completion?.usage?.completion_tokens ?? 0,
@@ -292,15 +335,31 @@ function modelInfo(m: RawModel): ModelInfo {
 }
 
 /** The models a key can use, for the agent editor, with what the provider says of each. */
-export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise<ModelInfo[]> {
+export async function listOpenAiModels(p: ProviderInfo, apiKey: string, signal?: AbortSignal): Promise<ModelInfo[]> {
   const res = await fetch(endpoint(p, "/models"), {
     headers: { Authorization: `Bearer ${apiKey}` },
     cache: "no-store",
+    ...(signal ? { signal } : {}),
   }).catch(() => null);
   if (!res) throw new ProviderError(`Could not reach ${p.label}.`, null);
   if (!res.ok) throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
   const body = (await res.json()) as { data?: RawModel[] };
   return (body.data ?? []).map(modelInfo).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * What DeepSeek advertises for `model`. A failed or empty answer is "not
+ * said": the request then carries the role's own choice, unheld.
+ */
+export async function advertisedModel(
+  p: ProviderInfo,
+  apiKey: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<ModelInfo | undefined> {
+  if (p.id !== "deepseek") return undefined;
+  const models = await listOpenAiModels(p, apiKey, signal).catch(() => []);
+  return models.find((m) => m.id === model);
 }
 
 /** A reply ceiling held to what the model advertises; unchanged when it advertises none. */

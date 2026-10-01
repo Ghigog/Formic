@@ -1,8 +1,8 @@
 import "server-only";
 
+import { attemptsFor, inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
-import { DEFAULT_RUN_BUDGET } from "@/lib/budget/limits";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
 import { runCoderAgent, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
@@ -41,6 +41,7 @@ import { cliPrompt, showcaseSummaries, startCliAnswer, startJobRun } from "@/lib
  * to sit in indefinitely.
  */
 
+const STAGE_PR = 6;
 const STAGE_MERGE = 7;
 
 /**
@@ -48,7 +49,6 @@ const STAGE_MERGE = 7;
  * than the attempt budget: the review that reads the diff alongside CI
  * should not cost a fix attempt when CI then comes back red.
  */
-export const MAX_REVIEWS = DEFAULT_RUN_BUDGET.maxAttempts + 1;
 
 /** A green-enough result. Skipped and neutral checks block nothing. */
 const GREEN = ["success", "neutral", "skipped"];
@@ -195,12 +195,34 @@ async function react(
   if (ticket.runnerJob) return;
 
   if (red.length === 0 && reviewedSha === headSha) {
+    if (!project.autoMerge) {
+      await awaitPersonMerge(projectId, ticket);
+      return;
+    }
     await inMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber));
     return;
   }
 
   if (!startReview) return;
   await reviewTicket(projectId, ticket, pull, red);
+}
+
+/**
+ * Auto-merge is off: the approved pull request waits in Merging for a person
+ * to merge it. The ticket is not merged until the merge is seen to happen.
+ */
+async function awaitPersonMerge(projectId: string, ticket: TicketDetail): Promise<void> {
+  if (ticket.status === "review" && ticket.stage === STAGE_MERGE) return;
+  await repository().updateTicket(ticket.id, { stage: STAGE_MERGE, blockedReason: null });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticket.id,
+    kind: "ticket",
+    status: ticket.status,
+    stalledIn: ticket.stalledIn ?? null,
+    stage: STAGE_MERGE,
+    blockedReason: null,
+  });
 }
 
 /**
@@ -259,9 +281,10 @@ function ceilingReason(
   ticket: TicketDetail,
   pull: PullRequestDetail,
   red: CheckSummary[],
+  maxReviews: number,
 ): string {
   if (red.length === 0) {
-    return `${ticket.key} has been reviewed ${MAX_REVIEWS} times without being approved. This needs a human.`;
+    return `${ticket.key} has been reviewed ${maxReviews} times without being approved. This needs a human.`;
   }
   const names = red.map((c) => c.name).join(", ");
   if (ticket.reviewedSha === pull.headSha) {
@@ -272,7 +295,7 @@ function ceilingReason(
       `or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code. This needs a human.`
     );
   }
-  return `${names} is still failing after ${MAX_REVIEWS} reviews of pull request #${pull.number}. This needs a human.`;
+  return `${names} is still failing after ${maxReviews} reviews of pull request #${pull.number}. This needs a human.`;
 }
 
 /** When each board's open pull requests were last looked at, to go easy on the API. */
@@ -551,7 +574,13 @@ async function mergeTicket(
     (await client.pullRequest(prNumber));
   if (pull.merged) return { merged: true };
 
-  const merged = await client.merge(prNumber, pull.headSha);
+  const merged = await client.merge(prNumber, pull.headSha).catch(
+    (e): { ok: false; conflict: false; reason: string } => ({
+      ok: false,
+      conflict: false,
+      reason: e instanceof Error ? e.message : String(e),
+    }),
+  );
   if (!merged.ok) {
     // A 405 means a conflict only when GitHub says so; otherwise it is a
     // refusal worth reporting as what it was.
@@ -568,7 +597,12 @@ async function mergeTicket(
     const reason = conflict
       ? `${ticket.key} could not be merged cleanly: ${merged.reason}`
       : `GitHub refused the merge: ${merged.reason}`;
-    await stallTicket(projectId, ticket, reason, { blocked: true, stalledIn: "in_review" });
+    // Back to where it was before the merge was tried, with the reason.
+    await stallTicket(projectId, ticket, reason, {
+      blocked: true,
+      stalledIn: "in_review",
+      stage: STAGE_PR,
+    });
     return { merged: false, reason };
   }
 
@@ -654,9 +688,8 @@ async function releaseDependents(
 
 /**
  * PROT-08. Once every ticket under an Epic has merged, the Epic is done: it
- * moves to the top of Done on its own, and the PM Agent writes its showcase
- * if it has none yet. Saved before the showcase runs, so an Epic whose
- * showcase fails still leaves To Do.
+ * moves to the top of Done on its own. Its showcase is written only when
+ * someone asks for it (startShowcase), so no agent runs here.
  */
 export async function completeEpic(
   projectId: string,
@@ -691,8 +724,18 @@ export async function completeEpic(
     stage: card?.stage ?? 8,
     blockedReason: null,
   });
+}
 
-  if (detail.showcase) return;
+/**
+ * Starts the PM Agent on an Epic's showcase. Only ever on request: finishing
+ * an Epic spends nothing. The caller has checked the Epic is done, has no
+ * showcase and has no PM run active.
+ */
+export async function startShowcase(projectId: string, epicId: string): Promise<void> {
+  const repo = repository();
+  const detail = await repo.epicDetail(epicId);
+  if (!detail) return;
+  const siblings = await repo.ticketsForEpic(epicId);
 
   const prd = prdSchema.safeParse(detail.prd);
   const run = startRun(projectId, "pm", {
@@ -736,9 +779,11 @@ async function reviewTicket(
   const repo = repository();
   const attempt = ticket.attempts + 1;
   const names = red.map((c) => c.name).join(", ");
+  const project = await projectFor(projectId);
+  const maxReviews = await attemptsFor(project.ownerId, "review");
 
-  if (attempt > MAX_REVIEWS) {
-    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red), {
+  if (attempt > maxReviews) {
+    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red, maxReviews), {
       blocked: true,
       stalledIn: "in_review",
     });
@@ -755,7 +800,6 @@ async function reviewTicket(
     return;
   }
 
-  const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
   await repo.updateTicket(ticket.id, { attempts: attempt });
@@ -777,13 +821,14 @@ async function reviewTicket(
     checks: logs,
     ciRunning: options.ciRunning ?? false,
     attempt,
-    maxAttempts: MAX_REVIEWS,
+    maxAttempts: maxReviews,
   };
 
   const run = startRun(projectId, "reviewer", {
     ...(await runTargetFor(projectId, "reviewer")),
     epicId: ticket.epicId,
     ticketId: ticket.id,
+    budget: await inProcessBudget(project.ownerId, ticket),
   });
 
   const cli = await cliAgentFor(projectId, "in_review");
@@ -891,7 +936,7 @@ async function reviewTicket(
     const pushed = await commitAndPush(checkout, {
       branch: ticket.branchName,
       subject: `${ticket.key}: ${verdict.summary}`,
-      body: `${verdict.detail}\n\nFrom review ${attempt} of ${MAX_REVIEWS}${names ? `, for ${names}` : ""}.`,
+      body: `${verdict.detail}\n\nFrom review ${attempt} of ${maxReviews}${names ? `, for ${names}` : ""}.`,
     });
 
     if (!pushed.ok) {
@@ -957,12 +1002,13 @@ async function resolveConflicts(
     });
 
   if (!ticket.branchName) return stall("It has no branch recorded to resolve it on.");
-  if (attempt > MAX_REVIEWS) {
-    return stall(`The Reviewer Agent has already had ${MAX_REVIEWS} goes at this pull request.`);
+  const project = await projectFor(projectId);
+  const maxReviews = await attemptsFor(project.ownerId, "review");
+  if (attempt > maxReviews) {
+    return stall(`The Reviewer Agent has already had ${maxReviews} goes at this pull request.`);
   }
   const branch = ticket.branchName;
 
-  const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
   await repo.updateTicket(ticket.id, { attempts: attempt });
@@ -976,7 +1022,7 @@ async function resolveConflicts(
     changedFiles,
     checks: [],
     attempt,
-    maxAttempts: MAX_REVIEWS,
+    maxAttempts: maxReviews,
   };
   const notes = await noteTexts(projectId, ticket.id);
 
@@ -984,6 +1030,7 @@ async function resolveConflicts(
     ...(await runTargetFor(projectId, "reviewer")),
     epicId: ticket.epicId,
     ticketId: ticket.id,
+    budget: await inProcessBudget(project.ownerId, ticket),
   });
 
   // In GitHub Actions the workflow merges the base in before the agent

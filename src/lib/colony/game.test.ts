@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BoardCard } from "@/lib/domain/entities";
 import {
   BUG_COST,
+  SENTINEL_UNLOCKS,
   HEAT_MAX,
   HEAT_WINDOW_MS,
   epicTally,
@@ -13,10 +14,12 @@ import {
   isSquashed,
   levelOf,
   nextUnlock,
+  queensEarned,
   rankOf,
   scoreOf,
+  unlocksAt,
 } from "./game";
-import { TODAY, WINDOW_DAYS, buildTimeline } from "./timeline";
+import { TODAY, WINDOW_DAYS, buildTimeline, isEpicComplete } from "./timeline";
 
 function card(p: Partial<BoardCard> & Pick<BoardCard, "id">): BoardCard {
   return {
@@ -53,9 +56,20 @@ describe("levels", () => {
     expect(rankOf(99)).toBe("Queen");
   });
 
+  it("earns a Queen for every level past the first, uncapped", () => {
+    expect(queensEarned(1)).toBe(0);
+    expect(queensEarned(50)).toBe(49);
+  });
+
+  it("names a Sentinel alongside shapes and colours at the level it unlocks", () => {
+    const at3 = SENTINEL_UNLOCKS.filter((u) => u.lv === 3).map((u) => u.label);
+    expect(at3.length).toBeGreaterThan(0);
+    expect(unlocksAt(3)).toEqual(expect.arrayContaining(["Ladybird", ...at3]));
+  });
+
   it("says what the next unlock is", () => {
-    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Crimson"] });
-    expect(nextUnlock(9)).toBeNull();
+    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Crimson", "QA"] });
+    expect(nextUnlock(12)).toBeNull();
   });
 });
 
@@ -237,5 +251,30 @@ describe("timeline", () => {
     const tl = buildTimeline(cards, at);
     expect(tl.total).toBe(2);
     expect(tl.forecast).toBeNull();
+  });
+});
+
+describe("isEpicComplete", () => {
+  const epicWith = (...statuses: BoardCard["status"][]) => {
+    const tl = buildTimeline(
+      [
+        card({ id: "e1", kind: "epic", epicId: null }),
+        ...statuses.map((status, i) => card({ id: `t${i}`, status, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })),
+      ],
+      new Date(),
+    );
+    return tl.epics[0]!;
+  };
+
+  it("is true when every ticket is done", () => {
+    expect(isEpicComplete(epicWith("merged", "merged"))).toBe(true);
+  });
+  it("is false with a ticket in progress, planned or in review", () => {
+    expect(isEpicComplete(epicWith("merged", "running"))).toBe(false);
+    expect(isEpicComplete(epicWith("merged", "ready"))).toBe(false);
+    expect(isEpicComplete(epicWith("merged", "review"))).toBe(false);
+  });
+  it("is false for an epic without tickets", () => {
+    expect(isEpicComplete({ ...epicWith("merged"), tickets: [] })).toBe(false);
   });
 });

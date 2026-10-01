@@ -3,6 +3,7 @@ import "server-only";
 import { repository } from "@/lib/db";
 import type { AgentPreset, AgentPresetInput } from "@/lib/domain/entities";
 import { formatReset } from "./limits";
+import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { hintFor, open, seal } from "@/lib/secrets/vault";
 import {
@@ -77,6 +78,38 @@ export function limitReason(preset: AgentPreset, where: string, now = Date.now()
   return `${preset.name} is out of usage until ${formatReset(until)}. Wait for it, or pick an agent on another account for ${where}.`;
 }
 
+/** How long an agent whose allowance is spent stays out before the window is read again. */
+const ALLOWANCE_RECHECK_MS = 3_600_000;
+const ALLOWANCE_NOTE = "Token allowance spent for the window.";
+
+/** Tokens an agent used over its rolling window: runs, and the chat answers it gave. */
+export async function tokensUsedInWindow(preset: AgentPreset, now = Date.now()): Promise<number> {
+  const days = preset.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS;
+  const since = new Date(now - days * 86_400_000);
+  const used = (await repository().agentTokensByPreset(since))[preset.id];
+  return used ? used.tokensIn + used.tokensOut : 0;
+}
+
+/**
+ * The start gate for an agent's token allowance. A spent allowance marks the
+ * agent out of usage for a while, so the board shows the existing note; a
+ * mark this gate set is lifted once usage has aged out of the window.
+ * Returns the preset as it now stands.
+ */
+export async function gateAllowance(preset: AgentPreset, now = Date.now()): Promise<AgentPreset> {
+  const own = preset.limitNote === ALLOWANCE_NOTE;
+  if (preset.tokenAllowance == null) return preset;
+  if ((await tokensUsedInWindow(preset, now)) >= preset.tokenAllowance) {
+    if (preset.limitedUntil && Date.parse(preset.limitedUntil) > now) return preset;
+    const until = new Date(now + ALLOWANCE_RECHECK_MS);
+    await repository().setPresetLimit(preset.id, { until, note: ALLOWANCE_NOTE });
+    return { ...preset, limitedUntil: until.toISOString(), limitNote: ALLOWANCE_NOTE };
+  }
+  if (!own || !preset.limitedUntil) return preset;
+  await repository().setPresetLimit(preset.id, null);
+  return { ...preset, limitedUntil: null, limitNote: null };
+}
+
 function envKey(id: ProviderId): string | null {
   const name = providerInfo(id)?.envKey;
   return (name && process.env[name]) || null;
@@ -89,6 +122,7 @@ async function resolveColumn(projectId: string, column: ColumnId): Promise<Resol
   const presetId = (await repo.columnAgents(projectId))[column];
   const found = presetId ? await repo.presetForRun(presetId) : null;
   if (found) {
+    found.preset = await gateAllowance(found.preset);
     const limited = limitReason(found.preset, COLUMN_LABELS[column]);
     if (limited) return { kind: "limited", reason: limited };
     const provider = found.preset.provider;
@@ -128,27 +162,30 @@ export async function columnLimit(projectId: string, column: ColumnId): Promise<
 }
 
 /**
- * The agent the Sentinels audit with. They belong to no column, so they
- * borrow the first column agent that can answer here rather than in GitHub
- * Actions: In Review's first, since auditing is closest to reviewing.
+ * The agent the Sentinels audit with: the one set for the board's assistant.
+ * Their persona and task come from the roster, so it only supplies provider,
+ * model and key; its own prompt is a chat brief and is left out. A CLI agent
+ * is handed back as it is: it audits in GitHub Actions, not in the app.
  */
 export async function sentinelAgent(
   projectId: string,
-): Promise<{ kind: "configured"; config: AgentConfig } | { kind: "mock" } | { kind: "none"; reason: string }> {
-  let limited: string | null = null;
-  for (const column of ["in_review", "todo", "backlog", "done", "in_progress"] as const) {
-    const resolved = await resolveColumn(projectId, column);
-    if (resolved.kind === "mock") return { kind: "mock" };
-    if (resolved.kind === "limited") limited ??= resolved.reason;
-    if (resolved.kind !== "configured") continue;
-    if (providerInfo(resolved.config.provider ?? "anthropic")?.kind === "cli") continue;
-    return { kind: "configured", config: resolved.config };
+): Promise<
+  | { kind: "configured"; config: AgentConfig }
+  | { kind: "cli"; agent: CliAgent }
+  | { kind: "mock" }
+  | { kind: "none"; reason: string }
+> {
+  const agent = await assistantAgentFor(projectId);
+  if (agent.kind === "limited") return { kind: "none", reason: agent.reason };
+  // A CLI agent audits in a GitHub Actions job, on a checkout of the repository.
+  if (agent.kind === "cli") return { kind: "cli", agent: agent.agent };
+  if (agent.kind === "none") {
+    if (authMode() === "local") return { kind: "mock" };
+    return { kind: "none", reason: "No agent is set for the assistant. Pick or create one above." };
   }
   return {
-    kind: "none",
-    reason:
-      limited ??
-      "Sentinels borrow a column's agent, and none can answer here. Give a column a Claude or OpenAI-compatible agent with its API key.",
+    kind: "configured",
+    config: { provider: agent.info.id, model: agent.model ?? undefined, apiKey: agent.apiKey ?? undefined },
   };
 }
 

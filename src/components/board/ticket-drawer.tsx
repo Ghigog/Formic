@@ -8,14 +8,16 @@ import { PlanSteps } from "@/components/ui/plan-steps";
 import { SideBySide, WithChat } from "@/components/ui/split";
 import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
+import { BUG_COST } from "@/lib/colony/game";
 import type { FormicEvent } from "@/lib/domain/events";
-import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE } from "@/lib/domain/entities";
+import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type WorkType } from "@/lib/domain/entities";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
 import { ProblemNotice, WorkTimer } from "./card";
+import { TicketUsage } from "./ticket-usage";
 import {
   activityOf,
   appendActivity,
@@ -40,12 +42,17 @@ export function TicketDrawer({
   ticketId,
   onClose,
   onOpenEpic,
+  onOpenTicket,
   subscribe,
+  onChanged,
 }: {
   ticketId: string | null;
   onClose: () => void;
   onOpenEpic: (epicId: string) => void;
+  onOpenTicket: (ticketId: string) => void;
   subscribe: SubscribeToEvents;
+  /** Called after the ticket itself was edited here, so the board can refetch. */
+  onChanged?: () => void;
 }) {
   const [view, setView] = useState<TicketView | null>(null);
   const [failed, setFailed] = useState(false);
@@ -103,6 +110,20 @@ export function TicketDrawer({
     return () => window.removeEventListener("keydown", onKey);
   }, [ticketId, onClose]);
 
+  const setWorkType = useCallback(
+    async (workType: WorkType | null) => {
+      if (!ticketId) return;
+      const res = await fetch(`/api/tickets/${ticketId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workType }),
+      }).catch(() => null);
+      if (res?.ok) onChanged?.();
+      await load();
+    },
+    [ticketId, load, onChanged],
+  );
+
   if (!ticketId) return null;
 
   const card = view?.card;
@@ -139,6 +160,28 @@ export function TicketDrawer({
               <h2 className="mt-0.5 font-serif text-[18px] leading-tight font-semibold">
                 {card?.title ?? (failed ? "Ticket" : "Loading…")}
               </h2>
+              {card && columnFor(card.status, card.stalledIn) === "todo" && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <div role="group" aria-label="Work type" className="flex gap-2">
+                    {(["bug", "spike"] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        aria-pressed={card.workType === type}
+                        onClick={() => void setWorkType(card.workType === type ? null : type)}
+                        className="border-line bg-card text-ink aria-pressed:border-terracotta aria-pressed:bg-cream h-[28px] rounded-lg border px-2.5 text-[12px] font-medium capitalize"
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                  {card.workType === "bug" && (
+                    <span className="text-[11px] text-crimson-chip-text">
+                      Tagged as bug · −{BUG_COST} points
+                    </span>
+                  )}
+                </div>
+              )}
               {card && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <StatusPill status={card.status} />
@@ -165,6 +208,7 @@ export function TicketDrawer({
                 </div>
               )}
             </div>
+            {view && <TicketUsage usage={view.usage} />}
             {view?.canStop && <StopButton ticketId={ticketId} onStopped={load} />}
             <button
               type="button"
@@ -226,7 +270,7 @@ export function TicketDrawer({
               aria-label="Ticket"
               className="min-h-0 overflow-y-auto p-4"
             >
-              {view && <TicketBody view={view} />}
+              {view && <TicketBody view={view} onOpenTicket={onOpenTicket} />}
             </section>
           }
           second={
@@ -259,7 +303,7 @@ export function TicketDrawer({
 }
 
 /** The ticket as it was written. */
-function TicketBody({ view }: { view: TicketView }) {
+function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (ticketId: string) => void }) {
   return (
     <div className="text-fg space-y-4 text-[13px] leading-6">
       <MarkdownLite text={view.description} />
@@ -281,7 +325,7 @@ function TicketBody({ view }: { view: TicketView }) {
         <div>
           <Heading>For you</Heading>
           <p className="text-fg-muted mt-1 text-[12px]">
-            Steps outside the repository no agent can take. The Epic&apos;s showcase lists them again once
+            Steps outside the repository no agent can take. The Epic&apos;s showcase, if you generate it, lists them again once
             everything has merged.
           </p>
           <ul className="mt-1 list-disc space-y-1 pl-5">
@@ -308,20 +352,19 @@ function TicketBody({ view }: { view: TicketView }) {
           <Heading>Waits on</Heading>
           <ul className="mt-1 space-y-1">
             {view.dependsOn.map((d) => (
-              <li key={d.id} className="flex items-center gap-2 text-[12px]">
-                <span className="text-fg-subtle font-mono text-[10px]">{d.key}</span>
-                <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                <StatusPill status={d.status as TicketView["card"]["status"]} />
+              <li key={d.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenTicket(d.id)}
+                  className="hover:text-terracotta focus-visible:text-terracotta flex w-full items-center gap-2 text-left text-[12px] underline-offset-2 hover:underline focus-visible:underline"
+                >
+                  <span className="text-fg-subtle font-mono text-[10px]">{d.key}</span>
+                  <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                  <StatusPill status={d.status as TicketView["card"]["status"]} />
+                </button>
               </li>
             ))}
           </ul>
-        </div>
-      )}
-
-      {view.summary && (
-        <div>
-          <Heading>What the agent changed</Heading>
-          <p className="mt-1">{view.summary}</p>
         </div>
       )}
     </div>

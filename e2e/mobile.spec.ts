@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { card, column, columnOf, gotoBoard, idForKey, moveViaApi } from "./board";
 
 /**
@@ -8,6 +8,8 @@ import { card, column, columnOf, gotoBoard, idForKey, moveViaApi } from "./board
  * horizontal scrollbar is the failure this layout exists to avoid, and it is
  * invisible at any wider viewport.
  */
+
+test.use({ hasTouch: true });
 
 test.beforeEach(async ({ page }) => {
   await gotoBoard(page);
@@ -26,25 +28,30 @@ for (const width of [390, 375, 320]) {
   });
 }
 
-test("the tab bar reaches every column, one at a time", async ({ page }) => {
+/** One real touch swipe across the board, by dx pixels, over CDP. */
+async function swipe(page: Page, dx: number) {
+  const cdp = await page.context().newCDPSession(page);
+  const box = (await page.locator("main").boundingBox())!;
+  const y = box.y + 40;
+  const x0 = box.x + box.width / 2;
+  const touch = (type: "touchStart" | "touchMove" | "touchEnd", x: number) =>
+    cdp.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: type === "touchEnd" ? [] : [{ x, y }],
+    });
+  await touch("touchStart", x0);
+  for (const step of [0.25, 0.5, 0.75, 1]) await touch("touchMove", x0 + dx * step);
+  await touch("touchEnd", x0 + dx);
+}
+
+test("a swipe moves from Backlog to To Do", async ({ page }) => {
   await expect(column(page, "Backlog")).toBeVisible();
-  await expect(column(page, "In Review")).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Columns" }).getByRole("button")).toHaveCount(0);
 
-  await page.getByRole("button", { name: /^In Review/ }).click();
+  await swipe(page, -150);
 
-  await expect(column(page, "In Review")).toBeVisible();
+  await expect(column(page, "To Do")).toBeVisible();
   await expect(column(page, "Backlog")).toHaveCount(0);
-});
-
-test("every tap target clears 44px", async ({ page }) => {
-  const targets = page.locator("nav[aria-label='Columns'] button");
-  const count = await targets.count();
-  expect(count).toBe(5);
-
-  for (let i = 0; i < count; i++) {
-    const box = await targets.nth(i).boundingBox();
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-  }
 });
 
 test("there is no floating Advance button", async ({ page }) => {
@@ -70,11 +77,21 @@ test("a card's arrow moves the card it names", async ({ page }) => {
   // One column renders at a time here, so the card leaves the DOM when it
   // moves. Follow it to the tab it landed on, as a user does.
   await expect(card(page, cardId)).toHaveCount(0);
-  await page.getByRole("button", { name: /^To Do/ }).click();
+  await swipe(page, -150);
   await expect(card(page, cardId)).toBeVisible();
 
   // Put the board back.
   await moveViaApi(page, cardId, ["To Do", "Backlog"]);
-  await page.getByRole("button", { name: /^Backlog/ }).click();
+  await swipe(page, 150);
   expect(await columnOf(page, cardId)).toBe("Backlog");
+});
+
+test("the app bar at 375px has heat and a timeline button, and no + button", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+
+  await expect(page.getByRole("button", { name: "New backlog item" })).toHaveCount(0);
+  await expect(page.locator('header:visible [data-colony="heat"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Open timeline" }).click();
+  await expect(page.getByRole("button", { name: "Back to board" })).toBeVisible();
 });

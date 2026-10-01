@@ -17,6 +17,8 @@ import {
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
+import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
+import { attemptsFor } from "@/lib/budget/in-process";
 import { diagnose, lastWords } from "@/lib/agents/limits";
 import { planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers";
@@ -45,7 +47,6 @@ import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { askForScope, widenScope } from "@/lib/coder/scope-request";
 import {
-  MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
   ticketSpecSchema,
@@ -58,7 +59,7 @@ import { directoryTree } from "@/lib/vcs/repositories";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { repository } from "@/lib/db";
-import type { TicketDetail } from "@/lib/db/repository";
+import type { AuditRecord, TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { signingSecret } from "@/lib/auth/session";
@@ -83,13 +84,14 @@ import {
   CHECKPOINT_TRAILER,
   JOB_HEADROOM_MINUTES,
   MERGED_TRAILER,
-  RUNNER_JOB_MINUTES,
   RUNNER_SETUP_BRANCH,
+  RUNNER_SETUP_PREFIX,
   RUNNER_VERSION,
   RUNNER_WORKFLOW_FILE,
   RUNNER_WORKFLOW_PATH,
   USAGE_TRAILER,
   attemptOfJob,
+  workflowCeiling,
   cardOfJob,
   isAnswerMode,
   isCarried,
@@ -180,6 +182,20 @@ export function usageOf(messages: string[]): Usage | null {
   return null;
 }
 
+/**
+ * Closes setup pull requests for other versions of the workflow. One left
+ * open would install a stale file and fail the repository's own check that
+ * the file matches its generator, whether or not a new one is needed: a
+ * deploy that lags a merged workflow change opens one for the old version.
+ */
+export async function closeStaleSetupPulls(client: VcsClient): Promise<void> {
+  await client.closeSupersededPulls(
+    RUNNER_SETUP_PREFIX,
+    RUNNER_SETUP_BRANCH,
+    "The Formic agent workflow changed since this was opened, so this version is out of date. Closing it.",
+  );
+}
+
 export type RunnerState =
   | { ready: true }
   /** `update` when an older version of the workflow is already there. */
@@ -192,6 +208,7 @@ export type RunnerState =
  * merges it, once.
  */
 export async function ensureRunner(client: VcsClient, baseBranch: string): Promise<RunnerState> {
+  await closeStaleSetupPulls(client);
   const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch);
   if (current?.includes(RUNNER_VERSION)) return { ready: true };
   const update = current !== null;
@@ -269,7 +286,7 @@ async function whyItFailed(
   const log = result.url ? ` Its log: ${result.url}` : "";
   if (result.conclusion === "cancelled") return `The agent's GitHub Actions run was cancelled.${log}`;
   if (result.conclusion === "timed_out") {
-    return `The agent ran past the workflow's 60-minute limit and was stopped.${log}`;
+    return `The agent ran past the job's time limit and was stopped.${log}`;
   }
   const plain = `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`;
   const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
@@ -325,16 +342,11 @@ export type JobAgent = {
 };
 
 /**
- * How long the loop entry may work on a ticket: the person's budget for it
- * (see resolveRunTimeBudget), and never past the job's own ceiling, which is
- * the backstop. The entry stops on this and says which limit stopped it, so
- * the card can tell the person; a job the platform kills says nothing at all.
- * With no budget (mode off) the entry gets no time limit, and the job's
- * ceiling is all that bounds the run.
+ * The minutes a job is given: the run's budget plus what a job needs for
+ * cloning and reporting, and never past the workflow's own ceiling.
  */
-export function loopBudgetMs(budgetMinutes: number | null): number | undefined {
-  if (budgetMinutes == null) return undefined;
-  return Math.min(budgetMinutes, RUNNER_JOB_MINUTES - JOB_HEADROOM_MINUTES) * 60_000;
+export function jobTimeoutMinutes(budgetMinutes: number | null, ceiling: number): number {
+  return budgetMinutes == null ? ceiling : Math.min(budgetMinutes + JOB_HEADROOM_MINUTES, ceiling);
 }
 
 /**
@@ -358,11 +370,10 @@ export function loopPayload(input: {
   notes: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
   instruction?: string;
-  /** The run's time budget in minutes, fixed when the run starts; null when there is none. */
-  budgetMinutes: number | null;
+  /** What budgetFor gave this run on the loop path, fixed when the run starts. */
+  budget: Budget;
 }): Omit<LoopEntryPayload, "apiKey"> {
-  const { ticket } = input;
-  const maxDurationMs = loopBudgetMs(input.budgetMinutes);
+  const { ticket, budget } = input;
   return {
     runId: input.runId,
     ticketId: ticket.id,
@@ -379,8 +390,15 @@ export function loopPayload(input: {
     repo: { fullName: input.repoFullName, baseBranch: input.baseBranch },
     provider: input.provider,
     model: input.model,
-    // The person's budget is the plan; the job's timeout is the backstop.
-    limits: maxDurationMs === undefined ? {} : { maxDurationMs },
+    // The person's budget is the plan, clamped to the job's room. The clamped
+    // value stops the run; the requested one lets the note say which ceiling
+    // it was. Money is derived from tokens and only ever checked, never shown.
+    limits: {
+      ...(budget.minutes.value != null ? { maxDurationMs: budget.minutes.value * 60_000 } : {}),
+      ...(budget.minutes.requested != null ? { budgetMs: budget.minutes.requested * 60_000 } : {}),
+      ...(budget.tokens.value != null ? { maxTokens: budget.tokens.value } : {}),
+      ...(budget.maxCents != null ? { maxCents: budget.maxCents } : {}),
+    },
   };
 }
 
@@ -531,6 +549,8 @@ async function dispatch(input: {
   merge?: string;
   /** `mode: loop`: where the job fetches Formic's loop entry from. */
   bundle?: string;
+  /** The run's time budget; the job's timeout follows it, within the workflow's ceiling. */
+  budgetMinutes?: number | null;
   /** Recorded before the dispatch: only this job's result is taken. */
   record: (job: string) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
@@ -552,6 +572,9 @@ async function dispatch(input: {
     const secret = secretNameFor(agent);
     await client.setSecret(secret, agent.credential);
 
+    // A workflow from before the timeout input keeps its own ceiling.
+    const ceiling = workflowCeiling(await client.readFile(RUNNER_WORKFLOW_PATH, input.baseBranch));
+
     await input.record(input.job);
     await client.dispatchWorkflow(RUNNER_WORKFLOW_FILE, input.baseBranch, {
       job: input.job,
@@ -567,6 +590,9 @@ async function dispatch(input: {
       report: reportUrl(input.job, Date.now()) ?? "",
       ...(input.bundle ? { bundle: input.bundle } : {}),
       ...(input.merge ? { merge: input.merge } : {}),
+      ...(ceiling.takesTimeout
+        ? { timeout: String(jobTimeoutMinutes(input.budgetMinutes ?? null, ceiling.minutes)) }
+        : {}),
     });
     return { ok: true };
   } catch (e) {
@@ -613,6 +639,8 @@ export async function startJobRun(input: {
   prompt: string | ((resumed: Checkpoint | null) => string);
   /** A branch to merge in first, for the agent to resolve its conflicts. */
   merge?: string;
+  /** What budgetFor gave this run; its minutes set the job's timeout. */
+  budget?: Budget;
   run: RunHandle;
   stalledIn: "in_progress" | "in_review";
   stage?: number;
@@ -655,6 +683,7 @@ export async function startJobRun(input: {
                 : input.prompt
               : input.prompt(resumed),
           merge: input.merge,
+          budgetMinutes: input.budget?.minutes.value ?? null,
           bundle: bundle ?? undefined,
           record: (job) =>
             repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
@@ -688,13 +717,13 @@ export async function startJobRun(input: {
 /* Planning agents: an answer, not a change.                                 */
 /* ------------------------------------------------------------------------ */
 
-/** Where each planning stage stalls, and the attempts it gets. */
+/** Where each planning stage stalls, and the attempts it gets; the Architect Agent's are the owner's attempts limit (see stageAttempts). */
 const ANSWER_STAGE: Record<
   AnswerMode,
   { stalledIn: "backlog" | "todo" | null; stage: number; attempts: number; role: "product" | "architect" | "pm" }
 > = {
   product: { stalledIn: "backlog", stage: 2, attempts: 2, role: "product" },
-  architect: { stalledIn: "todo", stage: 3, attempts: MAX_DECOMPOSITION_ATTEMPTS, role: "architect" },
+  architect: { stalledIn: "todo", stage: 3, attempts: ATTEMPT_DEFAULTS.decomposition, role: "architect" },
   showcase: { stalledIn: null, stage: 8, attempts: 1, role: "pm" },
 };
 
@@ -717,6 +746,11 @@ export function showcaseSummaries(
     title: t.title,
     summary: t.summary ?? t.description.split("\n")[0] ?? t.title,
   }));
+}
+
+/** The attempts a planning stage gets: the owner's limit for the Architect Agent, a fixed count for the others. */
+async function stageAttempts(mode: AnswerMode, ownerId: string | null): Promise<number> {
+  return mode === "architect" ? attemptsFor(ownerId, "decomposition") : ANSWER_STAGE[mode].attempts;
 }
 
 /** The prompt for a planning stage, built from the Epic as it is now. */
@@ -803,6 +837,7 @@ export async function startCliAnswer(input: {
   const repo = repository();
   const stage = ANSWER_STAGE[mode];
   const project = await projectFor(projectId);
+  const attempts = await stageAttempts(mode, project.ownerId);
   const creds = await credentialsForProject(project);
   const card = await repo.cardById(epicId);
 
@@ -828,7 +863,7 @@ export async function startCliAnswer(input: {
     ? [
         base,
         "",
-        `This is attempt ${input.retry.attempt} of ${stage.attempts}. Your previous answer was:`,
+        `This is attempt ${input.retry.attempt} of ${attempts}. Your previous answer was:`,
         "",
         input.retry.answer.slice(0, 20_000),
         "",
@@ -856,9 +891,6 @@ export async function startCliAnswer(input: {
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
-/** Attempts a CLI agent gets at drafting a To Do request's single ticket. */
-const DRAFT_ATTEMPTS = 2;
-
 /**
  * Starts a CLI agent drafting a To Do request's single ticket: the Architect
  * Agent's work, with no PRD, straight from the raw text. The job hangs off
@@ -875,6 +907,7 @@ export async function startCliDraftTicket(input: {
   const { projectId, ticketId, agent, run } = input;
   const repo = repository();
   const project = await projectFor(projectId);
+  const draftAttempts = await attemptsFor(project.ownerId, "draft");
   const creds = await credentialsForProject(project);
   const ticket = await repo.ticketDetail(ticketId);
   const epic = ticket ? await repo.epicDetail(ticket.epicId) : null;
@@ -914,7 +947,7 @@ export async function startCliDraftTicket(input: {
     ? [
         base,
         "",
-        `This is attempt ${input.retry.attempt} of ${DRAFT_ATTEMPTS}. Your previous answer was:`,
+        `This is attempt ${input.retry.attempt} of ${draftAttempts}. Your previous answer was:`,
         "",
         input.retry.answer.slice(0, 20_000),
         "",
@@ -1074,10 +1107,11 @@ async function completeCliAnswer(
   }
 
   const attempt = attemptOfJob(result.job);
-  if (attempt >= stage.attempts) {
+  const attempts = await stageAttempts(result.mode, project.ownerId);
+  if (attempt >= attempts) {
     await stall(
       result.mode === "architect"
-        ? `The Architect Agent could not produce a valid dependency graph in ${stage.attempts} attempts. This Epic needs a human to split it.`
+        ? `The Architect Agent could not produce a valid dependency graph in ${attempts} attempts. This Epic needs a human to split it.`
         : `The agent's answer could not be used: ${checked.correction}`,
       result.mode === "architect",
     );
@@ -1152,7 +1186,8 @@ async function completeCliDraft(projectId: string, result: RunnerResult): Promis
   }
 
   const attempt = attemptOfJob(result.job);
-  const agent = attempt < DRAFT_ATTEMPTS ? await cliAgentFor(projectId, "todo") : null;
+  const draftAttempts = await attemptsFor(project.ownerId, "draft");
+  const agent = attempt < draftAttempts ? await cliAgentFor(projectId, "todo") : null;
   if (!agent) {
     await stallDraftingTicket(projectId, ticketId, `The agent's answer could not be used: ${checked.correction}`, false);
     return;
@@ -1219,6 +1254,100 @@ export async function startCliAsk(input: {
 }
 
 /**
+ * Starts a CLI agent auditing as a sentinel, in the "ask" mode the board's
+ * assistant uses: a report, not a change. The audit finishes when the job's
+ * answer comes back, in completeCliSentinel.
+ */
+export async function startCliSentinel(input: {
+  projectId: string;
+  auditId: string;
+  sentinelId: string;
+  agent: CliAgent;
+  /** A second attempt, after its report was sent back. */
+  attempt?: number;
+  retry?: { answer: string; problem: string };
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const repo = repository();
+  const { sentinel } = await import("@/lib/sentinels/roster");
+  const { cliAuditPrompt } = await import("@/lib/sentinels/cli");
+  const s = sentinel(input.sentinelId);
+  if (!s) return { ok: false, reason: "No such sentinel." };
+  const project = await projectFor(input.projectId);
+  const creds = await credentialsForProject(project);
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent: input.agent,
+    job: jobId(input.auditId, randomUUID().slice(0, 8), input.attempt ?? 1),
+    mode: "ask",
+    cardKey: "sentinel",
+    from: project.baseBranch,
+    prompt: cliAuditPrompt(s, project.repoFullName, input.retry),
+    record: (job) => repo.setAuditJob(input.auditId, job, input.agent.presetId),
+  });
+  return started.ok ? { ok: true } : { ok: false, reason: started.reason };
+}
+
+/** A sentinel's report from a CLI agent arrived, or its run failed. */
+async function completeCliSentinel(
+  projectId: string,
+  result: RunnerResult,
+  audit: AuditRecord,
+  client: VcsClient,
+  cleanUp: () => Promise<unknown>,
+): Promise<void> {
+  const repo = repository();
+  // A result nobody is waiting for any more: the audit finished, or was run again.
+  if (audit.status !== "running" || audit.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+  const fail = (error: string) => repo.finishAudit(audit.id, { status: "failed", error, model: null });
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    await fail(await whyItFailed(projectId, client, result, audit.runnerAgent));
+    return;
+  }
+  const answer = await client.readFile(ANSWER_PATH, `${STAGING_PREFIX}${result.job}`).catch(() => null);
+  await cleanUp();
+
+  const { parseCliReport } = await import("@/lib/sentinels/cli");
+  const report = parseCliReport(answer);
+  if (report.ok) {
+    await repo.finishAudit(audit.id, {
+      status: "done",
+      stars: report.stars,
+      quote: report.quote,
+      summary: report.summary,
+      report: report.report,
+      files: report.files,
+      model: null,
+    });
+    return;
+  }
+
+  // Asked once more, with what was wrong, before the audit is called failed.
+  const attempt = attemptOfJob(result.job);
+  if (attempt < 2) {
+    const { assistantAgentFor } = await import("@/lib/agents/presets");
+    const agent = await assistantAgentFor(projectId);
+    if (agent.kind === "cli") {
+      await repo.logAudit(audit.id, "Asking for the report again");
+      const again = await startCliSentinel({
+        projectId,
+        auditId: audit.id,
+        sentinelId: audit.sentinel,
+        agent: agent.agent,
+        attempt: attempt + 1,
+        retry: { answer: answer ?? "", problem: report.problem },
+      }).catch(() => ({ ok: false as const }));
+      if (again.ok) return;
+    }
+  }
+  await fail(`${report.problem}${result.url ? ` Its log: ${result.url}` : ""}`);
+}
+
+/**
  * Starts a CLI agent answering a card's chat, in the "ask" mode the board's
  * assistant uses: an answer, not a change. Returns why it could not start,
  * or null once it is on its way.
@@ -1282,6 +1411,9 @@ export async function collectCliRuns(projectId: string): Promise<void> {
   for (const m of await repo.pendingCardChatJobs(projectId)) {
     if (m.runnerJob) waiting.add(m.runnerJob);
   }
+  for (const a of await repo.auditsFor(projectId)) {
+    if (a.status === "running" && a.runnerJob) waiting.add(a.runnerJob);
+  }
   if (waiting.size === 0) return;
 
   const project = await projectFor(projectId);
@@ -1311,6 +1443,13 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const client = vcs(project.repoFullName, creds.githubToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+
+  // A sentinel's audit is the other thing an "ask" run can be for.
+  const audit = messageId ? (await repo.auditsFor(projectId)).find((a) => a.id === messageId) : undefined;
+  if (audit) {
+    await completeCliSentinel(projectId, result, audit, client, cleanUp);
+    return;
+  }
 
   if (!message) {
     await completeCliCardChat(projectId, result, messageId, client);
@@ -1534,9 +1673,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     const summary =
       (line.startsWith(`${ticket.key}:`) ? line.slice(ticket.key.length + 1).trim() : line) ||
       ticket.title;
-    // A loop run reports what it used, in the trailer its summary carries: on
-    // a metered key that is money spent, and it belongs on the ticket.
-    const usage = result.mode === "loop" ? usageOf(change.messages) : null;
+    // Every run reports what it used, in the trailer its summary carries: a
+    // loop run on a metered key spends money, a CLI agent reports tokens only.
+    const usage = usageOf(change.messages);
     await openTicketPullRequest(projectId, ticket, client, {
       branch,
       change: {
@@ -1607,7 +1746,7 @@ export function loopBundleUrl(job: string, since: number): string | null {
   return `${origin}/api/runner/bundle?${q.toString()}`;
 }
 
-/** How long a signed attachment URL stays good: past the workflow's own 60-minute timeout, so a job that is slow to start never finds it expired. */
+/** How long a signed attachment URL stays good: past the workflow's own 180-minute timeout, so a job that is slow to start never finds it expired. */
 const ATTACHMENT_URL_TTL_MS = 90 * 60 * 1000;
 
 function attachmentToken(id: string, expires: number): string {
@@ -1727,6 +1866,17 @@ export async function receiveReport(input: {
         }
         return { notes: [], stop: false };
       }
+    }
+    // An assistant or card-chat "ask": live while its message is pending.
+    const message = cardId
+      ? ((await repo.assistantMessage(cardId)) ?? (await repo.cardChatMessage(cardId)))
+      : null;
+    if (message && message.runnerJob === input.job && message.status === "pending") {
+      for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
+        if (item.kind !== "log") continue;
+        await publish(message.projectId, { type: "run.log", runId: input.job, stream: item.stream, line: item.line });
+      }
+      return { notes: [], stop: false };
     }
     return { notes: [], stop: true };
   }

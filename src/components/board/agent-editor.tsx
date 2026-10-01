@@ -6,6 +6,7 @@ import {
   COLUMN_AGENT_ROLE,
   type AgentPreset,
   type AgentPresetInput,
+  type ColumnOverride,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { DEFAULT_BRIEF } from "@/lib/agents/prompts";
@@ -14,9 +15,11 @@ import {
   type ProviderId,
   provider as providerInfo,
 } from "@/lib/llm/providers";
+import { reasoningNote, reasoningRoleFor, roleReasoning } from "@/lib/agents/reasoning";
+import type { ModelInfo } from "@/lib/llm/openai-compat";
 import { pricingNote } from "@/lib/budget/limits";
 import { compact } from "@/components/ui/compact-number";
-import type { AgentTokens } from "@/lib/hooks/use-agents";
+import type { AgentTokens, TokenWindowView } from "@/lib/hooks/use-agents";
 
 /** What Formic always adds after a column's prompt, whatever the provider. */
 const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
@@ -29,10 +32,29 @@ const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
     "Always added after this: the coding rules (stay in the file scope, no git, verify before finishing) and the engineering practices (TDD, DDD, hexagonal, SOLID, applied where they fit).",
 };
 
+/** Where the count starts, in words, with dates in the person's own timezone. */
+function windowLabel({ kind, since, timezone }: TokenWindowView): string {
+  if (kind === "all-time" || !since) return "over everything it has run";
+  const date = new Date(since).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    ...(timezone ? { timeZone: timezone } : {}),
+  });
+  return kind === "reset" ? `since you reset it on ${date}` : `since ${date}`;
+}
+
+type LimitAxis = "minutes" | "tokens" | "attempts";
+
+const OVERRIDE_AXES: Array<{ id: LimitAxis; label: string }> = [
+  { id: "minutes", label: "Minutes" },
+  { id: "tokens", label: "Tokens" },
+  { id: "attempts", label: "Attempts" },
+];
+
 type ModelList =
   | { state: "idle" }
   | { state: "loading" }
-  | { state: "ready"; models: string[] }
+  | { state: "ready"; models: string[]; info: ModelInfo[] }
   | { state: "error"; reason: string };
 
 /**
@@ -48,6 +70,10 @@ export function AgentEditor({
   column,
   preset,
   usage,
+  window: tokenWindow = { kind: "all-time", since: null, timezone: null },
+  onResetWindow,
+  override,
+  onSaveOverride,
   onClose,
   onSave,
   onDelete,
@@ -58,26 +84,46 @@ export function AgentEditor({
   preset: AgentPreset | null;
   /** What this agent has used, in tokens, if it has been saved and run. */
   usage?: AgentTokens | undefined;
+  /** What the count is measured over. */
+  window?: TokenWindowView;
+  /** Starts the count again from now; offered only when no renewal day is set. */
+  onResetWindow?: () => Promise<void>;
+  /** This column's own limits, if it has any. */
+  override?: ColumnOverride | null;
+  /** Stores the column's override; offered for a column agent only, called after the agent saves. */
+  onSaveOverride?: (override: ColumnOverride) => Promise<void>;
   onClose: () => void;
   onSave: (input: Omit<AgentPresetInput, "column">) => Promise<void>;
   onDelete: (presetId: string) => Promise<void>;
 }) {
   const forAssistant = column === "assistant";
-  const role = forAssistant ? "Assistant" : `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
+  const role = forAssistant
+    ? "Assistant"
+    : `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
   // The assistant has no built-in brief: it answers whatever it is asked.
   const defaultPrompt = forAssistant ? "" : DEFAULT_BRIEF[column];
   const [name, setName] = useState(preset?.name ?? "");
-  const [provider, setProvider] = useState<ProviderId>(preset?.provider ?? "anthropic");
+  const [provider, setProvider] = useState<ProviderId>(
+    preset?.provider ?? "anthropic",
+  );
   const [model, setModel] = useState(preset?.model ?? "");
   const [prompt, setPrompt] = useState(preset?.prompt ?? defaultPrompt);
   /** Undefined keeps the saved key, null removes it, a string replaces it. */
   const [apiKey, setApiKey] = useState<string | null | undefined>(undefined);
+  const [limits, setLimits] = useState<Record<LimitAxis, string>>({
+    minutes: override?.minutes?.toString() ?? "",
+    tokens: override?.tokens?.toString() ?? "",
+    attempts: override?.attempts?.toString() ?? "",
+  });
   const [fetched, setFetched] = useState<ModelList>({ state: "idle" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const info = providerInfo(provider)!;
   const cli = info.kind === "cli";
+  // Only flat values, and only for an axis this column's path can enforce: a CLI agent
+  // reports no tokens, so a token limit would never bind.
+  const overrideAxes = OVERRIDE_AXES.filter((a) => a.id !== "tokens" || !cli);
 
   useEffect(() => {
     requestAnimationFrame(() => nameRef.current?.focus());
@@ -96,6 +142,8 @@ export function AgentEditor({
   // Ask the provider which models this key can use, once there is a key.
   const noKey = cli || (!typedKey && !savedKey);
   const models: ModelList = noKey ? { state: "idle" } : fetched;
+  const advertised = models.state === "ready" ? models.info.find((m) => m.id === model.trim()) : undefined;
+  const reasoningRole = forAssistant ? "chat" : reasoningRoleFor(COLUMN_AGENT_ROLE[column]);
   useEffect(() => {
     if (noKey) return;
     const controller = new AbortController();
@@ -111,12 +159,24 @@ export function AgentEditor({
         signal: controller.signal,
       })
         .then((r) => r.json())
-        .then((d: { ok: boolean; models?: Array<{ id: string }>; reason?: string }) =>
-          setFetched(
-            d.ok
-              ? { state: "ready", models: (d.models ?? []).map((m) => m.id) }
-              : { state: "error", reason: d.reason ?? "Could not list models." },
-          ),
+        .then(
+          (d: {
+            ok: boolean;
+            models?: ModelInfo[];
+            reason?: string;
+          }) =>
+            setFetched(
+              d.ok
+                ? {
+                    state: "ready",
+                    models: (d.models ?? []).map((m) => m.id),
+                    info: d.models ?? [],
+                  }
+                : {
+                    state: "error",
+                    reason: d.reason ?? "Could not list models.",
+                  },
+            ),
         )
         .catch(() => {
           if (!controller.signal.aborted) {
@@ -144,8 +204,24 @@ export function AgentEditor({
         model: model.trim(),
         prompt,
         // An empty box keeps a saved key; Remove clears it; a typed one replaces it.
-        ...(apiKey === null ? { apiKey: null } : typedKey ? { apiKey: typedKey } : {}),
+        ...(apiKey === null
+          ? { apiKey: null }
+          : typedKey
+            ? { apiKey: typedKey }
+            : {}),
       });
+      if (!forAssistant && onSaveOverride) {
+        const count = (axis: LimitAxis) => (limits[axis].trim() === "" ? null : Number(limits[axis]));
+        const next = {
+          minutes: count("minutes"),
+          tokens: cli ? null : count("tokens"),
+          attempts: count("attempts"),
+        };
+        if (Object.values(next).some((n) => n !== null && !(Number.isInteger(n) && n >= 1))) {
+          throw new Error("Limits are whole numbers of at least 1, or empty.");
+        }
+        await onSaveOverride(next);
+      }
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the agent.");
@@ -156,7 +232,11 @@ export function AgentEditor({
 
   async function remove() {
     if (!preset) return;
-    if (!window.confirm(`Delete ${preset.name}? Columns running it go back to having no agent.`)) {
+    if (
+      !window.confirm(
+        `Delete ${preset.name}? Columns running it go back to having no agent.`,
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -172,7 +252,11 @@ export function AgentEditor({
   const label = "text-ink text-[12px] font-semibold";
   const field =
     "border-line bg-cream text-ink focus:border-clay w-full rounded-md border px-2.5 text-[13px] outline-none";
-  const options = models.state === "ready" && models.models.length ? models.models : info.suggestedModels;
+  const gatewayModels = models.state === "ready" ? models.models : [];
+  const options = [
+    ...info.suggestedModels,
+    ...gatewayModels.filter((m) => !info.suggestedModels.includes(m)),
+  ];
 
   return (
     <div
@@ -244,7 +328,9 @@ export function AgentEditor({
             </span>
             {savedKey ? (
               <div className="border-line bg-cream flex h-9 items-center gap-2 rounded-md border px-2.5 text-[13px]">
-                <span className="text-ink flex-1 font-mono">••••••••{preset?.keyHint}</span>
+                <span className="text-ink flex-1 font-mono">
+                  ••••••••{preset?.keyHint}
+                </span>
                 <button
                   type="button"
                   onClick={() => setApiKey("")}
@@ -266,16 +352,26 @@ export function AgentEditor({
             )}
             {cli ? (
               <span className="text-muted text-[11px] leading-[1.5]">
-                {info.howToGetKey} Stored encrypted, and saved as a secret in your
-                repository&apos;s GitHub Actions when the agent runs.{" "}
-                <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
+                {info.howToGetKey} Stored encrypted, and saved as a secret in
+                your repository&apos;s GitHub Actions when the agent runs.{" "}
+                <a
+                  href={info.keyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-ink underline"
+                >
                   How it works
                 </a>
               </span>
             ) : (
               <span className="text-muted text-[11px]">
                 Stored encrypted and never shown again.{" "}
-                <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
+                <a
+                  href={info.keyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-ink underline"
+                >
                   Get a key from {info.label}
                 </a>
               </span>
@@ -301,15 +397,22 @@ export function AgentEditor({
               {cli
                 ? "Optional. Leave empty for the agent's own default."
                 : models.state === "loading"
-                ? "Asking the provider which models your key can use…"
-                : models.state === "ready"
-                  ? `${models.models.length} models available on your key. Start typing to filter.`
-                  : models.state === "error"
-                    ? models.reason
-                    : "Add the key above to see the models it can use."}
+                  ? "Asking the provider which models your key can use…"
+                  : models.state === "ready"
+                    ? `${models.models.length} models available on your key. Start typing to filter.`
+                    : models.state === "error"
+                      ? models.reason
+                      : "Add the key above to see the models it can use."}
             </span>
             {!cli && model.trim() && (
-              <span className="text-muted text-[11px]">{pricingNote(model.trim(), provider)}</span>
+              <span className="text-muted text-[11px]">
+                {pricingNote(model.trim(), provider)}
+              </span>
+            )}
+            {provider === "deepseek" && reasoningRole && (
+              <span className="text-muted text-[11px]" data-testid="reasoning-note">
+                {reasoningNote(roleReasoning(reasoningRole, advertised))}
+              </span>
             )}
           </label>
 
@@ -322,10 +425,47 @@ export function AgentEditor({
              * provider (see docs/token-usage.md).
              */
             <p className="text-muted text-[11px]">
-              {usage
-                ? `${compact((usage.tokensIn ?? 0) + (usage.tokensOut ?? 0))} tokens used by this agent, over its finished runs and its answers.`
-                : "No tokens used by this agent yet."}
+              {cli
+                ? "Its provider reports no tokens."
+                : `${compact((usage?.tokensIn ?? 0) + (usage?.tokensOut ?? 0))} tokens ${windowLabel(tokenWindow)}`}
+              {!cli && tokenWindow.kind !== "renewal" && onResetWindow && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => void onResetWindow().catch(() => setError("Could not reset the count."))}
+                    className="text-terracotta font-semibold"
+                  >
+                    Reset
+                  </button>
+                </>
+              )}
             </p>
+          )}
+
+          {!forAssistant && onSaveOverride && (
+            <fieldset className="flex flex-col gap-1">
+              <legend className={label}>Limit override</legend>
+              <div className="flex gap-2">
+                {overrideAxes.map(({ id, label: axis }) => (
+                  <input
+                    key={id}
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    aria-label={`${axis} override`}
+                    placeholder={axis}
+                    value={limits[id]}
+                    onChange={(e) => setLimits((l) => ({ ...l, [id]: e.target.value }))}
+                    className={`${field} h-9 min-w-0 flex-1`}
+                  />
+                ))}
+              </div>
+              <span className="text-muted text-[11px]">
+                One flat value per run for this column, used instead of the per point rule. Empty keeps the setting.
+              </span>
+            </fieldset>
           )}
 
           <label className="flex flex-col gap-1">
@@ -347,7 +487,9 @@ export function AgentEditor({
               className={`${field} resize-y py-2 font-mono text-[12px] leading-[1.5]`}
             />
             {!forAssistant && CONVENTIONS_NOTE[column] && (
-              <span className="text-muted text-[11px]">{CONVENTIONS_NOTE[column]}</span>
+              <span className="text-muted text-[11px]">
+                {CONVENTIONS_NOTE[column]}
+              </span>
             )}
           </label>
 

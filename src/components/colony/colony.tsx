@@ -96,14 +96,16 @@ export function useColony(): ColonyApi | null {
  * Product Agent writing its PRD. Both are an agent on the card's words, which
  * is the same work a ticket's crew is there for.
  */
-export function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null {
+export function crewPhase(card: BoardCard, extras: ExtrasMap, handingOver = false): CrewPhase | null {
   // Someone is on the card: a run behind it, or its own chat being answered.
   // A chat answer moves nothing and sets no run, so without this the only
   // sign of an agent working a card is inside that card's drawer.
   const on = Boolean(card.workingSince) || Boolean(extras[card.id]?.answering);
   // Only round a card an agent is really on: a card that says Running with
-  // nothing behind it gets no crew.
-  if (card.status === "running") return on ? "work" : null;
+  // nothing behind it gets no crew, unless its queue crew is still handing
+  // over: the run has not attached yet, and the crew walks on instead of going
+  // home and being replaced.
+  if (card.status === "running") return on || handingOver ? "work" : null;
   // Out of the nest, but crowded round its timer until the way is clear.
   if (card.status === "queued") return "queue";
   // Tunnelling while CI runs or the Reviewer Agent works; buried once CI
@@ -120,6 +122,15 @@ export function crewPhase(card: BoardCard, extras: ExtrasMap): CrewPhase | null 
   if (column === "todo" || column === "backlog") return on ? "read" : null;
   return null;
 }
+
+/** The level-up toast: the rank, what the level unlocks (Sentinels included) and the Queen it earns. */
+export function levelUpText(lv: number): string {
+  const got = [...unlocksAt(lv), "a Queen"];
+  return `Lv ${lv} ${rankOf(lv)} · unlocked ${got.join(" and ")}. Tap the nest to equip`;
+}
+
+/** How long a queue crew keeps the card after it starts running with no run behind it. */
+export const HANDOVER_MS = 15_000;
 
 export function ColonyProvider({
   storageKey,
@@ -173,15 +184,26 @@ export function ColonyProvider({
   const sfx = useCallback((n: Sfx, v = 0) => sound.play(n, v), [sound]);
 
   // What the frame loop draws from, pushed in whenever it changes.
-  const crews = useMemo(() => {
-    const out = new Map<string, { phase: CrewPhase; sp: number }>();
-    for (const c of cards) {
-      const phase = crewPhase(c, extras);
-      if (phase) out.set(c.id, { phase, sp: pointsOf(c) });
-    }
-    return out;
-  }, [cards, extras]);
+  // Queued ids, and the deadline of each that has started running with no run
+  // behind it yet.
+  const queued = useRef(new Set<string>());
+  const handover = useRef(new Map<string, number>());
   useEffect(() => {
+    const crews = new Map<string, { phase: CrewPhase; sp: number }>();
+    for (const c of cards) {
+      let handingOver = false;
+      if (c.status === "queued") queued.current.add(c.id);
+      else if (c.status === "running" && queued.current.has(c.id)) {
+        const until = handover.current.get(c.id) ?? now + HANDOVER_MS;
+        handover.current.set(c.id, until);
+        handingOver = now < until;
+      } else {
+        queued.current.delete(c.id);
+        handover.current.delete(c.id);
+      }
+      const phase = crewPhase(c, extras, handingOver);
+      if (phase) crews.set(c.id, { phase, sp: pointsOf(c) });
+    }
     fx.setWorld({
       crews,
       level: score.level,
@@ -191,7 +213,7 @@ export function ColonyProvider({
       bugHex,
       covered: timelineOpen || sentinelsOpen,
     });
-  }, [fx, crews, score.level, saved.shape, bugHex, timelineOpen, sentinelsOpen]);
+  }, [fx, cards, extras, now, score.level, saved.shape, bugHex, timelineOpen, sentinelsOpen]);
   useEffect(() => sound.setEnabled(soundOn), [sound, soundOn]);
   useEffect(() => sound.attach(), [sound]);
   useEffect(() => {
@@ -245,11 +267,7 @@ export function ColonyProvider({
         fx.burst(x, y, ["var(--clay)", "var(--clay-lit)", "var(--text)"], 18, { speed: 240, size: 3 });
       }
       const got = unlocksAt(lv);
-      showToast(
-        got.length
-          ? `Lv ${lv} ${rankOf(lv)} · unlocked ${got.join(" and ")}. Tap the nest to equip`
-          : `Lv ${lv} ${rankOf(lv)} reached`,
-      );
+      showToast(levelUpText(lv));
       const nest = colonyEl("nest");
       if (got.length && nest) {
         const [x, y] = centerOf(nest);

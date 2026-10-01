@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
-import { type ColumnView, type ColumnSort, type ColumnWorkType, EMPTY_VIEW, isViewActive } from "./view";
+import { type ColumnView, type ColumnSort, type TypeFilter, EMPTY_VIEW, isViewActive } from "./view";
 
 export interface ViewMenuProps {
   value: ColumnView;
@@ -44,7 +44,7 @@ export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
         aria-expanded={open}
         aria-label={buttonLabel}
         className={cn(
-          "border-line bg-card hover:border-clay relative inline-flex size-8 items-center justify-center rounded-md border text-muted transition-colors",
+          "border-line bg-card hover:border-clay relative inline-flex size-11 shrink-0 md:size-8 items-center justify-center rounded-md border text-muted transition-colors",
           active && "border-terracotta text-ink"
         )}
       >
@@ -106,23 +106,34 @@ export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
           </div>
           {(
             [
-              [null, "All types"],
+              ["ticket", "Tickets"],
               ["bug", "Bugs"],
               ["spike", "Spikes"],
+              ["archived", "Archived"],
             ] as const
-          ).map(([typeVal, typeLabel]) => (
-            <button
-              key={String(typeVal)}
-              type="button"
-              role="menuitemradio"
-              aria-checked={value.workType === typeVal}
-              className={itemClass}
-              onClick={() => onChange({ ...value, workType: typeVal as ColumnWorkType })}
-            >
-              <span className="flex-1 truncate">{typeLabel}</span>
-              {value.workType === typeVal && <Check />}
-            </button>
-          ))}
+          ).map(([typeVal, typeLabel]) => {
+            const checked = value.types.includes(typeVal);
+            return (
+              <button
+                key={typeVal}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={checked}
+                className={itemClass}
+                onClick={() =>
+                  onChange({
+                    ...value,
+                    types: checked
+                      ? value.types.filter((t) => t !== typeVal)
+                      : [...value.types, typeVal as TypeFilter],
+                  })
+                }
+              >
+                <span className="flex-1 truncate">{typeLabel}</span>
+                {checked && <Check />}
+              </button>
+            );
+          })}
 
           <div aria-hidden className="bg-hairline my-1 h-px" />
 
@@ -136,10 +147,10 @@ export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
             <span className="flex-1 truncate">
               {value.collapsed
                 ? scope === "board"
-                  ? "Expand board"
+                  ? "Expand all"
                   : "Expand column"
                 : scope === "board"
-                  ? "Collapse board"
+                  ? "Collapse all"
                   : "Collapse column"}
             </span>
           </button>

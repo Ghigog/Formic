@@ -104,3 +104,86 @@ describe("/api/settings autoMerge", () => {
     expect((await repository().projectById(p.id))?.autoMerge).toBe(false);
   });
 });
+
+describe("/api/settings renewal day", () => {
+  it("stores the day with its timezone", async () => {
+    const res = await PUT(put({ renewalDay: 5, timezone: "Europe/Paris" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ renewalDay: 5, timezone: "Europe/Paris" });
+    const user = await repository().userById(userId);
+    expect(user).toMatchObject({ tokenRenewalDay: 5, tokenWindowTimezone: "Europe/Paris" });
+  });
+
+  it("removes the day and timezone when null", async () => {
+    await PUT(put({ renewalDay: 5, timezone: "UTC" }));
+    expect((await PUT(put({ renewalDay: null }))).status).toBe(200);
+    const user = await repository().userById(userId);
+    expect(user).toMatchObject({ tokenRenewalDay: null, tokenWindowTimezone: null });
+  });
+
+  it.each([32, 0, 1.5, "5"])("rejects day %s", async (day) => {
+    const res = await PUT(put({ renewalDay: day, timezone: "UTC" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).errors.renewalDay).toMatch(/1 to 31/);
+  });
+
+  it("rejects an unknown timezone", async () => {
+    const res = await PUT(put({ renewalDay: 5, timezone: "Mars/Olympus" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).errors.timezone).toBeDefined();
+  });
+});
+
+describe("/api/settings token and attempt limits", () => {
+  it("returns defaults for a person with no stored limits", async () => {
+    const body = await (await GET()).json();
+    expect(body.mode).toBe("PER_STORY_POINT");
+    expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 64_000 });
+    expect(body.attempts).toEqual({ mode: "FLAT" });
+  });
+
+  it("stores each axis and returns it on later reads", async () => {
+    const res = await PUT(
+      put({
+        mode: "PER_STORY_POINT",
+        tokens: { mode: "FLAT", flat: 300000 },
+        attempts: { mode: "PER_POINT_BY_HAND", byHand: { "1": 2, "5": 6 } },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await (await GET()).json()).toMatchObject({
+      tokens: { mode: "FLAT", flat: 300000 },
+      attempts: { mode: "PER_POINT_BY_HAND", byHand: { 1: 2, 5: 6 } },
+    });
+  });
+
+  it("returns Off for tokens when Off was chosen, not the default", async () => {
+    await PUT(put({ mode: "PER_STORY_POINT", tokens: { mode: "OFF" } }));
+    const body = await (await GET()).json();
+    expect(body.tokens).toEqual({ mode: "OFF" });
+    expect(body.attempts).toEqual({ mode: "FLAT" });
+  });
+
+  it("leaves an axis alone when the request omits it", async () => {
+    await PUT(put({ mode: "OFF", tokens: { mode: "FLAT", flat: 5000 } }));
+    await PUT(put({ mode: "OFF", attempts: { mode: "FLAT", flat: 3 } }));
+    expect(await (await GET()).json()).toMatchObject({
+      tokens: { mode: "FLAT", flat: 5000 },
+      attempts: { mode: "FLAT", flat: 3 },
+    });
+  });
+
+  it.each([
+    ["a cents field at the top", { mode: "OFF", maxCents: 500 }],
+    ["a cents field on an axis", { mode: "OFF", tokens: { mode: "FLAT", flat: 1000, cents: 500 } }],
+    ["an unknown axis mode", { mode: "OFF", tokens: { mode: "WEEKLY" } }],
+    ["a flat axis with no value", { mode: "OFF", attempts: { mode: "FLAT" } }],
+    ["a fractional per-point value", { mode: "OFF", tokens: { mode: "PER_POINT", perPoint: 1.5 } }],
+  ])("rejects %s and stores nothing", async (_name, payload) => {
+    const res = await PUT(put(payload));
+    expect(res.status).toBe(400);
+    const body = await (await GET()).json();
+    expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 64_000 });
+    expect(body.mode).toBe("PER_STORY_POINT");
+  });
+});

@@ -141,11 +141,12 @@ describe("Auto-merge", () => {
         e2b={{ hint: null, serverFallback: false }}
       />,
     );
+    const toggle = screen.getByRole("checkbox", { name: /Merge approved pull requests in Formic/ });
     const user = userEvent.setup();
     await act(async () => {
-      await user.click(screen.getByRole("checkbox"));
+      await user.click(toggle);
     });
-    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    expect(toggle).not.toBeChecked();
     expect(screen.getByText("That did not save. Try again.")).toBeInTheDocument();
   });
 });

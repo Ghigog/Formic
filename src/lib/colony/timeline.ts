@@ -49,6 +49,11 @@ export interface TimelineEpic {
   tickets: TimelineTicket[];
 }
 
+/** An epic with tickets, every one of them done. */
+export function isEpicComplete(epic: TimelineEpic): boolean {
+  return epic.tickets.length > 0 && epic.tickets.every((t) => t.phase === "done");
+}
+
 export interface TimelineDay {
   date: Date;
   /** Story points merged that day. */

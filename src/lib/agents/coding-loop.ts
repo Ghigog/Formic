@@ -7,7 +7,9 @@ import type { AgentContext, AgentOutcome, CodeChange, Usage } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
 import type { PlanStep } from "@/lib/domain/entities";
-import { DEFAULT_RUN_BUDGET, estimateCostCents, taskBudgetTokens, turnCeiling } from "@/lib/budget/limits";
+import { PATH_RAILS } from "@/lib/budget/budget-for";
+import { estimateCostCents, turnCeiling } from "@/lib/budget/limits";
+import { timeLimitNote, tokenLimitNote } from "@/lib/budget/stop-notes";
 import {
   anthropicClient,
   billedInputTokens,
@@ -19,7 +21,8 @@ import { requestShape } from "./models";
 import { MAX_PLAN_STEPS, checkPlan, currentStep, planFraction } from "./plan";
 import { checkHandoff } from "./handoff";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
-import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
+import { type ChatMessage, type ModelInfo, type ToolSpec, advertisedModel, chat } from "@/lib/llm/openai-compat";
+import { reasoningFor } from "@/lib/agents/reasoning";
 
 /**
  * The agentic loop both PROT-06 and PROT-07 run on.
@@ -40,11 +43,17 @@ export const CODER_MODEL = "claude-opus-5";
 
 /**
  * A loop that has not converged in this many turns is not about to. The
- * in-process default: a job's own loop is given the ceiling its budget is
- * worth instead (see `turnCeiling`), because a ticket with half an hour to
- * spend should not be stopped by a wall meant for a four-minute run.
+ * fallback for a run that carries no budget: the in-process window. A run
+ * with a budget gets the ceiling its minutes are worth instead (see
+ * `turnCeiling`), because a ticket with half an hour to spend should not be
+ * stopped by a wall meant for a five-minute run.
  */
-const MAX_TURNS = turnCeiling(DEFAULT_RUN_BUDGET.maxDurationMs);
+const MAX_TURNS = turnCeiling(PATH_RAILS["in-process"].minutes * 60_000);
+
+/** The ceiling handed to the model so it paces itself: below the token limit, which is the backstop. The API rejects under 20k. */
+function advisoryTokens(tokens: number | null | undefined): number {
+  return Math.max(20_000, Math.floor((tokens ?? 64_000) * 0.8));
+}
 
 /** Tool output past this is padding; the middle is what gets dropped. */
 const MAX_TOOL_OUTPUT = 16_000;
@@ -344,7 +353,7 @@ function usageFrom(
 function claudeConversation(input: LoopInput, model: string): Conversation {
   const shape = requestShape(model, {
     effort: "medium",
-    taskBudgetTokens: taskBudgetTokens(DEFAULT_RUN_BUDGET),
+    taskBudgetTokens: advisoryTokens(input.ctx.budget?.tokens.value),
   });
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     { role: "user", content: input.prompt },
@@ -439,12 +448,18 @@ function openAiConversation(
     { role: "system", content: input.system },
     { role: "user", content: input.prompt },
   ];
+  let advertised: Promise<ModelInfo | undefined> | undefined;
   return {
     async next() {
+      advertised ??= advertisedModel(info, apiKey, model, input.ctx.signal);
+      const modelInfo = await advertised;
+      // The budget can run out while the model list is fetched; do not start a reply after it.
+      input.ctx.signal?.throwIfAborted();
       const result = await chat(info, apiKey, {
         model,
         messages,
         tools: openAiTools(input.role),
+        ...reasoningFor(info, input.role, modelInfo),
         signal: input.ctx.signal,
       }).catch((e: unknown) => {
         throw new Error(e instanceof Error ? e.message : String(e));
@@ -508,7 +523,12 @@ export async function runCodingLoop(
   const { ctx, workspace, role, ticketId } = input;
   const info = provider(input.provider ?? "anthropic")!;
   const model = input.model ?? CODER_MODEL;
-  const maxTurns = Math.max(1, Math.round(input.maxTurns ?? MAX_TURNS));
+  const minutes = ctx.budget?.minutes.value;
+  const maxTurns = Math.max(
+    1,
+    Math.round(input.maxTurns ?? (minutes ? turnCeiling(minutes * 60_000) : MAX_TURNS)),
+  );
+  const startedAt = ctx.startedAt ?? Date.now();
   let total: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
   let retries = 0;
   /** The plan as the agent last sent it: the board's progress while it works. */
@@ -558,6 +578,16 @@ export async function runCodingLoop(
         reason instanceof Error ? reason.message : "Run stopped before the change was finished.",
         true,
       );
+    }
+
+    // The run's own limits, between turns: a turn already under way is not
+    // cut short, and the next one is not begun past a limit.
+    const { budget } = ctx;
+    if (budget?.tokens.value != null && total.tokensIn + total.tokensOut >= budget.tokens.value) {
+      return fail(tokenLimitNote(budget, total.tokensIn + total.tokensOut), true);
+    }
+    if (budget?.minutes.value != null && Date.now() - startedAt >= budget.minutes.value * 60_000) {
+      return fail(timeLimitNote(budget), true);
     }
 
     let turn: Turn;

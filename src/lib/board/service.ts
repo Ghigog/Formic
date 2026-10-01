@@ -24,13 +24,15 @@ import {
   runProductAgent,
 } from "@/lib/agents/pipeline";
 import { runCoderAgent } from "@/lib/coder/pipeline";
-import { completeEpic, reviewPullRequest } from "@/lib/review/pipeline";
+import { completeEpic, reviewPullRequest, startShowcase } from "@/lib/review/pipeline";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
 import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { runningConflict } from "@/lib/domain/queue";
+import { planQueen } from "@/lib/queen/plan";
+import { startQueued } from "@/lib/board/queue";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -315,6 +317,36 @@ export async function applyTransition(
   }
 
   return { ok: true, status, runId: null };
+}
+
+/**
+ * Moves every Queen along: a card whose target is merged or Done gets its
+ * Queen cleared, and any other has its next prerequisites queued in In
+ * Progress. Run when a Queen is placed and after anything merges. A
+ * prerequisite that is blocked or failed stops the Queen (see planQueen).
+ */
+export async function advanceQueens(projectId: string): Promise<void> {
+  const repo = repository();
+  for (const queen of await repo.listQueens(projectId)) {
+    const cards = await repo.boardCards(projectId);
+    const target = cards.find((c) => c.id === queen.cardId);
+    if (!target || target.status === "merged") {
+      await repo.clearQueen(queen.cardId);
+      continue;
+    }
+    for (const id of planQueen(cards, target)) {
+      const card = cards.find((c) => c.id === id)!;
+      await applyTransition(projectId, {
+        cardId: id,
+        kind: "ticket",
+        from: columnOf(card),
+        to: "in_progress",
+        position: card.position,
+        actor: "system",
+      });
+    }
+  }
+  await startQueued(projectId);
 }
 
 /** An Epic's tickets waiting with it in Backlog. */
@@ -618,6 +650,32 @@ export async function retryEpic(projectId: string, epicId: string): Promise<Epic
   } else if (inTodo) {
     launch(() => decomposeEpic(projectId, epicId), `architect agent for ${card.key}`);
   }
+  return { ok: true };
+}
+
+/** Whether a done Epic can have its showcase written: it has none and no PM run is active. */
+export function canGenerateShowcase(card: BoardCard, detail: { showcase: unknown }): boolean {
+  return card.kind === "epic" && card.status === "merged" && !detail.showcase && card.agentRole !== "pm";
+}
+
+/** Starts the PM Agent on a done Epic's showcase, which is only ever written on request. */
+export async function generateShowcase(projectId: string, epicId: string): Promise<EpicActionResult> {
+  const repo = repository();
+  const detail = await repo.epicDetail(epicId);
+  const card = (await repo.boardCards(projectId)).find((c) => c.id === epicId);
+  if (!card || card.kind !== "epic" || !detail) {
+    return { ok: false, reason: "That Epic no longer exists.", status: 404 };
+  }
+  if (card.status !== "merged") {
+    return { ok: false, reason: `${card.key} is not done yet.`, status: 409 };
+  }
+  if (detail.showcase) {
+    return { ok: false, reason: `${card.key} already has a showcase.`, status: 409 };
+  }
+  if (!canGenerateShowcase(card, detail)) {
+    return { ok: false, reason: `The PM Agent is already writing the showcase for ${card.key}.`, status: 409 };
+  }
+  await startShowcase(projectId, epicId);
   return { ok: true };
 }
 

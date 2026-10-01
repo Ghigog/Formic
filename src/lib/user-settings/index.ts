@@ -2,6 +2,8 @@ import "server-only";
 
 import { repository } from "@/lib/db";
 import type { RunTimeBudgetColumns, UserRecord } from "@/lib/db/repository";
+import type { LimitSetting } from "@/lib/budget/budget-for";
+import { limitSettingFromStored, type LimitAxis } from "@/lib/domain/limit-settings";
 import {
   parsePerPointMinutes,
   serialisePerPointMinutes,
@@ -36,6 +38,33 @@ export function runTimeBudgetToRow(settings: RunTimeBudgetSettings): RunTimeBudg
     runTimeBudgetMode: settings.mode,
     runTimeBudgetFlatMinutes: settings.mode === "FLAT_MINUTES" ? (settings.flatMinutes ?? null) : null,
     runTimeBudgetPerPointMinutes: perPoint,
+  };
+}
+
+export type LimitSettings = Record<LimitAxis, LimitSetting>;
+
+/** Tokens and attempts as stored; a missing value is the default, Off is returned as Off. */
+export async function getLimitSettings(userId: string): Promise<LimitSettings> {
+  const row = await repository().userById(userId);
+  if (!row) throw new Error(`No user ${userId}.`);
+  return {
+    tokens: limitSettingFromStored("tokens", row.tokenLimit),
+    attempts: limitSettingFromStored("attempts", row.attemptLimit),
+  };
+}
+
+/** Stores already-validated settings for the axes given; returns all of them. */
+export async function updateLimitSettings(
+  userId: string,
+  input: Partial<LimitSettings>,
+): Promise<LimitSettings> {
+  const row = await repository().updateLimits(userId, {
+    ...(input.tokens ? { tokenLimit: { ...input.tokens } } : {}),
+    ...(input.attempts ? { attemptLimit: { ...input.attempts } } : {}),
+  });
+  return {
+    tokens: limitSettingFromStored("tokens", row.tokenLimit),
+    attempts: limitSettingFromStored("attempts", row.attemptLimit),
   };
 }
 

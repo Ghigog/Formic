@@ -8,6 +8,8 @@ import { SENTINELS } from "./roster";
 
 /** A run that has not moved for this long died with the function running it. */
 export const STALE_AFTER_MS = 10 * 60_000;
+/** A GitHub Actions job takes minutes to start and read the repository, and reports when it ends. */
+export const STALE_JOB_AFTER_MS = 45 * 60_000;
 
 export interface SentinelState {
   id: string;
@@ -36,7 +38,8 @@ export function sentinelStates(audits: AuditRecord[], now = Date.now()): Sentine
     const newest = mine.at(-1) ?? null;
     const later = newest && newest !== done ? newest : null;
     const stale =
-      later?.status === "running" && now - new Date(later.startedAt).getTime() > STALE_AFTER_MS;
+      later?.status === "running" &&
+      now - new Date(later.startedAt).getTime() > (later.runnerJob ? STALE_JOB_AFTER_MS : STALE_AFTER_MS);
     out[s.id] = {
       id: s.id,
       stars: done?.stars ?? null,

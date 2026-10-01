@@ -4,9 +4,11 @@ import { z } from "zod";
 
 import { MODELS } from "@/lib/agents/anthropic";
 import { claudeSpeak, openAiSpeak, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
+import { CHAT_ANSWER_BUDGET_MS, outOfTimeReply } from "@/lib/agents/card-chat";
 import { assistantAgentFor } from "@/lib/agents/presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
+import { attemptsFor } from "@/lib/budget/in-process";
 import { truncate } from "@/lib/agents/coding-loop";
 import { repository } from "@/lib/db";
 import type { AssistantMessage, AssistantProposal } from "@/lib/db/repository";
@@ -30,6 +32,8 @@ import { ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
  */
 
 const MAX_TURNS = 16;
+/** The answer stops itself here, inside the route's maxDuration, so the message never stays pending. */
+export const MAX_ANSWER_MS = CHAT_ANSWER_BUDGET_MS;
 const MAX_FILES_LISTED = 400;
 
 const listInput = z.object({ prefix: z.string().optional() });
@@ -116,6 +120,8 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     TICKET_TEMPLATE,
     "",
     ENGINEERING_PRACTICES,
+    "",
+    `You have ${MAX_TURNS} rounds, one per model call, and an answer that runs out of them is lost. Call propose as soon as you know the ticket list; do not read further to polish it. A thin fileScope is better than no proposal.`,
     "",
     "Answer in short, plain Markdown. After proposing, say in one line what you proposed.",
     "",
@@ -243,8 +249,19 @@ export async function answer(projectId: string, messageId: string): Promise<void
     let results: Array<{ id: string; content: string; isError: boolean }> | null = null;
     const filesRead = new Set<string>();
     let lastError: string | null = null;
+    let said = "";
+    const startedAt = Date.now();
     for (let turn = 0; turn < MAX_TURNS; turn++) {
+      if (Date.now() - startedAt >= MAX_ANSWER_MS) {
+        await finish(messageId, {
+          content: outOfTimeReply(MAX_ANSWER_MS, [...filesRead], said),
+          proposals,
+          status: "done",
+        });
+        return;
+      }
       const { text, calls } = await speak(results);
+      if (text.trim()) said = text;
       if (calls.length === 0) {
         await finish(messageId, {
           content: text || (proposals.length ? "Here is what I propose." : "I have nothing to add."),
@@ -297,9 +314,10 @@ function cliPrompt(system: string, past: Array<{ role: "user" | "assistant"; con
     ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
     "How to answer:",
     "- Do not change, create or delete any file in the repository. Nothing you change is kept.",
-    "- Write your answer to the file named by the FORMIC_OUTPUT environment variable, as one JSON object and nothing else:",
+    "- You have no propose tool here. A proposal is an entry in the JSON below: describing one in your reply does nothing, and the person can only approve what is in the JSON.",
+    "- Your final message is your answer, and it must be one JSON object and nothing else (you may write the same object to the file named by the FORMIC_OUTPUT environment variable instead). An answer that is not that JSON is thrown away:",
     '  {"reply": "<your answer, in Markdown>", "proposals": [{"summary": "<one line>", "action": <an action>}]}',
-    "- Leave proposals empty unless the person asked for a change to the board. Each action matches this JSON Schema:",
+    "- Leave proposals empty unless the person asked for a change to the board. When they agree to a ticket or ask for one (\"yes\", \"make it\", \"create the ticket\"), put it in proposals now: do not ask again, and do not re-explain. Each action matches this JSON Schema:",
     JSON.stringify(z.toJSONSchema(assistantActionSchema)),
   ].join("\n");
 }
@@ -333,8 +351,10 @@ async function askAgain(
   return true;
 }
 
-/** Tries a CLI agent gets to hand in proposals Formic can use. */
-const CLI_ANSWER_ATTEMPTS = 2;
+/** Tries a CLI agent gets to hand in proposals Formic can use: the owner's attempts limit. */
+async function cliAnswerAttempts(projectId: string): Promise<number> {
+  return attemptsFor((await projectFor(projectId)).ownerId, "cliAnswer");
+}
 
 export async function finishCliAnswer(
   messageId: string,
@@ -356,7 +376,25 @@ export async function finishCliAnswer(
   }
   const parsed = cliAnswerSchema.safeParse(raw);
   if (!parsed.success) {
-    await finish(messageId, { content: answerText.trim(), status: "done" });
+    // Prose where the JSON answer was due: any proposal in it is lost, so
+    // ask once more for the format before showing the text as it is.
+    if (from && from.attempt < (await cliAnswerAttempts(from.projectId))) {
+      const again = await askAgain(
+        from.projectId,
+        messageId,
+        answerText,
+        ['Your answer was not the JSON object. Make your final message the JSON object {"reply": ..., "proposals": [...]} and nothing else. If the person asked for a ticket or agreed to one, it belongs in proposals.'],
+        from.attempt + 1,
+      ).then(
+        () => true,
+        () => false,
+      );
+      if (again) return;
+    }
+    await finish(messageId, {
+      content: `${answerText.trim()}\n\n_The agent did not send its answer in a form Formic can read, so nothing here can be approved. If you asked for a ticket, ask again._`,
+      status: "done",
+    });
     return;
   }
 
@@ -367,7 +405,7 @@ export async function finishCliAnswer(
     if (checked.ok) proposals.push({ summary: p.summary, action: checked.action, state: "proposed" });
     else dropped.push(`${p.summary}: ${checked.problem}`);
   }
-  if (dropped.length && from && from.attempt < CLI_ANSWER_ATTEMPTS) {
+  if (dropped.length && from && from.attempt < (await cliAnswerAttempts(from.projectId))) {
     const again = await askAgain(from.projectId, messageId, answerText, dropped, from.attempt + 1).then(
       () => true,
       () => false,

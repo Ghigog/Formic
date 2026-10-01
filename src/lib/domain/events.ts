@@ -44,6 +44,12 @@ export type FormicEvent =
       reason: string;
     }
   | {
+      /** A Queen was placed on a card. */
+      type: "card.queen";
+      cardId: string;
+      kind: "epic" | "ticket";
+    }
+  | {
       type: "epic.prd";
       epicId: string;
       /** Incremental text while the Product Agent streams. */
@@ -104,6 +110,11 @@ export type FormicEvent =
       kind: "epic" | "ticket";
       /** "answering" while it writes, "idle" once its reply has landed. */
       state: "answering" | "idle";
+    }
+  | {
+      /** An answer in the board assistant's conversation was marked failed. */
+      type: "assistant.failed";
+      messageId: string;
     }
   | {
       /** The column's agent answering a person's note on a ticket's chat. */

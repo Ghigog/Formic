@@ -22,7 +22,17 @@ export async function GET() {
     activeProject(),
     repository().listProjects(ownerScope(user)),
   ]);
-  return Response.json({ active, projects });
+  const repo = repository();
+  const withActivity = await Promise.all(
+    projects.map(async (p) => {
+      const answered = (await repo.assistantMessages(p.id)).filter(
+        (m) => m.role === "assistant" && m.status !== "pending",
+      );
+      const last = answered[answered.length - 1];
+      return { ...p, lastAssistantMessage: last ? { id: last.id, createdAt: last.createdAt } : null };
+    }),
+  );
+  return Response.json({ active, projects: withActivity });
 }
 
 const chooseSchema = z.union([

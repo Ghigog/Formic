@@ -39,6 +39,21 @@ function contract(name: string, make: () => Repository) {
       ...over,
     });
 
+    describe("token window", () => {
+      it("stores the renewal day with its timezone, and the reset time", async () => {
+        const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+        expect([user.tokenRenewalDay, user.tokenWindowTimezone, user.tokenResetAt]).toEqual([null, null, null]);
+
+        const renewed = await repo.updateTokenRenewal(user.id, { tokenRenewalDay: 5, tokenWindowTimezone: "Europe/Paris" });
+        expect([renewed.tokenRenewalDay, renewed.tokenWindowTimezone]).toEqual([5, "Europe/Paris"]);
+
+        const at = new Date("2026-09-12T08:00:00Z");
+        const reset = await repo.stampTokenReset(user.id, at);
+        expect(reset.tokenResetAt).toEqual(at);
+        expect(reset.tokenRenewalDay).toBe(5);
+      });
+    });
+
     describe("projects", () => {
       it("creates a project for a repository once, whatever the casing", async () => {
         const repoName = `Contract/${randomUUID()}`;
@@ -99,6 +114,19 @@ function contract(name: string, make: () => Repository) {
         const cards = await repo.boardCards(p.id);
         const typeOf = (id: string) => cards.find((c) => c.id === id)?.workType ?? null;
         expect([typeOf(epic.id), typeOf(plain.id), typeOf(t!.id), typeOf(u!.id)]).toEqual(["bug", null, "spike", null]);
+      });
+
+      it("sets and clears a ticket's work type", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "C-1")]);
+        const typeOf = async () => (await repo.boardCards(p.id)).find((c) => c.id === t!.id)?.workType ?? null;
+
+        await repo.updateTicket(t!.id, { workType: "spike" });
+        expect(await typeOf()).toBe("spike");
+
+        await repo.updateTicket(t!.id, { workType: null });
+        expect(await typeOf()).toBeNull();
       });
 
       it("updates a ticket and finds it by its pull request", async () => {
@@ -408,6 +436,47 @@ function contract(name: string, make: () => Repository) {
         expect(updated.column).toBe("in_review");
       });
 
+      it("returns a column agent's override with the board's, and drops it with the agent", async () => {
+        const p = await project();
+        const preset = await repo.savePreset({
+          ownerId: null,
+          provider: "anthropic",
+          name: `contract-${randomUUID()}`,
+          model: "claude-opus-5",
+          prompt: "p",
+        });
+        expect(await repo.setColumnOverride(p.id, "in_progress", { minutes: 5, tokens: null, attempts: null })).toBe(false);
+
+        await repo.setColumnAgent(p.id, "in_progress", preset.id);
+        await repo.setColumnAgent(p.id, "in_review", preset.id);
+        expect(await repo.columnOverrides(p.id)).toEqual({});
+        expect(await repo.setColumnOverride(p.id, "in_progress", { minutes: 20, tokens: 90000, attempts: null })).toBe(true);
+        expect(await repo.columnOverrides(p.id)).toEqual({
+          in_progress: { minutes: 20, tokens: 90000, attempts: null },
+        });
+
+        await repo.setColumnAgent(p.id, "in_progress", null);
+        expect(await repo.columnOverrides(p.id)).toEqual({});
+      });
+
+      it("stores a token allowance with a rolling 30 day window by default", async () => {
+        const preset = await repo.savePreset({
+          ownerId: null,
+          provider: "anthropic",
+          name: `contract-${randomUUID()}`,
+          model: "claude-opus-5",
+          prompt: "p",
+        });
+        expect(preset).toMatchObject({ tokenAllowance: null, tokenAllowanceWindowDays: 30 });
+        await repo.setPresetAllowance(preset.id, { tokens: 1_000_000, windowDays: null });
+        expect((await repo.presetForRun(preset.id))?.preset).toMatchObject({
+          tokenAllowance: 1_000_000,
+          tokenAllowanceWindowDays: 30,
+        });
+        await repo.setPresetAllowance(preset.id, { tokens: 500, windowDays: 7 });
+        expect((await repo.presetForRun(preset.id))?.preset).toMatchObject({ tokenAllowance: 500, tokenAllowanceWindowDays: 7 });
+      });
+
       it("leaves a preset unscoped when no column is given, so it shows in every column", async () => {
         const preset = await repo.savePreset({
           ownerId: null,
@@ -417,6 +486,24 @@ function contract(name: string, make: () => Repository) {
           prompt: "p",
         });
         expect(preset.column).toBeNull();
+      });
+    });
+
+    describe("limit settings", () => {
+      it("stores Off explicitly, leaves an unset axis null, and returns a stored one", async () => {
+        const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2e9), login: "c", name: null, avatarUrl: null });
+        expect(user.tokenLimit ?? null).toBeNull();
+        expect(user.attemptLimit ?? null).toBeNull();
+
+        const off = await repo.updateLimits(user.id, { tokenLimit: { mode: "OFF" } });
+        expect(off.tokenLimit).toEqual({ mode: "OFF" });
+        expect(off.attemptLimit ?? null).toBeNull();
+
+        const both = await repo.updateLimits(user.id, { attemptLimit: { mode: "FLAT", flat: 3 } });
+        expect(both.tokenLimit).toEqual({ mode: "OFF" });
+        expect((await repo.userById(user.id))?.attemptLimit).toEqual({ mode: "FLAT", flat: 3 });
+
+        expect((await repo.updateLimits(user.id, { tokenLimit: null })).tokenLimit ?? null).toBeNull();
       });
     });
 
@@ -475,6 +562,19 @@ function contract(name: string, make: () => Repository) {
         // A cutoff before it was written: it may be being written right now.
         expect(await repo.orphanedCardChats(p.id, new Date(Date.now() - 60_000))).toEqual([]);
       });
+
+      it("lists a pending assistant answer with no job, once older than the cut-off", async () => {
+        const p = await project();
+        const base = { projectId: p.id, role: "assistant" as const, content: "", status: "pending" as const };
+        const orphan = await repo.addAssistantMessage(base);
+        const inActions = await repo.addAssistantMessage(base);
+        await repo.updateAssistantMessage(inActions.id, { runnerJob: "job-9" });
+
+        expect((await repo.orphanedAssistantAnswers(p.id, new Date(Date.now() + 60_000))).map((m) => m.id)).toEqual([
+          orphan.id,
+        ]);
+        expect(await repo.orphanedAssistantAnswers(p.id, new Date(Date.now() - 60_000))).toEqual([]);
+      });
     });
 
     describe("audits", () => {
@@ -511,6 +611,34 @@ function contract(name: string, make: () => Repository) {
           ["tester", "running", null],
         ]);
         expect(other.status).toBe("running");
+      });
+    });
+
+    describe("queens", () => {
+      it("keeps one Queen per card, marks it, and counts a cleared one as spent", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "Q-1")]);
+
+        expect(await repo.placeQueen(p.id, t!.id, "ticket")).toMatchObject({ cardId: t!.id, kind: "ticket" });
+        expect(await repo.placeQueen(p.id, t!.id, "ticket")).toBeNull();
+        expect((await repo.listQueens(p.id)).map((q) => q.cardId)).toEqual([t!.id]);
+        expect((await repo.boardCards(p.id)).find((c) => c.id === t!.id)!.queen).toBe(true);
+
+        expect(await repo.clearQueen(t!.id)).toBe(true);
+        expect(await repo.clearQueen(t!.id)).toBe(false);
+        expect(await repo.listQueens(p.id)).toEqual([]);
+        expect(await repo.queensSpent(p.id)).toBe(1);
+      });
+
+      it("drops a Queen with its card", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        await repo.placeQueen(p.id, epic.id, "epic");
+
+        await repo.deleteEpic(epic.id);
+
+        expect(await repo.listQueens(p.id)).toEqual([]);
       });
     });
 

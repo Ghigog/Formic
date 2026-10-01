@@ -9,6 +9,8 @@ import { parse } from "yaml";
 import {
   ALREADY_DONE_TRAILER,
   RUNNER_WORKFLOW_PATH,
+  workflowCeiling,
+  RUNNER_JOB_MINUTES,
   RUNNER_VERSION,
   USAGE_TRAILER,
   parseRunTitle,
@@ -93,7 +95,7 @@ interface Step {
 
 const doc = parse(text) as {
   on?: { workflow_dispatch?: { inputs?: Record<string, unknown> } };
-  jobs?: { agent?: { steps?: Step[] } };
+  jobs?: { agent?: { "timeout-minutes"?: number; steps?: Step[] } };
 };
 
 const steps = doc.jobs?.agent?.steps ?? [];
@@ -104,6 +106,21 @@ const step = (name: string): Step => {
 };
 
 describe("the installed workflow", () => {
+  it("takes the job's minutes as an input, at most the 60 it is clamped to", () => {
+    expect(RUNNER_JOB_MINUTES).toBe(60);
+    expect(text).toContain("timeout-minutes: ${{ fromJSON(inputs.timeout) }}");
+    expect(text).toContain(`default: "${RUNNER_JOB_MINUTES}"`);
+  });
+
+  it("holds a workflow without the timeout input to its old 180 minutes", () => {
+    expect(workflowCeiling(text)).toEqual({ minutes: 60, takesTimeout: true });
+    expect(workflowCeiling("jobs:\n  agent:\n    timeout-minutes: 180\n")).toEqual({
+      minutes: 180,
+      takesTimeout: false,
+    });
+    expect(workflowCeiling(null).minutes).toBe(180);
+  });
+
   it("parses as the YAML a runner will accept", () => {
     expect(() => parse(text)).not.toThrow();
     expect(text.startsWith(`# ${RUNNER_VERSION}`)).toBe(true);

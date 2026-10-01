@@ -57,6 +57,10 @@ export function useBoard(
           scheduleRefetch();
           break;
 
+        case "card.queen":
+          setCards((prev) => prev.map((c) => (c.id === event.cardId ? { ...c, queen: true } : c)));
+          break;
+
         case "card.chat":
           // A card's chat being answered is work on the card even though
           // nothing about it moves: the colony reads that off here.

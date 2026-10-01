@@ -122,8 +122,8 @@ describe("the loop entry a GitHub Actions job runs", () => {
 
     // The loop ran on the ticket's own key, and reached nothing else.
     expect(sent.map((s) => s.url)).toEqual([
-      "https://api.deepseek.com/v1/chat/completions",
-      "https://api.deepseek.com/v1/chat/completions",
+      "https://api.deepseek.com/chat/completions",
+      "https://api.deepseek.com/chat/completions",
     ]);
     expect(sent[0]!.auth).toBe("Bearer sk-deepseek");
 
@@ -216,6 +216,39 @@ describe("the run's own ceilings", () => {
     expect(!report.ok && report.blocked).toBe(true);
     expect(!report.ok && report.error).toContain("Ran out of time");
     expect(!report.ok && report.error).toContain("budget");
+    expect(!report.ok && report.error).toContain("Raise the ticket's budget to give it longer");
+  });
+
+  it("names the job's ceiling, not the budget, when the ceiling clamped the run", async () => {
+    vi.stubGlobal(
+      "fetch",
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new Error("This operation was aborted")));
+        }),
+    );
+
+    const report = await runLoopEntry(
+      payload({ limits: { maxDurationMs: 30, budgetMs: 200 * 60_000 } }),
+      { workspace: new MemoryWorkspace(), log: () => {} },
+    );
+
+    expect(report.limit).toBe("time");
+    expect(!report.ok && report.error).toContain("the job's ceiling stopped it");
+    expect(!report.ok && report.error).toContain("Do not raise the budget");
+  });
+
+  it("stops between turns at the token ceiling, and says it is the tokens", async () => {
+    fakeProvider([toolCall("call_1", "list_files", { path: "." }), finish()]);
+
+    const report = await runLoopEntry(payload({ limits: { maxTokens: 1 } }), {
+      workspace: new MemoryWorkspace(),
+      log: () => {},
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.limit).toBe("tokens");
+    expect(!report.ok && report.error).toContain("Token ceiling reached");
   });
 
   it("does not stop a plan that is not billed per token on money", async () => {
@@ -233,6 +266,18 @@ describe("the run's own ceilings", () => {
 
     expect(report.ok).toBe(true);
     expect(report.usage.costCents).toBe(0);
+  });
+
+  it("says the spend ceiling bounds tokens, not a bill, when it stops a run", async () => {
+    fakeProvider([toolCall("call_1", "list_files", { path: "." }), finish()]);
+
+    const report = await runLoopEntry(payload({ model: "deepseek-flash", limits: { maxCents: 0 } }), {
+      workspace: new MemoryWorkspace(),
+      log: () => {},
+    });
+
+    expect(report.ok).toBe(false);
+    expect(!report.ok && report.error).toContain("token volume, not a bill");
   });
 
   it("refuses a CLI agent, which belongs in an Actions job of its own", async () => {

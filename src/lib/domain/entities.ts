@@ -237,6 +237,8 @@ export interface BoardCard {
   misplacedIn?: (typeof COLUMNS)[number] | null;
   misplacedReason?: string | null;
   costCents: number;
+  /** Whether a person has placed a Queen on it. */
+  queen?: boolean;
   childCount: number;
   doneCount: number;
   /** ISO time the card was made. Drives the timeline. */
@@ -287,6 +289,10 @@ export interface AgentPreset {
   limitedUntil: string | null;
   /** What the agent said when it ran out. */
   limitNote: string | null;
+  /** Tokens this agent may use per window, or null for no allowance. */
+  tokenAllowance?: number | null;
+  /** The rolling window the allowance is measured over, in days; absent means 30. */
+  tokenAllowanceWindowDays?: number;
 }
 
 export const agentPresetInputSchema = z
@@ -310,3 +316,13 @@ export type AgentPresetInput = z.infer<typeof agentPresetInputSchema>;
 
 /** Which preset runs each column on one board. Unset columns run built-ins. */
 export type ColumnAgents = Partial<Record<(typeof COLUMNS)[number], string>>;
+
+/** A column agent's own limits; a null axis falls back to the person's setting. */
+export interface ColumnOverride {
+  minutes: number | null;
+  tokens: number | null;
+  attempts: number | null;
+}
+
+/** The overrides set on a board, by column. Columns with none are absent. */
+export type ColumnOverrides = Partial<Record<(typeof COLUMNS)[number], ColumnOverride>>;

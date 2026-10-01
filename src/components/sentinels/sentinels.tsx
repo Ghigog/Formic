@@ -5,7 +5,7 @@ import { cn } from "@/components/ui/cn";
 import { useColony, type ColonyApi } from "@/components/colony/colony";
 import { centerOf } from "@/components/colony/fx";
 import { GRADES, GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
-import { GROUP_INK, SENTINELS, promptFor, stepsFor, type Sentinel } from "@/lib/sentinels/roster";
+import { GROUP_INK, SENTINELS, isUnlocked, promptFor, stepsFor, type Sentinel } from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditPoint } from "@/lib/db/repository";
 import { portraitSvg, portraitGround } from "./portraits";
@@ -38,6 +38,7 @@ function Portrait({ id, className }: { id: string; className?: string }) {
   return (
     <span
       aria-hidden
+      data-avatar={id}
       className={cn("absolute inset-0 block", className)}
       dangerouslySetInnerHTML={{ __html: portraitSvg(id) }}
     />
@@ -51,6 +52,14 @@ function PlayIcon({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+/** Whether a sentinel has reported: the ones worth celebrating. */
+const reported = (st: SentinelState | undefined) => st?.stars != null;
+
+const SLIDE_MS = 520;
+const SLIDE_STAGGER_MS = 110;
+/** Hover scrubbing across the rail makes one voice per this long. */
+const VOICE_GAP_MS = 120;
 
 function ago(iso: string | null, now: number): string {
   if (!iso) return "";
@@ -87,11 +96,25 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
       if (e.key === "Escape") c.setSentinelsOpen(false);
     };
     window.addEventListener("keydown", onKey);
-    root.current?.animate([{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], {
-      duration: 260,
-      easing: "cubic-bezier(.2,.8,.2,1)",
-    });
+    // Reported cards slide up one after another; the rest fade in by CSS.
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const landed = SENTINELS.map((x, i) => ({ x, i })).filter(({ x }) => reported(s.states[x.id]));
+    if (landed.length) c.sfx("sentinelsOpen");
+    if (landed.length && !c.fx.reducedMotion) {
+      landed.forEach(({ x, i }, n) => {
+        const delay = n * SLIDE_STAGGER_MS;
+        root.current?.querySelector<HTMLElement>(`[data-card="${x.id}"]`)?.animate(
+          [
+            { opacity: 0, transform: `translateY(60vh) rotate(${n % 2 ? 4 : -4}deg)` },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: SLIDE_MS, delay, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" },
+        );
+        timers.push(setTimeout(() => c.sfx("sentinelLand", i), delay + SLIDE_MS));
+      });
+    }
     return () => {
+      timers.forEach(clearTimeout);
       clearInterval(id);
       window.removeEventListener("keydown", onKey);
     };
@@ -156,6 +179,30 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.states]);
 
+  // An avatar's reaction and its sentinel's voice. Hopping and tilting is
+  // motion; the voice is not, and is throttled so scrubbing does not stack.
+  const lastVoice = useRef(0);
+  const react = (id: string) => {
+    const now = performance.now();
+    if (now - lastVoice.current >= VOICE_GAP_MS) {
+      lastVoice.current = now;
+      c.sfx("sentinelVoice", SENTINELS.findIndex((x) => x.id === id));
+    }
+    if (c.fx.reducedMotion) return;
+    root.current
+      ?.querySelector<HTMLElement>(`[data-card="${id}"] [data-avatar]`)
+      ?.animate(
+        [
+          { transform: "none" },
+          { transform: "translateY(-10px) rotate(-5deg) scale(1.06)", offset: 0.35 },
+          { transform: "translateY(0) rotate(3deg) scale(1.04, 0.94)", offset: 0.65 },
+          { transform: "none" },
+        ],
+        { duration: 380, easing: "cubic-bezier(.2,.8,.2,1)" },
+      );
+  };
+
+  const unlocked = SENTINELS.filter((x) => isUnlocked(x, s.level)).length;
   const nBusy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
   const summon = (id: string) => {
     setSel(id);
@@ -237,11 +284,11 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
               c.sfx("emerge");
               s.summonAll();
             }}
-            disabled={nBusy === SENTINELS.length}
+            disabled={nBusy === unlocked}
             className="bg-anthracite text-cream inline-flex h-11 items-center gap-2.5 rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
           >
             <PlayIcon />
-            {nBusy ? `Auditing ${nBusy}…` : `Summon all ${SENTINELS.length}`}
+            {nBusy ? `Auditing ${nBusy}…` : `Summon all ${unlocked}`}
           </button>
         </section>
 
@@ -252,8 +299,8 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
         )}
 
         <div className="flex gap-4 max-lg:flex-col lg:min-h-0 lg:flex-1">
-          <Rail s={s} sel={sel} now={now} onSelect={(id) => { c.sfx("blip", 5); setSel(id); }} onSummon={summon} />
-          <Report x={selected} st={s.states[selected.id]!} now={now} onSummon={() => summon(selected.id)} />
+          <Rail s={s} sel={sel} now={now} onReact={react} onSelect={(id) => { c.sfx("blip", 5); setSel(id); react(id); }} onSummon={summon} />
+          <Report x={selected} st={s.states[selected.id]!} now={now} locked={!isUnlocked(selected, s.level)} onSummon={() => summon(selected.id)} />
         </div>
       </div>
     </div>
@@ -265,12 +312,14 @@ function Rail({
   sel,
   now,
   onSelect,
+  onReact,
   onSummon,
 }: {
   s: SentinelsApi;
   sel: string;
   now: number;
   onSelect: (id: string) => void;
+  onReact: (id: string) => void;
   onSummon: (id: string) => void;
 }) {
   const rail = useRef<HTMLDivElement>(null);
@@ -295,7 +344,7 @@ function Rail({
       className="flex min-w-0 flex-1 snap-x snap-proximity gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-2 max-lg:min-h-[520px]"
     >
       {SENTINELS.map((x) => (
-        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} onSelect={onSelect} onSummon={onSummon} />
+        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} locked={!isUnlocked(x, s.level)} onSelect={onSelect} onReact={onReact} onSummon={onSummon} />
       ))}
     </div>
   );
@@ -306,14 +355,18 @@ function Card({
   st,
   on,
   now,
+  locked,
   onSelect,
+  onReact,
   onSummon,
 }: {
   x: Sentinel;
   st: SentinelState;
   on: boolean;
   now: number;
+  locked: boolean;
   onSelect: (id: string) => void;
+  onReact: (id: string) => void;
   onSummon: (id: string) => void;
 }) {
   const running = !!st.running;
@@ -328,6 +381,8 @@ function Card({
       aria-label={`${x.who}, ${x.name}. ${st.stars !== null ? `${st.stars} of 5 stars` : "Not audited"}`}
       aria-current={on || undefined}
       onClick={() => onSelect(x.id)}
+      onPointerEnter={() => onReact(x.id)}
+      onFocus={() => onReact(x.id)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -336,11 +391,12 @@ function Card({
       }}
       className={cn(
         "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-start flex-col overflow-hidden rounded-[14px] border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
+        !reported(st) && "sentinel-motion animate-[sentinelFade_0.4s_ease-out]",
         on ? "border-terracotta shadow-[0_0_0_3px_rgb(217_107_39/0.14)]" : "border-line",
       )}
     >
       <div className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden" style={{ background: portraitGround(x.id) }}>
-        <div className={cn("absolute inset-0", running && "sentinel-motion animate-[sentinelBob_0.9s_ease-in-out_infinite]")}>
+        <div className={cn("absolute inset-0", locked && "opacity-40 grayscale", running && "sentinel-motion animate-[sentinelBob_0.9s_ease-in-out_infinite]")}>
           <Portrait id={x.id} />
         </div>
         <span className="text-anthracite absolute top-2.5 left-2.5 rounded-full bg-white/90 px-2 py-1 font-mono text-[9px] font-medium tracking-[0.12em] uppercase">
@@ -389,26 +445,30 @@ function Card({
               </span>
             ) : done ? (
               <span className="text-muted font-mono text-[10px]">Audited {ago(st.at, now)}</span>
+            ) : locked ? (
+              <span className="text-muted text-[11px]">Unlocks at Lv {x.unlockLevel}</span>
             ) : (
               <span className="text-muted text-[11px]">Counts as 0★</span>
             )}
             <span className="grow" />
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSummon(x.id);
-              }}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96]",
-                done
-                  ? "border-line bg-cream text-ink hover:border-terracotta h-7 border px-2.5"
-                  : "bg-anthracite text-cream h-[30px] px-3",
-              )}
-            >
-              {!done && <PlayIcon size={10} />}
-              {done ? "Re-run" : "Summon"}
-            </button>
+            {!locked && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSummon(x.id);
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96]",
+                  done
+                    ? "border-line bg-cream text-ink hover:border-terracotta h-7 border px-2.5"
+                    : "bg-anthracite text-cream h-[30px] px-3",
+                )}
+              >
+                {!done && <PlayIcon size={10} />}
+                {done ? "Re-run" : "Summon"}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -423,7 +483,7 @@ const SECTIONS: Array<{ key: "likes" | "dislikes" | "wrong" | "missing"; title: 
   { key: "missing", title: "What's missing", ink: "var(--dot-idle)" },
 ];
 
-function Report({ x, st, now, onSummon }: { x: Sentinel; st: SentinelState; now: number; onSummon: () => void }) {
+function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelState; now: number; locked: boolean; onSummon: () => void }) {
   const running = !!st.running;
   const done = st.stars !== null && !!st.report;
   const first = x.who.split(" ").at(-1);
@@ -450,10 +510,10 @@ function Report({ x, st, now, onSummon }: { x: Sentinel; st: SentinelState; now:
         <button
           type="button"
           onClick={onSummon}
-          disabled={running}
+          disabled={running || locked}
           className="border-line bg-cream text-ink hover:border-terracotta h-8 rounded-lg border px-3 text-[12px] font-semibold active:scale-[0.96] disabled:opacity-60"
         >
-          {running ? "Running…" : st.stars !== null ? "Re-run" : "Summon"}
+          {running ? "Running…" : locked ? `Lv ${x.unlockLevel}` : st.stars !== null ? "Re-run" : "Summon"}
         </button>
       </div>
 
@@ -510,12 +570,15 @@ function Report({ x, st, now, onSummon }: { x: Sentinel; st: SentinelState; now:
       {!done && !running && (
         <div className="border-line-dashed flex flex-col gap-3 rounded-[10px] border border-dashed p-4">
           <span className="text-muted text-[13px] leading-normal text-pretty">
-            {x.who} hasn&apos;t audited this project yet, so this seat adds zero stars to the grade.
+            {locked
+              ? `${x.who} unlocks at colony Lv ${x.unlockLevel}, and counts toward the grade from then.`
+              : `${x.who} hasn't audited this project yet, so this seat adds zero stars to the grade.`}
           </span>
           <button
             type="button"
             onClick={onSummon}
-            className="bg-anthracite text-cream inline-flex h-9 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
+            disabled={locked}
+            className="bg-anthracite text-cream inline-flex h-9 disabled:opacity-50 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
           >
             <PlayIcon size={12} />
             Summon {first}

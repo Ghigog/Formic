@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useRef } from "react";
+import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
@@ -189,10 +190,11 @@ function BugBadge({ squashed }: { squashed: boolean }) {
 
 function SpikeBadge() {
   return (
-    <span className="oct bg-line inline-flex shrink-0 p-px">
+    <span data-spikeicon className="oct bg-line inline-flex shrink-0 p-px">
       <span className="oct text-ink inline-flex items-center gap-1 bg-cream py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
         <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <circle cx="4" cy="4" r="2.8" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M6.2 6.2 9 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
         </svg>
         SPIKE
       </span>
@@ -206,6 +208,16 @@ function CardBugBadge({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
   if (!isBug(card, env?.epics ?? NO_EPICS)) return null;
   return <BugBadge squashed={isSquashed(card)} />;
+}
+
+/** A small chess queen on a card a Queen was placed on. */
+function CardQueenMark({ card }: { card: BoardCard }) {
+  if (!card.queen) return null;
+  return (
+    <span data-queenmark role="img" aria-label="Queen placed" title="Queen placed" className="text-clay inline-flex shrink-0">
+      <QueenIcon size={12} />
+    </span>
+  );
 }
 
 /** The spike label, on any card that is a spike. */
@@ -457,6 +469,7 @@ function TicketHead({
       {card.status === "queued" && <QueueTimer card={card} />}
       <CardBugBadge card={card} />
       <CardSpikeBadge card={card} />
+        <CardQueenMark card={card} />
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
       <ProblemBadge card={card} />
@@ -500,6 +513,7 @@ function BacklogEpic({
         </CoinBadge>
         <CardBugBadge card={card} />
         <CardSpikeBadge card={card} />
+        <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <div className="flex-grow" />
         <ProblemBadge card={card} />
@@ -618,6 +632,9 @@ function QueuedCard({ card, column }: { card: BoardCard; column: ColumnId }) {
  * In Review
  * ---------------------------------------------------------------------- */
 
+/** Rebase & Merge: the stage a ticket waits in for its merge. */
+const MERGE_STAGE = 7;
+
 function ReviewCard({
   card,
   column,
@@ -632,6 +649,10 @@ function ReviewCard({
   const failed = extras.checks?.failed ?? 0;
   const passed = extras.checks?.passed ?? 0;
   const green = extras.ci === "passing" || (failed === 0 && passed > 0);
+  // Approved and waiting for the merge: the last stage, with the card still in review.
+  const merging = card.status === "review" && card.stage === MERGE_STAGE;
+  // A merge that failed rolls the card back with why; say it on the card.
+  const problem = cardProblem(card);
 
   return (
     <CardShell
@@ -656,6 +677,7 @@ function ReviewCard({
             CI running
           </StatusChip>
         )}
+        {merging && <StatusChip tone="clay">Merging</StatusChip>}
         {extras.reviewState && (
           <StatusChip tone="rust">{extras.reviewState}</StatusChip>
         )}
@@ -668,6 +690,12 @@ function ReviewCard({
           </span>
         )}
       </div>
+
+      {problem && (
+        <p data-testid="card-problem" className="text-ink text-[11px] leading-[1.5]">
+          <LinkifiedText text={problem} />
+        </p>
+      )}
 
       {extras.progress && (
         <ProgressBar
@@ -903,6 +931,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
         />
         <CardBugBadge card={card} />
         <CardSpikeBadge card={card} />
+        <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <ProblemBadge card={card} />
         <h4
@@ -943,6 +972,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
         <CardBugBadge card={card} />
         <CardSpikeBadge card={card} />
+        <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <h4 className="text-ink truncate text-[12px] font-medium">
           {card.title}
@@ -1041,6 +1071,7 @@ export function EpicGroup({
               >
                 EPIC
               </CoinBadge>
+              <CardQueenMark card={epic} />
               <span className="text-muted font-mono text-[10px]">
                 {done
                   ? `${epic.key} · ${epic.doneCount}/${epic.childCount} merged`

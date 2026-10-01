@@ -27,12 +27,13 @@ export interface TicketView {
   description: string;
   acceptanceCriteria: string[];
   branchName: string | null;
-  summary: string | null;
   dependsOn: Array<{ id: string; key: string; title: string; status: string }>;
   plan: PlanStep[];
   /** Steps outside the repository the person has to take themselves. */
   handoff: string[];
   activity: TicketActivity[];
+  /** What its agent runs have taken, against the budget they were given; null budget means none. */
+  usage: { usedMinutes: number; budgetMinutes: number | null };
   /** Whether an agent is working it now, so it can be stopped. */
   canStop: boolean;
 }

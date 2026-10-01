@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Account } from "@/components/board/account-menu";
 import { useSound } from "@/components/colony/store";
+import { BoardViewSection } from "@/components/settings/board-view-section";
+import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
+import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
+import type { LimitSetting } from "@/lib/budget/budget-for";
+import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
 interface KeyState {
   /** Last four characters of the saved key, or null with none saved. */
@@ -29,11 +34,19 @@ export function SettingsForm({
   installUrl,
   projects = [],
   e2b,
+  runTimeBudget,
+  limits,
+  renewal,
 }: {
   account: Account;
   installUrl: string | null;
   projects?: ProjectSetting[];
   e2b: KeyState;
+  /** Saved run time budget; the default when omitted. */
+  runTimeBudget?: RunTimeBudgetSettings;
+  limits?: { tokens: LimitSetting; attempts: LimitSetting };
+  /** Saved plan renewal day; none when omitted. */
+  renewal?: Renewal;
 }) {
   return (
     <div className="bg-cream min-h-dvh">
@@ -96,6 +109,8 @@ export function SettingsForm({
 
         <SoundSection />
 
+        <BoardViewSection />
+
         <KeyField
           field="e2bKey"
           title="Sandbox (E2B)"
@@ -105,6 +120,10 @@ export function SettingsForm({
           placeholder="e2b_…"
           state={e2b}
         />
+
+        <RunTimeBudgetSection initial={runTimeBudget} tokens={limits?.tokens} attempts={limits?.attempts} />
+
+        <RenewalDaySection initial={renewal} />
 
         <p className="text-muted px-1 text-[12px] leading-[1.5]">
           AI provider keys live on each agent, not here: pick or create one from

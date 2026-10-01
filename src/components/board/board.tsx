@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DragDropContext,
   type DragStart,
@@ -10,9 +10,14 @@ import {
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
 import { EMPTY_VIEW, type ColumnView } from "./view";
+import { loadBoardView } from "./view-setting";
+import { adjacentColumn, ownsGesture, swipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
+import { cardEl, colonyEl } from "@/components/colony/fx";
+import { ghostOf, type Ghost } from "@/components/colony/epic-flight";
+import { flyToNest } from "@/components/colony/archive-flight";
 import type { AgentPreset, BoardCard, ColumnAgents } from "@/lib/domain/entities";
 import type { Account } from "./account-menu";
 import type { AssistantControls } from "./assistant";
@@ -44,9 +49,6 @@ export interface BoardProps {
   extras?: ExtrasMap;
   projectName: string;
   repoFullName: string;
-  baseBranch: string;
-  inSync?: boolean;
-  syncedLabel?: string;
   onOpenCard: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
   /** Opens the capture dialog: a column's "New request" button, and the mobile CTA. */
@@ -58,6 +60,8 @@ export interface BoardProps {
   onTransition: (t: CardTransition) => Promise<TransitionResult>;
   /** A ticket was archived by dropping it on the archive drop zone. */
   onArchived?: (ticketId: string) => void;
+  /** Whether any column's filter selects Archived, so the caller can supply those cards. */
+  onArchivedWanted?: (wanted: boolean) => void;
   /** Who is signed in, for the header's account menu. */
   account?: Account;
   /** The board's assistant, in the header. */
@@ -76,20 +80,20 @@ export function Board({
   extras = {},
   projectName,
   repoFullName,
-  baseBranch,
-  inSync = true,
-  syncedLabel,
   onOpenCard,
   onShowcase,
   onNewItem,
   onTransition,
   onArchived,
+  onArchivedWanted,
   agents,
   account,
   assistant,
 }: BoardProps) {
   /** The ticket last dropped on the archive zone, which does the archiving. */
   const [dropped, setDropped] = useState<{ ticketId: string } | null>(null);
+  /** The dropped ticket as it last looked, for the crumble once it is archived. */
+  const archiveGhost = useRef<Ghost | null>(null);
   // Empty until a drop. Seeded with the cards, it pinned every card to how it
   // first rendered, so nothing the server said about it afterwards showed.
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
@@ -112,6 +116,26 @@ export function Board({
     in_review: EMPTY_VIEW,
     done: EMPTY_VIEW,
   }));
+
+  // The Settings choice seeds every column once mounted (not in useState's
+  // initialiser, which would differ from the server render).
+  useEffect(() => {
+    const saved = loadBoardView();
+    if (saved === EMPTY_VIEW) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is only readable after mount
+    setViews({
+      backlog: saved,
+      todo: saved,
+      in_progress: saved,
+      in_review: saved,
+      done: saved,
+    });
+  }, []);
+
+  const archivedWanted = COLUMNS.some((c) => views[c].types.includes("archived"));
+  useEffect(() => {
+    onArchivedWanted?.(archivedWanted);
+  }, [archivedWanted, onArchivedWanted]);
 
   const isMobile = useMediaQuery("(max-width: 767px)");
   const colony = useColony();
@@ -262,6 +286,24 @@ export function Board({
     [agents],
   );
 
+  /* A swipe on the mobile board: where the touch began, unless it is not ours. */
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const onSwipeStart = (e: React.TouchEvent<HTMLElement>) => {
+    const t = e.touches[0];
+    swipeStart.current =
+      t && e.touches.length === 1 && !ownsGesture(e.target, e.currentTarget)
+        ? { x: t.clientX, y: t.clientY }
+        : null;
+  };
+  const onSwipeEnd = (e: React.TouchEvent<HTMLElement>) => {
+    const start = swipeStart.current;
+    const t = e.changedTouches[0];
+    swipeStart.current = null;
+    if (!start || !t || document.querySelector("[role='dialog']")) return;
+    const direction = swipeDirection(t.clientX - start.x, t.clientY - start.y);
+    if (direction) setActiveTab((tab) => adjacentColumn(tab, direction));
+  };
+
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
 
   const columnElements = visibleColumns.map((col) => (
@@ -341,13 +383,35 @@ export function Board({
       const card = live.find((c) => c.id === draggableId);
       if (!card) return;
       if (destination.droppableId === ARCHIVE_DROPPABLE_ID) {
-        if (card.kind === "ticket") setDropped({ ticketId: card.id });
+        if (card.kind === "ticket") {
+          const el = cardEl(card.id);
+          archiveGhost.current = colony && el ? ghostOf(el) : null;
+          setDropped({ ticketId: card.id });
+        }
         return;
       }
       void commit(card, destination.droppableId as ColumnId, destination.index);
     },
     [commit, live, colony],
   );
+
+  /**
+   * The crumble starts over the card in the same frame the board removes it,
+   * so it never flashes. A failed archive never gets here, and plays nothing.
+   */
+  const archived = (id: string) => {
+    // The drag library has put the card back by now: ghost it as it sits.
+    const el = cardEl(id);
+    const ghost = el?.isConnected ? ghostOf(el) : archiveGhost.current;
+    archiveGhost.current = null;
+    if (colony && ghost) {
+      void flyToNest(ghost, colonyEl("nest"), {
+        reduced: colony.fx.reducedMotion,
+        onCrumble: () => colony.sfx("crumble"),
+      });
+    }
+    onArchived?.(id);
+  };
 
   const epicsById = useMemo(
     () => new Map(live.filter((c) => c.kind === "epic").map((c) => [c.id, c])),
@@ -386,46 +450,39 @@ export function Board({
       <BoardHeader
         projectName={projectName}
         repoFullName={repoFullName}
-        baseBranch={baseBranch}
-        inSync={inSync}
-        syncedLabel={syncedLabel}
-        onNewItem={onNewItem}
         account={account}
         assistant={assistant}
       />
 
-      {/* Sticky column tabs. Replaces the 5-column layout below 768px. */}
-      <nav
+      {/* Where the board is below 768px: one column shows, a swipe changes it. */}
+      <ul
         aria-label="Columns"
         className="border-line bg-cream flex h-13 shrink-0 items-center gap-2 overflow-x-auto border-b px-4 md:hidden"
       >
         {COLUMNS.map((col) => {
           const active = activeTab === col;
           return (
-            <button
+            <li
               key={col}
-              type="button"
-              onClick={() => setActiveTab(col)}
               aria-current={active ? "true" : undefined}
-              className="inline-flex h-11 shrink-0 items-center"
+              className={cn(
+                "inline-flex h-9 shrink-0 items-center rounded-full text-[13px] whitespace-nowrap",
+                active
+                  ? "bg-anthracite text-cream px-3.5 font-semibold"
+                  : "border-line bg-card text-muted border px-3 font-medium",
+              )}
             >
-              <span
-                className={cn(
-                  "inline-flex h-9 items-center rounded-full text-[13px] whitespace-nowrap",
-                  active
-                    ? "bg-anthracite text-cream px-3.5 font-semibold"
-                    : "border-line bg-card text-muted border px-3 font-medium",
-                )}
-              >
-                {COLUMN_LABELS[col]}{" "}
-                <span className="ml-1 tabular-nums">
-                  {columnCount(byColumn[col], col)}
-                </span>
+              {COLUMN_LABELS[col]}{" "}
+              <span className="ml-1 tabular-nums">
+                {columnCount(byColumn[col], col)}
               </span>
-            </button>
+            </li>
           );
         })}
-      </nav>
+      </ul>
+      <p aria-live="polite" className="sr-only md:hidden">
+        {COLUMN_LABELS[activeTab]}
+      </p>
 
       {error && (
         <div
@@ -440,9 +497,12 @@ export function Board({
       <DragDropContext onDragStart={onDragStart} onDragUpdate={onDragUpdate} onDragEnd={onDragEnd}>
         <main
           data-colony="board"
+          onTouchStart={isMobile ? onSwipeStart : undefined}
+          onTouchEnd={isMobile ? onSwipeEnd : undefined}
+          onTouchCancel={isMobile ? () => (swipeStart.current = null) : undefined}
           className={cn(
             "relative flex min-h-0 flex-1",
-            isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
+            isMobile ? "touch-pan-y flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
           )}
         >
           {dragSnapshot ?? columnElements}
@@ -450,7 +510,7 @@ export function Board({
             <ArchiveDropZone
               dragging={dragSnapshot !== null}
               dropped={dropped}
-              onArchived={(id) => onArchived?.(id)}
+              onArchived={archived}
             />
           )}
         </main>

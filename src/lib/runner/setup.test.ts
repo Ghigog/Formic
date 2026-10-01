@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runnerSetup } from "./setup";
-import { RUNNER_SETUP_BRANCH, RUNNER_WORKFLOW_PATH, runnerWorkflow } from "./workflow";
+import { RUNNER_SETUP_BRANCH, RUNNER_SETUP_PREFIX, RUNNER_WORKFLOW_PATH, runnerWorkflow } from "./workflow";
 import { repository } from "@/lib/db";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, VcsError, resetVcs, setVcs } from "@/lib/vcs";
@@ -51,6 +51,36 @@ describe("runner setup", () => {
     await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, "name: Formic agent\n", "old");
 
     expect(await runnerSetup(project)).toMatchObject({ state: "waiting", update: true });
+  });
+
+  it("closes a setup pull request left over from an older workflow version", async () => {
+    const project = await repository().defaultProject();
+    const old = await client.openPullRequest({
+      headBranch: `${RUNNER_SETUP_PREFIX}000000000000`,
+      baseBranch: project.baseBranch,
+      title: "Let Formic run agents in GitHub Actions",
+      body: "",
+    });
+
+    const setup = await runnerSetup(project);
+
+    expect((await client.pullRequest(old.number)).state).toBe("closed");
+    expect(setup).toMatchObject({ state: "waiting" });
+    expect(setup.state === "waiting" && setup.setupUrl).not.toBe(old.url);
+  });
+
+  it("closes a stale setup pull request even when the workflow is already current", async () => {
+    const project = await repository().defaultProject();
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "merged");
+    const old = await client.openPullRequest({
+      headBranch: `${RUNNER_SETUP_PREFIX}000000000000`,
+      baseBranch: project.baseBranch,
+      title: "Let Formic run agents in GitHub Actions",
+      body: "",
+    });
+
+    expect(await runnerSetup(project)).toEqual({ state: "ready" });
+    expect((await client.pullRequest(old.number)).state).toBe("closed");
   });
 
   it("says what permission is missing when GitHub refuses", async () => {

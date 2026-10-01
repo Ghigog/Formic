@@ -161,7 +161,7 @@ describe("the coding loop on an OpenAI-format provider", () => {
 
     expect(outcome).toMatchObject({ ok: true, value: { summary: "added x" } });
     expect(await raw.readFile("src/app/x.ts")).toBe("export {};\n");
-    expect(sent[0]!.url).toBe("https://api.deepseek.com/v1/chat/completions");
+    expect(sent[0]!.url).toBe("https://api.deepseek.com/chat/completions");
     expect(sent[0]!.auth).toBe("Bearer sk-deepseek");
     // The tool result goes back as a tool message tied to the call.
     const second = sent[1]!.body.messages as Array<{ role: string; tool_call_id?: string }>;
@@ -415,6 +415,22 @@ describe("structured answers from OpenAI-format providers", () => {
     expect(outcome.ok).toBe(true);
     const retry = sent[1]!.body.messages as Array<{ role: string; content: string }>;
     expect(retry.at(-1)?.content).toContain("not safe to run");
+  });
+
+  it("stalls naming the attempts the person allows, three by default", async () => {
+    const bad = { role: "assistant", content: JSON.stringify({ tickets: [] }) };
+    const agent = new OpenAiArchitectAgent({ provider: "openai", model: "m", apiKey: "sk" });
+    const input = { epicId: "e", title: "t", prd: PRD, repoTree: ["src"] };
+
+    const sent = fakeProvider([bad, bad, bad]);
+    const byDefault = await agent.decompose(ctx(), input);
+    expect(sent).toHaveLength(3);
+    expect(byDefault.ok === false && byDefault.error).toContain("in 3 attempts");
+
+    const flat = fakeProvider([bad, bad, bad]);
+    const two = await agent.decompose(ctx(), { ...input, maxAttempts: 2 });
+    expect(flat).toHaveLength(2);
+    expect(two.ok === false && two.error).toContain("in 2 attempts");
   });
 });
 

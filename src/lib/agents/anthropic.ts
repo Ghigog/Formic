@@ -20,6 +20,7 @@ import type {
 } from "./ports";
 import { decompositionGuidance } from "./decomposition-guidance";
 import { type Prd, prdSchema } from "@/lib/domain/entities";
+import { ATTEMPT_DEFAULTS } from "@/lib/budget/budget-for";
 import { estimateCostCents } from "@/lib/budget/limits";
 import { env } from "@/lib/secrets/env";
 import { authMode } from "@/lib/auth/session";
@@ -31,7 +32,6 @@ import {
   withProductConventions,
 } from "./prompts";
 import {
-  MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
   ticketOrRerouteSchema,
@@ -280,8 +280,10 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
       repoTree: string[];
       existing?: ExistingTicket[];
       instructions?: string[];
+      maxAttempts?: number;
     },
   ): Promise<AgentOutcome<DraftTicket[]>> {
+    const maxAttempts = input.maxAttempts ?? ATTEMPT_DEFAULTS.decomposition;
     const model = this.config.model ?? MODELS.architect;
     const shape = requestShape(model, { effort: "medium" });
     const messages: Anthropic.Beta.BetaMessageParam[] = [
@@ -302,7 +304,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
 
     let total: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
 
-    for (let attempt = 1; attempt <= MAX_DECOMPOSITION_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (ctx.signal.aborted) {
         return failure(model, "Run stopped before decomposition finished.", true, total);
       }
@@ -313,7 +315,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         ticketId: null,
         role: "architect",
         label: attempt === 1 ? "Decomposing epic" : `Correcting the graph (attempt ${attempt})`,
-        fraction: attempt / MAX_DECOMPOSITION_ATTEMPTS,
+        fraction: attempt / maxAttempts,
       });
 
       let message: Anthropic.Beta.BetaMessage;
@@ -369,7 +371,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
 
     return failure(
       model,
-      `The Architect Agent could not produce a valid dependency graph in ${MAX_DECOMPOSITION_ATTEMPTS} attempts. This Epic needs a human to split it.`,
+      `The Architect Agent could not produce a valid dependency graph in ${maxAttempts} attempts. This Epic needs a human to split it.`,
       true,
       total,
     );

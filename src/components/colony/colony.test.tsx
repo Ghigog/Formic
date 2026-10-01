@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { ColonyProvider, crewPhase } from "./colony";
+import { ColonyProvider, crewPhase, levelUpText } from "./colony";
+import { SENTINEL_UNLOCKS } from "@/lib/colony/game";
 import { SoundEngine } from "./sound";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
@@ -87,12 +88,55 @@ describe("ColonyProvider bug squash", () => {
   });
 });
 
+describe("the done animation", () => {
+  async function statusChanges(...statuses: Array<[string, number]>) {
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const play = vi.spyOn(SoundEngine.prototype, "play");
+    const dings = () => play.mock.calls.filter(([name]) => name === "ding").length;
+    const card = makeCard({ status: "review", stage: 6, prNumber: 3 });
+    const tree = (c: typeof card) => (
+      <ColonyProvider storageKey="colony-test-done-anim" cards={[c] as never} extras={{}}>
+        <div data-tid={card.id} />
+      </ColonyProvider>
+    );
+    const { rerender } = render(tree(card));
+    await flushFrame();
+    const seen: number[] = [];
+    for (const [status, stage] of statuses) {
+      rerender(tree({ ...card, status: status as never, stage }));
+      await flushFrame();
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 100));
+      });
+      seen.push(dings());
+    }
+    return seen;
+  }
+
+  it("plays only once the ticket becomes merged, not while it waits in Merging", async () => {
+    const [merging, merged] = await statusChanges(["review", 7], ["merged", 8]);
+    expect(merging).toBe(0);
+    expect(merged).toBeGreaterThan(0);
+  });
+
+  it("does not play when a merge fails", async () => {
+    const [failed] = await statusChanges(["blocked", 6]);
+    expect(failed).toBe(0);
+  });
+});
+
 describe("crewPhase", () => {
   const since = "2024-01-01T00:00:00.000Z";
 
   it("sends a crew only to a running card an agent is really on", () => {
     expect(crewPhase(makeCard({ status: "running", workingSince: since }), {})).toBe("work");
     expect(crewPhase(makeCard({ status: "running", workingSince: null }), {})).toBeNull();
+  });
+
+  it("keeps a queue crew on a card that starts running before its run attaches", () => {
+    const running = makeCard({ status: "running", workingSince: null });
+    expect(crewPhase(running, {}, true)).toBe("work");
+    expect(crewPhase(running, {}, false)).toBeNull();
   });
 
   it("tunnels in review while CI runs or the reviewer works, and rests otherwise", () => {
@@ -135,5 +179,13 @@ describe("crewPhase", () => {
   it("leaves a merged Epic alone, whoever is talking about it", () => {
     const done = makeCard({ kind: "epic", status: "merged" });
     expect(crewPhase(done, { [done.id]: { answering: true } })).toBeNull();
+  });
+});
+
+describe("levelUpText", () => {
+  it("names the Sentinel a level unlocks and the Queen", () => {
+    const text = levelUpText(SENTINEL_UNLOCKS[0]!.lv);
+    expect(text).toContain(SENTINEL_UNLOCKS[0]!.label);
+    expect(text).toContain("Queen");
   });
 });

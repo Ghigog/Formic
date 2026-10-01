@@ -32,9 +32,9 @@ const VIEW: TicketView = {
   ].join("\n"),
   acceptanceCriteria: ["Given a board, when I export it, then I get a CSV."],
   branchName: null,
-  summary: null,
   dependsOn: [],
   handoff: [],
+  usage: { usedMinutes: 12, budgetMinutes: 20 },
   plan: [
     { step: "Read the board model", status: "done" },
     { step: "Add the endpoint", status: "in_progress" },
@@ -61,9 +61,67 @@ function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
     return () => listeners.delete(l);
   };
   const onOpenEpic = vi.fn();
-  render(<TicketDrawer ticketId="t-1" onClose={() => {}} onOpenEpic={onOpenEpic} subscribe={subscribe} />);
+  const onOpenTicket = vi.fn();
+  render(
+    <TicketDrawer
+      ticketId="t-1"
+      onClose={() => {}}
+      onOpenEpic={onOpenEpic}
+      onOpenTicket={onOpenTicket}
+      subscribe={subscribe}
+    />,
+  );
   const send = (e: FormicEvent, seq: number) => act(() => listeners.forEach((l) => l(e, seq)));
-  return { send, onOpenEpic };
+  return { send, onOpenEpic, onOpenTicket };
+}
+
+describe("TicketDrawer work type", () => {
+  const todoView = (workType: TicketView["card"]["workType"] = null): TicketView => ({
+    ...VIEW,
+    card: { ...card, status: "ready", workType },
+  });
+
+  it("offers Bug and Spike only while the ticket is in To Do", async () => {
+    open();
+    await screen.findByText("Export endpoint");
+    expect(screen.queryByRole("group", { name: "Work type" })).not.toBeInTheDocument();
+  });
+
+  it("presses Bug by sending the PATCH, and sends null when it is pressed again", async () => {
+    const { fetched } = openTodo(todoView("bug"));
+    const group = await screen.findByRole("group", { name: "Work type" });
+    const bug = within(group).getByRole("button", { name: "bug" });
+    expect(bug).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/Tagged as bug · −5 points/)).toBeInTheDocument();
+    fireEvent.click(bug);
+    await vi.waitFor(() =>
+      expect(fetched).toContainEqual(["/api/tickets/t-1", "PATCH", JSON.stringify({ workType: null })]),
+    );
+    fireEvent.click(within(group).getByRole("button", { name: "spike" }));
+    await vi.waitFor(() =>
+      expect(fetched).toContainEqual(["/api/tickets/t-1", "PATCH", JSON.stringify({ workType: "spike" })]),
+    );
+  });
+});
+
+function openTodo(view: TicketView) {
+  const fetched: Array<[string, string, string | undefined]> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (init?.method === "PATCH") {
+        fetched.push([url, "PATCH", init.body as string]);
+        return Response.json({ ok: true });
+      }
+      if (url.includes("/api/attachments")) return Response.json({ attachments: [] });
+      return Response.json(view);
+    }),
+  );
+  render(
+    <TicketDrawer ticketId="t-1" onClose={() => {}} onOpenEpic={() => {}} onOpenTicket={() => {}} subscribe={() => () => {}} />,
+  );
+  return { fetched };
 }
 
 describe("TicketDrawer", () => {
@@ -142,6 +200,29 @@ describe("TicketDrawer", () => {
     const { onOpenEpic } = open();
     (await screen.findByRole("button", { name: /EPIC-1: Board export/ })).click();
     expect(onOpenEpic).toHaveBeenCalledWith("e-1");
+  });
+
+  it("lists what it waits on as buttons that open that ticket", async () => {
+    const dep = (id: string, key: string, title: string) => ({ id, key, title, status: "running" });
+    const { onOpenTicket } = open({
+      ...VIEW,
+      dependsOn: [dep("t-8", "T-8", "Schema"), dep("t-9", "T-9", "Auth")],
+    });
+    (await screen.findByRole("button", { name: /T-9.*Auth/ })).click();
+    expect(onOpenTicket).toHaveBeenCalledWith("t-9");
+    expect(screen.getByRole("button", { name: /T-8.*Schema/ })).toBeInTheDocument();
+  });
+
+  it("shows no Waits on section without dependencies", async () => {
+    open();
+    await screen.findByRole("button", { name: /EPIC-1: Board export/ });
+    expect(screen.queryByText("Waits on")).not.toBeInTheDocument();
+  });
+
+  it("shows no What the agent changed section for a ticket that has been run", async () => {
+    open({ ...VIEW, summary: "Added the CSV endpoint." } as TicketView);
+    await screen.findByRole("button", { name: /EPIC-1: Board export/ });
+    expect(screen.queryByText("What the agent changed")).not.toBeInTheDocument();
   });
 
   it("says nothing about a reroute for a ticket that was never moved", async () => {

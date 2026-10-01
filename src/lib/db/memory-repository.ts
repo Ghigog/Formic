@@ -14,6 +14,7 @@ import type {
   PresetRecord,
   ProjectSummary,
   Reroute,
+  LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
   UserSecrets,
@@ -26,15 +27,20 @@ import type {
   AuditRecord,
   AuditResult,
   CardChatMessage,
+  QueenRecord,
 } from "./repository";
 import type {
   AgentPreset,
   AgentRunStatus,
   AttachmentSummary,
   BoardCard,
+  CardKind,
   ColumnAgents,
+  ColumnOverride,
+  ColumnOverrides,
   PlanStep,
 } from "@/lib/domain/entities";
+import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -107,6 +113,10 @@ interface Store {
   epicNumbers: Map<string, number>;
   /** The highest standalone ticket number each project has used, deleted ones included. */
   standaloneTicketNumbers: Map<string, number>;
+  /** Card id to the Queen on it. */
+  queens: Map<string, QueenRecord>;
+  /** Queens each project has taken off, by project id. */
+  queensSpent: Map<string, number>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -119,6 +129,7 @@ interface Store {
     RunRecord & {
       status: AgentRunStatus;
       startedAt: Date;
+      finishedAt?: Date | null;
       costCents: number;
       error: string | null;
       /** What it used, so an agent's own tokens can be summed from here. */
@@ -131,6 +142,8 @@ interface Store {
   users: Map<string, UserRecord>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
+  /** `${projectId}:${column}` to that column agent's override. */
+  columnOverrides: Map<string, ColumnOverride>;
   assistant: AssistantMessage[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
@@ -147,9 +160,12 @@ function store(): Store {
     // A store from before presets existed survives a dev-server reload.
     existing.presets ??= new Map();
     existing.columnAgents ??= new Map();
+    existing.columnOverrides ??= new Map();
     existing.users ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
+    existing.queens ??= new Map();
+    existing.queensSpent ??= new Map();
     existing.prdTimes ??= new Map();
     existing.epicJobTimes ??= new Map();
     existing.epicJobAgents ??= new Map();
@@ -181,12 +197,15 @@ function store(): Store {
     epicIssues: new Map(),
     epicNumbers: new Map(),
     standaloneTicketNumbers: new Map(),
+    queens: new Map(),
+    queensSpent: new Map(),
     events: [],
     runs: new Map(),
     deliveries: new Set(),
     presets: new Map(),
     users: new Map(),
     columnAgents: new Map(),
+    columnOverrides: new Map(),
     assistant: [],
     cardChat: [],
     attachments: new Map(),
@@ -277,6 +296,11 @@ export class MemoryRepository implements Repository {
       runTimeBudgetMode: "PER_STORY_POINT",
       runTimeBudgetFlatMinutes: null,
       runTimeBudgetPerPointMinutes: null,
+      tokenLimit: null,
+      attemptLimit: null,
+      tokenRenewalDay: null,
+      tokenWindowTimezone: null,
+      tokenResetAt: null,
     };
     s.users.set(user.id, user);
     return user;
@@ -293,6 +317,31 @@ export class MemoryRepository implements Repository {
     const user = store().users.get(userId);
     if (!user) throw new Error(`No user ${userId}.`);
     Object.assign(user, columns);
+    return user;
+  }
+
+  async updateLimits(userId: string, columns: LimitColumns): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    if (columns.tokenLimit !== undefined) user.tokenLimit = columns.tokenLimit;
+    if (columns.attemptLimit !== undefined) user.attemptLimit = columns.attemptLimit;
+    return user;
+  }
+
+  async updateTokenRenewal(
+    userId: string,
+    renewal: { tokenRenewalDay: number | null; tokenWindowTimezone: string | null },
+  ): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    Object.assign(user, renewal);
+    return user;
+  }
+
+  async stampTokenReset(userId: string, at: Date): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    user.tokenResetAt = at;
     return user;
   }
 
@@ -347,12 +396,16 @@ export class MemoryRepository implements Repository {
       for (const key of [...s.columnAgents.keys()]) {
         if (key.startsWith(`${projectId}:`)) s.columnAgents.delete(key);
       }
+      for (const key of [...s.columnOverrides.keys()]) {
+        if (key.startsWith(`${projectId}:`)) s.columnOverrides.delete(key);
+      }
       s.events = s.events.filter((e) => e.projectId !== projectId);
       s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
       s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
       s.audits = s.audits.filter((a) => a.projectId !== projectId);
       s.epicNumbers.delete(projectId);
       s.standaloneTicketNumbers.delete(projectId);
+      s.queensSpent.delete(projectId);
       s.projects.delete(projectId);
     }
     for (const preset of [...s.presets.values()]) {
@@ -395,6 +448,31 @@ export class MemoryRepository implements Repository {
     return card ? projectOf(s, card) : null;
   }
 
+  async placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null> {
+    const s = store();
+    if (s.queens.has(cardId)) return null;
+    const queen = { projectId, cardId, kind, placedAt: new Date() };
+    s.queens.set(cardId, queen);
+    return queen;
+  }
+
+  async listQueens(projectId: string): Promise<QueenRecord[]> {
+    return [...store().queens.values()].filter((q) => q.projectId === projectId);
+  }
+
+  async clearQueen(cardId: string): Promise<boolean> {
+    const s = store();
+    const queen = s.queens.get(cardId);
+    if (!queen) return false;
+    s.queens.delete(cardId);
+    s.queensSpent.set(queen.projectId, (s.queensSpent.get(queen.projectId) ?? 0) + 1);
+    return true;
+  }
+
+  async queensSpent(projectId: string): Promise<number> {
+    return store().queensSpent.get(projectId) ?? 0;
+  }
+
   async boardCards(projectId?: string): Promise<BoardCard[]> {
     const s = store();
     const cards = [...s.cards.values()].filter(
@@ -408,6 +486,7 @@ export class MemoryRepository implements Repository {
       if (id) live.set(id, { role: run.role, since: run.startedAt });
     }
     for (const card of cards) {
+      card.queen = s.queens.has(card.id);
       // An agent at work: a run here, or a CLI agent's job on GitHub Actions,
       // whose run here ends at dispatch.
       const job =
@@ -734,6 +813,7 @@ export class MemoryRepository implements Repository {
     const s = store();
     for (const id of ticketIds) {
       s.cards.delete(id);
+      s.queens.delete(id);
       s.ticketExtras.delete(id);
     }
     for (const card of s.cards.values()) {
@@ -749,6 +829,7 @@ export class MemoryRepository implements Repository {
     for (const card of [...s.cards.values()]) {
       if (card.epicId !== epicId) continue;
       s.cards.delete(card.id);
+      s.queens.delete(card.id);
       s.ticketExtras.delete(card.id);
     }
     for (const card of s.cards.values()) {
@@ -760,6 +841,7 @@ export class MemoryRepository implements Repository {
       }
     }
     s.cards.delete(epicId);
+    s.queens.delete(epicId);
     s.epicProject.delete(epicId);
     s.rawRequests.delete(epicId);
     s.prds.delete(epicId);
@@ -860,6 +942,7 @@ export class MemoryRepository implements Repository {
     const card = s.cards.get(ticketId);
     if (!card) return;
 
+    if (update.workType !== undefined) card.workType = update.workType;
     if (update.status !== undefined && update.status !== card.status) {
       card.updatedAt = new Date().toISOString();
       if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
@@ -951,11 +1034,20 @@ export class MemoryRepository implements Repository {
     const run = store().runs.get(runId);
     if (run) {
       run.status = outcome.status;
+      run.finishedAt = new Date();
       run.error = outcome.error;
       run.costCents = outcome.costCents;
       run.tokensIn = outcome.tokensIn;
       run.tokensOut = outcome.tokensOut;
+      run.finishedAt = new Date();
     }
+  }
+
+  async ticketRunMs(ticketId: string): Promise<number> {
+    const now = Date.now();
+    return [...store().runs.values()]
+      .filter((r) => r.ticketId === ticketId)
+      .reduce((sum, r) => sum + ((r.finishedAt?.getTime() ?? now) - r.startedAt.getTime()), 0);
   }
 
   async unfinishedRuns(
@@ -979,6 +1071,18 @@ export class MemoryRepository implements Repository {
       if (run.epicId === epicId) total += run.costCents;
     }
     return total;
+  }
+
+  async epicRunStats(epicId: string): Promise<{ elapsedMs: number; attempts: number }> {
+    const now = Date.now();
+    let elapsedMs = 0;
+    let attempts = 0;
+    for (const run of store().runs.values()) {
+      if (run.epicId !== epicId) continue;
+      elapsedMs += (run.finishedAt?.getTime() ?? now) - run.startedAt.getTime();
+      if (run.status === "failed" || run.status === "blocked") attempts += 1;
+    }
+    return { elapsedMs, attempts };
   }
 
   async agentTokensByPreset(
@@ -1019,6 +1123,7 @@ export class MemoryRepository implements Repository {
             : projectOfRun(s, run) === scope.projectId;
       if (!matches) continue;
       run.status = "cancelled";
+      run.finishedAt = new Date();
       run.error = reason;
       cancelled.push({ id: run.id, sandboxId: run.sandboxId });
     }
@@ -1050,6 +1155,8 @@ export class MemoryRepository implements Repository {
       error: null,
       model: null,
       files: [],
+      runnerJob: null,
+      runnerAgent: null,
       startedAt: new Date(),
       finishedAt: null,
     };
@@ -1059,6 +1166,11 @@ export class MemoryRepository implements Repository {
 
   async logAudit(id: string, step: string): Promise<void> {
     store().audits.find((a) => a.id === id)?.log.push(step);
+  }
+
+  async setAuditJob(id: string, job: string | null, agent: string | null): Promise<void> {
+    const audit = store().audits.find((a) => a.id === id);
+    if (audit) Object.assign(audit, { runnerJob: job, runnerAgent: agent });
   }
 
   async finishAudit(id: string, result: AuditResult): Promise<void> {
@@ -1074,6 +1186,8 @@ export class MemoryRepository implements Repository {
       error: result.error ?? null,
       model: result.model ?? null,
       files: result.files ?? [],
+      runnerJob: null,
+      runnerAgent: null,
       finishedAt: new Date(),
     });
     s.audits = s.audits.filter(
@@ -1127,6 +1241,8 @@ export class MemoryRepository implements Repository {
       // A new key is likely a new account, with its own usage.
       limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,
       limitNote: keep ? (existing?.limitNote ?? null) : null,
+      tokenAllowance: existing?.tokenAllowance ?? null,
+      tokenAllowanceWindowDays: existing?.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS,
     };
     row.hasKey = row.apiKeyCipher !== null;
     s.presets.set(row.id, row);
@@ -1143,7 +1259,38 @@ export class MemoryRepository implements Repository {
   async deletePreset(presetId: string): Promise<void> {
     const s = store();
     s.presets.delete(presetId);
-    for (const [k, v] of s.columnAgents) if (v === presetId) s.columnAgents.delete(k);
+    for (const [k, v] of s.columnAgents) {
+      if (v !== presetId) continue;
+      s.columnAgents.delete(k);
+      s.columnOverrides.delete(k);
+    }
+  }
+
+  async setPresetAllowance(
+    presetId: string,
+    allowance: { tokens: number | null; windowDays: number | null },
+  ): Promise<void> {
+    const row = store().presets.get(presetId);
+    if (!row) return;
+    row.tokenAllowance = allowance.tokens;
+    row.tokenAllowanceWindowDays = allowance.windowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS;
+  }
+
+  async columnOverrides(projectId: string): Promise<ColumnOverrides> {
+    const out: ColumnOverrides = {};
+    for (const [k, v] of store().columnOverrides) {
+      const [p, column] = k.split(":");
+      if (p === projectId) out[column as ColumnId] = { ...v };
+    }
+    return out;
+  }
+
+  async setColumnOverride(projectId: string, column: ColumnId, override: ColumnOverride): Promise<boolean> {
+    const s = store();
+    const key = `${projectId}:${column}`;
+    if (!s.columnAgents.has(key)) return false;
+    s.columnOverrides.set(key, { ...override });
+    return true;
   }
 
   async columnAgents(projectId: string): Promise<ColumnAgents> {
@@ -1162,8 +1309,10 @@ export class MemoryRepository implements Repository {
     presetId: string | null,
   ): Promise<void> {
     const s = store();
-    if (presetId === null) s.columnAgents.delete(`${projectId}:${column}`);
-    else s.columnAgents.set(`${projectId}:${column}`, presetId);
+    if (presetId === null) {
+      s.columnAgents.delete(`${projectId}:${column}`);
+      s.columnOverrides.delete(`${projectId}:${column}`);
+    } else s.columnAgents.set(`${projectId}:${column}`, presetId);
   }
 
   async assistantAgent(projectId: string): Promise<string | null> {
@@ -1285,6 +1434,19 @@ export class MemoryRepository implements Repository {
     return store()
       .cardChat.filter(
         (m) => m.projectId === projectId && m.status === "pending" && !m.runnerJob && m.createdAt < olderThan,
+      )
+      .map((m) => ({ ...m }));
+  }
+
+  async orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]> {
+    return store()
+      .assistant.filter(
+        (m) =>
+          m.projectId === projectId &&
+          m.role === "assistant" &&
+          m.status === "pending" &&
+          !m.runnerJob &&
+          m.createdAt < olderThan,
       )
       .map((m) => ({ ...m }));
   }

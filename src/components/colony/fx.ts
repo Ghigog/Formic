@@ -143,6 +143,8 @@ interface Crew {
   sp: number;
   phase: CrewPhase;
   ants: Ant[];
+  /** Its card is not rendered (hidden tab): not stepped, not drawn, not clickable. */
+  paused?: boolean;
 }
 interface Trail {
   cv: HTMLCanvasElement;
@@ -178,6 +180,10 @@ export function cssAlpha(color: string, alpha: number): string {
   const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
   if (!m) return hex;
   return `rgba(${parseInt(m[1]!, 16)},${parseInt(m[2]!, 16)},${parseInt(m[3]!, 16)},${alpha})`;
+}
+
+function cardWidth(id: string): number {
+  return cardEl(id)?.getBoundingClientRect().width ?? 0;
 }
 
 export function cardEl(id: string): HTMLElement | null {
@@ -225,6 +231,11 @@ export function visibleRects(clip: ClipRect, masks: ClipRect[]): ClipRect[] {
     pieces = next;
   }
   return pieces;
+}
+
+/** Where ants in transit between nest and column may be drawn: the whole viewport, masks included, so they are seen entering and leaving the nest. */
+export function travelRects(viewport: ClipRect): ClipRect[] {
+  return [viewport];
 }
 
 export function insideRect(x: number, y: number, r: ClipRect): boolean {
@@ -712,6 +723,7 @@ export class ColonyFx {
     }
     const crews = [...this.crewMap.values()];
     for (let i = crews.length - 1; i >= 0; i--) {
+      if (crews[i]!.paused) continue;
       const ants = crews[i]!.ants;
       for (let j = ants.length - 1; j >= 0; j--) {
         const a = ants[j]!;
@@ -1194,7 +1206,9 @@ export class ColonyFx {
       for (const [id, w] of want) {
         if (
           (w.phase === "work" || w.phase === "queue" || w.phase === "tunnel" || w.phase === "read") &&
-          !this.crewMap.has(id)
+          !this.crewMap.has(id) &&
+          // A card on a hidden tab has no element; its crew spawns when it renders.
+          cardWidth(id) > 0
         ) {
           this.spawnCrew(id, w.sp, w.phase);
         }
@@ -1209,10 +1223,14 @@ export class ColonyFx {
       const r = rr && rr.width > 0 ? rr : null;
       if (w) c.sp = w.sp;
       if (d !== c.phase) this.transition(c, d, r);
+      // A wanted card that is merely not rendered (a hidden tab): keep the
+      // crew as it is, undrawn, until the card comes back.
+      c.paused = !r && !!w && d !== "leave" && d !== "buried";
+      if (c.paused) continue;
       const col = el?.closest("[data-colony-clip]")?.getBoundingClientRect();
       const clip = col ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
       const visible = visibleRects(clip, masks);
-      const travelling = visibleRects({ left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }, masks);
+      const travelling = travelRects({ left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight });
       for (const ant of c.ants) this.stepCrewAnt(c, ant, r, el, dt, nx, ny, ctx, visible, travelling, clip);
       c.ants = c.ants.filter((a) => !a.gone);
       const pg = el?.querySelector<SVGElement>("[data-sp] polygon");

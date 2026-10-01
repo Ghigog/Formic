@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ATTEMPT_DEFAULTS } from "@/lib/budget/budget-for";
 import { runCoderAgent } from "./pipeline";
 import { setCheckoutFactory } from "./checkout";
 import {
-  MAX_REVIEWS,
   resetPullRequestSweep,
   reviewPullRequest,
+  startShowcase,
   sweepOpenPullRequests,
 } from "@/lib/review/pipeline";
 import { projectFor } from "@/lib/board/project";
@@ -304,11 +305,12 @@ describe("the Coder Agent pipeline", () => {
       return t?.status === "merged";
     }, "the ticket to merge");
 
-    // Every ticket under the Epic has merged, so PROT-08's showcase runs.
+    // Every ticket under the Epic has merged, so the Epic is done. Its
+    // showcase waits until someone asks for it.
     await until(async () => {
       const epic = await repository().cardById(ticket.epicId);
-      return epic?.stage === 8;
-    }, "the Epic showcase");
+      return epic?.status === "merged";
+    }, "the Epic to be done");
   });
 
   it("carries steps outside the repository through to the Epic's showcase", async () => {
@@ -319,9 +321,11 @@ describe("the Coder Agent pipeline", () => {
     await runCoderAgent(PROJECT, ticket.id);
     expect((await repository().ticketDetail(ticket.id))!.handoff).toEqual([step]);
 
-    await until(async () => (await repository().cardById(ticket.epicId))?.stage === 8, "the Epic showcase");
+    await until(async () => (await repository().cardById(ticket.epicId))?.status === "merged", "the Epic to be done");
+    await startShowcase(PROJECT, ticket.epicId);
     const store = (globalThis as { __formicMemoryStore?: { showcases: Map<string, string> } })
       .__formicMemoryStore!;
+    await until(async () => store.showcases.has(ticket.epicId), "the Epic showcase");
     const showcase = store.showcases.get(ticket.epicId)!;
     expect(showcase.startsWith("## For you")).toBe(true);
     expect(showcase).toContain(`- [ ] ${step} (T-1)`);
@@ -387,6 +391,11 @@ describe("the Coder Agent pipeline", () => {
 });
 
 describe("the Reviewer Agent pipeline", () => {
+  // These follow a pull request all the way to its merge: the project opts in.
+  beforeEach(async () => {
+    await repository().setAutoMerge(PROJECT, true);
+  });
+
   async function openPullRequestFor(ticket: TicketDetail, checksPass: boolean) {
     resetVcs();
     const client = new MockVcsClient(REPO, checksPass);
@@ -529,7 +538,7 @@ describe("the Reviewer Agent pipeline", () => {
     useAgents(new StubCoder(writesInScope()), reviewer);
     const ticket = await seedTicket();
     const pull = await openPullRequestFor(ticket, true);
-    await repository().updateTicket(ticket.id, { attempts: MAX_REVIEWS });
+    await repository().updateTicket(ticket.id, { attempts: ATTEMPT_DEFAULTS.review });
     MockVcsClient.setPull(pull.number, { mergeable: false });
 
     await reviewPullRequest(PROJECT, pull.number, pull.headSha);
@@ -618,7 +627,7 @@ describe("the Reviewer Agent pipeline", () => {
     const pull = await openPullRequestFor(ticket, false);
 
     // Red results on the same commit: a fix each time, then the card stops.
-    for (let i = 0; i <= MAX_REVIEWS; i++) {
+    for (let i = 0; i <= ATTEMPT_DEFAULTS.review; i++) {
       await reviewPullRequest(PROJECT, pull.number, pull.headSha);
     }
     await until(
@@ -627,7 +636,7 @@ describe("the Reviewer Agent pipeline", () => {
     );
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.attempts).toBe(MAX_REVIEWS);
+    expect(after.attempts).toBe(ATTEMPT_DEFAULTS.review);
     expect(after.status).toBe("blocked");
     expect(after.stalledIn).toBe("in_review");
     expect(after.blockedReason).toContain("ci / test");
@@ -640,7 +649,7 @@ describe("the Reviewer Agent pipeline", () => {
     const pull = await openPullRequestFor(ticket, false);
     // The reviewer approved this head, CI went red on exactly it, and the
     // ceiling is reached before another review can be spent on it.
-    await repository().updateTicket(ticket.id, { attempts: MAX_REVIEWS, reviewedSha: pull.headSha });
+    await repository().updateTicket(ticket.id, { attempts: ATTEMPT_DEFAULTS.review, reviewedSha: pull.headSha });
 
     await reviewPullRequest(PROJECT, pull.number, pull.headSha);
 

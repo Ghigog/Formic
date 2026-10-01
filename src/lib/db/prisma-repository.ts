@@ -18,6 +18,7 @@ import type {
   PresetRecord,
   ProjectSummary,
   Reroute,
+  LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
   UserSecrets,
@@ -32,18 +33,23 @@ import type {
   AuditRecord,
   AuditReport,
   AuditResult,
+  QueenRecord,
 } from "./repository";
 import type {
   AgentRole,
   AgentRunStatus,
   AttachmentSummary,
   BoardCard,
+  CardKind,
   AgentPreset,
   ColumnAgents,
+  ColumnOverride,
+  ColumnOverrides,
   PlanStep,
   WorkType,
 } from "@/lib/domain/entities";
 import { planStepSchema } from "@/lib/domain/entities";
+import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
@@ -52,6 +58,7 @@ import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 type EpicRow = {
   id: string;
+  queen?: { id: string } | null;
   number: number | null;
   title: string;
   status: TicketStatus;
@@ -202,6 +209,26 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async updateLimits(userId: string, columns: LimitColumns): Promise<UserRecord> {
+    const json = (v: Record<string, unknown> | null | undefined) =>
+      v === undefined ? undefined : v === null ? Prisma.DbNull : (v as Prisma.InputJsonObject);
+    return prisma().user.update({
+      where: { id: userId },
+      data: { tokenLimit: json(columns.tokenLimit), attemptLimit: json(columns.attemptLimit) },
+    });
+  }
+
+  async updateTokenRenewal(
+    userId: string,
+    renewal: { tokenRenewalDay: number | null; tokenWindowTimezone: string | null },
+  ): Promise<UserRecord> {
+    return prisma().user.update({ where: { id: userId }, data: renewal });
+  }
+
+  async stampTokenReset(userId: string, at: Date): Promise<UserRecord> {
+    return prisma().user.update({ where: { id: userId }, data: { tokenResetAt: at } });
+  }
+
   async acceptTerms(userId: string, version: string): Promise<UserRecord> {
     return prisma().user.update({
       where: { id: userId },
@@ -264,6 +291,44 @@ export class PrismaRepository implements Repository {
     return ticket?.epic.projectId ?? null;
   }
 
+  async placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null> {
+    try {
+      const row = await prisma().queen.create({
+        data: { projectId, ...(kind === "epic" ? { epicId: cardId } : { ticketId: cardId }) },
+      });
+      return { projectId, cardId, kind, placedAt: row.placedAt };
+    } catch (err) {
+      // The card's unique slot is taken: it already has one.
+      if ((err as { code?: string }).code === "P2002") return null;
+      throw err;
+    }
+  }
+
+  async listQueens(projectId: string): Promise<QueenRecord[]> {
+    const rows = await prisma().queen.findMany({ where: { projectId }, orderBy: { placedAt: "asc" } });
+    return rows.map((r) => ({
+      projectId,
+      cardId: (r.epicId ?? r.ticketId)!,
+      kind: r.epicId ? ("epic" as const) : ("ticket" as const),
+      placedAt: r.placedAt,
+    }));
+  }
+
+  async clearQueen(cardId: string): Promise<boolean> {
+    const db = prisma();
+    const row = await db.queen.findFirst({ where: { OR: [{ epicId: cardId }, { ticketId: cardId }] } });
+    if (!row) return false;
+    const gone = await db.queen.deleteMany({ where: { id: row.id } });
+    if (gone.count === 0) return false;
+    await db.project.update({ where: { id: row.projectId }, data: { queensSpent: { increment: 1 } } });
+    return true;
+  }
+
+  async queensSpent(projectId: string): Promise<number> {
+    const project = await prisma().project.findUnique({ where: { id: projectId }, select: { queensSpent: true } });
+    return project?.queensSpent ?? 0;
+  }
+
   async boardCards(projectId: string): Promise<BoardCard[]> {
     const db = prisma();
 
@@ -272,6 +337,7 @@ export class PrismaRepository implements Repository {
       orderBy: { position: "asc" },
       include: {
         tickets: { select: { id: true, status: true } },
+        queen: { select: { id: true } },
         runs: {
           where: { status: { in: ["queued", "running"] } },
           orderBy: { createdAt: "desc" },
@@ -285,6 +351,7 @@ export class PrismaRepository implements Repository {
       orderBy: { position: "asc" },
       include: {
         dependsOn: { select: { dependsOnTicketId: true } },
+        queen: { select: { id: true } },
         // Every run, newest first: the live one names the agent, the
         // oldest says when work started.
         runs: {
@@ -325,6 +392,7 @@ export class PrismaRepository implements Repository {
         misplacedIn: epic.misplacedIn,
         misplacedReason: epic.misplacedReason,
         costCents: 0,
+        queen: !!epic.queen,
         childCount: epic.tickets.length,
         doneCount: epic.tickets.filter((t) => t.status === "merged").length,
         createdAt: epic.createdAt.toISOString(),
@@ -373,6 +441,7 @@ export class PrismaRepository implements Repository {
       rerouteFrom: t.rerouteFrom,
       rerouteReason: t.rerouteReason,
       costCents: t.costCents,
+      queen: !!t.queen,
       childCount: 0,
       doneCount: 0,
       createdAt: t.createdAt.toISOString(),
@@ -394,7 +463,7 @@ export class PrismaRepository implements Repository {
     const tickets = await db.ticket.findMany({
       where: { epic: { projectId }, archived: true },
       orderBy: { position: "asc" },
-      select: { id: true, key: true, title: true, position: true, archived: true },
+      select: { id: true, key: true, title: true, position: true, archived: true, workType: true },
     });
     // The archive list is not the board: only what names the ticket.
     return tickets.map((t) => ({
@@ -409,6 +478,7 @@ export class PrismaRepository implements Repository {
       epicId: null,
       size: null,
       archived: t.archived,
+      workType: t.workType,
       agentRole: null,
       model: null,
       fileScope: [],
@@ -969,6 +1039,15 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async ticketRunMs(ticketId: string): Promise<number> {
+    const rows = await prisma().agentRun.findMany({
+      where: { ticketId, startedAt: { not: null } },
+      select: { startedAt: true, finishedAt: true },
+    });
+    const now = Date.now();
+    return rows.reduce((sum, r) => sum + ((r.finishedAt?.getTime() ?? now) - r.startedAt!.getTime()), 0);
+  }
+
   async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
     const db = prisma();
     await db.agentRun.updateMany({
@@ -1018,6 +1097,21 @@ export class PrismaRepository implements Repository {
       _sum: { costCents: true },
     });
     return result._sum.costCents ?? 0;
+  }
+
+  async epicRunStats(epicId: string): Promise<{ elapsedMs: number; attempts: number }> {
+    const rows = await prisma().agentRun.findMany({
+      where: { epicId },
+      select: { status: true, startedAt: true, finishedAt: true },
+    });
+    const now = Date.now();
+    let elapsedMs = 0;
+    let attempts = 0;
+    for (const r of rows as Array<{ status: AgentRunStatus; startedAt: Date | null; finishedAt: Date | null }>) {
+      if (r.startedAt) elapsedMs += (r.finishedAt?.getTime() ?? now) - r.startedAt.getTime();
+      if (r.status === "failed" || r.status === "blocked") attempts += 1;
+    }
+    return { elapsedMs, attempts };
   }
 
   async agentTokensByPreset(
@@ -1146,6 +1240,43 @@ export class PrismaRepository implements Repository {
   async columnAgents(projectId: string): Promise<ColumnAgents> {
     const rows = await prisma().columnAgent.findMany({ where: { projectId } });
     return Object.fromEntries(rows.map((r) => [r.column, r.presetId]));
+  }
+
+  async columnOverrides(projectId: string): Promise<ColumnOverrides> {
+    const rows = await prisma().columnAgent.findMany({
+      where: {
+        projectId,
+        OR: [{ overrideMinutes: { not: null } }, { overrideTokens: { not: null } }, { overrideAttempts: { not: null } }],
+      },
+    });
+    return Object.fromEntries(
+      rows.map((r) => [
+        r.column,
+        { minutes: r.overrideMinutes, tokens: r.overrideTokens, attempts: r.overrideAttempts },
+      ]),
+    );
+  }
+
+  async setColumnOverride(projectId: string, column: ColumnId, override: ColumnOverride): Promise<boolean> {
+    const { count } = await prisma().columnAgent.updateMany({
+      where: { projectId, column },
+      data: {
+        overrideMinutes: override.minutes,
+        overrideTokens: override.tokens,
+        overrideAttempts: override.attempts,
+      },
+    });
+    return count > 0;
+  }
+
+  async setPresetAllowance(
+    presetId: string,
+    allowance: { tokens: number | null; windowDays: number | null },
+  ): Promise<void> {
+    await prisma().agentPreset.updateMany({
+      where: { id: presetId },
+      data: { tokenAllowance: allowance.tokens, tokenAllowanceWindowDays: allowance.windowDays },
+    });
   }
 
   async setColumnAgent(
@@ -1278,6 +1409,13 @@ export class PrismaRepository implements Repository {
     return rows.map(toCardChatMessage);
   }
 
+  async orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]> {
+    const rows = await prisma().assistantMessage.findMany({
+      where: { projectId, role: "assistant", status: "pending", runnerJob: null, createdAt: { lt: olderThan } },
+    });
+    return rows.map(toAssistantMessage);
+  }
+
   async auditsFor(projectId: string): Promise<AuditRecord[]> {
     const rows = await prisma().audit.findMany({
       where: { projectId },
@@ -1295,6 +1433,10 @@ export class PrismaRepository implements Repository {
     await prisma().audit.update({ where: { id }, data: { log: { push: step } } });
   }
 
+  async setAuditJob(id: string, job: string | null, agent: string | null): Promise<void> {
+    await prisma().audit.update({ where: { id }, data: { runnerJob: job, runnerAgent: agent } });
+  }
+
   async finishAudit(id: string, result: AuditResult): Promise<void> {
     const db = prisma();
     const row = await db.audit.update({
@@ -1308,6 +1450,8 @@ export class PrismaRepository implements Repository {
         error: result.error ?? null,
         model: result.model ?? null,
         files: result.files ?? [],
+        runnerJob: null,
+        runnerAgent: null,
         finishedAt: new Date(),
       },
     });
@@ -1513,6 +1657,8 @@ function toPreset(row: {
   apiKeyHint: string | null;
   limitedUntil: Date | null;
   limitNote: string | null;
+  tokenAllowance: number | null;
+  tokenAllowanceWindowDays: number | null;
 }): AgentPreset {
   return {
     id: row.id,
@@ -1527,6 +1673,8 @@ function toPreset(row: {
     keyHint: row.apiKeyHint,
     limitedUntil: row.limitedUntil?.toISOString() ?? null,
     limitNote: row.limitNote,
+    tokenAllowance: row.tokenAllowance,
+    tokenAllowanceWindowDays: row.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS,
   };
 }
 
@@ -1551,6 +1699,8 @@ function toAuditRecord(row: {
   error: string | null;
   model: string | null;
   files: string[];
+  runnerJob: string | null;
+  runnerAgent: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }): AuditRecord {

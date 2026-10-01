@@ -7,7 +7,10 @@ import type {
   AttachmentKind,
   AttachmentSummary,
   BoardCard,
+  CardKind,
   ColumnAgents,
+  ColumnOverride,
+  ColumnOverrides,
   PlanStep,
   WorkType,
 } from "@/lib/domain/entities";
@@ -175,6 +178,9 @@ export interface AuditRecord {
   model: string | null;
   /** Files the sentinel read. */
   files: string[];
+  /** The GitHub Actions job a CLI agent audits in, while it runs. */
+  runnerJob: string | null;
+  runnerAgent: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }
@@ -240,6 +246,8 @@ export interface TicketUpdate {
   fileScope?: string[];
   /** 1, 2, 3, 5, 8 or 13; null clears the estimate. */
   storyPoints?: number | null;
+  /** Bug or spike; null clears it. */
+  workType?: WorkType | null;
   scopeRequest?: string[];
   needsHuman?: string | null;
   status?: TicketStatus;
@@ -281,6 +289,13 @@ export interface RunOutcome {
   tokensIn: number;
   tokensOut: number;
   costCents: number;
+}
+
+export interface QueenRecord {
+  projectId: string;
+  cardId: string;
+  kind: CardKind;
+  placedAt: Date;
 }
 
 export interface ProjectSummary {
@@ -329,6 +344,20 @@ export interface UserRecord {
   runTimeBudgetFlatMinutes: number | null;
   /** Stored JSON: story points to minutes, e.g. {"1":5}. */
   runTimeBudgetPerPointMinutes: unknown;
+  /** Stored limit settings (JSON), or null for the default. Read through src/lib/user-settings. */
+  tokenLimit?: unknown;
+  attemptLimit?: unknown;
+  /** Token window: renewal day of the month (1-31) in `tokenWindowTimezone` (IANA), or null. */
+  tokenRenewalDay: number | null;
+  tokenWindowTimezone: string | null;
+  /** When the person last reset the token count by hand, or null. */
+  tokenResetAt: Date | null;
+}
+
+/** Limit settings to store; an omitted axis is left alone, null returns it to the default. */
+export interface LimitColumns {
+  tokenLimit?: Record<string, unknown> | null;
+  attemptLimit?: Record<string, unknown> | null;
 }
 
 /** What a person's run time budget is stored as on their row. */
@@ -397,6 +426,14 @@ export interface Repository {
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
   updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
   updateRunTimeBudget(userId: string, columns: RunTimeBudgetColumns): Promise<UserRecord>;
+  updateLimits(userId: string, columns: LimitColumns): Promise<UserRecord>;
+  /** Sets (or with nulls clears) the day the token window renews and the timezone it is read in. */
+  updateTokenRenewal(
+    userId: string,
+    renewal: { tokenRenewalDay: number | null; tokenWindowTimezone: string | null },
+  ): Promise<UserRecord>;
+  /** Stamps the token window as reset at `at`. */
+  stampTokenReset(userId: string, at: Date): Promise<UserRecord>;
   /** Records that this person agreed to a version of the terms, now. */
   acceptTerms(userId: string, version: string): Promise<UserRecord>;
   /** Signs this person out everywhere: every session cookie issued so far stops working. */
@@ -411,6 +448,14 @@ export interface Repository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
+  /** Places a Queen on a card, or returns null when it already has one. */
+  placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null>;
+  /** The Queens placed in a project. */
+  listQueens(projectId: string): Promise<QueenRecord[]>;
+  /** Takes a card's Queen off. It stays spent: see queensSpent. Returns whether there was one. */
+  clearQueen(cardId: string): Promise<boolean>;
+  /** How many Queens this project has taken off the board, never handed back. */
+  queensSpent(projectId: string): Promise<number>;
   /** The archive: a project's archived tickets, off the active board. */
   archivedTickets(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
@@ -508,6 +553,8 @@ export interface Repository {
   ticketsForEpic(epicId: string): Promise<TicketDetail[]>;
 
   startRun(run: RunRecord): Promise<void>;
+  /** Milliseconds a ticket's agent runs have taken, a live one counted up to now. */
+  ticketRunMs(ticketId: string): Promise<number>;
   finishRun(runId: string, outcome: RunOutcome): Promise<void>;
   /**
    * Runs still marked live that began before `startedBefore`. Callers pass a
@@ -525,6 +572,12 @@ export interface Repository {
   recordRunSpend(runId: string, costCents: number): Promise<void>;
   /** Every run's spend under an Epic, finished or still running, summed. */
   epicSpentCents(epicId: string): Promise<number>;
+  /**
+   * What an Epic's runs have actually taken: the time they ran, summed (a run
+   * still going counts up to now), and how many attempts failed or were
+   * blocked. What the Epic's time and attempt ceilings read.
+   */
+  epicRunStats(epicId: string): Promise<{ elapsedMs: number; attempts: number }>;
   /**
    * What every saved agent has used, in tokens, keyed by preset id: its runs
    * and the chat answers it gave, summed together. Tokens, not money: a
@@ -567,6 +620,12 @@ export interface Repository {
   /** Marks a preset out of usage until a time, or clears that. */
   setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void>;
   columnAgents(projectId: string): Promise<ColumnAgents>;
+  /** The overrides on a board's column agents, by column. */
+  columnOverrides(projectId: string): Promise<ColumnOverrides>;
+  /** Sets a column agent's override; false when the column has no agent. */
+  setColumnOverride(projectId: string, column: ColumnId, override: ColumnOverride): Promise<boolean>;
+  /** Sets or clears (null tokens) a preset's token allowance; null window means the default. */
+  setPresetAllowance(presetId: string, allowance: { tokens: number | null; windowDays: number | null }): Promise<void>;
   /** The saved agent the board's assistant runs on, or null. */
   assistantAgent(projectId: string): Promise<string | null>;
   setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
@@ -614,6 +673,11 @@ export interface Repository {
    * whose worker died. See recoverStaleCardChats.
    */
   orphanedCardChats(projectId: string, olderThan: Date): Promise<CardChatMessage[]>;
+  /**
+   * The board assistant's answers nothing is behind any more: pending, no
+   * job, older than the cut-off. See recoverStaleAssistantAnswers.
+   */
+  orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,
@@ -627,6 +691,8 @@ export interface Repository {
   startAudit(projectId: string, sentinel: string): Promise<AuditRecord>;
   /** Adds a step to a running audit's log. */
   logAudit(id: string, step: string): Promise<void>;
+  /** Records the GitHub Actions job a CLI agent audits in; only its result is taken. */
+  setAuditJob(id: string, job: string | null, agent: string | null): Promise<void>;
   /**
    * Ends an audit. A report replaces the sentinel's earlier ones; a failure
    * keeps the last report, so a bad run never costs the project its stars.
