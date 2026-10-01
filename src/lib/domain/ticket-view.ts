@@ -27,7 +27,6 @@ export interface TicketView {
   description: string;
   acceptanceCriteria: string[];
   branchName: string | null;
-  summary: string | null;
   dependsOn: Array<{ id: string; key: string; title: string; status: string }>;
   plan: PlanStep[];
   /** Steps outside the repository the person has to take themselves. */

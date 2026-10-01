@@ -32,7 +32,6 @@ const VIEW: TicketView = {
   ].join("\n"),
   acceptanceCriteria: ["Given a board, when I export it, then I get a CSV."],
   branchName: null,
-  summary: null,
   dependsOn: [],
   handoff: [],
   plan: [
@@ -217,6 +216,12 @@ describe("TicketDrawer", () => {
     open();
     await screen.findByRole("button", { name: /EPIC-1: Board export/ });
     expect(screen.queryByText("Waits on")).not.toBeInTheDocument();
+  });
+
+  it("shows no What the agent changed section for a ticket that has been run", async () => {
+    open({ ...VIEW, summary: "Added the CSV endpoint." } as TicketView);
+    await screen.findByRole("button", { name: /EPIC-1: Board export/ });
+    expect(screen.queryByText("What the agent changed")).not.toBeInTheDocument();
   });
 
   it("says nothing about a reroute for a ticket that was never moved", async () => {
