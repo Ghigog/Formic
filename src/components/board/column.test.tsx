@@ -168,6 +168,15 @@ describe("Column", () => {
     expect(screen.queryByText("BUG")).toBeNull();
   });
 
+  it("marks the bug and spike badges with their own icons", () => {
+    const { container } = column("backlog", [
+      makeCard({ title: "Footer link is broken", workType: "bug", epicId: "holder", detached: true }),
+      makeCard({ title: "How does the merge queue work?", workType: "spike" }),
+    ]);
+    expect(container.querySelectorAll("[data-bugicon]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-spikeicon]")).toHaveLength(1);
+  });
+
   it("gives a ticket of a feature Epic no bug label", () => {
     const [epic, kid] = makeEpicWithChildren({ title: "Dark mode" }, [{ title: "Fix the palette" }]);
     column("todo", [epic!, kid!]);

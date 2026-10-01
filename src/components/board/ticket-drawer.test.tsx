@@ -66,6 +66,55 @@ function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
   return { send, onOpenEpic };
 }
 
+describe("TicketDrawer work type", () => {
+  const todoView = (workType: TicketView["card"]["workType"] = null): TicketView => ({
+    ...VIEW,
+    card: { ...card, status: "ready", workType },
+  });
+
+  it("offers Bug and Spike only while the ticket is in To Do", async () => {
+    open();
+    await screen.findByText("Export endpoint");
+    expect(screen.queryByRole("group", { name: "Work type" })).not.toBeInTheDocument();
+  });
+
+  it("presses Bug by sending the PATCH, and sends null when it is pressed again", async () => {
+    const { fetched } = openTodo(todoView("bug"));
+    const group = await screen.findByRole("group", { name: "Work type" });
+    const bug = within(group).getByRole("button", { name: "bug" });
+    expect(bug).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/Tagged as bug · −5 points/)).toBeInTheDocument();
+    fireEvent.click(bug);
+    await vi.waitFor(() =>
+      expect(fetched).toContainEqual(["/api/tickets/t-1", "PATCH", JSON.stringify({ workType: null })]),
+    );
+    fireEvent.click(within(group).getByRole("button", { name: "spike" }));
+    await vi.waitFor(() =>
+      expect(fetched).toContainEqual(["/api/tickets/t-1", "PATCH", JSON.stringify({ workType: "spike" })]),
+    );
+  });
+});
+
+function openTodo(view: TicketView) {
+  const fetched: Array<[string, string, string | undefined]> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (init?.method === "PATCH") {
+        fetched.push([url, "PATCH", init.body as string]);
+        return Response.json({ ok: true });
+      }
+      if (url.includes("/api/attachments")) return Response.json({ attachments: [] });
+      return Response.json(view);
+    }),
+  );
+  render(
+    <TicketDrawer ticketId="t-1" onClose={() => {}} onOpenEpic={() => {}} subscribe={() => () => {}} />,
+  );
+  return { fetched };
+}
+
 describe("TicketDrawer", () => {
   it("shows the story points and no T-shirt size", async () => {
     open();

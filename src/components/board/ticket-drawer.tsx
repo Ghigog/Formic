@@ -8,8 +8,9 @@ import { PlanSteps } from "@/components/ui/plan-steps";
 import { SideBySide, WithChat } from "@/components/ui/split";
 import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
+import { BUG_COST } from "@/lib/colony/game";
 import type { FormicEvent } from "@/lib/domain/events";
-import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE } from "@/lib/domain/entities";
+import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type WorkType } from "@/lib/domain/entities";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
@@ -41,11 +42,14 @@ export function TicketDrawer({
   onClose,
   onOpenEpic,
   subscribe,
+  onChanged,
 }: {
   ticketId: string | null;
   onClose: () => void;
   onOpenEpic: (epicId: string) => void;
   subscribe: SubscribeToEvents;
+  /** Called after the ticket itself was edited here, so the board can refetch. */
+  onChanged?: () => void;
 }) {
   const [view, setView] = useState<TicketView | null>(null);
   const [failed, setFailed] = useState(false);
@@ -103,6 +107,20 @@ export function TicketDrawer({
     return () => window.removeEventListener("keydown", onKey);
   }, [ticketId, onClose]);
 
+  const setWorkType = useCallback(
+    async (workType: WorkType | null) => {
+      if (!ticketId) return;
+      const res = await fetch(`/api/tickets/${ticketId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workType }),
+      }).catch(() => null);
+      if (res?.ok) onChanged?.();
+      await load();
+    },
+    [ticketId, load, onChanged],
+  );
+
   if (!ticketId) return null;
 
   const card = view?.card;
@@ -139,6 +157,28 @@ export function TicketDrawer({
               <h2 className="mt-0.5 font-serif text-[18px] leading-tight font-semibold">
                 {card?.title ?? (failed ? "Ticket" : "Loading…")}
               </h2>
+              {card && columnFor(card.status, card.stalledIn) === "todo" && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <div role="group" aria-label="Work type" className="flex gap-2">
+                    {(["bug", "spike"] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        aria-pressed={card.workType === type}
+                        onClick={() => void setWorkType(card.workType === type ? null : type)}
+                        className="border-line bg-card text-ink aria-pressed:border-terracotta aria-pressed:bg-cream h-[28px] rounded-lg border px-2.5 text-[12px] font-medium capitalize"
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                  {card.workType === "bug" && (
+                    <span className="text-[11px] text-crimson-chip-text">
+                      Tagged as bug · −{BUG_COST} points
+                    </span>
+                  )}
+                </div>
+              )}
               {card && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <StatusPill status={card.status} />

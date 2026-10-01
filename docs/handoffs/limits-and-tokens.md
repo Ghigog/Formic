@@ -26,8 +26,8 @@ places, wrong. Every row below is a real constant in the tree today:
 | limit | unit | default | scope | stops the work? |
 | :-- | :-- | :-- | :-- | :-- |
 | `DEFAULT_RUN_BUDGET.maxDurationMs` (`src/lib/budget/limits.ts:33`) | ms | 4 min | an in-function run | yes, between turns |
-| `loopBudgetMs(points)` (`src/lib/runner/runner.ts:334`) | ms | `10 × points`, ≤ 55 min | a loop run in Actions | yes, in the entry |
-| `RUNNER_JOB_MINUTES` (`src/lib/runner/workflow.ts:38`) | min | 60, written into each repo's workflow | a CLI agent in Actions | yes, by GitHub |
+| `loopBudgetMs(points)` (`src/lib/runner/runner.ts:334`) | ms | `10 × points`, ≤ 175 min (55 until the ceiling change merges) | a loop run in Actions | yes, in the entry |
+| `RUNNER_JOB_MINUTES` (`src/lib/runner/workflow.ts:38`) | min | 180 target, written into each repo's workflow (60 today, and on an older copy) | a CLI agent in Actions | yes, by GitHub |
 | route `maxDuration` (e.g. `src/app/api/tickets/route.ts:10`) | s | 300 | the whole invocation | yes, by the platform |
 | `DEFAULT_TTL_MS` (`src/lib/sandbox/types.ts:85`) | ms | 20 min; `max(20, budget + 5)` for a loop | the checkout | yes, by the sandbox |
 | `DEFAULT_EPIC_BUDGET.maxDurationMs` (`limits.ts:39`) | ms | 2 h | the Epic | **no — never checked** |
@@ -141,8 +141,9 @@ And two shapes that decide the design:
 
 - [ ] Given a ticket of 8 points with the default mode, when its run starts,
       then its allowance is 80 minutes in-process, and for a loop run the same
-      80 is clamped to the job's 55-minute ceiling, with the card saying which
-      limit stopped it.
+      80 is clamped to the job's 175-minute clamp (180-minute job) only above 17
+      points, with the card saying whether the job's ceiling or the ticket's
+      budget stopped it.
 - [ ] Given a column whose agent has its own limit, when a ticket lands there,
       then the column's limit is used, not the per-point one.
 - [ ] Given a run that reaches its time or token ceiling, when it stops, then
@@ -177,8 +178,9 @@ And two shapes that decide the design:
   under what the repository actually carries, or a run dies at the job's limit
   with nothing said.
 - The loop entry's payload clamps at `RUNNER_JOB_MINUTES -
-  JOB_HEADROOM_MINUTES` (55); the sandbox TTL is `max(20 min, budget + 5)`.
-  Both are already conservative — do not widen them to fit a budget.
+  JOB_HEADROOM_MINUTES` (175 at the 180-minute target; 55 while the job is 60); the sandbox TTL is `max(20 min, budget + 5)` (unchanged): 85 min for an
+  80-minute run, 180 for a 175-minute one. The clamp is conservative — do not
+  widen it to fit a budget.
 - `taskBudgetTokens` tells the *model* to budget 64k tokens, derived from 160¢
   at a fixed $25/M. It is an instruction the model acts on, so it must move to
   tokens before it can be believed.
@@ -187,14 +189,13 @@ And two shapes that decide the design:
 - `MAX_REVIEWS` is derived from `DEFAULT_RUN_BUDGET.maxAttempts`; moving that
   constant moves review iterations. Which number the reviews should follow is a
   decision, not a rename.
-- **The default rule already outgrows the job.** Ten minutes a point reaches
-  the 55-minute cap between five and six points — a 5-point ticket still gets
-  its 50, an 8-point one asks 80 and gets 55, a 13-point one asks 130 and gets
-  55. Either `RUNNER_JOB_MINUTES` goes up (GitHub allows 360, and every
-  repository's workflow has to be updated with it), or the card has to say the
-  job's ceiling is what stopped the run. The spec's acceptance criteria already
-  require the second; the first is a decision. See
-  `docs/handoffs/job-timeout-ceiling.md`.
+- **The job ceiling is to be raised to fit the default rule** (planned, not merged; see
+  `docs/handoffs/job-timeout-ceiling.md`). `RUNNER_JOB_MINUTES` is 60 in the code today; at 180 ten
+  minutes a point is honoured up to 17 points: an 8-point ticket gets its 80, a
+  13-point one its 130, and anything above 175 is clamped, with the card naming
+  the ceiling and the ticket's budget. A repository on an older workflow keeps
+  its 60-minute job until it accepts the refresh pull request; declining it keeps
+  the old behaviour.
 - The assistant and a card's chat are the same kind of loop with different
   budgets (16 turns with no clock, against 12 turns and 4 minutes). Whatever
   the modes become, those two should not disagree again.
