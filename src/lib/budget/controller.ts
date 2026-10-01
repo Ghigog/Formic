@@ -2,15 +2,15 @@ import "server-only";
 
 import {
   type Billing,
-  type Budget,
   type Spend,
   DEFAULT_EPIC_BUDGET,
-  DEFAULT_RUN_BUDGET,
   ZERO_SPEND,
   addSpend,
   billingFor,
   checkBudget,
 } from "./limits";
+import { budgetFor, type Budget as RunBudget } from "./budget-for";
+import { attemptsLimitNote, epicLimitNote, timeLimitNote, tokenLimitNote } from "./stop-notes";
 import { publish } from "@/lib/events/bus";
 import { disposeSandboxes } from "@/lib/sandbox";
 import { repository } from "@/lib/db";
@@ -40,8 +40,11 @@ interface LiveRun {
   epicId: string | null;
   ticketId: string | null;
   controller: AbortController;
-  budget: Budget;
+  /** What the run is held to: minutes, tokens and attempts, from budgetFor. */
+  budget: RunBudget;
   spend: Spend;
+  /** Tokens in and out so far; the token ceiling reads this, never money. */
+  tokens: number;
   /** Whether this run's model is charged per token at all, decided at its start. */
   billing: Billing;
   startedAt: number;
@@ -61,7 +64,7 @@ export function beginRun(input: {
   projectId: string;
   epicId?: string | null;
   ticketId?: string | null;
-  budget?: Budget;
+  budget?: RunBudget;
   /** The model this run will use, and who bills for it, for the spend ceiling. */
   model?: string | null;
   provider?: string | null;
@@ -73,8 +76,9 @@ export function beginRun(input: {
     epicId: input.epicId ?? null,
     ticketId: input.ticketId ?? null,
     controller,
-    budget: input.budget ?? DEFAULT_RUN_BUDGET,
+    budget: input.budget ?? budgetFor(null, null, {}, "in-process"),
     spend: { ...ZERO_SPEND },
+    tokens: 0,
     billing: billingFor(input.model, input.provider),
     startedAt: Date.now(),
   });
@@ -96,13 +100,14 @@ export function activeRunCount(projectId?: string): number {
  */
 export async function recordSpend(
   runId: string,
-  delta: Partial<Spend>,
+  delta: Partial<Spend> & { tokens?: number },
 ): Promise<boolean> {
   const run = runs().get(runId);
   if (!run) return false;
 
   run.spend = addSpend(run.spend, delta);
   run.spend.elapsedMs = Date.now() - run.startedAt;
+  run.tokens += delta.tokens ?? 0;
 
   // Written on every call, not only at the end: an Epic's ceiling is read
   // from here, and a run that never finishes (crashed worker, still going
@@ -111,9 +116,9 @@ export async function recordSpend(
     .recordRunSpend(runId, run.spend.cents)
     .catch((e) => console.error("[formic] could not persist run spend:", e));
 
-  const verdict = checkBudget(run.spend, run.budget, run.billing);
-  if (!verdict.ok) {
-    await stopRun(runId, `Run budget: ${verdict.reason}`, "run");
+  const stopped = runLimitNote(run);
+  if (stopped) {
+    await stopRun(runId, stopped, "run");
     return false;
   }
 
@@ -124,18 +129,44 @@ export async function recordSpend(
     const epicCents = await repository()
       .epicSpentCents(run.epicId)
       .catch(() => run.spend.cents);
+    // Measured from the runs' own rows, for the same reason: elapsed time
+    // and failed attempts across every run under the Epic, not this one.
+    const { elapsedMs, attempts } = await repository()
+      .epicRunStats(run.epicId)
+      .catch(() => ({ elapsedMs: run.spend.elapsedMs, attempts: run.spend.attempts }));
 
     const epicVerdict = checkBudget(
-      { cents: epicCents, elapsedMs: 0, attempts: 0 },
+      { cents: epicCents, elapsedMs, attempts },
       DEFAULT_EPIC_BUDGET,
     );
     if (!epicVerdict.ok) {
-      await stopEpic(run.epicId, `Epic budget: ${epicVerdict.reason}`);
+      const reason =
+        epicVerdict.exceeded === "time"
+          ? epicLimitNote("time", DEFAULT_EPIC_BUDGET.maxDurationMs)
+          : epicVerdict.exceeded === "attempts"
+            ? epicLimitNote("attempts", DEFAULT_EPIC_BUDGET.maxAttempts)
+            : epicVerdict.reason;
+      await stopEpic(run.epicId, `Epic budget: ${reason}`);
       return false;
     }
   }
 
   return true;
+}
+
+/** The note for the first run limit it has reached, or null. Money never stops a run: it is derived from tokens. */
+function runLimitNote(run: LiveRun): string | null {
+  const { budget } = run;
+  if (budget.tokens.value != null && run.tokens >= budget.tokens.value) {
+    return tokenLimitNote(budget, run.tokens);
+  }
+  if (budget.minutes.value != null && run.spend.elapsedMs >= budget.minutes.value * 60_000) {
+    return timeLimitNote(budget);
+  }
+  if (budget.attempts.value != null && run.spend.attempts >= budget.attempts.value) {
+    return attemptsLimitNote(budget);
+  }
+  return null;
 }
 
 export async function stopRun(
