@@ -1,83 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { CoinBadge } from "@/components/ui/coin-badge";
 import { RepoPicker } from "./repo-picker";
 import { useAssistantActivity } from "@/lib/hooks/use-assistant-activity";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AccountMenu, type Account } from "./account-menu";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
-import { ColonyHeaderStats, ColonyMobileStats } from "@/components/colony/header-stats";
-import type { CaptureColumn } from "./new-item-dialog";
-import { ViewMenu } from "./view-menu";
-import type { ColumnView } from "./view";
-
-function LogoMark({ size }: { size: 26 | 28 }) {
-  return (
-    <span
-      aria-hidden
-      className="oct-lg bg-anthracite text-cream inline-flex items-center justify-center font-serif font-semibold"
-      style={{ width: size, height: size, fontSize: size === 28 ? 16 : 15 }}
-    >
-      F
-    </span>
-  );
-}
-
-function PlusIcon({ size = 12 }: { size?: 12 | 16 }) {
-  const big = size === 16;
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={big ? "0 0 16 16" : "0 0 12 12"}
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d={big ? "M8 3.5v9M3.5 8h9" : "M6 2.5v7M2.5 6h7"}
-        stroke="currentColor"
-        strokeWidth={big ? 1.8 : 1.6}
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
+import { ColonyHeaderStats, ColonyLevelStats, ColonyMobileStats } from "@/components/colony/header-stats";
 
 /**
- * The 64px board header: who you are looking at, whether the base branch has
- * moved, the assistant, and the colony: level, points, heat and the way into
- * the timeline. New work starts from the Backlog's own button.
+ * The 64px board header: the project, the assistant, and the colony: level
+ * centred, then points, heat and the way into the timeline. New work starts
+ * from the Backlog's own button.
  *
- * Below 768px it collapses to a 56px app bar — project and branch stacked,
- * the CTA reduced to a 44px icon button.
+ * Below 768px it collapses to a 56px app bar.
  */
 export function BoardHeader({
   projectName,
   repoFullName,
-  baseBranch,
-  inSync,
-  syncedLabel,
-  onNewItem,
   account,
   assistant,
-  boardView,
-  onBoardViewChange,
 }: {
   projectName: string;
   repoFullName: string;
-  baseBranch: string;
-  inSync: boolean;
-  /** Relative time since the last fetch, e.g. "2m". */
-  syncedLabel?: string;
-  /** The mobile app bar's CTA. Always opens Backlog's dialog; on a wide screen, Backlog has its own. */
-  onNewItem: (column: CaptureColumn) => void;
   account?: Account;
   /** The board's assistant. Omitted, the header has no ask box. */
   assistant?: AssistantControls;
-  /** Search, sort, filter and collapse for every column at once. Omitted, the header has no board menu. */
-  boardView?: ColumnView;
-  onBoardViewChange?: (view: ColumnView) => void;
 }) {
   const [owner, repo] = repoFullName.split("/");
   const [picker, setPicker] = useState(false);
@@ -94,26 +42,12 @@ export function BoardHeader({
   );
   // One picker mounted at a time, in whichever header is showing.
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const boardMenu = boardView && onBoardViewChange && (
-    <ViewMenu value={boardView} onChange={onBoardViewChange} scope="board" />
-  );
-  const sync = inSync
-    ? `${baseBranch} · synced${syncedLabel ? ` ${syncedLabel}` : ""}`
-    : `${baseBranch} · behind`;
 
   return (
     <>
       {/* Desktop */}
-      <header className="border-line bg-card relative z-[2] hidden h-16 shrink-0 items-center gap-4 border-b px-6 md:flex">
-        <div className="flex items-center gap-[10px]">
-          <LogoMark size={28} />
-          <span className="font-serif text-[19px] font-semibold tracking-[-0.01em]">
-            Formic
-          </span>
-        </div>
-
-        <span aria-hidden className="bg-line h-6 w-px" />
-
+      <header className="border-line bg-card relative z-[2] hidden h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b px-6 md:grid">
+        <div className="flex min-w-0 items-center gap-4">
         <div className="relative shrink-0">
         <button
           type="button"
@@ -143,31 +77,20 @@ export function BoardHeader({
         </div>
         {!isMobile && unseenBadge}
 
-        <CoinBadge
-          ground="cream"
-          outerClassName="shrink-0 max-lg:hidden"
-          title={inSync ? "Base branch in sync" : "Base branch has moved ahead"}
-          className="text-ink px-[10px] py-[5px] text-[10px] tracking-[0.04em]"
-        >
-          <span
-            aria-hidden
-            className={`size-1.5 rounded-full ${inSync ? "bg-jade" : "bg-rust"}`}
-          />
-          {sync}
-        </CoinBadge>
-
-        <div className="flex min-w-0 flex-1 justify-center">
+        <div className="flex min-w-0 flex-1">
           {assistant && !isMobile && <AskBox a={assistant} repoName={repo ?? repoFullName} />}
         </div>
+        </div>
 
-        {!isMobile && boardMenu}
-        <ColonyHeaderStats />
-        {account && <AccountMenu account={account} />}
+        <ColonyLevelStats />
+        <div className="flex items-center justify-end gap-4">
+          <ColonyHeaderStats showLevel={false} />
+          {account && <AccountMenu account={account} />}
+        </div>
       </header>
 
       {/* Mobile app bar */}
       <header className="border-line bg-card flex h-14 shrink-0 items-center gap-[10px] border-b px-4 md:hidden">
-        <LogoMark size={26} />
         <button
           type="button"
           onClick={() => setPicker((v) => !v)}
@@ -175,13 +98,6 @@ export function BoardHeader({
           className="flex min-h-11 min-w-0 flex-col justify-center gap-px text-left"
         >
           <span className="truncate text-[13px] font-semibold">{repo} ▾</span>
-          <span className="text-muted inline-flex max-w-full items-center gap-[5px] overflow-hidden font-mono text-[9px] whitespace-nowrap">
-            <span
-              aria-hidden
-              className={`size-[5px] rounded-full ${inSync ? "bg-jade" : "bg-rust"}`}
-            />
-            {sync}
-          </span>
         </button>
         {picker && isMobile && (
           <RepoPicker
@@ -192,17 +108,8 @@ export function BoardHeader({
         )}
         {isMobile && unseenBadge}
         <div className="flex-grow" />
-        {isMobile && boardMenu}
-        <ColonyMobileStats />
+                <ColonyMobileStats />
         {assistant && isMobile && <AskButton a={assistant} repoName={repo ?? repoFullName} />}
-        <button
-          type="button"
-          onClick={() => onNewItem("backlog")}
-          aria-label="New backlog item"
-          className="bg-terracotta-cta inline-flex size-11 items-center justify-center rounded-[10px] text-white"
-        >
-          <PlusIcon size={16} />
-        </button>
         {account && <AccountMenu account={account} />}
       </header>
     </>

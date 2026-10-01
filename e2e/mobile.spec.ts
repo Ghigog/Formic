@@ -85,3 +85,13 @@ test("a card's arrow moves the card it names", async ({ page }) => {
   await swipe(page, 150);
   expect(await columnOf(page, cardId)).toBe("Backlog");
 });
+
+test("the app bar at 375px has heat and a timeline button, and no + button", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+
+  await expect(page.getByRole("button", { name: "New backlog item" })).toHaveCount(0);
+  await expect(page.locator('header:visible [data-colony="heat"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Open timeline" }).click();
+  await expect(page.getByRole("button", { name: "Back to board" })).toBeVisible();
+});

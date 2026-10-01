@@ -32,7 +32,6 @@ function renderBoard(
       cards={cards}
       projectName="Formic"
       repoFullName="formic-labs/formic-web"
-      baseBranch="main"
       onOpenCard={vi.fn()}
       onNewItem={vi.fn()}
       onTransition={onTransition}
@@ -53,7 +52,6 @@ describe("Board column views", () => {
     const props = {
       projectName: "Formic",
       repoFullName: "formic-labs/formic-web",
-      baseBranch: "main",
       onOpenCard: vi.fn(),
       onNewItem: vi.fn(),
       onTransition,
@@ -180,21 +178,12 @@ describe("Board, on a wide screen", () => {
     ).toBeInTheDocument();
   });
 
-  /*
-   * Both headers are in the DOM at once — the wide one and the app bar — and
-   * CSS hides whichever does not apply. A real browser drops the hidden one
-   * from the accessibility tree; jsdom loads no CSS, so it sees both. Only
-   * the app bar carries the CTA now: on a wide screen, Backlog has its own.
-   */
-  it("routes the app bar's CTA to the capture dialog", async () => {
-    const onNewItem = vi.fn();
-    renderBoard([makeCard()], { onNewItem });
-
-    const ctas = screen.getAllByRole("button", { name: "New backlog item" });
-    expect(ctas).toHaveLength(1);
-
-    await userEvent.setup().click(ctas[0]!);
-    expect(onNewItem).toHaveBeenCalledWith("backlog");
+  it("has no logo, sync badge, board options menu or app bar + button", () => {
+    renderBoard([makeCard()]);
+    expect(screen.queryByText("Formic")).toBeNull();
+    expect(screen.queryByText(/synced|behind/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Board options" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New backlog item" })).toBeNull();
   });
 });
 
@@ -265,7 +254,6 @@ describe("Board, as the server moves cards", () => {
     const props = {
       projectName: "Formic",
       repoFullName: "formic-labs/formic-web",
-      baseBranch: "main",
       onOpenCard: vi.fn(),
       onNewItem: vi.fn(),
       onTransition: vi.fn(),
@@ -398,59 +386,6 @@ describe("Board, below 768px", () => {
     const bar = screen.getByRole("list", { name: "Columns" });
     expect(within(bar).getByText("Backlog")).toHaveTextContent("Backlog 1");
     expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 0");
-  });
-});
-
-describe("Board menu", () => {
-  const cards = () => [
-    makeCard({ status: "ready", title: "Fix login", workType: "bug" }),
-    makeCard({ status: "ready", title: "Add export" }),
-    makeCard({ status: "draft", title: "Fix crash", workType: "bug" }),
-    makeCard({ status: "draft", title: "Add dark mode" }),
-  ];
-  const openBoardMenu = async () => {
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Board options" }));
-    return user;
-  };
-
-  it("searches every column", async () => {
-    renderBoard(cards());
-    const user = await openBoardMenu();
-    await user.type(screen.getByPlaceholderText("Search key or title..."), "fix");
-    expect(screen.getAllByText(/^Fix /)).toHaveLength(2);
-    expect(screen.queryByText("Add export")).toBeNull();
-    expect(screen.queryByText("Add dark mode")).toBeNull();
-    await user.click(screen.getByRole("menuitem", { name: "Clear" }));
-    expect(screen.getByText("Add export")).toBeInTheDocument();
-    expect(screen.getByText("Add dark mode")).toBeInTheDocument();
-  });
-
-  it("filters by type across columns", async () => {
-    renderBoard(cards());
-    const user = await openBoardMenu();
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Bugs" }));
-    expect(screen.getByText("Fix login")).toBeInTheDocument();
-    expect(screen.getByText("Fix crash")).toBeInTheDocument();
-    expect(screen.queryByText("Add export")).toBeNull();
-    expect(screen.queryByText("Add dark mode")).toBeNull();
-  });
-
-  it("collapses and expands every column, keeping other view fields", async () => {
-    renderBoard(cards());
-    const user = await openBoardMenu();
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Bugs" }));
-    await user.click(screen.getByRole("menuitem", { name: "Collapse all" }));
-    expect(screen.queryByText("Fix login")).toBeNull();
-    expect(screen.queryByText("Fix crash")).toBeNull();
-    for (const name of ["Backlog", "To Do"]) {
-      const col = screen.getByRole("region", { name });
-      expect(within(col).getByRole("button", { name: "Column options" })).toBeInTheDocument();
-    }
-    await user.click(screen.getByRole("menuitem", { name: "Expand all" }));
-    expect(screen.getByText("Fix login")).toBeInTheDocument();
-    expect(screen.getByText("Fix crash")).toBeInTheDocument();
-    expect(screen.queryByText("Add export")).toBeNull();
   });
 });
 
