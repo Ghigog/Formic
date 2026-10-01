@@ -44,7 +44,7 @@ export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
         aria-expanded={open}
         aria-label={buttonLabel}
         className={cn(
-          "border-line bg-card hover:border-clay relative inline-flex size-8 items-center justify-center rounded-md border text-muted transition-colors",
+          "border-line bg-card hover:border-clay relative inline-flex size-11 shrink-0 md:size-8 items-center justify-center rounded-md border text-muted transition-colors",
           active && "border-terracotta text-ink"
         )}
       >

@@ -124,6 +124,7 @@ export function Column({
   }
 
   const hidesSome = count !== total;
+  const inlineMenu = bare && !!agent && !view.collapsed;
   const menu = onViewChange && <ViewMenu value={view} onChange={onViewChange} />;
 
   const toggle = (epicId: string) =>
@@ -165,7 +166,7 @@ export function Column({
       </div>
       )}
 
-      {bare && menu && <div className="flex justify-end">{menu}</div>}
+      {bare && menu && !inlineMenu && <div className="flex justify-end">{menu}</div>}
 
       {!view.collapsed && limited && agent?.selected && (
         <LimitBanner
@@ -176,7 +177,18 @@ export function Column({
         />
       )}
 
-      {!view.collapsed && agent && <AgentSelect column={id} {...agent} />}
+      {!view.collapsed && agent && (
+        inlineMenu ? (
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <AgentSelect column={id} {...agent} />
+            </div>
+            {menu}
+          </div>
+        ) : (
+          <AgentSelect column={id} {...agent} />
+        )
+      )}
 
       {!view.collapsed && composer}
 
