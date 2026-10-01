@@ -69,6 +69,20 @@ describe("runner setup", () => {
     expect(setup.state === "waiting" && setup.setupUrl).not.toBe(old.url);
   });
 
+  it("closes a stale setup pull request even when the workflow is already current", async () => {
+    const project = await repository().defaultProject();
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "merged");
+    const old = await client.openPullRequest({
+      headBranch: `${RUNNER_SETUP_PREFIX}000000000000`,
+      baseBranch: project.baseBranch,
+      title: "Let Formic run agents in GitHub Actions",
+      body: "",
+    });
+
+    expect(await runnerSetup(project)).toEqual({ state: "ready" });
+    expect((await client.pullRequest(old.number)).state).toBe("closed");
+  });
+
   it("says what permission is missing when GitHub refuses", async () => {
     class Refusing extends MockVcsClient {
       override async readFile(): Promise<string | null> {
