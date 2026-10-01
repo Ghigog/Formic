@@ -5,6 +5,7 @@ import { hasDatabase, repository } from "@/lib/db";
 import { FIXTURE_EXTRAS, FIXTURE_STATS } from "@/lib/fixtures/board";
 import { activeProject } from "@/lib/board/project";
 import { currentUser, ownerScope } from "@/lib/auth/user";
+import { tokenWindow } from "@/lib/token-window";
 import { authMode } from "@/lib/auth/session";
 import { sentinelsFor } from "@/lib/sentinels/service";
 import type { Account } from "@/components/board/account-menu";
@@ -26,14 +27,22 @@ export default async function BoardPage() {
   const project = await activeProject();
   if (!project) return <Welcome account={account} />;
 
+  const window = tokenWindow(
+    {
+      renewalDay: user.tokenRenewalDay,
+      timezone: user.tokenWindowTimezone,
+      resetAt: user.tokenResetAt,
+    },
+    new Date(),
+  );
   const [cards, presets, columnAgents, sentinels, agentUsage] = await Promise.all([
     repo.boardCards(project.id),
     repo.listPresets(ownerScope(user)),
     repo.columnAgents(project.id),
     sentinelsFor(project.id),
-    // What each agent has used, in tokens: counted per agent, from the runs
-    // and answers that agent did (see docs/token-usage.md).
-    repo.agentTokensByPreset(),
+    // What each agent has used, in tokens: counted per agent since the
+    // person's token window began, from the runs and answers that agent did (see docs/token-usage.md).
+    repo.agentTokensByPreset(window.since),
   ]);
   const provider = process.env.SANDBOX_PROVIDER ?? "local";
 
@@ -54,6 +63,11 @@ export default async function BoardPage() {
       initialPresets={presets}
       initialColumnAgents={columnAgents}
       initialAgentUsage={agentUsage}
+      initialTokenWindow={{
+        kind: window.kind,
+        since: window.since?.toISOString() ?? null,
+        timezone: user.tokenWindowTimezone,
+      }}
       initialSentinels={sentinels}
       initialStats={
         demo

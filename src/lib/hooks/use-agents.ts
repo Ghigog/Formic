@@ -25,15 +25,28 @@ export interface AgentTokens {
 
 export type AgentUsage = Record<string, AgentTokens | undefined>;
 
+/** What the token counts are measured over: since a renewal day, a reset, or all time. */
+export interface TokenWindowView {
+  kind: "renewal" | "reset" | "all-time";
+  /** ISO instant the count starts at, null for all time. */
+  since: string | null;
+  /** IANA timezone the person's dates are read in, if they set one. */
+  timezone: string | null;
+}
+
+const ALL_TIME: TokenWindowView = { kind: "all-time", since: null, timezone: null };
+
 /** Saved agent presets and which column runs which, for the active board. */
 export function useAgents(
   initialPresets: AgentPreset[],
   initialColumns: ColumnAgents,
   initialUsage: AgentUsage = {},
+  initialWindow: TokenWindowView = ALL_TIME,
 ) {
   const [presets, setPresets] = useState(initialPresets);
   const [columns, setColumns] = useState(initialColumns);
   const [usage, setUsage] = useState(initialUsage);
+  const [window, setWindow] = useState(initialWindow);
 
   /**
    * Asks again what each agent has used. A run or an answer anyone started
@@ -41,9 +54,18 @@ export function useAgents(
    * agent's settings is the moment it matters.
    */
   const refreshUsage = useCallback(async () => {
-    const next = await send<{ usage?: AgentUsage }>("/api/agents", "GET").catch(() => null);
+    const next = await send<{ usage?: AgentUsage; window?: TokenWindowView }>("/api/agents", "GET").catch(
+      () => null,
+    );
     if (next?.usage) setUsage(next.usage);
+    if (next?.window) setWindow(next.window);
   }, []);
+
+  /** Starts the count again from now, then shows what it reads. */
+  const resetWindow = useCallback(async () => {
+    await send("/api/agents/token-window", "POST");
+    await refreshUsage();
+  }, [refreshUsage]);
 
   const assign = useCallback(async (column: ColumnId, presetId: string | null) => {
     const { columns } = await send<{ columns: ColumnAgents }>(
@@ -93,5 +115,5 @@ export function useAgents(
     );
   }, []);
 
-  return { presets, columns, usage, assign, save, remove, markLimited, refreshUsage };
+  return { presets, columns, usage, window, resetWindow, assign, save, remove, markLimited, refreshUsage };
 }
