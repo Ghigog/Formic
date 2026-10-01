@@ -19,7 +19,8 @@ import { requestShape } from "./models";
 import { MAX_PLAN_STEPS, checkPlan, currentStep, planFraction } from "./plan";
 import { checkHandoff } from "./handoff";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
-import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
+import { type ChatMessage, type ModelInfo, type ToolSpec, advertisedModel, chat } from "@/lib/llm/openai-compat";
+import { reasoningFor } from "@/lib/agents/reasoning";
 
 /**
  * The agentic loop both PROT-06 and PROT-07 run on.
@@ -439,12 +440,18 @@ function openAiConversation(
     { role: "system", content: input.system },
     { role: "user", content: input.prompt },
   ];
+  let advertised: Promise<ModelInfo | undefined> | undefined;
   return {
     async next() {
+      advertised ??= advertisedModel(info, apiKey, model, input.ctx.signal);
+      const modelInfo = await advertised;
+      // The budget can run out while the model list is fetched; do not start a reply after it.
+      input.ctx.signal?.throwIfAborted();
       const result = await chat(info, apiKey, {
         model,
         messages,
         tools: openAiTools(input.role),
+        ...reasoningFor(info, input.role, modelInfo),
         signal: input.ctx.signal,
       }).catch((e: unknown) => {
         throw new Error(e instanceof Error ? e.message : String(e));

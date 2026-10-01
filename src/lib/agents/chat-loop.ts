@@ -5,7 +5,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { anthropicClient, billedInputTokens, cachedSystem, cachedToHere } from "./anthropic";
 import type { Usage } from "./ports";
 import { estimateCostCents } from "@/lib/budget/limits";
-import { type ChatMessage, type ToolSpec, chat } from "@/lib/llm/openai-compat";
+import { type ChatMessage, type ModelInfo, type ToolSpec, advertisedModel, chat } from "@/lib/llm/openai-compat";
+import { reasoningFor } from "@/lib/agents/reasoning";
 import type { ProviderId, ProviderInfo } from "@/lib/llm/providers";
 
 /**
@@ -131,13 +132,16 @@ export function openAiSpeak(
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.schema },
   }));
+  let advertised: Promise<ModelInfo | undefined> | undefined;
   return async (results, options) => {
     for (const r of results ?? []) {
       messages.push({ role: "tool", tool_call_id: r.id, content: r.isError ? `Error: ${r.content}` : r.content });
     }
+    advertised ??= advertisedModel(info, apiKey, model);
     const result = await chat(info, apiKey, {
       model,
       messages,
+      ...reasoningFor(info, "chat", await advertised),
       ...(options?.answerOnly ? {} : { tools: toolSpecs }),
     });
     // Kept whole, reasoning included: DeepSeek rejects a turn without it.
