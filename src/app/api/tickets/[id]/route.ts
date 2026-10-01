@@ -48,7 +48,6 @@ export async function GET(
     description: detail.description,
     acceptanceCriteria: detail.acceptanceCriteria,
     branchName: detail.branchName,
-    summary: detail.summary,
     dependsOn: card.dependsOn.flatMap((depId) => {
       const dep = cards.find((c) => c.id === depId);
       return dep ? [{ id: dep.id, key: dep.key, title: dep.title, status: dep.status }] : [];
