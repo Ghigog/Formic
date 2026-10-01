@@ -88,6 +88,13 @@ export async function publish(
     const { startQueued } = await import("@/lib/board/queue");
     await startQueued(projectId);
   }
+
+  // A Queen pushes its card's prerequisites along: when one is placed, and
+  // whenever something merges.
+  if (event.type === "card.queen" || (event.type === "card.status" && event.status === "merged")) {
+    const { advanceQueens } = await import("@/lib/board/service");
+    await advanceQueens(projectId);
+  }
   return seq;
 }
 
