@@ -1,6 +1,6 @@
 import "server-only";
 
-import { budgetFor, type BudgetPath, type Budget, type ColumnLimits } from "./budget-for";
+import { ATTEMPT_DEFAULTS, budgetFor, type AttemptKind, type BudgetPath, type Budget, type ColumnLimits } from "./budget-for";
 import { resolveRunTimeBudget } from "@/lib/run-time-budget";
 import { getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
 
@@ -15,8 +15,9 @@ export async function budgetForRun(
   ticket: { storyPoints?: number | null },
   path: BudgetPath,
   column: ColumnLimits | null = null,
+  attemptKind: AttemptKind = "review",
 ): Promise<Budget> {
-  if (!ownerId) return budgetFor(null, column, ticket, path);
+  if (!ownerId) return budgetFor(null, column, ticket, path, attemptKind);
   const [limits, minutes] = await Promise.all([getLimitSettings(ownerId), getRunTimeBudgetSettings(ownerId)]);
   const resolved = resolveRunTimeBudget(minutes, ticket.storyPoints);
   return budgetFor(
@@ -27,7 +28,17 @@ export async function budgetForRun(
     column,
     ticket,
     path,
+    attemptKind,
   );
+}
+
+/**
+ * How many attempts the owner allows for one kind of retry loop: the attempts
+ * axis, with today's count when it is unset or Off, so a loop is never unbounded.
+ */
+export async function attemptsFor(ownerId: string | null, kind: AttemptKind): Promise<number> {
+  const budget = await budgetForRun(ownerId, {}, "in-process", null, kind);
+  return budget.attempts.value ?? ATTEMPT_DEFAULTS[kind];
 }
 
 /** A ticket's in-process run: the same rule, under the in-process rail. */

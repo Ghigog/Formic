@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { ATTEMPT_DEFAULTS, budgetFor, PATH_RAILS } from "./budget-for";
-import { MAX_DECOMPOSITION_ATTEMPTS } from "@/lib/agents/decomposition";
 
 describe("budgetFor", () => {
   it("defaults to 10 minutes a point, clamped to the in-process rail, naming it", () => {
@@ -70,7 +69,6 @@ describe("budgetFor", () => {
 
   it("keeps today's attempt defaults", () => {
     expect(ATTEMPT_DEFAULTS).toEqual({ review: 4, decomposition: 3, draft: 2, cliAnswer: 2 });
-    expect(ATTEMPT_DEFAULTS.decomposition).toBe(MAX_DECOMPOSITION_ATTEMPTS);
     expect(budgetFor(null, null, {}, "loop", "draft").attempts.value).toBe(2);
   });
 

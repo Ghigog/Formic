@@ -1,9 +1,8 @@
 import "server-only";
 
-import { inProcessBudget } from "@/lib/budget/in-process";
+import { attemptsFor, inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
-import { DEFAULT_RUN_BUDGET } from "@/lib/budget/limits";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
 import { runCoderAgent, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
@@ -50,7 +49,6 @@ const STAGE_MERGE = 7;
  * than the attempt budget: the review that reads the diff alongside CI
  * should not cost a fix attempt when CI then comes back red.
  */
-export const MAX_REVIEWS = DEFAULT_RUN_BUDGET.maxAttempts + 1;
 
 /** A green-enough result. Skipped and neutral checks block nothing. */
 const GREEN = ["success", "neutral", "skipped"];
@@ -283,9 +281,10 @@ function ceilingReason(
   ticket: TicketDetail,
   pull: PullRequestDetail,
   red: CheckSummary[],
+  maxReviews: number,
 ): string {
   if (red.length === 0) {
-    return `${ticket.key} has been reviewed ${MAX_REVIEWS} times without being approved. This needs a human.`;
+    return `${ticket.key} has been reviewed ${maxReviews} times without being approved. This needs a human.`;
   }
   const names = red.map((c) => c.name).join(", ");
   if (ticket.reviewedSha === pull.headSha) {
@@ -296,7 +295,7 @@ function ceilingReason(
       `or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code. This needs a human.`
     );
   }
-  return `${names} is still failing after ${MAX_REVIEWS} reviews of pull request #${pull.number}. This needs a human.`;
+  return `${names} is still failing after ${maxReviews} reviews of pull request #${pull.number}. This needs a human.`;
 }
 
 /** When each board's open pull requests were last looked at, to go easy on the API. */
@@ -780,9 +779,11 @@ async function reviewTicket(
   const repo = repository();
   const attempt = ticket.attempts + 1;
   const names = red.map((c) => c.name).join(", ");
+  const project = await projectFor(projectId);
+  const maxReviews = await attemptsFor(project.ownerId, "review");
 
-  if (attempt > MAX_REVIEWS) {
-    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red), {
+  if (attempt > maxReviews) {
+    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red, maxReviews), {
       blocked: true,
       stalledIn: "in_review",
     });
@@ -799,7 +800,6 @@ async function reviewTicket(
     return;
   }
 
-  const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
   await repo.updateTicket(ticket.id, { attempts: attempt });
@@ -821,7 +821,7 @@ async function reviewTicket(
     checks: logs,
     ciRunning: options.ciRunning ?? false,
     attempt,
-    maxAttempts: MAX_REVIEWS,
+    maxAttempts: maxReviews,
   };
 
   const run = startRun(projectId, "reviewer", {
@@ -936,7 +936,7 @@ async function reviewTicket(
     const pushed = await commitAndPush(checkout, {
       branch: ticket.branchName,
       subject: `${ticket.key}: ${verdict.summary}`,
-      body: `${verdict.detail}\n\nFrom review ${attempt} of ${MAX_REVIEWS}${names ? `, for ${names}` : ""}.`,
+      body: `${verdict.detail}\n\nFrom review ${attempt} of ${maxReviews}${names ? `, for ${names}` : ""}.`,
     });
 
     if (!pushed.ok) {
@@ -1002,12 +1002,13 @@ async function resolveConflicts(
     });
 
   if (!ticket.branchName) return stall("It has no branch recorded to resolve it on.");
-  if (attempt > MAX_REVIEWS) {
-    return stall(`The Reviewer Agent has already had ${MAX_REVIEWS} goes at this pull request.`);
+  const project = await projectFor(projectId);
+  const maxReviews = await attemptsFor(project.ownerId, "review");
+  if (attempt > maxReviews) {
+    return stall(`The Reviewer Agent has already had ${maxReviews} goes at this pull request.`);
   }
   const branch = ticket.branchName;
 
-  const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
   await repo.updateTicket(ticket.id, { attempts: attempt });
@@ -1021,7 +1022,7 @@ async function resolveConflicts(
     changedFiles,
     checks: [],
     attempt,
-    maxAttempts: MAX_REVIEWS,
+    maxAttempts: maxReviews,
   };
   const notes = await noteTexts(projectId, ticket.id);
 

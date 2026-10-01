@@ -128,6 +128,8 @@ export interface ArchitectAgent {
       existing?: ExistingTicket[];
       /** What the person asked of this breakdown, oldest first. */
       instructions?: string[];
+      /** Attempts the person allows before it stalls; unset is the default. */
+      maxAttempts?: number;
     },
   ): Promise<AgentOutcome<DraftTicket[]>>;
   /** A To Do request: no PRD, just the raw text and one ticket to draft. */

@@ -11,6 +11,7 @@ import { ticketNotes } from "@/lib/coder/notes";
 import { epicNoteTexts, withEpicNotes } from "./epic-notes";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { budgetFor, type Budget } from "@/lib/budget/budget-for";
+import { attemptsFor } from "@/lib/budget/in-process";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
 import { agentFor, cliAgentFor, runTargetFor } from "./presets";
@@ -590,6 +591,7 @@ export async function runArchitectAgent(
     repoTree,
     existing: guidance?.existing,
     instructions: guidance?.instructions,
+    maxAttempts: await attemptsFor((await projectFor(projectId)).ownerId, "decomposition"),
   });
 
   if (outcome.ok) {
