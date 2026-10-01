@@ -15,6 +15,9 @@ import { adjacentColumn, ownsGesture, swipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
+import { cardEl, colonyEl } from "@/components/colony/fx";
+import { ghostOf, type Ghost } from "@/components/colony/epic-flight";
+import { flyToNest } from "@/components/colony/archive-flight";
 import type { AgentPreset, BoardCard, ColumnAgents } from "@/lib/domain/entities";
 import type { Account } from "./account-menu";
 import type { AssistantControls } from "./assistant";
@@ -95,6 +98,8 @@ export function Board({
 }: BoardProps) {
   /** The ticket last dropped on the archive zone, which does the archiving. */
   const [dropped, setDropped] = useState<{ ticketId: string } | null>(null);
+  /** The dropped ticket as it last looked, for the crumble once it is archived. */
+  const archiveGhost = useRef<Ghost | null>(null);
   // Empty until a drop. Seeded with the cards, it pinned every card to how it
   // first rendered, so nothing the server said about it afterwards showed.
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
@@ -419,13 +424,35 @@ export function Board({
       const card = live.find((c) => c.id === draggableId);
       if (!card) return;
       if (destination.droppableId === ARCHIVE_DROPPABLE_ID) {
-        if (card.kind === "ticket") setDropped({ ticketId: card.id });
+        if (card.kind === "ticket") {
+          const el = cardEl(card.id);
+          archiveGhost.current = colony && el ? ghostOf(el) : null;
+          setDropped({ ticketId: card.id });
+        }
         return;
       }
       void commit(card, destination.droppableId as ColumnId, destination.index);
     },
     [commit, live, colony],
   );
+
+  /**
+   * The crumble starts over the card in the same frame the board removes it,
+   * so it never flashes. A failed archive never gets here, and plays nothing.
+   */
+  const archived = (id: string) => {
+    // The drag library has put the card back by now: ghost it as it sits.
+    const el = cardEl(id);
+    const ghost = el?.isConnected ? ghostOf(el) : archiveGhost.current;
+    archiveGhost.current = null;
+    if (colony && ghost) {
+      void flyToNest(ghost, colonyEl("nest"), {
+        reduced: colony.fx.reducedMotion,
+        onCrumble: () => colony.sfx("crumble"),
+      });
+    }
+    onArchived?.(id);
+  };
 
   const epicsById = useMemo(
     () => new Map(live.filter((c) => c.kind === "epic").map((c) => [c.id, c])),
@@ -530,7 +557,7 @@ export function Board({
             <ArchiveDropZone
               dragging={dragSnapshot !== null}
               dropped={dropped}
-              onArchived={(id) => onArchived?.(id)}
+              onArchived={archived}
             />
           )}
         </main>
