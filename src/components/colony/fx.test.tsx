@@ -81,6 +81,21 @@ describe("ColonyFx.antAt and squashAnt", () => {
     return { fx, inner, play };
   };
 
+  it("keeps the same ants, walking, when a queued crew's card starts running", () => {
+    const ants = [ant({ mode: "crowd", leader: true }), ant({ mode: "crowd", idx: 1 })];
+    const { inner } = setup("queue", ants);
+    const crew = inner.crewMap.get("c1")!;
+    (inner as unknown as { transition: (c: unknown, d: string, r: null) => void }).transition(crew, "work", null);
+    expect(inner.crewMap.get("c1")).toBe(crew);
+    expect(crew.phase).toBe("work");
+    expect(crew.ants).toHaveLength(2);
+    crew.ants.forEach((a, i) => {
+      expect(a).toBe(ants[i]);
+      expect(a).toMatchObject({ mode: "walk" });
+      expect((a as { hidden?: boolean }).hidden).toBeFalsy();
+    });
+  });
+
   it("finds an ant within reach of the pointer, not one far away", () => {
     const { fx, inner } = setup();
     const a = inner.crewMap.get("c1")!.ants[0];
@@ -230,5 +245,75 @@ describe("travelRects", () => {
     const barOverNest = { left: 800, top: 740, right: 1000, bottom: 800 };
     expect(travelRects(view)).toEqual([view]);
     expect(visibleRects(view, [barOverNest])).not.toEqual([view]);
+  });
+});
+
+describe("ColonyFx crews on a card that is not rendered", () => {
+  type Frame = { updateCrews(dt: number, ctx: unknown, nx: number, ny: number): void };
+  const ctx = new Proxy({}, { get: () => () => ({}), set: () => true });
+  const setup = (phase: "work" | "tunnel" = "work") => {
+    const fx = new ColonyFx(new SoundEngine());
+    const inner = fx as unknown as Internals & { world: unknown } & Frame;
+    const ants = [0, 1].map((idx) => ({ x: 5, y: 5, a: 0, ph: 0, mode: "perim", wait: 0, idx, leader: false, t: 0, sp: 20 }));
+    inner.crewMap.set("c1", { id: "c1", sp: 1, phase, ants });
+    const want = (p: string | null) =>
+      fx.setWorld({
+        crews: new Map(p ? [["c1", { phase: p, sp: 1 }]] : []),
+        level: 1,
+        ants: "busy",
+        full: true,
+        bugShape: "ant",
+        bugHex: "#000000",
+        covered: false,
+      } as never);
+    want(phase);
+    return { inner, ants, want, step: () => inner.updateCrews(0.016, ctx, 0, 0) };
+  };
+  const render = () => {
+    const el = document.createElement("div");
+    el.setAttribute("data-tid", "c1");
+    el.getBoundingClientRect = () => ({ left: 50, top: 60, width: 100, height: 40, right: 150, bottom: 100 }) as DOMRect;
+    document.body.appendChild(el);
+    return el;
+  };
+
+  it("keeps its ants where they are, none going home, then resumes when the card returns", () => {
+    const { inner, ants, step } = setup();
+    step();
+    step();
+    expect(inner.crewMap.get("c1")!.ants).toEqual(ants);
+    expect(ants.every((a) => a.mode === "perim" && a.x === 5)).toBe(true);
+    const el = render();
+    step();
+    expect(inner.crewMap.get("c1")!.ants).toHaveLength(2);
+    expect(ants.every((a) => a.mode === "perim")).toBe(true);
+    el.remove();
+  });
+
+  it("does not spawn a crew for a wanted card with no element", () => {
+    const { inner, want, step } = setup();
+    inner.crewMap.clear();
+    want("work");
+    step();
+    expect(inner.crewMap.size).toBe(0);
+  });
+
+  it("still dismisses a paused crew when its card leaves the board or changes phase", () => {
+    const { inner, ants, want, step } = setup();
+    want(null);
+    step();
+    expect(ants.every((a) => a.mode === "home" || a.mode === "out")).toBe(true);
+    const b = setup();
+    b.want("leave");
+    b.step();
+    expect(b.ants.every((a) => a.mode === "home" || a.mode === "out")).toBe(true);
+    expect(inner.crewMap.get("c1")).toBeDefined();
+  });
+
+  it("transitions a paused crew on the next frame when its phase changes", () => {
+    const { inner, want, step } = setup();
+    want("tunnel");
+    step();
+    expect(inner.crewMap.get("c1")!.phase).toBe("tunnel");
   });
 });
