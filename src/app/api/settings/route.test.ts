@@ -80,3 +80,32 @@ describe("/api/settings run time budget", () => {
     expect((await PUT(put({ mode: "OFF" }))).status).toBe(401);
   });
 });
+
+describe("/api/settings renewal day", () => {
+  it("stores the day with its timezone", async () => {
+    const res = await PUT(put({ renewalDay: 5, timezone: "Europe/Paris" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ renewalDay: 5, timezone: "Europe/Paris" });
+    const user = await repository().userById(userId);
+    expect(user).toMatchObject({ tokenRenewalDay: 5, tokenWindowTimezone: "Europe/Paris" });
+  });
+
+  it("removes the day and timezone when null", async () => {
+    await PUT(put({ renewalDay: 5, timezone: "UTC" }));
+    expect((await PUT(put({ renewalDay: null }))).status).toBe(200);
+    const user = await repository().userById(userId);
+    expect(user).toMatchObject({ tokenRenewalDay: null, tokenWindowTimezone: null });
+  });
+
+  it.each([32, 0, 1.5, "5"])("rejects day %s", async (day) => {
+    const res = await PUT(put({ renewalDay: day, timezone: "UTC" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).errors.renewalDay).toMatch(/1 to 31/);
+  });
+
+  it("rejects an unknown timezone", async () => {
+    const res = await PUT(put({ renewalDay: 5, timezone: "Mars/Olympus" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).errors.timezone).toBeDefined();
+  });
+});
