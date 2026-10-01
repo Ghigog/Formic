@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { ColonyProvider, crewPhase } from "./colony";
+import { ColonyProvider, crewPhase, levelUpText } from "./colony";
+import { SENTINEL_UNLOCKS } from "@/lib/colony/game";
 import { SoundEngine } from "./sound";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
@@ -178,5 +179,13 @@ describe("crewPhase", () => {
   it("leaves a merged Epic alone, whoever is talking about it", () => {
     const done = makeCard({ kind: "epic", status: "merged" });
     expect(crewPhase(done, { [done.id]: { answering: true } })).toBeNull();
+  });
+});
+
+describe("levelUpText", () => {
+  it("names the Sentinel a level unlocks and the Queen", () => {
+    const text = levelUpText(SENTINEL_UNLOCKS[0]!.lv);
+    expect(text).toContain(SENTINEL_UNLOCKS[0]!.label);
+    expect(text).toContain("Queen");
   });
 });

@@ -123,6 +123,12 @@ export function crewPhase(card: BoardCard, extras: ExtrasMap, handingOver = fals
   return null;
 }
 
+/** The level-up toast: the rank, what the level unlocks (Sentinels included) and the Queen it earns. */
+export function levelUpText(lv: number): string {
+  const got = [...unlocksAt(lv), "a Queen"];
+  return `Lv ${lv} ${rankOf(lv)} · unlocked ${got.join(" and ")}. Tap the nest to equip`;
+}
+
 /** How long a queue crew keeps the card after it starts running with no run behind it. */
 export const HANDOVER_MS = 15_000;
 
@@ -261,11 +267,7 @@ export function ColonyProvider({
         fx.burst(x, y, ["var(--clay)", "var(--clay-lit)", "var(--text)"], 18, { speed: 240, size: 3 });
       }
       const got = unlocksAt(lv);
-      showToast(
-        got.length
-          ? `Lv ${lv} ${rankOf(lv)} · unlocked ${got.join(" and ")}. Tap the nest to equip`
-          : `Lv ${lv} ${rankOf(lv)} reached`,
-      );
+      showToast(levelUpText(lv));
       const nest = colonyEl("nest");
       if (got.length && nest) {
         const [x, y] = centerOf(nest);

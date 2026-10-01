@@ -41,3 +41,15 @@ describe("a card in review", () => {
     expect(screen.getByTestId("card-problem").textContent).toContain("Required review missing.");
   });
 });
+
+describe("the queen mark", () => {
+  it("shows on a card with a Queen and not on one without", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4, queen: true }));
+    expect(screen.getByLabelText("Queen placed")).toBeTruthy();
+  });
+
+  it("is absent without a Queen", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
+    expect(screen.queryByLabelText("Queen placed")).toBeNull();
+  });
+});

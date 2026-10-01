@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useRef } from "react";
+import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
@@ -207,6 +208,16 @@ function CardBugBadge({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
   if (!isBug(card, env?.epics ?? NO_EPICS)) return null;
   return <BugBadge squashed={isSquashed(card)} />;
+}
+
+/** A small chess queen on a card a Queen was placed on. */
+function CardQueenMark({ card }: { card: BoardCard }) {
+  if (!card.queen) return null;
+  return (
+    <span data-queenmark role="img" aria-label="Queen placed" title="Queen placed" className="text-clay inline-flex shrink-0">
+      <QueenIcon size={12} />
+    </span>
+  );
 }
 
 /** The spike label, on any card that is a spike. */
@@ -458,6 +469,7 @@ function TicketHead({
       {card.status === "queued" && <QueueTimer card={card} />}
       <CardBugBadge card={card} />
       <CardSpikeBadge card={card} />
+        <CardQueenMark card={card} />
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
       <ProblemBadge card={card} />
@@ -501,6 +513,7 @@ function BacklogEpic({
         </CoinBadge>
         <CardBugBadge card={card} />
         <CardSpikeBadge card={card} />
+        <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <div className="flex-grow" />
         <ProblemBadge card={card} />
@@ -918,6 +931,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
         />
         <CardBugBadge card={card} />
         <CardSpikeBadge card={card} />
+        <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <ProblemBadge card={card} />
         <h4
@@ -958,6 +972,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
         <CardBugBadge card={card} />
         <CardSpikeBadge card={card} />
+        <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <h4 className="text-ink truncate text-[12px] font-medium">
           {card.title}

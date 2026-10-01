@@ -50,6 +50,7 @@ export function useBoardEvents(
       "card.created",
       "card.deleted",
       "card.rerouted",
+      "card.queen",
       "card.chat",
       "assistant.failed",
       "epic.prd",
