@@ -71,8 +71,12 @@ ceiling applied and gives both numbers ("stopped at the job's 180-minute
 ceiling; the ticket's budget is 200"), while a run that used its own budget says
 that one. A repository whose workflow is older keeps its old 60-minute job until
 it accepts the refresh pull request Formic offers; declining it changes nothing
-for that repository. The four modes, the per-user storage, the settings
-screen and the "12 of 20 minutes used" line on a ticket are not built yet.
+for that repository. The four modes, per-user storage, column overrides and the
+`budgetFor` rule that resolves them (`src/lib/budget/budget-for.ts`) are in the
+code; the settings screen and the "12 of 20 minutes used" line on a ticket have
+not been checked against this page. Every limit, with its unit, default, scope,
+enforcement class and whether a person may set it, is listed in
+[limits.md](limits.md), which is the page to trust where the two differ.
 
 ## Acceptance
 
