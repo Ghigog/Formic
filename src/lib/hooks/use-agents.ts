@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { AgentPreset, AgentPresetInput, ColumnAgents } from "@/lib/domain/entities";
+import type { AgentPreset, AgentPresetInput, ColumnAgents, ColumnOverride, ColumnOverrides } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 
 async function send<T>(url: string, method: string, body?: unknown): Promise<T> {
@@ -42,9 +42,11 @@ export function useAgents(
   initialColumns: ColumnAgents,
   initialUsage: AgentUsage = {},
   initialWindow: TokenWindowView = ALL_TIME,
+  initialOverrides: ColumnOverrides = {},
 ) {
   const [presets, setPresets] = useState(initialPresets);
   const [columns, setColumns] = useState(initialColumns);
+  const [overrides, setOverrides] = useState(initialOverrides);
   const [usage, setUsage] = useState(initialUsage);
   const [window, setWindow] = useState(initialWindow);
 
@@ -100,6 +102,16 @@ export function useAgents(
     [assign],
   );
 
+  /** Sets a column agent's own limits; null on an axis falls back to the person's setting. */
+  const setOverride = useCallback(async (column: ColumnId, override: ColumnOverride) => {
+    const next = await send<{ overrides: ColumnOverrides }>(
+      `/api/agents/columns/${column}/override`,
+      "PUT",
+      override,
+    );
+    setOverrides(next.overrides);
+  }, []);
+
   const remove = useCallback(async (presetId: string) => {
     await send(`/api/agents/presets/${presetId}`, "DELETE");
     setPresets((prev) => prev.filter((p) => p.id !== presetId));
@@ -115,5 +127,5 @@ export function useAgents(
     );
   }, []);
 
-  return { presets, columns, usage, window, resetWindow, assign, save, remove, markLimited, refreshUsage };
+  return { presets, columns, overrides, setOverride, usage, window, resetWindow, assign, save, remove, markLimited, refreshUsage };
 }

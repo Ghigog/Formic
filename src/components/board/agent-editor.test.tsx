@@ -176,3 +176,55 @@ describe("AgentEditor pricing note", () => {
     expect(screen.getByText(/not counted against the spend ceiling/)).toBeInTheDocument();
   });
 });
+
+describe("AgentEditor limit override", () => {
+  const preset = (provider: string): AgentPreset =>
+    ({
+      id: "p1",
+      name: "worker",
+      provider,
+      model: "m",
+      prompt: "",
+      column: "todo",
+      hasKey: true,
+      keyHint: "1234",
+      limitedUntil: null,
+      limitNote: null,
+    }) as AgentPreset;
+
+  it("offers flat values for minutes, tokens and attempts and saves them", async () => {
+    stubModelsFetch();
+    const onSaveOverride = vi.fn(async () => {});
+    render(
+      <AgentEditor
+        column="todo"
+        preset={preset("anthropic")}
+        override={{ minutes: 15, tokens: null, attempts: null }}
+        onSaveOverride={onSaveOverride}
+        onClose={vi.fn()}
+        onSave={vi.fn(async () => {})}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Minutes override")).toHaveValue(15);
+    await userEvent.type(screen.getByLabelText("Attempts override"), "3");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSaveOverride).toHaveBeenCalledWith({ minutes: 15, tokens: null, attempts: 3 });
+  });
+
+  it("offers no token limit to an agent whose path cannot enforce one", () => {
+    stubModelsFetch();
+    render(
+      <AgentEditor
+        column="todo"
+        preset={preset("claude-code")}
+        onSaveOverride={vi.fn()}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Minutes override")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Tokens override")).not.toBeInTheDocument();
+  });
+});

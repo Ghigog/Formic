@@ -534,6 +534,8 @@ export interface Repository {
   ticketsForEpic(epicId: string): Promise<TicketDetail[]>;
 
   startRun(run: RunRecord): Promise<void>;
+  /** Milliseconds a ticket's agent runs have taken, a live one counted up to now. */
+  ticketRunMs(ticketId: string): Promise<number>;
   finishRun(runId: string, outcome: RunOutcome): Promise<void>;
   /**
    * Runs still marked live that began before `startedBefore`. Callers pass a

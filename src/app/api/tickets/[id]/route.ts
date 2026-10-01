@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { WORK_TYPES } from "@/lib/domain/entities";
 import { columnFor } from "@/lib/domain/status";
+import { budgetFor, minutesSetting } from "@/lib/budget/budget-for";
+import { getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { limited, RUN } from "@/lib/rate-limit";
 import { repository } from "@/lib/db";
 import { activeProject } from "@/lib/board/project";
@@ -42,6 +44,18 @@ export async function GET(
     if (item) activity = appendActivity(activity, item);
   }
 
+  // The same rule a run is held to: the column's override, else the person's setting.
+  // `requested` rather than `value`, so mode Off reads as no budget, not the path's rail.
+  const column = columnFor(card.status, card.stalledIn);
+  const time = project.ownerId ? await getRunTimeBudgetSettings(project.ownerId) : null;
+  const budget = budgetFor(
+    time ? { minutes: minutesSetting(time) } : null,
+    (await repo.columnOverrides(project.id))[column],
+    card,
+    "loop",
+  );
+  const usedMs = await repo.ticketRunMs(id);
+
   const view: TicketView = {
     card,
     epic: epic ? { id: epic.id, key: epic.key, title: epic.title } : null,
@@ -55,6 +69,7 @@ export async function GET(
     plan: detail.plan,
     handoff: detail.handoff,
     activity,
+    usage: { usedMinutes: Math.round(usedMs / 60_000), budgetMinutes: budget.minutes.requested },
     canStop: card.status === "running" || !!detail.runnerJob || !!card.workingSince,
   };
   return Response.json(view);
