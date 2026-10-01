@@ -1435,6 +1435,31 @@ describe("a CLI agent seen while it works", () => {
     expect(again.notes).toEqual([]);
   });
 
+  it("shows an assistant question's output in the terminal while it is pending, and stops once it is not", async () => {
+    const msg = await repository().addAssistantMessage({
+      projectId: PROJECT,
+      role: "assistant",
+      content: "",
+      status: "pending",
+    });
+    const job = `${msg.id}--ask-1`;
+    await repository().updateAssistantMessage(msg.id, { runnerJob: job });
+    const before = (await repository().eventsAfter(PROJECT, 0)).length;
+
+    for (const text of ["reading the board", "still reading"]) {
+      const reply = await receiveReport({ job, since: Date.now(), after: 0, lines: [text] });
+      expect(reply.stop).toBe(false);
+    }
+    const events = (await repository().eventsAfter(PROJECT, 0)).slice(before);
+    expect(events.map((e) => e.payload)).toMatchObject([
+      { type: "run.log", runId: job, line: "reading the board" },
+      { type: "run.log", runId: job, line: "still reading" },
+    ]);
+
+    await repository().updateAssistantMessage(msg.id, { status: "done" });
+    expect((await receiveReport({ job, since: Date.now(), after: 0, lines: ["late"] })).stop).toBe(true);
+  });
+
   describe("checkpoints", () => {
     const BASE = "a".repeat(40);
     const checkpoint = {
