@@ -120,6 +120,8 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "",
     ENGINEERING_PRACTICES,
     "",
+    `You have ${MAX_TURNS} rounds, one per model call, and an answer that runs out of them is lost. Call propose as soon as you know the ticket list; do not read further to polish it. A thin fileScope is better than no proposal.`,
+    "",
     "Answer in short, plain Markdown. After proposing, say in one line what you proposed.",
     "",
     "The board right now:",
