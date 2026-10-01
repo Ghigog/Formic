@@ -9,7 +9,7 @@ import { SentinelsProvider } from "@/components/sentinels/store";
 function renderHeader() {
   return render(
     <ColonyProvider storageKey="colony-test-header-stats" cards={[]} extras={{}}>
-      <SentinelsProvider initial={{}}>
+      <SentinelsProvider initial={{}} level={1}>
         <ColonyHeaderStats />
       </SentinelsProvider>
     </ColonyProvider>,

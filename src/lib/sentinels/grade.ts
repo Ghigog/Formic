@@ -1,8 +1,9 @@
-import { SENTINELS } from "./roster";
+import { SENTINELS, isUnlocked } from "./roster";
 
 /**
- * The project's grade: the average of every sentinel's stars, where a
- * sentinel that has not reported counts as zero. The roster is the same on
+ * The project's grade: the average of the unlocked sentinels' stars, where
+ * an unlocked sentinel that has not reported counts as zero and a locked one
+ * does not count at all. The roster is the same on
  * every project, so grades compare across them.
  */
 
@@ -20,7 +21,7 @@ export const GRADES: ReadonlyArray<{ grade: Grade; min: number; ink: string }> =
 ];
 
 export const GRADE_RULE =
-  "Grade = average stars across all 12 sentinels, unaudited ones counting 0. S ≥ 4.5, A ≥ 4.0, B ≥ 3.5, C ≥ 3.0, D ≥ 2.5, E ≥ 2.0, F below.";
+  "Grade = average stars across the unlocked sentinels, unaudited ones counting 0 and locked ones not counted. S ≥ 4.5, A ≥ 4.0, B ≥ 3.5, C ≥ 3.0, D ≥ 2.5, E ≥ 2.0, F below.";
 
 export interface GradeSummary {
   grade: Grade;
@@ -36,11 +37,12 @@ export interface GradeSummary {
   progress: number;
 }
 
-export function gradeOf(stars: Record<string, number | null | undefined>): GradeSummary {
-  const total = SENTINELS.length;
-  const sum = SENTINELS.reduce((n, s) => n + (stars[s.id] ?? 0), 0);
-  const done = SENTINELS.filter((s) => stars[s.id] != null).length;
-  const avg = sum / total;
+export function gradeOf(stars: Record<string, number | null | undefined>, level: number): GradeSummary {
+  const unlocked = SENTINELS.filter((s) => isUnlocked(s, level));
+  const total = unlocked.length;
+  const sum = unlocked.reduce((n, s) => n + (stars[s.id] ?? 0), 0);
+  const done = unlocked.filter((s) => stars[s.id] != null).length;
+  const avg = total ? sum / total : 0;
   const i = GRADES.findIndex((g) => avg >= g.min - 1e-9);
   const at = GRADES[i]!;
   const up = i > 0 ? GRADES[i - 1]! : null;

@@ -25,6 +25,7 @@ import type { Account } from "./account-menu";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyTimeline } from "@/components/colony/timeline";
 import { SentinelsPage } from "@/components/sentinels/sentinels";
+import { scoreOf } from "@/lib/colony/game";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import type { SentinelStates } from "@/lib/sentinels/view";
 import { ColonyPopover, NestButton } from "@/components/colony/nest";
@@ -156,7 +157,7 @@ export function BoardShell({
 
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
-    <SentinelsProvider initial={initialSentinels}>
+    <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level}>
     <div className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}

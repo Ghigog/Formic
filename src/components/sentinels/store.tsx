@@ -32,14 +32,16 @@ const POLL_MS = 1500;
 
 export function SentinelsProvider({
   initial,
+  level,
   children,
 }: {
   initial: SentinelStates;
+  level: number;
   children: React.ReactNode;
 }) {
   const [states, setStates] = useState(initial);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const grade = useMemo(() => gradeOf(starsOf(states)), [states]);
+  const grade = useMemo(() => gradeOf(starsOf(states), level), [states, level]);
   const anyRunning = Object.values(states).some((s) => s.running);
 
   const refresh = useCallback(async () => {

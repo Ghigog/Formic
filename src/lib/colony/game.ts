@@ -1,5 +1,6 @@
 import type { BoardCard } from "@/lib/domain/entities";
 import { columnFor } from "@/lib/domain/status";
+import { SENTINELS } from "@/lib/sentinels/roster";
 
 /**
  * The colony's rules: points, levels and the heat multiplier.
@@ -52,6 +53,14 @@ export const COLOR_UNLOCKS: ReadonlyArray<{ key: BugColor; label: string; hex: s
   { key: "terracotta", label: "Terracotta", hex: "#C4561A", lv: 9 },
 ];
 
+export const SENTINEL_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: number }> = SENTINELS.map((s) => ({
+  key: s.id,
+  label: s.name,
+  lv: s.unlockLevel,
+}));
+
+const ALL_UNLOCKS = [...SHAPE_UNLOCKS, ...COLOR_UNLOCKS, ...SENTINEL_UNLOCKS];
+
 export function levelOf(xp: number): number {
   return Math.floor(Math.max(0, xp) / XP_PER_LEVEL) + 1;
 }
@@ -60,14 +69,19 @@ export function rankOf(level: number): string {
   return RANKS[Math.min(Math.max(1, level), RANKS.length) - 1]!;
 }
 
+/** Queens earned at a level: one for each level gained since Lv 1, with no cap. */
+export function queensEarned(level: number): number {
+  return Math.max(0, level - 1);
+}
+
 /** What a level unlocks, by label. */
 export function unlocksAt(level: number): string[] {
-  return [...SHAPE_UNLOCKS, ...COLOR_UNLOCKS].filter((u) => u.lv === level).map((u) => u.label);
+  return ALL_UNLOCKS.filter((u) => u.lv === level).map((u) => u.label);
 }
 
 /** The next level that unlocks anything, and what. Null once all are in. */
 export function nextUnlock(level: number): { level: number; labels: string[] } | null {
-  const ahead = [...SHAPE_UNLOCKS, ...COLOR_UNLOCKS].filter((u) => u.lv > level);
+  const ahead = ALL_UNLOCKS.filter((u) => u.lv > level);
   if (!ahead.length) return null;
   const lv = Math.min(...ahead.map((u) => u.lv));
   return { level: lv, labels: unlocksAt(lv) };
