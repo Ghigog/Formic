@@ -10,6 +10,19 @@ describe("provider entries", () => {
     expect(info.baseUrl).toBe("https://api.deepseek.com");
   });
 
+  it("tells ClinePass users where a durable key comes from and suggests the plan's slugs", () => {
+    const info = provider("clinepass")!;
+    expect(info.note).toContain("Settings > API Keys");
+    expect(info.note).toMatch(/expires in 60 minutes/);
+    expect(info.note).toMatch(/401/);
+    expect(info.suggestedModels).toEqual([
+      "cline-pass/deepseek-v4.1-flash",
+      "cline-pass/glm-5.3",
+      "cline-pass/kimi-k3",
+      "cline-pass/qwen3.7-max",
+    ]);
+  });
+
   it("leaves no provider with no suggestions and a note that repeats its label", () => {
     const blank = PROVIDERS.filter(
       (p) =>
