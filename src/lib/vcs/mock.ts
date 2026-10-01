@@ -12,6 +12,9 @@ import {
   type IssueRef,
   type WorkflowRunRef,
   type BranchRun,
+  type Snapshot,
+  type ArtifactFiles,
+  type SecurityFacts,
   STAGING_PREFIX,
   type Checkpoint,
   type CheckpointInput,
@@ -72,6 +75,8 @@ interface MockRepo {
   checkpoints: Map<string, Checkpoint & { input: CheckpointInput }>;
   /** Actions runs by branch, newest first, as a test says they went. */
   branchRuns: Map<string, BranchRun[]>;
+  /** Artifact files by branch, as a test says CI uploaded them. */
+  artifacts: Map<string, ArtifactFiles>;
 }
 
 export interface MockIssue {
@@ -104,6 +109,7 @@ function repo(): MockRepo {
     recordedMerges: new Map(),
     checkpoints: new Map(),
     branchRuns: new Map(),
+    artifacts: new Map(),
   };
   return g.__formicMockRepo;
 }
@@ -370,6 +376,43 @@ export class MockVcsClient implements VcsClient {
 
   async branchRuns(branch: string): Promise<BranchRun[]> {
     return repo().branchRuns.get(branch) ?? [];
+  }
+
+  async snapshot(ref: string, keep: (path: string, size: number) => boolean, budget: number): Promise<Snapshot> {
+    const files = new Map<string, Buffer>();
+    let left = budget;
+    let truncated = false;
+    for (const [key, text] of repo().files) {
+      if (!key.startsWith(`${ref}:`)) continue;
+      const path = key.slice(ref.length + 1);
+      const bytes = Buffer.from(text);
+      if (!keep(path, bytes.length)) continue;
+      if (bytes.length > left) {
+        truncated = true;
+        continue;
+      }
+      files.set(path, bytes);
+      left -= bytes.length;
+    }
+    return { files, truncated };
+  }
+
+  async artifacts(
+    branch: string,
+    name: RegExp,
+    keep: (path: string, size: number) => boolean,
+  ): Promise<ArtifactFiles | null> {
+    const found = repo().artifacts.get(branch);
+    if (!found) return null;
+    const files = new Map(
+      [...found.files].filter(([path, bytes]) => name.test(path.split("/")[0]!) && keep(path.slice(path.indexOf("/") + 1), bytes.length)),
+    );
+    return files.size ? { runUrl: found.runUrl, files } : null;
+  }
+
+  async security(): Promise<SecurityFacts> {
+    const none = { ok: false as const, reason: "not available in the mock" };
+    return { dependabot: none, secrets: none, codeScanning: none, protection: none, settings: none };
   }
 
   async saveCheckpoint(card: string, input: CheckpointInput): Promise<string> {

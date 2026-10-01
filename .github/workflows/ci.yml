@@ -66,9 +66,18 @@ jobs:
           DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
       # The github-actions reporter turns a failing test into an annotation,
       # which is what the Reviewer Agent reads to diagnose a red check.
-      - run: npm test -- --reporter=default --reporter=github-actions
+      # Coverage is for the Tester sentinel, which reads main's summary.
+      - run: npm test -- --reporter=default --reporter=github-actions --coverage
         env:
           TEST_DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
+
+      - name: Keep the coverage summary for the Sentinels
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sentinel-evidence-coverage
+          path: coverage/coverage-summary.json
+          retention-days: 14
 
   # One production build, then the two checks that run on it: boot against a
   # real database, and the board in a real browser. Steps of one job rather
@@ -105,6 +114,8 @@ jobs:
           restore-keys: |
             next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
       - run: npm run build
+      # What the build ships, for the Performance sentinel.
+      - run: node scripts/bundle-stats.mjs
 
       # A real database from here on, so the migrations and the app's runtime
       # queries run here first, not first in production.
@@ -149,6 +160,17 @@ jobs:
       - run: npm run test:e2e
         env:
           E2E_SKIP_BUILD: "1"
+
+      # Screenshots and axe scans from e2e/evidence.spec.ts, and the bundle
+      # stats above: what the Sentinels read about the running app.
+      - name: Keep what the Sentinels read
+        if: always() && github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sentinel-evidence
+          path: e2e/.evidence
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Keep what failed
         if: failure()

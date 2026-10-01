@@ -33,8 +33,10 @@ export interface Sentinel {
   task: string;
   /** Paths worth reading first when the file list is too long to hand over whole. */
   focus: RegExp[];
-  /** Facts from GitHub this role needs beyond the code: see `evidence`. */
+  /** Facts this role needs beyond the files it picks: see ./evidence. */
   evidence?: EvidenceKind[];
+  /** Files it may read that every other role skips as noise. */
+  include?: RegExp[];
 }
 
 export const GROUP_INK: Record<SentinelGroup, string> = {
@@ -69,7 +71,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Professor O'Chumley, a tenured tyrannosaur who lectures in a mortarboard and round reading glasses. You are rigorous, dryly funny about the reach of your own arms, and you insist that a claim without a test is just an opinion. You are the Tester.",
     task: "Read the test suites and the code they cover. Judge coverage where it matters, test clarity and determinism. Flag red or flaky tests and important code with no tests at all.",
     focus: [/\.(test|spec)\.[jt]sx?$/, /(^|\/)(tests?|__tests__|e2e)\//, /(vitest|jest|playwright)\.config/, /package\.json$/],
-    evidence: ["ci"],
+    evidence: ["ci", "untested", "coverage"],
   },
   {
     id: "qa",
@@ -95,6 +97,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Collum, a classical column with a stern face and a capital for a hat. You have held a roof up for two thousand years without a day off, you judge everything by what it can carry, and you speak in measured, load-bearing sentences. You are the Architect.",
     task: "Map the module structure, dependencies and data model. Judge separation of concerns, coupling and how easy the system is to change.",
     focus: [/schema\.(prisma|sql)$/, /(^|\/)lib\//, /(^|\/)(domain|core|services?)\//, /README\.md$/i, /package\.json$/, /tsconfig\.json$/],
+    evidence: ["imports"],
   },
   {
     id: "secops",
@@ -107,7 +110,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Twodoodes, an assassin in a tie-dye shirt with a blade where the beads should be. You are mellow, unhurried and genuinely sorry about what happens to anyone who reaches for a door you have locked, and you trust nobody who says they are already inside. You are SecOps.",
     task: "Audit authentication, authorisation, secrets handling, input validation, security headers and dependency risk.",
     focus: [/auth/i, /secret|vault|crypt|token|session/i, /middleware|proxy/, /(^|\/)api\//, /\.env/, /next\.config|package\.json$/],
-    evidence: ["deps"],
+    evidence: ["deps", "security"],
   },
   {
     id: "devops",
@@ -146,7 +149,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Longfoot Jhan, an astronaut monkey with long arms and a helmet built for a smaller head. You are quick, curious and bored in seconds, you count turns and milliseconds out loud, and you take waiting personally. You are the Performance engineer.",
     task: "Judge bundle weight, render cost and database access. Find what will slow down as projects and data grow: N+1 queries, missing indexes, needless re-renders, unbounded lists.",
     focus: [/schema\.prisma$/, /repository|db\//i, /(^|\/)api\//, /components\//, /next\.config|package\.json$/],
-    evidence: ["deps"],
+    evidence: ["deps", "bundle"],
   },
   {
     id: "a11y",
@@ -159,6 +162,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Luca L'amico, a very small knight in borrowed armour with a wooden sword, sworn friend of anyone who cannot use a mouse. You are earnest, brave and hard to impress, and you notice every gate that only opens for the tall. You are the Accessibility auditor.",
     task: "Judge the interface for keyboard-only use, screen readers and reduced motion. Check accessible names, focus handling, contrast and WCAG 2.2 AA.",
     focus: [/\.(tsx|jsx|vue|svelte|html)$/, /\.css$/, /(^|\/)components\//],
+    evidence: ["a11y", "axe", "screens"],
   },
   {
     id: "design",
@@ -171,6 +175,8 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are That Barbon, a caveman in goggles and a riveted top hat who builds everything with a club and a straight edge. You judge craftsmanship by hand, you grunt approvingly at anything square, and you have firm opinions about what deserves to be seen. You are the Designer.",
     task: "Review the visual system: tokens, layout, type, motion and sound. Judge consistency, empty and error states, and whether every detail earns its place.",
     focus: [/design|tokens|theme/i, /\.css$/, /(^|\/)components\/ui\//, /(^|\/)components\//],
+    evidence: ["screens"],
+    include: [/\.svg$/],
   },
   {
     id: "legal",
@@ -196,6 +202,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Ptoughneigh, an alien farmer in overalls who has been working this patch since before the internet. You are sunny, relentless about the pitch and always thinking about the thumbnail, and you measure a product by what grows on its own. You are the Marketer.",
     task: "Judge how clearly the product tells its story: the README, landing and login pages, share metadata, onboarding, and which moments people would screenshot and share.",
     focus: [/README\.md$/i, /login|welcome|landing|onboard|marketing/i, /layout\.(t|j)sx$/, /opengraph|icon|manifest/i, /CHANGELOG/i],
+    evidence: ["screens"],
   },
   {
     id: "sales",
@@ -230,5 +237,13 @@ export function promptFor(s: Sentinel): string {
 
 /** The steps a run reports, in order. */
 export function stepsFor(s: Sentinel): string[] {
-  return ["Listing files", `Choosing what a ${s.name} reads`, "Reading the code", `Scoring as ${s.name}`, "Writing report"];
+  return [
+    "Listing files",
+    "Gathering the facts",
+    `Choosing what a ${s.name} reads`,
+    "Reading the code",
+    "Reading more",
+    `Scoring as ${s.name}`,
+    "Writing report",
+  ];
 }

@@ -10,6 +10,17 @@ import { startCliSentinel } from "@/lib/runner/runner";
 import { CANNED } from "./canned";
 import { runAudit } from "./agent";
 import { gatherEvidence } from "./gather";
+
+/** Bytes of repository a sentinel downloads at most. */
+const SNAPSHOT_BUDGET = 80_000_000;
+
+/** What a snapshot keeps: text a sentinel could read, and lockfiles whole. */
+function snapshotWanted(path: string, size: number): boolean {
+  if (/(^|\/)(package-lock\.json|npm-shrinkwrap\.json)$/.test(path)) return size <= 30_000_000;
+  if (/(^|\/)(node_modules|\.git|dist|build|out|\.next|coverage|vendor)\//.test(path)) return false;
+  if (/\.(png|jpe?g|gif|webp|ico|woff2?|ttf|otf|eot|mp3|mp4|wav|ogg|pdf|zip|gz|tgz|wasm|bin|exe|dll|so|dylib|lockb)$/i.test(path)) return false;
+  return size <= 400_000;
+}
 import { scoreOf } from "@/lib/colony/game";
 import { isUnlocked, sentinel as findSentinel, stepsFor } from "./roster";
 import { sentinelStates, type SentinelStates } from "./view";
@@ -79,12 +90,20 @@ export async function summonSentinel(
       }
       const client = vcs(project.repoFullName, githubToken);
       const files = await client.listFiles(project.baseBranch);
-      const evidence = await gatherEvidence(client, project.baseBranch, files, s.evidence);
+      await log("Gathering the facts");
+      // The whole repository in one download, for reading and for the
+      // analysis that needs every file. Without it, files come one by one.
+      const snapshot = await client.snapshot(project.baseBranch, snapshotWanted, SNAPSHOT_BUDGET).catch(() => null);
+      const evidence = await gatherEvidence({ client, branch: project.baseBranch, files, kinds: s.evidence, snapshot });
       const outcome = await runAudit(agent.config, {
         sentinel: s,
         repoFullName: project.repoFullName,
         files,
-        read: (path) => client.readFile(path, project.baseBranch),
+        read: async (path) => {
+          const bytes = snapshot?.files.get(path);
+          // Not in it: too large for the snapshot, or no snapshot at all.
+          return bytes ? bytes.toString("utf8") : client.readFile(path, project.baseBranch);
+        },
         evidence,
         log,
         signal: AbortSignal.timeout(280_000),

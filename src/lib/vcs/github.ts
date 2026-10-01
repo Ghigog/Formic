@@ -19,7 +19,14 @@ import {
   type IssueRef,
   type WorkflowRunRef,
   type BranchRun,
+  type Snapshot,
+  type ArtifactFiles,
+  type SecurityFacts,
+  type SecurityList,
 } from "./types";
+import { Readable } from "node:stream";
+import { createGunzip } from "node:zlib";
+import { untar, unzip, type Keep } from "./archive";
 import { CARRY_DELETED, CARRY_DIR } from "@/lib/runner/workflow";
 
 /**
@@ -56,6 +63,14 @@ function toDetail(raw: RawPull): PullRequestDetail {
     mergeable: raw.mergeable ?? null,
     title: raw.title,
   };
+}
+
+/** Why GitHub would not answer, in words a report can carry. */
+function unavailable(e: unknown): string {
+  if (e instanceof VcsError && (e.status === 403 || e.status === 404)) {
+    return `not available to this token, or not turned on for the repository (${e.status})`;
+  }
+  return e instanceof Error ? e.message : String(e);
 }
 
 export class GitHubClient implements VcsClient {
@@ -439,6 +454,131 @@ export class GitHubClient implements VcsClient {
       updatedAt: r.updated_at,
       url: r.html_url,
     }));
+  }
+
+  async snapshot(ref: string, keep: Keep, budget: number): Promise<Snapshot> {
+    // Through a redirect to codeload, which carries its own short-lived
+    // token, so not through request(): fetch drops our header on the hop.
+    const response = await fetch(`${API}/repos/${this.repoFullName}/tarball/${encodeURIComponent(ref)}`, {
+      headers: this.headers(),
+    }).catch((e: unknown) => {
+      throw new VcsError(`Could not reach GitHub: ${e instanceof Error ? e.message : String(e)}`);
+    });
+    if (!response.ok || !response.body) {
+      throw new VcsError(`GitHub GET /tarball/${ref} failed (${response.status})`, response.status);
+    }
+    const gunzip = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream).pipe(createGunzip());
+    return untar(gunzip, keep, budget);
+  }
+
+  async artifacts(branch: string, name: RegExp, keep: Keep, budget: number): Promise<ArtifactFiles | null> {
+    const runs = (await this.branchRuns(branch)).filter((r) => r.status === "completed").slice(0, 10);
+    for (const run of runs) {
+      const runId = /\/actions\/runs\/(\d+)/.exec(run.url)?.[1];
+      if (!runId) continue;
+      const { data } = await this.request<{
+        artifacts: Array<{ name: string; expired: boolean; archive_download_url: string; size_in_bytes: number }>;
+      }>("GET", `/actions/runs/${runId}/artifacts?per_page=100`);
+      const wanted = data.artifacts.filter((a) => !a.expired && name.test(a.name) && a.size_in_bytes <= budget);
+      if (wanted.length === 0) continue;
+
+      const files = new Map<string, Buffer>();
+      let left = budget;
+      for (const a of wanted) {
+        const response = await fetch(a.archive_download_url, { headers: this.headers() }).catch(() => null);
+        if (!response?.ok) continue;
+        const zip = Buffer.from(await response.arrayBuffer());
+        const { files: inner } = unzip(zip, keep, left);
+        for (const [path, bytes] of inner) {
+          files.set(`${a.name}/${path}`, bytes);
+          left -= bytes.length;
+        }
+      }
+      return { runUrl: run.url, files };
+    }
+    return null;
+  }
+
+  async security(branch: string): Promise<SecurityFacts> {
+    const list = async <R, T>(path: string, map: (r: R) => T): Promise<SecurityList<T>> => {
+      try {
+        const { data } = await this.request<R[]>("GET", path);
+        return { ok: true, items: data.map(map) };
+      } catch (e) {
+        return { ok: false, reason: unavailable(e) };
+      }
+    };
+
+    const [dependabot, secrets, codeScanning, protection, settings] = await Promise.all([
+      list<
+        {
+          dependency: { package: { name: string; ecosystem: string }; manifest_path: string };
+          security_advisory: { severity: string; summary: string };
+          security_vulnerability: { first_patched_version: { identifier: string } | null };
+        },
+        { package: string; ecosystem: string; severity: string; summary: string; manifest: string; fixedIn: string | null }
+      >("/dependabot/alerts?state=open&per_page=100", (a) => ({
+        package: a.dependency.package.name,
+        ecosystem: a.dependency.package.ecosystem,
+        severity: a.security_advisory.severity,
+        summary: a.security_advisory.summary,
+        manifest: a.dependency.manifest_path,
+        fixedIn: a.security_vulnerability.first_patched_version?.identifier ?? null,
+      })),
+      // The alert carries the secret itself. Only its kind leaves here.
+      list<
+        { secret_type_display_name?: string; secret_type: string; created_at: string; push_protection_bypassed?: boolean },
+        { type: string; createdAt: string; pushProtectionBypassed: boolean }
+      >("/secret-scanning/alerts?state=open&per_page=100", (a) => ({
+        type: a.secret_type_display_name ?? a.secret_type,
+        createdAt: a.created_at,
+        pushProtectionBypassed: Boolean(a.push_protection_bypassed),
+      })),
+      list<
+        {
+          rule: { id: string; security_severity_level?: string | null; severity?: string | null };
+          tool: { name: string };
+          most_recent_instance: { location: { path: string; start_line?: number } };
+        },
+        { rule: string; severity: string; tool: string; path: string; line: number | null }
+      >("/code-scanning/alerts?state=open&per_page=100", (a) => ({
+        rule: a.rule.id,
+        severity: a.rule.security_severity_level ?? a.rule.severity ?? "unknown",
+        tool: a.tool.name,
+        path: a.most_recent_instance.location.path,
+        line: a.most_recent_instance.location.start_line ?? null,
+      })),
+      this.request<{ protected: boolean; protection?: { required_status_checks?: { contexts?: string[] } } }>(
+        "GET",
+        `/branches/${encodeURIComponent(branch)}`,
+      ).then(
+        ({ data }) => ({
+          ok: true as const,
+          protected: data.protected,
+          requiredChecks: data.protection?.required_status_checks?.contexts ?? [],
+        }),
+        (e: unknown) => ({ ok: false as const, reason: unavailable(e) }),
+      ),
+      fetch(`${API}/repos/${this.repoFullName}`, { headers: this.headers() })
+        .then(async (r) => {
+          if (!r.ok) return { ok: false as const, reason: `GitHub answered ${r.status}` };
+          const data = (await r.json()) as { visibility?: string; security_and_analysis?: Record<string, { status?: string }> | null };
+          const features = Object.fromEntries(
+            Object.entries(data.security_and_analysis ?? {}).map(([k, v]) => [k, v?.status ?? "unknown"]),
+          );
+          return { ok: true as const, visibility: data.visibility ?? "unknown", features };
+        })
+        .catch((e: unknown) => ({ ok: false as const, reason: unavailable(e) })),
+    ]);
+    return { dependabot, secrets, codeScanning, protection, settings };
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
   }
 
   async cancelRun(runId: number): Promise<void> {

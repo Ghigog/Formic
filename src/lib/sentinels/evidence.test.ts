@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BranchRun } from "@/lib/vcs/types";
-import { ciEvidence, dependencyEvidence, flakyWorkflows } from "./evidence";
+import { ciEvidence, dependencyEvidence, flakyWorkflows, readArtifacts, securityEvidence } from "./evidence";
 
 const run = (over: Partial<BranchRun>): BranchRun => ({
   name: "CI",
@@ -96,5 +96,56 @@ describe("dependencyEvidence", () => {
     expect(dependencyEvidence(manifest, null, "pnpm-lock.yaml")).toContain("pnpm-lock.yaml, which is not parsed here");
     expect(dependencyEvidence(manifest, null, "package-lock.json")).toContain("could not be read");
     expect(dependencyEvidence(null, null, null)).toContain("No package.json");
+  });
+});
+
+describe("readArtifacts", () => {
+  const json = (v: unknown) => Buffer.from(JSON.stringify(v));
+  const files = new Map<string, Buffer>([
+    [
+      "sentinel-evidence-coverage/coverage-summary.json",
+      json({
+        total: { lines: { total: 100, covered: 80, pct: 80 }, branches: { total: 10, covered: 5, pct: 50 }, functions: { total: 1, covered: 1, pct: 100 }, statements: { total: 1, covered: 1, pct: 100 } },
+        "/home/runner/work/r/r/src/lib/vcs/github.ts": { lines: { total: 400, covered: 0, pct: 0 }, branches: { total: 1, covered: 0, pct: 0 } },
+        "/home/runner/work/r/r/src/lib/ok.ts": { lines: { total: 50, covered: 50, pct: 100 } },
+      }),
+    ],
+    ["sentinel-evidence/bundle.json", json({ totalBytes: 512_000, gzipBytes: 160_000, chunks: [{ file: "a.js", bytes: 300_000, gzip: 90_000 }] })],
+    [
+      "sentinel-evidence/axe/board-light.json",
+      json({ url: "/ (light)", passes: [1, 2], violations: [{ id: "color-contrast", impact: "serious", help: "Elements must meet contrast", nodes: [{ target: [".chip"] }] }] }),
+    ],
+    ["sentinel-evidence/screens/board-light.png", Buffer.from([0x89, 0x50])],
+  ]);
+
+  it("sorts coverage, bundle, axe and screenshots out of the artifacts", () => {
+    const a = readArtifacts("https://run", files);
+    expect(a.coverage).toContain("Coverage: lines 80.0%, branches 50.0%");
+    expect(a.coverage).toContain("- src/lib/vcs/github.ts: 0.0% of 400 lines");
+    expect(a.coverage).not.toContain("ok.ts");
+    expect(a.bundle).toContain("Client JavaScript shipped: 500.0 kB, 156.3 kB gzipped, in 1 chunks.");
+    expect(a.axe).toContain("- / (light): 1 rules violated, 2 passed");
+    expect(a.axe).toContain("serious: color-contrast: Elements must meet contrast (1 elements, e.g. .chip)");
+    expect(a.images).toEqual([{ name: "sentinel-evidence/screens/board-light.png", mediaType: "image/png", data: Buffer.from([0x89, 0x50]) }]);
+  });
+});
+
+describe("securityEvidence", () => {
+  it("lists open alerts and says which features it could not see", () => {
+    const text = securityEvidence(
+      {
+        dependabot: { ok: true, items: [{ package: "next", ecosystem: "npm", severity: "high", summary: "SSRF", manifest: "package-lock.json", fixedIn: "16.3.7" }] },
+        secrets: { ok: false, reason: "not available to this token, or not turned on for the repository (403)" },
+        codeScanning: { ok: true, items: [] },
+        protection: { ok: true, protected: true, requiredChecks: ["test", "lint"] },
+        settings: { ok: true, visibility: "private", features: {} },
+      },
+      "main",
+    );
+    expect(text).toContain("- Dependabot alerts: 1 open\n  - high: next (npm, package-lock.json): SSRF; fixed in 16.3.7");
+    expect(text).toContain("- Secret-scanning alerts: not available to this token");
+    expect(text).toContain("- Code-scanning alerts: 0 open");
+    expect(text).toContain("- main is protected; required checks: test, lint");
+    expect(text).toContain("- Repository is private; security settings not visible to this token");
   });
 });
