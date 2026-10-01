@@ -155,7 +155,7 @@ export function AskBox({
       <Shade
         a={a}
         repoName={repoName}
-        className="absolute top-[calc(100%+14px)] left-1/2 w-[min(920px,calc(100vw-48px))] -translate-x-1/2"
+        className="fixed top-16 left-1/2 w-[min(920px,calc(100vw-48px))] -translate-x-1/2"
       />
     </div>
   );
@@ -364,7 +364,7 @@ function Shade({
         "assistant-shade border-line bg-card z-50 flex flex-col rounded-b-2xl border border-t-0 shadow-[0_18px_40px_-12px_rgba(28,25,23,0.28)]",
         className,
       )}
-      style={{ height: "min(60vh, 620px)" }}
+      style={{ height: "min(60vh, 620px, calc(100vh - 4rem - 16px))" }}
     >
       <header className="border-hairline flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
         <span className="text-muted text-[11px] font-semibold tracking-[0.06em] uppercase">

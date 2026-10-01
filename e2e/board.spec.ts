@@ -289,6 +289,26 @@ test("the assistant pulls down from the top bar and rolls back up", async ({ pag
   await expect(shade).toBeHidden();
 });
 
+test("the assistant shade stays inside the window", async ({ page }) => {
+  const shade = page.locator("section[aria-label=Assistant]");
+  for (const size of [
+    { width: 1024, height: 600 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(size);
+    await page.getByRole("button", { name: "Pull the assistant down" }).click();
+    await expect(shade).toHaveAttribute("data-open", "true");
+    // clip-path animates the reveal but never moves the box.
+    const box = (await shade.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(size.height);
+    await shade.getByRole("button", { name: "Roll the assistant up" }).click();
+    await expect(shade).toHaveAttribute("data-open", "false");
+  }
+});
+
 test("a dropped card stays where it was dropped while the server answers", async ({ page }) => {
   const [first] = await cardIds(page, "Backlog");
   expect(first, "the demo board should start with a card in Backlog").toBeTruthy();
