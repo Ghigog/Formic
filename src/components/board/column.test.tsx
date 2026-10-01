@@ -112,6 +112,15 @@ describe("Column", () => {
     expect(group.getByText("Coder Agent loop")).toBeInTheDocument();
   });
 
+  it("makes the epic header the Queen drop target and marks a placed Queen", () => {
+    const [epic, ...kids] = makeEpicWithChildren({ queen: true }, [{}, {}]);
+    const { container } = column("todo", [epic!, ...kids]);
+    const header = container.querySelector(`[data-tid="${epic!.id}"]`)!;
+    expect(within(header as HTMLElement).getByLabelText("Queen placed")).toBeInTheDocument();
+    // The child tickets sit outside the header, with ids of their own.
+    expect(header.querySelector(`[data-tid="${kids[0]!.id}"]`)).toBeNull();
+  });
+
   it("leaves tickets standing alone where the column does not group", () => {
     const [epic, ...kids] = makeEpicWithChildren({}, [{}, {}]);
     const { container } = column("in_progress", [epic!, ...kids]);

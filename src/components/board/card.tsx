@@ -1071,6 +1071,7 @@ export function EpicGroup({
               >
                 EPIC
               </CoinBadge>
+              <CardQueenMark card={epic} />
               <span className="text-muted font-mono text-[10px]">
                 {done
                   ? `${epic.key} · ${epic.doneCount}/${epic.childCount} merged`
