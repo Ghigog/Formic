@@ -27,12 +27,14 @@ import type {
   AuditRecord,
   AuditResult,
   CardChatMessage,
+  QueenRecord,
 } from "./repository";
 import type {
   AgentPreset,
   AgentRunStatus,
   AttachmentSummary,
   BoardCard,
+  CardKind,
   ColumnAgents,
   ColumnOverride,
   ColumnOverrides,
@@ -111,6 +113,10 @@ interface Store {
   epicNumbers: Map<string, number>;
   /** The highest standalone ticket number each project has used, deleted ones included. */
   standaloneTicketNumbers: Map<string, number>;
+  /** Card id to the Queen on it. */
+  queens: Map<string, QueenRecord>;
+  /** Queens each project has taken off, by project id. */
+  queensSpent: Map<string, number>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -158,6 +164,8 @@ function store(): Store {
     existing.users ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
+    existing.queens ??= new Map();
+    existing.queensSpent ??= new Map();
     existing.prdTimes ??= new Map();
     existing.epicJobTimes ??= new Map();
     existing.epicJobAgents ??= new Map();
@@ -189,6 +197,8 @@ function store(): Store {
     epicIssues: new Map(),
     epicNumbers: new Map(),
     standaloneTicketNumbers: new Map(),
+    queens: new Map(),
+    queensSpent: new Map(),
     events: [],
     runs: new Map(),
     deliveries: new Set(),
@@ -395,6 +405,7 @@ export class MemoryRepository implements Repository {
       s.audits = s.audits.filter((a) => a.projectId !== projectId);
       s.epicNumbers.delete(projectId);
       s.standaloneTicketNumbers.delete(projectId);
+      s.queensSpent.delete(projectId);
       s.projects.delete(projectId);
     }
     for (const preset of [...s.presets.values()]) {
@@ -437,6 +448,31 @@ export class MemoryRepository implements Repository {
     return card ? projectOf(s, card) : null;
   }
 
+  async placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null> {
+    const s = store();
+    if (s.queens.has(cardId)) return null;
+    const queen = { projectId, cardId, kind, placedAt: new Date() };
+    s.queens.set(cardId, queen);
+    return queen;
+  }
+
+  async listQueens(projectId: string): Promise<QueenRecord[]> {
+    return [...store().queens.values()].filter((q) => q.projectId === projectId);
+  }
+
+  async clearQueen(cardId: string): Promise<boolean> {
+    const s = store();
+    const queen = s.queens.get(cardId);
+    if (!queen) return false;
+    s.queens.delete(cardId);
+    s.queensSpent.set(queen.projectId, (s.queensSpent.get(queen.projectId) ?? 0) + 1);
+    return true;
+  }
+
+  async queensSpent(projectId: string): Promise<number> {
+    return store().queensSpent.get(projectId) ?? 0;
+  }
+
   async boardCards(projectId?: string): Promise<BoardCard[]> {
     const s = store();
     const cards = [...s.cards.values()].filter(
@@ -450,6 +486,7 @@ export class MemoryRepository implements Repository {
       if (id) live.set(id, { role: run.role, since: run.startedAt });
     }
     for (const card of cards) {
+      card.queen = s.queens.has(card.id);
       // An agent at work: a run here, or a CLI agent's job on GitHub Actions,
       // whose run here ends at dispatch.
       const job =
@@ -776,6 +813,7 @@ export class MemoryRepository implements Repository {
     const s = store();
     for (const id of ticketIds) {
       s.cards.delete(id);
+      s.queens.delete(id);
       s.ticketExtras.delete(id);
     }
     for (const card of s.cards.values()) {
@@ -791,6 +829,7 @@ export class MemoryRepository implements Repository {
     for (const card of [...s.cards.values()]) {
       if (card.epicId !== epicId) continue;
       s.cards.delete(card.id);
+      s.queens.delete(card.id);
       s.ticketExtras.delete(card.id);
     }
     for (const card of s.cards.values()) {
@@ -802,6 +841,7 @@ export class MemoryRepository implements Repository {
       }
     }
     s.cards.delete(epicId);
+    s.queens.delete(epicId);
     s.epicProject.delete(epicId);
     s.rawRequests.delete(epicId);
     s.prds.delete(epicId);

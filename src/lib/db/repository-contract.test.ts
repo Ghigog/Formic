@@ -605,6 +605,34 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("queens", () => {
+      it("keeps one Queen per card, marks it, and counts a cleared one as spent", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "Q-1")]);
+
+        expect(await repo.placeQueen(p.id, t!.id, "ticket")).toMatchObject({ cardId: t!.id, kind: "ticket" });
+        expect(await repo.placeQueen(p.id, t!.id, "ticket")).toBeNull();
+        expect((await repo.listQueens(p.id)).map((q) => q.cardId)).toEqual([t!.id]);
+        expect((await repo.boardCards(p.id)).find((c) => c.id === t!.id)!.queen).toBe(true);
+
+        expect(await repo.clearQueen(t!.id)).toBe(true);
+        expect(await repo.clearQueen(t!.id)).toBe(false);
+        expect(await repo.listQueens(p.id)).toEqual([]);
+        expect(await repo.queensSpent(p.id)).toBe(1);
+      });
+
+      it("drops a Queen with its card", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        await repo.placeQueen(p.id, epic.id, "epic");
+
+        await repo.deleteEpic(epic.id);
+
+        expect(await repo.listQueens(p.id)).toEqual([]);
+      });
+    });
+
     describe("webhook deliveries", () => {
       it("claims a delivery once", async () => {
         const key = `delivery-${randomUUID()}`;
