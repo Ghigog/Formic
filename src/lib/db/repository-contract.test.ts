@@ -427,6 +427,47 @@ function contract(name: string, make: () => Repository) {
         expect(updated.column).toBe("in_review");
       });
 
+      it("returns a column agent's override with the board's, and drops it with the agent", async () => {
+        const p = await project();
+        const preset = await repo.savePreset({
+          ownerId: null,
+          provider: "anthropic",
+          name: `contract-${randomUUID()}`,
+          model: "claude-opus-5",
+          prompt: "p",
+        });
+        expect(await repo.setColumnOverride(p.id, "in_progress", { minutes: 5, tokens: null, attempts: null })).toBe(false);
+
+        await repo.setColumnAgent(p.id, "in_progress", preset.id);
+        await repo.setColumnAgent(p.id, "in_review", preset.id);
+        expect(await repo.columnOverrides(p.id)).toEqual({});
+        expect(await repo.setColumnOverride(p.id, "in_progress", { minutes: 20, tokens: 90000, attempts: null })).toBe(true);
+        expect(await repo.columnOverrides(p.id)).toEqual({
+          in_progress: { minutes: 20, tokens: 90000, attempts: null },
+        });
+
+        await repo.setColumnAgent(p.id, "in_progress", null);
+        expect(await repo.columnOverrides(p.id)).toEqual({});
+      });
+
+      it("stores a token allowance with a rolling 30 day window by default", async () => {
+        const preset = await repo.savePreset({
+          ownerId: null,
+          provider: "anthropic",
+          name: `contract-${randomUUID()}`,
+          model: "claude-opus-5",
+          prompt: "p",
+        });
+        expect(preset).toMatchObject({ tokenAllowance: null, tokenAllowanceWindowDays: 30 });
+        await repo.setPresetAllowance(preset.id, { tokens: 1_000_000, windowDays: null });
+        expect((await repo.presetForRun(preset.id))?.preset).toMatchObject({
+          tokenAllowance: 1_000_000,
+          tokenAllowanceWindowDays: 30,
+        });
+        await repo.setPresetAllowance(preset.id, { tokens: 500, windowDays: 7 });
+        expect((await repo.presetForRun(preset.id))?.preset).toMatchObject({ tokenAllowance: 500, tokenAllowanceWindowDays: 7 });
+      });
+
       it("leaves a preset unscoped when no column is given, so it shows in every column", async () => {
         const preset = await repo.savePreset({
           ownerId: null,
@@ -436,6 +477,24 @@ function contract(name: string, make: () => Repository) {
           prompt: "p",
         });
         expect(preset.column).toBeNull();
+      });
+    });
+
+    describe("limit settings", () => {
+      it("stores Off explicitly, leaves an unset axis null, and returns a stored one", async () => {
+        const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2e9), login: "c", name: null, avatarUrl: null });
+        expect(user.tokenLimit ?? null).toBeNull();
+        expect(user.attemptLimit ?? null).toBeNull();
+
+        const off = await repo.updateLimits(user.id, { tokenLimit: { mode: "OFF" } });
+        expect(off.tokenLimit).toEqual({ mode: "OFF" });
+        expect(off.attemptLimit ?? null).toBeNull();
+
+        const both = await repo.updateLimits(user.id, { attemptLimit: { mode: "FLAT", flat: 3 } });
+        expect(both.tokenLimit).toEqual({ mode: "OFF" });
+        expect((await repo.userById(user.id))?.attemptLimit).toEqual({ mode: "FLAT", flat: 3 });
+
+        expect((await repo.updateLimits(user.id, { tokenLimit: null })).tokenLimit ?? null).toBeNull();
       });
     });
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { LimitSetting } from "@/lib/budget/budget-for";
 import { repository } from "@/lib/db";
 import { currentUser } from "@/lib/auth/user";
 import {
@@ -6,7 +7,13 @@ import {
   validateRunTimeBudgetSettings,
   type RunTimeBudgetSettings,
 } from "@/lib/run-time-budget";
-import { getRunTimeBudgetSettings, updateRunTimeBudgetSettings } from "@/lib/user-settings";
+import {
+  getLimitSettings,
+  getRunTimeBudgetSettings,
+  updateLimitSettings,
+  updateRunTimeBudgetSettings,
+} from "@/lib/user-settings";
+import { LIMIT_AXES, validateLimitSetting } from "@/lib/domain/limit-settings";
 import { hintFor, seal } from "@/lib/secrets/vault";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +29,17 @@ function sealed(value: string | null | undefined, cipher: string, hint: string) 
 }
 
 /** Flat minutes and per-point values stay loose so the domain validation reports them by field. */
-const budgetSchema = z.object({
-  mode: z.enum(RUN_TIME_BUDGET_MODES),
-  flatMinutes: z.number().nullable().optional(),
-  perPointMinutes: z.record(z.string(), z.unknown()).nullable().optional(),
-});
+const budgetSchema = z
+  .object({
+    mode: z.enum(RUN_TIME_BUDGET_MODES),
+    flatMinutes: z.number().nullable().optional(),
+    perPointMinutes: z.record(z.string(), z.unknown()).nullable().optional(),
+    /** Token and attempt limits, validated by field below. */
+    tokens: z.unknown().optional(),
+    attempts: z.unknown().optional(),
+  })
+  // Money is not a setting: a cents field, or any other stray one, is refused.
+  .strict();
 
 const renewalSchema = z.object({
   renewalDay: z.unknown(),
@@ -65,11 +78,11 @@ async function putRenewalDay(userId: string, json: unknown) {
   return Response.json({ renewalDay: updated.tokenRenewalDay, timezone: updated.tokenWindowTimezone });
 }
 
-/** This person's run time budget; the default when they never chose. */
+/** This person's limits on all three axes: time at the top level, then tokens and attempts. Defaults when they never chose. */
 export async function GET() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
-  return Response.json(await getRunTimeBudgetSettings(user.id));
+  return Response.json({ ...(await getRunTimeBudgetSettings(user.id)), ...(await getLimitSettings(user.id)) });
 }
 
 async function putRunTimeBudget(userId: string, json: unknown) {
@@ -78,7 +91,13 @@ async function putRunTimeBudget(userId: string, json: unknown) {
     return Response.json({ error: "Malformed.", errors: { mode: "Choose a valid mode." } }, { status: 400 });
   }
   const { mode, flatMinutes, perPointMinutes } = body.data;
-  const errors = validateRunTimeBudgetSettings({ mode, flatMinutes }, perPointMinutes ?? null);
+  const errors: Record<string, string> = validateRunTimeBudgetSettings({ mode, flatMinutes }, perPointMinutes ?? null);
+  for (const axis of LIMIT_AXES) {
+    if (body.data[axis] === undefined) continue;
+    for (const [field, message] of Object.entries(validateLimitSetting(body.data[axis]))) {
+      errors[`${axis}.${field}`] = message;
+    }
+  }
   if (mode === "PER_POINT" && !errors.perPointMinutes && perPointMinutes == null) {
     errors.perPointMinutes = "Add at least one per-point value.";
   }
@@ -92,7 +111,12 @@ async function putRunTimeBudget(userId: string, json: unknown) {
       ? Object.fromEntries(Object.entries(perPointMinutes).map(([k, v]) => [Number(k), v as number]))
       : null,
   };
-  return Response.json(await updateRunTimeBudgetSettings(userId, settings));
+  const time = await updateRunTimeBudgetSettings(userId, settings);
+  const limits = await updateLimitSettings(userId, {
+    ...(body.data.tokens !== undefined ? { tokens: body.data.tokens as LimitSetting } : {}),
+    ...(body.data.attempts !== undefined ? { attempts: body.data.attempts as LimitSetting } : {}),
+  });
+  return Response.json({ ...time, ...limits });
 }
 
 /** Saves this person's sandbox key (never returned), their run time budget when the body has a `mode`, or their renewal day when it has a `renewalDay`. */

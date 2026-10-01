@@ -109,3 +109,57 @@ describe("/api/settings renewal day", () => {
     expect((await res.json()).errors.timezone).toBeDefined();
   });
 });
+
+describe("/api/settings token and attempt limits", () => {
+  it("returns defaults for a person with no stored limits", async () => {
+    const body = await (await GET()).json();
+    expect(body.mode).toBe("PER_STORY_POINT");
+    expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 64_000 });
+    expect(body.attempts).toEqual({ mode: "FLAT" });
+  });
+
+  it("stores each axis and returns it on later reads", async () => {
+    const res = await PUT(
+      put({
+        mode: "PER_STORY_POINT",
+        tokens: { mode: "FLAT", flat: 300000 },
+        attempts: { mode: "PER_POINT_BY_HAND", byHand: { "1": 2, "5": 6 } },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await (await GET()).json()).toMatchObject({
+      tokens: { mode: "FLAT", flat: 300000 },
+      attempts: { mode: "PER_POINT_BY_HAND", byHand: { 1: 2, 5: 6 } },
+    });
+  });
+
+  it("returns Off for tokens when Off was chosen, not the default", async () => {
+    await PUT(put({ mode: "PER_STORY_POINT", tokens: { mode: "OFF" } }));
+    const body = await (await GET()).json();
+    expect(body.tokens).toEqual({ mode: "OFF" });
+    expect(body.attempts).toEqual({ mode: "FLAT" });
+  });
+
+  it("leaves an axis alone when the request omits it", async () => {
+    await PUT(put({ mode: "OFF", tokens: { mode: "FLAT", flat: 5000 } }));
+    await PUT(put({ mode: "OFF", attempts: { mode: "FLAT", flat: 3 } }));
+    expect(await (await GET()).json()).toMatchObject({
+      tokens: { mode: "FLAT", flat: 5000 },
+      attempts: { mode: "FLAT", flat: 3 },
+    });
+  });
+
+  it.each([
+    ["a cents field at the top", { mode: "OFF", maxCents: 500 }],
+    ["a cents field on an axis", { mode: "OFF", tokens: { mode: "FLAT", flat: 1000, cents: 500 } }],
+    ["an unknown axis mode", { mode: "OFF", tokens: { mode: "WEEKLY" } }],
+    ["a flat axis with no value", { mode: "OFF", attempts: { mode: "FLAT" } }],
+    ["a fractional per-point value", { mode: "OFF", tokens: { mode: "PER_POINT", perPoint: 1.5 } }],
+  ])("rejects %s and stores nothing", async (_name, payload) => {
+    const res = await PUT(put(payload));
+    expect(res.status).toBe(400);
+    const body = await (await GET()).json();
+    expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 64_000 });
+    expect(body.mode).toBe("PER_STORY_POINT");
+  });
+});
