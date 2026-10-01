@@ -1155,6 +1155,8 @@ export class MemoryRepository implements Repository {
       error: null,
       model: null,
       files: [],
+      runnerJob: null,
+      runnerAgent: null,
       startedAt: new Date(),
       finishedAt: null,
     };
@@ -1164,6 +1166,11 @@ export class MemoryRepository implements Repository {
 
   async logAudit(id: string, step: string): Promise<void> {
     store().audits.find((a) => a.id === id)?.log.push(step);
+  }
+
+  async setAuditJob(id: string, job: string | null, agent: string | null): Promise<void> {
+    const audit = store().audits.find((a) => a.id === id);
+    if (audit) Object.assign(audit, { runnerJob: job, runnerAgent: agent });
   }
 
   async finishAudit(id: string, result: AuditResult): Promise<void> {
@@ -1179,6 +1186,8 @@ export class MemoryRepository implements Repository {
       error: result.error ?? null,
       model: result.model ?? null,
       files: result.files ?? [],
+      runnerJob: null,
+      runnerAgent: null,
       finishedAt: new Date(),
     });
     s.audits = s.audits.filter(

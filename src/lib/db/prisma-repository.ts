@@ -1429,6 +1429,10 @@ export class PrismaRepository implements Repository {
     await prisma().audit.update({ where: { id }, data: { log: { push: step } } });
   }
 
+  async setAuditJob(id: string, job: string | null, agent: string | null): Promise<void> {
+    await prisma().audit.update({ where: { id }, data: { runnerJob: job, runnerAgent: agent } });
+  }
+
   async finishAudit(id: string, result: AuditResult): Promise<void> {
     const db = prisma();
     const row = await db.audit.update({
@@ -1442,6 +1446,8 @@ export class PrismaRepository implements Repository {
         error: result.error ?? null,
         model: result.model ?? null,
         files: result.files ?? [],
+        runnerJob: null,
+        runnerAgent: null,
         finishedAt: new Date(),
       },
     });
@@ -1689,6 +1695,8 @@ function toAuditRecord(row: {
   error: string | null;
   model: string | null;
   files: string[];
+  runnerJob: string | null;
+  runnerAgent: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }): AuditRecord {

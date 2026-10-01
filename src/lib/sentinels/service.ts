@@ -6,6 +6,7 @@ import { sentinelAgent } from "@/lib/agents/presets";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
+import { startCliSentinel } from "@/lib/runner/runner";
 import { CANNED } from "./canned";
 import { runAudit } from "./agent";
 import { scoreOf } from "@/lib/colony/game";
@@ -48,6 +49,18 @@ export async function summonSentinel(
       const agent = await sentinelAgent(projectId);
 
       if (agent.kind === "none") return await fail(agent.reason);
+      if (agent.kind === "cli") {
+        // The audit runs in GitHub Actions and finishes when its report comes back.
+        await log(`Starting ${agent.agent.info.label} in GitHub Actions`);
+        const started = await startCliSentinel({
+          projectId,
+          auditId: audit.id,
+          sentinelId: s.id,
+          agent: agent.agent,
+        });
+        if (!started.ok) await fail(started.reason);
+        return;
+      }
       if (agent.kind === "mock") {
         // No key and no GitHub needed: a canned report at a believable pace.
         for (const step of stepsFor(s).slice(1)) {

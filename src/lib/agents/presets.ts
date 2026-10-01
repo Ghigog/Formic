@@ -164,19 +164,21 @@ export async function columnLimit(projectId: string, column: ColumnId): Promise<
 /**
  * The agent the Sentinels audit with: the one set for the board's assistant.
  * Their persona and task come from the roster, so it only supplies provider,
- * model and key; its own prompt is a chat brief and is left out.
+ * model and key; its own prompt is a chat brief and is left out. A CLI agent
+ * is handed back as it is: it audits in GitHub Actions, not in the app.
  */
 export async function sentinelAgent(
   projectId: string,
-): Promise<{ kind: "configured"; config: AgentConfig } | { kind: "mock" } | { kind: "none"; reason: string }> {
+): Promise<
+  | { kind: "configured"; config: AgentConfig }
+  | { kind: "cli"; agent: CliAgent }
+  | { kind: "mock" }
+  | { kind: "none"; reason: string }
+> {
   const agent = await assistantAgentFor(projectId);
   if (agent.kind === "limited") return { kind: "none", reason: agent.reason };
-  if (agent.kind === "cli") {
-    return {
-      kind: "none",
-      reason: `${agent.agent.info.label} is a CLI agent. CLI agents run in GitHub Actions and cannot audit, so pick a Claude or OpenAI-compatible agent for the assistant.`,
-    };
-  }
+  // A CLI agent audits in a GitHub Actions job, on a checkout of the repository.
+  if (agent.kind === "cli") return { kind: "cli", agent: agent.agent };
   if (agent.kind === "none") {
     if (authMode() === "local") return { kind: "mock" };
     return { kind: "none", reason: "No agent is set for the assistant. Pick or create one above." };

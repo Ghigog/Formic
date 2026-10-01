@@ -70,6 +70,16 @@ export const reportSchema = z.object({
 
 export type SentinelReport = z.infer<typeof reportSchema>;
 
+/** A report as the page stores it: the stars clamped, the text trimmed. */
+export function finishedReport(r: SentinelReport) {
+  return {
+    stars: Math.min(5, Math.max(1, Math.round(r.stars))),
+    quote: r.quote.trim(),
+    summary: r.summary.trim(),
+    report: { likes: r.likes, dislikes: r.dislikes, wrong: r.wrong, missing: r.missing } satisfies AuditReport,
+  };
+}
+
 export interface AuditRun {
   sentinel: Sentinel;
   repoFullName: string;
@@ -156,16 +166,7 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
   if (!answer.ok) return { ok: false, error: answer.error, usage };
 
   await run.log("Writing report");
-  const r = answer.value;
-  return {
-    ok: true,
-    stars: Math.min(5, Math.max(1, Math.round(r.stars))),
-    quote: r.quote.trim(),
-    summary: r.summary.trim(),
-    report: { likes: r.likes, dislikes: r.dislikes, wrong: r.wrong, missing: r.missing },
-    files: texts.map((t) => t.path),
-    usage,
-  };
+  return { ok: true, ...finishedReport(answer.value), files: texts.map((t) => t.path), usage };
 }
 
 type Asked<T> = { ok: true; value: T; usage?: Usage } | { ok: false; error: string; usage?: Usage };
