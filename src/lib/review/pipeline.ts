@@ -414,12 +414,55 @@ export async function markMergedExternally(
  * changed nothing. There is nothing to review or merge, so the ticket goes
  * straight to Done with the agent's evidence as its summary, and whatever
  * was waiting on it is released exactly as a merge would release it.
+ *
+ * A re-run with its pull request open starts from that pull request's
+ * branch, so the work it finds in place is the pull request's own, not the
+ * base's. That ticket is done only when the pull request merges: it goes
+ * back to In Review, where a conflict or red CI is dealt with as usual.
  */
 export async function closeAlreadyDone(
   projectId: string,
   ticket: TicketDetail,
   evidence: { summary: string; detail: string },
 ): Promise<void> {
+  if (ticket.prNumber) {
+    const project = await projectFor(projectId);
+    const creds = await credentialsForProject(project);
+    const pull = await vcs(project.repoFullName, creds.githubToken).pullRequest(ticket.prNumber);
+    if (pull.merged) {
+      await markMergedExternally(projectId, pull.number);
+      return;
+    }
+    if (pull.state !== "open") {
+      await stallTicket(
+        projectId,
+        ticket,
+        `${ticket.key}'s work is on its own branch, but pull request #${pull.number} was closed without merging. Reopen it, or move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`,
+        { blocked: true, stalledIn: "in_progress" },
+      );
+      return;
+    }
+    await repository().updateTicket(ticket.id, {
+      status: "review",
+      stalledIn: null,
+      stage: STAGE_PR,
+      blockedReason: null,
+      runnerJob: null,
+      runnerAgent: null,
+    });
+    await publish(projectId, {
+      type: "card.status",
+      cardId: ticket.id,
+      kind: "ticket",
+      status: "review",
+      stalledIn: null,
+      stage: STAGE_PR,
+      blockedReason: null,
+    });
+    launch(() => reviewPullRequest(projectId, pull.number, pull.headSha), `review for ${ticket.key}`);
+    return;
+  }
+
   await closeWithoutMerge(projectId, ticket, {
     summary: `Already done: ${evidence.summary}`,
     comment: evidence.detail.trim()
