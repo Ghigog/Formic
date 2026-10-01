@@ -8,6 +8,8 @@ import type {
   AttachmentSummary,
   BoardCard,
   ColumnAgents,
+  ColumnOverride,
+  ColumnOverrides,
   PlanStep,
   WorkType,
 } from "@/lib/domain/entities";
@@ -331,6 +333,15 @@ export interface UserRecord {
   runTimeBudgetFlatMinutes: number | null;
   /** Stored JSON: story points to minutes, e.g. {"1":5}. */
   runTimeBudgetPerPointMinutes: unknown;
+  /** Stored limit settings (JSON), or null for the default. Read through src/lib/user-settings. */
+  tokenLimit?: unknown;
+  attemptLimit?: unknown;
+}
+
+/** Limit settings to store; an omitted axis is left alone, null returns it to the default. */
+export interface LimitColumns {
+  tokenLimit?: Record<string, unknown> | null;
+  attemptLimit?: Record<string, unknown> | null;
 }
 
 /** What a person's run time budget is stored as on their row. */
@@ -399,6 +410,7 @@ export interface Repository {
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
   updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
   updateRunTimeBudget(userId: string, columns: RunTimeBudgetColumns): Promise<UserRecord>;
+  updateLimits(userId: string, columns: LimitColumns): Promise<UserRecord>;
   /** Records that this person agreed to a version of the terms, now. */
   acceptTerms(userId: string, version: string): Promise<UserRecord>;
   /** Signs this person out everywhere: every session cookie issued so far stops working. */
@@ -569,6 +581,12 @@ export interface Repository {
   /** Marks a preset out of usage until a time, or clears that. */
   setPresetLimit(presetId: string, limit: { until: Date; note: string } | null): Promise<void>;
   columnAgents(projectId: string): Promise<ColumnAgents>;
+  /** The overrides on a board's column agents, by column. */
+  columnOverrides(projectId: string): Promise<ColumnOverrides>;
+  /** Sets a column agent's override; false when the column has no agent. */
+  setColumnOverride(projectId: string, column: ColumnId, override: ColumnOverride): Promise<boolean>;
+  /** Sets or clears (null tokens) a preset's token allowance; null window means the default. */
+  setPresetAllowance(presetId: string, allowance: { tokens: number | null; windowDays: number | null }): Promise<void>;
   /** The saved agent the board's assistant runs on, or null. */
   assistantAgent(projectId: string): Promise<string | null>;
   setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
