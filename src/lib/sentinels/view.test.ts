@@ -18,6 +18,8 @@ function audit(patch: Partial<AuditRecord>): AuditRecord {
     error: null,
     model: "m",
     files: [],
+    runnerJob: null,
+    runnerAgent: null,
     startedAt: new Date(T0),
     finishedAt: new Date(T0 + 1000),
     ...patch,

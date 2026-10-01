@@ -565,6 +565,10 @@ model Audit {
   model      String?
   /// Files the sentinel read.
   files      String[]  @default([])
+  /// The GitHub Actions job a CLI agent audits in, while it runs.
+  runnerJob   String?
+  /// The saved agent running it, so a usage limit it hits is recorded on it.
+  runnerAgent String?
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
 

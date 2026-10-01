@@ -59,7 +59,7 @@ import { directoryTree } from "@/lib/vcs/repositories";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { repository } from "@/lib/db";
-import type { TicketDetail } from "@/lib/db/repository";
+import type { AuditRecord, TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { signingSecret } from "@/lib/auth/session";
@@ -1254,6 +1254,100 @@ export async function startCliAsk(input: {
 }
 
 /**
+ * Starts a CLI agent auditing as a sentinel, in the "ask" mode the board's
+ * assistant uses: a report, not a change. The audit finishes when the job's
+ * answer comes back, in completeCliSentinel.
+ */
+export async function startCliSentinel(input: {
+  projectId: string;
+  auditId: string;
+  sentinelId: string;
+  agent: CliAgent;
+  /** A second attempt, after its report was sent back. */
+  attempt?: number;
+  retry?: { answer: string; problem: string };
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const repo = repository();
+  const { sentinel } = await import("@/lib/sentinels/roster");
+  const { cliAuditPrompt } = await import("@/lib/sentinels/cli");
+  const s = sentinel(input.sentinelId);
+  if (!s) return { ok: false, reason: "No such sentinel." };
+  const project = await projectFor(input.projectId);
+  const creds = await credentialsForProject(project);
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent: input.agent,
+    job: jobId(input.auditId, randomUUID().slice(0, 8), input.attempt ?? 1),
+    mode: "ask",
+    cardKey: "sentinel",
+    from: project.baseBranch,
+    prompt: cliAuditPrompt(s, project.repoFullName, input.retry),
+    record: (job) => repo.setAuditJob(input.auditId, job, input.agent.presetId),
+  });
+  return started.ok ? { ok: true } : { ok: false, reason: started.reason };
+}
+
+/** A sentinel's report from a CLI agent arrived, or its run failed. */
+async function completeCliSentinel(
+  projectId: string,
+  result: RunnerResult,
+  audit: AuditRecord,
+  client: VcsClient,
+  cleanUp: () => Promise<unknown>,
+): Promise<void> {
+  const repo = repository();
+  // A result nobody is waiting for any more: the audit finished, or was run again.
+  if (audit.status !== "running" || audit.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+  const fail = (error: string) => repo.finishAudit(audit.id, { status: "failed", error, model: null });
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    await fail(await whyItFailed(projectId, client, result, audit.runnerAgent));
+    return;
+  }
+  const answer = await client.readFile(ANSWER_PATH, `${STAGING_PREFIX}${result.job}`).catch(() => null);
+  await cleanUp();
+
+  const { parseCliReport } = await import("@/lib/sentinels/cli");
+  const report = parseCliReport(answer);
+  if (report.ok) {
+    await repo.finishAudit(audit.id, {
+      status: "done",
+      stars: report.stars,
+      quote: report.quote,
+      summary: report.summary,
+      report: report.report,
+      files: report.files,
+      model: null,
+    });
+    return;
+  }
+
+  // Asked once more, with what was wrong, before the audit is called failed.
+  const attempt = attemptOfJob(result.job);
+  if (attempt < 2) {
+    const { assistantAgentFor } = await import("@/lib/agents/presets");
+    const agent = await assistantAgentFor(projectId);
+    if (agent.kind === "cli") {
+      await repo.logAudit(audit.id, "Asking for the report again");
+      const again = await startCliSentinel({
+        projectId,
+        auditId: audit.id,
+        sentinelId: audit.sentinel,
+        agent: agent.agent,
+        attempt: attempt + 1,
+        retry: { answer: answer ?? "", problem: report.problem },
+      }).catch(() => ({ ok: false as const }));
+      if (again.ok) return;
+    }
+  }
+  await fail(`${report.problem}${result.url ? ` Its log: ${result.url}` : ""}`);
+}
+
+/**
  * Starts a CLI agent answering a card's chat, in the "ask" mode the board's
  * assistant uses: an answer, not a change. Returns why it could not start,
  * or null once it is on its way.
@@ -1317,6 +1411,9 @@ export async function collectCliRuns(projectId: string): Promise<void> {
   for (const m of await repo.pendingCardChatJobs(projectId)) {
     if (m.runnerJob) waiting.add(m.runnerJob);
   }
+  for (const a of await repo.auditsFor(projectId)) {
+    if (a.status === "running" && a.runnerJob) waiting.add(a.runnerJob);
+  }
   if (waiting.size === 0) return;
 
   const project = await projectFor(projectId);
@@ -1346,6 +1443,13 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const client = vcs(project.repoFullName, creds.githubToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+
+  // A sentinel's audit is the other thing an "ask" run can be for.
+  const audit = messageId ? (await repo.auditsFor(projectId)).find((a) => a.id === messageId) : undefined;
+  if (audit) {
+    await completeCliSentinel(projectId, result, audit, client, cleanUp);
+    return;
+  }
 
   if (!message) {
     await completeCliCardChat(projectId, result, messageId, client);

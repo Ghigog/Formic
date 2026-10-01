@@ -178,6 +178,9 @@ export interface AuditRecord {
   model: string | null;
   /** Files the sentinel read. */
   files: string[];
+  /** The GitHub Actions job a CLI agent audits in, while it runs. */
+  runnerJob: string | null;
+  runnerAgent: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }
@@ -687,6 +690,8 @@ export interface Repository {
   startAudit(projectId: string, sentinel: string): Promise<AuditRecord>;
   /** Adds a step to a running audit's log. */
   logAudit(id: string, step: string): Promise<void>;
+  /** Records the GitHub Actions job a CLI agent audits in; only its result is taken. */
+  setAuditJob(id: string, job: string | null, agent: string | null): Promise<void>;
   /**
    * Ends an audit. A report replaces the sentinel's earlier ones; a failure
    * keeps the last report, so a bad run never costs the project its stars.
