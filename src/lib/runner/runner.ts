@@ -17,7 +17,8 @@ import {
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
-import type { Budget } from "@/lib/budget/budget-for";
+import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
+import { attemptsFor } from "@/lib/budget/in-process";
 import { diagnose, lastWords } from "@/lib/agents/limits";
 import { planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers";
@@ -46,7 +47,6 @@ import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { askForScope, widenScope } from "@/lib/coder/scope-request";
 import {
-  MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
   ticketSpecSchema,
@@ -717,13 +717,13 @@ export async function startJobRun(input: {
 /* Planning agents: an answer, not a change.                                 */
 /* ------------------------------------------------------------------------ */
 
-/** Where each planning stage stalls, and the attempts it gets. */
+/** Where each planning stage stalls, and the attempts it gets; the Architect Agent's are the owner's attempts limit (see stageAttempts). */
 const ANSWER_STAGE: Record<
   AnswerMode,
   { stalledIn: "backlog" | "todo" | null; stage: number; attempts: number; role: "product" | "architect" | "pm" }
 > = {
   product: { stalledIn: "backlog", stage: 2, attempts: 2, role: "product" },
-  architect: { stalledIn: "todo", stage: 3, attempts: MAX_DECOMPOSITION_ATTEMPTS, role: "architect" },
+  architect: { stalledIn: "todo", stage: 3, attempts: ATTEMPT_DEFAULTS.decomposition, role: "architect" },
   showcase: { stalledIn: null, stage: 8, attempts: 1, role: "pm" },
 };
 
@@ -746,6 +746,11 @@ export function showcaseSummaries(
     title: t.title,
     summary: t.summary ?? t.description.split("\n")[0] ?? t.title,
   }));
+}
+
+/** The attempts a planning stage gets: the owner's limit for the Architect Agent, a fixed count for the others. */
+async function stageAttempts(mode: AnswerMode, ownerId: string | null): Promise<number> {
+  return mode === "architect" ? attemptsFor(ownerId, "decomposition") : ANSWER_STAGE[mode].attempts;
 }
 
 /** The prompt for a planning stage, built from the Epic as it is now. */
@@ -832,6 +837,7 @@ export async function startCliAnswer(input: {
   const repo = repository();
   const stage = ANSWER_STAGE[mode];
   const project = await projectFor(projectId);
+  const attempts = await stageAttempts(mode, project.ownerId);
   const creds = await credentialsForProject(project);
   const card = await repo.cardById(epicId);
 
@@ -857,7 +863,7 @@ export async function startCliAnswer(input: {
     ? [
         base,
         "",
-        `This is attempt ${input.retry.attempt} of ${stage.attempts}. Your previous answer was:`,
+        `This is attempt ${input.retry.attempt} of ${attempts}. Your previous answer was:`,
         "",
         input.retry.answer.slice(0, 20_000),
         "",
@@ -885,9 +891,6 @@ export async function startCliAnswer(input: {
   await run.finish({ ok: true, value: null, usage: noUsage(agent) });
 }
 
-/** Attempts a CLI agent gets at drafting a To Do request's single ticket. */
-const DRAFT_ATTEMPTS = 2;
-
 /**
  * Starts a CLI agent drafting a To Do request's single ticket: the Architect
  * Agent's work, with no PRD, straight from the raw text. The job hangs off
@@ -904,6 +907,7 @@ export async function startCliDraftTicket(input: {
   const { projectId, ticketId, agent, run } = input;
   const repo = repository();
   const project = await projectFor(projectId);
+  const draftAttempts = await attemptsFor(project.ownerId, "draft");
   const creds = await credentialsForProject(project);
   const ticket = await repo.ticketDetail(ticketId);
   const epic = ticket ? await repo.epicDetail(ticket.epicId) : null;
@@ -943,7 +947,7 @@ export async function startCliDraftTicket(input: {
     ? [
         base,
         "",
-        `This is attempt ${input.retry.attempt} of ${DRAFT_ATTEMPTS}. Your previous answer was:`,
+        `This is attempt ${input.retry.attempt} of ${draftAttempts}. Your previous answer was:`,
         "",
         input.retry.answer.slice(0, 20_000),
         "",
@@ -1103,10 +1107,11 @@ async function completeCliAnswer(
   }
 
   const attempt = attemptOfJob(result.job);
-  if (attempt >= stage.attempts) {
+  const attempts = await stageAttempts(result.mode, project.ownerId);
+  if (attempt >= attempts) {
     await stall(
       result.mode === "architect"
-        ? `The Architect Agent could not produce a valid dependency graph in ${stage.attempts} attempts. This Epic needs a human to split it.`
+        ? `The Architect Agent could not produce a valid dependency graph in ${attempts} attempts. This Epic needs a human to split it.`
         : `The agent's answer could not be used: ${checked.correction}`,
       result.mode === "architect",
     );
@@ -1181,7 +1186,8 @@ async function completeCliDraft(projectId: string, result: RunnerResult): Promis
   }
 
   const attempt = attemptOfJob(result.job);
-  const agent = attempt < DRAFT_ATTEMPTS ? await cliAgentFor(projectId, "todo") : null;
+  const draftAttempts = await attemptsFor(project.ownerId, "draft");
+  const agent = attempt < draftAttempts ? await cliAgentFor(projectId, "todo") : null;
   if (!agent) {
     await stallDraftingTicket(projectId, ticketId, `The agent's answer could not be used: ${checked.correction}`, false);
     return;

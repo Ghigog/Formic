@@ -15,6 +15,7 @@ import type {
 } from "./ports";
 import { decompositionGuidance } from "./decomposition-guidance";
 import { type Prd, prdSchema } from "@/lib/domain/entities";
+import { ATTEMPT_DEFAULTS } from "@/lib/budget/budget-for";
 import { estimateCostCents } from "@/lib/budget/limits";
 import {
   ARCHITECT_BRIEF,
@@ -24,7 +25,6 @@ import {
   withProductConventions,
 } from "./prompts";
 import {
-  MAX_DECOMPOSITION_ATTEMPTS,
   checkDecomposition,
   decompositionSchema,
   ticketOrRerouteSchema,
@@ -211,8 +211,10 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       repoTree: string[];
       existing?: ExistingTicket[];
       instructions?: string[];
+      maxAttempts?: number;
     },
   ): Promise<AgentOutcome<DraftTicket[]>> {
+    const maxAttempts = input.maxAttempts ?? ATTEMPT_DEFAULTS.decomposition;
     const r = resolve(this.config);
     if (typeof r === "string") return failure(this.config.model ?? "", r, true);
 
@@ -242,7 +244,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
         const checked = checkDecomposition(raw);
         return checked.ok ? { ok: true, value: checked.tickets } : checked;
       },
-      MAX_DECOMPOSITION_ATTEMPTS,
+      maxAttempts,
       (attempt) =>
         ctx.emit({
           type: "run.progress",
@@ -250,14 +252,14 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
           ticketId: null,
           role: "architect",
           label: attempt === 1 ? "Decomposing epic" : `Correcting the graph (attempt ${attempt})`,
-          fraction: attempt / MAX_DECOMPOSITION_ATTEMPTS,
+          fraction: attempt / maxAttempts,
         }),
     );
 
     if (!result.ok) {
       return failure(
         r.model,
-        `The Architect Agent could not produce a valid dependency graph in ${MAX_DECOMPOSITION_ATTEMPTS} attempts. This Epic needs a human to split it.`,
+        `The Architect Agent could not produce a valid dependency graph in ${maxAttempts} attempts. This Epic needs a human to split it.`,
         true,
         result.usage,
       );

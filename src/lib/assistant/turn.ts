@@ -8,6 +8,7 @@ import { CHAT_ANSWER_BUDGET_MS, outOfTimeReply } from "@/lib/agents/card-chat";
 import { assistantAgentFor } from "@/lib/agents/presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
+import { attemptsFor } from "@/lib/budget/in-process";
 import { truncate } from "@/lib/agents/coding-loop";
 import { repository } from "@/lib/db";
 import type { AssistantMessage, AssistantProposal } from "@/lib/db/repository";
@@ -349,8 +350,10 @@ async function askAgain(
   return true;
 }
 
-/** Tries a CLI agent gets to hand in proposals Formic can use. */
-const CLI_ANSWER_ATTEMPTS = 2;
+/** Tries a CLI agent gets to hand in proposals Formic can use: the owner's attempts limit. */
+async function cliAnswerAttempts(projectId: string): Promise<number> {
+  return attemptsFor((await projectFor(projectId)).ownerId, "cliAnswer");
+}
 
 export async function finishCliAnswer(
   messageId: string,
@@ -374,7 +377,7 @@ export async function finishCliAnswer(
   if (!parsed.success) {
     // Prose where the JSON answer was due: any proposal in it is lost, so
     // ask once more for the format before showing the text as it is.
-    if (from && from.attempt < CLI_ANSWER_ATTEMPTS) {
+    if (from && from.attempt < (await cliAnswerAttempts(from.projectId))) {
       const again = await askAgain(
         from.projectId,
         messageId,
@@ -401,7 +404,7 @@ export async function finishCliAnswer(
     if (checked.ok) proposals.push({ summary: p.summary, action: checked.action, state: "proposed" });
     else dropped.push(`${p.summary}: ${checked.problem}`);
   }
-  if (dropped.length && from && from.attempt < CLI_ANSWER_ATTEMPTS) {
+  if (dropped.length && from && from.attempt < (await cliAnswerAttempts(from.projectId))) {
     const again = await askAgain(from.projectId, messageId, answerText, dropped, from.attempt + 1).then(
       () => true,
       () => false,

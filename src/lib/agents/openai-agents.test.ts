@@ -416,6 +416,22 @@ describe("structured answers from OpenAI-format providers", () => {
     const retry = sent[1]!.body.messages as Array<{ role: string; content: string }>;
     expect(retry.at(-1)?.content).toContain("not safe to run");
   });
+
+  it("stalls naming the attempts the person allows, three by default", async () => {
+    const bad = { role: "assistant", content: JSON.stringify({ tickets: [] }) };
+    const agent = new OpenAiArchitectAgent({ provider: "openai", model: "m", apiKey: "sk" });
+    const input = { epicId: "e", title: "t", prd: PRD, repoTree: ["src"] };
+
+    const sent = fakeProvider([bad, bad, bad]);
+    const byDefault = await agent.decompose(ctx(), input);
+    expect(sent).toHaveLength(3);
+    expect(byDefault.ok === false && byDefault.error).toContain("in 3 attempts");
+
+    const flat = fakeProvider([bad, bad, bad]);
+    const two = await agent.decompose(ctx(), { ...input, maxAttempts: 2 });
+    expect(flat).toHaveLength(2);
+    expect(two.ok === false && two.error).toContain("in 2 attempts");
+  });
 });
 
 describe("the server's Claude key", () => {
