@@ -994,6 +994,15 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async ticketRunMs(ticketId: string): Promise<number> {
+    const rows = await prisma().agentRun.findMany({
+      where: { ticketId, startedAt: { not: null } },
+      select: { startedAt: true, finishedAt: true },
+    });
+    const now = Date.now();
+    return rows.reduce((sum, r) => sum + ((r.finishedAt?.getTime() ?? now) - r.startedAt!.getTime()), 0);
+  }
+
   async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
     const db = prisma();
     await db.agentRun.updateMany({

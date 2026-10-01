@@ -215,10 +215,14 @@ export async function runCoderAgent(
   if (loop && (await loopRunnerReady(client, project.baseBranch))) {
     const notes = await noteTexts(projectId, ticket.id);
     // Read once, here: a setting changed after this run starts is for the next.
-    const budgetMinutes = resolveRunTimeBudget(
-      project.ownerId ? await getRunTimeBudgetSettings(project.ownerId) : null,
-      ticket.storyPoints,
-    );
+    // A column's own minutes win over the person's per-point rule.
+    const override = (await repository().columnOverrides(projectId)).in_progress?.minutes;
+    const budgetMinutes =
+      override ??
+      resolveRunTimeBudget(
+        project.ownerId ? await getRunTimeBudgetSettings(project.ownerId) : null,
+        ticket.storyPoints,
+      );
     await startJobRun({
       projectId,
       ticket: { ...ticket, branchName: branch },

@@ -19,7 +19,7 @@ import { AgentEditor } from "./agent-editor";
 import { SetupDialog, type KeylessAgent } from "./setup-dialog";
 import { useRunnerSetup } from "@/lib/hooks/use-runner-setup";
 import { provider } from "@/lib/llm/providers";
-import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
+import type { AgentPreset, ColumnAgents, ColumnOverrides } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
@@ -51,6 +51,7 @@ export function BoardShell({
   initialAgentUsage = {},
   initialTokenWindow,
   initialSentinels = {},
+  initialOverrides = {},
   account,
 }: {
   initialCards: BoardCard[];
@@ -67,9 +68,11 @@ export function BoardShell({
   initialTokenWindow?: TokenWindowView;
   /** Each sentinel's last report on this project. */
   initialSentinels?: SentinelStates;
+  /** Each column agent's own limits. */
+  initialOverrides?: ColumnOverrides;
   account?: Account;
 }) {
-  const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage, initialTokenWindow);
+  const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage, initialTokenWindow, initialOverrides);
   // Views that follow the event stream themselves, such as an open ticket.
   const listeners = useRef(new Set<(event: FormicEvent, seq: number) => void>());
   const subscribe = useCallback<SubscribeToEvents>((listener) => {
@@ -206,6 +209,8 @@ export function BoardShell({
           usage={editing.preset ? agentState.usage[editing.preset.id] : undefined}
           window={agentState.window}
           onResetWindow={agentState.resetWindow}
+          override={editing.column === "assistant" ? null : (agentState.overrides[editing.column] ?? null)}
+          onSaveOverride={(override) => agentState.setOverride(editing.column as ColumnId, override)}
           onClose={() => setEditing(null)}
           onSave={async (input) => {
             const { column } = editing;

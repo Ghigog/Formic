@@ -999,7 +999,15 @@ export class MemoryRepository implements Repository {
       run.costCents = outcome.costCents;
       run.tokensIn = outcome.tokensIn;
       run.tokensOut = outcome.tokensOut;
+      run.finishedAt = new Date();
     }
+  }
+
+  async ticketRunMs(ticketId: string): Promise<number> {
+    const now = Date.now();
+    return [...store().runs.values()]
+      .filter((r) => r.ticketId === ticketId)
+      .reduce((sum, r) => sum + ((r.finishedAt?.getTime() ?? now) - r.startedAt.getTime()), 0);
   }
 
   async unfinishedRuns(

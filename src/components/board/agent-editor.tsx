@@ -6,6 +6,7 @@ import {
   COLUMN_AGENT_ROLE,
   type AgentPreset,
   type AgentPresetInput,
+  type ColumnOverride,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { DEFAULT_BRIEF } from "@/lib/agents/prompts";
@@ -42,6 +43,14 @@ function windowLabel({ kind, since, timezone }: TokenWindowView): string {
   return kind === "reset" ? `since you reset it on ${date}` : `since ${date}`;
 }
 
+type LimitAxis = "minutes" | "tokens" | "attempts";
+
+const OVERRIDE_AXES: Array<{ id: LimitAxis; label: string }> = [
+  { id: "minutes", label: "Minutes" },
+  { id: "tokens", label: "Tokens" },
+  { id: "attempts", label: "Attempts" },
+];
+
 type ModelList =
   | { state: "idle" }
   | { state: "loading" }
@@ -63,6 +72,8 @@ export function AgentEditor({
   usage,
   window: tokenWindow = { kind: "all-time", since: null, timezone: null },
   onResetWindow,
+  override,
+  onSaveOverride,
   onClose,
   onSave,
   onDelete,
@@ -77,6 +88,10 @@ export function AgentEditor({
   window?: TokenWindowView;
   /** Starts the count again from now; offered only when no renewal day is set. */
   onResetWindow?: () => Promise<void>;
+  /** This column's own limits, if it has any. */
+  override?: ColumnOverride | null;
+  /** Stores the column's override; offered for a column agent only, called after the agent saves. */
+  onSaveOverride?: (override: ColumnOverride) => Promise<void>;
   onClose: () => void;
   onSave: (input: Omit<AgentPresetInput, "column">) => Promise<void>;
   onDelete: (presetId: string) => Promise<void>;
@@ -95,12 +110,20 @@ export function AgentEditor({
   const [prompt, setPrompt] = useState(preset?.prompt ?? defaultPrompt);
   /** Undefined keeps the saved key, null removes it, a string replaces it. */
   const [apiKey, setApiKey] = useState<string | null | undefined>(undefined);
+  const [limits, setLimits] = useState<Record<LimitAxis, string>>({
+    minutes: override?.minutes?.toString() ?? "",
+    tokens: override?.tokens?.toString() ?? "",
+    attempts: override?.attempts?.toString() ?? "",
+  });
   const [fetched, setFetched] = useState<ModelList>({ state: "idle" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const info = providerInfo(provider)!;
   const cli = info.kind === "cli";
+  // Only flat values, and only for an axis this column's path can enforce: a CLI agent
+  // reports no tokens, so a token limit would never bind.
+  const overrideAxes = OVERRIDE_AXES.filter((a) => a.id !== "tokens" || !cli);
 
   useEffect(() => {
     requestAnimationFrame(() => nameRef.current?.focus());
@@ -187,6 +210,18 @@ export function AgentEditor({
             ? { apiKey: typedKey }
             : {}),
       });
+      if (!forAssistant && onSaveOverride) {
+        const count = (axis: LimitAxis) => (limits[axis].trim() === "" ? null : Number(limits[axis]));
+        const next = {
+          minutes: count("minutes"),
+          tokens: cli ? null : count("tokens"),
+          attempts: count("attempts"),
+        };
+        if (Object.values(next).some((n) => n !== null && !(Number.isInteger(n) && n >= 1))) {
+          throw new Error("Limits are whole numbers of at least 1, or empty.");
+        }
+        await onSaveOverride(next);
+      }
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the agent.");
@@ -406,6 +441,31 @@ export function AgentEditor({
                 </>
               )}
             </p>
+          )}
+
+          {!forAssistant && onSaveOverride && (
+            <fieldset className="flex flex-col gap-1">
+              <legend className={label}>Limit override</legend>
+              <div className="flex gap-2">
+                {overrideAxes.map(({ id, label: axis }) => (
+                  <input
+                    key={id}
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    aria-label={`${axis} override`}
+                    placeholder={axis}
+                    value={limits[id]}
+                    onChange={(e) => setLimits((l) => ({ ...l, [id]: e.target.value }))}
+                    className={`${field} h-9 min-w-0 flex-1`}
+                  />
+                ))}
+              </div>
+              <span className="text-muted text-[11px]">
+                One flat value per run for this column, used instead of the per point rule. Empty keeps the setting.
+              </span>
+            </fieldset>
           )}
 
           <label className="flex flex-col gap-1">

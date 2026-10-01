@@ -34,6 +34,7 @@ const VIEW: TicketView = {
   branchName: null,
   dependsOn: [],
   handoff: [],
+  usage: { usedMinutes: 12, budgetMinutes: 20 },
   plan: [
     { step: "Read the board model", status: "done" },
     { step: "Add the endpoint", status: "in_progress" },
