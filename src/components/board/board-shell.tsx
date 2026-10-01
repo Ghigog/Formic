@@ -13,7 +13,7 @@ import {
 import type { ExtrasMap } from "./card";
 import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
-import { useAgents, type AgentUsage } from "@/lib/hooks/use-agents";
+import { useAgents, type AgentUsage, type TokenWindowView } from "@/lib/hooks/use-agents";
 import { useAssistant } from "@/lib/hooks/use-assistant";
 import { AgentEditor } from "./agent-editor";
 import { SetupDialog, type KeylessAgent } from "./setup-dialog";
@@ -49,6 +49,7 @@ export function BoardShell({
   initialPresets = [],
   initialColumnAgents = {},
   initialAgentUsage = {},
+  initialTokenWindow,
   initialSentinels = {},
   account,
 }: {
@@ -63,11 +64,12 @@ export function BoardShell({
   initialColumnAgents?: ColumnAgents;
   /** What each saved agent has used, in tokens, as of this render. */
   initialAgentUsage?: AgentUsage;
+  initialTokenWindow?: TokenWindowView;
   /** Each sentinel's last report on this project. */
   initialSentinels?: SentinelStates;
   account?: Account;
 }) {
-  const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage);
+  const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage, initialTokenWindow);
   // Views that follow the event stream themselves, such as an open ticket.
   const listeners = useRef(new Set<(event: FormicEvent, seq: number) => void>());
   const subscribe = useCallback<SubscribeToEvents>((listener) => {
@@ -202,6 +204,8 @@ export function BoardShell({
           column={editing.column}
           preset={editing.preset}
           usage={editing.preset ? agentState.usage[editing.preset.id] : undefined}
+          window={agentState.window}
+          onResetWindow={agentState.resetWindow}
           onClose={() => setEditing(null)}
           onSave={async (input) => {
             const { column } = editing;

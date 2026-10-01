@@ -41,6 +41,43 @@ const budgetSchema = z
   // Money is not a setting: a cents field, or any other stray one, is refused.
   .strict();
 
+const renewalSchema = z.object({
+  renewalDay: z.unknown(),
+  timezone: z.unknown().optional(),
+});
+
+function validTimezone(value: unknown): value is string {
+  if (typeof value !== "string" || !value) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Stores the renewal day with its timezone; a null day removes both. */
+async function putRenewalDay(userId: string, json: unknown) {
+  const { renewalDay, timezone } = renewalSchema.parse(json);
+  if (renewalDay === null) {
+    await repository().updateTokenRenewal(userId, { tokenRenewalDay: null, tokenWindowTimezone: null });
+    return Response.json({ renewalDay: null, timezone: null });
+  }
+  const errors: { renewalDay?: string; timezone?: string } = {};
+  if (typeof renewalDay !== "number" || !Number.isInteger(renewalDay) || renewalDay < 1 || renewalDay > 31) {
+    errors.renewalDay = "Enter a whole day from 1 to 31.";
+  }
+  if (!validTimezone(timezone)) errors.timezone = "Your timezone could not be read.";
+  if (errors.renewalDay || errors.timezone) {
+    return Response.json({ error: "Invalid renewal day.", errors }, { status: 400 });
+  }
+  const updated = await repository().updateTokenRenewal(userId, {
+    tokenRenewalDay: renewalDay as number,
+    tokenWindowTimezone: timezone as string,
+  });
+  return Response.json({ renewalDay: updated.tokenRenewalDay, timezone: updated.tokenWindowTimezone });
+}
+
 /** This person's limits on all three axes: time at the top level, then tokens and attempts. Defaults when they never chose. */
 export async function GET() {
   const user = await currentUser();
@@ -82,12 +119,13 @@ async function putRunTimeBudget(userId: string, json: unknown) {
   return Response.json({ ...time, ...limits });
 }
 
-/** Saves this person's sandbox key (never returned), or their run time budget when the body has a `mode`. */
+/** Saves this person's sandbox key (never returned), their run time budget when the body has a `mode`, or their renewal day when it has a `renewalDay`. */
 export async function PUT(req: Request) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
   const json = await req.json().catch(() => null);
   if (json && typeof json === "object" && "mode" in json) return putRunTimeBudget(user.id, json);
+  if (json && typeof json === "object" && "renewalDay" in json) return putRenewalDay(user.id, json);
   const body = bodySchema.safeParse(json);
   if (!body.success) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });

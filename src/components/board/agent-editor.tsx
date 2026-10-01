@@ -18,7 +18,7 @@ import { reasoningNote, reasoningRoleFor, roleReasoning } from "@/lib/agents/rea
 import type { ModelInfo } from "@/lib/llm/openai-compat";
 import { pricingNote } from "@/lib/budget/limits";
 import { compact } from "@/components/ui/compact-number";
-import type { AgentTokens } from "@/lib/hooks/use-agents";
+import type { AgentTokens, TokenWindowView } from "@/lib/hooks/use-agents";
 
 /** What Formic always adds after a column's prompt, whatever the provider. */
 const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
@@ -30,6 +30,17 @@ const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
   in_review:
     "Always added after this: the coding rules (stay in the file scope, no git, verify before finishing) and the engineering practices (TDD, DDD, hexagonal, SOLID, applied where they fit).",
 };
+
+/** Where the count starts, in words, with dates in the person's own timezone. */
+function windowLabel({ kind, since, timezone }: TokenWindowView): string {
+  if (kind === "all-time" || !since) return "over everything it has run";
+  const date = new Date(since).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    ...(timezone ? { timeZone: timezone } : {}),
+  });
+  return kind === "reset" ? `since you reset it on ${date}` : `since ${date}`;
+}
 
 type ModelList =
   | { state: "idle" }
@@ -50,6 +61,8 @@ export function AgentEditor({
   column,
   preset,
   usage,
+  window: tokenWindow = { kind: "all-time", since: null, timezone: null },
+  onResetWindow,
   onClose,
   onSave,
   onDelete,
@@ -60,6 +73,10 @@ export function AgentEditor({
   preset: AgentPreset | null;
   /** What this agent has used, in tokens, if it has been saved and run. */
   usage?: AgentTokens | undefined;
+  /** What the count is measured over. */
+  window?: TokenWindowView;
+  /** Starts the count again from now; offered only when no renewal day is set. */
+  onResetWindow?: () => Promise<void>;
   onClose: () => void;
   onSave: (input: Omit<AgentPresetInput, "column">) => Promise<void>;
   onDelete: (presetId: string) => Promise<void>;
@@ -373,9 +390,21 @@ export function AgentEditor({
              * provider (see docs/token-usage.md).
              */
             <p className="text-muted text-[11px]">
-              {usage
-                ? `${compact((usage.tokensIn ?? 0) + (usage.tokensOut ?? 0))} tokens used by this agent, over its finished runs and its answers.`
-                : "No tokens used by this agent yet."}
+              {cli
+                ? "Its provider reports no tokens."
+                : `${compact((usage?.tokensIn ?? 0) + (usage?.tokensOut ?? 0))} tokens ${windowLabel(tokenWindow)}`}
+              {!cli && tokenWindow.kind !== "renewal" && onResetWindow && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => void onResetWindow().catch(() => setError("Could not reset the count."))}
+                    className="text-terracotta font-semibold"
+                  >
+                    Reset
+                  </button>
+                </>
+              )}
             </p>
           )}
 

@@ -24,6 +24,7 @@ export default async function SettingsPage() {
       }}
       installUrl={installUrl()}
       runTimeBudget={await getRunTimeBudgetSettings(user.id)}
+      renewal={{ day: user.tokenRenewalDay, timezone: user.tokenWindowTimezone }}
       e2b={{
         hint: user.e2bKeyHint,
         serverFallback: !!config.E2B_API_KEY,

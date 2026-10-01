@@ -6,6 +6,7 @@ import type { Account } from "@/components/board/account-menu";
 import { useSound } from "@/components/colony/store";
 import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
+import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
 interface KeyState {
@@ -26,12 +27,15 @@ export function SettingsForm({
   installUrl,
   e2b,
   runTimeBudget,
+  renewal,
 }: {
   account: Account;
   installUrl: string | null;
   e2b: KeyState;
   /** Saved run time budget; the default when omitted. */
   runTimeBudget?: RunTimeBudgetSettings;
+  /** Saved plan renewal day; none when omitted. */
+  renewal?: Renewal;
 }) {
   return (
     <div className="bg-cream min-h-dvh">
@@ -94,6 +98,8 @@ export function SettingsForm({
         />
 
         <RunTimeBudgetSection initial={runTimeBudget} />
+
+        <RenewalDaySection initial={renewal} />
 
         <p className="text-muted px-1 text-[12px] leading-[1.5]">
           AI provider keys live on each agent, not here: pick or create one from

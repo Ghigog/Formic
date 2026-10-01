@@ -12,6 +12,7 @@ const { SESSION_COOKIE, signSession } = await import("@/lib/auth/session");
 const { PROJECT_COOKIE } = await import("@/lib/board/project");
 const { resetEnvCache } = await import("@/lib/secrets/env");
 const { GET } = await import("./route");
+const { POST } = await import("./token-window/route");
 const { PUT: putOverride } = await import("./columns/[column]/override/route");
 const { PUT: putAllowance } = await import("./presets/[id]/allowance/route");
 
@@ -26,6 +27,7 @@ function put(body: unknown): Request {
 const column = (c: string) => ({ params: Promise.resolve({ column: c }) });
 const presetParams = (id: string) => ({ params: Promise.resolve({ id }) });
 
+let userId: string;
 let presetId: string;
 
 beforeEach(async () => {
@@ -38,6 +40,7 @@ beforeEach(async () => {
   resetEnvCache();
   const repo = repository();
   const user = await repo.upsertUser({ githubId: 1, login: "a", name: null, avatarUrl: null });
+  userId = user.id;
   jar.set(SESSION_COOKIE, await signSession(user.id));
   const project = await repo.ensureProject({ ownerId: user.id, repoFullName: "a/board", baseBranch: "main" });
   jar.set(PROJECT_COOKIE, project.id);
@@ -50,6 +53,33 @@ beforeEach(async () => {
   });
   presetId = preset.id;
   await repo.setColumnAgent(project.id, "in_progress", presetId);
+});
+
+describe("/api/agents token window", () => {
+  it("reads all time with nothing set", async () => {
+    expect((await (await GET()).json()).window).toEqual({ kind: "all-time", since: null, timezone: null });
+  });
+
+  it("reads the renewal window in the stored timezone", async () => {
+    await repository().updateTokenRenewal(userId, { tokenRenewalDay: 5, tokenWindowTimezone: "UTC" });
+    const { window } = await (await GET()).json();
+    expect(window.kind).toBe("renewal");
+    expect(window.timezone).toBe("UTC");
+    expect(new Date(window.since).getUTCDate()).toBe(5);
+  });
+
+  it("stamps a reset for the current user, which the next read reports", async () => {
+    const res = await POST();
+    expect(res.status).toBe(200);
+    const { window } = await (await GET()).json();
+    expect(window.kind).toBe("reset");
+    expect(window.since).toBe((await res.json()).resetAt);
+  });
+
+  it("refuses a reset when nobody is signed in", async () => {
+    jar.clear();
+    expect((await POST()).status).toBe(401);
+  });
 });
 
 describe("/api/agents column override", () => {
@@ -104,3 +134,4 @@ describe("/api/agents token allowance", () => {
     expect((await putAllowance(put(body), presetParams(presetId))).status).toBe(400);
   });
 });
+
