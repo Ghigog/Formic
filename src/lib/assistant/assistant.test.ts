@@ -364,6 +364,7 @@ describe("the assistant on a CLI plan", () => {
     await answer(PROJECT, pending.id);
     const first = MockVcsClient.runner().dispatches.at(-1)!.inputs;
     expect(first.prompt).toContain("do not ask again");
+    expect(first.prompt).toContain("Your final message is your answer");
 
     await client.commitFile(`${STAGING_PREFIX}${first.job}`, ANSWER_PATH, "Should I propose it?", "answer");
     await completeCliRun(PROJECT, { job: first.job!, mode: "ask", conclusion: "success", url: null });
