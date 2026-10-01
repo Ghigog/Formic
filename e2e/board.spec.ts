@@ -409,11 +409,12 @@ test("a summoned sentinel reports, and its stars count toward the grade", async 
   const sentinels = page.getByRole("region", { name: "Sentinels" });
   await expect(sentinels.getByRole("heading", { name: "Sentinels" })).toBeVisible();
 
-  // The mock DevOps sentinel gives five stars: 5 / 12 is still F, 0.42 avg.
-  const card = sentinels.getByRole("listitem", { name: /Waterwheel/ });
+  // The Tester unlocks at Lv 1, so it is summonable at any colony level; the
+  // mock Tester gives four stars, and the grade total counts unlocked seats only.
+  const card = sentinels.getByRole("listitem", { name: /Professor O'Chumley/ });
   await card.getByRole("button", { name: "Summon" }).click();
-  await expect(card).toHaveAccessibleName(/5 of 5 stars/, { timeout: 15_000 });
-  await expect(sentinels.getByText("1 of 12 reported")).toBeVisible();
+  await expect(card).toHaveAccessibleName(/4 of 5 stars/, { timeout: 15_000 });
+  await expect(sentinels.getByText(/^1 of \d+ reported$/)).toBeVisible();
 
   const report = page.getByRole("complementary", { name: "Audit report" });
   await expect(report.getByText("What works")).toBeVisible();

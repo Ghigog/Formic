@@ -8,7 +8,8 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
 import { CANNED } from "./canned";
 import { runAudit } from "./agent";
-import { sentinel as findSentinel, stepsFor } from "./roster";
+import { scoreOf } from "@/lib/colony/game";
+import { isUnlocked, sentinel as findSentinel, stepsFor } from "./roster";
 import { sentinelStates, type SentinelStates } from "./view";
 
 /**
@@ -27,6 +28,11 @@ export async function summonSentinel(
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const s = findSentinel(sentinelId);
   if (!s) return { ok: false, error: "No such sentinel.", status: 404 };
+  // The level the colony shows, from the same stamped merge scores.
+  const { level } = scoreOf(await repository().boardCards(projectId));
+  if (!isUnlocked(s, level)) {
+    return { ok: false, error: `${s.name} unlocks at Lv ${s.unlockLevel}.`, status: 403 };
+  }
   const current = await sentinelsFor(projectId);
   if (current[s.id]?.running) return { ok: true };
 

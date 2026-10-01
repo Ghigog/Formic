@@ -14,7 +14,9 @@ function renderHeader(ui: ReactNode = <ColonyHeaderStats />) {
       cards={[]}
       extras={{}}
     >
-      <SentinelsProvider initial={{}}>{ui}</SentinelsProvider>
+      <SentinelsProvider initial={{}} level={1}>
+        {ui}
+      </SentinelsProvider>
     </ColonyProvider>,
   );
 }

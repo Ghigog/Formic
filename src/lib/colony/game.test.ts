@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BoardCard } from "@/lib/domain/entities";
 import {
   BUG_COST,
+  SENTINEL_UNLOCKS,
   HEAT_MAX,
   HEAT_WINDOW_MS,
   epicTally,
@@ -13,8 +14,10 @@ import {
   isSquashed,
   levelOf,
   nextUnlock,
+  queensEarned,
   rankOf,
   scoreOf,
+  unlocksAt,
 } from "./game";
 import { TODAY, WINDOW_DAYS, buildTimeline, isEpicComplete } from "./timeline";
 
@@ -53,9 +56,20 @@ describe("levels", () => {
     expect(rankOf(99)).toBe("Queen");
   });
 
+  it("earns a Queen for every level past the first, uncapped", () => {
+    expect(queensEarned(1)).toBe(0);
+    expect(queensEarned(50)).toBe(49);
+  });
+
+  it("names a Sentinel alongside shapes and colours at the level it unlocks", () => {
+    const at3 = SENTINEL_UNLOCKS.filter((u) => u.lv === 3).map((u) => u.label);
+    expect(at3.length).toBeGreaterThan(0);
+    expect(unlocksAt(3)).toEqual(expect.arrayContaining(["Ladybird", ...at3]));
+  });
+
   it("says what the next unlock is", () => {
-    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Crimson"] });
-    expect(nextUnlock(9)).toBeNull();
+    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Crimson", "QA"] });
+    expect(nextUnlock(12)).toBeNull();
   });
 });
 
