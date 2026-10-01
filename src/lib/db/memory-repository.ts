@@ -277,6 +277,9 @@ export class MemoryRepository implements Repository {
       runTimeBudgetMode: "PER_STORY_POINT",
       runTimeBudgetFlatMinutes: null,
       runTimeBudgetPerPointMinutes: null,
+      tokenRenewalDay: null,
+      tokenWindowTimezone: null,
+      tokenResetAt: null,
     };
     s.users.set(user.id, user);
     return user;
@@ -293,6 +296,23 @@ export class MemoryRepository implements Repository {
     const user = store().users.get(userId);
     if (!user) throw new Error(`No user ${userId}.`);
     Object.assign(user, columns);
+    return user;
+  }
+
+  async updateTokenRenewal(
+    userId: string,
+    renewal: { tokenRenewalDay: number | null; tokenWindowTimezone: string | null },
+  ): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    Object.assign(user, renewal);
+    return user;
+  }
+
+  async stampTokenReset(userId: string, at: Date): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    user.tokenResetAt = at;
     return user;
   }
 
