@@ -46,7 +46,8 @@ export function BoardHeader({
   return (
     <>
       {/* Desktop */}
-      <header className="border-line bg-card relative z-[2] hidden h-16 shrink-0 items-center gap-4 border-b px-6 md:flex">
+      <header className="border-line bg-card relative z-[2] hidden h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b px-6 md:grid">
+        <div className="flex min-w-0 items-center gap-4">
         <div className="relative shrink-0">
         <button
           type="button"
@@ -76,15 +77,16 @@ export function BoardHeader({
         </div>
         {!isMobile && unseenBadge}
 
-        <div className="flex min-w-0 flex-1 justify-center">
+        <div className="flex min-w-0 flex-1">
           {assistant && !isMobile && <AskBox a={assistant} repoName={repo ?? repoFullName} />}
         </div>
-
-        <div className="absolute left-1/2 -translate-x-1/2">
-          <ColonyLevelStats />
         </div>
-        <ColonyHeaderStats showLevel={false} />
-        {account && <AccountMenu account={account} />}
+
+        <ColonyLevelStats />
+        <div className="flex items-center justify-end gap-4">
+          <ColonyHeaderStats showLevel={false} />
+          {account && <AccountMenu account={account} />}
+        </div>
       </header>
 
       {/* Mobile app bar */}
