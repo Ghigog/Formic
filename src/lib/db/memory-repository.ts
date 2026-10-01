@@ -14,6 +14,7 @@ import type {
   PresetRecord,
   ProjectSummary,
   Reroute,
+  LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
   UserSecrets,
@@ -33,8 +34,11 @@ import type {
   AttachmentSummary,
   BoardCard,
   ColumnAgents,
+  ColumnOverride,
+  ColumnOverrides,
   PlanStep,
 } from "@/lib/domain/entities";
+import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -131,6 +135,8 @@ interface Store {
   users: Map<string, UserRecord>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
+  /** `${projectId}:${column}` to that column agent's override. */
+  columnOverrides: Map<string, ColumnOverride>;
   assistant: AssistantMessage[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
@@ -147,6 +153,7 @@ function store(): Store {
     // A store from before presets existed survives a dev-server reload.
     existing.presets ??= new Map();
     existing.columnAgents ??= new Map();
+    existing.columnOverrides ??= new Map();
     existing.users ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
@@ -187,6 +194,7 @@ function store(): Store {
     presets: new Map(),
     users: new Map(),
     columnAgents: new Map(),
+    columnOverrides: new Map(),
     assistant: [],
     cardChat: [],
     attachments: new Map(),
@@ -277,6 +285,8 @@ export class MemoryRepository implements Repository {
       runTimeBudgetMode: "PER_STORY_POINT",
       runTimeBudgetFlatMinutes: null,
       runTimeBudgetPerPointMinutes: null,
+      tokenLimit: null,
+      attemptLimit: null,
       tokenRenewalDay: null,
       tokenWindowTimezone: null,
       tokenResetAt: null,
@@ -296,6 +306,14 @@ export class MemoryRepository implements Repository {
     const user = store().users.get(userId);
     if (!user) throw new Error(`No user ${userId}.`);
     Object.assign(user, columns);
+    return user;
+  }
+
+  async updateLimits(userId: string, columns: LimitColumns): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    if (columns.tokenLimit !== undefined) user.tokenLimit = columns.tokenLimit;
+    if (columns.attemptLimit !== undefined) user.attemptLimit = columns.attemptLimit;
     return user;
   }
 
@@ -366,6 +384,9 @@ export class MemoryRepository implements Repository {
       }
       for (const key of [...s.columnAgents.keys()]) {
         if (key.startsWith(`${projectId}:`)) s.columnAgents.delete(key);
+      }
+      for (const key of [...s.columnOverrides.keys()]) {
+        if (key.startsWith(`${projectId}:`)) s.columnOverrides.delete(key);
       }
       s.events = s.events.filter((e) => e.projectId !== projectId);
       s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
@@ -1148,6 +1169,8 @@ export class MemoryRepository implements Repository {
       // A new key is likely a new account, with its own usage.
       limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,
       limitNote: keep ? (existing?.limitNote ?? null) : null,
+      tokenAllowance: existing?.tokenAllowance ?? null,
+      tokenAllowanceWindowDays: existing?.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS,
     };
     row.hasKey = row.apiKeyCipher !== null;
     s.presets.set(row.id, row);
@@ -1164,7 +1187,38 @@ export class MemoryRepository implements Repository {
   async deletePreset(presetId: string): Promise<void> {
     const s = store();
     s.presets.delete(presetId);
-    for (const [k, v] of s.columnAgents) if (v === presetId) s.columnAgents.delete(k);
+    for (const [k, v] of s.columnAgents) {
+      if (v !== presetId) continue;
+      s.columnAgents.delete(k);
+      s.columnOverrides.delete(k);
+    }
+  }
+
+  async setPresetAllowance(
+    presetId: string,
+    allowance: { tokens: number | null; windowDays: number | null },
+  ): Promise<void> {
+    const row = store().presets.get(presetId);
+    if (!row) return;
+    row.tokenAllowance = allowance.tokens;
+    row.tokenAllowanceWindowDays = allowance.windowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS;
+  }
+
+  async columnOverrides(projectId: string): Promise<ColumnOverrides> {
+    const out: ColumnOverrides = {};
+    for (const [k, v] of store().columnOverrides) {
+      const [p, column] = k.split(":");
+      if (p === projectId) out[column as ColumnId] = { ...v };
+    }
+    return out;
+  }
+
+  async setColumnOverride(projectId: string, column: ColumnId, override: ColumnOverride): Promise<boolean> {
+    const s = store();
+    const key = `${projectId}:${column}`;
+    if (!s.columnAgents.has(key)) return false;
+    s.columnOverrides.set(key, { ...override });
+    return true;
   }
 
   async columnAgents(projectId: string): Promise<ColumnAgents> {
@@ -1183,8 +1237,10 @@ export class MemoryRepository implements Repository {
     presetId: string | null,
   ): Promise<void> {
     const s = store();
-    if (presetId === null) s.columnAgents.delete(`${projectId}:${column}`);
-    else s.columnAgents.set(`${projectId}:${column}`, presetId);
+    if (presetId === null) {
+      s.columnAgents.delete(`${projectId}:${column}`);
+      s.columnOverrides.delete(`${projectId}:${column}`);
+    } else s.columnAgents.set(`${projectId}:${column}`, presetId);
   }
 
   async assistantAgent(projectId: string): Promise<string | null> {
