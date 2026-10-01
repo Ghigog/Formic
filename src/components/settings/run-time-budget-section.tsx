@@ -1,215 +1,214 @@
 "use client";
 
 import { useState } from "react";
+import type { LimitMode, LimitSetting } from "@/lib/budget/budget-for";
 import {
   DEFAULT_MINUTES_PER_STORY_POINT,
   DEFAULT_RUN_TIME_BUDGET_SETTINGS,
   validateRunTimeBudgetSettings,
-  type RunTimeBudgetErrors,
   type RunTimeBudgetMode,
   type RunTimeBudgetSettings,
 } from "@/lib/run-time-budget";
+import { DEFAULT_LIMIT_SETTINGS, validateLimitSetting } from "@/lib/domain/limit-settings";
+import { DEFAULT_TOKENS_PER_STORY_POINT } from "@/lib/budget/budget-for";
+import {
+  LimitAxisSection,
+  draftFromSetting,
+  toRows,
+  whole,
+  type AxisConfig,
+  type AxisDraft,
+  type AxisErrors,
+  type AxisId,
+} from "./limit-axis-section";
 
-const MODES: { mode: RunTimeBudgetMode; label: string; blurb: string }[] = [
+const TIME_TO_AXIS: Record<RunTimeBudgetMode, LimitMode> = {
+  OFF: "OFF",
+  FLAT_MINUTES: "FLAT",
+  PER_STORY_POINT: "PER_POINT",
+  PER_POINT: "PER_POINT_BY_HAND",
+};
+const AXIS_TO_TIME = Object.fromEntries(
+  Object.entries(TIME_TO_AXIS).map(([time, axis]) => [axis, time]),
+) as Record<LimitMode, RunTimeBudgetMode>;
+
+const AXES: AxisConfig[] = [
   {
-    mode: "OFF",
-    label: "Off",
-    blurb: "No time budget. Runs are bounded only by what the platform allows.",
+    id: "time",
+    title: "Time",
+    question: "How long may an agent work on one ticket?",
+    unit: "minutes",
+    enforcement: "between-turns",
+    defaultPerPoint: DEFAULT_MINUTES_PER_STORY_POINT,
+    editableRate: false,
+    offBlurb: "No time budget.",
   },
-  { mode: "FLAT_MINUTES", label: "Flat minutes", blurb: "The same number of minutes for every ticket." },
   {
-    mode: "PER_STORY_POINT",
-    label: "Per story point",
-    blurb: `Minutes × story points. Default: ${DEFAULT_MINUTES_PER_STORY_POINT} minutes per story point.`,
+    id: "tokens",
+    title: "Tokens",
+    question: "How many tokens may an agent use on one ticket?",
+    unit: "tokens",
+    enforcement: "job",
+    defaultPerPoint: DEFAULT_TOKENS_PER_STORY_POINT,
+    editableRate: true,
+    offBlurb: "No token limit.",
   },
   {
-    mode: "PER_POINT",
-    label: "Per-point values",
-    blurb: "Your own minutes for particular story point sizes.",
+    id: "attempts",
+    title: "Attempts",
+    question: "How many times may an agent retry one step?",
+    unit: "attempts",
+    enforcement: "between-turns",
+    defaultPerPoint: null,
+    editableRate: true,
+    blankFlatKeepsDefault: true,
+    offBlurb: "No attempt limit.",
   },
 ];
 
-type Row = { points: string; minutes: string };
-type FieldErrors = RunTimeBudgetErrors & { mode?: string };
+type Drafts = Record<AxisId, AxisDraft>;
+type AllErrors = Record<AxisId, AxisErrors>;
 
-const inputClass =
-  "border-line bg-cream text-ink focus:border-clay h-10 rounded-md border px-2.5 text-[13px] outline-none";
-
-function toRows(values: RunTimeBudgetSettings["perPointMinutes"]): Row[] {
-  return Object.entries(values ?? {}).map(([points, minutes]) => ({
-    points,
-    minutes: String(minutes),
-  }));
+function timeDraft(time: RunTimeBudgetSettings): AxisDraft {
+  return {
+    mode: TIME_TO_AXIS[time.mode],
+    flat: time.flatMinutes != null ? String(time.flatMinutes) : "",
+    perPoint: "",
+    rows: toRows(time.perPointMinutes),
+  };
 }
 
-/** A whole number from the input, or NaN so validation rejects it. */
-function whole(text: string): number {
-  return /^\s*\d+\s*$/.test(text) ? Number(text) : NaN;
+const NO_ERRORS: AllErrors = { time: {}, tokens: {}, attempts: {} };
+
+/** The setting a draft says, plus the field errors that stop it saving. */
+function build(
+  config: AxisConfig,
+  draft: AxisDraft,
+): { setting: LimitSetting | null; errors: AxisErrors; keepsDefault?: boolean } {
+  const errors: AxisErrors = {};
+  if (draft.mode === "FLAT" && config.blankFlatKeepsDefault && draft.flat.trim() === "") {
+    return { setting: null, errors, keepsDefault: true };
+  }
+  const setting: LimitSetting = { mode: draft.mode };
+  if (draft.mode === "FLAT") setting.flat = whole(draft.flat);
+  if (draft.mode === "PER_POINT" && config.editableRate) {
+    if (draft.perPoint.trim() !== "") setting.perPoint = whole(draft.perPoint);
+    else if (config.defaultPerPoint == null) errors.perPoint = `Enter ${config.unit} per story point.`;
+  }
+  if (draft.mode === "PER_POINT_BY_HAND") {
+    // Keyed by the typed text so duplicates and junk surface as errors, not silent merges.
+    const byHand = Object.fromEntries(draft.rows.map((row) => [row.points.trim(), whole(row.value)]));
+    if (draft.rows.length === 0) errors.byHand = "Add at least one per-point value.";
+    else if (Object.keys(byHand).length < draft.rows.length) {
+      errors.byHand = "Each story point size can appear only once.";
+    }
+    setting.byHand = byHand as unknown as Record<number, number>;
+  }
+  if (config.id === "time") {
+    const found = validateRunTimeBudgetSettings(
+      { mode: AXIS_TO_TIME[draft.mode], flatMinutes: setting.flat },
+      setting.byHand as Record<string, unknown> | undefined,
+    );
+    if (found.flatMinutes) errors.flat = found.flatMinutes;
+    if (found.perPointMinutes && !errors.byHand) errors.byHand = found.perPointMinutes;
+  } else {
+    const found = validateLimitSetting(setting);
+    for (const key of ["mode", "flat", "perPoint", "byHand"] as const) {
+      if (found[key] && !errors[key]) errors[key] = found[key];
+    }
+  }
+  return { setting: Object.keys(errors).length ? null : setting, errors };
 }
 
-/** How long a run may last: the mode, and the minutes that mode uses. */
+/** Server field errors, keyed `flatMinutes`/`perPointMinutes` for time and `tokens.flat` and so on, back to each axis. */
+function serverErrors(raw: Record<string, string> | undefined): AllErrors {
+  const out: AllErrors = { time: {}, tokens: {}, attempts: {} };
+  for (const [key, message] of Object.entries(raw ?? {})) {
+    if (key === "flatMinutes") out.time.flat = message;
+    else if (key === "perPointMinutes") out.time.byHand = message;
+    else if (key === "mode") out.time.mode = message;
+    else {
+      const [axis, field] = key.split(".");
+      if (axis === "tokens" || axis === "attempts") out[axis][field as keyof AxisErrors] = message;
+    }
+  }
+  return out;
+}
+
+/** The limits on a run: time, tokens and attempts, each with its own mode and values, saved together. */
 export function RunTimeBudgetSection({
   initial = DEFAULT_RUN_TIME_BUDGET_SETTINGS,
+  tokens = DEFAULT_LIMIT_SETTINGS.tokens,
+  attempts = DEFAULT_LIMIT_SETTINGS.attempts,
 }: {
   initial?: RunTimeBudgetSettings;
+  tokens?: LimitSetting;
+  attempts?: LimitSetting;
 }) {
-  const [mode, setMode] = useState(initial.mode);
-  const [flat, setFlat] = useState(initial.flatMinutes != null ? String(initial.flatMinutes) : "");
-  const [rows, setRows] = useState<Row[]>(toRows(initial.perPointMinutes));
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const [drafts, setDrafts] = useState<Drafts>({
+    time: timeDraft(initial),
+    tokens: draftFromSetting(tokens),
+    attempts: draftFromSetting(attempts),
+  });
+  const [errors, setErrors] = useState<AllErrors>(NO_ERRORS);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  function setRow(index: number, patch: Partial<Row>) {
-    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  }
-
   async function save() {
     setMessage(null);
-    const flatMinutes = mode === "FLAT_MINUTES" ? whole(flat) : null;
-    // Keyed by the typed text so duplicates and junk surface as errors, not silent merges.
-    const perPoint =
-      mode === "PER_POINT"
-        ? Object.fromEntries(rows.map((row) => [row.points.trim(), whole(row.minutes)]))
-        : null;
-    const found: FieldErrors = validateRunTimeBudgetSettings(
-      { mode, flatMinutes },
-      perPoint,
-    );
-    if (perPoint && !found.perPointMinutes && Object.keys(perPoint).length < rows.length) {
-      found.perPointMinutes = "Each story point size can appear only once.";
-    }
+    const built = AXES.map((config) => ({ config, ...build(config, drafts[config.id]) }));
+    const found: AllErrors = { time: {}, tokens: {}, attempts: {} };
+    for (const b of built) found[b.config.id] = b.errors;
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (built.some((b) => b.setting == null && !b.keepsDefault)) return;
+    const [time, tokenSetting, attemptSetting] = built.map((b) => b.setting);
+    if (!time || !tokenSetting) return;
 
     setBusy(true);
     const res = await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, flatMinutes, perPointMinutes: perPoint }),
+      body: JSON.stringify({
+        mode: AXIS_TO_TIME[time.mode],
+        flatMinutes: time.mode === "FLAT" ? time.flat : null,
+        perPointMinutes: time.mode === "PER_POINT_BY_HAND" ? time.byHand : null,
+        tokens: tokenSetting,
+        // Left out when it keeps the built-in defaults, so what is stored stays as it was.
+        ...(attemptSetting ? { attempts: attemptSetting } : {}),
+      }),
     }).catch(() => null);
     setBusy(false);
     const body = (await res?.json().catch(() => null)) as
-      | { error?: string; errors?: FieldErrors }
+      | { error?: string; errors?: Record<string, string> }
       | null;
     if (!res?.ok) {
-      setErrors(body?.errors ?? {});
+      setErrors(serverErrors(body?.errors));
       setMessage({ ok: false, text: body?.error ?? "That did not save. Try again." });
       return;
     }
-    setMessage({ ok: true, text: "Run time budget saved." });
+    setMessage({ ok: true, text: "Limits saved." });
   }
 
   return (
     <section className="bg-card border-line rounded-xl border p-4">
-      <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">
-        Run time budget
-      </h2>
+      <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">Limits</h2>
       <form
-        className="flex flex-col gap-3"
+        className="flex flex-col gap-5"
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
           void save();
         }}
       >
-        <fieldset className="flex flex-col gap-2">
-          <legend className="text-muted mb-1 text-[12px] leading-[1.5]">
-            How long may an agent work on one ticket?
-          </legend>
-          {MODES.map((m) => (
-            <label key={m.mode} className="flex items-start gap-2">
-              <input
-                type="radio"
-                name="run-time-budget-mode"
-                value={m.mode}
-                checked={mode === m.mode}
-                onChange={() => setMode(m.mode)}
-                className="mt-1"
-              />
-              <span>
-                <span className="text-ink block text-[13px] font-medium">{m.label}</span>
-                <span className="text-muted block text-[12px] leading-[1.5]">{m.blurb}</span>
-              </span>
-            </label>
-          ))}
-          {errors.mode && <p className="text-crimson-text text-[11px]">{errors.mode}</p>}
-        </fieldset>
-
-        {mode === "FLAT_MINUTES" && (
-          <div>
-            <label className="text-ink block text-[12px] font-medium" htmlFor="run-time-budget-flat">
-              Minutes per ticket
-            </label>
-            <input
-              id="run-time-budget-flat"
-              inputMode="numeric"
-              value={flat}
-              onChange={(e) => setFlat(e.target.value)}
-              aria-invalid={!!errors.flatMinutes}
-              aria-describedby={errors.flatMinutes ? "run-time-budget-flat-error" : undefined}
-              className={`${inputClass} w-28`}
-            />
-            {errors.flatMinutes && (
-              <p id="run-time-budget-flat-error" className="text-crimson-text mt-1 text-[11px]">
-                {errors.flatMinutes}
-              </p>
-            )}
-          </div>
-        )}
-
-        {mode === "PER_POINT" && (
-          <div className="flex flex-col gap-2">
-            {rows.map((row, i) => (
-              <div key={i} className="flex items-end gap-2">
-                <div>
-                  <label className="text-ink block text-[12px] font-medium" htmlFor={`run-time-budget-points-${i}`}>
-                    Story points (row {i + 1})
-                  </label>
-                  <input
-                    id={`run-time-budget-points-${i}`}
-                    inputMode="numeric"
-                    value={row.points}
-                    onChange={(e) => setRow(i, { points: e.target.value })}
-                    className={`${inputClass} w-24`}
-                  />
-                </div>
-                <div>
-                  <label className="text-ink block text-[12px] font-medium" htmlFor={`run-time-budget-minutes-${i}`}>
-                    Minutes (row {i + 1})
-                  </label>
-                  <input
-                    id={`run-time-budget-minutes-${i}`}
-                    inputMode="numeric"
-                    value={row.minutes}
-                    onChange={(e) => setRow(i, { minutes: e.target.value })}
-                    className={`${inputClass} w-24`}
-                  />
-                </div>
-                <button
-                  type="button"
-                  aria-label={`Remove row ${i + 1}`}
-                  onClick={() => setRows((current) => current.filter((_, j) => j !== i))}
-                  className="text-muted hover:text-ink h-10 px-1 text-[12px] font-medium"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() => setRows((current) => [...current, { points: "", minutes: "" }])}
-              className="text-terracotta self-start text-[12px] font-semibold"
-            >
-              Add row
-            </button>
-            {errors.perPointMinutes && (
-              <p role="alert" className="text-crimson-text text-[11px]">
-                {errors.perPointMinutes}
-              </p>
-            )}
-          </div>
-        )}
+        {AXES.map((config) => (
+          <LimitAxisSection
+            key={config.id}
+            config={config}
+            draft={drafts[config.id]}
+            errors={errors[config.id]}
+            onChange={(draft) => setDrafts((current) => ({ ...current, [config.id]: draft }))}
+          />
+        ))}
 
         <div className="flex items-center gap-3">
           <button
