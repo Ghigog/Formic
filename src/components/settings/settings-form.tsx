@@ -7,6 +7,7 @@ import { useSound } from "@/components/colony/store";
 import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
+import type { LimitSetting } from "@/lib/budget/budget-for";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
 interface KeyState {
@@ -27,6 +28,7 @@ export function SettingsForm({
   installUrl,
   e2b,
   runTimeBudget,
+  limits,
   renewal,
 }: {
   account: Account;
@@ -34,6 +36,7 @@ export function SettingsForm({
   e2b: KeyState;
   /** Saved run time budget; the default when omitted. */
   runTimeBudget?: RunTimeBudgetSettings;
+  limits?: { tokens: LimitSetting; attempts: LimitSetting };
   /** Saved plan renewal day; none when omitted. */
   renewal?: Renewal;
 }) {
@@ -97,7 +100,7 @@ export function SettingsForm({
           state={e2b}
         />
 
-        <RunTimeBudgetSection initial={runTimeBudget} />
+        <RunTimeBudgetSection initial={runTimeBudget} tokens={limits?.tokens} attempts={limits?.attempts} />
 
         <RenewalDaySection initial={renewal} />
 
