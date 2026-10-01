@@ -931,6 +931,34 @@ describe("taking a CLI agent's work", () => {
     expect(MockVcsClient.runner().branches.has(staging)).toBe(false);
   });
 
+  it("sends a re-run that finds its own open pull request's work back to review, not Done", async () => {
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    const branch = "formic/t-1-earlier";
+    const pull = await new MockVcsClient("acme/widgets").openPullRequest({
+      headBranch: branch,
+      baseBranch: "formic/integration",
+      title: "T-1: first try",
+      body: "",
+    });
+    await repository().updateTicket(ticket.id, { branchName: branch, prNumber: pull.number, prUrl: pull.url });
+
+    await runCoderAgent(PROJECT, ticket.id);
+    const job = MockVcsClient.runner().dispatches.at(-1)!.inputs.job!;
+    MockVcsClient.stage(
+      `${STAGING_PREFIX}${job}`,
+      [],
+      `T-1: The thing is already there\n\nIt is done on this branch.\n\n${ALREADY_DONE_TRAILER}`,
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("review");
+    expect(after.prNumber).toBe(pull.number);
+  });
+
   it("still stops on an empty run that does not say it was already done", async () => {
     const { ticket, job, staging } = await dispatched();
     MockVcsClient.stage(staging, [], "T-1: nothing");
