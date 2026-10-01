@@ -1,19 +1,21 @@
-import type { BoardCard, WorkType } from "@/lib/domain/entities";
+import type { BoardCard } from "@/lib/domain/entities";
 
 export type ColumnSort = "position" | "title" | "newest" | "points";
-export type ColumnWorkType = WorkType | null;
+/** Tickets are the plain ones, with no work type. */
+export type TypeFilter = "ticket" | "bug" | "spike" | "archived";
 
 export interface ColumnView {
   query: string;
   sort: ColumnSort;
-  workType: ColumnWorkType;
+  /** The toggled-on types. None means every non-archived card. */
+  types: TypeFilter[];
   collapsed: boolean;
 }
 
 export const EMPTY_VIEW: ColumnView = {
   query: "",
   sort: "position",
-  workType: null,
+  types: [],
   collapsed: false,
 };
 
@@ -21,7 +23,7 @@ export function isViewActive(view: ColumnView): boolean {
   return (
     view.query.trim() !== "" ||
     view.sort !== "position" ||
-    view.workType !== null ||
+    view.types.length > 0 ||
     view.collapsed
   );
 }
@@ -29,10 +31,12 @@ export function isViewActive(view: ColumnView): boolean {
 export function applyView(cards: BoardCard[], view: ColumnView): BoardCard[] {
   let result = [...cards];
 
-  // 1. Work type filter
-  if (view.workType !== null) {
-    result = result.filter((card) => card.workType === view.workType);
-  }
+  // 1. Type filter: archived cards only through the Archived toggle
+  const { types } = view;
+  result = result.filter((card) => {
+    if (card.archived) return types.includes("archived");
+    return types.length === 0 || types.includes(card.workType ?? "ticket");
+  });
 
   // 2. Query search (case-insensitive over key and title)
   const q = view.query.trim().toLowerCase();
@@ -73,4 +77,9 @@ export function applyView(cards: BoardCard[], view: ColumnView): BoardCard[] {
   // 'position' keeps incoming order (stable sort)
 
   return result;
+}
+
+/** The same members, whatever the order. */
+export function sameTypes(a: TypeFilter[], b: TypeFilter[]): boolean {
+  return a.length === b.length && a.every((t) => b.includes(t));
 }

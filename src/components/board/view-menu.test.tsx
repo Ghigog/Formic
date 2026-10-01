@@ -42,16 +42,25 @@ describe("ViewMenu", () => {
     );
   });
 
-  it("emits onChange when work type filter is chosen", () => {
-    const onChange = vi.fn();
-    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} scope="column" />);
-
+  it("shows four unchecked type toggles by default", () => {
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={vi.fn()} scope="column" />);
     fireEvent.click(screen.getByRole("button", { name: "Column options" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /Bugs/i }));
+    for (const name of ["Tickets", "Bugs", "Spikes", "Archived"]) {
+      expect(screen.getByRole("menuitemcheckbox", { name })).toHaveAttribute("aria-checked", "false");
+    }
+  });
 
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ workType: "bug" })
-    );
+  it("toggles types independently", () => {
+    const onChange = vi.fn();
+    renderInDnd(<ViewMenu value={{ ...EMPTY_VIEW, types: ["bug"] }} onChange={onChange} scope="column" />);
+    fireEvent.click(screen.getByRole("button", { name: "Column options" }));
+    expect(screen.getByRole("menuitemcheckbox", { name: "Bugs" })).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Spikes" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ types: ["bug", "spike"] }));
+
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Bugs" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ types: [] }));
   });
 
   it("emits onChange when collapse/expand is clicked", () => {
@@ -71,7 +80,7 @@ describe("ViewMenu", () => {
     const activeView: ColumnView = {
       query: "login",
       sort: "title",
-      workType: "bug",
+      types: ["bug"],
       collapsed: true,
     };
     renderInDnd(<ViewMenu value={activeView} onChange={onChange} scope="column" />);

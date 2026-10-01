@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DragDropContext,
   type DragStart,
@@ -9,7 +9,7 @@ import {
 } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
-import { EMPTY_VIEW, type ColumnView } from "./view";
+import { EMPTY_VIEW, sameTypes, type ColumnView } from "./view";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
@@ -58,6 +58,8 @@ export interface BoardProps {
   onTransition: (t: CardTransition) => Promise<TransitionResult>;
   /** A ticket was archived by dropping it on the archive drop zone. */
   onArchived?: (ticketId: string) => void;
+  /** Whether any column's filter selects Archived, so the caller can supply those cards. */
+  onArchivedWanted?: (wanted: boolean) => void;
   /** Who is signed in, for the header's account menu. */
   account?: Account;
   /** The board's assistant, in the header. */
@@ -84,6 +86,7 @@ export function Board({
   onNewItem,
   onTransition,
   onArchived,
+  onArchivedWanted,
   agents,
   account,
   assistant,
@@ -113,15 +116,20 @@ export function Board({
     done: EMPTY_VIEW,
   }));
 
+  const archivedWanted = COLUMNS.some((c) => views[c].types.includes("archived"));
+  useEffect(() => {
+    onArchivedWanted?.(archivedWanted);
+  }, [archivedWanted, onArchivedWanted]);
+
   // A field shows its value when every column agrees, otherwise the empty one.
   const boardView = useMemo<ColumnView>(() => {
     const all = COLUMNS.map((c) => views[c]);
-    const agreed = <K extends keyof ColumnView>(key: K): ColumnView[K] =>
+    const agreed = <K extends "query" | "sort">(key: K): ColumnView[K] =>
       all.every((v) => v[key] === all[0]![key]) ? all[0]![key] : EMPTY_VIEW[key];
     return {
       query: agreed("query"),
       sort: agreed("sort"),
-      workType: agreed("workType"),
+      types: all.every((v) => sameTypes(v.types, all[0]!.types)) ? all[0]!.types : EMPTY_VIEW.types,
       collapsed: all.every((v) => v.collapsed),
     };
   }, [views]);
@@ -136,7 +144,9 @@ export function Board({
           out[c] = next === EMPTY_VIEW ? EMPTY_VIEW : { ...prev[c] };
           if (next !== EMPTY_VIEW) {
             for (const key of Object.keys(next) as (keyof ColumnView)[]) {
-              if (next[key] !== boardView[key]) Object.assign(out[c], { [key]: next[key] });
+              const changed =
+                key === "types" ? !sameTypes(next.types, boardView.types) : next[key] !== boardView[key];
+              if (changed) Object.assign(out[c], { [key]: next[key] });
             }
           }
         }
