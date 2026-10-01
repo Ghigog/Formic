@@ -2,12 +2,23 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/components/ui/cn";
-import { HEAT_MAX, HEAT_WINDOW_MS, XP_PER_LEVEL, pointsOf } from "@/lib/colony/game";
+import {
+  HEAT_MAX,
+  HEAT_WINDOW_MS,
+  XP_PER_LEVEL,
+  pointsOf,
+} from "@/lib/colony/game";
 import { GradeBadge } from "@/components/sentinels/sentinels";
 import { useColony, type ColonyApi } from "./colony";
 
 /** Counts toward the value it is given rather than jumping to it. */
-function PointsCounter({ value, className }: { value: number; className?: string }) {
+function PointsCounter({
+  value,
+  className,
+}: {
+  value: number;
+  className?: string;
+}) {
   const spanRef = useRef<HTMLSpanElement>(null);
   const shown = useRef(value);
   useEffect(() => {
@@ -50,10 +61,22 @@ const HEAT_LOOK = (n: number) =>
   n === 0
     ? { edge: "var(--border)", bg: "var(--cream)", ink: "var(--text-muted)" }
     : n <= 2
-      ? { edge: "var(--terracotta)", bg: "var(--epic-chip)", ink: "var(--terracotta-deep)" }
+      ? {
+          edge: "var(--terracotta)",
+          bg: "var(--epic-chip)",
+          ink: "var(--terracotta-deep)",
+        }
       : n <= 4
-        ? { edge: "var(--clay)", bg: "var(--clay-chip)", ink: "var(--clay-chip-text)" }
-        : { edge: "var(--crimson)", bg: "var(--crimson-chip)", ink: "var(--crimson-chip-text)" };
+        ? {
+            edge: "var(--clay)",
+            bg: "var(--clay-chip)",
+            ink: "var(--clay-chip-text)",
+          }
+        : {
+            edge: "var(--crimson)",
+            bg: "var(--crimson-chip)",
+            ink: "var(--crimson-chip-text)",
+          };
 
 function Heat({ c }: { c: ColonyApi }) {
   const look = HEAT_LOOK(c.stacks.length);
@@ -69,7 +92,10 @@ function Heat({ c }: { c: ColonyApi }) {
         className="oct inline-flex min-w-11 flex-col items-center gap-1 px-2 pt-1.5 pb-[5px] transition-colors"
         style={{ background: look.bg }}
       >
-        <span className="font-mono text-[13px] leading-none font-medium" style={{ color: look.ink }}>
+        <span
+          className="font-mono text-[13px] leading-none font-medium"
+          style={{ color: look.ink }}
+        >
           ×{c.multiplier.toFixed(1)}
         </span>
         <span aria-hidden className="flex gap-0.5">
@@ -77,7 +103,10 @@ function Heat({ c }: { c: ColonyApi }) {
             const exp = c.stacks[i];
             const k = exp ? Math.max(0, (exp - now) / HEAT_WINDOW_MS) : 0;
             return (
-              <span key={i} className="block h-[3px] w-1 overflow-hidden bg-[color-mix(in_srgb,var(--anthracite)_12%,transparent)]">
+              <span
+                key={i}
+                className="block h-[3px] w-1 overflow-hidden bg-[color-mix(in_srgb,var(--anthracite)_12%,transparent)]"
+              >
                 <span
                   className="bg-terracotta block h-[3px] transition-[width] duration-1000 ease-linear"
                   style={{ width: `${(k * 100).toFixed(1)}%` }}
@@ -98,14 +127,28 @@ function epicPips(c: ColonyApi) {
     .map((e) => {
       const tickets = c.cards.filter((t) => t.epicId === e.id);
       const total = tickets.reduce((n, t) => n + pointsOf(t), 0);
-      const done = tickets.filter((t) => t.status === "merged").reduce((n, t) => n + pointsOf(t), 0);
-      return { id: e.id, title: e.title, pct: total ? done / total : 0, merged: e.status === "merged", has: total > 0 };
+      const done = tickets
+        .filter((t) => t.status === "merged")
+        .reduce((n, t) => n + pointsOf(t), 0);
+      return {
+        id: e.id,
+        title: e.title,
+        pct: total ? done / total : 0,
+        merged: e.status === "merged",
+        has: total > 0,
+      };
     })
     .filter((p) => p.has)
     .slice(0, 6);
 }
 
-function TimelineButton({ c }: { c: ColonyApi }) {
+function TimelineButton({
+  c,
+  iconOnly = false,
+}: {
+  c: ColonyApi;
+  iconOnly?: boolean;
+}) {
   const open = c.timelineOpen;
   return (
     <button
@@ -114,26 +157,80 @@ function TimelineButton({ c }: { c: ColonyApi }) {
       onClick={() => c.setTimelineOpen(!open)}
       aria-label={open ? "Back to board" : "Open timeline"}
       aria-expanded={open}
-      className="border-line bg-card text-ink hover:border-terracotta inline-flex h-9 shrink-0 items-center gap-2.5 rounded-lg border pr-3 pl-2.5 text-[13px] font-semibold transition-[border-color,box-shadow] hover:shadow-[0_6px_14px_-10px_color-mix(in_srgb,var(--anthracite)_40%,transparent)] active:scale-[0.97]"
+      className={cn(
+        "border-line bg-card text-ink hover:border-terracotta inline-flex shrink-0 items-center rounded-lg border text-[13px] font-semibold transition-[border-color,box-shadow] hover:shadow-[0_6px_14px_-10px_color-mix(in_srgb,var(--anthracite)_40%,transparent)] active:scale-[0.97]",
+        iconOnly ? "size-11 justify-center" : "h-9 gap-2.5 pr-3 pl-2.5",
+      )}
     >
       {open ? (
         <>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <rect x="1" y="1.5" width="3.4" height="11" rx="1.2" fill="var(--text)" />
-            <rect x="5.3" y="1.5" width="3.4" height="7.5" rx="1.2" fill="var(--clay)" />
-            <rect x="9.6" y="1.5" width="3.4" height="4.5" rx="1.2" fill="var(--terracotta)" />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect
+              x="1"
+              y="1.5"
+              width="3.4"
+              height="11"
+              rx="1.2"
+              fill="var(--text)"
+            />
+            <rect
+              x="5.3"
+              y="1.5"
+              width="3.4"
+              height="7.5"
+              rx="1.2"
+              fill="var(--clay)"
+            />
+            <rect
+              x="9.6"
+              y="1.5"
+              width="3.4"
+              height="4.5"
+              rx="1.2"
+              fill="var(--terracotta)"
+            />
             <circle cx="11.3" cy="10.6" r="1.4" fill="var(--text-muted)" />
           </svg>
-          Board
-          <span className="border-line text-muted rounded border px-[5px] py-0.5 font-mono text-[9px] font-medium">
-            ESC
-          </span>
+          {!iconOnly && (
+            <>
+              Board
+              <span className="border-line text-muted rounded border px-[5px] py-0.5 font-mono text-[9px] font-medium">
+                ESC
+              </span>
+            </>
+          )}
         </>
       ) : (
         <>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <rect x="1" y="2" width="7" height="2.4" rx="1.2" fill="var(--text)" />
-            <rect x="4" y="5.8" width="8" height="2.4" rx="1.2" fill="var(--clay)" />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect
+              x="1"
+              y="2"
+              width="7"
+              height="2.4"
+              rx="1.2"
+              fill="var(--text)"
+            />
+            <rect
+              x="4"
+              y="5.8"
+              width="8"
+              height="2.4"
+              rx="1.2"
+              fill="var(--clay)"
+            />
             <rect
               x="6.5"
               y="9.6"
@@ -146,20 +243,77 @@ function TimelineButton({ c }: { c: ColonyApi }) {
               strokeDasharray="1.6 1.2"
             />
           </svg>
-          Timeline
-          <span aria-hidden className="flex gap-[3px] max-xl:hidden">
-            {epicPips(c).map((p) => (
-              <span key={p.id} title={p.title} className="bg-line block h-1 w-3.5 overflow-hidden rounded-sm">
-                <span
-                  className={cn("block h-1 transition-[width] duration-600", p.merged ? "bg-jade" : "bg-clay")}
-                  style={{ width: `${p.pct * 100}%` }}
-                />
+          {!iconOnly && (
+            <>
+              Timeline
+              <span aria-hidden className="flex gap-[3px] max-xl:hidden">
+                {epicPips(c).map((p) => (
+                  <span
+                    key={p.id}
+                    title={p.title}
+                    className="bg-line block h-1 w-3.5 overflow-hidden rounded-sm"
+                  >
+                    <span
+                      className={cn(
+                        "block h-1 transition-[width] duration-600",
+                        p.merged ? "bg-jade" : "bg-clay",
+                      )}
+                      style={{ width: `${p.pct * 100}%` }}
+                    />
+                  </span>
+                ))}
               </span>
-            ))}
-          </span>
+            </>
+          )}
         </>
       )}
     </button>
+  );
+}
+
+/** The grade-free level: the LV badge and the rank and XP bar. */
+export function ColonyLevelStats() {
+  const c = useColony();
+  if (!c) return null;
+  const s = c.score;
+  return (
+    <div className="flex shrink-0 items-center gap-2.5">
+      <span
+        data-colony="level"
+        className="oct-lg bg-anthracite text-cream inline-flex size-9 flex-col items-center justify-center gap-px"
+        title={`Level ${s.level}`}
+      >
+        <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">
+          LV
+        </span>
+        <span className="font-serif text-[16px] leading-none font-semibold">
+          {s.level}
+        </span>
+      </span>
+      <div className="flex flex-col gap-1.5 max-xl:hidden">
+        <div className="flex items-baseline gap-2">
+          <span className="text-ink text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap uppercase">
+            Colony · {s.rank}
+          </span>
+          <span className="text-muted font-mono text-[10px] tabular-nums">
+            {s.intoLevel}/{XP_PER_LEVEL}
+          </span>
+        </div>
+        <span
+          role="progressbar"
+          aria-label="Experience to next level"
+          aria-valuemin={0}
+          aria-valuemax={XP_PER_LEVEL}
+          aria-valuenow={s.intoLevel}
+          className="bg-line block h-1 w-[148px] overflow-hidden rounded-sm"
+        >
+          <span
+            className="bg-clay block h-1 transition-[width] duration-700 ease-[cubic-bezier(.2,.8,.2,1)]"
+            style={{ width: `${(s.intoLevel / XP_PER_LEVEL) * 100}%` }}
+          />
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -167,52 +321,27 @@ function TimelineButton({ c }: { c: ColonyApi }) {
  * The colony's corner of the header: the Sentinels' grade and the level,
  * rank, points and heat, and the way into the timeline.
  */
-export function ColonyHeaderStats() {
+export function ColonyHeaderStats({
+  showLevel = true,
+}: {
+  showLevel?: boolean;
+}) {
   const c = useColony();
   if (!c) return null;
-  const s = c.score;
   return (
     <>
       <div className="flex shrink-0 items-center gap-2.5">
         <GradeBadge />
-        <span
-          data-colony="level"
-          className="oct-lg bg-anthracite text-cream inline-flex size-9 flex-col items-center justify-center gap-px"
-          title={`Level ${s.level}`}
-        >
-          <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">LV</span>
-          <span className="font-serif text-[16px] leading-none font-semibold">{s.level}</span>
-        </span>
-        <div className="flex flex-col gap-1.5 max-xl:hidden">
-          <div className="flex items-baseline gap-2">
-            <span className="text-ink text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap uppercase">
-              Colony · {s.rank}
-            </span>
-            <span className="text-muted font-mono text-[10px] tabular-nums">
-              {s.intoLevel}/{XP_PER_LEVEL}
-            </span>
-          </div>
-          <span
-            role="progressbar"
-            aria-label="Experience to next level"
-            aria-valuemin={0}
-            aria-valuemax={XP_PER_LEVEL}
-            aria-valuenow={s.intoLevel}
-            className="bg-line block h-1 w-[148px] overflow-hidden rounded-sm"
-          >
-            <span
-              className="bg-clay block h-1 transition-[width] duration-700 ease-[cubic-bezier(.2,.8,.2,1)]"
-              style={{ width: `${(s.intoLevel / XP_PER_LEVEL) * 100}%` }}
-            />
-          </span>
-        </div>
+        {showLevel && <ColonyLevelStats />}
       </div>
 
       <span aria-hidden className="bg-line h-6 w-px shrink-0 max-xl:hidden" />
 
       <div className="flex shrink-0 items-center gap-2.5">
         <div className="flex flex-col items-end gap-[3px]">
-          <span className="text-muted font-mono text-[9px] tracking-[0.12em]">POINTS</span>
+          <span className="text-muted font-mono text-[9px] tracking-[0.12em]">
+            POINTS
+          </span>
           <PointsCounter value={c.shownPoints} />
         </div>
         <Heat c={c} />
@@ -224,8 +353,8 @@ export function ColonyHeaderStats() {
 }
 
 /**
- * The colony in the app bar below 768px: level, points and heat in one
- * 44px button that opens the timeline.
+ * The colony in the app bar below 768px: the grade, a level and points
+ * button, heat, and an icon-only timeline button.
  */
 export function ColonyMobileStats() {
   const c = useColony();
@@ -233,26 +362,30 @@ export function ColonyMobileStats() {
   const s = c.score;
   return (
     <>
-    <GradeBadge compact />
-    <button
-      type="button"
-      onClick={() => c.setTimelineOpen(!c.timelineOpen)}
-      aria-expanded={c.timelineOpen}
-      aria-label={`Level ${s.level} ${s.rank}, ${c.shownPoints} points. ${c.timelineOpen ? "Back to board" : "Open timeline"}`}
-      className="flex h-11 shrink-0 items-center gap-2 rounded-[10px] px-1"
-    >
-      <span
-        data-colony="level"
-        className="oct-lg bg-anthracite text-cream inline-flex size-8 flex-col items-center justify-center"
+      <GradeBadge compact />
+      <button
+        type="button"
+        aria-label={`Level ${s.level} ${s.rank}, ${c.shownPoints} points`}
+        className="flex h-11 shrink-0 items-center gap-1.5 rounded-[10px] px-1"
       >
-        <span className="text-drawer-muted font-mono text-[7px] tracking-[0.1em]">LV</span>
-        <span className="font-serif text-[14px] leading-none font-semibold">{s.level}</span>
-      </span>
-      <span className="flex flex-col items-start gap-0.5 max-[359px]:hidden">
-        <PointsCounter value={c.shownPoints} className="origin-left text-[14px]" />
-        <span className="text-muted font-mono text-[9px]">×{c.multiplier.toFixed(1)}</span>
-      </span>
-    </button>
+        <span
+          data-colony="level"
+          className="oct-lg bg-anthracite text-cream inline-flex size-8 flex-col items-center justify-center"
+        >
+          <span className="text-drawer-muted font-mono text-[7px] tracking-[0.1em]">
+            LV
+          </span>
+          <span className="font-serif text-[14px] leading-none font-semibold">
+            {s.level}
+          </span>
+        </span>
+        <PointsCounter
+          value={c.shownPoints}
+          className="origin-left text-[14px] max-[359px]:hidden"
+        />
+      </button>
+      <Heat c={c} />
+      <TimelineButton c={c} iconOnly />
     </>
   );
 }
