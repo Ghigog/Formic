@@ -35,9 +35,9 @@ function openPopoverAt(earned: number) {
 
 describe("ColonyPopover progress bar", () => {
   it("is full once every style is unlocked, and the header keeps the level XP", () => {
-    expect(openPopoverAt(8 * XP_PER_LEVEL + 20)).toBe("100%");
+    expect(openPopoverAt(11 * XP_PER_LEVEL + 20)).toBe("100%");
     expect(screen.getByText("Every style unlocked")).toBeTruthy();
-    expect(screen.getByText(/420 XP earned · 20\/50 this level/)).toBeTruthy();
+    expect(screen.getByText(/570 XP earned · 20\/50 this level/)).toBeTruthy();
   });
 
   it("shows progress into the level before the last unlock", () => {
