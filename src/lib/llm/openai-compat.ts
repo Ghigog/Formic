@@ -292,10 +292,11 @@ function modelInfo(m: RawModel): ModelInfo {
 }
 
 /** The models a key can use, for the agent editor, with what the provider says of each. */
-export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise<ModelInfo[]> {
+export async function listOpenAiModels(p: ProviderInfo, apiKey: string, signal?: AbortSignal): Promise<ModelInfo[]> {
   const res = await fetch(endpoint(p, "/models"), {
     headers: { Authorization: `Bearer ${apiKey}` },
     cache: "no-store",
+    ...(signal ? { signal } : {}),
   }).catch(() => null);
   if (!res) throw new ProviderError(`Could not reach ${p.label}.`, null);
   if (!res.ok) throw new ProviderError(describeStatus(p, res, await res.text()), res.status);
@@ -307,9 +308,14 @@ export async function listOpenAiModels(p: ProviderInfo, apiKey: string): Promise
  * What DeepSeek advertises for `model`. A failed or empty answer is "not
  * said": the request then carries the role's own choice, unheld.
  */
-export async function advertisedModel(p: ProviderInfo, apiKey: string, model: string): Promise<ModelInfo | undefined> {
+export async function advertisedModel(
+  p: ProviderInfo,
+  apiKey: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<ModelInfo | undefined> {
   if (p.id !== "deepseek") return undefined;
-  const models = await listOpenAiModels(p, apiKey).catch(() => []);
+  const models = await listOpenAiModels(p, apiKey, signal).catch(() => []);
   return models.find((m) => m.id === model);
 }
 

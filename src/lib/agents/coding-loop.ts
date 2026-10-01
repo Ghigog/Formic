@@ -443,12 +443,15 @@ function openAiConversation(
   let advertised: Promise<ModelInfo | undefined> | undefined;
   return {
     async next() {
-      advertised ??= advertisedModel(info, apiKey, model);
+      advertised ??= advertisedModel(info, apiKey, model, input.ctx.signal);
+      const modelInfo = await advertised;
+      // The budget can run out while the model list is fetched; do not start a reply after it.
+      input.ctx.signal?.throwIfAborted();
       const result = await chat(info, apiKey, {
         model,
         messages,
         tools: openAiTools(input.role),
-        ...reasoningFor(info, input.role, await advertised),
+        ...reasoningFor(info, input.role, modelInfo),
         signal: input.ctx.signal,
       }).catch((e: unknown) => {
         throw new Error(e instanceof Error ? e.message : String(e));
