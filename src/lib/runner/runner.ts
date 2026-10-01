@@ -1741,6 +1741,17 @@ export async function receiveReport(input: {
         return { notes: [], stop: false };
       }
     }
+    // An assistant or card-chat "ask": live while its message is pending.
+    const message = cardId
+      ? ((await repo.assistantMessage(cardId)) ?? (await repo.cardChatMessage(cardId)))
+      : null;
+    if (message && message.runnerJob === input.job && message.status === "pending") {
+      for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
+        if (item.kind !== "log") continue;
+        await publish(message.projectId, { type: "run.log", runId: input.job, stream: item.stream, line: item.line });
+      }
+      return { notes: [], stop: false };
+    }
     return { notes: [], stop: true };
   }
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { RepoPicker } from "./repo-picker";
+import { useAssistantActivity } from "@/lib/hooks/use-assistant-activity";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AccountMenu, type Account } from "./account-menu";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
@@ -80,6 +81,17 @@ export function BoardHeader({
 }) {
   const [owner, repo] = repoFullName.split("/");
   const [picker, setPicker] = useState(false);
+  const activity = useAssistantActivity();
+  const unseenBadge = activity.count > 0 && (
+    <button
+      type="button"
+      onClick={() => setPicker(true)}
+      aria-label={`${activity.count} other ${activity.count === 1 ? "project has" : "projects have"} a new assistant answer`}
+      className="bg-terracotta inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+    >
+      {activity.count}
+    </button>
+  );
   // One picker mounted at a time, in whichever header is showing.
   const isMobile = useMediaQuery("(max-width: 767px)");
   const boardMenu = boardView && onBoardViewChange && (
@@ -129,6 +141,7 @@ export function BoardHeader({
           />
         )}
         </div>
+        {!isMobile && unseenBadge}
 
         <CoinBadge
           ground="cream"
@@ -177,6 +190,7 @@ export function BoardHeader({
             className="fixed top-14 left-4"
           />
         )}
+        {isMobile && unseenBadge}
         <div className="flex-grow" />
         {isMobile && boardMenu}
         <ColonyMobileStats />
