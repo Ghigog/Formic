@@ -14,6 +14,8 @@ import {
   type ProviderId,
   provider as providerInfo,
 } from "@/lib/llm/providers";
+import { reasoningNote, reasoningRoleFor, roleReasoning } from "@/lib/agents/reasoning";
+import type { ModelInfo } from "@/lib/llm/openai-compat";
 import { pricingNote } from "@/lib/budget/limits";
 import { compact } from "@/components/ui/compact-number";
 import type { AgentTokens } from "@/lib/hooks/use-agents";
@@ -32,7 +34,7 @@ const CONVENTIONS_NOTE: Partial<Record<ColumnId, string>> = {
 type ModelList =
   | { state: "idle" }
   | { state: "loading" }
-  | { state: "ready"; models: string[] }
+  | { state: "ready"; models: string[]; info: ModelInfo[] }
   | { state: "error"; reason: string };
 
 /**
@@ -96,6 +98,8 @@ export function AgentEditor({
   // Ask the provider which models this key can use, once there is a key.
   const noKey = cli || (!typedKey && !savedKey);
   const models: ModelList = noKey ? { state: "idle" } : fetched;
+  const advertised = models.state === "ready" ? models.info.find((m) => m.id === model.trim()) : undefined;
+  const reasoningRole = forAssistant ? "chat" : reasoningRoleFor(COLUMN_AGENT_ROLE[column]);
   useEffect(() => {
     if (noKey) return;
     const controller = new AbortController();
@@ -111,10 +115,10 @@ export function AgentEditor({
         signal: controller.signal,
       })
         .then((r) => r.json())
-        .then((d: { ok: boolean; models?: Array<{ id: string }>; reason?: string }) =>
+        .then((d: { ok: boolean; models?: ModelInfo[]; reason?: string }) =>
           setFetched(
             d.ok
-              ? { state: "ready", models: (d.models ?? []).map((m) => m.id) }
+              ? { state: "ready", models: (d.models ?? []).map((m) => m.id), info: d.models ?? [] }
               : { state: "error", reason: d.reason ?? "Could not list models." },
           ),
         )
@@ -310,6 +314,11 @@ export function AgentEditor({
             </span>
             {!cli && model.trim() && (
               <span className="text-muted text-[11px]">{pricingNote(model.trim(), provider)}</span>
+            )}
+            {provider === "deepseek" && reasoningRole && (
+              <span className="text-muted text-[11px]" data-testid="reasoning-note">
+                {reasoningNote(roleReasoning(reasoningRole, advertised))}
+              </span>
             )}
           </label>
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyView, isViewActive, EMPTY_VIEW } from "./view";
+import { applyView, isViewActive, EMPTY_VIEW, type TypeFilter } from "./view";
 import type { BoardCard } from "@/lib/domain/entities";
 
 const makeCard = (overrides: Partial<BoardCard>): BoardCard => ({
@@ -56,18 +56,32 @@ describe("board view logic", () => {
     expect(res3.map((c) => c.id)).toEqual(["1", "3"]);
   });
 
-  it("filters by workType", () => {
+  it("filters by each type toggle, tickets being cards with no work type", () => {
     const cards = [
       makeCard({ id: "1", workType: "bug" }),
       makeCard({ id: "2", workType: "spike" }),
       makeCard({ id: "3", workType: null }),
     ];
+    const ids = (types: TypeFilter[]) => applyView(cards, { ...EMPTY_VIEW, types }).map((c) => c.id);
+    expect(ids(["bug"])).toEqual(["1"]);
+    expect(ids(["spike"])).toEqual(["2"]);
+    expect(ids(["ticket"])).toEqual(["3"]);
+    expect(ids(["bug", "spike"])).toEqual(["1", "2"]);
+    expect(ids([])).toEqual(["1", "2", "3"]);
+  });
 
-    const bugs = applyView(cards, { ...EMPTY_VIEW, workType: "bug" });
-    expect(bugs.map((c) => c.id)).toEqual(["1"]);
-
-    const spikes = applyView(cards, { ...EMPTY_VIEW, workType: "spike" });
-    expect(spikes.map((c) => c.id)).toEqual(["2"]);
+  it("shows archived cards of any type only when Archived is on", () => {
+    const cards = [
+      makeCard({ id: "t", workType: null, archived: true }),
+      makeCard({ id: "b", workType: "bug", archived: true }),
+      makeCard({ id: "s", workType: "spike", archived: true }),
+      makeCard({ id: "live", workType: "bug" }),
+    ];
+    const ids = (types: TypeFilter[]) => applyView(cards, { ...EMPTY_VIEW, types }).map((c) => c.id);
+    expect(ids([])).toEqual(["live"]);
+    expect(ids(["archived"])).toEqual(["t", "b", "s"]);
+    expect(ids(["archived", "bug"])).toEqual(["t", "b", "s", "live"]);
+    expect(ids(["spike"])).toEqual([]);
   });
 
   it("sorts by title", () => {
@@ -104,7 +118,7 @@ describe("board view logic", () => {
     expect(isViewActive(EMPTY_VIEW)).toBe(false);
     expect(isViewActive({ ...EMPTY_VIEW, query: "abc" })).toBe(true);
     expect(isViewActive({ ...EMPTY_VIEW, sort: "title" })).toBe(true);
-    expect(isViewActive({ ...EMPTY_VIEW, workType: "bug" })).toBe(true);
+    expect(isViewActive({ ...EMPTY_VIEW, types: ["archived"] })).toBe(true);
     expect(isViewActive({ ...EMPTY_VIEW, collapsed: true })).toBe(true);
   });
 });
