@@ -123,6 +123,7 @@ interface Store {
     RunRecord & {
       status: AgentRunStatus;
       startedAt: Date;
+      finishedAt?: Date | null;
       costCents: number;
       error: string | null;
       /** What it used, so an agent's own tokens can be summed from here. */
@@ -993,6 +994,7 @@ export class MemoryRepository implements Repository {
     const run = store().runs.get(runId);
     if (run) {
       run.status = outcome.status;
+      run.finishedAt = new Date();
       run.error = outcome.error;
       run.costCents = outcome.costCents;
       run.tokensIn = outcome.tokensIn;
@@ -1021,6 +1023,18 @@ export class MemoryRepository implements Repository {
       if (run.epicId === epicId) total += run.costCents;
     }
     return total;
+  }
+
+  async epicRunStats(epicId: string): Promise<{ elapsedMs: number; attempts: number }> {
+    const now = Date.now();
+    let elapsedMs = 0;
+    let attempts = 0;
+    for (const run of store().runs.values()) {
+      if (run.epicId !== epicId) continue;
+      elapsedMs += (run.finishedAt?.getTime() ?? now) - run.startedAt.getTime();
+      if (run.status === "failed" || run.status === "blocked") attempts += 1;
+    }
+    return { elapsedMs, attempts };
   }
 
   async agentTokensByPreset(
@@ -1061,6 +1075,7 @@ export class MemoryRepository implements Repository {
             : projectOfRun(s, run) === scope.projectId;
       if (!matches) continue;
       run.status = "cancelled";
+      run.finishedAt = new Date();
       run.error = reason;
       cancelled.push({ id: run.id, sandboxId: run.sandboxId });
     }
