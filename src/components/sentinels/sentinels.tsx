@@ -38,6 +38,7 @@ function Portrait({ id, className }: { id: string; className?: string }) {
   return (
     <span
       aria-hidden
+      data-avatar={id}
       className={cn("absolute inset-0 block", className)}
       dangerouslySetInnerHTML={{ __html: portraitSvg(id) }}
     />
@@ -51,6 +52,14 @@ function PlayIcon({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+/** Whether a sentinel has reported: the ones worth celebrating. */
+const reported = (st: SentinelState | undefined) => st?.stars != null;
+
+const SLIDE_MS = 520;
+const SLIDE_STAGGER_MS = 110;
+/** Hover scrubbing across the rail makes one voice per this long. */
+const VOICE_GAP_MS = 120;
 
 function ago(iso: string | null, now: number): string {
   if (!iso) return "";
@@ -87,11 +96,25 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
       if (e.key === "Escape") c.setSentinelsOpen(false);
     };
     window.addEventListener("keydown", onKey);
-    root.current?.animate([{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], {
-      duration: 260,
-      easing: "cubic-bezier(.2,.8,.2,1)",
-    });
+    // Reported cards slide up one after another; the rest fade in by CSS.
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const landed = SENTINELS.map((x, i) => ({ x, i })).filter(({ x }) => reported(s.states[x.id]));
+    if (landed.length) c.sfx("sentinelsOpen");
+    if (landed.length && !c.fx.reducedMotion) {
+      landed.forEach(({ x, i }, n) => {
+        const delay = n * SLIDE_STAGGER_MS;
+        root.current?.querySelector<HTMLElement>(`[data-card="${x.id}"]`)?.animate(
+          [
+            { opacity: 0, transform: `translateY(60vh) rotate(${n % 2 ? 4 : -4}deg)` },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: SLIDE_MS, delay, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" },
+        );
+        timers.push(setTimeout(() => c.sfx("sentinelLand", i), delay + SLIDE_MS));
+      });
+    }
     return () => {
+      timers.forEach(clearTimeout);
       clearInterval(id);
       window.removeEventListener("keydown", onKey);
     };
@@ -155,6 +178,29 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.states]);
+
+  // An avatar's reaction and its sentinel's voice. Hopping and tilting is
+  // motion; the voice is not, and is throttled so scrubbing does not stack.
+  const lastVoice = useRef(0);
+  const react = (id: string) => {
+    const now = performance.now();
+    if (now - lastVoice.current >= VOICE_GAP_MS) {
+      lastVoice.current = now;
+      c.sfx("sentinelVoice", SENTINELS.findIndex((x) => x.id === id));
+    }
+    if (c.fx.reducedMotion) return;
+    root.current
+      ?.querySelector<HTMLElement>(`[data-card="${id}"] [data-avatar]`)
+      ?.animate(
+        [
+          { transform: "none" },
+          { transform: "translateY(-10px) rotate(-5deg) scale(1.06)", offset: 0.35 },
+          { transform: "translateY(0) rotate(3deg) scale(1.04, 0.94)", offset: 0.65 },
+          { transform: "none" },
+        ],
+        { duration: 380, easing: "cubic-bezier(.2,.8,.2,1)" },
+      );
+  };
 
   const unlocked = SENTINELS.filter((x) => x.unlockLevel <= s.level).length;
   const nBusy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
@@ -253,7 +299,7 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
         )}
 
         <div className="flex gap-4 max-lg:flex-col lg:min-h-0 lg:flex-1">
-          <Rail s={s} sel={sel} now={now} onSelect={(id) => { c.sfx("blip", 5); setSel(id); }} onSummon={summon} />
+          <Rail s={s} sel={sel} now={now} onReact={react} onSelect={(id) => { c.sfx("blip", 5); setSel(id); react(id); }} onSummon={summon} />
           <Report x={selected} st={s.states[selected.id]!} now={now} locked={selected.unlockLevel > s.level} onSummon={() => summon(selected.id)} />
         </div>
       </div>
@@ -266,12 +312,14 @@ function Rail({
   sel,
   now,
   onSelect,
+  onReact,
   onSummon,
 }: {
   s: SentinelsApi;
   sel: string;
   now: number;
   onSelect: (id: string) => void;
+  onReact: (id: string) => void;
   onSummon: (id: string) => void;
 }) {
   const rail = useRef<HTMLDivElement>(null);
@@ -296,7 +344,7 @@ function Rail({
       className="flex min-w-0 flex-1 snap-x snap-proximity gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-2 max-lg:min-h-[520px]"
     >
       {SENTINELS.map((x) => (
-        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} locked={x.unlockLevel > s.level} onSelect={onSelect} onSummon={onSummon} />
+        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} locked={x.unlockLevel > s.level} onSelect={onSelect} onReact={onReact} onSummon={onSummon} />
       ))}
     </div>
   );
@@ -309,6 +357,7 @@ function Card({
   now,
   locked,
   onSelect,
+  onReact,
   onSummon,
 }: {
   x: Sentinel;
@@ -317,6 +366,7 @@ function Card({
   now: number;
   locked: boolean;
   onSelect: (id: string) => void;
+  onReact: (id: string) => void;
   onSummon: (id: string) => void;
 }) {
   const running = !!st.running;
@@ -331,6 +381,8 @@ function Card({
       aria-label={`${x.who}, ${x.name}. ${st.stars !== null ? `${st.stars} of 5 stars` : "Not audited"}`}
       aria-current={on || undefined}
       onClick={() => onSelect(x.id)}
+      onPointerEnter={() => onReact(x.id)}
+      onFocus={() => onReact(x.id)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -339,6 +391,7 @@ function Card({
       }}
       className={cn(
         "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-start flex-col overflow-hidden rounded-[14px] border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
+        !reported(st) && "sentinel-motion animate-[sentinelFade_0.4s_ease-out]",
         on ? "border-terracotta shadow-[0_0_0_3px_rgb(217_107_39/0.14)]" : "border-line",
       )}
     >

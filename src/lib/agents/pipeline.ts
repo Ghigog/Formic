@@ -10,6 +10,7 @@ import { publish } from "@/lib/events/bus";
 import { ticketNotes } from "@/lib/coder/notes";
 import { epicNoteTexts, withEpicNotes } from "./epic-notes";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
+import { budgetFor, type Budget } from "@/lib/budget/budget-for";
 import { positionForIndex } from "@/lib/ordering";
 import type { AgentRole, Prd } from "@/lib/domain/entities";
 import { agentFor, cliAgentFor, runTargetFor } from "./presets";
@@ -48,9 +49,12 @@ export function startRun(
     provider?: string | null;
     /** The saved agent running it, so what it uses is counted to that agent. */
     presetId?: string | null;
+    /** What the run is held to; unset is the in-process default for a one-point ticket. */
+    budget?: Budget;
   },
 ): RunHandle {
   const runId = randomUUID();
+  const budget = ids.budget ?? budgetFor(null, null, {}, "in-process");
   const signal = beginRun({
     runId,
     projectId,
@@ -58,6 +62,7 @@ export function startRun(
     ticketId: ids.ticketId ?? null,
     model: ids.model ?? null,
     provider: ids.provider ?? null,
+    budget,
   });
 
   const record = {
@@ -79,6 +84,7 @@ export function startRun(
   // as it goes; finish() must then settle only the difference, or a run pays
   // for every turn twice and trips its own ceiling.
   let charged = 0;
+  let chargedTokens = 0;
   let planWrites: Promise<void> = Promise.resolve();
 
   const startedAt = new Date();
@@ -89,6 +95,8 @@ export function startRun(
     runId,
     projectId,
     signal,
+    budget,
+    startedAt: startedAt.getTime(),
     // Read from the database, not memory: the stop and the note may reach
     // another instance than the one running the agent.
     interrupts: ticketId
@@ -129,7 +137,12 @@ export function startRun(
     },
     charge: async (usage) => {
       charged = usage.costCents;
-      await recordSpend(runId, { cents: usage.costCents, attempts: 0 });
+      chargedTokens += usage.tokensIn + usage.tokensOut;
+      await recordSpend(runId, {
+        cents: usage.costCents,
+        tokens: usage.tokensIn + usage.tokensOut,
+        attempts: 0,
+      });
     },
   };
 
@@ -142,6 +155,7 @@ export function startRun(
     const usage: Usage = outcome.usage;
     await recordSpend(runId, {
       cents: Math.max(usage.costCents - charged, 0),
+      tokens: Math.max(usage.tokensIn + usage.tokensOut - chargedTokens, 0),
       attempts: 1,
     });
     await repository().finishRun(runId, {

@@ -22,6 +22,7 @@ import { agentFor, cliAgentFor, loopAgentFor, runTargetFor } from "@/lib/agents/
 import type { CodeChange, Usage } from "@/lib/agents/ports";
 import type { VcsClient } from "@/lib/vcs";
 import { resolveRunTimeBudget } from "@/lib/run-time-budget";
+import { inProcessBudget } from "@/lib/budget/in-process";
 import { getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { cliPrompt, loopPayload, loopRunnerReady, resumeBrief, startJobRun } from "@/lib/runner/runner";
 import { guidedWorkspace } from "@/lib/sandbox/workspace";
@@ -158,6 +159,7 @@ export async function runCoderAgent(
     ...(await runTargetFor(projectId, "coder")),
     epicId: ticket.epicId,
     ticketId: ticket.id,
+    budget: await inProcessBudget(project.ownerId, ticket),
   });
 
   await repo.updateTicket(ticket.id, {
@@ -213,10 +215,14 @@ export async function runCoderAgent(
   if (loop && (await loopRunnerReady(client, project.baseBranch))) {
     const notes = await noteTexts(projectId, ticket.id);
     // Read once, here: a setting changed after this run starts is for the next.
-    const budgetMinutes = resolveRunTimeBudget(
-      project.ownerId ? await getRunTimeBudgetSettings(project.ownerId) : null,
-      ticket.storyPoints,
-    );
+    // A column's own minutes win over the person's per-point rule.
+    const override = (await repository().columnOverrides(projectId)).in_progress?.minutes;
+    const budgetMinutes =
+      override ??
+      resolveRunTimeBudget(
+        project.ownerId ? await getRunTimeBudgetSettings(project.ownerId) : null,
+        ticket.storyPoints,
+      );
     await startJobRun({
       projectId,
       ticket: { ...ticket, branchName: branch },

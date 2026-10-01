@@ -994,6 +994,15 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async ticketRunMs(ticketId: string): Promise<number> {
+    const rows = await prisma().agentRun.findMany({
+      where: { ticketId, startedAt: { not: null } },
+      select: { startedAt: true, finishedAt: true },
+    });
+    const now = Date.now();
+    return rows.reduce((sum, r) => sum + ((r.finishedAt?.getTime() ?? now) - r.startedAt!.getTime()), 0);
+  }
+
   async finishRun(runId: string, outcome: RunOutcome): Promise<void> {
     const db = prisma();
     await db.agentRun.updateMany({
@@ -1043,6 +1052,21 @@ export class PrismaRepository implements Repository {
       _sum: { costCents: true },
     });
     return result._sum.costCents ?? 0;
+  }
+
+  async epicRunStats(epicId: string): Promise<{ elapsedMs: number; attempts: number }> {
+    const rows = await prisma().agentRun.findMany({
+      where: { epicId },
+      select: { status: true, startedAt: true, finishedAt: true },
+    });
+    const now = Date.now();
+    let elapsedMs = 0;
+    let attempts = 0;
+    for (const r of rows as Array<{ status: AgentRunStatus; startedAt: Date | null; finishedAt: Date | null }>) {
+      if (r.startedAt) elapsedMs += (r.finishedAt?.getTime() ?? now) - r.startedAt.getTime();
+      if (r.status === "failed" || r.status === "blocked") attempts += 1;
+    }
+    return { elapsedMs, attempts };
   }
 
   async agentTokensByPreset(

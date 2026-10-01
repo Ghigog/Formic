@@ -1,6 +1,7 @@
 import type { Prd } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { Workspace } from "@/lib/sandbox/workspace";
+import type { Budget } from "@/lib/budget/budget-for";
 import type { ProviderId } from "@/lib/llm/providers";
 
 /**
@@ -25,6 +26,10 @@ export interface AgentContext {
    * that is only checked after the loop finishes is not a budget.
    */
   charge?: (usage: Usage) => Promise<void>;
+  /** What this run is held to; a loop stops itself between turns at its time and token limits. */
+  budget?: Budget;
+  /** When the run started, in epoch milliseconds, for the time limit. */
+  startedAt?: number;
   /**
    * Whether the person watching the ticket stopped the run, and the notes
    * they sent it since it started. A loop asks between turns.

@@ -12,6 +12,7 @@
 import {
   DEFAULT_MINUTES_PER_STORY_POINT,
   resolveRunTimeBudget,
+  type RunTimeBudgetSettings,
 } from "@/lib/run-time-budget";
 
 export const LIMIT_MODES = ["OFF", "FLAT", "PER_POINT", "PER_POINT_BY_HAND"] as const;
@@ -35,6 +36,18 @@ export type ProjectLimitSettings = {
 
 /** A column's own value for an axis; wins over the project's setting. */
 export type ColumnLimits = { minutes?: number | null; tokens?: number | null; attempts?: number | null };
+
+const TIME_MODES = {
+  OFF: "OFF",
+  FLAT_MINUTES: "FLAT",
+  PER_STORY_POINT: "PER_POINT",
+  PER_POINT: "PER_POINT_BY_HAND",
+} as const;
+
+/** The person's stored time setting as the minutes axis budgetFor reads. */
+export function minutesSetting(time: RunTimeBudgetSettings): LimitSetting {
+  return { mode: TIME_MODES[time.mode], flat: time.flatMinutes, byHand: time.perPointMinutes };
+}
 
 export type TicketForBudget = { storyPoints?: number | null };
 
@@ -91,7 +104,7 @@ export type Budget = {
   /** Derived from tokens × a conservative rate; null when tokens are unbounded. */
   maxCents: number | null;
   /** How each limit is enforced. */
-  enforcement: { minutes: "between-turns"; tokens: "job"; attempts: "between-turns" };
+  enforcement: { minutes: "between-turns"; tokens: "between-turns" | "job"; attempts: "between-turns" };
 };
 
 function points(ticket: TicketForBudget): number {
@@ -177,6 +190,7 @@ export function budgetFor(
     tokens,
     attempts,
     maxCents: tokens.value == null ? null : Math.ceil((tokens.value / 1_000_000) * CENTS_PER_MTOK),
-    enforcement: { minutes: "between-turns", tokens: "job", attempts: "between-turns" },
+    // An in-process loop stops itself between turns; a job's token ceiling is read by the job.
+    enforcement: { minutes: "between-turns", tokens: path === "in-process" ? "between-turns" : "job", attempts: "between-turns" },
   };
 }

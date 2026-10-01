@@ -1,5 +1,6 @@
 import "server-only";
 
+import { inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
 import { DEFAULT_RUN_BUDGET } from "@/lib/budget/limits";
@@ -827,6 +828,7 @@ async function reviewTicket(
     ...(await runTargetFor(projectId, "reviewer")),
     epicId: ticket.epicId,
     ticketId: ticket.id,
+    budget: await inProcessBudget(project.ownerId, ticket),
   });
 
   const cli = await cliAgentFor(projectId, "in_review");
@@ -1027,6 +1029,7 @@ async function resolveConflicts(
     ...(await runTargetFor(projectId, "reviewer")),
     epicId: ticket.epicId,
     ticketId: ticket.id,
+    budget: await inProcessBudget(project.ownerId, ticket),
   });
 
   // In GitHub Actions the workflow merges the base in before the agent

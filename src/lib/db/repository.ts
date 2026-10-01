@@ -534,6 +534,8 @@ export interface Repository {
   ticketsForEpic(epicId: string): Promise<TicketDetail[]>;
 
   startRun(run: RunRecord): Promise<void>;
+  /** Milliseconds a ticket's agent runs have taken, a live one counted up to now. */
+  ticketRunMs(ticketId: string): Promise<number>;
   finishRun(runId: string, outcome: RunOutcome): Promise<void>;
   /**
    * Runs still marked live that began before `startedBefore`. Callers pass a
@@ -551,6 +553,12 @@ export interface Repository {
   recordRunSpend(runId: string, costCents: number): Promise<void>;
   /** Every run's spend under an Epic, finished or still running, summed. */
   epicSpentCents(epicId: string): Promise<number>;
+  /**
+   * What an Epic's runs have actually taken: the time they ran, summed (a run
+   * still going counts up to now), and how many attempts failed or were
+   * blocked. What the Epic's time and attempt ceilings read.
+   */
+  epicRunStats(epicId: string): Promise<{ elapsedMs: number; attempts: number }>;
   /**
    * What every saved agent has used, in tokens, keyed by preset id: its runs
    * and the chat answers it gave, summed together. Tokens, not money: a
