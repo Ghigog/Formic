@@ -35,10 +35,11 @@ export default async function BoardPage() {
     },
     new Date(),
   );
-  const [cards, presets, columnAgents, sentinels, agentUsage] = await Promise.all([
+  const [cards, presets, columnAgents, columnOverrides, sentinels, agentUsage] = await Promise.all([
     repo.boardCards(project.id),
     repo.listPresets(ownerScope(user)),
     repo.columnAgents(project.id),
+    repo.columnOverrides(project.id),
     sentinelsFor(project.id),
     // What each agent has used, in tokens: counted per agent since the
     // person's token window began, from the runs and answers that agent did (see docs/token-usage.md).
@@ -62,6 +63,7 @@ export default async function BoardPage() {
       baseBranch={project.baseBranch}
       initialPresets={presets}
       initialColumnAgents={columnAgents}
+      initialOverrides={columnOverrides}
       initialAgentUsage={agentUsage}
       initialTokenWindow={{
         kind: window.kind,

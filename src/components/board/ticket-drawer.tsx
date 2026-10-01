@@ -17,6 +17,7 @@ import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
 import { ProblemNotice, WorkTimer } from "./card";
+import { TicketUsage } from "./ticket-usage";
 import {
   activityOf,
   appendActivity,
@@ -207,6 +208,7 @@ export function TicketDrawer({
                 </div>
               )}
             </div>
+            {view && <TicketUsage usage={view.usage} />}
             {view?.canStop && <StopButton ticketId={ticketId} onStopped={load} />}
             <button
               type="button"

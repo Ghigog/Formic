@@ -53,8 +53,8 @@ export type BudgetVerdict =
   | { ok: false; reason: string; exceeded: "cost" | "time" | "attempts" };
 
 /** What a run is told when it hits the spend ceiling; the ceiling bounds tokens, not a bill. */
-export function spendCeilingNote(maxCents: number): string {
-  return `Spend ceiling reached ($${(maxCents / 100).toFixed(2)} of estimated token volume, not a bill).`;
+export function spendCeilingNote(): string {
+  return "Spend ceiling reached (an estimate of token volume, not a bill).";
 }
 
 export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "metered"): BudgetVerdict {
@@ -66,7 +66,7 @@ export function checkBudget(spend: Spend, budget: Budget, billing: Billing = "me
     return {
       ok: false,
       exceeded: "cost",
-      reason: spendCeilingNote(budget.maxCents),
+      reason: spendCeilingNote(),
     };
   }
   if (spend.elapsedMs >= budget.maxDurationMs) {

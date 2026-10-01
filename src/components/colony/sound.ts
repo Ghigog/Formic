@@ -1,3 +1,5 @@
+import { SENTINELS } from "@/lib/sentinels/roster";
+
 /**
  * The colony's sounds, synthesised with WebAudio: no files to load, and
  * nothing plays until the page has had a gesture (browsers insist).
@@ -43,7 +45,34 @@ export type Sfx =
   | "click"
   | "fold"
   | "unfold"
-  | "close";
+  | "close"
+  | "crumble"
+  | "sentinelsOpen"
+  | "sentinelLand"
+  | "sentinelVoice";
+
+/** One sentinel's voice: a pitch, a wave and a glide to another pitch. */
+export interface SentinelVoice {
+  freq: number;
+  type: OscillatorType;
+  to: number;
+}
+
+/** Each sentinel's own sound, keyed by roster id. */
+export const SENTINEL_VOICES: Record<string, SentinelVoice> = {
+  tester: { freq: 523, type: "square", to: 659 },
+  qa: { freq: 587, type: "triangle", to: 523 },
+  architect: { freq: 196, type: "sawtooth", to: 262 },
+  secops: { freq: 147, type: "square", to: 110 },
+  devops: { freq: 392, type: "sawtooth", to: 523 },
+  techops: { freq: 330, type: "triangle", to: 440 },
+  perf: { freq: 784, type: "sawtooth", to: 1175 },
+  a11y: { freq: 698, type: "sine", to: 880 },
+  design: { freq: 880, type: "triangle", to: 740 },
+  legal: { freq: 247, type: "sine", to: 220 },
+  marketer: { freq: 1047, type: "square", to: 1319 },
+  sales: { freq: 440, type: "sine", to: 659 },
+};
 
 interface ToneOpts {
   type?: OscillatorType;
@@ -374,6 +403,30 @@ export class SoundEngine {
       case "close":
         this.tone(880, 0.12, { to: 440, gain: 0.03, type: "triangle" });
         break;
+      case "crumble":
+        // Rattling grit, then a low thump as it is buried.
+        for (let i = 0; i < 7; i++) {
+          this.noise(0.05, { freq: 3200 + (i % 3) * 900, hp: true, gain: 0.05, q: 1.5, delay: i * 0.06 + (i % 2) * 0.02 });
+        }
+        this.noise(0.3, { freq: 1800, to: 300, gain: 0.07, q: 1.2 });
+        this.tone(110, 0.22, { to: 45, gain: 0.18, delay: 0.5 });
+        this.noise(0.12, { freq: 400, to: 90, gain: 0.12, delay: 0.5 });
+        break;
+      case "sentinelsOpen":
+        this.tone(330, 0.45, { to: 990, gain: 0.03, type: "triangle", attack: 0.06 });
+        this.noise(0.4, { freq: 600, to: 3200, gain: 0.04, q: 1.4 });
+        break;
+      case "sentinelLand":
+        this.noise(0.03, { freq: 2200, to: 600, gain: 0.05 });
+        this.tone(900 + v * 40, 0.04, { type: "triangle", gain: 0.02 });
+        break;
+      case "sentinelVoice": {
+        // v: the sentinel's place in the roster.
+        const id = SENTINELS[v]?.id;
+        const voice = id ? SENTINEL_VOICES[id] : undefined;
+        if (voice) this.tone(voice.freq, 0.16, { type: voice.type, to: voice.to, gain: 0.03 });
+        break;
+      }
     }
   }
 }
