@@ -516,6 +516,12 @@
   }
 }
 
+@keyframes sentinelFade {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sentinel-motion {
     animation: none !important;
