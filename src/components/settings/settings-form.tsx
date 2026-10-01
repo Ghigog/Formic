@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Account } from "@/components/board/account-menu";
 import { useSound } from "@/components/colony/store";
+import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
@@ -79,6 +80,8 @@ export function SettingsForm({
         </Section>
 
         <SoundSection />
+
+        <BoardViewSection />
 
         <KeyField
           field="e2bKey"
