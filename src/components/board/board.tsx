@@ -9,7 +9,7 @@ import {
 } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
-import { EMPTY_VIEW, sameTypes, type ColumnView } from "./view";
+import { EMPTY_VIEW, type ColumnView } from "./view";
 import { loadBoardView } from "./view-setting";
 import { adjacentColumn, ownsGesture, swipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
@@ -46,9 +46,6 @@ export interface BoardProps {
   extras?: ExtrasMap;
   projectName: string;
   repoFullName: string;
-  baseBranch: string;
-  inSync?: boolean;
-  syncedLabel?: string;
   onOpenCard: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
   /** Opens the capture dialog: a column's "New request" button, and the mobile CTA. */
@@ -80,9 +77,6 @@ export function Board({
   extras = {},
   projectName,
   repoFullName,
-  baseBranch,
-  inSync = true,
-  syncedLabel,
   onOpenCard,
   onShowcase,
   onNewItem,
@@ -137,41 +131,6 @@ export function Board({
   useEffect(() => {
     onArchivedWanted?.(archivedWanted);
   }, [archivedWanted, onArchivedWanted]);
-
-  // A field shows its value when every column agrees, otherwise the empty one.
-  const boardView = useMemo<ColumnView>(() => {
-    const all = COLUMNS.map((c) => views[c]);
-    const agreed = <K extends "query" | "sort">(key: K): ColumnView[K] =>
-      all.every((v) => v[key] === all[0]![key]) ? all[0]![key] : EMPTY_VIEW[key];
-    return {
-      query: agreed("query"),
-      sort: agreed("sort"),
-      types: all.every((v) => sameTypes(v.types, all[0]!.types)) ? all[0]!.types : EMPTY_VIEW.types,
-      collapsed: all.every((v) => v.collapsed),
-    };
-  }, [views]);
-
-  // Write only what the menu changed to every column, so the other fields stay
-  // per-column. Clear resets everything.
-  const changeBoardView = useCallback(
-    (next: ColumnView) => {
-      setViews((prev) => {
-        const out = { ...prev };
-        for (const c of COLUMNS) {
-          out[c] = next === EMPTY_VIEW ? EMPTY_VIEW : { ...prev[c] };
-          if (next !== EMPTY_VIEW) {
-            for (const key of Object.keys(next) as (keyof ColumnView)[]) {
-              const changed =
-                key === "types" ? !sameTypes(next.types, boardView.types) : next[key] !== boardView[key];
-              if (changed) Object.assign(out[c], { [key]: next[key] });
-            }
-          }
-        }
-        return out;
-      });
-    },
-    [boardView],
-  );
 
   const isMobile = useMediaQuery("(max-width: 767px)");
   const colony = useColony();
@@ -464,14 +423,8 @@ export function Board({
       <BoardHeader
         projectName={projectName}
         repoFullName={repoFullName}
-        baseBranch={baseBranch}
-        inSync={inSync}
-        syncedLabel={syncedLabel}
-        onNewItem={onNewItem}
         account={account}
         assistant={assistant}
-        boardView={boardView}
-        onBoardViewChange={changeBoardView}
       />
 
       {/* Where the board is below 768px: one column shows, a swipe changes it. */}

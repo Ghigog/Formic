@@ -44,7 +44,6 @@ export function BoardShell({
   initialExtras = {},
   projectName,
   repoFullName,
-  baseBranch,
   initialStats,
   initialPresets = [],
   initialColumnAgents = {},
@@ -58,7 +57,8 @@ export function BoardShell({
   initialExtras?: ExtrasMap;
   projectName: string;
   repoFullName: string;
-  baseBranch: string;
+  /** No longer shown; callers may still pass it. */
+  baseBranch?: string;
   initialStats: AmbientStats;
   initialPresets?: AgentPreset[];
   initialColumnAgents?: ColumnAgents;
@@ -167,7 +167,6 @@ export function BoardShell({
         extras={merged}
         projectName={projectName}
         repoFullName={repoFullName}
-        baseBranch={baseBranch}
         onOpenCard={(card) =>
           card.kind === "epic" ? setOpenEpicId(card.id) : setOpenTicketId(card.id)
         }
