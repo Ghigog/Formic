@@ -103,4 +103,30 @@ describe("ColonyPopover Queens", () => {
     expect(document.querySelector("[data-queen-image]")).toBeNull();
     card.remove();
   });
+
+  it("places on the Epic whose header holds the drop, and shows the 422 message", async () => {
+    const message = "A draft with no tickets cannot take a Queen.";
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? new Response(JSON.stringify({ error: message }), { status: 422 })
+        : new Response(JSON.stringify({ unspent: 2 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    openPopoverAt(3 * XP_PER_LEVEL);
+    const header = document.createElement("div");
+    header.dataset.tid = "e-1";
+    const title = document.createElement("button");
+    header.append(title);
+    document.body.append(header);
+    document.elementFromPoint = vi.fn(() => title);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2"));
+
+    fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+
+    expect((await screen.findByRole("alert")).textContent).toBe(message);
+    expect(fetchMock).toHaveBeenCalledWith("/api/queens", expect.objectContaining({ body: JSON.stringify({ cardId: "e-1" }) }));
+    expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2");
+    header.remove();
+  });
 });
