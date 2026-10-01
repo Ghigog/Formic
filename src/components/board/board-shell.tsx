@@ -242,6 +242,7 @@ export function BoardShell({
           setOpenTicketId(null);
           setOpenEpicId(epicId);
         }}
+        onOpenTicket={setOpenTicketId}
         subscribe={subscribe}
         onChanged={() => void refetch()}
       />

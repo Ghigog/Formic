@@ -61,9 +61,18 @@ function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
     return () => listeners.delete(l);
   };
   const onOpenEpic = vi.fn();
-  render(<TicketDrawer ticketId="t-1" onClose={() => {}} onOpenEpic={onOpenEpic} subscribe={subscribe} />);
+  const onOpenTicket = vi.fn();
+  render(
+    <TicketDrawer
+      ticketId="t-1"
+      onClose={() => {}}
+      onOpenEpic={onOpenEpic}
+      onOpenTicket={onOpenTicket}
+      subscribe={subscribe}
+    />,
+  );
   const send = (e: FormicEvent, seq: number) => act(() => listeners.forEach((l) => l(e, seq)));
-  return { send, onOpenEpic };
+  return { send, onOpenEpic, onOpenTicket };
 }
 
 describe("TicketDrawer work type", () => {
@@ -110,7 +119,7 @@ function openTodo(view: TicketView) {
     }),
   );
   render(
-    <TicketDrawer ticketId="t-1" onClose={() => {}} onOpenEpic={() => {}} subscribe={() => () => {}} />,
+    <TicketDrawer ticketId="t-1" onClose={() => {}} onOpenEpic={() => {}} onOpenTicket={() => {}} subscribe={() => () => {}} />,
   );
   return { fetched };
 }
@@ -191,6 +200,23 @@ describe("TicketDrawer", () => {
     const { onOpenEpic } = open();
     (await screen.findByRole("button", { name: /EPIC-1: Board export/ })).click();
     expect(onOpenEpic).toHaveBeenCalledWith("e-1");
+  });
+
+  it("lists what it waits on as buttons that open that ticket", async () => {
+    const dep = (id: string, key: string, title: string) => ({ id, key, title, status: "running" });
+    const { onOpenTicket } = open({
+      ...VIEW,
+      dependsOn: [dep("t-8", "T-8", "Schema"), dep("t-9", "T-9", "Auth")],
+    });
+    (await screen.findByRole("button", { name: /T-9.*Auth/ })).click();
+    expect(onOpenTicket).toHaveBeenCalledWith("t-9");
+    expect(screen.getByRole("button", { name: /T-8.*Schema/ })).toBeInTheDocument();
+  });
+
+  it("shows no Waits on section without dependencies", async () => {
+    open();
+    await screen.findByRole("button", { name: /EPIC-1: Board export/ });
+    expect(screen.queryByText("Waits on")).not.toBeInTheDocument();
   });
 
   it("says nothing about a reroute for a ticket that was never moved", async () => {
