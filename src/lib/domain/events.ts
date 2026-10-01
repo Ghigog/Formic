@@ -44,6 +44,12 @@ export type FormicEvent =
       reason: string;
     }
   | {
+      /** A Queen was placed on a card. */
+      type: "card.queen";
+      cardId: string;
+      kind: "epic" | "ticket";
+    }
+  | {
       type: "epic.prd";
       epicId: string;
       /** Incremental text while the Product Agent streams. */
