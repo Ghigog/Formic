@@ -105,3 +105,53 @@ describe("SentinelsPage locked sentinels", () => {
     expect(within(card(locked.id)).getByRole("button", { name: /summon/i })).toBeTruthy();
   });
 });
+
+describe("Report: create epic", () => {
+  const x = SENTINELS[0]!;
+  const report = { likes: [], dislikes: [], wrong: [{ text: "Bug", ref: "a.ts" }], missing: [] };
+
+  async function openWith(stars: number, running = false) {
+    const base = states([]);
+    base[x.id] = {
+      ...base[x.id]!,
+      stars,
+      summary: "Summary",
+      report,
+      at: new Date().toISOString(),
+      running: running ? { log: [], startedAt: new Date().toISOString() } : null,
+    };
+    render(
+      <ColonyProvider storageKey="colony-test-sentinels-epic" cards={[]} extras={{}}>
+        <SentinelsProvider initial={base} level={13}>
+          <Open />
+          <SentinelsPage repoName="repo" />
+        </SentinelsProvider>
+      </ColonyProvider>,
+    );
+    await userEvent.click(screen.getByText("open sentinels"));
+    return screen.getByRole("button", { name: "Create epic from this report" });
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts once and shows the epic is in Backlog", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ card: {} }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const button = await openWith(3);
+    await userEvent.click(button);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${x.id}/epic`, { method: "POST" });
+    expect(await screen.findByText("Epic added to Backlog.")).toBeTruthy();
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("is disabled at 5 stars", async () => {
+    const button = await openWith(5);
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toBeTruthy();
+  });
+
+  it("is disabled while an audit runs", async () => {
+    const button = await openWith(3, true);
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+});

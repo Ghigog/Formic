@@ -493,6 +493,22 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
       ? `${x.name} · ${st.stars} of 5 · ${ago(st.at, now)}`
       : `${x.name} · not audited`;
   const prompt = useMemo(() => promptFor(x), [x]);
+  // The report an Epic was made from, so it is not sent twice.
+  const reportKey = `${x.id}@${st.at}`;
+  const [sentKey, setSentKey] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [epicError, setEpicError] = useState<string | null>(null);
+  const sent = sentKey === reportKey;
+  const noGaps = st.stars === 5;
+
+  async function createEpic() {
+    setSending(true);
+    setEpicError(null);
+    const res = await fetch(`/api/sentinels/${x.id}/epic`, { method: "POST" }).catch(() => null);
+    setSending(false);
+    if (res?.ok) setSentKey(reportKey);
+    else setEpicError(((await res?.json().catch(() => null)) as { error?: string } | null)?.error ?? "Could not create the epic.");
+  }
 
   return (
     <aside
@@ -564,6 +580,27 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
               </ul>
             </details>
           )}
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => void createEpic()}
+              disabled={noGaps || running || sending || sent}
+              title={noGaps ? "A 5-star report leaves nothing to fix." : running ? "An audit is running." : undefined}
+              className="bg-anthracite text-cream h-9 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97] disabled:opacity-50"
+            >
+              Create epic from this report
+            </button>
+            {sent && (
+              <span role="status" className="text-muted text-[12px]">
+                Epic added to Backlog.
+              </span>
+            )}
+            {epicError && (
+              <span role="alert" className="text-crimson-chip-text text-[12px]">
+                {epicError}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
