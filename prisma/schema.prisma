@@ -119,6 +119,13 @@ model User {
   tokenLimit   Json?
   attemptLimit Json?
 
+  /// Token window: the day of the month the plan renews (1-31) in
+  /// tokenWindowTimezone (IANA), and when the person last reset the count by
+  /// hand. See src/lib/token-window.
+  tokenRenewalDay     Int?
+  tokenWindowTimezone String?
+  tokenResetAt        DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

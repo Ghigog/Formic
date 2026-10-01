@@ -215,6 +215,17 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async updateTokenRenewal(
+    userId: string,
+    renewal: { tokenRenewalDay: number | null; tokenWindowTimezone: string | null },
+  ): Promise<UserRecord> {
+    return prisma().user.update({ where: { id: userId }, data: renewal });
+  }
+
+  async stampTokenReset(userId: string, at: Date): Promise<UserRecord> {
+    return prisma().user.update({ where: { id: userId }, data: { tokenResetAt: at } });
+  }
+
   async acceptTerms(userId: string, version: string): Promise<UserRecord> {
     return prisma().user.update({
       where: { id: userId },
