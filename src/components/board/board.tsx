@@ -10,6 +10,7 @@ import {
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
 import { EMPTY_VIEW, sameTypes, type ColumnView } from "./view";
+import { adjacentColumn, ownsGesture, swipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
@@ -305,6 +306,24 @@ export function Board({
     [agents],
   );
 
+  /* A swipe on the mobile board: where the touch began, unless it is not ours. */
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const onSwipeStart = (e: React.TouchEvent<HTMLElement>) => {
+    const t = e.touches[0];
+    swipeStart.current =
+      t && e.touches.length === 1 && !ownsGesture(e.target, e.currentTarget)
+        ? { x: t.clientX, y: t.clientY }
+        : null;
+  };
+  const onSwipeEnd = (e: React.TouchEvent<HTMLElement>) => {
+    const start = swipeStart.current;
+    const t = e.changedTouches[0];
+    swipeStart.current = null;
+    if (!start || !t || document.querySelector("[role='dialog']")) return;
+    const direction = swipeDirection(t.clientX - start.x, t.clientY - start.y);
+    if (direction) setActiveTab((tab) => adjacentColumn(tab, direction));
+  };
+
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
 
   const columnElements = visibleColumns.map((col) => (
@@ -439,38 +458,35 @@ export function Board({
         onBoardViewChange={changeBoardView}
       />
 
-      {/* Sticky column tabs. Replaces the 5-column layout below 768px. */}
-      <nav
+      {/* Where the board is below 768px: one column shows, a swipe changes it. */}
+      <ul
         aria-label="Columns"
         className="border-line bg-cream flex h-13 shrink-0 items-center gap-2 overflow-x-auto border-b px-4 md:hidden"
       >
         {COLUMNS.map((col) => {
           const active = activeTab === col;
           return (
-            <button
+            <li
               key={col}
-              type="button"
-              onClick={() => setActiveTab(col)}
               aria-current={active ? "true" : undefined}
-              className="inline-flex h-11 shrink-0 items-center"
+              className={cn(
+                "inline-flex h-9 shrink-0 items-center rounded-full text-[13px] whitespace-nowrap",
+                active
+                  ? "bg-anthracite text-cream px-3.5 font-semibold"
+                  : "border-line bg-card text-muted border px-3 font-medium",
+              )}
             >
-              <span
-                className={cn(
-                  "inline-flex h-9 items-center rounded-full text-[13px] whitespace-nowrap",
-                  active
-                    ? "bg-anthracite text-cream px-3.5 font-semibold"
-                    : "border-line bg-card text-muted border px-3 font-medium",
-                )}
-              >
-                {COLUMN_LABELS[col]}{" "}
-                <span className="ml-1 tabular-nums">
-                  {columnCount(byColumn[col], col)}
-                </span>
+              {COLUMN_LABELS[col]}{" "}
+              <span className="ml-1 tabular-nums">
+                {columnCount(byColumn[col], col)}
               </span>
-            </button>
+            </li>
           );
         })}
-      </nav>
+      </ul>
+      <p aria-live="polite" className="sr-only md:hidden">
+        {COLUMN_LABELS[activeTab]}
+      </p>
 
       {error && (
         <div
@@ -485,9 +501,12 @@ export function Board({
       <DragDropContext onDragStart={onDragStart} onDragUpdate={onDragUpdate} onDragEnd={onDragEnd}>
         <main
           data-colony="board"
+          onTouchStart={isMobile ? onSwipeStart : undefined}
+          onTouchEnd={isMobile ? onSwipeEnd : undefined}
+          onTouchCancel={isMobile ? () => (swipeStart.current = null) : undefined}
           className={cn(
             "relative flex min-h-0 flex-1",
-            isMobile ? "flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
+            isMobile ? "touch-pan-y flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
           )}
         >
           {dragSnapshot ?? columnElements}
