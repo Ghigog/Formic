@@ -415,7 +415,7 @@ function spendCeiling(maxCents: number): Error {
 function spendNote(maxCents: number | undefined): string {
   return maxCents === undefined
     ? "Spend ceiling reached."
-    : `${spendCeilingNote(maxCents)} Raise the ticket's budget, or move the column to an agent on another account.`;
+    : `${spendCeilingNote()} Raise the ticket's budget, or move the column to an agent on another account.`;
 }
 
 /** One line of progress for a job log, in the voice the board already uses. */
