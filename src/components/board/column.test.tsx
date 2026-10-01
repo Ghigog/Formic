@@ -203,6 +203,56 @@ describe("Column", () => {
     expect(screen.queryByRole("heading", { name: "To Do" })).toBeNull();
     expect(container.firstElementChild!.className).not.toContain("bg-column");
   });
+
+  describe("bare with a view menu", () => {
+    const preset = {
+      id: "p1",
+      ownerId: null,
+      column: null,
+      name: "Claude (work)",
+      provider: "claude-code" as const,
+      model: "",
+      prompt: "",
+      hasKey: true,
+      keyHint: "1234",
+      limitedUntil: null,
+      limitNote: null,
+    };
+    const renderBare = (withAgent: boolean) =>
+      renderInDnd(
+        <Column
+          id="todo"
+          cards={[makeCard()]}
+          extras={{}}
+          bare
+          view={EMPTY_VIEW}
+          onViewChange={noop}
+          onOpen={noop}
+          agent={
+            withAgent
+              ? { presets: [preset], selected: preset, onAssign: vi.fn(), onEdit: vi.fn() }
+              : undefined
+          }
+        />,
+      );
+
+    it("puts the options button after the agent select on one row", () => {
+      renderBare(true);
+      const agentButton = screen.getByRole("button", { name: /Claude \(work\)/ });
+      const options = screen.getByRole("button", { name: "Column options" });
+      const row = options.parentElement!.parentElement!;
+      expect(row.contains(agentButton)).toBe(true);
+      expect(
+        agentButton.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.getAllByRole("button", { name: /Claude \(work\)/ })).toHaveLength(1);
+    });
+
+    it("still renders the options button without an agent", () => {
+      renderBare(false);
+      expect(screen.getByRole("button", { name: "Column options" })).toBeInTheDocument();
+    });
+  });
 });
 
 describe("Column with an agent out of usage", () => {
