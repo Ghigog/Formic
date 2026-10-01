@@ -101,6 +101,9 @@ export const loopEntryPayloadSchema = z.object({
       maxDurationMs: z.number().int().positive().optional(),
       /** The ticket's own budget, before the job's ceiling clamped it. */
       budgetMs: z.number().int().positive().optional(),
+      /** Tokens the run may use, checked between turns. */
+      maxTokens: z.number().int().positive().optional(),
+      /** Derived from the tokens at a conservative rate; never shown as a budget. */
       maxCents: z.number().nonnegative().optional(),
     })
     .optional(),
@@ -113,7 +116,7 @@ export type LoopEntryPayload = z.infer<typeof loopEntryPayloadSchema>;
  * ending, whose reason is the loop's own words in `error` — a provider's
  * refusal, a quota, or the turn ceiling.
  */
-export type LoopEntryLimit = "time" | "spend" | null;
+export type LoopEntryLimit = "time" | "tokens" | "spend" | null;
 
 /**
  * What the job gets back, as JSON on stdout. A change carries the loop's own
@@ -201,6 +204,7 @@ export async function runLoopEntry(
   const runId = payload.runId ?? randomUUID();
   const maxDurationMs = payload.limits?.maxDurationMs;
   const maxCents = payload.limits?.maxCents;
+  const maxTokens = payload.limits?.maxTokens;
   // Money only stops a run that is billed per token. A flat-rate plan and an
   // id nobody has priced are bounded by time, exactly as in-process.
   const billing = billingFor(payload.model, payload.provider);
@@ -224,6 +228,7 @@ export async function runLoopEntry(
   deadline?.unref?.();
 
   let spentCents = 0;
+  let spentTokens = 0;
   let sandbox: SandboxHandle | null = null;
 
   /** Every event the loop publishes: out to the caller, then the log. */
@@ -285,6 +290,10 @@ export async function runLoopEntry(
       // the ceiling is checked against what this run has spent altogether.
       charge: async (usage) => {
         spentCents += usage.costCents;
+        spentTokens += usage.tokensIn + usage.tokensOut;
+        if (maxTokens !== undefined && spentTokens >= maxTokens) {
+          stop("tokens", new Error(tokenNote(maxTokens)));
+        }
         if (billing === "metered" && maxCents !== undefined && spentCents >= maxCents) {
           stop("spend", spendCeiling(maxCents));
         }
@@ -319,9 +328,11 @@ export async function runLoopEntry(
       const named =
         limit.hit === "time"
           ? timeLimitNote(maxDurationMs, payload.limits?.budgetMs)
-          : limit.hit === "spend"
-            ? spendNote(maxCents)
-            : null;
+          : limit.hit === "tokens"
+            ? tokenNote(maxTokens)
+            : limit.hit === "spend"
+              ? spendNote(maxCents)
+              : null;
       return {
         ok: false,
         error: named ?? outcome.error,
@@ -403,9 +414,13 @@ function ranOutOfTime(maxDurationMs: number, budgetMs?: number): Error {
 function timeLimitNote(maxDurationMs: number | undefined, budgetMs?: number): string {
   const minutes = Math.round((maxDurationMs ?? 0) / 60_000);
   if (budgetMs !== undefined && maxDurationMs !== undefined && budgetMs > maxDurationMs) {
-    return `Ran out of time: stopped at the job's ${minutes}-minute ceiling; the ticket's budget is ${Math.round(budgetMs / 60_000)}.`;
+    return `Ran out of time: the job's ceiling stopped it at ${minutes} minutes, and the ticket's budget is ${Math.round(budgetMs / 60_000)}. Do not raise the budget: the job cannot run longer.`;
   }
   return `Ran out of time: this run's budget is ${minutes} minute${minutes === 1 ? "" : "s"}. Raise the ticket's budget to give it longer.`;
+}
+
+function tokenNote(maxTokens: number | undefined): string {
+  return `Token ceiling reached${maxTokens === undefined ? "" : `: this run's budget is ${maxTokens.toLocaleString("en-US")} tokens`}. Raise the ticket's token budget to give it more.`;
 }
 
 function spendCeiling(maxCents: number): Error {

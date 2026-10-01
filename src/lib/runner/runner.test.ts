@@ -8,7 +8,7 @@ import {
   PLAN_FIRST_RULE,
   collectCliRuns,
   completeCliRun,
-  loopBudgetMs,
+  jobTimeoutMinutes,
   receiveReport,
   reportAllowed,
   reviewVerdictOf,
@@ -1205,7 +1205,7 @@ describe("collecting a run whose webhook never came", () => {
 
     const card = (await repository().cardById(epic.id))!;
     expect(card).toMatchObject({ status: "failed", stalledIn: "backlog" });
-    expect(card.blockedReason).toContain("180-minute limit");
+    expect(card.blockedReason).toContain("time limit");
   });
 });
 
@@ -1717,10 +1717,44 @@ describe("an API-key coder running in a job", () => {
       expect(limitOf(0)).toBe(40 * 60_000);
     });
 
-    it("hands the job no time limit when the budget is off", async () => {
+    it("holds a run with no budget to the job's 55 usable minutes", async () => {
       await ownProject({ mode: "OFF" });
       await startRun(3);
-      expect(limitOf(0)).toBeUndefined();
+      expect(limitOf(0)).toBe(55 * 60_000);
+    });
+
+    it("clamps an 8-point ticket to the job's ceiling and says so, with tokens and derived money", async () => {
+      await ownProject({ mode: "PER_STORY_POINT" });
+      await startRun(8);
+      const { limits } = JSON.parse(MockVcsClient.runner().dispatches[0]!.inputs.prompt!) as {
+        limits: Record<string, number>;
+      };
+      expect(limits).toMatchObject({ maxDurationMs: 55 * 60_000, budgetMs: 80 * 60_000, maxTokens: 512_000 });
+      expect(limits.maxCents).toBe(1280);
+      expect(MockVcsClient.runner().dispatches[0]!.inputs.timeout).toBe("60");
+    });
+
+    it("sizes the job's timeout to the budget", async () => {
+      await ownProject({ mode: "FLAT_MINUTES", flatMinutes: 20 });
+      await startRun(1);
+      expect(MockVcsClient.runner().dispatches[0]!.inputs.timeout).toBe("25");
+    });
+
+    it("dispatches to an older workflow without a timeout, which keeps its own ceiling", async () => {
+      await ownProject({ mode: "PER_STORY_POINT" });
+      vi.stubEnv("FORMIC_URL", "https://formic.example");
+      await assignApiAgent();
+      const base = (await projectFor(PROJECT)).baseBranch;
+      await new MockVcsClient("acme/widgets").commitFile(
+        base,
+        RUNNER_WORKFLOW_PATH,
+        `# ${RUNNER_VERSION}\njobs:\n  agent:\n    timeout-minutes: 180\n`,
+        "install",
+      );
+      const ticket = await seedTicket();
+      await repository().updateTicket(ticket.id, { storyPoints: 3 });
+      await runCoderAgent(PROJECT, ticket.id);
+      expect(MockVcsClient.runner().dispatches[0]!.inputs).not.toHaveProperty("timeout");
     });
 
     it("keeps a run's budget when the setting changes afterwards", async () => {
@@ -1862,17 +1896,15 @@ describe("what a run reported it used", () => {
   });
 });
 
-describe("the time limit a run's budget gives the loop entry", () => {
-  it("is the budget in milliseconds, and never past the job's own room", () => {
-    expect(loopBudgetMs(30)).toBe(30 * 60_000);
-    expect(loopBudgetMs(40)).toBe(40 * 60_000);
-    expect(loopBudgetMs(80)).toBe(80 * 60_000);
-    // The job's ceiling is the backstop.
-    expect(loopBudgetMs(200)).toBe(175 * 60_000);
+describe("the minutes a job is given", () => {
+  it("is the budget plus headroom, never past the workflow's ceiling", () => {
+    expect(jobTimeoutMinutes(30, 60)).toBe(35);
+    expect(jobTimeoutMinutes(55, 60)).toBe(60);
+    expect(jobTimeoutMinutes(80, 60)).toBe(60);
+    expect(jobTimeoutMinutes(200, 180)).toBe(180);
   });
 
-  it("is none when the person has no budget", () => {
-    expect(loopBudgetMs(null)).toBeUndefined();
+  it("is the whole ceiling when there is no budget", () => {
+    expect(jobTimeoutMinutes(null, 60)).toBe(60);
   });
 });
-
