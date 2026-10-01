@@ -394,7 +394,7 @@ export class PrismaRepository implements Repository {
     const tickets = await db.ticket.findMany({
       where: { epic: { projectId }, archived: true },
       orderBy: { position: "asc" },
-      select: { id: true, key: true, title: true, position: true, archived: true },
+      select: { id: true, key: true, title: true, position: true, archived: true, workType: true },
     });
     // The archive list is not the board: only what names the ticket.
     return tickets.map((t) => ({
@@ -409,6 +409,7 @@ export class PrismaRepository implements Repository {
       epicId: null,
       size: null,
       archived: t.archived,
+      workType: t.workType,
       agentRole: null,
       model: null,
       fileScope: [],
