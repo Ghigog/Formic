@@ -313,9 +313,9 @@ function cliPrompt(system: string, past: Array<{ role: "user" | "assistant"; con
     ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
     "How to answer:",
     "- Do not change, create or delete any file in the repository. Nothing you change is kept.",
-    "- Write your answer to the file named by the FORMIC_OUTPUT environment variable, as one JSON object and nothing else:",
+    "- The one file you do write is your answer: the path in the FORMIC_OUTPUT environment variable, as one JSON object and nothing else. An answer that is not that JSON is thrown away, and so is any proposal that is only described in the reply:",
     '  {"reply": "<your answer, in Markdown>", "proposals": [{"summary": "<one line>", "action": <an action>}]}',
-    "- Leave proposals empty unless the person asked for a change to the board. Each action matches this JSON Schema:",
+    "- Leave proposals empty unless the person asked for a change to the board. When they agree to a ticket or ask for one (\"yes\", \"make it\", \"create the ticket\"), put it in proposals now: do not ask again, and do not re-explain. Each action matches this JSON Schema:",
     JSON.stringify(z.toJSONSchema(assistantActionSchema)),
   ].join("\n");
 }
@@ -372,7 +372,25 @@ export async function finishCliAnswer(
   }
   const parsed = cliAnswerSchema.safeParse(raw);
   if (!parsed.success) {
-    await finish(messageId, { content: answerText.trim(), status: "done" });
+    // Prose where the JSON answer was due: any proposal in it is lost, so
+    // ask once more for the format before showing the text as it is.
+    if (from && from.attempt < CLI_ANSWER_ATTEMPTS) {
+      const again = await askAgain(
+        from.projectId,
+        messageId,
+        answerText,
+        ['Your answer was not the JSON object. Write {"reply": ..., "proposals": [...]} to the FORMIC_OUTPUT file. If the person asked for a ticket or agreed to one, it belongs in proposals.'],
+        from.attempt + 1,
+      ).then(
+        () => true,
+        () => false,
+      );
+      if (again) return;
+    }
+    await finish(messageId, {
+      content: `${answerText.trim()}\n\n_The agent did not send its answer in a form Formic can read, so nothing here can be approved. If you asked for a ticket, ask again._`,
+      status: "done",
+    });
     return;
   }
 
