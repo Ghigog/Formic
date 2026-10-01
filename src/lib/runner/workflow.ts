@@ -628,6 +628,9 @@ ${indent(REPORTER_SCRIPT, 10)}
           FORMIC_SUMMARY: \${{ runner.temp }}/formic-summary.md
           FORMIC_OUTPUT: \${{ runner.temp }}/formic-answer.md
           FORMIC_STDOUT: \${{ runner.temp }}/formic-stdout.md
+          FORMIC_STREAM: \${{ runner.temp }}/formic-stream.jsonl
+          CLI: \${{ inputs.cli }}
+          MODEL: \${{ inputs.model }}
           GH_TOKEN: \${{ github.token }}
           REPO: \${{ github.repository }}
         run: |
@@ -684,6 +687,26 @@ ${indent(REPORTER_SCRIPT, 10)}
           fi
           if [ ! -s "$FORMIC_SUMMARY" ]; then
             printf '%s: changes from the agent\\n' "$TICKET" > "$FORMIC_SUMMARY"
+          fi
+          # A CLI agent reports tokens only, from its stream: claude and gemini
+          # on their result event, codex on each turn that completed. The loop
+          # wrote its own trailer.
+          if ! grep -q '^${USAGE_TRAILER}' "$FORMIC_SUMMARY" && [ -s "$FORMIC_STREAM" ]; then
+            usage="$(jq -Rn '
+              [inputs | fromjson? | objects
+                | if .type == "result" then (.usage // .stats)
+                  elif .type == "turn.completed" then .usage
+                  else null end
+                | select(. != null)]
+              | if length == 0 then empty else {
+                  model: ((env.MODEL | select(. != "")) // env.CLI),
+                  tokensIn: (map((.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)) | add),
+                  tokensOut: (map(.output_tokens // 0) | add),
+                  costCents: 0
+                } end' "$FORMIC_STREAM" || true)"
+            if [ -n "$usage" ]; then
+              printf '\\n${USAGE_TRAILER} %s\\n' "$(jq -c . <<< "$usage")" >> "$FORMIC_SUMMARY"
+            fi
           fi
           if [ -n "\${FORMIC_MERGED:-}" ]; then
             printf '\\n${MERGED_TRAILER} %s\\n' "$FORMIC_MERGED" >> "$FORMIC_SUMMARY"

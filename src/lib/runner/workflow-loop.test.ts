@@ -308,5 +308,73 @@ describe.skipIf(MISSING.length > 0)("the loop branch, as the job runs it", () =>
     // The loop never ran at all.
     await expect(readFile(path.join(tmp, "received-payload.json"), "utf8")).rejects.toThrow();
   });
-});
 
+  describe("the hand-off step, for a CLI agent's stream", () => {
+    const handStep = (doc.jobs?.agent?.steps ?? []).find((s) => s.name === "Hand the work to Formic")!;
+    const streams: Record<string, { stream: string[]; tokensIn: number; tokensOut: number }> = {
+      claude: {
+        stream: [
+          '{"type":"assistant"}',
+          '{"type":"result","result":"done","usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":100,"output_tokens":40}}',
+        ],
+        tokensIn: 115,
+        tokensOut: 40,
+      },
+      codex: {
+        stream: [
+          '{"type":"turn.completed","usage":{"input_tokens":200,"cached_input_tokens":150,"output_tokens":20}}',
+          '{"type":"turn.completed","usage":{"input_tokens":300,"cached_input_tokens":250,"output_tokens":30}}',
+        ],
+        tokensIn: 500,
+        tokensOut: 50,
+      },
+      gemini: {
+        stream: ['{"type":"result","status":"success","stats":{"input_tokens":70,"output_tokens":8,"total_tokens":78}}'],
+        tokensIn: 70,
+        tokensOut: 8,
+      },
+    };
+
+    it.each(Object.keys(streams))("writes a tokens-only usage trailer for %s", async (cli) => {
+      const { repo, tmp } = await fixture();
+      const { stream, tokensIn, tokensOut } = streams[cli]!;
+      const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
+      const start = git("rev-parse", "HEAD").toString().trim();
+      await writeFile(path.join(repo, "src", "thing.ts"), "export {};\n");
+      await writeFile(path.join(tmp, "stream.jsonl"), `${stream.join("\n")}\n`);
+      await writeFile(path.join(tmp, "stdout.md"), "T-1: Did the thing\n");
+
+      // The push has nowhere to go; the summary is written before it.
+      try {
+        execFileSync("bash", ["-c", handStep.run!], {
+          cwd: repo,
+          stdio: "pipe",
+          env: {
+            NODE_ENV: "test",
+            PATH: process.env.PATH ?? "/usr/bin:/bin",
+            HOME: tmp,
+            MODE: "implement",
+            CLI: cli,
+            MODEL: "",
+            TICKET: "T-1",
+            JOB: "job_1",
+            REPO: "acme/widgets",
+            GH_TOKEN: "x",
+            FORMIC_START: start,
+            FORMIC_STREAM: path.join(tmp, "stream.jsonl"),
+            FORMIC_SUMMARY: path.join(tmp, "summary.md"),
+            FORMIC_OUTPUT: path.join(tmp, "answer.md"),
+            FORMIC_STDOUT: path.join(tmp, "stdout.md"),
+          },
+        });
+      } catch {
+        // expected: no remote
+      }
+
+      const summary = await readFile(path.join(tmp, "summary.md"), "utf8");
+      expect(summary).toContain(
+        `${USAGE_TRAILER} {"model":"${cli}","tokensIn":${tokensIn},"tokensOut":${tokensOut},"costCents":0}`,
+      );
+    });
+  });
+});

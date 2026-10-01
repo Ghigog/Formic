@@ -1555,8 +1555,8 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     const summary =
       (line.startsWith(`${ticket.key}:`) ? line.slice(ticket.key.length + 1).trim() : line) ||
       ticket.title;
-    // A loop run reports what it used, in the trailer its summary carries: on
-    // a metered key that is money spent, and it belongs on the ticket.
+    // Every run reports what it used, in the trailer its summary carries: a
+    // loop run on a metered key spends money, a CLI agent reports tokens only.
     const usage = usageOf(change.messages);
     await openTicketPullRequest(projectId, ticket, client, {
       branch,
