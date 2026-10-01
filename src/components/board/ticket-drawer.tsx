@@ -365,13 +365,6 @@ function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (t
           </ul>
         </div>
       )}
-
-      {view.summary && (
-        <div>
-          <Heading>What the agent changed</Heading>
-          <p className="mt-1">{view.summary}</p>
-        </div>
-      )}
     </div>
   );
 }
