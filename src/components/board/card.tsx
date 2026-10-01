@@ -619,6 +619,9 @@ function QueuedCard({ card, column }: { card: BoardCard; column: ColumnId }) {
  * In Review
  * ---------------------------------------------------------------------- */
 
+/** Rebase & Merge: the stage a ticket waits in for its merge. */
+const MERGE_STAGE = 7;
+
 function ReviewCard({
   card,
   column,
@@ -633,6 +636,10 @@ function ReviewCard({
   const failed = extras.checks?.failed ?? 0;
   const passed = extras.checks?.passed ?? 0;
   const green = extras.ci === "passing" || (failed === 0 && passed > 0);
+  // Approved and waiting for the merge: the last stage, with the card still in review.
+  const merging = card.status === "review" && card.stage === MERGE_STAGE;
+  // A merge that failed rolls the card back with why; say it on the card.
+  const problem = cardProblem(card);
 
   return (
     <CardShell
@@ -657,6 +664,7 @@ function ReviewCard({
             CI running
           </StatusChip>
         )}
+        {merging && <StatusChip tone="clay">Merging</StatusChip>}
         {extras.reviewState && (
           <StatusChip tone="rust">{extras.reviewState}</StatusChip>
         )}
@@ -669,6 +677,12 @@ function ReviewCard({
           </span>
         )}
       </div>
+
+      {problem && (
+        <p data-testid="card-problem" className="text-ink text-[11px] leading-[1.5]">
+          <LinkifiedText text={problem} />
+        </p>
+      )}
 
       {extras.progress && (
         <ProgressBar

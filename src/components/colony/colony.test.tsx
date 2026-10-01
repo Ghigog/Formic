@@ -87,6 +87,43 @@ describe("ColonyProvider bug squash", () => {
   });
 });
 
+describe("the done animation", () => {
+  async function statusChanges(...statuses: Array<[string, number]>) {
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const play = vi.spyOn(SoundEngine.prototype, "play");
+    const dings = () => play.mock.calls.filter(([name]) => name === "ding").length;
+    const card = makeCard({ status: "review", stage: 6, prNumber: 3 });
+    const tree = (c: typeof card) => (
+      <ColonyProvider storageKey="colony-test-done-anim" cards={[c] as never} extras={{}}>
+        <div data-tid={card.id} />
+      </ColonyProvider>
+    );
+    const { rerender } = render(tree(card));
+    await flushFrame();
+    const seen: number[] = [];
+    for (const [status, stage] of statuses) {
+      rerender(tree({ ...card, status: status as never, stage }));
+      await flushFrame();
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 100));
+      });
+      seen.push(dings());
+    }
+    return seen;
+  }
+
+  it("plays only once the ticket becomes merged, not while it waits in Merging", async () => {
+    const [merging, merged] = await statusChanges(["review", 7], ["merged", 8]);
+    expect(merging).toBe(0);
+    expect(merged).toBeGreaterThan(0);
+  });
+
+  it("does not play when a merge fails", async () => {
+    const [failed] = await statusChanges(["blocked", 6]);
+    expect(failed).toBe(0);
+  });
+});
+
 describe("crewPhase", () => {
   const since = "2024-01-01T00:00:00.000Z";
 
