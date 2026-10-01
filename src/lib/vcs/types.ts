@@ -86,6 +86,21 @@ export interface WorkflowRunRef {
   url: string;
 }
 
+/** One finished or running Actions run on a branch, for the history behind its checks. */
+export interface BranchRun {
+  /** The workflow's name. */
+  name: string;
+  sha: string;
+  status: string;
+  /** Null until it completes. */
+  conclusion: string | null;
+  /** 1 for a first run; higher when someone re-ran it. */
+  attempt: number;
+  startedAt: string;
+  updatedAt: string;
+  url: string;
+}
+
 export interface IssueRef {
   number: number;
   /** GitHub's internal id, which linking a sub-issue needs. */
@@ -188,6 +203,8 @@ export interface VcsClient {
   deleteStagingBranch(branch: string): Promise<void>;
   /** The commit a branch points at, or null when there is no such branch. */
   branchHead(branch: string): Promise<string | null>;
+  /** The latest Actions runs on a branch, from any workflow, newest first. */
+  branchRuns(branch: string): Promise<BranchRun[]>;
 
   /*
    * Checkpoints: an agent's work in progress, saved while it works, so a run

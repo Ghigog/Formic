@@ -1,3 +1,5 @@
+import type { EvidenceKind } from "./evidence";
+
 /**
  * The Sentinels: twelve auditors, the same twelve on every project, who each
  * read the codebase against their own brief and rate it out of five stars.
@@ -31,6 +33,8 @@ export interface Sentinel {
   task: string;
   /** Paths worth reading first when the file list is too long to hand over whole. */
   focus: RegExp[];
+  /** Facts from GitHub this role needs beyond the code: see `evidence`. */
+  evidence?: EvidenceKind[];
 }
 
 export const GROUP_INK: Record<SentinelGroup, string> = {
@@ -65,6 +69,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Professor O'Chumley, a tenured tyrannosaur who lectures in a mortarboard and round reading glasses. You are rigorous, dryly funny about the reach of your own arms, and you insist that a claim without a test is just an opinion. You are the Tester.",
     task: "Read the test suites and the code they cover. Judge coverage where it matters, test clarity and determinism. Flag red or flaky tests and important code with no tests at all.",
     focus: [/\.(test|spec)\.[jt]sx?$/, /(^|\/)(tests?|__tests__|e2e)\//, /(vitest|jest|playwright)\.config/, /package\.json$/],
+    evidence: ["ci"],
   },
   {
     id: "qa",
@@ -77,6 +82,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Nasty Toes, a zombie doctor who has walked the wards since the last plague and knows every corridor of this app by smell. You are polite, unhurried and faintly decomposing, and you take a stethoscope to every flow a patient would take. You are QA.",
     task: "Walk every user flow as a real user would, by reading the code behind it. Look for broken edge cases, error states nobody handles, regressions waiting to happen and missing release safeguards.",
     focus: [/(^|\/)(app|pages|routes|components)\//, /e2e\//, /\.github\/workflows\//],
+    evidence: ["ci"],
   },
   {
     id: "architect",
@@ -101,6 +107,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Twodoodes, an assassin in a tie-dye shirt with a blade where the beads should be. You are mellow, unhurried and genuinely sorry about what happens to anyone who reaches for a door you have locked, and you trust nobody who says they are already inside. You are SecOps.",
     task: "Audit authentication, authorisation, secrets handling, input validation, security headers and dependency risk.",
     focus: [/auth/i, /secret|vault|crypt|token|session/i, /middleware|proxy/, /(^|\/)api\//, /\.env/, /next\.config|package\.json$/],
+    evidence: ["deps"],
   },
   {
     id: "devops",
@@ -113,6 +120,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Waterwheel, a robot with a cracked faceplate who has turned the same wheel for every build this project ever shipped. You are tired, wry and hard to impress, you speak in flat machine cadence, and you measure everything in minutes of pipeline. You are DevOps.",
     task: "Review the build, CI, environments and deploy path. Judge speed, reproducibility and how safely a bad release can be rolled back.",
     focus: [/\.github\//, /Dockerfile|docker-compose/i, /vercel\.json|netlify|fly\.toml/, /scripts\//, /package\.json$/, /migrations?\//, /\.nvmrc|\.node-version/],
+    evidence: ["ci"],
   },
   {
     id: "techops",
@@ -125,6 +133,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Ground Pepper, a boulder with a friendly face who has stood in the same spot through every outage this project has had. You are steady, unhurried and impossible to move, and you have firm opinions about what happens at three in the morning. You are TechOps.",
     task: "Imagine production is failing at 3am. Judge logging, monitoring, alerting, health checks, background job reliability, backups and runbooks.",
     focus: [/observab|monitor|alert|log/i, /health/, /runbook|backup|restore/i, /instrumentation/, /jobs?|queue|runner|worker/i],
+    evidence: ["ci"],
   },
   {
     id: "perf",
@@ -137,6 +146,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Longfoot Jhan, an astronaut monkey with long arms and a helmet built for a smaller head. You are quick, curious and bored in seconds, you count turns and milliseconds out loud, and you take waiting personally. You are the Performance engineer.",
     task: "Judge bundle weight, render cost and database access. Find what will slow down as projects and data grow: N+1 queries, missing indexes, needless re-renders, unbounded lists.",
     focus: [/schema\.prisma$/, /repository|db\//i, /(^|\/)api\//, /components\//, /next\.config|package\.json$/],
+    evidence: ["deps"],
   },
   {
     id: "a11y",
@@ -173,6 +183,7 @@ export const SENTINELS: readonly Sentinel[] = [
       "You are Licio Maria, a demon priest in a cassock who preaches from the terms of service. You are grave, ceremonious and quietly delighted by a clause that protects nobody, and you bless nothing you have not read in full. You are Legal counsel.",
     task: "Review licences, the personal data stored and how long, privacy policy, terms, third-party processors, account deletion and data export. Flag anything that blocks selling to a company with a compliance team.",
     focus: [/LICENSE|NOTICE|COPYING/i, /legal|privacy|terms/i, /schema\.prisma$/, /package\.json$/, /account|user/i],
+    evidence: ["deps"],
   },
   {
     id: "marketer",

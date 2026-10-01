@@ -9,6 +9,7 @@ import { vcs } from "@/lib/vcs";
 import { startCliSentinel } from "@/lib/runner/runner";
 import { CANNED } from "./canned";
 import { runAudit } from "./agent";
+import { gatherEvidence } from "./gather";
 import { scoreOf } from "@/lib/colony/game";
 import { isUnlocked, sentinel as findSentinel, stepsFor } from "./roster";
 import { sentinelStates, type SentinelStates } from "./view";
@@ -78,11 +79,13 @@ export async function summonSentinel(
       }
       const client = vcs(project.repoFullName, githubToken);
       const files = await client.listFiles(project.baseBranch);
+      const evidence = await gatherEvidence(client, project.baseBranch, files, s.evidence);
       const outcome = await runAudit(agent.config, {
         sentinel: s,
         repoFullName: project.repoFullName,
         files,
         read: (path) => client.readFile(path, project.baseBranch),
+        evidence,
         log,
         signal: AbortSignal.timeout(280_000),
       });

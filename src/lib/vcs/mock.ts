@@ -11,6 +11,7 @@ import {
   type IssuePatch,
   type IssueRef,
   type WorkflowRunRef,
+  type BranchRun,
   STAGING_PREFIX,
   type Checkpoint,
   type CheckpointInput,
@@ -69,6 +70,8 @@ interface MockRepo {
   recordedMerges: Map<string, string>;
   /** Each card's checkpoint, with what it saved. */
   checkpoints: Map<string, Checkpoint & { input: CheckpointInput }>;
+  /** Actions runs by branch, newest first, as a test says they went. */
+  branchRuns: Map<string, BranchRun[]>;
 }
 
 export interface MockIssue {
@@ -100,6 +103,7 @@ function repo(): MockRepo {
     refusals: new Map(),
     recordedMerges: new Map(),
     checkpoints: new Map(),
+    branchRuns: new Map(),
   };
   return g.__formicMockRepo;
 }
@@ -362,6 +366,10 @@ export class MockVcsClient implements VcsClient {
 
   async branchHead(branch: string): Promise<string | null> {
     return repo().branches.get(branch) ?? null;
+  }
+
+  async branchRuns(branch: string): Promise<BranchRun[]> {
+    return repo().branchRuns.get(branch) ?? [];
   }
 
   async saveCheckpoint(card: string, input: CheckpointInput): Promise<string> {

@@ -28,6 +28,13 @@ export const MAX_PICKS = 40;
 const FILE_CAP = 16_000;
 const TOTAL_CAP = 240_000;
 
+/**
+ * An API sentinel only reads. Said outright, because without it a model
+ * explains a test run it never could have made with a reason it made up.
+ */
+const READ_ONLY =
+  "You cannot run anything: you judge only from the files and facts in this message. Where your brief needs something you were not given, say it was not available, and do not guess why.";
+
 const NOISE =
   /(^|\/)(node_modules|dist|build|out|\.next|coverage|vendor|\.git)\/|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb)$|\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|eot|mp3|mp4|wav|ogg|pdf|zip|gz|min\.js|map)$/i;
 
@@ -85,6 +92,8 @@ export interface AuditRun {
   repoFullName: string;
   files: string[];
   read: (path: string) => Promise<string | null>;
+  /** Facts gathered from GitHub for this role (see ./evidence), or empty. */
+  evidence?: string[];
   log: (step: string) => Promise<void>;
   signal: AbortSignal;
 }
@@ -149,10 +158,11 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
 
   await run.log(`Scoring as ${s.name}`);
   const answer = await ask(config, model, run.signal, {
-    system: promptFor(s),
+    system: `${promptFor(s)} ${READ_ONLY}`,
     user: [
       `Repository: ${run.repoFullName} (${run.files.length} files).`,
       "",
+      ...(run.evidence?.length ? ["Facts from GitHub, gathered for your role:", ...run.evidence, ""] : []),
       "All paths, for knowing what exists:",
       shown.slice(0, 1500).join("\n"),
       "",

@@ -18,6 +18,7 @@ import {
   type IssuePatch,
   type IssueRef,
   type WorkflowRunRef,
+  type BranchRun,
 } from "./types";
 import { CARRY_DELETED, CARRY_DIR } from "@/lib/runner/workflow";
 
@@ -410,6 +411,32 @@ export class GitHubClient implements VcsClient {
       title: r.display_title,
       status: r.status,
       conclusion: r.conclusion,
+      url: r.html_url,
+    }));
+  }
+
+  async branchRuns(branch: string): Promise<BranchRun[]> {
+    const { data } = await this.request<{
+      workflow_runs: Array<{
+        name: string | null;
+        head_sha: string;
+        status: string;
+        conclusion: string | null;
+        run_attempt?: number;
+        run_started_at?: string;
+        created_at: string;
+        updated_at: string;
+        html_url: string;
+      }>;
+    }>("GET", `/actions/runs?branch=${encodeURIComponent(branch)}&exclude_pull_requests=true&per_page=50`);
+    return data.workflow_runs.map((r) => ({
+      name: r.name ?? "workflow",
+      sha: r.head_sha,
+      status: r.status,
+      conclusion: r.conclusion,
+      attempt: r.run_attempt ?? 1,
+      startedAt: r.run_started_at ?? r.created_at,
+      updatedAt: r.updated_at,
       url: r.html_url,
     }));
   }
