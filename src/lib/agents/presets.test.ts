@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agentConfigFor, agentFor, runTargetFor, savePreset, sentinelAgent } from "./presets";
+import { agentConfigFor, agentFor, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
 import { AnthropicProductAgent } from "./anthropic";
@@ -192,5 +192,47 @@ describe("the sentinels' agent", () => {
 
   it("runs the mock in local mode when the assistant has no agent", async () => {
     expect(await sentinelAgent(PROJECT)).toEqual({ kind: "mock" });
+  });
+});
+
+describe("token allowance", () => {
+  const DAY = 86_400_000;
+
+  async function agentWithAllowance() {
+    const preset = await savePreset(worker);
+    await repository().setColumnAgent(PROJECT, "in_progress", preset.id);
+    await repository().setPresetAllowance(preset.id, { tokens: 1_000_000, windowDays: 30 });
+    return preset;
+  }
+
+  it("sums tokens in and out over the window", async () => {
+    const preset = await agentWithAllowance();
+    const spy = vi
+      .spyOn(repository(), "agentTokensByPreset")
+      .mockResolvedValue({ [preset.id]: { tokensIn: 600_000, tokensOut: 400_000 } });
+    const now = Date.now();
+    const found = await repository().presetForRun(preset.id);
+    expect(await tokensUsedInWindow(found!.preset, now)).toBe(1_000_000);
+    expect(spy).toHaveBeenCalledWith(new Date(now - 30 * DAY));
+  });
+
+  it("does not start a spent agent and marks it out of usage", async () => {
+    const preset = await agentWithAllowance();
+    vi.spyOn(repository(), "agentTokensByPreset").mockResolvedValue({
+      [preset.id]: { tokensIn: 1_000_000, tokensOut: 0 },
+    });
+    expect(await columnLimit(PROJECT, "in_progress")).toMatch(/out of usage until/);
+    expect((await repository().presetForRun(preset.id))?.preset.limitedUntil).not.toBeNull();
+  });
+
+  it("starts again once usage ages out of the window", async () => {
+    const preset = await agentWithAllowance();
+    const spy = vi.spyOn(repository(), "agentTokensByPreset").mockResolvedValue({
+      [preset.id]: { tokensIn: 1_000_000, tokensOut: 0 },
+    });
+    expect(await columnLimit(PROJECT, "in_progress")).not.toBeNull();
+    spy.mockResolvedValue({});
+    expect(await columnLimit(PROJECT, "in_progress")).toBeNull();
+    expect((await repository().presetForRun(preset.id))?.preset.limitedUntil).toBeNull();
   });
 });
