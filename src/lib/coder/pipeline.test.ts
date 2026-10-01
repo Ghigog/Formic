@@ -391,6 +391,11 @@ describe("the Coder Agent pipeline", () => {
 });
 
 describe("the Reviewer Agent pipeline", () => {
+  // These follow a pull request all the way to its merge: the project opts in.
+  beforeEach(async () => {
+    await repository().setAutoMerge(PROJECT, true);
+  });
+
   async function openPullRequestFor(ticket: TicketDetail, checksPass: boolean) {
     resetVcs();
     const client = new MockVcsClient(REPO, checksPass);

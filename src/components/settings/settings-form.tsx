@@ -19,6 +19,12 @@ interface KeyState {
   fallbackMinutesLeft?: number;
 }
 
+interface ProjectSetting {
+  id: string;
+  name: string;
+  autoMerge: boolean;
+}
+
 /**
  * Everything that is this person's own: who they are on GitHub, which
  * repositories Formic may touch, and the keys their runs are paid with.
@@ -26,6 +32,7 @@ interface KeyState {
 export function SettingsForm({
   account,
   installUrl,
+  projects = [],
   e2b,
   runTimeBudget,
   limits,
@@ -33,6 +40,7 @@ export function SettingsForm({
 }: {
   account: Account;
   installUrl: string | null;
+  projects?: ProjectSetting[];
   e2b: KeyState;
   /** Saved run time budget; the default when omitted. */
   runTimeBudget?: RunTimeBudgetSettings;
@@ -86,6 +94,19 @@ export function SettingsForm({
           )}
         </Section>
 
+        {projects.length > 0 && (
+          <Section title="Auto-merge">
+            <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+              Formic merges an approved, green pull request on its own only in
+              projects where you switch this on. Off, nothing lands on the
+              base branch until you merge it.
+            </p>
+            {projects.map((project) => (
+              <AutoMergeToggle key={project.id} project={project} />
+            ))}
+          </Section>
+        )}
+
         <SoundSection />
 
         <BoardViewSection />
@@ -112,6 +133,43 @@ export function SettingsForm({
 
         {account.signedIn && <DangerZone />}
       </main>
+    </div>
+  );
+}
+
+function AutoMergeToggle({ project }: { project: ProjectSetting }) {
+  const [on, setOn] = useState(project.autoMerge);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function change(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, autoMerge: next }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      setError("That did not save. Try again.");
+      return;
+    }
+    setOn(next);
+  }
+
+  return (
+    <div>
+      <label className="text-ink flex items-center gap-2 text-[13px]">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void change(e.target.checked)}
+        />
+        Merge approved pull requests in {project.name}
+      </label>
+      {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>
   );
 }

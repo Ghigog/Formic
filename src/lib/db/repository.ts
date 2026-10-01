@@ -305,7 +305,7 @@ export interface ProjectSummary {
   name: string;
   repoFullName: string;
   baseBranch: string;
-  /** Whether Formic merges an approved pull request, or leaves it for a person. */
+  /** Formic merges approved, green pull requests on its own. Off until the owner opts in. */
   autoMerge: boolean;
 }
 
@@ -629,6 +629,7 @@ export interface Repository {
   /** The saved agent the board's assistant runs on, or null. */
   assistantAgent(projectId: string): Promise<string | null>;
   setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
+  setAutoMerge(projectId: string, autoMerge: boolean): Promise<void>;
   /** The assistant conversation, oldest first. */
   assistantMessages(projectId: string): Promise<AssistantMessage[]>;
   assistantMessage(id: string): Promise<AssistantMessage | null>;

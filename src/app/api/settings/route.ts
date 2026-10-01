@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { LimitSetting } from "@/lib/budget/budget-for";
 import { repository } from "@/lib/db";
-import { currentUser } from "@/lib/auth/user";
+import { canSee, currentUser } from "@/lib/auth/user";
+import type { UserRecord } from "@/lib/db/repository";
 import {
   RUN_TIME_BUDGET_MODES,
   validateRunTimeBudgetSettings,
@@ -20,12 +21,25 @@ export const dynamic = "force-dynamic";
 
 /** A new key; null removes the saved one; omitted leaves it. */
 const keySchema = z.string().trim().min(1).max(500).nullable().optional();
-const bodySchema = z.object({ e2bKey: keySchema });
+const bodySchema = z.object({
+  e2bKey: keySchema,
+  projectId: z.string().min(1).optional(),
+  autoMerge: z.boolean().optional(),
+});
 
 function sealed(value: string | null | undefined, cipher: string, hint: string) {
   if (value === undefined) return {};
   if (value === null) return { [cipher]: null, [hint]: null };
   return { [cipher]: seal(value), [hint]: hintFor(value) };
+}
+
+/** The project if this person owns it; otherwise the refusal to send. */
+async function ownedProject(user: UserRecord, projectId: string | null) {
+  const project = projectId ? await repository().projectById(projectId) : null;
+  if (!project || !canSee(user, project.ownerId)) {
+    return { refusal: Response.json({ error: "Not your project." }, { status: 403 }) };
+  }
+  return { project };
 }
 
 /** Flat minutes and per-point values stay loose so the domain validation reports them by field. */
@@ -78,10 +92,20 @@ async function putRenewalDay(userId: string, json: unknown) {
   return Response.json({ renewalDay: updated.tokenRenewalDay, timezone: updated.tokenWindowTimezone });
 }
 
-/** This person's limits on all three axes: time at the top level, then tokens and attempts. Defaults when they never chose. */
-export async function GET() {
+/**
+ * A project's settings when `projectId` is given; otherwise this person's
+ * limits on all three axes: time at the top level, then tokens and attempts.
+ * Defaults when they never chose.
+ */
+export async function GET(req?: Request) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
+  const projectId = req ? new URL(req.url).searchParams.get("projectId") : null;
+  if (projectId !== null) {
+    const found = await ownedProject(user, projectId);
+    if (found.refusal) return found.refusal;
+    return Response.json({ autoMerge: found.project.autoMerge });
+  }
   return Response.json({ ...(await getRunTimeBudgetSettings(user.id)), ...(await getLimitSettings(user.id)) });
 }
 
@@ -129,6 +153,16 @@ export async function PUT(req: Request) {
   const body = bodySchema.safeParse(json);
   if (!body.success) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
+  }
+
+  if ((body.data.autoMerge === undefined) !== (body.data.projectId === undefined)) {
+    return Response.json({ error: "autoMerge and projectId go together." }, { status: 400 });
+  }
+  if (body.data.projectId !== undefined && body.data.autoMerge !== undefined) {
+    const found = await ownedProject(user, body.data.projectId);
+    if (found.refusal) return found.refusal;
+    await repository().setAutoMerge(found.project.id, body.data.autoMerge);
+    return Response.json({ autoMerge: body.data.autoMerge });
   }
 
   const updated = await repository().updateUser(user.id, {

@@ -1308,6 +1308,10 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: { assistantPresetId: presetId } });
   }
 
+  async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {
+    await prisma().project.update({ where: { id: projectId }, data: { autoMerge } });
+  }
+
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
     const rows = await prisma().assistantMessage.findMany({
       where: { projectId },

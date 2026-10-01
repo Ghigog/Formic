@@ -179,7 +179,7 @@ function store(): Store {
     name: "Formic",
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
-    autoMerge: true,
+    autoMerge: false,
   };
   const s: Store = {
     project,
@@ -436,7 +436,7 @@ export class MemoryRepository implements Repository {
       name: input.repoFullName.split("/")[1] ?? input.repoFullName,
       repoFullName: input.repoFullName,
       baseBranch: input.baseBranch,
-      autoMerge: true,
+      autoMerge: false,
     };
     s.projects.set(project.id, project);
     return project;
@@ -1323,6 +1323,11 @@ export class MemoryRepository implements Repository {
     const s = store();
     if (presetId === null) s.columnAgents.delete(`${projectId}:assistant`);
     else s.columnAgents.set(`${projectId}:assistant`, presetId);
+  }
+
+  async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) project.autoMerge = autoMerge;
   }
 
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
