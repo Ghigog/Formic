@@ -132,6 +132,12 @@ describe("crewPhase", () => {
     expect(crewPhase(makeCard({ status: "running", workingSince: null }), {})).toBeNull();
   });
 
+  it("keeps a queue crew on a card that starts running before its run attaches", () => {
+    const running = makeCard({ status: "running", workingSince: null });
+    expect(crewPhase(running, {}, true)).toBe("work");
+    expect(crewPhase(running, {}, false)).toBeNull();
+  });
+
   it("tunnels in review while CI runs or the reviewer works, and rests otherwise", () => {
     const review = makeCard({ status: "review", prNumber: 1 });
     expect(crewPhase({ ...review, workingSince: since }, {})).toBe("tunnel");

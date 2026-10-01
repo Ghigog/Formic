@@ -81,6 +81,21 @@ describe("ColonyFx.antAt and squashAnt", () => {
     return { fx, inner, play };
   };
 
+  it("keeps the same ants, walking, when a queued crew's card starts running", () => {
+    const ants = [ant({ mode: "crowd", leader: true }), ant({ mode: "crowd", idx: 1 })];
+    const { inner } = setup("queue", ants);
+    const crew = inner.crewMap.get("c1")!;
+    (inner as unknown as { transition: (c: unknown, d: string, r: null) => void }).transition(crew, "work", null);
+    expect(inner.crewMap.get("c1")).toBe(crew);
+    expect(crew.phase).toBe("work");
+    expect(crew.ants).toHaveLength(2);
+    crew.ants.forEach((a, i) => {
+      expect(a).toBe(ants[i]);
+      expect(a).toMatchObject({ mode: "walk" });
+      expect((a as { hidden?: boolean }).hidden).toBeFalsy();
+    });
+  });
+
   it("finds an ant within reach of the pointer, not one far away", () => {
     const { fx, inner } = setup();
     const a = inner.crewMap.get("c1")!.ants[0];
