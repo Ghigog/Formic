@@ -67,5 +67,6 @@ Notes:
 ## Epic budget
 
 `DEFAULT_EPIC_BUDGET` (`src/lib/budget/limits.ts`) is 2,000¢, 2 hours and 12
-attempts per Epic, checked by `recordSpend`. Its time dimension is never
-checked: `recordSpend` passes `elapsedMs: 0`. Not settable.
+attempts per Epic. `recordSpend` checks all three after each turn, summed from
+the database across every run under the Epic (`epicSpentCents`,
+`epicRunStats`), and stops the Epic with an "Epic budget" note. Not settable.
