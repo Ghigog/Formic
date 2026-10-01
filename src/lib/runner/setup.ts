@@ -3,7 +3,7 @@ import "server-only";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { vcs, VcsError } from "@/lib/vcs";
-import { ensureRunner, explain } from "./runner";
+import { closeStaleSetupPulls, ensureRunner, explain } from "./runner";
 import { RUNNER_SETUP_BRANCH, RUNNER_VERSION, RUNNER_WORKFLOW_PATH } from "./workflow";
 
 /**
@@ -30,6 +30,7 @@ export async function runnerSetup(project: ProjectSummary): Promise<RunnerSetup>
   const client = vcs(project.repoFullName, creds.githubToken);
 
   try {
+    await closeStaleSetupPulls(client);
     const current = await client.readFile(RUNNER_WORKFLOW_PATH, project.baseBranch);
     if (current?.includes(RUNNER_VERSION)) return { state: "ready" };
     const open = await client.findPullRequest(RUNNER_SETUP_BRANCH);

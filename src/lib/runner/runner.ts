@@ -182,6 +182,20 @@ export function usageOf(messages: string[]): Usage | null {
   return null;
 }
 
+/**
+ * Closes setup pull requests for other versions of the workflow. One left
+ * open would install a stale file and fail the repository's own check that
+ * the file matches its generator, whether or not a new one is needed: a
+ * deploy that lags a merged workflow change opens one for the old version.
+ */
+export async function closeStaleSetupPulls(client: VcsClient): Promise<void> {
+  await client.closeSupersededPulls(
+    RUNNER_SETUP_PREFIX,
+    RUNNER_SETUP_BRANCH,
+    "The Formic agent workflow changed since this was opened, so this version is out of date. Closing it.",
+  );
+}
+
 export type RunnerState =
   | { ready: true }
   /** `update` when an older version of the workflow is already there. */
@@ -194,17 +208,11 @@ export type RunnerState =
  * merges it, once.
  */
 export async function ensureRunner(client: VcsClient, baseBranch: string): Promise<RunnerState> {
+  await closeStaleSetupPulls(client);
   const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch);
   if (current?.includes(RUNNER_VERSION)) return { ready: true };
   const update = current !== null;
 
-  // A setup PR for an older version would install a stale workflow and fail
-  // the repository's own check that the file matches its generator.
-  await client.closeSupersededPulls(
-    RUNNER_SETUP_PREFIX,
-    RUNNER_SETUP_BRANCH,
-    "The Formic agent workflow changed since this was opened, so this version is out of date. Closing it in favour of a fresh pull request.",
-  );
   await client.ensureBranch(RUNNER_SETUP_BRANCH, baseBranch);
   const onBranch = await client.readFile(RUNNER_WORKFLOW_PATH, RUNNER_SETUP_BRANCH);
   if (!onBranch?.includes(RUNNER_VERSION)) {
