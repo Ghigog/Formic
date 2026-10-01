@@ -350,6 +350,61 @@ describe("the assistant on a CLI plan", () => {
   it("shows a plain-text answer as the reply", async () => {
     const pending = await ask("Hi");
     await finishCliAnswer(pending.id, "Just text, no JSON.");
-    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "Just text, no JSON." });
+    const done = await reload(pending.id);
+    expect(done.status).toBe("done");
+    expect(done.content).toContain("Just text, no JSON.");
+  });
+
+  it("asks once more when the agent answers in prose, then says nothing can be approved", async () => {
+    await useAgent("claude-code");
+    const base = (await projectFor(PROJECT)).baseBranch;
+    const client = new MockVcsClient("acme/widgets");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    const pending = await ask("Yes please make the ticket");
+    await answer(PROJECT, pending.id);
+    const first = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    expect(first.prompt).toContain("do not ask again");
+
+    await client.commitFile(`${STAGING_PREFIX}${first.job}`, ANSWER_PATH, "Should I propose it?", "answer");
+    await completeCliRun(PROJECT, { job: first.job!, mode: "ask", conclusion: "success", url: null });
+
+    expect((await reload(pending.id)).status).toBe("pending");
+    const retry = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    expect(retry.job).not.toBe(first.job);
+    expect(retry.prompt).toContain("not the JSON object");
+
+    await client.commitFile(`${STAGING_PREFIX}${retry.job}`, ANSWER_PATH, "Still prose.", "answer");
+    await completeCliRun(PROJECT, { job: retry.job!, mode: "ask", conclusion: "success", url: null });
+    const done = await reload(pending.id);
+    expect(done.status).toBe("done");
+    expect(done.content).toContain("Still prose.");
+    expect(done.content).toContain("nothing here can be approved");
+    expect(done.proposals).toEqual([]);
+  });
+
+  it("keeps the proposal when the retry comes back as JSON", async () => {
+    await useAgent("claude-code");
+    const base = (await projectFor(PROJECT)).baseBranch;
+    const client = new MockVcsClient("acme/widgets");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    const pending = await ask("Yes please make the ticket");
+    await answer(PROJECT, pending.id);
+    const first = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    await client.commitFile(`${STAGING_PREFIX}${first.job}`, ANSWER_PATH, "Prose only.", "answer");
+    await completeCliRun(PROJECT, { job: first.job!, mode: "ask", conclusion: "success", url: null });
+    const retry = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    await client.commitFile(
+      `${STAGING_PREFIX}${retry.job}`,
+      ANSWER_PATH,
+      JSON.stringify({
+        reply: "Proposed.",
+        proposals: [{ summary: "Add it", action: { type: "create_backlog_item", request: "Do it" } }],
+      }),
+      "answer",
+    );
+    await completeCliRun(PROJECT, { job: retry.job!, mode: "ask", conclusion: "success", url: null });
+    const done = await reload(pending.id);
+    expect(done.status).toBe("done");
+    expect(done.proposals.map((p) => p.summary)).toEqual(["Add it"]);
   });
 });
