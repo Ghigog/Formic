@@ -63,11 +63,15 @@ export function AgentEditor({
   onDelete: (presetId: string) => Promise<void>;
 }) {
   const forAssistant = column === "assistant";
-  const role = forAssistant ? "Assistant" : `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
+  const role = forAssistant
+    ? "Assistant"
+    : `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
   // The assistant has no built-in brief: it answers whatever it is asked.
   const defaultPrompt = forAssistant ? "" : DEFAULT_BRIEF[column];
   const [name, setName] = useState(preset?.name ?? "");
-  const [provider, setProvider] = useState<ProviderId>(preset?.provider ?? "anthropic");
+  const [provider, setProvider] = useState<ProviderId>(
+    preset?.provider ?? "anthropic",
+  );
   const [model, setModel] = useState(preset?.model ?? "");
   const [prompt, setPrompt] = useState(preset?.prompt ?? defaultPrompt);
   /** Undefined keeps the saved key, null removes it, a string replaces it. */
@@ -111,12 +115,20 @@ export function AgentEditor({
         signal: controller.signal,
       })
         .then((r) => r.json())
-        .then((d: { ok: boolean; models?: Array<{ id: string }>; reason?: string }) =>
-          setFetched(
-            d.ok
-              ? { state: "ready", models: (d.models ?? []).map((m) => m.id) }
-              : { state: "error", reason: d.reason ?? "Could not list models." },
-          ),
+        .then(
+          (d: {
+            ok: boolean;
+            models?: Array<{ id: string }>;
+            reason?: string;
+          }) =>
+            setFetched(
+              d.ok
+                ? { state: "ready", models: (d.models ?? []).map((m) => m.id) }
+                : {
+                    state: "error",
+                    reason: d.reason ?? "Could not list models.",
+                  },
+            ),
         )
         .catch(() => {
           if (!controller.signal.aborted) {
@@ -144,7 +156,11 @@ export function AgentEditor({
         model: model.trim(),
         prompt,
         // An empty box keeps a saved key; Remove clears it; a typed one replaces it.
-        ...(apiKey === null ? { apiKey: null } : typedKey ? { apiKey: typedKey } : {}),
+        ...(apiKey === null
+          ? { apiKey: null }
+          : typedKey
+            ? { apiKey: typedKey }
+            : {}),
       });
       onClose();
     } catch (e) {
@@ -156,7 +172,11 @@ export function AgentEditor({
 
   async function remove() {
     if (!preset) return;
-    if (!window.confirm(`Delete ${preset.name}? Columns running it go back to having no agent.`)) {
+    if (
+      !window.confirm(
+        `Delete ${preset.name}? Columns running it go back to having no agent.`,
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -172,7 +192,11 @@ export function AgentEditor({
   const label = "text-ink text-[12px] font-semibold";
   const field =
     "border-line bg-cream text-ink focus:border-clay w-full rounded-md border px-2.5 text-[13px] outline-none";
-  const options = models.state === "ready" && models.models.length ? models.models : info.suggestedModels;
+  const gatewayModels = models.state === "ready" ? models.models : [];
+  const options = [
+    ...info.suggestedModels,
+    ...gatewayModels.filter((m) => !info.suggestedModels.includes(m)),
+  ];
 
   return (
     <div
@@ -244,7 +268,9 @@ export function AgentEditor({
             </span>
             {savedKey ? (
               <div className="border-line bg-cream flex h-9 items-center gap-2 rounded-md border px-2.5 text-[13px]">
-                <span className="text-ink flex-1 font-mono">••••••••{preset?.keyHint}</span>
+                <span className="text-ink flex-1 font-mono">
+                  ••••••••{preset?.keyHint}
+                </span>
                 <button
                   type="button"
                   onClick={() => setApiKey("")}
@@ -266,16 +292,26 @@ export function AgentEditor({
             )}
             {cli ? (
               <span className="text-muted text-[11px] leading-[1.5]">
-                {info.howToGetKey} Stored encrypted, and saved as a secret in your
-                repository&apos;s GitHub Actions when the agent runs.{" "}
-                <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
+                {info.howToGetKey} Stored encrypted, and saved as a secret in
+                your repository&apos;s GitHub Actions when the agent runs.{" "}
+                <a
+                  href={info.keyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-ink underline"
+                >
                   How it works
                 </a>
               </span>
             ) : (
               <span className="text-muted text-[11px]">
                 Stored encrypted and never shown again.{" "}
-                <a href={info.keyUrl} target="_blank" rel="noreferrer" className="text-ink underline">
+                <a
+                  href={info.keyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-ink underline"
+                >
                   Get a key from {info.label}
                 </a>
               </span>
@@ -301,15 +337,17 @@ export function AgentEditor({
               {cli
                 ? "Optional. Leave empty for the agent's own default."
                 : models.state === "loading"
-                ? "Asking the provider which models your key can use…"
-                : models.state === "ready"
-                  ? `${models.models.length} models available on your key. Start typing to filter.`
-                  : models.state === "error"
-                    ? models.reason
-                    : "Add the key above to see the models it can use."}
+                  ? "Asking the provider which models your key can use…"
+                  : models.state === "ready"
+                    ? `${models.models.length} models available on your key. Start typing to filter.`
+                    : models.state === "error"
+                      ? models.reason
+                      : "Add the key above to see the models it can use."}
             </span>
             {!cli && model.trim() && (
-              <span className="text-muted text-[11px]">{pricingNote(model.trim(), provider)}</span>
+              <span className="text-muted text-[11px]">
+                {pricingNote(model.trim(), provider)}
+              </span>
             )}
           </label>
 
@@ -347,7 +385,9 @@ export function AgentEditor({
               className={`${field} resize-y py-2 font-mono text-[12px] leading-[1.5]`}
             />
             {!forAssistant && CONVENTIONS_NOTE[column] && (
-              <span className="text-muted text-[11px]">{CONVENTIONS_NOTE[column]}</span>
+              <span className="text-muted text-[11px]">
+                {CONVENTIONS_NOTE[column]}
+              </span>
             )}
           </label>
 
