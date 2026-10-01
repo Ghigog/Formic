@@ -331,6 +331,11 @@ export interface UserRecord {
   runTimeBudgetFlatMinutes: number | null;
   /** Stored JSON: story points to minutes, e.g. {"1":5}. */
   runTimeBudgetPerPointMinutes: unknown;
+  /** Token window: renewal day of the month (1-31) in `tokenWindowTimezone` (IANA), or null. */
+  tokenRenewalDay: number | null;
+  tokenWindowTimezone: string | null;
+  /** When the person last reset the token count by hand, or null. */
+  tokenResetAt: Date | null;
 }
 
 /** What a person's run time budget is stored as on their row. */
@@ -399,6 +404,13 @@ export interface Repository {
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
   updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
   updateRunTimeBudget(userId: string, columns: RunTimeBudgetColumns): Promise<UserRecord>;
+  /** Sets (or with nulls clears) the day the token window renews and the timezone it is read in. */
+  updateTokenRenewal(
+    userId: string,
+    renewal: { tokenRenewalDay: number | null; tokenWindowTimezone: string | null },
+  ): Promise<UserRecord>;
+  /** Stamps the token window as reset at `at`. */
+  stampTokenReset(userId: string, at: Date): Promise<UserRecord>;
   /** Records that this person agreed to a version of the terms, now. */
   acceptTerms(userId: string, version: string): Promise<UserRecord>;
   /** Signs this person out everywhere: every session cookie issued so far stops working. */
