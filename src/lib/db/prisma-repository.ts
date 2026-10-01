@@ -33,12 +33,14 @@ import type {
   AuditRecord,
   AuditReport,
   AuditResult,
+  QueenRecord,
 } from "./repository";
 import type {
   AgentRole,
   AgentRunStatus,
   AttachmentSummary,
   BoardCard,
+  CardKind,
   AgentPreset,
   ColumnAgents,
   ColumnOverride,
@@ -56,6 +58,7 @@ import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 type EpicRow = {
   id: string;
+  queen?: { id: string } | null;
   number: number | null;
   title: string;
   status: TicketStatus;
@@ -288,6 +291,44 @@ export class PrismaRepository implements Repository {
     return ticket?.epic.projectId ?? null;
   }
 
+  async placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null> {
+    try {
+      const row = await prisma().queen.create({
+        data: { projectId, ...(kind === "epic" ? { epicId: cardId } : { ticketId: cardId }) },
+      });
+      return { projectId, cardId, kind, placedAt: row.placedAt };
+    } catch (err) {
+      // The card's unique slot is taken: it already has one.
+      if ((err as { code?: string }).code === "P2002") return null;
+      throw err;
+    }
+  }
+
+  async listQueens(projectId: string): Promise<QueenRecord[]> {
+    const rows = await prisma().queen.findMany({ where: { projectId }, orderBy: { placedAt: "asc" } });
+    return rows.map((r) => ({
+      projectId,
+      cardId: (r.epicId ?? r.ticketId)!,
+      kind: r.epicId ? ("epic" as const) : ("ticket" as const),
+      placedAt: r.placedAt,
+    }));
+  }
+
+  async clearQueen(cardId: string): Promise<boolean> {
+    const db = prisma();
+    const row = await db.queen.findFirst({ where: { OR: [{ epicId: cardId }, { ticketId: cardId }] } });
+    if (!row) return false;
+    const gone = await db.queen.deleteMany({ where: { id: row.id } });
+    if (gone.count === 0) return false;
+    await db.project.update({ where: { id: row.projectId }, data: { queensSpent: { increment: 1 } } });
+    return true;
+  }
+
+  async queensSpent(projectId: string): Promise<number> {
+    const project = await prisma().project.findUnique({ where: { id: projectId }, select: { queensSpent: true } });
+    return project?.queensSpent ?? 0;
+  }
+
   async boardCards(projectId: string): Promise<BoardCard[]> {
     const db = prisma();
 
@@ -296,6 +337,7 @@ export class PrismaRepository implements Repository {
       orderBy: { position: "asc" },
       include: {
         tickets: { select: { id: true, status: true } },
+        queen: { select: { id: true } },
         runs: {
           where: { status: { in: ["queued", "running"] } },
           orderBy: { createdAt: "desc" },
@@ -309,6 +351,7 @@ export class PrismaRepository implements Repository {
       orderBy: { position: "asc" },
       include: {
         dependsOn: { select: { dependsOnTicketId: true } },
+        queen: { select: { id: true } },
         // Every run, newest first: the live one names the agent, the
         // oldest says when work started.
         runs: {
@@ -349,6 +392,7 @@ export class PrismaRepository implements Repository {
         misplacedIn: epic.misplacedIn,
         misplacedReason: epic.misplacedReason,
         costCents: 0,
+        queen: !!epic.queen,
         childCount: epic.tickets.length,
         doneCount: epic.tickets.filter((t) => t.status === "merged").length,
         createdAt: epic.createdAt.toISOString(),
@@ -397,6 +441,7 @@ export class PrismaRepository implements Repository {
       rerouteFrom: t.rerouteFrom,
       rerouteReason: t.rerouteReason,
       costCents: t.costCents,
+      queen: !!t.queen,
       childCount: 0,
       doneCount: 0,
       createdAt: t.createdAt.toISOString(),
