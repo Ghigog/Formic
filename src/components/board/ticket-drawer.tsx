@@ -41,12 +41,14 @@ export function TicketDrawer({
   ticketId,
   onClose,
   onOpenEpic,
+  onOpenTicket,
   subscribe,
   onChanged,
 }: {
   ticketId: string | null;
   onClose: () => void;
   onOpenEpic: (epicId: string) => void;
+  onOpenTicket: (ticketId: string) => void;
   subscribe: SubscribeToEvents;
   /** Called after the ticket itself was edited here, so the board can refetch. */
   onChanged?: () => void;
@@ -266,7 +268,7 @@ export function TicketDrawer({
               aria-label="Ticket"
               className="min-h-0 overflow-y-auto p-4"
             >
-              {view && <TicketBody view={view} />}
+              {view && <TicketBody view={view} onOpenTicket={onOpenTicket} />}
             </section>
           }
           second={
@@ -299,7 +301,7 @@ export function TicketDrawer({
 }
 
 /** The ticket as it was written. */
-function TicketBody({ view }: { view: TicketView }) {
+function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (ticketId: string) => void }) {
   return (
     <div className="text-fg space-y-4 text-[13px] leading-6">
       <MarkdownLite text={view.description} />
@@ -348,10 +350,16 @@ function TicketBody({ view }: { view: TicketView }) {
           <Heading>Waits on</Heading>
           <ul className="mt-1 space-y-1">
             {view.dependsOn.map((d) => (
-              <li key={d.id} className="flex items-center gap-2 text-[12px]">
-                <span className="text-fg-subtle font-mono text-[10px]">{d.key}</span>
-                <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                <StatusPill status={d.status as TicketView["card"]["status"]} />
+              <li key={d.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenTicket(d.id)}
+                  className="hover:text-terracotta focus-visible:text-terracotta flex w-full items-center gap-2 text-left text-[12px] underline-offset-2 hover:underline focus-visible:underline"
+                >
+                  <span className="text-fg-subtle font-mono text-[10px]">{d.key}</span>
+                  <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                  <StatusPill status={d.status as TicketView["card"]["status"]} />
+                </button>
               </li>
             ))}
           </ul>
