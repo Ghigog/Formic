@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   COLOR_UNLOCKS,
   SHAPE_UNLOCKS,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/colony/game";
 import { useColony, type ColonyApi } from "./colony";
 import { drawBug } from "./fx";
+import { QueenIcon } from "./queen-icon";
 
 /** The ant hill at the end of the ambient bar. Opens the colony. */
 export function NestButton() {
@@ -60,6 +61,121 @@ function BugPreview({ shape, locked, on, c }: { shape: BugShape; locked: boolean
   return <canvas ref={ref} width={80} height={80} className="size-10" aria-hidden />;
 }
 
+/** The Queen, drawn with the chosen shape and colour at 10x. Also the drag image. */
+function QueenBug({ c, className }: { c: ColonyApi; className: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    const ctx = cv?.getContext("2d");
+    if (!cv || !ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    drawBug(ctx, cv.width / 2, cv.height / 2 + 2, 10, 0.26, c.shape, c.bugHex);
+  }, [c.shape, c.bugHex]);
+  return <canvas ref={ref} width={200} height={200} className={className} aria-hidden />;
+}
+
+/**
+ * Unspent Queens, and one to drag onto a card. A pointer drag, like the rest
+ * of the board's, not native HTML5 drag: the board's drag library owns
+ * pointer events on its own cards, and a drop here is found with
+ * `elementFromPoint` on the card's `data-tid`.
+ */
+function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) => void }) {
+  const [unspent, setUnspent] = useState<number | null>(null);
+  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/queens")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { unspent: number } | null) => live && body && setUnspent(body.unspent))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [c.score.level]);
+
+  const place = async (cardId: string) => {
+    try {
+      const res = await fetch("/api/queens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { unspent?: number; error?: string };
+      if (!res.ok) return setError(body.error ?? "Could not place the Queen.");
+      setError(null);
+      if (typeof body.unspent === "number") setUnspent(body.unspent);
+    } catch {
+      setError("Could not place the Queen.");
+    }
+  };
+
+  const start = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    setDrag({ x: e.clientX, y: e.clientY });
+    onDragging(true);
+    const move = (m: PointerEvent) => setDrag({ x: m.clientX, y: m.clientY });
+    const end = (u: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      setDrag(null);
+      onDragging(false);
+      const id = u.type === "pointerup" ? document.elementFromPoint(u.clientX, u.clientY)?.closest<HTMLElement>("[data-tid]")?.dataset.tid : null;
+      if (id) void place(id);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  };
+
+  const count = unspent ?? 0;
+  return (
+    <div className="bg-panel flex items-center gap-3 rounded-lg px-3 py-2.5">
+      <span className="text-clay inline-flex shrink-0" data-queen-icon>
+        <QueenIcon size={22} />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-ink text-[12px] font-semibold">
+          Queens <span data-queen-count>{count}</span>
+        </span>
+        <span className="text-muted text-[11px]">Unlock a queen with each level</span>
+        <span className="text-muted text-[11px]">Drag a Queen onto a ticket or Epic to finish it without its prerequisites.</span>
+        {error && (
+          <span role="alert" className="text-log-error text-[11px]">
+            {error}
+          </span>
+        )}
+      </div>
+      {count > 0 && (
+        <button
+          type="button"
+          data-queen-drag
+          aria-label="Drag a Queen onto a card"
+          onPointerDown={start}
+          className="border-line bg-card inline-flex size-12 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg border active:cursor-grabbing"
+        >
+          <QueenBug c={c} className="size-10" />
+        </button>
+      )}
+      {drag && (
+        <div
+          data-queen-image
+          aria-hidden
+          className="pointer-events-none fixed z-[90] -translate-x-1/2 -translate-y-1/2"
+          style={{ left: drag.x, top: drag.y }}
+        >
+          <QueenBug c={c} className="size-14" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Levels and bug styles: what the colony has earned and what it can wear. */
 export function ColonyPopover() {
   const c = useColony();
@@ -81,6 +197,7 @@ export function ColonyPopover() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  const [carrying, setCarrying] = useState(false);
   if (!c || !open) return null;
 
   const s = c.score;
@@ -91,12 +208,16 @@ export function ColonyPopover() {
 
   return (
     <>
-      <div aria-hidden onClick={() => c.setColonyOpen(false)} className="fixed inset-0 z-[74]" />
+      <div
+        aria-hidden
+        onClick={() => c.setColonyOpen(false)}
+        className={`fixed inset-0 z-[74] ${carrying ? "pointer-events-none" : ""}`}
+      />
       <div
         ref={panel}
         role="dialog"
         aria-label="Colony"
-        className="border-line bg-card fixed right-4 bottom-16 z-[75] box-border flex w-[400px] max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)]"
+        className={`border-line bg-card fixed right-4 bottom-16 z-[75] box-border flex w-[400px] max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)] ${carrying ? "pointer-events-none" : ""}`}
       >
         <div className="flex items-center gap-3">
           <span className="bg-anthracite text-cream inline-flex size-[42px] shrink-0 flex-col items-center justify-center gap-px [clip-path:polygon(10px_0,calc(100%-10px)_0,100%_10px,100%_calc(100%-10px),calc(100%-10px)_100%,10px_100%,0_calc(100%-10px),0_10px)]">
@@ -120,6 +241,8 @@ export function ColonyPopover() {
             </svg>
           </button>
         </div>
+
+        <QueenTray c={c} onDragging={setCarrying} />
 
         <div className="bg-panel flex flex-col gap-2 rounded-lg px-3 py-2.5">
           <span className="text-ink text-[12px] font-semibold">{nextText}</span>

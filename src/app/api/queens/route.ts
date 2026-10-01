@@ -9,6 +9,19 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({ cardId: z.string().min(1) });
 
+/** How many Queens the colony has earned and not yet placed or spent. */
+export async function GET() {
+  const project = await activeProject();
+  if (!project) return noProject();
+  const repo = repository();
+  const [cards, placed, spent] = await Promise.all([
+    repo.boardCards(project.id),
+    repo.listQueens(project.id),
+    repo.queensSpent(project.id),
+  ]);
+  return Response.json({ unspent: Math.max(0, queensEarned(scoreOf(cards).level) - placed.length - spent) });
+}
+
 /**
  * Places a Queen on a ticket or an Epic. Queens are earned with levels; one
  * taken off again stays spent, so clearing never gives it back.
