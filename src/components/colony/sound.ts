@@ -46,6 +46,7 @@ export type Sfx =
   | "fold"
   | "unfold"
   | "close"
+  | "crumble"
   | "sentinelsOpen"
   | "sentinelLand"
   | "sentinelVoice";
@@ -401,6 +402,15 @@ export class SoundEngine {
         break;
       case "close":
         this.tone(880, 0.12, { to: 440, gain: 0.03, type: "triangle" });
+        break;
+      case "crumble":
+        // Rattling grit, then a low thump as it is buried.
+        for (let i = 0; i < 7; i++) {
+          this.noise(0.05, { freq: 3200 + (i % 3) * 900, hp: true, gain: 0.05, q: 1.5, delay: i * 0.06 + (i % 2) * 0.02 });
+        }
+        this.noise(0.3, { freq: 1800, to: 300, gain: 0.07, q: 1.2 });
+        this.tone(110, 0.22, { to: 45, gain: 0.18, delay: 0.5 });
+        this.noise(0.12, { freq: 400, to: 90, gain: 0.12, delay: 0.5 });
         break;
       case "sentinelsOpen":
         this.tone(330, 0.45, { to: 990, gain: 0.03, type: "triangle", attack: 0.06 });
