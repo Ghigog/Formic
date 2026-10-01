@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
+import { markSeen, readSeen, unseenProjects, type ProjectActivity } from "@/lib/hooks/use-assistant-activity";
 
-interface Project {
+interface Project extends ProjectActivity {
   id: string;
   repoFullName: string;
   baseBranch: string;
@@ -47,13 +48,17 @@ export function RepoPicker({
   const [install, setInstall] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [unseen, setUnseen] = useState<string[]>([]);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     input.current?.focus();
     void fetch("/api/projects", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { projects: Project[] }) => setProjects(d.projects))
+      .then((d: { active?: { id: string } | null; projects: Project[] }) => {
+        setProjects(d.projects);
+        setUnseen(unseenProjects(d.projects, d.active?.id ?? null, readSeen()));
+      })
       .catch(() => setProjects([]));
     void fetch("/api/github/repos", { cache: "no-store" })
       .then((r) => r.json())
@@ -108,6 +113,7 @@ export function RepoPicker({
       : null;
 
   async function choose(body: { projectId: string } | { repoFullName: string }, key: string) {
+    const project = "projectId" in body ? projects?.find((p) => p.id === body.projectId) : undefined;
     setBusy(key);
     setError(null);
     const res = await fetch("/api/projects", {
@@ -121,6 +127,7 @@ export function RepoPicker({
       setBusy(null);
       return;
     }
+    if (project) markSeen(project);
     window.location.reload();
   }
 
@@ -181,6 +188,13 @@ export function RepoPicker({
                       {p.repoFullName}
                     </span>
                     <span className="text-muted font-mono text-[10px]">{p.baseBranch}</span>
+                    {unseen.includes(p.id) && (
+                      <span
+                        role="img"
+                        aria-label="New assistant answer"
+                        className="bg-terracotta size-2 shrink-0 rounded-full"
+                      />
+                    )}
                     {selected && <Check />}
                     {busy === p.id && <span className="text-muted text-[11px]">…</span>}
                   </button>
