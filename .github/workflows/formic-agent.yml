@@ -1,4 +1,4 @@
-# formic-runner: 2e6218bd6872
+# formic-runner: 8d2fa4067a4d
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -46,6 +46,10 @@ on:
         description: A branch to merge in first, its conflicts left for the agent, or empty
         required: false
         default: ""
+      timeout:
+        description: Minutes the job may run, at most 60
+        required: false
+        default: "60"
 
 permissions:
   contents: write
@@ -56,7 +60,7 @@ concurrency:
 jobs:
   agent:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: ${{ fromJSON(inputs.timeout) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

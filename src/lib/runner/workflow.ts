@@ -35,7 +35,21 @@ export const ANSWER_PATH = ".formic/answer.md";
  * over this less the headroom (see `loopBudgetMs` in ./runner), because a run that hits its own limit stops and
  * says which limit it was, and a job the platform kills says nothing.
  */
-export const RUNNER_JOB_MINUTES = 180;
+export const RUNNER_JOB_MINUTES = 60;
+
+/** What a workflow installed before the `timeout` input holds a job to. */
+export const LEGACY_JOB_MINUTES = 180;
+
+/**
+ * The most a repository's installed workflow lets a job run, and whether it
+ * takes the run's own timeout as an input. A workflow without the input keeps
+ * its fixed ceiling and is dispatched without one.
+ */
+export function workflowCeiling(workflow: string | null): { minutes: number; takesTimeout: boolean } {
+  return workflow?.includes("inputs.timeout")
+    ? { minutes: RUNNER_JOB_MINUTES, takesTimeout: true }
+    : { minutes: LEGACY_JOB_MINUTES, takesTimeout: false };
+}
 
 /** What the budget leaves a loop run for cloning, installing and reporting. */
 export const JOB_HEADROOM_MINUTES = 5;
@@ -380,6 +394,10 @@ on:
         description: A branch to merge in first, its conflicts left for the agent, or empty
         required: false
         default: ""
+      timeout:
+        description: Minutes the job may run, at most ${RUNNER_JOB_MINUTES}
+        required: false
+        default: "${RUNNER_JOB_MINUTES}"
 
 permissions:
   contents: write
@@ -390,7 +408,7 @@ concurrency:
 jobs:
   agent:
     runs-on: ubuntu-latest
-    timeout-minutes: ${RUNNER_JOB_MINUTES}
+    timeout-minutes: \${{ fromJSON(inputs.timeout) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
