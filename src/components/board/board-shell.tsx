@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board";
 import { NewItemDialog, type CaptureColumn } from "./new-item-dialog";
 import { EpicDrawer } from "./epic-drawer";
@@ -75,7 +75,7 @@ export function BoardShell({
   }, []);
   const [rerouteToast, setRerouteToast] = useState<RerouteNotice | null>(null);
   const rerouteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { cards: boardCards, extras, stats, prdStreams, connection, transition, createEpic, createTicket } =
+  const { cards: boardCards, extras, stats, prdStreams, connection, transition, createEpic, createTicket, refetch } =
     useBoard(initialCards, initialStats, (event, seq) => {
       if (event.type === "agent.limited") agentState.markLimited(event.presetId, event.until, event.note);
       if (event.type === "card.rerouted") {
@@ -92,6 +92,29 @@ export function BoardShell({
     () => boardCards.filter((c) => !c.archived && !archivedIds.has(c.id)),
     [boardCards, archivedIds],
   );
+  // The archive, fetched once the first time a filter asks for it.
+  const [archiveWanted, setArchiveWanted] = useState(false);
+  const [archive, setArchive] = useState<BoardCard[]>([]);
+  const fetchedArchive = useRef(false);
+  useEffect(() => {
+    if (!archiveWanted || fetchedArchive.current) return;
+    fetchedArchive.current = true;
+    fetch("/api/tickets/archived")
+      .then((res) => (res.ok ? res.json() : { tickets: [] }))
+      .then((body: { tickets: BoardCard[] }) => setArchive(body.tickets))
+      .catch(() => {
+        fetchedArchive.current = false;
+      });
+  }, [archiveWanted]);
+  // Cards archived this session stay in the list, marked archived.
+  const boardShown = useMemo(() => {
+    if (!archiveWanted) return cards;
+    const sessionArchived = boardCards
+      .filter((c) => archivedIds.has(c.id))
+      .map((c) => ({ ...c, archived: true }));
+    const have = new Set(sessionArchived.map((c) => c.id));
+    return [...cards, ...sessionArchived, ...archive.filter((c) => !have.has(c.id))];
+  }, [archiveWanted, cards, boardCards, archivedIds, archive]);
   const runner = useRunnerSetup(subscribe);
   const [dialog, setDialog] = useState<{ column: CaptureColumn } | null>(null);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
@@ -136,7 +159,8 @@ export function BoardShell({
     <SentinelsProvider initial={initialSentinels}>
     <div className="flex h-dvh flex-col overflow-hidden">
       <Board
-        cards={cards}
+        cards={boardShown}
+        onArchivedWanted={setArchiveWanted}
         extras={merged}
         projectName={projectName}
         repoFullName={repoFullName}
@@ -219,6 +243,7 @@ export function BoardShell({
           setOpenEpicId(epicId);
         }}
         subscribe={subscribe}
+        onChanged={() => void refetch()}
       />
 
       <SetupDialog

@@ -20,11 +20,13 @@ interface EpicDetail {
   title: string;
   rawRequest: string;
   prd: Prd | null;
-  /** The PM Agent's write-up, once every ticket has merged. */
+  /** The PM Agent's write-up, written when someone asks for it on a done Epic. */
   showcase: string | null;
   children: BoardCard[];
   /** Its planning stopped, and a person can start it again. */
   canRetry: boolean;
+  /** Done, with no showcase and no PM run active. */
+  canGenerateShowcase: boolean;
 }
 
 const ACTION =
@@ -119,6 +121,25 @@ export function EpicDrawer({
     [epicId, load],
   );
 
+  const generateShowcase = useCallback(async () => {
+    if (!epicId) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/showcase`, { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setActionError(body?.error ?? "That did not work. Try again in a moment.");
+        return;
+      }
+      await load();
+    } catch {
+      setActionError("That did not work. Try again in a moment.");
+    } finally {
+      setBusy(false);
+    }
+  }, [epicId, load]);
+
   const act = useCallback(
     async (method: "POST" | "DELETE") => {
       if (!epicId) return;
@@ -198,6 +219,16 @@ export function EpicDrawer({
                   className={cn(ACTION, "text-fg hover:border-line-strong")}
                 >
                   Retry
+                </button>
+              )}
+              {detail?.canGenerateShowcase && !confirming && (
+                <button
+                  type="button"
+                  disabled={busy || epic?.agentRole === "pm"}
+                  onClick={() => void generateShowcase()}
+                  className={cn(ACTION, "text-fg hover:border-line-strong")}
+                >
+                  Generate showcase
                 </button>
               )}
               {epic && !confirming && (

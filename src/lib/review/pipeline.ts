@@ -41,6 +41,7 @@ import { cliPrompt, showcaseSummaries, startCliAnswer, startJobRun } from "@/lib
  * to sit in indefinitely.
  */
 
+const STAGE_PR = 6;
 const STAGE_MERGE = 7;
 
 /**
@@ -195,12 +196,34 @@ async function react(
   if (ticket.runnerJob) return;
 
   if (red.length === 0 && reviewedSha === headSha) {
+    if (!project.autoMerge) {
+      await awaitPersonMerge(projectId, ticket);
+      return;
+    }
     await inMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber));
     return;
   }
 
   if (!startReview) return;
   await reviewTicket(projectId, ticket, pull, red);
+}
+
+/**
+ * Auto-merge is off: the approved pull request waits in Merging for a person
+ * to merge it. The ticket is not merged until the merge is seen to happen.
+ */
+async function awaitPersonMerge(projectId: string, ticket: TicketDetail): Promise<void> {
+  if (ticket.status === "review" && ticket.stage === STAGE_MERGE) return;
+  await repository().updateTicket(ticket.id, { stage: STAGE_MERGE, blockedReason: null });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticket.id,
+    kind: "ticket",
+    status: ticket.status,
+    stalledIn: ticket.stalledIn ?? null,
+    stage: STAGE_MERGE,
+    blockedReason: null,
+  });
 }
 
 /**
@@ -551,7 +574,13 @@ async function mergeTicket(
     (await client.pullRequest(prNumber));
   if (pull.merged) return { merged: true };
 
-  const merged = await client.merge(prNumber, pull.headSha);
+  const merged = await client.merge(prNumber, pull.headSha).catch(
+    (e): { ok: false; conflict: false; reason: string } => ({
+      ok: false,
+      conflict: false,
+      reason: e instanceof Error ? e.message : String(e),
+    }),
+  );
   if (!merged.ok) {
     // A 405 means a conflict only when GitHub says so; otherwise it is a
     // refusal worth reporting as what it was.
@@ -568,7 +597,12 @@ async function mergeTicket(
     const reason = conflict
       ? `${ticket.key} could not be merged cleanly: ${merged.reason}`
       : `GitHub refused the merge: ${merged.reason}`;
-    await stallTicket(projectId, ticket, reason, { blocked: true, stalledIn: "in_review" });
+    // Back to where it was before the merge was tried, with the reason.
+    await stallTicket(projectId, ticket, reason, {
+      blocked: true,
+      stalledIn: "in_review",
+      stage: STAGE_PR,
+    });
     return { merged: false, reason };
   }
 
@@ -654,9 +688,8 @@ async function releaseDependents(
 
 /**
  * PROT-08. Once every ticket under an Epic has merged, the Epic is done: it
- * moves to the top of Done on its own, and the PM Agent writes its showcase
- * if it has none yet. Saved before the showcase runs, so an Epic whose
- * showcase fails still leaves To Do.
+ * moves to the top of Done on its own. Its showcase is written only when
+ * someone asks for it (startShowcase), so no agent runs here.
  */
 export async function completeEpic(
   projectId: string,
@@ -691,8 +724,18 @@ export async function completeEpic(
     stage: card?.stage ?? 8,
     blockedReason: null,
   });
+}
 
-  if (detail.showcase) return;
+/**
+ * Starts the PM Agent on an Epic's showcase. Only ever on request: finishing
+ * an Epic spends nothing. The caller has checked the Epic is done, has no
+ * showcase and has no PM run active.
+ */
+export async function startShowcase(projectId: string, epicId: string): Promise<void> {
+  const repo = repository();
+  const detail = await repo.epicDetail(epicId);
+  if (!detail) return;
+  const siblings = await repo.ticketsForEpic(epicId);
 
   const prd = prdSchema.safeParse(detail.prd);
   const run = startRun(projectId, "pm", {

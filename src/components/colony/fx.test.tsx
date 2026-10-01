@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ColonyFx, clipSetFor, heldByDrag, visibleRects } from "./fx";
+import { ColonyFx, clipSetFor, heldByDrag, travelRects, visibleRects } from "./fx";
 import { SoundEngine } from "./sound";
 
 /**
@@ -221,5 +221,14 @@ describe("visibleRects with the viewport", () => {
     expect(visibleRects(view, [])).toEqual([view]);
     const out = visibleRects(view, [{ left: 600, top: 0, right: 1000, bottom: 800 }]);
     expect(out).toEqual([{ left: 0, top: 0, right: 600, bottom: 800 }]);
+  });
+});
+
+describe("travelRects", () => {
+  it("is the whole viewport, not cut by a mask over the nest, while visibleRects is", () => {
+    const view = { left: 0, top: 0, right: 1000, bottom: 800 };
+    const barOverNest = { left: 800, top: 740, right: 1000, bottom: 800 };
+    expect(travelRects(view)).toEqual([view]);
+    expect(visibleRects(view, [barOverNest])).not.toEqual([view]);
   });
 });

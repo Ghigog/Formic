@@ -161,7 +161,7 @@ describe("the coding loop on an OpenAI-format provider", () => {
 
     expect(outcome).toMatchObject({ ok: true, value: { summary: "added x" } });
     expect(await raw.readFile("src/app/x.ts")).toBe("export {};\n");
-    expect(sent[0]!.url).toBe("https://api.deepseek.com/v1/chat/completions");
+    expect(sent[0]!.url).toBe("https://api.deepseek.com/chat/completions");
     expect(sent[0]!.auth).toBe("Bearer sk-deepseek");
     // The tool result goes back as a tool message tied to the call.
     const second = sent[1]!.body.messages as Array<{ role: string; tool_call_id?: string }>;

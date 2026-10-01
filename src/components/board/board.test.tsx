@@ -348,7 +348,7 @@ describe("Board menu", () => {
   it("filters by type across columns", async () => {
     renderBoard(cards());
     const user = await openBoardMenu();
-    await user.click(screen.getByRole("menuitemradio", { name: "Bugs" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Bugs" }));
     expect(screen.getByText("Fix login")).toBeInTheDocument();
     expect(screen.getByText("Fix crash")).toBeInTheDocument();
     expect(screen.queryByText("Add export")).toBeNull();
@@ -358,7 +358,7 @@ describe("Board menu", () => {
   it("collapses and expands every column, keeping other view fields", async () => {
     renderBoard(cards());
     const user = await openBoardMenu();
-    await user.click(screen.getByRole("menuitemradio", { name: "Bugs" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Bugs" }));
     await user.click(screen.getByRole("menuitem", { name: "Collapse all" }));
     expect(screen.queryByText("Fix login")).toBeNull();
     expect(screen.queryByText("Fix crash")).toBeNull();
@@ -370,5 +370,24 @@ describe("Board menu", () => {
     expect(screen.getByText("Fix login")).toBeInTheDocument();
     expect(screen.getByText("Fix crash")).toBeInTheDocument();
     expect(screen.queryByText("Add export")).toBeNull();
+  });
+});
+
+describe("Board archived filter", () => {
+  it("shows archived cards in Done once Archived is toggled on, and asks for them", async () => {
+    const onArchivedWanted = vi.fn();
+    const live = makeCard({ status: "merged", title: "Shipped one" });
+    const old = makeCard({ status: "merged", title: "Old archived", archived: true });
+    renderBoard([live, old], { onArchivedWanted });
+    expect(screen.queryByText("Old archived")).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    const done = screen.getByRole("region", { name: /done/i });
+    await user.click(within(done).getByRole("button", { name: "Column options" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Archived" }));
+
+    expect(screen.getByText("Old archived")).toBeInTheDocument();
+    expect(screen.queryByText("Shipped one")).not.toBeInTheDocument();
+    expect(onArchivedWanted).toHaveBeenLastCalledWith(true);
   });
 });

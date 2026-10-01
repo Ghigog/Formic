@@ -163,6 +163,7 @@ function store(): Store {
     name: "Formic",
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
+    autoMerge: true,
   };
   const s: Store = {
     project,
@@ -382,6 +383,7 @@ export class MemoryRepository implements Repository {
       name: input.repoFullName.split("/")[1] ?? input.repoFullName,
       repoFullName: input.repoFullName,
       baseBranch: input.baseBranch,
+      autoMerge: true,
     };
     s.projects.set(project.id, project);
     return project;
@@ -858,6 +860,7 @@ export class MemoryRepository implements Repository {
     const card = s.cards.get(ticketId);
     if (!card) return;
 
+    if (update.workType !== undefined) card.workType = update.workType;
     if (update.status !== undefined && update.status !== card.status) {
       card.updatedAt = new Date().toISOString();
       if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
@@ -1278,6 +1281,19 @@ export class MemoryRepository implements Repository {
     return store()
       .cardChat.filter(
         (m) => m.projectId === projectId && m.status === "pending" && !m.runnerJob && m.createdAt < olderThan,
+      )
+      .map((m) => ({ ...m }));
+  }
+
+  async orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]> {
+    return store()
+      .assistant.filter(
+        (m) =>
+          m.projectId === projectId &&
+          m.role === "assistant" &&
+          m.status === "pending" &&
+          !m.runnerJob &&
+          m.createdAt < olderThan,
       )
       .map((m) => ({ ...m }));
   }

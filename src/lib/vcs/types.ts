@@ -146,6 +146,12 @@ export interface VcsClient {
   commitFile(branch: string, path: string, content: string, message: string): Promise<void>;
   /** The open pull request from a branch, if there is one. */
   findPullRequest(headBranch: string): Promise<PullRequestRef | null>;
+  /**
+   * Closes every open pull request whose head branch starts with `prefix`,
+   * except `keepBranch`, each with `reason` as its last comment. Returns the
+   * numbers it closed.
+   */
+  closeSupersededPulls(prefix: string, keepBranch: string, reason: string): Promise<number[]>;
   /** Stores an Actions secret, encrypted to the repository's key. */
   setSecret(name: string, value: string): Promise<void>;
   dispatchWorkflow(file: string, ref: string, inputs: Record<string, string>): Promise<void>;

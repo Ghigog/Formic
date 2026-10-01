@@ -101,6 +101,19 @@ function contract(name: string, make: () => Repository) {
         expect([typeOf(epic.id), typeOf(plain.id), typeOf(t!.id), typeOf(u!.id)]).toEqual(["bug", null, "spike", null]);
       });
 
+      it("sets and clears a ticket's work type", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "C-1")]);
+        const typeOf = async () => (await repo.boardCards(p.id)).find((c) => c.id === t!.id)?.workType ?? null;
+
+        await repo.updateTicket(t!.id, { workType: "spike" });
+        expect(await typeOf()).toBe("spike");
+
+        await repo.updateTicket(t!.id, { workType: null });
+        expect(await typeOf()).toBeNull();
+      });
+
       it("updates a ticket and finds it by its pull request", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
@@ -465,6 +478,19 @@ function contract(name: string, make: () => Repository) {
         ]);
         // A cutoff before it was written: it may be being written right now.
         expect(await repo.orphanedCardChats(p.id, new Date(Date.now() - 60_000))).toEqual([]);
+      });
+
+      it("lists a pending assistant answer with no job, once older than the cut-off", async () => {
+        const p = await project();
+        const base = { projectId: p.id, role: "assistant" as const, content: "", status: "pending" as const };
+        const orphan = await repo.addAssistantMessage(base);
+        const inActions = await repo.addAssistantMessage(base);
+        await repo.updateAssistantMessage(inActions.id, { runnerJob: "job-9" });
+
+        expect((await repo.orphanedAssistantAnswers(p.id, new Date(Date.now() + 60_000))).map((m) => m.id)).toEqual([
+          orphan.id,
+        ]);
+        expect(await repo.orphanedAssistantAnswers(p.id, new Date(Date.now() - 60_000))).toEqual([]);
       });
     });
 
