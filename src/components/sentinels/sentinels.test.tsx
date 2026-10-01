@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyFx } from "@/components/colony/fx";
@@ -33,10 +33,10 @@ function Open() {
   return <button onClick={() => c?.setSentinelsOpen(true)}>open sentinels</button>;
 }
 
-async function open() {
+async function open(level = 13) {
   render(
     <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
-      <SentinelsProvider initial={states([SENTINELS[0]!.id, SENTINELS[3]!.id])} level={13}>
+      <SentinelsProvider initial={states([SENTINELS[0]!.id, SENTINELS[3]!.id])} level={level}>
         <Open />
         <SentinelsPage repoName="repo" />
       </SentinelsProvider>
@@ -84,5 +84,24 @@ describe("SentinelsPage motion and sound", () => {
     await userEvent.hover(cards[3]!);
     expect(play.mock.calls.filter(([n]: unknown[]) => n === "sentinelVoice")).toEqual([["sentinelVoice", 2]]);
     expect(animate).toHaveBeenCalled();
+  });
+});
+
+describe("SentinelsPage locked sentinels", () => {
+  const card = (id: string) => document.querySelector(`[data-card="${id}"]`) as HTMLElement;
+  const locked = SENTINELS.find((x) => x.unlockLevel > 1)!;
+  const first = SENTINELS.find((x) => x.unlockLevel === 1)!;
+
+  it("shows a locked sentinel's unlock level and no run button", async () => {
+    await open(1);
+    expect(within(card(locked.id)).getByText(`Unlocks at Lv ${locked.unlockLevel}`)).toBeTruthy();
+    expect(within(card(locked.id)).queryByRole("button")).toBeNull();
+    expect(within(card(first.id)).getByRole("button", { name: /summon|re-run/i })).toBeTruthy();
+  });
+
+  it("offers a summon button once the colony reaches the unlock level", async () => {
+    await open(locked.unlockLevel);
+    expect(within(card(locked.id)).queryByText(/Unlocks at Lv/)).toBeNull();
+    expect(within(card(locked.id)).getByRole("button", { name: /summon/i })).toBeTruthy();
   });
 });
