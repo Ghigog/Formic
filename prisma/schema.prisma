@@ -113,6 +113,19 @@ model User {
   runTimeBudgetFlatMinutes     Int?
   runTimeBudgetPerPointMinutes Json?
 
+  /// Token and attempt limits, each a JSON limit setting such as
+  /// {"mode":"FLAT","flat":200000}. Null means the default; {"mode":"OFF"}
+  /// is an explicit choice. Money is never stored: cents derive from tokens.
+  tokenLimit   Json?
+  attemptLimit Json?
+
+  /// Token window: the day of the month the plan renews (1-31) in
+  /// tokenWindowTimezone (IANA), and when the person last reset the count by
+  /// hand. See src/lib/token-window.
+  tokenRenewalDay     Int?
+  tokenWindowTimezone String?
+  tokenResetAt        DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -123,30 +136,30 @@ model User {
 }
 
 model Project {
-  id           String   @id @default(cuid())
+  id                         String   @id @default(cuid())
   /// Null for the demo board, which belongs to no one.
-  ownerId      String?
-  owner        User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  name         String
-  repoFullName String
-  baseBranch   String   @default("main")
-  createdAt    DateTime @default(now())
+  ownerId                    String?
+  owner                      User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name                       String
+  repoFullName               String
+  baseBranch                 String   @default("main")
+  createdAt                  DateTime @default(now())
   /// The saved agent the board's assistant runs on. Not a relation: a
   /// deleted template simply leaves the assistant without one.
-  assistantPresetId String?
+  assistantPresetId          String?
   /// The highest Epic number this project has given out, deleted Epics
   /// included, so a number is never handed out twice.
-  lastEpicNumber Int @default(0)
+  lastEpicNumber             Int      @default(0)
   /// The highest standalone ticket number this project has given out, deleted
   /// tickets included, so a number is never handed out twice.
-  lastStandaloneTicketNumber Int @default(0)
+  lastStandaloneTicketNumber Int      @default(0)
   /// Whether Formic merges an approved pull request itself. Off, it waits in
   /// Merging for a person to merge it.
-  autoMerge Boolean @default(true)
+  autoMerge                  Boolean  @default(true)
 
-  epics        Epic[]
-  events       Event[]
-  columnAgents ColumnAgent[]
+  epics             Epic[]
+  events            Event[]
+  columnAgents      ColumnAgent[]
   assistantMessages AssistantMessage[]
   cardChatMessages  CardChatMessage[]
   audits            Audit[]
@@ -167,7 +180,7 @@ model Epic {
   rawRequest       String
   /// Structured PRD from the Product Agent. Null until stage 2 completes.
   prd              Json?
-  prdEditedByHuman Boolean @default(false)
+  prdEditedByHuman Boolean   @default(false)
   /// Bug or spike, as the owner chose. Null for neither.
   workType         WorkType?
   /// When the PRD last changed. Tickets made before it were made from an
@@ -185,12 +198,12 @@ model Epic {
   /// The GitHub issue that tracks this epic, once created.
   issueNumber      Int?
 
-  status    TicketStatus @default(draft)
+  status          TicketStatus @default(draft)
   /// Set only for blocked/failed cards, so a stalled card keeps its column.
-  stalledIn ColumnId?
-  stage     Int          @default(1)
+  stalledIn       ColumnId?
+  stage           Int          @default(1)
   /// Why a planning stage stalled. Cleared when the Epic moves on.
-  blockedReason String?
+  blockedReason   String?
   /// Where a person dropped it when it cannot work there. It shows there,
   /// with misplacedReason saying what is wrong and how to fix it; its status
   /// stays what is true. Cleared by its next move or status change.
@@ -199,7 +212,7 @@ model Epic {
   /// A holder for a ticket with no Epic of its own: a To Do request. Never
   /// its own card on the board; its one child ticket renders alone instead,
   /// exactly as a detached ticket does today.
-  standalone Boolean @default(false)
+  standalone      Boolean      @default(false)
   /// The column a request was rerouted from, and why. Set together with
   /// rerouteReason by setReroute; rerouting is just flipping standalone and
   /// the child ticket, so the rawRequest, its id and its attachments never
@@ -207,7 +220,7 @@ model Epic {
   rerouteFrom     ColumnId?
   rerouteReason   String?
   /// Fractional index. A drag writes one row instead of renumbering a column.
-  position  Float
+  position        Float
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -236,17 +249,17 @@ model Ticket {
   scopeRequest       String[]   @default([])
   size               TicketSize @default(M)
 
-  status    TicketStatus @default(waiting)
-  stalledIn ColumnId?
-  stage     Int          @default(3)
-  position  Float
+  status          TicketStatus @default(waiting)
+  stalledIn       ColumnId?
+  stage           Int          @default(3)
+  position        Float
   /// Pulled out of its epic's group by a human. Only To Do reads it.
-  detached  Boolean      @default(false)
+  detached        Boolean      @default(false)
   /// The ticket is in the archive, off the board. The sort/filter epic
   /// reads it.
-  archived Boolean      @default(false)
+  archived        Boolean      @default(false)
   /// Bug or spike, as the owner chose. Null for neither.
-  workType WorkType?
+  workType        WorkType?
   /// Where a person dropped it when it cannot work there. It shows there,
   /// with misplacedReason saying what is wrong and how to fix it; its status
   /// stays what is true. Cleared by its next move or status change.
@@ -256,38 +269,38 @@ model Ticket {
   rerouteFrom     ColumnId?
   rerouteReason   String?
 
-  branchName    String?
+  branchName      String?
   /// One line describing what the Coder Agent actually changed. Feeds the
   /// Epic showcase, which would otherwise only know ticket titles.
-  summary       String?
-  prNumber      Int?
-  prUrl         String?
-  blockedReason String?
-  attempts      Int     @default(0)
+  summary         String?
+  prNumber        Int?
+  prUrl           String?
+  blockedReason   String?
+  attempts        Int       @default(0)
   /// The GitHub Actions run a CLI agent is doing for this ticket, if any.
   /// Only that run's result is taken; any other is stale.
-  runnerJob     String?
+  runnerJob       String?
   /// The preset that run was dispatched with, so a failure is blamed on the
   /// agent that actually ran it, not whichever one the column has now.
-  runnerAgent   String?
+  runnerAgent     String?
   /// When that run was sent: how long the agent has been at it.
-  runnerJobAt   DateTime?
+  runnerJobAt     DateTime?
   /// The GitHub issue that tracks this ticket, a sub-issue of its epic's.
-  issueNumber   Int?
+  issueNumber     Int?
   /// The estimate on the Fibonacci scale, 1 to 13.
-  storyPoints   Int?
+  storyPoints     Int?
   /// The steps the agent is working the ticket through: [{ step, status }].
-  plan          Json?
+  plan            Json?
   /// Steps outside the repository the person has to take, one per entry.
   /// The Epic's showcase hands them over once everything has merged.
-  handoff       String[] @default([])
+  handoff         String[]  @default([])
   /// Set when the ticket is work for a person, not an agent (an account to
   /// set up, a manual test on production): why. Agents do not start it; the
   /// person does it and closes it from its chat.
-  needsHuman    String?
+  needsHuman      String?
   /// The head commit the Reviewer Agent last approved or pushed. Green CI on
   /// exactly this commit merges; anything newer is reviewed again.
-  reviewedSha   String?
+  reviewedSha     String?
   /// When it merged, and what the merge scored: its story points times the
   /// project's heat at that moment (1 + 0.5 per merge in the 45s before,
   /// at most six). Set once, on the first move to merged.
@@ -414,28 +427,32 @@ model Event {
 /// A saved agent: a model, a brief, and optionally its own API key. Saved
 /// once and assigned to columns on any project's board.
 model AgentPreset {
-  id           String   @id @default(cuid())
+  id                       String    @id @default(cuid())
   /// Null for presets saved before accounts existed.
-  ownerId      String?
-  owner        User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId                  String?
+  owner                    User?     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   /// The column it was made for, set once on create. Null shows it in every
   /// column's picker, matching presets from before this field existed.
-  column       ColumnId?
-  name         String
-  provider     String   @default("anthropic")
-  model        String
+  column                   ColumnId?
+  name                     String
+  provider                 String    @default("anthropic")
+  model                    String
   /// Replaces the built-in brief for whichever column runs it.
-  prompt       String
+  prompt                   String
   /// AES-GCM ciphertext. Null means the server's ANTHROPIC_API_KEY.
-  apiKeyCipher String?
+  apiKeyCipher             String?
   /// Last four characters, so the editor can say which key is saved.
-  apiKeyHint   String?
+  apiKeyHint               String?
   /// Out of usage on its plan until then. Cleared by a new key.
-  limitedUntil DateTime?
+  limitedUntil             DateTime?
   /// What the agent said when it ran out, for the board to show.
-  limitNote    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  limitNote                String?
+  /// Tokens this agent may use per window. Null means no allowance.
+  tokenAllowance           Int?
+  /// The window the allowance is measured over, in days, rolling. Null means 30.
+  tokenAllowanceWindowDays Int?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   columns ColumnAgent[]
 
@@ -451,6 +468,11 @@ model ColumnAgent {
   presetId  String
   preset    AgentPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
 
+  /// This column's own limits; null falls back to the person's setting.
+  overrideMinutes  Int?
+  overrideTokens   Int?
+  overrideAttempts Int?
+
   @@id([projectId, column])
   @@index([presetId])
   @@map("column_agent")
@@ -459,22 +481,22 @@ model ColumnAgent {
 /// The board's assistant: a conversation per project with the agent the
 /// person picked for it.
 model AssistantMessage {
-  id        String   @id @default(cuid())
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// "user" or "assistant".
-  role      String
-  content   String
+  role        String
+  content     String
   /// Changes the assistant proposed, each waiting for the person's approval.
-  proposals Json?
+  proposals   Json?
   /// "done", "pending" while the agent works, or "failed".
-  status    String   @default("done")
+  status      String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.
-  runnerJob String?
+  runnerJob   String?
   /// The preset that run was dispatched with, so a failure is blamed on the
   /// agent that actually ran it, not whichever one the assistant runs now.
   runnerAgent String?
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   @@index([projectId, createdAt])
   @@map("assistant_message")
@@ -483,19 +505,19 @@ model AssistantMessage {
 /// A card's chat with its column's agent: a conversation per Epic or
 /// ticket, not tied to a relation since either table can own one.
 model CardChatMessage {
-  id        String   @id @default(cuid())
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// "epic" or "ticket".
-  cardKind  String
-  cardId    String
+  cardKind      String
+  cardId        String
   /// "user" or "assistant".
-  role      String
-  content   String
+  role          String
+  content       String
   /// "done", "pending" while the agent works, or "failed".
-  status    String   @default("done")
+  status        String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.
-  runnerJob String?
+  runnerJob     String?
   /// The saved agent that answered: the preset whose plan or key paid for it,
   /// whether it answered in this process or in GitHub Actions. A chat answer
   /// is not a run, so this is what its tokens are counted by, and a failure
@@ -506,10 +528,10 @@ model CardChatMessage {
   /// Zero on a person's message and on a CLI agent's answer. `costCents` is
   /// the same unverified estimate a run's is (see budget/limits.ts), unused
   /// for now — what a person is shown is the token count.
-  tokensIn    Int      @default(0)
-  tokensOut   Int      @default(0)
-  costCents   Float    @default(0)
-  createdAt DateTime @default(now())
+  tokensIn      Int      @default(0)
+  tokensOut     Int      @default(0)
+  costCents     Float    @default(0)
+  createdAt     DateTime @default(now())
 
   @@index([cardId, createdAt])
   @@index([agentPresetId, createdAt])
@@ -544,4 +566,3 @@ model Audit {
   @@index([projectId, sentinel])
   @@map("audit")
 }
-

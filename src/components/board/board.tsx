@@ -10,6 +10,7 @@ import {
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
 import { EMPTY_VIEW, sameTypes, type ColumnView } from "./view";
+import { loadBoardView } from "./view-setting";
 import { adjacentColumn, ownsGesture, swipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
@@ -116,6 +117,21 @@ export function Board({
     in_review: EMPTY_VIEW,
     done: EMPTY_VIEW,
   }));
+
+  // The Settings choice seeds every column once mounted (not in useState's
+  // initialiser, which would differ from the server render).
+  useEffect(() => {
+    const saved = loadBoardView();
+    if (saved === EMPTY_VIEW) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is only readable after mount
+    setViews({
+      backlog: saved,
+      todo: saved,
+      in_progress: saved,
+      in_review: saved,
+      done: saved,
+    });
+  }, []);
 
   const archivedWanted = COLUMNS.some((c) => views[c].types.includes("archived"));
   useEffect(() => {

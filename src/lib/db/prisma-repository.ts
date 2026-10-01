@@ -18,6 +18,7 @@ import type {
   PresetRecord,
   ProjectSummary,
   Reroute,
+  LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
   UserSecrets,
@@ -40,10 +41,13 @@ import type {
   BoardCard,
   AgentPreset,
   ColumnAgents,
+  ColumnOverride,
+  ColumnOverrides,
   PlanStep,
   WorkType,
 } from "@/lib/domain/entities";
 import { planStepSchema } from "@/lib/domain/entities";
+import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
@@ -200,6 +204,26 @@ export class PrismaRepository implements Repository {
         runTimeBudgetPerPointMinutes: columns.runTimeBudgetPerPointMinutes ?? Prisma.DbNull,
       },
     });
+  }
+
+  async updateLimits(userId: string, columns: LimitColumns): Promise<UserRecord> {
+    const json = (v: Record<string, unknown> | null | undefined) =>
+      v === undefined ? undefined : v === null ? Prisma.DbNull : (v as Prisma.InputJsonObject);
+    return prisma().user.update({
+      where: { id: userId },
+      data: { tokenLimit: json(columns.tokenLimit), attemptLimit: json(columns.attemptLimit) },
+    });
+  }
+
+  async updateTokenRenewal(
+    userId: string,
+    renewal: { tokenRenewalDay: number | null; tokenWindowTimezone: string | null },
+  ): Promise<UserRecord> {
+    return prisma().user.update({ where: { id: userId }, data: renewal });
+  }
+
+  async stampTokenReset(userId: string, at: Date): Promise<UserRecord> {
+    return prisma().user.update({ where: { id: userId }, data: { tokenResetAt: at } });
   }
 
   async acceptTerms(userId: string, version: string): Promise<UserRecord> {
@@ -1149,6 +1173,43 @@ export class PrismaRepository implements Repository {
     return Object.fromEntries(rows.map((r) => [r.column, r.presetId]));
   }
 
+  async columnOverrides(projectId: string): Promise<ColumnOverrides> {
+    const rows = await prisma().columnAgent.findMany({
+      where: {
+        projectId,
+        OR: [{ overrideMinutes: { not: null } }, { overrideTokens: { not: null } }, { overrideAttempts: { not: null } }],
+      },
+    });
+    return Object.fromEntries(
+      rows.map((r) => [
+        r.column,
+        { minutes: r.overrideMinutes, tokens: r.overrideTokens, attempts: r.overrideAttempts },
+      ]),
+    );
+  }
+
+  async setColumnOverride(projectId: string, column: ColumnId, override: ColumnOverride): Promise<boolean> {
+    const { count } = await prisma().columnAgent.updateMany({
+      where: { projectId, column },
+      data: {
+        overrideMinutes: override.minutes,
+        overrideTokens: override.tokens,
+        overrideAttempts: override.attempts,
+      },
+    });
+    return count > 0;
+  }
+
+  async setPresetAllowance(
+    presetId: string,
+    allowance: { tokens: number | null; windowDays: number | null },
+  ): Promise<void> {
+    await prisma().agentPreset.updateMany({
+      where: { id: presetId },
+      data: { tokenAllowance: allowance.tokens, tokenAllowanceWindowDays: allowance.windowDays },
+    });
+  }
+
   async setColumnAgent(
     projectId: string,
     column: ColumnId,
@@ -1517,6 +1578,8 @@ function toPreset(row: {
   apiKeyHint: string | null;
   limitedUntil: Date | null;
   limitNote: string | null;
+  tokenAllowance: number | null;
+  tokenAllowanceWindowDays: number | null;
 }): AgentPreset {
   return {
     id: row.id,
@@ -1531,6 +1594,8 @@ function toPreset(row: {
     keyHint: row.apiKeyHint,
     limitedUntil: row.limitedUntil?.toISOString() ?? null,
     limitNote: row.limitNote,
+    tokenAllowance: row.tokenAllowance,
+    tokenAllowanceWindowDays: row.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS,
   };
 }
 
