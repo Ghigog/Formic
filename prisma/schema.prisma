@@ -156,8 +156,11 @@ model Project {
   /// Whether Formic merges an approved pull request itself. Off, it waits in
   /// Merging for a person to merge it.
   autoMerge                  Boolean  @default(true)
+  /// Queens taken off the board, so clearing one never hands it back.
+  queensSpent                Int      @default(0)
 
   epics             Epic[]
+  queens            Queen[]
   events            Event[]
   columnAgents      ColumnAgent[]
   assistantMessages AssistantMessage[]
@@ -227,6 +230,7 @@ model Epic {
 
   tickets Ticket[]
   runs    AgentRun[]
+  queen   Queen?
 
   @@index([projectId, status])
   @@map("epic")
@@ -318,6 +322,7 @@ model Ticket {
   dependsOn  TicketDependency[] @relation("dependent")
   dependents TicketDependency[] @relation("dependency")
   runs       AgentRun[]
+  queen      Queen?
 
   @@unique([epicId, key])
   @@index([epicId, status])
@@ -565,4 +570,20 @@ model Audit {
 
   @@index([projectId, sentinel])
   @@map("audit")
+}
+
+/// A Queen a person placed on a ticket or an Epic: at most one per card, and
+/// gone with it. Exactly one of epicId and ticketId is set.
+model Queen {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  epicId    String?  @unique
+  epic      Epic?    @relation(fields: [epicId], references: [id], onDelete: Cascade)
+  ticketId  String?  @unique
+  ticket    Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  placedAt  DateTime @default(now())
+
+  @@index([projectId])
+  @@map("queen")
 }

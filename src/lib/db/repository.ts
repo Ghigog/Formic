@@ -7,6 +7,7 @@ import type {
   AttachmentKind,
   AttachmentSummary,
   BoardCard,
+  CardKind,
   ColumnAgents,
   ColumnOverride,
   ColumnOverrides,
@@ -287,6 +288,13 @@ export interface RunOutcome {
   costCents: number;
 }
 
+export interface QueenRecord {
+  projectId: string;
+  cardId: string;
+  kind: CardKind;
+  placedAt: Date;
+}
+
 export interface ProjectSummary {
   id: string;
   /** Null for the demo board, which belongs to no one. */
@@ -437,6 +445,14 @@ export interface Repository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
+  /** Places a Queen on a card, or returns null when it already has one. */
+  placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null>;
+  /** The Queens placed in a project. */
+  listQueens(projectId: string): Promise<QueenRecord[]>;
+  /** Takes a card's Queen off. It stays spent: see queensSpent. Returns whether there was one. */
+  clearQueen(cardId: string): Promise<boolean>;
+  /** How many Queens this project has taken off the board, never handed back. */
+  queensSpent(projectId: string): Promise<number>;
   /** The archive: a project's archived tickets, off the active board. */
   archivedTickets(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;

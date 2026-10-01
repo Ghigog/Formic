@@ -237,6 +237,8 @@ export interface BoardCard {
   misplacedIn?: (typeof COLUMNS)[number] | null;
   misplacedReason?: string | null;
   costCents: number;
+  /** Whether a person has placed a Queen on it. */
+  queen?: boolean;
   childCount: number;
   doneCount: number;
   /** ISO time the card was made. Drives the timeline. */

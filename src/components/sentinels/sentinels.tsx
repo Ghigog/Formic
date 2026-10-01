@@ -5,7 +5,7 @@ import { cn } from "@/components/ui/cn";
 import { useColony, type ColonyApi } from "@/components/colony/colony";
 import { centerOf } from "@/components/colony/fx";
 import { GRADES, GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
-import { GROUP_INK, SENTINELS, promptFor, stepsFor, type Sentinel } from "@/lib/sentinels/roster";
+import { GROUP_INK, SENTINELS, isUnlocked, promptFor, stepsFor, type Sentinel } from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditPoint } from "@/lib/db/repository";
 import { portraitSvg, portraitGround } from "./portraits";
@@ -202,7 +202,7 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
       );
   };
 
-  const unlocked = SENTINELS.filter((x) => x.unlockLevel <= s.level).length;
+  const unlocked = SENTINELS.filter((x) => isUnlocked(x, s.level)).length;
   const nBusy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
   const summon = (id: string) => {
     setSel(id);
@@ -300,7 +300,7 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
 
         <div className="flex gap-4 max-lg:flex-col lg:min-h-0 lg:flex-1">
           <Rail s={s} sel={sel} now={now} onReact={react} onSelect={(id) => { c.sfx("blip", 5); setSel(id); react(id); }} onSummon={summon} />
-          <Report x={selected} st={s.states[selected.id]!} now={now} locked={selected.unlockLevel > s.level} onSummon={() => summon(selected.id)} />
+          <Report x={selected} st={s.states[selected.id]!} now={now} locked={!isUnlocked(selected, s.level)} onSummon={() => summon(selected.id)} />
         </div>
       </div>
     </div>
@@ -344,7 +344,7 @@ function Rail({
       className="flex min-w-0 flex-1 snap-x snap-proximity gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-2 max-lg:min-h-[520px]"
     >
       {SENTINELS.map((x) => (
-        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} locked={x.unlockLevel > s.level} onSelect={onSelect} onReact={onReact} onSummon={onSummon} />
+        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} locked={!isUnlocked(x, s.level)} onSelect={onSelect} onReact={onReact} onSummon={onSummon} />
       ))}
     </div>
   );
@@ -396,7 +396,7 @@ function Card({
       )}
     >
       <div className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden" style={{ background: portraitGround(x.id) }}>
-        <div className={cn("absolute inset-0", running && "sentinel-motion animate-[sentinelBob_0.9s_ease-in-out_infinite]")}>
+        <div className={cn("absolute inset-0", locked && "opacity-40 grayscale", running && "sentinel-motion animate-[sentinelBob_0.9s_ease-in-out_infinite]")}>
           <Portrait id={x.id} />
         </div>
         <span className="text-anthracite absolute top-2.5 left-2.5 rounded-full bg-white/90 px-2 py-1 font-mono text-[9px] font-medium tracking-[0.12em] uppercase">
@@ -451,23 +451,24 @@ function Card({
               <span className="text-muted text-[11px]">Counts as 0★</span>
             )}
             <span className="grow" />
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSummon(x.id);
-              }}
-              disabled={locked}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96] disabled:opacity-50",
-                done
-                  ? "border-line bg-cream text-ink hover:border-terracotta h-7 border px-2.5"
-                  : "bg-anthracite text-cream h-[30px] px-3",
-              )}
-            >
-              {!done && <PlayIcon size={10} />}
-              {done ? "Re-run" : "Summon"}
-            </button>
+            {!locked && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSummon(x.id);
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96]",
+                  done
+                    ? "border-line bg-cream text-ink hover:border-terracotta h-7 border px-2.5"
+                    : "bg-anthracite text-cream h-[30px] px-3",
+                )}
+              >
+                {!done && <PlayIcon size={10} />}
+                {done ? "Re-run" : "Summon"}
+              </button>
+            )}
           </div>
         )}
       </div>
