@@ -314,7 +314,8 @@ function cliPrompt(system: string, past: Array<{ role: "user" | "assistant"; con
     ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
     "How to answer:",
     "- Do not change, create or delete any file in the repository. Nothing you change is kept.",
-    "- The one file you do write is your answer: the path in the FORMIC_OUTPUT environment variable, as one JSON object and nothing else. An answer that is not that JSON is thrown away, and so is any proposal that is only described in the reply:",
+    "- You have no propose tool here. A proposal is an entry in the JSON below: describing one in your reply does nothing, and the person can only approve what is in the JSON.",
+    "- Your final message is your answer, and it must be one JSON object and nothing else (you may write the same object to the file named by the FORMIC_OUTPUT environment variable instead). An answer that is not that JSON is thrown away:",
     '  {"reply": "<your answer, in Markdown>", "proposals": [{"summary": "<one line>", "action": <an action>}]}',
     "- Leave proposals empty unless the person asked for a change to the board. When they agree to a ticket or ask for one (\"yes\", \"make it\", \"create the ticket\"), put it in proposals now: do not ask again, and do not re-explain. Each action matches this JSON Schema:",
     JSON.stringify(z.toJSONSchema(assistantActionSchema)),
@@ -382,7 +383,7 @@ export async function finishCliAnswer(
         from.projectId,
         messageId,
         answerText,
-        ['Your answer was not the JSON object. Write {"reply": ..., "proposals": [...]} to the FORMIC_OUTPUT file. If the person asked for a ticket or agreed to one, it belongs in proposals.'],
+        ['Your answer was not the JSON object. Make your final message the JSON object {"reply": ..., "proposals": [...]} and nothing else. If the person asked for a ticket or agreed to one, it belongs in proposals.'],
         from.attempt + 1,
       ).then(
         () => true,
