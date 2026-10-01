@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
@@ -236,7 +236,7 @@ describe("Board, as the server moves cards", () => {
 });
 
 describe("Board, below 768px", () => {
-  it("shows one column at a time, with the tab bar carrying the counts", async () => {
+  it("shows one column at a time, with an indicator carrying the counts", async () => {
     setViewportMatches(true);
     const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [
       { status: "ready" },
@@ -244,17 +244,47 @@ describe("Board, below 768px", () => {
     ]);
     renderBoard([makeCard({ status: "draft" }), epic!, ...kids]);
 
-    const user = userEvent.setup();
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^Backlog/ })).toBeInTheDocument(),
-    );
-    expect(screen.getByRole("button", { name: "To Do 2" })).toBeInTheDocument();
+    const bar = await screen.findByRole("list", { name: "Columns" });
+    expect(within(bar).queryAllByRole("button")).toHaveLength(0);
+    expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 2");
+    expect(within(bar).getByText("Backlog")).toHaveAttribute("aria-current", "true");
     expect(screen.queryByRole("region", { name: "To Do" })).toBeNull();
+  });
 
-    await user.click(screen.getByRole("button", { name: "To Do 2" }));
-    expect(screen.getByRole("region", { name: "To Do" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Backlog" })).toBeNull();
+  describe("swiping", () => {
+    const swipe = (dx: number, dy = 0) => {
+      const main = document.querySelector("main")!;
+      fireEvent.touchStart(main, { touches: [{ clientX: 200, clientY: 300 }] });
+      fireEvent.touchEnd(main, { changedTouches: [{ clientX: 200 + dx, clientY: 300 + dy }] });
+    };
+    const setup = async () => {
+      setViewportMatches(true);
+      renderBoard([makeCard({ status: "draft" })]);
+      await screen.findByRole("region", { name: "Backlog" });
+    };
+
+    it("moves to the next column on a left swipe and back on a right swipe", async () => {
+      await setup();
+      swipe(-100);
+      expect(screen.getByRole("region", { name: "To Do" })).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Backlog" })).toBeNull();
+      swipe(100);
+      expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+    });
+
+    it("stays put at Backlog and at Done", async () => {
+      await setup();
+      swipe(100);
+      expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+      for (let i = 0; i < 6; i++) swipe(-100);
+      expect(screen.getByRole("region", { name: "Done" })).toBeInTheDocument();
+    });
+
+    it("ignores a mostly vertical scroll with horizontal drift", async () => {
+      await setup();
+      swipe(-60, 150);
+      expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+    });
   });
 
   it("has no floating Advance button; the card's own arrow takes it on", async () => {
@@ -277,7 +307,12 @@ describe("Board, below 768px", () => {
     const { onTransition } = renderBoard([card]);
 
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /^In Progress/ }));
+    await screen.findByRole("region", { name: "Backlog" });
+    const main = document.querySelector("main")!;
+    for (let i = 0; i < 2; i++) {
+      fireEvent.touchStart(main, { touches: [{ clientX: 200, clientY: 300 }] });
+      fireEvent.touchEnd(main, { changedTouches: [{ clientX: 100, clientY: 300 }] });
+    }
     await user.click(screen.getByRole("button", { name: "Return PROT-13 to To Do" }));
 
     expect(onTransition).toHaveBeenCalledOnce();
@@ -315,8 +350,9 @@ describe("Board, below 768px", () => {
       "That epic has no PRD yet.",
     );
     // Still in Backlog: the optimistic move was dropped, not kept.
-    expect(screen.getByRole("button", { name: "Backlog 1" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "To Do 0" })).toBeInTheDocument();
+    const bar = screen.getByRole("list", { name: "Columns" });
+    expect(within(bar).getByText("Backlog")).toHaveTextContent("Backlog 1");
+    expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 0");
   });
 });
 
