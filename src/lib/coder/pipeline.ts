@@ -21,9 +21,7 @@ import {
 import { agentFor, cliAgentFor, loopAgentFor, runTargetFor } from "@/lib/agents/presets";
 import type { CodeChange, Usage } from "@/lib/agents/ports";
 import type { VcsClient } from "@/lib/vcs";
-import { resolveRunTimeBudget } from "@/lib/run-time-budget";
-import { inProcessBudget } from "@/lib/budget/in-process";
-import { getRunTimeBudgetSettings } from "@/lib/user-settings";
+import { budgetForRun, inProcessBudget } from "@/lib/budget/in-process";
 import { cliPrompt, loopPayload, loopRunnerReady, resumeBrief, startJobRun } from "@/lib/runner/runner";
 import { guidedWorkspace } from "@/lib/sandbox/workspace";
 import { askForScope, hasKeptWork, takeKeptWork, widenScope } from "./scope-request";
@@ -184,6 +182,12 @@ export async function runCoderAgent(
   const cli = await cliAgentFor(projectId, "in_progress");
   if (cli) {
     await startJobRun({
+      budget: await budgetForRun(
+        project.ownerId,
+        ticket,
+        "cli-job",
+        (await repository().columnOverrides(projectId)).in_progress,
+      ),
       projectId,
       ticket: { ...ticket, branchName: branch },
       mode: "implement",
@@ -215,19 +219,19 @@ export async function runCoderAgent(
   if (loop && (await loopRunnerReady(client, project.baseBranch))) {
     const notes = await noteTexts(projectId, ticket.id);
     // Read once, here: a setting changed after this run starts is for the next.
-    // A column's own minutes win over the person's per-point rule.
-    const override = (await repository().columnOverrides(projectId)).in_progress?.minutes;
-    const budgetMinutes =
-      override ??
-      resolveRunTimeBudget(
-        project.ownerId ? await getRunTimeBudgetSettings(project.ownerId) : null,
-        ticket.storyPoints,
-      );
+    // A column's own values win over the person's rules.
+    const budget = await budgetForRun(
+      project.ownerId,
+      ticket,
+      "loop",
+      (await repository().columnOverrides(projectId)).in_progress,
+    );
     await startJobRun({
       projectId,
       ticket: { ...ticket, branchName: branch },
       mode: "loop",
       agent: loop,
+      budget,
       from: startFrom,
       // Built here, serialized by the runner: a resumed run's notes go in as
       // notes, because this prompt is JSON and cannot have a paragraph added
@@ -242,7 +246,7 @@ export async function runCoderAgent(
             baseBranch: project.baseBranch,
             provider: loop.info.id,
             model: loop.model,
-            budgetMinutes,
+            budget,
             notes: resumed ? [...notes, resumeBrief(resumed, ticket.plan)] : notes,
             ...(options.instruction ? { instruction: options.instruction } : {}),
           }),

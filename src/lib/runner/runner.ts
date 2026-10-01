@@ -17,6 +17,7 @@ import {
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
+import type { Budget } from "@/lib/budget/budget-for";
 import { diagnose, lastWords } from "@/lib/agents/limits";
 import { planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers";
@@ -83,7 +84,6 @@ import {
   CHECKPOINT_TRAILER,
   JOB_HEADROOM_MINUTES,
   MERGED_TRAILER,
-  RUNNER_JOB_MINUTES,
   RUNNER_SETUP_BRANCH,
   RUNNER_SETUP_PREFIX,
   RUNNER_VERSION,
@@ -91,6 +91,7 @@ import {
   RUNNER_WORKFLOW_PATH,
   USAGE_TRAILER,
   attemptOfJob,
+  workflowCeiling,
   cardOfJob,
   isAnswerMode,
   isCarried,
@@ -277,7 +278,7 @@ async function whyItFailed(
   const log = result.url ? ` Its log: ${result.url}` : "";
   if (result.conclusion === "cancelled") return `The agent's GitHub Actions run was cancelled.${log}`;
   if (result.conclusion === "timed_out") {
-    return `The agent ran past the workflow's ${RUNNER_JOB_MINUTES}-minute limit and was stopped.${log}`;
+    return `The agent ran past the job's time limit and was stopped.${log}`;
   }
   const plain = `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`;
   const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
@@ -333,16 +334,11 @@ export type JobAgent = {
 };
 
 /**
- * How long the loop entry may work on a ticket: the person's budget for it
- * (see resolveRunTimeBudget), and never past the job's own ceiling, which is
- * the backstop. The entry stops on this and says which limit stopped it, so
- * the card can tell the person; a job the platform kills says nothing at all.
- * With no budget (mode off) the entry gets no time limit, and the job's
- * ceiling is all that bounds the run.
+ * The minutes a job is given: the run's budget plus what a job needs for
+ * cloning and reporting, and never past the workflow's own ceiling.
  */
-export function loopBudgetMs(budgetMinutes: number | null): number | undefined {
-  if (budgetMinutes == null) return undefined;
-  return Math.min(budgetMinutes, RUNNER_JOB_MINUTES - JOB_HEADROOM_MINUTES) * 60_000;
+export function jobTimeoutMinutes(budgetMinutes: number | null, ceiling: number): number {
+  return budgetMinutes == null ? ceiling : Math.min(budgetMinutes + JOB_HEADROOM_MINUTES, ceiling);
 }
 
 /**
@@ -366,11 +362,10 @@ export function loopPayload(input: {
   notes: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
   instruction?: string;
-  /** The run's time budget in minutes, fixed when the run starts; null when there is none. */
-  budgetMinutes: number | null;
+  /** What budgetFor gave this run on the loop path, fixed when the run starts. */
+  budget: Budget;
 }): Omit<LoopEntryPayload, "apiKey"> {
-  const { ticket } = input;
-  const maxDurationMs = loopBudgetMs(input.budgetMinutes);
+  const { ticket, budget } = input;
   return {
     runId: input.runId,
     ticketId: ticket.id,
@@ -387,13 +382,15 @@ export function loopPayload(input: {
     repo: { fullName: input.repoFullName, baseBranch: input.baseBranch },
     provider: input.provider,
     model: input.model,
-    // The person's budget is the plan; the job's timeout is the backstop.
-    // The clamped value stops the run; the full budget lets the note say which
-    // ceiling it was.
-    limits:
-      maxDurationMs === undefined || input.budgetMinutes == null
-        ? {}
-        : { maxDurationMs, budgetMs: input.budgetMinutes * 60_000 },
+    // The person's budget is the plan, clamped to the job's room. The clamped
+    // value stops the run; the requested one lets the note say which ceiling
+    // it was. Money is derived from tokens and only ever checked, never shown.
+    limits: {
+      ...(budget.minutes.value != null ? { maxDurationMs: budget.minutes.value * 60_000 } : {}),
+      ...(budget.minutes.requested != null ? { budgetMs: budget.minutes.requested * 60_000 } : {}),
+      ...(budget.tokens.value != null ? { maxTokens: budget.tokens.value } : {}),
+      ...(budget.maxCents != null ? { maxCents: budget.maxCents } : {}),
+    },
   };
 }
 
@@ -544,6 +541,8 @@ async function dispatch(input: {
   merge?: string;
   /** `mode: loop`: where the job fetches Formic's loop entry from. */
   bundle?: string;
+  /** The run's time budget; the job's timeout follows it, within the workflow's ceiling. */
+  budgetMinutes?: number | null;
   /** Recorded before the dispatch: only this job's result is taken. */
   record: (job: string) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
@@ -565,6 +564,9 @@ async function dispatch(input: {
     const secret = secretNameFor(agent);
     await client.setSecret(secret, agent.credential);
 
+    // A workflow from before the timeout input keeps its own ceiling.
+    const ceiling = workflowCeiling(await client.readFile(RUNNER_WORKFLOW_PATH, input.baseBranch));
+
     await input.record(input.job);
     await client.dispatchWorkflow(RUNNER_WORKFLOW_FILE, input.baseBranch, {
       job: input.job,
@@ -580,6 +582,9 @@ async function dispatch(input: {
       report: reportUrl(input.job, Date.now()) ?? "",
       ...(input.bundle ? { bundle: input.bundle } : {}),
       ...(input.merge ? { merge: input.merge } : {}),
+      ...(ceiling.takesTimeout
+        ? { timeout: String(jobTimeoutMinutes(input.budgetMinutes ?? null, ceiling.minutes)) }
+        : {}),
     });
     return { ok: true };
   } catch (e) {
@@ -626,6 +631,8 @@ export async function startJobRun(input: {
   prompt: string | ((resumed: Checkpoint | null) => string);
   /** A branch to merge in first, for the agent to resolve its conflicts. */
   merge?: string;
+  /** What budgetFor gave this run; its minutes set the job's timeout. */
+  budget?: Budget;
   run: RunHandle;
   stalledIn: "in_progress" | "in_review";
   stage?: number;
@@ -668,6 +675,7 @@ export async function startJobRun(input: {
                 : input.prompt
               : input.prompt(resumed),
           merge: input.merge,
+          budgetMinutes: input.budget?.minutes.value ?? null,
           bundle: bundle ?? undefined,
           record: (job) =>
             repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
@@ -1547,9 +1555,9 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
     const summary =
       (line.startsWith(`${ticket.key}:`) ? line.slice(ticket.key.length + 1).trim() : line) ||
       ticket.title;
-    // A loop run reports what it used, in the trailer its summary carries: on
-    // a metered key that is money spent, and it belongs on the ticket.
-    const usage = result.mode === "loop" ? usageOf(change.messages) : null;
+    // Every run reports what it used, in the trailer its summary carries: a
+    // loop run on a metered key spends money, a CLI agent reports tokens only.
+    const usage = usageOf(change.messages);
     await openTicketPullRequest(projectId, ticket, client, {
       branch,
       change: {

@@ -234,8 +234,21 @@ describe("the run's own ceilings", () => {
     );
 
     expect(report.limit).toBe("time");
-    expect(!report.ok && report.error).toContain("job's 0-minute ceiling; the ticket's budget is 200");
-    expect(!report.ok && report.error).not.toContain("Raise");
+    expect(!report.ok && report.error).toContain("the job's ceiling stopped it");
+    expect(!report.ok && report.error).toContain("Do not raise the budget");
+  });
+
+  it("stops between turns at the token ceiling, and says it is the tokens", async () => {
+    fakeProvider([toolCall("call_1", "list_files", { path: "." }), finish()]);
+
+    const report = await runLoopEntry(payload({ limits: { maxTokens: 1 } }), {
+      workspace: new MemoryWorkspace(),
+      log: () => {},
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.limit).toBe("tokens");
+    expect(!report.ok && report.error).toContain("Token ceiling reached");
   });
 
   it("does not stop a plan that is not billed per token on money", async () => {
