@@ -41,7 +41,7 @@ function contract(name: string, make: () => Repository) {
 
     describe("token window", () => {
       it("stores the renewal day with its timezone, and the reset time", async () => {
-        const user = await repo.upsertUser({ githubId: Date.now(), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+        const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
         expect([user.tokenRenewalDay, user.tokenWindowTimezone, user.tokenResetAt]).toEqual([null, null, null]);
 
         const renewed = await repo.updateTokenRenewal(user.id, { tokenRenewalDay: 5, tokenWindowTimezone: "Europe/Paris" });
