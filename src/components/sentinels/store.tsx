@@ -15,6 +15,8 @@ import { starsOf, type SentinelStates } from "@/lib/sentinels/view";
 export interface SentinelsApi {
   states: SentinelStates;
   grade: GradeSummary;
+  /** The colony level that decides which Sentinels are unlocked. */
+  level: number;
   /** Summons one sentinel. A second summon while it runs does nothing. */
   summon: (id: string) => Promise<void>;
   summonAll: () => void;
@@ -81,15 +83,15 @@ export function SentinelsProvider({
     latest.current = states;
   }, [states]);
   const summonAll = useCallback(() => {
-    SENTINELS.forEach((s, i) => {
+    SENTINELS.filter((s) => s.unlockLevel <= level).forEach((s, i) => {
       if (latest.current[s.id]?.running) return;
       setTimeout(() => void summon(s.id), i * 240);
     });
-  }, [summon]);
+  }, [summon, level]);
 
   const api = useMemo<SentinelsApi>(
-    () => ({ states, grade, summon, summonAll, refusal }),
-    [states, grade, summon, summonAll, refusal],
+    () => ({ states, grade, level, summon, summonAll, refusal }),
+    [states, grade, level, summon, summonAll, refusal],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }

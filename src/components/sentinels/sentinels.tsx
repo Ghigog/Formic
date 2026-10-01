@@ -156,6 +156,7 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.states]);
 
+  const unlocked = SENTINELS.filter((x) => x.unlockLevel <= s.level).length;
   const nBusy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
   const summon = (id: string) => {
     setSel(id);
@@ -237,11 +238,11 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
               c.sfx("emerge");
               s.summonAll();
             }}
-            disabled={nBusy === SENTINELS.length}
+            disabled={nBusy === unlocked}
             className="bg-anthracite text-cream inline-flex h-11 items-center gap-2.5 rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
           >
             <PlayIcon />
-            {nBusy ? `Auditing ${nBusy}…` : `Summon all ${SENTINELS.length}`}
+            {nBusy ? `Auditing ${nBusy}…` : `Summon all ${unlocked}`}
           </button>
         </section>
 
@@ -253,7 +254,7 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
 
         <div className="flex gap-4 max-lg:flex-col lg:min-h-0 lg:flex-1">
           <Rail s={s} sel={sel} now={now} onSelect={(id) => { c.sfx("blip", 5); setSel(id); }} onSummon={summon} />
-          <Report x={selected} st={s.states[selected.id]!} now={now} onSummon={() => summon(selected.id)} />
+          <Report x={selected} st={s.states[selected.id]!} now={now} locked={selected.unlockLevel > s.level} onSummon={() => summon(selected.id)} />
         </div>
       </div>
     </div>
@@ -295,7 +296,7 @@ function Rail({
       className="flex min-w-0 flex-1 snap-x snap-proximity gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-2 max-lg:min-h-[520px]"
     >
       {SENTINELS.map((x) => (
-        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} onSelect={onSelect} onSummon={onSummon} />
+        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} locked={x.unlockLevel > s.level} onSelect={onSelect} onSummon={onSummon} />
       ))}
     </div>
   );
@@ -306,6 +307,7 @@ function Card({
   st,
   on,
   now,
+  locked,
   onSelect,
   onSummon,
 }: {
@@ -313,6 +315,7 @@ function Card({
   st: SentinelState;
   on: boolean;
   now: number;
+  locked: boolean;
   onSelect: (id: string) => void;
   onSummon: (id: string) => void;
 }) {
@@ -389,6 +392,8 @@ function Card({
               </span>
             ) : done ? (
               <span className="text-muted font-mono text-[10px]">Audited {ago(st.at, now)}</span>
+            ) : locked ? (
+              <span className="text-muted text-[11px]">Unlocks at Lv {x.unlockLevel}</span>
             ) : (
               <span className="text-muted text-[11px]">Counts as 0★</span>
             )}
@@ -399,8 +404,9 @@ function Card({
                 e.stopPropagation();
                 onSummon(x.id);
               }}
+              disabled={locked}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96]",
+                "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96] disabled:opacity-50",
                 done
                   ? "border-line bg-cream text-ink hover:border-terracotta h-7 border px-2.5"
                   : "bg-anthracite text-cream h-[30px] px-3",
@@ -423,7 +429,7 @@ const SECTIONS: Array<{ key: "likes" | "dislikes" | "wrong" | "missing"; title: 
   { key: "missing", title: "What's missing", ink: "var(--dot-idle)" },
 ];
 
-function Report({ x, st, now, onSummon }: { x: Sentinel; st: SentinelState; now: number; onSummon: () => void }) {
+function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelState; now: number; locked: boolean; onSummon: () => void }) {
   const running = !!st.running;
   const done = st.stars !== null && !!st.report;
   const first = x.who.split(" ").at(-1);
@@ -450,10 +456,10 @@ function Report({ x, st, now, onSummon }: { x: Sentinel; st: SentinelState; now:
         <button
           type="button"
           onClick={onSummon}
-          disabled={running}
+          disabled={running || locked}
           className="border-line bg-cream text-ink hover:border-terracotta h-8 rounded-lg border px-3 text-[12px] font-semibold active:scale-[0.96] disabled:opacity-60"
         >
-          {running ? "Running…" : st.stars !== null ? "Re-run" : "Summon"}
+          {running ? "Running…" : locked ? `Lv ${x.unlockLevel}` : st.stars !== null ? "Re-run" : "Summon"}
         </button>
       </div>
 
@@ -510,12 +516,15 @@ function Report({ x, st, now, onSummon }: { x: Sentinel; st: SentinelState; now:
       {!done && !running && (
         <div className="border-line-dashed flex flex-col gap-3 rounded-[10px] border border-dashed p-4">
           <span className="text-muted text-[13px] leading-normal text-pretty">
-            {x.who} hasn&apos;t audited this project yet, so this seat adds zero stars to the grade.
+            {locked
+              ? `${x.who} unlocks at colony Lv ${x.unlockLevel}, and counts toward the grade from then.`
+              : `${x.who} hasn't audited this project yet, so this seat adds zero stars to the grade.`}
           </span>
           <button
             type="button"
             onClick={onSummon}
-            className="bg-anthracite text-cream inline-flex h-9 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
+            disabled={locked}
+            className="bg-anthracite text-cream inline-flex h-9 disabled:opacity-50 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
           >
             <PlayIcon size={12} />
             Summon {first}
