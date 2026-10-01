@@ -16,7 +16,7 @@ vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn() }));
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
-const { applyTransition, canRetryEpic, createTodoItem, deleteEpic, generateShowcase, retryEpic } = await import(
+const { advanceQueens, applyTransition, canRetryEpic, createTodoItem, deleteEpic, generateShowcase, retryEpic } = await import(
   "./service"
 );
 const { repository } = await import("@/lib/db");
@@ -569,5 +569,51 @@ describe("generating a showcase", () => {
     expect(await generateShowcase(PROJECT, epic!.id)).toMatchObject({ ok: false, status: 409 });
     expect(launched).toEqual([]);
     boardCards.mockRestore();
+  });
+});
+
+describe("advanceQueens", () => {
+  async function queenBoard() {
+    const [epic, a, b] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "ready", fileScope: ["src/a.ts"] },
+      { status: "waiting", fileScope: ["src/b.ts"] },
+    ]);
+    b!.dependsOn = [a!.id];
+    seedMemory([epic!, a!, b!]);
+    await repository().placeQueen(PROJECT, epic!.id, "epic");
+    return { epic: epic!, a: a!, b: b! };
+  }
+  const statusOf = async (id: string) => (await repository().cardById(id))?.status;
+
+  it("starts only the first ticket when the Queen is placed", async () => {
+    const { a, b } = await queenBoard();
+    await advanceQueens(PROJECT);
+    expect(await statusOf(a.id)).toBe("running");
+    expect(await statusOf(b.id)).toBe("waiting");
+  });
+
+  it("starts the next ticket once the first is merged", async () => {
+    const { a, b } = await queenBoard();
+    await advanceQueens(PROJECT);
+    await repository().updateTicket(a.id, { status: "merged" });
+    await advanceQueens(PROJECT);
+    expect(await statusOf(b.id)).toBe("running");
+  });
+
+  it("clears the Queen when the target is Done", async () => {
+    const { epic, a, b } = await queenBoard();
+    await repository().updateTicket(a.id, { status: "merged" });
+    await repository().updateTicket(b.id, { status: "merged" });
+    await repository().move({ cardId: epic.id, kind: "epic", status: "merged", stalledIn: null, position: epic.position });
+    await advanceQueens(PROJECT);
+    expect(await repository().listQueens(PROJECT)).toEqual([]);
+  });
+
+  it("queues nothing and keeps the Queen when a prerequisite failed", async () => {
+    const { a, b } = await queenBoard();
+    await repository().updateTicket(a.id, { status: "failed" });
+    await advanceQueens(PROJECT);
+    expect(await statusOf(b.id)).toBe("waiting");
+    expect(await repository().listQueens(PROJECT)).toHaveLength(1);
   });
 });

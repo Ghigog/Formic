@@ -31,6 +31,8 @@ import { vcs } from "@/lib/vcs";
 import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { runningConflict } from "@/lib/domain/queue";
+import { planQueen } from "@/lib/queen/plan";
+import { startQueued } from "@/lib/board/queue";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -315,6 +317,36 @@ export async function applyTransition(
   }
 
   return { ok: true, status, runId: null };
+}
+
+/**
+ * Moves every Queen along: a card whose target is merged or Done gets its
+ * Queen cleared, and any other has its next prerequisites queued in In
+ * Progress. Run when a Queen is placed and after anything merges. A
+ * prerequisite that is blocked or failed stops the Queen (see planQueen).
+ */
+export async function advanceQueens(projectId: string): Promise<void> {
+  const repo = repository();
+  for (const queen of await repo.listQueens(projectId)) {
+    const cards = await repo.boardCards(projectId);
+    const target = cards.find((c) => c.id === queen.cardId);
+    if (!target || target.status === "merged") {
+      await repo.clearQueen(queen.cardId);
+      continue;
+    }
+    for (const id of planQueen(cards, target)) {
+      const card = cards.find((c) => c.id === id)!;
+      await applyTransition(projectId, {
+        cardId: id,
+        kind: "ticket",
+        from: columnOf(card),
+        to: "in_progress",
+        position: card.position,
+        actor: "system",
+      });
+    }
+  }
+  await startQueued(projectId);
 }
 
 /** An Epic's tickets waiting with it in Backlog. */
