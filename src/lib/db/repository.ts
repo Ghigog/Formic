@@ -554,6 +554,12 @@ export interface Repository {
   /** Every run's spend under an Epic, finished or still running, summed. */
   epicSpentCents(epicId: string): Promise<number>;
   /**
+   * What an Epic's runs have actually taken: the time they ran, summed (a run
+   * still going counts up to now), and how many attempts failed or were
+   * blocked. What the Epic's time and attempt ceilings read.
+   */
+  epicRunStats(epicId: string): Promise<{ elapsedMs: number; attempts: number }>;
+  /**
    * What every saved agent has used, in tokens, keyed by preset id: its runs
    * and the chat answers it gave, summed together. Tokens, not money: a
    * flat-rate plan such as ClinePass costs nothing per token, and a direct

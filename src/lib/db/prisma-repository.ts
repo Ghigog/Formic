@@ -1054,6 +1054,21 @@ export class PrismaRepository implements Repository {
     return result._sum.costCents ?? 0;
   }
 
+  async epicRunStats(epicId: string): Promise<{ elapsedMs: number; attempts: number }> {
+    const rows = await prisma().agentRun.findMany({
+      where: { epicId },
+      select: { status: true, startedAt: true, finishedAt: true },
+    });
+    const now = Date.now();
+    let elapsedMs = 0;
+    let attempts = 0;
+    for (const r of rows as Array<{ status: AgentRunStatus; startedAt: Date | null; finishedAt: Date | null }>) {
+      if (r.startedAt) elapsedMs += (r.finishedAt?.getTime() ?? now) - r.startedAt.getTime();
+      if (r.status === "failed" || r.status === "blocked") attempts += 1;
+    }
+    return { elapsedMs, attempts };
+  }
+
   async agentTokensByPreset(
     since?: Date | null,
   ): Promise<Record<string, { tokensIn: number; tokensOut: number }>> {

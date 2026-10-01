@@ -104,7 +104,7 @@ export type Budget = {
   /** Derived from tokens × a conservative rate; null when tokens are unbounded. */
   maxCents: number | null;
   /** How each limit is enforced. */
-  enforcement: { minutes: "between-turns"; tokens: "job"; attempts: "between-turns" };
+  enforcement: { minutes: "between-turns"; tokens: "between-turns" | "job"; attempts: "between-turns" };
 };
 
 function points(ticket: TicketForBudget): number {
@@ -190,6 +190,7 @@ export function budgetFor(
     tokens,
     attempts,
     maxCents: tokens.value == null ? null : Math.ceil((tokens.value / 1_000_000) * CENTS_PER_MTOK),
-    enforcement: { minutes: "between-turns", tokens: "job", attempts: "between-turns" },
+    // An in-process loop stops itself between turns; a job's token ceiling is read by the job.
+    enforcement: { minutes: "between-turns", tokens: path === "in-process" ? "between-turns" : "job", attempts: "between-turns" },
   };
 }
