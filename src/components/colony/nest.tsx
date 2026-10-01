@@ -126,7 +126,7 @@ export function ColonyPopover() {
           <span className="bg-line block h-1 overflow-hidden rounded-sm">
             <span
               className="bg-clay block h-1 transition-[width] duration-700"
-              style={{ width: `${(s.intoLevel / XP_PER_LEVEL) * 100}%` }}
+              style={{ width: `${next ? (s.intoLevel / XP_PER_LEVEL) * 100 : 100}%` }}
             />
           </span>
         </div>
