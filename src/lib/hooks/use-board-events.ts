@@ -10,7 +10,15 @@ import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
  * work is handled by the browser. What this adds is a mirrored cursor for the
  * first connection after a full page load, and a connection state the UI can
  * show rather than silently going stale.
+ *
+ * The stream closes while the tab is hidden and reopens from the cursor when
+ * it is shown again, so nothing is missed. An open stream is a server holding
+ * a connection and polling the event log for as long as it lasts, and a board
+ * left in a background tab all day costs as much as one being watched.
  */
+
+/** How long a tab stays hidden before its stream is closed: a quick tab switch keeps it. */
+export const HIDDEN_GRACE_MS = 60_000;
 
 export type ConnectionState = "connecting" | "open" | "reconnecting";
 
@@ -25,9 +33,10 @@ export function useBoardEvents(
   });
 
   const cursor = useRef(0);
+  const visible = useVisibleAfterGrace(HIDDEN_GRACE_MS);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !visible) return;
 
     const url = cursor.current
       ? `/api/events?lastEventId=${cursor.current}`
@@ -80,7 +89,33 @@ export function useBoardEvents(
         source.removeEventListener(t, onMessage as EventListener);
       source.close();
     };
-  }, [enabled]);
+  }, [enabled, visible]);
 
   return state;
+}
+
+/**
+ * Whether the page is visible, turning false only once it has stayed hidden
+ * for `graceMs`, and true again the moment it is shown.
+ */
+function useVisibleAfterGrace(graceMs: number): boolean {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === "hidden") {
+        timer = setTimeout(() => setVisible(false), graceMs);
+      } else {
+        setVisible(true);
+      }
+    };
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [graceMs]);
+  return visible;
 }
