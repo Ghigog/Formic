@@ -107,6 +107,21 @@ start and health check.
 
 ### Failing over
 
+This is automatic. CI's `deploy` job tries Vercel first. If Vercel refuses
+the deploy, the job deploys the same commit to Railway, waits for
+`/api/health`, and points the GitHub App's webhook there. When a later
+deploy goes through on Vercel again, the job points the webhook back.
+
+For that to work, the repository needs:
+
+- secrets: `RAILWAY_TOKEN` (a Railway project token) and
+  `GITHUB_APP_PRIVATE_KEY` (the app's private key, the whole PEM);
+- variables: `RAILWAY_URL` (`https://<railway-domain>`) and `GITHUB_APP_ID`,
+  plus `RAILWAY_SERVICE` if the service isn't named `formic`, and
+  `VERCEL_URL` if production isn't `https://formic-board.vercel.app`.
+
+To do it by hand instead:
+
 1. Deploy: `RAILWAY_TOKEN=<project token> npx @railway/cli up --ci --service formic`.
 2. Point the GitHub App's webhook at Railway, so CI results and finished
    runs reach the board:
@@ -116,9 +131,10 @@ start and health check.
 
 ### Failing back
 
-Once Vercel deploys again, run the script with the Vercel address
-(`https://formic-board.vercel.app`) so the webhook goes back there. Then stop
-the Railway service so two hosts aren't serving one database.
+The first deploy Vercel accepts moves the webhook back to Vercel, with no
+action from you. Then stop the Railway service, so two hosts aren't serving
+one database. By hand, run the script with the Vercel address
+(`https://formic-board.vercel.app`).
 
 ## Setting up staging
 

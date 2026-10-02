@@ -194,6 +194,14 @@ jobs:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      # The fallback host, and the GitHub App whose webhook follows the board
+      # between the two. See docs/runbook.md, "When Vercel is out".
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'formic' }}
+      RAILWAY_URL: ${{ vars.RAILWAY_URL }}
+      VERCEL_URL: ${{ vars.VERCEL_URL || 'https://formic-board.vercel.app' }}
+      GITHUB_APP_ID: ${{ vars.GITHUB_APP_ID }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check the Vercel secrets are set
@@ -212,4 +220,37 @@ jobs:
         with:
           path: ~/.npm
           key: vercel-cli-${{ runner.os }}-61.1.0
-      - run: npx --yes vercel@61.1.0 deploy --prod --yes --token "$VERCEL_TOKEN"
+      # Vercel is home. When it refuses the deploy (an account paused for
+      # going over its usage, an outage), Railway serves the same commit
+      # until Vercel takes one again, and GitHub's webhook follows.
+      - name: Deploy to Vercel
+        id: vercel
+        continue-on-error: true
+        run: npx --yes vercel@61.1.0 deploy --prod --yes --token "$VERCEL_TOKEN"
+
+      - name: Point GitHub's webhook at Vercel
+        if: steps.vercel.outcome == 'success'
+        run: node scripts/point-webhook.mjs "$VERCEL_URL"
+
+      - name: Deploy to Railway instead
+        if: steps.vercel.outcome == 'failure'
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ] || [ -z "$RAILWAY_URL" ]; then
+            echo "::error::Vercel refused the deploy, and RAILWAY_TOKEN or RAILWAY_URL is not set, so there is nowhere else to deploy."
+            exit 1
+          fi
+          echo "::warning::Vercel refused the deploy, so this commit goes to Railway ($RAILWAY_URL) instead."
+          # Waits for the build and fails the job if it fails.
+          npx --yes @railway/cli@5.63.1 up --ci --service "$RAILWAY_SERVICE"
+          for i in $(seq 1 30); do
+            curl -sf "$RAILWAY_URL/api/health" > health.json && break
+            sleep 5
+          done
+          if ! jq -e '.ok == true' health.json 2>/dev/null; then
+            echo "::error::Railway deployed but $RAILWAY_URL/api/health never reported ok."
+            exit 1
+          fi
+
+      - name: Point GitHub's webhook at Railway
+        if: steps.vercel.outcome == 'failure'
+        run: node scripts/point-webhook.mjs "$RAILWAY_URL"
