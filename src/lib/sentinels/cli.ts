@@ -8,8 +8,9 @@ import { promptFor, type Sentinel } from "./roster";
 
 /**
  * A sentinel audited by a CLI agent. The agent runs in GitHub Actions on a
- * checkout, so it reads the repository itself instead of being handed files,
- * and hands back the same report an API agent writes.
+ * checkout with the dependencies installed, so it reads the repository and
+ * runs what backs its judgement (tests, the build, a coverage run) instead of
+ * being handed facts, and hands back the same report an API agent writes.
  */
 
 const cliReportSchema = reportSchema.extend({
@@ -24,7 +25,7 @@ export function cliAuditPrompt(
   return [
     promptFor(s),
     "",
-    `You are auditing ${repoFullName}, checked out in the current directory. Read the code you need for your role with your tools. Do not change, create or delete any file in the repository: nothing you change is kept.`,
+    `You are auditing ${repoFullName}, checked out in the current directory with its dependencies installed. Read the code you need for your role with your tools, and run what backs your judgement: the tests, the linter, the type checker, the build, a coverage run, or any check your role calls for. Prefer evidence you ran over evidence you inferred, and say in your report what you ran and what it showed. If something could not run, say why, from its output. Do not change any file in the repository: nothing you change is kept.`,
     "",
     "Your final message is your report, and it must be one JSON object and nothing else (you may write the same object to the file named by the FORMIC_OUTPUT environment variable instead). It must match this JSON Schema:",
     JSON.stringify(z.toJSONSchema(cliReportSchema)),

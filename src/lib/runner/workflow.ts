@@ -479,10 +479,11 @@ jobs:
           esac
 
       # Ready before the agent starts, so it spends its turns on the ticket.
-      # Only the coding modes need them, and a failure here is not fatal:
-      # the agent can still install what it needs itself.
+      # The coding modes need them, and so does a sentinel's audit, which runs
+      # the tests and the build to back its report. A failure here is not
+      # fatal: the agent can still install what it needs itself.
       - name: Install the project's dependencies
-        if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop'
+        if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop' || (inputs.mode == 'ask' && inputs.ticket == 'sentinel')
         continue-on-error: true
         run: |
           # Installed, never handed back: kept out of what the agent commits.
