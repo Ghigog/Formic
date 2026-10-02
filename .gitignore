@@ -14,5 +14,6 @@ prisma/dev.db
 
 # Playwright run artefacts
 /e2e/.results
+/e2e/.evidence
 /playwright-report
 /test-results

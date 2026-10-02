@@ -31,6 +31,14 @@ const alias = {
 export default defineConfig({
   resolve: { alias },
   test: {
+    // Off unless asked for (`--coverage`): CI asks, and uploads the summary
+    // for the Tester sentinel to read. See docs/sentinels.md.
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/generated/**"],
+      reporter: ["json-summary", "text-summary"],
+    },
     projects: [
       {
         resolve: { alias },

@@ -86,6 +86,52 @@ export interface WorkflowRunRef {
   url: string;
 }
 
+/** One finished or running Actions run on a branch, for the history behind its checks. */
+export interface BranchRun {
+  /** The workflow's name. */
+  name: string;
+  sha: string;
+  status: string;
+  /** Null until it completes. */
+  conclusion: string | null;
+  /** 1 for a first run; higher when someone re-ran it. */
+  attempt: number;
+  startedAt: string;
+  updatedAt: string;
+  url: string;
+}
+
+/** A ref's files, as raw bytes, for reading a whole repository in one request. */
+export interface Snapshot {
+  files: Map<string, Buffer>;
+  /** True when the repository was larger than the snapshot keeps. */
+  truncated: boolean;
+}
+
+/** Files from the Actions artifacts of a branch's latest finished run. */
+export interface ArtifactFiles {
+  /** The run they came from. */
+  runUrl: string;
+  /** `${artifactName}/${path}` to bytes. */
+  files: Map<string, Buffer>;
+}
+
+/** One finding from GitHub's own security features, or why it could not be read. */
+export type SecurityList<T> = { ok: true; items: T[] } | { ok: false; reason: string };
+
+export interface SecurityFacts {
+  /** Open Dependabot alerts. */
+  dependabot: SecurityList<{ package: string; ecosystem: string; severity: string; summary: string; manifest: string; fixedIn: string | null }>;
+  /** Open secret-scanning alerts. Never the secret itself. */
+  secrets: SecurityList<{ type: string; createdAt: string; pushProtectionBypassed: boolean }>;
+  /** Open code-scanning alerts. */
+  codeScanning: SecurityList<{ rule: string; severity: string; tool: string; path: string; line: number | null }>;
+  /** Whether the base branch is protected, and what it requires. */
+  protection: { ok: true; protected: boolean; requiredChecks: string[] } | { ok: false; reason: string };
+  /** The repository's visibility and security features, where the token may see them. */
+  settings: { ok: true; visibility: string; features: Record<string, string> } | { ok: false; reason: string };
+}
+
 export interface IssueRef {
   number: number;
   /** GitHub's internal id, which linking a sub-issue needs. */
@@ -188,6 +234,20 @@ export interface VcsClient {
   deleteStagingBranch(branch: string): Promise<void>;
   /** The commit a branch points at, or null when there is no such branch. */
   branchHead(branch: string): Promise<string | null>;
+  /** The latest Actions runs on a branch, from any workflow, newest first. */
+  branchRuns(branch: string): Promise<BranchRun[]>;
+  /**
+   * A ref's files in one download, keeping only what `keep` accepts, up to
+   * `budget` bytes in all.
+   */
+  snapshot(ref: string, keep: (path: string, size: number) => boolean, budget: number): Promise<Snapshot>;
+  /**
+   * The files in the artifacts whose names match `name`, from the newest
+   * finished run on `branch` that uploaded any. Null when none did.
+   */
+  artifacts(branch: string, name: RegExp, keep: (path: string, size: number) => boolean, budget: number): Promise<ArtifactFiles | null>;
+  /** What GitHub's security features know about the repository. */
+  security(branch: string): Promise<SecurityFacts>;
 
   /*
    * Checkpoints: an agent's work in progress, saved while it works, so a run
