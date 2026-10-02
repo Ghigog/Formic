@@ -1705,8 +1705,10 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
 export function formicOrigin(): string | null {
   const explicit = process.env.FORMIC_URL?.trim().replace(/\/+$/, "");
   if (explicit) return explicit;
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  return vercel ? `https://${vercel}` : null;
+  // The host's own name for it: Vercel's production domain, or Railway's,
+  // where the board runs while Vercel is out (see docs/runbook.md).
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  return host ? `https://${host}` : null;
 }
 
 function reportToken(job: string, since: number): string {

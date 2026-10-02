@@ -1381,7 +1381,15 @@ describe("signed attachment URLs for a CLI agent with no Formic session", () => 
   it("has no URL to sign without a public origin", () => {
     vi.stubEnv("FORMIC_URL", "");
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
+    vi.stubEnv("RAILWAY_PUBLIC_DOMAIN", "");
     expect(signedAttachmentUrl("att_1")).toBeNull();
+  });
+
+  it("signs with Railway's domain when the board runs there", () => {
+    vi.stubEnv("FORMIC_URL", "");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
+    vi.stubEnv("RAILWAY_PUBLIC_DOMAIN", "formic.up.railway.app");
+    expect(signedAttachmentUrl("att_1")).toMatch(/^https:\/\/formic\.up\.railway\.app\/api\/attachments\/att_1\?/);
   });
 });
 

@@ -84,6 +84,42 @@ change, point `DATABASE_URL` at it (or restore in place, if the provider
 supports that), then confirm with the same query as step 3 before letting
 traffic back in.
 
+## When Vercel is out
+
+Railway is the fallback host. When Vercel refuses deploys (a Hobby account
+paused for going over its usage, or an outage), the same commit runs on a
+Railway service against the same database. `railway.json` holds its build,
+start and health check.
+
+### One-time setup
+
+1. In Railway, create a project with an empty service named `formic`, and
+   don't connect it to GitHub: deploys come from `railway up`.
+2. Give the service the same variables as Vercel's production environment:
+   `DATABASE_URL` (and `POSTGRES_URL_NON_POOLING` if set), `FORMIC_SECRET`,
+   `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG`,
+   `GITHUB_WEBHOOK_SECRET`, `FORMIC_ALLOWED_USERS`, and any provider keys.
+   Generate a public domain under Networking. The app reads it from
+   `RAILWAY_PUBLIC_DOMAIN`, so `FORMIC_URL` isn't needed.
+3. In the GitHub App's settings, add
+   `https://<railway-domain>/api/auth/github/callback` as a second callback
+   URL, so sign-in works on both hosts. Generate a private key for the app.
+
+### Failing over
+
+1. Deploy: `RAILWAY_TOKEN=<project token> npx @railway/cli up --ci --service formic`.
+2. Point the GitHub App's webhook at Railway, so CI results and finished
+   runs reach the board:
+   `GITHUB_APP_ID=<id> GITHUB_APP_PRIVATE_KEY="$(cat key.pem)" node scripts/point-webhook.mjs https://<railway-domain>`
+3. Use the Railway address until Vercel is back. It's the same database, so
+   the board is exactly as you left it.
+
+### Failing back
+
+Once Vercel deploys again, run the script with the Vercel address
+(`https://formic-board.vercel.app`) so the webhook goes back there. Then stop
+the Railway service so two hosts aren't serving one database.
+
 ## Setting up staging
 
 A staging environment is a second Vercel project pointed at this repository,
