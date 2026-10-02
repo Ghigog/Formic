@@ -22,6 +22,13 @@ export const runtime = "nodejs";
 /** Frames buffered for a slow client before droppable events start falling. */
 const HIGH_WATER = 256;
 
+/**
+ * How often the durable log is tailed. Events published in this instance
+ * arrive at once through the bus; this is the lag for ones from elsewhere,
+ * traded against a database read per open board per tick.
+ */
+const TAIL_EVERY_MS = 5_000;
+
 export async function GET(req: NextRequest) {
   const project = await activeProject();
   // 204 is the one status that tells EventSource to stop reconnecting.
@@ -112,7 +119,7 @@ export async function GET(req: NextRequest) {
         } finally {
           polling = false;
         }
-      }, 2_000);
+      }, TAIL_EVERY_MS);
 
       // Comment frames keep intermediaries from closing an idle connection.
       const heartbeat = setInterval(() => {
