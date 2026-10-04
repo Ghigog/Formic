@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# One-time setup of an Oracle Cloud Ubuntu VM to run Formic. Run it from your
-# own machine, as the VM's default user:
+# One-time setup of an Ubuntu server (a Google Cloud e2-micro, see
+# docs/google-cloud.md) to run Formic. Upload this file to the server, then:
 #
-#   ssh ubuntu@<public-ip> 'sudo bash -s' < deploy/oracle/setup.sh
+#   sudo bash setup.sh
 #
-# or with your own domain (its A record already pointing at the VM):
+# or with your own domain (its A record already pointing at the server):
 #
-#   ssh ubuntu@<public-ip> 'sudo DOMAIN=formic.example.com bash -s' < deploy/oracle/setup.sh
+#   sudo DOMAIN=formic.example.com bash setup.sh
 #
-# Without DOMAIN it uses <ip>.sslip.io, which resolves to the VM's IP with no
-# DNS to set up, so Caddy can still get a real HTTPS certificate.
+# Without DOMAIN it uses <ip>.sslip.io, which resolves to the server's IP with
+# no DNS to set up, so Caddy can still get a real HTTPS certificate.
 #
 # Safe to run again: every step checks before it changes anything.
 set -euo pipefail
@@ -18,7 +18,7 @@ NODE_MAJOR=22
 APP=/opt/formic
 
 if [ "$(id -u)" -ne 0 ]; then
-  echo "Run as root (sudo bash -s)." >&2
+  echo "Run as root: sudo bash setup.sh" >&2
   exit 1
 fi
 
@@ -26,10 +26,21 @@ ip="$(curl -fsS --max-time 10 https://api.ipify.org)"
 DOMAIN="${DOMAIN:-$(echo "$ip" | tr . -).sslip.io}"
 echo "==> Public IP $ip, serving on https://$DOMAIN"
 
+# 1 GB of memory is enough to run the app, not to start it alongside a
+# migration and Caddy with room to spare. Swap covers the peaks.
+echo "==> Swap"
+if ! swapon --show | grep -q /swapfile; then
+  fallocate -l 2G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
 echo "==> Packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -yq ca-certificates curl gnupg git debian-keyring debian-archive-keyring apt-transport-https iptables-persistent
+apt-get install -yq ca-certificates curl gnupg debian-keyring debian-archive-keyring apt-transport-https
 
 if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" != "$NODE_MAJOR" ]; then
   curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
@@ -42,18 +53,6 @@ if ! command -v caddy >/dev/null; then
   apt-get update -q
   apt-get install -yq caddy
 fi
-
-# Oracle's Ubuntu images ship an iptables policy that rejects everything but
-# SSH, on top of the VCN's security list. Both have to let 80 and 443 in.
-echo "==> Firewall"
-for port in 80 443; do
-  if ! iptables -C INPUT -p tcp --dport "$port" -m state --state NEW -j ACCEPT 2>/dev/null; then
-    # Ahead of the image's catch-all REJECT, or the rule never matches.
-    at="$(iptables -L INPUT --line-numbers | awk '/REJECT/ {print $1; exit}')"
-    iptables -I INPUT "${at:-1}" -p tcp --dport "$port" -m state --state NEW -j ACCEPT
-  fi
-done
-netfilter-persistent save
 
 echo "==> formic user"
 if ! id formic >/dev/null 2>&1; then

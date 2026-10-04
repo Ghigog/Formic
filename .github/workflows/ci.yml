@@ -182,8 +182,8 @@ jobs:
 
   # Production deploys only once every job above passes on main. vercel.json turns
   # off Vercel's own Git deploy for main, so this is the only path to prod.
-  # With the DEPLOY_HOST variable set it deploys to the Oracle VM instead
-  # (deploy/oracle); without it, to Vercel.
+  # With the DEPLOY_HOST variable set it deploys to the server instead
+  # (deploy/server, docs/google-cloud.md); without it, to Vercel.
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [lint, typecheck, test, build]
@@ -202,9 +202,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Oracle: ship this commit's files to a fresh release directory and
-      # build it there (the VM is arm64, so nothing built here would run).
-      - name: Deploy to the Oracle VM
+      # Server: build here (it has too little memory to build), ship the
+      # result, and let the server migrate and switch to it. The build needs
+      # no secrets: every page renders on demand (see the build job).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: env.DEPLOY_HOST != ''
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build for the server
+        if: env.DEPLOY_HOST != ''
+        run: |
+          npm ci
+          npm run build
+          tar --exclude=./.git --exclude=./.next/cache -czf "$RUNNER_TEMP/release.tgz" .
+      - name: Deploy to the server
         if: env.DEPLOY_HOST != ''
         run: |
           if [ -z "$DEPLOY_SSH_KEY" ]; then
@@ -215,9 +227,9 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
           chmod 600 ~/.ssh/deploy
           ssh_() { ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "formic@$DEPLOY_HOST" "$@"; }
-          rel="/opt/formic/releases/$GITHUB_SHA"
-          git archive --format=tar HEAD | ssh_ "rm -rf $rel && mkdir -p $rel && tar -x -C $rel"
-          ssh_ "bash $rel/deploy/oracle/deploy.sh $GITHUB_SHA"
+          ssh_ "cat > /opt/formic/releases/$GITHUB_SHA.tgz" < "$RUNNER_TEMP/release.tgz"
+          ssh_ "cat > /opt/formic/deploy.sh" < deploy/server/deploy.sh
+          ssh_ "bash /opt/formic/deploy.sh $GITHUB_SHA"
 
       - name: Check the Vercel secrets are set
         if: env.DEPLOY_HOST == ''
