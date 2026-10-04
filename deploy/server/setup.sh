@@ -40,7 +40,7 @@ fi
 echo "==> Packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -yq ca-certificates curl gnupg debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -yq ca-certificates curl gnupg nano debian-keyring debian-archive-keyring apt-transport-https
 
 if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" != "$NODE_MAJOR" ]; then
   curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
