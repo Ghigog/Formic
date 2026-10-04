@@ -257,6 +257,10 @@ It needs three repository secrets: `VERCEL_TOKEN` (a Vercel access token),
 `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` (from `.vercel/project.json` after
 `vercel link`).
 
+With the `DEPLOY_HOST` repository variable set, the same job deploys to an
+Oracle Cloud VM over SSH instead. Setup, rollback and the way back to
+Vercel are in [docs/oracle.md](docs/oracle.md).
+
 ## Layout
 
 ```

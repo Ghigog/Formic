@@ -182,21 +182,45 @@ jobs:
 
   # Production deploys only once every job above passes on main. vercel.json turns
   # off Vercel's own Git deploy for main, so this is the only path to prod.
+  # With the DEPLOY_HOST variable set it deploys to the Oracle VM instead
+  # (deploy/oracle); without it, to Vercel.
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [lint, typecheck, test, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # One deploy at a time, in merge order; never cancel one mid-flight.
     concurrency:
       group: production-deploy
       cancel-in-progress: false
     env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Oracle: ship this commit's files to a fresh release directory and
+      # build it there (the VM is arm64, so nothing built here would run).
+      - name: Deploy to the Oracle VM
+        if: env.DEPLOY_HOST != ''
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::error::DEPLOY_SSH_KEY secret is not set, so main can't deploy."
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          ssh_() { ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "formic@$DEPLOY_HOST" "$@"; }
+          rel="/opt/formic/releases/$GITHUB_SHA"
+          git archive --format=tar HEAD | ssh_ "rm -rf $rel && mkdir -p $rel && tar -x -C $rel"
+          ssh_ "bash $rel/deploy/oracle/deploy.sh $GITHUB_SHA"
+
       - name: Check the Vercel secrets are set
+        if: env.DEPLOY_HOST == ''
         run: |
           for v in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
             if [ -z "${!v}" ]; then
@@ -209,7 +233,9 @@ jobs:
       # Pinned, and its download cached, so a deploy does not fetch the CLI
       # (or pick up a new release) every time. Dependabot does not track this.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: env.DEPLOY_HOST == ''
         with:
           path: ~/.npm
           key: vercel-cli-${{ runner.os }}-61.1.0
-      - run: npx --yes vercel@61.1.0 deploy --prod --yes --token "$VERCEL_TOKEN"
+      - if: env.DEPLOY_HOST == ''
+        run: npx --yes vercel@61.1.0 deploy --prod --yes --token "$VERCEL_TOKEN"
