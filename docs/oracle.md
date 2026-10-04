@@ -17,8 +17,14 @@ In the Oracle Cloud console, **Compute > Instances > Create instance**:
 - **Networking:** a public subnet, "Assign a public IPv4 address" on.
 - **SSH keys:** paste your own public key.
 
-"Out of capacity" for A1 is common on free accounts. Upgrading the account to
-Pay As You Go fixes it and stays free within the Always Free limits.
+That is exactly the Always Free limit for Ampere, so keep it to this one A1
+instance: going over it after the 30-day trial disables every A1 instance.
+
+Upgrade the account to Pay As You Go. It stays free as long as everything is
+marked Always Free, and it avoids two problems free accounts have: "out of
+capacity" when creating A1 instances, and Oracle reclaiming instances that sit
+mostly idle for a week, which a quiet board will. Set a budget alert at $1
+under **Billing > Budgets** so any accidental paid resource shows up at once.
 
 Then open the web ports: **Networking > Virtual cloud networks >** your VCN
 **> Security Lists > Default** > Add ingress rules: source `0.0.0.0/0`, TCP,
