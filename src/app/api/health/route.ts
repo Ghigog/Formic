@@ -137,7 +137,7 @@ async function fullReport(): Promise<FullReport> {
   const ok = database !== "unreachable" && !secretIssue;
   return {
     ok,
-    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.FORMIC_COMMIT ?? null,
     buildId,
     database,
     ...(databaseError ? { databaseError } : {}),
