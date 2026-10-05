@@ -236,7 +236,13 @@ async function resume(projectId: string, card: BoardCard): Promise<string> {
   // Out of its stall at once, so the board shows it working while the
   // Coder Agent gets going.
   const repo = repository();
-  await repo.updateTicket(card.id, { status: "running", stalledIn: null, blockedReason: null, attempts: 0 });
+  await repo.updateTicket(card.id, {
+    status: "running",
+    stalledIn: null,
+    blockedReason: null,
+    attempts: 0,
+    reviewedHead: null,
+  });
   await publish(projectId, {
     type: "card.status",
     cardId: card.id,
@@ -280,7 +286,7 @@ async function redoTicket(projectId: string, card: BoardCard, instruction: strin
     if (await working(card)) await stopTicket(projectId, card.id);
     launch(async () => {
       await untilIdle(card.id);
-      await repository().updateTicket(card.id, { attempts: 0 });
+      await repository().updateTicket(card.id, { attempts: 0, reviewedHead: null });
       await runCoderAgent(projectId, card.id, { instruction });
     }, `coder agent for ${card.key}, from its chat`);
     return `Starting the Coder Agent on ${card.key} again, to do what you asked.`;
@@ -298,6 +304,7 @@ async function redoTicket(projectId: string, card: BoardCard, instruction: strin
         stalledIn: null,
         blockedReason: null,
         reviewedSha: null,
+        reviewedHead: null,
         attempts: 0,
       });
       const ticket = await repo.ticketDetail(card.id);

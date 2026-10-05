@@ -75,6 +75,7 @@ interface TicketExtras {
   plan?: PlanStep[];
   handoff?: string[];
   reviewedSha?: string | null;
+  reviewedHead?: string | null;
   scopeRequest?: string[];
 }
 
@@ -715,6 +716,13 @@ export class MemoryRepository implements Repository {
       .map(toAttachmentSummary);
   }
 
+  async attachmentScope(
+    id: string,
+  ): Promise<{ projectId: string; requestId: string | null } | null> {
+    const row = store().attachments.get(id);
+    return row ? { projectId: row.projectId, requestId: row.requestId } : null;
+  }
+
   async attachmentContent(id: string): Promise<AttachmentContent | null> {
     const row = store().attachments.get(id);
     return row ? { bytes: row.bytes, mimeType: row.mimeType } : null;
@@ -1000,6 +1008,7 @@ export class MemoryRepository implements Repository {
     if (update.plan !== undefined) extras.plan = update.plan;
     if (update.handoff !== undefined) extras.handoff = update.handoff;
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
+    if (update.reviewedHead !== undefined) extras.reviewedHead = update.reviewedHead;
     if (update.scopeRequest !== undefined) extras.scopeRequest = update.scopeRequest;
   }
 
@@ -1494,6 +1503,7 @@ function toDetail(
     plan: extras?.plan ?? [],
     handoff: extras?.handoff ?? [],
     reviewedSha: extras?.reviewedSha ?? null,
+    reviewedHead: extras?.reviewedHead ?? null,
     needsHuman: card.needsHuman ?? null,
   };
 }

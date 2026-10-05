@@ -53,8 +53,12 @@ export async function GET(req: NextRequest) {
   }
 
   const repo = repository();
-  const owner = (await repo.boardCards(project.id)).find((c) => c.id === (epicId ?? ticketId));
-  if (!owner) return Response.json({ attachments: [] });
+  // The card has to be this project's, which is one indexed lookup. Reading
+  // the board to check it moved every Epic's PRD and every ticket's text out
+  // of the database each time a drawer's gallery loaded.
+  const cardId = epicId ?? ticketId!;
+  const owner = await repo.projectOfCard(cardId);
+  if (owner !== project.id) return Response.json({ attachments: [] });
 
   const attachments = await repo.attachmentsFor(epicId ? { epicId } : { ticketId: ticketId! });
   return Response.json({ attachments });
