@@ -34,6 +34,7 @@ export function SettingsForm({
   installUrl,
   projects = [],
   e2b,
+  github,
   runTimeBudget,
   limits,
   renewal,
@@ -42,6 +43,8 @@ export function SettingsForm({
   installUrl: string | null;
   projects?: ProjectSetting[];
   e2b: KeyState;
+  /** Local mode only: the server's one GitHub credential, set here. */
+  github?: { hint: string | null } | null;
   /** Saved run time budget; the default when omitted. */
   runTimeBudget?: RunTimeBudgetSettings;
   limits?: { tokens: LimitSetting; attempts: LimitSetting };
@@ -93,6 +96,19 @@ export function SettingsForm({
             </a>
           )}
         </Section>
+
+        {github && (
+          <KeyField
+            field="githubToken"
+            title="GitHub access"
+            blurb="The token Formic reads your repositories, pushes branches and opens pull requests with (scopes: repo and workflow). In local mode this is the server's one credential."
+            getFrom="https://github.com/settings/tokens/new"
+            getFromLabel="github.com/settings/tokens"
+            placeholder="ghp_…"
+            fallbackText="Without one, Formic can't reach GitHub: the board still runs, but nothing leaves this Mac."
+            state={{ hint: github.hint, serverFallback: false }}
+          />
+        )}
 
         {projects.length > 0 && (
           <Section title="Auto-merge">
@@ -266,20 +282,26 @@ function KeyField({
   getFromLabel,
   placeholder,
   state,
+  fallbackText,
 }: {
-  field: "e2bKey";
+  field: "e2bKey" | "githubToken";
   title: string;
   blurb: string;
   getFrom: string;
   getFromLabel: string;
   placeholder: string;
   state: KeyState;
+  /** Overrides the "without one…" line under the field. */
+  fallbackText?: string;
 }) {
   const [hint, setHint] = useState(state.hint);
   const [editing, setEditing] = useState(!state.hint);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Which field of the response carries this key's hint.
+  const hintKey = field === "e2bKey" ? "e2bKeyHint" : "githubTokenHint";
 
   async function save(next: string | null) {
     setBusy(true);
@@ -291,13 +313,13 @@ function KeyField({
     }).catch(() => null);
     setBusy(false);
     const body = (await res?.json().catch(() => null)) as
-      | { error?: string; e2bKeyHint?: string | null }
+      | { error?: string; e2bKeyHint?: string | null; githubTokenHint?: string | null }
       | null;
     if (!res?.ok) {
       setMessage({ ok: false, text: body?.error ?? "That did not save. Try again." });
       return;
     }
-    const saved = body?.e2bKeyHint;
+    const saved = body?.[hintKey];
     setHint(saved ?? null);
     setEditing(!saved);
     setValue("");
@@ -305,13 +327,15 @@ function KeyField({
   }
 
   const left = state.fallbackMinutesLeft;
-  const fallback = !state.serverFallback
-    ? "Without one, coding agents can't run."
-    : left === undefined
-      ? "Without one, runs use the server's key."
-      : left > 0
-        ? `You're on the server's key: ${left} sandbox ${left === 1 ? "minute" : "minutes"} left this month. Add your own for no limit.`
-        : "You're on the server's key and have used this month's sandbox minutes. Add your own key to keep running.";
+  const fallback =
+    fallbackText ??
+    (!state.serverFallback
+      ? "Without one, coding agents can't run."
+      : left === undefined
+        ? "Without one, runs use the server's key."
+        : left > 0
+          ? `You're on the server's key: ${left} sandbox ${left === 1 ? "minute" : "minutes"} left this month. Add your own for no limit.`
+          : "You're on the server's key and have used this month's sandbox minutes. Add your own key to keep running.");
 
   return (
     <Section title={title}>

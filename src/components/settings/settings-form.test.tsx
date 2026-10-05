@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsForm } from "./settings-form";
 
@@ -148,5 +148,50 @@ describe("Auto-merge", () => {
     });
     expect(toggle).not.toBeChecked();
     expect(screen.getByText("That did not save. Try again.")).toBeInTheDocument();
+  });
+});
+
+describe("GitHub access (local mode)", () => {
+  it("saves the token through /api/settings", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({ e2bKeyHint: null, githubTokenHint: "1234" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <SettingsForm
+        account={account}
+        installUrl={null}
+        // A saved sandbox key keeps that field out of its editing state, so the
+        // only Save button on the page is this one.
+        e2b={{ hint: "abcd", serverFallback: false }}
+        github={{ hint: null }}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.type(screen.getByLabelText("GitHub access API key"), "ghp_TESTTOKEN1234");
+    });
+    // The budget and renewal sections have Save buttons of their own.
+    const section = screen.getByText("GitHub access").closest("section")!;
+    await act(async () => {
+      await user.click(within(section).getByRole("button", { name: "Save" }));
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ githubToken: "ghp_TESTTOKEN1234" }),
+      }),
+    );
+  });
+
+  it("is not offered outside local mode, where the sign-in is the credential", () => {
+    render(
+      <SettingsForm account={account} installUrl={null} e2b={{ hint: null, serverFallback: false }} />,
+    );
+
+    expect(screen.queryByText("GitHub access")).not.toBeInTheDocument();
   });
 });
