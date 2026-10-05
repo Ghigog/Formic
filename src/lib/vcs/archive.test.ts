@@ -29,12 +29,39 @@ const files = {
   "big.bin": Buffer.alloc(5000, 7),
 };
 
+/**
+ * macOS writes an AppleDouble `._name` entry beside every file it archives, so
+ * a tarball made here carries entries no GitHub archive ever has. Turning that
+ * off makes the fixture match what the reader is really handed.
+ */
+const tarEnv = { ...process.env, COPYFILE_DISABLE: "1" };
+
+/**
+ * Whether this machine's tar can write a format at all. macOS ships BSD tar,
+ * which cannot write `gnu` ("No such format 'gnu'"), so that fixture can only
+ * be made where GNU tar is. The subject here is reading an archive, not the
+ * platform's tar — a format this tar cannot make is skipped rather than failed,
+ * and CI, on Linux, still runs both.
+ */
+function tarCanWrite(format: string): boolean {
+  const dir = mkdtempSync(join(tmpdir(), "formic-tar-"));
+  try {
+    execFileSync("tar", [`--format=${format}`, "-cf", join(dir, "can.tar"), "-C", dir, "."], {
+      stdio: "ignore",
+      env: tarEnv,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("untar", () => {
   for (const format of ["pax", "gnu"]) {
-    it(`reads a ${format} tarball in odd-sized chunks, long paths and all`, async () => {
+    it.skipIf(!tarCanWrite(format))(`reads a ${format} tarball in odd-sized chunks, long paths and all`, async () => {
       const root = tree(files);
       const out = join(root, "repo.tar.gz");
-      execFileSync("tar", [`--format=${format}`, "-czf", out, "-C", root, "owner-repo-abc123"]);
+      execFileSync("tar", [`--format=${format}`, "-czf", out, "-C", root, "owner-repo-abc123"], { env: tarEnv });
       const tar = gunzipSync(readFileSync(out));
 
       const { files: got, truncated } = await untar(chunked(tar, 333), (p) => !p.endsWith(".bin"), 1_000_000);
@@ -48,7 +75,7 @@ describe("untar", () => {
   it("stops keeping once the budget is spent, and says so", async () => {
     const root = tree(files);
     const out = join(root, "repo.tar");
-    execFileSync("tar", ["-cf", out, "-C", root, "owner-repo-abc123"]);
+    execFileSync("tar", ["-cf", out, "-C", root, "owner-repo-abc123"], { env: tarEnv });
     const { files: got, truncated } = await untar(chunked(readFileSync(out), 4096), () => true, 100);
     expect(truncated).toBe(true);
     expect([...got.values()].reduce((n, b) => n + b.length, 0)).toBeLessThanOrEqual(100);
