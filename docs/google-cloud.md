@@ -1,9 +1,9 @@
 # Hosting on Google Cloud
 
 Formic runs on Google Cloud's free **e2-micro** server: Node serves the app,
-Caddy puts HTTPS in front of it, and CI builds every green commit on `main` and
-ships it over SSH. The database stays where it is (Supabase or Neon); only the
-app moves.
+Caddy puts HTTPS in front of it, and a manual CI run builds the app and ships
+it over SSH. The database stays where it is (Supabase or Neon); only the app
+moves.
 
 The e2-micro has 1 GB of memory — enough to run the app, not to build it — so
 GitHub Actions builds and the server only unpacks, migrates and restarts. On a
@@ -11,14 +11,7 @@ long-running server nothing is frozen after a response, so agent runs are no
 longer capped by a function's `maxDuration`. That is the point of moving.
 
 This is the alternative to `docs/vercel.md`, and it can coexist with it: with
-`DEPLOY_HOST` unset, CI deploys to Vercel exactly as before.
-
-> **Prerequisite.** This path is added by the "Deploy to a Google Cloud
-> e2-micro when DEPLOY_HOST is set" change (PR #456): the server scripts
-> `deploy/server/setup.sh` and `deploy/server/deploy.sh`, the CI `deploy`
-> branch, and `FORMIC_COMMIT` in `/api/health`. Merge that first (or work from
-> its branch); on `main` before it, those files and this branch of the deploy
-> job do not exist yet.
+`DEPLOY_HOST` unset, the same manual run deploys to Vercel instead.
 
 ## 1. Account
 
@@ -116,8 +109,9 @@ change the **callback URL**, **setup URL** and **webhook URL** to the new
 
 ## 6. Deploy
 
-Merge anything to `main`, or re-run the CI workflow on its latest commit. The
-`deploy` job builds on the runner, uploads the release to
+Deploys are manual, the same as the Vercel path: **Actions → CI → Run
+workflow** on `main`, once lint, typecheck, test and build pass. The `deploy`
+job builds on the runner, uploads the release to
 `/opt/formic/releases/<sha>.tgz`, copies `deploy/server/deploy.sh` up, and runs
 it as the `formic` user. `deploy.sh` unpacks the release, runs the migrations
 from `/opt/formic/shared/.env`, writes `.release.env` with `FORMIC_COMMIT`, moves

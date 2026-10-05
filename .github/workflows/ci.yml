@@ -187,22 +187,58 @@ jobs:
   # Merging to main no longer ships anything by itself, so a paused host or a
   # failing check on a branch cannot gate a merge. Every job above still has to
   # pass before this one runs. vercel.json turns off Vercel's own Git deploy,
-  # so this remains the only path to production.
+  # so this remains the only path to production. With the DEPLOY_HOST variable
+  # set it deploys to the server instead (deploy/server, docs/google-cloud.md);
+  # without it, to Vercel.
   deploy:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: [lint, typecheck, test, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # One deploy at a time, in merge order; never cancel one mid-flight.
     concurrency:
       group: production-deploy
       cancel-in-progress: false
     env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Server: build here (it has too little memory to build), ship the
+      # result, and let the server migrate and switch to it. The build needs
+      # no secrets: every page renders on demand (see the build job).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: env.DEPLOY_HOST != ''
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build for the server
+        if: env.DEPLOY_HOST != ''
+        run: |
+          npm ci
+          npm run build
+          tar --exclude=./.git --exclude=./.next/cache -czf "$RUNNER_TEMP/release.tgz" .
+      - name: Deploy to the server
+        if: env.DEPLOY_HOST != ''
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::error::DEPLOY_SSH_KEY secret is not set, so main can't deploy."
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          ssh_() { ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "formic@$DEPLOY_HOST" "$@"; }
+          ssh_ "cat > /opt/formic/releases/$GITHUB_SHA.tgz" < "$RUNNER_TEMP/release.tgz"
+          ssh_ "cat > /opt/formic/deploy.sh" < deploy/server/deploy.sh
+          ssh_ "bash /opt/formic/deploy.sh $GITHUB_SHA"
+
       - name: Check the Vercel secrets are set
+        if: env.DEPLOY_HOST == ''
         run: |
           for v in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
             if [ -z "${!v}" ]; then
@@ -215,7 +251,9 @@ jobs:
       # Pinned, and its download cached, so a deploy does not fetch the CLI
       # (or pick up a new release) every time. Dependabot does not track this.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: env.DEPLOY_HOST == ''
         with:
           path: ~/.npm
           key: vercel-cli-${{ runner.os }}-61.1.0
-      - run: npx --yes vercel@61.1.0 deploy --prod --yes --token "$VERCEL_TOKEN"
+      - if: env.DEPLOY_HOST == ''
+        run: npx --yes vercel@61.1.0 deploy --prod --yes --token "$VERCEL_TOKEN"

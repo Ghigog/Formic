@@ -332,10 +332,31 @@ export class PrismaRepository implements Repository {
   async boardCards(projectId: string): Promise<BoardCard[]> {
     const db = prisma();
 
+    // Only what a card shows. The board is read on every refresh, and the
+    // long text (a PRD, a request, a ticket's description and criteria) is
+    // most of each row: reading it here was most of the database's egress.
     const epics = await db.epic.findMany({
       where: { projectId },
       orderBy: { position: "asc" },
-      include: {
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        status: true,
+        stalledIn: true,
+        stage: true,
+        blockedReason: true,
+        misplacedIn: true,
+        misplacedReason: true,
+        standalone: true,
+        workType: true,
+        rerouteFrom: true,
+        rerouteReason: true,
+        runnerJob: true,
+        runnerJobAt: true,
+        position: true,
+        createdAt: true,
+        updatedAt: true,
         tickets: { select: { id: true, status: true } },
         queen: { select: { id: true } },
         runs: {
@@ -349,7 +370,37 @@ export class PrismaRepository implements Repository {
     const tickets = await db.ticket.findMany({
       where: { epic: { projectId }, archived: false },
       orderBy: { position: "asc" },
-      include: {
+      select: {
+        id: true,
+        epicId: true,
+        key: true,
+        title: true,
+        status: true,
+        stalledIn: true,
+        stage: true,
+        position: true,
+        detached: true,
+        size: true,
+        storyPoints: true,
+        needsHuman: true,
+        archived: true,
+        workType: true,
+        runnerJob: true,
+        runnerJobAt: true,
+        fileScope: true,
+        prNumber: true,
+        prUrl: true,
+        blockedReason: true,
+        misplacedIn: true,
+        misplacedReason: true,
+        rerouteFrom: true,
+        rerouteReason: true,
+        costCents: true,
+        createdAt: true,
+        updatedAt: true,
+        mergedAt: true,
+        mergePoints: true,
+        mergeMultiplier: true,
         dependsOn: { select: { dependsOnTicketId: true } },
         queen: { select: { id: true } },
         // Every run, newest first: the live one names the agent, the

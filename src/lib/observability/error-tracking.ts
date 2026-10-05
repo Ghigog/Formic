@@ -45,7 +45,7 @@ export function trackError(input: ErrorInput): TrackedError {
     route: input.route,
     digest: input.digest,
     source: input.source,
-    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.FORMIC_COMMIT ?? null,
     timestamp: new Date().toISOString(),
   };
 
