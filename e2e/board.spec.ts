@@ -262,8 +262,14 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   // then is overwritten when React takes over the input.
   await page.waitForLoadState("networkidle");
 
+  // The page has more than one Save button (GitHub access, limits, renewal), so
+  // this targets the sandbox field's own section rather than the first on the page.
+  const sandbox = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Sandbox (E2B)" }) });
+
   await page.getByLabel("Sandbox (E2B) API key").fill("e2b_test_abcd");
-  await page.getByRole("button", { name: "Save" }).first().click();
+  await sandbox.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("••••••••abcd")).toBeVisible();
 
   await page.reload();
@@ -271,7 +277,7 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   expect(await page.content()).not.toContain("e2b_test_abcd");
   await page.screenshot({ path: "e2e/.results/settings.png" });
 
-  await page.getByRole("button", { name: "Remove" }).first().click();
+  await sandbox.getByRole("button", { name: "Remove" }).click();
   await expect(page.getByLabel("Sandbox (E2B) API key")).toBeVisible();
 });
 
