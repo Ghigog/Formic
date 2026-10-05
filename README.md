@@ -268,14 +268,10 @@ hold a merge up over something nobody asked to ship.
 `vercel.json` turns off Vercel's own Git deploys, and the Vercel GitHub App is
 **not** installed on this repository, so nothing deploys on its own. A manual
 run needs either the three Vercel secrets — `VERCEL_TOKEN`, `VERCEL_ORG_ID`,
-`VERCEL_PROJECT_ID` (from `.vercel/project.json` after `vercel link`) — or, for
-the server path, the `DEPLOY_HOST` variable described in
-[`docs/google-cloud.md`](docs/google-cloud.md).
-
-With the `DEPLOY_HOST` repository variable set, the same job builds the app
-and deploys it to a server over SSH instead, such as Google Cloud's free
-e2-micro. Setup, rollback and the way back to Vercel are in
-[docs/google-cloud.md](docs/google-cloud.md).
+`VERCEL_PROJECT_ID` (from `.vercel/project.json` after `vercel link`) — or the
+`DEPLOY_HOST` repository variable, which sends the same job to a server over
+SSH instead (a Google Cloud e2-micro, say). Setup, rollback and the way back to
+Vercel are in [`docs/google-cloud.md`](docs/google-cloud.md).
 
 ## Layout
 
