@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Deploys are manual: Actions → CI → Run workflow, with main selected.
+  # A merge to main runs the checks and ships nothing.
+  workflow_dispatch:
 
 # A new push to a pull request replaces the run still going on the old one.
 # Pushes to main are keyed by commit, so a deploy is never cancelled.
@@ -180,12 +183,15 @@ jobs:
           path: e2e/.results
           retention-days: 7
 
-  # Production deploys only once every job above passes on main. vercel.json turns
-  # off Vercel's own Git deploy for main, so this is the only path to prod.
-  # With the DEPLOY_HOST variable set it deploys to the server instead
-  # (deploy/server, docs/google-cloud.md); without it, to Vercel.
+  # Deploys are manual, and only from main: Actions → CI → Run workflow.
+  # Merging to main no longer ships anything by itself, so a paused host or a
+  # failing check on a branch cannot gate a merge. Every job above still has to
+  # pass before this one runs. vercel.json turns off Vercel's own Git deploy,
+  # so this remains the only path to production. With the DEPLOY_HOST variable
+  # set it deploys to the server instead (deploy/server, docs/google-cloud.md);
+  # without it, to Vercel.
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: [lint, typecheck, test, build]
     runs-on: ubuntu-latest
     timeout-minutes: 30
