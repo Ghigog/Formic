@@ -6,6 +6,7 @@ import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
 import { repository } from "@/lib/db";
 import { getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { env } from "@/lib/secrets/env";
+import { hintFor } from "@/lib/secrets/vault";
 import { SettingsForm } from "@/components/settings/settings-form";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,12 @@ export default async function SettingsPage() {
       }}
       installUrl={installUrl()}
       projects={projects}
+      // Local mode only: GitHub mode's credential is the sign-in itself.
+      github={
+        authMode() === "local"
+          ? { hint: config.GITHUB_TOKEN ? hintFor(config.GITHUB_TOKEN) : null }
+          : null
+      }
       runTimeBudget={await getRunTimeBudgetSettings(user.id)}
       limits={await getLimitSettings(user.id)}
       renewal={{ day: user.tokenRenewalDay, timezone: user.tokenWindowTimezone }}

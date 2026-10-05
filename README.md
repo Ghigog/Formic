@@ -246,16 +246,31 @@ the bug style and the sound switch.
 
 ## Deploys
 
-Production deploys from CI, not Vercel's Git integration. `vercel.json` turns
-Git deployments off for `main` and for every branch with a slash in its name
-(`claude/…`, `formic/…`, and the like), so pull requests get no preview. On
-each push to `main`, CI's `deploy` job runs `vercel deploy --prod` once
-`build` and `e2e` pass, so a merge that breaks CI never goes live. Each merge
-still costs one deploy against the plan's daily limit.
+Formic runs three ways. They are not exclusive, and the database story between
+them is one page:
 
-It needs three repository secrets: `VERCEL_TOKEN` (a Vercel access token),
-`VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` (from `.vercel/project.json` after
-`vercel link`).
+| Way | Guide | You get | You give up |
+| :-- | :-- | :-- | :-- |
+| **Your own machine** | [`docs/local.md`](docs/local.md) | Free, no egress, no sign-in; a double-clickable app built by `deploy/mac/` | Agents pause when the machine sleeps; GitHub can't reach you; one user |
+| **Vercel** | [`docs/vercel.md`](docs/vercel.md) | Always on, multi-user | Function time limits, egress, `e2b` sandboxes required |
+| **Google Cloud** | [`docs/google-cloud.md`](docs/google-cloud.md) | Always on, no function ceiling | A server to maintain; still needs the database |
+
+[`docs/database.md`](docs/database.md) is the part all three share: connection
+resolution, migrations, seeding, egress, backups. [`docs/runbook.md`](docs/runbook.md)
+is the deploy, rollback and restore drill.
+
+**Deploying is manual.** A merge runs the checks and ships nothing: CI's
+`deploy` job runs only from **Actions → CI → Run workflow**, on `main`, and
+only once every job above it has passed. That way a host that is paused — or a
+deploy that fails — cannot leave a failing check on a pull request, and cannot
+hold a merge up over something nobody asked to ship.
+
+`vercel.json` turns off Vercel's own Git deploys, and the Vercel GitHub App is
+**not** installed on this repository, so nothing deploys on its own. A manual
+run needs either the three Vercel secrets — `VERCEL_TOKEN`, `VERCEL_ORG_ID`,
+`VERCEL_PROJECT_ID` (from `.vercel/project.json` after `vercel link`) — or, for
+the server path, the `DEPLOY_HOST` variable described in
+[`docs/google-cloud.md`](docs/google-cloud.md).
 
 With the `DEPLOY_HOST` repository variable set, the same job builds the app
 and deploys it to a server over SSH instead, such as Google Cloud's free
