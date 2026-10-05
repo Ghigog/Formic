@@ -213,6 +213,41 @@ describe("GET /api/attachments/[id]", () => {
 
     expect(res.status).toBe(404);
   });
+
+  it("authorizes a read from the attachment's own row, never by reading the board", async () => {
+    activeProject.mockResolvedValue({ id: PROJECT_A });
+    const attachment = await createUnclaimed("req-board");
+    const epic = await repository().createEpic({
+      projectId: PROJECT_A,
+      title: "Epic",
+      rawRequest: "Do the thing.",
+      position: 1000,
+    });
+    await repository().claimAttachments("req-board", { epicId: epic.id });
+
+    // Every image in a drawer's gallery used to cost the whole board plus one
+    // query per card on it, each dragging that card's attachments along. The
+    // row already says which project it belongs to and whether a card has
+    // claimed it.
+    const repo = repository();
+    const board = vi.spyOn(repo, "boardCards");
+    const listing = vi.spyOn(repo, "attachmentsFor");
+    const scope = vi.spyOn(repo, "attachmentScope");
+
+    const res = await GET(
+      req(`http://localhost/api/attachments/${attachment.id}`),
+      params(attachment.id),
+    );
+
+    expect(res.status).toBe(200);
+    expect(scope).toHaveBeenCalledTimes(1);
+    expect(board).not.toHaveBeenCalled();
+    expect(listing).not.toHaveBeenCalled();
+
+    board.mockRestore();
+    listing.mockRestore();
+    scope.mockRestore();
+  });
 });
 
 describe("DELETE /api/attachments/[id]", () => {

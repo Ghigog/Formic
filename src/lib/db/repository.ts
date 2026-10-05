@@ -234,6 +234,13 @@ export interface TicketDetail {
   handoff: string[];
   /** The head commit the Reviewer Agent last approved or pushed. */
   reviewedSha: string | null;
+  /**
+   * The head a review has already been given, answer or not. A report about
+   * that same commit does not start another review while the card is parked
+   * on it (see src/lib/review/pipeline.ts); null once the review has come
+   * back, and after a person moves the card.
+   */
+  reviewedHead: string | null;
   /** Work for a person, not an agent: why. Null when an agent can do it. */
   needsHuman: string | null;
 }
@@ -267,6 +274,7 @@ export interface TicketUpdate {
   plan?: PlanStep[];
   handoff?: string[];
   reviewedSha?: string | null;
+  reviewedHead?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -472,6 +480,13 @@ export interface Repository {
   setReroute(cardId: string, kind: "epic" | "ticket", reroute: Reroute | null): Promise<void>;
   createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary>;
   attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]>;
+  /**
+   * Which project an attachment belongs to, and the request id it is still
+   * waiting under (null once a card has claimed it). The whole of what a read
+   * has to check, in one query: a route that read the board to work this out
+   * paid for the board every time an image loaded.
+   */
+  attachmentScope(id: string): Promise<{ projectId: string; requestId: string | null } | null>;
   /** The stored bytes and mime type, or null when no such attachment exists. */
   attachmentContent(id: string): Promise<AttachmentContent | null>;
   /** Moves every attachment under requestId to a real card, once it exists. */

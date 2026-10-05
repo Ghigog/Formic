@@ -776,16 +776,35 @@ export class PrismaRepository implements Repository {
         size: input.size ?? "M",
         bytes: Buffer.from(input.bytes),
       },
+      // Without this, INSERT ... RETURNING hands the file straight back, so
+      // uploading cost a second copy of its bytes in egress.
+      select: ATTACHMENT_SUMMARY,
     });
     return toAttachmentSummary(row);
   }
 
   async attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]> {
+    // Summary columns only, deliberately: `bytes` holds the whole file, and a
+    // listing that fetched it threw it away in toAttachmentSummary anyway.
+    // Every call paid for a copy of every attachment's contents.
     const rows = await prisma().attachment.findMany({
       where: attachmentRefWhere(ref),
       orderBy: { createdAt: "asc" },
+      select: ATTACHMENT_SUMMARY,
     });
     return rows.map(toAttachmentSummary);
+  }
+
+  async attachmentScope(
+    id: string,
+  ): Promise<{ projectId: string; requestId: string | null } | null> {
+    // The one query an attachment read needs to authorize itself. It used to
+    // read the whole board, then every card's attachments one by one.
+    const row = await prisma().attachment.findUnique({
+      where: { id },
+      select: { projectId: true, requestId: true },
+    });
+    return row ?? null;
   }
 
   async attachmentContent(id: string): Promise<AttachmentContent | null> {
@@ -1572,6 +1591,7 @@ type TicketRow = {
   plan: unknown;
   handoff: string[];
   reviewedSha: string | null;
+  reviewedHead: string | null;
   needsHuman: string | null;
   epic: { projectId: string };
 };
@@ -1662,6 +1682,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     plan: planOf(row.plan),
     handoff: row.handoff,
     reviewedSha: row.reviewedSha,
+    reviewedHead: row.reviewedHead,
     needsHuman: row.needsHuman,
   };
 }
@@ -1671,6 +1692,21 @@ function attachmentRefWhere(ref: AttachmentRef) {
   if ("ticketId" in ref) return { ticketId: ref.ticketId };
   return { requestId: ref.requestId };
 }
+
+/**
+ * The columns a listing needs. `bytes` is missing on purpose and must stay
+ * missing: it is the entire file, and every route that lists attachments —
+ * the gallery, the batch-limit check, a CLI agent's prompt — only ever wanted
+ * the filename and size. Selecting it moved whole screenshots and archives
+ * out of Postgres for nothing. The url below is derived, not a column.
+ */
+const ATTACHMENT_SUMMARY = {
+  id: true,
+  filename: true,
+  mimeType: true,
+  kind: true,
+  size: true,
+} as const;
 
 function toAttachmentSummary(row: {
   id: string;

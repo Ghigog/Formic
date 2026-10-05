@@ -12,27 +12,17 @@ export const dynamic = "force-dynamic";
  * Whether this project may reach this attachment: still waiting under the
  * requestId the caller supplied (a request id is a client-generated secret,
  * unguessable by another project's session), or already claimed by one of
- * this project's own cards.
+ * this project's own cards. One indexed query — the card it is attached to
+ * and the project it was uploaded for are already on the row.
  */
 async function reachable(
   projectId: string,
   attachmentId: string,
   requestId: string | null,
 ): Promise<boolean> {
-  const repo = repository();
-
-  if (requestId) {
-    const pending = await repo.attachmentsFor({ requestId });
-    if (pending.some((a) => a.id === attachmentId)) return true;
-  }
-
-  const cards = await repo.boardCards(projectId);
-  const claimed = await Promise.all(
-    cards.map((card) =>
-      repo.attachmentsFor(card.kind === "epic" ? { epicId: card.id } : { ticketId: card.id }),
-    ),
-  );
-  return claimed.some((list) => list.some((a) => a.id === attachmentId));
+  const scope = await repository().attachmentScope(attachmentId);
+  if (!scope) return false;
+  return scope.requestId ? scope.requestId === requestId : scope.projectId === projectId;
 }
 
 export async function GET(

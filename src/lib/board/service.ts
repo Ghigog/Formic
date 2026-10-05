@@ -292,9 +292,11 @@ export async function applyTransition(
   // Moving a ticket into In Progress is the Coder Agent's trigger: sandbox,
   // implement, check the diff against the file scope, push, open a pull
   // request. Detached for the same reason as above.
-  // A person moving a ticket on is a fresh start for its review count.
+  // A person moving a ticket on is a fresh start for its reviews: the count
+  // goes back to zero, and no head is left marked as one already out for a
+  // review nothing came back on.
   if (card.kind === "ticket" && (t.to === "in_progress" || t.to === "in_review")) {
-    await repo.updateTicket(card.id, { attempts: 0 });
+    await repo.updateTicket(card.id, { attempts: 0, reviewedHead: null });
   }
   if (card.kind === "ticket" && status === "running") {
     launch(

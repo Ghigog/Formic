@@ -110,6 +110,22 @@ class StubReviewer implements ReviewerAgent {
   }
 }
 
+/**
+ * A reviewer whose own provider fell over before it read anything: a quota
+ * exhausted, a key rejected. It is the difference between a review that came
+ * back with an answer and one that never ran at all.
+ */
+class FallingOverReviewer implements ReviewerAgent {
+  reviews: ReviewTask[] = [];
+
+  constructor(private readonly error: string) {}
+
+  async review(_ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
+    this.reviews.push(input);
+    return { ok: false, blocked: false, error: this.error, usage: NO_USAGE };
+  }
+}
+
 const fixesInScope = async (workspace: Workspace, input: ReviewTask) => {
   await workspace.writeFile(`${input.task.fileScope[0]}/fix.ts`, "export const b = 2;\n");
 };
@@ -772,6 +788,31 @@ describe("the Reviewer Agent pipeline", () => {
     // Another report on the same head does not review it again.
     await reviewPullRequest(PROJECT, pull.number, pull.headSha);
     expect((await repository().ticketDetail(ticket.id))!.attempts).toBe(after.attempts);
+  });
+
+  it("spends one review on a head whose review fell over, not one per report", async () => {
+    // The provider is out of quota, so nothing was read. A commit finishing
+    // four checks arrives as four reports, and each of them used to start a
+    // review of its own: four runs of the In Review agent, and a card parked
+    // at its ceiling saying it had been reviewed four times.
+    const reviewer = new FallingOverReviewer(
+      "ClinePass is rate limiting this key (HTTP 429). Wait a minute, then move the card back to retry.",
+    );
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+
+    for (let i = 0; i < 4; i++) {
+      await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+    }
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(reviewer.reviews).toHaveLength(1);
+    expect(after.attempts).toBe(1);
+    // The card says what actually happened, rather than asking a person to
+    // settle four reviews that never read the diff.
+    expect(after.blockedReason).toContain("429");
+    expect(after.blockedReason).not.toContain("without being approved");
   });
 
   it("merges an approved pull request once its base is brought in, without reviewing it again", async () => {

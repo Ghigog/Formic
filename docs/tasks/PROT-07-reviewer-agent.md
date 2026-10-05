@@ -93,6 +93,17 @@ restores the PRD's behaviour, in one place, as a deliberate choice.
   attempt counter is persisted on the ticket so a restart cannot reset it, and
   reactions are serialized per ticket so a commit finishing four checks does
   not open four sandboxes.
+- Serializing reports is not enough on its own: the four a commit's checks
+  produce still start four reviews, one after the other. What stops that is
+  the head itself — written on the ticket when a review is given one, and
+  given up when the review answers. A review that fell over before it read
+  anything (a provider out of quota, a sandbox that would not open) keeps the
+  head and parks the card with what actually went wrong, and the reports that
+  follow about that same commit wait for the person that reason names instead
+  of spending the rest of the review ceiling on a CI run nothing was read
+  from. A new head, or a person moving the card, is what asks again. One that
+  answered gives the head up, so a report after it — a check somebody re-ran,
+  now green — is reviewed again rather than answered from a stale verdict.
 - After the ceiling the card is parked in `blocked` with the failing check
   named, in the column it stalled in. When that check fails on the very
   commit the reviewer approved, the reason says so, because the person is

@@ -141,6 +141,7 @@ function contract(name: string, make: () => Repository) {
           plan: [{ step: "write it", status: "done" }],
           handoff: ["rotate the key"],
           attempts: 2,
+          reviewedHead: "head-1",
         });
 
         const byPr = await repo.ticketByPrNumber(p.id, 42);
@@ -150,6 +151,7 @@ function contract(name: string, make: () => Repository) {
           prUrl: "https://example.test/pr/42",
           attempts: 2,
           handoff: ["rotate the key"],
+          reviewedHead: "head-1",
         });
         expect(byPr!.plan).toEqual([{ step: "write it", status: "done" }]);
         expect(await repo.ticketByPrNumber(p.id, 43)).toBeNull();

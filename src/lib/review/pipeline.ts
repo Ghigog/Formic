@@ -105,6 +105,23 @@ export async function reviewPullRequest(
 }
 
 /**
+ * Whether this card is already parked on a review of this commit, and so is
+ * waiting for the person its reason names rather than for another report.
+ *
+ * A commit finishing four checks arrives as four deliveries, and reports keep
+ * coming after a review has fallen over — a provider out of quota, a sandbox
+ * that would not open, a base that would not come in. Each of them would
+ * start its own review of the same head: four runs of the In Review agent,
+ * four of the ticket's reviews spent on one CI run, and a card parked at its
+ * ceiling saying it had been reviewed four times when nothing was read. The
+ * reason from the review that fell over is what the person acts on, and a new
+ * head or a person moving the card is what asks for another go.
+ */
+function parkedOnReview(ticket: TicketDetail, headSha: string): boolean {
+  return ticket.reviewedHead === headSha && ticket.blockedReason !== null;
+}
+
+/**
  * One reaction per ticket at a time, and only to the commit that is currently
  * at the head. Webhooks arrive at least once and out of order, so an event
  * about a commit the reviewer has already replaced is not history worth
@@ -134,6 +151,7 @@ async function react(
   const pull = await client.pullRequest(prNumber);
   if (pull.merged) return;
   if (!ticket.runnerJob && pull.state === "open" && pull.mergeable === false) {
+    if (parkedOnReview(ticket, pull.headSha)) return;
     await resolveConflicts(projectId, ticket, pull);
     return;
   }
@@ -175,7 +193,7 @@ async function react(
     // the merge waits for both. Once it has approved this head, or once a
     // check has already failed, the rest of CI is worth waiting for.
     if (ticket.runnerJob || reviewedSha === headSha || red.length > 0) return;
-    if (!startReview) return;
+    if (!startReview || parkedOnReview(ticket, headSha)) return;
     await reviewTicket(projectId, ticket, pull, [], { ciRunning: true });
     return;
   }
@@ -203,7 +221,9 @@ async function react(
     return;
   }
 
-  if (!startReview) return;
+  // An approved head still merges above, on its own reports; what a card
+  // parked on a review of this head is not asked for again is another review.
+  if (!startReview || parkedOnReview(ticket, headSha)) return;
   await reviewTicket(projectId, ticket, pull, red);
 }
 
@@ -845,7 +865,9 @@ async function reviewTicket(
 
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
-  await repo.updateTicket(ticket.id, { attempts: attempt });
+  // Written down before the review runs, so the other reports about this same
+  // commit do not each start one of their own; see parkedOnReview.
+  await repo.updateTicket(ticket.id, { attempts: attempt, reviewedHead: pull.headSha });
 
   const logs: FailingCheck[] = [];
   for (const check of red) {
@@ -934,10 +956,13 @@ async function reviewTicket(
     }
 
     const verdict = outcome.value;
+    // The review answered, whatever it is about to be asked to do with the
+    // answer: this head is no longer one a report can hand to it again.
     await repo.updateTicket(ticket.id, {
       costCents: outcome.usage.costCents,
       tokensIn: outcome.usage.tokensIn,
       tokensOut: outcome.usage.tokensOut,
+      reviewedHead: null,
     });
 
     if (verdict.sendBack) {
@@ -1054,7 +1079,7 @@ async function resolveConflicts(
 
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
-  await repo.updateTicket(ticket.id, { attempts: attempt });
+  await repo.updateTicket(ticket.id, { attempts: attempt, reviewedHead: pull.headSha });
 
   const changedFiles = await client
     .compare(pull.baseBranch, branch)
@@ -1309,6 +1334,9 @@ export async function approve(
   const repo = repository();
   await repo.updateTicket(ticket.id, {
     reviewedSha: headSha,
+    // The review has answered about this head; a report about it is not a
+    // reason to hand the same commit back to it again.
+    reviewedHead: null,
     handoff: mergeHandoff(ticket.handoff, verdict.handoff),
   });
   await publish(projectId, {
@@ -1358,6 +1386,9 @@ export async function recordFix(
 ): Promise<void> {
   await repository().updateTicket(ticket.id, {
     reviewedSha: sha,
+    // It vouched for this one with a fix of its own, so it is no longer a
+    // commit a report can hand to it as an unread review.
+    reviewedHead: null,
     handoff: mergeHandoff(ticket.handoff, handoff),
   });
   await publish(projectId, {
@@ -1396,7 +1427,11 @@ export async function sendBack(
   await addNote(projectId, ticket.id, `Sent back by review: ${reason}`);
   // Running from here, not from when the Coder Agent gets going: a CI
   // result arriving in between would otherwise review the same head again.
-  await repository().updateTicket(ticket.id, { reviewedSha: null, status: "running" });
+  await repository().updateTicket(ticket.id, {
+    reviewedSha: null,
+    reviewedHead: null,
+    status: "running",
+  });
   launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
 }
 
