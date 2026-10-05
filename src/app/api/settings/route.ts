@@ -1,3 +1,5 @@
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import type { LimitSetting } from "@/lib/budget/budget-for";
 import { repository } from "@/lib/db";
@@ -14,7 +16,9 @@ import {
   updateLimitSettings,
   updateRunTimeBudgetSettings,
 } from "@/lib/user-settings";
+import { authMode } from "@/lib/auth/session";
 import { LIMIT_AXES, validateLimitSetting } from "@/lib/domain/limit-settings";
+import { resetEnvCache } from "@/lib/secrets/env";
 import { hintFor, seal } from "@/lib/secrets/vault";
 
 export const dynamic = "force-dynamic";
@@ -143,13 +147,53 @@ async function putRunTimeBudget(userId: string, json: unknown) {
   return Response.json({ ...time, ...limits });
 }
 
-/** Saves this person's sandbox key (never returned), their run time budget when the body has a `mode`, or their renewal day when it has a `renewalDay`. */
+/**
+ * Local mode's GitHub credential is the server's, not a person's, so it lives
+ * in `.env` rather than on a user row. Writing it there and reloading the
+ * config in place makes the board go live without a restart. Every other line
+ * of the file is left as it was.
+ */
+async function putGithubToken(json: { githubToken: unknown }) {
+  if (authMode() !== "local") {
+    return Response.json(
+      { error: "Signed in with GitHub, your sign-in is the GitHub credential. Nothing to set here." },
+      { status: 400 },
+    );
+  }
+  const token = z.string().trim().min(1).max(500).nullable().safeParse(json.githubToken);
+  if (!token.success) {
+    return Response.json({ error: "That does not look like a token." }, { status: 400 });
+  }
+
+  const file = path.join(process.cwd(), ".env");
+  let lines: string[] = [];
+  try {
+    lines = (await readFile(file, "utf8")).split("\n");
+  } catch {
+    // No .env yet: this creates one.
+  }
+  const kept = lines.filter((line) => !/^\s*GITHUB_TOKEN\s*=/.test(line));
+  while (kept.length > 0 && (kept[kept.length - 1] ?? "").trim() === "") kept.pop();
+  if (token.data !== null) kept.push(`GITHUB_TOKEN="${token.data.replace(/"/g, "")}"`);
+  await writeFile(file, `${kept.join("\n")}\n`);
+
+  if (token.data === null) delete process.env.GITHUB_TOKEN;
+  else process.env.GITHUB_TOKEN = token.data;
+  resetEnvCache();
+
+  return Response.json({ githubTokenHint: token.data ? hintFor(token.data) : null });
+}
+
+/** Saves this person's sandbox key (never returned), their run time budget when the body has a `mode`, their renewal day when it has a `renewalDay`, or local mode's server GitHub token when it has a `githubToken`. */
 export async function PUT(req: Request) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
   const json = await req.json().catch(() => null);
   if (json && typeof json === "object" && "mode" in json) return putRunTimeBudget(user.id, json);
   if (json && typeof json === "object" && "renewalDay" in json) return putRenewalDay(user.id, json);
+  if (json && typeof json === "object" && "githubToken" in json) {
+    return putGithubToken(json as { githubToken: unknown });
+  }
   const body = bodySchema.safeParse(json);
   if (!body.success) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
