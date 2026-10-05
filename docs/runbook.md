@@ -28,13 +28,14 @@ environment, its own database) work with this script unchanged.
 3. On staging first: merge to the branch staging deploys from (or promote
    the same commit there, depending on how staging is wired — see below).
    Confirm `/api/health` reports `ok: true` and spot-check the board.
-4. Merge to `main`. Once CI's `build` and `e2e` pass, its `deploy` job has
-   Vercel build and deploy production, running
-   `scripts/db-push.sh` (`prisma migrate deploy`) before `next build`. A
-   migration that references a column or table that doesn't exist yet, or
-   whose file was edited after being applied, fails the build instead of
-   running — the build log says which migration and why.
-5. Confirm `/api/health` on production and watch the post-merge smoke test.
+4. Merge to `main`. Nothing deploys on a merge: the `deploy` job runs only
+   from **Actions → CI → Run workflow** on `main`, and only once every check
+   above it has passed. Run it when you mean to ship. Vercel then builds and
+   deploys production, running `scripts/db-push.sh` (`prisma migrate deploy`)
+   before `next build`. A migration that references a column or table that
+   doesn't exist yet, or whose file was edited after being applied, fails the
+   build instead of running — the build log says which migration and why.
+5. Confirm `/api/health` on production and watch the smoke test.
 
 ## Roll back
 
