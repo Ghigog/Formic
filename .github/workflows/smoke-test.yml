@@ -1,8 +1,10 @@
 name: Production smoke test
 
 on:
-  push:
-    branches: [main]
+  # Manual, like the deploy it checks. A merge ships nothing now, so running
+  # this on every push to main would just sit and wait twenty minutes for a
+  # release that is not coming — and then fail. Dispatch it after a deploy,
+  # from Actions → Production smoke test → Run workflow.
   workflow_dispatch:
 
 jobs:
