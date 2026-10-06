@@ -79,7 +79,6 @@ import {
 } from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
-import { liveToken } from "@/lib/llm/cline-session";
   ALREADY_DONE_TRAILER,
   ANSWER_PATH,
   ATTACHMENTS_DIR_VAR,
@@ -108,6 +107,7 @@ import { liveToken } from "@/lib/llm/cline-session";
   type LoopMode,
   type RunnerMode,
 } from "./workflow";
+import { liveToken } from "@/lib/llm/cline-session";
 
 export { ALREADY_DONE_TRAILER, USAGE_TRAILER };
 
