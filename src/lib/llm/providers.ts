@@ -158,19 +158,20 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     flatRate: true,
     keyName: "API key",
     envKey: "CLINE_API_KEY",
-    // Real ids, exactly as Cline's gateway lists them: `vendor/model`
-    // (deepseek/…, z-ai/… for GLM, moonshotai/… for Kimi, qwen/…). Cline has
-    // no `cline-pass/` scheme — that prefix was invented — so the old slugs
-    // matched no live model, never de-duplicated against the gateway list
-    // (openai-compat.ts `listOpenAiModels`), and, because they were the only
-    // options containing the word "Cline", typing the provider's own name into
-    // the editor's datalist hid the whole real catalog behind them.
+    // The slugs the $9.99 plan answers to — and deliberately not the gateway's
+    // own catalog, which is the opposite of what this column needs. `/models`
+    // at api.cline.bot lists the *metered* ids (`deepseek/…`, `z-ai/…`,
+    // `moonshotai/…`, `qwen/…`), and asking for one of those bills the API
+    // balance: a plan holder has never funded it, so the call comes back 402
+    // `insufficient_credits` on its first turn. The `cline-pass/…` slugs are the
+    // plan's own. They are not in that catalog, which is why they have to be
+    // suggested here — and why the editor puts these ahead of the gateway list
+    // (see agent-editor.tsx) rather than filtering the word "Cline" out of it.
     suggestedModels: [
-      "deepseek/deepseek-v4.1-flash",
-      "deepseek/deepseek-v4-pro",
-      "z-ai/glm-5.3",
-      "moonshotai/kimi-k3",
-      "qwen/qwen3.7-max",
+      "cline-pass/deepseek-v4.1-flash",
+      "cline-pass/glm-5.3",
+      "cline-pass/kimi-k3",
+      "cline-pass/qwen3.7-max",
     ],
   },
   {

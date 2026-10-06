@@ -10,23 +10,22 @@ describe("provider entries", () => {
     expect(info.baseUrl).toBe("https://api.deepseek.com");
   });
 
-  it("tells ClinePass users where a durable key comes from and suggests real model ids", () => {
+  it("tells ClinePass users which key to paste and suggests the plan's own slugs", () => {
     const info = provider("clinepass")!;
     expect(info.note).toContain("Settings > API Keys");
     expect(info.note).toMatch(/expires in 60 minutes/);
     expect(info.note).toMatch(/401/);
-    // Cline's ids are `vendor/model` and never `cline-pass/…`: the gateway
-    // lists deepseek/…, z-ai/… , moonshotai/… and qwen/…, and a made-up
-    // prefix both failed to de-duplicate against the live list and turned the
-    // word "Cline" in the model box into a filter that hid every real model.
+    // The plan's slugs, not the gateway's catalog. The catalog's `vendor/model`
+    // ids are the metered API: a plan holder has no balance for them, so asking
+    // for one is a 402 on the run's first turn, and the plan's own slugs are not
+    // in `/models` to be found there. Which is the whole reason they are
+    // suggested by hand — see the comment in providers.ts.
     expect(info.suggestedModels).toEqual([
-      "deepseek/deepseek-v4.1-flash",
-      "deepseek/deepseek-v4-pro",
-      "z-ai/glm-5.3",
-      "moonshotai/kimi-k3",
-      "qwen/qwen3.7-max",
+      "cline-pass/deepseek-v4.1-flash",
+      "cline-pass/glm-5.3",
+      "cline-pass/kimi-k3",
+      "cline-pass/qwen3.7-max",
     ]);
-    expect(info.suggestedModels.some((m) => m.startsWith("cline-pass/"))).toBe(false);
   });
 
   it("leaves no provider with no suggestions and a note that repeats its label", () => {
