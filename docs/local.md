@@ -129,7 +129,10 @@ Whichever you pick, put `DATABASE_URL` in `.env` so `npm run dev` and the
   It is never selected implicitly, and never on a board a person is using.
 - Saved agent templates are the same as everywhere: each carries its own
   provider key, and they run in-process, bounded by `DEFAULT_RUN_BUDGET`
-  (`docs/agent-execution.md`), not by a job.
+  (`docs/agent-execution.md`), not by a job. The job is where the ticket's own
+  budget lives, and one cannot start here: it fetches Formic's loop from the
+  board, and this board has no address GitHub can reach. Give it one —
+  `FORMIC_URL`, a tunnel or a deployment — and the loop runs here too.
 - CLI agents (Claude Code, Codex, Gemini CLI) still run in the repository's
   own GitHub Actions. They need `GITHUB_TOKEN` with the **`workflow`** scope
   (writing `.github/workflows/formic-agent.yml` needs it), and the repository

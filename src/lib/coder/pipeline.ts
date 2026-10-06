@@ -22,7 +22,14 @@ import { agentFor, cliAgentFor, loopAgentFor, runTargetFor } from "@/lib/agents/
 import type { CodeChange, Usage } from "@/lib/agents/ports";
 import type { VcsClient } from "@/lib/vcs";
 import { budgetForRun, inProcessBudget } from "@/lib/budget/in-process";
-import { cliPrompt, loopPayload, loopRunnerReady, resumeBrief, startJobRun } from "@/lib/runner/runner";
+import {
+  cliPrompt,
+  formicOrigin,
+  loopPayload,
+  loopRunnerReady,
+  resumeBrief,
+  startJobRun,
+} from "@/lib/runner/runner";
 import { guidedWorkspace } from "@/lib/sandbox/workspace";
 import { askForScope, hasKeptWork, takeKeptWork, widenScope } from "./scope-request";
 
@@ -215,7 +222,13 @@ export async function runCoderAgent(
   // workflow, and a board that has never installed one (local mode), keeps
   // the in-process path below exactly as it was: no card changes behaviour
   // because a feature exists.
-  const loop = await loopAgentFor(projectId, "in_progress");
+  //
+  // The job fetches that loop from this board, so the board needs an address
+  // GitHub can reach, and a laptop has none (docs/local.md). That is the same
+  // case once more — the run goes in-process below — rather than a card parked
+  // on a setting nobody set. What such a run gives up is the ticket's own
+  // budget, and the card says which limit stopped it.
+  const loop = formicOrigin() ? await loopAgentFor(projectId, "in_progress") : null;
   if (loop && (await loopRunnerReady(client, project.baseBranch))) {
     const notes = await noteTexts(projectId, ticket.id);
     // Read once, here: a setting changed after this run starts is for the next.

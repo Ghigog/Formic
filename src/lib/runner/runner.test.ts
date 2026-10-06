@@ -14,6 +14,7 @@ import {
   reviewVerdictOf,
   secretNameFor,
   signedAttachmentUrl,
+  startJobRun,
   stopTicket,
   usageOf,
 } from "./runner";
@@ -35,7 +36,7 @@ import {
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { reviewPullRequest } from "@/lib/review/pipeline";
 import { cliAgentFor, loopAgentFor, savePreset } from "@/lib/agents/presets";
-import { runArchitectAgent, runArchitectDraftTicket, runProductAgent } from "@/lib/agents/pipeline";
+import { runArchitectAgent, runArchitectDraftTicket, runProductAgent, startRun } from "@/lib/agents/pipeline";
 import type { ColumnId } from "@/lib/domain/status";
 import { provider } from "@/lib/llm/providers";
 import { resetAgents } from "@/lib/agents/registry";
@@ -1818,16 +1819,54 @@ describe("an API-key coder running in a job", () => {
     expect((await repository().ticketDetail(ticket.id))!.runnerJob).toBeNull();
   });
 
-  it("says so, without dispatching, when the board has no public address", async () => {
+  it("runs an API-key coder in-process on a board with no public address", async () => {
+    // A loop run hands the job a signed address for Formic's own loop, and the
+    // job fetches it from this board. A laptop has no address GitHub can fetch
+    // it from (docs/local.md), so the run takes the in-process path a
+    // repository with no workflow gets, rather than parking the card on a
+    // setting nobody set.
     await assignApiAgent();
     await installRunner();
     const ticket = await seedTicket();
+    // The in-process path calls the provider; this is only about it being the
+    // path taken, so the call itself is made to fail at once.
+    vi.stubGlobal("fetch", async () => new Response("no", { status: 500 }));
 
     await runCoderAgent(PROJECT, ticket.id);
 
     expect(MockVcsClient.runner().dispatches).toHaveLength(0);
+    expect(MockVcsClient.runner().secrets.size).toBe(0);
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.status).toBe("blocked");
+    expect(after.runnerJob).toBeNull();
+    expect(after.blockedReason ?? "").not.toContain("no public address");
+  });
+
+  it("refuses a loop run outright when the board has no address", async () => {
+    // The coder pipeline never chooses a job without one (see the test above);
+    // this is startJobRun's own precondition, for any other caller.
+    vi.stubEnv("FORMIC_URL", "");
+    await assignApiAgent();
+    const ticket = await seedTicket();
+    const agent = (await loopAgentFor(PROJECT, "in_progress"))!;
+    const run = startRun(PROJECT, "coder", {
+      ticketId: ticket.id,
+      model: agent.model,
+      provider: agent.info.id,
+    });
+
+    await startJobRun({
+      projectId: PROJECT,
+      ticket,
+      mode: "loop",
+      agent,
+      from: "main",
+      prompt: "{}",
+      run,
+      stalledIn: "in_progress",
+    });
+
+    expect(MockVcsClient.runner().dispatches).toHaveLength(0);
+    const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.blockedReason).toContain("no public address");
     expect(after.blockedReason).toContain("Set FORMIC_URL, then try again.");
   });
