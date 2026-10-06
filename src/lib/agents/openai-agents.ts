@@ -71,6 +71,27 @@ function add(a: Usage, b: Usage): Usage {
   };
 }
 
+/**
+ * A user turn, with any attachments ahead of its text. OpenAI-format providers
+ * take content as parts, so an image becomes a data-URL image part and a text
+ * file its own text part. `ChatMessage.content` is typed as a string because
+ * nothing here needed more before, so the object sent over the wire is the real
+ * shape and the cast only gets past that type.
+ */
+function withAttachments(text: string, attachments: AgentAttachment[]): ChatMessage {
+  const parts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [];
+  for (const a of attachments) {
+    if (a.kind === "image" && a.base64) {
+      parts.push({ type: "image_url", image_url: { url: `data:${a.mimeType};base64,${a.base64}` } });
+    } else if (a.kind === "file" && a.text) {
+      parts.push({ type: "text", text: `Attached file "${a.filename}":\n\n${a.text}` });
+    }
+  }
+  if (parts.length === 0) return { role: "user", content: text };
+  parts.push({ type: "text", text });
+  return { role: "user", content: parts as unknown as string };
+}
+
 function failure(model: string, error: string, blocked = false, used?: Usage): AgentOutcome<never> {
   return {
     ok: false,
@@ -170,7 +191,7 @@ export class OpenAiProductAgent implements ProductAgent {
       ctx,
       [
         { role: "system", content: jsonSystem(withProductConventions(this.config.brief ?? PRODUCT_BRIEF), productOutput) },
-        { role: "user", content: `Raw feature request:\n\n${input.rawRequest}` },
+        withAttachments(`Raw feature request:\n\n${input.rawRequest}`, input.attachments),
       ],
       (raw) => {
         const parsed = productOutput.safeParse(raw);
@@ -284,16 +305,16 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
           role: "system",
           content: jsonSystem(withPlanningConventions(this.config.brief ?? ARCHITECT_BRIEF), ticketOrRerouteSchema),
         },
-        {
-          role: "user",
-          content: [
+        withAttachments(
+          [
             "Raw feature request:",
             input.rawRequest,
             "",
             "Existing top-level directories in the repository:",
             input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
           ].join("\n"),
-        },
+          input.attachments,
+        ),
       ],
       (raw) => {
         const parsed = ticketOrRerouteSchema.safeParse(raw);

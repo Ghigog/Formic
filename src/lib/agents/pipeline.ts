@@ -4,8 +4,16 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 
-import type { AgentContext, AgentOutcome, DraftTicket, ExistingTicket, Usage } from "./ports";
+import type {
+  AgentAttachment,
+  AgentContext,
+  AgentOutcome,
+  DraftTicket,
+  ExistingTicket,
+  Usage,
+} from "./ports";
 import { repository } from "@/lib/db";
+import type { AttachmentRef } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
 import { ticketNotes } from "@/lib/coder/notes";
 import { epicNoteTexts, withEpicNotes } from "./epic-notes";
@@ -514,6 +522,31 @@ export async function stallEpic(
   });
 }
 
+/**
+ * A card's attachments, read back and shaped for a model: an image as base64,
+ * a text file as its decoded content. One whose bytes are gone is dropped, not
+ * failed — a pruned attachment is not a reason to stop drafting.
+ *
+ * The CLI agents get the same files by URL instead (`attachmentsPrompt` in
+ * runner.ts): they run in GitHub Actions and can download them there, while an
+ * in-process agent has to be handed the bytes.
+ */
+async function attachmentsFor(ref: AttachmentRef): Promise<AgentAttachment[]> {
+  const repo = repository();
+  const summaries = await repo.attachmentsFor(ref);
+  const attachments = await Promise.all(
+    summaries.map(async (s): Promise<AgentAttachment | null> => {
+      const content = await repo.attachmentContent(s.id);
+      if (!content) return null;
+      const base = { id: s.id, filename: s.filename, mimeType: s.mimeType };
+      return s.kind === "image"
+        ? { ...base, kind: "image" as const, base64: Buffer.from(content.bytes).toString("base64") }
+        : { ...base, kind: "file" as const, text: Buffer.from(content.bytes).toString("utf-8") };
+    }),
+  );
+  return attachments.filter((a): a is AgentAttachment => a !== null);
+}
+
 /** Stage 2. Raw backlog request becomes an Epic PRD. */
 export async function runProductAgent(
   projectId: string,
@@ -536,7 +569,7 @@ export async function runProductAgent(
   const outcome = await (await agentFor(projectId, "product")).draftPrd(run.ctx, {
     epicId,
     rawRequest: withEpicNotes(rawRequest, await epicNoteTexts(projectId, epicId)),
-    attachments: [],
+    attachments: await attachmentsFor({ epicId }),
   });
 
   if (outcome.ok) {
@@ -636,7 +669,7 @@ export async function runArchitectDraftTicket(
   const outcome = await (await agentFor(projectId, "architect")).draftTicket(run.ctx, {
     rawRequest,
     repoTree,
-    attachments: [],
+    attachments: await attachmentsFor({ ticketId }),
   });
 
   if (outcome.ok) {

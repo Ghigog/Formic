@@ -113,6 +113,29 @@ describe("the Architect's draft from a raw request", () => {
   });
 });
 
+describe("attachments on a draft", () => {
+  it("hands an image and a text file to an OpenAI-format provider as content parts", async () => {
+    const sent = fakeProvider([{ role: "assistant", content: JSON.stringify(TICKET_SPEC) }]);
+    const agent = new OpenAiArchitectAgent({ provider: "groq", model: "m", apiKey: "gsk" });
+
+    await agent.draftTicket(ctx(), {
+      rawRequest: "Do the thing.",
+      repoTree: [],
+      attachments: [
+        { id: "a1", filename: "shot.png", mimeType: "image/png", kind: "image", base64: "AQID" },
+        { id: "a2", filename: "notes.md", mimeType: "text/markdown", kind: "file", text: "hello" },
+      ],
+    });
+
+    const messages = sent[0]!.body.messages as Array<{ role: string; content: unknown }>;
+    const parts = messages.find((m) => m.role === "user")!.content as Array<Record<string, unknown>>;
+    expect(parts[0]).toEqual({ type: "image_url", image_url: { url: "data:image/png;base64,AQID" } });
+    expect(parts[1]).toEqual({ type: "text", text: 'Attached file "notes.md":\n\nhello' });
+    // The request text always comes last, after the attachments.
+    expect(parts.at(-1)).toMatchObject({ type: "text" });
+  });
+});
+
 describe("the coding loop on an OpenAI-format provider", () => {
   it("edits files through tool calls and finishes", async () => {
     const sent = fakeProvider([

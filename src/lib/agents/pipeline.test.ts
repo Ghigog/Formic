@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 import type {
+  AgentAttachment,
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
@@ -351,6 +352,37 @@ describe("runArchitectDraftTicket", () => {
     const after = await repository().cardById(epic.id);
     expect(after).toMatchObject({ status: "specified", stalledIn: null, blockedReason: null });
     expect((await repository().epicDetail(epic.id))?.prd).toMatchObject({ summary: "s" });
+  });
+});
+
+describe("runProductAgent, with attachments on the request", () => {
+  it("reads a stored attachment back and hands it to the agent, an image as base64", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null });
+    seedMemory([epic]);
+    const repo = repository();
+    await repo.createAttachment({
+      projectId: PROJECT,
+      requestId: "req-1",
+      filename: "shot.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+    await repo.claimAttachments("req-1", { epicId: epic.id });
+
+    let seen: AgentAttachment[] = [];
+    useProduct({
+      async draftPrd(_ctx, input) {
+        seen = input.attachments;
+        return { ok: true, value: { kind: "prd", title: "T", prd: PRD }, usage: NO_USAGE };
+      },
+    });
+
+    await runProductAgent(PROJECT, epic.id, "A request with a screenshot");
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ filename: "shot.png", kind: "image", base64: "AQID" });
   });
 });
 

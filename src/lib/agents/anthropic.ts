@@ -39,6 +39,33 @@ import {
 } from "./decomposition";
 import { requestShape } from "./models";
 
+/** Image types the API accepts as an image content block. Anything else is inlined as text instead. */
+const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+/**
+ * An attachment as the model sees it: an image ahead of the request becomes an
+ * image content block, a text file its own text block. Both drafting agents
+ * ground their reading in these the way they ground it in the request text.
+ */
+function attachmentBlocks(attachments: AgentAttachment[]): Anthropic.Beta.BetaContentBlockParam[] {
+  const blocks: Anthropic.Beta.BetaContentBlockParam[] = [];
+  for (const a of attachments) {
+    if (a.kind === "image" && a.base64 && IMAGE_MEDIA_TYPES.has(a.mimeType)) {
+      blocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: a.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+          data: a.base64,
+        },
+      });
+    } else if (a.kind === "file" && a.text) {
+      blocks.push({ type: "text", text: `Attached file "${a.filename}":\n\n${a.text}` });
+    }
+  }
+  return blocks;
+}
+
 /**
  * Real agents.
  *
@@ -212,7 +239,10 @@ export class AnthropicProductAgent implements ProductAgent {
         messages: [
           {
             role: "user",
-            content: `Raw feature request:\n\n${input.rawRequest}`,
+            content: [
+              ...attachmentBlocks(input.attachments),
+              { type: "text", text: `Raw feature request:\n\n${input.rawRequest}` },
+            ],
           },
         ],
       });
@@ -399,12 +429,18 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
           {
             role: "user",
             content: [
-              "Raw feature request:",
-              input.rawRequest,
-              "",
-              "Existing top-level directories in the repository:",
-              input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
-            ].join("\n"),
+              ...attachmentBlocks(input.attachments),
+              {
+                type: "text",
+                text: [
+                  "Raw feature request:",
+                  input.rawRequest,
+                  "",
+                  "Existing top-level directories in the repository:",
+                  input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+                ].join("\n"),
+              },
+            ],
           },
         ],
       });
