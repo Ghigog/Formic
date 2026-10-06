@@ -158,11 +158,19 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     flatRate: true,
     keyName: "API key",
     envKey: "CLINE_API_KEY",
+    // Real ids, exactly as Cline's gateway lists them: `vendor/model`
+    // (deepseek/…, z-ai/… for GLM, moonshotai/… for Kimi, qwen/…). Cline has
+    // no `cline-pass/` scheme — that prefix was invented — so the old slugs
+    // matched no live model, never de-duplicated against the gateway list
+    // (openai-compat.ts `listOpenAiModels`), and, because they were the only
+    // options containing the word "Cline", typing the provider's own name into
+    // the editor's datalist hid the whole real catalog behind them.
     suggestedModels: [
-      "cline-pass/deepseek-v4.1-flash",
-      "cline-pass/glm-5.3",
-      "cline-pass/kimi-k3",
-      "cline-pass/qwen3.7-max",
+      "deepseek/deepseek-v4.1-flash",
+      "deepseek/deepseek-v4-pro",
+      "z-ai/glm-5.3",
+      "moonshotai/kimi-k3",
+      "qwen/qwen3.7-max",
     ],
   },
   {
