@@ -91,7 +91,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    @objc func reload(_ sender: Any?) { webView.reload() }
+    /**
+     * ⌘R, and the menu's Reload. Deliberately not `webView.reload()`: a reload
+     * keeps the same web content process, and that process is where the audio
+     * lives. A page whose sound WebKit has stopped serving stays silent through
+     * any number of reloads — only quitting the app brings it back, because
+     * that is what makes a new process. A new web view does the same, so this is
+     * the cheap version of quit and reopen.
+     */
+    @objc func reload(_ sender: Any?) {
+        let frame = webView.frame
+        let config = webView.configuration
+        let back = webView.url
+        webView.removeFromSuperview()
+        let fresh = WKWebView(frame: frame, configuration: config)
+        fresh.uiDelegate = self
+        webView = fresh
+        window.contentView = fresh
+        let http = back?.scheme == "http" || back?.scheme == "https"
+        fresh.load(URLRequest(url: http ? back! : BOARD_URL))
+    }
 
     /**
      * A link with target="_blank" — which is every external link in Formic: a

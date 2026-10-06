@@ -94,6 +94,8 @@ interface NoiseOpts {
 export class SoundEngine {
   private enabled = true;
   private gestured = false;
+  /** Set while a resume has been asked for and has not been seen to work. */
+  private reviving = false;
   private ac: AudioContext | null = null;
   private out: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
@@ -117,7 +119,10 @@ export class SoundEngine {
    * would otherwise be spent discovering the context is still silent.
    */
   private readonly onWake = () => {
-    if (this.ac && this.ac.state !== "running") void this.ac.resume().catch(() => {});
+    if (this.ac && this.ac.state !== "running") {
+      this.reviving = true;
+      void this.ac.resume().catch(() => {});
+    }
   };
 
   /** Whatever was waiting to be heard goes now, after the current handlers. */
@@ -169,6 +174,20 @@ export class SoundEngine {
 
   private audio(): AudioContext | null {
     if (!this.enabled || !this.unlocked()) return null;
+    // Asked to resume last time, and still not running: this context is gone as
+    // far as WebKit is concerned. The audio was taken away — a device change,
+    // a display that slept, a window in the background — and nothing brings one
+    // of those back, however many times it is asked. Build another, which is
+    // what quitting and reopening the app was doing for it. Every node goes
+    // with the old one, buffers included: they belong to the context that made
+    // them.
+    if (this.ac && this.reviving && this.ac.state !== "running") {
+      void this.ac.close().catch(() => {});
+      this.ac = null;
+      this.out = null;
+      this.noiseBuf = null;
+      this.reviving = false;
+    }
     if (!this.ac) {
       const AC =
         window.AudioContext ??
@@ -186,13 +205,16 @@ export class SoundEngine {
       this.out.gain.value = 0.9;
       this.out.connect(comp);
       comp.connect(this.ac.destination);
+      // A context made inside a gesture starts running; one made for a sound
+      // that arrived on its own does not, and is asked below.
+      this.reviving = this.ac.state !== "running";
     }
     // Not just "suspended": when the system takes the audio away — a sleep, a
     // device change, headphones plugged in — WebKit parks the context in
     // "interrupted", and it stays there, silent, until something resumes it.
-    // Nothing else in the page ever will: every sound comes through here. Left
-    // as "suspended" alone, the board went quiet for good until it was reloaded.
-    if (this.ac.state !== "running") void this.ac.resume().catch(() => {});
+    // Nothing else in the page ever will: every sound comes through here.
+    if (this.ac.state === "running") this.reviving = false;
+    else if (!this.reviving) void this.ac.resume().catch(() => {});
     return this.ac;
   }
 
