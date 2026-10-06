@@ -2,6 +2,7 @@ import "server-only";
 
 import type { ProviderInfo } from "./providers";
 import { describeProviderError, isTransientProviderError } from "@/lib/agents/limits";
+import { liveToken } from "./cline-session";
 
 /**
  * OpenAI's chat completions format, spoken at whichever address a provider
@@ -186,6 +187,27 @@ export interface ChatRequest {
 }
 
 export async function chat(
+  p: ProviderInfo,
+  apiKey: string,
+  request: ChatRequest,
+): Promise<ChatResult> {
+  // ClinePass's plan credential is an account session, not an API key, and it
+  // expires. Ask for a live one before the call, so a run does not die on a
+  // token that was minted an hour ago (see ./cline-session.ts).
+  const key = await liveToken(p, apiKey);
+  try {
+    return await withRetries(p, key, request);
+  } catch (e) {
+    // Refused anyway: one refresh, once. A credential that is genuinely wrong
+    // still reports itself rather than being retried forever.
+    if (p.id !== "clinepass" || !(e instanceof ProviderError) || e.status !== 401) throw e;
+    const again = await liveToken(p, apiKey, { force: true });
+    if (again === key) throw e;
+    return await withRetries(p, again, request);
+  }
+}
+
+async function withRetries(
   p: ProviderInfo,
   apiKey: string,
   request: ChatRequest,
