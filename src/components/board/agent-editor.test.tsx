@@ -206,10 +206,52 @@ describe("AgentEditor limit override", () => {
         onDelete={vi.fn()}
       />,
     );
-    expect(screen.getByLabelText("Minutes override")).toHaveValue(15);
+    expect(screen.getByLabelText("Minutes override")).toHaveValue("15");
     await userEvent.type(screen.getByLabelText("Attempts override"), "3");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSaveOverride).toHaveBeenCalledWith({ minutes: 15, tokens: null, attempts: 3 });
+  });
+
+  it("clears an override when its value is taken out, so the column leaves it", async () => {
+    stubModelsFetch();
+    const onSaveOverride = vi.fn(async () => {});
+    render(
+      <AgentEditor
+        column="todo"
+        preset={preset("anthropic")}
+        override={{ minutes: 15, tokens: 90000, attempts: 3 }}
+        onSaveOverride={onSaveOverride}
+        onClose={vi.fn()}
+        onSave={vi.fn(async () => {})}
+        onDelete={vi.fn()}
+      />,
+    );
+    await userEvent.clear(screen.getByLabelText("Minutes override"));
+    await userEvent.clear(screen.getByLabelText("Tokens override"));
+    await userEvent.clear(screen.getByLabelText("Attempts override"));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSaveOverride).toHaveBeenCalledWith({ minutes: null, tokens: null, attempts: null });
+  });
+
+  it("refuses a value that is not a whole number of at least 1, and writes nothing", async () => {
+    stubModelsFetch();
+    const onSave = vi.fn(async () => {});
+    const onSaveOverride = vi.fn(async () => {});
+    render(
+      <AgentEditor
+        column="todo"
+        preset={preset("anthropic")}
+        onSaveOverride={onSaveOverride}
+        onClose={vi.fn()}
+        onSave={onSave}
+        onDelete={vi.fn()}
+      />,
+    );
+    await userEvent.type(screen.getByLabelText("Minutes override"), "0");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/whole numbers of at least 1/);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onSaveOverride).not.toHaveBeenCalled();
   });
 
   it("offers no token limit to an agent whose path cannot enforce one", () => {

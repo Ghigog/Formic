@@ -195,6 +195,19 @@ export function AgentEditor({
       setError(`Add your ${info.keyName}. This agent runs on it.`);
       return;
     }
+    // Read the override before the agent is written, so a limit that is not a
+    // whole number of at least 1 stops the save and says so, rather than
+    // leaving the agent saved with its old limits.
+    const count = (axis: LimitAxis) => (limits[axis].trim() === "" ? null : Number(limits[axis]));
+    const next: ColumnOverride = {
+      minutes: count("minutes"),
+      tokens: cli ? null : count("tokens"),
+      attempts: count("attempts"),
+    };
+    if (Object.values(next).some((n) => n !== null && !(Number.isInteger(n) && n >= 1))) {
+      setError("Limits are whole numbers of at least 1, or empty.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -210,18 +223,7 @@ export function AgentEditor({
             ? { apiKey: typedKey }
             : {}),
       });
-      if (!forAssistant && onSaveOverride) {
-        const count = (axis: LimitAxis) => (limits[axis].trim() === "" ? null : Number(limits[axis]));
-        const next = {
-          minutes: count("minutes"),
-          tokens: cli ? null : count("tokens"),
-          attempts: count("attempts"),
-        };
-        if (Object.values(next).some((n) => n !== null && !(Number.isInteger(n) && n >= 1))) {
-          throw new Error("Limits are whole numbers of at least 1, or empty.");
-        }
-        await onSaveOverride(next);
-      }
+      if (!forAssistant && onSaveOverride) await onSaveOverride(next);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the agent.");
@@ -448,11 +450,13 @@ export function AgentEditor({
               <legend className={label}>Limit override</legend>
               <div className="flex gap-2">
                 {overrideAxes.map(({ id, label: axis }) => (
+                  // A plain field, not `type="number"`: its spinners clamp at a
+                  // minimum and an out-of-range value silently blocks the form's
+                  // Save, so a flat value entered here could not be taken out
+                  // again. Whole numbers of at least 1, or empty, are checked
+                  // above on save, like the same fields in Settings.
                   <input
                     key={id}
-                    type="number"
-                    min={1}
-                    step={1}
                     inputMode="numeric"
                     aria-label={`${axis} override`}
                     placeholder={axis}
