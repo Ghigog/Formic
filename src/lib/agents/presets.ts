@@ -16,6 +16,7 @@ import { OpenAiArchitectAgent, OpenAiProductAgent, OpenAiShowcaseAgent } from ".
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import type { AgentConfig, AgentOutcome, AgentRegistry } from "./ports";
 import { agents, agentsOverridden } from "./registry";
+import { mockAgentsEnabled } from "./mock-mode";
 import { CODER_MODEL } from "./coding-loop";
 import { authMode } from "@/lib/auth/session";
 import {
@@ -60,9 +61,10 @@ export async function savePreset(
  *
  * A saved agent template carries its own provider, model, key and prompt;
  * nothing else supplies a key. A column without one does not quietly run on
- * someone's key: signed in with GitHub, its cards stop and say so. Local
- * mode keeps the old behaviour for development: Claude on the server's
- * ANTHROPIC_API_KEY if there is one, the mock agents if not.
+ * someone's key or on a mock: its cards stop and say so. Local mode has one
+ * development-only fallback, Claude on the server's ANTHROPIC_API_KEY when
+ * there is one. Mocks are never a fallback — they take an explicit
+ * `AGENT_PROVIDER=mock` (see ./mock-mode), which is for development and tests.
  */
 type Resolution =
   | { kind: "configured"; config: AgentConfig; presetId: string | null }
@@ -144,14 +146,18 @@ async function resolveColumn(projectId: string, column: ColumnId): Promise<Resol
   }
 
   if (!local) return { kind: "unassigned" };
-  if (process.env.AGENT_PROVIDER !== "mock" && envKey("anthropic")) {
+  // Mocks are a development and test affordance, chosen explicitly. On a board
+  // a person is using, a column with no agent is unassigned — its card stops
+  // and asks for one — rather than quietly running a mock.
+  if (mockAgentsEnabled()) return { kind: "mock" };
+  if (envKey("anthropic")) {
     return {
       kind: "configured",
       config: { provider: "anthropic", apiKey: envKey("anthropic") },
       presetId: null,
     };
   }
-  return { kind: "mock" };
+  return { kind: "unassigned" };
 }
 
 /** Why a column takes no work right now: its agent is out of usage. */
@@ -180,7 +186,9 @@ export async function sentinelAgent(
   // A CLI agent audits in a GitHub Actions job, on a checkout of the repository.
   if (agent.kind === "cli") return { kind: "cli", agent: agent.agent };
   if (agent.kind === "none") {
-    if (authMode() === "local") return { kind: "mock" };
+    // A canned report is a mock, and mocks are only for local development and
+    // tests: signed in with GitHub, an assistant with no agent says so.
+    if (authMode() === "local" && mockAgentsEnabled()) return { kind: "mock" };
     return { kind: "none", reason: "No agent is set for the assistant. Pick or create one above." };
   }
   return {

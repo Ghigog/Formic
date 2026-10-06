@@ -17,9 +17,13 @@ npm run dev
 ```
 
 That works with no configuration: no database and no API key. The board runs
-on an in-memory store seeded with demo data, and the agent pipelines run on
-mock implementations that stream and take a plausible amount of time. State
-survives a browser reload, not a server restart.
+on an in-memory store seeded with demo data, so there is something to look at,
+and state survives a browser reload — not a server restart.
+
+Agents are not mocked for you. A column with no agent stops and asks for one,
+rather than being worked on by a mock. A developer can run the pipelines with
+no key by setting `AGENT_PROVIDER=mock`, which pairs the mock agents with a
+mock GitHub so nothing leaves the machine.
 
 For the real thing, copy `.env.example` to `.env` and fill in what you need.
 Each credential unlocks one layer and nothing breaks without it:
@@ -35,6 +39,7 @@ Each credential unlocks one layer and nothing breaks without it:
 | `SANDBOX_PROVIDER=e2b` | Isolated sandboxes, on each person's E2B key. Required on Vercel. |
 | `E2B_API_KEY` | Optional fallback sandbox key for people who have not added their own. |
 | `ANTHROPIC_API_KEY` (and `OPENAI_API_KEY`, `GEMINI_API_KEY`, …) | Local mode only: lets agents run in development without a saved template. |
+| `AGENT_PROVIDER=mock` | Development and tests only: mock agents and a mock GitHub, so the board runs end to end with nothing leaving the machine. Never set it on a board a person is using. |
 | `GITHUB_TOKEN`, `FORMIC_PASSWORD` | Local mode only: the one GitHub credential, and a shared password. |
 
 ```bash

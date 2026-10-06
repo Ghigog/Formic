@@ -23,7 +23,8 @@ import type { Workspace } from "@/lib/sandbox/workspace";
  * return data that passes the same validation the real ones do, so the board
  * can be driven end to end with no API key and no network.
  *
- * Set AGENT_PROVIDER=mock (the default when ANTHROPIC_API_KEY is unset).
+ * Set AGENT_PROVIDER=mock. Mocks are never chosen implicitly: a column with
+ * no agent on a board a person is using stops and asks for one instead.
  */
 
 const MOCK_USAGE: Usage = {

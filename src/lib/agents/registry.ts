@@ -12,11 +12,16 @@ import {
   MockReviewerAgent,
   MockShowcaseAgent,
 } from "./mock";
+import { mockAgentsEnabled } from "./mock-mode";
 
 /**
  * The one place a mock is swapped for the real thing. Real agents are
- * registered here by PROT-03, PROT-04 and PROT-08; until an ANTHROPIC_API_KEY
- * is present the board runs entirely on mocks.
+ * registered here by PROT-03, PROT-04 and PROT-08.
+ *
+ * Mocks are a development and test affordance, and are only used when
+ * `AGENT_PROVIDER=mock` asks for them (see ./mock-mode). A board a person is
+ * using never runs on a mock: a column with no agent stops and asks for one,
+ * handled in `resolveColumn` (./presets) rather than here.
  */
 
 let cached: AgentRegistry | null = null;
@@ -28,9 +33,7 @@ export function agentsOverridden(): boolean {
 }
 
 export function usingMockAgents(): boolean {
-  if (process.env.AGENT_PROVIDER === "mock") return true;
-  if (process.env.AGENT_PROVIDER === "anthropic") return false;
-  return !process.env.ANTHROPIC_API_KEY;
+  return mockAgentsEnabled();
 }
 
 export function agents(): AgentRegistry {

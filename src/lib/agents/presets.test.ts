@@ -126,9 +126,18 @@ describe("agent templates", () => {
     expect(cleared).toMatchObject({ hasKey: false, keyHint: null });
   });
 
-  it("in local mode, runs the mock on a column with no template", async () => {
+  it("runs the mock on a column with no template only when mocks are asked for", async () => {
     expect(await agentConfigFor(PROJECT, "in_progress")).toBeNull();
     expect(await agentFor(PROJECT, "coder")).toBeInstanceOf(MockCoderAgent);
+  });
+
+  it("stops a column with no agent instead of quietly running a mock", async () => {
+    vi.stubEnv("AGENT_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    expect(await agentConfigFor(PROJECT, "in_progress")).toBeNull();
+    const outcome = await (await agentFor(PROJECT, "coder")).implement({} as never, {} as never);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toMatch(/No agent is set for In Progress/);
   });
 
   it("in local mode, runs Claude on the server key when there is one", async () => {

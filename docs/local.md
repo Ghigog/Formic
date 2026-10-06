@@ -47,9 +47,11 @@ npm run dev
 ```
 
 Open http://localhost:3000. That works with nothing else set: the board runs
-on an in-memory store seeded with the demo data, and the agent pipelines run
-on mocks that stream and take a plausible amount of time. State survives a
-browser reload but not a server restart.
+on an in-memory store seeded with the demo data. State survives a browser
+reload but not a server restart.
+
+Agents are not mocked for you: a column with no agent stops and asks for one.
+To run the pipelines with no key, set `AGENT_PROVIDER=mock` (see Agents below).
 
 ## The board you see
 
@@ -121,8 +123,10 @@ Whichever you pick, put `DATABASE_URL` in `.env` so `npm run dev` and the
 ## Agents
 
 - A column with no saved agent gets Claude on the server's
-  `ANTHROPIC_API_KEY`, or the mocks without one. `AGENT_PROVIDER=mock` forces
-  the mocks even when a key is set.
+  `ANTHROPIC_API_KEY`; with no key it stops and asks for an agent rather than
+  running anything. `AGENT_PROVIDER=mock` is a development and test switch: it
+  runs the mock agents against a mock GitHub, so nothing leaves the machine.
+  It is never selected implicitly, and never on a board a person is using.
 - Saved agent templates are the same as everywhere: each carries its own
   provider key, and they run in-process, bounded by `DEFAULT_RUN_BUDGET`
   (`docs/agent-execution.md`), not by a job.

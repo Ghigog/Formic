@@ -142,8 +142,16 @@ async function fullReport(): Promise<FullReport> {
     database,
     ...(databaseError ? { databaseError } : {}),
     // Signed in with GitHub, agents run on each person's own Anthropic key,
-    // so the server having none does not make them mocks.
-    agents: authMode() === "github" ? "per-user" : usingMockAgents() ? "mock" : "anthropic",
+    // so the server having none does not make them mocks. Otherwise: mocks
+    // only when asked for, the server's own key, or nothing configured.
+    agents:
+      authMode() === "github"
+        ? "per-user"
+        : usingMockAgents()
+          ? "mock"
+          : process.env.ANTHROPIC_API_KEY
+            ? "anthropic"
+            : "none",
     sandbox: config.SANDBOX_PROVIDER,
     // Signed in with GitHub, each board uses its owner's token.
     github: authMode() === "github" ? "per-user" : usingMockVcs() ? "mock" : "live",

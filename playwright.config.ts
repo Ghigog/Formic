@@ -67,6 +67,13 @@ export default defineConfig({
    */
   webServer: {
     command: `${buildFirst}npx next start -p ${PORT}`,
+    /*
+     * The board's agents run as mocks here, and this is the only reason they
+     * do: mocks are never chosen implicitly (see src/lib/agents/mock-mode).
+     * Without this the suite's columns have no agent and every pipeline test
+     * would stall instead of running.
+     */
+    env: { ...process.env, AGENT_PROVIDER: "mock" } as Record<string, string>,
     url: `${baseURL}/api/health`,
     /*
      * A fresh server, and therefore a fresh in-memory store, for every run.
