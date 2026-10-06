@@ -9,6 +9,10 @@
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>Formic</string>
+  <!-- CFBundleIconName is the layered icon in Assets.car, which macOS 26 draws
+       and adapts to Appearance > Icon & widget style. CFBundleIconFile is the
+       .icns actool builds alongside it, for anything older. -->
+  <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>

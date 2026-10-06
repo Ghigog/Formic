@@ -3,13 +3,17 @@
     points="9,0 19,0 28,9 28,19 19,28 9,28 0,19 0,9"
     fill="#1c1917"
   />
-  <text
-    x="14"
-    y="19.5"
-    text-anchor="middle"
-    font-family="Newsreader, Georgia, Cambria, serif"
-    font-weight="600"
-    font-size="15"
+  <!--
+    The title's Newsreader "F" (SemiBold), outlined to a path: the same glyph
+    deploy/mac/AppIcon.icon draws. Outlined rather than a <text> element so the
+    mark does not depend on a font being installed where the SVG is rendered —
+    the browser falls back to Georgia, and actool refuses text in an icon layer.
+    The board's own placement: 15px on a 28px canvas, sitting on the baseline.
+  -->
+  <path
     fill="#fbf9f5"
-  >F</text>
+    d="M 16.28 12.52 V 14.49 V 16.45 H 15.61 L 15.44 14.91 H 11.92 V 14.07 H 15.44 L 15.61 12.52 Z
+       M 17.38 9 H 17.55 L 18.11 12.34 L 17.71 12.43 L 16.22 10.01 L 17.11 10.29 H 11.77 V 9.45 H 16.48 Z
+       M 12.94 9.45 V 18.76 L 14.06 19.19 V 19.5 H 9.89 V 19.19 L 11.01 18.76 V 10.19 L 9.89 9.76 V 9.45 Z"
+  />
 </svg>

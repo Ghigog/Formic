@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    The octagon logo mark: the board's chamfered octagon with the title's
+    Newsreader "F" knocked out of it, so the squircle's ground shows through.
+
+    Geometry only — `fill="none"`, no colour of its own. icon.json gives this
+    layer a fill per appearance, which is what makes one drawing serve the light,
+    dark and tinted icons. The "F" is one contour with no counters, so the
+    knockout only needs fill-rule="evenodd" to punch it out of the octagon.
+  -->
+  <path
+    fill="none"
+    fill-rule="evenodd"
+    d="M329 146 L695 146 L878 329 L878 695 L695 878 L329 878 L146 695 L146 329 Z
+       M 583.5 437.4 V 560.5 H 562.4 L 557.2 512.2 H 446.9 V 485.7 H 557.2 L 562.4 437.4 Z
+       M 617.8 326.9 H 623.2 L 640.9 431.6 L 628.2 434.4 L 581.5 358.8 L 609.3 367.6 H 442 V 341.1 H 589.8 Z
+       M 478.8 341.1 V 632.9 L 513.9 646.1 V 656 H 383.1 V 646.1 L 418.3 632.9 V 364.2 L 383.1 351 V 341.1 Z"
+  />
+</svg>
