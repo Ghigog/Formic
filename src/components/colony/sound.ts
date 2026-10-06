@@ -206,15 +206,21 @@ export class SoundEngine {
       this.out.connect(comp);
       comp.connect(this.ac.destination);
       // A context made inside a gesture starts running; one made for a sound
-      // that arrived on its own does not, and is asked below.
-      this.reviving = this.ac.state !== "running";
+      // that arrived on its own does not, and is asked to below.
     }
     // Not just "suspended": when the system takes the audio away — a sleep, a
     // device change, headphones plugged in — WebKit parks the context in
     // "interrupted", and it stays there, silent, until something resumes it.
     // Nothing else in the page ever will: every sound comes through here.
-    if (this.ac.state === "running") this.reviving = false;
-    else if (!this.reviving) void this.ac.resume().catch(() => {});
+    if (this.ac.state === "running") {
+      this.reviving = false;
+    } else if (!this.reviving) {
+      // First ask to bring this context to life — a fresh one, or one that has
+      // just come back. `reviving` records the ask: if the next sound still
+      // finds it not running, that ask failed and the context is rebuilt.
+      this.reviving = true;
+      void this.ac.resume().catch(() => {});
+    }
     return this.ac;
   }
 

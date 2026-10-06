@@ -522,6 +522,9 @@ describe("a CLI agent drafting a To Do request's single ticket", () => {
 
 describe("starting a CLI agent", () => {
   it("opens a setup pull request first, and waits for a person to merge it", async () => {
+    // The loop entry is committed with the workflow; the fixture stands in for
+    // a built entry, which is a gitignored build artifact absent from `npm test`.
+    setLoopBundleDir("src/test/loop-entry-bundle");
     await assignClaudeCode();
     const ticket = await seedTicket();
 
