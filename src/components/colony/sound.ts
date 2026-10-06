@@ -100,6 +100,12 @@ export class SoundEngine {
   private waiting: Array<() => void> = [];
   private readonly onGesture = () => {
     this.gestured = true;
+    // Open the context here, inside the gesture, rather than on the first sound
+    // after it: most sounds fire outside a gesture — a merge finishing, a hover
+    // — and a context opened there starts suspended, so that first sound is
+    // spent waking it up instead of being heard. The page has just been touched;
+    // this is the moment.
+    this.audio();
     this.release();
   };
 
@@ -166,7 +172,12 @@ export class SoundEngine {
       this.out.connect(comp);
       comp.connect(this.ac.destination);
     }
-    if (this.ac.state === "suspended") void this.ac.resume().catch(() => {});
+    // Not just "suspended": when the system takes the audio away — a sleep, a
+    // device change, headphones plugged in — WebKit parks the context in
+    // "interrupted", and it stays there, silent, until something resumes it.
+    // Nothing else in the page ever will: every sound comes through here. Left
+    // as "suspended" alone, the board went quiet for good until it was reloaded.
+    if (this.ac.state !== "running") void this.ac.resume().catch(() => {});
     return this.ac;
   }
 
