@@ -79,6 +79,7 @@ import {
 } from "@/lib/vcs";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
+import { liveToken } from "@/lib/llm/cline-session";
   ALREADY_DONE_TRAILER,
   ANSWER_PATH,
   ATTACHMENTS_DIR_VAR,
@@ -583,9 +584,13 @@ async function dispatch(input: {
       };
     }
 
-    // Set on every run, so a replaced token takes effect on the next one.
+    // Set on every run, so a replaced token takes effect on the next one. A
+    // ClinePass credential is a plan session, not a key, and the job in GitHub
+    // has nothing it could refresh one with: hand it a live token, minted here
+    // when the credential is a session (see ./llm/cline-session). Every other
+    // provider's credential is passed through exactly as it was.
     const secret = secretNameFor(agent);
-    await client.setSecret(secret, agent.credential);
+    await client.setSecret(secret, await liveToken(agent.info, agent.credential, { force: true }));
 
     // A workflow from before the timeout input keeps its own ceiling.
     const ceiling = workflowCeiling(await client.readFile(RUNNER_WORKFLOW_PATH, input.baseBranch));
