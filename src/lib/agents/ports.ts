@@ -54,7 +54,19 @@ export interface Usage {
   model: string;
   tokensIn: number;
   tokensOut: number;
+  /**
+   * Input tokens as they count against a run's token budget: cache writes at
+   * a quarter more and cache reads at a tenth, so tokens the provider served
+   * from cache are not charged as if they were fresh. Absent, `tokensIn` is
+   * the count (providers that do not report a cache breakdown).
+   */
+  costTokensIn?: number;
   costCents: number;
+}
+
+/** Tokens that count against a run's budget: cost-weighted input plus output. */
+export function budgetTokens(usage: Usage): number {
+  return (usage.costTokensIn ?? usage.tokensIn) + usage.tokensOut;
 }
 
 export type AgentOutcome<T> =

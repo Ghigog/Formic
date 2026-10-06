@@ -78,6 +78,7 @@ Mid-run, you may receive a message starting "A note from the person watching thi
 Rules that are enforced, not advisory:
 - ${scopeRule}
 - Start by reading AGENTS.md at the repository root, or CLAUDE.md if there is no AGENTS.md: it is this repository's own guide for agents, and it wins over your defaults.
+- Read economically. Prefer the repository's own documents (AGENTS.md/CLAUDE.md, README, docs/) and targeted reads over rediscovering the layout; use a file listing and grep/sed ranges, not cat of whole files or trees. Every tool result is re-sent on every later turn, so a large read early is paid for again and again.
 - Match the surrounding code. Read neighbouring files before you write; the conventions in this repository are not the ones in your training data.
 - ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.

@@ -12,6 +12,7 @@ import type {
   ExistingTicket,
   Usage,
 } from "./ports";
+import { budgetTokens } from "./ports";
 import { repository } from "@/lib/db";
 import type { AttachmentRef } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
@@ -145,11 +146,12 @@ export function startRun(
       void publish(projectId, event);
     },
     charge: async (usage) => {
+      const tokens = budgetTokens(usage);
       charged = usage.costCents;
-      chargedTokens += usage.tokensIn + usage.tokensOut;
+      chargedTokens += tokens;
       await recordSpend(runId, {
         cents: usage.costCents,
-        tokens: usage.tokensIn + usage.tokensOut,
+        tokens,
         attempts: 0,
       });
     },
@@ -164,7 +166,7 @@ export function startRun(
     const usage: Usage = outcome.usage;
     await recordSpend(runId, {
       cents: Math.max(usage.costCents - charged, 0),
-      tokens: Math.max(usage.tokensIn + usage.tokensOut - chargedTokens, 0),
+      tokens: Math.max(budgetTokens(usage) - chargedTokens, 0),
       attempts: 1,
     });
     await repository().finishRun(runId, {

@@ -38,6 +38,7 @@ import { z } from "zod";
 import { coderPrompt } from "@/lib/agents/coder";
 import { runCodingLoop } from "@/lib/agents/coding-loop";
 import type { AgentContext, CoderTask, Usage } from "@/lib/agents/ports";
+import { budgetTokens } from "@/lib/agents/ports";
 import { isSpikeText } from "@/lib/colony/game";
 import { CODER_BRIEF, CHECKPOINT_RULE, withCodingRules } from "@/lib/agents/prompts";
 import { billingFor, spendCeilingNote, turnCeiling } from "@/lib/budget/limits";
@@ -290,7 +291,7 @@ export async function runLoopEntry(
       // the ceiling is checked against what this run has spent altogether.
       charge: async (usage) => {
         spentCents += usage.costCents;
-        spentTokens += usage.tokensIn + usage.tokensOut;
+        spentTokens += budgetTokens(usage);
         if (maxTokens !== undefined && spentTokens >= maxTokens) {
           stop("tokens", new Error(tokenNote(maxTokens)));
         }
