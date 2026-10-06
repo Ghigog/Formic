@@ -126,12 +126,13 @@ export async function refreshSession(refreshToken: string): Promise<Refresh | nu
       }),
     });
     if (!res.ok) {
-      // Refused out loud. A credential pasted out of the CLI's own file is
-      // retired the moment the CLI refreshes that file — which it does every
-      // hour, and on every command — so the copy here goes stale on its own,
-      // and the run only fails later and elsewhere. Say so where it happens.
-      console.warn(
-        `[formic] ClinePass refused this session refresh (HTTP ${res.status}): paste the current refresh token from ~/.cline/data/settings/providers.json, or a live access token, into the agent.`,
+      // Nothing to refresh. Said at info, not as a warning: the ordinary
+      // credential here is a *durable API key* — which the plan's own slugs work
+      // with, and which needs no refreshing at all — so being asked to refresh
+      // it is the expected answer, not a fault. The other reading is a session
+      // token the CLI has since retired, which does need a fresh one pasted.
+      console.info(
+        `[formic] ClinePass has no session to refresh (HTTP ${res.status}). Fine if this agent's credential is a durable API key; if it is a session token, paste a fresh one.`,
       );
       return null;
     }
