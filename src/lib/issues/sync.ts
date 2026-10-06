@@ -8,6 +8,7 @@ import { prdSchema, type BoardCard } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import { COLUMN_LABELS, columnFor, isStalled, type ColumnId } from "@/lib/domain/status";
 import { vcs, type VcsClient } from "@/lib/vcs";
+import { BLOCKED_LABEL, LABEL_PREFIX } from "./labels";
 
 /**
  * Every Epic and ticket, mirrored as a GitHub issue, so work can be followed
@@ -18,14 +19,14 @@ import { vcs, type VcsClient } from "@/lib/vcs";
  * worth a notification: work started, a pull request opened, a card that
  * needs a human, a merge. Merged tickets and shipped Epics are closed.
  *
+ * A ticket imported from an issue adopts that issue instead of filing a
+ * second one (see `ensureTicketIssue` and src/lib/issues/intake.ts).
+ *
  * This is the platform's job, not a prompt's: it happens the same way
  * whichever agent did the work, and costs no tokens. It is driven by the
  * card events the board already publishes, and a GitHub failure here never
  * fails the work it describes.
  */
-
-const LABEL_PREFIX = "formic: ";
-const BLOCKED_LABEL = `${LABEL_PREFIX}needs a human`;
 
 const COLUMN_COLORS: Record<ColumnId, string> = {
   backlog: "c5c0b6",
@@ -41,14 +42,19 @@ function columnLabel(column: ColumnId): string {
 
 const FOOTER = "_Tracked by [Formic](https://formic-board.vercel.app). It moves with the board._";
 
-/** One sync at a time per card, so two quick events cannot file two issues. */
+/** The promises in flight, by lane key. Shared across this process's modules. */
 function lanes(): Map<string, Promise<void>> {
   const g = globalThis as { __formicIssueLanes?: Map<string, Promise<void>> };
   g.__formicIssueLanes ??= new Map();
   return g.__formicIssueLanes;
 }
 
-function inLane(key: string, work: () => Promise<void>): Promise<void> {
+/**
+ * Runs `work` after whatever is already in `key`'s lane, and keeps everything
+ * else that arrives in the same lane behind it. One card sync at a time, and
+ * one intake at a time per project, so two quick events cannot file two issues.
+ */
+export function inLane(key: string, work: () => Promise<void>): Promise<void> {
   const previous = lanes().get(key) ?? Promise.resolve();
   const next = previous.then(work, work);
   lanes().set(key, next);
@@ -148,6 +154,17 @@ async function ensureEpicIssue(ctx: Context, epicId: string, card: BoardCard): P
   return issue.number;
 }
 
+/**
+ * The issue that tracks a ticket, filing one if it has none.
+ *
+ * A ticket imported from a GitHub issue already has one: the issue it came
+ * from. That issue is adopted as this ticket's own — recorded as the ticket's
+ * `issueNumber` — rather than a second one being filed. Everything after this
+ * then treats it exactly as it would an issue Formic filed itself: labels, the
+ * comments worth a notification, and the pull request's `Closes #N`. Filing a
+ * second issue is what would leave the person's issue open forever, since the
+ * pull request closes only the one Formic made.
+ */
 async function ensureTicketIssue(
   ctx: Context,
   ticket: TicketDetail,
@@ -155,6 +172,14 @@ async function ensureTicketIssue(
 ): Promise<{ number: number; created: boolean }> {
   if (ticket.issueNumber) return { number: ticket.issueNumber, created: false };
   const repo = repository();
+
+  if (ticket.sourceIssueNumber) {
+    // Nothing else to do: its issue exists, and its holder Epic — the
+    // standalone one an import makes — never gets one of its own.
+    await repo.updateTicket(ticket.id, { issueNumber: ticket.sourceIssueNumber });
+    return { number: ticket.sourceIssueNumber, created: false };
+  }
+
   const issue = await ctx.client.createIssue({
     title: `${ticket.key}: ${ticket.title}`,
     body: await ticketBody(ticket, card),

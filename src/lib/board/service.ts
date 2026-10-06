@@ -477,6 +477,19 @@ export async function createBacklogItem(
   return card;
 }
 
+/** What a To Do request came in with, beyond its text. */
+export interface CreateTodoItemInput {
+  /** Attachments uploaded against the request, to move onto the ticket. */
+  requestId?: string;
+  workType?: WorkType;
+  /**
+   * The GitHub issue it came in from, when it came in from one. Recorded
+   * before the ticket is mirrored, so the mirror adopts that issue as this
+   * ticket's own rather than filing a second one (see src/lib/issues/sync.ts).
+   */
+  sourceIssueNumber?: number;
+}
+
 /**
  * A raw request with no PRD and no breakdown needed: one ticket, drafted by
  * the Architect Agent straight from the text. The Epic it sits under is a
@@ -486,14 +499,19 @@ export async function createBacklogItem(
 export async function createTodoItem(
   projectId: string,
   rawRequest: string,
-  requestId?: string,
-  workType?: WorkType,
+  input: CreateTodoItemInput = {},
 ): Promise<BoardCard> {
   const repo = repository();
   const trimmed = rawRequest.trim();
   const title = trimmed.split(/[.\n]/)[0]?.slice(0, 80) || "New ticket";
 
-  const epic = await repo.createEpic({ projectId, title, rawRequest: trimmed, position: 0, workType });
+  const epic = await repo.createEpic({
+    projectId,
+    title,
+    rawRequest: trimmed,
+    position: 0,
+    workType: input.workType,
+  });
   await repo.setStandalone(epic.id, true);
 
   const positions = await repo.columnPositions(projectId, "todo");
@@ -512,10 +530,16 @@ export async function createTodoItem(
         storyPoints: null,
         position,
         dependsOnKeys: [],
-        workType,
+        workType: input.workType,
       },
     ])
   )[0]!;
+
+  // Recorded before the card is published: the mirror runs on `card.created`,
+  // and it has to see where this ticket came from by then.
+  if (input.sourceIssueNumber !== undefined) {
+    await repo.updateTicket(ticket.id, { sourceIssueNumber: input.sourceIssueNumber });
+  }
 
   // Blocked from the start, so the card shows it is being drafted the moment
   // it appears rather than flashing as ready before its content exists.
@@ -529,7 +553,7 @@ export async function createTodoItem(
   });
   await repo.updateTicket(ticket.id, { blockedReason: "Drafting the ticket…" });
 
-  if (requestId) await repo.claimAttachments(requestId, { ticketId: ticket.id });
+  if (input.requestId) await repo.claimAttachments(input.requestId, { ticketId: ticket.id });
 
   await publish(projectId, {
     type: "card.created",

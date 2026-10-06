@@ -227,6 +227,12 @@ export interface TicketDetail {
   runnerAgent: string | null;
   /** The GitHub issue that tracks it, once created. */
   issueNumber: number | null;
+  /**
+   * The GitHub issue this ticket was imported from, when it came in from one.
+   * The mirror adopts that issue as this ticket's own rather than filing a
+   * second one; see `ensureTicketIssue` in src/lib/issues/sync.ts.
+   */
+  sourceIssueNumber: number | null;
   storyPoints: number | null;
   /** The plan the agent is working through, oldest step first. */
   plan: PlanStep[];
@@ -269,6 +275,8 @@ export interface TicketUpdate {
   runnerJob?: string | null;
   runnerAgent?: string | null;
   issueNumber?: number | null;
+  /** The GitHub issue it was imported from, set once, at import. */
+  sourceIssueNumber?: number | null;
   /** Cleared from active view without being deleted; the archive epic reads it. */
   archived?: boolean;
   plan?: PlanStep[];
@@ -566,6 +574,14 @@ export interface Repository {
   updateTicket(ticketId: string, update: TicketUpdate): Promise<void>;
   /** Every ticket under an Epic, for dependency gating and the showcase. */
   ticketsForEpic(epicId: string): Promise<TicketDetail[]>;
+  /**
+   * Every GitHub issue number this project's mirror owns: each Epic's, and
+   * each ticket's own or the one it was imported from. What the intake skips
+   * before it will import anything, so an issue Formic filed is never filed
+   * back in. Kept to numbers: it is read on a poll, and nothing else about
+   * those rows is wanted.
+   */
+  mirroredIssueNumbers(projectId: string): Promise<number[]>;
 
   startRun(run: RunRecord): Promise<void>;
   /** Milliseconds a ticket's agent runs have taken, a live one counted up to now. */

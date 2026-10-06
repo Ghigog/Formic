@@ -31,6 +31,9 @@ export async function POST(req: NextRequest) {
 
   const project = await activeProject();
   if (!project) return noProject();
-  const card = await createTodoItem(project.id, parsed.data.rawRequest, parsed.data.requestId, parsed.data.workType);
+  const card = await createTodoItem(project.id, parsed.data.rawRequest, {
+    requestId: parsed.data.requestId,
+    workType: parsed.data.workType,
+  });
   return Response.json({ card }, { status: 201 });
 }

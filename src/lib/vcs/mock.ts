@@ -10,6 +10,9 @@ import {
   type Comparison,
   type IssuePatch,
   type IssueRef,
+  type IssueFilter,
+  type IssueState,
+  type IssueSummary,
   type WorkflowRunRef,
   type BranchRun,
   type Snapshot,
@@ -87,6 +90,18 @@ export interface MockIssue {
   state: "open" | "closed";
   labels: string[];
   subIssues: number[];
+}
+
+function toSummary(issue: MockIssue, subIssue: boolean): IssueSummary {
+  return {
+    number: issue.number,
+    id: issue.id,
+    title: issue.title,
+    body: issue.body,
+    state: issue.state,
+    labels: [...issue.labels],
+    subIssue,
+  };
 }
 
 function repo(): MockRepo {
@@ -244,6 +259,26 @@ export class MockVcsClient implements VcsClient {
     const issue = repo().issues.get(number);
     if (!issue) throw new Error(`No mock issue ${number}.`);
     Object.assign(issue, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+  }
+
+  async issues(state: IssueState, filter: IssueFilter = {}): Promise<IssueSummary[]> {
+    // `since` is not applied: a mock issue has no updated time. The intake's
+    // dedupe is what stops a second sweep importing the same issue, and
+    // ignoring `since` is what makes that testable.
+    const all = [...repo().issues.values()];
+    const subIssues = new Set(all.flatMap((i) => i.subIssues));
+    return all
+      .filter((issue) => issue.state === state)
+      .filter((issue) => (filter.labels ?? []).every((label) => issue.labels.includes(label)))
+      .sort((a, b) => b.number - a.number)
+      .map((issue) => toSummary(issue, subIssues.has(issue.number)));
+  }
+
+  async issue(number: number): Promise<IssueSummary | null> {
+    const all = [...repo().issues.values()];
+    const found = repo().issues.get(number);
+    if (!found) return null;
+    return toSummary(found, all.some((i) => i.subIssues.includes(number)));
   }
 
   async addSubIssue(parentNumber: number, childId: number): Promise<void> {
@@ -442,6 +477,35 @@ export class MockVcsClient implements VcsClient {
 
   static runner(): MockRepo {
     return repo();
+  }
+
+  /**
+   * Test seam: an issue that was already on GitHub before Formic saw it. The
+   * intake reads what a person wrote, so the tests have to be able to write it.
+   */
+  static seedIssue(input: {
+    number: number;
+    title: string;
+    body?: string;
+    labels?: string[];
+    state?: "open" | "closed";
+    /** The parent issue's number, when this one is a sub-issue. */
+    parent?: number;
+  }): MockIssue {
+    const issue: MockIssue = {
+      number: input.number,
+      id: input.number * 10,
+      title: input.title,
+      body: input.body ?? "",
+      state: input.state ?? "open",
+      labels: input.labels ? [...input.labels] : [],
+      subIssues: [],
+    };
+    repo().issues.set(issue.number, issue);
+    if (input.parent !== undefined) {
+      repo().issues.get(input.parent)?.subIssues.push(issue.number);
+    }
+    return issue;
   }
 
   /** Test seam: flip a mock PR's checks and hand back the head sha. */

@@ -31,7 +31,9 @@ user, working with one GitHub token.
   is not one, so the CI-driven fix-or-merge loop does not fire on its own:
   results arrive by checking GitHub while the board is open, not instantly.
   Agents running in the repository's GitHub Actions cannot report progress
-  live either.
+  live either. Labelling an issue `formic: intake` still works — the board
+  polls GitHub for those on its own sweep while it is open, which is exactly
+  why the import is polled rather than pushed.
 - **Only you can use it.** There is no one else to sign in.
 
 If you want any of those back, that is exactly what `docs/vercel.md` and

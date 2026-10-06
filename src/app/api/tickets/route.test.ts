@@ -57,7 +57,10 @@ describe("POST /api/tickets", () => {
     activeProject.mockResolvedValue({ id: "project_default" });
     createTodoItem.mockResolvedValue({ id: "ticket-1", kind: "ticket" });
     expect((await POST(request({ rawRequest: "Look into it", workType: "spike" }))).status).toBe(201);
-    expect(createTodoItem).toHaveBeenLastCalledWith("project_default", "Look into it", undefined, "spike");
+    expect(createTodoItem).toHaveBeenLastCalledWith("project_default", "Look into it", {
+      requestId: undefined,
+      workType: "spike",
+    });
     createTodoItem.mockClear();
     expect((await POST(request({ rawRequest: "Look into it", workType: "epic-thing" }))).status).toBe(400);
     expect(createTodoItem).not.toHaveBeenCalled();
@@ -91,8 +94,7 @@ describe("POST /api/tickets", () => {
     expect(createTodoItem).toHaveBeenCalledWith(
       "project_default",
       "Fix the broken footer link.",
-      "req-1",
-      undefined,
+      { requestId: "req-1", workType: undefined },
     );
   });
 });

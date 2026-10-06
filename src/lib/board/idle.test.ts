@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { makeCard } from "@/test/cards";
 
 /** Every start the sweep made, in order, with the work it was handed. */
@@ -20,6 +20,8 @@ const { IDLE_AFTER_MS, resetIdleSweep, restartIdleCards, sweepIdleCards } = awai
 const { resetChatRecovery } = await import("@/lib/agents/recovery");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
+const { MockVcsClient, resetVcs, setVcs } = await import("@/lib/vcs");
+const { resetEnvCache } = await import("@/lib/secrets/env");
 
 const PROJECT = "project_default";
 const NOW = Date.parse("2026-09-27T03:00:00Z");
@@ -32,8 +34,21 @@ beforeEach(() => {
   launches.length = 0;
   productAgent.mockClear();
   globalThis.__formicMemoryStore = undefined;
+  MockVcsClient.reset();
+  resetVcs();
+  // The intake is skipped without a token; the sweep under test is the local
+  // path's, so it has one, and the client it makes is the mock.
+  setVcs(new MockVcsClient("acme/widgets"));
+  vi.stubEnv("GITHUB_TOKEN", "test");
+  resetEnvCache();
   resetIdleSweep();
   resetChatRecovery();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  resetEnvCache();
+  resetVcs();
 });
 
 describe("restartIdleCards", () => {
@@ -144,6 +159,35 @@ describe("restartIdleCards", () => {
     await restartIdleCards(PROJECT, NOW);
 
     expect(started()).toEqual([]);
+  });
+});
+
+describe("the GitHub issue intake in the sweep", () => {
+  const tickets = async () =>
+    (await repository().boardCards(PROJECT)).filter((c) => c.kind === "ticket");
+
+  it("imports a labelled issue, and does not import it twice", async () => {
+    MockVcsClient.seedIssue({
+      number: 42,
+      title: "Add a CSV export",
+      body: "Every card, one row.",
+      labels: ["formic: intake"],
+    });
+
+    await restartIdleCards(PROJECT, NOW);
+    // A second tick of the same sweep: what the webhook would race it to.
+    resetIdleSweep();
+    await restartIdleCards(PROJECT, NOW + 60_000);
+
+    expect(await tickets()).toHaveLength(1);
+  });
+
+  it("leaves the board alone for an issue nobody labelled", async () => {
+    MockVcsClient.seedIssue({ number: 42, title: "Something else entirely" });
+
+    await restartIdleCards(PROJECT, NOW);
+
+    expect(await tickets()).toEqual([]);
   });
 });
 
