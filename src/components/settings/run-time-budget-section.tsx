@@ -10,7 +10,7 @@ import {
   type RunTimeBudgetSettings,
 } from "@/lib/run-time-budget";
 import { DEFAULT_LIMIT_SETTINGS, validateLimitSetting } from "@/lib/domain/limit-settings";
-import { DEFAULT_TOKENS_PER_STORY_POINT } from "@/lib/budget/budget-for";
+import { ATTEMPT_DEFAULTS, DEFAULT_TOKENS_PER_STORY_POINT } from "@/lib/budget/budget-for";
 import {
   LimitAxisSection,
   draftFromSetting,
@@ -32,6 +32,19 @@ const AXIS_TO_TIME = Object.fromEntries(
   Object.entries(TIME_TO_AXIS).map(([time, axis]) => [axis, time]),
 ) as Record<LimitMode, RunTimeBudgetMode>;
 
+/** The built-in attempt defaults, named for the Flat line, from ATTEMPT_DEFAULTS. */
+const ATTEMPT_DEFAULT_KIND_LABELS: Record<keyof typeof ATTEMPT_DEFAULTS, string> = {
+  review: "review",
+  decomposition: "decomposition",
+  draft: "draft",
+  cliAnswer: "CLI answer",
+};
+const ATTEMPT_DEFAULTS_NOTE = (
+  Object.keys(ATTEMPT_DEFAULTS) as Array<keyof typeof ATTEMPT_DEFAULTS>
+)
+  .map((kind) => `${ATTEMPT_DEFAULT_KIND_LABELS[kind]} ${ATTEMPT_DEFAULTS[kind]}`)
+  .join(", ");
+
 const AXES: AxisConfig[] = [
   {
     id: "time",
@@ -40,7 +53,7 @@ const AXES: AxisConfig[] = [
     unit: "minutes",
     enforcement: "between-turns",
     defaultPerPoint: DEFAULT_MINUTES_PER_STORY_POINT,
-    editableRate: false,
+    editableRate: true,
     offBlurb: "No time budget.",
   },
   {
@@ -62,6 +75,7 @@ const AXES: AxisConfig[] = [
     defaultPerPoint: null,
     editableRate: true,
     blankFlatKeepsDefault: true,
+    builtInDefaultsNote: ATTEMPT_DEFAULTS_NOTE,
     offBlurb: "No attempt limit.",
   },
 ];
@@ -73,7 +87,7 @@ function timeDraft(time: RunTimeBudgetSettings): AxisDraft {
   return {
     mode: TIME_TO_AXIS[time.mode],
     flat: time.flatMinutes != null ? String(time.flatMinutes) : "",
-    perPoint: "",
+    perPoint: time.perPointRate != null ? String(time.perPointRate) : "",
     rows: toRows(time.perPointMinutes),
   };
 }
@@ -106,10 +120,11 @@ function build(
   }
   if (config.id === "time") {
     const found = validateRunTimeBudgetSettings(
-      { mode: AXIS_TO_TIME[draft.mode], flatMinutes: setting.flat },
+      { mode: AXIS_TO_TIME[draft.mode], flatMinutes: setting.flat, perPointRate: setting.perPoint },
       setting.byHand as Record<string, unknown> | undefined,
     );
     if (found.flatMinutes) errors.flat = found.flatMinutes;
+    if (found.perPointRate && !errors.perPoint) errors.perPoint = found.perPointRate;
     if (found.perPointMinutes && !errors.byHand) errors.byHand = found.perPointMinutes;
   } else {
     const found = validateLimitSetting(setting);
@@ -171,6 +186,8 @@ export function RunTimeBudgetSection({
       body: JSON.stringify({
         mode: AXIS_TO_TIME[time.mode],
         flatMinutes: time.mode === "FLAT" ? time.flat : null,
+        // The minutes one story point buys, only in per-point mode; blank keeps the default.
+        perPointRate: time.mode === "PER_POINT" ? (time.perPoint ?? null) : null,
         perPointMinutes: time.mode === "PER_POINT_BY_HAND" ? time.byHand : null,
         tokens: tokenSetting,
         // Left out when it keeps the built-in defaults, so what is stored stays as it was.

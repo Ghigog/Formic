@@ -24,6 +24,7 @@ function user(termsAcceptedVersion: string | null): UserRecord {
     runTimeBudgetMode: "PER_STORY_POINT",
     runTimeBudgetFlatMinutes: null,
     runTimeBudgetPerPointMinutes: null,
+    runTimeBudgetPerPointRate: null,
     tokenRenewalDay: null,
     tokenWindowTimezone: null,
     tokenResetAt: null,

@@ -51,6 +51,8 @@ const budgetSchema = z
   .object({
     mode: z.enum(RUN_TIME_BUDGET_MODES),
     flatMinutes: z.number().nullable().optional(),
+    /** The minutes one story point buys in PER_STORY_POINT mode; null keeps the default. */
+    perPointRate: z.number().nullable().optional(),
     perPointMinutes: z.record(z.string(), z.unknown()).nullable().optional(),
     /** Token and attempt limits, validated by field below. */
     tokens: z.unknown().optional(),
@@ -118,8 +120,11 @@ async function putRunTimeBudget(userId: string, json: unknown) {
   if (!body.success) {
     return Response.json({ error: "Malformed.", errors: { mode: "Choose a valid mode." } }, { status: 400 });
   }
-  const { mode, flatMinutes, perPointMinutes } = body.data;
-  const errors: Record<string, string> = validateRunTimeBudgetSettings({ mode, flatMinutes }, perPointMinutes ?? null);
+  const { mode, flatMinutes, perPointRate, perPointMinutes } = body.data;
+  const errors: Record<string, string> = validateRunTimeBudgetSettings(
+    { mode, flatMinutes, perPointRate },
+    perPointMinutes ?? null,
+  );
   for (const axis of LIMIT_AXES) {
     if (body.data[axis] === undefined) continue;
     for (const [field, message] of Object.entries(validateLimitSetting(body.data[axis]))) {
@@ -135,6 +140,7 @@ async function putRunTimeBudget(userId: string, json: unknown) {
   const settings: RunTimeBudgetSettings = {
     mode,
     flatMinutes,
+    perPointRate,
     perPointMinutes: perPointMinutes
       ? Object.fromEntries(Object.entries(perPointMinutes).map(([k, v]) => [Number(k), v as number]))
       : null,

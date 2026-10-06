@@ -108,10 +108,12 @@ model User {
 
   /// Run time budget. Null parameters mean the default, ten minutes per point;
   /// OFF is an explicit choice. runTimeBudgetPerPointMinutes maps story points
-  /// to minutes, e.g. {"1":5,"2":15,"5":40}.
+  /// to minutes, e.g. {"1":5,"2":15,"5":40}; runTimeBudgetPerPointRate is the
+  /// minutes one story point buys in PER_STORY_POINT mode (null keeps the ten).
   runTimeBudgetMode            RunTimeBudgetMode @default(PER_STORY_POINT)
   runTimeBudgetFlatMinutes     Int?
   runTimeBudgetPerPointMinutes Json?
+  runTimeBudgetPerPointRate    Int?
 
   /// Token and attempt limits, each a JSON limit setting such as
   /// {"mode":"FLAT","flat":200000}. Null means the default; {"mode":"OFF"}

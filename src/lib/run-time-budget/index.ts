@@ -22,6 +22,8 @@ export type RunTimeBudgetSettings = {
   mode: RunTimeBudgetMode;
   /** Used by FLAT_MINUTES. */
   flatMinutes?: number | null;
+  /** Used by PER_STORY_POINT: the minutes one story point buys. Null keeps the default. */
+  perPointRate?: number | null;
   /** Used by PER_POINT. */
   perPointMinutes?: PerPointMinutes | null;
 };
@@ -42,10 +44,11 @@ export function resolveRunTimeBudget(
   settings: RunTimeBudgetSettings | null | undefined,
   storyPoints: number | null | undefined,
 ): RunTimeBudgetMinutes {
-  const { mode, flatMinutes, perPointMinutes } =
+  const { mode, flatMinutes, perPointRate, perPointMinutes } =
     settings ?? DEFAULT_RUN_TIME_BUDGET_SETTINGS;
   const points = effectivePoints(storyPoints);
-  const perStoryPoint = points * DEFAULT_MINUTES_PER_STORY_POINT;
+  const rate = perPointRate != null && perPointRate >= 1 ? perPointRate : DEFAULT_MINUTES_PER_STORY_POINT;
+  const perStoryPoint = points * rate;
   switch (mode) {
     case "OFF":
       return null;
@@ -93,6 +96,7 @@ export function parsePerPointMinutes(
 
 export type RunTimeBudgetErrors = {
   flatMinutes?: string;
+  perPointRate?: string;
   perPointMinutes?: string;
 };
 
@@ -106,6 +110,13 @@ export function validateRunTimeBudgetSettings(
     const m = settings.flatMinutes;
     if (m == null || !Number.isInteger(m) || m < 1) {
       errors.flatMinutes = "Flat minutes must be a whole number of at least 1.";
+    }
+  }
+  if (settings.mode === "PER_STORY_POINT") {
+    // Blank keeps the default, so only a value that was typed can be wrong.
+    const rate = settings.perPointRate;
+    if (rate != null && (typeof rate !== "number" || !Number.isInteger(rate) || rate < 1)) {
+      errors.perPointRate = "Minutes per story point must be a whole number of at least 1.";
     }
   }
   if (settings.mode === "PER_POINT") {

@@ -300,6 +300,7 @@ export class MemoryRepository implements Repository {
       runTimeBudgetMode: "PER_STORY_POINT",
       runTimeBudgetFlatMinutes: null,
       runTimeBudgetPerPointMinutes: null,
+      runTimeBudgetPerPointRate: null,
       tokenLimit: null,
       attemptLimit: null,
       tokenRenewalDay: null,

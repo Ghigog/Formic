@@ -76,11 +76,44 @@ describe("RunTimeBudgetSection", () => {
     expect(sentBody(fetchMock)).toEqual({
       mode: "FLAT_MINUTES",
       flatMinutes: 30,
+      perPointRate: null,
       perPointMinutes: null,
       tokens: { mode: "FLAT", flat: 100000 },
       attempts: { mode: "OFF" },
     });
     expect(await screen.findByText("Limits saved.")).toBeInTheDocument();
+  });
+
+  it("lets time set the minutes one story point buys, and sends it", async () => {
+    const fetchMock = stubFetch(Response.json({}));
+    render(<RunTimeBudgetSection initial={{ mode: "PER_STORY_POINT" }} />);
+    const user = userEvent.setup();
+
+    // Per point is the default mode, and its rate box sits with the other axes'.
+    await user.type(axis("Time").getByLabelText("Minutes per story point"), "12");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(sentBody(fetchMock)).toMatchObject({ mode: "PER_STORY_POINT", perPointRate: 12 });
+  });
+
+  it("shows a saved per-point rate, and takes it out to keep the default", async () => {
+    const fetchMock = stubFetch(Response.json({}));
+    render(<RunTimeBudgetSection initial={{ mode: "PER_STORY_POINT", perPointRate: 12 }} />);
+    const user = userEvent.setup();
+
+    const rate = axis("Time").getByLabelText("Minutes per story point");
+    expect(rate).toHaveValue("12");
+    await user.clear(rate);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(sentBody(fetchMock)).toMatchObject({ mode: "PER_STORY_POINT", perPointRate: null });
+  });
+
+  it("names the attempts built-in defaults a blank flat value keeps", () => {
+    render(<RunTimeBudgetSection />);
+    expect(
+      axis("Attempts").getByText(/built-in defaults \(review 4, decomposition 3, draft 2, CLI answer 2\)/),
+    ).toBeInTheDocument();
   });
 
   it("saves per point by hand values and shows them again on load", async () => {

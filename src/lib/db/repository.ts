@@ -360,6 +360,8 @@ export interface UserRecord {
   runTimeBudgetFlatMinutes: number | null;
   /** Stored JSON: story points to minutes, e.g. {"1":5}. */
   runTimeBudgetPerPointMinutes: unknown;
+  /** Minutes one story point buys in PER_STORY_POINT mode; null means the default. */
+  runTimeBudgetPerPointRate: number | null;
   /** Stored limit settings (JSON), or null for the default. Read through src/lib/user-settings. */
   tokenLimit?: unknown;
   attemptLimit?: unknown;
@@ -382,6 +384,8 @@ export interface RunTimeBudgetColumns {
   runTimeBudgetFlatMinutes: number | null;
   /** A JSON object, or null for none. */
   runTimeBudgetPerPointMinutes: Record<string, number> | null;
+  /** Minutes one story point buys, or null to keep the default. */
+  runTimeBudgetPerPointRate: number | null;
 }
 
 export type UserSecrets = Partial<

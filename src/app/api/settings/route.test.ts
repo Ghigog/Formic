@@ -60,8 +60,16 @@ describe("/api/settings run time budget", () => {
     expect((await (await GET(get())).json()).perPointMinutes).toEqual({ 1: 5, 3: 20 });
   });
 
+  it("stores the minutes one story point buys and returns them", async () => {
+    const res = await PUT(put({ mode: "PER_STORY_POINT", perPointRate: 12 }));
+    expect(res.status).toBe(200);
+    expect(await (await GET(get())).json()).toMatchObject({ mode: "PER_STORY_POINT", perPointRate: 12 });
+  });
+
   it.each([
     ["flat minutes below 1", { mode: "FLAT_MINUTES", flatMinutes: 0 }, "flatMinutes"],
+    ["a per-point rate below 1", { mode: "PER_STORY_POINT", perPointRate: 0 }, "perPointRate"],
+    ["a fractional per-point rate", { mode: "PER_STORY_POINT", perPointRate: 1.5 }, "perPointRate"],
     ["a per-point entry that is not a positive integer", { mode: "PER_POINT", perPointMinutes: { "1": 1.5 } }, "perPointMinutes"],
     ["a per-point key that is not a whole number", { mode: "PER_POINT", perPointMinutes: { "1.5": 5 } }, "perPointMinutes"],
     ["an empty per-point map", { mode: "PER_POINT", perPointMinutes: {} }, "perPointMinutes"],

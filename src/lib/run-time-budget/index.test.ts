@@ -31,6 +31,12 @@ describe("resolveRunTimeBudget", () => {
     expect(resolveRunTimeBudget({ mode: "PER_STORY_POINT" }, 5)).toBe(50);
   });
 
+  it("multiplies by a chosen per-point rate, falling back to the default", () => {
+    expect(resolveRunTimeBudget({ mode: "PER_STORY_POINT", perPointRate: 12 }, 5)).toBe(60);
+    expect(resolveRunTimeBudget({ mode: "PER_STORY_POINT", perPointRate: null }, 5)).toBe(50);
+    expect(resolveRunTimeBudget({ mode: "PER_STORY_POINT", perPointRate: 0 }, 5)).toBe(50);
+  });
+
   it("uses the per-point value for the ticket's points", () => {
     const s = { mode: "PER_POINT" as const, perPointMinutes: perPoint };
     expect(resolveRunTimeBudget(s, 5)).toBe(40);
@@ -92,6 +98,17 @@ describe("validateRunTimeBudgetSettings", () => {
         validateRunTimeBudgetSettings({ mode: "FLAT_MINUTES", flatMinutes })
           .flatMinutes,
       ).toBeTruthy();
+    }
+  });
+
+  it("accepts a whole per-point rate, or none, and rejects the rest", () => {
+    expect(validateRunTimeBudgetSettings({ mode: "PER_STORY_POINT", perPointRate: 12 })).toEqual({});
+    expect(validateRunTimeBudgetSettings({ mode: "PER_STORY_POINT", perPointRate: null })).toEqual({});
+    expect(validateRunTimeBudgetSettings({ mode: "PER_STORY_POINT" })).toEqual({});
+    for (const perPointRate of [0, -3, 1.5, NaN]) {
+      expect(
+        validateRunTimeBudgetSettings({ mode: "PER_STORY_POINT", perPointRate }).perPointRate,
+      ).toMatch(/Minutes per story point/);
     }
   });
 

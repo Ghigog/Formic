@@ -12,7 +12,10 @@ import {
 
 type BudgetRow = Pick<
   UserRecord,
-  "runTimeBudgetMode" | "runTimeBudgetFlatMinutes" | "runTimeBudgetPerPointMinutes"
+  | "runTimeBudgetMode"
+  | "runTimeBudgetFlatMinutes"
+  | "runTimeBudgetPerPointMinutes"
+  | "runTimeBudgetPerPointRate"
 >;
 
 /** Row to domain. Only the fields the mode uses are set. */
@@ -24,6 +27,7 @@ export function runTimeBudgetFromRow(row: BudgetRow): RunTimeBudgetSettings {
   return {
     mode: row.runTimeBudgetMode,
     flatMinutes: row.runTimeBudgetFlatMinutes,
+    perPointRate: row.runTimeBudgetPerPointRate,
     perPointMinutes: perPoint,
   };
 }
@@ -38,6 +42,8 @@ export function runTimeBudgetToRow(settings: RunTimeBudgetSettings): RunTimeBudg
     runTimeBudgetMode: settings.mode,
     runTimeBudgetFlatMinutes: settings.mode === "FLAT_MINUTES" ? (settings.flatMinutes ?? null) : null,
     runTimeBudgetPerPointMinutes: perPoint,
+    runTimeBudgetPerPointRate:
+      settings.mode === "PER_STORY_POINT" ? (settings.perPointRate ?? null) : null,
   };
 }
 

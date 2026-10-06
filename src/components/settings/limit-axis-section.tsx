@@ -30,6 +30,8 @@ export type AxisConfig = {
   editableRate: boolean;
   /** Whether a blank Flat value keeps the built-in defaults instead of being an error. */
   blankFlatKeepsDefault?: boolean;
+  /** Names those built-in defaults, e.g. "review 4, decomposition 3", for the Flat line. */
+  builtInDefaultsNote?: string;
   /** What Off means for this axis, before the hard rail is named. */
   offBlurb: string;
 };
@@ -85,7 +87,7 @@ export function LimitAxisSection({
   const { id, unit } = config;
   const modes: { mode: LimitMode; label: string; blurb: string }[] = [
     { mode: "OFF", label: "Off", blurb: config.offBlurb },
-    { mode: "FLAT", label: "Flat", blurb: `The same number of ${unit} for every ticket.${config.blankFlatKeepsDefault ? " Leave blank to keep the built-in defaults." : ""}`,
+    { mode: "FLAT", label: "Flat", blurb: `The same number of ${unit} for every ticket.${config.blankFlatKeepsDefault ? ` Leave blank to keep the built-in defaults${config.builtInDefaultsNote ? ` (${config.builtInDefaultsNote})` : ""}.` : ""}`,
     },
     {
       mode: "PER_POINT",
