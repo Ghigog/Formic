@@ -21,6 +21,14 @@ import { createHash } from "node:crypto";
 
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
+
+/**
+ * Where the loop entry is committed, beside the workflow: Formic's own coding
+ * loop as one file, for a repository whose coder runs on an API key. The two
+ * travel together — one setup pull request, one version — so a job runs the
+ * entry from its own checkout and needs nothing from the board.
+ */
+export const RUNNER_ENTRY_PATH = ".github/formic/loop-entry.mjs";
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
 /** Every version's setup branch starts with this; see RUNNER_SETUP_BRANCH. */
 export const RUNNER_SETUP_PREFIX = "formic/setup-runner-";
@@ -342,15 +350,20 @@ function indent(text: string, spaces: number): string {
  * so two accounts on the same CLI never overwrite each other mid-run. Only
  * that CLI's FORMIC_ secrets can be named, never the repository's others.
  */
-export function runnerWorkflow(): string {
-  return `# ${RUNNER_VERSION}\n${workflowBody()}`;
+export function runnerWorkflow(entryHash: string | null): string {
+  return `# ${runnerVersion(entryHash)}\n${workflowBody(entryHash)}`;
 }
 
-function workflowBody(): string {
+function workflowBody(entryHash: string | null): string {
   return `# Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
 # its version changes.
+#
+# formic-loop-entry names the loop entry this workflow was installed with, in
+# ${RUNNER_ENTRY_PATH} beside it. The version below covers both, so a
+# repository has the pair or neither, and a job never runs the wrong loop.
+# formic-loop-entry: ${entryHash ?? "none"}
 name: ${RUNNER_WORKFLOW_NAME}
 run-name: "Formic \${{ inputs.mode }} \${{ inputs.ticket }} · \${{ inputs.job }}"
 
@@ -541,26 +554,38 @@ ${indent(REPORTER_SCRIPT, 10)}
           fi
           case "$MODE" in
             loop)
-              # Formic's own loop, fetched as one file: an agent on an API key
-              # working here, where a CLI agent works, until its budget says
-              # stop. It writes its progress to stderr as one JSON event per
-              # line, which the reporter above posts as it goes.
-              if [ -z "$BUNDLE" ]; then echo "This loop run came with no bundle URL."; exit 1; fi
+              # Formic's own loop, as the entry this repository carries beside
+              # this workflow: an agent on an API key working here, where a CLI
+              # agent works, until its budget says stop. It writes its progress
+              # to stderr as one JSON event per line, which the reporter above
+              # posts as it goes.
               if [ -z "$FORMIC_API_KEY" ]; then echo "No API key for this agent. Add it to the agent in Formic."; exit 1; fi
               payload="$RUNNER_TEMP/formic-payload.json"
               jq --arg key "$FORMIC_API_KEY" --arg dir "$PWD" '.apiKey = $key | .repo.dir = $dir' <<< "$PROMPT" > "$payload"
-              curl -fsSL --max-time 60 --retry 2 -o "$RUNNER_TEMP/formic-loop.mjs" "$BUNDLE"
+              # Already in the checkout: the setup pull request installs the
+              # pair. A board that has a public address to serve one from still
+              # hands over a signed URL too, which is all a repository set up
+              # before the entry shipped with it has.
+              entry="$RUNNER_TEMP/formic-loop.mjs"
+              if [ -f "${RUNNER_ENTRY_PATH}" ]; then
+                cp "${RUNNER_ENTRY_PATH}" "$entry"
+              elif [ -n "$BUNDLE" ]; then
+                curl -fsSL --max-time 60 --retry 2 -o "$entry" "$BUNDLE"
+              else
+                echo "This repository has no loop entry, and the run came with no bundle URL."
+                exit 1
+              fi
               set +e
               # Its account of the run goes to Formic through the reporter, and
               # to this log as well: a step that shows nothing cannot be told
               # apart from one that is stuck. tee writes the stream, and the
               # pipeline is waited on, so every line is flushed before the step
               # moves on; the loop's own exit code is PIPESTATUS[0].
-              node "$RUNNER_TEMP/formic-loop.mjs" < "$payload" \
+              node "$entry" < "$payload" \
                 2>&1 > "$FORMIC_REPORT" | tee -a "$FORMIC_STREAM"
               status=\${PIPESTATUS[0]}
               set -e
-              rm -f "$payload" "$RUNNER_TEMP/formic-loop.mjs"
+              rm -f "$payload" "$entry"
               if [ "$status" -ne 0 ]; then
                 if [ -s "$FORMIC_REPORT" ]; then jq -r '.error // empty' "$FORMIC_REPORT" >&2 || true; fi
                 echo "The loop stopped (exit $status)."
@@ -725,13 +750,24 @@ ${indent(REPORTER_SCRIPT, 10)}
  * Formic's own install, refreshed by its setup pull request like any other
  * repository's: never edit it by hand. Last in the file: it reads the whole
  * workflow, which reads everything above.
+ *
+ * The entry's hash is part of the body it hashes, so the version covers the
+ * workflow *and* the loop entry installed with it: a repository with one and
+ * not the other, or with an older pair, is not this version.
  */
-const RUNNER_HASH = createHash("sha256").update(workflowBody()).digest("hex").slice(0, 12);
-export const RUNNER_VERSION = `formic-runner: ${RUNNER_HASH}`;
+export function runnerVersion(entryHash: string | null): string {
+  return `formic-runner: ${runnerHash(entryHash)}`;
+}
+
+function runnerHash(entryHash: string | null): string {
+  return createHash("sha256").update(workflowBody(entryHash)).digest("hex").slice(0, 12);
+}
 
 /**
  * Where the setup pull request comes from: a branch of its own per version,
  * cut from the base branch as it is now. Reusing one branch left each new
  * setup pull request on top of an old base, where it conflicted.
  */
-export const RUNNER_SETUP_BRANCH = `${RUNNER_SETUP_PREFIX}${RUNNER_HASH}`;
+export function runnerSetupBranch(entryHash: string | null): string {
+  return `${RUNNER_SETUP_PREFIX}${runnerHash(entryHash)}`;
+}

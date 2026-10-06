@@ -3,6 +3,8 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { runnerSetupBranch, runnerVersion, runnerWorkflow } from "./workflow";
+
 /**
  * The loop entry as one file, for a job in someone else's repository to run.
  *
@@ -24,6 +26,13 @@ export interface LoopBundle {
   commit: string;
   /** When it was built, ISO. */
   builtAt: string;
+  /**
+   * The entry's code, hashed — what a repository's workflow names as the entry
+   * it needs, so that the pair of files installed together is one version. It
+   * is a hash of the code and not of this build of it (the banner is not in
+   * it), so rebuilding one source does not make every repository out of date.
+   */
+  hash: string;
 }
 
 let override: string | null = null;
@@ -44,13 +53,57 @@ export async function loopBundle(dir?: string): Promise<LoopBundle | null> {
       readFile(path.join(where, "loop-entry.json"), "utf8"),
     ]);
     if (!code.trim()) return null;
-    const { commit, builtAt } = JSON.parse(meta) as { commit?: string; builtAt?: string };
+    const { commit, builtAt, hash } = JSON.parse(meta) as {
+      commit?: string;
+      builtAt?: string;
+      hash?: string;
+    };
     return {
       code,
       commit: commit?.trim() || "unknown",
       builtAt: builtAt?.trim() || "",
+      hash: hash?.trim() || "",
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * The hash of the entry this build produced, reading only the sidecar. The
+ * workflow is versioned with it, and that version is checked on every board
+ * read, so the check must not read three quarters of a megabyte of JavaScript
+ * to do it.
+ */
+export async function loopEntryHash(dir?: string): Promise<string | null> {
+  const where = dir ?? override ?? path.join(process.cwd(), LOOP_BUNDLE_DIR);
+  try {
+    const meta = JSON.parse(await readFile(path.join(where, "loop-entry.json"), "utf8")) as {
+      hash?: string;
+    };
+    return meta.hash?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The pair this build installs in a repository, and how they are named: the
+ * workflow (versioned with the entry beside it), the entry's hash, and the
+ * version and setup branch that go with them. `ensureRunner` writes these; the
+ * tests install them, so that what a test sets up is what a board would.
+ */
+export async function currentRunnerFiles(): Promise<{
+  hash: string | null;
+  version: string;
+  branch: string;
+  workflow: string;
+}> {
+  const hash = await loopEntryHash();
+  return {
+    hash,
+    version: runnerVersion(hash),
+    branch: runnerSetupBranch(hash),
+    workflow: runnerWorkflow(hash),
+  };
 }

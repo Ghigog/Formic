@@ -5,7 +5,8 @@ import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 import { collectCliRuns, completeCliRun } from "@/lib/runner/runner";
-import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle, runnerWorkflow } from "@/lib/runner/workflow";
+import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle } from "@/lib/runner/workflow";
+import { currentRunnerFiles } from "@/lib/runner/bundle";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
 import { parseCliReport } from "./cli";
@@ -33,7 +34,7 @@ async function setUp() {
   await repository().setAssistantAgent(PROJECT, preset.id);
   const base = (await projectFor(PROJECT)).baseBranch;
   const client = new MockVcsClient("acme/widgets");
-  await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+  await client.commitFile(base, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "install");
   return client;
 }
 

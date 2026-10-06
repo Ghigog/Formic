@@ -28,7 +28,8 @@ import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
 import { applyTransition } from "@/lib/board/service";
 import { cardProblem } from "@/lib/domain/status";
 import { completeCliRun } from "@/lib/runner/runner";
-import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runnerWorkflow } from "@/lib/runner/workflow";
+import { ANSWER_PATH, RUNNER_WORKFLOW_PATH } from "@/lib/runner/workflow";
+import { currentRunnerFiles } from "@/lib/runner/bundle";
 
 /**
  * A card's chat: the person talks to the agent they set for the card's
@@ -113,7 +114,7 @@ async function seedTickets(): Promise<[TicketDetail, TicketDetail]> {
 
 async function installRunner(): Promise<void> {
   const base = (await projectFor(PROJECT)).baseBranch;
-  await new MockVcsClient("acme/widgets").commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+  await new MockVcsClient("acme/widgets").commitFile(base, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "install");
 }
 
 function lastDispatch() {

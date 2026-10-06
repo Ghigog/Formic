@@ -23,6 +23,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +55,12 @@ const banner = `formic loop entry — commit ${commit} — built ${builtAt}`;
 
 await mkdir(outDir, { recursive: true });
 
+// Written by hand rather than with esbuild's own banner option, so that the
+// code can be hashed on its own: the banner carries the commit and the time,
+// and two builds of one source differ in bytes. That hash is what a
+// repository's workflow names as the entry it needs (see
+// src/lib/runner/workflow.ts), so it has to belong to the code and not to this
+// build of it.
 const result = await build({
   entryPoints: [path.join(root, "src/lib/runner/loop-entry.ts")],
   outfile: path.join(outDir, "loop-entry.mjs"),
@@ -63,16 +70,21 @@ const result = await build({
   target: "node22",
   minify: true,
   legalComments: "none",
-  banner: { js: `// ${banner}` },
   alias: { "server-only": path.join(root, "src/test/server-only-stub.ts") },
   metafile: true,
+  write: false,
   logLevel: "warning",
 });
+
+const code = result.outputFiles?.[0]?.text ?? "";
+if (!code.trim()) throw new Error("The loop entry built empty.");
+const hash = createHash("sha256").update(code).digest("hex").slice(0, 12);
+await writeFile(path.join(outDir, "loop-entry.mjs"), `// ${banner} · ${hash}\n${code}`);
 
 const bytes = Object.values(result.metafile.outputs)[0]?.bytes ?? 0;
 await writeFile(
   path.join(outDir, "loop-entry.json"),
-  `${JSON.stringify({ commit, builtAt, bytes }, null, 2)}\n`,
+  `${JSON.stringify({ commit, builtAt, bytes, hash }, null, 2)}\n`,
 );
 
-process.stdout.write(`Built the loop entry for ${commit}: ${bytes} bytes in ${outDir}\n`);
+process.stdout.write(`Built the loop entry for ${commit}: ${bytes} bytes, ${hash}, in ${outDir}\n`);

@@ -24,8 +24,7 @@ import {
   ANSWER_PATH,
   CARRY_DELETED,
   CHECKPOINT_TRAILER,
-  RUNNER_SETUP_BRANCH,
-  RUNNER_VERSION,
+  RUNNER_ENTRY_PATH,
   RUNNER_WORKFLOW_NAME,
   RUNNER_WORKFLOW_PATH,
   USAGE_TRAILER,
@@ -33,6 +32,7 @@ import {
   runTitle,
   runnerWorkflow,
 } from "./workflow";
+import { currentRunnerFiles, setLoopBundleDir } from "./bundle";
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { reviewPullRequest } from "@/lib/review/pipeline";
 import { cliAgentFor, loopAgentFor, savePreset } from "@/lib/agents/presets";
@@ -99,12 +99,8 @@ async function assignClaudeCode(column: ColumnId = "in_progress") {
 
 async function installRunner(): Promise<string> {
   const base = (await projectFor(PROJECT)).baseBranch;
-  await new MockVcsClient("acme/widgets").commitFile(
-    base,
-    RUNNER_WORKFLOW_PATH,
-    runnerWorkflow(),
-    "install",
-  );
+  const { workflow } = await currentRunnerFiles();
+  await new MockVcsClient("acme/widgets").commitFile(base, RUNNER_WORKFLOW_PATH, workflow, "install");
   return base;
 }
 
@@ -124,6 +120,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   resetEnvCache();
+  setLoopBundleDir(null);
 });
 
 describe("CLI agent templates", () => {
@@ -538,11 +535,13 @@ describe("starting a CLI agent", () => {
       /GitHub Actions\. Merge the setup pull request once \(https:\/\/\S+\), then try again\.$/,
     );
     const runner = MockVcsClient.runner();
-    expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(
-      RUNNER_WORKFLOW_NAME,
-    );
+    const { branch, version } = await currentRunnerFiles();
+    expect(runner.files.get(`${branch}:${RUNNER_WORKFLOW_PATH}`)).toContain(RUNNER_WORKFLOW_NAME);
+    // The pair: the loop entry is committed with the workflow, on its branch,
+    // so a job runs it from its own checkout and fetches nothing.
+    expect(runner.files.get(`${branch}:${RUNNER_ENTRY_PATH}`)).toContain("formic loop entry");
     // A branch per version, so each setup starts from the base as it is now.
-    expect(RUNNER_SETUP_BRANCH).toBe(`formic/setup-runner-${RUNNER_VERSION.split(": ")[1]}`);
+    expect(branch).toBe(`formic/setup-runner-${version.split(": ")[1]}`);
     expect(runner.dispatches).toHaveLength(0);
     expect(runner.secrets.size).toBe(0);
   });
@@ -1239,20 +1238,30 @@ describe("collecting a run whose webhook never came", () => {
 });
 
 describe("the runner workflow", () => {
-  it("is versioned by its own content, so no two changes can share a version", () => {
-    expect(RUNNER_VERSION).toMatch(/^formic-runner: [0-9a-f]{12}$/);
-    expect(runnerWorkflow().startsWith(`# ${RUNNER_VERSION}\n`)).toBe(true);
+  it("is versioned by its own content, so no two changes can share a version", async () => {
+    const { version, workflow } = await currentRunnerFiles();
+    expect(version).toMatch(/^formic-runner: [0-9a-f]{12}$/);
+    expect(workflow.startsWith(`# ${version}\n`)).toBe(true);
+  });
+
+  it("is versioned on the loop entry it installs with, so the pair is one version", async () => {
+    const { workflow } = await currentRunnerFiles();
+    // The entry a repository must carry is named in the workflow, and the
+    // version hashes that name: a repository with one file and not the other,
+    // or with an older pair, is not the version this board installs.
+    expect(workflow).toContain("# formic-loop-entry: ");
+    expect(runnerWorkflow("abcdef123456")).not.toBe(runnerWorkflow(null));
   });
 
   it("merges another branch in before the agent starts, when asked, leaving its conflicts", () => {
-    const yaml = runnerWorkflow();
+    const yaml = runnerWorkflow(null);
     expect(yaml).toContain("merge --no-commit --no-ff");
     expect(yaml).toContain("fetch-depth: ${{ inputs.merge != '' && '0' || '2' }}");
     expect(yaml).toContain("Conflict markers are still in the change.");
   });
 
   it("never splices inputs into a script", () => {
-    const yaml = runnerWorkflow();
+    const yaml = runnerWorkflow(null);
     for (const line of yaml.split("\n")) {
       if (!line.includes("${{ inputs.")) continue;
       // Allowed: env values, the checkout's ref and depth, the title and the concurrency key.
@@ -1275,7 +1284,7 @@ describe("the runner workflow", () => {
   });
 
   it("streams the agent's output to Formic and hands Claude Code notes through a hook", () => {
-    const yaml = runnerWorkflow();
+    const yaml = runnerWorkflow(null);
     expect(yaml).toContain("--output-format stream-json --verbose");
     expect(yaml).toContain('--settings "$RUNNER_TEMP/formic-hooks.json"');
     expect(yaml).toContain("exec --json --output-last-message");
@@ -1285,14 +1294,14 @@ describe("the runner workflow", () => {
   });
 
   it("keeps only the answer from a planning run", () => {
-    const yaml = runnerWorkflow();
+    const yaml = runnerWorkflow(null);
     expect(yaml).toContain("product|architect|showcase|ask)");
     expect(yaml).toContain('git reset -q --hard "$FORMIC_START"');
     expect(yaml).toContain(`git add -f "${ANSWER_PATH}"`);
   });
 
   it("makes room for downloaded attachments and names it for the agent", () => {
-    const yaml = runnerWorkflow();
+    const yaml = runnerWorkflow(null);
     expect(yaml).toContain('mkdir -p "$RUNNER_TEMP/formic-attachments"');
     expect(yaml).toContain("FORMIC_ATTACHMENTS: ${{ runner.temp }}/formic-attachments");
   });
@@ -1343,7 +1352,8 @@ describe("the runner workflow", () => {
       /GitHub Actions\. Merge the setup pull request once \(https:\/\/\S+\), then try again\.$/,
     );
     const runner = MockVcsClient.runner();
-    expect(runner.files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toContain(RUNNER_VERSION);
+    const { branch, version } = await currentRunnerFiles();
+    expect(runner.files.get(`${branch}:${RUNNER_WORKFLOW_PATH}`)).toContain(version);
   });
 });
 
@@ -1777,7 +1787,7 @@ describe("an API-key coder running in a job", () => {
       await new MockVcsClient("acme/widgets").commitFile(
         base,
         RUNNER_WORKFLOW_PATH,
-        `# ${RUNNER_VERSION}\njobs:\n  agent:\n    timeout-minutes: 180\n`,
+        `# ${(await currentRunnerFiles()).version}\njobs:\n  agent:\n    timeout-minutes: 180\n`,
         "install",
       );
       const ticket = await seedTicket();
@@ -1819,31 +1829,31 @@ describe("an API-key coder running in a job", () => {
     expect((await repository().ticketDetail(ticket.id))!.runnerJob).toBeNull();
   });
 
-  it("runs an API-key coder in-process on a board with no public address", async () => {
-    // A loop run hands the job a signed address for Formic's own loop, and the
-    // job fetches it from this board. A laptop has no address GitHub can fetch
-    // it from (docs/local.md), so the run takes the in-process path a
-    // repository with no workflow gets, rather than parking the card on a
-    // setting nobody set.
+  it("dispatches a loop run out of the repository's own entry, with no public address", async () => {
+    // The entry travels with the workflow, so the job runs it out of its own
+    // checkout and a loop run needs no address of the board's own — a laptop
+    // included (docs/local.md). The fixture stands in for a built entry;
+    // `installRunner` installs what this board would.
+    setLoopBundleDir("src/test/loop-entry-bundle");
     await assignApiAgent();
     await installRunner();
     const ticket = await seedTicket();
-    // The in-process path calls the provider; this is only about it being the
-    // path taken, so the call itself is made to fail at once.
-    vi.stubGlobal("fetch", async () => new Response("no", { status: 500 }));
 
     await runCoderAgent(PROJECT, ticket.id);
 
-    expect(MockVcsClient.runner().dispatches).toHaveLength(0);
-    expect(MockVcsClient.runner().secrets.size).toBe(0);
-    const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.runnerJob).toBeNull();
-    expect(after.blockedReason ?? "").not.toContain("no public address");
+    const [dispatch] = MockVcsClient.runner().dispatches;
+    expect(dispatch).toBeTruthy();
+    // Nothing to fetch: the job has the entry.
+    expect(dispatch!.inputs).not.toHaveProperty("bundle");
+    expect((await repository().ticketDetail(ticket.id))!.runnerJob).toBe(dispatch!.inputs.job);
   });
 
-  it("refuses a loop run outright when the board has no address", async () => {
-    // The coder pipeline never chooses a job without one (see the test above);
-    // this is startJobRun's own precondition, for any other caller.
+  it("refuses a loop run when there is no entry to install and no address to serve one", async () => {
+    // A board that was never built with an entry has nothing to put in a
+    // repository, and with no public address it has nothing to hand a job
+    // either, so there is nothing to run. Said here, rather than as a job that
+    // fails a minute later.
+    setLoopBundleDir("src/test");
     vi.stubEnv("FORMIC_URL", "");
     await assignApiAgent();
     const ticket = await seedTicket();
@@ -1867,8 +1877,8 @@ describe("an API-key coder running in a job", () => {
 
     expect(MockVcsClient.runner().dispatches).toHaveLength(0);
     const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.blockedReason).toContain("no Formic loop entry to run");
     expect(after.blockedReason).toContain("no public address");
-    expect(after.blockedReason).toContain("Set FORMIC_URL, then try again.");
   });
 
   it("is not the agent a CLI column runs, and not one without a key", async () => {

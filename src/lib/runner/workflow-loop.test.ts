@@ -35,7 +35,7 @@ interface Step {
   env?: Record<string, string>;
 }
 
-const doc = parse(runnerWorkflow()) as { jobs?: { agent?: { steps?: Step[] } } };
+const doc = parse(runnerWorkflow(null)) as { jobs?: { agent?: { steps?: Step[] } } };
 const loopStep = (doc.jobs?.agent?.steps ?? []).find((s) => s.name === "Run the agent")!;
 /** Every name the workflow gives the step, and nothing else. */
 const declared = Object.keys(loopStep.env ?? {});

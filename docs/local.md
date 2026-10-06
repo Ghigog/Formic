@@ -128,11 +128,13 @@ Whichever you pick, put `DATABASE_URL` in `.env` so `npm run dev` and the
   runs the mock agents against a mock GitHub, so nothing leaves the machine.
   It is never selected implicitly, and never on a board a person is using.
 - Saved agent templates are the same as everywhere: each carries its own
-  provider key, and they run in-process, bounded by `DEFAULT_RUN_BUDGET`
-  (`docs/agent-execution.md`), not by a job. The job is where the ticket's own
-  budget lives, and one cannot start here: it fetches Formic's loop from the
-  board, and this board has no address GitHub can reach. Give it one —
-  `FORMIC_URL`, a tunnel or a deployment — and the loop runs here too.
+  provider key. An agent on an API key runs in the repository's GitHub Actions
+  — where the ticket's own budget lives — once the setup pull request is
+  merged, and in-process until then, bounded by `DEFAULT_RUN_BUDGET`
+  (`docs/agent-execution.md`). Formic installs its own loop entry with that
+  workflow, in the same merge, so a job in Actions needs no address of yours to
+  fetch anything: this is the one piece of the cloud path a laptop can do
+  completely, and it is why the setup pull request is worth merging here.
 - CLI agents (Claude Code, Codex, Gemini CLI) still run in the repository's
   own GitHub Actions. They need `GITHUB_TOKEN` with the **`workflow`** scope
   (writing `.github/workflows/formic-agent.yml` needs it), and the repository

@@ -7,7 +7,8 @@ import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 import { collectCliRuns, completeCliRun } from "@/lib/runner/runner";
-import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle, runnerWorkflow } from "@/lib/runner/workflow";
+import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle } from "@/lib/runner/workflow";
+import { currentRunnerFiles } from "@/lib/runner/bundle";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
 
@@ -258,7 +259,7 @@ describe("the assistant on a CLI plan", () => {
     await useAgent("claude-code");
     const base = (await projectFor(PROJECT)).baseBranch;
     const client = new MockVcsClient("acme/widgets");
-    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "install");
     const pending = await ask("Turn docs/tickets.md into tickets");
 
     await answer(PROJECT, pending.id);
@@ -321,7 +322,7 @@ describe("the assistant on a CLI plan", () => {
     await useAgent("claude-code");
     const base = (await projectFor(PROJECT)).baseBranch;
     const client = new MockVcsClient("acme/widgets");
-    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "install");
     const pending = await ask("What tickets are there?");
     await answer(PROJECT, pending.id);
     const job = MockVcsClient.runner().dispatches.at(-1)!.inputs.job!;
@@ -359,7 +360,7 @@ describe("the assistant on a CLI plan", () => {
     await useAgent("claude-code");
     const base = (await projectFor(PROJECT)).baseBranch;
     const client = new MockVcsClient("acme/widgets");
-    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "install");
     const pending = await ask("Yes please make the ticket");
     await answer(PROJECT, pending.id);
     const first = MockVcsClient.runner().dispatches.at(-1)!.inputs;
@@ -387,7 +388,7 @@ describe("the assistant on a CLI plan", () => {
     await useAgent("claude-code");
     const base = (await projectFor(PROJECT)).baseBranch;
     const client = new MockVcsClient("acme/widgets");
-    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "install");
     const pending = await ask("Yes please make the ticket");
     await answer(PROJECT, pending.id);
     const first = MockVcsClient.runner().dispatches.at(-1)!.inputs;

@@ -24,7 +24,6 @@ import type { VcsClient } from "@/lib/vcs";
 import { budgetForRun, inProcessBudget } from "@/lib/budget/in-process";
 import {
   cliPrompt,
-  formicOrigin,
   loopPayload,
   loopRunnerReady,
   resumeBrief,
@@ -223,12 +222,13 @@ export async function runCoderAgent(
   // the in-process path below exactly as it was: no card changes behaviour
   // because a feature exists.
   //
-  // The job fetches that loop from this board, so the board needs an address
-  // GitHub can reach, and a laptop has none (docs/local.md). That is the same
-  // case once more — the run goes in-process below — rather than a card parked
-  // on a setting nobody set. What such a run gives up is the ticket's own
-  // budget, and the card says which limit stopped it.
-  const loop = formicOrigin() ? await loopAgentFor(projectId, "in_progress") : null;
+  // The job runs Formic's own loop out of the repository's checkout: the setup
+  // pull request installs the entry with the workflow (see ensureRunner). So a
+  // loop run needs no address of this board's — a laptop included — only that
+  // the repository has the pair, which is what `loopRunnerReady` answers. A
+  // repository that has not got it runs in-process below, exactly as it did
+  // before the loop existed, and the card says which limit stopped it.
+  const loop = await loopAgentFor(projectId, "in_progress");
   if (loop && (await loopRunnerReady(client, project.baseBranch))) {
     const notes = await noteTexts(projectId, ticket.id);
     // Read once, here: a setting changed after this run starts is for the next.

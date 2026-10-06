@@ -104,16 +104,33 @@ signed address `loopBundleUrl` builds — the same HMAC and the same claim as
 an empty script) where a build produced no bundle. The bundle is
 `outputFileTracingIncludes`d into that function's deployment.
 
+Where the entry *goes* changed once the desktop app met it, and this is where
+that is recorded. It is installed **in the repository, with the workflow**:
+`ensureRunner` commits both to the same setup branch, so the pair arrives in
+one merge, and the workflow's version is hashed over both — a repository with
+one file and not the other, or with an older pair, is not the current version
+(see `runnerVersion`). The job runs the entry out of its own checkout
+(`RUNNER_ENTRY_PATH`), so it fetches nothing, which is what lets a board with
+no public address — a laptop, `docs/local.md` — run a loop agent at all. The
+entry's hash is a hash of its *code*, not of the build of it, or every deploy
+would make every repository out of date.
+
+The signed address above is still handed over, and still means what it meant:
+a repository set up before the entry shipped with the workflow uses it, and so
+does a board that was built without an entry to install.
+
 **Step 3** — `mode: loop` in `src/lib/runner/workflow.ts`, and the dispatch
-behind it. The job fetches the entry, hands it the job's own checkout
-(`repo.dir`) with the key injected from the repository's Actions secrets,
-appends its progress to the same stream a CLI agent's is read from, and writes
-the run's report as the commit: its summary and handoff, a `Formic-Usage:`
-trailer the runner counts on the ticket, and `Formic-Already-Done` when the
-ticket was already done. `startJobRun` dispatches it, `completeCliRun` collects
-it, and `loopRunnerReady` decides: a repository whose workflow is current runs
-its API-key coders this way, and one that is not keeps running them in-process
-until it is updated — no card changes behaviour because a feature exists.
+behind it. The job runs the entry — out of its own checkout, or fetched at the
+signed address when the repository predates that — hands it the job's own
+checkout (`repo.dir`) with the key injected from the repository's Actions
+secrets, appends its progress to the same stream a CLI agent's is read from,
+and writes the run's report as the commit: its summary and handoff, a
+`Formic-Usage:` trailer the runner counts on the ticket, and
+`Formic-Already-Done` when the ticket was already done. `startJobRun` dispatches
+it, `completeCliRun` collects it, and `loopRunnerReady` decides: a repository
+whose workflow and entry are current runs its API-key coders this way, and one
+that is not keeps running them in-process until it is updated — no card changes
+behaviour because a feature exists.
 
 A loop run can be watched while it works: the loop says what it is doing before
 its first model call, not only after its first tool call, and its own lines go

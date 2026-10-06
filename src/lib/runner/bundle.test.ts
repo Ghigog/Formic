@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { loopBundle, setLoopBundleDir } from "./bundle";
+import { loopBundle, loopEntryHash, setLoopBundleDir } from "./bundle";
 
 /**
  * The loop entry as the job receives it: one file, built from this repository,
@@ -74,6 +74,24 @@ describe("the loop entry as a build artifact", () => {
     const report = JSON.parse(stdout) as { ok: boolean; error: string };
     expect(report.ok).toBe(false);
     expect(report.error).toContain("GITHUB_TOKEN");
+  });
+
+  it("hashes the code and not the build, so a rebuild is not a new version", async () => {
+    const first = await build("1111111111111111111111111111111111111111");
+    const second = await build("2222222222222222222222222222222222222222");
+
+    const one = await loopBundle(first);
+    const two = await loopBundle(second);
+    // The banner records the commit and the time, so the two files differ…
+    expect(one?.code).not.toBe(two?.code);
+    // …and the hash is of the code alone. The workflow's version is hashed over
+    // it, so two builds of one source are one version, and no repository is
+    // asked to update itself because a board was deployed again.
+    expect(one?.hash).toMatch(/^[0-9a-f]{12}$/);
+    expect(one?.hash).toBe(two?.hash);
+    // The board reads only the sidecar for that version: it is checked on every
+    // board read, and must not pull three quarters of a megabyte to do it.
+    expect(await loopEntryHash(first)).toBe(one?.hash);
   });
 
   it("is nothing at all when a build did not produce one", async () => {

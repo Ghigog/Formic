@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runnerSetup } from "./setup";
-import { RUNNER_SETUP_BRANCH, RUNNER_SETUP_PREFIX, RUNNER_WORKFLOW_PATH, runnerWorkflow } from "./workflow";
+import { RUNNER_SETUP_PREFIX, RUNNER_WORKFLOW_PATH } from "./workflow";
+import { currentRunnerFiles } from "./bundle";
 import { repository } from "@/lib/db";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, VcsError, resetVcs, setVcs } from "@/lib/vcs";
@@ -34,14 +35,14 @@ describe("runner setup", () => {
 
     expect(first).toMatchObject({ state: "waiting", update: false });
     expect(second).toEqual(first);
-    expect(MockVcsClient.runner().files.get(`${RUNNER_SETUP_BRANCH}:${RUNNER_WORKFLOW_PATH}`)).toBeTruthy();
+    expect(MockVcsClient.runner().files.get(`${(await currentRunnerFiles()).branch}:${RUNNER_WORKFLOW_PATH}`)).toBeTruthy();
   });
 
   it("is ready once the workflow is on the base branch", async () => {
     const project = await repository().defaultProject();
     await runnerSetup(project);
 
-    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "merged");
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "merged");
 
     expect(await runnerSetup(project)).toEqual({ state: "ready" });
   });
@@ -71,7 +72,7 @@ describe("runner setup", () => {
 
   it("closes a stale setup pull request even when the workflow is already current", async () => {
     const project = await repository().defaultProject();
-    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "merged");
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "merged");
     const old = await client.openPullRequest({
       headBranch: `${RUNNER_SETUP_PREFIX}000000000000`,
       baseBranch: project.baseBranch,

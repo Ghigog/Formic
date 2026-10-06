@@ -11,7 +11,6 @@ import {
   RUNNER_WORKFLOW_PATH,
   workflowCeiling,
   RUNNER_JOB_MINUTES,
-  RUNNER_VERSION,
   USAGE_TRAILER,
   parseRunTitle,
   runTitle,
@@ -84,7 +83,7 @@ function shellReads(script: string): Set<string> {
  * be what the generator just produced.
  */
 
-const text = runnerWorkflow();
+const text = runnerWorkflow(null);
 
 interface Step {
   name?: string;
@@ -123,7 +122,9 @@ describe("the installed workflow", () => {
 
   it("parses as the YAML a runner will accept", () => {
     expect(() => parse(text)).not.toThrow();
-    expect(text.startsWith(`# ${RUNNER_VERSION}`)).toBe(true);
+    // The version is the first line, so anything reading the installed copy —
+    // a person, the board — can see which one it is.
+    expect(text.split("\n")[0]).toMatch(/^# formic-runner: [0-9a-f]{12}$/);
     expect(Object.keys(doc.on?.workflow_dispatch?.inputs ?? {})).toEqual(
       expect.arrayContaining(["job", "mode", "ticket", "cli", "model", "from", "secret", "prompt", "bundle", "report", "merge"]),
     );
@@ -207,7 +208,14 @@ describe("the installed workflow", () => {
 
   it("is what this repository has checked in, refreshed by the generator alone", () => {
     const root = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
-    expect(readFileSync(path.join(root, RUNNER_WORKFLOW_PATH), "utf8")).toBe(text);
+    const checkedIn = readFileSync(path.join(root, RUNNER_WORKFLOW_PATH), "utf8");
+    // Generated for whichever loop entry the copy names — this repository's own
+    // install is written by its own setup pull request — so the file has to be
+    // the generator's output for that entry and not a hand edit. Which entry it
+    // names is the other half: `loopRunnerReady` reads it, so a copy naming an
+    // entry the checkout does not carry is not current.
+    const named = (/^# formic-loop-entry: (.+)$/m.exec(checkedIn)?.[1] ?? "none").trim();
+    expect(checkedIn).toBe(runnerWorkflow(named === "none" ? null : named));
   });
 
   it("puts loop runs in a title its completion can read back", () => {
