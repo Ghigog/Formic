@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
 import type { AgentContext, AgentOutcome, CodeChange, Usage } from "./ports";
+import { budgetTokens } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
 import type { PlanStep } from "@/lib/domain/entities";
@@ -331,6 +332,7 @@ function addUsage(a: Usage, b: Usage): Usage {
     model: a.model,
     tokensIn: a.tokensIn + b.tokensIn,
     tokensOut: a.tokensOut + b.tokensOut,
+    costTokensIn: (a.costTokensIn ?? a.tokensIn) + (b.costTokensIn ?? b.tokensIn),
     costCents: a.costCents + b.costCents,
   };
 }
@@ -346,6 +348,7 @@ function usageFrom(
     model,
     tokensIn,
     tokensOut,
+    costTokensIn,
     costCents: estimateCostCents(model, costTokensIn, tokensOut, provider),
   };
 }
@@ -583,8 +586,8 @@ export async function runCodingLoop(
     // The run's own limits, between turns: a turn already under way is not
     // cut short, and the next one is not begun past a limit.
     const { budget } = ctx;
-    if (budget?.tokens.value != null && total.tokensIn + total.tokensOut >= budget.tokens.value) {
-      return fail(tokenLimitNote(budget, total.tokensIn + total.tokensOut), true);
+    if (budget?.tokens.value != null && budgetTokens(total) >= budget.tokens.value) {
+      return fail(tokenLimitNote(budget, budgetTokens(total)), true);
     }
     if (budget?.minutes.value != null && Date.now() - startedAt >= budget.minutes.value * 60_000) {
       return fail(timeLimitNote(budget), true);
