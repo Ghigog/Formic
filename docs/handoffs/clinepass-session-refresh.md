@@ -24,11 +24,15 @@ This is `docs/cline-audit.md` blocker 5, and this is the work that closes it.
   later `expiresAt` is the one to use.
 - The refresh is a standard grant: `{ grant_type: "refresh_token",
   refresh_token, client_id }`, against WorkOS —
-  `https://api.workos.com/user_management/authenticate`. The CLI's bundle
-  (`/opt/homebrew/lib/node_modules/cline`) carries the candidate client ids
-  `client_01K3A5415VF6QBQBG3XYCW91G6`, `client_01K3A541FN8TA3EPPHTD2325AR`,
-  `client_01K6XQAY7JK6T5HXVSZW2S5VYK`; which one ClinePass signs in with is
-  settled by making the grant once against a real refresh token.
+  `https://api.workos.com/user_management/authenticate`. **Verified 6 October
+  2026** with the refresh token from that file: it answers
+  `{ access_token, refresh_token, authentication_method, user }` and 200. Of the
+  CLI's three client ids, only **`client_01K3A541FN8TA3EPPHTD2325AR`** is
+  accepted; `client_01K3A5415VF6QBQBG3XYCW91G6` and
+  `client_01K6XQAY7JK6T5HXVSZW2S5VYK` answer `400 invalid_grant`. Nothing else is
+  needed — no client secret — and the **refresh token comes back rotated**, so
+  the new one has to be sealed back over the old (a refresh that throws its
+  replacement away works once and then locks the account out).
 
 ## The shape of the fix
 
