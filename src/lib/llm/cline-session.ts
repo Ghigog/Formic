@@ -92,7 +92,14 @@ export async function liveToken(
   // token is the one to present — rotation retires the token that was pasted —
   // and a credential that is not a session at all answers 400 here and is left
   // alone from then on.
-  const refreshed = await refreshSession(mine?.refreshToken ?? credential);
+  let refreshed: Refresh | null = null;
+  try {
+    refreshed = await refreshSession(mine?.refreshToken ?? credential);
+  } catch {
+    // Could not ask, which is not the same as being refused: nothing is
+    // remembered against the credential, and the call is made as it was.
+    return credential;
+  }
   if (!refreshed) {
     notSessions.add(credential);
     return credential;
@@ -118,7 +125,16 @@ export async function refreshSession(refreshToken: string): Promise<Refresh | nu
         client_id: CLIENT_ID,
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Refused out loud. A credential pasted out of the CLI's own file is
+      // retired the moment the CLI refreshes that file — which it does every
+      // hour, and on every command — so the copy here goes stale on its own,
+      // and the run only fails later and elsewhere. Say so where it happens.
+      console.warn(
+        `[formic] ClinePass refused this session refresh (HTTP ${res.status}): paste the current refresh token from ~/.cline/data/settings/providers.json, or a live access token, into the agent.`,
+      );
+      return null;
+    }
 
     const body = (await res.json()) as { access_token?: string; refresh_token?: string };
     if (!body.access_token) return null;
