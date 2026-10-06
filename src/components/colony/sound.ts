@@ -109,6 +109,17 @@ export class SoundEngine {
     this.release();
   };
 
+  /**
+   * Coming back to a window that was in the background, or a display that was
+   * asleep: the system may have taken the audio away while nothing was
+   * happening, and WebKit does not bring it back on its own. Nothing is being
+   * played this moment, so this is the one chance to do it — the next sound
+   * would otherwise be spent discovering the context is still silent.
+   */
+  private readonly onWake = () => {
+    if (this.ac && this.ac.state !== "running") void this.ac.resume().catch(() => {});
+  };
+
   /** Whatever was waiting to be heard goes now, after the current handlers. */
   private release() {
     const run = this.waiting;
@@ -144,9 +155,13 @@ export class SoundEngine {
   attach(): () => void {
     window.addEventListener("pointerdown", this.onGesture, true);
     window.addEventListener("keydown", this.onGesture, true);
+    document.addEventListener("visibilitychange", this.onWake);
+    window.addEventListener("focus", this.onWake);
     return () => {
       window.removeEventListener("pointerdown", this.onGesture, true);
       window.removeEventListener("keydown", this.onGesture, true);
+      document.removeEventListener("visibilitychange", this.onWake);
+      window.removeEventListener("focus", this.onWake);
       void this.ac?.close().catch(() => {});
       this.ac = null;
     };
