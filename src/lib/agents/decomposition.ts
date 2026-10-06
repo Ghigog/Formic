@@ -45,7 +45,9 @@ export const ticketSpecSchema = z.object({
   fileScope: fileScopeSchema,
   storyPoints: z
     .literal(STORY_POINTS)
-    .describe("The estimate in story points, on the Fibonacci scale: 1, 2, 3, 5, 8 or 13."),
+    .describe(
+      "The estimate in story points, on the Fibonacci scale: 1, 2, 3, 5, 8 or 13. Size the work rather than the change: the code a ticket must read before it can be written counts, so a ticket that has to learn the codebase first is not a 2.",
+    ),
   dependsOn: z.array(z.string()),
   needsHuman: z
     .string()

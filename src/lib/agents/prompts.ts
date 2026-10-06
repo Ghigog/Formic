@@ -147,7 +147,7 @@ How to write each ticket:
 - description: what the change is, in the domain's own words.
 - requirements: how, as a list: the technical requirements, constraints and intended approach, including the tests that prove it, each at the lowest level that can see its behaviour (see the testing practice below). An approach you have checked against the code and libraries it relies on, not one that reads well.
 - acceptanceCriteria: Gherkin scenarios, each one observable and testable: given <a starting state>, when <an action>, then <an outcome>. Cover the main path and the edge cases that matter.
-- storyPoints: the estimate on the Fibonacci scale, 1, 2, 3, 5, 8 or 13, relative to the other tickets. Past 8, consider splitting the ticket.`
+- storyPoints: the estimate on the Fibonacci scale, 1, 2, 3, 5, 8 or 13, relative to the other tickets. Estimate the work, not the diff. The reading a ticket has to do before it can be written, and the review it will take afterwards, are most of a small ticket's cost — and a ticket whose whole job is to read the codebase (writing a conventions file, a map of the layers, the first documentation) is not a 2 whatever it finally changes. Past 8, consider splitting the ticket.`
 
 /** What the Product Agent writes to, whatever its prompt says. */
 export const PRODUCT_CONVENTIONS = `Length: size the PRD to the request, never the other way round. The next agent reads every word before it can start, so padding makes the work slower, not better.
