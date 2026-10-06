@@ -152,6 +152,50 @@ describe("GitHub issues for an Epic", () => {
   });
 });
 
+describe("a ticket that came in from a GitHub issue", () => {
+  /**
+   * What the intake leaves behind: a ticket under a standalone holder Epic,
+   * with the issue it came from recorded and no issue of its own yet.
+   */
+  async function imported() {
+    const epic = await repository().createEpic({
+      projectId: PROJECT,
+      title: "Export",
+      rawRequest: "Let me export my board as CSV",
+      position: 1,
+    });
+    const [ticket] = await repository().createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "Export endpoint",
+        description: "Serve the CSV.",
+        acceptanceCriteria: ["It downloads"],
+        fileScope: ["src/app/api/export"],
+        size: "S",
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repository().updateTicket(ticket!.id, { sourceIssueNumber: 42 });
+    MockVcsClient.seedIssue({ number: 42, title: "Add a CSV export", labels: ["formic: intake"] });
+    return ticket!;
+  }
+
+  it("adopts that issue instead of filing a second one, and follows it as usual", async () => {
+    const ticket = await imported();
+
+    await moveTicket(ticket.id, "running");
+
+    // One issue, the person's own: not #42 plus a second one describing the
+    // ticket, which is what would leave their #42 open forever.
+    expect(issues()).toHaveLength(1);
+    expect(issue(42).labels).toEqual(["formic: in progress"]);
+    expect((await repository().ticketDetail(ticket.id))!.issueNumber).toBe(42);
+    expect(comments(42)).toEqual(["An agent started work on this."]);
+  });
+});
+
 describe("GitHub issues for a ticket", () => {
   async function ticket() {
     const epic = await newEpic();

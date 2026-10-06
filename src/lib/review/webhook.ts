@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { INTAKE_LABEL, isCardLabel } from "@/lib/issues/labels";
 import {
   RUNNER_SETUP_PREFIX,
   RUNNER_WORKFLOW_NAME,
@@ -59,7 +60,9 @@ export type WebhookSignal =
       conclusion: string;
       url: string | null;
       key: string;
-    };
+    }
+  /** An issue a person labelled for intake: Formic should take it from here. */
+  | { kind: "issue"; number: number; key: string };
 
 interface PullRef {
   number: number;
@@ -70,6 +73,14 @@ function pullNumbers(value: unknown): number[] {
   return value
     .map((p) => (p as PullRef)?.number)
     .filter((n): n is number => typeof n === "number");
+}
+
+/** GitHub sends an issue's labels as objects, `[{ name }]`; this reads the names. */
+function labelNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((l) => (typeof l === "string" ? l : (l as { name?: unknown })?.name))
+    .filter((name): name is string => typeof name === "string");
 }
 
 function ciSignals(
@@ -169,6 +180,25 @@ export function interpret(event: string, payload: unknown): WebhookSignal[] {
           key: `${prNumber}:merged:${String(pull.merge_commit_sha ?? "")}`,
         },
       ];
+    }
+
+    case "issues": {
+      const issue = body.issue as Record<string, unknown> | undefined;
+      // Opened, labelled or reopened: the three ways an issue becomes one to
+      // import. Everything else — an edit, a close — changes nothing here.
+      if (!issue || (action !== "opened" && action !== "labeled" && action !== "reopened")) return [];
+      // Dropped before it is a signal: without the opt-in there is nothing to
+      // import, and with one of Formic's own labels on it there is nothing to
+      // import either — it is already a card's mirror.
+      const labels = labelNames(issue.labels);
+      if (!labels.includes(INTAKE_LABEL)) return [];
+      if (labels.some(isCardLabel)) return [];
+      const number = Number(issue.number);
+      if (!Number.isFinite(number)) return [];
+      // Keyed on the repository and the issue, not the delivery id, so a
+      // redelivery, or the sweep finding the same issue, is one import.
+      const fullName = (body.repository as { full_name?: unknown } | undefined)?.full_name;
+      return [{ kind: "issue", number, key: `issue:${String(fullName ?? "")}#${number}` }];
     }
 
     default:

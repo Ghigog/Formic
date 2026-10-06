@@ -20,6 +20,10 @@ import { startQueued } from "./queue";
  * A card's chat answer is started the same way and can be lost the same way,
  * except that leaving it pending also locks the chat; `recoverStaleCardChats`
  * is that half of the sweep.
+ *
+ * The sweep also polls GitHub for issues a person labelled `formic: intake`.
+ * That belongs here for the same reason everything else does: it is the one
+ * hook that already ticks on every board that is being looked at.
  */
 
 /** Long enough for any start in flight to show up as a run or a job. */
@@ -51,6 +55,13 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
 
   // Queued tickets start when the one ahead stops; that start can be lost too.
   await startQueued(projectId);
+
+  // A person labels a GitHub issue `formic: intake`; this poll is what finds
+  // it. The webhook only reaches a deployed board, and GitHub cannot reach a
+  // laptop at all (docs/local.md), so this is the local path's way in. Skipped
+  // outright when the project has no GitHub token.
+  const { importIssues } = await import("@/lib/issues/intake");
+  await importIssues(projectId);
 
   const repo = repository();
   for (const card of await repo.boardCards(projectId)) {

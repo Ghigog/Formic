@@ -139,6 +139,32 @@ export interface IssueRef {
   url: string;
 }
 
+export type IssueState = "open" | "closed";
+
+/** What an issue listing can be narrowed to. */
+export interface IssueFilter {
+  /** Only issues carrying every one of these labels. */
+  labels?: string[];
+  /** Only issues updated at or after this time, ISO. What keeps a poll cheap. */
+  since?: string;
+}
+
+/**
+ * One issue, as much of it as the intake reads. Deliberately smaller than a
+ * `TicketDetail`: this crosses a network, on a timer.
+ */
+export interface IssueSummary {
+  number: number;
+  /** GitHub's internal id, which linking a sub-issue needs. */
+  id: number;
+  title: string;
+  body: string;
+  state: IssueState;
+  labels: string[];
+  /** True when the issue is a sub-issue of another. */
+  subIssue: boolean;
+}
+
 export interface IssuePatch {
   title?: string;
   body?: string;
@@ -177,6 +203,14 @@ export interface VcsClient {
 
   createIssue(input: { title: string; body: string; labels: string[] }): Promise<IssueRef>;
   updateIssue(number: number, patch: IssuePatch): Promise<void>;
+  /**
+   * One page of a repository's issues, newest first, narrowed by `filter`.
+   * Pull requests are not issues here: GitHub serves them from the same
+   * endpoint and their numbers collide with real issues, so they are dropped.
+   */
+  issues(state: IssueState, filter?: IssueFilter): Promise<IssueSummary[]>;
+  /** One issue by number, or null when there is none (or it is a pull request). */
+  issue(number: number): Promise<IssueSummary | null>;
   /** Files an issue under a parent, by the child's internal id. */
   addSubIssue(parentNumber: number, childId: number): Promise<void>;
   /** Creates a label when the repository does not have it yet. */

@@ -140,6 +140,24 @@ Formic does this itself, not through the agents' prompts, so it works the
 same with every provider and costs no tokens. A repository without Issues
 access still runs; the board just says nothing on GitHub.
 
+### The other direction: an issue you already wrote
+
+Label an issue `formic: intake` and Formic takes it from there: one ticket in
+To Do, drafted by the Architect Agent straight from the issue's text. The issue
+you labelled is then the one Formic tracks that ticket by — its label becomes
+`formic: <column>`, and the ticket's pull request says `Closes #42`. So the
+issue you wrote is the one that closes when the work merges, rather than a
+second issue about it appearing beside it.
+
+- The label is the opt-in. Nothing without it is imported, and nothing is
+  imported twice.
+- The title and the body are read once, at import. Editing the issue afterwards
+  does not edit the ticket, and taking the label off does not take the ticket
+  away — the label is a door, not a leash.
+- On a deployed board GitHub's `issues` webhook makes this immediate. On a
+  laptop GitHub cannot reach you at all, so the board's own sweep finds it
+  within about half a minute instead (`docs/local.md`).
+
 ## Agents per column
 
 Each column's header has an agent menu. An agent is a template: a name, an

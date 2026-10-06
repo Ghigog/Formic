@@ -72,6 +72,8 @@ interface TicketExtras {
   /** When that job was sent. */
   runnerJobAt?: Date | null;
   issueNumber: number | null;
+  /** The GitHub issue this ticket was imported from, when it came in from one. */
+  sourceIssueNumber?: number | null;
   plan?: PlanStep[];
   handoff?: string[];
   reviewedSha?: string | null;
@@ -1005,6 +1007,7 @@ export class MemoryRepository implements Repository {
     }
     if (update.runnerAgent !== undefined) extras.runnerAgent = update.runnerAgent;
     if (update.issueNumber !== undefined) extras.issueNumber = update.issueNumber;
+    if (update.sourceIssueNumber !== undefined) extras.sourceIssueNumber = update.sourceIssueNumber;
     if (update.plan !== undefined) extras.plan = update.plan;
     if (update.handoff !== undefined) extras.handoff = update.handoff;
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
@@ -1018,6 +1021,23 @@ export class MemoryRepository implements Repository {
       .filter((c) => c.kind === "ticket" && c.epicId === epicId)
       .sort(byPosition)
       .map((c) => toDetail(c, s.ticketExtras.get(c.id), projectOf(s, c)));
+  }
+
+  async mirroredIssueNumbers(projectId: string): Promise<number[]> {
+    const s = store();
+    const numbers = new Set<number>();
+    for (const card of s.cards.values()) {
+      if (projectOf(s, card) !== projectId) continue;
+      if (card.kind === "epic") {
+        const issue = s.epicIssues.get(card.id);
+        if (issue !== undefined) numbers.add(issue);
+        continue;
+      }
+      const extras = s.ticketExtras.get(card.id);
+      if (extras?.issueNumber != null) numbers.add(extras.issueNumber);
+      if (extras?.sourceIssueNumber != null) numbers.add(extras.sourceIssueNumber);
+    }
+    return [...numbers];
   }
 
   async startRun(run: RunRecord): Promise<void> {
@@ -1499,6 +1519,7 @@ function toDetail(
     runnerJob: extras?.runnerJob ?? null,
     runnerAgent: extras?.runnerAgent ?? null,
     issueNumber: extras?.issueNumber ?? null,
+    sourceIssueNumber: extras?.sourceIssueNumber ?? null,
     storyPoints: card.storyPoints ?? null,
     plan: extras?.plan ?? [],
     handoff: extras?.handoff ?? [],

@@ -17,6 +17,9 @@ import {
   VcsError,
   type IssuePatch,
   type IssueRef,
+  type IssueFilter,
+  type IssueState,
+  type IssueSummary,
   type WorkflowRunRef,
   type BranchRun,
   type Snapshot,
@@ -49,6 +52,34 @@ interface RawPull {
   title: string;
   head: { sha: string; ref: string };
   base: { ref: string };
+}
+
+/** An issue as GitHub serves it, from either issues endpoint. */
+interface RawIssue {
+  number: number;
+  id: number;
+  title: string;
+  body: string | null;
+  state: string;
+  labels: Array<string | { name?: string }>;
+  /** Present only on a pull request, which the issues endpoints also return. */
+  pull_request?: unknown;
+  /** Set only on a sub-issue: a URL to the issue that parents it. */
+  parent_issue_url?: string | null;
+}
+
+function toIssueSummary(raw: RawIssue): IssueSummary {
+  return {
+    number: raw.number,
+    id: raw.id,
+    title: raw.title,
+    body: raw.body ?? "",
+    state: raw.state === "closed" ? "closed" : "open",
+    labels: raw.labels
+      .map((l) => (typeof l === "string" ? l : (l.name ?? "")))
+      .filter(Boolean),
+    subIssue: Boolean(raw.parent_issue_url),
+  };
 }
 
 function toDetail(raw: RawPull): PullRequestDetail {
@@ -305,6 +336,26 @@ export class GitHubClient implements VcsClient {
 
   async updateIssue(number: number, patch: IssuePatch): Promise<void> {
     await this.request("PATCH", `/issues/${number}`, patch);
+  }
+
+  async issues(state: IssueState, filter: IssueFilter = {}): Promise<IssueSummary[]> {
+    const query = new URLSearchParams({ state, per_page: "100" });
+    if (filter.labels?.length) query.set("labels", filter.labels.join(","));
+    if (filter.since) query.set("since", filter.since);
+    const { data } = await this.request<RawIssue[]>("GET", `/issues?${query.toString()}`);
+    // The issues endpoints serve pull requests too, and their numbers collide
+    // with real issues. A pull request is never something to import.
+    return data.filter((issue) => !issue.pull_request).map(toIssueSummary);
+  }
+
+  async issue(number: number): Promise<IssueSummary | null> {
+    try {
+      const { data } = await this.request<RawIssue>("GET", `/issues/${number}`);
+      return data.pull_request ? null : toIssueSummary(data);
+    } catch (e) {
+      if (e instanceof VcsError && e.status === 404) return null;
+      throw e;
+    }
   }
 
   async addSubIssue(parentNumber: number, childId: number): Promise<void> {

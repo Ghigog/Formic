@@ -142,6 +142,7 @@ function contract(name: string, make: () => Repository) {
           handoff: ["rotate the key"],
           attempts: 2,
           reviewedHead: "head-1",
+          sourceIssueNumber: 77,
         });
 
         const byPr = await repo.ticketByPrNumber(p.id, 42);
@@ -152,9 +153,30 @@ function contract(name: string, make: () => Repository) {
           attempts: 2,
           handoff: ["rotate the key"],
           reviewedHead: "head-1",
+          sourceIssueNumber: 77,
         });
         expect(byPr!.plan).toEqual([{ step: "write it", status: "done" }]);
         expect(await repo.ticketByPrNumber(p.id, 43)).toBeNull();
+      });
+
+      it("lists every issue the mirror owns, for the intake to skip", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [own, imported] = await repo.createTickets([
+          ticket(epic.id, "C-1"),
+          ticket(epic.id, "C-2"),
+        ]);
+
+        expect(await repo.mirroredIssueNumbers(p.id)).toEqual([]);
+
+        await repo.setEpicIssue(epic.id, 11);
+        await repo.updateTicket(own!.id, { issueNumber: 22 });
+        await repo.updateTicket(imported!.id, { sourceIssueNumber: 33 });
+
+        expect((await repo.mirroredIssueNumbers(p.id)).sort((a, b) => a - b)).toEqual([11, 22, 33]);
+        // Another board's mirror is not this one's: its issues are its own.
+        const other = await repo.ensureProject({ ownerId: null, repoFullName: `contract/${randomUUID()}`, baseBranch: "main" });
+        expect(await repo.mirroredIssueNumbers(other.id)).toEqual([]);
       });
 
       it("stores an Epic's PRD, issue, runner job and showcase", async () => {

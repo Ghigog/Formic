@@ -144,4 +144,48 @@ describe("interpret", () => {
       }),
     ).toEqual([]);
   });
+
+  it("reads an issue a person labelled for intake", () => {
+    const payload = {
+      action: "labeled",
+      issue: { number: 42, labels: [{ name: "formic: intake" }] },
+      repository: { full_name: "acme/widgets" },
+    };
+
+    expect(interpret("issues", payload)).toEqual([
+      { kind: "issue", number: 42, key: "issue:acme/widgets#42" },
+    ]);
+    // Keyed on the repository and the issue, not on the delivery: the sweep
+    // finding the same issue, or a redelivery under a new id, is one import.
+    expect(interpret("issues", { ...payload, action: "reopened" })[0]!.key).toBe(
+      "issue:acme/widgets#42",
+    );
+  });
+
+  it("reads an issue opened or reopened with the label", () => {
+    for (const action of ["opened", "reopened"]) {
+      expect(
+        interpret("issues", {
+          action,
+          issue: { number: 7, labels: [{ name: "formic: intake" }] },
+          repository: { full_name: "acme/widgets" },
+        }),
+      ).toHaveLength(1);
+    }
+  });
+
+  it("drops an issue with no label, and one Formic already labelled", () => {
+    const at = (labels: Array<{ name: string }>, action = "labeled") => ({
+      action,
+      issue: { number: 42, labels },
+      repository: { full_name: "acme/widgets" },
+    });
+
+    expect(interpret("issues", at([{ name: "bug" }]))).toEqual([]);
+    expect(
+      interpret("issues", at([{ name: "formic: intake" }, { name: "formic: in review" }])),
+    ).toEqual([]);
+    expect(interpret("issues", at([{ name: "formic: needs a human" }]))).toEqual([]);
+    expect(interpret("issues", at([{ name: "formic: intake" }], "closed"))).toEqual([]);
+  });
 });

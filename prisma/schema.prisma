@@ -291,6 +291,11 @@ model Ticket {
   runnerJobAt     DateTime?
   /// The GitHub issue that tracks this ticket, a sub-issue of its epic's.
   issueNumber     Int?
+  /// The GitHub issue this ticket was imported from, when it came in from one
+  /// (see src/lib/issues/intake.ts). The mirror adopts it as this ticket's
+  /// issue instead of filing a second, so the person's issue is the one its
+  /// pull request closes. Null for a ticket Formic made itself.
+  sourceIssueNumber Int?
   /// The estimate on the Fibonacci scale, 1 to 13.
   storyPoints     Int?
   /// The steps the agent is working the ticket through: [{ step, status }].

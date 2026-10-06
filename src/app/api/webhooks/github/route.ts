@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 
 import { launch } from "@/lib/agents/pipeline";
 import { repository } from "@/lib/db";
+import { importIssues } from "@/lib/issues/intake";
 import { markMergedExternally, reviewPullRequest } from "@/lib/review/pipeline";
 import { interpret, verifySignature } from "@/lib/review/webhook";
 import { completeCliRun } from "@/lib/runner/runner";
@@ -76,6 +77,14 @@ export async function POST(req: NextRequest) {
         );
       } else if (signal.kind === "runner-setup") {
         launch(async () => void (await publish(project.id, { type: "runner.ready" })), "announcing the runner is set up");
+      } else if (signal.kind === "issue") {
+        // The sweep would find it within 30 s; this is what makes a deployed
+        // board feel immediate about it. Both go through the same import, so
+        // whichever arrives first is the only one that creates the ticket.
+        launch(
+          () => importIssues(project.id, signal.number),
+          `importing issue ${signal.number}`,
+        );
       } else if (signal.kind === "ci") {
         launch(
           () => reviewPullRequest(project.id, signal.prNumber, signal.headSha),

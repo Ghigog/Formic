@@ -518,7 +518,7 @@ describe("createTodoItem", () => {
   });
 
   it("claims attachments uploaded against the request id, a no-op with none yet", async () => {
-    const card = await createTodoItem(PROJECT, "Add a retry button.", "req-1");
+    const card = await createTodoItem(PROJECT, "Add a retry button.", { requestId: "req-1" });
 
     expect(await repository().attachmentsFor({ ticketId: card.id })).toEqual([]);
   });

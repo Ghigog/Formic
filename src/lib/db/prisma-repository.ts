@@ -1090,6 +1090,28 @@ export class PrismaRepository implements Repository {
     return rows.map(toTicketDetail);
   }
 
+  async mirroredIssueNumbers(projectId: string): Promise<number[]> {
+    const db = prisma();
+    const epics = await db.epic.findMany({
+      where: { projectId, issueNumber: { not: null } },
+      select: { issueNumber: true },
+    });
+    const tickets = await db.ticket.findMany({
+      where: {
+        epic: { projectId },
+        OR: [{ issueNumber: { not: null } }, { sourceIssueNumber: { not: null } }],
+      },
+      select: { issueNumber: true, sourceIssueNumber: true },
+    });
+    const numbers = new Set<number>();
+    for (const epic of epics) if (epic.issueNumber !== null) numbers.add(epic.issueNumber);
+    for (const ticket of tickets) {
+      if (ticket.issueNumber !== null) numbers.add(ticket.issueNumber);
+      if (ticket.sourceIssueNumber !== null) numbers.add(ticket.sourceIssueNumber);
+    }
+    return [...numbers];
+  }
+
   async startRun(run: RunRecord): Promise<void> {
     const db = prisma();
     await db.agentRun.upsert({
@@ -1587,6 +1609,7 @@ type TicketRow = {
   runnerJob: string | null;
   runnerAgent: string | null;
   issueNumber: number | null;
+  sourceIssueNumber: number | null;
   storyPoints: number | null;
   plan: unknown;
   handoff: string[];
@@ -1678,6 +1701,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     runnerJob: row.runnerJob,
     runnerAgent: row.runnerAgent,
     issueNumber: row.issueNumber,
+    sourceIssueNumber: row.sourceIssueNumber,
     storyPoints: row.storyPoints,
     plan: planOf(row.plan),
     handoff: row.handoff,
