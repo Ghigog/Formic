@@ -39,6 +39,29 @@ function contract(name: string, make: () => Repository) {
       ...over,
     });
 
+    describe("the board's log", () => {
+      it("drops the oldest frames it was told to, and keeps state changes", async () => {
+        const p = await project();
+        for (let i = 0; i < 5; i++) await repo.appendEvent(p.id, "run.log", { i });
+        await repo.appendEvent(p.id, "card.status", { i: 5 });
+        for (let i = 0; i < 3; i++) await repo.appendEvent(p.id, "run.log", { i: 6 + i });
+
+        // Eight droppable frames, and one that is not: keeping the newest two
+        // of them drops six, and never the state change.
+        expect(await repo.pruneEvents(p.id, 2)).toBe(6);
+
+        const left = await repo.eventsAfter(p.id, 0, 100);
+        expect(left.filter((e) => e.type === "run.log")).toHaveLength(2);
+        expect(left.filter((e) => e.type === "card.status")).toHaveLength(1);
+      });
+
+      it("has nothing to do when the board is under its bound", async () => {
+        const p = await project();
+        await repo.appendEvent(p.id, "run.log", {});
+        expect(await repo.pruneEvents(p.id, 20_000)).toBe(0);
+      });
+    });
+
     describe("token window", () => {
       it("stores the renewal day with its timezone, and the reset time", async () => {
         const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });

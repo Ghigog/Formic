@@ -186,6 +186,24 @@ export type FormicEvent =
 
 export type FormicEventType = FormicEvent["type"];
 
+/**
+ * The frames a board's log can throw away: run output, which is large,
+ * high-volume and worthless once it has been read.
+ *
+ * Not `run.progress`, which is slow-moving enough to be worth keeping and is
+ * read back by the ticket activity feed (`ACTIVITY_EVENTS`, `ticket-view.ts`).
+ * Nothing here is a state change, and nothing here is read back by anything
+ * but a client replaying a stream it fell behind on — see `pruneEvents`.
+ */
+export const PRUNABLE_EVENT_TYPES = ["run.log", "run.diff"] as const;
+
+const PRUNABLE = new Set<string>(PRUNABLE_EVENT_TYPES);
+
+/** Is this one of the frames `pruneEvents` may drop? */
+export function isPrunableEventType(type: string): boolean {
+  return PRUNABLE.has(type);
+}
+
 /** An event as it travels over the wire, with the replay cursor attached. */
 export interface SequencedEvent {
   /** Monotonic per project. The client sends this back as Last-Event-ID. */

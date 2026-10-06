@@ -1,6 +1,7 @@
 import "server-only";
 
 import { normalizeRepo } from "@/lib/secrets/repo";
+import { isPrunableEventType } from "@/lib/domain/events";
 
 import type {
   AttachmentContent,
@@ -921,6 +922,30 @@ export class MemoryRepository implements Repository {
   async latestEventSeq(projectId: string): Promise<number> {
     const mine = store().events.filter((e) => e.projectId === projectId);
     return mine.at(-1)?.seq ?? 0;
+  }
+
+  /**
+   * The demo store already keeps only the last 2000 frames it was ever
+   * given (`appendEvent`), so this normally has nothing to do. It is here
+   * because the contract is the same for both stores, and a caller asking
+   * for a smaller bound than that must get one.
+   */
+  async pruneEvents(projectId: string, keep: number): Promise<number> {
+    if (keep <= 0) return 0;
+    const s = store();
+    const mine = s.events.filter(
+      (e) => e.projectId === projectId && isPrunableEventType(e.type),
+    );
+    const cut = mine.at(-keep)?.seq;
+    if (cut === undefined) return 0;
+    const kept = s.events.filter(
+      (e) =>
+        !(e.projectId === projectId && isPrunableEventType(e.type) && e.seq < cut),
+    );
+    const gone = s.events.length - kept.length;
+    s.events.length = 0;
+    s.events.push(...kept);
+    return gone;
   }
 
   async ticketDetail(ticketId: string): Promise<TicketDetail | null> {

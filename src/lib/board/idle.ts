@@ -23,13 +23,25 @@ import { startQueued } from "./queue";
  *
  * The sweep also polls GitHub for issues a person labelled `formic: intake`.
  * That belongs here for the same reason everything else does: it is the one
- * hook that already ticks on every board that is being looked at.
+ * hook that already ticks on every board that is being looked at. So does
+ * pruning the board's own log, which is the one table here that only grows.
  */
 
 /** Long enough for any start in flight to show up as a run or a job. */
 export const IDLE_AFTER_MS = 2 * 60_000;
 const SWEEP_EVERY_MS = 30_000;
 const lastSwept = new Map<string, number>();
+
+/**
+ * How much of a board's own log stays. Run output is what a log is mostly
+ * made of, and it is worth nothing once read: on the first real board, 94% of
+ * the events were `run.log` and the log was 82% of the whole database.
+ */
+const KEEP_PRUNABLE_EVENTS = 20_000;
+
+/** Pruning is housekeeping, not the sweep's business: hourly is plenty. */
+const PRUNE_EVERY_MS = 60 * 60_000;
+const lastPruned = new Map<string, number>();
 
 /**
  * The board's idle sweep, called on every tick of its event stream and on
@@ -64,6 +76,15 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
   await importIssues(projectId);
 
   const repo = repository();
+
+  // The board's own log is the one table here that only grows, and it is
+  // almost all run output that nothing reads back. The newest frames stay;
+  // the rest goes, on the same slow clock as everything else in this sweep.
+  if (now - (lastPruned.get(projectId) ?? 0) >= PRUNE_EVERY_MS) {
+    lastPruned.set(projectId, now);
+    await repo.pruneEvents(projectId, KEEP_PRUNABLE_EVENTS);
+  }
+
   for (const card of await repo.boardCards(projectId)) {
     if (card.workingSince || card.needsHuman) continue;
     const updated = card.updatedAt ? Date.parse(card.updatedAt) : now;
@@ -119,4 +140,5 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
 /** Test seam. */
 export function resetIdleSweep(): void {
   lastSwept.clear();
+  lastPruned.clear();
 }

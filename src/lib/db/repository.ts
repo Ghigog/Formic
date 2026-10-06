@@ -561,6 +561,14 @@ export interface Repository {
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
   /** Highest event sequence number so far, or 0 with none. */
   latestEventSeq(projectId: string): Promise<number>;
+  /**
+   * Drops the oldest frames of a board's own log, keeping its newest `keep`
+   * of them, and returns how many rows went. Only the frames nothing reads
+   * back (`PRUNABLE_EVENT_TYPES`): a state change is never touched, and a
+   * client that reconnects from a cursor older than the cut loses log lines
+   * only, which `isDroppable` already says it may.
+   */
+  pruneEvents(projectId: string, keep: number): Promise<number>;
   rebalanceColumn(projectId: string, column: ColumnId): Promise<void>;
 
   /* PROT-06 / PROT-07: the ticket run lifecycle. */

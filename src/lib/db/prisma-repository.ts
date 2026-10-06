@@ -2,6 +2,7 @@ import "server-only";
 
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isProviderId } from "@/lib/llm/providers";
+import { PRUNABLE_EVENT_TYPES } from "@/lib/domain/events";
 
 import { Prisma } from "@/generated/prisma/client";
 
@@ -967,6 +968,25 @@ export class PrismaRepository implements Repository {
       select: { seq: true },
     });
     return row ? Number(row.seq) : 0;
+  }
+
+  async pruneEvents(projectId: string, keep: number): Promise<number> {
+    if (keep <= 0 || !PRUNABLE_EVENT_TYPES.length) return 0;
+    const db = prisma();
+    const types = [...PRUNABLE_EVENT_TYPES];
+    // The cut is the `keep`-th newest frame on this board: everything older
+    // than it goes, and everything after it stays. One query to find it.
+    const oldestKept = await db.event.findFirst({
+      where: { projectId, type: { in: types } },
+      orderBy: { seq: "desc" },
+      skip: keep - 1,
+      select: { seq: true },
+    });
+    if (!oldestKept) return 0;
+    const gone = await db.event.deleteMany({
+      where: { projectId, type: { in: types }, seq: { lt: oldestKept.seq } },
+    });
+    return gone.count;
   }
 
   async eventsAfter(projectId: string, seq: number, limit = 500) {
