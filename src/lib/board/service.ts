@@ -75,10 +75,11 @@ async function whatIsWrong(
       : `An Epic is not worked on itself; its tickets are, and it has none yet. Drag it to To Do and the Architect Agent will make them.`;
   }
 
+  // A ticket with a pull request never reaches here: dropping it on Done asks
+  // for the merge (see applyTransition). One without a pull request has no
+  // merge to make, so there is nowhere for it to land yet.
   if (to === "done") {
-    return card.prNumber
-      ? `${card.key} reaches Done when its pull request merges. Merge it on GitHub and the card follows. ${back}`
-      : `${card.key} reaches Done when its pull request merges, and it has none yet. ${back}`;
+    return `${card.key} reaches Done when its pull request merges, and it has none yet. ${back}`;
   }
 
   if (to === "in_review" && !card.prNumber) {
@@ -174,6 +175,33 @@ export async function applyTransition(
       blockedReason: card.blockedReason,
     });
     return { ok: true, status: card.status, runId: null, problem: misplaced?.reason ?? null };
+  }
+
+  // A ticket reaches Done by its pull request merging — never by being closed
+  // around it. Dragging it there is a person asking for exactly that: with
+  // auto-merge off it is the "Merge when move to done" the Settings toggle
+  // names, and it is the same move the card's chat makes with "Merge it". A
+  // refusal leaves the card where it was, saying why, so it still never
+  // reaches Done without the merge.
+  if (card.kind === "ticket" && t.to === "done" && card.prNumber) {
+    if (card.status === "running" || card.workingSince) {
+      return {
+        ok: false,
+        reason: `An agent is still working on ${card.key}. Stop it first, or wait for it to finish.`,
+        revertTo: shown,
+      };
+    }
+    const ticket = await repo.ticketDetail(card.id);
+    if (!ticket) return { ok: false, reason: "That card no longer exists.", revertTo: shown };
+    const { mergeByPerson } = await import("@/lib/review/pipeline");
+    const said = await mergeByPerson(projectId, ticket, card.prNumber);
+    // Merging is what git does; the card is Done only once the merge is seen
+    // to have happened. Anything short of that leaves it where it was, with
+    // the merge's own reason (red CI, a conflict, a refusal) in the banner.
+    if ((await repo.ticketDetail(card.id))?.status === "merged") {
+      return { ok: true, status: "merged", runId: null };
+    }
+    return { ok: false, reason: said, revertTo: shown };
   }
 
   // Somewhere it cannot work: it lands there anyway, as the person asked,
