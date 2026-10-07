@@ -8,6 +8,7 @@ import { runCoderAgent, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
+import { env } from "@/lib/secrets/env";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
@@ -351,6 +352,10 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
+  // With no webhook secret, GitHub has no address to report to, so no report
+  // will ever start a review: the sweep has to. Configured, the report starts
+  // them and the sweep only finishes, to avoid a poll racing a push.
+  const webhookConfigured = Boolean(env().GITHUB_WEBHOOK_SECRET);
 
   for (const card of waiting) {
     const ticket = await repo.ticketDetail(card.id);
@@ -384,9 +389,10 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
     // this board acts on, and a head whose checks deliver nothing sends
     // nothing either. Without this, a change the reviewer vouched for, with
     // green CI, waits on a report that is never coming. Finishing that is the
-    // sweep's job; starting a review is not, and a report is what does it.
+    // sweep's job. Starting a review is the report's — except when there is no
+    // webhook to deliver one, in which case the sweep starts it too.
     launch(
-      () => reviewPullRequest(projectId, pull.number, pull.headSha, { startReview: false }),
+      () => reviewPullRequest(projectId, pull.number, pull.headSha, { startReview: !webhookConfigured }),
       `the sweep of ${ticket.key}'s pull request`,
     );
   }
