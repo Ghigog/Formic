@@ -238,7 +238,7 @@ describe("the run's own ceilings", () => {
     expect(!report.ok && report.error).toContain("Do not raise the budget");
   });
 
-  it("stops between turns at the token ceiling, and says it is the tokens", async () => {
+  it("stops between turns at the token budget, and says it is the tokens", async () => {
     fakeProvider([toolCall("call_1", "list_files", { path: "." }), finish()]);
 
     const report = await runLoopEntry(payload({ limits: { maxTokens: 1 } }), {
@@ -248,7 +248,8 @@ describe("the run's own ceilings", () => {
 
     expect(report.ok).toBe(false);
     expect(report.limit).toBe("tokens");
-    expect(!report.ok && report.error).toContain("Token ceiling reached");
+    expect(!report.ok && report.error).toContain("Token budget reached");
+    expect(!report.ok && report.error).toContain("input plus output");
   });
 
   it("does not stop a plan that is not billed per token on money", async () => {

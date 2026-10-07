@@ -34,7 +34,7 @@ places, wrong. Every row below is a real constant in the tree today:
 | `turnCeiling(ms)` (`limits.ts:107`) | turns | 10 a minute (→ 40) | the coding loop | yes |
 | a card's chat (`src/lib/agents/card-chat.ts:38,51`) | turns + ms | 12 + 4 min | one answer | yes |
 | the assistant (`src/lib/assistant/turn.ts:32`) | turns | 16, **no clock** | one answer | only by the platform's kill |
-| `taskBudgetTokens` (`limits.ts:117`) | tokens | 64k, from 160¢ (0.8 × the 200¢ ceiling) at a fixed $25/M | advice to the model | the model paces itself |
+| token budget (`DEFAULT_TOKENS_PER_STORY_POINT` in `src/lib/budget/budget-for.ts`) | actual tokens | 250,000 per story point, counted input plus output | a run's loop and job | yes, between turns |
 | attempts | tries | 3 a run, 12 an Epic, 4 reviews, 3 architect, 2 draft, 2 CLI ask | various | yes |
 | `maxCents` | cents | 200 a run, 2000 an Epic | metered providers only | yes, and unverifiable |
 | `AgentPreset.limitedUntil` | a plan | — | one saved agent | yes: the provider's own fact |
@@ -126,8 +126,8 @@ And two shapes that decide the design:
    conservative rate`) or left internal; it is never shown to a person and
    never settable. `PRICE_FAMILIES`/`estimateCostCents` stay what they are —
    unverified estimates for bounding unattended burn, and said to be so — and
-   `taskBudgetTokens` stops deriving a token instruction to the model from a
-   cents guess.
+   the model's task budget (`advisoryTokens` in `src/lib/agents/coding-loop.ts`)
+   is a fraction of the real token budget, not a cents guess.
 8. **Say which kind of limit each one is**, in the screen and in the card's
    message. Three classes: enforced between turns (in-process), enforced by
    the job (a CLI agent: minutes only; tokens are reported), and hard rails
@@ -181,9 +181,12 @@ And two shapes that decide the design:
   JOB_HEADROOM_MINUTES` (175 at the 180-minute target; 55 while the job is 60); the sandbox TTL is `max(20 min, budget + 5)` (unchanged): 85 min for an
   80-minute run, 180 for a 175-minute one. The clamp is conservative — do not
   widen it to fit a budget.
-- `taskBudgetTokens` tells the *model* to budget 64k tokens, derived from 160¢
-  at a fixed $25/M. It is an instruction the model acts on, so it must move to
-  tokens before it can be believed.
+- The token budget is now a real token count (`DEFAULT_TOKENS_PER_STORY_POINT` =
+  250,000 actual input plus output tokens), not money in disguise. The earlier
+  64k figure was derived from 160¢ at a fixed $25/M. The model's task budget
+  (`advisoryTokens` in `src/lib/agents/coding-loop.ts`) is 80% of that real
+  budget, and the hard stop counts actual tokens via `budgetTokens` in
+  `src/lib/agents/ports.ts`.
 - A ticket's used time is not stored: sum its runs' `startedAt`/`finishedAt`
   from `agent_run` rather than adding a counter that can drift.
 - `MAX_REVIEWS` is derived from `DEFAULT_RUN_BUDGET.maxAttempts`; moving that

@@ -24,7 +24,7 @@ setting.
 | Limit | Unit | Default | Scope | Enforcement | Settable |
 | :-- | :-- | :-- | :-- | :-- | :-- |
 | Run time budget | minutes per attempt | 10 per story point (a ticket with no points counts as 1) | per person; a column may override | Between turns (in-process, loop); Job (CLI agent) | Yes: Off, Flat, Per point, Per point by hand (`runTimeBudget*` on `User`) |
-| Token budget | tokens per attempt | 64,000 per story point | per person; a column may override | Between turns (in-process); Job (loop, CLI) | Yes: same four modes (`tokenLimit`) |
+| Token budget | actual tokens per attempt (input plus output) | 250,000 per story point | per person; a column may override | Between turns (in-process); Job (loop, CLI) | Yes: same four modes (`tokenLimit`) |
 | Attempt limit | attempts | review 4, decomposition 3, draft 2, CLI answer 2 | per person; a column may override | Between turns | Yes: same four modes (`attemptLimit`) |
 | Column override | minutes, tokens, attempts | none (falls back to the person's setting) | one column of one project | as the axis it overrides | Yes (`overrideMinutes`, `overrideTokens`, `overrideAttempts`) |
 | Agent token allowance | tokens per window | none | per agent preset | Gate: an agent at its allowance does not start (re-checked after 1 h) | Yes (`tokenAllowance`) |
@@ -35,6 +35,9 @@ Notes:
 - Money is never a setting. A run's cents are derived from tokens at
   2,500¢ per million tokens, and only stop a run on a metered provider; a
   flat-rate plan or an unpriced model is bounded by time and attempts.
+- The token budget counts the provider's actual input plus output tokens,
+  summed across every turn of a run — cache reads and writes included, so a
+  loop's re-sent context is paid for. It is a token count, not a money figure.
 - Off is an explicit choice, and a missing value means the default.
   An Off time budget is still bounded by the hard rail of the path it runs on.
 - A requested value above a path's hard rail is clamped to the rail, and the

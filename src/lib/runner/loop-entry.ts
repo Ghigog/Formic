@@ -293,7 +293,7 @@ export async function runLoopEntry(
         spentCents += usage.costCents;
         spentTokens += budgetTokens(usage);
         if (maxTokens !== undefined && spentTokens >= maxTokens) {
-          stop("tokens", new Error(tokenNote(maxTokens)));
+          stop("tokens", new Error(tokenNote(maxTokens, spentTokens)));
         }
         if (billing === "metered" && maxCents !== undefined && spentCents >= maxCents) {
           stop("spend", spendCeiling(maxCents));
@@ -330,7 +330,7 @@ export async function runLoopEntry(
         limit.hit === "time"
           ? timeLimitNote(maxDurationMs, payload.limits?.budgetMs)
           : limit.hit === "tokens"
-            ? tokenNote(maxTokens)
+            ? tokenNote(maxTokens, spentTokens)
             : limit.hit === "spend"
               ? spendNote(maxCents)
               : null;
@@ -420,8 +420,10 @@ function timeLimitNote(maxDurationMs: number | undefined, budgetMs?: number): st
   return `Ran out of time: this run's budget is ${minutes} minute${minutes === 1 ? "" : "s"}. Raise the ticket's budget to give it longer.`;
 }
 
-function tokenNote(maxTokens: number | undefined): string {
-  return `Token ceiling reached${maxTokens === undefined ? "" : `: this run's budget is ${maxTokens.toLocaleString("en-US")} tokens`}. Raise the ticket's token budget to give it more.`;
+function tokenNote(maxTokens: number | undefined, usedTokens?: number): string {
+  const ceiling = maxTokens === undefined ? "" : `: this run's budget is ${maxTokens.toLocaleString("en-US")} tokens`;
+  const spent = usedTokens === undefined ? "" : ` (${usedTokens.toLocaleString("en-US")} spent, input plus output)`;
+  return `Token budget reached${ceiling}${spent}. Raise the ticket's token budget under Settings → Limits, or move it to a column with a larger budget; the run can be retried.`;
 }
 
 function spendCeiling(maxCents: number): Error {

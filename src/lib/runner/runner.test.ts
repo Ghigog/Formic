@@ -1767,8 +1767,8 @@ describe("an API-key coder running in a job", () => {
       const { limits } = JSON.parse(MockVcsClient.runner().dispatches[0]!.inputs.prompt!) as {
         limits: Record<string, number>;
       };
-      expect(limits).toMatchObject({ maxDurationMs: 55 * 60_000, budgetMs: 80 * 60_000, maxTokens: 512_000 });
-      expect(limits.maxCents).toBe(1280);
+      expect(limits).toMatchObject({ maxDurationMs: 55 * 60_000, budgetMs: 80 * 60_000, maxTokens: 2_000_000 });
+      expect(limits.maxCents).toBe(5000);
       expect(MockVcsClient.runner().dispatches[0]!.inputs.timeout).toBe("60");
     });
 

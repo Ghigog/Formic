@@ -80,8 +80,16 @@ export const PATH_RAILS: Record<BudgetPath, { minutes: number; enforcement: Enfo
 export const ATTEMPT_DEFAULTS = { review: 4, decomposition: 3, draft: 2, cliAnswer: 2 } as const;
 export type AttemptKind = keyof typeof ATTEMPT_DEFAULTS;
 
-/** Default tokens a story point buys: today's 200¢ run ceiling at the rate below, less headroom. */
-export const DEFAULT_TOKENS_PER_STORY_POINT = 64_000;
+/**
+ * Actual tokens a story point buys. A real token count, not a money figure in
+ * disguise: it is set to what a one-point coding loop actually consumes. A loop
+ * re-sends its system prompt, tool schemas and the whole conversation on every
+ * turn (the provider bills those input tokens for real), so a ticket whose
+ * deliverable is only a few thousand tokens of new text costs a few hundred
+ * thousand tokens of cumulative input plus output across its turns. 250,000 is
+ * a conservative floor a small ticket clears and a runaway loop still trips.
+ */
+export const DEFAULT_TOKENS_PER_STORY_POINT = 250_000;
 
 /** Conservative cents per million tokens; money is derived from tokens, never set. */
 const CENTS_PER_MTOK = 2500;

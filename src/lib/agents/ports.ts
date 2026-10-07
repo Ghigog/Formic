@@ -55,18 +55,24 @@ export interface Usage {
   tokensIn: number;
   tokensOut: number;
   /**
-   * Input tokens as they count against a run's token budget: cache writes at
-   * a quarter more and cache reads at a tenth, so tokens the provider served
-   * from cache are not charged as if they were fresh. Absent, `tokensIn` is
-   * the count (providers that do not report a cache breakdown).
+   * Input tokens weighted by cache cost: a cache write costs a quarter more
+   * than plain input, a cache read a tenth. Used only to estimate `costCents`;
+   * a run's token budget is counted in actual tokens (see `budgetTokens`), so
+   * this never gates it. Absent, `tokensIn` is the count (providers that
+   * report no cache breakdown).
    */
   costTokensIn?: number;
   costCents: number;
 }
 
-/** Tokens that count against a run's budget: cost-weighted input plus output. */
+/**
+ * Actual tokens a run has consumed: raw input plus output, the provider's own
+ * count, cache reads and writes included. This is what counts against a run's
+ * token budget — not a cost-weighted substitute, which would understate every
+ * cached turn. Money (`costCents`) stays a separate, derived figure.
+ */
 export function budgetTokens(usage: Usage): number {
-  return (usage.costTokensIn ?? usage.tokensIn) + usage.tokensOut;
+  return usage.tokensIn + usage.tokensOut;
 }
 
 export type AgentOutcome<T> =
