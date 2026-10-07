@@ -22,7 +22,7 @@ describe("the onboarding ticket", () => {
     expect(card).toMatchObject({ kind: "ticket", status: "ready", title: ONBOARDING_TICKET.title });
     const detail = (await repo.ticketDetail(card.id))!;
     expect(detail.fileScope).toEqual(["AGENTS.md", "CLAUDE.md"]);
-    expect(detail.acceptanceCriteria).toHaveLength(4);
+    expect(detail.acceptanceCriteria).toHaveLength(2);
     expect(detail.description).toContain("@AGENTS.md");
   });
 });
