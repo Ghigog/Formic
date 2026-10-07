@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { decomposeEpic, launch, runProductAgent } from "./pipeline";
+import { checkSplit, ticketSpecSchema, toDraftTicket, type TicketSpec } from "./decomposition";
 import { projectFor } from "@/lib/board/project";
 import { applyTransition, redraftTicket, retryEpic } from "@/lib/board/service";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -16,6 +17,7 @@ import { runningConflict } from "@/lib/domain/queue";
 import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, isStalled, type ColumnId } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { cancelJob, stopTicket } from "@/lib/runner/runner";
+import { positionBetween } from "@/lib/ordering";
 import { vcs } from "@/lib/vcs";
 
 /**
@@ -80,6 +82,16 @@ export const cardActionSchema = z.discriminatedUnion("type", [
       .nullable()
       .describe("What the person has to do themselves, or null when an agent can do it after all."),
   }),
+  z.object({
+    type: z.literal("split_ticket"),
+    tickets: z
+      .array(ticketSpecSchema)
+      .min(2)
+      .max(12)
+      .describe(
+        "The tickets this one becomes, 2 to 12 of them, each with its key, title, user story, requirements, acceptance criteria, file scope, story points and dependencies. The first replaces this ticket; the rest are added beside it. Give each a file scope disjoint from its siblings (unless one depends on the other), and only depend on one of these tickets or on an existing ticket of this Epic.",
+      ),
+  }),
 ]);
 
 export type CardAction = z.infer<typeof cardActionSchema>;
@@ -94,6 +106,7 @@ export const CARD_ACTIONS_GUIDE = `What you can do, besides answering:
 - edit_ticket: tickets only. Rewrite the ticket's title, description, acceptance criteria, file scope or story points (1, 2, 3, 5, 8 or 13), or add what the person reported doing or finding under Results. Widening its file scope this way also carries the ticket on if it was blocked waiting on exactly those files.
 - widen_scope: tickets only, when the ticket is asking for files outside its file scope. With allow true, the files join its scope and it goes back to In Progress, carrying on from its kept work, as soon as nothing running uses them. With allow false, its kept work is dropped and it starts again within its scope.
 - needs_human: tickets only. Mark the ticket as work for the person, not an agent, with what they have to do; or null to hand it back to agents.
+- split_ticket: tickets only. Split this ticket into two or more smaller tickets on the same Epic, for work too large for one run. The first of them replaces this ticket; the rest are new. Each must have a file scope disjoint from its siblings (unless one depends on the other), and a dependency must name one of the new tickets or an existing ticket on this Epic.
 
 When to act:
 - Act when the person asks for something, in whatever words. "This has already been done" asks you to close the ticket. "Yes", "go ahead" or "ok" to a ticket asking for files outside its scope is widen_scope with allow true; "no" is allow false. "Change it to use X" asks you to redo, or on a ticket nobody has started, to edit_ticket.
@@ -132,6 +145,10 @@ export async function applyCardAction(
         return cardKind === "ticket" ? await widenScope(projectId, card, action.allow) : "Only a ticket has a file scope.";
       case "needs_human":
         return cardKind === "ticket" ? await markNeedsHuman(projectId, card, action.reason) : "Only a ticket can be marked.";
+      case "split_ticket":
+        return cardKind === "ticket"
+          ? await splitTicket(projectId, card, action.tickets)
+          : "Only a ticket can be split.";
     }
   } catch (e) {
     return `Could not ${action.type.replace("_", " ")}: ${e instanceof Error ? e.message : String(e)}`;
@@ -464,4 +481,85 @@ async function markNeedsHuman(projectId: string, card: BoardCard, reason: string
 
 function list(items: string[]): string {
   return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+/**
+ * Splits a ticket that is too large for one run into smaller tickets on the
+ * same Epic. The first of them takes this ticket's place; the rest are new.
+ * A ticket with an open pull request, or one an agent is still working, is
+ * refused, and a split the person can correct is preferred over one the board
+ * half-applies.
+ */
+async function splitTicket(projectId: string, card: BoardCard, specs: TicketSpec[]): Promise<string> {
+  const repo = repository();
+  const ticket = await repo.ticketDetail(card.id);
+  if (!ticket) return "This ticket no longer exists.";
+  if (await working(card)) {
+    return `An agent is still working on ${card.key}. Stop it first, or wait for it to finish.`;
+  }
+  if (ticket.prNumber) {
+    return `${card.key} has an open pull request; merge or close it before splitting.`;
+  }
+
+  const tickets = specs.map(toDraftTicket);
+  const siblings = await repo.ticketsForEpic(ticket.epicId);
+  const existingKeys = new Set(siblings.filter((t) => t.id !== card.id).map((t) => t.key));
+  const check = checkSplit(tickets, existingKeys);
+  if (!check.ok) return check.correction;
+
+  const childKeys = new Set(tickets.map((t) => t.key));
+  const existingById = new Map(siblings.filter((t) => t.id !== card.id).map((t) => [t.key, t.id]));
+
+  // The first child keeps this ticket's place; the rest are appended after
+  // everything currently in To Do, so the split never reorders the column.
+  const positions = await repo.columnPositions(projectId, "todo");
+  const tail = positions.length > 0 ? positions[positions.length - 1]! : 0;
+  let next = tail;
+  const childPositions = tickets.map((_, i) =>
+    i === 0 ? card.position : (next = positionBetween(next, null)),
+  );
+
+  await repo.deleteTickets([card.id]);
+
+  const created = await repo.createTickets(
+    tickets.map((t, i) => ({
+      epicId: ticket.epicId,
+      key: t.key,
+      title: t.title,
+      description: t.description,
+      acceptanceCriteria: t.acceptanceCriteria,
+      fileScope: t.fileScope,
+      storyPoints: t.storyPoints ?? null,
+      needsHuman: t.needsHuman ?? null,
+      position: childPositions[i]!,
+      dependsOnKeys: t.dependsOn,
+    })),
+  );
+
+  // Dependencies onto tickets that already exist are added after the batch,
+  // because createTickets only resolves keys within its own batch.
+  const createdByKey = new Map(created.map((c) => [c.key, c.id]));
+  const edges: Array<{ ticketId: string; dependsOnTicketId: string }> = [];
+  for (const t of tickets) {
+    const childId = createdByKey.get(t.key);
+    if (!childId) continue;
+    for (const dep of t.dependsOn) {
+      if (childKeys.has(dep)) continue;
+      const existingId = existingById.get(dep);
+      if (existingId) edges.push({ ticketId: childId, dependsOnTicketId: existingId });
+    }
+  }
+  if (edges.length > 0) await repo.addDependencies(edges);
+
+  await publish(projectId, {
+    type: "card.deleted",
+    cardId: card.id,
+    kind: "ticket",
+    issueNumbers: ticket.issueNumber ? [ticket.issueNumber] : [],
+  });
+  for (const c of created) {
+    await publish(projectId, { type: "card.created", cardId: c.id, kind: "ticket", epicId: ticket.epicId });
+  }
+
+  return `Split ${card.key} into ${created.map((c) => c.key).join(", ")}.`;
 }

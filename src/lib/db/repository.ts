@@ -485,6 +485,8 @@ export interface Repository {
    */
   nextStandaloneTicketNumber(projectId: string): Promise<number>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
+  /** Adds dependency edges by ticket id, for dependencies that name tickets created elsewhere. */
+  addDependencies(edges: Array<{ ticketId: string; dependsOnTicketId: string }>): Promise<void>;
   move(input: MoveInput): Promise<void>;
   /** Epics only: whether it is a holder with no card of its own. */
   setStandalone(epicId: string, standalone: boolean): Promise<void>;
