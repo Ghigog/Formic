@@ -17,6 +17,7 @@ import {
   openCheckout,
   prepareMergeTarget,
   pullRequestBody,
+  pullRequestTitle,
 } from "./checkout";
 import { agentFor, cliAgentFor, loopAgentFor, runTargetFor } from "@/lib/agents/presets";
 import type { CodeChange, Usage } from "@/lib/agents/ports";
@@ -405,7 +406,7 @@ export async function openTicketPullRequest(
     (await client.openPullRequest({
       headBranch: input.branch,
       baseBranch: target,
-      title: `${ticket.key}: ${input.change.summary}`,
+      title: pullRequestTitle(ticket, input.change),
       body: pullRequestBody(ticket, input.change),
     }));
 
