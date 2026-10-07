@@ -4,8 +4,9 @@ import nextTs from "eslint-config-next/typescript";
 
 /**
  * Next.js's own rules (React, hooks, accessibility, Core Web Vitals) and
- * typescript-eslint's recommended set. Prisma's generated client is not
- * ours to lint.
+ * typescript-eslint's recommended set. Prisma's generated client, and the
+ * loop entry installed beside the workflow, are build artifacts — minified
+ * and not ours to lint.
  */
 export default defineConfig([
   ...nextVitals,
@@ -24,6 +25,9 @@ export default defineConfig([
   globalIgnores([
     ".next/**",
     "src/generated/**",
+    // The loop entry a job runs is committed beside its workflow (RUNNER_ENTRY_PATH
+    // in src/lib/runner/workflow.ts), minified, with the same code as src/generated.
+    ".github/formic/**",
     "coverage/**",
     "playwright-report/**",
     "test-results/**",
