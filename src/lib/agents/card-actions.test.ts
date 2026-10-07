@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyCardAction, cardActionSchema } from "./card-actions";
+import type { TicketSpec } from "./decomposition";
 import { resetAgents, setAgents } from "./registry";
 import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
@@ -340,5 +341,127 @@ describe("editing a ticket that is asking for files outside its scope", () => {
     expect(after.status).toBe("ready");
     expect(after.stalledIn).toBeNull();
     expect(after.scopeRequest).toEqual([]);
+  });
+});
+
+describe("splitting a ticket", () => {
+  /** A plain, unstarted ticket in To Do. */
+  async function seedReady(): Promise<TicketDetail> {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "An epic", rawRequest: "Do a thing", position: 1 });
+    const [a] = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "Do the thing",
+        description: "Ship it.",
+        acceptanceCriteria: ["It is done"],
+        fileScope: ["src/lib/feature"],
+        size: "M",
+        storyPoints: 5,
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    return (await repo.ticketDetail(a!.id))!;
+  }
+
+  function spec(key: string, fileScope: string[], dependsOn: string[] = []): TicketSpec {
+    return {
+      key,
+      title: `${key} title`,
+      userStory: { as: "a board owner", want: "a thing", soThat: "it works" },
+      requirements: [],
+      acceptanceCriteria: [{ given: "a board", when: "I use it", then: "it works" }],
+      fileScope,
+      storyPoints: 2,
+      dependsOn,
+    };
+  }
+
+  it("replaces the ticket with the split children on the same Epic", async () => {
+    const ticket = await seedReady();
+    const repo = repository();
+    const before = (await repo.cardById(ticket.id))!;
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "split_ticket",
+      tickets: [spec("T-1A", ["src/lib/feature/a"]), spec("T-1B", ["src/lib/feature/b"])],
+    });
+
+    expect(said).toBe("Split T-1 into T-1A, T-1B.");
+    expect(await repo.cardById(ticket.id)).toBeNull();
+    const children = (await repo.boardCards(PROJECT)).filter((c) => c.epicId === ticket.epicId);
+    expect(children.map((c) => c.key).sort()).toEqual(["T-1A", "T-1B"]);
+    // The first child keeps the original's place, and both stay under the Epic.
+    expect(children.find((c) => c.key === "T-1A")!.position).toBe(before.position);
+  });
+
+  it("splits a ticket whose agent stopped with a branch but no pull request", async () => {
+    const ticket = await seedReady();
+    await repository().updateTicket(ticket.id, { branchName: "formic/t-1", status: "failed", stalledIn: "todo" });
+
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "split_ticket",
+      tickets: [spec("T-1A", ["src/lib/feature/a"]), spec("T-1B", ["src/lib/feature/b"])],
+    });
+
+    expect(said).toBe("Split T-1 into T-1A, T-1B.");
+    expect(await repository().cardById(ticket.id)).toBeNull();
+  });
+
+  it("points a dependency at an existing ticket on the Epic", async () => {
+    const ticket = await seedReady();
+    const repo = repository();
+    const [existing] = await repo.createTickets([
+      {
+        epicId: ticket.epicId,
+        key: "T-0",
+        title: "Earlier",
+        description: "Already there.",
+        acceptanceCriteria: ["Done"],
+        fileScope: ["src/lib/earlier"],
+        size: "M",
+        position: 0,
+        dependsOnKeys: [],
+      },
+    ]);
+
+    await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "split_ticket",
+      tickets: [spec("T-1A", ["src/lib/feature/a"]), spec("T-1B", ["src/lib/feature/b"], ["T-0"])],
+    });
+
+    const b = (await repo.boardCards(PROJECT)).find((c) => c.key === "T-1B")!;
+    expect(b.dependsOn).toEqual([existing!.id]);
+    expect(b.status).toBe("waiting");
+  });
+
+  it("refuses a ticket with an open pull request", async () => {
+    const { ticket } = await seedInReview();
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "split_ticket",
+      tickets: [spec("T-1A", ["src/lib/feature/a"]), spec("T-1B", ["src/lib/feature/b"])],
+    });
+    expect(said).toContain("open pull request");
+  });
+
+  it("refuses a split whose children could run together on the same files", async () => {
+    const ticket = await seedReady();
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "split_ticket",
+      tickets: [spec("T-1A", ["src/lib/feature"]), spec("T-1B", ["src/lib/feature"])],
+    });
+    expect(said).toContain("not safe to run");
+    expect(await repository().cardById(ticket.id)).not.toBeNull();
+  });
+
+  it("refuses a split whose dependency names nothing", async () => {
+    const ticket = await seedReady();
+    const said = await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "split_ticket",
+      tickets: [spec("T-1A", ["src/lib/a"]), spec("T-1B", ["src/lib/b"], ["NOPE"])],
+    });
+    expect(said).toContain("not safe to run");
   });
 });

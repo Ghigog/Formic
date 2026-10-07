@@ -926,6 +926,11 @@ export class PrismaRepository implements Repository {
     await prisma().ticket.deleteMany({ where: { id: { in: ticketIds } } });
   }
 
+  async addDependencies(edges: Array<{ ticketId: string; dependsOnTicketId: string }>): Promise<void> {
+    if (edges.length === 0) return;
+    await prisma().ticketDependency.createMany({ data: edges, skipDuplicates: true });
+  }
+
   async deleteEpic(epicId: string): Promise<void> {
     // Tickets, their dependencies and every run cascade with it.
     await prisma().epic.deleteMany({ where: { id: epicId } });

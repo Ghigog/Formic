@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { STORY_POINTS, fileScopeSchema } from "@/lib/domain/entities";
 import { validateDag } from "@/lib/domain/dag";
-import { describeProblems } from "@/lib/domain/problems";
+import { describeProblem, describeProblems } from "@/lib/domain/problems";
 import { normalizeScope } from "@/lib/domain/scope";
 import type { DraftTicket } from "./ports";
 
@@ -144,6 +144,67 @@ export function checkDecomposition(
       describeProblems(validation.problems),
       "",
       "Return a corrected decomposition in the same format.",
+    ].join("\n"),
+  };
+}
+
+/**
+ * What the Architect Agent returns when a person asks it to split a ticket
+ * that is too large for one run. Like `checkDecomposition`, the graph is never
+ * trusted: a failure goes back as a correction. Unlike it, a split may depend
+ * on tickets already on the Epic, so `existingKeys` widens what a dependency
+ * may name.
+ */
+export function checkSplit(
+  tickets: DraftTicket[],
+  existingKeys: ReadonlySet<string>,
+): { ok: true } | { ok: false; correction: string } {
+  const problems: string[] = [];
+
+  // Keys must be unique among themselves, and must not collide with tickets
+  // already on the Epic. Duplicates between children are reported by the DAG
+  // check below; this only checks the children against what already exists.
+  const seen = new Set<string>();
+  for (const t of tickets) {
+    seen.add(t.key);
+    if (existingKeys.has(t.key)) {
+      problems.push(`"${t.key}" is already a ticket on this Epic; give it a new key.`);
+    }
+  }
+
+  // A dependency must name another split ticket or an existing Epic ticket.
+  for (const t of tickets) {
+    for (const dep of t.dependsOn) {
+      if (!seen.has(dep) && !existingKeys.has(dep)) {
+        problems.push(
+          `"${t.key}" depends on "${dep}", which is neither one of the split tickets nor an existing ticket.`,
+        );
+      }
+    }
+  }
+
+  // The children themselves must form a safe DAG: no duplicates, no
+  // self-dependencies, no cycles, and disjoint scopes between tickets that
+  // could run at the same time. Dependencies onto existing tickets are left
+  // out here, because they serialize nothing between two children.
+  const dag = validateDag(
+    tickets.map((t) => ({
+      key: t.key,
+      dependsOn: t.dependsOn.filter((d) => seen.has(d)),
+      fileScope: t.fileScope,
+    })),
+  );
+  for (const problem of dag.problems) problems.push(describeProblem(problem));
+
+  if (problems.length === 0) return { ok: true };
+  return {
+    ok: false,
+    correction: [
+      "That split is not safe to run. Problems:",
+      "",
+      ...problems.map((p) => `- ${p}`),
+      "",
+      "Return a corrected split in the same format.",
     ].join("\n"),
   };
 }
