@@ -18,8 +18,6 @@ const spec: TicketSpec = {
   key: "T-1",
   title: "Export the board",
   userStory: { as: "board owner", want: "export my board as CSV", soThat: "I can report on it." },
-  context: "People track work in spreadsheets too.",
-  description: "A CSV download of every card.",
   requirements: ["An endpoint that streams CSV", "A test per column"],
   acceptanceCriteria: [
     { given: "Given a board with two cards", when: "I export it", then: "Then the CSV has two rows." },
@@ -30,17 +28,11 @@ const spec: TicketSpec = {
 };
 
 describe("the ticket template", () => {
-  it("renders the story, why, what and how as the ticket's description", () => {
+  it("renders the user story and the requirements as the ticket's description", () => {
     const t = toDraftTicket(spec);
     expect(t.description).toBe(
       [
         "**User story:** As a board owner, I'd like to export my board as CSV, so that I can report on it.",
-        "",
-        "### Context",
-        "People track work in spreadsheets too.",
-        "",
-        "### Description",
-        "A CSV download of every card.",
         "",
         "### Requirements",
         "- An endpoint that streams CSV",
@@ -48,6 +40,12 @@ describe("the ticket template", () => {
       ].join("\n"),
     );
     expect(t.fileScope).toEqual(["src/app/api/export"]);
+  });
+
+  it("renders the story alone when there are no requirements", () => {
+    expect(toDraftTicket({ ...spec, requirements: [] }).description).toBe(
+      "**User story:** As a board owner, I'd like to export my board as CSV, so that I can report on it.",
+    );
   });
 
   it("stores acceptance criteria as one Gherkin line each, without doubled keywords", () => {

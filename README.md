@@ -94,11 +94,13 @@ Create one at https://github.com/settings/apps/new (or under your org):
 Whatever an agent's prompt says, Formic adds these after it:
 
 - **The ticket template.** Every ticket, from the Architect or the
-  assistant, has a user story ("As a…, I'd like to…, so that…"), context
-  (why), a description (what), requirements (how), and acceptance criteria
-  as Gherkin scenarios (given, when, then). It is a schema, not advice: a
-  ticket missing a part goes back to the agent to fix. Tickets store it as
-  Markdown, so it reads well in the GitHub issue and the pull request.
+  assistant, has a user story ("As a…, I'd like to…, so that…"), acceptance
+  criteria as Gherkin scenarios (given, when, then), and requirements (the
+  how) only when the approach is not already obvious. The story carries the
+  what and the why, so there is no separate context or description. It is a
+  schema, not advice: a ticket missing a required part goes back to the
+  agent to fix. Tickets store it as Markdown, so it reads well in the GitHub
+  issue and the pull request.
 - **Engineering practices**, as defaults with judgment: test first (TDD), the
   domain's own words throughout (ubiquitous language), domain-driven design
   for rich domains, hexagonal architecture where there are real I/O

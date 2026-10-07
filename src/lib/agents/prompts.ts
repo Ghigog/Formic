@@ -140,13 +140,11 @@ export const ENGINEERING_PRACTICES = `Engineering practices. Defaults, not dogma
  * How tickets are written, for the agents that write them. The shape itself
  * is enforced by the ticket schema; this says what goes in each part.
  */
-export const TICKET_TEMPLATE = `Size the breakdown to the work. As few tickets as the change allows: a small change is one ticket, and work one agent can finish in one pull request is not split. Add a ticket only where it lets work run in parallel or keeps a review small. Keep every field short: context and description in a sentence or two, a handful of requirements, and two to four acceptance scenarios.
+export const TICKET_TEMPLATE = `Size the breakdown to the work. As few tickets as the change allows: a small change is one ticket, and work one agent can finish in one pull request is not split. Add a ticket only where it lets work run in parallel or keeps a review small. Keep every field short: a one-sentence user story, two to four acceptance scenarios, and requirements only when the approach is not already obvious.
 
 How to write each ticket:
-- userStory: who wants it, what they would like to do, and why. "As a <role>, I'd like to <capability>, so that <benefit>." Use the product's own roles, not "user" when a sharper one exists.
-- context: why this change exists, the problem or motivation.
-- description: what the change is, in the domain's own words.
-- requirements: how, as a list: the technical requirements, constraints and intended approach, including the tests that prove it, each at the lowest level that can see its behaviour (see the testing practice below). An approach you have checked against the code and libraries it relies on, not one that reads well.
+- userStory: who wants it, what they would like to do, and why, all in one sentence: "As a <role>, I'd like to <capability>, so that <benefit>." Use the product's own roles, not "user" when a sharper one exists. The story carries the what and the why, so there is no separate context or description field.
+- requirements: how, as a list, and only when it earns its keep: the technical requirements, constraints and intended approach, including the tests that prove it, each at the lowest level that can see its behaviour (see the testing practice below). An approach you have checked against the code and libraries it relies on, not one that reads well. Leave it empty when the acceptance criteria already make the approach obvious.
 - acceptanceCriteria: Gherkin scenarios, each one observable and testable: given <a starting state>, when <an action>, then <an outcome>. Cover the main path and the edge cases that matter.
 - storyPoints: the estimate on the Fibonacci scale, 1, 2, 3, 5, 8 or 13, relative to the other tickets. Estimate the work, not the diff. The reading a ticket has to do before it can be written, and the review it will take afterwards, are most of a small ticket's cost — and a ticket whose whole job is to read the codebase (writing a conventions file, a map of the layers, the first documentation) is not a 2 whatever it finally changes. Past 8, consider splitting the ticket.`
 

@@ -12,9 +12,11 @@ import type { DraftTicket } from "./ports";
  */
 
 /**
- * The ticket template every agent writes to: a user story, the why, the
- * what, the how, and acceptance criteria in Gherkin. A schema rather than a
- * suggestion in a prompt, so every provider fills in every part.
+ * The ticket template every agent writes to: a user story, requirements (the
+ * how, when the approach is not already obvious), and acceptance criteria in
+ * Gherkin. The story carries the what and the why, so there is no separate
+ * context or description field. A schema rather than a suggestion in a
+ * prompt, so every provider fills in every required part.
  */
 export const ticketSpecSchema = z.object({
   key: z.string().describe('Short stable key, e.g. "T-1".'),
@@ -26,12 +28,12 @@ export const ticketSpecSchema = z.object({
       soThat: z.string().min(1).describe('Why it matters to them, e.g. "I can report on it elsewhere".'),
     })
     .describe("As a <as>, I'd like to <want>, so that <soThat>."),
-  context: z.string().min(1).describe("Why: the problem or motivation behind the change."),
-  description: z.string().min(1).describe("What: the change itself, in the domain's own words."),
   requirements: z
     .array(z.string().min(1))
-    .min(1)
-    .describe("How: technical requirements, constraints and the approach to take."),
+    .default([])
+    .describe(
+      "How: technical requirements, constraints and the approach to take. Leave empty when the acceptance criteria already make the approach obvious.",
+    ),
   acceptanceCriteria: z
     .array(
       z.object({
@@ -66,23 +68,17 @@ export function gherkin(c: { given: string; when: string; then: string }): strin
 }
 
 /**
- * A ticket as the board stores it: the template's parts become a Markdown
- * description with a heading each, which reads well in the GitHub issue,
- * the pull request and the coding agent's brief alike.
+ * A ticket as the board stores it: the user story, then the requirements
+ * under a heading when there are any. It reads well in the GitHub issue, the
+ * pull request and the coding agent's brief alike.
  */
 export function toDraftTicket(spec: TicketSpec): DraftTicket {
   const { as, want, soThat } = spec.userStory;
   const description = [
     `**User story:** As ${/^(a|an|the)\s/i.test(as.trim()) ? as.trim() : `a ${as.trim()}`}, I'd like to ${want.trim()}, so that ${soThat.trim().replace(/\.$/, "")}.`,
-    "",
-    "### Context",
-    spec.context.trim(),
-    "",
-    "### Description",
-    spec.description.trim(),
-    "",
-    "### Requirements",
-    ...spec.requirements.map((r) => `- ${r.trim()}`),
+    ...(spec.requirements.length
+      ? ["", "### Requirements", ...spec.requirements.map((r) => `- ${r.trim()}`)]
+      : []),
   ].join("\n");
   return {
     key: spec.key,
