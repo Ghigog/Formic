@@ -64,6 +64,7 @@ function turnUsage(
     model,
     tokensIn,
     tokensOut,
+    costTokensIn,
     costCents: estimateCostCents(model, costTokensIn, tokensOut, providerId),
   };
 }
@@ -158,7 +159,7 @@ export function openAiSpeak(
         return { id: c.id, name: c.function.name, input };
       }),
       // No caching on this format: what the provider counts is what it bills.
-      usage: turnUsage(model, result.tokensIn, result.tokensOut, result.tokensIn, info.id),
+      usage: turnUsage(model, result.tokensIn, result.tokensOut, result.costTokensIn ?? result.tokensIn, info.id),
     };
   };
 }
