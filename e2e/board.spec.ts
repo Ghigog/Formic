@@ -201,7 +201,7 @@ test("picking another repository switches the board to it", async ({ page }) => 
   // A new repository starts a board of its own, with one ticket: its AGENTS.md.
   await expect(page.getByRole("button", { name: /Choose another project/ }).first())
     .toContainText("acme / widgets");
-  await expect(column(page, "To Do").getByText(/Write the AGENTS\.md/)).toBeVisible();
+  await expect(column(page, "To Do").getByText(/Write an? AGENTS\.md/)).toBeVisible();
   await expect(cardIds(page, "To Do")).resolves.toHaveLength(1);
 
   // And the demo board is still there to switch back to.
