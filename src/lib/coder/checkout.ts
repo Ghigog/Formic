@@ -218,6 +218,39 @@ export function pullRequestBody(
   ].join("\n");
 }
 
+/** How long the summary part of a pull request title may be before it is cut. */
+const TITLE_SUMMARY_MAX = 72;
+
+/** A literal string, escaped so it can sit safely inside a RegExp. */
+function literal(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The pull request's title: the ticket's key and the agent's summary, kept to
+ * one line a list can show. The summary is written for a card and drifts: an
+ * agent echoes the key the title already leads with, signs off with the issue
+ * the body already links ("Closes #38"), or writes a paragraph where a line was
+ * asked for. None of that belongs in a title someone scans, so it is reduced
+ * here rather than trusted. The detail lives in the body.
+ */
+export function pullRequestTitle(ticket: TicketDetail, change: { summary: string }): string {
+  let text = (change.summary.split("\n")[0] ?? "").replace(/\s+/g, " ").trim();
+  // The key the title leads with, said again by the summary.
+  text = text.replace(new RegExp(`^${literal(ticket.key)}\\s*[:\\-–—]\\s*`, "i"), "");
+  // The issue the body links, repeated as a sign-off: "…new file. - #38".
+  if (ticket.issueNumber !== null) {
+    text = text.replace(new RegExp(`\\s*[-–—]?\\s*\\(?#${ticket.issueNumber}\\.?\\)?\\s*$`), "");
+  }
+  text = text.replace(/[\s.,;:!?\-–—]+$/, "").trim();
+  if (!text) text = ticket.title.trim();
+  if (text.length > TITLE_SUMMARY_MAX) {
+    const cut = text.slice(0, TITLE_SUMMARY_MAX - 1).replace(/\s+\S*$/, "");
+    text = `${cut || text.slice(0, TITLE_SUMMARY_MAX - 1)}…`;
+  }
+  return `${ticket.key}: ${text}`;
+}
+
 export async function ensureMergeTarget(
   client: VcsClient,
   target: string,

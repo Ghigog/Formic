@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openCheckout, type CheckoutRequest } from "./checkout";
+import { openCheckout, pullRequestTitle, type CheckoutRequest } from "./checkout";
 import { repository } from "@/lib/db";
+import type { TicketDetail } from "@/lib/db/repository";
 import { FALLBACK_CAP_MESSAGE } from "@/lib/sandbox/fallback-cap";
 
 const spawnSandbox = vi.hoisted(() => vi.fn());
@@ -54,5 +55,49 @@ describe("the operator's fallback E2B key", () => {
   it("does not cap a person on their own key", async () => {
     const req = await request(false);
     await expect(openCheckout(req)).resolves.toBeDefined();
+  });
+});
+
+describe("the pull request title", () => {
+  const ticket = (over: Partial<TicketDetail> = {}) =>
+    ({
+      key: "T-1",
+      title: "Write the operating manual",
+      issueNumber: 38,
+      ...over,
+    }) as TicketDetail;
+
+  it("leads with the ticket key and the agent's one-line summary", () => {
+    expect(pullRequestTitle(ticket(), { summary: "Wrote AGENTS.md" })).toBe("T-1: Wrote AGENTS.md");
+  });
+
+  it("keeps only the first line, whatever else the agent sent", () => {
+    expect(
+      pullRequestTitle(ticket(), { summary: "Wrote AGENTS.md\n\nAnd reduced CLAUDE.md." }),
+    ).toBe("T-1: Wrote AGENTS.md");
+  });
+
+  it("drops a key the agent echoed and the issue it signed off with", () => {
+    expect(pullRequestTitle(ticket(), { summary: "T-1: Wrote AGENTS.md" })).toBe(
+      "T-1: Wrote AGENTS.md",
+    );
+    expect(pullRequestTitle(ticket(), { summary: "Wrote AGENTS.md - #38" })).toBe(
+      "T-1: Wrote AGENTS.md",
+    );
+    expect(pullRequestTitle(ticket(), { summary: "Wrote AGENTS.md (#38)" })).toBe(
+      "T-1: Wrote AGENTS.md",
+    );
+  });
+
+  it("caps a paragraph to a title someone can scan", () => {
+    const long = `Wrote AGENTS.md ${"and kept going ".repeat(20)}done.`;
+    const title = pullRequestTitle(ticket(), { summary: long });
+    expect(title).toMatch(/^T-1: Wrote AGENTS\.md /);
+    expect(title.endsWith("…")).toBe(true);
+    expect(title.length).toBeLessThanOrEqual("T-1: ".length + 72);
+  });
+
+  it("falls back to the ticket's title when the agent sent nothing usable", () => {
+    expect(pullRequestTitle(ticket(), { summary: "  \n" })).toBe("T-1: Write the operating manual");
   });
 });

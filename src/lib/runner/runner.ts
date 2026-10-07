@@ -142,7 +142,7 @@ const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
-- When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters, a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.
+- When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters (no ticket key and no issue number), a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.
 - ${HANDOFF_RULE} Put them in the summary as a "For you:" section, one "- step" per line, before the plan.`;
 
 const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:

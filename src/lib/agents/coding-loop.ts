@@ -227,7 +227,11 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
     input_schema: {
       type: "object",
       properties: {
-        summary: { type: "string" },
+        summary: {
+          type: "string",
+          description:
+            "One line for the card and the pull request's title: what changed, about 70 characters at most. No ticket key, no issue number, and not a paragraph.",
+        },
         detail: { type: "string" },
         verified_with: { type: ["string", "null"] },
         already_done: {
@@ -250,7 +254,11 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
     input_schema: {
       type: "object",
       properties: {
-        summary: { type: "string" },
+        summary: {
+          type: "string",
+          description:
+            "One line for the card and, when the review fixes something, the pull request title: about 70 characters at most. No ticket key, no issue number, and not a paragraph.",
+        },
         detail: {
           type: "string",
           description: "Your review, criterion by criterion, and what you fixed if you fixed anything.",
