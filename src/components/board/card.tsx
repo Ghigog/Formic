@@ -649,8 +649,12 @@ function ReviewCard({
   const failed = extras.checks?.failed ?? 0;
   const passed = extras.checks?.passed ?? 0;
   const green = extras.ci === "passing" || (failed === 0 && passed > 0);
-  // Approved and waiting for the merge: the last stage, with the card still in review.
-  const merging = card.status === "review" && card.stage === MERGE_STAGE;
+  // Approved, green and at the merge stage: nothing but the merge is left, and
+  // it is not this card's move — with auto-merge off it waits for a person to
+  // merge on GitHub, with it on Formic does it. Either way it is *ready* to
+  // merge, not mid-merge, so the chip says so rather than implying a merge that
+  // is already in flight and never lands.
+  const readyToMerge = card.status === "review" && card.stage === MERGE_STAGE;
   // A merge that failed rolls the card back with why; say it on the card.
   const problem = cardProblem(card);
 
@@ -677,7 +681,7 @@ function ReviewCard({
             CI running
           </StatusChip>
         )}
-        {merging && <StatusChip tone="clay">Merging</StatusChip>}
+        {readyToMerge && <StatusChip tone="jade">Ready to merge</StatusChip>}
         {extras.reviewState && (
           <StatusChip tone="rust">{extras.reviewState}</StatusChip>
         )}

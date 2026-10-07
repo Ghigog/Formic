@@ -17,15 +17,15 @@ function renderReview(card: BoardCard) {
 }
 
 describe("a card in review", () => {
-  it("shows a yellow Merging dot once it waits in the Merging stage", () => {
+  it("shows a jade Ready to merge chip once it waits in the merge stage", () => {
     renderReview(makeCard({ status: "review", stage: 7, prNumber: 4 }));
-    const chip = screen.getByText("Merging");
-    expect(chip.querySelector("span")?.className).toContain("bg-clay");
+    const chip = screen.getByText("Ready to merge");
+    expect(chip.querySelector("span")?.className).toContain("bg-jade");
   });
 
-  it("shows no Merging dot before the Merging stage", () => {
+  it("shows no Ready to merge chip before the merge stage", () => {
     renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
-    expect(screen.queryByText("Merging")).toBeNull();
+    expect(screen.queryByText("Ready to merge")).toBeNull();
   });
 
   it("shows why a merge failed", () => {
