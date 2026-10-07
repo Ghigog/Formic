@@ -287,6 +287,36 @@ describe("runArchitectDraftTicket", () => {
     expect(detail?.acceptanceCriteria).toEqual(draftedTicket.acceptanceCriteria);
   });
 
+  it("keeps the placeholder's sequential key, not the agent's T-1 draft key", async () => {
+    const [epic, ticket] = makeEpicWithChildren(
+      { status: "draft", standalone: true, size: null },
+      [
+        {
+          key: "T-7",
+          status: "blocked",
+          stalledIn: "todo",
+          blockedReason: "Drafting the ticket…",
+          detached: true,
+          fileScope: [],
+        },
+      ],
+    );
+    seedMemory([epic!, ticket!]);
+    useArchitect(
+      new StubArchitect(async () => ({
+        ok: true,
+        value: { kind: "ticket", ticket: draftedTicket },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic!.id, ticket!.id, "raw request text", []);
+
+    const cards = await repository().boardCards(PROJECT);
+    const drafted = cards.find((c) => c.epicId === epic!.id && c.kind === "ticket");
+    expect(drafted?.key).toBe("T-7");
+  });
+
   it("stalls the ticket blocked in To Do when the run fails", async () => {
     const { epic, ticket } = seedDrafting();
     useArchitect(
@@ -429,6 +459,28 @@ describe("runProductAgent, given a reroute answer", () => {
     const detail = await repository().ticketDetail(drafted.id);
     expect(detail?.description).toBe(draftedTicket.description);
     expect(detail?.acceptanceCriteria).toEqual(draftedTicket.acceptanceCriteria);
+  });
+
+  it("keys the To Do ticket from the counter, not the agent's draft key", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null });
+    seedMemory([epic]);
+    useProduct(
+      new StubProduct(async () => ({
+        ok: true,
+        value: {
+          kind: "reroute",
+          reason: "Small enough for one ticket.",
+          ticket: { ...draftedTicket, key: "T-99" },
+        },
+        usage: NO_USAGE,
+      })),
+    );
+
+    await runProductAgent(PROJECT, epic.id, "Add the missing button please");
+
+    const cards = await repository().boardCards(PROJECT);
+    const drafted = cards.find((c) => c.epicId === epic.id && c.kind === "ticket")!;
+    expect(drafted.key).toBe("T-1");
   });
 });
 
