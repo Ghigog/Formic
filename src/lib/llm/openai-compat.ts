@@ -39,6 +39,11 @@ export interface ChatResult {
   finishReason: string | null;
   tokensIn: number;
   tokensOut: number;
+  /**
+   * Input tokens as they count against a run's budget: cached input at a
+   * tenth. Same as `tokensIn` when the provider reports no cache breakdown.
+   */
+  costTokensIn?: number;
 }
 
 export class ProviderError extends Error {
@@ -68,7 +73,19 @@ function describeStatus(p: ProviderInfo, res: Response, body: string): string {
 /** A reply, in whichever envelope the provider chose to send it. */
 interface Completion {
   choices?: Array<{ message?: ChatMessage; finish_reason?: string | null }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    /** Cached input tokens, by whichever name a provider uses. */
+    prompt_cache_hit_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
+}
+
+/** Cached input tokens, by whichever name a provider reports them. */
+function cachedInputTokens(usage: Completion["usage"]): number {
+  if (!usage) return 0;
+  return usage.prompt_cache_hit_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0;
 }
 
 /**
@@ -302,11 +319,17 @@ async function chatOnce(
       res.status,
     );
   }
+  const usage = completion?.usage;
+  const tokensIn = usage?.prompt_tokens ?? 0;
+  const cached = cachedInputTokens(usage);
   return {
     message: checkToolCalls(p, choice.message),
     finishReason: choice.finish_reason ?? null,
-    tokensIn: completion?.usage?.prompt_tokens ?? 0,
-    tokensOut: completion?.usage?.completion_tokens ?? 0,
+    tokensIn,
+    tokensOut: usage?.completion_tokens ?? 0,
+    // A cached input token costs about a tenth of a fresh one, so it counts
+    // as a tenth against the budget instead of in full.
+    costTokensIn: tokensIn - cached * 0.9,
   };
 }
 

@@ -491,7 +491,7 @@ function openAiConversation(
           return { id: c.id, name: c.function.name, input: parsed };
         }),
         stop: result.finishReason === "length" ? "max_tokens" : "done",
-        usage: usageFrom(model, result.tokensIn, result.tokensOut, info.id),
+        usage: usageFrom(model, result.tokensIn, result.tokensOut, info.id, result.costTokensIn),
       };
     },
     toolResults(results) {

@@ -58,8 +58,8 @@ function resolve(config: AgentConfig): Resolved | string {
   return { info, model: config.model, apiKey: config.apiKey };
 }
 
-function usage(model: string, tokensIn: number, tokensOut: number, provider?: string | null): Usage {
-  return { model, tokensIn, tokensOut, costCents: estimateCostCents(model, tokensIn, tokensOut, provider) };
+function usage(model: string, tokensIn: number, tokensOut: number, provider?: string | null, costTokensIn = tokensIn): Usage {
+  return { model, tokensIn, tokensOut, costTokensIn, costCents: estimateCostCents(model, costTokensIn, tokensOut, provider) };
 }
 
 function add(a: Usage, b: Usage): Usage {
@@ -67,6 +67,7 @@ function add(a: Usage, b: Usage): Usage {
     model: a.model,
     tokensIn: a.tokensIn + b.tokensIn,
     tokensOut: a.tokensOut + b.tokensOut,
+    costTokensIn: (a.costTokensIn ?? a.tokensIn) + (b.costTokensIn ?? b.tokensIn),
     costCents: a.costCents + b.costCents,
   };
 }
@@ -134,7 +135,7 @@ async function askForJson<T>(
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e), usage: total };
     }
-    total = add(total, usage(r.model, result.tokensIn, result.tokensOut, r.info.id));
+    total = add(total, usage(r.model, result.tokensIn, result.tokensOut, r.info.id, result.costTokensIn));
     const text = result.message.content ?? "";
 
     let raw: unknown = null;
@@ -371,7 +372,7 @@ export class OpenAiShowcaseAgent implements ShowcaseAgent {
           },
         ],
       });
-      const used = usage(r.model, result.tokensIn, result.tokensOut, r.info.id);
+      const used = usage(r.model, result.tokensIn, result.tokensOut, r.info.id, result.costTokensIn);
       const markdown = (result.message.content ?? "").trim();
       if (!markdown) return failure(r.model, "The showcase came back empty.", false, used);
       ctx.emit({ type: "epic.showcase", epicId: input.epicId, markdown });
