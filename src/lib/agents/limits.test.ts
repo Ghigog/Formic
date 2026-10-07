@@ -221,6 +221,34 @@ describe("lastWords", () => {
     expect(lastWords(log)).toContain("Ran out of time: this run's budget is 30 minutes.");
   });
 
+  it("prefers the job's own token-budget reason to the diff it was streaming", () => {
+    // A real run (37665187909): the QUI-016 loop hit its 320,000-token ceiling
+    // mid-edit, and the card quoted the last line of the diff it happened to be
+    // writing — a `while (!stopRequested)` — instead of why the run stopped.
+    const log = stepLog(
+      [
+        "Token ceiling reached: this run's budget is 320,000 tokens. Raise the ticket's token budget to give it more.",
+        '{"type":"run.log","runId":"r","stream":"stdout","line":"         while (!stopRequested) {"}',
+        "The loop stopped (exit 1).",
+      ].join("\n"),
+    );
+    expect(lastWords(log)).toContain("Token ceiling reached: this run's budget is 320,000 tokens.");
+  });
+
+  it("shows the loop entry's own failure, not the bare message echoed after it", () => {
+    // A payload the entry cannot use exits 2 with its reason on stderr, and the
+    // job then echoes the report's `.error` — the same reason, without the
+    // prefix — which is the last line before our own exit line.
+    const log = stepLog(
+      [
+        "The loop entry could not run: No such provider: clinepass.",
+        "No such provider: clinepass.",
+        "The loop stopped (exit 2).",
+      ].join("\n"),
+    );
+    expect(lastWords(log)).toBe("The loop entry could not run: No such provider: clinepass.");
+  });
+
   it("never quotes an envelope, only the line it carries", () => {
     const log = stepLog('{"type":"run.log","runId":"r","stream":"stdout","line":"> tsc --noEmit"}');
     expect(lastWords(log)).toBe("> tsc --noEmit");

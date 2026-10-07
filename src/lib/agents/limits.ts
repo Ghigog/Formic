@@ -110,7 +110,7 @@ const PLUMBING = /^The loop stopped \(exit \d+\)\.$/;
 
 /** The job's own account of why its loop stopped. */
 const STOP_REASON =
-  /^(?:The agent did not converge in \d+ turns?\.|Ran out of time: |Spend ceiling reached\b)/;
+  /^(?:The agent did not converge in \d+ turns?\.|Ran out of time: |Spend ceiling reached\b|Token ceiling reached\b|The loop entry could not run: )/;
 
 /**
  * The last thing the agent said before its step failed.
