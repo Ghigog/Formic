@@ -56,8 +56,6 @@ const TICKET_SPEC = {
   key: "T-1",
   title: "Add a retry button to a failed run",
   userStory: { as: "a board owner", want: "retry a failed run", soThat: "I do not have to ask again" },
-  context: "Runs fail and there is no way back.",
-  description: "Add a retry button to the run drawer.",
   requirements: ["A button that restarts the run it belongs to."],
   acceptanceCriteria: [{ given: "a failed run", when: "I click retry", then: "the run starts again" }],
   fileScope: ["src/components/board"],

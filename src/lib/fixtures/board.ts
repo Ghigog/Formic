@@ -331,12 +331,6 @@ export const FIXTURE_TICKET_DETAILS: Record<
     description: [
       "**User story:** As a board owner, I'd like a ticket in In Progress to be implemented by an agent, so that I only step in to review.",
       "",
-      "### Context",
-      "Tickets reach In Progress with a scope and acceptance criteria, but nothing works them yet.",
-      "",
-      "### Description",
-      "A Coder Agent loop that reads the ticket, edits files inside its scope, runs the checks and hands back a change.",
-      "",
       "### Requirements",
       "- Tools: `bash`, `read_file`, `write_file`, `str_replace`, `finish`",
       "- Writes outside the file scope are refused",
@@ -357,12 +351,6 @@ export const FIXTURE_TICKET_DETAILS: Record<
   "prot-5": {
     description: [
       "**User story:** As a Coder Agent, I'd like a clean sandbox per ticket, so that my work cannot touch anyone else's.",
-      "",
-      "### Context",
-      "Agents need somewhere to run commands that is not the server.",
-      "",
-      "### Description",
-      "An E2B sandbox minted per run, with the repository checked out on the ticket's branch.",
       "",
       "### Requirements",
       "- One sandbox per run, torn down when it ends",
