@@ -12,7 +12,7 @@ vi.mock("@/lib/agents/pipeline", () => ({
   startRun: vi.fn(() => ({})),
   applyShowcase: vi.fn(),
 }));
-vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn() }));
+vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn(), stallTicket: vi.fn(), taskFor: vi.fn() }));
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
@@ -21,12 +21,16 @@ const { advanceQueens, applyTransition, canRetryEpic, createTodoItem, deleteEpic
 );
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
+const { MockVcsClient, resetVcs, setVcs } = await import("@/lib/vcs");
 
 const PROJECT = "project_default";
 
 beforeEach(() => {
   launched.length = 0;
   globalThis.__formicMemoryStore = undefined;
+  MockVcsClient.reset();
+  resetVcs();
+  setVcs(new MockVcsClient("acme/widgets"));
   delete process.env.DATABASE_URL;
   delete process.env.POSTGRES_PRISMA_URL;
   delete process.env.POSTGRES_URL;
@@ -617,3 +621,66 @@ describe("advanceQueens", () => {
     expect(await repository().listQueens(PROJECT)).toHaveLength(1);
   });
 });
+
+describe("dropping a ticket with a pull request on Done", () => {
+  /**
+   * T-1 in review, green, with an open pull request, and T-2 waiting on it.
+   * The Settings toggle calls this "Merge when move to done", so dropping the
+   * card on Done is how a person lands it.
+   */
+  async function seedReview() {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "An epic", rawRequest: "Do a thing", position: 1 });
+    const [a, b] = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "Do the thing", description: "Ship it.", acceptanceCriteria: ["It is done"], fileScope: ["src/lib/feature"], storyPoints: 3, position: 1, dependsOnKeys: [] },
+      { epicId: epic.id, key: "T-2", title: "Then the next", description: "Build on it.", acceptanceCriteria: ["It is done"], fileScope: ["src/lib/other"], storyPoints: 1, position: 2, dependsOnKeys: ["T-1"] },
+    ]);
+    const client = new MockVcsClient("acme/widgets");
+    const pull = await client.openPullRequest({ headBranch: "formic/t-1", baseBranch: "main", title: "T-1", body: "" });
+    const headSha = MockVcsClient.setChecks(pull.number, "success");
+    await repo.updateTicket(a!.id, { status: "review", stage: 6, prNumber: pull.number, reviewedSha: headSha });
+    return {
+      ticket: (await repo.ticketDetail(a!.id))!,
+      next: (await repo.ticketDetail(b!.id))!,
+      prNumber: pull.number,
+    };
+  }
+
+  it("merges it, puts the ticket in Done, and frees what waits on it", async () => {
+    const { ticket, next, prNumber } = await seedReview();
+
+    const result = await applyTransition(PROJECT, {
+      cardId: ticket.id,
+      kind: "ticket",
+      from: "in_review",
+      to: "done",
+      position: 1,
+      actor: "user",
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "merged" });
+    expect((await new MockVcsClient("acme/widgets").pullRequest(prNumber)).merged).toBe(true);
+    expect((await repository().ticketDetail(ticket.id))!.status).toBe("merged");
+    expect((await repository().ticketDetail(next.id))!.status).toBe("ready");
+  });
+
+  it("leaves it in In Review, saying why, when CI is red", async () => {
+    const { ticket, prNumber } = await seedReview();
+    MockVcsClient.setChecks(prNumber, "failure");
+
+    const result = await applyTransition(PROJECT, {
+      cardId: ticket.id,
+      kind: "ticket",
+      from: "in_review",
+      to: "done",
+      position: 1,
+      actor: "user",
+    });
+
+    expect(result).toMatchObject({ ok: false, revertTo: "in_review" });
+    expect(result.ok ? "" : result.reason).toContain("Red CI does not merge");
+    expect((await new MockVcsClient("acme/widgets").pullRequest(prNumber)).merged).toBe(false);
+    expect((await repository().ticketDetail(ticket.id))!.status).not.toBe("merged");
+  });
+});
+
