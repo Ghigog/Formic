@@ -266,7 +266,7 @@ export async function applyReroute(
       await repo.createTickets([
         {
           epicId: input.epicId,
-          key: input.ticket.key,
+          key: `T-${await repo.nextStandaloneTicketNumber(projectId)}`,
           title: input.ticket.title,
           description: input.ticket.description,
           acceptanceCriteria: input.ticket.acceptanceCriteria,
@@ -700,13 +700,18 @@ export async function applyDraftedTicket(
   const repo = repository();
   const placeholder = await repo.cardById(ticketId);
   const position = placeholder?.position ?? 0;
+  // The placeholder already carries the project's next standalone ticket
+  // number from createTodoItem. Keep it rather than the agent's self-chosen
+  // key (the ticket spec suggests "T-1"), or every drafted To Do request would
+  // come back keyed "T-1" and throw the sequence away.
+  const key = placeholder?.key ?? ticket.key;
 
   await repo.deleteTickets([ticketId]);
   const created = (
     await repo.createTickets([
       {
         epicId,
-        key: ticket.key,
+        key,
         title: ticket.title,
         description: ticket.description,
         acceptanceCriteria: ticket.acceptanceCriteria,
