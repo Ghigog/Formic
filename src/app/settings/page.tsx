@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import { currentUser, ownerScope } from "@/lib/auth/user";
+import { currentUser } from "@/lib/auth/user";
 import { authMode } from "@/lib/auth/session";
 import { installUrl } from "@/lib/auth/github";
+import { activeProject } from "@/lib/board/project";
 import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
-import { repository } from "@/lib/db";
 import { getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { env } from "@/lib/secrets/env";
 import { hintFor } from "@/lib/secrets/vault";
@@ -15,11 +15,12 @@ export default async function SettingsPage() {
   const user = await currentUser();
   if (!user) redirect("/login?next=/settings");
   const config = env();
-  const projects = (await repository().listProjects(ownerScope(user))).map((p) => ({
-    id: p.id,
-    name: p.name,
-    autoMerge: p.autoMerge,
-  }));
+  // Auto-merge is per board, so settings only offer the one this browser is
+  // on; there is nothing to choose among.
+  const current = await activeProject();
+  const project = current
+    ? { id: current.id, name: current.name, autoMerge: current.autoMerge }
+    : null;
 
   return (
     <SettingsForm
@@ -30,7 +31,7 @@ export default async function SettingsPage() {
         signedIn: authMode() === "github",
       }}
       installUrl={installUrl()}
-      projects={projects}
+      project={project}
       // Local mode only: GitHub mode's credential is the sign-in itself.
       github={
         authMode() === "local"

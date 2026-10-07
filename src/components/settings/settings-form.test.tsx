@@ -100,21 +100,21 @@ describe("Sandbox key", () => {
 });
 
 describe("Auto-merge", () => {
-  const projects = [{ id: "p1", name: "Formic", autoMerge: false }];
+  const project = { id: "p1", name: "Formic", autoMerge: false };
 
-  it("shows the saved state and saves a switch for that project", async () => {
+  it("shows only the current board, and the label follows the switch", async () => {
     const fetchMock = vi.fn(async () => Response.json({ autoMerge: true }));
     vi.stubGlobal("fetch", fetchMock);
     render(
       <SettingsForm
         account={account}
         installUrl={null}
-        projects={projects}
+        project={project}
         e2b={{ hint: null, serverFallback: false }}
       />,
     );
 
-    const toggle = screen.getByRole("checkbox", { name: /Merge approved pull requests in Formic/ });
+    const toggle = screen.getByRole("checkbox", { name: "Merge when move to done" });
     expect(toggle).not.toBeChecked();
     const user = userEvent.setup();
     await act(async () => {
@@ -129,6 +129,8 @@ describe("Auto-merge", () => {
       }),
     );
     expect(toggle).toBeChecked();
+    // The label now describes the behaviour it was switched into.
+    expect(toggle).toHaveAccessibleName("Auto-merge when review is finished");
   });
 
   it("stays off and says so when the save is refused", async () => {
@@ -137,17 +139,24 @@ describe("Auto-merge", () => {
       <SettingsForm
         account={account}
         installUrl={null}
-        projects={projects}
+        project={project}
         e2b={{ hint: null, serverFallback: false }}
       />,
     );
-    const toggle = screen.getByRole("checkbox", { name: /Merge approved pull requests in Formic/ });
+    const toggle = screen.getByRole("checkbox", { name: "Merge when move to done" });
     const user = userEvent.setup();
     await act(async () => {
       await user.click(toggle);
     });
     expect(toggle).not.toBeChecked();
     expect(screen.getByText("That did not save. Try again.")).toBeInTheDocument();
+  });
+
+  it("shows nothing when there is no board to set it on", () => {
+    render(
+      <SettingsForm account={account} installUrl={null} e2b={{ hint: null, serverFallback: false }} />,
+    );
+    expect(screen.queryByRole("checkbox", { name: /merge/i })).not.toBeInTheDocument();
   });
 });
 

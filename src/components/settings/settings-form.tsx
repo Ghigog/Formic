@@ -32,7 +32,7 @@ interface ProjectSetting {
 export function SettingsForm({
   account,
   installUrl,
-  projects = [],
+  project,
   e2b,
   github,
   runTimeBudget,
@@ -41,7 +41,8 @@ export function SettingsForm({
 }: {
   account: Account;
   installUrl: string | null;
-  projects?: ProjectSetting[];
+  /** The board this browser is on; auto-merge is switched on for it alone. */
+  project?: ProjectSetting | null;
   e2b: KeyState;
   /** Local mode only: the server's one GitHub credential, set here. */
   github?: { hint: string | null } | null;
@@ -110,16 +111,14 @@ export function SettingsForm({
           />
         )}
 
-        {projects.length > 0 && (
+        {project && (
           <Section title="Auto-merge">
             <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
-              Formic merges an approved, green pull request on its own only in
-              projects where you switch this on. Off, nothing lands on the
-              base branch until you merge it.
+              Applies to {project.name}. Formic merges an approved, green pull
+              request on its own once review finishes; off, nothing lands on
+              the base branch until you merge it.
             </p>
-            {projects.map((project) => (
-              <AutoMergeToggle key={project.id} project={project} />
-            ))}
+            <AutoMergeToggle project={project} />
           </Section>
         )}
 
@@ -183,7 +182,7 @@ function AutoMergeToggle({ project }: { project: ProjectSetting }) {
           disabled={busy}
           onChange={(e) => void change(e.target.checked)}
         />
-        Merge approved pull requests in {project.name}
+        {on ? "Auto-merge when review is finished" : "Merge when move to done"}
       </label>
       {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>
