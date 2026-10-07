@@ -146,7 +146,7 @@ describe("/api/settings token and attempt limits", () => {
   it("returns defaults for a person with no stored limits", async () => {
     const body = await (await GET()).json();
     expect(body.mode).toBe("PER_STORY_POINT");
-    expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 64_000 });
+    expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 250_000 });
     expect(body.attempts).toEqual({ mode: "FLAT" });
   });
 
@@ -191,7 +191,7 @@ describe("/api/settings token and attempt limits", () => {
     const res = await PUT(put(payload));
     expect(res.status).toBe(400);
     const body = await (await GET()).json();
-    expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 64_000 });
+    expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 250_000 });
     expect(body.mode).toBe("PER_STORY_POINT");
   });
 });

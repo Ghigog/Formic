@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ATTEMPT_DEFAULTS, budgetFor, PATH_RAILS } from "./budget-for";
+import { ATTEMPT_DEFAULTS, budgetFor, DEFAULT_TOKENS_PER_STORY_POINT, PATH_RAILS } from "./budget-for";
 
 describe("budgetFor", () => {
   it("defaults to 10 minutes a point, clamped to the in-process rail, naming it", () => {
@@ -65,6 +65,12 @@ describe("budgetFor", () => {
     const two = budgetFor(null, null, { storyPoints: 2 }, "loop");
     expect(two.tokens.value).toBe(2 * one.tokens.value!);
     expect(two.maxCents).toBeGreaterThan(one.maxCents!);
+  });
+
+  it("defaults tokens to a real token count per point, not a money figure", () => {
+    expect(DEFAULT_TOKENS_PER_STORY_POINT).toBe(250_000);
+    expect(budgetFor(null, null, { storyPoints: 1 }, "loop").tokens.value).toBe(250_000);
+    expect(budgetFor(null, null, {}, "loop").tokens.value).toBe(250_000); // no points counts as 1
   });
 
   it("keeps today's attempt defaults", () => {

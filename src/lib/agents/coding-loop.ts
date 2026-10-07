@@ -8,7 +8,7 @@ import { budgetTokens } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
 import type { PlanStep } from "@/lib/domain/entities";
-import { PATH_RAILS } from "@/lib/budget/budget-for";
+import { DEFAULT_TOKENS_PER_STORY_POINT, PATH_RAILS } from "@/lib/budget/budget-for";
 import { estimateCostCents, turnCeiling } from "@/lib/budget/limits";
 import { timeLimitNote, tokenLimitNote } from "@/lib/budget/stop-notes";
 import {
@@ -51,9 +51,14 @@ export const CODER_MODEL = "claude-opus-5";
  */
 const MAX_TURNS = turnCeiling(PATH_RAILS["in-process"].minutes * 60_000);
 
-/** The ceiling handed to the model so it paces itself: below the token limit, which is the backstop. The API rejects under 20k. */
+/**
+ * The task budget handed to the model so it paces itself: 80% of the run's
+ * token budget, so the hard stop is the backstop, not the plan. The API
+ * rejects a task budget under 20k, and a run with no budget of its own gets
+ * the one-point default.
+ */
 function advisoryTokens(tokens: number | null | undefined): number {
-  return Math.max(20_000, Math.floor((tokens ?? 64_000) * 0.8));
+  return Math.max(20_000, Math.floor((tokens ?? DEFAULT_TOKENS_PER_STORY_POINT) * 0.8));
 }
 
 /** Tool output past this is padding; the middle is what gets dropped. */

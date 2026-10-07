@@ -10,7 +10,7 @@ const CHANGE_IT = "Change it under Settings → Limits, or on the column; the ru
 
 export function tokenLimitNote(budget: Budget, used: number): string {
   const limit = budget.tokens.value ?? 0;
-  return `Token limit reached (${used.toLocaleString("en-US")} of ${limit.toLocaleString("en-US")} tokens). Enforced between turns: the run stops before its next turn. ${CHANGE_IT}`;
+  return `Token limit reached (${used.toLocaleString("en-US")} of ${limit.toLocaleString("en-US")} tokens, input plus output). Enforced between turns: the run stops before its next turn. ${CHANGE_IT}`;
 }
 
 export function timeLimitNote(budget: Budget): string {

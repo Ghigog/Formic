@@ -8,7 +8,6 @@ import {
   estimateCostCents,
   priceForModel,
   pricingNote,
-  taskBudgetTokens,
   turnCeiling,
 } from "./limits";
 
@@ -211,18 +210,6 @@ describe("pricingNote", () => {
     const verdict = checkBudget({ cents: 500, elapsedMs: 0, attempts: 0 }, { ...DEFAULT_RUN_BUDGET, maxCents: 500 });
     expect(verdict).toMatchObject({ ok: false, exceeded: "cost" });
     if (!verdict.ok) expect(verdict.reason).toMatch(/^Spend ceiling reached .*not a bill/);
-  });
-});
-
-describe("taskBudgetTokens", () => {
-  it("never returns a value the API would reject", () => {
-    expect(taskBudgetTokens({ ...DEFAULT_RUN_BUDGET, maxCents: 1 })).toBe(20_000);
-  });
-
-  it("scales with the ceiling", () => {
-    const small = taskBudgetTokens({ ...DEFAULT_RUN_BUDGET, maxCents: 200 });
-    const large = taskBudgetTokens({ ...DEFAULT_RUN_BUDGET, maxCents: 20_000 });
-    expect(large).toBeGreaterThan(small);
   });
 });
 

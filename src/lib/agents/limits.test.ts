@@ -222,17 +222,18 @@ describe("lastWords", () => {
   });
 
   it("prefers the job's own token-budget reason to the diff it was streaming", () => {
-    // A real run (37665187909): the QUI-016 loop hit its 320,000-token ceiling
+    // A real run (37665187909): the QUI-016 loop hit its 320,000-token budget
     // mid-edit, and the card quoted the last line of the diff it happened to be
     // writing — a `while (!stopRequested)` — instead of why the run stopped.
     const log = stepLog(
       [
-        "Token ceiling reached: this run's budget is 320,000 tokens. Raise the ticket's token budget to give it more.",
+        "Token budget reached: this run's budget is 320,000 tokens (320,000 spent, input plus output). Raise the ticket's token budget under Settings → Limits, or move it to a column with a larger budget; the run can be retried.",
         '{"type":"run.log","runId":"r","stream":"stdout","line":"         while (!stopRequested) {"}',
         "The loop stopped (exit 1).",
       ].join("\n"),
     );
-    expect(lastWords(log)).toContain("Token ceiling reached: this run's budget is 320,000 tokens.");
+    expect(lastWords(log)).toContain("Token budget reached: this run's budget is 320,000 tokens");
+    expect(lastWords(log)).toContain("input plus output");
   });
 
   it("shows the loop entry's own failure, not the bare message echoed after it", () => {

@@ -105,19 +105,6 @@ export function turnCeiling(maxDurationMs: number): number {
   return Math.max(1, Math.round((maxDurationMs / 60_000) * TURNS_PER_MINUTE));
 }
 
-/**
- * The advisory ceiling handed to the model so it paces itself and finishes
- * gracefully, rather than being cut off mid-edit by the hard cap above.
- * Deliberately below the hard limit: the hard cap is the backstop, not the
- * plan.
- */
-export function taskBudgetTokens(budget: Budget, costPerMTokCents = 2500): number {
-  const headroomCents = budget.maxCents * 0.8;
-  const tokens = Math.floor((headroomCents / costPerMTokCents) * 1_000_000);
-  // The API rejects a task budget below 20k tokens.
-  return Math.max(20_000, tokens);
-}
-
 export function addSpend(a: Spend, b: Partial<Spend>): Spend {
   return {
     cents: a.cents + (b.cents ?? 0),
