@@ -4,6 +4,7 @@ import { repository } from "@/lib/db";
 import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
 import { redactDeep } from "@/lib/secrets/redact";
 import { syncIssues } from "@/lib/issues/sync";
+import { pingBoards } from "./realtime";
 
 /**
  * In-process pub/sub with a durable tail.
@@ -70,6 +71,10 @@ export async function publish(
       // A broken subscriber must not take down the publisher.
     }
   }
+
+  // Boards open elsewhere hear about it through Supabase Realtime, when set
+  // up (./realtime.ts). Awaited, for the same reason as below; never throws.
+  await pingBoards(projectId, isDroppable(event));
 
   // Card changes are mirrored onto GitHub issues, after the board has them.
   // Awaited, because a serverless function may stop once this returns; it

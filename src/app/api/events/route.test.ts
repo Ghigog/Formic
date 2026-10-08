@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
   replay: vi.fn(async (): Promise<unknown[]> => []),
   latestEventSeq: vi.fn(async () => 10),
+  realtime: false,
 }));
 
 vi.mock("@/lib/board/project", () => ({ activeProject: async () => mocks.project }));
@@ -34,6 +35,10 @@ vi.mock("@/lib/agents/pipeline", () => ({ fromStream: (work: () => Promise<void>
 vi.mock("@/lib/runner/runner", () => ({ collectCliRuns: vi.fn(async () => undefined) }));
 vi.mock("@/lib/review/pipeline", () => ({ sweepOpenPullRequests: vi.fn(async () => undefined) }));
 vi.mock("@/lib/board/idle", () => ({ sweepIdleCards: vi.fn(async () => undefined) }));
+vi.mock("@/lib/events/realtime", () => ({
+  realtimeConfig: () => (mocks.realtime ? { url: "https://abc.supabase.co", key: "anon" } : null),
+  realtimeTopic: async (id: string) => `formic-${id}`,
+}));
 
 const { GET } = await import("./route");
 
@@ -69,6 +74,7 @@ beforeEach(() => {
   mocks.unsubscribe.mockClear();
   mocks.replay.mockReset().mockResolvedValue([]);
   mocks.latestEventSeq.mockClear();
+  mocks.realtime = false;
 });
 
 afterEach(() => {
@@ -163,6 +169,27 @@ describe("GET /api/events", () => {
       const body = await (await open().response).text();
       expect(mocks.replay).not.toHaveBeenCalled();
       expect(body).toContain("id: 10\nevent: stream.pause");
+    });
+  });
+
+  describe("one look as JSON", () => {
+    function look(cursor?: number) {
+      const q = cursor ? `&lastEventId=${cursor}` : "";
+      return GET(new NextRequest(`http://localhost/api/events?format=json${q}`));
+    }
+
+    it("answers what was missed, the cursor to come back with, and the board's channel", async () => {
+      mocks.realtime = true;
+      mocks.replay.mockResolvedValueOnce([event(4), event(5)]);
+      const body = await (await look(3)).json();
+      expect(body.events.map((e: SequencedEvent) => e.seq)).toEqual([4, 5]);
+      expect(body.through).toBe(5);
+      expect(body.realtime).toEqual({ url: "https://abc.supabase.co", key: "anon", topic: "formic-p1" });
+    });
+
+    it("says there is no channel when Realtime is not set up, and starts a fresh board at the head", async () => {
+      const body = await (await look()).json();
+      expect(body).toEqual({ events: [], through: 10, realtime: null });
     });
   });
 });

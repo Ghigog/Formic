@@ -36,6 +36,7 @@
     "@hello-pangea/dnd": "^18.0.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "@supabase/realtime-js": "2.117.2",
     "libsodium-wrappers": "0.8.4",
     "next": "^16.3.6",
     "react": "^19.3.0",

@@ -12,8 +12,20 @@ import type { NextConfig } from "next";
  * Google Fonts' stylesheet and font files (the artboards' three families),
  * GitHub avatars and the same-origin attachment previews, the board's
  * event stream, and inline styles from Next's own compiled CSS output.
- * Anything a script or a frame needs is left out on purpose.
+ * Anything a script or a frame needs is left out on purpose. With Supabase
+ * Realtime set up, the board also connects to the Supabase project
+ * (src/lib/events/realtime.ts).
  */
+const realtimeOrigins = (() => {
+  const raw = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  try {
+    const { protocol, host } = new URL(raw);
+    return protocol === "https:" ? [`https://${host}`, `wss://${host}`] : [];
+  } catch {
+    return [];
+  }
+})();
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -26,7 +38,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://avatars.githubusercontent.com",
-      "connect-src 'self'",
+      ["connect-src 'self'", ...realtimeOrigins].join(" "),
       "object-src 'none'",
     ].join("; "),
   },
