@@ -31,7 +31,8 @@ only one pair, so don't paste it already quoted.
 Migrations have one extra rule: they need a **direct** connection. Supabase's
 pooled URL (PgBouncer, transaction mode) does not support the advisory locks
 `prisma migrate deploy` takes. `scripts/db-push.sh` therefore swaps
-`POSTGRES_URL_NON_POOLING` in for `DATABASE_URL` when it is present. If you
+`POSTGRES_URL_NON_POOLING` (Supabase) or `DATABASE_URL_UNPOOLED` (Neon) in
+for `DATABASE_URL` when one is present. If you
 have only the pooled string set, the first migration fails with a lock error
 — copy the direct string Supabase shows next to the pooled one.
 
