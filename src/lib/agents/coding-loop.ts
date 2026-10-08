@@ -65,6 +65,14 @@ function advisoryTokens(tokens: number | null | undefined): number {
 const MAX_TOOL_OUTPUT = 16_000;
 /** Longest thought the board is sent in one piece. */
 const MAX_THOUGHT = 4_000;
+/**
+ * A command's output past its first lines is noise to the person watching and
+ * a stored frame apiece: an `npm install` is thousands. Past the head, the
+ * board gets a line now and then to show it is alive, then the tail.
+ */
+const LOG_HEAD_LINES = 200;
+const LOG_TAIL_LINES = 50;
+const LOG_PULSE_MS = 2_000;
 
 /**
  * A turn's transcript growth past its opening prompt that triggers compaction.
@@ -111,6 +119,60 @@ export function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
   const half = Math.floor(limit / 2);
   const dropped = text.length - limit;
   return `${text.slice(0, half)}\n\n... [${dropped} characters omitted] ...\n\n${text.slice(-half)}`;
+}
+
+/**
+ * A file as `read_file` returns it: whole, or the lines asked for. A file too
+ * long to show whole says so at the top, which `truncate` keeps, so the agent
+ * reads the middle in parts instead of reaching for sed.
+ */
+export function readWindow(contents: string, offset?: number, limit?: number): string {
+  const lines = contents.split("\n");
+  if (offset === undefined && limit === undefined) {
+    if (contents.length <= MAX_TOOL_OUTPUT) return contents;
+    return `[${lines.length} lines, too long to show whole: the middle is cut below. Read it in parts with offset and limit.]\n${contents}`;
+  }
+  const start = (offset ?? 1) - 1;
+  const window = lines.slice(start, limit === undefined ? undefined : start + limit);
+  if (window.length === 0) {
+    return `[The file has ${lines.length} lines; offset ${start + 1} is past the end.]`;
+  }
+  return `[Lines ${start + 1}-${start + window.length} of ${lines.length}]\n${window.join("\n")}`;
+}
+
+/**
+ * Streams a command's output to the board: the head as it comes, a line every
+ * so often after that, and the tail once the command ends.
+ */
+function commandLog(ctx: AgentContext) {
+  type Line = { stream: "stdout" | "stderr"; line: string };
+  const send = ({ stream, line }: Line) =>
+    ctx.emit({ type: "run.log", runId: ctx.runId, stream, line });
+  let seen = 0;
+  let pulses = 0;
+  let lastPulse = 0;
+  const tail: Array<Line & { sent: boolean }> = [];
+  return {
+    line(entry: Line) {
+      seen++;
+      if (seen <= LOG_HEAD_LINES) return send(entry);
+      const now = Date.now();
+      const pulse = now - lastPulse >= LOG_PULSE_MS;
+      if (pulse) {
+        lastPulse = now;
+        pulses++;
+        send(entry);
+      }
+      tail.push({ ...entry, sent: pulse });
+      if (tail.length > LOG_TAIL_LINES) tail.shift();
+    },
+    end() {
+      const rest = tail.filter((entry) => !entry.sent);
+      const skipped = seen - LOG_HEAD_LINES - pulses - rest.length;
+      if (skipped > 0) send({ stream: "stdout", line: `... [${skipped} lines not shown] ...` });
+      rest.forEach(send);
+    },
+  };
 }
 
 /**
@@ -162,7 +224,13 @@ const bashInput = z.object({
   command: z.string().min(1),
   timeout_seconds: z.number().int().min(1).max(600).optional(),
 });
-const readInput = z.object({ path: z.string().min(1) });
+const readInput = z.object({
+  path: z.string().min(1),
+  /** 1-based line to start at; omit to read from the top. */
+  offset: z.number().int().min(1).optional(),
+  /** How many lines to read; omit to read to the end. */
+  limit: z.number().int().min(1).optional(),
+});
 const writeInput = z.object({ path: z.string().min(1), contents: z.string() });
 const replaceInput = z.object({
   path: z.string().min(1),
@@ -198,10 +266,15 @@ const WORK_TOOLS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: "read_file",
-    description: "Read a file, relative to the repository root.",
+    description:
+      "Read a file, relative to the repository root. A long file comes back with its middle cut; pass offset (1-based line) and limit (line count) to read any part of it.",
     input_schema: {
       type: "object",
-      properties: { path: { type: "string" } },
+      properties: {
+        path: { type: "string" },
+        offset: { type: "integer" },
+        limit: { type: "integer" },
+      },
       required: ["path"],
       additionalProperties: false,
     },
@@ -720,8 +793,25 @@ export async function runCodingLoop(
 
     const results: Array<{ id: string; content: string; isError: boolean }> = [];
 
+    // Reads change nothing, so the ones before this turn's first command or
+    // edit are fetched together; anything after that waits its turn, since it
+    // may need to see the change. runTool never rejects.
+    const prefetched = new Map<string, Promise<ToolOutcome>>();
+    for (const call of turn.calls) {
+      if (call.name === "bash" || call.name === "write_file" || call.name === "str_replace") break;
+      if (call.name === "read_file") prefetched.set(call.id, runTool(call, workspace, ctx));
+    }
+
+    // One diff per file per turn, not one per edit: each is a git process.
+    const edited = new Set<string>();
+    const flushDiffs = async () => {
+      for (const path of edited) await emitDiff(workspace, ctx, path);
+      edited.clear();
+    };
+
     for (const call of turn.calls) {
       if (call.name === "finish") {
+        await flushDiffs();
         const parsed = finishInput.safeParse(call.input);
         if (parsed.success) {
           const blocked = parsed.data.blocked_reason?.trim();
@@ -769,15 +859,19 @@ export async function runCodingLoop(
         continue;
       }
 
-      const outcome = await runTool(call, workspace, ctx);
+      const outcome = await (prefetched.get(call.id) ?? runTool(call, workspace, ctx));
       progress(outcome.label, iteration);
       results.push({ id: call.id, isError: outcome.isError, content: truncate(outcome.content) });
       if (call.name === "write_file" || call.name === "str_replace") {
         const path = (call.input as { path?: unknown } | null)?.path;
-        if (typeof path === "string") changedFiles.add(path);
+        if (typeof path === "string") {
+          changedFiles.add(path);
+          if (!outcome.isError) edited.add(path);
+        }
       }
     }
 
+    await flushDiffs();
     conversation.toolResults(results);
 
     // The person watching can stop the run or steer it between turns.
@@ -836,14 +930,15 @@ async function runTool(
         if (!parsed.success) {
           return invalid(parsed.error.issues[0]?.message, "bash");
         }
-        const result = await workspace.exec(parsed.data.command, {
-          timeoutMs: (parsed.data.timeout_seconds ?? 300) * 1000,
-          signal: ctx.signal,
-          onStdout: (line) =>
-            ctx.emit({ type: "run.log", runId: ctx.runId, stream: "stdout", line }),
-          onStderr: (line) =>
-            ctx.emit({ type: "run.log", runId: ctx.runId, stream: "stderr", line }),
-        });
+        const log = commandLog(ctx);
+        const result = await workspace
+          .exec(parsed.data.command, {
+            timeoutMs: (parsed.data.timeout_seconds ?? 300) * 1000,
+            signal: ctx.signal,
+            onStdout: (line) => log.line({ stream: "stdout", line }),
+            onStderr: (line) => log.line({ stream: "stderr", line }),
+          })
+          .finally(() => log.end());
         const body = [
           `exit ${result.exitCode}${result.timedOut ? " (timed out)" : ""}`,
           result.stdout && `stdout:\n${result.stdout}`,
@@ -866,11 +961,12 @@ async function runTool(
         if (!parsed.success) {
           return invalid(parsed.error.issues[0]?.message, "read_file");
         }
-        const contents = await workspace.readFile(parsed.data.path);
+        const { path, offset, limit } = parsed.data;
+        const contents = await workspace.readFile(path);
         return {
-          content: contents,
+          content: readWindow(contents, offset, limit),
           isError: false,
-          label: `Reading ${parsed.data.path}`,
+          label: offset || limit ? `Reading ${path} from line ${offset ?? 1}` : `Reading ${path}`,
         };
       }
 
@@ -880,7 +976,6 @@ async function runTool(
           return invalid(parsed.error.issues[0]?.message, "write_file");
         }
         await workspace.writeFile(parsed.data.path, parsed.data.contents);
-        await emitDiff(workspace, ctx, parsed.data.path);
         return {
           content: `Wrote ${parsed.data.path}.${outsideNote(workspace, parsed.data.path)}`,
           isError: false,
@@ -914,7 +1009,6 @@ async function runTool(
           path,
           before.slice(0, first) + new_text + before.slice(first + old_text.length),
         );
-        await emitDiff(workspace, ctx, path);
         return { content: `Edited ${path}.${outsideNote(workspace, path)}`, isError: false, label: `Editing ${path}` };
       }
 

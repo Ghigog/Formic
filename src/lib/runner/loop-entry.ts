@@ -42,6 +42,7 @@ import { budgetTokens } from "@/lib/agents/ports";
 import { isSpikeText } from "@/lib/colony/game";
 import { CODER_BRIEF, CHECKPOINT_RULE, withCodingRules } from "@/lib/agents/prompts";
 import { billingFor, spendCeilingNote, turnCeiling } from "@/lib/budget/limits";
+import type { Budget } from "@/lib/budget/budget-for";
 import type { PlanStep } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import { isProviderId, provider, type ProviderId } from "@/lib/llm/providers";
@@ -282,11 +283,27 @@ export async function runLoopEntry(
       notes: ticket.notes ?? [],
     };
 
+    // The loop reads the token budget for two things this entry would otherwise
+    // leave at their defaults: the task budget it hands the model to pace
+    // itself by, and the transcript-growth ceiling that triggers compaction.
+    // Stopping the run on tokens is `charge`'s job, not the loop's, so this is
+    // the same number and nothing else. Minutes stay unset: the deadline timer
+    // above is the time stop, and a second one would trip first with a plainer
+    // message.
+    const budget: Budget = {
+      minutes: { value: null, requested: null, clamp: null },
+      tokens: { value: maxTokens ?? null, requested: null, clamp: null },
+      attempts: { value: null, requested: null, clamp: null },
+      maxCents: maxCents ?? null,
+      enforcement: { minutes: "between-turns", tokens: "job", attempts: "between-turns" },
+    };
+
     const ctx: AgentContext = {
       runId,
       projectId: payload.projectId ?? "",
       signal: controller.signal,
       emit,
+      budget,
       // The loop charges each turn as it happens, not the running total, so
       // the ceiling is checked against what this run has spent altogether.
       charge: async (usage) => {
