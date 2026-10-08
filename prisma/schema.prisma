@@ -605,3 +605,19 @@ model Queen {
   @@index([projectId])
   @@map("queen")
 }
+
+/// What the host has done for this deployment, per UTC day, as Formic counts
+/// it. Read back over a rolling window to keep a Hobby-plan host under its
+/// allowance. See src/lib/usage/governor.ts.
+model PlatformUsage {
+  /// "YYYY-MM-DD", UTC.
+  day       String   @id
+  requests  BigInt   @default(0)
+  /// Wall-clock milliseconds a function was kept busy.
+  busyMs    BigInt   @default(0)
+  /// Milliseconds of CPU a function spent.
+  cpuMs     BigInt   @default(0)
+  updatedAt DateTime @default(now())
+
+  @@map("platform_usage")
+}

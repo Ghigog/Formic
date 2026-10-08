@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const POLL_MS = 20_000;
+const POLL_MS = 60_000;
 const SEEN_KEY = "formic.assistant-seen";
 
 export interface ProjectActivity {
@@ -60,7 +60,9 @@ export function useAssistantActivity(): { count: number; unseen: string[] } {
       if (live && found) setUnseen(found);
     };
     void load().then(apply);
-    const timer = setInterval(() => void load().then(apply), POLL_MS);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void load().then(apply);
+    }, POLL_MS);
     return () => {
       live = false;
       clearInterval(timer);

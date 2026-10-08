@@ -1,9 +1,11 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HIDDEN_GRACE_MS, useBoardEvents } from "./use-board-events";
+import { HIDDEN_GRACE_MS, REFUSED_RETRY_MS, useBoardEvents } from "./use-board-events";
 
 class FakeSource {
   static all: FakeSource[] = [];
+  static CLOSED = 2;
+  readyState = 0;
   closed = false;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
@@ -73,5 +75,30 @@ describe("useBoardEvents", () => {
     act(() => vi.advanceTimersByTime(HIDDEN_GRACE_MS));
     expect(FakeSource.all).toHaveLength(1);
     expect(FakeSource.all[0]!.closed).toBe(false);
+  });
+
+  it("does not show a planned close after a pause frame as reconnecting, and keeps its cursor", () => {
+    const { result } = renderHook(() => useBoardEvents(() => {}));
+    const source = FakeSource.all[0]!;
+    act(() => source.onopen?.());
+    act(() => source.emit("stream.pause", 57));
+    act(() => source.onerror?.());
+    expect(result.current).toBe("open");
+
+    // A reconnect that then fails is a real error.
+    act(() => source.onerror?.());
+    expect(result.current).toBe("reconnecting");
+  });
+
+  it("opens again, later, a stream the server refused", () => {
+    renderHook(() => useBoardEvents(() => {}));
+    const refused = FakeSource.all[0]!;
+    refused.readyState = FakeSource.CLOSED;
+    act(() => refused.onerror?.());
+    act(() => vi.advanceTimersByTime(REFUSED_RETRY_MS - 1));
+    expect(FakeSource.all).toHaveLength(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(FakeSource.all).toHaveLength(2);
+    expect(refused.closed).toBe(true);
   });
 });

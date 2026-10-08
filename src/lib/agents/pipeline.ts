@@ -31,6 +31,7 @@ import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { directoryTree } from "@/lib/vcs/repositories";
+import { holdFunction } from "@/lib/usage/governor";
 
 /**
  * Wires agents to column transitions.
@@ -784,10 +785,15 @@ export function fromStream<T>(work: () => T): T {
  * runs detached as before.
  */
 export function launch(work: () => Promise<void>, label: string): void {
-  const run = () =>
-    work().catch((e) => {
-      console.error(`[formic] ${label} failed:`, e);
-    });
+  const run = () => {
+    // What keeps a function alive is counted against the host's allowance.
+    const release = holdFunction();
+    return work()
+      .catch((e) => {
+        console.error(`[formic] ${label} failed:`, e);
+      })
+      .finally(release);
+  };
 
   if (streaming.getStore()) {
     void run();

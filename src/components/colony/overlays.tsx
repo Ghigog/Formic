@@ -111,7 +111,9 @@ function useShowcase(epicId: string | undefined): { text: string | null; offered
         })
         .catch(() => undefined);
     void look();
-    const timer = setInterval(() => void look(), 4000);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void look();
+    }, 8000);
     return () => {
       live = false;
       clearInterval(timer);

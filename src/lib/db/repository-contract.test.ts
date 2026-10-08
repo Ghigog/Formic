@@ -23,6 +23,23 @@ function contract(name: string, make: () => Repository) {
       repo = make();
     });
 
+    it("adds host usage per day and totals it from a given day on", async () => {
+      // A random year far in the past, so this case meets neither a real
+      // deployment's days nor an earlier run's on a database that is kept.
+      const year = 1000 + Math.floor(Math.random() * 900);
+      const day = (n: number) => `${year}-0${n}-01`;
+      const tag = Math.floor(Math.random() * 1_000);
+      await repo.addPlatformUsage(day(1), { requests: 5, busyMs: 100, cpuMs: 1 }, day(1));
+      await repo.addPlatformUsage(day(2), { requests: tag, busyMs: 0, cpuMs: 0 }, day(2));
+      const totals = await repo.addPlatformUsage(day(2), { requests: 3, busyMs: 50, cpuMs: 2 }, day(1));
+      expect(totals.today).toMatchObject({ requests: tag + 3, busyMs: 50, cpuMs: 2 });
+      expect(totals.window.requests).toBeGreaterThanOrEqual(tag + 8);
+      // Days before the one given are left out.
+      const later = await repo.addPlatformUsage(day(1), { requests: 0, busyMs: 0, cpuMs: 0 }, day(2));
+      expect(later.today.requests).toBe(5);
+      expect(later.window.requests).toBeGreaterThanOrEqual(tag + 3);
+    });
+
     const project = () =>
       repo.ensureProject({ ownerId: null, repoFullName: `contract/${randomUUID()}`, baseBranch: "main" });
 

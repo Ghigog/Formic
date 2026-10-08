@@ -30,7 +30,7 @@ export function useSentinels(): SentinelsApi | null {
   return useContext(Ctx);
 }
 
-const POLL_MS = 1500;
+const POLL_MS = 5_000;
 
 export function SentinelsProvider({
   initial,
@@ -55,7 +55,9 @@ export function SentinelsProvider({
 
   useEffect(() => {
     if (!anyRunning) return;
-    const id = setInterval(() => void refresh(), POLL_MS);
+    const id = setInterval(() => {
+      if (document.visibilityState !== "hidden") void refresh();
+    }, POLL_MS);
     return () => clearInterval(id);
   }, [anyRunning, refresh]);
 

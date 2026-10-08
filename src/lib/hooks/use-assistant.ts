@@ -38,7 +38,7 @@ async function send(url: string, method: string, body?: unknown): Promise<State>
 }
 
 /** How often to look for an answer while one is being written. */
-const POLL_MS = 2_000;
+const POLL_MS = 4_000;
 
 /**
  * The board's assistant conversation. Loads when first opened, and while an
@@ -79,6 +79,7 @@ export function useAssistant(enabled: boolean) {
   useEffect(() => {
     if (!pending) return;
     const timer = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
       void send("/api/assistant", "GET")
         .then((next) => alive.current && setState(next))
         .catch(() => undefined);

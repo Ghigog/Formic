@@ -71,7 +71,10 @@ beforeEach(() => {
   mocks.latestEventSeq.mockClear();
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 describe("GET /api/events", () => {
   it("answers 204 when there is no board, so the browser stops reconnecting", async () => {
@@ -140,5 +143,26 @@ describe("GET /api/events", () => {
     let done = false;
     while (!done) done = (await reader.read()).done;
     expect(done).toBe(true);
+  });
+
+  describe("on a serverless host", () => {
+    beforeEach(() => vi.stubEnv("FORMIC_EVENTS", "poll"));
+
+    it("answers at once with what was missed, then a pause frame that moves the cursor", async () => {
+      mocks.replay.mockResolvedValueOnce([event(4), event(5)]);
+      const res = await open({ "last-event-id": "3" }).response;
+
+      const body = await res.text();
+      expect(body.startsWith("retry: 15000\n\n")).toBe(true);
+      expect(body).toContain("id: 4\nevent: card.moved");
+      expect(body.trimEnd().endsWith('id: 5\nevent: stream.pause\ndata: {"seq":5}')).toBe(true);
+      expect(mocks.subscribers).toHaveLength(0);
+    });
+
+    it("starts a fresh connection's cursor at the log's head", async () => {
+      const body = await (await open().response).text();
+      expect(mocks.replay).not.toHaveBeenCalled();
+      expect(body).toContain("id: 10\nevent: stream.pause");
+    });
   });
 });

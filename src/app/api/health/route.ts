@@ -18,6 +18,7 @@ import { mergeTarget, usingMockVcs } from "@/lib/vcs";
 import { configWarnings, env } from "@/lib/secrets/env";
 import { redact } from "@/lib/secrets/redact";
 import { reportAllowed } from "@/lib/runner/runner";
+import { usageReport } from "@/lib/usage/governor";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,8 @@ type FullReport = {
   mergeTarget: string;
   activeRuns: number;
   activeSandboxes: number;
+  /** What Formic has counted of the host's allowance (src/lib/usage/governor.ts). */
+  hostUsage: Awaited<ReturnType<typeof usageReport>>;
   warnings: string[];
 };
 
@@ -160,6 +163,7 @@ async function fullReport(): Promise<FullReport> {
     mergeTarget: mergeTarget(config.GITHUB_BASE_BRANCH),
     activeRuns: activeRunCount(),
     activeSandboxes: activeSandboxCount(),
+    hostUsage: await usageReport(),
     warnings,
   };
 }

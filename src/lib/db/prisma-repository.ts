@@ -35,6 +35,8 @@ import type {
   AuditReport,
   AuditResult,
   QueenRecord,
+  PlatformUsage,
+  PlatformUsageTotals,
 } from "./repository";
 import type {
   AgentRole,
@@ -964,6 +966,37 @@ export class PrismaRepository implements Repository {
       select: { seq: true },
     });
     return Number(row.seq);
+  }
+
+  async addPlatformUsage(day: string, delta: PlatformUsage, sinceDay: string): Promise<PlatformUsageTotals> {
+    const db = prisma();
+    // One atomic increment, so instances counting at once never lose a count.
+    await db.$executeRaw`
+      INSERT INTO "platform_usage" ("day", "requests", "busyMs", "cpuMs", "updatedAt")
+      VALUES (${day}, ${delta.requests}, ${Math.round(delta.busyMs)}, ${Math.round(delta.cpuMs)}, now())
+      ON CONFLICT ("day") DO UPDATE SET
+        "requests" = "platform_usage"."requests" + EXCLUDED."requests",
+        "busyMs" = "platform_usage"."busyMs" + EXCLUDED."busyMs",
+        "cpuMs" = "platform_usage"."cpuMs" + EXCLUDED."cpuMs",
+        "updatedAt" = now()`;
+    const from = day < sinceDay ? day : sinceDay;
+    const rows = await db.platformUsage.findMany({ where: { day: { gte: from } } });
+    const of = (r: (typeof rows)[number]) => ({
+      requests: Number(r.requests),
+      busyMs: Number(r.busyMs),
+      cpuMs: Number(r.cpuMs),
+    });
+    const window = { requests: 0, busyMs: 0, cpuMs: 0 };
+    let today = { requests: 0, busyMs: 0, cpuMs: 0 };
+    for (const r of rows) {
+      const u = of(r);
+      if (r.day === day) today = u;
+      if (r.day < sinceDay) continue;
+      window.requests += u.requests;
+      window.busyMs += u.busyMs;
+      window.cpuMs += u.cpuMs;
+    }
+    return { today, window };
   }
 
   async latestEventSeq(projectId: string): Promise<number> {

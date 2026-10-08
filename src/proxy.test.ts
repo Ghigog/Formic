@@ -4,9 +4,11 @@ import { proxy } from "./proxy";
 import { SESSION_COOKIE, signSession } from "@/lib/auth/session";
 import { repository } from "@/lib/db";
 import { CURRENT_TERMS_VERSION } from "@/lib/auth/user";
+import { dailyBudget, resetGovernorForTests, utcDay } from "@/lib/usage/governor";
 
 beforeEach(() => {
   globalThis.__formicMemoryStore = undefined;
+  resetGovernorForTests();
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -102,5 +104,52 @@ describe("proxy", () => {
     const res = await proxy(request("/settings", await signSession(user.id)));
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe("http://localhost/legal?next=%2Fsettings");
+  });
+});
+
+describe("proxy, at the host allowance", () => {
+  async function spend(share: number) {
+    vi.stubEnv("FORMIC_USAGE_LIMITS", "on");
+    const today = utcDay(Date.now());
+    await repository().addPlatformUsage(
+      today,
+      { requests: dailyBudget().requests * share, busyMs: 0, cpuMs: 0 },
+      today,
+    );
+  }
+
+  function post(path: string) {
+    return new NextRequest(`http://localhost${path}`, { method: "POST" });
+  }
+
+  it("lets everything through with room to spare", async () => {
+    await spend(0.1);
+    expect((await proxy(post("/api/tickets"))).headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("near the line, refuses new work and the event stream but still serves reads and finishing work", async () => {
+    await spend(0.9);
+    const refused = await proxy(post("/api/tickets"));
+    expect(refused.status).toBe(503);
+    expect(refused.headers.get("retry-after")).toMatch(/^\d+$/);
+    expect(await refused.json()).toMatchObject({ allowance: "heavy" });
+    expect((await proxy(request("/api/events"))).status).toBe(503);
+
+    for (const res of [
+      await proxy(request("/api/board")),
+      await proxy(request("/")),
+      await proxy(post("/api/webhooks/github")),
+      await proxy(post("/api/runner/report")),
+    ]) {
+      expect(res.headers.get("x-middleware-next")).toBe("1");
+    }
+  });
+
+  it("at the line, refuses everything but the health check", async () => {
+    await spend(1);
+    expect((await proxy(request("/api/board"))).status).toBe(503);
+    expect((await proxy(request("/"))).status).toBe(503);
+    expect((await proxy(post("/api/webhooks/github"))).status).toBe(503);
+    expect((await proxy(request("/api/health"))).headers.get("x-middleware-next")).toBe("1");
   });
 });

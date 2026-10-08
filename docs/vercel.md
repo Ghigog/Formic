@@ -107,6 +107,39 @@ point at the old one.
   server only matters in local mode; signed in with GitHub, agents run on each
   person's own key on their template.
 
+## Staying under the Hobby allowance
+
+Hobby has no overage: going past an allowance pauses the whole account. Two
+things keep Formic under it.
+
+**It costs less.** The board's event stream does not hold a function open on
+Vercel: each connection sends what changed and ends, and the browser comes
+back 15 seconds later (`STREAM_POLL_MS`). A held stream kept a function alive
+for as long as any board was open, which spent the month's function time in
+days. The background pollers also stop while a tab is hidden.
+
+**It refuses work before the line** (`src/lib/usage/governor.ts`). Formic
+counts requests, function time and CPU per UTC day in the `platform_usage`
+table, and judges them over a rolling 30 days, so it holds whatever day
+Vercel's own period starts on. It budgets 70% of each allowance, and a day
+may spend a tenth of the 30-day budget.
+
+| Used | What happens |
+| :-- | :-- |
+| under 85% | Everything works. |
+| 85% | New work is refused (changes through the API, the event stream) with a 503. Reading the board, webhooks and runner reports still work, so runs already going can finish. |
+| 100% | Everything but `/api/health` answers 503 until 00:00 UTC. |
+
+`/api/health` (signed in) shows the counts under `hostUsage`. Compare them
+with the Usage dashboard now and then; Formic's figures are its own estimate,
+not Vercel's meter.
+
+| Variable | Default | |
+| :-- | :-- | :-- |
+| `FORMIC_USAGE_LIMITS` | on on Vercel | `on` or `off` to force it either way. |
+| `FORMIC_USAGE_SHARE` | `0.7` | The share of each Hobby allowance to budget. Lower it if the dashboard runs ahead of `hostUsage`. |
+| `FORMIC_EVENTS` | `poll` on Vercel | `stream` holds the event stream open, as on a server. |
+
 ## After a merge
 
 The `smoke-test` workflow waits for the deploy to serve the merged commit,

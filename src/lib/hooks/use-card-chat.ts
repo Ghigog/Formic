@@ -34,7 +34,7 @@ async function send(url: string, method: string, body?: unknown): Promise<State>
 }
 
 /** How often to look for an answer while one is being written. */
-const POLL_MS = 2_000;
+const POLL_MS = 4_000;
 
 /**
  * One card's chat with the agent that runs its column now: loads when the
@@ -76,6 +76,7 @@ export function useCardChat(kind: "epic" | "ticket", cardId: string | null) {
   useEffect(() => {
     if (!pending || !url) return;
     const timer = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
       void send(url, "GET")
         .then((next) => alive.current && setState(next))
         .catch(() => undefined);
