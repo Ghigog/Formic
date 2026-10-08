@@ -162,8 +162,14 @@ describe("the loop entry a GitHub Actions job runs", () => {
     // next run has the files and what they were for nowhere.
     const inJob = fakeProvider([finish()]);
     vi.stubEnv("FORMIC_PROGRESS", "/home/runner/work/_temp/formic-progress.md");
-    await runLoopEntry(payload(), { workspace: new MemoryWorkspace(), log: () => {} });
-    vi.unstubAllEnvs();
+    try {
+      await runLoopEntry(payload(), { workspace: new MemoryWorkspace(), log: () => {} });
+    } finally {
+      // Unstub always, so a thrown run cannot leak the checkpoint rule into the
+      // run after this one. setup-env strips FORMIC_PROGRESS before any test
+      // runs, so restoring here puts back "unset", never a job's real value.
+      vi.unstubAllEnvs();
+    }
 
     const onItsOwn = fakeProvider([finish()]);
     await runLoopEntry(payload(), { workspace: new MemoryWorkspace(), log: () => {} });

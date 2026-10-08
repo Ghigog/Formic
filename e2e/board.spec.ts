@@ -320,9 +320,13 @@ test("a dropped card stays where it was dropped while the server answers", async
   expect(first, "the demo board should start with a card in Backlog").toBeTruthy();
 
   await withCardReturned(page, first!, async () => {
-    // Hold the answer back, so the gap between drop and reply is visible.
+    // Hold the answer back until the test lets it go, so every look below
+    // happens while the server has not answered. A fixed delay raced the
+    // looks against it: on a slow runner the reply could land first.
+    let answer!: () => void;
+    const held = new Promise<void>((res) => (answer = res));
     await page.route("**/api/transitions", async (r) => {
-      await new Promise((res) => setTimeout(res, 1200));
+      await held;
       await r.continue().catch(() => undefined);
     });
     const drag = dragCardTo(page, first!, "To Do");
@@ -331,7 +335,9 @@ test("a dropped card stays where it was dropped while the server answers", async
       expect(await columnOf(page, first!)).toBe("To Do");
       await page.waitForTimeout(200);
     }
+    answer();
     await drag;
+    expect(await columnOf(page, first!)).toBe("To Do");
     await page.unrouteAll({ behavior: "wait" });
   });
 });

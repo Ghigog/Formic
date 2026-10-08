@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
+import { closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
 import { resetMergeLanes } from "./lane";
 import { repository } from "@/lib/db";
 import { subscribe } from "@/lib/events/bus";
@@ -123,5 +123,50 @@ describe("a merge that fails", () => {
         blockedReason: expect.stringContaining("Required review missing."),
       }),
     );
+  });
+});
+
+describe("closeAlreadyDone", () => {
+  /** A ticket already in progress with an open pull request, in the given state. */
+  async function seedTicketWithPull(pullState: { merged: boolean; state: "open" | "closed" }) {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const [ticket] = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "T",
+        description: "d",
+        acceptanceCriteria: ["c"],
+        fileScope: ["src"],
+        storyPoints: 3,
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    const pull = await vcs.openPullRequest({ headBranch: "t-1", baseBranch: "main", title: "T", body: "" });
+    await repo.updateTicket(ticket!.id, { status: "running", stage: 3, prNumber: pull.number });
+    MockVcsClient.setPull(pull.number, pullState);
+    return { ticketId: ticket!.id };
+  }
+
+  it("marks the ticket merged when its open pull request was already merged", async () => {
+    const { ticketId } = await seedTicketWithPull({ merged: true, state: "closed" });
+    const ticket = (await repository().ticketDetail(ticketId))!;
+
+    await closeAlreadyDone(PROJECT, ticket, { summary: "already there", detail: "found in place" });
+
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("merged");
+  });
+
+  it("blocks the ticket when its pull request was closed without merging", async () => {
+    const { ticketId } = await seedTicketWithPull({ merged: false, state: "closed" });
+    const ticket = (await repository().ticketDetail(ticketId))!;
+
+    await closeAlreadyDone(PROJECT, ticket, { summary: "already there", detail: "found in place" });
+
+    const after = (await repository().ticketDetail(ticketId))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("closed without merging");
   });
 });

@@ -226,6 +226,101 @@ describe("the assistant", () => {
   });
 });
 
+describe("a turn's edges", () => {
+  it("hands a bad tool call back to the model as an error, not a crash", async () => {
+    await useAgent("groq");
+    const sent = fakeProvider([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          call("c1", "read_file", { path: "/missing.md" }),
+          call("c2", "list_files", { prefix: "/nowhere/" }),
+          call("c3", "delete_repo", {}),
+          call("c4", "read_file", {}),
+        ],
+      },
+      { role: "assistant", content: "I could not find it." },
+    ]);
+    const pending = await ask("What is in missing.md?");
+
+    await answer(PROJECT, pending.id);
+
+    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "I could not find it." });
+    const results = (sent[1]!.messages as Array<{ role: string; content: string }>)
+      .filter((m) => m.role === "tool")
+      .map((m) => m.content);
+    expect(results[0]).toBe("Error: /missing.md does not exist on main.");
+    expect(results[1]).toBe("No files there.");
+    expect(results[2]).toBe("Error: There is no tool called delete_repo.");
+    expect(results[3]).toMatch(/path/);
+  });
+
+  it("fails with what it read and its last error when it runs out of rounds", async () => {
+    await useAgent("groq");
+    fakeProvider(
+      Array.from({ length: 16 }, (_, i) => ({
+        role: "assistant",
+        content: null,
+        tool_calls: [call(`c${i}`, "read_file", { path: "nope.md" })],
+      })),
+    );
+    const pending = await ask("Keep looking.");
+
+    await answer(PROJECT, pending.id);
+
+    const done = await reload(pending.id);
+    expect(done.status).toBe("failed");
+    expect(done.content).toContain("nope.md does not exist");
+  });
+
+  it("tells the model what the person decided about its earlier proposals", async () => {
+    await useAgent("groq");
+    const repo = repository();
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "Plan it." });
+    const earlier = await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "", status: "pending" });
+    await repo.updateAssistantMessage(earlier.id, {
+      content: "Here is a plan.",
+      status: "done",
+      proposals: [
+        { summary: "Add the export Epic", action: { type: "create_backlog_item", title: "x", description: "y" }, state: "dismissed" },
+      ] as never,
+    });
+    const sent = fakeProvider([{ role: "assistant", content: "Understood." }]);
+    const pending = await ask("Why not?");
+
+    await answer(PROJECT, pending.id);
+
+    const history = (sent[0]!.messages as Array<{ role: string; content: string }>).map((m) => m.content);
+    expect(history).toContain("Here is a plan.\n[Proposed: Add the export Epic. The person dismissed it.]");
+  });
+
+  it("turns a provider failure into a failed message the person can read", async () => {
+    await useAgent("groq");
+    vi.stubGlobal("fetch", async () => {
+      throw new Error("provider is down");
+    });
+    const pending = await ask("Hello?");
+
+    await answer(PROJECT, pending.id);
+
+    const done = await reload(pending.id);
+    expect(done.status).toBe("failed");
+    expect(done.content).toMatch(/provider is down/);
+  });
+
+  it("shows a CLI run's failure, or its silence, as the reply", async () => {
+    const failed = await ask("One?");
+    const silent = await ask("Two?");
+
+    await finishCliAnswer(failed.id, null, "The run was cancelled.");
+    await finishCliAnswer(silent.id, "   ");
+
+    expect(await reload(failed.id)).toMatchObject({ status: "failed", content: "The run was cancelled." });
+    expect(await reload(silent.id)).toMatchObject({ status: "failed", content: "The agent finished without an answer." });
+  });
+});
+
 describe("applying an approved proposal", () => {
   it("puts a planned Epic and its tickets straight into To Do", async () => {
     const checked = checkAction({

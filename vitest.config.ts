@@ -38,6 +38,18 @@ export default defineConfig({
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/generated/**"],
       reporter: ["json-summary", "text-summary"],
+      // A floor, not a target. CI runs with `--coverage`; a change that drops
+      // below these — even one that only removes a test's reach — turns the
+      // `test` check red. Set just under where the suite is today so a small
+      // legitimate drift does not fail it, while a real regression still does.
+      // (The Postgres half of the contract suite only runs in CI, so these are
+      // measured against the in-memory half and CI has more headroom still.)
+      thresholds: {
+        lines: 71,
+        statements: 68,
+        branches: 64,
+        functions: 67,
+      },
     },
     projects: [
       {

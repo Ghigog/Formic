@@ -689,6 +689,278 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("people", () => {
+      const person = () =>
+        repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+
+      it("counts a person once, however often they sign in", async () => {
+        const before = await repo.countUsers();
+        const profile = { githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null };
+        const first = await repo.upsertUser(profile);
+        const again = await repo.upsertUser({ ...profile, name: "Renamed" });
+
+        expect(again.id).toBe(first.id);
+        expect(again.name).toBe("Renamed");
+        expect(await repo.countUsers()).toBe(before + 1);
+      });
+
+      it("stores sealed secrets, leaves the ones not named, and clears with null", async () => {
+        const user = await person();
+        const expires = new Date("2026-10-01T00:00:00Z");
+
+        await repo.updateUser(user.id, { githubTokenCipher: "gh", githubTokenExpiresAt: expires, e2bKeyCipher: "e2b", e2bKeyHint: "…1234" });
+        const cleared = await repo.updateUser(user.id, { e2bKeyCipher: null, e2bKeyHint: null });
+
+        expect(cleared).toMatchObject({ githubTokenCipher: "gh", githubTokenExpiresAt: expires, e2bKeyCipher: null, e2bKeyHint: null });
+        expect(await repo.userById(user.id)).toEqual(cleared);
+      });
+
+      it("stores the run time budget columns as given", async () => {
+        const user = await person();
+
+        const flat = await repo.updateRunTimeBudget(user.id, {
+          runTimeBudgetMode: "FLAT_MINUTES",
+          runTimeBudgetFlatMinutes: 30,
+          runTimeBudgetPerPointMinutes: null,
+          runTimeBudgetPerPointRate: null,
+        });
+        expect(flat).toMatchObject({ runTimeBudgetMode: "FLAT_MINUTES", runTimeBudgetFlatMinutes: 30 });
+
+        const perPoint = await repo.updateRunTimeBudget(user.id, {
+          runTimeBudgetMode: "PER_POINT",
+          runTimeBudgetFlatMinutes: null,
+          runTimeBudgetPerPointMinutes: { "1": 5, "3": 12 },
+          runTimeBudgetPerPointRate: 4,
+        });
+        expect(perPoint).toMatchObject({
+          runTimeBudgetMode: "PER_POINT",
+          runTimeBudgetFlatMinutes: null,
+          runTimeBudgetPerPointMinutes: { "1": 5, "3": 12 },
+          runTimeBudgetPerPointRate: 4,
+        });
+      });
+
+      it("records the terms version and signs out everywhere by bumping the session version", async () => {
+        const user = await person();
+        const { sessionVersion } = user;
+        expect(user.termsAcceptedVersion).toBeNull();
+
+        expect((await repo.acceptTerms(user.id, "2026-09")).termsAcceptedVersion).toBe("2026-09");
+        expect((await repo.bumpSessionVersion(user.id)).sessionVersion).toBe(sessionVersion + 1);
+        expect((await repo.bumpSessionVersion(user.id)).sessionVersion).toBe(sessionVersion + 2);
+      });
+
+      it("adds fallback sandbox seconds within a month, and starts over in a new one", async () => {
+        const user = await person();
+
+        await repo.addFallbackSandboxSeconds(user.id, 60, "2026-09");
+        expect(await repo.addFallbackSandboxSeconds(user.id, 30, "2026-09")).toMatchObject({
+          fallbackSandboxSeconds: 90,
+          fallbackSandboxMonth: "2026-09",
+        });
+        expect(await repo.addFallbackSandboxSeconds(user.id, 10, "2026-10")).toMatchObject({
+          fallbackSandboxSeconds: 10,
+          fallbackSandboxMonth: "2026-10",
+        });
+      });
+
+      it("lists someone's projects, with the unowned ones only when asked", async () => {
+        const user = await person();
+        const mine = await repo.ensureProject({ ownerId: user.id, repoFullName: `contract/${randomUUID()}`, baseBranch: "main" });
+        const unowned = await project();
+
+        const own = (await repo.listProjects({ ownerId: user.id, includeUnowned: false })).map((p) => p.id);
+        const all = (await repo.listProjects({ ownerId: user.id, includeUnowned: true })).map((p) => p.id);
+
+        expect(own).toEqual([mine.id]);
+        expect(all).toEqual(expect.arrayContaining([mine.id, unowned.id]));
+      });
+
+      it("gives the first person every unowned project and preset", async () => {
+        const unowned = await project();
+        const preset = await repo.savePreset({ ownerId: null, provider: "anthropic", name: `contract-${randomUUID()}`, model: "m", prompt: "", apiKeyCipher: null, apiKeyHint: null });
+        const user = await person();
+
+        await repo.adoptUnowned(user.id);
+
+        expect((await repo.projectById(unowned.id))?.ownerId).toBe(user.id);
+        const presets = await repo.listPresets({ ownerId: user.id, includeUnowned: false });
+        expect(presets.map((p) => p.id)).toContain(preset.id);
+      });
+
+      it("removes a person with everything they own", async () => {
+        const user = await person();
+        const owned = await repo.ensureProject({ ownerId: user.id, repoFullName: `contract/${randomUUID()}`, baseBranch: "main" });
+        const epic = await repo.createEpic({ projectId: owned.id, title: "E", rawRequest: "E", position: 1 });
+        await repo.createTickets([ticket(epic.id, "D-1")]);
+        const preset = await repo.savePreset({ ownerId: user.id, provider: "anthropic", name: `contract-${randomUUID()}`, model: "m", prompt: "", apiKeyCipher: null, apiKeyHint: null });
+        const bystander = await project();
+
+        await repo.deleteUser(user.id);
+
+        expect(await repo.userById(user.id)).toBeNull();
+        expect(await repo.projectById(owned.id)).toBeNull();
+        expect(await repo.projectOfCard(epic.id)).toBeNull();
+        expect(await repo.presetForRun(preset.id)).toBeNull();
+        expect(await repo.projectById(bystander.id)).not.toBeNull();
+      });
+
+      it("has a demo board, the same one every time", async () => {
+        const a = await repo.defaultProject();
+        const b = await repo.defaultProject();
+        expect(b.id).toBe(a.id);
+        expect(a.ownerId).toBeNull();
+      });
+    });
+
+    describe("card details", () => {
+      it("keeps archived tickets off the board and in the archive", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [a, b] = await repo.createTickets([ticket(epic.id, "A-1"), ticket(epic.id, "A-2", { position: 2 })]);
+
+        await repo.updateTicket(a!.id, { archived: true });
+
+        expect((await repo.archivedTickets(p.id)).map((c) => c.id)).toEqual([a!.id]);
+        const board = (await repo.boardCards(p.id)).map((c) => c.id);
+        expect(board).toContain(b!.id);
+        expect(board).not.toContain(a!.id);
+      });
+
+      it("numbers standalone tickets per project, never twice", async () => {
+        const p = await project();
+        const other = await project();
+
+        const first = await repo.nextStandaloneTicketNumber(p.id);
+        const second = await repo.nextStandaloneTicketNumber(p.id);
+
+        expect(second).toBe(first + 1);
+        expect(await repo.nextStandaloneTicketNumber(other.id)).toBe(1);
+      });
+
+      it("adds dependencies between tickets made separately", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [a] = await repo.createTickets([ticket(epic.id, "B-1")]);
+        const [b] = await repo.createTickets([ticket(epic.id, "B-2", { position: 2 })]);
+
+        await repo.addDependencies([{ ticketId: b!.id, dependsOnTicketId: a!.id }]);
+
+        expect((await repo.boardCards(p.id)).find((c) => c.id === b!.id)!.dependsOn).toEqual([a!.id]);
+      });
+
+      it("hides a standalone Epic from the board, and shows it again when it is not", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const read = async () => (await repo.boardCards(p.id)).find((c) => c.id === epic.id);
+
+        await repo.setStandalone(epic.id, true);
+        expect(await read()).toBeUndefined();
+        await repo.setStandalone(epic.id, false);
+        expect((await read())?.standalone).toBe(false);
+      });
+
+      it("records where a card was rerouted from and why, and clears it", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "R-1")]);
+        const read = async (id: string) => {
+          const c = (await repo.boardCards(p.id)).find((x) => x.id === id)!;
+          return [c.rerouteFrom, c.rerouteReason];
+        };
+
+        await repo.setReroute(t!.id, "ticket", { from: "in_progress", reason: "No agent" });
+        await repo.setReroute(epic.id, "epic", { from: "backlog", reason: "No PRD" });
+        expect(await read(t!.id)).toEqual(["in_progress", "No agent"]);
+        expect(await read(epic.id)).toEqual(["backlog", "No PRD"]);
+
+        await repo.setReroute(t!.id, "ticket", null);
+        expect(await read(t!.id)).toEqual([null, null]);
+      });
+
+      it("says which project an attachment is in, and its request until a card claims it", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const requestId = randomUUID();
+        const a = await repo.createAttachment({ projectId: p.id, requestId, filename: "a.png", mimeType: "image/png", kind: "image", size: 1, bytes: new Uint8Array([1]) });
+
+        expect(await repo.attachmentScope(a.id)).toEqual({ projectId: p.id, requestId });
+        await repo.claimAttachments(requestId, { epicId: epic.id });
+        expect(await repo.attachmentScope(a.id)).toEqual({ projectId: p.id, requestId: null });
+        expect(await repo.attachmentScope(randomUUID())).toBeNull();
+      });
+    });
+
+    describe("run time", () => {
+      it("counts run time and failed attempts, and finds runs left live", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "M-1")]);
+        const ids: string[] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+        const [failed, blocked, succeeded, live] = ids;
+        for (const id of ids) {
+          await repo.startRun({ id: id!, role: "coder", epicId: epic.id, ticketId: t!.id, model: null, sandboxId: null });
+        }
+        const end = { error: null, tokensIn: 0, tokensOut: 0, costCents: 0 };
+        await repo.finishRun(failed!, { ...end, status: "failed" });
+        await repo.finishRun(blocked!, { ...end, status: "blocked" });
+        await repo.finishRun(succeeded!, { ...end, status: "succeeded" });
+
+        const stats = await repo.epicRunStats(epic.id);
+        expect(stats.attempts).toBe(2);
+        expect(stats.elapsedMs).toBeGreaterThanOrEqual(0);
+        expect(await repo.ticketRunMs(t!.id)).toBeGreaterThanOrEqual(0);
+        expect(await repo.ticketRunMs(randomUUID())).toBe(0);
+
+        const later = (await repo.unfinishedRuns(new Date(Date.now() + 60_000))).map((r) => r.id);
+        expect(later.filter((id) => ids.includes(id))).toEqual([live]);
+        const earlier = (await repo.unfinishedRuns(new Date(Date.now() - 60_000))).map((r) => r.id);
+        expect(earlier).not.toContain(live);
+      });
+    });
+
+    describe("assistant and audit bookkeeping", () => {
+      it("keeps a board's assistant conversation in order, and clears only that board's", async () => {
+        const p = await project();
+        const other = await project();
+        const q = await repo.addAssistantMessage({ projectId: p.id, role: "user", content: "Q" });
+        const a = await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "A" });
+        const kept = await repo.addAssistantMessage({ projectId: other.id, role: "user", content: "Other" });
+
+        expect((await repo.assistantMessages(p.id)).map((m) => m.content)).toEqual(["Q", "A"]);
+        expect(await repo.assistantMessage(a.id)).toMatchObject({ id: a.id, role: "assistant", content: "A" });
+        expect(await repo.assistantMessage(randomUUID())).toBeNull();
+
+        await repo.clearAssistant(p.id);
+
+        expect(await repo.assistantMessages(p.id)).toEqual([]);
+        expect(await repo.assistantMessage(q.id)).toBeNull();
+        expect((await repo.assistantMessages(other.id)).map((m) => m.id)).toEqual([kept.id]);
+      });
+
+      it("records and clears the job an audit runs in", async () => {
+        const p = await project();
+        const audit = await repo.startAudit(p.id, "tester");
+
+        await repo.setAuditJob(audit.id, "job-1", "claude");
+        expect((await repo.auditsFor(p.id))[0]).toMatchObject({ runnerJob: "job-1", runnerAgent: "claude" });
+        await repo.setAuditJob(audit.id, null, null);
+        expect((await repo.auditsFor(p.id))[0]).toMatchObject({ runnerJob: null, runnerAgent: null });
+      });
+
+      it("marks a preset out of usage until a time, and clears it", async () => {
+        const preset = await repo.savePreset({ ownerId: null, provider: "anthropic", name: `contract-${randomUUID()}`, model: "m", prompt: "", apiKeyCipher: null, apiKeyHint: null });
+        const scope = { ownerId: randomUUID(), includeUnowned: true };
+        const read = async () => (await repo.listPresets(scope)).find((x) => x.id === preset.id)!;
+        const until = new Date("2026-10-08T12:00:00Z");
+
+        await repo.setPresetLimit(preset.id, { until, note: "Out of tokens" });
+        expect(await read()).toMatchObject({ limitedUntil: until.toISOString(), limitNote: "Out of tokens" });
+        await repo.setPresetLimit(preset.id, null);
+        expect(await read()).toMatchObject({ limitedUntil: null, limitNote: null });
+      });
+    });
+
     describe("webhook deliveries", () => {
       it("claims a delivery once", async () => {
         const key = `delivery-${randomUUID()}`;
@@ -703,6 +975,19 @@ contract("memory", () => {
   globalThis.__formicMemoryStore = undefined;
   return new MemoryRepository();
 });
+
+// The Postgres half must actually run when a database is available: a green run
+// that silently skipped it says nothing about the store production uses. The CI
+// test job sets REQUIRE_TEST_DATABASE, so there a missing TEST_DATABASE_URL is a
+// failure, not a skip; elsewhere it is a visible warning rather than a quiet
+// `skipIf`. Not keyed on CI: a Formic agent job also runs in GitHub Actions,
+// with CI set and no database, and its test runs must still pass.
+if (!TEST_DATABASE_URL) {
+  const note =
+    "TEST_DATABASE_URL is unset: the Postgres half of the repository contract suite is skipped. Set it (CI does) to run PrismaRepository against a real database.";
+  if (process.env.REQUIRE_TEST_DATABASE) throw new Error(`${note} This run requires it.`);
+  console.warn(note);
+}
 
 describe.skipIf(!TEST_DATABASE_URL)("on Postgres", () => {
   beforeAll(() => {
