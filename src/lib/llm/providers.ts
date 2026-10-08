@@ -211,7 +211,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   },
   {
     id: "gemini-cli",
-    label: "Gemini CLI (free tier)",
+    label: "Gemini CLI",
     kind: "cli",
     cli: "gemini",
     secretName: "FORMIC_GEMINI_API_KEY",

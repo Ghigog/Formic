@@ -43,6 +43,13 @@ function windowLabel({ kind, since, timezone }: TokenWindowView): string {
   return kind === "reset" ? `since you reset it on ${date}` : `since ${date}`;
 }
 
+/** The provider picker: plans first, then API keys, each A to Z. */
+const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
+const PROVIDER_GROUPS = [
+  { label: "Your plan (runs in GitHub Actions)", providers: PROVIDERS.filter((p) => p.kind === "cli").sort(byLabel) },
+  { label: "API key", providers: PROVIDERS.filter((p) => p.kind !== "cli").sort(byLabel) },
+];
+
 type LimitAxis = "minutes" | "tokens" | "attempts";
 
 const OVERRIDE_AXES: Array<{ id: LimitAxis; label: string }> = [
@@ -314,11 +321,15 @@ export function AgentEditor({
               }}
               className={`${field} h-9`}
             >
-              {PROVIDERS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                  {p.freeTier ? " · free tier" : ""}
-                </option>
+              {PROVIDER_GROUPS.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.providers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                      {p.freeTier ? " · free tier" : ""}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             <span className="text-muted text-[11px]">{info.note}</span>
