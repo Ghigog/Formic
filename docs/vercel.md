@@ -116,7 +116,10 @@ things keep Formic under it.
 Vercel: each connection sends what changed and ends, and the browser comes
 back 15 seconds later (`STREAM_POLL_MS`). A held stream kept a function alive
 for as long as any board was open, which spent the month's function time in
-days. The background pollers also stop while a tab is hidden.
+days. The background pollers also stop while a tab is hidden, and the checks
+a watched board drives (finished runs, open pull requests, idle cards), which
+are the fallback behind GitHub's webhooks, run at most every two minutes.
+Active CPU is the allowance that runs out first.
 
 **It refuses work before the line** (`src/lib/usage/governor.ts`). Formic
 counts requests, function time and CPU per UTC day in the `platform_usage`

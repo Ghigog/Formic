@@ -23,6 +23,7 @@ import {
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inMergeLane, inTicketLane } from "./lane";
+import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
 import { cliPrompt, showcaseSummaries, startCliAnswer, startJobRun } from "@/lib/runner/runner";
@@ -330,7 +331,7 @@ const SWEEP_EVERY_MS = 30_000;
  */
 export async function sweepOpenPullRequests(projectId: string): Promise<void> {
   const now = Date.now();
-  if (now - (lastSwept.get(projectId) ?? 0) < SWEEP_EVERY_MS) return;
+  if (now - (lastSwept.get(projectId) ?? 0) < sweepInterval(SWEEP_EVERY_MS)) return;
   lastSwept.set(projectId, now);
 
   const repo = repository();

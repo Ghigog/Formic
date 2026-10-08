@@ -5,6 +5,7 @@ import { launch, runProductAgent } from "@/lib/agents/pipeline";
 import { recoverStaleAssistantAnswers, recoverStaleCardChats } from "@/lib/agents/recovery";
 import { prdSchema } from "@/lib/domain/entities";
 import { startQueued } from "./queue";
+import { sweepInterval } from "@/lib/usage/governor";
 
 /**
  * A card that says an agent is on it must have one. Moving a card writes its
@@ -62,7 +63,7 @@ export async function sweepIdleCards(projectId: string): Promise<void> {
  * where a start is not lost between instances.
  */
 export async function restartIdleCards(projectId: string, now = Date.now()): Promise<void> {
-  if (now - (lastSwept.get(projectId) ?? 0) < SWEEP_EVERY_MS) return;
+  if (now - (lastSwept.get(projectId) ?? 0) < sweepInterval(SWEEP_EVERY_MS)) return;
   lastSwept.set(projectId, now);
 
   // Queued tickets start when the one ahead stops; that start can be lost too.

@@ -89,6 +89,18 @@ export function shortLivedStreams(): boolean {
   return !!process.env.VERCEL;
 }
 
+/**
+ * How often a background check driven by a watched board may run. The
+ * checks (finished runs, open pull requests, idle cards) are the fallback
+ * behind GitHub's webhooks, and each costs queries and CPU, so on a
+ * serverless host, where CPU is the allowance that runs out first, they
+ * run at most every SERVERLESS_SWEEP_MS.
+ */
+export const SERVERLESS_SWEEP_MS = 120_000;
+export function sweepInterval(ms: number): number {
+  return shortLivedStreams() ? Math.max(ms, SERVERLESS_SWEEP_MS) : ms;
+}
+
 function share(): number {
   const n = Number(process.env.FORMIC_USAGE_SHARE);
   return Number.isFinite(n) && n > 0 && n <= 1 ? n : DEFAULT_SHARE;
@@ -149,6 +161,18 @@ let lastFlush = 0;
 let lastCpu = process.cpuUsage();
 let flushing: Promise<void> | null = null;
 let failedAt = 0;
+
+/**
+ * Writes this instance's counts on a timer while it runs. Started once per
+ * server process (src/instrumentation.ts), so the CPU a route handler spends
+ * is counted even in an instance the proxy never runs in.
+ */
+let clock: ReturnType<typeof setInterval> | null = null;
+export function startUsageClock(): void {
+  if (clock || !governorEnabled()) return;
+  clock = setInterval(() => void flush(false), FLUSH_EVERY_MS);
+  clock.unref?.();
+}
 
 /** Counts one request through the proxy. */
 export function countRequest(): void {

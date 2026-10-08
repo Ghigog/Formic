@@ -7,6 +7,7 @@ import {
   dailyBudget,
   holdFunction,
   resetGovernorForTests,
+  sweepInterval,
   standingOf,
   usageReport,
   usedShare,
@@ -123,5 +124,15 @@ describe("holdFunction", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("sweepInterval", () => {
+  it("slows the board's background checks to every two minutes on a serverless host only", () => {
+    vi.stubEnv("FORMIC_EVENTS", "poll");
+    expect(sweepInterval(15_000)).toBe(120_000);
+    expect(sweepInterval(300_000)).toBe(300_000);
+    vi.stubEnv("FORMIC_EVENTS", "stream");
+    expect(sweepInterval(15_000)).toBe(15_000);
   });
 });
