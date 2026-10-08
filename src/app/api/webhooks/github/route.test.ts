@@ -54,6 +54,20 @@ beforeEach(() => {
 });
 
 describe("POST /api/webhooks/github", () => {
+  it("refuses every delivery with 503 when no webhook secret is configured", async () => {
+    vi.unstubAllEnvs();
+    resetEnvCache();
+
+    const res = await POST(delivery("push", { ref: "refs/heads/main" }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      ok: false,
+      reason: "GITHUB_WEBHOOK_SECRET is not configured.",
+    });
+    expect(mocks.launched).toEqual([]);
+  });
+
   it("refuses a delivery it cannot prove came from GitHub", async () => {
     const res = await POST(delivery("issues", { action: "labeled", issue: LABELLED }, false));
 

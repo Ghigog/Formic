@@ -10,8 +10,9 @@ that can fail for the right reason.**
 | End to end | Chromium | `e2e/*.spec.ts` | `npm run test:e2e` |
 
 `npm test` runs the first two. They need no server, no database and no
-network, and finish in a few seconds. `npm run test:e2e` builds the app and
-starts it, so it costs about a minute.
+network, and finish in about twenty seconds — most of it building a fresh jsdom
+for each component test file, not running the assertions. `npm run test:e2e`
+builds the app and starts it, so it costs about a minute.
 
 ## The split is by file extension, not by directory
 
@@ -140,6 +141,15 @@ another (`needs`) has no check run until it starts, and until then the reviewer
 sees only the green ones. A newer push
 to a pull request cancels the run on the older commit; the reviewer already
 treats a cancelled check as "not a result" and only reacts to the current head.
+
+The `test` job runs with `--coverage`, and `vitest.config.ts` sets a floor for
+each metric just under where the suite is today: dropping below it fails the
+check. It also runs the repository contract suite's Postgres half, and sets
+`REQUIRE_TEST_DATABASE` so a missing `TEST_DATABASE_URL` fails the run instead
+of skipping it. Locally the Postgres half is skipped with a warning unless you
+point `TEST_DATABASE_URL` at a database with the schema pushed. Playwright does
+not retry in CI: a test that only passes on its second try is reported, not
+hidden.
 
 ## Gaps worth filling
 

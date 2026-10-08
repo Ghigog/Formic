@@ -37,12 +37,14 @@ export default defineConfig({
   fullyParallel: false,
 
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // No retries: a test that passes on its second try is a flaky test, and a
+  // retry would turn it green instead of reporting it.
+  retries: 0,
   reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
 
   use: {
     baseURL,
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
     screenshot: "only-on-failure",
     launchOptions,
   },
