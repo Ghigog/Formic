@@ -7,7 +7,7 @@
 set -euo pipefail
 
 DUMP="${1:-}"
-DATABASE_URL="${DATABASE_URL:-${POSTGRES_URL_NON_POOLING:-${POSTGRES_URL:-}}}"
+DATABASE_URL="${DATABASE_URL_UNPOOLED:-${DATABASE_URL:-${POSTGRES_URL_NON_POOLING:-${POSTGRES_URL:-}}}}"
 
 if [ -z "$DUMP" ] || [ -z "$DATABASE_URL" ]; then
   echo "Usage: DATABASE_URL=postgresql://... $0 <dump-file>" >&2

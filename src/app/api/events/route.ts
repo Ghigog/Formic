@@ -7,6 +7,7 @@ import { activeProject } from "@/lib/board/project";
 import { collectCliRuns } from "@/lib/runner/runner";
 import { sweepOpenPullRequests } from "@/lib/review/pipeline";
 import { sweepIdleCards } from "@/lib/board/idle";
+import { realtimeConfig, realtimeTopic } from "@/lib/events/realtime";
 import { holdFunction, shortLivedStreams } from "@/lib/usage/governor";
 
 export const dynamic = "force-dynamic";
@@ -65,7 +66,8 @@ function sweep(projectId: string): Promise<unknown> {
 const frame = (e: SequencedEvent) =>
   `id: ${e.seq}\nevent: ${e.event.type}\ndata: ${JSON.stringify(e)}\n\n`;
 
-async function shortLived(projectId: string, cursor: number): Promise<Response> {
+/** What happened after the cursor, and the cursor to come back with. */
+async function look(projectId: string, cursor: number) {
   const fresh = !(Number.isFinite(cursor) && cursor > 0);
   const events = fresh ? [] : await replay(projectId, cursor);
   const through = fresh
@@ -80,12 +82,31 @@ async function shortLived(projectId: string, cursor: number): Promise<Response> 
     // Outside a request (tests) there is no `after()` scope.
     void sweep(projectId);
   }
+  return { events, through };
+}
 
+async function shortLived(projectId: string, cursor: number): Promise<Response> {
+  const { events, through } = await look(projectId, cursor);
   const body =
     `retry: ${STREAM_POLL_MS}\n\n` +
     events.map(frame).join("") +
     `id: ${through}\nevent: ${STREAM_PAUSE_EVENT}\ndata: ${JSON.stringify({ seq: through })}\n\n`;
   return new Response(body, { headers: STREAM_HEADERS });
+}
+
+/**
+ * `?format=json`: one look, for a board told of changes by Supabase Realtime
+ * (src/lib/events/realtime.ts). It also carries the board's channel, or null
+ * when Realtime isn't set up and the board should stream instead.
+ */
+async function lookJson(projectId: string, cursor: number): Promise<Response> {
+  const { events, through } = await look(projectId, cursor);
+  const config = realtimeConfig();
+  const realtime = config ? { ...config, topic: await realtimeTopic(projectId) } : null;
+  return Response.json(
+    { events, through, realtime },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -98,6 +119,7 @@ export async function GET(req: NextRequest) {
     req.nextUrl.searchParams.get("lastEventId");
   const cursor = lastEventId ? Number(lastEventId) : 0;
 
+  if (req.nextUrl.searchParams.get("format") === "json") return lookJson(project.id, cursor);
   if (shortLivedStreams()) return shortLived(project.id, cursor);
 
   const encoder = new TextEncoder();

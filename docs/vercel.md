@@ -121,6 +121,23 @@ a watched board drives (finished runs, open pull requests, idle cards), which
 are the fallback behind GitHub's webhooks, run at most every two minutes.
 Active CPU is the allowance that runs out first.
 
+**Boards are told of changes instead of asking** (`src/lib/events/realtime.ts`).
+With Supabase Realtime set up, the server broadcasts one empty "changed"
+message on a board's channel whenever something happens, and the board
+fetches what changed once. An idle board then costs a look every two minutes
+(`REALTIME_FALLBACK_MS`) instead of every 15 seconds. No board data goes
+through Supabase: the channel name is signed with `FORMIC_SECRET`, and only a
+signed-in person is told it. It turns on when these are set (the Supabase
+integration for Vercel sets them; redeploy after adding them, since the
+browser's allowed addresses are fixed at build time):
+
+| Variable | |
+| :-- | :-- |
+| `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`) | `https://<project>.supabase.co` |
+| `SUPABASE_ANON_KEY` (or `NEXT_PUBLIC_SUPABASE_ANON_KEY`, or a publishable key) | The public key the browser connects with. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional. The server sends with it when set. |
+| `FORMIC_REALTIME=off` | Turns it off; boards poll every 15 seconds. |
+
 **It refuses work before the line** (`src/lib/usage/governor.ts`). Formic
 counts requests, function time and CPU per UTC day in the `platform_usage`
 table, and judges them over a rolling 30 days, so it holds whatever day

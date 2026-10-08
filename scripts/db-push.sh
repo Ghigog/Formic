@@ -21,9 +21,13 @@ if [ -n "${VERCEL_ENV:-}" ] && [ "${VERCEL_ENV}" != "production" ]; then
   exit 0
 fi
 
-# Migrations need a direct connection: Supabase's pooled URLs (pgbouncer,
-# transaction mode) don't support the advisory locks `migrate deploy` needs.
-if [ -n "${POSTGRES_URL_NON_POOLING:-}" ]; then
+# Migrations need a direct connection: pooled URLs (Supabase's pgbouncer,
+# Neon's pooler, both in transaction mode) don't support the advisory locks
+# `migrate deploy` needs. Neon's Vercel integration names its direct one
+# DATABASE_URL_UNPOOLED; Supabase's, POSTGRES_URL_NON_POOLING.
+if [ -n "${DATABASE_URL_UNPOOLED:-}" ]; then
+  export DATABASE_URL="$DATABASE_URL_UNPOOLED"
+elif [ -n "${POSTGRES_URL_NON_POOLING:-}" ]; then
   export DATABASE_URL="$POSTGRES_URL_NON_POOLING"
 fi
 

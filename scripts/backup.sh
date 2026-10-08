@@ -8,7 +8,7 @@
 # runbook's restore drill against staging. See docs/runbook.md.
 set -euo pipefail
 
-DATABASE_URL="${DATABASE_URL:-${POSTGRES_URL_NON_POOLING:-${POSTGRES_URL:-}}}"
+DATABASE_URL="${DATABASE_URL_UNPOOLED:-${DATABASE_URL:-${POSTGRES_URL_NON_POOLING:-${POSTGRES_URL:-}}}}"
 if [ -z "$DATABASE_URL" ]; then
   echo "Usage: DATABASE_URL=postgresql://... $0 [output-file]" >&2
   exit 1
