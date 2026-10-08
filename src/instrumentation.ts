@@ -10,6 +10,10 @@ import type { Instrumentation } from "next";
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Host usage is counted in every process, not only where the proxy runs.
+  const { startUsageClock } = await import("@/lib/usage/governor");
+  startUsageClock();
+
   const { reconcileOrphanedRuns } = await import("@/lib/agents/recovery");
   try {
     const reclaimed = await reconcileOrphanedRuns();

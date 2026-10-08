@@ -91,7 +91,9 @@ export function EpicDrawer({
   const working = !!detail?.epic?.agentRole;
   useEffect(() => {
     if (!working) return;
-    const timer = setInterval(() => void load(), 10_000);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void load();
+    }, 15_000);
     return () => clearInterval(timer);
   }, [working, load]);
 

@@ -425,6 +425,21 @@ export interface PresetRecord {
   apiKeyHint?: string | null;
 }
 
+/** What the host has done for this deployment, as Formic counts it. */
+export interface PlatformUsage {
+  /** Requests served. */
+  requests: number;
+  /** Wall-clock milliseconds a function was kept busy. */
+  busyMs: number;
+  /** Milliseconds of CPU a function spent. */
+  cpuMs: number;
+}
+
+export interface PlatformUsageTotals {
+  today: PlatformUsage;
+  window: PlatformUsage;
+}
+
 export interface Repository {
   /** The demo board: the first unowned project, created on demand. */
   defaultProject(): Promise<ProjectSummary>;
@@ -750,4 +765,11 @@ export interface Repository {
    * redelivery a no-op rather than a second fix commit.
    */
   claimDelivery(key: string): Promise<boolean>;
+
+  /**
+   * Adds to the host usage counted for one UTC day ("YYYY-MM-DD"), and
+   * returns that day's total with the total of every day from `sinceDay` on.
+   * See src/lib/usage/governor.ts.
+   */
+  addPlatformUsage(day: string, delta: PlatformUsage, sinceDay: string): Promise<PlatformUsageTotals>;
 }

@@ -212,3 +212,14 @@ export interface SequencedEvent {
   at: string;
   event: FormicEvent;
 }
+
+/**
+ * Not a FormicEvent: the last frame of an event-stream connection the server
+ * ends on purpose (see src/app/api/events/route.ts). Its id moves the
+ * browser's cursor even when nothing happened, and it tells the client the
+ * close that follows is planned, not a dropped connection.
+ */
+export const STREAM_PAUSE_EVENT = "stream.pause";
+
+/** How long a board waits between short-lived event-stream connections. */
+export const STREAM_POLL_MS = 15_000;

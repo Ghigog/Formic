@@ -108,6 +108,7 @@ import {
   type RunnerMode,
 } from "./workflow";
 import { liveToken } from "@/lib/llm/cline-session";
+import { sweepInterval } from "@/lib/usage/governor";
 
 export { ALREADY_DONE_TRAILER, USAGE_TRAILER };
 
@@ -1415,7 +1416,7 @@ const LOOK_EVERY_MS = 15_000;
  */
 export async function collectCliRuns(projectId: string): Promise<void> {
   const now = Date.now();
-  if (now - (lastLooked.get(projectId) ?? 0) < LOOK_EVERY_MS) return;
+  if (now - (lastLooked.get(projectId) ?? 0) < sweepInterval(LOOK_EVERY_MS)) return;
   lastLooked.set(projectId, now);
 
   const repo = repository();

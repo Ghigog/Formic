@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
+import { STREAM_PAUSE_EVENT, type FormicEvent, type SequencedEvent } from "@/lib/domain/events";
 
 /**
  * Subscribes to the project event stream.
@@ -15,7 +15,14 @@ import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
  * it is shown again, so nothing is missed. An open stream is a server holding
  * a connection and polling the event log for as long as it lasts, and a board
  * left in a background tab all day costs as much as one being watched.
+ *
+ * On a serverless host the server ends each connection on purpose after a
+ * pause frame, and the browser reconnects a little later (see
+ * src/app/api/events/route.ts). That close is not shown as reconnecting.
  */
+
+/** How long to wait before opening a stream the server refused outright. */
+export const REFUSED_RETRY_MS = 5 * 60_000;
 
 /** How long a tab stays hidden before its stream is closed: a quick tab switch keeps it. */
 export const HIDDEN_GRACE_MS = 60_000;
@@ -34,6 +41,9 @@ export function useBoardEvents(
 
   const cursor = useRef(0);
   const visible = useVisibleAfterGrace(HIDDEN_GRACE_MS);
+  // Bumped to open again a stream the server refused (a 503 while the host
+  // allowance is nearly spent), which EventSource never retries by itself.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!enabled || !visible) return;
@@ -81,15 +91,40 @@ export function useBoardEvents(
     ];
     for (const t of types) source.addEventListener(t, onMessage as EventListener);
 
+    // The close after a pause frame is planned; only the error it raises is ignored.
+    let paused = false;
+    const onPause = (raw: MessageEvent<string>) => {
+      try {
+        const { seq } = JSON.parse(raw.data) as { seq: number };
+        cursor.current = Math.max(cursor.current, seq);
+      } catch {
+        // The browser still keeps the frame's id as its cursor.
+      }
+      paused = true;
+    };
+    source.addEventListener(STREAM_PAUSE_EVENT, onPause as EventListener);
+
+    let retry: ReturnType<typeof setTimeout> | undefined;
     source.onopen = () => setState("open");
-    source.onerror = () => setState("reconnecting");
+    source.onerror = () => {
+      if (paused) {
+        paused = false;
+        return;
+      }
+      setState("reconnecting");
+      if (source.readyState === EventSource.CLOSED) {
+        retry = setTimeout(() => setAttempt((n) => n + 1), REFUSED_RETRY_MS);
+      }
+    };
 
     return () => {
+      clearTimeout(retry);
       for (const t of types)
         source.removeEventListener(t, onMessage as EventListener);
+      source.removeEventListener(STREAM_PAUSE_EVENT, onPause as EventListener);
       source.close();
     };
-  }, [enabled, visible]);
+  }, [enabled, visible, attempt]);
 
   return state;
 }

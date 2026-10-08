@@ -29,6 +29,8 @@ import type {
   AuditResult,
   CardChatMessage,
   QueenRecord,
+  PlatformUsage,
+  PlatformUsageTotals,
 } from "./repository";
 import type {
   AgentPreset,
@@ -98,6 +100,8 @@ interface AttachmentRow {
 }
 
 interface Store {
+  /** Host usage by UTC day, "YYYY-MM-DD". */
+  platformUsage: Map<string, PlatformUsage>;
   /** The project the demo board belongs to, and the fallback. */
   project: ProjectSummary;
   projects: Map<string, ProjectSummary>;
@@ -175,6 +179,7 @@ function store(): Store {
     existing.epicJobAgents ??= new Map();
     existing.attachments ??= new Map();
     existing.audits ??= [];
+    existing.platformUsage ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -204,6 +209,7 @@ function store(): Store {
     queens: new Map(),
     queensSpent: new Map(),
     events: [],
+    platformUsage: new Map(),
     runs: new Map(),
     deliveries: new Set(),
     presets: new Map(),
@@ -928,6 +934,24 @@ export class MemoryRepository implements Repository {
       )
       .slice(-limit)
       .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
+  }
+
+  async addPlatformUsage(day: string, delta: PlatformUsage, sinceDay: string): Promise<PlatformUsageTotals> {
+    const days = store().platformUsage;
+    const was = days.get(day) ?? { requests: 0, busyMs: 0, cpuMs: 0 };
+    days.set(day, {
+      requests: was.requests + delta.requests,
+      busyMs: was.busyMs + delta.busyMs,
+      cpuMs: was.cpuMs + delta.cpuMs,
+    });
+    const window = { requests: 0, busyMs: 0, cpuMs: 0 };
+    for (const [d, u] of days) {
+      if (d < sinceDay) continue;
+      window.requests += u.requests;
+      window.busyMs += u.busyMs;
+      window.cpuMs += u.cpuMs;
+    }
+    return { today: { ...days.get(day)! }, window };
   }
 
   async latestEventSeq(projectId: string): Promise<number> {

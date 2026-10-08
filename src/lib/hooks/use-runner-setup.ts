@@ -39,7 +39,9 @@ export function useRunnerSetup(subscribe: Subscribe): {
   const waiting = setup?.state === "waiting";
   useEffect(() => {
     if (!waiting) return;
-    const timer = setInterval(() => void check(), POLL_MS);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void check();
+    }, POLL_MS);
     const onVisible = () => {
       if (document.visibilityState === "visible") void check();
     };
