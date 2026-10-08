@@ -80,3 +80,46 @@ describe("the coding loop's limits, between turns", () => {
     expect(error).toContain("in-process hard rail");
   });
 });
+
+describe("context compaction", () => {
+  it("collapses the transcript once it grows past the ceiling, so the run keeps going", async () => {
+    // Each turn's input is reported larger than the last, as a transcript that
+    // only ever grows would be. The loop should collapse it back down instead
+    // of resending it until the token ceiling trips.
+    const messageCounts: number[] = [];
+    let sent = 0;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      if (!init?.body) return Response.json({ data: [] });
+      sent += 1;
+      const body = JSON.parse(init.body as string) as { messages: unknown[] };
+      messageCounts.push(body.messages.length);
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: `call_${sent}`,
+                  type: "function",
+                  function: { name: "read_file", arguments: JSON.stringify({ path: "a.ts" }) },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: { prompt_tokens: 100_000 + sent * 60_000, completion_tokens: 5 },
+      });
+    });
+
+    await run({});
+
+    // The transcript grew beyond two messages, then was compacted back to
+    // system + one user turn (length 2).
+    expect(sent).toBeGreaterThan(3);
+    expect(Math.max(...messageCounts)).toBeGreaterThan(2);
+    expect(Math.min(...messageCounts)).toBe(2);
+  });
+});

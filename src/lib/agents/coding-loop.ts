@@ -67,6 +67,13 @@ const MAX_TOOL_OUTPUT = 16_000;
 const MAX_THOUGHT = 4_000;
 
 /**
+ * A turn's transcript growth past its opening prompt that triggers compaction.
+ * Below this the re-sent transcript is cheap enough that summarizing costs more
+ * than it saves; above it every turn re-sends enough to matter.
+ */
+const COMPACT_GROWTH_TOKENS = 96_000;
+
+/**
  * Asked of every coding agent, so the person watching a ticket can follow
  * it: the plan up front, kept current, and a word before each action.
  */
@@ -104,6 +111,51 @@ export function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
   const half = Math.floor(limit / 2);
   const dropped = text.length - limit;
   return `${text.slice(0, half)}\n\n... [${dropped} characters omitted] ...\n\n${text.slice(-half)}`;
+}
+
+/**
+ * The transcript growth that triggers compaction: a fixed ceiling for a run
+ * with no token budget, and a quarter of the budget when one is set, so the
+ * run compacts and keeps going rather than spending its whole budget resending
+ * a bloated transcript.
+ */
+function compactThreshold(tokens: number | null | undefined): number {
+  const budgetCeiling = tokens == null ? Infinity : Math.max(1, Math.floor(tokens / 4));
+  return Math.min(COMPACT_GROWTH_TOKENS, budgetCeiling);
+}
+
+/**
+ * What the model is left with when its transcript is compacted: the plan it
+ * sent and the files it changed, plus a pointer to re-read what it needs. The
+ * detailed tool calls and outputs that came before are gone.
+ */
+function compactionSummary(
+  plan: readonly PlanStep[],
+  changed: ReadonlySet<string>,
+  turns: number,
+): string {
+  const planLines =
+    plan.length === 0
+      ? "  (none sent yet)"
+      : plan
+          .map(
+            (s) =>
+              `  - [${s.status === "done" ? "x" : s.status === "in_progress" ? "~" : " "}] ${s.step}`,
+          )
+          .join("\n");
+  const changedLines =
+    changed.size === 0
+      ? ""
+      : `\nFiles changed so far:\n${[...changed].map((p) => `- ${p}`).join("\n")}`;
+  return [
+    `The first ${turns} turns of this run were compacted to stay within budget: their tool calls, outputs and thinking are no longer in the conversation. The plan below is the source of truth, and you can re-read any file you need.`,
+    "",
+    "Current plan:",
+    planLines,
+    changedLines,
+    "",
+    "Continue from here and call finish with a summary once the change is complete.",
+  ].join("\n");
 }
 
 const bashInput = z.object({
@@ -338,6 +390,13 @@ interface Conversation {
    * the tool results' message: two user messages in a row are refused.
    */
   note(text: string): void;
+  /**
+   * Replaces the transcript with the opening prompt plus `summary`, dropping
+   * the tool calls, outputs and thinking that accumulated before it. Used when
+   * the transcript grows past a ceiling, so the run keeps working instead of
+   * re-sending everything and tripping the token budget.
+   */
+  compact(summary: string): void;
 }
 
 function addUsage(a: Usage, b: Usage): Usage {
@@ -443,6 +502,12 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
         messages.push({ role: "user", content: text });
       }
     },
+    compact(summary) {
+      // The opening prompt and the summary become one user turn: two user
+      // messages in a row are refused.
+      messages.length = 0;
+      messages.push({ role: "user", content: `${input.prompt}\n\n${summary}` });
+    },
   };
 }
 
@@ -522,6 +587,10 @@ function openAiConversation(
     note(text) {
       messages.push({ role: "user", content: text });
     },
+    compact(summary) {
+      messages.length = 1; // keep the system prompt
+      messages.push({ role: "user", content: `${input.prompt}\n\n${summary}` });
+    },
   };
 }
 
@@ -551,6 +620,10 @@ export async function runCodingLoop(
   let plan: PlanStep[] = [];
   /** The turn the plan last moved, or was last asked about. */
   let planTurn = 0;
+  /** The first turn's input tokens: the prompt, tools and system, sent every turn. */
+  let baselineIn: number | null = null;
+  /** Paths written or edited, kept in the summary when the transcript is compacted. */
+  const changedFiles = new Set<string>();
 
   const fail = (error: string, blocked = false): AgentOutcome<LoopResult> => ({
     ok: false,
@@ -699,6 +772,10 @@ export async function runCodingLoop(
       const outcome = await runTool(call, workspace, ctx);
       progress(outcome.label, iteration);
       results.push({ id: call.id, isError: outcome.isError, content: truncate(outcome.content) });
+      if (call.name === "write_file" || call.name === "str_replace") {
+        const path = (call.input as { path?: unknown } | null)?.path;
+        if (typeof path === "string") changedFiles.add(path);
+      }
     }
 
     conversation.toolResults(results);
@@ -719,6 +796,19 @@ export async function runCodingLoop(
     if (stale >= PLAN_NUDGE_TURNS) {
       planTurn = iteration;
       conversation.note(planNudge(plan, stale));
+    }
+
+    // A transcript that has grown far past its opening prompt is compacted
+    // here, so the run keeps working instead of re-sending everything and
+    // tripping the token ceiling. Growth is measured on the last turn's input
+    // tokens, which is the transcript exactly as it was sent.
+    const grown = baselineIn === null ? 0 : turn.usage.tokensIn - baselineIn;
+    if (baselineIn === null) {
+      baselineIn = turn.usage.tokensIn;
+    } else if (grown > compactThreshold(ctx.budget?.tokens.value)) {
+      progress("Compacting the conversation to stay within budget", iteration);
+      conversation.compact(compactionSummary(plan, changedFiles, iteration));
+      baselineIn = null;
     }
   }
 
