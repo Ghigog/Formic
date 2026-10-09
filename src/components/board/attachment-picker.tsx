@@ -182,7 +182,6 @@ export function AttachmentPicker({
             type="file"
             multiple
             accept={ALLOWED_ATTACHMENT_TYPES.join(",")}
-            capture="environment"
             className="sr-only"
             onChange={(e) => {
               addFiles(e.target.files);
