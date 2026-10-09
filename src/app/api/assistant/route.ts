@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { launch } from "@/lib/agents/pipeline";
-import { answer } from "@/lib/assistant/turn";
+import { answer, cancelPending } from "@/lib/assistant/turn";
 import { collectCliRuns } from "@/lib/runner/runner";
 import { currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
@@ -67,6 +67,14 @@ export async function POST(req: Request) {
   });
   launch(() => answer(projectId, reply.id), `assistant answer ${reply.id}`);
   return Response.json(await state(projectId));
+}
+
+/** Stops waiting for the pending answer; a new question is accepted after. */
+export async function PATCH() {
+  const found = await board();
+  if ("error" in found) return found.error;
+  await cancelPending(found.project.id);
+  return Response.json(await state(found.project.id));
 }
 
 /** Starts the conversation over. */

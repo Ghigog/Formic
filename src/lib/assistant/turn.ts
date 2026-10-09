@@ -192,6 +192,9 @@ async function finish(
   messageId: string,
   update: { content: string; proposals?: AssistantProposal[]; status: "done" | "failed" },
 ): Promise<void> {
+  // The person may have stopped this answer while it was being written.
+  const current = await repository().assistantMessage(messageId);
+  if (!current || current.status !== "pending") return;
   await repository().updateAssistantMessage(messageId, {
     content: update.content,
     proposals: update.proposals ?? [],
@@ -199,6 +202,21 @@ async function finish(
     runnerJob: null,
     runnerAgent: null,
   });
+}
+
+/** The person stopped waiting: pending answers become failed, so a new question is accepted. */
+export async function cancelPending(projectId: string): Promise<void> {
+  const repo = repository();
+  for (const m of await repo.assistantMessages(projectId)) {
+    if (m.status !== "pending") continue;
+    await repo.updateAssistantMessage(m.id, {
+      content: "Stopped.",
+      proposals: [],
+      status: "failed",
+      runnerJob: null,
+      runnerAgent: null,
+    });
+  }
 }
 
 /**
