@@ -152,6 +152,21 @@ describe("NewItemDialog", () => {
   });
 
   describe("attachments", () => {
+    it("opens the file dialog from the Attach files button, without forcing the camera", async () => {
+      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+      const input = screen.getByLabelText("Attach files");
+      const opened = vi.fn((e: Event) => e.preventDefault());
+      input.addEventListener("click", opened);
+
+      await userEvent.setup().click(screen.getByText("Attach files"));
+
+      expect(opened).toHaveBeenCalledTimes(1);
+      // `capture` makes mobile browsers open the camera, and some desktop
+      // ones skip the file dialog; only "Take a photo" should ask for it.
+      expect(input).not.toHaveAttribute("capture");
+    });
+
     it("attaches a file, lists it with a filename, and removes it", async () => {
       serveUploads();
       render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
