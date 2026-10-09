@@ -26,14 +26,23 @@ interface State {
   messages: AssistantMessageView[];
 }
 
-async function send(url: string, method: string, body?: unknown): Promise<State> {
+async function send(
+  url: string,
+  method: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<State> {
   const res = await fetch(url, {
     method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    signal,
+    headers:
+      body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => null)) as (State & { error?: string }) | null;
-  if (!res.ok || !data) throw new Error(data?.error ?? "That did not go through. Try again.");
+  const data = (await res.json().catch(() => null)) as
+    (State & { error?: string }) | null;
+  if (!res.ok || !data)
+    throw new Error(data?.error ?? "That did not go through. Try again.");
   return data;
 }
 
@@ -50,6 +59,8 @@ export function useAssistant(enabled: boolean) {
   const loaded = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
+  const [asking, setAsking] = useState(false);
+  const asked = useRef<AbortController | null>(null);
 
   useEffect(() => {
     alive.current = true;
@@ -65,6 +76,7 @@ export function useAssistant(enabled: boolean) {
       setError(null);
       setState(next);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
@@ -75,9 +87,10 @@ export function useAssistant(enabled: boolean) {
     void run(() => send("/api/assistant", "GET"));
   }, [enabled, run]);
 
-  const pending = state.messages.some((m) => m.status === "pending");
+  const answering = state.messages.some((m) => m.status === "pending");
+  const pending = asking || answering;
   useEffect(() => {
-    if (!pending) return;
+    if (!answering) return;
     const timer = setInterval(() => {
       if (document.visibilityState === "hidden") return;
       void send("/api/assistant", "GET")
@@ -85,35 +98,62 @@ export function useAssistant(enabled: boolean) {
         .catch(() => undefined);
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [pending]);
+  }, [answering]);
 
   const ask = useCallback(
-    (text: string) => run(() => send("/api/assistant", "POST", { text })),
+    async (text: string) => {
+      const controller = new AbortController();
+      asked.current = controller;
+      setAsking(true);
+      try {
+        await run(() =>
+          send("/api/assistant", "POST", { text }, controller.signal),
+        );
+      } finally {
+        if (asked.current === controller) asked.current = null;
+        if (alive.current && !controller.signal.aborted) setAsking(false);
+      }
+    },
     [run],
   );
-  const clear = useCallback(() => run(() => send("/api/assistant", "DELETE")), [run]);
+  /** Give up on the question being sent; the box is free again at once. */
+  const stop = useCallback(() => {
+    asked.current?.abort();
+    asked.current = null;
+    setAsking(false);
+    setError(null);
+  }, []);
+  const clear = useCallback(
+    () => run(() => send("/api/assistant", "DELETE")),
+    [run],
+  );
   const decide = useCallback(
     (messageId: string, index: number, decision: "apply" | "dismiss") =>
-      run(() => send("/api/assistant/proposals", "POST", { messageId, index, decision })),
+      run(() =>
+        send("/api/assistant/proposals", "POST", {
+          messageId,
+          index,
+          decision,
+        }),
+      ),
     [run],
   );
-  const setAgent = useCallback(
-    async (presetId: string | null) => {
-      setError(null);
-      const res = await fetch("/api/assistant/agent", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presetId }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Could not change the agent.");
-        return;
-      }
-      setState((s) => ({ ...s, presetId }));
-    },
-    [],
-  );
+  const setAgent = useCallback(async (presetId: string | null) => {
+    setError(null);
+    const res = await fetch("/api/assistant/agent", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ presetId }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      setError(data?.error ?? "Could not change the agent.");
+      return;
+    }
+    setState((s) => ({ ...s, presetId }));
+  }, []);
 
-  return { ...state, pending, error, ask, clear, decide, setAgent };
+  return { ...state, pending, error, ask, stop, clear, decide, setAgent };
 }

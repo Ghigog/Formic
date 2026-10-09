@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { cn } from "@/components/ui/cn";
 import type { AgentPreset } from "@/lib/domain/entities";
 import type { AssistantMessageView } from "@/lib/hooks/use-assistant";
@@ -24,6 +30,7 @@ export interface AssistantControls {
   pending: boolean;
   error: string | null;
   ask: (text: string) => Promise<void>;
+  stop: () => void;
   clear: () => Promise<void>;
   decide: (
     messageId: string,
@@ -95,14 +102,23 @@ function Composer({
   toggle?: boolean;
 }) {
   const [text, setText] = useState("");
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const field = useRef<HTMLTextAreaElement>(null);
+  const submit = async (e?: FormEvent) => {
+    e?.preventDefault();
     const value = text.trim();
     if (!value || a.pending) return;
     a.setOpen(true);
     setText("");
     await a.ask(value);
     onAsked?.();
+  };
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape") a.setOpen(false);
+    // Enter alone does nothing; Shift+Enter is the textarea's own newline.
+    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void submit();
+    }
   };
   return (
     <form
@@ -112,18 +128,61 @@ function Composer({
       <span className="text-muted pointer-events-none absolute left-3">
         <SparkIcon />
       </span>
-      <input
+      <textarea
+        ref={field}
+        rows={1}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onFocus={() => a.messages.length > 0 && a.setOpen(true)}
-        onKeyDown={(e) => e.key === "Escape" && a.setOpen(false)}
+        onKeyDown={onKeyDown}
         placeholder={a.pending ? "Answering…" : `Ask about ${repoName}…`}
         aria-label="Ask the assistant"
         className={cn(
-          "border-line bg-cream text-ink placeholder:text-muted h-9 w-full rounded-lg border pl-9 text-[13px] outline-none focus:border-terracotta",
-          toggle ? "pr-10" : "pr-3",
+          "border-line bg-cream text-ink placeholder:text-muted h-9 w-full resize-none rounded-lg border py-[7px] pl-9 text-[13px] leading-5 outline-none focus:border-terracotta",
+          toggle ? "pr-[4.5rem]" : "pr-10",
         )}
       />
+      {a.pending ? (
+        <button
+          type="button"
+          onClick={() => {
+            a.stop();
+            field.current?.focus();
+          }}
+          aria-label="Stop"
+          className={cn(
+            "text-ink hover:bg-column absolute inline-flex size-8 items-center justify-center rounded-md",
+            toggle ? "right-9" : "right-1",
+          )}
+        >
+          <span className="bg-ink size-2.5 rounded-[2px]" aria-hidden />
+        </button>
+      ) : (
+        <button
+          type="submit"
+          aria-label="Send"
+          className={cn(
+            "text-muted hover:text-ink absolute inline-flex size-8 items-center justify-center rounded-md",
+            toggle ? "right-9" : "right-1",
+          )}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M6 10V2M2.5 5.5 6 2l3.5 3.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
       {toggle && (
         <button
           type="button"
