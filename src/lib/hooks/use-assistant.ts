@@ -122,7 +122,9 @@ export function useAssistant(enabled: boolean) {
     asked.current = null;
     setAsking(false);
     setError(null);
-  }, []);
+    // The POST only enqueues the answer: cancel it on the server too.
+    void run(() => send("/api/assistant", "PATCH"));
+  }, [run]);
   const clear = useCallback(
     () => run(() => send("/api/assistant", "DELETE")),
     [run],
