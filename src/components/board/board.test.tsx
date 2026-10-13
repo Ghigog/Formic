@@ -305,6 +305,22 @@ describe("Board, below 768px", () => {
       expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
     });
 
+    it("marks the slide direction after a swipe, and not on first render", async () => {
+      await setup();
+      const slide = () => document.querySelector("[data-slide]");
+      expect(slide()).toBeNull();
+      swipe(-100);
+      expect(slide()).toHaveAttribute("data-slide", "next");
+      swipe(100);
+      expect(slide()).toHaveAttribute("data-slide", "previous");
+    });
+
+    it("does not animate a swipe past the end", async () => {
+      await setup();
+      swipe(100);
+      expect(document.querySelector("[data-slide]")).toBeNull();
+    });
+
     it("stays put at Backlog and at Done", async () => {
       await setup();
       swipe(100);

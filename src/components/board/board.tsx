@@ -11,7 +11,7 @@ import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
 import { EMPTY_VIEW, type ColumnView } from "./view";
 import { loadBoardView } from "./view-setting";
-import { adjacentColumn, ownsGesture, swipeDirection } from "./swipe";
+import { adjacentColumn, ownsGesture, swipeDirection, type SwipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
@@ -295,13 +295,19 @@ export function Board({
         ? { x: t.clientX, y: t.clientY }
         : null;
   };
+  /* Which way the last swipe moved, so the new column slides in from that side. */
+  const [slide, setSlide] = useState<SwipeDirection | null>(null);
   const onSwipeEnd = (e: React.TouchEvent<HTMLElement>) => {
     const start = swipeStart.current;
     const t = e.changedTouches[0];
     swipeStart.current = null;
     if (!start || !t || document.querySelector("[role='dialog']")) return;
     const direction = swipeDirection(t.clientX - start.x, t.clientY - start.y);
-    if (direction) setActiveTab((tab) => adjacentColumn(tab, direction));
+    if (!direction) return;
+    const next = adjacentColumn(activeTab, direction);
+    if (next === activeTab) return;
+    setSlide(direction);
+    setActiveTab(next);
   };
 
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
@@ -465,8 +471,9 @@ export function Board({
             <li
               key={col}
               aria-current={active ? "true" : undefined}
+              ref={active ? (el) => el?.scrollIntoView?.({ behavior: "smooth", inline: "center", block: "nearest" }) : undefined}
               className={cn(
-                "inline-flex h-9 shrink-0 items-center rounded-full text-[13px] whitespace-nowrap",
+                "inline-flex h-9 shrink-0 items-center rounded-full text-[13px] whitespace-nowrap transition-[color,background-color,padding] duration-200 ease-out",
                 active
                   ? "bg-anthracite text-cream px-3.5 font-semibold"
                   : "border-line bg-card text-muted border px-3 font-medium",
@@ -505,7 +512,18 @@ export function Board({
             isMobile ? "touch-pan-y flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
           )}
         >
-          {dragSnapshot ?? columnElements}
+          {dragSnapshot ??
+            (isMobile ? (
+              <div
+                key={activeTab}
+                data-slide={slide ?? undefined}
+                className="column-slide flex min-h-0 flex-1 flex-col"
+              >
+                {columnElements}
+              </div>
+            ) : (
+              columnElements
+            ))}
           {!isMobile && (
             <ArchiveDropZone
               dragging={dragSnapshot !== null}
