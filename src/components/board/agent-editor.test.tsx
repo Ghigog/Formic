@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentEditor } from "./agent-editor";
 import type { AgentPreset } from "@/lib/domain/entities";
 
 afterEach(() => vi.unstubAllGlobals());
+
+// The editor moves focus to its name field a frame after mounting; typing
+// before that lands the keystrokes in the wrong field.
+async function settled() {
+  await waitFor(() => expect(screen.getByLabelText("Name")).toHaveFocus());
+}
 
 function stubModelsFetch() {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true, models: [] })));
@@ -207,6 +213,7 @@ describe("AgentEditor limit override", () => {
       />,
     );
     expect(screen.getByLabelText("Minutes override")).toHaveValue("15");
+    await settled();
     await userEvent.type(screen.getByLabelText("Attempts override"), "3");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSaveOverride).toHaveBeenCalledWith({ minutes: 15, tokens: null, attempts: 3 });
@@ -247,6 +254,7 @@ describe("AgentEditor limit override", () => {
         onDelete={vi.fn()}
       />,
     );
+    await settled();
     await userEvent.type(screen.getByLabelText("Minutes override"), "0");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/whole numbers of at least 1/);

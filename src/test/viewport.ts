@@ -24,6 +24,7 @@ export function resetViewport(): void {
 export function installMatchMedia(): void {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
+    configurable: true,
     value: (query: string): MediaQueryList =>
       ({
         matches,

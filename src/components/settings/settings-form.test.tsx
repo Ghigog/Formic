@@ -50,9 +50,8 @@ describe("Danger zone", () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     // jsdom does not implement navigation; deleting the account sends the
-    // browser to /login, which is out of scope for this test.
-    const originalLocation = window.location;
-    Object.defineProperty(window, "location", { value: { href: "" }, writable: true });
+    // browser to /login, which jsdom reports and ignores. `location` cannot
+    // be replaced in the shared window, so it is left alone.
 
     render(
       <SettingsForm account={account} installUrl={null} e2b={{ hint: null, serverFallback: false }} />,
@@ -67,8 +66,6 @@ describe("Danger zone", () => {
       "/api/account",
       expect.objectContaining({ method: "DELETE", body: JSON.stringify({ confirm: true }) }),
     );
-
-    Object.defineProperty(window, "location", { value: originalLocation, writable: true });
   });
 
   it("is not shown in local mode, where there is no account to delete", () => {
