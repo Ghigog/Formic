@@ -69,9 +69,9 @@ export default defineConfig({
           environment: "jsdom",
           include: ["src/**/*.test.tsx"],
           setupFiles: ["./src/test/setup-env.ts", "./src/test/setup-dom.ts"],
-          // One jsdom per worker instead of one per file (modules stay per-file,
-          // so vi.mock still works); building it was
-          // most of the suite's time. setup-dom.ts resets what files share.
+          // Run each file in a VM context on a shared worker thread instead of
+          // a fresh worker per file; modules stay per-file, so vi.mock still
+          // works. setup-dom.ts resets DOM state as a guard against leakage.
           pool: "vmThreads",
           testTimeout: 15_000,
         },

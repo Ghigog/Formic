@@ -11,9 +11,9 @@ import { installMatchMedia, resetViewport } from "./viewport";
 installMatchMedia();
 
 /**
- * The dom project does not isolate files (`isolate: false` in
- * vitest.config.ts), so they share one window. Put it back the way a fresh
- * jsdom would have it after every test.
+ * The dom project runs on `pool: "vmThreads"` (vitest.config.ts), where
+ * files share a worker thread. Put the window back the way a fresh jsdom
+ * would have it after every test, so nothing can leak between tests or files.
  */
 afterEach(() => {
   cleanup();
