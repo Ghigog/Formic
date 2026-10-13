@@ -478,6 +478,35 @@
   }
 }
 
+@keyframes columnSlideFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+
+@keyframes columnSlideFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-32px);
+  }
+}
+
+/* Mobile board: the column a swipe brings in slides from the side it came from. */
+.column-slide[data-slide="next"] {
+  animation: columnSlideFromRight 250ms ease-out;
+}
+
+.column-slide[data-slide="previous"] {
+  animation: columnSlideFromLeft 250ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .column-slide[data-slide] {
+    animation: none;
+  }
+}
+
 .glow-ready {
   animation: readyGlow 2.4s ease-in-out infinite;
 }
