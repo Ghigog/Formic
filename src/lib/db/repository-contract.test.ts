@@ -469,6 +469,29 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.columnAgents(p.id)).toEqual({});
       });
 
+      it("keeps auto-escalation off until switched on, per project", async () => {
+        const p = await project();
+        expect((await repo.projectById(p.id))?.autoEscalate).toBe(false);
+        await repo.setAutoEscalate(p.id, true);
+        expect((await repo.projectById(p.id))?.autoEscalate).toBe(true);
+        await repo.setAutoEscalate(p.id, false);
+        expect((await repo.projectById(p.id))?.autoEscalate).toBe(false);
+      });
+
+      it("records that a ticket was auto-escalated, once", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "C-1")]);
+        expect((await repo.ticketDetail(t!.id))?.autoEscalatedAt).toBeNull();
+
+        await repo.markTicketAutoEscalated(t!.id);
+        const first = (await repo.ticketDetail(t!.id))?.autoEscalatedAt;
+        expect(first).toEqual(expect.any(String));
+
+        await repo.markTicketAutoEscalated(t!.id);
+        expect((await repo.ticketDetail(t!.id))?.autoEscalatedAt).toBe(first);
+      });
+
       it("keeps auto-merge off until switched on, per project", async () => {
         const p = await project();
         expect((await repo.projectById(p.id))?.autoMerge).toBe(false);

@@ -1458,6 +1458,17 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: { assistantPresetId: presetId } });
   }
 
+  async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
+    await prisma().project.update({ where: { id: projectId }, data: { autoEscalate } });
+  }
+
+  async markTicketAutoEscalated(ticketId: string): Promise<void> {
+    await prisma().ticket.updateMany({
+      where: { id: ticketId, autoEscalatedAt: null },
+      data: { autoEscalatedAt: new Date() },
+    });
+  }
+
   async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {
     await prisma().project.update({ where: { id: projectId }, data: { autoMerge } });
   }
@@ -1673,6 +1684,7 @@ type TicketRow = {
   handoff: string[];
   reviewedSha: string | null;
   reviewedHead: string | null;
+  autoEscalatedAt: Date | null;
   needsHuman: string | null;
   epic: { projectId: string };
 };
@@ -1765,6 +1777,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     handoff: row.handoff,
     reviewedSha: row.reviewedSha,
     reviewedHead: row.reviewedHead,
+    autoEscalatedAt: row.autoEscalatedAt?.toISOString() ?? null,
     needsHuman: row.needsHuman,
   };
 }
