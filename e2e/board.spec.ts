@@ -200,7 +200,7 @@ test("picking another repository switches the board to it", async ({ page }) => 
 
   // A new repository starts a board of its own, with one ticket: its AGENTS.md.
   await expect(page.getByRole("button", { name: /Choose another project/ }).first())
-    .toContainText("acme / widgets");
+    .toHaveAttribute("title", "acme/widgets");
   await expect(column(page, "To Do").getByText(/Write an? AGENTS\.md/)).toBeVisible();
   await expect(cardIds(page, "To Do")).resolves.toHaveLength(1);
 
@@ -210,7 +210,7 @@ test("picking another repository switches the board to it", async ({ page }) => 
   await page.screenshot({ path: "e2e/.results/repo-picker.png" });
   await picker.getByRole("button", { name: /Ghigog\/Formic/i }).click();
   await expect(page.getByRole("button", { name: /Choose another project/ }).first())
-    .not.toContainText("acme");
+    .not.toHaveAttribute("title", /acme/);
 });
 
 test("a column runs a saved agent: create, pick, edit, remove", async ({ page }) => {
