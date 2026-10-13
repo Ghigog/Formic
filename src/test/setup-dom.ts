@@ -10,9 +10,23 @@ import { installMatchMedia, resetViewport } from "./viewport";
 
 installMatchMedia();
 
+/**
+ * The dom project does not isolate files (`isolate: false` in
+ * vitest.config.ts), so they share one window. Put it back the way a fresh
+ * jsdom would have it after every test.
+ */
 afterEach(() => {
   cleanup();
+  document.body.innerHTML = "";
+  document.body.removeAttribute("class");
+  document.body.removeAttribute("style");
+  document.documentElement.removeAttribute("class");
+  document.documentElement.removeAttribute("style");
+  document.title = "";
+  localStorage.clear();
+  sessionStorage.clear();
   resetViewport();
+  installMatchMedia();
 });
 
 /**

@@ -10,8 +10,11 @@ that can fail for the right reason.**
 | End to end | Chromium | `e2e/*.spec.ts` | `npm run test:e2e` |
 
 `npm test` runs the first two. They need no server, no database and no
-network, and finish in about twenty seconds — most of it building a fresh jsdom
-for each component test file, not running the assertions. `npm run test:e2e`
+network, and finish in about twenty-five seconds (the component tests alone in
+about six). The dom project builds one jsdom per worker and reuses it across
+files (`pool: "vmThreads"`); before that, building a fresh jsdom for each file
+took most of the time: `npm test` 39s and `npm run test:dom` 20s, on the same
+machine. `npm run test:e2e`
 builds the app and starts it, so it costs about a minute.
 
 ## The split is by file extension, not by directory
@@ -65,6 +68,16 @@ import { makeCard } from "@/test/cards";
 a running board and will keep changing with the design, so a test that asserts
 on them breaks for reasons that have nothing to do with the test. Build the
 smallest board the assertion needs.
+
+Files in the dom project share one window, so `src/test/setup-dom.ts` puts it
+back after every test: `cleanup()`, `document.body` and the root element's
+attributes, `localStorage`, `sessionStorage`, the viewport and `matchMedia`.
+Module state stays per file, so `vi.mock` works as usual. `isolate: false` was
+tried and rejected: it shares the module cache too, so a `vi.mock` in one file
+leaked into others. Two consequences for tests: `window.location` cannot be
+replaced (jsdom just reports a navigation it does not implement), and
+`matchMedia` can be stubbed with `vi.stubGlobal`. To check for leakage, run
+`npx vitest run --project dom --sequence.shuffle.files` a few times.
 
 Three things jsdom needs help with, all handled in `src/test/setup-dom.ts`:
 
