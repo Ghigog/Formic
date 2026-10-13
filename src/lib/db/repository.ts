@@ -249,6 +249,8 @@ export interface TicketDetail {
   reviewedHead: string | null;
   /** Work for a person, not an agent: why. Null when an agent can do it. */
   needsHuman: string | null;
+  /** When story points were auto-escalated (ISO), so it happens once. Null if never. */
+  autoEscalatedAt: string | null;
 }
 
 export interface TicketUpdate {
@@ -323,6 +325,8 @@ export interface ProjectSummary {
   baseBranch: string;
   /** Formic merges approved, green pull requests on its own. Off until the owner opts in. */
   autoMerge: boolean;
+  /** Formic raises a ticket's story points on its own when it outgrows its estimate. Off until the owner opts in. */
+  autoEscalate: boolean;
 }
 
 /** Whose projects and presets a query sees. */
@@ -690,6 +694,9 @@ export interface Repository {
   assistantAgent(projectId: string): Promise<string | null>;
   setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoMerge(projectId: string, autoMerge: boolean): Promise<void>;
+  setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
+  /** Records that the ticket's story points were auto-escalated; keeps the first time if already marked. */
+  markTicketAutoEscalated(ticketId: string): Promise<void>;
   /** The assistant conversation, oldest first. */
   assistantMessages(projectId: string): Promise<AssistantMessage[]>;
   assistantMessage(id: string): Promise<AssistantMessage | null>;

@@ -158,6 +158,9 @@ model Project {
   /// Whether Formic merges an approved pull request itself. Off (the default),
   /// it waits in Merging for a person to merge it.
   autoMerge                  Boolean  @default(false)
+  /// Whether Formic raises a ticket's story points itself when it outgrows
+  /// its estimate. Off (the default) until the owner opts in.
+  autoEscalate               Boolean  @default(false)
   /// Queens taken off the board, so clearing one never hands it back.
   queensSpent                Int      @default(0)
 
@@ -319,6 +322,8 @@ model Ticket {
   /// was reviewed four times when nothing was read. Cleared when the review
   /// answers, and when a person moves the card.
   reviewedHead    String?
+  /// When its story points were auto-escalated. Set once, so it happens once.
+  autoEscalatedAt DateTime?
   /// When it merged, and what the merge scored: its story points times the
   /// project's heat at that moment (1 + 0.5 per merge in the 45s before,
   /// at most six). Set once, on the first move to merged.

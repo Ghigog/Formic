@@ -81,6 +81,7 @@ interface TicketExtras {
   handoff?: string[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
+  autoEscalatedAt?: string | null;
   scopeRequest?: string[];
 }
 
@@ -189,6 +190,7 @@ function store(): Store {
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
     autoMerge: false,
+    autoEscalate: false,
   };
   const s: Store = {
     project,
@@ -448,6 +450,7 @@ export class MemoryRepository implements Repository {
       repoFullName: input.repoFullName,
       baseBranch: input.baseBranch,
       autoMerge: false,
+      autoEscalate: false,
     };
     s.projects.set(project.id, project);
     return project;
@@ -1414,6 +1417,16 @@ export class MemoryRepository implements Repository {
     else s.columnAgents.set(`${projectId}:assistant`, presetId);
   }
 
+  async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) project.autoEscalate = autoEscalate;
+  }
+
+  async markTicketAutoEscalated(ticketId: string): Promise<void> {
+    const extras = store().ticketExtras.get(ticketId);
+    if (extras && !extras.autoEscalatedAt) extras.autoEscalatedAt = new Date().toISOString();
+  }
+
   async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) project.autoMerge = autoMerge;
@@ -1585,6 +1598,7 @@ function toDetail(
     handoff: extras?.handoff ?? [],
     reviewedSha: extras?.reviewedSha ?? null,
     reviewedHead: extras?.reviewedHead ?? null,
+    autoEscalatedAt: extras?.autoEscalatedAt ?? null,
     needsHuman: card.needsHuman ?? null,
   };
 }
