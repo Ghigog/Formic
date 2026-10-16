@@ -415,6 +415,7 @@ export function loopPayload(input: {
       ...(budget.minutes.requested != null ? { budgetMs: budget.minutes.requested * 60_000 } : {}),
       ...(budget.tokens.value != null ? { maxTokens: budget.tokens.value } : {}),
       ...(budget.maxCents != null ? { maxCents: budget.maxCents } : {}),
+      ...(budget.effort ? { effort: budget.effort } : {}),
     },
   };
 }

@@ -195,3 +195,16 @@ describe("/api/settings token and attempt limits", () => {
     expect(body.mode).toBe("PER_STORY_POINT");
   });
 });
+
+describe("/api/settings thinking effort", () => {
+  it("follows story points unless switched off", async () => {
+    expect((await (await GET()).json()).effortByPoints).toBe(true);
+    expect((await (await PUT(put({ effortByPoints: false }))).json()).effortByPoints).toBe(false);
+    expect((await (await GET()).json()).effortByPoints).toBe(false);
+    expect((await (await PUT(put({ effortByPoints: true }))).json()).effortByPoints).toBe(true);
+  });
+
+  it("rejects anything but on or off", async () => {
+    expect((await PUT(put({ effortByPoints: "yes" }))).status).toBe(400);
+  });
+});

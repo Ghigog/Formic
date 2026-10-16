@@ -4,6 +4,7 @@ const settings = vi.hoisted(() => ({ attempts: undefined as unknown }));
 vi.mock("@/lib/user-settings", () => ({
   getLimitSettings: async () => (settings.attempts ? { attempts: settings.attempts } : {}),
   getRunTimeBudgetSettings: async () => null,
+  getEffortByPoints: async () => true,
 }));
 
 import { ATTEMPT_DEFAULTS } from "./budget-for";

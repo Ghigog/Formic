@@ -4,7 +4,7 @@ import { authMode } from "@/lib/auth/session";
 import { installUrl } from "@/lib/auth/github";
 import { activeProject } from "@/lib/board/project";
 import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
-import { getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
+import { getEffortByPoints, getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { env } from "@/lib/secrets/env";
 import { hintFor } from "@/lib/secrets/vault";
 import { SettingsForm } from "@/components/settings/settings-form";
@@ -40,6 +40,7 @@ export default async function SettingsPage() {
       }
       runTimeBudget={await getRunTimeBudgetSettings(user.id)}
       limits={await getLimitSettings(user.id)}
+      effortByPoints={await getEffortByPoints(user.id)}
       renewal={{ day: user.tokenRenewalDay, timezone: user.tokenWindowTimezone }}
       e2b={{
         hint: user.e2bKeyHint,

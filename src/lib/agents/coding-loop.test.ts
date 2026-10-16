@@ -83,6 +83,43 @@ describe("the coding loop's limits, between turns", () => {
   });
 });
 
+describe("effort by story points", () => {
+  it("asks DeepSeek to think harder on a large ticket", async () => {
+    const efforts: unknown[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      if (!init?.body) return Response.json({ data: [] });
+      efforts.push(JSON.parse(init.body as string).reasoning_effort);
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "finish",
+                    arguments: JSON.stringify({ summary: "s", detail: "d", verified_with: null }),
+                  },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+    });
+
+    await run({ budget: budgetFor(null, null, { storyPoints: 8 }, "in-process") });
+    await run({ budget: budgetFor({ effortByPoints: false }, null, { storyPoints: 8 }, "in-process") });
+
+    expect(efforts).toEqual(["high", "low"]);
+  });
+});
+
 describe("context compaction", () => {
   it("collapses the transcript once it grows past the ceiling, so the run keeps going", async () => {
     // Each turn's input is reported larger than the last, as a transcript that

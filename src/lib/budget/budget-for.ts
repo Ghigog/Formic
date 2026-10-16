@@ -32,6 +32,8 @@ export type ProjectLimitSettings = {
   minutes?: LimitSetting | null;
   tokens?: LimitSetting | null;
   attempts?: LimitSetting | null;
+  /** Whether thinking effort follows story points; on when absent. */
+  effortByPoints?: boolean | null;
 };
 
 /** A column's own value for an axis; wins over the project's setting. */
@@ -105,12 +107,31 @@ export type Limit = {
   clamp: Clamp | null;
 };
 
+/** How hard a coding run thinks, as the ticket's size asks. */
+export type RunEffort = "low" | "medium" | "high";
+
+/**
+ * The effort a ticket's story points ask for: a small ticket thinks briefly,
+ * a large one thoroughly. When a ticket is escalated its points rise, and its
+ * effort with them.
+ */
+export function effortForPoints(points: number): RunEffort {
+  if (points <= 2) return "low";
+  if (points <= 5) return "medium";
+  return "high";
+}
+
 export type Budget = {
   minutes: Limit;
   tokens: Limit;
   attempts: Limit;
   /** Derived from tokens × a conservative rate; null when tokens are unbounded. */
   maxCents: number | null;
+  /**
+   * The thinking effort for the ticket's size; null or absent leaves each
+   * agent at its fixed default.
+   */
+  effort?: RunEffort | null;
   /** How each limit is enforced. */
   enforcement: { minutes: "between-turns"; tokens: "between-turns" | "job"; attempts: "between-turns" };
 };
@@ -198,6 +219,11 @@ export function budgetFor(
     tokens,
     attempts,
     maxCents: tokens.value == null ? null : Math.ceil((tokens.value / 1_000_000) * CENTS_PER_MTOK),
+    // A ticket with no estimate keeps the default rather than reading as one point.
+    effort:
+      settings?.effortByPoints === false || !positive(ticket.storyPoints)
+        ? null
+        : effortForPoints(pts),
     // An in-process loop stops itself between turns; a job's token ceiling is read by the job.
     enforcement: { minutes: "between-turns", tokens: path === "in-process" ? "between-turns" : "job", attempts: "between-turns" },
   };

@@ -83,3 +83,19 @@ describe("budgetFor", () => {
     expect(budgetFor(null, { attempts: 1 }, {}, "loop").attempts.value).toBe(1);
   });
 });
+
+describe("effort by story points", () => {
+  it("thinks less on small tickets and more on large ones", () => {
+    const effort = (storyPoints: number) => budgetFor(null, null, { storyPoints }, "in-process").effort;
+    expect([1, 2, 3, 5, 8, 13].map(effort)).toEqual(["low", "low", "medium", "medium", "high", "high"]);
+  });
+
+  it("is on by default and off when switched off", () => {
+    expect(budgetFor({}, null, { storyPoints: 8 }, "loop").effort).toBe("high");
+    expect(budgetFor({ effortByPoints: false }, null, { storyPoints: 8 }, "loop").effort).toBeNull();
+  });
+
+  it("leaves a ticket with no estimate at the agent's default", () => {
+    expect(budgetFor(null, null, {}, "in-process").effort).toBeNull();
+  });
+});

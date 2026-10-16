@@ -369,6 +369,8 @@ export interface UserRecord {
   /** Stored limit settings (JSON), or null for the default. Read through src/lib/user-settings. */
   tokenLimit?: unknown;
   attemptLimit?: unknown;
+  /** Whether thinking effort follows story points; on when absent. */
+  effortByPoints?: boolean;
   /** Token window: renewal day of the month (1-31) in `tokenWindowTimezone` (IANA), or null. */
   tokenRenewalDay: number | null;
   tokenWindowTimezone: string | null;
@@ -380,6 +382,7 @@ export interface UserRecord {
 export interface LimitColumns {
   tokenLimit?: Record<string, unknown> | null;
   attemptLimit?: Record<string, unknown> | null;
+  effortByPoints?: boolean;
 }
 
 /** What a person's run time budget is stored as on their row. */

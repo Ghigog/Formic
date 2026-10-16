@@ -74,6 +74,18 @@ export async function updateLimitSettings(
   };
 }
 
+/** Whether thinking effort follows story points; on unless switched off. */
+export async function getEffortByPoints(userId: string): Promise<boolean> {
+  const row = await repository().userById(userId);
+  if (!row) throw new Error(`No user ${userId}.`);
+  return row.effortByPoints ?? true;
+}
+
+export async function setEffortByPoints(userId: string, on: boolean): Promise<boolean> {
+  const row = await repository().updateLimits(userId, { effortByPoints: on });
+  return row.effortByPoints ?? true;
+}
+
 export async function getRunTimeBudgetSettings(userId: string): Promise<RunTimeBudgetSettings> {
   const row = await repository().userById(userId);
   if (!row) throw new Error(`No user ${userId}.`);
