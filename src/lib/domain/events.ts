@@ -103,6 +103,18 @@ export type FormicEvent =
       text: string;
     }
   | {
+      /**
+       * An agent saying a shared note helped it or is no longer true. What
+       * keeps a useful note in briefings and drops a stale one
+       * (src/lib/domain/trail.ts).
+       */
+      type: "repo.note.rated";
+      ticketId: string;
+      /** The `seq` of the `repo.note` event rated. */
+      noteSeq: number;
+      verdict: "helped" | "outdated";
+    }
+  | {
       /** A person's instruction to the Architect Agent breaking down an Epic. */
       type: "epic.note";
       epicId: string;
