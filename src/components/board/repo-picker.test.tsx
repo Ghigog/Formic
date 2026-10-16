@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RepoPicker } from "./repo-picker";
 
 function serve(repos: unknown[]) {
@@ -22,6 +22,44 @@ describe("RepoPicker", () => {
     expect(screen.getByRole("link", { name: /Give Formic access/ })).toHaveAttribute(
       "href",
       "https://github.com/apps/formic-board/installations/new",
+    );
+  });
+
+  it("creates a new repository from a bare name, then opens its board", async () => {
+    const calls: Array<{ url: string; body?: string }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, body: init?.body as string | undefined });
+      if (url === "/api/github/repos" && init?.method === "POST") {
+        return Response.json({ repo: { fullName: "ada/fresh-idea" } });
+      }
+      if (url === "/api/projects" && init?.method === "POST") {
+        return Response.json({ project: { id: "p1" } });
+      }
+      return Response.json(
+        url.includes("/api/projects")
+          ? { projects: [] }
+          : { ok: true, repos: [{ fullName: "ada/old", defaultBranch: "main", private: false, description: null }] },
+      );
+    });
+    render(<RepoPicker current={null} inline onClose={() => {}} />);
+    await screen.findByText("ada/old");
+
+    fireEvent.change(screen.getByLabelText("Search repositories"), { target: { value: "old" } });
+    expect(screen.queryByText("new private repo")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search repositories"), {
+      target: { value: "fresh-idea" },
+    });
+    fireEvent.click(screen.getByText("new private repo"));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url === "/api/projects" && c.body)).toBe(true),
+    );
+    expect(calls.find((c) => c.url === "/api/github/repos" && c.body)?.body).toBe(
+      JSON.stringify({ name: "fresh-idea" }),
+    );
+    expect(calls.find((c) => c.url === "/api/projects" && c.body)?.body).toBe(
+      JSON.stringify({ repoFullName: "ada/fresh-idea" }),
     );
   });
 });

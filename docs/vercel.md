@@ -83,7 +83,8 @@ the URLs to the Vercel production address:
 - **Webhook:** active, `https://<your-app>/api/webhooks/github`, secret into
   `GITHUB_WEBHOOK_SECRET`.
 - **Permissions:** Contents, Pull requests, Issues, Actions, Secrets and
-  Workflows read/write; Checks and commit statuses read.
+  Workflows read/write; Administration read/write, so people can create a
+  new repository from the picker; Checks and commit statuses read.
 - **Events:** Check run, Check suite, Workflow run, Pull request.
 
 **Preview deployments cannot sign in** — their URLs change per branch, so the
