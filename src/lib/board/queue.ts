@@ -7,6 +7,9 @@ import { publish } from "@/lib/events/bus";
 import { heldBy } from "@/lib/domain/queue";
 import { byPosition } from "@/lib/ordering";
 import { LeaseBusy, repoKey, withLease } from "./lease";
+import type { ProjectSummary } from "@/lib/db/repository";
+import { scoreOf } from "@/lib/colony/game";
+import { colonyAdmits, effectiveColony, slotsInUse, slotsOf, type ColonySettings } from "@/lib/colony/reserve";
 
 /**
  * Starts every queued ticket whose files no running ticket is writing any
@@ -60,14 +63,22 @@ async function startQueuedOn(repoFullName: string): Promise<void> {
 async function claimQueued(repoFullName: string): Promise<Array<{ projectId: string; card: BoardCard }>> {
   const repo = repository();
   const projects = await repo.projectsForRepo(repoFullName);
-  const boards = await Promise.all(projects.map(async (p) => ({ projectId: p.id, cards: await repo.boardCards(p.id) })));
+  const boards = await Promise.all(
+    projects.map(async (p) => ({ project: p, projectId: p.id, cards: await repo.boardCards(p.id) })),
+  );
   if (!boards.some((b) => b.cards.some(isQueued))) return [];
 
   const claims: Reservation[] = await repo.reservations(repoFullName);
   const started: Array<{ projectId: string; card: BoardCard }> = [];
-  for (const { projectId, cards } of boards) {
+  for (const { project, projectId, cards } of boards) {
+    // Each board's colony is its own: its person's slots, at its level.
+    const colony = colonyOf(project, cards);
+    const epics = epicsOf(cards);
+    let inUse = slotsInUse(cards);
     for (const card of cards.filter(isQueued).sort(byPosition)) {
       if (heldBy(card, claims)) continue;
+      if (!colonyAdmits(card, inUse, colony, epics).ok) continue;
+      inUse += slotsOf(card);
       // A ticket sent back from review keeps its count of reviews: waiting
       // its turn is not a fresh start (a person's move already reset it).
       await repo.updateTicket(card.id, { status: "running", ...(card.prNumber ? {} : { attempts: 0 }) });
@@ -81,6 +92,25 @@ async function claimQueued(repoFullName: string): Promise<Array<{ projectId: str
 
 function isQueued(card: BoardCard): boolean {
   return card.kind === "ticket" && card.status === "queued";
+}
+
+/** A board's colony settings, held to what its level allows. */
+export function colonyOf(project: ProjectSummary, cards: readonly BoardCard[]): ColonySettings {
+  return effectiveColony(project, scoreOf([...cards]).level);
+}
+
+function epicsOf(cards: readonly BoardCard[]): Map<string, BoardCard> {
+  return new Map(cards.filter((c) => c.kind === "epic").map((c) => [c.id, c]));
+}
+
+/** Why a ticket the colony holds back waits: null when it has room for it. */
+export async function colonyHold(projectId: string, card: BoardCard): Promise<string | null> {
+  const repo = repository();
+  const project = await repo.projectById(projectId);
+  if (!project || project.colonySize === null) return null;
+  const cards = await repo.boardCards(projectId);
+  const answer = colonyAdmits(card, slotsInUse(cards.filter((c) => c.id !== card.id)), colonyOf(project, cards), epicsOf(cards));
+  return answer.ok ? null : answer.reason;
 }
 
 /**
@@ -104,7 +134,7 @@ export async function claimOrQueue(
   }
   return withLease(reservationLease(project.repoFullName), async () => {
     const blocker = heldBy(card, await repo.reservations(project.repoFullName));
-    const status = blocker ? "queued" : "running";
+    const status = blocker || (await colonyHold(projectId, card)) ? "queued" : "running";
     await write(status);
     return { status, blocker };
   });

@@ -257,6 +257,18 @@ export interface TicketDetail {
   needsHuman: string | null;
   /** When story points were auto-escalated (ISO), so it happens once. Null if never. */
   autoEscalatedAt: string | null;
+  /** Bug or spike, as the owner chose. Null for neither. */
+  workType: WorkType | null;
+  /** On a scout: the ticket it scouts for (docs/colony.md). Null on any other ticket. */
+  scoutOf: string | null;
+  /** On a scout: the approach it was told to take. */
+  scoutBrief: string | null;
+  /** On a scout: the agent template it runs on; null runs the column's. */
+  scoutPresetId: string | null;
+  /** On a parent: how many scouts it sent out, the one picked, and why. */
+  scouts: number;
+  scoutPick: string | null;
+  scoutWhy: string | null;
 }
 
 export interface TicketUpdate {
@@ -292,6 +304,9 @@ export interface TicketUpdate {
   reviewedSha?: string | null;
   reviewedHead?: string | null;
   stackedOn?: string | null;
+  scouts?: number;
+  scoutPick?: string | null;
+  scoutWhy?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -334,6 +349,12 @@ export interface ProjectSummary {
   autoMerge: boolean;
   /** Formic raises a ticket's story points on its own when it outgrows its estimate. Off until the owner opts in. */
   autoEscalate: boolean;
+  /** The most Coder Agents the board runs at once, scouts included. Null: no cap. */
+  colonySize: number | null;
+  /** Slots of colonySize kept for urgent work. */
+  colonyReserve: number;
+  /** Whether idle reserve slots send scouts out on their own. */
+  autoScout: boolean;
 }
 
 /** Whose projects and presets a query sees. */
@@ -651,8 +672,15 @@ export interface Repository {
     prNumber: number,
   ): Promise<TicketDetail | null>;
   updateTicket(ticketId: string, update: TicketUpdate): Promise<void>;
-  /** Every ticket under an Epic, for dependency gating and the showcase. */
+  /** Every ticket under an Epic, for dependency gating and the showcase. Never scouts. */
   ticketsForEpic(epicId: string): Promise<TicketDetail[]>;
+  /**
+   * Makes a scout of `parentId` for each brief: a copy of the ticket, off the
+   * board, numbered after it (FOR-14-s1, -s2, ...), running.
+   */
+  createScouts(parentId: string, briefs: Array<{ brief: string; presetId: string | null }>): Promise<TicketDetail[]>;
+  /** A ticket's scouts, in the order they were sent. */
+  scoutsOf(parentId: string): Promise<TicketDetail[]>;
   /**
    * Every GitHub issue number this project's mirror owns: each Epic's, and
    * each ticket's own or the one it was imported from. What the intake skips
@@ -740,6 +768,8 @@ export interface Repository {
   assistantAgent(projectId: string): Promise<string | null>;
   setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoMerge(projectId: string, autoMerge: boolean): Promise<void>;
+  /** The colony's size, reserve and auto-scouting (docs/colony.md). */
+  setColony(projectId: string, colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean }): Promise<void>;
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
   /** Records that the ticket's story points were auto-escalated; keeps the first time if already marked. */
   markTicketAutoEscalated(ticketId: string): Promise<void>;

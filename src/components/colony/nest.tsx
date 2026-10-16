@@ -11,6 +11,7 @@ import {
 import { useColony, type ColonyApi } from "./colony";
 import { drawBug } from "./fx";
 import { QueenIcon } from "./queen-icon";
+import { ColonyPanel } from "./colony-panel";
 
 /** The ant hill at the end of the ambient bar. Opens the colony. */
 export function NestButton() {
@@ -243,6 +244,8 @@ export function ColonyPopover() {
         </div>
 
         <QueenTray c={c} onDragging={setCarrying} />
+
+        <ColonyPanel level={s.level} />
 
         <div className="bg-panel flex flex-col gap-2 rounded-lg px-3 py-2.5">
           <span className="text-ink text-[12px] font-semibold">{nextText}</span>

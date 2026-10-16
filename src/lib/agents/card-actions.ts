@@ -14,7 +14,7 @@ import { answerScope, hasKeptWork, resolveScopeRequest, scopeAsked, stillAsked }
 import { repository } from "@/lib/db";
 import { fileScopeSchema, prdSchema, type BoardCard } from "@/lib/domain/entities";
 import { claimLabel } from "@/lib/domain/queue";
-import { blockerOf } from "@/lib/board/queue";
+import { blockerOf, colonyHold } from "@/lib/board/queue";
 import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, isStalled, type ColumnId } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { cancelJob, stopTicket } from "@/lib/runner/runner";
@@ -231,6 +231,8 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
   }
   if (result.status === "queued") {
     const blocker = await blockerOf(projectId, now);
+    const held = blocker ? null : await colonyHold(projectId, now);
+    if (held) return `Moved ${card.key} to In Progress, up next. ${held} It starts when a slot frees.`;
     return `Moved ${card.key} to In Progress, queued behind ${blocker ? claimLabel(blocker, projectId) : "a ticket writing the same files"}. The Coder Agent starts on it once that one is done.`;
   }
   return `Moved ${card.key} to ${COLUMN_LABELS[to]}.${
