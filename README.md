@@ -329,6 +329,9 @@ each, and what is not covered yet.
 saved agent, and why money is a ceiling for unattended runs rather than a bill
 anyone is shown.
 
+`docs/token-efficiency.md` covers how Formic keeps that number small:
+prompt caching, tidied and masked tool output, compaction, and capped output.
+
 `src/lib/domain` has no I/O and no framework imports. Everything that decides
 whether something is *allowed* lives there, which is why it is the part with
 the most tests.

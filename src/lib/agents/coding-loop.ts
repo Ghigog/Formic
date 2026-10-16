@@ -24,6 +24,7 @@ import { checkHandoff } from "./handoff";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
 import { type ChatMessage, type ModelInfo, type ToolSpec, advertisedModel, chat } from "@/lib/llm/openai-compat";
 import { reasoningFor } from "@/lib/agents/reasoning";
+import { type Observation, maskedNote, staleObservations, tidyOutput } from "./observations";
 
 /**
  * The agentic loop both PROT-06 and PROT-07 run on.
@@ -470,6 +471,11 @@ interface Conversation {
    * re-sending everything and tripping the token budget.
    */
   compact(summary: string): void;
+  /**
+   * Swaps the tool results named for the text given, leaving the calls that
+   * produced them, and everything the model said, as they were.
+   */
+  mask(notes: ReadonlyMap<string, string>): void;
 }
 
 function addUsage(a: Usage, b: Usage): Usage {
@@ -581,6 +587,15 @@ function claudeConversation(input: LoopInput, model: string): Conversation {
       messages.length = 0;
       messages.push({ role: "user", content: `${input.prompt}\n\n${summary}` });
     },
+    mask(notes) {
+      for (const m of messages) {
+        if (m.role !== "user" || !Array.isArray(m.content)) continue;
+        for (const block of m.content) {
+          const note = block.type === "tool_result" ? notes.get(block.tool_use_id) : undefined;
+          if (note !== undefined) (block as { content: unknown }).content = note;
+        }
+      }
+    },
   };
 }
 
@@ -664,6 +679,12 @@ function openAiConversation(
       messages.length = 1; // keep the system prompt
       messages.push({ role: "user", content: `${input.prompt}\n\n${summary}` });
     },
+    mask(notes) {
+      for (const m of messages) {
+        const note = m.role === "tool" && m.tool_call_id ? notes.get(m.tool_call_id) : undefined;
+        if (note !== undefined) m.content = note;
+      }
+    },
   };
 }
 
@@ -697,6 +718,8 @@ export async function runCodingLoop(
   let baselineIn: number | null = null;
   /** Paths written or edited, kept in the summary when the transcript is compacted. */
   const changedFiles = new Set<string>();
+  /** Every tool result sent since the last compaction, for observation masking. */
+  let observations: Observation[] = [];
 
   const fail = (error: string, blocked = false): AgentOutcome<LoopResult> => ({
     ok: false,
@@ -873,6 +896,19 @@ export async function runCodingLoop(
 
     await flushDiffs();
     conversation.toolResults(results);
+    for (const r of results) {
+      const tool = turn.calls.find((c) => c.id === r.id)?.name ?? "tool";
+      observations.push({ id: r.id, tool, turn: iteration, size: r.content.length, masked: false });
+    }
+
+    // Outputs the agent has moved past are cleared in one batch once enough
+    // has piled up, so every later turn re-sends less and compaction, which
+    // drops everything, comes later or not at all.
+    const moved = staleObservations(observations, iteration);
+    if (moved.length > 0) {
+      conversation.mask(new Map(moved.map((o) => [o.id, maskedNote(o)])));
+      for (const o of moved) o.masked = true;
+    }
 
     // The person watching can stop the run or steer it between turns.
     const heard = await ctx.interrupts?.().catch(() => null);
@@ -902,6 +938,7 @@ export async function runCodingLoop(
     } else if (grown > compactThreshold(ctx.budget?.tokens.value)) {
       progress("Compacting the conversation to stay within budget", iteration);
       conversation.compact(compactionSummary(plan, changedFiles, iteration));
+      observations = [];
       baselineIn = null;
     }
   }
@@ -939,10 +976,12 @@ async function runTool(
             onStderr: (line) => log.line({ stream: "stderr", line }),
           })
           .finally(() => log.end());
+        const stdout = tidyOutput(result.stdout);
+        const stderr = tidyOutput(result.stderr);
         const body = [
           `exit ${result.exitCode}${result.timedOut ? " (timed out)" : ""}`,
-          result.stdout && `stdout:\n${result.stdout}`,
-          result.stderr && `stderr:\n${result.stderr}`,
+          stdout && `stdout:\n${stdout}`,
+          stderr && `stderr:\n${stderr}`,
         ]
           .filter(Boolean)
           .join("\n");
