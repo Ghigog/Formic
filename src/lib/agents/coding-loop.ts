@@ -18,7 +18,9 @@ import {
   cachedToHere,
   describeError,
 } from "./anthropic";
-import { requestShape } from "./models";
+import { HELPER_MODEL, requestShape } from "./models";
+import { SHARED_NOTES_INTRO } from "./prompts";
+import { MAX_SHARED_NOTE } from "@/lib/domain/events";
 import { MAX_PLAN_STEPS, checkPlan, currentStep, planFraction } from "./plan";
 import { checkHandoff } from "./handoff";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
@@ -91,6 +93,18 @@ const PLANNING_RULES = `Working in the open:
 - Exactly one step is in_progress, and it is the one you are working on. Mark the step you finished done in the same turn as the first action of the next one: a plan left on step one while you are on step four reads as a stalled run, and the person watching cannot tell the difference.
 - Send each plan update in the same turn as the action it goes with, alongside that tool call, not in a turn of its own.
 - Before each action, say in a sentence or two what you are about to do and why. The person watching the board reads it.`;
+
+/**
+ * The read-only helper behind `explore`: a few searches and reads, then an
+ * answer. Bounded on its own so one question cannot spend the ticket's
+ * budget, and on the run's time and tokens like any other turn.
+ */
+const EXPLORE_TURNS = 12;
+const EXPLORE_TOKENS = 150_000;
+
+const EXPLORER_BRIEF = `You answer one question about a repository for a coding agent working in it, so that it need not do the searching and reading itself. You can only look: list files, search, read. Be quick: a few targeted searches, then only the files that matter.
+
+Answer in under 300 words: the paths and line numbers, and only the lines worth quoting. Say plainly what you looked for and could not find. Then call finish with a one-line summary and your answer in detail.`;
 
 /** Turns a plan may sit still before the agent is asked about it again. */
 const PLAN_NUDGE_TURNS = 6;
@@ -238,10 +252,15 @@ const replaceInput = z.object({
   old_text: z.string().min(1),
   new_text: z.string(),
 });
+const shareInput = z.object({ note: z.string().trim().min(1) });
+const exploreInput = z.object({ question: z.string().trim().min(1) });
+const listInput = z.object({ path: z.string().optional() });
+const searchInput = z.object({ pattern: z.string().min(1), path: z.string().optional() });
 const finishInput = z.object({
   summary: z.string().min(1),
   detail: z.string().min(1),
-  verified_with: z.string().nullable(),
+  // Optional here: the helper behind explore verifies nothing.
+  verified_with: z.string().nullable().optional(),
   // Optional here: a model that leaves it out has changed something.
   already_done: z.boolean().optional(),
   send_back: z.string().nullable().optional(),
@@ -336,6 +355,60 @@ const WORK_TOOLS: Anthropic.Beta.BetaTool[] = [
   },
 ];
 
+/** For working beside the agents on the repository's other tickets. */
+const TEAM_TOOLS: Anthropic.Beta.BetaTool[] = [
+  {
+    name: "share_note",
+    description:
+      "Tell the agents working on this repository's other tickets something they may rely on: an export you renamed, moved or removed, a signature or shared type you changed, a trap in the build. A sentence or two. They see it between their turns.",
+    input_schema: {
+      type: "object",
+      properties: { note: { type: "string" } },
+      required: ["note"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "explore",
+    description:
+      "Ask a helper agent a question about this repository: where something is defined or used, how a pattern is done across files, what calls a function. It searches and reads on a cheaper model and returns only its answer, so that reading stays out of your conversation. Use it for questions that need a broad search; read a file yourself before you edit it. Several explore calls in one turn run at the same time.",
+    input_schema: {
+      type: "object",
+      properties: { question: { type: "string" } },
+      required: ["question"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+];
+
+/** What the helper behind explore can do: look, and nothing else. */
+const LOOK_TOOLS: Anthropic.Beta.BetaTool[] = [
+  WORK_TOOLS.find((t) => t.name === "read_file")!,
+  {
+    name: "list_files",
+    description: "List the repository's files, under a directory if one is given.",
+    input_schema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: [],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "search",
+    description:
+      "Search the repository's files for an extended regular expression, under a directory if one is given. Returns matching lines with their paths and line numbers.",
+    input_schema: {
+      type: "object",
+      properties: { pattern: { type: "string" }, path: { type: "string" } },
+      required: ["pattern"],
+      additionalProperties: false,
+    },
+  },
+];
+
 const FOR_YOU = {
   type: "array",
   items: { type: "string" },
@@ -408,17 +481,33 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
     },
     strict: true,
   },
+  explorer: {
+    name: "finish",
+    description: "Call this with your answer. Ends the run.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "The answer in one line." },
+        detail: { type: "string", description: "The answer: paths, line numbers and the lines that matter." },
+      },
+      required: ["summary", "detail"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
 };
 
 function toolsFor(role: LoopInput["role"]): Anthropic.Beta.BetaTool[] {
-  return [...WORK_TOOLS, FINISH[role]];
+  if (role === "explorer") return [...LOOK_TOOLS, FINISH.explorer];
+  return [...WORK_TOOLS, ...TEAM_TOOLS, FINISH[role]];
 }
 
 interface LoopInput {
   ctx: AgentContext;
   workspace: Workspace;
   ticketId: string;
-  role: "coder" | "reviewer";
+  /** An explorer is the read-only helper a coder or reviewer asks with explore. */
+  role: "coder" | "reviewer" | "explorer";
   system: string;
   prompt: string;
   /**
@@ -629,7 +718,8 @@ function openAiConversation(
         model,
         messages,
         tools: openAiTools(input.role),
-        ...reasoningFor(info, input.role, modelInfo, input.ctx.budget?.effort),
+        // The helper answers a question, the way a chat does.
+        ...reasoningFor(info, input.role === "explorer" ? "chat" : input.role, modelInfo, input.ctx.budget?.effort),
         signal: input.ctx.signal,
       }).catch((e: unknown) => {
         throw new Error(e instanceof Error ? e.message : String(e));
@@ -729,7 +819,8 @@ export async function runCodingLoop(
     usage: total,
   });
 
-  const briefed = { ...input, system: `${input.system.trim()}\n\n${PLANNING_RULES}` };
+  const briefed =
+    role === "explorer" ? input : { ...input, system: `${input.system.trim()}\n\n${PLANNING_RULES}` };
   let conversation: Conversation;
   if (info.kind === "anthropic") {
     conversation = claudeConversation(briefed, model);
@@ -743,7 +834,8 @@ export async function runCodingLoop(
       type: "run.progress",
       runId: ctx.runId,
       ticketId,
-      role,
+      // The helper's ctx shows nothing, but the event still names a role.
+      role: role === "explorer" ? "coder" : role,
       label,
       // The plan is the progress once there is one, exactly as it is for a CLI
       // agent's run; the turn ceiling is the bar before the first plan lands.
@@ -817,13 +909,15 @@ export async function runCodingLoop(
 
     const results: Array<{ id: string; content: string; isError: boolean }> = [];
 
-    // Reads change nothing, so the ones before this turn's first command or
-    // edit are fetched together; anything after that waits its turn, since it
-    // may need to see the change. runTool never rejects.
+    // Reads and questions change nothing, so the ones before this turn's
+    // first command or edit run together; anything after that waits its
+    // turn, since it may need to see the change. Neither ever rejects.
+    const look = (call: LoopCall) =>
+      call.name === "explore" ? explore(call, input) : runTool(call, workspace, ctx);
     const prefetched = new Map<string, Promise<ToolOutcome>>();
     for (const call of turn.calls) {
       if (call.name === "bash" || call.name === "write_file" || call.name === "str_replace") break;
-      if (call.name === "read_file") prefetched.set(call.id, runTool(call, workspace, ctx));
+      if (call.name === "read_file" || call.name === "explore") prefetched.set(call.id, look(call));
     }
 
     // One diff per file per turn, not one per edit: each is a git process.
@@ -846,7 +940,7 @@ export async function runCodingLoop(
             value: {
               summary: parsed.data.summary,
               detail: parsed.data.detail,
-              verifiedWith: parsed.data.verified_with,
+              verifiedWith: parsed.data.verified_with ?? null,
               alreadyDone: parsed.data.already_done ?? false,
               handoff: checkHandoff(parsed.data.for_you),
               sendBack: parsed.data.send_back?.trim() || null,
@@ -859,6 +953,12 @@ export async function runCodingLoop(
           isError: true,
           content: `finish was malformed: ${parsed.error.issues[0]?.message}`,
         });
+        continue;
+      }
+
+      // The helper looks and nothing else, whatever tool it names.
+      if (role === "explorer" && !LOOK_TOOLS.some((t) => t.name === call.name)) {
+        results.push({ id: call.id, isError: true, content: `${call.name} is not available to you.` });
         continue;
       }
 
@@ -883,7 +983,26 @@ export async function runCodingLoop(
         continue;
       }
 
-      const outcome = await (prefetched.get(call.id) ?? runTool(call, workspace, ctx));
+      if (call.name === "share_note") {
+        const parsed = shareInput.safeParse(call.input);
+        if (parsed.success) {
+          const note = parsed.data.note.slice(0, MAX_SHARED_NOTE);
+          ctx.emit({ type: "repo.note", ticketId, text: note });
+          progress(`Shared with the other agents: ${note}`.slice(0, 200), iteration);
+        }
+        results.push({
+          id: call.id,
+          isError: !parsed.success,
+          content: parsed.success
+            ? "Shared with the agents on this repository's other tickets."
+            : "share_note needs a note.",
+        });
+        continue;
+      }
+
+      const outcome = await (prefetched.get(call.id) ?? look(call));
+      // The helper's turns were charged as they ran; the run's total carries them.
+      if (outcome.usage) total = addUsage(total, outcome.usage);
       progress(outcome.label, iteration);
       results.push({ id: call.id, isError: outcome.isError, content: truncate(outcome.content) });
       if (call.name === "write_file" || call.name === "str_replace") {
@@ -919,12 +1038,15 @@ export async function runCodingLoop(
         `A note from the person watching this ticket. Take it into account from here on:\n\n${note}`,
       );
     }
+    if (heard?.shared?.length) {
+      conversation.note(`${SHARED_NOTES_INTRO}\n\n${heard.shared.map((n) => `- ${n}`).join("\n")}`);
+    }
 
     // A plan that stopped moving is how the person watching tells a slow run
     // from a stuck one, and a model deep in its work forgets it. Asked as a
     // fact about the board, not as the rule it already has.
     const stale = iteration - planTurn;
-    if (stale >= PLAN_NUDGE_TURNS) {
+    if (role !== "explorer" && stale >= PLAN_NUDGE_TURNS) {
       planTurn = iteration;
       conversation.note(planNudge(plan, stale));
     }
@@ -954,7 +1076,75 @@ interface ToolOutcome {
   content: string;
   isError: boolean;
   label: string;
+  /** What a tool that calls a model used: explore's helper. */
+  usage?: Usage;
 }
+
+/**
+ * A question answered by a helper agent: its own short loop, on the same
+ * provider and key, read-only, and on a cheaper model where Formic knows
+ * one. Only the answer comes back, so the searching and reading behind it
+ * never enter the asking agent's conversation, which every later turn
+ * re-sends.
+ */
+async function explore(call: LoopCall, input: LoopInput): Promise<ToolOutcome> {
+  const parsed = exploreInput.safeParse(call.input);
+  if (!parsed.success) return invalid(parsed.error.issues[0]?.message, "explore");
+  const { question } = parsed.data;
+  const label = `Asked a helper: ${question.slice(0, 60)}`;
+  const { ctx } = input;
+  const info = provider(input.provider ?? "anthropic");
+  const model = info?.kind === "anthropic" ? HELPER_MODEL : (input.model ?? CODER_MODEL);
+  const outcome = await runCodingLoop({
+    ...input,
+    role: "explorer",
+    system: EXPLORER_BRIEF,
+    prompt: question,
+    model,
+    maxTurns: EXPLORE_TURNS,
+    ctx: {
+      runId: ctx.runId,
+      projectId: ctx.projectId,
+      signal: ctx.signal,
+      // Its turns count against the run's budget as they happen; what it
+      // thinks and reads is not the board's to show.
+      charge: ctx.charge,
+      emit: () => {},
+      startedAt: ctx.startedAt,
+      budget: {
+        minutes: ctx.budget?.minutes ?? { value: null, requested: null, clamp: null },
+        tokens: { value: EXPLORE_TOKENS, requested: null, clamp: null },
+        attempts: { value: null, requested: null, clamp: null },
+        maxCents: null,
+        effort: "low",
+        enforcement: { minutes: "between-turns", tokens: "between-turns", attempts: "between-turns" },
+      },
+    },
+  }).catch(
+    (e: unknown): AgentOutcome<LoopResult> => ({
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+      blocked: false,
+      usage: { model, tokensIn: 0, tokensOut: 0, costCents: 0 },
+    }),
+  );
+  return outcome.ok
+    ? { content: outcome.value.detail, isError: false, label, usage: outcome.usage }
+    : {
+        content: `The helper could not answer: ${outcome.error} Search and read it yourself.`,
+        isError: true,
+        label,
+        usage: outcome.usage,
+      };
+}
+
+/** A value as one shell word. */
+function shellWord(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/** At most this many lines of a listing or a search come back. */
+const MAX_LOOK_LINES = 300;
 
 async function runTool(
   call: LoopCall,
@@ -1008,6 +1198,31 @@ async function runTool(
           isError: false,
           label: offset || limit ? `Reading ${path} from line ${offset ?? 1}` : `Reading ${path}`,
         };
+      }
+
+      case "list_files":
+      case "search": {
+        const listed = call.name === "list_files";
+        const parsed = listed ? listInput.safeParse(call.input) : searchInput.safeParse(call.input);
+        if (!parsed.success) return invalid(parsed.error.issues[0]?.message, call.name);
+        const under = parsed.data.path?.trim() ? ` -- ${shellWord(parsed.data.path.trim())}` : "";
+        const command = listed
+          ? `git ls-files --cached --others --exclude-standard${under}`
+          : `git grep --untracked -n -I -E -e ${shellWord((parsed.data as { pattern: string }).pattern)}${under}`;
+        const result = await workspace.exec(`${command} | head -n ${MAX_LOOK_LINES + 1}`, {
+          timeoutMs: 60_000,
+          signal: ctx.signal,
+        });
+        const lines = result.stdout.split("\n").filter(Boolean);
+        const body =
+          lines.length === 0
+            ? listed
+              ? "No files there."
+              : "No matches."
+            : lines.length > MAX_LOOK_LINES
+              ? `${lines.slice(0, MAX_LOOK_LINES).join("\n")}\n[More than ${MAX_LOOK_LINES} lines: narrow it down.]`
+              : lines.join("\n");
+        return { content: body, isError: false, label: listed ? "Listing files" : "Searching" };
       }
 
       case "write_file": {

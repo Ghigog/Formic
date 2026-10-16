@@ -209,3 +209,10 @@ describe("reading Formic's own loop, as the job that runs it posts it", () => {
   });
 });
 
+
+describe("the loop entry's shared notes", () => {
+  it("reads a note the job's agent shared, for the board to pass on", () => {
+    const line = JSON.stringify({ type: "repo.note", ticketId: "t", text: "Renamed formatDate to formatDay." });
+    expect(readStreamLine(line)).toEqual([{ kind: "share", text: "Renamed formatDate to formatDay." }]);
+  });
+});

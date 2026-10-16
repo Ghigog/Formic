@@ -65,6 +65,7 @@ import { publish } from "@/lib/events/bus";
 import { signingSecret } from "@/lib/auth/session";
 import { abortTicketRuns } from "@/lib/budget/controller";
 import { ticketNotes } from "@/lib/coder/notes";
+import { shareNote } from "@/lib/coder/shared-notes";
 import { readStream } from "./stream";
 import type { LoopEntryPayload } from "./loop-entry";
 import { loopBundle, loopEntryHash } from "./bundle";
@@ -385,6 +386,8 @@ export function loopPayload(input: {
   model: string;
   /** What the person told this ticket, oldest first: it goes into the prompt. */
   notes: string[];
+  /** What agents on the repository's other tickets shared, one line each. */
+  sharedNotes?: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
   instruction?: string;
   /** What budgetFor gave this run on the loop path, fixed when the run starts. */
@@ -402,6 +405,7 @@ export function loopPayload(input: {
       acceptanceCriteria: ticket.acceptanceCriteria,
       fileScope: ticket.fileScope,
       ...(input.notes.length ? { notes: input.notes } : {}),
+      ...(input.sharedNotes?.length ? { sharedNotes: input.sharedNotes } : {}),
       ...(input.instruction ? { instruction: input.instruction } : {}),
     },
     repo: { fullName: input.repoFullName, baseBranch: input.baseBranch },
@@ -489,9 +493,11 @@ export function cliPrompt(
   notes: string[] = [],
   /** What the person asked this run to do, from the ticket's chat. */
   instruction?: string,
+  /** What agents on the repository's other tickets shared, one line each. */
+  sharedNotes: string[] = [],
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskFor(ticket, notes, instruction);
+  const task = taskFor(ticket, notes, instruction, sharedNotes);
   const work = review
     ? [reviewBrief({ ...review, task }), "", review.conflicts ? CLI_RESOLVE : CLI_REVIEW]
     : [
@@ -1945,6 +1951,9 @@ export async function receiveReport(input: {
         break;
       case "log":
         await publish(projectId, { type: "run.log", runId, ticketId: ticket.id, stream: item.stream, line: item.line });
+        break;
+      case "share":
+        await shareNote(projectId, ticket.id, item.text);
         break;
     }
   }

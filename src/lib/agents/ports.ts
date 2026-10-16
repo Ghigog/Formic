@@ -31,10 +31,12 @@ export interface AgentContext {
   /** When the run started, in epoch milliseconds, for the time limit. */
   startedAt?: number;
   /**
-   * Whether the person watching the ticket stopped the run, and the notes
-   * they sent it since it started. A loop asks between turns.
+   * Whether the person watching the ticket stopped the run, the notes they
+   * sent it since it started, and what the agents on other tickets of the
+   * repository shared since (src/lib/coder/shared-notes.ts), one line each.
+   * A loop asks between turns.
    */
-  interrupts?: () => Promise<{ stopped: string | null; notes: string[] }>;
+  interrupts?: () => Promise<{ stopped: string | null; notes: string[]; shared?: string[] }>;
 }
 
 /**
@@ -188,6 +190,11 @@ export interface CoderTask {
   fileScope: string[];
   /** What the person watching the ticket told its agents, oldest first. */
   notes?: string[];
+  /**
+   * What agents on other tickets of the repository shared lately, oldest
+   * first, one line each (src/lib/coder/shared-notes.ts).
+   */
+  sharedNotes?: string[];
   /**
    * What the person asked this run, from the ticket's chat, to do. The
    * ticket is then background: the run does this, not the ticket over.

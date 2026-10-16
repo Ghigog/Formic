@@ -64,6 +64,14 @@ export function agentModel(id: string): AgentModel | undefined {
   return AGENT_MODELS.find((m) => m.id === id);
 }
 
+/**
+ * The model the coding loop's read-only helper runs on when the coder is on
+ * Claude (`explore` in ./coding-loop.ts): searching and reading need no
+ * strong model, and the helper's turns are most of what a broad question
+ * costs.
+ */
+export const HELPER_MODEL = "claude-haiku-4-5";
+
 export function modelLabel(id: string): string {
   return agentModel(id)?.label ?? id;
 }

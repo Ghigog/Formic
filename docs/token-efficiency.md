@@ -50,6 +50,14 @@ Three steps, cheapest first:
   it runs in batches: only once at least 48,000 characters (about 12k tokens)
   of stale output have piled up. Between batches the prefix is stable and
   stays cached.
+- **A helper for searching** (`explore` in `coding-loop.ts`). A Coder or
+  Reviewer Agent with a broad question (where is this defined, what calls
+  it) asks a helper instead of reading for itself. The helper runs its own
+  short loop, read-only (list, search, read), on Haiku when the agent is on
+  Claude and on the agent's own model otherwise, and only its answer comes
+  back. The reading never enters the asking agent's conversation, which every
+  later turn re-sends. Several questions in one turn run at once, and the
+  helper's tokens count against the ticket's budget.
 - **Compaction** (`compactionSummary`). If the transcript still grows past
   96k tokens, or a quarter of the run's token budget, it is replaced by the
   opening prompt, the plan and the files changed. Masking makes this rare,

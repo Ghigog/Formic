@@ -93,6 +93,16 @@ export type FormicEvent =
       text: string;
     }
   | {
+      /**
+       * Something an agent found out that the other agents working on the same
+       * repository should know: an export renamed, a convention, a trap. Read
+       * across every board on the repository (src/lib/coder/shared-notes.ts).
+       */
+      type: "repo.note";
+      ticketId: string;
+      text: string;
+    }
+  | {
       /** A person's instruction to the Architect Agent breaking down an Epic. */
       type: "epic.note";
       epicId: string;
@@ -195,6 +205,9 @@ export type FormicEventType = FormicEvent["type"];
  * Nothing here is a state change, and nothing here is read back by anything
  * but a client replaying a stream it fell behind on — see `pruneEvents`.
  */
+/** The longest a shared note (`repo.note`) may be. */
+export const MAX_SHARED_NOTE = 1_000;
+
 export const PRUNABLE_EVENT_TYPES = ["run.log", "run.diff"] as const;
 
 const PRUNABLE = new Set<string>(PRUNABLE_EVENT_TYPES);

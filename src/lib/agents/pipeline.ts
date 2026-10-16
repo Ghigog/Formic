@@ -17,6 +17,7 @@ import { repository } from "@/lib/db";
 import type { AttachmentRef } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
 import { ticketNotes } from "@/lib/coder/notes";
+import { sharedNoteLine, sharedNotesFor } from "@/lib/coder/shared-notes";
 import { epicNoteTexts, withEpicNotes } from "./epic-notes";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { budgetFor, type Budget } from "@/lib/budget/budget-for";
@@ -30,7 +31,7 @@ import { prdSchema } from "@/lib/domain/entities";
 import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
-import { directoryTree } from "@/lib/vcs/repositories";
+import { fileLayout } from "@/lib/vcs/repositories";
 import { holdFunction } from "@/lib/usage/governor";
 
 /**
@@ -100,6 +101,7 @@ export function startRun(
 
   const startedAt = new Date();
   const heard = new Set<number>();
+  const heardShared = new Set<number>();
   const ticketId = ids.ticketId ?? null;
 
   const ctx: AgentContext = {
@@ -128,7 +130,12 @@ export function startRun(
             (n) => !heard.has(n.seq),
           );
           for (const n of fresh) heard.add(n.seq);
-          return { stopped, notes: fresh.map((n) => n.text) };
+          // A board that cannot be read for shared notes still hears its person.
+          const shared = (await sharedNotesFor(projectId, ticketId, startedAt).catch(() => [])).filter(
+            (n) => !heardShared.has(n.seq),
+          );
+          for (const n of shared) heardShared.add(n.seq);
+          return { stopped, notes: fresh.map((n) => n.text), shared: shared.map(sharedNoteLine) };
         }
       : undefined,
     emit: (raw) => {
@@ -345,15 +352,16 @@ export async function applyReroute(
 }
 
 /**
- * Directories the Architect Agent uses to ground its file scopes: the picked
- * repository's real layout when GitHub can be read, and otherwise the known
+ * What the Architect Agent grounds its file scopes in: the picked
+ * repository's files, one line per directory, when GitHub can be read, so it
+ * can reserve files rather than whole directories; otherwise the known
  * layout of this repository, which is a better prompt than nothing.
  */
 export async function repoTree(projectId: string): Promise<string[]> {
   const project = await projectFor(projectId);
   const { githubToken } = await credentialsForProject(project);
   const tree = githubToken
-    ? await directoryTree(project.repoFullName, project.baseBranch, githubToken)
+    ? await fileLayout(project.repoFullName, project.baseBranch, githubToken)
     : null;
   if (tree && tree.length > 0) return tree;
   return [

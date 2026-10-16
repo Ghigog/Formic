@@ -620,6 +620,16 @@ export interface Repository {
     types: string[],
     limit?: number,
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
+  /**
+   * Events of the given types on any of these boards from `since` on, oldest
+   * first. At most `limit`, the latest ones.
+   */
+  eventsOfTypes(
+    projectIds: string[],
+    types: string[],
+    since: Date,
+    limit?: number,
+  ): Promise<Array<{ seq: number; projectId: string; type: string; payload: unknown; at: Date }>>;
   /** Highest event sequence number so far, or 0 with none. */
   latestEventSeq(projectId: string): Promise<number>;
   /**
