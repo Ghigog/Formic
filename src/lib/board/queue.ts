@@ -68,7 +68,9 @@ async function claimQueued(repoFullName: string): Promise<Array<{ projectId: str
   for (const { projectId, cards } of boards) {
     for (const card of cards.filter(isQueued).sort(byPosition)) {
       if (heldBy(card, claims)) continue;
-      await repo.updateTicket(card.id, { status: "running", attempts: 0 });
+      // A ticket sent back from review keeps its count of reviews: waiting
+      // its turn is not a fresh start (a person's move already reset it).
+      await repo.updateTicket(card.id, { status: "running", ...(card.prNumber ? {} : { attempts: 0 }) });
       card.status = "running";
       claims.push({ ticketId: card.id, key: card.key, projectId, ownerLogin: null, fileScope: card.fileScope });
       started.push({ projectId, card });

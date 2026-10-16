@@ -120,6 +120,26 @@ describe("files reserved across every board on a repository", () => {
   });
 });
 
+describe("a ticket sent back from review", () => {
+  it("waits its turn when another board's ticket is writing its files, keeping its count of reviews", async () => {
+    const { sendBack } = await import("@/lib/review/pipeline");
+    const [epic, mine] = makeEpicWithChildren({ status: "ready" }, [{ status: "review", fileScope: ["src/api"], prNumber: 9 }]);
+    seedMemory([epic!, mine!], { [mine!.id]: { description: "API", acceptanceCriteria: [] } });
+    await repository().updateTicket(mine!.id, { attempts: 2 });
+    const { hers, ticket } = await hersRunning(["src/api/router.ts"]);
+
+    await sendBack(PROJECT, (await repository().ticketDetail(mine!.id))!, "Handle the empty case.");
+    expect((await repository().cardById(mine!.id))?.status).toBe("queued");
+    expect(launched).toEqual([]);
+
+    await repository().updateTicket(ticket.id, { status: "review" });
+    await startQueued(hers.id);
+    expect((await repository().cardById(mine!.id))?.status).toBe("running");
+    expect((await repository().ticketDetail(mine!.id))?.attempts).toBe(2);
+    expect(launched).toEqual([`coder agent for ${mine!.key}`]);
+  });
+});
+
 describe("withLease", () => {
   it("runs one holder at a time and lets the next in when it is done", async () => {
     const order: string[] = [];

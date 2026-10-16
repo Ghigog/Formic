@@ -25,6 +25,7 @@ import {
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inTicketLane } from "./lane";
 import { inRepoMergeLane } from "./merge-lane";
+import { claimOrQueue } from "@/lib/board/queue";
 import { releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
@@ -1498,11 +1499,25 @@ export async function sendBack(
   await addNote(projectId, ticket.id, `Sent back by review: ${reason}`);
   // Running from here, not from when the Coder Agent gets going: a CI
   // result arriving in between would otherwise review the same head again.
-  await repository().updateTicket(ticket.id, {
-    reviewedSha: null,
-    reviewedHead: null,
-    status: "running",
-  });
+  // Back to writing code, it claims its files like any start: while another
+  // ticket on the repository is writing them, it waits its turn.
+  const repo = repository();
+  const write = (status: "running" | "queued") =>
+    repo.updateTicket(ticket.id, { reviewedSha: null, reviewedHead: null, status });
+  const card = await repo.cardById(ticket.id);
+  const { status } = card ? await claimOrQueue(projectId, card, write) : (await write("running"), { status: "running" });
+  if (status === "queued") {
+    await publish(projectId, {
+      type: "card.status",
+      cardId: ticket.id,
+      kind: "ticket",
+      status: "queued",
+      stalledIn: null,
+      stage: card?.stage ?? ticket.stage,
+      blockedReason: null,
+    });
+    return;
+  }
   launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
 }
 
