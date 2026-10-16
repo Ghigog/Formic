@@ -4,7 +4,7 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { normalizeScope, pathInScope, violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { runningConflict } from "@/lib/domain/queue";
+import { widenClaim } from "@/lib/board/queue";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { VcsError, mergeTarget, type VcsClient } from "@/lib/vcs";
 import { projectFor } from "@/lib/board/project";
@@ -80,11 +80,14 @@ export async function widenScope(
 ): Promise<string[] | null> {
   const requested = normalizeScope(outside);
   const repo = repository();
-  const cards = await repo.boardCards(projectId);
-  if (runningConflict({ id: ticket.id, status: ticket.status, fileScope: requested }, cards)) return null;
-
   const fileScope = normalizeScope([...ticket.fileScope, ...requested]);
-  await repo.updateTicket(ticket.id, { fileScope });
+  // Widening a running ticket's scope is a new claim on those files, held
+  // against every board on the repository, and taken under the same lease
+  // as any other start so nothing else claims them meanwhile.
+  const widened = await widenClaim(projectId, { id: ticket.id, fileScope: requested }, () =>
+    repo.updateTicket(ticket.id, { fileScope }).then(() => undefined),
+  );
+  if (!widened) return null;
   const text = `${ticket.key} needed files outside its scope, and no running ticket was using them, so I added them: ${listed(requested)}.`;
   await repo.addCardChatMessage({ projectId, cardKind: "ticket", cardId: ticket.id, role: "assistant", content: text });
   await publish(projectId, { type: "ticket.reply", ticketId: ticket.id, agent: "Coder Agent", text });
@@ -183,8 +186,9 @@ export async function takeKeptWork(
   const project = await projectFor(projectId);
   // Only a branch that is gone means nothing was kept; any other failure
   // leaves the kept work where it is, to try again.
+  // A stacked ticket's own work is what it adds to the branch it was built on.
   const change = await client
-    .compare(mergeTarget(project.baseBranch), branch)
+    .compare(ticket.stackedOn ?? mergeTarget(project.baseBranch), branch)
     .catch((e: unknown) => {
       if (e instanceof VcsError && e.status === 404) return null;
       throw e;

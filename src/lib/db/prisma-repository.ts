@@ -37,6 +37,7 @@ import type {
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
+  Reservation,
 } from "./repository";
 import type {
   AgentRole,
@@ -159,6 +160,46 @@ export class PrismaRepository implements Repository {
 
   async projectById(projectId: string): Promise<ProjectSummary | null> {
     return prisma().project.findUnique({ where: { id: projectId } });
+  }
+
+  async reservations(repoFullName: string): Promise<Reservation[]> {
+    const rows = await prisma().ticket.findMany({
+      where: {
+        status: "running",
+        epic: { project: { repoFullName: { equals: repoFullName, mode: "insensitive" } } },
+      },
+      select: {
+        id: true,
+        key: true,
+        fileScope: true,
+        epic: { select: { projectId: true, project: { select: { owner: { select: { login: true } } } } } },
+      },
+    });
+    return rows.map((r) => ({
+      ticketId: r.id,
+      key: r.key,
+      projectId: r.epic.projectId,
+      ownerLogin: r.epic.project.owner?.login ?? null,
+      fileScope: r.fileScope,
+    }));
+  }
+
+  async acquireLease(key: string, holder: string, ttlMs: number): Promise<boolean> {
+    // One statement, on the database's clock: instances never compare their
+    // own clocks, and two asking at once cannot both win.
+    const rows = await prisma().$queryRaw<Array<{ key: string }>>`
+      INSERT INTO "lease" ("key", "holder", "expiresAt")
+      VALUES (${key}, ${holder}, now() + ${ttlMs} * interval '1 millisecond')
+      ON CONFLICT ("key") DO UPDATE SET
+        "holder" = EXCLUDED."holder",
+        "expiresAt" = EXCLUDED."expiresAt"
+      WHERE "lease"."expiresAt" < now() OR "lease"."holder" = EXCLUDED."holder"
+      RETURNING "key"`;
+    return rows.length > 0;
+  }
+
+  async releaseLease(key: string, holder: string): Promise<void> {
+    await prisma().lease.deleteMany({ where: { key, holder } });
   }
 
   async ensureProject(input: {
@@ -1688,6 +1729,7 @@ type TicketRow = {
   handoff: string[];
   reviewedSha: string | null;
   reviewedHead: string | null;
+  stackedOn: string | null;
   autoEscalatedAt: Date | null;
   needsHuman: string | null;
   epic: { projectId: string };
@@ -1781,6 +1823,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     handoff: row.handoff,
     reviewedSha: row.reviewedSha,
     reviewedHead: row.reviewedHead,
+    stackedOn: row.stackedOn,
     autoEscalatedAt: row.autoEscalatedAt?.toISOString() ?? null,
     needsHuman: row.needsHuman,
   };

@@ -10,6 +10,7 @@ import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { noteTexts } from "./notes";
 import { newBranchName } from "@/lib/sandbox";
+import { announceStack, releaseWaiting, restack, stackBase, ticketBelow } from "./stack";
 import { mergeTarget, vcs } from "@/lib/vcs";
 import {
   commitAndPush,
@@ -157,7 +158,13 @@ export async function runCoderAgent(
       });
       return;
     }
-    startFrom = target.branch;
+    // Stacked on a prerequisite whose pull request is still open: built on
+    // its branch, so this ticket need not wait for that one to merge.
+    const below = await stackBase(projectId, ticket);
+    startFrom = below?.branch ?? target.branch;
+    ticket = { ...ticket, stackedOn: below?.branch ?? null };
+    await repo.updateTicket(ticket.id, { stackedOn: ticket.stackedOn });
+    if (below) await announceStack(projectId, ticket, below, target.branch);
   }
 
   const run = startRun(projectId, "coder", {
@@ -401,11 +408,14 @@ export async function openTicketPullRequest(
   const target = mergeTarget(project.baseBranch);
   await ensureMergeTarget(client, target, project.baseBranch);
 
+  // A stacked ticket's pull request targets the branch it was built on, so
+  // its diff is its own layer, until the one under it merges.
+  const stacked = (await repo.ticketDetail(ticket.id))?.stackedOn ?? null;
   const pull =
     (await client.findPullRequest(input.branch)) ??
     (await client.openPullRequest({
       headBranch: input.branch,
-      baseBranch: target,
+      baseBranch: stacked ?? target,
       title: pullRequestTitle(ticket, input.change),
       body: pullRequestBody(ticket, input.change),
     }));
@@ -445,6 +455,15 @@ export async function openTicketPullRequest(
     state: "pending",
     checkName: null,
   });
+
+  // The one under it merged while this one was being written: it moves onto
+  // the merge target now rather than waiting for a merge it already missed.
+  const opened = { ...ticket, prNumber: pull.number, stackedOn: stacked };
+  const below = await ticketBelow(opened);
+  if (stacked && below?.status === "merged") await restack(projectId, opened, client, target, below.key);
+
+  // Tickets waiting on this one can build on it now that its pull request is open.
+  await releaseWaiting(projectId);
 
   // The review starts now, alongside CI, rather than on CI's first webhook.
   // With a mock GitHub no webhook will ever arrive at all, so this is also

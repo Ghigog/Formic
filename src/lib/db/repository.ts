@@ -247,6 +247,12 @@ export interface TicketDetail {
    * back, and after a person moves the card.
    */
   reviewedHead: string | null;
+  /**
+   * Stacked: the branch of the prerequisite whose open pull request this
+   * ticket builds on, and its own pull request's base until that one merges.
+   * Null on the merge target.
+   */
+  stackedOn: string | null;
   /** Work for a person, not an agent: why. Null when an agent can do it. */
   needsHuman: string | null;
   /** When story points were auto-escalated (ISO), so it happens once. Null if never. */
@@ -285,6 +291,7 @@ export interface TicketUpdate {
   handoff?: string[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
+  stackedOn?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -447,6 +454,19 @@ export interface PlatformUsageTotals {
   window: PlatformUsage;
 }
 
+/**
+ * A running ticket's claim on its files. Claims are per repository, not per
+ * board: two people's boards on one repository write the same files.
+ */
+export interface Reservation {
+  ticketId: string;
+  key: string;
+  projectId: string;
+  /** The GitHub login of the board's owner. Null for the demo board. */
+  ownerLogin: string | null;
+  fileScope: string[];
+}
+
 export interface Repository {
   /** The demo board: the first unowned project, created on demand. */
   defaultProject(): Promise<ProjectSummary>;
@@ -460,6 +480,19 @@ export interface Repository {
     repoFullName: string;
     baseBranch: string;
   }): Promise<ProjectSummary>;
+
+  /* Coordination across boards and server instances. */
+
+  /** Every running ticket on every board of a repository, and the files it holds. */
+  reservations(repoFullName: string): Promise<Reservation[]>;
+  /**
+   * Takes `key` for `holder` for `ttlMs`, when nobody holds it, the holder
+   * let it lapse, or `holder` already has it. True when it is now theirs.
+   * Atomic across instances.
+   */
+  acquireLease(key: string, holder: string, ttlMs: number): Promise<boolean>;
+  /** Lets go of `key`, only if `holder` still has it. */
+  releaseLease(key: string, holder: string): Promise<void>;
 
   /* People. */
 

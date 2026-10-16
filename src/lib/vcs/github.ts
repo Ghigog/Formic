@@ -240,6 +240,10 @@ export class GitHubClient implements VcsClient {
     };
   }
 
+  async retargetPullRequest(number: number, baseBranch: string): Promise<void> {
+    await this.request("PATCH", `/pulls/${number}`, { base: baseBranch });
+  }
+
   async updateBranch(number: number): Promise<UpdateOutcome> {
     try {
       await this.request("PUT", `/pulls/${number}/update-branch`, {});

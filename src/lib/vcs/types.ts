@@ -183,6 +183,11 @@ export interface VcsClient {
   pullRequest(number: number): Promise<PullRequestDetail>;
   checksFor(sha: string): Promise<CheckSummary[]>;
   checkLog(checkRunId: number): Promise<CheckLog>;
+  /**
+   * Points an open pull request at another base: a stacked one at the merge
+   * target, once the pull request it was built on has merged.
+   */
+  retargetPullRequest(number: number, baseBranch: string): Promise<void>;
   /** Merges the base branch into the PR head. Never rewrites history. */
   updateBranch(number: number): Promise<UpdateOutcome>;
   /**

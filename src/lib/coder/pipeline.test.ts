@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ATTEMPT_DEFAULTS } from "@/lib/budget/budget-for";
 import { runCoderAgent } from "./pipeline";
+import { reviewBrief } from "@/lib/agents/coder";
 import { setCheckoutFactory } from "./checkout";
 import {
   resetPullRequestSweep,
@@ -547,6 +548,44 @@ describe("the Reviewer Agent pipeline", () => {
     expect(reviewer.reviews).toHaveLength(1);
     expect(reviewer.reviews[0]!.conflicts).toBeDefined();
     expect((await new MockVcsClient(REPO).pullRequest(pull.number)).mergeable).toBe(true);
+  });
+
+  it("shows the Reviewer Agent the common ancestor, and why each side changed the conflicted files", async () => {
+    const reviewer = new StubReviewer();
+    useAgents(new StubCoder(writesInScope()), reviewer);
+    const commands: string[] = [];
+    setCheckoutFactory(async (request) => {
+      const raw = new MemoryWorkspace({}, (command) => {
+        commands.push(command);
+        const ok = (stdout = "") => ({ exitCode: 0, stdout, stderr: "", timedOut: false });
+        if (command.includes("--diff-filter=U")) return ok("src/lib/feature/load.ts\n");
+        if (command.includes("merge --no-commit")) return { exitCode: 1, stdout: "", stderr: "CONFLICT", timedOut: false };
+        if (command.includes("grep -qE")) return { exitCode: 1, stdout: "", stderr: "", timedOut: false };
+        if (command.startsWith("git log") && command.includes("HEAD..refs/formic/base")) {
+          return ok("abc1234 T-9: rename load to fetch\nOne name for it everywhere.\n@@formic-commit-end@@\n");
+        }
+        if (command.startsWith("git log")) return ok("def5678 T-1: validate input\n\n@@formic-commit-end@@\n");
+        return ok();
+      });
+      return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: "e2b_test", async dispose() {} };
+    });
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, true);
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    expect(commands.some((c) => c.includes("-c merge.conflictStyle=diff3 merge --no-commit"))).toBe(true);
+    const review = reviewer.reviews[0]!;
+    expect(review.conflicts).toEqual(["src/lib/feature/load.ts"]);
+    expect(review.conflictHistory).toEqual({
+      base: ["abc1234 T-9: rename load to fetch\nOne name for it everywhere."],
+      branch: ["def5678 T-1: validate input"],
+    });
+    const brief = reviewBrief(review);
+    expect(brief).toContain("the common ancestor both started from");
+    expect(brief).toContain("- abc1234 T-9: rename load to fetch\n  One name for it everywhere.");
+    expect(brief).toContain("- def5678 T-1: validate input");
   });
 
   it("parks a conflict for a person once the Reviewer Agent is out of goes", async () => {

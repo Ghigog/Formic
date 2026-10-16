@@ -31,6 +31,7 @@ import type {
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
+  Reservation,
 } from "./repository";
 import type {
   AgentPreset,
@@ -81,6 +82,7 @@ interface TicketExtras {
   handoff?: string[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
+  stackedOn?: string | null;
   autoEscalatedAt?: string | null;
   scopeRequest?: string[];
 }
@@ -101,6 +103,8 @@ interface AttachmentRow {
 }
 
 interface Store {
+  /** Lease key to who holds it and until when (ms since epoch). */
+  leases: Map<string, { holder: string; expiresAt: number }>;
   /** Host usage by UTC day, "YYYY-MM-DD". */
   platformUsage: Map<string, PlatformUsage>;
   /** The project the demo board belongs to, and the fallback. */
@@ -181,6 +185,7 @@ function store(): Store {
     existing.attachments ??= new Map();
     existing.audits ??= [];
     existing.platformUsage ??= new Map();
+    existing.leases ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -212,6 +217,7 @@ function store(): Store {
     queensSpent: new Map(),
     events: [],
     platformUsage: new Map(),
+    leases: new Map(),
     runs: new Map(),
     deliveries: new Set(),
     presets: new Map(),
@@ -431,6 +437,39 @@ export class MemoryRepository implements Repository {
 
   async projectById(projectId: string): Promise<ProjectSummary | null> {
     return store().projects.get(projectId) ?? null;
+  }
+
+  async reservations(repoFullName: string): Promise<Reservation[]> {
+    const s = store();
+    const projects = new Map((await this.projectsForRepo(repoFullName)).map((p) => [p.id, p]));
+    const held: Reservation[] = [];
+    for (const card of s.cards.values()) {
+      if (card.kind !== "ticket" || card.status !== "running") continue;
+      const project = projects.get(projectOf(s, card));
+      if (!project) continue;
+      held.push({
+        ticketId: card.id,
+        key: card.key,
+        projectId: project.id,
+        ownerLogin: project.ownerId ? (s.users.get(project.ownerId)?.login ?? null) : null,
+        fileScope: [...card.fileScope],
+      });
+    }
+    return held;
+  }
+
+  async acquireLease(key: string, holder: string, ttlMs: number): Promise<boolean> {
+    const s = store();
+    const now = Date.now();
+    const held = s.leases.get(key);
+    if (held && held.holder !== holder && held.expiresAt > now) return false;
+    s.leases.set(key, { holder, expiresAt: now + ttlMs });
+    return true;
+  }
+
+  async releaseLease(key: string, holder: string): Promise<void> {
+    const s = store();
+    if (s.leases.get(key)?.holder === holder) s.leases.delete(key);
   }
 
   async ensureProject(input: {
@@ -1077,6 +1116,7 @@ export class MemoryRepository implements Repository {
     if (update.handoff !== undefined) extras.handoff = update.handoff;
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
     if (update.reviewedHead !== undefined) extras.reviewedHead = update.reviewedHead;
+    if (update.stackedOn !== undefined) extras.stackedOn = update.stackedOn;
     if (update.scopeRequest !== undefined) extras.scopeRequest = update.scopeRequest;
   }
 
@@ -1600,6 +1640,7 @@ function toDetail(
     handoff: extras?.handoff ?? [],
     reviewedSha: extras?.reviewedSha ?? null,
     reviewedHead: extras?.reviewedHead ?? null,
+    stackedOn: extras?.stackedOn ?? null,
     autoEscalatedAt: extras?.autoEscalatedAt ?? null,
     needsHuman: card.needsHuman ?? null,
   };

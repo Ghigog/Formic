@@ -205,6 +205,12 @@ export class MockVcsClient implements VcsClient {
     };
   }
 
+  async retargetPullRequest(number: number, baseBranch: string): Promise<void> {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    pull.baseBranch = baseBranch;
+  }
+
   async updateBranch(number: number): Promise<UpdateOutcome> {
     const refusal = repo().refusals.get(number);
     if (refusal) return { ok: false, reason: refusal, conflict: true };

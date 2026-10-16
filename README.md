@@ -57,7 +57,8 @@ With a GitHub App configured, everyone signs in with GitHub. Each person:
 
 - **picks repositories** from the ones they installed the app on. Each gets
   its own board, private to them. Two people on the same repository get two
-  boards.
+  boards, and their agents still take turns on the same files and merge one
+  at a time (`docs/concurrency.md`).
 - **adds their sandbox key** (E2B) in Settings. AI provider keys live on
   each agent template instead (see Agents per column).
 - **pushes as themselves.** Agents use the person's GitHub App token, which
@@ -329,6 +330,10 @@ each, and what is not covered yet.
 saved agent, and why money is a ceiling for unattended runs rather than a bill
 anyone is shown.
 
+`docs/concurrency.md` covers many agents and many people on one repository:
+file reservations, stacked pull requests, the merge queue and conflict
+resolution.
+
 `docs/token-efficiency.md` covers how Formic keeps that number small:
 prompt caching, tidied and masked tool output, compaction, and capped output.
 
@@ -342,7 +347,10 @@ the most tests.
 they may touch. The Architect Agent's graph is validated server-side for
 cycles and for scope overlap between tickets that could run at the same time,
 and a Coder Agent's diff is checked against its scope before it may commit. A
-prompt asking nicely for isolation is not a boundary.
+prompt asking nicely for isolation is not a boundary. A running ticket's
+scope is a reservation on the repository, not just its board: a ticket on
+anyone's board that needs the same files waits in In Progress until it is
+free, decided under a lock in the database so every server instance agrees.
 
 **Done means merged into the base branch.** A ticket merges into its
 project's base branch only after the Reviewer Agent approves it and CI is
@@ -350,7 +358,11 @@ green. To keep a person between agents and the base branch, set
 `MERGE_TARGET=integration`: agents then merge into `formic/integration`, which
 is kept up to date with the base branch before every ticket starts, and
 promoting it is that person's click. Either way the merge lane is serialized:
-one merge in flight at a time, each rebased on the result of the last.
+one merge in flight at a time per repository and branch, across every board
+and server instance, each brought up to date with the last and merged only
+once CI passes on exactly that head. A ticket can also stack on the open pull
+request of the one it depends on, rather than wait for it to merge.
+`docs/concurrency.md` has all of it.
 
 **The local sandbox provider is not isolation.** It runs child processes on the
 host with host network and filesystem access. It exists so the system can be

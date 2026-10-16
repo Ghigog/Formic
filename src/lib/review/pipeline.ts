@@ -19,10 +19,14 @@ import {
   type CheckSummary,
   type PullRequestDetail,
   mergeNeedsPromotion,
+  mergeTarget,
   vcs,
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
-import { inMergeLane, inTicketLane } from "./lane";
+import { inTicketLane } from "./lane";
+import { inRepoMergeLane } from "./merge-lane";
+import { claimOrQueue } from "@/lib/board/queue";
+import { releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
@@ -215,11 +219,14 @@ async function react(
   if (ticket.runnerJob) return;
 
   if (red.length === 0 && reviewedSha === headSha) {
+    // Stacked on a pull request that has not merged: this one merges after
+    // it, once it has been pointed at the merge target (restackOnto).
+    if (ticket.stackedOn && pull.baseBranch === ticket.stackedOn) return;
     if (!project.autoMerge) {
       await awaitPersonMerge(projectId, ticket);
       return;
     }
-    await inMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber));
+    await inRepoMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber), laneBusy);
     return;
   }
 
@@ -368,6 +375,26 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
       await markMergedExternally(projectId, pull.number);
       continue;
     }
+    if (ticket.stackedOn && pull.state === "open") {
+      const below = await ticketBelow(ticket);
+      // The one under it merged where this board did not see it (a person on
+      // GitHub, while no instance was listening): it moves on now.
+      if (below?.status === "merged") {
+        await restack(projectId, ticket, client, mergeTarget(project.baseBranch), below.key);
+        continue;
+      }
+      // The one under it started over on a new branch, or is gone: what this
+      // pull request was built on will never merge.
+      if (!below) {
+        await stallTicket(
+          projectId,
+          ticket,
+          `${ticket.key}'s pull request #${pull.number} is built on ${ticket.stackedOn}, which the ticket it depends on no longer uses, so it can never merge as it is. Close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`,
+          { blocked: true, stalledIn: "in_review" },
+        );
+        continue;
+      }
+    }
     if (pull.state === "open" && pull.mergeable === false) {
       // Detached: resolving is an agent's run, and the sweep has other
       // cards to look at meanwhile.
@@ -432,6 +459,13 @@ export async function markMergedExternally(
     blockedReason: null,
   });
 
+  // Merged by a person: whatever was stacked on it moves onto the target
+  // just as it would after a merge from the queue.
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  await restackOnto(projectId, ticket, vcs(project.repoFullName, creds.githubToken), mergeTarget(project.baseBranch)).catch(
+    (e: unknown) => console.error(`[formic] restacking on ${ticket.key} failed:`, e),
+  );
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
 }
@@ -552,6 +586,8 @@ async function closeWithoutMerge(
 
 type MergeResult = { merged: true } | { merged: false; reason: string };
 
+const laneBusy = (reason: string): MergeResult => ({ merged: false, reason });
+
 /**
  * A person asks for the ticket's pull request to merge, in its chat. Their
  * word stands in for the review, but red CI still does not merge, and a
@@ -587,10 +623,14 @@ export async function mergeByPerson(
   // The person vouches for this head, so bringing the base in carries it
   // across exactly as a review's approval would.
   await repository().updateTicket(ticket.id, { reviewedSha: pull.headSha });
-  const result = await inMergeLane(projectId, async () => {
-    const fresh = (await repository().ticketDetail(ticket.id)) ?? ticket;
-    return mergeTicket(projectId, fresh, prNumber);
-  });
+  const result = await inRepoMergeLane(
+    projectId,
+    async () => {
+      const fresh = (await repository().ticketDetail(ticket.id)) ?? ticket;
+      return mergeTicket(projectId, fresh, prNumber);
+    },
+    laneBusy,
+  );
   if (!result.merged) return `Did not merge pull request #${prNumber}: ${result.reason}`;
   // Merged already, or just now by the lane: either way the card says so.
   await markMergedExternally(projectId, prNumber);
@@ -614,6 +654,13 @@ async function mergeTicket(
 
   const before = await client.pullRequest(prNumber);
   if (before.merged) return { merged: true };
+  const target = mergeTarget(project.baseBranch);
+  if (ticket.stackedOn && before.baseBranch === ticket.stackedOn) {
+    return {
+      merged: false,
+      reason: `${ticket.key} is stacked on ${ticket.stackedOn}, so it merges after that does, once it is pointed at ${target}.`,
+    };
+  }
 
   const update = await client.updateBranch(prNumber);
   if (!update.ok && update.conflict) {
@@ -699,6 +746,7 @@ async function mergeTicket(
     );
   }
 
+  await restackOnto(projectId, ticket, client, target);
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
   return { merged: true };
@@ -725,35 +773,17 @@ async function settle(
 }
 
 /**
- * A merge can unblock siblings. Without this they sit in To Do as `waiting`
- * until someone drags them, which makes the dependency graph decorative.
+ * A merge can unblock siblings: anything waiting only on it, and anything
+ * that can now build on the one pull request still open under it.
  */
 async function releaseDependents(
   projectId: string,
   merged: TicketDetail,
 ): Promise<void> {
-  const repo = repository();
-  const cards = await repo.boardCards(projectId);
-  const mergedIds = new Set(
-    cards.filter((c) => c.status === "merged").map((c) => c.id),
-  );
-  mergedIds.add(merged.id);
-
-  for (const card of cards) {
-    if (card.kind !== "ticket" || card.status !== "waiting") continue;
-    if (!card.dependsOn.every((id) => mergedIds.has(id))) continue;
-
-    await repo.updateTicket(card.id, { status: "ready", stalledIn: null });
-    await publish(projectId, {
-      type: "card.status",
-      cardId: card.id,
-      kind: "ticket",
-      status: "ready",
-      stalledIn: null,
-      stage: card.stage,
-      blockedReason: null,
-    });
-  }
+  const cards = await repository().boardCards(projectId);
+  // The store may not show it merged yet to every reader; this one knows.
+  for (const card of cards) if (card.id === merged.id) card.status = "merged";
+  await releaseWaiting(projectId, cards);
 }
 
 /**
@@ -1165,6 +1195,7 @@ async function resolveConflicts(
     // changes (or its scope), and GitHub brings the base in.
     const real = checkout.sandboxId !== null;
     let conflicts = changedFiles.length ? changedFiles : ticket.fileScope;
+    let conflictHistory: { base: string[]; branch: string[] } | undefined;
     if (real) {
       const merged = await mergeInBase(checkout.raw, pull.baseBranch);
       if (!merged.ok) {
@@ -1193,6 +1224,7 @@ async function resolveConflicts(
         return;
       }
       conflicts = merged.conflicts;
+      if (conflicts.length > 0) conflictHistory = await historyOf(checkout.raw, conflicts);
     }
 
     let resolved: ReviewVerdict | null = null;
@@ -1204,6 +1236,7 @@ async function resolveConflicts(
         workspace: scopedWorkspace(checkout.raw, [...ticket.fileScope, ...conflicts]),
         ...review,
         conflicts,
+        ...(conflictHistory ? { conflictHistory } : {}),
       });
       if (!outcome.ok) {
         await stallTicket(projectId, ticket, outcome.error, { blocked: outcome.blocked, stalledIn: "in_review" });
@@ -1231,7 +1264,7 @@ async function resolveConflicts(
 
     const { raw } = checkout;
     const left = await raw.exec(
-      `git add -A && git diff --cached HEAD | grep -qE '^\\+(<<<<<<<|>>>>>>>)( |$)'`,
+      `git add -A && git diff --cached HEAD | grep -qE '^\\+(<<<<<<<|\\|\\|\\|\\|\\|\\|\\||>>>>>>>)( |$)'`,
     );
     if (left.exitCode === 0) {
       return await fail(`The Reviewer Agent could not resolve it${said ? `: ${said}` : "."}`);
@@ -1268,6 +1301,35 @@ async function resolveConflicts(
   } finally {
     await checkout.dispose();
   }
+}
+
+/** How many commits on each side a resolver is told about. */
+const HISTORY_COMMITS = 15;
+/** Ends each commit in the log historyOf reads; no commit message has it. */
+const COMMIT_END = "@@formic-commit-end@@";
+
+/**
+ * Why each side changed the conflicted files: the commits on the base and on
+ * the branch since they diverged, newest first. The base's are often other
+ * tickets, from this board or another on the repository, whose subject and
+ * body say what they were for.
+ */
+async function historyOf(raw: Workspace, files: string[]): Promise<{ base: string[]; branch: string[] }> {
+  const paths = files.map(shellQuote).join(" ");
+  const read = async (range: string) => {
+    const log = await raw.exec(
+      `git log --no-merges --max-count=${HISTORY_COMMITS} --format='%h %s%n%b%n${COMMIT_END}' ${range} -- ${paths}`,
+    );
+    if (log.exitCode !== 0) return [];
+    return log.stdout
+      .split(COMMIT_END)
+      .map((c) => c.trim().slice(0, 1_500))
+      .filter(Boolean);
+  };
+  // One at a time: a sandbox runs one command at a time.
+  const base = await read(`HEAD..${BASE_REF}`);
+  const branch = await read(`${BASE_REF}..HEAD`);
+  return { base, branch };
 }
 
 /** Where the base branch is fetched to in a checkout, to merge it from. */
@@ -1315,7 +1377,10 @@ async function mergeInBase(
     };
   }
   const identity = `-c user.name=${shellQuote(AGENT_COMMIT_AUTHOR.name)} -c user.email=${shellQuote(AGENT_COMMIT_AUTHOR.email)}`;
-  const merge = await raw.exec(`git ${identity} merge --no-commit --no-ff ${BASE_REF}`);
+  // diff3 markers carry the common ancestor between the two sides, which is
+  // what tells a resolver what each side changed rather than only how each
+  // side ended up.
+  const merge = await raw.exec(`git ${identity} -c merge.conflictStyle=diff3 merge --no-commit --no-ff ${BASE_REF}`);
   const conflicts = lines((await raw.exec("git diff --name-only --diff-filter=U")).stdout);
   if (merge.exitCode !== 0 && conflicts.length === 0) {
     return {
@@ -1377,7 +1442,7 @@ export async function approve(
   }
   const fresh = await repo.ticketDetail(ticket.id);
   if (!fresh || fresh.status === "merged") return;
-  await inMergeLane(projectId, () => mergeTicket(projectId, fresh, prNumber));
+  await inRepoMergeLane(projectId, () => mergeTicket(projectId, fresh, prNumber), laneBusy);
 }
 
 /**
@@ -1434,11 +1499,25 @@ export async function sendBack(
   await addNote(projectId, ticket.id, `Sent back by review: ${reason}`);
   // Running from here, not from when the Coder Agent gets going: a CI
   // result arriving in between would otherwise review the same head again.
-  await repository().updateTicket(ticket.id, {
-    reviewedSha: null,
-    reviewedHead: null,
-    status: "running",
-  });
+  // Back to writing code, it claims its files like any start: while another
+  // ticket on the repository is writing them, it waits its turn.
+  const repo = repository();
+  const write = (status: "running" | "queued") =>
+    repo.updateTicket(ticket.id, { reviewedSha: null, reviewedHead: null, status });
+  const card = await repo.cardById(ticket.id);
+  const { status } = card ? await claimOrQueue(projectId, card, write) : (await write("running"), { status: "running" });
+  if (status === "queued") {
+    await publish(projectId, {
+      type: "card.status",
+      cardId: ticket.id,
+      kind: "ticket",
+      status: "queued",
+      stalledIn: null,
+      stage: card?.stage ?? ticket.stage,
+      blockedReason: null,
+    });
+    return;
+  }
   launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
 }
 
