@@ -173,6 +173,56 @@ describe("context compaction", () => {
   });
 });
 
+describe("observation masking", () => {
+  it("clears large outputs the agent has moved past, and keeps the recent ones", async () => {
+    const big = "x".repeat(15_000);
+    const requests: Array<Array<{ role: string; tool_call_id?: string; content: string | null }>> = [];
+    let sent = 0;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      if (!init?.body) return Response.json({ data: [] });
+      sent += 1;
+      requests.push(JSON.parse(init.body as string).messages);
+      const call =
+        sent > 8
+          ? { name: "finish", arguments: JSON.stringify({ summary: "s", detail: "d", verified_with: null }) }
+          : { name: "read_file", arguments: JSON.stringify({ path: "big.ts" }) };
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [{ id: `call_${sent}`, type: "function", function: call }],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+    });
+
+    const outcome = await runCodingLoop({
+      ctx: { runId: "r", projectId: "p", emit: () => {}, signal: new AbortController().signal },
+      workspace: new MemoryWorkspace({ "big.ts": big }),
+      ticketId: "t",
+      role: "coder",
+      system: "sys",
+      prompt: "do it",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      apiKey: "sk",
+    });
+
+    expect(outcome.ok).toBe(true);
+    const last = requests.at(-1)!.filter((m) => m.role === "tool");
+    const cleared = last.filter((m) => m.content?.includes("cleared to keep the context lean"));
+    const whole = last.filter((m) => m.content === big);
+    expect(cleared.map((m) => m.tool_call_id)).toContain("call_1");
+    expect(whole.map((m) => m.tool_call_id)).toContain("call_8");
+    expect(cleared.length + whole.length).toBe(8);
+  });
+});
+
 type Call = { name: string; args: Record<string, unknown> };
 
 const finish: Call = {
