@@ -186,8 +186,9 @@ export async function takeKeptWork(
   const project = await projectFor(projectId);
   // Only a branch that is gone means nothing was kept; any other failure
   // leaves the kept work where it is, to try again.
+  // A stacked ticket's own work is what it adds to the branch it was built on.
   const change = await client
-    .compare(mergeTarget(project.baseBranch), branch)
+    .compare(ticket.stackedOn ?? mergeTarget(project.baseBranch), branch)
     .catch((e: unknown) => {
       if (e instanceof VcsError && e.status === 404) return null;
       throw e;

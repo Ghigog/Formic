@@ -247,6 +247,12 @@ export interface TicketDetail {
    * back, and after a person moves the card.
    */
   reviewedHead: string | null;
+  /**
+   * Stacked: the branch of the prerequisite whose open pull request this
+   * ticket builds on, and its own pull request's base until that one merges.
+   * Null on the merge target.
+   */
+  stackedOn: string | null;
   /** Work for a person, not an agent: why. Null when an agent can do it. */
   needsHuman: string | null;
   /** When story points were auto-escalated (ISO), so it happens once. Null if never. */
@@ -285,6 +291,7 @@ export interface TicketUpdate {
   handoff?: string[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
+  stackedOn?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;

@@ -94,9 +94,13 @@ export async function publish(
     await startQueued(projectId);
   }
 
-  // A Queen pushes its card's prerequisites along: when one is placed, and
-  // whenever something merges.
-  if (event.type === "card.queen" || (event.type === "card.status" && event.status === "merged")) {
+  // A Queen pushes its card's prerequisites along: when one is placed,
+  // whenever something merges, and whenever a pull request opens, since a
+  // ticket can build on an open one (src/lib/domain/stack.ts).
+  if (
+    event.type === "card.queen" ||
+    (event.type === "card.status" && (event.status === "merged" || (event.kind === "ticket" && event.status === "review")))
+  ) {
     const { advanceQueens } = await import("@/lib/board/service");
     await advanceQueens(projectId);
   }

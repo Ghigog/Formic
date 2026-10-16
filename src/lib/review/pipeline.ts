@@ -19,11 +19,13 @@ import {
   type CheckSummary,
   type PullRequestDetail,
   mergeNeedsPromotion,
+  mergeTarget,
   vcs,
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inTicketLane } from "./lane";
 import { inRepoMergeLane } from "./merge-lane";
+import { releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
@@ -216,6 +218,9 @@ async function react(
   if (ticket.runnerJob) return;
 
   if (red.length === 0 && reviewedSha === headSha) {
+    // Stacked on a pull request that has not merged: this one merges after
+    // it, once it has been pointed at the merge target (restackOnto).
+    if (ticket.stackedOn && pull.baseBranch === ticket.stackedOn) return;
     if (!project.autoMerge) {
       await awaitPersonMerge(projectId, ticket);
       return;
@@ -369,6 +374,26 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
       await markMergedExternally(projectId, pull.number);
       continue;
     }
+    if (ticket.stackedOn && pull.state === "open") {
+      const below = await ticketBelow(ticket);
+      // The one under it merged where this board did not see it (a person on
+      // GitHub, while no instance was listening): it moves on now.
+      if (below?.status === "merged") {
+        await restack(projectId, ticket, client, mergeTarget(project.baseBranch), below.key);
+        continue;
+      }
+      // The one under it started over on a new branch, or is gone: what this
+      // pull request was built on will never merge.
+      if (!below) {
+        await stallTicket(
+          projectId,
+          ticket,
+          `${ticket.key}'s pull request #${pull.number} is built on ${ticket.stackedOn}, which the ticket it depends on no longer uses, so it can never merge as it is. Close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`,
+          { blocked: true, stalledIn: "in_review" },
+        );
+        continue;
+      }
+    }
     if (pull.state === "open" && pull.mergeable === false) {
       // Detached: resolving is an agent's run, and the sweep has other
       // cards to look at meanwhile.
@@ -433,6 +458,13 @@ export async function markMergedExternally(
     blockedReason: null,
   });
 
+  // Merged by a person: whatever was stacked on it moves onto the target
+  // just as it would after a merge from the queue.
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  await restackOnto(projectId, ticket, vcs(project.repoFullName, creds.githubToken), mergeTarget(project.baseBranch)).catch(
+    (e: unknown) => console.error(`[formic] restacking on ${ticket.key} failed:`, e),
+  );
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
 }
@@ -621,6 +653,13 @@ async function mergeTicket(
 
   const before = await client.pullRequest(prNumber);
   if (before.merged) return { merged: true };
+  const target = mergeTarget(project.baseBranch);
+  if (ticket.stackedOn && before.baseBranch === ticket.stackedOn) {
+    return {
+      merged: false,
+      reason: `${ticket.key} is stacked on ${ticket.stackedOn}, so it merges after that does, once it is pointed at ${target}.`,
+    };
+  }
 
   const update = await client.updateBranch(prNumber);
   if (!update.ok && update.conflict) {
@@ -706,6 +745,7 @@ async function mergeTicket(
     );
   }
 
+  await restackOnto(projectId, ticket, client, target);
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
   return { merged: true };
@@ -732,35 +772,17 @@ async function settle(
 }
 
 /**
- * A merge can unblock siblings. Without this they sit in To Do as `waiting`
- * until someone drags them, which makes the dependency graph decorative.
+ * A merge can unblock siblings: anything waiting only on it, and anything
+ * that can now build on the one pull request still open under it.
  */
 async function releaseDependents(
   projectId: string,
   merged: TicketDetail,
 ): Promise<void> {
-  const repo = repository();
-  const cards = await repo.boardCards(projectId);
-  const mergedIds = new Set(
-    cards.filter((c) => c.status === "merged").map((c) => c.id),
-  );
-  mergedIds.add(merged.id);
-
-  for (const card of cards) {
-    if (card.kind !== "ticket" || card.status !== "waiting") continue;
-    if (!card.dependsOn.every((id) => mergedIds.has(id))) continue;
-
-    await repo.updateTicket(card.id, { status: "ready", stalledIn: null });
-    await publish(projectId, {
-      type: "card.status",
-      cardId: card.id,
-      kind: "ticket",
-      status: "ready",
-      stalledIn: null,
-      stage: card.stage,
-      blockedReason: null,
-    });
-  }
+  const cards = await repository().boardCards(projectId);
+  // The store may not show it merged yet to every reader; this one knows.
+  for (const card of cards) if (card.id === merged.id) card.status = "merged";
+  await releaseWaiting(projectId, cards);
 }
 
 /**

@@ -1729,6 +1729,7 @@ type TicketRow = {
   handoff: string[];
   reviewedSha: string | null;
   reviewedHead: string | null;
+  stackedOn: string | null;
   autoEscalatedAt: Date | null;
   needsHuman: string | null;
   epic: { projectId: string };
@@ -1822,6 +1823,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     handoff: row.handoff,
     reviewedSha: row.reviewedSha,
     reviewedHead: row.reviewedHead,
+    stackedOn: row.stackedOn,
     autoEscalatedAt: row.autoEscalatedAt?.toISOString() ?? null,
     needsHuman: row.needsHuman,
   };

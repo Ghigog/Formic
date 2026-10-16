@@ -31,6 +31,7 @@ import { vcs } from "@/lib/vcs";
 import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
+import { readiness } from "@/lib/domain/stack";
 import { claimOrQueue, startQueued } from "@/lib/board/queue";
 
 /**
@@ -44,12 +45,12 @@ function allMerged(epic: BoardCard): boolean {
   return epic.childCount > 0 && epic.doneCount === epic.childCount;
 }
 
+/**
+ * Whether a ticket's prerequisites let it start: all merged, or all but one
+ * that has its pull request open, which it then stacks on (src/lib/domain/stack.ts).
+ */
 function dependenciesMet(card: BoardCard, all: BoardCard[]): boolean {
-  if (card.dependsOn.length === 0) return true;
-  const merged = new Set(
-    all.filter((c) => c.status === "merged").map((c) => c.id),
-  );
-  return card.dependsOn.every((id) => merged.has(id));
+  return readiness(card, all).ready;
 }
 
 /**
@@ -108,7 +109,7 @@ async function whatIsWrong(
       .filter((c) => c && c.status !== "merged")
       .map((c) => c!.key)
       .join(", ");
-    return `${card.key} is waiting on ${blocking || "a dependency"} to merge first. Drag it back to To Do; it is ready to go once that merges.`;
+    return `${card.key} is waiting on ${blocking || "a dependency"}. It can start once every ticket it depends on has merged, or all but one have and that one has its pull request open, which it then builds on. Drag it back to To Do; it is ready to go then.`;
   }
 
   return null;

@@ -1578,10 +1578,13 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   }
 
   const branch = ticket.branchName!;
-  // A new ticket started from the branch it merges into; a re-run with its
-  // pull request open started from the ticket's own branch.
+  // A new ticket started from the branch it merges into, or the branch it is
+  // stacked on; a re-run with its pull request open started from the
+  // ticket's own branch.
   const from =
-    isTicketImplementation(result.mode) && !ticket.prNumber ? mergeTarget(project.baseBranch) : branch;
+    isTicketImplementation(result.mode) && !ticket.prNumber
+      ? (ticket.stackedOn ?? mergeTarget(project.baseBranch))
+      : branch;
 
   // The run finished and handed its work back whole: its checkpoint has
   // nothing more to give, unless taking the work fails and loses it.

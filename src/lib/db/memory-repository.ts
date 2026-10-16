@@ -82,6 +82,7 @@ interface TicketExtras {
   handoff?: string[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
+  stackedOn?: string | null;
   autoEscalatedAt?: string | null;
   scopeRequest?: string[];
 }
@@ -1115,6 +1116,7 @@ export class MemoryRepository implements Repository {
     if (update.handoff !== undefined) extras.handoff = update.handoff;
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
     if (update.reviewedHead !== undefined) extras.reviewedHead = update.reviewedHead;
+    if (update.stackedOn !== undefined) extras.stackedOn = update.stackedOn;
     if (update.scopeRequest !== undefined) extras.scopeRequest = update.scopeRequest;
   }
 
@@ -1638,6 +1640,7 @@ function toDetail(
     handoff: extras?.handoff ?? [],
     reviewedSha: extras?.reviewedSha ?? null,
     reviewedHead: extras?.reviewedHead ?? null,
+    stackedOn: extras?.stackedOn ?? null,
     autoEscalatedAt: extras?.autoEscalatedAt ?? null,
     needsHuman: card.needsHuman ?? null,
   };
