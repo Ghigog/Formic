@@ -18,6 +18,7 @@ import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
 import { ProblemNotice, WorkTimer } from "./card";
 import { TicketUsage } from "./ticket-usage";
+import { ScoutsPanel } from "./scouts-panel";
 import {
   activityOf,
   appendActivity,
@@ -235,6 +236,16 @@ export function TicketDrawer({
             <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
               <LinkifiedText text={card.blockedReason} />
             </p>
+          )}
+
+          {card && (
+            <ScoutsPanel
+              card={card}
+              onChanged={() => {
+                void load();
+                onChanged?.();
+              }}
+            />
           )}
 
           {/* Survives the toast that announced it: where it came from, and why. */}

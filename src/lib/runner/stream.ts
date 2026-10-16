@@ -17,6 +17,8 @@ export type StreamItem =
   | { kind: "plan"; steps: PlanStep[] }
   /** What the loop's agent shared with the agents on the repository's other tickets. */
   | { kind: "share"; text: string }
+  /** What the loop's agent said of a note another agent shared. */
+  | { kind: "rate"; noteSeq: number; verdict: "helped" | "outdated" }
   | { kind: "log"; stream: "stdout" | "stderr"; line: string };
 
 const MAX_THOUGHT = 4_000;
@@ -266,6 +268,11 @@ function formicEventLine(event: Json, type: string): StreamItem[] | null {
   if (type === "repo.note") {
     const text = str(event.text).trim();
     return text ? [{ kind: "share", text }] : [];
+  }
+  if (type === "repo.note.rated") {
+    const noteSeq = Number(event.noteSeq);
+    const verdict = event.verdict === "helped" || event.verdict === "outdated" ? event.verdict : null;
+    return Number.isInteger(noteSeq) && noteSeq > 0 && verdict ? [{ kind: "rate", noteSeq, verdict }] : [];
   }
   if (type === "ticket.plan") {
     return Array.isArray(event.steps) ? [{ kind: "plan", steps: event.steps as PlanStep[] }] : [];

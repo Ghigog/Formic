@@ -486,6 +486,13 @@ export async function closeAlreadyDone(
   ticket: TicketDetail,
   evidence: { summary: string; detail: string },
 ): Promise<void> {
+  // A scout that finds nothing to do brings back no change; if they all do,
+  // the ticket says so with their reasons.
+  if (ticket.scoutOf) {
+    const { scoutReturned } = await import("@/lib/coder/scouts");
+    await scoutReturned(projectId, ticket, { ok: false, reason: `Found it already done: ${evidence.summary}` });
+    return;
+  }
   if (ticket.prNumber) {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);

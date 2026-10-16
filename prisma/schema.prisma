@@ -167,6 +167,15 @@ model Project {
   autoEscalate               Boolean  @default(false)
   /// Queens taken off the board, so clearing one never hands it back.
   queensSpent                Int      @default(0)
+  /// The most Coder Agents this board runs at once, scouts included. Null
+  /// (the default) is no cap: only file reservations hold work back.
+  colonySize                 Int?
+  /// Slots of colonySize kept for urgent work (bugs, tickets back from
+  /// review). The board's level sets the least it may be (docs/colony.md).
+  colonyReserve              Int      @default(0)
+  /// Whether idle reserve slots send scouts out on their own. Unlocked by
+  /// level; off until the owner turns it on.
+  autoScout                  Boolean  @default(false)
 
   epics             Epic[]
   queens            Queen[]
@@ -339,6 +348,17 @@ model Ticket {
   mergePoints     Int?
   mergeMultiplier Float?
 
+  /// Scouts (docs/colony.md). On a scout: the ticket it scouts for, the
+  /// approach it was told to take, and the agent template it runs on (null:
+  /// the column's). A scout is never on the board; its parent shows it.
+  scoutOf         String?
+  scoutBrief      String?
+  scoutPresetId   String?
+  /// On a parent: how many scouts it sent out, the one picked, and why.
+  scouts          Int       @default(0)
+  scoutPick       String?
+  scoutWhy        String?
+
   costCents Float @default(0)
   tokensIn  Int   @default(0)
   tokensOut Int   @default(0)
@@ -355,6 +375,7 @@ model Ticket {
   @@index([epicId, status])
   @@index([mergedAt])
   @@index([prNumber])
+  @@index([scoutOf])
   @@map("ticket")
 }
 

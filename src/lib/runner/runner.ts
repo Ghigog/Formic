@@ -65,7 +65,7 @@ import { publish } from "@/lib/events/bus";
 import { signingSecret } from "@/lib/auth/session";
 import { abortTicketRuns } from "@/lib/budget/controller";
 import { ticketNotes } from "@/lib/coder/notes";
-import { shareNote } from "@/lib/coder/shared-notes";
+import { rateNote, shareNote } from "@/lib/coder/shared-notes";
 import { readStream } from "./stream";
 import type { LoopEntryPayload } from "./loop-entry";
 import { loopBundle, loopEntryHash } from "./bundle";
@@ -1954,6 +1954,9 @@ export async function receiveReport(input: {
         break;
       case "share":
         await shareNote(projectId, ticket.id, item.text);
+        break;
+      case "rate":
+        await rateNote(projectId, ticket.id, item.noteSeq, item.verdict);
         break;
     }
   }

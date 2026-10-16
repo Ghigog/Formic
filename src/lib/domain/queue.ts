@@ -47,11 +47,20 @@ export interface Claim {
  * people's boards on one repository write into the same files, and only one
  * of them may be doing it at a time.
  */
-export function heldBy<T extends Claim>(card: { id: string; fileScope: readonly string[] }, claims: readonly T[]): T | null {
+export function heldBy<T extends Claim>(
+  card: { id: string; fileScope: readonly string[] },
+  claims: readonly T[],
+  /** Tickets that share this one's claim: a scouting ticket and its scouts. */
+  together: readonly string[] = [],
+): T | null {
   if (card.fileScope.length === 0) return null;
   return (
     claims.find(
-      (c) => c.ticketId !== card.id && c.fileScope.length > 0 && scopesOverlap(card.fileScope, c.fileScope),
+      (c) =>
+        c.ticketId !== card.id &&
+        !together.includes(c.ticketId) &&
+        c.fileScope.length > 0 &&
+        scopesOverlap(card.fileScope, c.fileScope),
     ) ?? null
   );
 }

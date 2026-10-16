@@ -13,6 +13,8 @@ import type {
   ReviewerAgent,
 } from "./ports";
 import { runCodingLoop } from "./coding-loop";
+import type { ScoutCandidate, ScoutVerdict } from "./judge";
+import { provider as providerInfo } from "@/lib/llm/providers";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { isSpikeText } from "@/lib/colony/game";
 import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, SHARED_NOTES_INTRO, withCodingRules } from "./prompts";
@@ -122,6 +124,19 @@ export class LoopCoderAgent implements CoderAgent {
 
 export class LoopReviewerAgent implements ReviewerAgent {
   constructor(private readonly config: AgentConfig = {}) {}
+
+  async compare(
+    ctx: AgentContext,
+    input: { task: CoderTask; candidates: ScoutCandidate[] },
+  ): Promise<AgentOutcome<ScoutVerdict>> {
+    // The same provider and model the reviews run on, asked once.
+    if (providerInfo(this.config.provider ?? "anthropic")?.kind === "openai") {
+      const { compareScoutsOnOpenAi } = await import("./openai-agents");
+      return compareScoutsOnOpenAi(this.config, ctx, input);
+    }
+    const { compareScoutsOnClaude } = await import("./anthropic");
+    return compareScoutsOnClaude(this.config, ctx, input);
+  }
 
   review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
     return runCodingLoop({

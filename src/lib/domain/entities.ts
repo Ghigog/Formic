@@ -256,6 +256,12 @@ export interface BoardCard {
   mergedAt?: string | null;
   mergePoints?: number | null;
   mergeMultiplier?: number | null;
+  /**
+   * Tickets: how many scouts it sent out (0: none), and the one picked once
+   * they are back (docs/colony.md). Scouts themselves are never board cards.
+   */
+  scouts?: number;
+  scoutPick?: string | null;
 }
 
 export const STAGE_COUNT = LIFECYCLE_STAGES.length;

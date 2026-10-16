@@ -118,6 +118,14 @@ that cost it effort calls `share_note` (`src/lib/coder/shared-notes.ts`).
   working hears new ones between its turns, with the person's own notes.
 - **Information, not instructions.** The agent is told to check a note
   against the code before relying on it.
+- **Strongest first, like an ant trail.** A briefing hands out the 20
+  strongest notes, not the newest (`src/lib/domain/trail.ts`). A note fades
+  by half each day, so an unrated one is gone in about three. An agent that
+  found it useful calls `rate_note` with `helped`, which adds strength that
+  fades by half each week, so a note that keeps saving agents time stays for
+  weeks. One the code no longer matches is rated `outdated` and stops being
+  handed out. Each ticket's latest rating of a note counts once. Notes that
+  arrive mid-run are all passed on as they come.
 - **Every path.** A loop run in GitHub Actions shares through its reporter and
   is briefed when it starts; a CLI agent is briefed when it starts.
 

@@ -81,11 +81,21 @@ export async function widenScope(
   const requested = normalizeScope(outside);
   const repo = repository();
   const fileScope = normalizeScope([...ticket.fileScope, ...requested]);
+  // A scout widens its parent's claim with its own: the change it brings
+  // back may become the parent's, and its siblings share the parent's files.
+  const parent = ticket.scoutOf ? await repo.ticketDetail(ticket.scoutOf) : null;
+  const together = parent ? [parent.id, ...(await repo.scoutsOf(parent.id)).map((s) => s.id)] : [];
   // Widening a running ticket's scope is a new claim on those files, held
   // against every board on the repository, and taken under the same lease
   // as any other start so nothing else claims them meanwhile.
-  const widened = await widenClaim(projectId, { id: ticket.id, fileScope: requested }, () =>
-    repo.updateTicket(ticket.id, { fileScope }).then(() => undefined),
+  const widened = await widenClaim(
+    projectId,
+    { id: ticket.id, fileScope: requested },
+    async () => {
+      await repo.updateTicket(ticket.id, { fileScope });
+      if (parent) await repo.updateTicket(parent.id, { fileScope: normalizeScope([...parent.fileScope, ...requested]) });
+    },
+    together,
   );
   if (!widened) return null;
   const text = `${ticket.key} needed files outside its scope, and no running ticket was using them, so I added them: ${listed(requested)}.`;
@@ -105,6 +115,15 @@ export async function askForScope(
   options: { kept: boolean },
 ): Promise<void> {
   const requested = normalizeScope(outside);
+  // A scout does not ask: it is one scout fewer.
+  if (ticket.scoutOf) {
+    const { scoutReturned } = await import("./scouts");
+    await scoutReturned(projectId, ticket, {
+      ok: false,
+      reason: `Needed files outside the ticket that another ticket is writing: ${listed(requested)}.`,
+    });
+    return;
+  }
   const reason = `Needs files outside its scope: ${listed(requested)}. Allow them in its chat to carry on.`;
   const repo = repository();
   await repo.updateTicket(ticket.id, {

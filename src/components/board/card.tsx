@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useRef } from "react";
+import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
@@ -434,9 +435,12 @@ function CardShell({
 function QueueTimer({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
   const blocker = env?.queuedBehind?.(card) ?? null;
+  const { view: colony } = useColonySettings();
   const label = blocker
     ? `Waiting for ${blocker.key} to finish. It starts on its own then.`
-    : "Up next. Starting now.";
+    : colony?.colonySize
+      ? "Up next. It starts when a slot in the colony frees."
+      : "Up next. Starting now.";
   return (
     <span
       data-queue
@@ -473,6 +477,11 @@ function TicketHead({
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
       <ProblemBadge card={card} />
+      {(card.scouts ?? 0) > 0 && !card.scoutPick && card.status === "running" && (
+        <CoinBadge title="Scouts trying it at once" className="shrink-0 whitespace-nowrap">
+          {card.scouts} scouts out
+        </CoinBadge>
+      )}
       {pr && card.prNumber && (
         <CoinBadge title="Pull request" className="shrink-0 whitespace-nowrap">
           PR #{card.prNumber}

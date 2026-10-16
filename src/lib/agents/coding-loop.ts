@@ -253,6 +253,7 @@ const replaceInput = z.object({
   new_text: z.string(),
 });
 const shareInput = z.object({ note: z.string().trim().min(1) });
+const rateInput = z.object({ note: z.number().int().positive(), verdict: z.enum(["helped", "outdated"]) });
 const exploreInput = z.object({ question: z.string().trim().min(1) });
 const listInput = z.object({ path: z.string().optional() });
 const searchInput = z.object({ pattern: z.string().min(1), path: z.string().optional() });
@@ -365,6 +366,21 @@ const TEAM_TOOLS: Anthropic.Beta.BetaTool[] = [
       type: "object",
       properties: { note: { type: "string" } },
       required: ["note"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "rate_note",
+    description:
+      "Say whether a note another agent shared, numbered [note N], held up. helped: it saved you effort, so later agents are told it too. outdated: the code no longer matches it, so it stops being handed out. Only for a note you checked against the code.",
+    input_schema: {
+      type: "object",
+      properties: {
+        note: { type: "integer", description: "N from [note N]." },
+        verdict: { type: "string", enum: ["helped", "outdated"] },
+      },
+      required: ["note", "verdict"],
       additionalProperties: false,
     },
     strict: true,
@@ -996,6 +1012,19 @@ export async function runCodingLoop(
           content: parsed.success
             ? "Shared with the agents on this repository's other tickets."
             : "share_note needs a note.",
+        });
+        continue;
+      }
+
+      if (call.name === "rate_note") {
+        const parsed = rateInput.safeParse(call.input);
+        if (parsed.success) {
+          ctx.emit({ type: "repo.note.rated", ticketId, noteSeq: parsed.data.note, verdict: parsed.data.verdict });
+        }
+        results.push({
+          id: call.id,
+          isError: !parsed.success,
+          content: parsed.success ? "Noted." : "rate_note needs a note number and a verdict of helped or outdated.",
         });
         continue;
       }

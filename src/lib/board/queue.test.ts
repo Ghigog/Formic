@@ -163,3 +163,60 @@ describe("withLease", () => {
     expect(await withLease("k", async () => "next")).toBe("next");
   });
 });
+
+describe("the colony's cap", () => {
+  it("holds routine work at the reserve, and lets a bug through", async () => {
+    const [epic, a, b, bug] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "running", fileScope: ["src/a.ts"] },
+      { status: "queued", fileScope: ["src/b.ts"] },
+      { status: "queued", fileScope: ["src/c.ts"], workType: "bug" },
+    ]);
+    seedMemory([epic!, a!, b!, bug!]);
+    // Two agents at once, at Lv 1, where the reserve floor is two: held to one.
+    await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: false });
+
+    await startQueued(PROJECT);
+    expect((await repository().cardById(b!.id))?.status).toBe("queued");
+    expect((await repository().cardById(bug!.id))?.status).toBe("running");
+    expect(launched).toEqual([`coder agent for ${bug!.key}`]);
+  });
+
+  it("changes nothing on a board with no cap", async () => {
+    const [epic, a, b] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "running", fileScope: ["src/a.ts"] },
+      { status: "queued", fileScope: ["src/b.ts"] },
+    ]);
+    seedMemory([epic!, a!, b!]);
+
+    await startQueued(PROJECT);
+    expect((await repository().cardById(b!.id))?.status).toBe("running");
+  });
+
+  it("calls back scouts the reserve sent on its own when urgent work needs the slots", async () => {
+    const [epic, scouting, bug] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "running", fileScope: ["src/a.ts"], scouts: 2 },
+      { status: "queued", fileScope: ["src/c.ts"], workType: "bug" },
+    ]);
+    seedMemory([epic!, scouting!, bug!], { [scouting!.id]: { description: "Spike", acceptanceCriteria: [] } });
+    await repository().updateTicket(scouting!.id, { scoutWhy: "auto" });
+    await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: true });
+
+    await startQueued(PROJECT);
+    expect((await repository().cardById(scouting!.id))?.status).toBe("ready");
+    expect((await repository().ticketDetail(scouting!.id))?.scouts).toBe(0);
+    expect((await repository().cardById(bug!.id))?.status).toBe("running");
+  });
+
+  it("does not call back scouts a person sent", async () => {
+    const [epic, scouting, bug] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "running", fileScope: ["src/a.ts"], scouts: 2 },
+      { status: "queued", fileScope: ["src/c.ts"], workType: "bug" },
+    ]);
+    seedMemory([epic!, scouting!, bug!]);
+    await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: true });
+
+    await startQueued(PROJECT);
+    expect((await repository().cardById(scouting!.id))?.status).toBe("running");
+    expect((await repository().cardById(bug!.id))?.status).toBe("queued");
+  });
+});

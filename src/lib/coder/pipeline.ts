@@ -8,7 +8,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { noteTexts } from "./notes";
+import { runScouts, scoutReturned, scouting, ticketNoteTexts } from "./scouts";
 import { sharedNoteLine, sharedNotesFor } from "./shared-notes";
 import { newBranchName } from "@/lib/sandbox";
 import { announceStack, releaseWaiting, restack, stackBase, ticketBelow } from "./stack";
@@ -79,6 +79,11 @@ export async function stallTicket(
     stage?: number;
   },
 ): Promise<void> {
+  // A scout's failure is one scout fewer, not a card that stops.
+  if (ticket.scoutOf) {
+    await scoutReturned(projectId, ticket, { ok: false, reason });
+    return;
+  }
   const status = options.blocked ? "blocked" : "failed";
   const stage = options.stage ?? ticket.stage;
 
@@ -113,6 +118,12 @@ export async function runCoderAgent(
   const found = await repo.ticketDetail(ticketId);
   if (!found) return;
   let ticket: TicketDetail = found;
+
+  // A ticket with scouts sent does not code itself: its scouts do.
+  if (scouting(ticket)) {
+    await runScouts(projectId, ticket);
+    return;
+  }
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
@@ -224,7 +235,7 @@ export async function runCoderAgent(
         "implement",
         ticket,
         undefined,
-        await noteTexts(projectId, ticket.id),
+        await ticketNoteTexts(projectId, ticket),
         options.instruction,
         shared,
       ),
@@ -251,7 +262,7 @@ export async function runCoderAgent(
   // before the loop existed, and the card says which limit stopped it.
   const loop = await loopAgentFor(projectId, "in_progress");
   if (loop && (await loopRunnerReady(client, project.baseBranch))) {
-    const notes = await noteTexts(projectId, ticket.id);
+    const notes = await ticketNoteTexts(projectId, ticket);
     // Read once, here: a setting changed after this run starts is for the next.
     // A column's own values win over the person's rules.
     const budget = await budgetForRun(
@@ -324,7 +335,7 @@ export async function runCoderAgent(
 
   try {
     const outcome = await (await agentFor(projectId, "coder")).implement(run.ctx, {
-      task: taskFor(ticket, await noteTexts(projectId, ticket.id), options.instruction, shared),
+      task: taskFor(ticket, await ticketNoteTexts(projectId, ticket), options.instruction, shared),
       // The scope guides the agent rather than fencing it in: the right
       // change may need a file outside it, and the diff check below asks
       // the person before any of that goes further.
@@ -417,6 +428,11 @@ export async function openTicketPullRequest(
   client: VcsClient,
   input: { branch: string; change: CodeChange; usage?: Usage },
 ): Promise<void> {
+  // A scout's change stops at its branch: the Reviewer Agent picks among them.
+  if (ticket.scoutOf) {
+    await scoutReturned(projectId, ticket, { ok: true, branch: input.branch, change: input.change, usage: input.usage });
+    return;
+  }
   const repo = repository();
   const project = await projectFor(projectId);
   const target = mergeTarget(project.baseBranch);

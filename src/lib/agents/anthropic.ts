@@ -12,6 +12,7 @@ import type {
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
+  CoderTask,
   DraftTicket,
   ExistingTicket,
   ProductAgent,
@@ -38,6 +39,8 @@ import {
   toDraftTicket,
 } from "./decomposition";
 import { requestShape } from "./models";
+import { CODER_MODEL } from "./coding-loop";
+import { JUDGE_BRIEF, acceptVerdict, judgePrompt, scoutVerdictSchema, type ScoutCandidate, type ScoutVerdict } from "./judge";
 
 /** Image types the API accepts as an image content block. Anything else is inlined as text instead. */
 const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
@@ -474,6 +477,42 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
     } catch (e) {
       return failure(model, describeError(e));
     }
+  }
+}
+
+/** The Reviewer Agent's pick among a ticket's scouts, on Claude. */
+export async function compareScoutsOnClaude(
+  config: AgentConfig,
+  ctx: AgentContext,
+  input: { task: CoderTask; candidates: ScoutCandidate[] },
+): Promise<AgentOutcome<ScoutVerdict>> {
+  const model = config.model ?? CODER_MODEL;
+  const shape = requestShape(model, { effort: "medium" });
+  try {
+    const message = await anthropicClient(config.apiKey).beta.messages.create(
+      {
+        model,
+        max_tokens: 4_000,
+        system: JUDGE_BRIEF,
+        ...(shape.thinking ? { thinking: shape.thinking } : {}),
+        ...(shape.fallbacks ? { fallbacks: shape.fallbacks } : {}),
+        output_config: { ...shape.outputConfig, format: zodOutputFormat(scoutVerdictSchema) },
+        betas: shape.betas,
+        messages: [{ role: "user", content: judgePrompt(input.task, input.candidates) }],
+      },
+      { signal: ctx.signal },
+    );
+    const usage = usageFrom(model, message.usage);
+    if (message.stop_reason === "refusal") return failure(model, "The model declined to compare the scouts.", true, usage);
+    const text = message.content
+      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+    const verdict = acceptVerdict(JSON.parse(text), input.candidates);
+    if (typeof verdict === "string") return failure(model, verdict, false, usage);
+    return { ok: true, value: verdict, usage };
+  } catch (e) {
+    return failure(model, describeError(e));
   }
 }
 

@@ -83,6 +83,20 @@ export async function publish(
     await syncIssues(projectId, event);
   }
 
+  // A ticket moved out of In Progress before its scouts were back calls
+  // them back (src/lib/coder/scouts.ts).
+  if (
+    event.type === "card.status" &&
+    event.kind === "ticket" &&
+    (event.status === "ready" || event.status === "blocked" || event.status === "failed")
+  ) {
+    const ticket = await repository().ticketDetail(event.cardId);
+    if (ticket && !ticket.scoutOf && ticket.scouts > 0 && !ticket.scoutPick) {
+      const { recallScouts } = await import("@/lib/coder/scouts");
+      await recallScouts(projectId, ticket.id);
+    }
+  }
+
   // A ticket that stopped running may free files a queued one is waiting
   // on. Every way a run ends says so here, so the queue is moved on here.
   // Imported late: the queue starts agents, and they publish.

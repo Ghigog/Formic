@@ -1,3 +1,4 @@
+import type { ScoutCandidate, ScoutVerdict } from "./judge";
 import type {
   AgentAttachment,
   AgentContext,
@@ -358,6 +359,19 @@ export class MockCoderAgent implements CoderAgent {
 }
 
 export class MockReviewerAgent implements ReviewerAgent {
+  async compare(
+    ctx: AgentContext,
+    input: { task: CoderTask; candidates: ScoutCandidate[] },
+  ): Promise<AgentOutcome<ScoutVerdict>> {
+    await sleep(200, ctx.signal);
+    const pick = [...input.candidates].sort((a, b) => a.files.length - b.files.length)[0]!;
+    return {
+      ok: true,
+      value: { pick: pick.label, why: `${pick.label} meets the ticket with the smallest change (mock run).`, lessons: [] },
+      usage: MOCK_USAGE,
+    };
+  }
+
   async review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
     const red = input.checks[0]?.name;
     ctx.emit({

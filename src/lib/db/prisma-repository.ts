@@ -405,7 +405,7 @@ export class PrismaRepository implements Repository {
         position: true,
         createdAt: true,
         updatedAt: true,
-        tickets: { select: { id: true, status: true } },
+        tickets: { where: { scoutOf: null }, select: { id: true, status: true } },
         queen: { select: { id: true } },
         runs: {
           where: { status: { in: ["queued", "running"] } },
@@ -416,7 +416,7 @@ export class PrismaRepository implements Repository {
     });
 
     const tickets = await db.ticket.findMany({
-      where: { epic: { projectId }, archived: false },
+      where: { epic: { projectId }, archived: false, scoutOf: null },
       orderBy: { position: "asc" },
       select: {
         id: true,
@@ -449,6 +449,8 @@ export class PrismaRepository implements Repository {
         mergedAt: true,
         mergePoints: true,
         mergeMultiplier: true,
+        scouts: true,
+        scoutPick: true,
         dependsOn: { select: { dependsOnTicketId: true } },
         queen: { select: { id: true } },
         // Every run, newest first: the live one names the agent, the
@@ -551,6 +553,8 @@ export class PrismaRepository implements Repository {
       mergedAt: t.mergedAt?.toISOString() ?? null,
       mergePoints: t.mergePoints,
       mergeMultiplier: t.mergeMultiplier,
+      scouts: t.scouts,
+      scoutPick: t.scoutPick,
       };
     });
 
@@ -560,7 +564,7 @@ export class PrismaRepository implements Repository {
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
     const db = prisma();
     const tickets = await db.ticket.findMany({
-      where: { epic: { projectId }, archived: true },
+      where: { epic: { projectId }, archived: true, scoutOf: null },
       orderBy: { position: "asc" },
       select: { id: true, key: true, title: true, position: true, archived: true, workType: true },
     });
@@ -1202,8 +1206,50 @@ export class PrismaRepository implements Repository {
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
     const db = prisma();
     const rows = await db.ticket.findMany({
-      where: { epicId },
+      where: { epicId, scoutOf: null },
       orderBy: { position: "asc" },
+      include: { epic: { select: { projectId: true } } },
+    });
+    return rows.map(toTicketDetail);
+  }
+
+  async createScouts(parentId: string, briefs: Array<{ brief: string; presetId: string | null }>): Promise<TicketDetail[]> {
+    const db = prisma();
+    const parent = await db.ticket.findUnique({ where: { id: parentId } });
+    if (!parent) return [];
+    const made = [];
+    for (const [i, b] of briefs.entries()) {
+      made.push(
+        await db.ticket.create({
+          data: {
+            epicId: parent.epicId,
+            key: `${parent.key}-s${i + 1}`,
+            title: parent.title,
+            description: parent.description,
+            acceptanceCriteria: parent.acceptanceCriteria,
+            fileScope: parent.fileScope,
+            size: parent.size,
+            storyPoints: parent.storyPoints,
+            workType: parent.workType,
+            position: parent.position,
+            // Inert until the parent starts and sends them out.
+            status: "ready",
+            stage: parent.stage,
+            scoutOf: parent.id,
+            scoutBrief: b.brief,
+            scoutPresetId: b.presetId,
+          },
+          include: { epic: { select: { projectId: true } } },
+        }),
+      );
+    }
+    return made.map(toTicketDetail);
+  }
+
+  async scoutsOf(parentId: string): Promise<TicketDetail[]> {
+    const rows = await prisma().ticket.findMany({
+      where: { scoutOf: parentId },
+      orderBy: { key: "asc" },
       include: { epic: { select: { projectId: true } } },
     });
     return rows.map(toTicketDetail);
@@ -1534,6 +1580,13 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: { autoMerge } });
   }
 
+  async setColony(
+    projectId: string,
+    colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean },
+  ): Promise<void> {
+    await prisma().project.update({ where: { id: projectId }, data: colony });
+  }
+
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
     const rows = await prisma().assistantMessage.findMany({
       where: { projectId },
@@ -1748,6 +1801,13 @@ type TicketRow = {
   stackedOn: string | null;
   autoEscalatedAt: Date | null;
   needsHuman: string | null;
+  workType: WorkType | null;
+  scoutOf: string | null;
+  scoutBrief: string | null;
+  scoutPresetId: string | null;
+  scouts: number;
+  scoutPick: string | null;
+  scoutWhy: string | null;
   epic: { projectId: string };
 };
 
@@ -1842,6 +1902,13 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     stackedOn: row.stackedOn,
     autoEscalatedAt: row.autoEscalatedAt?.toISOString() ?? null,
     needsHuman: row.needsHuman,
+    workType: row.workType,
+    scoutOf: row.scoutOf,
+    scoutBrief: row.scoutBrief,
+    scoutPresetId: row.scoutPresetId,
+    scouts: row.scouts,
+    scoutPick: row.scoutPick,
+    scoutWhy: row.scoutWhy,
   };
 }
 

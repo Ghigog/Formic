@@ -85,6 +85,12 @@ interface TicketExtras {
   stackedOn?: string | null;
   autoEscalatedAt?: string | null;
   scopeRequest?: string[];
+  /** On a scout: the ticket it scouts for, its approach and its agent template. */
+  scoutOf?: string | null;
+  scoutBrief?: string | null;
+  scoutPresetId?: string | null;
+  /** On a parent: why the pick was made. */
+  scoutWhy?: string | null;
 }
 
 /** A stored file, kept alongside its bytes until fetched or claimed. */
@@ -196,6 +202,9 @@ function store(): Store {
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
     autoMerge: false,
     autoEscalate: false,
+    colonySize: null,
+    colonyReserve: 0,
+    autoScout: false,
   };
   const s: Store = {
     project,
@@ -492,6 +501,9 @@ export class MemoryRepository implements Repository {
       baseBranch: input.baseBranch,
       autoMerge: false,
       autoEscalate: false,
+      colonySize: null,
+      colonyReserve: 0,
+      autoScout: false,
     };
     s.projects.set(project.id, project);
     return project;
@@ -530,8 +542,9 @@ export class MemoryRepository implements Repository {
 
   async boardCards(projectId?: string): Promise<BoardCard[]> {
     const s = store();
+    // Scouts are never board cards: their parent shows them.
     const cards = [...s.cards.values()].filter(
-      (c) => projectId === undefined || projectOf(s, c) === projectId,
+      (c) => (projectId === undefined || projectOf(s, c) === projectId) && !isScout(s, c),
     );
     // Runs still going here, by the card they are for.
     const live = new Map<string, { role: BoardCard["agentRole"]; since: Date }>();
@@ -589,7 +602,7 @@ export class MemoryRepository implements Repository {
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
     const s = store();
     return [...s.cards.values()]
-      .filter((c) => c.kind === "ticket" && c.archived && projectOf(s, c) === projectId)
+      .filter((c) => c.kind === "ticket" && c.archived && projectOf(s, c) === projectId && !isScout(s, c))
       .sort(byPosition);
   }
 
@@ -1104,6 +1117,8 @@ export class MemoryRepository implements Repository {
       card.blockedReason = update.blockedReason;
     }
     if (update.costCents !== undefined) card.costCents += update.costCents;
+    if (update.scouts !== undefined) card.scouts = update.scouts;
+    if (update.scoutPick !== undefined) card.scoutPick = update.scoutPick;
 
     const extras = s.ticketExtras.get(ticketId);
     if (!extras) return;
@@ -1125,13 +1140,67 @@ export class MemoryRepository implements Repository {
     if (update.reviewedHead !== undefined) extras.reviewedHead = update.reviewedHead;
     if (update.stackedOn !== undefined) extras.stackedOn = update.stackedOn;
     if (update.scopeRequest !== undefined) extras.scopeRequest = update.scopeRequest;
+    if (update.scoutWhy !== undefined) extras.scoutWhy = update.scoutWhy;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
     const s = store();
     return [...s.cards.values()]
-      .filter((c) => c.kind === "ticket" && c.epicId === epicId)
+      .filter((c) => c.kind === "ticket" && c.epicId === epicId && !isScout(s, c))
       .sort(byPosition)
+      .map((c) => toDetail(c, s.ticketExtras.get(c.id), projectOf(s, c)));
+  }
+
+  async createScouts(parentId: string, briefs: Array<{ brief: string; presetId: string | null }>): Promise<TicketDetail[]> {
+    const s = store();
+    const parent = s.cards.get(parentId);
+    const extras = s.ticketExtras.get(parentId);
+    if (!parent || parent.kind !== "ticket" || !extras) return [];
+    const made: TicketDetail[] = [];
+    for (const [i, b] of briefs.entries()) {
+      const now = new Date().toISOString();
+      const card: BoardCard = {
+        ...parent,
+        id: id("ticket"),
+        key: `${parent.key}-s${i + 1}`,
+        // Inert until the parent starts and sends them out.
+        status: "ready",
+        stalledIn: null,
+        dependsOn: [],
+        prNumber: null,
+        prUrl: null,
+        blockedReason: null,
+        costCents: 0,
+        queen: false,
+        scouts: 0,
+        scoutPick: null,
+        createdAt: now,
+        startedAt: now,
+        updatedAt: now,
+      };
+      s.cards.set(card.id, card);
+      s.ticketExtras.set(card.id, {
+        description: extras.description,
+        acceptanceCriteria: [...extras.acceptanceCriteria],
+        branchName: null,
+        attempts: 0,
+        summary: null,
+        runnerJob: null,
+        issueNumber: null,
+        scoutOf: parentId,
+        scoutBrief: b.brief,
+        scoutPresetId: b.presetId,
+      });
+      made.push(toDetail(card, s.ticketExtras.get(card.id), projectOf(s, card)));
+    }
+    return made;
+  }
+
+  async scoutsOf(parentId: string): Promise<TicketDetail[]> {
+    const s = store();
+    return [...s.cards.values()]
+      .filter((c) => s.ticketExtras.get(c.id)?.scoutOf === parentId)
+      .sort((a, b) => a.key.localeCompare(b.key))
       .map((c) => toDetail(c, s.ticketExtras.get(c.id), projectOf(s, c)));
   }
 
@@ -1476,6 +1545,14 @@ export class MemoryRepository implements Repository {
     if (extras && !extras.autoEscalatedAt) extras.autoEscalatedAt = new Date().toISOString();
   }
 
+  async setColony(
+    projectId: string,
+    colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean },
+  ): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) Object.assign(project, colony);
+  }
+
   async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) project.autoMerge = autoMerge;
@@ -1650,7 +1727,18 @@ function toDetail(
     stackedOn: extras?.stackedOn ?? null,
     autoEscalatedAt: extras?.autoEscalatedAt ?? null,
     needsHuman: card.needsHuman ?? null,
+    workType: card.workType ?? null,
+    scoutOf: extras?.scoutOf ?? null,
+    scoutBrief: extras?.scoutBrief ?? null,
+    scoutPresetId: extras?.scoutPresetId ?? null,
+    scouts: card.scouts ?? 0,
+    scoutPick: card.scoutPick ?? null,
+    scoutWhy: extras?.scoutWhy ?? null,
   };
+}
+
+function isScout(s: Store, card: BoardCard): boolean {
+  return card.kind === "ticket" && !!s.ticketExtras.get(card.id)?.scoutOf;
 }
 
 function matchesAttachmentRef(row: AttachmentRow, ref: AttachmentRef): boolean {

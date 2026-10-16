@@ -3,6 +3,7 @@ import type { FormicEvent } from "@/lib/domain/events";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import type { Budget } from "@/lib/budget/budget-for";
 import type { ProviderId } from "@/lib/llm/providers";
+import type { ScoutCandidate, ScoutVerdict } from "./judge";
 
 /**
  * The agent boundary. Every pipeline is reachable through one of these, and
@@ -276,6 +277,15 @@ export interface ReviewVerdict extends CodeChange {
  */
 export interface ReviewerAgent {
   review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>>;
+  /**
+   * A ticket's scouts are back: which of their changes to keep
+   * (src/lib/coder/scouts.ts). An agent that cannot answer here leaves it
+   * out, and the smallest change is kept.
+   */
+  compare?(
+    ctx: AgentContext,
+    input: { task: CoderTask; candidates: ScoutCandidate[] },
+  ): Promise<AgentOutcome<ScoutVerdict>>;
 }
 
 export interface AgentRegistry {

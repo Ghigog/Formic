@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
 const { repository } = await import("@/lib/db");
-const { sharedNotes, sharedNotesFor, shareNote, sharedNoteLine } = await import("./shared-notes");
+const { rateNote, sharedNotes, sharedNotesFor, shareNote, sharedNoteLine } = await import("./shared-notes");
 
 beforeEach(() => {
   globalThis.__formicMemoryStore = undefined;
@@ -46,7 +46,7 @@ describe("notes agents share on a repository", () => {
     await shareNote(hers.id, theirs.id, "  Renamed formatDate to formatDay.  ");
 
     expect((await sharedNotesFor(ours.id, mine.id)).map(sharedNoteLine)).toEqual([
-      "HER-1: Renamed formatDate to formatDay.",
+      expect.stringMatching(/^\[note \d+\] HER-1: Renamed formatDate to formatDay\.$/),
     ]);
     expect(await sharedNotesFor(hers.id, theirs.id)).toEqual([]);
   });
@@ -71,5 +71,35 @@ describe("notes agents share on a repository", () => {
 
     const [note] = await sharedNotesFor(ours.id, mine.id);
     expect(note!.text).toHaveLength(1_000);
+  });
+
+  it("drops a note an agent found outdated from briefings", async () => {
+    const { ours } = await twoBoards();
+    const mine = await ticketOn(ours.id, "OUR-1");
+    const other = await ticketOn(ours.id, "OUR-2");
+    const third = await ticketOn(ours.id, "OUR-3");
+
+    await shareNote(ours.id, other.id, "Stale.");
+    await shareNote(ours.id, other.id, "Still true.");
+    const [stale] = await sharedNotesFor(ours.id, mine.id);
+    await rateNote(ours.id, third.id, stale!.seq, "outdated");
+
+    expect((await sharedNotesFor(ours.id, mine.id)).map((n) => n.text)).toEqual(["Still true."]);
+  });
+
+  it("keeps a note that helped past the day an unrated one fades in", async () => {
+    const { ours } = await twoBoards();
+    const mine = await ticketOn(ours.id, "OUR-1");
+    const other = await ticketOn(ours.id, "OUR-2");
+    const third = await ticketOn(ours.id, "OUR-3");
+
+    await shareNote(ours.id, other.id, "Useful.");
+    await shareNote(ours.id, other.id, "Never rated.");
+    const [useful] = await sharedNotesFor(ours.id, mine.id);
+    await rateNote(ours.id, third.id, useful!.seq, "helped");
+
+    const inFiveDays = Date.now() + 5 * 24 * 60 * 60 * 1000;
+    const later = await sharedNotes(ours.repoFullName, { exceptTicketId: mine.id, now: inFiveDays });
+    expect(later.map((n) => n.text)).toEqual(["Useful."]);
   });
 });
