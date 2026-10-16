@@ -217,7 +217,11 @@ export class PrismaRepository implements Repository {
       v === undefined ? undefined : v === null ? Prisma.DbNull : (v as Prisma.InputJsonObject);
     return prisma().user.update({
       where: { id: userId },
-      data: { tokenLimit: json(columns.tokenLimit), attemptLimit: json(columns.attemptLimit) },
+      data: {
+        tokenLimit: json(columns.tokenLimit),
+        attemptLimit: json(columns.attemptLimit),
+        effortByPoints: columns.effortByPoints,
+      },
     });
   }
 

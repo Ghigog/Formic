@@ -7,6 +7,7 @@ import { useSound } from "@/components/colony/store";
 import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
+import { EffortSection } from "@/components/settings/effort-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
@@ -38,6 +39,7 @@ export function SettingsForm({
   runTimeBudget,
   limits,
   renewal,
+  effortByPoints,
 }: {
   account: Account;
   installUrl: string | null;
@@ -51,6 +53,8 @@ export function SettingsForm({
   limits?: { tokens: LimitSetting; attempts: LimitSetting };
   /** Saved plan renewal day; none when omitted. */
   renewal?: Renewal;
+  /** Whether thinking effort follows story points; on when omitted. */
+  effortByPoints?: boolean;
 }) {
   return (
     <div className="bg-cream min-h-dvh">
@@ -137,6 +141,8 @@ export function SettingsForm({
         />
 
         <RunTimeBudgetSection initial={runTimeBudget} tokens={limits?.tokens} attempts={limits?.attempts} />
+
+        <EffortSection initial={effortByPoints} />
 
         <RenewalDaySection initial={renewal} />
 

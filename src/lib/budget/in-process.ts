@@ -2,7 +2,7 @@ import "server-only";
 
 import { ATTEMPT_DEFAULTS, budgetFor, type AttemptKind, type BudgetPath, type Budget, type ColumnLimits } from "./budget-for";
 import { resolveRunTimeBudget } from "@/lib/run-time-budget";
-import { getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
+import { getEffortByPoints, getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
 
 /**
  * What a ticket's run is held to on a path: the owner's settings for minutes,
@@ -18,12 +18,17 @@ export async function budgetForRun(
   attemptKind: AttemptKind = "review",
 ): Promise<Budget> {
   if (!ownerId) return budgetFor(null, column, ticket, path, attemptKind);
-  const [limits, minutes] = await Promise.all([getLimitSettings(ownerId), getRunTimeBudgetSettings(ownerId)]);
+  const [limits, minutes, effortByPoints] = await Promise.all([
+    getLimitSettings(ownerId),
+    getRunTimeBudgetSettings(ownerId),
+    getEffortByPoints(ownerId),
+  ]);
   const resolved = resolveRunTimeBudget(minutes, ticket.storyPoints);
   return budgetFor(
     {
       ...limits,
       minutes: resolved == null ? { mode: "OFF" } : { mode: "FLAT", flat: resolved },
+      effortByPoints,
     },
     column,
     ticket,

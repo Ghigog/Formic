@@ -107,6 +107,8 @@ export const loopEntryPayloadSchema = z.object({
       maxTokens: z.number().int().positive().optional(),
       /** Derived from the tokens at a conservative rate; never shown as a budget. */
       maxCents: z.number().nonnegative().optional(),
+      /** Thinking effort for the ticket's size; the agent's default when omitted. */
+      effort: z.enum(["low", "medium", "high"]).optional(),
     })
     .optional(),
 });
@@ -295,6 +297,7 @@ export async function runLoopEntry(
       tokens: { value: maxTokens ?? null, requested: null, clamp: null },
       attempts: { value: null, requested: null, clamp: null },
       maxCents: maxCents ?? null,
+      effort: payload.limits?.effort ?? null,
       enforcement: { minutes: "between-turns", tokens: "job", attempts: "between-turns" },
     };
 

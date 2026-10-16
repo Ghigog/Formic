@@ -121,6 +121,10 @@ model User {
   tokenLimit   Json?
   attemptLimit Json?
 
+  /// Whether a coding run's thinking effort follows its ticket's story points
+  /// (low for small tickets, high for large ones). On unless switched off.
+  effortByPoints Boolean @default(true)
+
   /// Token window: the day of the month the plan renews (1-31) in
   /// tokenWindowTimezone (IANA), and when the person last reset the count by
   /// hand. See src/lib/token-window.

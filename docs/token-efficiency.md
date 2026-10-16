@@ -65,12 +65,14 @@ more than they must:
   (`output_config.format`), not prose to parse.
 - The Coder edits with `str_replace`, a minimal diff, rather than rewriting
   files.
-- Thinking effort is set per role: `medium` on Claude (`requestShape` in
-  `models.ts`), `low` on DeepSeek (`reasoning.ts`), and the coding loop
-  passes a task budget so the model paces itself.
-
-## Next
-
-Routing by ticket size: a 1-point ticket on a smaller model than an 8-point
-one, chosen per preset. The ticket's story points are already there; the
-preset would need a second, lighter model.
+- Thinking effort follows the ticket's story points (`effortForPoints` in
+  `src/lib/budget/budget-for.ts`): low for 1–2 points, medium for 3–5, high
+  for 8 and up. Lower effort means fewer thinking tokens and, on easy work,
+  fewer tool calls. It rides on the run's budget, so an escalated ticket
+  thinks harder with its new points, and a coding loop run in GitHub Actions
+  gets it too.
+  On Claude it is `output_config.effort`; DeepSeek has no medium, so 3–5
+  points stay at low. On by default; Settings → Thinking effort turns it
+  off, and every run then thinks at the old fixed level (medium on Claude,
+  low on DeepSeek). The coding loop also passes a task budget so the model
+  paces itself.

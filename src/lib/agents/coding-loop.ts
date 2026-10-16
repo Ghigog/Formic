@@ -506,7 +506,8 @@ function usageFrom(
 
 function claudeConversation(input: LoopInput, model: string): Conversation {
   const shape = requestShape(model, {
-    effort: "medium",
+    // The ticket's size when effort follows story points; medium otherwise.
+    effort: input.ctx.budget?.effort ?? "medium",
     taskBudgetTokens: advisoryTokens(input.ctx.budget?.tokens.value),
   });
   const messages: Anthropic.Beta.BetaMessageParam[] = [
@@ -628,7 +629,7 @@ function openAiConversation(
         model,
         messages,
         tools: openAiTools(input.role),
-        ...reasoningFor(info, input.role, modelInfo),
+        ...reasoningFor(info, input.role, modelInfo, input.ctx.budget?.effort),
         signal: input.ctx.signal,
       }).catch((e: unknown) => {
         throw new Error(e instanceof Error ? e.message : String(e));

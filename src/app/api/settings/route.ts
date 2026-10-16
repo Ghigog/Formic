@@ -11,10 +11,12 @@ import {
   type RunTimeBudgetSettings,
 } from "@/lib/run-time-budget";
 import {
+  getEffortByPoints,
   getLimitSettings,
   getRunTimeBudgetSettings,
   updateLimitSettings,
   updateRunTimeBudgetSettings,
+  setEffortByPoints,
 } from "@/lib/user-settings";
 import { authMode } from "@/lib/auth/session";
 import { LIMIT_AXES, validateLimitSetting } from "@/lib/domain/limit-settings";
@@ -112,7 +114,11 @@ export async function GET(req?: Request) {
     if (found.refusal) return found.refusal;
     return Response.json({ autoMerge: found.project.autoMerge });
   }
-  return Response.json({ ...(await getRunTimeBudgetSettings(user.id)), ...(await getLimitSettings(user.id)) });
+  return Response.json({
+    ...(await getRunTimeBudgetSettings(user.id)),
+    ...(await getLimitSettings(user.id)),
+    effortByPoints: await getEffortByPoints(user.id),
+  });
 }
 
 async function putRunTimeBudget(userId: string, json: unknown) {
@@ -197,6 +203,11 @@ export async function PUT(req: Request) {
   const json = await req.json().catch(() => null);
   if (json && typeof json === "object" && "mode" in json) return putRunTimeBudget(user.id, json);
   if (json && typeof json === "object" && "renewalDay" in json) return putRenewalDay(user.id, json);
+  if (json && typeof json === "object" && "effortByPoints" in json) {
+    const on = z.boolean().safeParse((json as { effortByPoints: unknown }).effortByPoints);
+    if (!on.success) return Response.json({ error: "effortByPoints is on or off." }, { status: 400 });
+    return Response.json({ effortByPoints: await setEffortByPoints(user.id, on.data) });
+  }
   if (json && typeof json === "object" && "githubToken" in json) {
     return putGithubToken(json as { githubToken: unknown });
   }

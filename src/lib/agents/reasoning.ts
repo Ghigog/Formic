@@ -1,6 +1,7 @@
 import type { ModelInfo, ReasoningEffort } from "@/lib/llm/openai-compat";
 import type { ProviderInfo } from "@/lib/llm/providers";
 import type { AgentRole } from "@/lib/domain/entities";
+import type { RunEffort } from "@/lib/budget/budget-for";
 
 /**
  * What a DeepSeek request asks for, per role. DeepSeek thinks at effort high
@@ -41,9 +42,24 @@ export interface RoleReasoning {
   maxTokens: number;
 }
 
-/** What a role will use on this model; the editor shows it and the request carries it. */
-export function roleReasoning(role: ReasoningRole, info?: ModelInfo): RoleReasoning {
-  const { effort, ceiling } = WANTED[role];
+/**
+ * DeepSeek's level for a ticket's effort. It has no medium, so a mid-sized
+ * ticket stays at low, the level every run used before effort followed size.
+ */
+const DEEPSEEK_EFFORT: Record<RunEffort, ReasoningEffort> = { low: "low", medium: "low", high: "high" };
+
+/**
+ * What a role will use on this model; the editor shows it and the request
+ * carries it. `runEffort`, from the ticket's story points, replaces the role's
+ * fixed level when given.
+ */
+export function roleReasoning(
+  role: ReasoningRole,
+  info?: ModelInfo,
+  runEffort?: RunEffort | null,
+): RoleReasoning {
+  const { effort: fixed, ceiling } = WANTED[role];
+  const effort = runEffort ? DEEPSEEK_EFFORT[runEffort] : fixed;
   const reasoningEffort = chooseEffort(effort, info);
   return {
     // With no level the model accepts, thinking is off rather than left to the default.
@@ -58,9 +74,10 @@ export function reasoningFor(
   p: ProviderInfo,
   role: ReasoningRole,
   info?: ModelInfo,
+  runEffort?: RunEffort | null,
 ): Partial<RoleReasoning & { modelInfo: ModelInfo }> {
   if (p.id !== "deepseek") return {};
-  return { ...roleReasoning(role, info), ...(info ? { modelInfo: info } : {}) };
+  return { ...roleReasoning(role, info, runEffort), ...(info ? { modelInfo: info } : {}) };
 }
 
 /** The role a column's agent reasons as; the roles without a loop of their own chat. */

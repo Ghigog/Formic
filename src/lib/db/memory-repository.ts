@@ -311,6 +311,7 @@ export class MemoryRepository implements Repository {
       runTimeBudgetPerPointRate: null,
       tokenLimit: null,
       attemptLimit: null,
+      effortByPoints: true,
       tokenRenewalDay: null,
       tokenWindowTimezone: null,
       tokenResetAt: null,
@@ -338,6 +339,7 @@ export class MemoryRepository implements Repository {
     if (!user) throw new Error(`No user ${userId}.`);
     if (columns.tokenLimit !== undefined) user.tokenLimit = columns.tokenLimit;
     if (columns.attemptLimit !== undefined) user.attemptLimit = columns.attemptLimit;
+    if (columns.effortByPoints !== undefined) user.effortByPoints = columns.effortByPoints;
     return user;
   }
 
