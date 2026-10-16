@@ -414,6 +414,17 @@ model WebhookDelivery {
   @@map("webhook_delivery")
 }
 
+/// A short-lived lock shared by every server instance: one queue pass, or one
+/// merge, at a time per repository, whichever board or instance asks. A
+/// holder that dies lets go when `expiresAt` passes. See src/lib/board/lease.ts.
+model Lease {
+  key       String   @id
+  holder    String
+  expiresAt DateTime
+
+  @@map("lease")
+}
+
 /// A file attached to a raw request. Stored as bytes in Postgres, not on
 /// disk or in a blob store: Vercel gives the app no persistent disk and none
 /// is wired up yet. Keyed at upload time to a client-generated requestId so a

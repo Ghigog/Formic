@@ -30,9 +30,8 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
 import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
-import { runningConflict } from "@/lib/domain/queue";
 import { planQueen } from "@/lib/queen/plan";
-import { startQueued } from "@/lib/board/queue";
+import { claimOrQueue, startQueued } from "@/lib/board/queue";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -265,26 +264,33 @@ export async function applyTransition(
   const breakDown = toArchitect && hasPrd && (parked.length === 0 || parked.some(madeBefore));
 
   // Back in Backlog, an Epic that has its PRD is still specified, not a draft.
-  // A ticket whose files another agent is writing waits its turn in In
-  // Progress, and starts once that one stops (see startQueued).
-  const status =
+  const dropped =
     toArchitect && !hasPrd
       ? "waiting"
       : card.kind === "epic" && t.to === "backlog" && hasPrd
         ? "specified"
-        : card.kind === "ticket" && t.to === "in_progress" && runningConflict(card, cards)
-          ? "queued"
-          : statusForUserDrop(t.to, met);
+        : statusForUserDrop(t.to, met);
   const position = await placeAmong(projectId, t.to, card, t.position);
+  const write = (status: typeof dropped) =>
+    repo.move({
+      cardId: card.id,
+      kind: card.kind,
+      status,
+      stalledIn: null,
+      position,
+      detached,
+    });
 
-  await repo.move({
-    cardId: card.id,
-    kind: card.kind,
-    status,
-    stalledIn: null,
-    position,
-    detached,
-  });
+  // A ticket whose files another agent is writing, on this board or anyone
+  // else's on the repository, waits its turn in In Progress and starts once
+  // that one stops (see startQueued). Decided and written under the
+  // repository's reservation, so two moves landing together cannot both win.
+  let status = dropped;
+  if (card.kind === "ticket" && dropped === "running") {
+    status = (await claimOrQueue(projectId, card, write)).status;
+  } else {
+    await write(status);
+  }
   await repo.rebalanceColumn(projectId, t.to);
 
   await publish(projectId, {

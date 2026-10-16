@@ -22,7 +22,8 @@ import {
   vcs,
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
-import { inMergeLane, inTicketLane } from "./lane";
+import { inTicketLane } from "./lane";
+import { inRepoMergeLane } from "./merge-lane";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
@@ -219,7 +220,7 @@ async function react(
       await awaitPersonMerge(projectId, ticket);
       return;
     }
-    await inMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber));
+    await inRepoMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber), laneBusy);
     return;
   }
 
@@ -552,6 +553,8 @@ async function closeWithoutMerge(
 
 type MergeResult = { merged: true } | { merged: false; reason: string };
 
+const laneBusy = (reason: string): MergeResult => ({ merged: false, reason });
+
 /**
  * A person asks for the ticket's pull request to merge, in its chat. Their
  * word stands in for the review, but red CI still does not merge, and a
@@ -587,10 +590,14 @@ export async function mergeByPerson(
   // The person vouches for this head, so bringing the base in carries it
   // across exactly as a review's approval would.
   await repository().updateTicket(ticket.id, { reviewedSha: pull.headSha });
-  const result = await inMergeLane(projectId, async () => {
-    const fresh = (await repository().ticketDetail(ticket.id)) ?? ticket;
-    return mergeTicket(projectId, fresh, prNumber);
-  });
+  const result = await inRepoMergeLane(
+    projectId,
+    async () => {
+      const fresh = (await repository().ticketDetail(ticket.id)) ?? ticket;
+      return mergeTicket(projectId, fresh, prNumber);
+    },
+    laneBusy,
+  );
   if (!result.merged) return `Did not merge pull request #${prNumber}: ${result.reason}`;
   // Merged already, or just now by the lane: either way the card says so.
   await markMergedExternally(projectId, prNumber);
@@ -1377,7 +1384,7 @@ export async function approve(
   }
   const fresh = await repo.ticketDetail(ticket.id);
   if (!fresh || fresh.status === "merged") return;
-  await inMergeLane(projectId, () => mergeTicket(projectId, fresh, prNumber));
+  await inRepoMergeLane(projectId, () => mergeTicket(projectId, fresh, prNumber), laneBusy);
 }
 
 /**

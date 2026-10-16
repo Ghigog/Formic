@@ -13,7 +13,8 @@ import { MAX_NOTE, addNote } from "@/lib/coder/notes";
 import { answerScope, hasKeptWork, resolveScopeRequest, scopeAsked, stillAsked } from "@/lib/coder/scope-request";
 import { repository } from "@/lib/db";
 import { fileScopeSchema, prdSchema, type BoardCard } from "@/lib/domain/entities";
-import { runningConflict } from "@/lib/domain/queue";
+import { claimLabel } from "@/lib/domain/queue";
+import { blockerOf } from "@/lib/board/queue";
 import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, isStalled, type ColumnId } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { cancelJob, stopTicket } from "@/lib/runner/runner";
@@ -229,8 +230,8 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
     return `Could not move ${card.key}: ${result.problem.replace(/\s*Drag it back to [^.]+ to undo this\./, "")}`;
   }
   if (result.status === "queued") {
-    const blocker = runningConflict(now, await repository().boardCards(projectId));
-    return `Moved ${card.key} to In Progress, queued behind ${blocker?.key ?? "a ticket writing the same files"}. The Coder Agent starts on it once that one is done.`;
+    const blocker = await blockerOf(projectId, now);
+    return `Moved ${card.key} to In Progress, queued behind ${blocker ? claimLabel(blocker, projectId) : "a ticket writing the same files"}. The Coder Agent starts on it once that one is done.`;
   }
   return `Moved ${card.key} to ${COLUMN_LABELS[to]}.${
     card.kind === "ticket" && to === "in_progress" ? " The Coder Agent is starting on it." : ""

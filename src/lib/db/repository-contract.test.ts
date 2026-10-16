@@ -1001,6 +1001,52 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("coordination across boards", () => {
+      it("lists every board's running tickets on a repository, with whose board each is", async () => {
+        const repoName = `contract/${randomUUID()}`;
+        const alice = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `a${randomUUID()}`, name: null, avatarUrl: null });
+        const bob = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `b${randomUUID()}`, name: null, avatarUrl: null });
+        const hers = await repo.ensureProject({ ownerId: alice.id, repoFullName: repoName, baseBranch: "main" });
+        const his = await repo.ensureProject({ ownerId: bob.id, repoFullName: repoName.toUpperCase(), baseBranch: "main" });
+        const elsewhere = await project();
+
+        const [e1, e2, e3] = await Promise.all(
+          [hers, his, elsewhere].map((p) => repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 })),
+        );
+        const [running] = await repo.createTickets([ticket(e1!.id, "R-1", { fileScope: ["src/api"] })]);
+        const [idle] = await repo.createTickets([ticket(e2!.id, "R-2")]);
+        const [other] = await repo.createTickets([ticket(e3!.id, "R-3")]);
+        for (const t of [running!, other!]) await repo.updateTicket(t.id, { status: "running" });
+
+        const held = await repo.reservations(repoName);
+        expect(held).toEqual([
+          { ticketId: running!.id, key: "R-1", projectId: hers.id, ownerLogin: alice.login, fileScope: ["src/api"] },
+        ]);
+        expect(held.some((r) => r.ticketId === idle!.id)).toBe(false);
+      });
+
+      it("gives a lease to one holder at a time, and to the next once it lapses or is let go", async () => {
+        const key = `contract:${randomUUID()}`;
+        expect(await repo.acquireLease(key, "a", 60_000)).toBe(true);
+        expect(await repo.acquireLease(key, "b", 60_000)).toBe(false);
+        // The holder renews its own.
+        expect(await repo.acquireLease(key, "a", 60_000)).toBe(true);
+        // Letting go is only the holder's to do.
+        await repo.releaseLease(key, "b");
+        expect(await repo.acquireLease(key, "b", 60_000)).toBe(false);
+        await repo.releaseLease(key, "a");
+        expect(await repo.acquireLease(key, "b", 1)).toBe(true);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(await repo.acquireLease(key, "c", 60_000)).toBe(true);
+      });
+
+      it("never gives one lease to two holders asking at once", async () => {
+        const key = `contract:${randomUUID()}`;
+        const wins = await Promise.all(["a", "b", "c", "d", "e"].map((h) => repo.acquireLease(key, h, 60_000)));
+        expect(wins.filter(Boolean)).toHaveLength(1);
+      });
+    });
+
     describe("webhook deliveries", () => {
       it("claims a delivery once", async () => {
         const key = `delivery-${randomUUID()}`;
