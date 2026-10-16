@@ -1232,7 +1232,8 @@ export class PrismaRepository implements Repository {
             storyPoints: parent.storyPoints,
             workType: parent.workType,
             position: parent.position,
-            status: "running",
+            // Inert until the parent starts and sends them out.
+            status: "ready",
             stage: parent.stage,
             scoutOf: parent.id,
             scoutBrief: b.brief,

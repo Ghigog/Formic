@@ -662,19 +662,22 @@ export class GitHubClient implements VcsClient {
 
   async compare(base: string, head: string): Promise<Comparison> {
     const { data } = await this.request<{
-      files?: Array<{ filename: string; previous_filename?: string }>;
+      files?: Array<{ filename: string; previous_filename?: string; patch?: string }>;
       commits: Array<{ sha: string; commit: { message: string } }>;
     }>("GET", `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`);
     const files = new Set<string>();
+    const patches: Array<{ path: string; patch: string }> = [];
     for (const f of data.files ?? []) {
       files.add(f.filename);
       // A rename touches the path it left as well as the one it took.
       if (f.previous_filename) files.add(f.previous_filename);
+      if (f.patch) patches.push({ path: f.filename, patch: f.patch });
     }
     return {
       files: [...files],
       messages: data.commits.map((c) => c.commit.message),
       headSha: data.commits.at(-1)?.sha ?? "",
+      patches,
     };
   }
 

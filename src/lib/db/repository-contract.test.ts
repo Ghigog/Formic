@@ -492,6 +492,40 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.ticketDetail(t!.id))?.autoEscalatedAt).toBe(first);
       });
 
+      it("keeps the colony uncapped until set, per project", async () => {
+        const p = await project();
+        expect(await repo.projectById(p.id)).toMatchObject({ colonySize: null, colonyReserve: 0, autoScout: false });
+        await repo.setColony(p.id, { colonySize: 4, colonyReserve: 1, autoScout: true });
+        expect(await repo.projectById(p.id)).toMatchObject({ colonySize: 4, colonyReserve: 1, autoScout: true });
+        await repo.setColony(p.id, { colonySize: null, colonyReserve: 0, autoScout: false });
+        expect((await repo.projectById(p.id))?.colonySize).toBeNull();
+      });
+
+      it("makes scouts of a ticket, off the board and out of its Epic's tickets", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "S-1")]);
+        const made = await repo.createScouts(t!.id, [
+          { brief: "small", presetId: null },
+          { brief: "robust", presetId: null },
+        ]);
+        expect(made.map((s) => [s.key, s.status, s.scoutOf, s.scoutBrief])).toEqual([
+          ["S-1-s1", "ready", t!.id, "small"],
+          ["S-1-s2", "ready", t!.id, "robust"],
+        ]);
+        expect((await repo.scoutsOf(t!.id)).map((s) => s.key)).toEqual(["S-1-s1", "S-1-s2"]);
+
+        const cards = await repo.boardCards(p.id);
+        expect(cards.filter((c) => c.kind === "ticket").map((c) => c.key)).toEqual(["S-1"]);
+        expect(cards.find((c) => c.id === epic.id)?.childCount).toBe(1);
+        expect((await repo.ticketsForEpic(epic.id)).map((x) => x.key)).toEqual(["S-1"]);
+
+        await repo.updateTicket(t!.id, { scouts: 2, scoutPick: made[1]!.id, scoutWhy: "tests" });
+        expect(await repo.ticketDetail(t!.id)).toMatchObject({ scouts: 2, scoutPick: made[1]!.id, scoutWhy: "tests" });
+        expect(cards.length).toBeGreaterThan(0);
+        expect((await repo.boardCards(p.id)).find((c) => c.id === t!.id)).toMatchObject({ scouts: 2, scoutPick: made[1]!.id });
+      });
+
       it("keeps auto-merge off until switched on, per project", async () => {
         const p = await project();
         expect((await repo.projectById(p.id))?.autoMerge).toBe(false);

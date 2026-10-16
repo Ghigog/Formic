@@ -477,6 +477,11 @@ function TicketHead({
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
       <ProblemBadge card={card} />
+      {(card.scouts ?? 0) > 0 && !card.scoutPick && card.status === "running" && (
+        <CoinBadge title="Scouts trying it at once" className="shrink-0 whitespace-nowrap">
+          {card.scouts} scouts out
+        </CoinBadge>
+      )}
       {pr && card.prNumber && (
         <CoinBadge title="Pull request" className="shrink-0 whitespace-nowrap">
           PR #{card.prNumber}

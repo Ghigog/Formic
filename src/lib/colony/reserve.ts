@@ -66,9 +66,9 @@ export function isUrgent(card: BoardCard, epics: ReadonlyMap<string, BoardCard>)
   return card.workType === "bug" || isBug(card, epics) || card.prNumber !== null;
 }
 
-/** Slots a ticket takes while it runs: one, or one per scout it sent. */
-export function slotsOf(card: Pick<BoardCard, "scouts">): number {
-  return Math.max(1, card.scouts ?? 0);
+/** Slots a ticket takes while it runs: one, or one per scout it has out. */
+export function slotsOf(card: Pick<BoardCard, "scouts" | "scoutPick">): number {
+  return card.scoutPick ? 1 : Math.max(1, card.scouts ?? 0);
 }
 
 /** Slots in use on a board: every running ticket, a scouting one by its scouts. */

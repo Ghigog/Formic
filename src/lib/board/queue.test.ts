@@ -191,4 +191,32 @@ describe("the colony's cap", () => {
     await startQueued(PROJECT);
     expect((await repository().cardById(b!.id))?.status).toBe("running");
   });
+
+  it("calls back scouts the reserve sent on its own when urgent work needs the slots", async () => {
+    const [epic, scouting, bug] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "running", fileScope: ["src/a.ts"], scouts: 2 },
+      { status: "queued", fileScope: ["src/c.ts"], workType: "bug" },
+    ]);
+    seedMemory([epic!, scouting!, bug!], { [scouting!.id]: { description: "Spike", acceptanceCriteria: [] } });
+    await repository().updateTicket(scouting!.id, { scoutWhy: "auto" });
+    await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: true });
+
+    await startQueued(PROJECT);
+    expect((await repository().cardById(scouting!.id))?.status).toBe("ready");
+    expect((await repository().ticketDetail(scouting!.id))?.scouts).toBe(0);
+    expect((await repository().cardById(bug!.id))?.status).toBe("running");
+  });
+
+  it("does not call back scouts a person sent", async () => {
+    const [epic, scouting, bug] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "running", fileScope: ["src/a.ts"], scouts: 2 },
+      { status: "queued", fileScope: ["src/c.ts"], workType: "bug" },
+    ]);
+    seedMemory([epic!, scouting!, bug!]);
+    await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: true });
+
+    await startQueued(PROJECT);
+    expect((await repository().cardById(scouting!.id))?.status).toBe("running");
+    expect((await repository().cardById(bug!.id))?.status).toBe("queued");
+  });
 });

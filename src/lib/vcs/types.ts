@@ -20,6 +20,8 @@ export interface Comparison {
   /** Commit messages on the head side, oldest first. */
   messages: string[];
   headSha: string;
+  /** Each changed file's patch, where the host gives one (not for binaries or huge files). */
+  patches?: Array<{ path: string; patch: string }>;
 }
 
 export interface PullRequestRef {

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { repository } from "@/lib/db";
 import type { AgentPreset, AgentPresetInput } from "@/lib/domain/entities";
 import { formatReset } from "./limits";
@@ -117,11 +118,23 @@ function envKey(id: ProviderId): string | null {
   return (name && process.env[name]) || null;
 }
 
+/**
+ * A column's agent replaced for the work run inside it: a scout told to run
+ * on its own template (src/lib/coder/scouts.ts). Async-local, so it reaches
+ * every lookup the run makes and nothing else.
+ */
+const columnPreset = new AsyncLocalStorage<{ column: ColumnId; presetId: string }>();
+
+export function withColumnPreset<T>(column: ColumnId, presetId: string | null, work: () => T): T {
+  return presetId ? columnPreset.run({ column, presetId }, work) : work();
+}
+
 async function resolveColumn(projectId: string, column: ColumnId): Promise<Resolution> {
   const repo = repository();
   const local = authMode() === "local";
 
-  const presetId = (await repo.columnAgents(projectId))[column];
+  const override = columnPreset.getStore();
+  const presetId = override?.column === column ? override.presetId : (await repo.columnAgents(projectId))[column];
   const found = presetId ? await repo.presetForRun(presetId) : null;
   if (found) {
     found.preset = await gateAllowance(found.preset);

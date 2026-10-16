@@ -676,7 +676,7 @@ export interface Repository {
   ticketsForEpic(epicId: string): Promise<TicketDetail[]>;
   /**
    * Makes a scout of `parentId` for each brief: a copy of the ticket, off the
-   * board, numbered after it (FOR-14-s1, -s2, ...), running.
+   * board, numbered after it (FOR-14-s1, -s2, ...), ready to be sent out.
    */
   createScouts(parentId: string, briefs: Array<{ brief: string; presetId: string | null }>): Promise<TicketDetail[]>;
   /** A ticket's scouts, in the order they were sent. */

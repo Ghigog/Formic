@@ -1163,7 +1163,8 @@ export class MemoryRepository implements Repository {
         ...parent,
         id: id("ticket"),
         key: `${parent.key}-s${i + 1}`,
-        status: "running",
+        // Inert until the parent starts and sends them out.
+        status: "ready",
         stalledIn: null,
         dependsOn: [],
         prNumber: null,
