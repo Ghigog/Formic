@@ -4,14 +4,22 @@ Formic runs several Coder Agents at once, and several people can each have a
 board on the same repository. Two things go wrong when many hands push to one
 repository: two of them edit the same lines (a textual collision), or a merge
 goes through cleanly but breaks because each side changed something the other
-relied on (semantic drift). Four mechanisms keep both out of the base branch.
+relied on (semantic drift). Five mechanisms keep both out of the base branch.
 
 ## 1. Files are reserved before any code is written
 
-Every ticket declares its file scope: the directory prefixes it may touch
+Every ticket declares its file scope: the paths it may touch
 (`src/lib/domain/scope.ts`). A running ticket holds a reservation on those
 files, and a ticket that needs any of them waits in In Progress, marked
 "Up next", until the one holding them stops.
+
+- **Files, not directories.** The Architect Agent names the files a ticket
+  changes, or a module without its extension (`src/lib/auth/session` covers
+  `session.ts` and the tests beside it), and a directory only for a ticket
+  that changes most of it. It sees the repository's files to do so, one line
+  per directory (`fileLayout` in `src/lib/vcs/repositories.ts`). The
+  narrower the reservation, the more tickets run at once; a file the agent
+  turns out to need is added at run time when nothing running holds it.
 
 - **Per repository, not per board.** Reservations are read from every board
   on the repository (`Repository.reservations`), so a ticket on Bob's board
@@ -95,11 +103,30 @@ files), checked for leftover markers, pushed as a merge, and goes through CI
 before it can merge. A conflict it cannot resolve without redoing the ticket
 waits for a person, with the reason.
 
+## 5. Agents tell each other what changed
+
+Reservations keep agents out of each other's files, not out of each other's
+way: one renames an export another is about to call. So a Coder or Reviewer
+Agent that changes something others may rely on (an export renamed or
+removed, a signature or shared type, a config or script) or learns something
+that cost it effort calls `share_note` (`src/lib/coder/shared-notes.ts`).
+
+- **Per repository, like the reservations.** A note is a `repo.note` event on
+  its own board, and it is read from every board on the repository.
+- **At the start and between turns.** An agent starting a ticket is briefed
+  with the last day's notes from the repository's other tickets; one already
+  working hears new ones between its turns, with the person's own notes.
+- **Information, not instructions.** The agent is told to check a note
+  against the code before relying on it.
+- **Every path.** A loop run in GitHub Actions shares through its reporter and
+  is briefed when it starts; a CLI agent is briefed when it starts.
+
 ## What is not covered
 
 - People pushing straight to the repository outside Formic hold no
   reservations. Their changes still reach a Formic pull request only through
   the merge queue, so a collision with them is caught as a conflict or by CI,
   not before the code is written.
+- An agent in GitHub Actions does not hear notes shared after it started.
 - Each person still has their own board. They see each other's work as
   reservations and on GitHub, not as cards.

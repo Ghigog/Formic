@@ -9,6 +9,7 @@ import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { noteTexts } from "./notes";
+import { sharedNoteLine, sharedNotesFor } from "./shared-notes";
 import { newBranchName } from "@/lib/sandbox";
 import { announceStack, releaseWaiting, restack, stackBase, ticketBelow } from "./stack";
 import { mergeTarget, vcs } from "@/lib/vcs";
@@ -47,9 +48,16 @@ import { askForScope, hasKeptWork, takeKeptWork, widenScope } from "./scope-requ
 const STAGE_CODE_RUN = 5;
 const STAGE_PR_OPEN = 6;
 
-export function taskFor(ticket: TicketDetail, notes: string[] = [], instruction?: string): CoderTask {
+export function taskFor(
+  ticket: TicketDetail,
+  notes: string[] = [],
+  instruction?: string,
+  /** What agents on the repository's other tickets shared, one line each. */
+  sharedNotes: string[] = [],
+): CoderTask {
   return {
     ...(instruction ? { instruction } : {}),
+    ...(sharedNotes.length ? { sharedNotes } : {}),
     ticketId: ticket.id,
     key: ticket.key,
     title: ticket.title,
@@ -191,6 +199,10 @@ export async function runCoderAgent(
     blockedReason: null,
   });
 
+  // What the agents on the repository's other tickets have shared lately:
+  // the start of this run's view of them, whichever path it runs on.
+  const shared = (await sharedNotesFor(projectId, ticket.id).catch(() => [])).map(sharedNoteLine);
+
   // A CLI agent on the person's own plan works in GitHub Actions instead of
   // a sandbox here, and reports back on the workflow_run webhook.
   const cli = await cliAgentFor(projectId, "in_progress");
@@ -214,6 +226,7 @@ export async function runCoderAgent(
         undefined,
         await noteTexts(projectId, ticket.id),
         options.instruction,
+        shared,
       ),
       run,
       stalledIn: "in_progress",
@@ -269,6 +282,7 @@ export async function runCoderAgent(
             model: loop.model,
             budget,
             notes: resumed ? [...notes, resumeBrief(resumed, ticket.plan)] : notes,
+            sharedNotes: shared,
             ...(options.instruction ? { instruction: options.instruction } : {}),
           }),
         ),
@@ -310,7 +324,7 @@ export async function runCoderAgent(
 
   try {
     const outcome = await (await agentFor(projectId, "coder")).implement(run.ctx, {
-      task: taskFor(ticket, await noteTexts(projectId, ticket.id), options.instruction),
+      task: taskFor(ticket, await noteTexts(projectId, ticket.id), options.instruction, shared),
       // The scope guides the agent rather than fencing it in: the right
       // change may need a file outside it, and the diff check below asks
       // the person before any of that goes further.

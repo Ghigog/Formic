@@ -15,6 +15,8 @@ export type StreamItem =
   | { kind: "thought"; thought: "thinking" | "text"; text: string }
   | { kind: "action"; label: string }
   | { kind: "plan"; steps: PlanStep[] }
+  /** What the loop's agent shared with the agents on the repository's other tickets. */
+  | { kind: "share"; text: string }
   | { kind: "log"; stream: "stdout" | "stderr"; line: string };
 
 const MAX_THOUGHT = 4_000;
@@ -260,6 +262,10 @@ function formicEventLine(event: Json, type: string): StreamItem[] | null {
   if (type === "run.diff") {
     const path = str(event.path);
     return path ? [{ kind: "action", label: `Changed ${short(path)}` }] : [];
+  }
+  if (type === "repo.note") {
+    const text = str(event.text).trim();
+    return text ? [{ kind: "share", text }] : [];
   }
   if (type === "ticket.plan") {
     return Array.isArray(event.steps) ? [{ kind: "plan", steps: event.steps as PlanStep[] }] : [];

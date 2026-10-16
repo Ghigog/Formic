@@ -72,6 +72,8 @@ export const loopEntryPayloadSchema = z.object({
     fileScope: z.array(z.string()),
     /** What the person watching told this ticket's agents, oldest first. */
     notes: z.array(z.string()).optional(),
+    /** What agents on the repository's other tickets shared, one line each. */
+    sharedNotes: z.array(z.string()).optional(),
     /** What this run was asked to do from the ticket's chat, if anything. */
     instruction: z.string().optional(),
   }),
@@ -283,6 +285,7 @@ export async function runLoopEntry(
       acceptanceCriteria: ticket.acceptanceCriteria,
       fileScope: ticket.fileScope,
       notes: ticket.notes ?? [],
+      ...(ticket.sharedNotes?.length ? { sharedNotes: ticket.sharedNotes } : {}),
     };
 
     // The loop reads the token budget for two things this entry would otherwise

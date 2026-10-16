@@ -412,3 +412,108 @@ describe("a turn's tool calls", () => {
     expect(new Set(lines).size).toBe(lines.length);
   });
 });
+
+describe("working beside the agents on other tickets", () => {
+  it("shares a note with the repository's other agents, and shows it on the ticket", async () => {
+    const events: FormicEvent[] = [];
+    scriptedTurns([[{ name: "share_note", args: { note: "Renamed formatDate to formatDay in src/lib/dates.ts." } }], [finish]]);
+
+    const outcome = await runIn(new MemoryWorkspace(), events);
+
+    expect(outcome.ok).toBe(true);
+    expect(events).toContainEqual({
+      type: "repo.note",
+      ticketId: "t",
+      text: "Renamed formatDate to formatDay in src/lib/dates.ts.",
+    });
+    expect(events.some((e) => e.type === "run.progress" && e.label.startsWith("Shared with the other agents"))).toBe(true);
+  });
+
+  it("hears what the other agents shared between its turns", async () => {
+    const sent: string[] = [];
+    scriptedTurns([[{ name: "read_file", args: { path: "a.ts" } }], [finish]]);
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (init?.body) sent.push(String(init.body));
+      return original(url, init);
+    });
+    let asked = 0;
+
+    await runCodingLoop({
+      ctx: {
+        runId: "r",
+        projectId: "p",
+        emit: () => {},
+        signal: new AbortController().signal,
+        interrupts: async () => ({
+          stopped: null,
+          notes: [],
+          shared: asked++ === 0 ? ["HER-2: Renamed formatDate to formatDay."] : [],
+        }),
+      },
+      workspace: new MemoryWorkspace({ "a.ts": "a" }),
+      ticketId: "t",
+      role: "coder",
+      system: "sys",
+      prompt: "do it",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      apiKey: "sk",
+    });
+
+    expect(sent[0]).not.toContain("formatDay");
+    expect(sent[1]).toContain("agents on other tickets of this repository shared");
+    expect(sent[1]).toContain("HER-2: Renamed formatDate to formatDay.");
+  });
+});
+
+describe("explore", () => {
+  it("has a helper search and read, and hands back only its answer and its tokens", async () => {
+    const seen: string[] = [];
+    scriptedTurns([
+      [{ name: "explore", args: { question: "Where is formatDate defined?" } }],
+      // The helper's turns.
+      [{ name: "search", args: { pattern: "function formatDate", path: "src" } }],
+      [{ name: "finish", args: { summary: "src/lib/dates.ts", detail: "src/lib/dates.ts:3 defines formatDate." } }],
+      [finish],
+    ]);
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (init?.body) {
+        const body = JSON.parse(String(init.body)) as { messages: Array<{ role: string; content: string }> };
+        seen.push(body.messages.filter((m) => m.role === "tool").map((m) => m.content).join("\n"));
+      }
+      return original(url, init);
+    });
+    const workspace = new MemoryWorkspace({}, () => ({
+      exitCode: 0,
+      stdout: "src/lib/dates.ts:3:export function formatDate(d: Date) {\n",
+      stderr: "",
+      timedOut: false,
+    }));
+
+    const outcome = await runIn(workspace, []);
+
+    expect(outcome.ok).toBe(true);
+    expect(workspace.commands[0]).toContain("git grep --untracked -n -I -E -e 'function formatDate' -- 'src'");
+    // The coder's next turn sees the answer, not the search behind it.
+    expect(seen[3]).toContain("src/lib/dates.ts:3 defines formatDate.");
+    expect(seen[3]).not.toContain("export function formatDate");
+    // Four turns of 15 tokens: the helper's two count against the run.
+    expect(outcome.usage.tokensIn + outcome.usage.tokensOut).toBe(60);
+  });
+
+  it("only looks, whatever tool the helper names", async () => {
+    scriptedTurns([
+      [{ name: "explore", args: { question: "q" } }],
+      [{ name: "write_file", args: { path: "a.ts", contents: "changed" } }],
+      [{ name: "finish", args: { summary: "s", detail: "d" } }],
+      [finish],
+    ]);
+    const workspace = new MemoryWorkspace({ "a.ts": "a" });
+
+    await runIn(workspace, []);
+
+    expect(await workspace.readFile("a.ts")).toBe("a");
+  });
+});

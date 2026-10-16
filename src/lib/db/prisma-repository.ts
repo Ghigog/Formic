@@ -1115,6 +1115,22 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async eventsOfTypes(projectIds: string[], types: string[], since: Date, limit = 200) {
+    if (projectIds.length === 0) return [];
+    const rows = await prisma().event.findMany({
+      where: { projectId: { in: projectIds }, type: { in: types }, at: { gte: since } },
+      orderBy: { seq: "desc" },
+      take: limit,
+    });
+    return rows.reverse().map((r) => ({
+      seq: Number(r.seq),
+      projectId: r.projectId,
+      type: r.type,
+      payload: r.payload,
+      at: r.at,
+    }));
+  }
+
   async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
     const db = prisma();
     const row = await db.ticket.findUnique({

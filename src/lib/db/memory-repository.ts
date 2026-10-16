@@ -998,6 +998,13 @@ export class MemoryRepository implements Repository {
     return { today: { ...days.get(day)! }, window };
   }
 
+  async eventsOfTypes(projectIds: string[], types: string[], since: Date, limit = 200) {
+    return store()
+      .events.filter((e) => projectIds.includes(e.projectId) && types.includes(e.type) && e.at >= since)
+      .slice(-limit)
+      .map(({ seq, projectId, type, payload, at }) => ({ seq, projectId, type, payload, at }));
+  }
+
   async latestEventSeq(projectId: string): Promise<number> {
     const mine = store().events.filter((e) => e.projectId === projectId);
     return mine.at(-1)?.seq ?? 0;

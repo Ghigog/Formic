@@ -15,7 +15,7 @@ import type {
 import { runCodingLoop } from "./coding-loop";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { isSpikeText } from "@/lib/colony/game";
-import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
+import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, SHARED_NOTES_INTRO, withCodingRules } from "./prompts";
 
 /**
  * The two agents that write code. Same loop, different brief, and any
@@ -47,6 +47,13 @@ export function taskBrief(task: CoderTask): string {
           "",
           "Notes on this ticket, from the person watching it or from its review. Follow them; where they disagree, the newest wins:",
           ...task.notes.map((n) => `- ${n}`),
+        ]
+      : []),
+    ...(task.sharedNotes?.length
+      ? [
+          "",
+          SHARED_NOTES_INTRO,
+          ...task.sharedNotes.map((n) => `- ${n}`),
         ]
       : []),
   ].join("\n");
