@@ -18,12 +18,14 @@ interface RepoOption {
 }
 
 const OWNER_REPO = /^[\w.-]+\/[\w.-]+$/;
+const REPO_NAME = /^[\w.-]{1,100}$/;
 
 /**
  * Which repository the board works on. Repositories already on the board
  * come first; below them, everything the GitHub token can reach. Typing an
  * owner/repo that is in neither list still works, for a token that can push
- * to a repository it cannot list.
+ * to a repository it cannot list. A bare name that matches none of them
+ * offers to create that repository on GitHub and start its board.
  *
  * Picking one switches this browser's board and reloads it, since the event
  * stream and every card belong to the project.
@@ -111,6 +113,32 @@ export function RepoPicker({
     !(repos ?? []).some((r) => r.fullName.toLowerCase() === q)
       ? query.trim()
       : null;
+  const fresh =
+    REPO_NAME.test(query.trim()) &&
+    repos !== null &&
+    !(repos ?? []).some((r) => r.fullName.toLowerCase().split("/")[1] === q) &&
+    !(projects ?? []).some((p) => p.repoFullName.toLowerCase().split("/")[1] === q)
+      ? query.trim()
+      : null;
+
+  async function create(name: string) {
+    setBusy(`create:${name}`);
+    setError(null);
+    const res = await fetch("/api/github/repos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).catch(() => null);
+    const data = (await res?.json().catch(() => null)) as
+      | { repo?: { fullName: string }; error?: string }
+      | null;
+    if (!res?.ok || !data?.repo) {
+      setError(data?.error ?? "Could not create the repository.");
+      setBusy(null);
+      return;
+    }
+    await choose({ repoFullName: data.repo.fullName }, `create:${name}`);
+  }
 
   async function choose(body: { projectId: string } | { repoFullName: string }, key: string) {
     const project = "projectId" in body ? projects?.find((p) => p.id === body.projectId) : undefined;
@@ -150,7 +178,7 @@ export function RepoPicker({
             ref={input}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search or type owner/repo"
+            placeholder="Search, type owner/repo, or name a new repo"
             aria-label="Search repositories"
             className="border-line bg-cream text-ink focus:border-clay h-9 w-full rounded-md border px-2.5 text-[13px] outline-none"
           />
@@ -166,6 +194,22 @@ export function RepoPicker({
             >
               <span className="text-muted">Use</span>
               <span className="text-ink font-medium">{typed}</span>
+            </button>
+          )}
+
+          {fresh && (
+            <button
+              type="button"
+              className={row}
+              disabled={busy !== null}
+              onClick={() => void create(fresh)}
+            >
+              <span className="text-muted">Create</span>
+              <span className="text-ink min-w-0 flex-1 truncate font-medium">{fresh}</span>
+              <span className="text-muted border-line rounded border px-1 font-mono text-[9px]">
+                new private repo
+              </span>
+              {busy === `create:${fresh}` && <span className="text-muted text-[11px]">…</span>}
             </button>
           )}
 

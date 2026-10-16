@@ -109,6 +109,39 @@ export async function getRepository(fullName: string, token: string): Promise<Re
   return toOption((await res.json()) as RawRepo);
 }
 
+/** A name GitHub accepts for a new repository. */
+export const REPO_NAME = /^[\w.-]{1,100}$/;
+
+/**
+ * A new private repository on the person's own account, with a first commit
+ * so it has a default branch for agents to branch from. Needs the app's
+ * Administration permission, or the "repo" scope on a personal token.
+ */
+export async function createRepository(
+  name: string,
+  token: string,
+): Promise<{ ok: true; repo: RepoOption } | { ok: false; reason: string }> {
+  const res = await fetch(`${API}/user/repos`, {
+    method: "POST",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ name, private: true, auto_init: true }),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!res) return { ok: false, reason: "Could not reach GitHub." };
+  if (res.ok) return { ok: true, repo: toOption((await res.json()) as RawRepo) };
+  if (res.status === 422) {
+    return { ok: false, reason: `You already have a repository called ${name}.` };
+  }
+  if (res.status === 403 || res.status === 404) {
+    return {
+      ok: false,
+      reason:
+        "GitHub won't let Formic create repositories yet. Accept Formic's updated permissions on GitHub, then try again.",
+    };
+  }
+  return { ok: false, reason: `GitHub refused to create the repository (${res.status}).` };
+}
+
 /**
  * Directories in a repository, two levels deep, for the Architect Agent to
  * ground file scopes in. Null when the token cannot read it.
