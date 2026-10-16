@@ -243,6 +243,13 @@ export interface ReviewTask {
    * into the checkout, and these files hold the conflicts to resolve.
    */
   conflicts?: string[];
+  /**
+   * Why each side of the conflicts changed: the commits on each side since
+   * they diverged that touch the conflicted files, newest first, each its
+   * subject and body. What lets a resolution keep what both authors meant,
+   * rather than whichever lines look right.
+   */
+  conflictHistory?: { base: string[]; branch: string[] };
   attempt: number;
   maxAttempts: number;
 }

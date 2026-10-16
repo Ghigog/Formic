@@ -1194,6 +1194,7 @@ async function resolveConflicts(
     // changes (or its scope), and GitHub brings the base in.
     const real = checkout.sandboxId !== null;
     let conflicts = changedFiles.length ? changedFiles : ticket.fileScope;
+    let conflictHistory: { base: string[]; branch: string[] } | undefined;
     if (real) {
       const merged = await mergeInBase(checkout.raw, pull.baseBranch);
       if (!merged.ok) {
@@ -1222,6 +1223,7 @@ async function resolveConflicts(
         return;
       }
       conflicts = merged.conflicts;
+      if (conflicts.length > 0) conflictHistory = await historyOf(checkout.raw, conflicts);
     }
 
     let resolved: ReviewVerdict | null = null;
@@ -1233,6 +1235,7 @@ async function resolveConflicts(
         workspace: scopedWorkspace(checkout.raw, [...ticket.fileScope, ...conflicts]),
         ...review,
         conflicts,
+        ...(conflictHistory ? { conflictHistory } : {}),
       });
       if (!outcome.ok) {
         await stallTicket(projectId, ticket, outcome.error, { blocked: outcome.blocked, stalledIn: "in_review" });
@@ -1260,7 +1263,7 @@ async function resolveConflicts(
 
     const { raw } = checkout;
     const left = await raw.exec(
-      `git add -A && git diff --cached HEAD | grep -qE '^\\+(<<<<<<<|>>>>>>>)( |$)'`,
+      `git add -A && git diff --cached HEAD | grep -qE '^\\+(<<<<<<<|\\|\\|\\|\\|\\|\\|\\||>>>>>>>)( |$)'`,
     );
     if (left.exitCode === 0) {
       return await fail(`The Reviewer Agent could not resolve it${said ? `: ${said}` : "."}`);
@@ -1297,6 +1300,35 @@ async function resolveConflicts(
   } finally {
     await checkout.dispose();
   }
+}
+
+/** How many commits on each side a resolver is told about. */
+const HISTORY_COMMITS = 15;
+/** Ends each commit in the log historyOf reads; no commit message has it. */
+const COMMIT_END = "@@formic-commit-end@@";
+
+/**
+ * Why each side changed the conflicted files: the commits on the base and on
+ * the branch since they diverged, newest first. The base's are often other
+ * tickets, from this board or another on the repository, whose subject and
+ * body say what they were for.
+ */
+async function historyOf(raw: Workspace, files: string[]): Promise<{ base: string[]; branch: string[] }> {
+  const paths = files.map(shellQuote).join(" ");
+  const read = async (range: string) => {
+    const log = await raw.exec(
+      `git log --no-merges --max-count=${HISTORY_COMMITS} --format='%h %s%n%b%n${COMMIT_END}' ${range} -- ${paths}`,
+    );
+    if (log.exitCode !== 0) return [];
+    return log.stdout
+      .split(COMMIT_END)
+      .map((c) => c.trim().slice(0, 1_500))
+      .filter(Boolean);
+  };
+  // One at a time: a sandbox runs one command at a time.
+  const base = await read(`HEAD..${BASE_REF}`);
+  const branch = await read(`${BASE_REF}..HEAD`);
+  return { base, branch };
 }
 
 /** Where the base branch is fetched to in a checkout, to merge it from. */
@@ -1344,7 +1376,10 @@ async function mergeInBase(
     };
   }
   const identity = `-c user.name=${shellQuote(AGENT_COMMIT_AUTHOR.name)} -c user.email=${shellQuote(AGENT_COMMIT_AUTHOR.email)}`;
-  const merge = await raw.exec(`git ${identity} merge --no-commit --no-ff ${BASE_REF}`);
+  // diff3 markers carry the common ancestor between the two sides, which is
+  // what tells a resolver what each side changed rather than only how each
+  // side ended up.
+  const merge = await raw.exec(`git ${identity} -c merge.conflictStyle=diff3 merge --no-commit --no-ff ${BASE_REF}`);
   const conflicts = lines((await raw.exec("git diff --name-only --diff-filter=U")).stdout);
   if (merge.exitCode !== 0 && conflicts.length === 0) {
     return {

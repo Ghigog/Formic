@@ -455,7 +455,12 @@ const CLI_REVIEW = `How to finish your review. Do exactly one of these:
 To approve or send back, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
 
-const CLI_RESOLVE = `The conflicted files are the ones \`git diff --name-only --diff-filter=U\` lists. When every conflict is resolved, write the summary file as usual: what each conflict was and how you kept both sides. Do not commit.`;
+const CLI_RESOLVE = [
+  "The conflicted files are the ones `git diff --name-only --diff-filter=U` lists.",
+  "To see what each side changed rather than only how it ended up, rewrite a file's markers with the common ancestor in them: `git checkout --conflict=diff3 -- <file>`. To see why, read the commits each side made to it since they diverged: `git log HEAD..MERGE_HEAD -- <file>` for the base, `git log MERGE_HEAD..HEAD -- <file>` for this branch.",
+  "Write the code both changes would have written had they known about each other, and check the call sites, types and tests of whatever either side renamed or added still agree.",
+  "When every conflict is resolved, write the summary file as usual: what each conflict was and how you kept both sides. Do not commit.",
+].join(" ");
 
 /** What a CLI reviewer decided when it changed nothing, if it said. */
 export function reviewVerdictOf(messages: string[]): "approved" | "send-back" | null {
