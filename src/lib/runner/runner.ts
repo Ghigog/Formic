@@ -25,6 +25,7 @@ import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers
 import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
 import { reviewBrief, taskBrief } from "@/lib/agents/coder";
+import { hasActiveRun } from "@/lib/domain/status";
 import {
   ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
@@ -1989,8 +1990,7 @@ export async function stopTicket(projectId: string, ticketId: string): Promise<b
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket) return false;
   const card = await repo.cardById(ticketId);
-  const working = ticket.status === "running" || !!ticket.runnerJob || !!card?.workingSince;
-  if (!working) return false;
+  if (!hasActiveRun(ticket, card)) return false;
 
   const job = ticket.runnerJob;
   await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });

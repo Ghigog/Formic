@@ -1,22 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { card, dragTo, gotoBoard } from "./board";
+import { card, dragTo, gotoBoard, idForKey } from "./board";
 
 test("dragging a ticket onto the archive zone archives it", async ({ page }) => {
   await gotoBoard(page);
-  // The first ticket on screen that is not running: epics cannot be archived.
-  const board = await page.request.get("/api/board");
-  const { cards } = (await board.json()) as {
-    cards: Array<{ id: string; kind: string; status: string }>;
-  };
-  let id = "";
-  for (const c of cards) {
-    if (c.kind !== "ticket" || c.status === "running") continue;
-    if (await card(page, c.id).isVisible()) {
-      id = c.id;
-      break;
-    }
-  }
-  expect(id, "the demo board should show an idle ticket").toBeTruthy();
+  // PROT-04 is in review with no active run, so it can be archived, and no other spec uses it.
+  // The store is shared, so archiving another card would take it from the specs that run later.
+  const id = await idForKey(page, "PROT-04");
   const source = card(page, id);
   await expect(source).toBeVisible();
 

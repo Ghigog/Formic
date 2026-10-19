@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 
 import { repository } from "@/lib/db";
 import { activeProject } from "@/lib/board/project";
+import { limited, RUN } from "@/lib/rate-limit";
+import { hasActiveRun } from "@/lib/domain/status";
 
 export const dynamic = "force-dynamic";
 
@@ -10,17 +12,26 @@ export const dynamic = "force-dynamic";
  * an already-archived ticket stays archived and the call still succeeds.
  */
 export async function PATCH(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const refused = limited(req, RUN, "ticket-archive");
+  if (refused) return refused;
   const { id } = await params;
   const repo = repository();
   const project = await activeProject();
   if (!project || (await repo.projectOfCard(id)) !== project.id) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
-  if (!(await repo.ticketDetail(id))) {
+  const ticket = await repo.ticketDetail(id);
+  if (!ticket) {
     return Response.json({ error: "Not a ticket" }, { status: 404 });
+  }
+  if (hasActiveRun(ticket, await repo.cardById(id))) {
+    return Response.json(
+      { error: "An agent is working this ticket. Stop it before archiving.", reason: "active-run" },
+      { status: 409 },
+    );
   }
   await repo.updateTicket(id, { archived: true });
   return Response.json({ archived: true });

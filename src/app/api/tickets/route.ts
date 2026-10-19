@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  rawRequest: z.string().min(3, "Describe the ticket in a sentence or two.").max(4000),
+  rawRequest: z.string().trim().min(3, "Describe the ticket in a sentence or two.").max(4000),
   requestId: z.string().optional(),
   workType: z.enum(WORK_TYPES).optional(),
 });

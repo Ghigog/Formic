@@ -66,6 +66,12 @@ describe("POST /api/tickets", () => {
     expect(createTodoItem).not.toHaveBeenCalled();
   });
 
+  it("rejects a whitespace-only rawRequest without starting the Architect", async () => {
+    createTodoItem.mockClear();
+    expect((await POST(request({ rawRequest: "     \n  " }))).status).toBe(400);
+    expect(createTodoItem).not.toHaveBeenCalled();
+  });
+
   it("rejects a body with no rawRequest at all", async () => {
     const res = await POST(request({}));
     expect(res.status).toBe(400);
