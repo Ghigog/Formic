@@ -9,6 +9,11 @@ import type { SentinelStates } from "@/lib/sentinels/view";
 import { SentinelsPage } from "./sentinels";
 import { SentinelsProvider } from "./store";
 
+const RUBRIC = {
+  context: "A board.",
+  rungs: [2, 3, 4, 5].map((stars) => ({ stars, checks: [{ id: `${stars}a`, text: `Bar ${stars}.`, how: "Read it." }] })),
+};
+
 const states = (reported: string[]): SentinelStates =>
   Object.fromEntries(
     SENTINELS.map((x) => [
@@ -21,9 +26,12 @@ const states = (reported: string[]): SentinelStates =>
         quote: null,
         summary: null,
         report: null,
+        scoredWith: reported.includes(x.id) ? RUBRIC : null,
         at: reported.includes(x.id) ? new Date().toISOString() : null,
         model: null,
         files: [],
+        rubric: reported.includes(x.id) ? { rubric: RUBRIC, at: null, model: null } : null,
+        rubricChanged: false,
         running: null,
         error: null,
       },
@@ -98,13 +106,13 @@ describe("SentinelsPage locked sentinels", () => {
     await open(1);
     expect(within(card(locked.id)).getByText(`Unlocks at Lv ${locked.unlockLevel}`)).toBeTruthy();
     expect(within(card(locked.id)).queryByRole("button")).toBeNull();
-    expect(within(card(first.id)).getByRole("button", { name: /summon|re-run/i })).toBeTruthy();
+    expect(within(card(first.id)).getByRole("button", { name: /calibrate|audit/i })).toBeTruthy();
   });
 
   it("offers a summon button once the colony reaches the unlock level", async () => {
     await open(locked.unlockLevel);
     expect(within(card(locked.id)).queryByText(/Unlocks at Lv/)).toBeNull();
-    expect(within(card(locked.id)).getByRole("button", { name: /summon/i })).toBeTruthy();
+    expect(within(card(locked.id)).getByRole("button", { name: "Calibrate" })).toBeTruthy();
   });
 });
 
@@ -121,7 +129,7 @@ describe("Report: create epic", () => {
       summary: "Summary",
       report,
       at: new Date().toISOString(),
-      running: running ? { log: [], startedAt: new Date().toISOString() } : null,
+      running: running ? { kind: "audit", log: [], startedAt: new Date().toISOString() } : null,
     };
     render(
       <ColonyProvider storageKey="colony-test-sentinels-epic" cards={[]} extras={{}}>
@@ -261,23 +269,29 @@ describe("SentinelsPage carousel and report modal", () => {
     expect(screen.queryByRole("region", { name: "Sentinels" })).toBeNull();
   });
 
-  it("Summon runs the audit without opening the modal", async () => {
+  const post = (kind: string) => ({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind }),
+  });
+
+  it("Calibrate runs a calibration without opening the modal", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
     await open();
-    await userEvent.click(within(card(1)).getByRole("button", { name: "Summon" }));
-    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${SENTINELS[1]!.id}`, { method: "POST" });
+    await userEvent.click(within(card(1)).getByRole("button", { name: "Calibrate" }));
+    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${SENTINELS[1]!.id}`, post("calibrate"));
     expect(screen.queryByRole("dialog")).toBeNull();
     vi.unstubAllGlobals();
   });
 
-  it("Enter on the Re-run button re-runs and does not open the modal", async () => {
+  it("Enter on the Re-audit button audits again and does not open the modal", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
     await open();
-    within(card(0)).getByRole("button", { name: "Re-run" }).focus();
+    within(card(0)).getByRole("button", { name: "Re-audit" }).focus();
     await userEvent.keyboard("{Enter}");
-    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${SENTINELS[0]!.id}`, { method: "POST" });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${SENTINELS[0]!.id}`, post("audit"));
     expect(screen.queryByRole("dialog")).toBeNull();
     vi.unstubAllGlobals();
   });

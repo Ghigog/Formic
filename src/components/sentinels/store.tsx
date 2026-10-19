@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { gradeOf, type GradeSummary } from "@/lib/sentinels/grade";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import { starsOf, type SentinelStates } from "@/lib/sentinels/view";
+import type { AuditKind } from "@/lib/db/repository";
 
 /**
  * The Sentinels' state on the client: each one's last report and any run in
@@ -17,8 +18,12 @@ export interface SentinelsApi {
   grade: GradeSummary;
   /** The colony level that decides which Sentinels are unlocked. */
   level: number;
-  /** Summons one sentinel. A second summon while it runs does nothing. */
-  summon: (id: string) => Promise<void>;
+  /**
+   * Summons one sentinel: to calibrate, writing its rubric, or to audit
+   * against that rubric. A second summon while it runs does nothing.
+   */
+  summon: (id: string, kind?: AuditKind) => Promise<void>;
+  /** Audits every unlocked sentinel, calibrating the ones that have no rubric yet. */
   summonAll: () => void;
   /** Why the last summon was refused, if it was. */
   refusal: string | null;
@@ -61,15 +66,19 @@ export function SentinelsProvider({
     return () => clearInterval(id);
   }, [anyRunning, refresh]);
 
-  const summon = useCallback(async (id: string) => {
+  const summon = useCallback(async (id: string, kind: AuditKind = "audit") => {
     setRefusal(null);
     // Shown running at once; the server's answer fills in the real log.
     setStates((prev) => {
       const s = prev[id];
       if (!s || s.running) return prev;
-      return { ...prev, [id]: { ...s, error: null, running: { log: [], startedAt: new Date().toISOString() } } };
+      return { ...prev, [id]: { ...s, error: null, running: { kind, log: [], startedAt: new Date().toISOString() } } };
     });
-    const res = await fetch(`/api/sentinels/${id}`, { method: "POST" }).catch(() => null);
+    const res = await fetch(`/api/sentinels/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind }),
+    }).catch(() => null);
     if (res?.ok) {
       const body = (await res.json()) as { sentinels: SentinelStates };
       setStates(body.sentinels);
@@ -86,8 +95,9 @@ export function SentinelsProvider({
   }, [states]);
   const summonAll = useCallback(() => {
     SENTINELS.filter((s) => s.unlockLevel <= level).forEach((s, i) => {
-      if (latest.current[s.id]?.running) return;
-      setTimeout(() => void summon(s.id), i * 240);
+      const st = latest.current[s.id];
+      if (st?.running) return;
+      setTimeout(() => void summon(s.id, st?.rubric ? "audit" : "calibrate"), i * 240);
     });
   }, [summon, level]);
 

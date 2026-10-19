@@ -1,9 +1,10 @@
-import type { AuditRecord, AuditReport } from "@/lib/db/repository";
+import type { AuditKind, AuditRecord, AuditReport, Rubric } from "@/lib/db/repository";
 import { SENTINELS } from "./roster";
+import { sameRubric } from "./rubric";
 
 /**
- * What the page knows about each sentinel: its last report, and a run in
- * progress or a failure newer than that report. No server imports.
+ * What the page knows about each sentinel: its rubric, its last report, and
+ * a run in progress or a failure newer than those. No server imports.
  */
 
 /** A run that has not moved for this long died with the function running it. */
@@ -21,12 +22,18 @@ export interface SentinelState {
   quote: string | null;
   summary: string | null;
   report: AuditReport | null;
+  /** The rubric the report was scored against, or null for one from before rubrics. */
+  scoredWith: Rubric | null;
   /** When the report was written, ISO. */
   at: string | null;
   model: string | null;
   files: string[];
-  running: { log: string[]; startedAt: string } | null;
-  /** The newest run failed: why. The last report still stands. */
+  /** The rubric the next audit is scored against, from the last calibration. */
+  rubric: { rubric: Rubric; at: string | null; model: string | null } | null;
+  /** Whether the report was scored against a rubric since replaced by calibrating again. */
+  rubricChanged: boolean;
+  running: { kind: AuditKind; log: string[]; startedAt: string } | null;
+  /** The newest run failed: why. The last report and rubric still stand. */
   error: string | null;
 }
 
@@ -38,9 +45,10 @@ export function sentinelStates(audits: AuditRecord[], now = Date.now()): Sentine
     const mine = audits
       .filter((a) => a.sentinel === s.id)
       .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
-    const done = mine.filter((a) => a.status === "done").at(-1) ?? null;
+    const done = mine.filter((a) => a.kind === "audit" && a.status === "done").at(-1) ?? null;
+    const calibrated = mine.filter((a) => a.kind === "calibrate" && a.status === "done" && a.rubric).at(-1) ?? null;
     const newest = mine.at(-1) ?? null;
-    const later = newest && newest !== done ? newest : null;
+    const later = newest && newest !== done && newest !== calibrated ? newest : null;
     const stale =
       later?.status === "running" &&
       now - new Date(later.startedAt).getTime() > (later.runnerJob ? STALE_JOB_AFTER_MS : STALE_AFTER_MS);
@@ -52,18 +60,27 @@ export function sentinelStates(audits: AuditRecord[], now = Date.now()): Sentine
       quote: done?.quote ?? null,
       summary: done?.summary ?? null,
       report: done?.report ?? null,
+      scoredWith: done?.rubric ?? null,
       at: done?.finishedAt ? new Date(done.finishedAt).toISOString() : null,
       model: done?.model ?? null,
       files: done?.files ?? [],
+      rubric: calibrated
+        ? {
+            rubric: calibrated.rubric!,
+            at: calibrated.finishedAt ? new Date(calibrated.finishedAt).toISOString() : null,
+            model: calibrated.model,
+          }
+        : null,
+      rubricChanged: !!done?.rubric && !!calibrated && !sameRubric(done.rubric, calibrated.rubric),
       running:
         later?.status === "running" && !stale
-          ? { log: later.log, startedAt: new Date(later.startedAt).toISOString() }
+          ? { kind: later.kind, log: later.log, startedAt: new Date(later.startedAt).toISOString() }
           : null,
       error:
         later?.status === "failed"
-          ? (later.error ?? "The audit failed.")
+          ? (later.error ?? (later.kind === "calibrate" ? "Calibrating failed." : "The audit failed."))
           : stale
-            ? "The audit stopped without reporting. Run it again."
+            ? `The ${later.kind === "calibrate" ? "calibration" : "audit"} stopped without reporting. Run it again.`
             : null,
     };
   }

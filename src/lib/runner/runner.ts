@@ -60,6 +60,7 @@ import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { repository } from "@/lib/db";
 import type { AuditRecord, TicketDetail } from "@/lib/db/repository";
+import type { Goal } from "@/lib/sentinels/rubric";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { signingSecret } from "@/lib/auth/session";
@@ -1299,6 +1300,7 @@ export async function startCliSentinel(input: {
   projectId: string;
   auditId: string;
   sentinelId: string;
+  goal: Goal;
   agent: CliAgent;
   /** A second attempt, after its report was sent back. */
   attempt?: number;
@@ -1319,7 +1321,7 @@ export async function startCliSentinel(input: {
     mode: "ask",
     cardKey: "sentinel",
     from: project.baseBranch,
-    prompt: cliAuditPrompt(s, project.repoFullName, input.retry),
+    prompt: cliAuditPrompt(s, project.repoFullName, input.goal, input.retry),
     record: (job) => repo.setAuditJob(input.auditId, job, input.agent.presetId),
   });
   return started.ok ? { ok: true } : { ok: false, reason: started.reason };
@@ -1348,18 +1350,14 @@ async function completeCliSentinel(
   const answer = await client.readFile(ANSWER_PATH, `${STAGING_PREFIX}${result.job}`).catch(() => null);
   await cleanUp();
 
+  const { goalOf } = await import("@/lib/sentinels/rubric");
+  const goal = goalOf(audit);
+  if (!goal) return void (await fail("This audit started without a rubric. Calibrate, then audit again."));
   const { parseCliReport } = await import("@/lib/sentinels/cli");
-  const report = parseCliReport(answer);
+  const report = parseCliReport(answer, goal);
   if (report.ok) {
-    await repo.finishAudit(audit.id, {
-      status: "done",
-      stars: report.stars,
-      quote: report.quote,
-      summary: report.summary,
-      report: report.report,
-      files: report.files,
-      model: null,
-    });
+    const { ok: _, ...done } = report;
+    await repo.finishAudit(audit.id, { status: "done", ...done, model: null });
     return;
   }
 
@@ -1374,6 +1372,7 @@ async function completeCliSentinel(
         projectId,
         auditId: audit.id,
         sentinelId: audit.sentinel,
+        goal,
         agent: agent.agent,
         attempt: attempt + 1,
         retry: { answer: answer ?? "", problem: report.problem },

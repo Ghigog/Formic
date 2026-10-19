@@ -25,8 +25,10 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
+  AuditKind,
   AuditRecord,
   AuditResult,
+  Rubric,
   CardChatMessage,
   QueenRecord,
   PlatformUsage,
@@ -1358,17 +1360,19 @@ export class MemoryRepository implements Repository {
       .map((a) => ({ ...a, log: [...a.log], files: [...a.files] }));
   }
 
-  async startAudit(projectId: string, sentinel: string): Promise<AuditRecord> {
+  async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null): Promise<AuditRecord> {
     const audit: AuditRecord = {
       id: `audit_${Math.random().toString(36).slice(2, 10)}`,
       projectId,
       sentinel,
+      kind,
       status: "running",
       log: [],
       stars: null,
       quote: null,
       summary: null,
       report: null,
+      rubric,
       error: null,
       model: null,
       files: [],
@@ -1406,6 +1410,7 @@ export class MemoryRepository implements Repository {
       quote: result.quote ?? null,
       summary: result.summary ?? null,
       report: result.report ?? null,
+      rubric: result.rubric ?? audit.rubric,
       error: result.error ?? null,
       model: result.model ?? null,
       files: result.files ?? [],
@@ -1418,6 +1423,7 @@ export class MemoryRepository implements Repository {
         a === audit ||
         a.projectId !== audit.projectId ||
         a.sentinel !== audit.sentinel ||
+        a.kind !== audit.kind ||
         a.status === "running" ||
         (result.status === "failed" && a.status === "done"),
     );
