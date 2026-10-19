@@ -31,9 +31,16 @@ describe("the scouts panel", () => {
     const changed = vi.fn();
     render(<ScoutsPanel card={card} onChanged={changed} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Send a scout" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send scout" }));
     await waitFor(() => expect(posts).toEqual([{ action: "send", ticketId: card.id }]));
     expect(changed).toHaveBeenCalled();
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it.each(["ready", "review", "merged"] as const)("has no Send scout button on a %s ticket", (status) => {
+    serve({ why: null, scouts: [] });
+    render(<ScoutsPanel card={makeCard({ status, stalledIn: null })} onChanged={() => {}} />);
+    expect(screen.queryByRole("button", { name: "Send scout" })).toBeNull();
   });
 
   it("shows the scouts back and lets a person keep another one", async () => {
