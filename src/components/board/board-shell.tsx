@@ -253,7 +253,7 @@ export function BoardShell({
         }}
         onOpenTicket={setOpenTicketId}
         subscribe={subscribe}
-        onChanged={() => void refetch()}
+        onChanged={() => void refetch().catch(() => {})}
       />
 
       <SetupDialog

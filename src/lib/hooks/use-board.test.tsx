@@ -14,8 +14,16 @@ vi.mock("./use-board-events", () => ({
 
 import { useBoard } from "./use-board";
 
-const card = (id: string, key: string) => ({ id, key, kind: "ticket", title: key }) as unknown as BoardCard;
-const stats: AmbientStats = { activeSandboxes: 0, provider: "none", tokensIn: 0, tokensOut: 0, costCents: 0, logLines: [] };
+const card = (id: string, key: string) =>
+  ({ id, key, kind: "ticket", title: key }) as unknown as BoardCard;
+const stats: AmbientStats = {
+  activeSandboxes: 0,
+  provider: "none",
+  tokensIn: 0,
+  tokensOut: 0,
+  costCents: 0,
+  logLines: [],
+};
 const send = (event: object, seq = 1) => act(() => emit(event as FormicEvent, seq));
 
 const fetchMock = vi.fn();
@@ -42,15 +50,35 @@ describe("useBoard", () => {
     send({ type: "ci.status", ticketId: "c1", state: "passing" });
     expect(result.current.extras.c1?.ci).toBe("passing");
 
-    send({ type: "run.progress", ticketId: "c1", label: "Coding", fraction: 0.5 });
-    expect(result.current.extras.c1?.progress).toEqual({ label: "Coding", fraction: 0.5 });
+    send({
+      type: "run.progress",
+      ticketId: "c1",
+      label: "Coding",
+      fraction: 0.5,
+    });
+    expect(result.current.extras.c1?.progress).toEqual({
+      label: "Coding",
+      fraction: 0.5,
+    });
 
     send({ type: "run.usage", tokensIn: 10, tokensOut: 5, costCents: 3 });
     send({ type: "run.usage", tokensIn: 1, tokensOut: 1, costCents: 1 });
-    expect(result.current.stats).toMatchObject({ tokensIn: 11, tokensOut: 6, costCents: 4 });
+    expect(result.current.stats).toMatchObject({
+      tokensIn: 11,
+      tokensOut: 6,
+      costCents: 4,
+    });
 
-    send({ type: "run.log", runId: "r", ticketId: "c1", stream: "stdout", line: "hi" });
-    expect(result.current.stats.logLines).toEqual([{ runId: "r", label: "T-1", stream: "stdout", line: "hi" }]);
+    send({
+      type: "run.log",
+      runId: "r",
+      ticketId: "c1",
+      stream: "stdout",
+      line: "hi",
+    });
+    expect(result.current.stats.logLines).toEqual([
+      { runId: "r", label: "T-1", stream: "stdout", line: "hi" },
+    ]);
 
     send({ type: "epic.prd", epicId: "e", delta: "a", done: false });
     send({ type: "epic.prd", epicId: "e", delta: "b", done: false });
@@ -59,7 +87,12 @@ describe("useBoard", () => {
 
   it("refetches once when several events arrive within the debounce window", async () => {
     const { result } = renderHook(() => useBoard([card("c1", "T-1")], stats));
-    const status = { type: "card.status", cardId: "c1", kind: "ticket", status: "coding" };
+    const status = {
+      type: "card.status",
+      cardId: "c1",
+      kind: "ticket",
+      status: "coding",
+    };
 
     send(status, 1);
     await act(() => vi.advanceTimersByTimeAsync(100));
@@ -71,5 +104,63 @@ describe("useBoard", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith("/api/board", { cache: "no-store" });
     expect(result.current.cards.map((c) => c.id)).toEqual(["c2"]);
+  });
+
+  describe("transition", () => {
+    const move = {
+      cardId: "c1",
+      kind: "ticket",
+      from: "backlog",
+      to: "done",
+      position: 1,
+      actor: "user",
+    } as const;
+    const run = async (
+      hook: ReturnType<typeof renderHook<ReturnType<typeof useBoard>, unknown>>,
+    ) => {
+      let out;
+      await act(async () => {
+        out = await hook.result.current.transition(move);
+      });
+      return out;
+    };
+
+    it("reverts when the request rejects", async () => {
+      fetchMock.mockRejectedValue(new TypeError("offline"));
+      const hook = renderHook(() => useBoard([card("c1", "T-1")], stats));
+      expect(await run(hook)).toMatchObject({ ok: false, revertTo: "backlog" });
+    });
+
+    it("reverts when the body is not JSON", async () => {
+      fetchMock.mockImplementation(async (url: string) =>
+        url === "/api/transitions" ? new Response("<html>") : Response.json({ cards: [] }),
+      );
+      const hook = renderHook(() => useBoard([card("c1", "T-1")], stats));
+      expect(await run(hook)).toMatchObject({ ok: false, revertTo: "backlog" });
+    });
+
+    it("reports failure when the refetch fails", async () => {
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url === "/api/transitions")
+          return Response.json({ ok: true, status: "done", runId: null });
+        throw new TypeError("offline");
+      });
+      const hook = renderHook(() => useBoard([card("c1", "T-1")], stats));
+      expect(await run(hook)).toMatchObject({ ok: false, revertTo: "backlog" });
+    });
+
+    it("passes through the revertTo of a rejected move", async () => {
+      fetchMock.mockImplementation(async (url: string) =>
+        url === "/api/transitions"
+          ? Response.json({ ok: false, reason: "no", revertTo: "coding" }, { status: 400 })
+          : Response.json({ cards: [] }),
+      );
+      const hook = renderHook(() => useBoard([card("c1", "T-1")], stats));
+      expect(await run(hook)).toEqual({
+        ok: false,
+        reason: "no",
+        revertTo: "coding",
+      });
+    });
   });
 });
