@@ -1,14 +1,25 @@
 name: Production smoke test
 
 on:
-  # Manual, like the deploy it checks. A merge ships nothing now, so running
-  # this on every push to main would just sit and wait twenty minutes for a
-  # release that is not coming — and then fail. Dispatch it after a deploy,
-  # from Actions → Production smoke test → Run workflow.
+  # Starts by itself after a production deploy: the CI workflow's deploy job
+  # only runs on a dispatch from main, so a CI run that completed successfully
+  # for that event on main is a deploy that finished (other CI runs never reach
+  # the deploy job, so they are skipped by the job's condition). Can still be
+  # dispatched by hand: Actions → Production smoke test → Run workflow.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
+
+env:
+  # The commit that was deployed. A workflow_run's GITHUB_SHA is main's head,
+  # which may have moved on since.
+  DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   smoke-test:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -43,24 +54,24 @@ jobs:
             status=$(curl -s -o health.json -w '%{http_code}' --max-time 15 "$base/api/health" || echo 000)
             live=$(jq -r '.commit // "unknown"' health.json 2>/dev/null || echo unknown)
             ok=$(jq -r '.ok // false' health.json 2>/dev/null || echo false)
-            if [ "$live" = "$GITHUB_SHA" ] || [ "$live" = "unknown" ] || [ "$live" = "null" ]; then
+            if [ "$live" = "$DEPLOYED_SHA" ] || [ "$live" = "unknown" ] || [ "$live" = "null" ]; then
               [ "$status" = "200" ] && break
               if [ "$ok" = "false" ] && [ -z "$alerted_unhealthy" ]; then
                 alerted_unhealthy=1
-                alert "/api/health reports ok: false on $GITHUB_SHA: $(cat health.json 2>/dev/null)"
+                alert "/api/health reports ok: false on $DEPLOYED_SHA: $(cat health.json 2>/dev/null)"
               fi
             fi
             if [ $SECONDS -ge $deadline ]; then
-              alert "Production never became healthy on $GITHUB_SHA (serving: $live, /api/health: HTTP $status)"
+              alert "Production never became healthy on $DEPLOYED_SHA (serving: $live, /api/health: HTTP $status)"
               cat health.json 2>/dev/null
               exit 1
             fi
-            echo "Serving $live, /api/health $status; waiting for $GITHUB_SHA..."
+            echo "Serving $live, /api/health $status; waiting for $DEPLOYED_SHA..."
             sleep 20
           done
 
           cat health.json; echo
-          if [ "$live" != "$GITHUB_SHA" ]; then
+          if [ "$live" != "$DEPLOYED_SHA" ]; then
             echo "::warning::/api/health doesn't report a commit, so this may be checking an older deploy."
           fi
           jq -r '.warnings[]?' health.json | while read -r w; do echo "::warning::$w"; done
@@ -68,7 +79,7 @@ jobs:
           # With GitHub sign-in on, / redirects to the sign-in page; follow it.
           page=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$base/")
           if [ "$page" != "200" ]; then
-            alert "/ returned HTTP $page on $GITHUB_SHA"
+            alert "/ returned HTTP $page on $DEPLOYED_SHA"
             exit 1
           fi
           echo "Production is healthy on $live."
