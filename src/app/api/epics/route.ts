@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  rawRequest: z.string().min(3, "Describe the feature in a sentence or two.").max(4000),
+  rawRequest: z.string().trim().min(3, "Describe the feature in a sentence or two.").max(4000),
+  requestId: z.string().optional(),
   workType: z.enum(WORK_TYPES).optional(),
 });
 
@@ -29,6 +30,11 @@ export async function POST(req: NextRequest) {
 
   const project = await activeProject();
   if (!project) return noProject();
-  const card = await createBacklogItem(project.id, parsed.data.rawRequest, parsed.data.workType);
+  const card = await createBacklogItem(
+    project.id,
+    parsed.data.rawRequest,
+    parsed.data.workType,
+    parsed.data.requestId,
+  );
   return Response.json({ card }, { status: 201 });
 }
