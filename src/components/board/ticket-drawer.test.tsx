@@ -476,3 +476,61 @@ describe("TicketDrawer on-screen keyboard", () => {
     }
   });
 });
+
+describe("TicketDrawer archive", () => {
+  const todo: TicketView = { ...VIEW, card: { ...card, status: "ready", queen: false } };
+
+  function openWith(archive: () => Response) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (init?.method === "PATCH") {
+          calls.push(url);
+          return archive();
+        }
+        if (url.includes("/api/attachments")) return Response.json({ attachments: [] });
+        if (url.includes("/api/queens")) return Response.json({ unspent: 0 });
+        return Response.json(todo);
+      }),
+    );
+    const onClose = vi.fn();
+    const onChanged = vi.fn();
+    render(
+      <TicketDrawer
+        ticketId="t-1"
+        onClose={onClose}
+        onChanged={onChanged}
+        onOpenEpic={() => {}}
+        onOpenTicket={() => {}}
+        subscribe={() => () => {}}
+      />,
+    );
+    return { calls, onClose, onChanged };
+  }
+
+  it("archives the ticket and closes the drawer", async () => {
+    const { calls, onClose, onChanged } = openWith(() => Response.json({ ok: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(calls).toEqual(["/api/tickets/t-1/archive"]);
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("shows the error and stays open when archiving fails", async () => {
+    const { onClose } = openWith(() => Response.json({ error: "Still working." }, { status: 409 }));
+    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Still working.");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("puts Add Queen, the no-Queens note and Archive in one row", async () => {
+    openWith(() => Response.json({ ok: true }));
+    const archive = await screen.findByRole("button", { name: "Archive" });
+    const addQueen = screen.getByRole("button", { name: "Add Queen" });
+    expect(addQueen.closest("[data-queen]")?.parentElement).toBe(archive.parentElement);
+    expect(await screen.findByText("No unspent Queens")).toBeInTheDocument();
+    expect(archive).toBeEnabled();
+  });
+});
