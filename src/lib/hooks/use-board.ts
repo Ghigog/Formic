@@ -37,14 +37,14 @@ export function useBoard(
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/board", { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(`Board refresh failed (${res.status})`);
     const data = (await res.json()) as { cards: BoardCard[] };
     setCards(data.cards);
   }, []);
 
   const scheduleRefetch = useCallback(() => {
     if (refetchTimer.current) clearTimeout(refetchTimer.current);
-    refetchTimer.current = setTimeout(() => void refetch(), 120);
+    refetchTimer.current = setTimeout(() => void refetch().catch(() => {}), 120);
   }, [refetch]);
 
   const onEvent = useCallback(
@@ -66,7 +66,10 @@ export function useBoard(
           // nothing about it moves: the colony reads that off here.
           setExtras((prev) => ({
             ...prev,
-            [event.cardId]: { ...prev[event.cardId], answering: event.state === "answering" },
+            [event.cardId]: {
+              ...prev[event.cardId],
+              answering: event.state === "answering",
+            },
           }));
           break;
 
@@ -151,15 +154,19 @@ export function useBoard(
 
   const transition = useCallback(
     async (t: CardTransition): Promise<TransitionResult> => {
-      const res = await fetch("/api/transitions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(t),
-      });
-
-      const result = (await res.json().catch(() => null)) as TransitionResult | null;
+      let result: TransitionResult | null = null;
+      try {
+        const res = await fetch("/api/transitions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(t),
+        });
+        result = (await res.json().catch(() => null)) as TransitionResult | null;
+      } catch {
+        // Network failure: handled like an unreadable answer.
+      }
       if (!result) {
-        void refetch();
+        void refetch().catch(() => {});
         return {
           ok: false,
           reason: "The server did not respond to that move.",
@@ -169,7 +176,17 @@ export function useBoard(
 
       // Awaited so the board swaps its optimistic copy for fresh server state
       // in one render, rather than flashing the card back where it came from.
-      await refetch();
+      try {
+        await refetch();
+      } catch {
+        return result.ok
+          ? {
+              ok: false,
+              reason: "Could not refresh the board after that move.",
+              revertTo: t.from,
+            }
+          : result;
+      }
       return result;
     },
     [refetch],
@@ -184,7 +201,9 @@ export function useBoard(
       });
       await refetch();
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(body?.error ?? "Could not create that backlog item.");
       }
     },
@@ -200,7 +219,9 @@ export function useBoard(
       });
       await refetch();
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(body?.error ?? "Could not create that ticket.");
       }
     },

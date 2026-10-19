@@ -43,8 +43,14 @@ export function ArchiveDropZone({
     const { ticketId } = dropped;
     let live = true;
     fetch(`/api/tickets/${ticketId}/archive`, { method: "PATCH" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Archive failed (${res.status})`);
+      .then(async (res) => {
+        if (!res.ok) {
+          // The server says why, e.g. the 409 for a ticket with an active run.
+          const body = (await Promise.resolve()
+            .then(() => res.json())
+            .catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? `Archive failed (${res.status})`);
+        }
         if (!live) return;
         setOutcome({ drop: dropped, error: null });
         onArchived(ticketId);
@@ -89,11 +95,7 @@ export function ArchiveDropZone({
             )}
           >
             <span>
-              {snapshot.isDraggingOver
-                ? "Drop to archive"
-                : archiving
-                  ? "Archiving…"
-                  : "Archive"}
+              {snapshot.isDraggingOver ? "Drop to archive" : archiving ? "Archiving…" : "Archive"}
             </span>
             {error && (
               <span role="alert" className="text-log-error">
