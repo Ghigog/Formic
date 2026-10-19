@@ -7,6 +7,7 @@ import { useSound } from "@/components/colony/store";
 import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
+import { ColonySection } from "@/components/settings/colony-section";
 import { EffortSection } from "@/components/settings/effort-section";
 import { ScoutAgentSection } from "@/components/settings/scout-agent-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
@@ -167,6 +168,8 @@ export function SettingsForm({
         />
 
         <RunTimeBudgetSection initial={runTimeBudget} tokens={limits?.tokens} attempts={limits?.attempts} />
+
+        <ColonySection />
 
         <EffortSection initial={effortByPoints} />
 

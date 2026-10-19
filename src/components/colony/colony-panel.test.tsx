@@ -41,23 +41,29 @@ function serve(first: ColonyView) {
 }
 
 describe("the colony panel", () => {
-  it("will not lower the reserve below the level's floor, and says which level does", async () => {
-    serve(view());
-    render(<ColonyPanel level={1} />);
-    expect(await screen.findByText(/Lv 3 lets you run closer to full/)).toBeTruthy();
-    expect((screen.getByLabelText("Fewer reserve slots") as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("saves a bigger colony", async () => {
-    const posts = serve(view({ level: 2 }));
-    render(<ColonyPanel level={2} />);
-    fireEvent.click(await screen.findByLabelText("More agents"));
-    await waitFor(() => expect(posts).toEqual([{ colonySize: 5, colonyReserve: 2, autoScout: false }]));
-  });
-
-  it("keeps auto-scouting locked until its level", async () => {
+  it("shows a disabled Auto-scout that says when it unlocks, and no cap controls", async () => {
     serve(view({ level: 3 }));
     render(<ColonyPanel level={3} />);
-    expect(await screen.findByText(/unlocks at Lv 8/)).toBeTruthy();
+    const button = (await screen.findByRole("button", { name: /Auto-scout/ })) as HTMLButtonElement;
+    expect(button.textContent).toMatch(/unlocks at Lv 8/);
+    expect(button.disabled).toBe(true);
+    expect(screen.queryByLabelText("More agents")).toBeNull();
+    expect(screen.queryByText(/Cap how many agents run/)).toBeNull();
+  });
+
+  it("needs a cap before it can be turned on", async () => {
+    serve(view({ level: 8, colonySize: null }));
+    render(<ColonyPanel level={8} />);
+    const button = (await screen.findByRole("button", { name: /Auto-scout/ })) as HTMLButtonElement;
+    expect(button.textContent).toMatch(/Settings/);
+    expect(button.disabled).toBe(true);
+  });
+
+  it("saves auto-scout on when unlocked and capped", async () => {
+    const posts = serve(view({ level: 8 }));
+    render(<ColonyPanel level={8} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Auto-scout/ }));
+    await waitFor(() => expect(posts).toEqual([{ colonySize: 4, colonyReserve: 2, autoScout: true }]));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Auto-scout/ }).getAttribute("aria-pressed")).toBe("true"));
   });
 });
