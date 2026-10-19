@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { useColony, type ColonyApi } from "@/components/colony/colony";
 import { centerOf } from "@/components/colony/fx";
-import { GRADES, GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
+import { GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
 import { GROUP_INK, SENTINELS, isUnlocked, promptFor, stepsFor, type Sentinel } from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditPoint } from "@/lib/db/repository";
@@ -60,6 +60,8 @@ const SLIDE_MS = 520;
 const SLIDE_STAGGER_MS = 110;
 /** Hover scrubbing across the rail makes one voice per this long. */
 const VOICE_GAP_MS = 120;
+/** A wheel gesture ends once the wheel has been quiet this long. */
+const WHEEL_QUIET_MS = 160;
 
 function ago(iso: string | null, now: number): string {
   if (!iso) return "";
@@ -76,24 +78,100 @@ function ago(iso: string | null, now: number): string {
  * own brief, report, and rate it. Their average is the project's grade.
  * Covers the board between the header and the ambient bar, like the timeline.
  */
-export function SentinelsPage({ repoName }: { repoName: string }) {
+export function SentinelsPage(_: { repoName: string }) {
   const c = useColony();
   const s = useSentinels();
   if (!c?.sentinelsOpen || !s) return null;
-  return <SentinelsView c={c} s={s} repoName={repoName} />;
+  return <SentinelsView c={c} s={s} />;
 }
 
-function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repoName: string }) {
+function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
   const root = useRef<HTMLDivElement>(null);
   const gradeRef = useRef<HTMLSpanElement>(null);
-  const [sel, setSel] = useState<string>(SENTINELS[0]!.id);
+  const rail = useRef<HTMLDivElement>(null);
+  /** The centred sentinel; the ref lets rapid steps build on each other. */
+  const [idx, setIdx] = useState(0);
+  const idxRef = useRef(0);
+  /** The sentinel whose report is open in the modal. */
+  const [reportId, setReportId] = useState<string | null>(null);
+  const reportRef = useRef<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const g = s.grade;
+
+  const goTo = (i: number) => {
+    const el = rail.current;
+    const item = el?.children[i] as HTMLElement | undefined;
+    idxRef.current = i;
+    setIdx(i);
+    el?.scrollTo({
+      left: item ? item.offsetLeft + item.offsetWidth / 2 - el.clientWidth / 2 : 0,
+      behavior: c.fx.reducedMotion ? "auto" : "smooth",
+    });
+  };
+  /** One sentinel left or right, stopping at the first and last. */
+  const step = (dir: -1 | 1) => {
+    const i = Math.min(SENTINELS.length - 1, Math.max(0, idxRef.current + dir));
+    if (i !== idxRef.current) goTo(i);
+  };
+  const closeReport = () => {
+    const id = reportRef.current;
+    reportRef.current = null;
+    setReportId(null);
+    root.current?.querySelector<HTMLElement>(`[data-card="${id}"]`)?.focus();
+  };
+  // The centred index follows the scroll position, so swipes keep it right.
+  const onScroll = () => {
+    const el = rail.current;
+    if (!el) return;
+    const mid = el.scrollLeft + el.clientWidth / 2;
+    let best = 0;
+    let gap = Infinity;
+    Array.from(el.children).forEach((child, i) => {
+      const it = child as HTMLElement;
+      const d = Math.abs(it.offsetLeft + it.offsetWidth / 2 - mid);
+      if (d < gap) {
+        gap = d;
+        best = i;
+      }
+    });
+    idxRef.current = best;
+    setIdx(best);
+  };
+
+  // A mouse wheel gesture is one step: further wheel events are swallowed
+  // until the wheel has been quiet, which also absorbs trackpad inertia.
+  useEffect(() => {
+    const el = rail.current;
+    if (!el) return;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (quiet === undefined) step(((Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) < 0 ? -1 : 1));
+      clearTimeout(quiet);
+      quiet = setTimeout(() => (quiet = undefined), WHEEL_QUIET_MS);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      clearTimeout(quiet);
+      el.removeEventListener("wheel", onWheel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Focus moves into the report modal when it opens.
+  useEffect(() => {
+    if (reportId) root.current?.querySelector<HTMLElement>("[role=dialog] button")?.focus();
+  }, [reportId]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") c.setSentinelsOpen(false);
+      if (e.key === "Escape") {
+        if (reportRef.current) closeReport();
+        else c.setSentinelsOpen(false);
+      } else if (!reportRef.current && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        step(e.key === "ArrowLeft" ? -1 : 1);
+      }
     };
     window.addEventListener("keydown", onKey);
     // Reported cards slide up one after another; the rest fade in by CSS.
@@ -205,21 +283,21 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
   const unlocked = SENTINELS.filter((x) => isUnlocked(x, s.level)).length;
   const nBusy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
   const summon = (id: string) => {
-    setSel(id);
     c.sfx("emerge");
     void s.summon(id);
   };
-  const selected = SENTINELS.find((x) => x.id === sel)!;
+  const reporting = SENTINELS.find((x) => x.id === reportId);
 
   return (
     <div
       ref={root}
       role="region"
       aria-label="Sentinels"
-      className="bg-cream fixed top-14 right-0 bottom-14 left-0 z-[60] box-border overflow-auto px-4 pt-5 pb-6 md:top-16 md:px-6 lg:overflow-hidden"
+      className="bg-cream fixed top-14 right-0 bottom-14 left-0 z-[60] box-border overflow-hidden px-4 pt-5 pb-6 md:top-16 md:px-6"
     >
-      <div className="mx-auto flex max-w-[1640px] flex-col gap-4 lg:h-full">
-        <section className="border-line bg-card flex shrink-0 flex-wrap items-center gap-6 rounded-[14px] border px-6 py-5">
+      <div className="mx-auto flex h-full max-w-[1640px] flex-col gap-4">
+        <h1 className="sr-only">Sentinels</h1>
+        <section className="border-line bg-card flex shrink-0 flex-wrap items-center gap-x-6 gap-y-4 rounded-[14px] border px-5 py-4">
           <span
             ref={gradeRef}
             title={GRADE_RULE}
@@ -229,36 +307,7 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
             <span className="font-mono text-[9px] tracking-[0.14em] opacity-80">GRADE</span>
             <span className="font-serif text-[42px] leading-none font-semibold">{g.grade}</span>
           </span>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <span className="text-muted font-mono text-[10px] tracking-[0.12em] uppercase">Colony audit · {repoName}</span>
-            <h1 className="m-0 font-serif text-[30px] leading-none font-semibold tracking-[-0.01em]">Sentinels</h1>
-            <span className="text-muted max-w-[440px] text-[13px] text-pretty">
-              Twelve agents read the codebase against their own brief and rate it. Unaudited sentinels count as zero
-              stars.
-            </span>
-          </div>
-          <div className="grow" />
           <div className="flex flex-col items-start gap-2">
-            <div className="flex gap-1">
-              {GRADES.map((x) => {
-                const on = x.grade === g.grade;
-                return (
-                  <span
-                    key={x.grade}
-                    title={x.min ? `${x.grade} · avg ≥ ${x.min.toFixed(1)}` : `${x.grade} · below 2.0`}
-                    className="oct inline-flex p-px"
-                    style={{ background: on ? x.ink : "var(--border)" }}
-                  >
-                    <span
-                      className="oct inline-flex size-[30px] items-center justify-center font-serif text-[15px] font-semibold transition-colors duration-300"
-                      style={{ background: on ? x.ink : "var(--card)", color: on ? "var(--cream)" : "var(--dot-idle)" }}
-                    >
-                      {x.grade}
-                    </span>
-                  </span>
-                );
-              })}
-            </div>
             <div className="flex items-baseline gap-2.5">
               <span className="text-ink font-mono text-[12px] font-medium">{g.avg.toFixed(2)} / 5 avg</span>
               <span className="text-muted text-[12px]">
@@ -277,7 +326,6 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
                 : "Top grade reached"}
             </span>
           </div>
-          <span aria-hidden className="bg-line w-px self-stretch max-lg:hidden" />
           <button
             type="button"
             onClick={() => {
@@ -298,54 +346,83 @@ function SentinelsView({ c, s, repoName }: { c: ColonyApi; s: SentinelsApi; repo
           </p>
         )}
 
-        <div className="flex gap-4 max-lg:flex-col lg:min-h-0 lg:flex-1">
-          <Rail s={s} sel={sel} now={now} onReact={react} onSelect={(id) => { c.sfx("blip", 5); setSel(id); react(id); }} onSummon={summon} />
-          <Report x={selected} st={s.states[selected.id]!} now={now} locked={!isUnlocked(selected, s.level)} onSummon={() => summon(selected.id)} />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={rail}
+            role="list"
+            aria-label="Sentinels"
+            onScroll={onScroll}
+            className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain px-[calc(50%-132px)] pb-2"
+          >
+            {SENTINELS.map((x, i) => (
+              <Card
+                key={x.id}
+                x={x}
+                st={s.states[x.id]!}
+                on={i === idx}
+                now={now}
+                locked={!isUnlocked(x, s.level)}
+                onActivate={() => {
+                  if (i !== idxRef.current) goTo(i);
+                  else {
+                    c.sfx("blip", 5);
+                    reportRef.current = x.id;
+                    setReportId(x.id);
+                  }
+                }}
+                onReact={react}
+                onSummon={summon}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            aria-label="Previous sentinel"
+            onClick={() => step(-1)}
+            disabled={idx === 0}
+            className="border-line bg-card text-ink absolute top-1/2 left-1 size-9 -translate-y-1/2 rounded-full border disabled:opacity-40"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            aria-label="Next sentinel"
+            onClick={() => step(1)}
+            disabled={idx === SENTINELS.length - 1}
+            className="border-line bg-card text-ink absolute top-1/2 right-1 size-9 -translate-y-1/2 rounded-full border disabled:opacity-40"
+          >
+            ›
+          </button>
         </div>
       </div>
-    </div>
-  );
-}
 
-function Rail({
-  s,
-  sel,
-  now,
-  onSelect,
-  onReact,
-  onSummon,
-}: {
-  s: SentinelsApi;
-  sel: string;
-  now: number;
-  onSelect: (id: string) => void;
-  onReact: (id: string) => void;
-  onSummon: (id: string) => void;
-}) {
-  const rail = useRef<HTMLDivElement>(null);
-  // A mouse wheel scrolls the rail sideways.
-  useEffect(() => {
-    const el = rail.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      el.scrollLeft += e.deltaY;
-      e.preventDefault();
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-
-  return (
-    <div
-      ref={rail}
-      role="list"
-      aria-label="Sentinels"
-      className="flex min-w-0 flex-1 snap-x snap-proximity gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-2 max-lg:min-h-[520px]"
-    >
-      {SENTINELS.map((x) => (
-        <Card key={x.id} x={x} st={s.states[x.id]!} on={sel === x.id} now={now} locked={!isUnlocked(x, s.level)} onSelect={onSelect} onReact={onReact} onSummon={onSummon} />
-      ))}
+      {reporting && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgb(28_25_23/0.45)] p-4" onClick={closeReport}>
+          <div
+            role="dialog"
+            aria-modal
+            aria-label={`${reporting.who} audit report`}
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-h-full w-full max-w-[460px] overflow-auto rounded-[14px]"
+          >
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={closeReport}
+              className="border-line bg-cream text-ink absolute top-3 right-3 z-10 size-8 rounded-full border"
+            >
+              ×
+            </button>
+            <Report
+              x={reporting}
+              st={s.states[reporting.id]!}
+              now={now}
+              locked={!isUnlocked(reporting, s.level)}
+              onSummon={() => summon(reporting.id)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -356,7 +433,7 @@ function Card({
   on,
   now,
   locked,
-  onSelect,
+  onActivate,
   onReact,
   onSummon,
 }: {
@@ -365,7 +442,7 @@ function Card({
   on: boolean;
   now: number;
   locked: boolean;
-  onSelect: (id: string) => void;
+  onActivate: () => void;
   onReact: (id: string) => void;
   onSummon: (id: string) => void;
 }) {
@@ -380,17 +457,19 @@ function Card({
       tabIndex={0}
       aria-label={`${x.who}, ${x.name}. ${st.stars !== null ? `${st.stars} of 5 stars` : "Not audited"}`}
       aria-current={on || undefined}
-      onClick={() => onSelect(x.id)}
+      onClick={onActivate}
       onPointerEnter={() => onReact(x.id)}
       onFocus={() => onReact(x.id)}
       onKeyDown={(e) => {
+        // Keys pressed on the Summon button belong to the button, not the card.
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onSelect(x.id);
+          onActivate();
         }
       }}
       className={cn(
-        "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-start flex-col overflow-hidden rounded-[14px] border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
+        "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-center snap-always flex-col overflow-hidden rounded-[14px] border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
         !reported(st) && "sentinel-motion animate-[sentinelFade_0.4s_ease-out]",
         on ? "border-terracotta shadow-[0_0_0_3px_rgb(217_107_39/0.14)]" : "border-line",
       )}
@@ -513,7 +592,7 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
   return (
     <aside
       aria-label="Audit report"
-      className="border-line bg-card box-border flex shrink-0 flex-col gap-[18px] rounded-[14px] border p-5 lg:min-h-0 lg:w-[420px] lg:overflow-auto"
+      className="border-line bg-card box-border flex flex-col gap-[18px] rounded-[14px] border p-5 pt-12"
     >
       <div className="flex items-center gap-3">
         <span className="relative size-[52px] shrink-0 overflow-hidden rounded-full" style={{ background: portraitGround(x.id) }}>
