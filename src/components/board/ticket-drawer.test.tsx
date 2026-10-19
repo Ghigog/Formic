@@ -100,8 +100,15 @@ describe("TicketDrawer notice", () => {
     expect(banner.className).toContain("bg-crimson");
     expect(within(banner).getByText("Warning")).toBeInTheDocument();
     expect(within(banner).getByText("Failed")).toBeInTheDocument();
-    expect(within(banner).getAllByText(/CI broke/).length).toBeGreaterThan(0);
-    expect(within(banner).getByText(/line two of the log/)).toBeInTheDocument();
+    expect(within(banner).getAllByText(/CI broke/)).toHaveLength(1);
+    expect(within(banner).getAllByText(/line two of the log/)).toHaveLength(1);
+  });
+
+  it("shows a single-line failure once, with no gray block", async () => {
+    open(stalled("failed", "The run timed out"));
+    const banner = await screen.findByRole("alert");
+    expect(within(banner).getAllByText("The run timed out")).toHaveLength(1);
+    expect(banner.querySelector("pre")).toBeNull();
   });
 
   it("shows a yellow Alert banner for a ticket paused for authorization", async () => {

@@ -412,7 +412,7 @@ export function ColonyProvider({
       } else if (card.status === "failed" || card.status === "blocked") {
         later.push(() => {
           sfx("reject");
-          mark(card, "NEEDS YOU", card.blockedReason ?? null, "var(--crimson)");
+          mark(card, "NEEDS YOU", card.blockedReason?.split("\n", 1)[0] ?? null, "var(--crimson)");
         });
       }
       // A bug report squashes when handed to the agents; a bug ticket, when it is merged.

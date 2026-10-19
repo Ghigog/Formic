@@ -446,7 +446,9 @@ function NoticeBanner({
         <span className="font-semibold">{notice.title}</span>
       </div>
       {notice.shortDescription && (
-        <p className="mt-1">{notice.shortDescription}</p>
+        <p className="mt-1">
+          <LinkifiedText text={notice.shortDescription} />
+        </p>
       )}
       {notice.longDescription && (
         <pre className="bg-sunken mt-1.5 max-h-40 overflow-auto rounded px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">

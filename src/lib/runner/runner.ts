@@ -297,18 +297,16 @@ export function explain(e: unknown): string {
  * already have switched that column to a different agent, and blaming the
  * new one for the old run's limit would mark it out of usage it never used.
  */
-async function whyItFailed(
+export async function whyItFailed(
   projectId: string,
   client: VcsClient,
   result: RunnerResult,
   presetId: string | null,
 ): Promise<string> {
-  const log = result.url ? ` Its log: ${result.url}` : "";
-  if (result.conclusion === "cancelled") return `The agent's GitHub Actions run was cancelled.${log}`;
-  if (result.conclusion === "timed_out") {
-    return `The agent ran past the job's time limit and was stopped.${log}`;
-  }
-  const plain = `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`;
+  const log = result.url ? `Log: ${result.url}` : "";
+  if (result.conclusion === "cancelled") return failure("The run was cancelled", log);
+  if (result.conclusion === "timed_out") return failure("The run timed out", log);
+  const plain = failure(`The run ended as ${result.conclusion}`, log);
   const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
   if (!text) return plain;
 
@@ -321,7 +319,7 @@ async function whyItFailed(
   const diagnosis = diagnose(text, label);
   if (!diagnosis) {
     const last = lastWords(text);
-    return last ? `The agent's GitHub Actions run failed: "${last}".${log}` : plain;
+    return last ? failure("The run failed", last, log) : plain;
   }
   if (diagnosis.kind === "limit" && diagnosis.until && found) {
     await repo.setPresetLimit(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
@@ -332,7 +330,16 @@ async function whyItFailed(
       note: diagnosis.message,
     });
   }
-  return `${diagnosis.message}${log}`;
+  const type = { limit: "Usage limit reached", credit: "Out of credit", auth: "Sign-in rejected" }[diagnosis.kind];
+  return failure(type, diagnosis.message, log);
+}
+
+/**
+ * A failure reason: the error type on the first line, then the detail (the
+ * agent's own words, then the log link). classifyNotice splits it there.
+ */
+function failure(type: string, ...detail: string[]): string {
+  return [type, ...detail.filter(Boolean)].join("\n");
 }
 
 /**
@@ -1577,7 +1584,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
 
   const stalledIn = isTicketImplementation(result.mode) ? "in_progress" : "in_review";
-  const log = result.url ? ` Its log: ${result.url}` : "";
+  const logLink = result.url ? `Log: ${result.url}` : "";
   const stop = async (reason: string, blocked: boolean) => {
     await cleanUp();
     await stallTicket(projectId, ticket, reason, { blocked, stalledIn });
@@ -1644,7 +1651,8 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       }
     }
     if (change.files.length === 0 || !change.headSha) {
-      await stop(`The agent finished without changing anything.${log}`, result.mode === "fix");
+      const said = (change.messages.at(-1) ?? "").trim();
+      await stop(failure("The agent changed nothing", said, logLink), result.mode === "fix");
       return;
     }
 
