@@ -19,7 +19,7 @@ import type { DraftTicket } from "./ports";
  * prompt, so every provider fills in every required part.
  */
 export const ticketSpecSchema = z.object({
-  key: z.string().describe('Short stable key, e.g. "T-1".'),
+  key: z.string().describe('Short local key, e.g. "T-1", used only so dependsOn can refer to it. The code stores the ticket as EPIC-n-Tm.'),
   title: z.string(),
   userStory: z
     .object({
