@@ -67,6 +67,8 @@ export function TicketDrawer({
 }) {
   const [view, setView] = useState<TicketView | null>(null);
   const [failed, setFailed] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [tab, setTab] = useState<"ticket" | "agent">("ticket");
 
   // Another ticket: nothing of the last one's stays on screen.
@@ -75,6 +77,7 @@ export function TicketDrawer({
     setShownFor(ticketId);
     setView(null);
     setFailed(false);
+    setArchiveError(null);
   }
 
   const load = useCallback(async () => {
@@ -138,6 +141,26 @@ export function TicketDrawer({
     },
     [ticketId, load, onChanged],
   );
+
+  const archive = useCallback(async () => {
+    if (!ticketId) return;
+    setArchiving(true);
+    setArchiveError(null);
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}/archive`, { method: "PATCH" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setArchiveError(body.error ?? "Could not archive this ticket.");
+        return;
+      }
+      onChanged?.();
+      onClose();
+    } catch {
+      setArchiveError("Could not archive this ticket.");
+    } finally {
+      setArchiving(false);
+    }
+  }, [ticketId, onChanged, onClose]);
 
   const kb = keyboardStyles(useKeyboardInset());
 
@@ -284,23 +307,37 @@ export function TicketDrawer({
             )}
 
           {card && (
-            <QueenPanel
-              card={card}
-              onChanged={() => {
-                void load();
-                onChanged?.();
-              }}
-            />
-          )}
-
-          {card && (
-            <ScoutsPanel
-              card={card}
-              onChanged={() => {
-                void load();
-                onChanged?.();
-              }}
-            />
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
+              <QueenPanel
+                card={card}
+                onChanged={() => {
+                  void load();
+                  onChanged?.();
+                }}
+              />
+              <ScoutsPanel
+                card={card}
+                onChanged={() => {
+                  void load();
+                  onChanged?.();
+                }}
+              />
+              {card.kind === "ticket" && (
+                <button
+                  type="button"
+                  disabled={archiving}
+                  onClick={() => void archive()}
+                  className="border-line bg-card rounded border px-2.5 py-1 font-medium disabled:opacity-50"
+                >
+                  Archive
+                </button>
+              )}
+              {archiveError && (
+                <span role="alert" className="text-log-error w-full text-[11px]">
+                  {archiveError}
+                </span>
+              )}
+            </div>
           )}
 
           {/* Survives the toast that announced it: where it came from, and why. */}
