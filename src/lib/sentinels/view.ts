@@ -13,6 +13,10 @@ export const STALE_JOB_AFTER_MS = 45 * 60_000;
 
 export interface SentinelState {
   id: string;
+  /** The report's audit, to mark when an Epic is made from it. */
+  auditId: string | null;
+  /** The Epic made from the current report, if any. */
+  epicId: string | null;
   stars: number | null;
   quote: string | null;
   summary: string | null;
@@ -42,6 +46,8 @@ export function sentinelStates(audits: AuditRecord[], now = Date.now()): Sentine
       now - new Date(later.startedAt).getTime() > (later.runnerJob ? STALE_JOB_AFTER_MS : STALE_AFTER_MS);
     out[s.id] = {
       id: s.id,
+      auditId: done?.id ?? null,
+      epicId: done?.epicId ?? null,
       stars: done?.stars ?? null,
       quote: done?.quote ?? null,
       summary: done?.summary ?? null,

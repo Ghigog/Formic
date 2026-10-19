@@ -20,6 +20,7 @@ function audit(patch: Partial<AuditRecord>): AuditRecord {
     files: [],
     runnerJob: null,
     runnerAgent: null,
+    epicId: null,
     startedAt: new Date(T0),
     finishedAt: new Date(T0 + 1000),
     ...patch,
@@ -31,6 +32,17 @@ describe("sentinelStates", () => {
     const s = sentinelStates([], T0);
     expect(Object.keys(s)).toHaveLength(12);
     expect(s.secops).toMatchObject({ stars: null, running: null, error: null });
+  });
+
+  it("exposes the epic made from the latest done audit", () => {
+    const marked = audit({ id: "a1", epicId: "e1" });
+    expect(sentinelStates([marked], T0).secops).toMatchObject({ auditId: "a1", epicId: "e1" });
+    const newer = audit({ startedAt: new Date(T0 + 5000) });
+    expect(sentinelStates([marked, newer], T0 + 9000).secops!.epicId).toBeNull();
+    const running = audit({ status: "running", stars: null, startedAt: new Date(T0 + 5000) });
+    expect(sentinelStates([marked, running], T0 + 6000).secops!.epicId).toBe("e1");
+    const failed = audit({ status: "failed", stars: null, startedAt: new Date(T0 + 5000) });
+    expect(sentinelStates([marked, failed], T0 + 6000).secops!.epicId).toBe("e1");
   });
 
   it("keeps the last report while a new run is going", () => {
