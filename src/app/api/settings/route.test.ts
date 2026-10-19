@@ -100,9 +100,9 @@ describe("/api/settings autoMerge", () => {
 
   it("is off for a new project and saved on update for the owner", async () => {
     const p = await project(userId);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false, autoEscalate: false });
     expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(200);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true, autoEscalate: false });
   });
 
   it("refuses someone who does not own the project and leaves the flag", async () => {
@@ -110,6 +110,29 @@ describe("/api/settings autoMerge", () => {
     const p = await project(other.id);
     expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(403);
     expect((await repository().projectById(p.id))?.autoMerge).toBe(false);
+  });
+});
+
+describe("/api/settings autoEscalate", () => {
+  it("is off for a new project and saved on update for the owner", async () => {
+    const p = await repository().ensureProject({ ownerId: userId, repoFullName: "a/esc", baseBranch: "main" });
+    expect((await (await GET(get(`?projectId=${p.id}`))).json()).autoEscalate).toBe(false);
+    const res = await PUT(put({ projectId: p.id, autoEscalate: true }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ autoEscalate: true });
+    expect((await repository().projectById(p.id))?.autoEscalate).toBe(true);
+    expect((await repository().projectById(p.id))?.autoMerge).toBe(false);
+  });
+
+  it("refuses someone who does not own the project and leaves the flag", async () => {
+    const other = await repository().upsertUser({ githubId: 3, login: "c", name: null, avatarUrl: null });
+    const p = await repository().ensureProject({ ownerId: other.id, repoFullName: "a/esc2", baseBranch: "main" });
+    expect((await PUT(put({ projectId: p.id, autoEscalate: true }))).status).toBe(403);
+    expect((await repository().projectById(p.id))?.autoEscalate).toBe(false);
+  });
+
+  it("needs a project id", async () => {
+    expect((await PUT(put({ autoEscalate: true }))).status).toBe(400);
   });
 });
 

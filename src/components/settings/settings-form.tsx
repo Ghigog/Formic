@@ -24,6 +24,7 @@ interface ProjectSetting {
   id: string;
   name: string;
   autoMerge: boolean;
+  autoEscalate: boolean;
 }
 
 /**
@@ -126,6 +127,17 @@ export function SettingsForm({
           </Section>
         )}
 
+        {project && (
+          <Section title="Auto-escalation">
+            <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+              Applies to {project.name}. Formic raises a ticket&apos;s story
+              points on its own when a run shows it is bigger than estimated;
+              off, points only change when you change them.
+            </p>
+            <AutoEscalateToggle project={project} />
+          </Section>
+        )}
+
         <SoundSection />
 
         <BoardViewSection />
@@ -189,6 +201,43 @@ function AutoMergeToggle({ project }: { project: ProjectSetting }) {
           onChange={(e) => void change(e.target.checked)}
         />
         {on ? "Auto-merge when review is finished" : "Merge when move to done"}
+      </label>
+      {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
+    </div>
+  );
+}
+
+function AutoEscalateToggle({ project }: { project: ProjectSetting }) {
+  const [on, setOn] = useState(project.autoEscalate);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function change(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, autoEscalate: next }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      setError("That did not save. Try again.");
+      return;
+    }
+    setOn(next);
+  }
+
+  return (
+    <div>
+      <label className="text-ink flex items-center gap-2 text-[13px]">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void change(e.target.checked)}
+        />
+        Escalate story points automatically
       </label>
       {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>
