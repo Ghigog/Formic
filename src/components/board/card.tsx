@@ -19,6 +19,7 @@ import { isBug, isSpike, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
+import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { LinkifiedText } from "./linkified-text";
 
 /**
@@ -333,6 +334,24 @@ export function ProblemBadge({ card }: { card: BoardCard }) {
       className="bg-crimson text-on-crimson inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none font-bold"
     >
       !
+    </span>
+  );
+}
+
+/** The mark for a notice: a red warning triangle or a yellow alert bell-dot. */
+export function NoticeIcon({ severity }: { severity: Notice["severity"] }) {
+  return (
+    <span
+      role="img"
+      aria-label={severity === "warning" ? "Warning" : "Alert"}
+      className={cn(
+        "inline-flex size-4 shrink-0 items-center justify-center text-[10px] leading-none font-bold",
+        severity === "warning"
+          ? "bg-crimson text-on-crimson rounded-full"
+          : "bg-clay text-on-accent rounded-sm",
+      )}
+    >
+      {severity === "warning" ? "!" : "?"}
     </span>
   );
 }
@@ -786,8 +805,8 @@ function PlainTicket({
   column: ColumnId;
   extras: CardExtras;
 }) {
-  const failed = card.status === "failed";
   const held = card.status === "waiting" || card.status === "blocked";
+  const notice = classifyNotice(card);
   return (
     <CardShell
       card={card}
@@ -796,23 +815,28 @@ function PlainTicket({
       <TicketHead card={card} column={column} />
       <Title muted={held}>{card.title}</Title>
       <EpicLine card={card} />
-      {card.blockedReason &&
-        (failed ? (
-          // Failure reasons can be raw CLI output; keep them to one line so
-          // they never push the card wider than its column.
-          <StatusChip tone="crimson" className="max-w-full self-start">
-            <span className="truncate" title={card.blockedReason}>
-              {card.blockedReason}
-            </span>
-          </StatusChip>
-        ) : (
+      {notice ? (
+        <span
+          data-testid="card-notice"
+          data-severity={notice.severity}
+          className={cn(
+            "inline-flex min-w-0 items-center gap-1.5 text-[11px] font-semibold",
+            notice.severity === "warning" ? "text-crimson" : "text-clay",
+          )}
+        >
+          <NoticeIcon severity={notice.severity} />
+          <span className="truncate">{notice.title}</span>
+        </span>
+      ) : (
+        card.blockedReason && (
           <span className="text-muted inline-flex min-w-0 items-center gap-1.5 font-mono text-[9px]">
             <span aria-hidden className="bg-idle size-[5px] shrink-0 rounded-full" />
             <span className="truncate" title={card.blockedReason}>
               {card.blockedReason}
             </span>
           </span>
-        ))}
+        )
+      )}
       {extras.progress && (
         <ProgressBar
           value={extras.progress.fraction}
