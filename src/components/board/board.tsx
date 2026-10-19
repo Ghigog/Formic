@@ -34,6 +34,7 @@ import type { CardTransition, TransitionResult } from "@/lib/domain/transitions"
 import { byCompletion, byPosition } from "@/lib/ordering";
 import { runningConflict } from "@/lib/domain/queue";
 import { placeDrop } from "./placement";
+import { QUEEN_CARRY_EVENT, type QueenCarryDetail } from "@/components/colony/queen-carry";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
 import { ARCHIVE_DROPPABLE_ID, ArchiveDropZone } from "./archive-drop-zone";
@@ -139,6 +140,17 @@ export function Board({
 
   const isMobile = useMediaQuery("(max-width: 767px)");
   const colony = useColony();
+
+  // A Queen picked up in the Colony panel: on a phone only one column shows,
+  // so bring up To Do, where she is most likely wanted.
+  useEffect(() => {
+    if (!isMobile) return;
+    const onCarry = (e: Event) => {
+      if ((e as CustomEvent<QueenCarryDetail>).detail?.on) setActiveTab("todo");
+    };
+    window.addEventListener(QUEEN_CARRY_EVENT, onCarry);
+    return () => window.removeEventListener(QUEEN_CARRY_EVENT, onCarry);
+  }, [isMobile]);
 
   const toggleCollapse = useCallback(
     (column: ColumnId, epicId: string) => {

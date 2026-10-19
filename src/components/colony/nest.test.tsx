@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { XP_PER_LEVEL, levelOf, rankOf, type Score } from "@/lib/colony/game";
 import { ColonyPopover } from "./nest";
 import type { ColonyApi } from "./colony";
+import { resetViewport, setViewportMatches } from "@/test/viewport";
 
 let api: ColonyApi | null = null;
 vi.mock("./colony", () => ({ useColony: () => api }));
@@ -128,5 +129,56 @@ describe("ColonyPopover Queens", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/queens", expect.objectContaining({ body: JSON.stringify({ cardId: "e-1" }) }));
     expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2");
     header.remove();
+  });
+});
+
+describe("ColonyPopover Queen carry", () => {
+  const carryEvents: boolean[] = [];
+  const onCarry = (e: Event) => carryEvents.push((e as CustomEvent<{ on: boolean }>).detail.on);
+
+  function dragAndDrop(mobile: boolean) {
+    setViewportMatches(mobile);
+    carryEvents.length = 0;
+    window.addEventListener("formic:queen-carry", onCarry);
+    const fetchMock = stubQueens(2);
+    openPopoverAt(3 * XP_PER_LEVEL);
+    return fetchMock;
+  }
+
+  afterEach(() => {
+    window.removeEventListener("formic:queen-carry", onCarry);
+    resetViewport();
+  });
+
+  it("hides the dialog and backdrop on a phone while carrying, then restores them and still places", async () => {
+    const fetchMock = dragAndDrop(true);
+    const card = document.createElement("div");
+    card.dataset.tid = "t-9";
+    document.body.append(card);
+    document.elementFromPoint = vi.fn(() => card);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2"));
+
+    fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    const dialog = document.querySelector<HTMLElement>("[role=dialog]")!;
+    expect(dialog.className).toContain("invisible");
+    expect(dialog.previousElementSibling!.className).toContain("invisible");
+    expect(document.querySelector("[data-queen-image]")).toBeTruthy();
+    expect(carryEvents).toEqual([true]);
+
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/queens", expect.objectContaining({ body: JSON.stringify({ cardId: "t-9" }) })),
+    );
+    expect(dialog.className).not.toContain("invisible");
+    expect(carryEvents).toEqual([true, false]);
+    card.remove();
+  });
+
+  it("leaves the dialog visible on desktop while carrying", async () => {
+    dragAndDrop(false);
+    await screen.findByLabelText("Drag a Queen onto a card");
+    fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    expect(document.querySelector("[role=dialog]")!.className).not.toContain("invisible");
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
 import { saveBoardView, BOARD_VIEW_KEY } from "./view-setting";
@@ -282,6 +282,23 @@ describe("Board, below 768px", () => {
     expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 2");
     expect(within(bar).getByText("Backlog")).toHaveAttribute("aria-current", "true");
     expect(screen.queryByRole("region", { name: "To Do" })).toBeNull();
+  });
+
+  it("switches to To Do when a Queen is picked up, on a phone only", async () => {
+    const carry = () => act(() => void window.dispatchEvent(new CustomEvent("formic:queen-carry", { detail: { on: true } })));
+    setViewportMatches(true);
+    const phone = render(
+      <Board cards={[makeCard({ status: "ready" })]} projectName="Formic" repoFullName="a/b" onOpenCard={vi.fn()} onNewItem={vi.fn()} onTransition={vi.fn()} />,
+    );
+    await screen.findByRole("region", { name: "Backlog" });
+    carry();
+    expect(await screen.findByRole("region", { name: "To Do" })).toBeInTheDocument();
+    phone.unmount();
+
+    setViewportMatches(false);
+    renderBoard([makeCard({ status: "ready" })]);
+    carry();
+    expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
   });
 
   describe("swiping", () => {
