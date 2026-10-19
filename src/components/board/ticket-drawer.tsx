@@ -20,6 +20,7 @@ import { NoticeIcon, ProblemNotice, WorkTimer } from "./card";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
 import { ScoutsPanel } from "./scouts-panel";
+import { QueenPanel } from "./queen-panel";
 import {
   activityOf,
   appendActivity,
@@ -243,6 +244,16 @@ export function TicketDrawer({
             <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
               <LinkifiedText text={card.blockedReason} />
             </p>
+          )}
+
+          {card && (
+            <QueenPanel
+              card={card}
+              onChanged={() => {
+                void load();
+                onChanged?.();
+              }}
+            />
           )}
 
           {card && (

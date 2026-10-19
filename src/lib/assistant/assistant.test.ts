@@ -340,7 +340,7 @@ describe("applying an approved proposal", () => {
     expect(epic.status).toBe("ready");
     const tickets = cards.filter((c) => c.kind === "ticket");
     expect(tickets.every((t) => t.epicId === epic.id)).toBe(true);
-    expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2"]);
+    expect(tickets.map((t) => t.key).sort()).toEqual(["EPIC-1-T1", "EPIC-1-T2"]);
     expect(said).toContain("2 tickets");
   });
 });
