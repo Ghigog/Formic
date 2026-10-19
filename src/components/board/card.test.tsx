@@ -53,3 +53,39 @@ describe("the queen mark", () => {
     expect(screen.queryByLabelText("Queen placed")).toBeNull();
   });
 });
+
+describe("a notice on a card", () => {
+  function renderTodo(card: BoardCard) {
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
+    return renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+  }
+
+  const SCOPE = "Needs files outside its scope: src/a.ts\nlong detail";
+
+  it("shows a red warning icon and the title only for a failed ticket", () => {
+    renderTodo(makeCard({ status: "failed", stalledIn: "todo", blockedReason: "Boom\nstack trace" }));
+    const notice = screen.getByTestId("card-notice");
+    expect(notice.dataset.severity).toBe("warning");
+    expect(notice.className).toContain("text-crimson");
+    expect(notice.textContent).toContain("Failed");
+    expect(screen.queryByText(/stack trace/)).toBeNull();
+  });
+
+  it("shows a yellow alert icon and the title only for a ticket paused for authorization", () => {
+    renderTodo(makeCard({ status: "blocked", stalledIn: "todo", blockedReason: SCOPE }));
+    const notice = screen.getByTestId("card-notice");
+    expect(notice.dataset.severity).toBe("alert");
+    expect(notice.className).toContain("text-clay");
+    expect(notice.textContent).toContain("Needs authorization");
+    expect(screen.queryByText(/long detail/)).toBeNull();
+  });
+
+  it("shows neither for a ticket waiting on a dependency", () => {
+    renderTodo(makeCard({ status: "waiting", blockedReason: "Waiting on PROT-1" }));
+    expect(screen.queryByTestId("card-notice")).toBeNull();
+  });
+});
