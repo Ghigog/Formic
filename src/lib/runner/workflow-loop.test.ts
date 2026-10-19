@@ -29,6 +29,14 @@ const MISSING = ["bash", "git", "jq", "curl"].filter((cmd) => {
   }
 });
 
+// Like REQUIRE_TEST_DATABASE: where CI sets REQUIRE_LOOP_TOOLS, a missing tool
+// fails the run instead of quietly skipping the suite. Elsewhere it still skips.
+if (MISSING.length > 0 && process.env.REQUIRE_LOOP_TOOLS) {
+  throw new Error(
+    `The loop-branch suite needs ${MISSING.join(", ")} on PATH, and REQUIRE_LOOP_TOOLS is set.`,
+  );
+}
+
 interface Step {
   name?: string;
   run?: string;
