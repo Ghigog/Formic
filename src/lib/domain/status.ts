@@ -136,6 +136,14 @@ export function columnOf(card: {
 }
 
 
+/** Whether an agent run is active on a ticket: stop halts it, archive refuses it. */
+export function hasActiveRun(
+  ticket: { status: TicketStatus; runnerJob?: string | null },
+  card: { workingSince?: unknown } | null,
+): boolean {
+  return ticket.status === "running" || !!ticket.runnerJob || !!card?.workingSince;
+}
+
 /** Terminal states an agent will not move on from without a human. */
 export function isStalled(status: TicketStatus): status is "blocked" | "failed" {
   return status === "blocked" || status === "failed";
