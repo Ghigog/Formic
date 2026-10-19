@@ -82,6 +82,8 @@ interface MockRepo {
   branchRuns: Map<string, BranchRun[]>;
   /** Artifact files by branch, as a test says CI uploaded them. */
   artifacts: Map<string, ArtifactFiles>;
+  /** Set when a test says the repository runs no CI at all. */
+  noCi: boolean;
 }
 
 export interface MockIssue {
@@ -128,6 +130,7 @@ function repo(): MockRepo {
     checkpoints: new Map(),
     branchRuns: new Map(),
     artifacts: new Map(),
+    noCi: false,
   };
   return g.__formicMockRepo;
 }
@@ -191,6 +194,10 @@ export class MockVcsClient implements VcsClient {
       if (pull.headSha === sha) return pull.checks;
     }
     return [];
+  }
+
+  async hasCi(): Promise<boolean> {
+    return !repo().noCi;
   }
 
   async checkLog(checkRunId: number): Promise<CheckLog> {
@@ -542,6 +549,15 @@ export class MockVcsClient implements VcsClient {
       status: "completed",
       conclusion,
     }));
+    return pull.headSha;
+  }
+
+  /** Test seam: the repository runs no CI, so a mock PR's head gets no checks. */
+  static withoutCi(number: number): string {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    repo().noCi = true;
+    pull.checks = [];
     return pull.headSha;
   }
 

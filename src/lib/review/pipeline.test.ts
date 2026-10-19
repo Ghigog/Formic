@@ -102,6 +102,28 @@ describe("the manual-merge gate", () => {
   });
 });
 
+describe("a repository with no CI", () => {
+  it("merges an approved pull request that has no checks to wait for", async () => {
+    const { ticketId, prNumber } = await seedApproved(true);
+    const headSha = MockVcsClient.withoutCi(prNumber);
+
+    await reviewPullRequest(PROJECT, prNumber, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(true);
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("merged");
+  });
+
+  it("still waits when the repository has CI that has not reported yet", async () => {
+    const { ticketId, prNumber, headSha } = await seedApproved(true);
+    (await vcs.pullRequest(prNumber) as { checks?: unknown[] }).checks = [];
+
+    await reviewPullRequest(PROJECT, prNumber, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("review");
+  });
+});
+
 describe("a merge that fails", () => {
   it("rolls the ticket back with the reason, awarding nothing and releasing nothing", async () => {
     const { ticketId, dependentId, prNumber, headSha } = await seedApproved(true);
