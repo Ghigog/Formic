@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
-import { currentUser } from "@/lib/auth/user";
+import { currentUser, ownerScope } from "@/lib/auth/user";
 import { authMode } from "@/lib/auth/session";
 import { installUrl } from "@/lib/auth/github";
 import { activeProject } from "@/lib/board/project";
 import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
 import { getEffortByPoints, getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
+import { repository } from "@/lib/db";
 import { env } from "@/lib/secrets/env";
 import { hintFor } from "@/lib/secrets/vault";
 import { SettingsForm } from "@/components/settings/settings-form";
@@ -19,7 +20,7 @@ export default async function SettingsPage() {
   // on; there is nothing to choose among.
   const current = await activeProject();
   const project = current
-    ? { id: current.id, name: current.name, autoMerge: current.autoMerge, autoEscalate: current.autoEscalate }
+    ? { id: current.id, name: current.name, autoMerge: current.autoMerge, autoEscalate: current.autoEscalate, scoutPresetId: current.scoutPresetId }
     : null;
 
   return (
@@ -32,6 +33,7 @@ export default async function SettingsPage() {
       }}
       installUrl={installUrl()}
       project={project}
+      presets={(await repository().listPresets(ownerScope(user))).map(({ id, name }) => ({ id, name }))}
       // Local mode only: GitHub mode's credential is the sign-in itself.
       github={
         authMode() === "local"
