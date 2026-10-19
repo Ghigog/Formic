@@ -202,6 +202,13 @@ export class PrismaRepository implements Repository {
     await prisma().lease.deleteMany({ where: { key, holder } });
   }
 
+  async leaseHolder(key: string): Promise<string | null> {
+    // On the database's clock, as acquireLease is.
+    const rows = await prisma().$queryRaw<Array<{ holder: string }>>`
+      SELECT "holder" FROM "lease" WHERE "key" = ${key} AND "expiresAt" >= now()`;
+    return rows[0]?.holder ?? null;
+  }
+
   async ensureProject(input: {
     ownerId: string | null;
     repoFullName: string;

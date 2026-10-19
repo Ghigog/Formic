@@ -482,6 +482,11 @@ export class MemoryRepository implements Repository {
     if (s.leases.get(key)?.holder === holder) s.leases.delete(key);
   }
 
+  async leaseHolder(key: string): Promise<string | null> {
+    const held = store().leases.get(key);
+    return held && held.expiresAt > Date.now() ? held.holder : null;
+  }
+
   async ensureProject(input: {
     ownerId: string | null;
     repoFullName: string;

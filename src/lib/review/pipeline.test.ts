@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
 import { resetMergeLanes } from "./lane";
@@ -123,6 +123,115 @@ describe("a merge that fails", () => {
         blockedReason: expect.stringContaining("Required review missing."),
       }),
     );
+  });
+});
+
+describe("the merge slot", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** `count` approved tickets in review, green on their own heads, every one behind its base. */
+  async function seedQueue(count: number) {
+    const repo = repository();
+    (await repo.projectById(PROJECT))!.autoMerge = true;
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const created = await repo.createTickets(
+      Array.from({ length: count }, (_, i) => ({
+        epicId: epic.id,
+        key: `T-${i + 1}`,
+        title: `Ticket ${i + 1}`,
+        description: "d",
+        acceptanceCriteria: ["c"],
+        fileScope: [`src/${i}`],
+        storyPoints: 3,
+        position: i + 1,
+        dependsOnKeys: [],
+      })),
+    );
+    const queue = [];
+    for (const [i, ticket] of created.entries()) {
+      const pull = await vcs.openPullRequest({ headBranch: `t-${i + 1}`, baseBranch: "main", title: `T-${i + 1}`, body: "" });
+      const headSha = MockVcsClient.setChecks(pull.number, "success");
+      MockVcsClient.behindBase(pull.number);
+      await repo.updateTicket(ticket!.id, { status: "review", stage: 6, prNumber: pull.number, reviewedSha: headSha });
+      queue.push({ ticketId: ticket!.id, prNumber: pull.number, headSha });
+    }
+    return queue;
+  }
+
+  const head = async (prNumber: number) => (await vcs.pullRequest(prNumber)).headSha;
+
+  it("lets one pull request bring the base in while the rest wait on their own heads", async () => {
+    const [first, second, third] = await seedQueue(3);
+
+    for (const q of [first!, second!, third!]) await reviewPullRequest(PROJECT, q.prNumber, q.headSha);
+
+    expect(await head(first!.prNumber)).not.toBe(first!.headSha);
+    expect(await head(second!.prNumber)).toBe(second!.headSha);
+    expect(await head(third!.prNumber)).toBe(third!.headSha);
+    for (const q of [first!, second!, third!]) {
+      expect((await vcs.pullRequest(q.prNumber)).merged).toBe(false);
+    }
+  });
+
+  it("merges the one in the slot once CI passes on its new head, then the next one takes its turn", async () => {
+    const [first, second, third] = await seedQueue(3);
+    for (const q of [first!, second!, third!]) await reviewPullRequest(PROJECT, q.prNumber, q.headSha);
+
+    const moved = MockVcsClient.setChecks(first!.prNumber, "success");
+    await reviewPullRequest(PROJECT, first!.prNumber, moved);
+
+    expect((await vcs.pullRequest(first!.prNumber)).merged).toBe(true);
+    expect((await repository().ticketDetail(first!.ticketId))!.status).toBe("merged");
+    // The approval carried across the base it brought in: no second review.
+    expect((await repository().ticketDetail(first!.ticketId))!.reviewedSha).toBe(moved);
+    // Letting go starts the next in line, and only one of them.
+    await vi.waitFor(async () => {
+      const heads = [await head(second!.prNumber), await head(third!.prNumber)];
+      expect(heads.filter((h, i) => h !== [second!, third!][i]!.headSha)).toHaveLength(1);
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const heads = [await head(second!.prNumber), await head(third!.prNumber)];
+    expect(heads.filter((h, i) => h !== [second!, third!][i]!.headSha)).toHaveLength(1);
+  });
+
+  it("lets go when CI goes red on the head it brought the base into", async () => {
+    const [first, second] = await seedQueue(2);
+    await reviewPullRequest(PROJECT, first!.prNumber, first!.headSha);
+    await reviewPullRequest(PROJECT, second!.prNumber, second!.headSha);
+    expect(await head(second!.prNumber)).toBe(second!.headSha);
+
+    const red = MockVcsClient.setChecks(first!.prNumber, "failure");
+    await reviewPullRequest(PROJECT, first!.prNumber, red, { startReview: false });
+    await reviewPullRequest(PROJECT, second!.prNumber, second!.headSha);
+
+    expect((await vcs.pullRequest(first!.prNumber)).merged).toBe(false);
+    expect(await head(second!.prNumber)).not.toBe(second!.headSha);
+  });
+
+  it("lets the next one in once a holder that never hears back lapses", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const [first, second] = await seedQueue(2);
+    await reviewPullRequest(PROJECT, first!.prNumber, first!.headSha);
+    await reviewPullRequest(PROJECT, second!.prNumber, second!.headSha);
+    expect(await head(second!.prNumber)).toBe(second!.headSha);
+
+    vi.setSystemTime(Date.now() + 21 * 60 * 1000);
+    await reviewPullRequest(PROJECT, second!.prNumber, second!.headSha);
+
+    expect(await head(second!.prNumber)).not.toBe(second!.headSha);
+  });
+
+  it("does not wait on a holder that merged where the board did not see it", async () => {
+    const [first, second] = await seedQueue(2);
+    await reviewPullRequest(PROJECT, first!.prNumber, first!.headSha);
+    MockVcsClient.setPull(first!.prNumber, { merged: true, state: "closed" });
+    await markMergedExternally(PROJECT, first!.prNumber);
+
+    await reviewPullRequest(PROJECT, second!.prNumber, second!.headSha);
+
+    expect(await head(second!.prNumber)).not.toBe(second!.headSha);
   });
 });
 

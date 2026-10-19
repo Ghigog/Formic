@@ -24,7 +24,7 @@ import {
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inTicketLane } from "./lane";
-import { inRepoMergeLane } from "./merge-lane";
+import { claimMergeSlot, inRepoMergeLane, releaseMergeSlot } from "./merge-lane";
 import { claimOrQueue } from "@/lib/board/queue";
 import { releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
@@ -155,18 +155,22 @@ async function react(
   const client = vcs(project.repoFullName, creds.githubToken);
 
   const pull = await client.pullRequest(prNumber);
-  if (pull.merged) return;
+  // Anything but an approved head on its way to merging gives up the merge
+  // slot, if it has it, so the next one in line can go.
+  if (pull.merged) return await leaveMergeSlot(projectId, ticket.id);
   if (!ticket.runnerJob && pull.state === "open" && pull.mergeable === false) {
+    await leaveMergeSlot(projectId, ticket.id);
     if (parkedOnReview(ticket, pull.headSha)) return;
     await resolveConflicts(projectId, ticket, pull);
     return;
   }
   const stuck = ticket.runnerJob ? null : whyStuck(ticket.key, pull);
   if (stuck) {
+    await leaveMergeSlot(projectId, ticket.id);
     await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
     return;
   }
-  if (pull.merged || pull.state === "closed") return;
+  if (pull.state === "closed") return await leaveMergeSlot(projectId, ticket.id);
   if (pull.headSha !== headSha) return;
 
   // Bringing the base in moves the head without changing the work, so the
@@ -195,6 +199,8 @@ async function react(
         checkName: pending(checks)[0]?.name ?? null,
       });
     }
+    // CI on the head it brought the base into is what the slot waits for.
+    if (reviewedSha !== headSha || red.length > 0) await leaveMergeSlot(projectId, ticket.id);
     // The review reads the diff while CI runs, rather than after it, and
     // the merge waits for both. Once it has approved this head, or once a
     // check has already failed, the rest of CI is worth waiting for.
@@ -216,7 +222,7 @@ async function react(
 
   // A reviewer is already on this pull request in GitHub Actions. More
   // reports about the same head are not a reason to start another.
-  if (ticket.runnerJob) return;
+  if (ticket.runnerJob) return await leaveMergeSlot(projectId, ticket.id);
 
   if (red.length === 0 && reviewedSha === headSha) {
     // Stacked on a pull request that has not merged: this one merges after
@@ -226,9 +232,17 @@ async function react(
       await awaitPersonMerge(projectId, ticket);
       return;
     }
-    await inRepoMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber), laneBusy);
+    // Another pull request is bringing the base in and waiting on CI. This
+    // one waits as it is, green on its own head: bringing the base in now
+    // would only be undone by that one landing. Its turn comes when that one
+    // lets go (leaveMergeSlot), or from the sweep.
+    if (!(await claimMergeSlot(projectId, ticket.id))) return;
+    const result = await inRepoMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber), laneBusy);
+    if (result.merged || !result.waiting) await leaveMergeSlot(projectId, ticket.id);
     return;
   }
+
+  await leaveMergeSlot(projectId, ticket.id);
 
   // An approved head still merges above, on its own reports; what a card
   // parked on a review of this head is not asked for again is another review.
@@ -591,9 +605,20 @@ async function closeWithoutMerge(
   await completeEpic(projectId, ticket.epicId);
 }
 
-type MergeResult = { merged: true } | { merged: false; reason: string };
+/** `waiting`: not merged yet, but still on its way, so it keeps the merge slot. */
+type MergeResult = { merged: true } | { merged: false; reason: string; waiting?: boolean };
 
-const laneBusy = (reason: string): MergeResult => ({ merged: false, reason });
+const laneBusy = (reason: string): MergeResult => ({ merged: false, reason, waiting: true });
+
+/**
+ * Lets go of the merge slot if this ticket has it, and starts the next one in
+ * line straight away rather than at the next sweep.
+ */
+async function leaveMergeSlot(projectId: string, ticketId: string): Promise<void> {
+  if (!(await releaseMergeSlot(projectId, ticketId))) return;
+  lastSwept.delete(projectId);
+  launch(() => sweepOpenPullRequests(projectId), "the next merge in line");
+}
 
 /**
  * A person asks for the ticket's pull request to merge, in its chat. Their
@@ -638,6 +663,7 @@ export async function mergeByPerson(
     },
     laneBusy,
   );
+  if (result.merged) await leaveMergeSlot(projectId, ticket.id);
   if (!result.merged) return `Did not merge pull request #${prNumber}: ${result.reason}`;
   // Merged already, or just now by the lane: either way the card says so.
   await markMergedExternally(projectId, prNumber);
@@ -686,7 +712,11 @@ async function mergeTicket(
   if (update.ok && update.updated) {
     const moved = await settle(client, prNumber, (p) => p.headSha !== before.headSha);
     if (moved) {
-      return { merged: false, reason: `Brought ${before.baseBranch} into it first; it merges once CI passes on the new head.` };
+      return {
+        merged: false,
+        reason: `Brought ${before.baseBranch} into it first; it merges once CI passes on the new head.`,
+        waiting: true,
+      };
     }
   }
 
@@ -715,7 +745,7 @@ async function mergeTicket(
     if (!conflict && after) {
       const checks = await client.checksFor(after.headSha).catch(() => []);
       if (checks.length === 0 || pending(checks).length > 0) {
-        return { merged: false, reason: `CI is still running on ${ticket.key}; it merges once it passes.` };
+        return { merged: false, reason: `CI is still running on ${ticket.key}; it merges once it passes.`, waiting: true };
       }
     }
     const reason = conflict

@@ -1093,6 +1093,18 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.acquireLease(key, "c", 60_000)).toBe(true);
       });
 
+      it("says who holds a lease, and nobody once it lapses", async () => {
+        const key = `contract:${randomUUID()}`;
+        expect(await repo.leaseHolder(key)).toBeNull();
+        await repo.acquireLease(key, "a", 60_000);
+        expect(await repo.leaseHolder(key)).toBe("a");
+        await repo.releaseLease(key, "a");
+        expect(await repo.leaseHolder(key)).toBeNull();
+        await repo.acquireLease(key, "b", 1);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(await repo.leaseHolder(key)).toBeNull();
+      });
+
       it("never gives one lease to two holders asking at once", async () => {
         const key = `contract:${randomUUID()}`;
         const wins = await Promise.all(["a", "b", "c", "d", "e"].map((h) => repo.acquireLease(key, h, 60_000)));

@@ -39,3 +39,58 @@ export async function inRepoMergeLane<T>(
     throw e;
   }
 }
+
+/**
+ * The merge slot: which ticket may bring the base in, held from then until it
+ * merges or drops out, across the CI run in between.
+ *
+ * The lane above orders the moments of merging, a few seconds each, and lets
+ * go before CI on the new head has run. On its own, every approved, green pull
+ * request takes its turn, brings the base in and leaves to wait for CI, and
+ * the next merge moves the base under all of them again: each brings it in
+ * again and runs CI again, and a busy board spends a CI run on every waiting
+ * pull request for every merge, while the unlucky one never lands. With the
+ * slot, one pull request at a time brings the base in. The rest wait as they
+ * are, green on their own heads, until it is their turn.
+ *
+ * A lease named by the ticket, keyed like the lane: the holder renews it each
+ * time it is reported on, and one that went quiet (CI that never reported)
+ * lets the next one in once it lapses.
+ */
+const SLOT_TTL_MS = 20 * 60 * 1000;
+
+async function slotKey(projectId: string): Promise<string | null> {
+  const project = await repository().projectById(projectId);
+  if (!project) return null;
+  return `merge-slot:${repoKey(project.repoFullName)}:${mergeTarget(project.baseBranch)}`;
+}
+
+/**
+ * Takes the merge slot for `ticketId`, or renews it if it is theirs. False
+ * while another ticket is still merging through it.
+ */
+export async function claimMergeSlot(projectId: string, ticketId: string): Promise<boolean> {
+  const repo = repository();
+  const key = await slotKey(projectId);
+  if (!key) return true;
+  for (let i = 0; i < 2; i++) {
+    if (await repo.acquireLease(key, ticketId, SLOT_TTL_MS)) return true;
+    const holder = await repo.leaseHolder(key);
+    if (!holder) continue;
+    const ahead = await repo.ticketDetail(holder);
+    if (ahead && ahead.status === "review" && ahead.prNumber !== null) return false;
+    // Merged, closed, sent back or parked somewhere nothing let go of the
+    // slot (a person on GitHub, an instance that died): it is not merging.
+    await repo.releaseLease(key, holder);
+  }
+  return false;
+}
+
+/** Lets go of the merge slot if `ticketId` has it. True when it did. */
+export async function releaseMergeSlot(projectId: string, ticketId: string): Promise<boolean> {
+  const repo = repository();
+  const key = await slotKey(projectId);
+  if (!key || (await repo.leaseHolder(key)) !== ticketId) return false;
+  await repo.releaseLease(key, ticketId);
+  return true;
+}
