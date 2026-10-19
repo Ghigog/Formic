@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyFx } from "@/components/colony/fx";
@@ -129,6 +129,7 @@ describe("Report: create epic", () => {
       </ColonyProvider>,
     );
     await userEvent.click(screen.getByText("open sentinels"));
+    await userEvent.click(document.querySelector(`[data-card="${x.id}"]`)!);
     return screen.getByRole("button", { name: "Create epic from this report" });
   }
 
@@ -153,5 +154,111 @@ describe("Report: create epic", () => {
   it("is disabled while an audit runs", async () => {
     const button = await openWith(3, true);
     expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("SentinelsPage carousel and report modal", () => {
+  const scrollTo = vi.fn();
+  const list = () => screen.getByRole("list", { name: "Sentinels" });
+  const centred = () => screen.getAllByRole("listitem").findIndex((el) => el.getAttribute("aria-current") === "true");
+  const card = (i: number) => screen.getAllByRole("listitem")[i]!;
+
+  beforeEach(() => {
+    scrollTo.mockReset();
+    HTMLElement.prototype.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+    vi.spyOn(SoundEngine.prototype, "play").mockImplementation(() => {});
+    vi.spyOn(ColonyFx.prototype, "reducedMotion", "get").mockReturnValue(true);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("keeps only the badge, progress and summon-all above the carousel", async () => {
+    await open();
+    expect(screen.getByRole("button", { name: "Summon all 12" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Sentinels" })).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: "Audit report" })).toBeNull();
+    expect(screen.queryByText(/Twelve agents/)).toBeNull();
+  });
+
+  it("steps by one with the buttons and arrow keys, stopping at the ends", async () => {
+    await open();
+    expect(centred()).toBe(0);
+    expect((screen.getByRole("button", { name: "Previous sentinel" }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Next sentinel" }));
+    expect(centred()).toBe(1);
+    await userEvent.keyboard("{ArrowRight}");
+    expect(centred()).toBe(2);
+    await userEvent.keyboard("{ArrowLeft}{ArrowLeft}{ArrowLeft}");
+    expect(centred()).toBe(0);
+    expect(scrollTo).toHaveBeenCalledTimes(4);
+    for (let i = 0; i < SENTINELS.length + 2; i++) await userEvent.keyboard("{ArrowRight}");
+    expect(centred()).toBe(SENTINELS.length - 1);
+  });
+
+  it("moves one step per wheel gesture and prevents the page scroll", async () => {
+    await open();
+    vi.useFakeTimers();
+    try {
+      const wheel = (deltaY: number) => {
+        const e = new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true });
+        act(() => void list().dispatchEvent(e));
+        return e;
+      };
+      expect(wheel(40).defaultPrevented).toBe(true);
+      wheel(60);
+      wheel(30);
+      expect(centred()).toBe(1);
+      act(() => void vi.advanceTimersByTime(300));
+      wheel(-40);
+      expect(centred()).toBe(0);
+      act(() => void vi.advanceTimersByTime(300));
+      wheel(-40);
+      expect(centred()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens the report on the centred card and returns focus on close", async () => {
+    await open();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await userEvent.click(card(0));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(within(dialog).getByRole("complementary", { name: "Audit report" })).toBeTruthy();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(card(0));
+    card(0).focus();
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("a non-centred card scrolls to centre instead of opening", async () => {
+    await open();
+    await userEvent.click(card(2));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(centred()).toBe(2);
+  });
+
+  it("Escape closes the modal first, then the page", async () => {
+    await open();
+    await userEvent.click(card(0));
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(card(0));
+    expect(screen.getByRole("region", { name: "Sentinels" })).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("region", { name: "Sentinels" })).toBeNull();
+  });
+
+  it("Summon runs the audit without opening the modal", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    await open();
+    await userEvent.click(within(card(1)).getByRole("button", { name: "Summon" }));
+    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${SENTINELS[1]!.id}`, { method: "POST" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    vi.unstubAllGlobals();
   });
 });
