@@ -32,7 +32,7 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
   const [error, setError] = useState<string | null>(null);
 
   const canSend =
-    card.kind === "ticket" && !card.prNumber && columnFor(card.status, card.stalledIn) === "in_progress";
+    card.kind === "ticket" && columnFor(card.status, card.stalledIn) === "in_progress";
   const hasScouts = (card.scouts ?? 0) > 0 || !!card.scoutPick;
 
   const load = useCallback(
@@ -80,7 +80,6 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
     <div data-scouts className="bg-sunken mt-3 flex flex-col gap-2 rounded-md px-3 py-2 text-[12px]">
       {canSend && !hasScouts ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-ink font-semibold">Send a scout</span>
           <span className="text-fg-muted">A second attempt, on the board&apos;s scout agent.</span>
           <button
             type="button"
@@ -88,7 +87,7 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
             onClick={() => void post({ action: "send", ticketId: card.id })}
             className="bg-amber text-on-amber rounded px-2.5 py-1 font-medium disabled:opacity-50"
           >
-            Send a scout
+            Send scout
           </button>
         </div>
       ) : (
