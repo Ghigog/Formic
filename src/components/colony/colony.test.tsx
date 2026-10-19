@@ -6,9 +6,15 @@ import { SoundEngine } from "./sound";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+/** Fake timers for the waits below; animation frames stay real so flushFrame still settles. */
+function fakeTimers() {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+}
 
 async function flushFrame() {
   await act(async () => {
@@ -59,6 +65,7 @@ describe("ColonyProvider sound preference", () => {
 describe("ColonyProvider bug squash", () => {
   async function moveToDone(title: string, workType?: "bug") {
     // Reduced motion: the squash lands at once, and jsdom needs no animations.
+    fakeTimers();
     vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
     const play = vi.spyOn(SoundEngine.prototype, "play");
     const [epic, ticket] = makeEpicWithChildren({ title, workType }, [{ status: "review" }]);
@@ -74,7 +81,7 @@ describe("ColonyProvider bug squash", () => {
     rerender(tree([epic!, { ...ticket!, status: "merged" }]));
     await flushFrame();
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 1500));
+      await vi.advanceTimersByTimeAsync(1500);
     });
     return play.mock.calls.filter(([name]) => name === "squash");
   }
@@ -90,6 +97,7 @@ describe("ColonyProvider bug squash", () => {
 
 describe("the done animation", () => {
   async function statusChanges(...statuses: Array<[string, number]>) {
+    fakeTimers();
     vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
     const play = vi.spyOn(SoundEngine.prototype, "play");
     const dings = () => play.mock.calls.filter(([name]) => name === "ding").length;
@@ -106,7 +114,7 @@ describe("the done animation", () => {
       rerender(tree({ ...card, status: status as never, stage }));
       await flushFrame();
       await act(async () => {
-        await new Promise((r) => setTimeout(r, 100));
+        await vi.advanceTimersByTimeAsync(100);
       });
       seen.push(dings());
     }
