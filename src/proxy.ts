@@ -16,7 +16,8 @@ import { countRequest, verdict } from "@/lib/usage/governor";
  *
  * Open regardless: sign-in itself, health checks, the GitHub webhook, which
  * authenticates with its own signature, and a runner's report and bundle,
- * which carry a token good for one job.
+ * which carry a token good for one job, and an attachment fetched with a
+ * signed URL (the route checks the signature).
  */
 
 const OPEN = [
@@ -48,11 +49,19 @@ const ALWAYS = /^\/api\/health$/;
 /** Exempt from the terms gate below, so accepting them isn't itself gated on accepting them. */
 const LEGAL = /^\/legal(\/|$)/;
 
+const ATTACHMENT = /^\/api\/attachments\/[^/]+$/;
+
+/** A GET for an attachment carrying the query a signed URL has. */
+function signedAttachment(req: NextRequest, path: string): boolean {
+  const q = req.nextUrl.searchParams;
+  return req.method === "GET" && ATTACHMENT.test(path) && q.has("expires") && q.has("token");
+}
+
 export async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const refused = await overAllowance(req, path);
   if (refused) return refused;
-  if (OPEN.some((re) => re.test(path))) return NextResponse.next();
+  if (OPEN.some((re) => re.test(path)) || signedAttachment(req, path)) return NextResponse.next();
 
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
   let user: UserRecord | null = null;
