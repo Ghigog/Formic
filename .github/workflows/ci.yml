@@ -63,10 +63,17 @@ jobs:
       - run: npm ci
       # Unit tests run on the in-memory store by design, so no DATABASE_URL.
       # The repository contract suite also runs against Postgres, through
-      # TEST_DATABASE_URL, once the schema is pushed.
-      - run: npx prisma db push
+      # TEST_DATABASE_URL, once the migrations are applied.
+      - run: npx prisma migrate deploy
         env:
           DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
+      # Fails when schema.prisma has a change no migration carries. Replays the
+      # migrations on a scratch database and compares that with the schema.
+      - run: psql postgresql://formic:formic@localhost:5432/formic -c "CREATE DATABASE formic_shadow"
+      - run: npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+        env:
+          DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
+          SHADOW_DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_shadow
       # The github-actions reporter turns a failing test into an annotation,
       # which is what the Reviewer Agent reads to diagnose a red check.
       # Coverage is for the Tester sentinel, which reads main's summary.
