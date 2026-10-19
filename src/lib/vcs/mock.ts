@@ -261,7 +261,10 @@ export class MockVcsClient implements VcsClient {
     }
     pull.merged = true;
     pull.state = "closed";
-    return { ok: true, sha: fakeSha() };
+    const sha = fakeSha();
+    // The base moves on to the merge, as on GitHub, where Formic has seen it.
+    if (repo().branches.has(pull.baseBranch)) repo().branches.set(pull.baseBranch, sha);
+    return { ok: true, sha };
   }
 
   async comment(number: number, body: string): Promise<void> {

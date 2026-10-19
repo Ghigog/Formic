@@ -59,10 +59,16 @@ export async function inRepoMergeLane<T>(
  */
 const SLOT_TTL_MS = 20 * 60 * 1000;
 
-async function slotKey(projectId: string): Promise<string | null> {
+/** The repository and branch a board merges into, as one key: what every merge lease is per. */
+async function laneOf(projectId: string): Promise<string | null> {
   const project = await repository().projectById(projectId);
   if (!project) return null;
-  return `merge-slot:${repoKey(project.repoFullName)}:${mergeTarget(project.baseBranch)}`;
+  return `${repoKey(project.repoFullName)}:${mergeTarget(project.baseBranch)}`;
+}
+
+async function slotKey(projectId: string): Promise<string | null> {
+  const lane = await laneOf(projectId);
+  return lane && `merge-slot:${lane}`;
 }
 
 /**
@@ -93,4 +99,73 @@ export async function releaseMergeSlot(projectId: string, ticketId: string): Pro
   if (!key || (await repo.leaseHolder(key)) !== ticketId) return false;
   await repo.releaseLease(key, ticketId);
   return true;
+}
+
+/**
+ * A merge batch: several approved, green pull requests merged together onto
+ * the target on a branch of their own, so one CI run tests them all as they
+ * will land. While it is open the slot stays with its first member.
+ *
+ * Kept as a lease, with the batch itself as the holder, so it is one row any
+ * instance can read, written only by whoever holds the merge lane, and gone
+ * by itself if everything that would end it dies.
+ */
+export interface MergeBatch {
+  projectId: string;
+  /** The pull request that runs CI on the batch branch. */
+  pr: number;
+  branch: string;
+  /** The target's head the batch was built on, and after each member lands, that merge's. */
+  targetSha: string;
+  /** In the order they were merged onto the batch branch, which is the order they land. */
+  members: Array<{ ticketId: string; key: string; prNumber: number; headSha: string }>;
+}
+
+const BATCH_TTL_MS = 2 * 60 * 60 * 1000;
+
+async function batchKey(projectId: string): Promise<string | null> {
+  const lane = await laneOf(projectId);
+  return lane && `merge-batch:${lane}`;
+}
+
+/** The batch open on this board's merge target, if there is one. */
+export async function openBatch(projectId: string): Promise<MergeBatch | null> {
+  const key = await batchKey(projectId);
+  const held = key && (await repository().leaseHolder(key));
+  if (!held) return null;
+  try {
+    return JSON.parse(held) as MergeBatch;
+  } catch {
+    return null;
+  }
+}
+
+/** Records `next` in place of `previous` (null to open one). False when another batch is open. */
+export async function recordBatch(projectId: string, next: MergeBatch, previous: MergeBatch | null): Promise<boolean> {
+  const repo = repository();
+  const key = await batchKey(projectId);
+  if (!key) return false;
+  if (previous) await repo.releaseLease(key, JSON.stringify(previous));
+  return repo.acquireLease(key, JSON.stringify(next), BATCH_TTL_MS);
+}
+
+export async function closeBatchRecord(projectId: string, batch: MergeBatch): Promise<void> {
+  const key = await batchKey(projectId);
+  if (key) await repository().releaseLease(key, JSON.stringify(batch));
+}
+
+/**
+ * A head that was in a batch whose CI failed merges on its own from then on,
+ * so the one that broke it goes back through review with its own CI, rather
+ * than every batch it joins failing for the same reason. A new head is a new
+ * change, and may join a batch again.
+ */
+const SOLO_TTL_MS = 24 * 60 * 60 * 1000;
+
+export async function mergeAlone(ticketId: string, headSha: string): Promise<void> {
+  await repository().acquireLease(`merge-solo:${ticketId}:${headSha}`, "solo", SOLO_TTL_MS);
+}
+
+export async function mustMergeAlone(ticketId: string, headSha: string): Promise<boolean> {
+  return (await repository().leaseHolder(`merge-solo:${ticketId}:${headSha}`)) !== null;
 }

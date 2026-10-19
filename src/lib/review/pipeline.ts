@@ -17,14 +17,26 @@ import { positionForIndex } from "@/lib/ordering";
 import {
   AGENT_COMMIT_AUTHOR,
   type CheckSummary,
+  type MergeOutcome,
   type PullRequestDetail,
+  STAGING_PREFIX,
   mergeNeedsPromotion,
   mergeTarget,
   vcs,
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inTicketLane } from "./lane";
-import { claimMergeSlot, inRepoMergeLane, releaseMergeSlot } from "./merge-lane";
+import {
+  type MergeBatch,
+  claimMergeSlot,
+  closeBatchRecord,
+  inRepoMergeLane,
+  mergeAlone,
+  mustMergeAlone,
+  openBatch,
+  recordBatch,
+  releaseMergeSlot,
+} from "./merge-lane";
 import { claimOrQueue } from "@/lib/board/queue";
 import { releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
@@ -103,8 +115,9 @@ export async function reviewPullRequest(
   const ticket = await repo.ticketByPrNumber(projectId, prNumber);
 
   // A pull request Formic did not open. Not an error: the webhook is
-  // repository-wide and humans open pull requests too.
-  if (!ticket) return;
+  // repository-wide and humans open pull requests too. A merge batch's is
+  // Formic's, though, and its CI is news for the pull requests in it.
+  if (!ticket) return await reactToBatch(projectId, prNumber);
   if (ticket.status === "merged") return;
 
   await inTicketLane(ticket.id, () => react(projectId, ticket.id, prNumber, headSha, options));
@@ -237,6 +250,13 @@ async function react(
     // would only be undone by that one landing. Its turn comes when that one
     // lets go (leaveMergeSlot), or from the sweep.
     if (!(await claimMergeSlot(projectId, ticket.id))) return;
+    const step = await inRepoMergeLane(
+      projectId,
+      () => mergeInBatch(projectId, client, ticket, pull, mergeTarget(project.baseBranch)),
+      (): BatchStep => "waiting",
+    );
+    if (step === "waiting") return;
+    if (step === "landed") return await leaveMergeSlot(projectId, ticket.id);
     const result = await inRepoMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber), laneBusy);
     if (result.merged || !result.waiting) await leaveMergeSlot(projectId, ticket.id);
     return;
@@ -618,6 +638,229 @@ async function leaveMergeSlot(projectId: string, ticketId: string): Promise<void
   if (!(await releaseMergeSlot(projectId, ticketId))) return;
   lastSwept.delete(projectId);
   launch(() => sweepOpenPullRequests(projectId), "the next merge in line");
+}
+
+/** At most this many pull requests are tested together. */
+const BATCH_MAX = 5;
+
+/**
+ * Where a batch goes next, for the ticket holding the merge slot: "waiting" on
+ * the batch's CI, "landed" with it merged, or "alone" to merge by itself,
+ * bringing the base in as it always has.
+ */
+type BatchStep = "waiting" | "landed" | "alone";
+type Client = ReturnType<typeof vcs>;
+type BatchMember = MergeBatch["members"][number];
+
+/**
+ * Merge batches. With several approved, green pull requests waiting, the
+ * slot holder does not bring the base into its own head: it merges itself and
+ * up to BATCH_MAX - 1 of the others onto the target on a branch of their own,
+ * and a pull request from that branch runs CI on exactly what they make
+ * together. Green, they land one after another with no CI in between; red,
+ * each goes back to merging alone, so the one that broke it meets its own red
+ * CI and the review that comes with it. One CI run then lands several pull
+ * requests where it used to land one.
+ *
+ * Runs inside the merge lane, so only one instance at a time opens, moves or
+ * ends a batch.
+ */
+async function mergeInBatch(
+  projectId: string,
+  client: Client,
+  lead: TicketDetail,
+  leadPull: PullRequestDetail,
+  target: string,
+): Promise<BatchStep> {
+  const open = await openBatch(projectId);
+  if (open) {
+    if (open.members.some((m) => m.ticketId === lead.id)) return driveBatch(projectId, client, open);
+    // The slot passed to a pull request outside it, so the one that held it
+    // for the batch dropped out, and nothing is going to land it.
+    await endBatch(client, open, "The pull request holding the merge queue for this batch dropped out of it, so it will not land.");
+  }
+  if (await mustMergeAlone(lead.id, leadPull.headSha)) return "alone";
+  const others = await batchCandidates(projectId, client, lead, target);
+  if (others.length === 0) return "alone";
+  const first = { ticketId: lead.id, key: lead.key, prNumber: leadPull.number, headSha: leadPull.headSha };
+  try {
+    return await startBatch(projectId, client, target, [first, ...others]);
+  } catch (e) {
+    console.error(`[formic] building a merge batch for ${lead.key} failed:`, e);
+    return "alone";
+  }
+}
+
+/** Other approved pull requests that could land alongside `lead`: green on the head that was approved, not stacked. */
+async function batchCandidates(
+  projectId: string,
+  client: Client,
+  lead: TicketDetail,
+  target: string,
+): Promise<BatchMember[]> {
+  const repo = repository();
+  const found: BatchMember[] = [];
+  for (const card of await repo.boardCards(projectId)) {
+    if (found.length >= BATCH_MAX - 1) break;
+    if (card.kind !== "ticket" || card.status !== "review" || !card.prNumber || card.id === lead.id) continue;
+    const ticket = await repo.ticketDetail(card.id);
+    if (!ticket?.prNumber || !ticket.reviewedSha || ticket.runnerJob || ticket.blockedReason) continue;
+    const pull = await client.pullRequest(ticket.prNumber).catch(() => null);
+    if (!pull || pull.merged || pull.state !== "open" || pull.mergeable === false) continue;
+    if (pull.baseBranch !== target || pull.headSha !== ticket.reviewedSha) continue;
+    const checks = await client.checksFor(pull.headSha);
+    if (checks.length === 0 || pending(checks).length > 0 || failing(checks).length > 0) continue;
+    if (await mustMergeAlone(ticket.id, pull.headSha)) continue;
+    found.push({ ticketId: ticket.id, key: ticket.key, prNumber: pull.number, headSha: pull.headSha });
+  }
+  return found;
+}
+
+async function startBatch(
+  projectId: string,
+  client: Client,
+  target: string,
+  candidates: BatchMember[],
+): Promise<BatchStep> {
+  const targetSha = await client.branchHead(target);
+  if (!targetSha) return "alone";
+  const branch = `${STAGING_PREFIX}merge-batch-${target.replace(/[^\w.-]/g, "-")}`;
+  // One left behind by an instance that died mid-batch starts over.
+  await client.deleteStagingBranch(branch).catch(() => undefined);
+  await client.moveBranch(branch, targetSha);
+
+  const members: BatchMember[] = [];
+  for (const candidate of candidates) {
+    const merged = await client.mergeBranch(branch, candidate.headSha);
+    if (merged.ok) members.push(candidate);
+    // The slot holder conflicts with the target itself: bringing the base in
+    // alone is what hands that conflict to the Reviewer Agent.
+    else if (members.length === 0) break;
+    // Any other that conflicts with the rest waits for a turn of its own.
+  }
+  if (members.length < 2) {
+    await client.deleteStagingBranch(branch).catch(() => undefined);
+    return "alone";
+  }
+
+  const keys = members.map((m) => m.key).join(", ");
+  const pull = await client.openPullRequest({
+    headBranch: branch,
+    baseBranch: target,
+    title: `Merge batch: ${keys}`,
+    body: [
+      `Formic is testing these pull requests together, merged onto \`${target}\` exactly as they will land:`,
+      "",
+      ...members.map((m) => `- #${m.prNumber} (${m.key})`),
+      "",
+      "Once CI passes here, Formic merges each of them and closes this one. Do not merge this pull request itself.",
+    ].join("\n"),
+  });
+  const batch: MergeBatch = { projectId, pr: pull.number, branch, targetSha, members };
+  if (!(await recordBatch(projectId, batch, null))) {
+    await endBatch(client, batch, "Another merge batch is already open.");
+    return "alone";
+  }
+  return "waiting";
+}
+
+/** Moves an open batch on: waits for its CI, lands it, or gives it up. */
+async function driveBatch(projectId: string, client: Client, batch: MergeBatch): Promise<BatchStep> {
+  const batchPull = await client.pullRequest(batch.pr);
+  if (batchPull.state !== "open") {
+    await endBatch(client, batch, "");
+    return "alone";
+  }
+
+  const repo = repository();
+  const left: BatchMember[] = [];
+  for (const m of batch.members) {
+    const pull = await client.pullRequest(m.prNumber);
+    if (pull.merged) continue;
+    const ticket = await repo.ticketDetail(m.ticketId);
+    if (pull.state !== "open" || pull.headSha !== m.headSha || ticket?.status !== "review") {
+      await endBatch(client, batch, `${m.key} changed since this batch was built, so it no longer tests what would land.`);
+      return "alone";
+    }
+    left.push(m);
+  }
+  if (left.length === 0) {
+    await endBatch(client, batch, "Every pull request in it has merged.");
+    return "landed";
+  }
+
+  const checks = await client.checksFor(batchPull.headSha);
+  if (checks.length === 0 || pending(checks).length > 0) return "waiting";
+  const red = failing(checks);
+  if (red.length > 0) {
+    for (const m of left) await mergeAlone(m.ticketId, m.headSha);
+    await endBatch(
+      client,
+      batch,
+      `${red.map((c) => c.name).join(", ")} failed with these pull requests together, so each now merges on its own, with its own CI.`,
+    );
+    return "alone";
+  }
+
+  let current = batch;
+  for (const m of left) {
+    // Landing on anything but what CI ran on would land untested code.
+    if ((await client.branchHead(batchPull.baseBranch)) !== current.targetSha) {
+      await endBatch(client, current, `${batchPull.baseBranch} moved while this batch was landing, so the rest would not land as tested.`);
+      return "alone";
+    }
+    const merged = await mergeAsTested(client, m);
+    if (!merged.ok) {
+      await endBatch(client, current, `GitHub refused to merge ${m.key}: ${merged.reason}`);
+      return "alone";
+    }
+    const next = { ...current, targetSha: merged.sha };
+    await recordBatch(projectId, next, current);
+    current = next;
+    await markMergedExternally(projectId, m.prNumber);
+  }
+  await endBatch(client, current, `Landed ${left.map((m) => m.key).join(", ")}.`);
+  return "landed";
+}
+
+/**
+ * Merges one batch member at the head the batch tested. GitHub works out a
+ * pull request's mergeability again after each merge into its base, and
+ * refuses one asked for meanwhile, so it waits that out.
+ */
+async function mergeAsTested(client: Client, m: BatchMember): Promise<MergeOutcome> {
+  let last: MergeOutcome = { ok: false, reason: "GitHub never said whether it could be merged.", conflict: false };
+  for (let i = 0; i < SETTLE_TRIES; i++) {
+    const pull = await client.pullRequest(m.prNumber);
+    if (pull.mergeable !== null) {
+      last = await client.merge(m.prNumber, m.headSha).catch(
+        (e): MergeOutcome => ({ ok: false, reason: e instanceof Error ? e.message : String(e), conflict: false }),
+      );
+      if (last.ok || pull.mergeable === false) return last;
+    }
+    await new Promise((r) => setTimeout(r, SETTLE_EVERY_MS));
+  }
+  return last;
+}
+
+/** Closes a batch's pull request with `reason`, deletes its branch and forgets it. */
+async function endBatch(client: Client, batch: MergeBatch, reason: string): Promise<void> {
+  if (reason) {
+    await client
+      .closeSupersededPulls(batch.branch, "", reason)
+      .catch((e: unknown) => console.error(`[formic] closing merge batch #${batch.pr} failed:`, e));
+  }
+  await client.deleteStagingBranch(batch.branch).catch(() => undefined);
+  await closeBatchRecord(batch.projectId, batch);
+}
+
+/** A batch's CI reported: whichever of its pull requests holds the slot moves it on. */
+async function reactToBatch(projectId: string, prNumber: number): Promise<void> {
+  const batch = await openBatch(projectId);
+  if (!batch || batch.pr !== prNumber) return;
+  for (const m of batch.members) {
+    await inTicketLane(m.ticketId, () => react(projectId, m.ticketId, m.prNumber, m.headSha, { startReview: false }));
+  }
 }
 
 /**

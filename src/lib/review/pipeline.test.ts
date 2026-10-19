@@ -235,6 +235,131 @@ describe("the merge slot", () => {
   });
 });
 
+describe("merge batches", () => {
+  const BATCH = "formic-staging/merge-batch-main";
+
+  /** `count` approved, green tickets in review, behind a target Formic can see the head of. */
+  async function seedApproved(count: number) {
+    await vcs.moveBranch("main", "base-0");
+    const repo = repository();
+    (await repo.projectById(PROJECT))!.autoMerge = true;
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const created = await repo.createTickets(
+      Array.from({ length: count }, (_, i) => ({
+        epicId: epic.id,
+        key: `T-${i + 1}`,
+        title: `Ticket ${i + 1}`,
+        description: "d",
+        acceptanceCriteria: ["c"],
+        fileScope: [`src/${i}`],
+        storyPoints: 3,
+        position: i + 1,
+        dependsOnKeys: [],
+      })),
+    );
+    const queue = [];
+    for (const [i, ticket] of created.entries()) {
+      const pull = await vcs.openPullRequest({ headBranch: `t-${i + 1}`, baseBranch: "main", title: `T-${i + 1}`, body: "" });
+      const headSha = MockVcsClient.setChecks(pull.number, "success");
+      MockVcsClient.behindBase(pull.number);
+      await repo.updateTicket(ticket!.id, { status: "review", stage: 6, prNumber: pull.number, reviewedSha: headSha });
+      queue.push({ ticketId: ticket!.id, prNumber: pull.number, headSha });
+    }
+    return queue;
+  }
+
+  const merged = async (prNumber: number) => (await vcs.pullRequest(prNumber)).merged;
+
+  it("tests the waiting pull requests together on a branch of their own, moving none of their heads", async () => {
+    const queue = await seedApproved(3);
+
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+
+    const batch = await vcs.findPullRequest(BATCH);
+    expect(batch).not.toBeNull();
+    expect(batch!.baseBranch).toBe("main");
+    expect((await vcs.pullRequest(batch!.number)).title).toBe("Merge batch: T-1, T-2, T-3");
+    for (const q of queue) {
+      expect((await vcs.pullRequest(q.prNumber)).headSha).toBe(q.headSha);
+      expect(await merged(q.prNumber)).toBe(false);
+    }
+  });
+
+  it("lands every pull request in it, in order, once CI passes on the batch", async () => {
+    const queue = await seedApproved(3);
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+    const batch = (await vcs.findPullRequest(BATCH))!;
+
+    await reviewPullRequest(PROJECT, batch.number, MockVcsClient.setChecks(batch.number, "success"));
+
+    for (const q of queue) {
+      expect(await merged(q.prNumber)).toBe(true);
+      expect((await repository().ticketDetail(q.ticketId))!.status).toBe("merged");
+    }
+    expect((await vcs.pullRequest(batch.number)).state).toBe("closed");
+    expect((await vcs.pullRequest(batch.number)).merged).toBe(false);
+  });
+
+  it("sends each back to merging alone when CI fails on the batch, landing none of them", async () => {
+    const queue = await seedApproved(3);
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+    const batch = (await vcs.findPullRequest(BATCH))!;
+
+    await reviewPullRequest(PROJECT, batch.number, MockVcsClient.setChecks(batch.number, "failure"));
+
+    expect((await vcs.pullRequest(batch.number)).state).toBe("closed");
+    for (const q of queue) expect(await merged(q.prNumber)).toBe(false);
+    // The first goes on alone: it brings the base in and waits on its own CI.
+    expect((await vcs.pullRequest(queue[0]!.prNumber)).headSha).not.toBe(queue[0]!.headSha);
+    // And none of them joins another batch on the head that failed.
+    await vi.waitFor(async () => expect(await vcs.findPullRequest(BATCH)).toBeNull());
+  });
+
+  it("leaves out one that conflicts with the rest", async () => {
+    const queue = await seedApproved(3);
+    MockVcsClient.conflictOn(BATCH, queue[1]!.headSha);
+
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+
+    const batch = (await vcs.findPullRequest(BATCH))!;
+    expect((await vcs.pullRequest(batch.number)).title).toBe("Merge batch: T-1, T-3");
+  });
+
+  it("gives the batch up when one of its pull requests changes before it lands", async () => {
+    const queue = await seedApproved(3);
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+    const batch = (await vcs.findPullRequest(BATCH))!;
+    MockVcsClient.bringBaseIn(queue[1]!.prNumber);
+
+    await reviewPullRequest(PROJECT, batch.number, MockVcsClient.setChecks(batch.number, "success"));
+
+    expect((await vcs.pullRequest(batch.number)).state).toBe("closed");
+    expect(await merged(queue[1]!.prNumber)).toBe(false);
+    expect(await merged(queue[2]!.prNumber)).toBe(false);
+  });
+
+  it("stops landing when the target moves under it", async () => {
+    const queue = await seedApproved(2);
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+    const batch = (await vcs.findPullRequest(BATCH))!;
+    await vcs.moveBranch("main", "someone-elses-push");
+
+    await reviewPullRequest(PROJECT, batch.number, MockVcsClient.setChecks(batch.number, "success"));
+
+    expect((await vcs.pullRequest(batch.number)).state).toBe("closed");
+    expect(await merged(queue[1]!.prNumber)).toBe(false);
+  });
+
+  it("merges alone when nothing else is waiting", async () => {
+    const [only] = await seedApproved(1);
+
+    await reviewPullRequest(PROJECT, only!.prNumber, only!.headSha);
+
+    expect(await vcs.findPullRequest(BATCH)).toBeNull();
+    expect((await vcs.pullRequest(only!.prNumber)).headSha).not.toBe(only!.headSha);
+  });
+});
+
 describe("closeAlreadyDone", () => {
   /** A ticket already in progress with an open pull request, in the given state. */
   async function seedTicketWithPull(pullState: { merged: boolean; state: "open" | "closed" }) {
