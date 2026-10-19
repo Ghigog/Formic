@@ -434,6 +434,9 @@ export async function openTicketPullRequest(
     return;
   }
   const repo = repository();
+  // A scout sent mid-run was kept first: its change is the pull request.
+  const current = await repo.ticketDetail(ticket.id);
+  if (current?.scoutPick && current.branchName !== input.branch) return;
   const project = await projectFor(projectId);
   const target = mergeTarget(project.baseBranch);
   await ensureMergeTarget(client, target, project.baseBranch);
