@@ -355,6 +355,8 @@ export interface ProjectSummary {
   colonyReserve: number;
   /** Whether idle reserve slots send scouts out on their own. */
   autoScout: boolean;
+  /** The saved agent scouts run on. Null: the In Progress column's agent. */
+  scoutPresetId: string | null;
 }
 
 /** Whose projects and presets a query sees. */
@@ -770,6 +772,7 @@ export interface Repository {
   setAutoMerge(projectId: string, autoMerge: boolean): Promise<void>;
   /** The colony's size, reserve and auto-scouting (docs/colony.md). */
   setColony(projectId: string, colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean }): Promise<void>;
+  setScoutAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
   /** Records that the ticket's story points were auto-escalated; keeps the first time if already marked. */
   markTicketAutoEscalated(ticketId: string): Promise<void>;

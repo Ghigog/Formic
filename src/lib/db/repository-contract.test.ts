@@ -478,6 +478,25 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.projectById(p.id))?.autoEscalate).toBe(false);
       });
 
+      it("runs scouts on the column's agent until a scout agent is set, per project", async () => {
+        const p = await project();
+        const preset = await repo.savePreset({
+          ownerId: null,
+          provider: "anthropic",
+          name: `scout-${randomUUID()}`,
+          model: "claude-opus-5",
+          prompt: "p",
+          apiKeyCipher: null,
+          apiKeyHint: null,
+        });
+        expect((await repo.projectById(p.id))?.scoutPresetId).toBeNull();
+        await repo.setScoutAgent(p.id, preset.id);
+        expect((await repo.projectById(p.id))?.scoutPresetId).toBe(preset.id);
+        await repo.setScoutAgent(p.id, null);
+        expect((await repo.projectById(p.id))?.scoutPresetId).toBeNull();
+        await repo.deletePreset(preset.id);
+      });
+
       it("records that a ticket was auto-escalated, once", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
