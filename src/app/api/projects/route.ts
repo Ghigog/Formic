@@ -11,6 +11,7 @@ import { launch } from "@/lib/agents/pipeline";
 import { addOnboardingTicket } from "@/lib/board/onboarding";
 import { runnerSetup } from "@/lib/runner/setup";
 import { limited, RUN } from "@/lib/rate-limit";
+import { verdict } from "@/lib/usage/governor";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,17 @@ export async function POST(req: NextRequest) {
     }
     const repoFullName = remote?.fullName ?? fullName;
     const existed = (await repo.projectsForRepo(repoFullName)).some((p) => p.ownerId === user.id);
+    // Near the host allowance, switching between boards stays open (the
+    // proxy lets it through) but a new board would start its setup run.
+    if (!existed && (await verdict()).standing !== "ok") {
+      return Response.json(
+        {
+          error:
+            "Formic is close to its hosting allowance, so new boards wait until 00:00 UTC. Existing boards can still be opened.",
+        },
+        { status: 503 },
+      );
+    }
     project = await repo.ensureProject({
       ownerId: user.id,
       repoFullName,

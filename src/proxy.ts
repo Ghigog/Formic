@@ -32,10 +32,12 @@ const OPEN = [
 
 /**
  * Kept working while the host allowance is nearly spent ("heavy"): what
- * finishes work already started, and signing in and out. Only the health
- * check is answered once it is spent.
+ * finishes work already started, signing in and out, and switching boards
+ * (the route itself refuses opening a new one). Only the health check is
+ * answered once it is spent.
  */
 const FINISHES_WORK = [
+  /^\/api\/projects$/,
   /^\/api\/webhooks\//,
   /^\/api\/runner\/report$/,
   /^\/api\/runner\/bundle$/,

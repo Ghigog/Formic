@@ -151,6 +151,7 @@ describe("proxy, at the host allowance", () => {
       await proxy(request("/")),
       await proxy(post("/api/webhooks/github")),
       await proxy(post("/api/runner/report")),
+      await proxy(post("/api/projects")),
       await proxy(request("/api/attachments/att_1?expires=1&token=abc")),
     ]) {
       expect(res.headers.get("x-middleware-next")).toBe("1");
