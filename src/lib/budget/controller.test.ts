@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { beginRun, recordSpend, spendFor } from "./controller";
 import { budgetFor } from "./budget-for";
@@ -52,5 +53,57 @@ describe("recordSpend", () => {
     expect(await recordSpend("a", {})).toBe(false);
     spy.mockRestore();
     expect((signal.reason as Error).message).toMatch(/Epic attempt limit reached \(12/);
+  });
+});
+
+describe("auto-escalation on token overrun", () => {
+  async function overrun(autoEscalate: boolean, points: number, escalated: boolean) {
+    const repo = repository();
+    const project = await repo.ensureProject({ ownerId: null, repoFullName: `esc/${randomUUID()}`, baseBranch: "main" });
+    await repo.setAutoEscalate(project.id, autoEscalate);
+    const epic = await repo.createEpic({ projectId: project.id, title: "E", rawRequest: "E", position: 1 });
+    const [t] = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "E-1",
+        title: "t",
+        description: "t",
+        acceptanceCriteria: [],
+        fileScope: [],
+        size: "S",
+        position: 1,
+        dependsOnKeys: [],
+        storyPoints: points,
+      },
+    ]);
+    if (escalated) await repo.markTicketAutoEscalated(t!.id);
+    const runId = randomUUID();
+    beginRun({
+      runId,
+      projectId: project.id,
+      ticketId: t!.id,
+      budget: budget({ tokens: { mode: "FLAT", flat: 100 } }, points),
+    });
+    await recordSpend(runId, { tokens: 101 });
+    return { repo, id: t!.id };
+  }
+
+  it("raises 5 points to 8 and marks the ticket", async () => {
+    const { repo, id } = await overrun(true, 5, false);
+    const t = await repo.ticketDetail(id);
+    expect(t?.storyPoints).toBe(8);
+    expect(t?.autoEscalatedAt).not.toBeNull();
+  });
+
+  it("leaves points alone the second time", async () => {
+    const { repo, id } = await overrun(true, 8, true);
+    expect((await repo.ticketDetail(id))?.storyPoints).toBe(8);
+  });
+
+  it("does nothing when disabled", async () => {
+    const { repo, id } = await overrun(false, 5, false);
+    const t = await repo.ticketDetail(id);
+    expect(t?.storyPoints).toBe(5);
+    expect(t?.autoEscalatedAt).toBeNull();
   });
 });

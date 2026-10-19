@@ -9,6 +9,7 @@ import {
   billingFor,
   checkBudget,
 } from "./limits";
+import { escalateStoryPoints } from "./escalate";
 import { budgetFor, type Budget as RunBudget } from "./budget-for";
 import { attemptsLimitNote, epicLimitNote, timeLimitNote, tokenLimitNote } from "./stop-notes";
 import { publish } from "@/lib/events/bus";
@@ -118,6 +119,7 @@ export async function recordSpend(
 
   const stopped = runLimitNote(run);
   if (stopped) {
+    if (tokensExceeded(run)) await escalateTicket(run);
     await stopRun(runId, stopped, "run");
     return false;
   }
@@ -152,6 +154,40 @@ export async function recordSpend(
   }
 
   return true;
+}
+
+function tokensExceeded(run: LiveRun): boolean {
+  return run.budget.tokens.value != null && run.tokens >= run.budget.tokens.value;
+}
+
+/**
+ * A run past its token budget re-points its ticket to the next Fibonacci value
+ * once, if the project allows it, and tells the user either way it acts.
+ */
+async function escalateTicket(run: LiveRun): Promise<void> {
+  if (!run.ticketId) return;
+  try {
+    const repo = repository();
+    const [ticket, project] = await Promise.all([repo.ticketDetail(run.ticketId), repo.projectById(run.projectId)]);
+    if (!ticket || !project) return;
+    const result = escalateStoryPoints({
+      storyPoints: ticket.storyPoints,
+      enabled: project.autoEscalate,
+      escalatedAt: ticket.autoEscalatedAt,
+    });
+    if (result.kind === "none") return;
+    let detail: string;
+    if (result.kind === "escalate") {
+      await repo.updateTicket(run.ticketId, { storyPoints: result.to });
+      await repo.markTicketAutoEscalated(run.ticketId);
+      detail = `Ticket exceeded its token budget for ${result.from} points; re-pointed to ${result.to}.`;
+    } else {
+      detail = `Ticket exceeded its token budget again at ${result.storyPoints} points; it was re-pointed twice and is left as is.`;
+    }
+    await publish(run.projectId, { type: "budget.exhausted", scope: "run", id: run.ticketId, detail });
+  } catch (e) {
+    console.error("[formic] could not escalate story points:", e);
+  }
 }
 
 /** The note for the first run limit it has reached, or null. Money never stops a run: it is derived from tokens. */
