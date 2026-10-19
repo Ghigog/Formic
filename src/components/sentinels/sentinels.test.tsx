@@ -282,3 +282,15 @@ describe("SentinelsPage carousel and report modal", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("SentinelsPage summary layout", () => {
+  it("keeps the grade on the right of the stats on one row", async () => {
+    await open();
+    const grade = screen.getByTitle(/^Grade = average/);
+    const stats = screen.getByText(/avg$/);
+    expect(stats.compareDocumentPosition(grade) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const section = grade.closest("section")!;
+    expect(section.className).not.toMatch(/flex-col/);
+    expect(grade.parentElement!.className).not.toMatch(/flex-(col|wrap)/);
+  });
+});

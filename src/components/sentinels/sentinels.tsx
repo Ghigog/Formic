@@ -5,7 +5,14 @@ import { cn } from "@/components/ui/cn";
 import { useColony, type ColonyApi } from "@/components/colony/colony";
 import { centerOf } from "@/components/colony/fx";
 import { GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
-import { GROUP_INK, SENTINELS, isUnlocked, promptFor, stepsFor, type Sentinel } from "@/lib/sentinels/roster";
+import {
+  GROUP_INK,
+  SENTINELS,
+  isUnlocked,
+  promptFor,
+  stepsFor,
+  type Sentinel,
+} from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditPoint } from "@/lib/db/repository";
 import { portraitSvg, portraitGround } from "./portraits";
@@ -15,13 +22,20 @@ import { useSentinels, type SentinelsApi } from "./store";
 const BIG_OCT =
   "polygon(22px 0,calc(100% - 22px) 0,100% 22px,100% calc(100% - 22px),calc(100% - 22px) 100%,22px 100%,0 calc(100% - 22px),0 22px)";
 
-const STAR = "M8 1.2l2.1 4.3 4.7.7-3.4 3.3.8 4.7L8 11.9l-4.2 2.3.8-4.7L1.2 6.2l4.7-.7z";
+const STAR =
+  "M8 1.2l2.1 4.3 4.7.7-3.4 3.3.8 4.7L8 11.9l-4.2 2.3.8-4.7L1.2 6.2l4.7-.7z";
 
 function Stars({ n, size, id }: { n: number; size: number; id?: string }) {
   return (
     <span className="flex gap-0.5" aria-hidden>
       {[0, 1, 2, 3, 4].map((i) => (
-        <svg key={i} data-star={id} width={size} height={size} viewBox="0 0 16 16">
+        <svg
+          key={i}
+          data-star={id}
+          width={size}
+          height={size}
+          viewBox="0 0 16 16"
+        >
           <path d={STAR} fill={i < n ? "var(--clay)" : "var(--border)"} />
         </svg>
       ))}
@@ -47,7 +61,13 @@ function Portrait({ id, className }: { id: string; className?: string }) {
 
 function PlayIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 14 14" fill="none" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden="true"
+    >
       <path d="M3.5 2.2v9.6L11.5 7z" fill="var(--clay-lit)" />
     </svg>
   );
@@ -104,7 +124,9 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     idxRef.current = i;
     setIdx(i);
     el?.scrollTo({
-      left: item ? item.offsetLeft + item.offsetWidth / 2 - el.clientWidth / 2 : 0,
+      left: item
+        ? item.offsetLeft + item.offsetWidth / 2 - el.clientWidth / 2
+        : 0,
       behavior: c.fx.reducedMotion ? "auto" : "smooth",
     });
   };
@@ -146,7 +168,12 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     let quiet: ReturnType<typeof setTimeout> | undefined;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (quiet === undefined) step(((Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) < 0 ? -1 : 1));
+      if (quiet === undefined)
+        step(
+          (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) < 0
+            ? -1
+            : 1,
+        );
       clearTimeout(quiet);
       quiet = setTimeout(() => (quiet = undefined), WHEEL_QUIET_MS);
     };
@@ -160,7 +187,8 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
 
   // Focus moves into the report modal when it opens.
   useEffect(() => {
-    if (reportId) root.current?.querySelector<HTMLElement>("[role=dialog] button")?.focus();
+    if (reportId)
+      root.current?.querySelector<HTMLElement>("[role=dialog] button")?.focus();
   }, [reportId]);
 
   useEffect(() => {
@@ -169,26 +197,43 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
       if (e.key === "Escape") {
         if (reportRef.current) closeReport();
         else c.setSentinelsOpen(false);
-      } else if (!reportRef.current && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      } else if (
+        !reportRef.current &&
+        (e.key === "ArrowLeft" || e.key === "ArrowRight")
+      ) {
         step(e.key === "ArrowLeft" ? -1 : 1);
       }
     };
     window.addEventListener("keydown", onKey);
     // Reported cards slide up one after another; the rest fade in by CSS.
     const timers: ReturnType<typeof setTimeout>[] = [];
-    const landed = SENTINELS.map((x, i) => ({ x, i })).filter(({ x }) => reported(s.states[x.id]));
+    const landed = SENTINELS.map((x, i) => ({ x, i })).filter(({ x }) =>
+      reported(s.states[x.id]),
+    );
     if (landed.length) c.sfx("sentinelsOpen");
     if (landed.length && !c.fx.reducedMotion) {
       landed.forEach(({ x, i }, n) => {
         const delay = n * SLIDE_STAGGER_MS;
-        root.current?.querySelector<HTMLElement>(`[data-card="${x.id}"]`)?.animate(
-          [
-            { opacity: 0, transform: `translateY(60vh) rotate(${n % 2 ? 4 : -4}deg)` },
-            { opacity: 1, transform: "none" },
-          ],
-          { duration: SLIDE_MS, delay, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" },
+        root.current
+          ?.querySelector<HTMLElement>(`[data-card="${x.id}"]`)
+          ?.animate(
+            [
+              {
+                opacity: 0,
+                transform: `translateY(60vh) rotate(${n % 2 ? 4 : -4}deg)`,
+              },
+              { opacity: 1, transform: "none" },
+            ],
+            {
+              duration: SLIDE_MS,
+              delay,
+              easing: "cubic-bezier(.2,.8,.2,1)",
+              fill: "backwards",
+            },
+          );
+        timers.push(
+          setTimeout(() => c.sfx("sentinelLand", i), delay + SLIDE_MS),
         );
-        timers.push(setTimeout(() => c.sfx("sentinelLand", i), delay + SLIDE_MS));
       });
     }
     return () => {
@@ -216,23 +261,38 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
       }
       if (!is?.at || is.at === was.at) continue;
       const stars = is.stars ?? 0;
-      const els = root.current?.querySelectorAll<SVGElement>(`[data-star="${x.id}"]`) ?? [];
+      const els =
+        root.current?.querySelectorAll<SVGElement>(`[data-star="${x.id}"]`) ??
+        [];
       for (let i = 0; i < stars; i++) {
         setTimeout(() => {
           c.sfx("blip", i * 2 + 7);
           if (!reduce)
             els[i]?.animate(
-              [{ transform: "scale(0.2) rotate(-40deg)" }, { transform: "scale(1.45)" }, { transform: "scale(1)" }],
+              [
+                { transform: "scale(0.2) rotate(-40deg)" },
+                { transform: "scale(1.45)" },
+                { transform: "scale(1)" },
+              ],
               { duration: 360, easing: "cubic-bezier(.2,.8,.2,1)" },
             );
         }, i * 110);
       }
-      const card = root.current?.querySelector<HTMLElement>(`[data-card="${x.id}"]`);
+      const card = root.current?.querySelector<HTMLElement>(
+        `[data-card="${x.id}"]`,
+      );
       if (card && !reduce)
-        card.animate([{ transform: "none" }, { transform: "translateY(-8px)" }, { transform: "none" }], {
-          duration: 420,
-          easing: "cubic-bezier(.2,.8,.2,1)",
-        });
+        card.animate(
+          [
+            { transform: "none" },
+            { transform: "translateY(-8px)" },
+            { transform: "none" },
+          ],
+          {
+            duration: 420,
+            easing: "cubic-bezier(.2,.8,.2,1)",
+          },
+        );
     }
     if (g.grade !== prevGrade.current) {
       const up = gradeRose(prevGrade.current, g.grade);
@@ -243,14 +303,29 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
         if (!el || reduce) return;
         el.animate(
           up
-            ? [{ transform: "rotateY(0) scale(1)" }, { transform: "rotateY(360deg) scale(1.2)" }, { transform: "rotateY(360deg) scale(1)" }]
-            : [{ transform: "none" }, { transform: "translateX(-6px)" }, { transform: "translateX(5px)" }, { transform: "none" }],
+            ? [
+                { transform: "rotateY(0) scale(1)" },
+                { transform: "rotateY(360deg) scale(1.2)" },
+                { transform: "rotateY(360deg) scale(1)" },
+              ]
+            : [
+                { transform: "none" },
+                { transform: "translateX(-6px)" },
+                { transform: "translateX(5px)" },
+                { transform: "none" },
+              ],
           { duration: up ? 700 : 360, easing: "cubic-bezier(.2,.8,.2,1)" },
         );
         if (up) {
           const [x, y] = centerOf(el);
           c.fx.ring(x, y, g.ink, 60, 0.5, 3);
-          c.fx.burst(x, y, [g.ink, "var(--clay-lit)"], 18, { speed: 180, g: 220, size: 2, life: 0.6, shape: "dot" });
+          c.fx.burst(x, y, [g.ink, "var(--clay-lit)"], 18, {
+            speed: 180,
+            g: 220,
+            size: 2,
+            life: 0.6,
+            shape: "dot",
+          });
         }
       }, 700);
     }
@@ -264,7 +339,10 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     const now = performance.now();
     if (now - lastVoice.current >= VOICE_GAP_MS) {
       lastVoice.current = now;
-      c.sfx("sentinelVoice", SENTINELS.findIndex((x) => x.id === id));
+      c.sfx(
+        "sentinelVoice",
+        SENTINELS.findIndex((x) => x.id === id),
+      );
     }
     if (c.fx.reducedMotion) return;
     root.current
@@ -272,8 +350,14 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
       ?.animate(
         [
           { transform: "none" },
-          { transform: "translateY(-10px) rotate(-5deg) scale(1.06)", offset: 0.35 },
-          { transform: "translateY(0) rotate(3deg) scale(1.04, 0.94)", offset: 0.65 },
+          {
+            transform: "translateY(-10px) rotate(-5deg) scale(1.06)",
+            offset: 0.35,
+          },
+          {
+            transform: "translateY(0) rotate(3deg) scale(1.04, 0.94)",
+            offset: 0.65,
+          },
           { transform: "none" },
         ],
         { duration: 380, easing: "cubic-bezier(.2,.8,.2,1)" },
@@ -297,33 +381,41 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     >
       <div className="mx-auto flex h-full max-w-[1640px] flex-col gap-4">
         <h1 className="sr-only">Sentinels</h1>
-        <section className="border-line bg-card flex shrink-0 flex-wrap items-center gap-x-6 gap-y-4 rounded-[14px] border px-5 py-4">
-          <span
-            ref={gradeRef}
-            title={GRADE_RULE}
-            className="text-cream inline-flex size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400"
-            style={{ background: g.ink, clipPath: BIG_OCT }}
-          >
-            <span className="font-mono text-[9px] tracking-[0.14em] opacity-80">GRADE</span>
-            <span className="font-serif text-[42px] leading-none font-semibold">{g.grade}</span>
-          </span>
-          <div className="flex flex-col items-start gap-2">
-            <div className="flex items-baseline gap-2.5">
-              <span className="text-ink font-mono text-[12px] font-medium">{g.avg.toFixed(2)} / 5 avg</span>
+        <section className="border-line bg-card flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-[14px] border px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+              <div className="flex items-baseline gap-2.5">
+                <span className="text-ink font-mono text-[12px] font-medium">
+                  {g.avg.toFixed(2)} / 5 avg
+                </span>
+                <span className="text-muted text-[12px]">
+                  {g.done} of {g.total} reported
+                </span>
+              </div>
+              <span className="bg-line block h-1 w-full max-w-[238px] overflow-hidden rounded-sm">
+                <span
+                  className="bg-clay block h-1 transition-[width] duration-700 ease-[cubic-bezier(.2,.8,.2,1)]"
+                  style={{ width: `${g.progress * 100}%` }}
+                />
+              </span>
               <span className="text-muted text-[12px]">
-                {g.done} of {g.total} reported
+                {g.next
+                  ? `${g.next.grade} at ${g.next.min.toFixed(1)} avg · ${g.next.need} more star${g.next.need === 1 ? "" : "s"}`
+                  : "Top grade reached"}
               </span>
             </div>
-            <span className="bg-line block h-1 w-[238px] overflow-hidden rounded-sm">
-              <span
-                className="bg-clay block h-1 transition-[width] duration-700 ease-[cubic-bezier(.2,.8,.2,1)]"
-                style={{ width: `${g.progress * 100}%` }}
-              />
-            </span>
-            <span className="text-muted text-[12px]">
-              {g.next
-                ? `${g.next.grade} at ${g.next.min.toFixed(1)} avg · ${g.next.need} more star${g.next.need === 1 ? "" : "s"}`
-                : "Top grade reached"}
+            <span
+              ref={gradeRef}
+              title={GRADE_RULE}
+              className="text-cream inline-flex size-[68px] sm:size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400"
+              style={{ background: g.ink, clipPath: BIG_OCT }}
+            >
+              <span className="font-mono text-[9px] tracking-[0.14em] opacity-80">
+                GRADE
+              </span>
+              <span className="font-serif text-[32px] sm:text-[42px] leading-none font-semibold">
+                {g.grade}
+              </span>
             </span>
           </div>
           <button
@@ -333,7 +425,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
               s.summonAll();
             }}
             disabled={nBusy === unlocked}
-            className="bg-anthracite text-cream inline-flex h-11 items-center gap-2.5 rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
+            className="bg-anthracite text-cream inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
           >
             <PlayIcon />
             {nBusy ? `Auditing ${nBusy}…` : `Summon all ${unlocked}`}
@@ -341,7 +433,10 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
         </section>
 
         {s.refusal && (
-          <p role="alert" className="bg-crimson-chip text-crimson-chip-text m-0 rounded-lg px-4 py-2.5 text-[13px]">
+          <p
+            role="alert"
+            className="bg-crimson-chip text-crimson-chip-text m-0 rounded-lg px-4 py-2.5 text-[13px]"
+          >
             {s.refusal}
           </p>
         )}
@@ -397,7 +492,10 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
       </div>
 
       {reporting && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgb(28_25_23/0.45)] p-4" onClick={closeReport}>
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgb(28_25_23/0.45)] p-4"
+          onClick={closeReport}
+        >
           <div
             role="dialog"
             aria-modal
@@ -471,11 +569,23 @@ function Card({
       className={cn(
         "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-center snap-always flex-col overflow-hidden rounded-[14px] border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
         !reported(st) && "sentinel-motion animate-[sentinelFade_0.4s_ease-out]",
-        on ? "border-terracotta shadow-[0_0_0_3px_rgb(217_107_39/0.14)]" : "border-line",
+        on
+          ? "border-terracotta shadow-[0_0_0_3px_rgb(217_107_39/0.14)]"
+          : "border-line",
       )}
     >
-      <div className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden" style={{ background: portraitGround(x.id) }}>
-        <div className={cn("absolute inset-0", locked && "opacity-40 grayscale", running && "sentinel-motion animate-[sentinelBob_0.9s_ease-in-out_infinite]")}>
+      <div
+        className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden"
+        style={{ background: portraitGround(x.id) }}
+      >
+        <div
+          className={cn(
+            "absolute inset-0",
+            locked && "opacity-40 grayscale",
+            running &&
+              "sentinel-motion animate-[sentinelBob_0.9s_ease-in-out_infinite]",
+          )}
+        >
           <Portrait id={x.id} />
         </div>
         <span className="text-anthracite absolute top-2.5 left-2.5 rounded-full bg-white/90 px-2 py-1 font-mono text-[9px] font-medium tracking-[0.12em] uppercase">
@@ -495,12 +605,23 @@ function Card({
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-4">
         <div className="flex flex-col gap-[3px]">
-          <span className="text-ink font-serif text-[21px] leading-[1.1] font-semibold">{x.who}</span>
+          <span className="text-ink font-serif text-[21px] leading-[1.1] font-semibold">
+            {x.who}
+          </span>
           <span className="text-muted text-[12px]">{x.kind}</span>
         </div>
         <Stars n={st.stars ?? 0} size={17} id={x.id} />
-        <p className={cn("m-0 font-serif text-[16px] leading-[1.4] text-pretty italic", st.quote ? "text-ink" : "text-muted")}>
-          {st.quote ? `“${st.quote}”` : running ? "Reading the codebase…" : "Waiting to be summoned."}
+        <p
+          className={cn(
+            "m-0 font-serif text-[16px] leading-[1.4] text-pretty italic",
+            st.quote ? "text-ink" : "text-muted",
+          )}
+        >
+          {st.quote
+            ? `“${st.quote}”`
+            : running
+              ? "Reading the codebase…"
+              : "Waiting to be summoned."}
         </p>
         <div className="grow" />
         {running ? (
@@ -519,13 +640,20 @@ function Card({
         ) : (
           <div className="border-hairline flex items-center gap-2 border-t pt-2.5">
             {st.error ? (
-              <span className="text-crimson-chip-text line-clamp-2 text-[11px]" title={st.error}>
+              <span
+                className="text-crimson-chip-text line-clamp-2 text-[11px]"
+                title={st.error}
+              >
                 Last run failed
               </span>
             ) : done ? (
-              <span className="text-muted font-mono text-[10px]">Audited {ago(st.at, now)}</span>
+              <span className="text-muted font-mono text-[10px]">
+                Audited {ago(st.at, now)}
+              </span>
             ) : locked ? (
-              <span className="text-muted text-[11px]">Unlocks at Lv {x.unlockLevel}</span>
+              <span className="text-muted text-[11px]">
+                Unlocks at Lv {x.unlockLevel}
+              </span>
             ) : (
               <span className="text-muted text-[11px]">Counts as 0★</span>
             )}
@@ -555,14 +683,30 @@ function Card({
   );
 }
 
-const SECTIONS: Array<{ key: "likes" | "dislikes" | "wrong" | "missing"; title: string; ink: string }> = [
+const SECTIONS: Array<{
+  key: "likes" | "dislikes" | "wrong" | "missing";
+  title: string;
+  ink: string;
+}> = [
   { key: "likes", title: "What works", ink: "var(--jade)" },
   { key: "dislikes", title: "What doesn't", ink: "var(--terracotta)" },
   { key: "wrong", title: "What's wrong", ink: "var(--crimson)" },
   { key: "missing", title: "What's missing", ink: "var(--dot-idle)" },
 ];
 
-function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelState; now: number; locked: boolean; onSummon: () => void }) {
+function Report({
+  x,
+  st,
+  now,
+  locked,
+  onSummon,
+}: {
+  x: Sentinel;
+  st: SentinelState;
+  now: number;
+  locked: boolean;
+  onSummon: () => void;
+}) {
   const running = !!st.running;
   const done = st.stars !== null && !!st.report;
   const first = x.who.split(" ").at(-1);
@@ -583,12 +727,16 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
   async function createEpic() {
     setSending(true);
     setEpicError(null);
-    const res = await fetch(`/api/sentinels/${x.id}/epic`, { method: "POST" }).catch(() => null);
+    const res = await fetch(`/api/sentinels/${x.id}/epic`, {
+      method: "POST",
+    }).catch(() => null);
     setSending(false);
-    if (res?.ok) {
-      setCreatedKey(reportKey);
-    }
-    else setEpicError(((await res?.json().catch(() => null)) as { error?: string } | null)?.error ?? "Could not create the epic.");
+    if (res?.ok) setCreatedKey(reportKey);
+    else
+      setEpicError(
+        ((await res?.json().catch(() => null)) as { error?: string } | null)
+          ?.error ?? "Could not create the epic.",
+      );
   }
 
   return (
@@ -597,12 +745,19 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
       className="border-line bg-card box-border flex flex-col gap-[18px] rounded-[14px] border p-5 pt-12"
     >
       <div className="flex items-center gap-3">
-        <span className="relative size-[52px] shrink-0 overflow-hidden rounded-full" style={{ background: portraitGround(x.id) }}>
+        <span
+          className="relative size-[52px] shrink-0 overflow-hidden rounded-full"
+          style={{ background: portraitGround(x.id) }}
+        >
           <Portrait id={x.id} />
         </span>
         <div className="flex min-w-0 grow flex-col gap-[3px]">
-          <span className="font-serif text-[21px] leading-[1.1] font-semibold">{x.who}</span>
-          <span className="text-muted font-mono text-[10px] uppercase">{meta}</span>
+          <span className="font-serif text-[21px] leading-[1.1] font-semibold">
+            {x.who}
+          </span>
+          <span className="text-muted font-mono text-[10px] uppercase">
+            {meta}
+          </span>
         </div>
         <button
           type="button"
@@ -610,12 +765,21 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
           disabled={running || locked}
           className="border-line bg-cream text-ink hover:border-terracotta h-8 rounded-lg border px-3 text-[12px] font-semibold active:scale-[0.96] disabled:opacity-60"
         >
-          {running ? "Running…" : locked ? `Lv ${x.unlockLevel}` : st.stars !== null ? "Re-run" : "Summon"}
+          {running
+            ? "Running…"
+            : locked
+              ? `Lv ${x.unlockLevel}`
+              : st.stars !== null
+                ? "Re-run"
+                : "Summon"}
         </button>
       </div>
 
       {st.error && !running && (
-        <p role="status" className="bg-crimson-chip text-crimson-chip-text m-0 rounded-lg px-3.5 py-2.5 text-[13px] leading-[1.45]">
+        <p
+          role="status"
+          className="bg-crimson-chip text-crimson-chip-text m-0 rounded-lg px-3.5 py-2.5 text-[13px] leading-[1.45]"
+        >
           {st.error}
           {st.stars !== null ? " The last report below still counts." : ""}
         </p>
@@ -623,19 +787,23 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
 
       {running && (
         <div className="bg-anthracite flex flex-col gap-2 rounded-[10px] px-4 py-3.5">
-          {(st.running!.log.length ? st.running!.log : ["Waking up"]).map((t, i, all) => {
-            const past = i < all.length - 1;
-            return (
-              <span
-                key={`${i}-${t}`}
-                className="sentinel-motion flex animate-[sentinelLine_240ms_ease-out] gap-2 font-mono text-[11px] leading-normal"
-                style={{ color: past ? "var(--dot-idle)" : "var(--log-text)" }}
-              >
-                <span aria-hidden>{past ? "✓" : "›"}</span>
-                {t}
-              </span>
-            );
-          })}
+          {(st.running!.log.length ? st.running!.log : ["Waking up"]).map(
+            (t, i, all) => {
+              const past = i < all.length - 1;
+              return (
+                <span
+                  key={`${i}-${t}`}
+                  className="sentinel-motion flex animate-[sentinelLine_240ms_ease-out] gap-2 font-mono text-[11px] leading-normal"
+                  style={{
+                    color: past ? "var(--dot-idle)" : "var(--log-text)",
+                  }}
+                >
+                  <span aria-hidden>{past ? "✓" : "›"}</span>
+                  {t}
+                </span>
+              );
+            },
+          )}
         </div>
       )}
 
@@ -643,10 +811,17 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
         <div className="flex flex-col gap-[18px]">
           <div className="bg-panel flex flex-col gap-2 rounded-[10px] px-4 py-3.5">
             <Stars n={st.stars ?? 0} size={20} />
-            <p className="text-ink m-0 font-serif text-[17px] leading-[1.4] text-pretty">{st.summary}</p>
+            <p className="text-ink m-0 font-serif text-[17px] leading-[1.4] text-pretty">
+              {st.summary}
+            </p>
           </div>
           {SECTIONS.map((sec) => (
-            <Section key={sec.key} title={sec.title} ink={sec.ink} items={st.report![sec.key]} />
+            <Section
+              key={sec.key}
+              title={sec.title}
+              ink={sec.ink}
+              items={st.report![sec.key]}
+            />
           ))}
           {st.files.length > 0 && (
             <details className="text-muted text-[12px]">
@@ -666,7 +841,13 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
               type="button"
               onClick={() => void createEpic()}
               disabled={noGaps || running || sending || sent}
-              title={noGaps ? "A 5-star report leaves nothing to fix." : running ? "An audit is running." : undefined}
+              title={
+                noGaps
+                  ? "A 5-star report leaves nothing to fix."
+                  : running
+                    ? "An audit is running."
+                    : undefined
+              }
               className="bg-anthracite text-cream h-9 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97] disabled:opacity-50"
             >
               {sent ? "Epic created" : "Create epic from this report"}
@@ -705,28 +886,51 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
       )}
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-muted font-mono text-[9px] tracking-[0.12em]">PROMPT</span>
-        <p className="bg-panel text-muted m-0 rounded-lg px-3.5 py-3 font-mono text-[11px] leading-[1.6] text-pretty">{prompt}</p>
+        <span className="text-muted font-mono text-[9px] tracking-[0.12em]">
+          PROMPT
+        </span>
+        <p className="bg-panel text-muted m-0 rounded-lg px-3.5 py-3 font-mono text-[11px] leading-[1.6] text-pretty">
+          {prompt}
+        </p>
       </div>
     </aside>
   );
 }
 
-function Section({ title, ink, items }: { title: string; ink: string; items: AuditPoint[] }) {
+function Section({
+  title,
+  ink,
+  items,
+}: {
+  title: string;
+  ink: string;
+  items: AuditPoint[];
+}) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <span className="size-2 rounded-[2px]" style={{ background: ink }} />
-        <span className="text-ink text-[11px] font-bold tracking-[0.08em] uppercase">{title}</span>
+        <span className="text-ink text-[11px] font-bold tracking-[0.08em] uppercase">
+          {title}
+        </span>
         <span className="text-muted font-mono text-[10px]">{items.length}</span>
       </div>
       {items.length === 0 ? (
         <span className="text-muted pl-4 text-[13px]">Nothing flagged</span>
       ) : (
         items.map((it, i) => (
-          <div key={i} className="border-hairline flex flex-col gap-[3px] border-b pb-2 pl-4">
-            <span className="text-ink text-[13px] leading-[1.45] text-pretty">{it.text}</span>
-            {it.ref && <span className="text-terracotta-deep font-mono text-[10px] break-all">{it.ref}</span>}
+          <div
+            key={i}
+            className="border-hairline flex flex-col gap-[3px] border-b pb-2 pl-4"
+          >
+            <span className="text-ink text-[13px] leading-[1.45] text-pretty">
+              {it.text}
+            </span>
+            {it.ref && (
+              <span className="text-terracotta-deep font-mono text-[10px] break-all">
+                {it.ref}
+              </span>
+            )}
           </div>
         ))
       )}
@@ -762,8 +966,22 @@ export function GradeBadge({ compact = false }: { compact?: boolean }) {
         )}
         style={{ color: g.ink }}
       >
-        <span className={cn("font-mono tracking-[0.1em]", compact ? "text-[6px]" : "text-[7px]")}>AUDIT</span>
-        <span className={cn("font-serif leading-none font-semibold", compact ? "text-[14px]" : "text-[16px]")}>{g.grade}</span>
+        <span
+          className={cn(
+            "font-mono tracking-[0.1em]",
+            compact ? "text-[6px]" : "text-[7px]",
+          )}
+        >
+          AUDIT
+        </span>
+        <span
+          className={cn(
+            "font-serif leading-none font-semibold",
+            compact ? "text-[14px]" : "text-[16px]",
+          )}
+        >
+          {g.grade}
+        </span>
       </span>
       {busy && (
         <span className="bg-clay-lit absolute top-1 right-1 size-1.5 animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
@@ -771,4 +989,3 @@ export function GradeBadge({ compact = false }: { compact?: boolean }) {
     </button>
   );
 }
-
