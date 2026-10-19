@@ -9,6 +9,8 @@ import { tokenWindow } from "@/lib/token-window";
 import { authMode } from "@/lib/auth/session";
 import { sentinelsFor } from "@/lib/sentinels/service";
 import type { Account } from "@/components/board/account-menu";
+import { credentialsForProject } from "@/lib/auth/credentials";
+import { vcs } from "@/lib/vcs";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +37,7 @@ export default async function BoardPage() {
     },
     new Date(),
   );
-  const [cards, presets, columnAgents, columnOverrides, sentinels, agentUsage] = await Promise.all([
+  const [cards, presets, columnAgents, columnOverrides, sentinels, agentUsage, hasCi] = await Promise.all([
     repo.boardCards(project.id),
     repo.listPresets(ownerScope(user)),
     repo.columnAgents(project.id),
@@ -44,6 +46,11 @@ export default async function BoardPage() {
     // What each agent has used, in tokens: counted per agent since the
     // person's token window began, from the runs and answers that agent did (see docs/token-usage.md).
     repo.agentTokensByPreset(window.since),
+    // Whether review cards have checks to wait for. Unknown reads as yes,
+    // so the card says CI is running, as it did before it could tell.
+    credentialsForProject(project)
+      .then((creds) => vcs(project.repoFullName, creds.githubToken).hasCi(project.baseBranch))
+      .catch(() => true),
   ]);
   const provider = process.env.SANDBOX_PROVIDER ?? "local";
 
@@ -60,6 +67,8 @@ export default async function BoardPage() {
       initialExtras={demo ? FIXTURE_EXTRAS : {}}
       projectName={project.name}
       repoFullName={project.repoFullName}
+      noCi={!hasCi}
+      autoMerge={project.autoMerge}
       baseBranch={project.baseBranch}
       initialPresets={presets}
       initialColumnAgents={columnAgents}

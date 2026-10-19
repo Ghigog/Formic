@@ -7,8 +7,8 @@ import { renderInDnd } from "@/test/render";
 import { makeCard } from "@/test/cards";
 import type { BoardCard } from "@/lib/domain/entities";
 
-function renderReview(card: BoardCard) {
-  const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
+function renderReview(card: BoardCard, repo: { noCi?: boolean; autoMerge?: boolean } = {}) {
+  const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn(), ...repo };
   return renderInDnd(
     <CardEnvContext.Provider value={env}>
       <Column id="in_review" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
@@ -26,6 +26,22 @@ describe("a card in review", () => {
   it("shows no Ready to merge chip before the merge stage", () => {
     renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
     expect(screen.queryByText("Ready to merge")).toBeNull();
+  });
+
+  it("says CI is running while checks are expected", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
+    expect(screen.getByText("CI running")).toBeTruthy();
+  });
+
+  it("says there is no CI and that a person merges it, with auto-merge off", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }), { noCi: true, autoMerge: false });
+    expect(screen.queryByText("CI running")).toBeNull();
+    expect(screen.getByText("No CI · please merge manually")).toBeTruthy();
+  });
+
+  it("says there is no CI and that it is merging, with auto-merge on", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }), { noCi: true, autoMerge: true });
+    expect(screen.getByText("No CI · auto-merging…")).toBeTruthy();
   });
 
   it("shows why a merge failed", () => {

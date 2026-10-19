@@ -52,6 +52,8 @@ export function BoardShell({
   initialSentinels = {},
   initialOverrides = {},
   account,
+  noCi,
+  autoMerge,
 }: {
   initialCards: BoardCard[];
   /** Demo detail for the mock board: elapsed times, CI counts, commits. */
@@ -71,6 +73,10 @@ export function BoardShell({
   /** Each column agent's own limits. */
   initialOverrides?: ColumnOverrides;
   account?: Account;
+  /** The repository runs no CI, as of this render. */
+  noCi?: boolean;
+  /** Whether Formic merges an approved ticket itself. */
+  autoMerge?: boolean;
 }) {
   const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage, initialTokenWindow, initialOverrides);
   // Views that follow the event stream themselves, such as an open ticket.
@@ -178,6 +184,8 @@ export function BoardShell({
         onTransition={transition}
         onArchived={(id) => setArchivedIds((prev) => new Set(prev).add(id))}
         account={account}
+        noCi={noCi}
+        autoMerge={autoMerge}
         assistant={{
           ...assistant,
           open: assistantOpen,

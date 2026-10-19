@@ -97,6 +97,16 @@ function pending(checks: CheckSummary[]): CheckSummary[] {
 }
 
 /**
+ * Whether CI on this head has yet to report. No checks at all is CI that has
+ * not started, unless the repository runs none: a brand-new one has no
+ * workflow yet, and waiting on it would leave the card in review for good.
+ */
+async function ciPending(client: Client, checks: CheckSummary[], baseBranch: string): Promise<boolean> {
+  if (pending(checks).length > 0) return true;
+  return checks.length === 0 && (await client.hasCi(baseBranch));
+}
+
+/**
  * The entry point every CI signal funnels into. Idempotency is the caller's
  * (see ./deliveries.ts): by the time this runs, the event is known to be new.
  *
@@ -202,7 +212,7 @@ async function react(
   const checks = await client.checksFor(headSha);
   const red = failing(checks);
 
-  if (checks.length === 0 || pending(checks).length > 0) {
+  if (await ciPending(client, checks, pull.baseBranch)) {
     if (startReview) {
       await publish(projectId, {
         type: "ci.status",
@@ -228,7 +238,7 @@ async function react(
       type: "ci.status",
       ticketId: ticket.id,
       prNumber,
-      state: red.length === 0 ? "passing" : "failing",
+      state: checks.length === 0 ? "none" : red.length === 0 ? "passing" : "failing",
       checkName: red[0]?.name ?? null,
     });
   }
@@ -709,7 +719,7 @@ async function batchCandidates(
     if (!pull || pull.merged || pull.state !== "open" || pull.mergeable === false) continue;
     if (pull.baseBranch !== target || pull.headSha !== ticket.reviewedSha) continue;
     const checks = await client.checksFor(pull.headSha);
-    if (checks.length === 0 || pending(checks).length > 0 || failing(checks).length > 0) continue;
+    if (failing(checks).length > 0 || (await ciPending(client, checks, pull.baseBranch))) continue;
     if (await mustMergeAlone(ticket.id, pull.headSha)) continue;
     found.push({ ticketId: ticket.id, key: ticket.key, prNumber: pull.number, headSha: pull.headSha });
   }
@@ -790,7 +800,7 @@ async function driveBatch(projectId: string, client: Client, batch: MergeBatch):
   }
 
   const checks = await client.checksFor(batchPull.headSha);
-  if (checks.length === 0 || pending(checks).length > 0) return "waiting";
+  if (await ciPending(client, checks, batchPull.baseBranch)) return "waiting";
   const red = failing(checks);
   if (red.length > 0) {
     for (const m of left) await mergeAlone(m.ticketId, m.headSha);
@@ -891,7 +901,7 @@ export async function mergeByPerson(
   if (red.length > 0) {
     return `${red.map((c) => c.name).join(", ")} is failing on pull request #${prNumber}. Red CI does not merge.`;
   }
-  if (checks.length === 0 || pending(checks).length > 0) {
+  if (await ciPending(client, checks, pull.baseBranch)) {
     return `CI is still running on pull request #${prNumber}. Ask again once it passes.`;
   }
 
@@ -987,7 +997,7 @@ async function mergeTicket(
     // the card over: CI reporting in merges it, as above.
     if (!conflict && after) {
       const checks = await client.checksFor(after.headSha).catch(() => []);
-      if (checks.length === 0 || pending(checks).length > 0) {
+      if (await ciPending(client, checks, after.baseBranch)) {
         return { merged: false, reason: `CI is still running on ${ticket.key}; it merges once it passes.`, waiting: true };
       }
     }
@@ -1707,7 +1717,7 @@ export async function approve(
   const pull = await client.pullRequest(prNumber);
   if (pull.merged || pull.state === "closed" || pull.headSha !== headSha) return;
   const checks = await client.checksFor(headSha);
-  if (checks.length === 0 || pending(checks).length > 0) return;
+  if (await ciPending(client, checks, pull.baseBranch)) return;
   const red = failing(checks);
   if (red.length > 0) {
     // CI failed while it read the diff, and that report was not a reason to

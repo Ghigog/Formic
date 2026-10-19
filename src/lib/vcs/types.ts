@@ -184,6 +184,13 @@ export interface VcsClient {
   openPullRequest(input: OpenPullRequestInput): Promise<PullRequestRef>;
   pullRequest(number: number): Promise<PullRequestDetail>;
   checksFor(sha: string): Promise<CheckSummary[]>;
+  /**
+   * Whether anything in the repository reports checks on a pull request into
+   * `baseBranch`: a workflow besides Formic's own runner, or a check the
+   * branch requires. A brand-new repository has neither, and a head with no
+   * checks there is done with CI rather than waiting for it.
+   */
+  hasCi(baseBranch: string): Promise<boolean>;
   checkLog(checkRunId: number): Promise<CheckLog>;
   /**
    * Points an open pull request at another base: a stacked one at the merge

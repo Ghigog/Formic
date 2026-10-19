@@ -179,7 +179,8 @@ export type FormicEvent =
       type: "ci.status";
       ticketId: string;
       prNumber: number;
-      state: "pending" | "passing" | "failing";
+      /** "none": the repository runs no CI, so there is nothing to wait for. */
+      state: "pending" | "passing" | "failing" | "none";
       checkName: string | null;
     }
   | {

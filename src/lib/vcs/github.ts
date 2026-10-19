@@ -30,7 +30,7 @@ import {
 import { Readable } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { untar, unzip, type Keep } from "./archive";
-import { CARRY_DELETED, CARRY_DIR } from "@/lib/runner/workflow";
+import { CARRY_DELETED, CARRY_DIR, RUNNER_WORKFLOW_PATH } from "@/lib/runner/workflow";
 
 /**
  * GitHub REST over fetch.
@@ -205,6 +205,29 @@ export class GitHubClient implements VcsClient {
       conclusion: run.conclusion as CheckSummary["conclusion"],
       detailsUrl: run.details_url,
     }));
+  }
+
+  async hasCi(baseBranch: string): Promise<boolean> {
+    const [workflows, required] = await Promise.all([
+      this.request<{ workflows: Array<{ path: string; state: string }> }>(
+        "GET",
+        "/actions/workflows?per_page=100",
+      ).then(
+        ({ data }) => data.workflows,
+        // Unreadable workflows could be CI: wait for checks, as before.
+        () => null,
+      ),
+      this.request<{ protection?: { required_status_checks?: { contexts?: string[] } } }>(
+        "GET",
+        `/branches/${encodeURIComponent(baseBranch)}`,
+      ).then(
+        ({ data }) => data.protection?.required_status_checks?.contexts ?? [],
+        // A base GitHub cannot show requires nothing Formic can wait on.
+        () => [],
+      ),
+    ]);
+    if (!workflows || required.length > 0) return true;
+    return workflows.some((w) => w.state === "active" && w.path !== RUNNER_WORKFLOW_PATH);
   }
 
   async checkLog(checkRunId: number): Promise<CheckLog> {
