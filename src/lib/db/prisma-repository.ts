@@ -1716,6 +1716,10 @@ export class PrismaRepository implements Repository {
     await prisma().audit.update({ where: { id }, data: { runnerJob: job, runnerAgent: agent } });
   }
 
+  async markAuditEpic(auditId: string, epicId: string): Promise<void> {
+    await prisma().audit.update({ where: { id: auditId }, data: { epicId } });
+  }
+
   async finishAudit(id: string, result: AuditResult): Promise<void> {
     const db = prisma();
     const row = await db.audit.update({
@@ -2017,6 +2021,7 @@ function toAuditRecord(row: {
   files: string[];
   runnerJob: string | null;
   runnerAgent: string | null;
+  epicId: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }): AuditRecord {

@@ -181,6 +181,8 @@ export interface AuditRecord {
   /** The GitHub Actions job a CLI agent audits in, while it runs. */
   runnerJob: string | null;
   runnerAgent: string | null;
+  /** The Backlog Epic made from this report, if any. */
+  epicId: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }
@@ -844,6 +846,8 @@ export interface Repository {
    * keeps the last report, so a bad run never costs the project its stars.
    */
   finishAudit(id: string, result: AuditResult): Promise<void>;
+  /** Records the Epic made from an audit's report. */
+  markAuditEpic(auditId: string, epicId: string): Promise<void>;
 
   /**
    * Records a webhook delivery, returning false when it has been seen before.

@@ -631,6 +631,8 @@ model Audit {
   runnerJob   String?
   /// The saved agent running it, so a usage limit it hits is recorded on it.
   runnerAgent String?
+  /// The Backlog Epic made from this report, if any.
+  epicId     String?
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
 
