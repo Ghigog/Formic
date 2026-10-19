@@ -18,7 +18,8 @@ import type {
 import type { ScoutCandidate, ScoutVerdict } from "@/lib/agents/judge";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
 import { MockArchitectAgent, MockProductAgent, MockShowcaseAgent } from "@/lib/agents/mock";
-import { autoScout, sendScouts, swapScout } from "./scouts";
+import { autoScout, sendScouts, swapScout, SCOUT_APPROACHES } from "./scouts";
+import { runCoderAgent } from "./pipeline";
 import { scoreOf } from "@/lib/colony/game";
 import { AUTO_SCOUT_LEVEL } from "@/lib/colony/reserve";
 import { ticketNotes } from "./notes";
@@ -116,6 +117,22 @@ async function ticket() {
   return made!;
 }
 
+/** Several scouts at once are what the judge compares: set them out as a ticket's start would. */
+async function sendTwo(id: string) {
+  const repo = repository();
+  await repo.createScouts(id, [
+    { brief: SCOUT_APPROACHES[0], presetId: null },
+    { brief: SCOUT_APPROACHES[1], presetId: null },
+  ]);
+  await repo.updateTicket(id, { scouts: 2, status: "running" });
+  void runCoderAgent(PROJECT, id);
+}
+
+/** A ticket whose attempt failed in In Progress. */
+async function stopped(id: string) {
+  await repository().updateTicket(id, { status: "failed", stalledIn: "in_progress" });
+}
+
 beforeEach(() => {
   globalThis.__formicMemoryStore = undefined;
   MockVcsClient.reset();
@@ -138,7 +155,7 @@ describe("scouts", () => {
     useAgents(coder, reviewer);
     const t = await ticket();
 
-    expect(await sendScouts(PROJECT, t.id, { count: 2 })).toEqual({ ok: true });
+    await sendTwo(t.id);
     await until(async () => (await repo.ticketDetail(t.id))!.status === "review", "the pick to open its pull request");
 
     // Each scout was told its own approach, after the ticket's own notes.
@@ -165,7 +182,7 @@ describe("scouts", () => {
     const repo = repository();
     useAgents(new FollowsItsApproach(), new Picks((c) => c[0]!.label));
     const t = await ticket();
-    await sendScouts(PROJECT, t.id, { count: 2 });
+    await sendTwo(t.id);
     await until(async () => (await repo.ticketDetail(t.id))!.status === "review", "the pick");
     const before = (await repo.ticketDetail(t.id))!;
     const other = (await repo.scoutsOf(t.id)).find((s) => s.id !== before.scoutPick)!;
@@ -182,7 +199,7 @@ describe("scouts", () => {
     const reviewer = new Picks(() => "S9");
     useAgents(new FollowsItsApproach((a) => /smallest/.test(a)), reviewer);
     const t = await ticket();
-    await sendScouts(PROJECT, t.id, { count: 2 });
+    await sendTwo(t.id);
     await until(async () => (await repo.ticketDetail(t.id))!.status === "review", "the pick");
     expect(reviewer.seen).toEqual([]);
     expect((await repo.ticketDetail(t.id))!.scoutWhy).toMatch(/only scout that came back/);
@@ -192,7 +209,7 @@ describe("scouts", () => {
     const repo = repository();
     useAgents(new FollowsItsApproach(() => true), new Picks((c) => c[0]!.label));
     const t = await ticket();
-    await sendScouts(PROJECT, t.id, { count: 2 });
+    await sendTwo(t.id);
     await until(async () => (await repo.ticketDetail(t.id))!.status === "failed", "the ticket to stop");
 
     const parent = (await repo.ticketDetail(t.id))!;
@@ -202,20 +219,62 @@ describe("scouts", () => {
     expect((await ticketNotes(PROJECT, t.id)).at(-1)?.text).toMatch(/Every scout came back/);
   });
 
-  it("refuses more scouts than the level allows, and a ticket already started", async () => {
+  it("sends exactly one scout from In Progress, on the column's agent when no scout agent is set", async () => {
     const repo = repository();
-    useAgents(new FollowsItsApproach(), new Picks((c) => c[0]!.label));
+    const coder = new FollowsItsApproach();
+    useAgents(coder, new Picks((c) => c[0]!.label));
     const t = await ticket();
-    expect(await sendScouts(PROJECT, t.id, { count: 3 })).toEqual({ ok: false, reason: "Send 2 to 2 scouts at this level." });
-    await repo.updateTicket(t.id, { status: "running" });
-    expect((await sendScouts(PROJECT, t.id, { count: 2 })).ok).toBe(false);
+    await stopped(t.id);
+
+    expect(await sendScouts(PROJECT, t.id)).toEqual({ ok: true });
+    await until(async () => !!(await repo.ticketDetail(t.id))!.prNumber, "the scout's pull request");
+    const scouts = await repo.scoutsOf(t.id);
+    expect(scouts).toHaveLength(1);
+    expect(scouts[0]!.scoutPresetId).toBeNull();
+    expect(coder.briefs).toHaveLength(1);
   });
 
-  it("auto-scouts a spike from idle reserve once the level unlocks it", async () => {
+  it("runs the scout on the scout agent the board sets", async () => {
     const repo = repository();
     useAgents(new FollowsItsApproach(), new Picks((c) => c[0]!.label));
     const t = await ticket();
-    await repo.updateTicket(t.id, { workType: "spike" });
+    await stopped(t.id);
+    const preset = await repo.savePreset({
+      ownerId: null,
+      provider: "anthropic",
+      name: "Scout",
+      model: "claude-opus-5",
+      prompt: "p",
+      apiKeyCipher: null,
+      apiKeyHint: null,
+    });
+    await repo.setScoutAgent(PROJECT, preset.id);
+
+    await sendScouts(PROJECT, t.id);
+    expect((await repo.scoutsOf(t.id))[0]!.scoutPresetId).toBe(preset.id);
+    expect((await repo.columnAgents(PROJECT)).in_progress ?? null).toBeNull();
+  });
+
+  it("refuses a ticket in To Do, Review or Done, or with a scout already out", async () => {
+    const repo = repository();
+    useAgents(new FollowsItsApproach(), new Picks((c) => c[0]!.label));
+    const t = await ticket();
+    const reason = "A scout goes out on a ticket in In Progress.";
+    expect(await sendScouts(PROJECT, t.id)).toEqual({ ok: false, reason });
+    await repo.updateTicket(t.id, { status: "review" });
+    expect(await sendScouts(PROJECT, t.id)).toEqual({ ok: false, reason });
+    await repo.updateTicket(t.id, { status: "merged" });
+    expect(await sendScouts(PROJECT, t.id)).toEqual({ ok: false, reason });
+    await stopped(t.id);
+    await repo.createScouts(t.id, [{ brief: SCOUT_APPROACHES[0], presetId: null }]);
+    expect((await sendScouts(PROJECT, t.id)).ok).toBe(false);
+  });
+
+  it("auto-scouts a failed ticket from idle reserve once the level unlocks it", async () => {
+    const repo = repository();
+    useAgents(new FollowsItsApproach(), new Picks((c) => c[0]!.label));
+    const t = await ticket();
+    await stopped(t.id);
     await repo.setColony(PROJECT, { colonySize: 6, colonyReserve: 0, autoScout: true });
 
     // Below the level, nothing goes out on its own.
@@ -234,6 +293,6 @@ describe("scouts", () => {
 
     await autoScout(PROJECT);
     await until(async () => !!(await repo.ticketDetail(t.id))!.scoutPick && !!(await repo.ticketDetail(t.id))!.prNumber, "the auto-scouts' pick");
-    expect(await repo.scoutsOf(t.id)).toHaveLength(2);
+    expect(await repo.scoutsOf(t.id)).toHaveLength(1);
   });
 });

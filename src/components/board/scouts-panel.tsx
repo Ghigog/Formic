@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { AgentPreset, BoardCard } from "@/lib/domain/entities";
+import type { BoardCard } from "@/lib/domain/entities";
 import { columnFor } from "@/lib/domain/status";
 
 interface ScoutView {
@@ -17,29 +17,22 @@ interface ScoutView {
 interface ScoutsAnswer {
   why: string | null;
   scouts: ScoutView[];
-  max?: number;
-  min?: number;
   error?: string;
 }
-
-const APPROACHES = ["smallest", "most robust", "cleanest", "different route"];
 
 const STATUS_TEXT: Record<ScoutView["status"], string> = { out: "Out", back: "Back", empty: "Came back empty" };
 
 /**
- * A ticket's scouts in its drawer: sent from To Do, watched while they are
+ * A ticket's scouts in its drawer: sent from In Progress, watched while they are
  * out, and the pick swappable until the ticket merges (src/lib/coder/scouts.ts).
  */
 export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: () => void }) {
   const [answer, setAnswer] = useState<ScoutsAnswer | null>(null);
-  const [count, setCount] = useState(2);
-  const [presets, setPresets] = useState<AgentPreset[]>([]);
-  const [agents, setAgents] = useState<Array<string | null>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const canSend =
-    card.kind === "ticket" && card.status === "ready" && !card.prNumber && columnFor(card.status, card.stalledIn) === "todo";
+    card.kind === "ticket" && !card.prNumber && columnFor(card.status, card.stalledIn) === "in_progress";
   const hasScouts = (card.scouts ?? 0) > 0 || !!card.scoutPick;
 
   const load = useCallback(
@@ -58,16 +51,6 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
   useEffect(() => {
     if (shown) void load();
   }, [load, shown, card.status, card.scoutPick, card.updatedAt]);
-
-  useEffect(() => {
-    if (!canSend) return;
-    fetch("/api/agents", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body: { presets?: AgentPreset[] } | null) =>
-        setPresets((body?.presets ?? []).filter((p) => p.column === null || p.column === "in_progress")),
-      )
-      .catch(() => {});
-  }, [canSend]);
 
   const post = async (body: object) => {
     setBusy(true);
@@ -90,73 +73,24 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
   };
 
   if (!canSend && !hasScouts) return null;
-  const max = answer?.max ?? 2;
-  const min = answer?.min ?? 2;
   const scouts = answer?.scouts ?? [];
   const swappable = card.status === "review" && !!card.scoutPick;
 
   return (
     <div data-scouts className="bg-sunken mt-3 flex flex-col gap-2 rounded-md px-3 py-2 text-[12px]">
       {canSend && !hasScouts ? (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-ink font-semibold">Send scouts</span>
-            <span className="text-fg-muted">Each tries its own approach at once; the Reviewer keeps the best.</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-fg-muted inline-flex items-center gap-1.5">
-              Scouts
-              <select
-                aria-label="How many scouts"
-                value={count}
-                onChange={(e) => setCount(Number(e.target.value))}
-                className="border-line bg-card rounded border px-1.5 py-0.5"
-              >
-                {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {presets.length > 0 &&
-              Array.from({ length: count }, (_, i) => (
-                <label key={i} className="text-fg-muted inline-flex items-center gap-1">
-                  S{i + 1} · {APPROACHES[i]}
-                  <select
-                    aria-label={`Agent for scout ${i + 1}`}
-                    value={agents[i] ?? ""}
-                    onChange={(e) =>
-                      setAgents((a) => {
-                        const next = [...a];
-                        next[i] = e.target.value || null;
-                        return next;
-                      })
-                    }
-                    className="border-line bg-card max-w-[140px] rounded border px-1 py-0.5"
-                  >
-                    <option value="">Column&apos;s agent</option>
-                    {presets.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                void post({ action: "send", ticketId: card.id, count, presets: Array.from({ length: count }, (_, i) => agents[i] ?? null) })
-              }
-              className="bg-amber text-on-amber rounded px-2.5 py-1 font-medium disabled:opacity-50"
-            >
-              Send {count} scouts
-            </button>
-          </div>
-          {max <= 2 && <span className="text-fg-muted text-[11px]">Lv 4 lets a ticket send 3 scouts.</span>}
-        </>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-ink font-semibold">Send a scout</span>
+          <span className="text-fg-muted">A second attempt, on the board&apos;s scout agent.</span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void post({ action: "send", ticketId: card.id })}
+            className="bg-amber text-on-amber rounded px-2.5 py-1 font-medium disabled:opacity-50"
+          >
+            Send a scout
+          </button>
+        </div>
       ) : (
         <>
           <span className="text-ink font-semibold">Scouts</span>

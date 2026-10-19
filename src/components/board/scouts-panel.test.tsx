@@ -25,15 +25,14 @@ function serve(answer: object) {
 }
 
 describe("the scouts panel", () => {
-  it("sends scouts on a ticket in To Do", async () => {
-    const posts = serve({ why: null, scouts: [], max: 3, min: 2 });
-    const card = makeCard({ status: "ready", stalledIn: null });
+  it("sends one scout on a ticket in In Progress", async () => {
+    const posts = serve({ why: null, scouts: [] });
+    const card = makeCard({ status: "running", stalledIn: null });
     const changed = vi.fn();
     render(<ScoutsPanel card={card} onChanged={changed} />);
 
-    fireEvent.change(await screen.findByLabelText("How many scouts"), { target: { value: "3" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send 3 scouts" }));
-    await waitFor(() => expect(posts).toEqual([{ action: "send", ticketId: card.id, count: 3, presets: [null, null, null] }]));
+    fireEvent.click(await screen.findByRole("button", { name: "Send a scout" }));
+    await waitFor(() => expect(posts).toEqual([{ action: "send", ticketId: card.id }]));
     expect(changed).toHaveBeenCalled();
   });
 
@@ -54,9 +53,9 @@ describe("the scouts panel", () => {
     await waitFor(() => expect(posts).toEqual([{ action: "swap", ticketId: card.id, scoutId: "s2" }]));
   });
 
-  it("shows nothing on a ticket already started without scouts", () => {
+  it("shows nothing on a ticket in To Do without scouts", () => {
     serve({ why: null, scouts: [] });
-    const { container } = render(<ScoutsPanel card={makeCard({ status: "running" })} onChanged={() => {}} />);
+    const { container } = render(<ScoutsPanel card={makeCard({ status: "ready", stalledIn: null })} onChanged={() => {}} />);
     expect(container.innerHTML).toBe("");
   });
 });
