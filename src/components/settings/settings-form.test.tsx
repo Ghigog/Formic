@@ -3,6 +3,9 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsForm } from "./settings-form";
 
+// It fetches the colony on mount; colony-section.test.tsx covers it.
+vi.mock("@/components/settings/colony-section", () => ({ ColonySection: () => null }));
+
 const account = { login: "octo", name: "Octo Cat", avatarUrl: null, signedIn: true };
 
 afterEach(() => {

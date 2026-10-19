@@ -145,7 +145,7 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
           Queens <span data-queen-count>{count}</span>
         </span>
         <span className="text-muted text-[11px]">Unlock a queen with each level</span>
-        <span className="text-muted text-[11px]">Drag a Queen onto a ticket or Epic to finish it without its prerequisites.</span>
+        <span className="text-muted text-[11px]">Drop a Queen on a ticket and the ants work through every ticket it needs, until that ticket is done.</span>
         {error && (
           <span role="alert" className="text-log-error text-[11px]">
             {error}
