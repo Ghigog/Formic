@@ -176,6 +176,9 @@ model Project {
   /// Whether idle reserve slots send scouts out on their own. Unlocked by
   /// level; off until the owner turns it on.
   autoScout                  Boolean  @default(false)
+  /// The saved agent scouts run on. Null (the default) is the In Progress
+  /// column's agent. Not a relation: a deleted template falls back to it.
+  scoutPresetId              String?
 
   epics             Epic[]
   queens            Queen[]
