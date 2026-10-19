@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  keyboardStyles,
+  useKeyboardInset,
+} from "@/lib/hooks/use-keyboard-inset";
 import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
@@ -10,7 +14,11 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { BUG_COST } from "@/lib/colony/game";
 import type { FormicEvent } from "@/lib/domain/events";
-import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type WorkType } from "@/lib/domain/entities";
+import {
+  AGENT_ROLE_LABELS,
+  COLUMN_AGENT_ROLE,
+  type WorkType,
+} from "@/lib/domain/entities";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
@@ -93,14 +101,18 @@ export function TicketDrawer({
         return;
       }
       if (
-        ((event.type === "card.status" || event.type === "card.created") && event.cardId === ticketId) ||
+        ((event.type === "card.status" || event.type === "card.created") &&
+          event.cardId === ticketId) ||
         (event.type === "ci.status" && event.ticketId === ticketId)
       ) {
         void load();
         return;
       }
       const item = activityOf(event, ticketId, seq, new Date().toISOString());
-      if (item) setView((v) => (v ? { ...v, activity: appendActivity(v.activity, item) } : v));
+      if (item)
+        setView((v) =>
+          v ? { ...v, activity: appendActivity(v.activity, item) } : v,
+        );
     });
   }, [ticketId, subscribe, load]);
 
@@ -127,11 +139,15 @@ export function TicketDrawer({
     [ticketId, load, onChanged],
   );
 
+  const kb = keyboardStyles(useKeyboardInset());
+
   if (!ticketId) return null;
 
   const card = view?.card;
   const notice = card && !card.misplacedReason ? classifyNotice(card) : null;
-  const progress = card ? ticketProgress(card) : { current: 3, working: false, failedAt: null };
+  const progress = card
+    ? ticketProgress(card)
+    : { current: 3, working: false, failedAt: null };
 
   return (
     <div
@@ -139,10 +155,12 @@ export function TicketDrawer({
       aria-modal
       aria-label="Ticket detail"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      style={kb.backdrop}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        style={kb.panel}
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
@@ -155,7 +173,9 @@ export function TicketDrawer({
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span className="text-fg-subtle font-mono text-[10px]">{card?.key ?? "TICKET"}</span>
+                <span className="text-fg-subtle font-mono text-[10px]">
+                  {card?.key ?? "TICKET"}
+                </span>
                 {view?.epic && (
                   <button
                     type="button"
@@ -171,13 +191,19 @@ export function TicketDrawer({
               </h2>
               {card && columnFor(card.status, card.stalledIn) === "todo" && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <div role="group" aria-label="Work type" className="flex gap-2">
+                  <div
+                    role="group"
+                    aria-label="Work type"
+                    className="flex gap-2"
+                  >
                     {(["bug", "spike"] as const).map((type) => (
                       <button
                         key={type}
                         type="button"
                         aria-pressed={card.workType === type}
-                        onClick={() => void setWorkType(card.workType === type ? null : type)}
+                        onClick={() =>
+                          void setWorkType(card.workType === type ? null : type)
+                        }
                         className="border-line bg-card text-ink aria-pressed:border-terracotta aria-pressed:bg-cream h-[28px] rounded-lg border px-2.5 text-[12px] font-medium capitalize"
                       >
                         {type}
@@ -196,11 +222,18 @@ export function TicketDrawer({
                   <StatusPill status={card.status} />
                   {card.workingSince && (
                     <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
-                      Working for <WorkTimer since={card.workingSince} className="text-ochre-text" />
+                      Working for{" "}
+                      <WorkTimer
+                        since={card.workingSince}
+                        className="text-ochre-text"
+                      />
                     </span>
                   )}
                   {card.storyPoints != null && (
-                    <CoinBadge title={`${card.storyPoints} story points`} className="tabular-nums">
+                    <CoinBadge
+                      title={`${card.storyPoints} story points`}
+                      className="tabular-nums"
+                    >
                       {card.storyPoints} pt
                     </CoinBadge>
                   )}
@@ -218,7 +251,9 @@ export function TicketDrawer({
               )}
             </div>
             {view && <TicketUsage usage={view.usage} />}
-            {view?.canStop && <StopButton ticketId={ticketId} onStopped={load} />}
+            {view?.canStop && (
+              <StopButton ticketId={ticketId} onStopped={load} />
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -240,11 +275,13 @@ export function TicketDrawer({
 
           {/* A reason it waits that is not a problem, such as a dependency. A
               reason that names a pull request is clickable. */}
-          {card?.blockedReason && !card.misplacedReason && !isStalled(card.status) && (
-            <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
-              <LinkifiedText text={card.blockedReason} />
-            </p>
-          )}
+          {card?.blockedReason &&
+            !card.misplacedReason &&
+            !isStalled(card.status) && (
+              <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
+                <LinkifiedText text={card.blockedReason} />
+              </p>
+            )}
 
           {card && (
             <QueenPanel
@@ -316,12 +353,20 @@ export function TicketDrawer({
                       kind="ticket"
                       inputOnly
                       cardId={ticketId}
-                      agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(view.card.status, view.card.stalledIn)]]}
+                      agentLabel={
+                        AGENT_ROLE_LABELS[
+                          COLUMN_AGENT_ROLE[
+                            columnFor(view.card.status, view.card.stalledIn)
+                          ]
+                        ]
+                      }
                     />
                   )
                 }
               >
-                <div className="p-4">{view && <AgentBody view={view} working={progress.working} />}</div>
+                <div className="p-4">
+                  {view && <AgentBody view={view} working={progress.working} />}
+                </div>
               </WithChat>
             </section>
           }
@@ -333,7 +378,13 @@ export function TicketDrawer({
 
 /** The ticket as it was written. */
 /** A warning (red) or alert (yellow) in full: title, the short line, then the long text. */
-function NoticeBanner({ notice, className }: { notice: Notice; className?: string }) {
+function NoticeBanner({
+  notice,
+  className,
+}: {
+  notice: Notice;
+  className?: string;
+}) {
   const warning = notice.severity === "warning";
   return (
     <div
@@ -347,12 +398,19 @@ function NoticeBanner({ notice, className }: { notice: Notice; className?: strin
     >
       <div className="flex items-center gap-2">
         <NoticeIcon severity={notice.severity} />
-        <span className={cn("text-[10px] font-bold uppercase", warning ? "text-crimson" : "text-clay")}>
+        <span
+          className={cn(
+            "text-[10px] font-bold uppercase",
+            warning ? "text-crimson" : "text-clay",
+          )}
+        >
           {warning ? "Warning" : "Alert"}
         </span>
         <span className="font-semibold">{notice.title}</span>
       </div>
-      {notice.shortDescription && <p className="mt-1">{notice.shortDescription}</p>}
+      {notice.shortDescription && (
+        <p className="mt-1">{notice.shortDescription}</p>
+      )}
       {notice.longDescription && (
         <pre className="bg-sunken mt-1.5 max-h-40 overflow-auto rounded px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">
           <LinkifiedText text={notice.longDescription} />
@@ -362,7 +420,13 @@ function NoticeBanner({ notice, className }: { notice: Notice; className?: strin
   );
 }
 
-function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (ticketId: string) => void }) {
+function TicketBody({
+  view,
+  onOpenTicket,
+}: {
+  view: TicketView;
+  onOpenTicket: (ticketId: string) => void;
+}) {
   return (
     <div className="text-fg space-y-4 text-[13px] leading-6">
       <MarkdownLite text={view.description} />
@@ -372,7 +436,10 @@ function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (t
           <Heading>Acceptance criteria</Heading>
           <ul className="mt-1 space-y-1.5">
             {view.acceptanceCriteria.map((c, i) => (
-              <li key={i} className="border-line bg-surface rounded-md border px-2 py-1.5">
+              <li
+                key={i}
+                className="border-line bg-surface rounded-md border px-2 py-1.5"
+              >
                 <Gherkin text={c} />
               </li>
             ))}
@@ -384,8 +451,9 @@ function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (t
         <div>
           <Heading>For you</Heading>
           <p className="text-fg-muted mt-1 text-[12px]">
-            Steps outside the repository no agent can take. The Epic&apos;s showcase, if you generate it, lists them again once
-            everything has merged.
+            Steps outside the repository no agent can take. The Epic&apos;s
+            showcase, if you generate it, lists them again once everything has
+            merged.
           </p>
           <ul className="mt-1 list-disc space-y-1 pl-5">
             {view.handoff.map((s, i) => (
@@ -417,9 +485,13 @@ function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (t
                   onClick={() => onOpenTicket(d.id)}
                   className="hover:text-terracotta focus-visible:text-terracotta flex w-full items-center gap-2 text-left text-[12px] underline-offset-2 hover:underline focus-visible:underline"
                 >
-                  <span className="text-fg-subtle font-mono text-[10px]">{d.key}</span>
+                  <span className="text-fg-subtle font-mono text-[10px]">
+                    {d.key}
+                  </span>
                   <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                  <StatusPill status={d.status as TicketView["card"]["status"]} />
+                  <StatusPill
+                    status={d.status as TicketView["card"]["status"]}
+                  />
                 </button>
               </li>
             ))}
@@ -492,7 +564,13 @@ function AgentBody({ view, working }: { view: TicketView; working: boolean }) {
 }
 
 /** Stops the agent working the ticket, wherever it runs. */
-function StopButton({ ticketId, onStopped }: { ticketId: string; onStopped: () => void }) {
+function StopButton({
+  ticketId,
+  onStopped,
+}: {
+  ticketId: string;
+  onStopped: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   return (
     <button
@@ -500,7 +578,9 @@ function StopButton({ ticketId, onStopped }: { ticketId: string; onStopped: () =
       disabled={busy}
       onClick={async () => {
         setBusy(true);
-        await fetch(`/api/tickets/${ticketId}/stop`, { method: "POST" }).catch(() => undefined);
+        await fetch(`/api/tickets/${ticketId}/stop`, { method: "POST" }).catch(
+          () => undefined,
+        );
         setBusy(false);
         onStopped();
       }}
@@ -521,7 +601,11 @@ function ActivityLine({ item }: { item: TicketActivity }) {
     );
   }
   if (item.kind === "reply" && !item.agent) {
-    return <li className="text-fg-muted px-2 text-[11px] leading-5 italic">{item.text}</li>;
+    return (
+      <li className="text-fg-muted px-2 text-[11px] leading-5 italic">
+        {item.text}
+      </li>
+    );
   }
   if (item.kind === "reply") {
     return (
@@ -543,7 +627,9 @@ function ActivityLine({ item }: { item: TicketActivity }) {
     <li
       className={cn(
         "rounded-md px-2 py-1.5 text-[12px] leading-5 whitespace-pre-wrap",
-        item.kind === "thinking" ? "text-fg-muted border-line border italic" : "bg-surface text-fg",
+        item.kind === "thinking"
+          ? "text-fg-muted border-line border italic"
+          : "bg-surface text-fg",
       )}
     >
       {item.kind === "thinking" && <span className="sr-only">Thinking: </span>}
@@ -554,6 +640,8 @@ function ActivityLine({ item }: { item: TicketActivity }) {
 
 function Heading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-fg-subtle font-mono text-[10px] tracking-wide uppercase">{children}</h3>
+    <h3 className="text-fg-subtle font-mono text-[10px] tracking-wide uppercase">
+      {children}
+    </h3>
   );
 }
