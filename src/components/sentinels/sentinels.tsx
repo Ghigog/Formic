@@ -461,6 +461,8 @@ function Card({
       onPointerEnter={() => onReact(x.id)}
       onFocus={() => onReact(x.id)}
       onKeyDown={(e) => {
+        // Keys pressed on the Summon button belong to the button, not the card.
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onActivate();

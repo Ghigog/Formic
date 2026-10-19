@@ -261,4 +261,15 @@ describe("SentinelsPage carousel and report modal", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     vi.unstubAllGlobals();
   });
+
+  it("Enter on the Re-run button re-runs and does not open the modal", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    await open();
+    within(card(0)).getByRole("button", { name: "Re-run" }).focus();
+    await userEvent.keyboard("{Enter}");
+    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${SENTINELS[0]!.id}`, { method: "POST" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    vi.unstubAllGlobals();
+  });
 });
