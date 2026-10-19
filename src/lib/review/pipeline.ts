@@ -238,7 +238,7 @@ async function react(
       type: "ci.status",
       ticketId: ticket.id,
       prNumber,
-      state: red.length === 0 ? "passing" : "failing",
+      state: checks.length === 0 ? "none" : red.length === 0 ? "passing" : "failing",
       checkName: red[0]?.name ?? null,
     });
   }

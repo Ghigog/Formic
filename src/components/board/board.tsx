@@ -65,6 +65,10 @@ export interface BoardProps {
   onArchivedWanted?: (wanted: boolean) => void;
   /** Who is signed in, for the header's account menu. */
   account?: Account;
+  /** The repository runs no CI. */
+  noCi?: boolean;
+  /** Whether Formic merges an approved ticket itself. */
+  autoMerge?: boolean;
   /** The board's assistant, in the header. */
   assistant?: AssistantControls;
   /** Per-column agent choice. Omitted, columns show no agent selector. */
@@ -90,6 +94,8 @@ export function Board({
   agents,
   account,
   assistant,
+  noCi = false,
+  autoMerge = false,
 }: BoardProps) {
   /** The ticket last dropped on the archive zone, which does the archiving. */
   const [dropped, setDropped] = useState<{ ticketId: string } | null>(null);
@@ -459,8 +465,10 @@ export function Board({
           : null,
       onAdvance: (card, to) => void commit(card, to, Number.MAX_SAFE_INTEGER),
       queuedBehind: (card) => runningConflict(card, live),
+      noCi,
+      autoMerge,
     }),
-    [epicsById, accepts, commit, live, isMobile],
+    [epicsById, accepts, commit, live, isMobile, noCi, autoMerge],
   );
 
   return (

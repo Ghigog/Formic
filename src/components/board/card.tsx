@@ -29,7 +29,7 @@ import { LinkifiedText } from "./linkified-text";
  * them from fixtures.
  */
 export interface CardExtras {
-  ci?: "pending" | "passing" | "failing";
+  ci?: "pending" | "passing" | "failing" | "none";
   progress?: { label: string; fraction: number | null };
   /** One-line summary under a backlog epic's title. */
   summary?: string;
@@ -83,6 +83,10 @@ export interface CardEnv {
   onAdvance: (card: BoardCard, to: ColumnId) => void;
   /** The running ticket a queued one is waiting on, or null when none is. */
   queuedBehind?: (card: BoardCard) => BoardCard | null;
+  /** The repository runs no CI, so a review card has no checks to wait for. */
+  noCi?: boolean;
+  /** Whether Formic merges an approved ticket itself. */
+  autoMerge?: boolean;
 }
 
 const NO_EPICS: ReadonlyMap<string, BoardCard> = new Map();
@@ -674,8 +678,11 @@ function ReviewCard({
   extras: CardExtras;
   agentLabel: string | null;
 }) {
+  const env = useContext(CardEnvContext);
   const failed = extras.checks?.failed ?? 0;
   const passed = extras.checks?.passed ?? 0;
+  // A check reported on this head outranks what the board knew at load.
+  const noCi = extras.ci === "none" || (!extras.ci && failed === 0 && passed === 0 && env?.noCi === true);
   const green = extras.ci === "passing" || (failed === 0 && passed > 0);
   // Approved, green and at the merge stage: nothing but the merge is left, and
   // it is not this card's move — with auto-merge off it waits for a person to
@@ -699,6 +706,10 @@ function ReviewCard({
         {failed > 0 || extras.ci === "failing" ? (
           <StatusChip tone="crimson">
             {failed > 0 ? `${failed} check${failed === 1 ? "" : "s"} failed` : "Checks failed"}
+          </StatusChip>
+        ) : noCi ? (
+          <StatusChip tone="jade">
+            {env?.autoMerge ? "No CI · auto-merging…" : "No CI · please merge manually"}
           </StatusChip>
         ) : green ? (
           <StatusChip tone="jade">

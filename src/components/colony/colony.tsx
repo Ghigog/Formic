@@ -113,7 +113,7 @@ export function crewPhase(card: BoardCard, extras: ExtrasMap, handingOver = fals
   if (card.status === "review") {
     const ci = extras[card.id]?.ci;
     if (on || ci === "pending") return "tunnel";
-    return ci === "passing" ? "buried" : null;
+    return ci === "passing" || ci === "none" ? "buried" : null;
   }
   // Backlog and To Do: the card's words are the work. Nothing is built and
   // nothing is carried out of it, so the crew walks over the card and reads
