@@ -174,27 +174,45 @@ describe("applyTickets on an Epic broken down again", () => {
   });
 
   it("replaces the tickets nobody started, keeps the rest, and renames clashing keys", async () => {
-    const [epic, idle, busy] = makeEpicWithChildren({ status: "ready" }, [
-      { key: "T-1", status: "ready" },
-      { key: "T-2", status: "review", prNumber: 7 },
+    const [epic, idle, busy] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, [
+      { key: "EPIC-3-T1", status: "ready" },
+      { key: "EPIC-3-T2", status: "review", prNumber: 7 },
     ]);
     seedMemory([epic!, idle!, busy!]);
 
     await applyTickets(PROJECT, epic!.id, [draft("T-1"), draft("T-2", ["T-1"])]);
 
     const tickets = await repository().ticketsForEpic(epic!.id);
-    expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2", "T-2-2"]);
+    expect(tickets.map((t) => t.key).sort()).toEqual(["EPIC-3-T1", "EPIC-3-T2", "EPIC-3-T2-2"]);
     expect(tickets.some((t) => t.id === idle!.id)).toBe(false);
     expect(tickets.some((t) => t.id === busy!.id)).toBe(true);
-    const renamed = (await repository().boardCards(PROJECT)).find((c) => c.key === "T-2-2")!;
-    const first = tickets.find((t) => t.key === "T-1")!;
+    const renamed = (await repository().boardCards(PROJECT)).find((c) => c.key === "EPIC-3-T2-2")!;
+    const first = tickets.find((t) => t.key === "EPIC-3-T1")!;
     expect(renamed.dependsOn).toEqual([first.id]);
   });
 
+  it("keys tickets under their Epic and maps dependsOn to the new keys", async () => {
+    const [epic3] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, []);
+    const [epic4] = makeEpicWithChildren({ key: "EPIC-4", status: "ready" }, []);
+    seedMemory([epic3!, epic4!]);
+
+    for (const e of [epic3!, epic4!]) {
+      await applyTickets(PROJECT, e.id, [draft("T-1"), draft("T-2", ["T-1"])]);
+    }
+
+    const t3 = await repository().ticketsForEpic(epic3!.id);
+    const t4 = await repository().ticketsForEpic(epic4!.id);
+    expect(t3.map((t) => t.key).sort()).toEqual(["EPIC-3-T1", "EPIC-3-T2"]);
+    expect(t4.map((t) => t.key).sort()).toEqual(["EPIC-4-T1", "EPIC-4-T2"]);
+    const cards = await repository().boardCards(PROJECT);
+    const second = cards.find((c) => c.key === "EPIC-3-T2")!;
+    expect(second.dependsOn).toEqual([t3.find((t) => t.key === "EPIC-3-T1")!.id]);
+  });
+
   it("leaves a record in the Epic's chat of what it replaced and kept", async () => {
-    const [epic, idle, busy] = makeEpicWithChildren({ status: "ready" }, [
-      { key: "T-1", status: "ready" },
-      { key: "T-2", status: "review", prNumber: 7 },
+    const [epic, idle, busy] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, [
+      { key: "EPIC-3-T1", status: "ready" },
+      { key: "EPIC-3-T2", status: "review", prNumber: 7 },
     ]);
     seedMemory([epic!, idle!, busy!]);
 
@@ -203,12 +221,12 @@ describe("applyTickets on an Epic broken down again", () => {
     const messages = await repository().cardChatMessages(epic!.id);
     const record = messages.find((m) => m.role === "assistant");
     expect(record?.status).toBe("done");
-    expect(record?.content).toContain("Replaced T-1 (");
-    expect(record?.content).toContain("Kept T-2, already in flight.");
+    expect(record?.content).toContain("Replaced EPIC-3-T1 (");
+    expect(record?.content).toContain("Kept EPIC-3-T2, already in flight.");
   });
 
   it("leaves no record on the very first decomposition", async () => {
-    const [epic] = makeEpicWithChildren({ status: "ready" }, []);
+    const [epic] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, []);
     seedMemory([epic!]);
 
     await applyTickets(PROJECT, epic!.id, [draft("T-1")]);
