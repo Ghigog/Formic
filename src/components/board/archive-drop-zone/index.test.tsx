@@ -32,7 +32,9 @@ describe("ArchiveDropZone", () => {
     const onArchived = vi.fn();
     renderInDnd(<ArchiveDropZone dropped={{ ticketId: "t1" }} onArchived={onArchived} />);
     await waitFor(() => expect(onArchived).toHaveBeenCalledWith("t1"));
-    expect(fetchMock).toHaveBeenCalledWith("/api/tickets/t1/archive", { method: "PATCH" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/tickets/t1/archive", {
+      method: "PATCH",
+    });
   });
 
   it("shows an error and keeps the ticket when the request fails", async () => {
@@ -40,6 +42,22 @@ describe("ArchiveDropZone", () => {
     const onArchived = vi.fn();
     renderInDnd(<ArchiveDropZone dropped={{ ticketId: "t1" }} onArchived={onArchived} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Archive failed");
+    expect(onArchived).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's reason when a running ticket is refused", async () => {
+    const reason = "An agent is working this ticket. Stop it before archiving.";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: reason }),
+      }),
+    );
+    const onArchived = vi.fn();
+    renderInDnd(<ArchiveDropZone dropped={{ ticketId: "t1" }} onArchived={onArchived} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(reason);
     expect(onArchived).not.toHaveBeenCalled();
   });
 });

@@ -255,15 +255,20 @@ export function Board({
       // this one was in flight, has replaced it and must not be undone by it.
       const settle = () => setOptimistic((prev) => prev.filter((c) => c !== moved));
 
-      const result = await onTransition({
-        cardId: card.id,
-        kind: card.kind,
-        from,
-        to,
-        position,
-        detached: card.kind === "ticket" ? detached : undefined,
-        actor: "user",
-      });
+      let result: TransitionResult;
+      try {
+        result = await onTransition({
+          cardId: card.id,
+          kind: card.kind,
+          from,
+          to,
+          position,
+          detached: card.kind === "ticket" ? detached : undefined,
+          actor: "user",
+        });
+      } catch {
+        result = { ok: false, reason: "That move did not go through.", revertTo: from };
+      }
 
       if (!result.ok) {
         // Drop the optimistic entry and surface why. The card snaps back
