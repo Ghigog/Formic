@@ -97,7 +97,7 @@ describe("Sandbox key", () => {
 });
 
 describe("Auto-merge", () => {
-  const project = { id: "p1", name: "Formic", autoMerge: false };
+  const project = { id: "p1", name: "Formic", autoMerge: false, autoEscalate: false };
 
   it("shows only the current board, and the label follows the switch", async () => {
     const fetchMock = vi.fn(async () => Response.json({ autoMerge: true }));
@@ -154,6 +154,55 @@ describe("Auto-merge", () => {
       <SettingsForm account={account} installUrl={null} e2b={{ hint: null, serverFallback: false }} />,
     );
     expect(screen.queryByRole("checkbox", { name: /merge/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("Auto-escalation", () => {
+  const project = { id: "p1", name: "Formic", autoMerge: false, autoEscalate: false };
+  const e2b = { hint: null, serverFallback: false };
+
+  it("shows the stored value and saves a change", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ autoEscalate: false }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <SettingsForm
+        account={account}
+        installUrl={null}
+        project={{ ...project, autoEscalate: true }}
+        e2b={e2b}
+      />,
+    );
+    const toggle = screen.getByRole("checkbox", { name: "Escalate story points automatically" });
+    expect(toggle).toBeChecked();
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(toggle);
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ projectId: "p1", autoEscalate: false }),
+      }),
+    );
+    expect(toggle).not.toBeChecked();
+  });
+
+  it("stays as it was and says so when the save is refused", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "no" }, { status: 403 })));
+    render(<SettingsForm account={account} installUrl={null} project={project} e2b={e2b} />);
+    const toggle = screen.getByRole("checkbox", { name: "Escalate story points automatically" });
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(toggle);
+    });
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText("That did not save. Try again.")).toBeInTheDocument();
+  });
+
+  it("shows nothing when there is no board to set it on", () => {
+    render(<SettingsForm account={account} installUrl={null} e2b={e2b} />);
+    expect(screen.queryByRole("checkbox", { name: /escalate/i })).not.toBeInTheDocument();
   });
 });
 

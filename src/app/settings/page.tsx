@@ -19,7 +19,7 @@ export default async function SettingsPage() {
   // on; there is nothing to choose among.
   const current = await activeProject();
   const project = current
-    ? { id: current.id, name: current.name, autoMerge: current.autoMerge }
+    ? { id: current.id, name: current.name, autoMerge: current.autoMerge, autoEscalate: current.autoEscalate }
     : null;
 
   return (
