@@ -480,6 +480,8 @@ export async function createBacklogItem(
   projectId: string,
   rawRequest: string,
   workType?: WorkType,
+  /** The id the request's attachments were uploaded against, to move onto the Epic. */
+  requestId?: string,
 ): Promise<BoardCard> {
   const repo = repository();
   const positions = await repo.columnPositions(projectId, "backlog");
@@ -495,6 +497,8 @@ export async function createBacklogItem(
     position,
     workType,
   });
+
+  if (requestId) await repo.claimAttachments(requestId, { epicId: card.id });
 
   await publish(projectId, {
     type: "card.created",
