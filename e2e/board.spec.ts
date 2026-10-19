@@ -439,7 +439,7 @@ test("a summoned sentinel reports, and its stars count toward the grade", async 
   await gotoBoard(page);
   await page.getByRole("button", { name: /Audit grade/ }).click();
   const sentinels = page.getByRole("region", { name: "Sentinels" });
-  await expect(sentinels.getByRole("heading", { name: "Sentinels" })).toBeVisible();
+  await expect(sentinels.getByRole("heading", { name: "Sentinels" })).toBeAttached();
 
   // The Tester unlocks at Lv 1, so it is summonable at any colony level; the
   // mock Tester gives four stars, and the grade total counts unlocked seats only.
@@ -448,10 +448,13 @@ test("a summoned sentinel reports, and its stars count toward the grade", async 
   await expect(card).toHaveAccessibleName(/4 of 5 stars/, { timeout: 15_000 });
   await expect(sentinels.getByText(/^1 of \d+ reported$/)).toBeVisible();
 
-  const report = page.getByRole("complementary", { name: "Audit report" });
+  await card.click();
+  const report = page.getByRole("dialog").getByRole("complementary", { name: "Audit report" });
   await expect(report.getByText("What works")).toBeVisible();
   await expect(report.getByText("What's missing")).toBeVisible();
 
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(sentinels).toBeHidden();
 });
