@@ -1,5 +1,6 @@
-import type { AuditPoint, AuditReport } from "@/lib/db/repository";
+import type { AuditPoint, AuditReport, Rubric } from "@/lib/db/repository";
 import type { Sentinel } from "./roster";
+import { unmetChecks } from "./rubric";
 
 /** createBacklogItem refuses a request longer than this (see POST /api/epics). */
 export const REQUEST_CAP = 4000;
@@ -13,12 +14,14 @@ const SECTIONS = [
 const line = (p: AuditPoint) => `- ${p.text}${p.ref ? ` (${p.ref})` : ""}`;
 
 /**
- * The request a Product Agent writes an Epic's PRD from: the sentinel's
- * report minus what works. A list too long for the cap loses its last points.
+ * The request a Product Agent writes an Epic's PRD from: the rubric checks
+ * the audit found unmet, which are what earns the next stars, then the rest
+ * of the report minus what works. A list too long for the cap loses its last
+ * points.
  */
 export function requestFromReport(
   sentinel: Pick<Sentinel, "who" | "name">,
-  audit: { stars: number; summary: string | null; report: AuditReport },
+  audit: { stars: number; summary: string | null; report: AuditReport; rubric?: Rubric | null },
 ): string {
   const head = [
     `Fix what ${sentinel.who} (${sentinel.name}) found in their audit. They rated the project ${audit.stars} of 5 stars.`,
@@ -28,9 +31,16 @@ export function requestFromReport(
     .join("\n")
     .slice(0, 1000);
 
-  const blocks = SECTIONS.map((s) => ({ title: s.title, lines: audit.report[s.key].map(line) })).filter(
-    (b) => b.lines.length > 0,
-  );
+  const unmet =
+    audit.rubric && audit.report.checks
+      ? unmetChecks(audit.rubric, audit.report.checks).map(
+          (c) => `- (${c.stars} stars) ${c.text}${c.evidence ? ` Found: ${c.evidence}` : ""}`,
+        )
+      : [];
+  const blocks = [
+    { title: "Rubric checks not met, lowest star first", lines: unmet },
+    ...SECTIONS.map((s) => ({ title: s.title, lines: audit.report[s.key].map(line) })),
+  ].filter((b) => b.lines.length > 0);
   const render = () => [head, ...blocks.map((b) => `${b.title}:\n${b.lines.join("\n")}`)].join("\n\n");
 
   let text = render();

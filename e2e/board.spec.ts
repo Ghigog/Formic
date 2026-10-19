@@ -435,16 +435,19 @@ test("a ticket opens its own view, not its Epic's", async ({ page }) => {
   await expect(dialog).toBeHidden();
 });
 
-test("a summoned sentinel reports, and its stars count toward the grade", async ({ page }) => {
+test("a sentinel calibrates, then audits against its rubric, and its stars count toward the grade", async ({ page }) => {
   await gotoBoard(page);
   await page.getByRole("button", { name: /Audit grade/ }).click();
   const sentinels = page.getByRole("region", { name: "Sentinels" });
   await expect(sentinels.getByRole("heading", { name: "Sentinels" })).toBeAttached();
 
-  // The Tester unlocks at Lv 1, so it is summonable at any colony level; the
-  // mock Tester gives four stars, and the grade total counts unlocked seats only.
+  // The Tester unlocks at Lv 1, so it is summonable at any colony level. It
+  // calibrates first; the mock Tester then gives four stars against that
+  // rubric, and the grade total counts unlocked seats only.
   const card = sentinels.getByRole("listitem", { name: /Professor O'Chumley/ });
-  await card.getByRole("button", { name: "Summon" }).click();
+  await card.getByRole("button", { name: "Calibrate" }).click();
+  await expect(card.getByRole("button", { name: "Audit" })).toBeVisible({ timeout: 15_000 });
+  await card.getByRole("button", { name: "Audit" }).click();
   await expect(card).toHaveAccessibleName(/4 of 5 stars/, { timeout: 15_000 });
   await expect(sentinels.getByText(/^1 of \d+ reported$/)).toBeVisible();
 
@@ -452,6 +455,7 @@ test("a summoned sentinel reports, and its stars count toward the grade", async 
   const report = page.getByRole("dialog").getByRole("complementary", { name: "Audit report" });
   await expect(report.getByText("What works")).toBeVisible();
   await expect(report.getByText("What's missing")).toBeVisible();
+  await expect(report.getByRole("button", { name: "Recalibrate" })).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeHidden();

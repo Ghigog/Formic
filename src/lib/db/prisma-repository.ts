@@ -31,9 +31,11 @@ import type {
   AssistantMessage,
   AssistantProposal,
   CardChatMessage,
+  AuditKind,
   AuditRecord,
   AuditReport,
   AuditResult,
+  Rubric,
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
@@ -1710,8 +1712,8 @@ export class PrismaRepository implements Repository {
     return rows.map(toAuditRecord);
   }
 
-  async startAudit(projectId: string, sentinel: string): Promise<AuditRecord> {
-    const row = await prisma().audit.create({ data: { projectId, sentinel } });
+  async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null): Promise<AuditRecord> {
+    const row = await prisma().audit.create({ data: { projectId, sentinel, kind, rubric: (rubric ?? undefined) as never } });
     return toAuditRecord(row);
   }
 
@@ -1737,6 +1739,7 @@ export class PrismaRepository implements Repository {
         quote: result.quote ?? null,
         summary: result.summary ?? null,
         report: (result.report ?? undefined) as never,
+        ...(result.rubric ? { rubric: result.rubric as never } : {}),
         error: result.error ?? null,
         model: result.model ?? null,
         files: result.files ?? [],
@@ -1749,6 +1752,7 @@ export class PrismaRepository implements Repository {
       where: {
         projectId: row.projectId,
         sentinel: row.sentinel,
+        kind: row.kind,
         id: { not: id },
         status: result.status === "done" ? { not: "running" } : "failed",
       },
@@ -2011,18 +2015,30 @@ const auditReport = z.object({
   dislikes: z.array(auditPoint),
   wrong: z.array(auditPoint),
   missing: z.array(auditPoint),
+  checks: z.array(z.object({ id: z.string(), met: z.boolean(), evidence: z.string() })).optional(),
+});
+const rubric = z.object({
+  context: z.string(),
+  rungs: z.array(
+    z.object({
+      stars: z.number(),
+      checks: z.array(z.object({ id: z.string(), text: z.string(), how: z.string() })),
+    }),
+  ),
 });
 
 function toAuditRecord(row: {
   id: string;
   projectId: string;
   sentinel: string;
+  kind: string;
   status: string;
   log: string[];
   stars: number | null;
   quote: string | null;
   summary: string | null;
   report: unknown;
+  rubric: unknown;
   error: string | null;
   model: string | null;
   files: string[];
@@ -2033,9 +2049,12 @@ function toAuditRecord(row: {
   finishedAt: Date | null;
 }): AuditRecord {
   const report = auditReport.safeParse(row.report);
+  const scale = rubric.safeParse(row.rubric);
   return {
     ...row,
+    kind: row.kind === "calibrate" ? "calibrate" : "audit",
     status: row.status === "done" || row.status === "failed" ? row.status : "running",
     report: report.success ? (report.data satisfies AuditReport) : null,
+    rubric: scale.success ? (scale.data satisfies Rubric) : null,
   };
 }

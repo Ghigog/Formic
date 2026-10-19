@@ -228,7 +228,7 @@ export function sentinel(id: string): Sentinel | undefined {
 }
 
 /** What every sentinel is asked, after its own persona and brief. */
-export const REPORT_RULES = `Report what you like, what you dislike, what is wrong and what is missing, each point with the file it is about where there is one, then rate the codebase from 1 to 5 stars for your role. Five stars is rare and means you would sign off without changes; one star means it cannot ship. Stay in character only for the one-line quote; keep the summary and the report itself plain, specific and factual. Only cite files you were actually shown.`;
+export const REPORT_RULES = `Report what you like, what you dislike, what is wrong and what is missing, each point with the file it is about where there is one. Stay in character only for the one-line quote; keep the summary and the report itself plain, specific and factual. Only cite files you were actually shown.`;
 
 /** The full brief a sentinel runs on, as the page shows it. */
 export function promptFor(s: Sentinel): string {
@@ -236,14 +236,13 @@ export function promptFor(s: Sentinel): string {
 }
 
 /** The steps a run reports, in order. */
-export function stepsFor(s: Sentinel): string[] {
+export function stepsFor(s: Sentinel, kind: "audit" | "calibrate" = "audit"): string[] {
   return [
     "Listing files",
     "Gathering the facts",
     `Choosing what a ${s.name} reads`,
     "Reading the code",
     "Reading more",
-    `Scoring as ${s.name}`,
-    "Writing report",
+    ...(kind === "calibrate" ? ["Writing the rubric", "Saving the rubric"] : [`Scoring as ${s.name}`, "Writing report"]),
   ];
 }

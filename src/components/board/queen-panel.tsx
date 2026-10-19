@@ -48,18 +48,16 @@ export function QueenPanel({ card, onChanged }: { card: BoardCard; onChanged: ()
   const none = unspent === 0;
 
   return (
-    <div data-queen className="bg-sunken mt-3 flex flex-col gap-2 rounded-md px-3 py-2 text-[12px]">
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={busy || unspent === null || none}
-          onClick={() => void place()}
-          className="bg-amber text-on-amber rounded px-2.5 py-1 font-medium disabled:opacity-50"
-        >
-          Add Queen
-        </button>
-        {none && <span className="text-fg-muted">No unspent Queens</span>}
-      </div>
+    <div data-queen className="flex flex-wrap items-center gap-2 text-[12px]">
+      <button
+        type="button"
+        disabled={busy || unspent === null || none}
+        onClick={() => void place()}
+        className="bg-ink text-bg rounded px-2.5 py-1 font-medium disabled:opacity-50"
+      >
+        Add Queen
+      </button>
+      {none && <span className="text-fg-muted">No unspent Queens</span>}
       {error && (
         <span role="alert" className="text-log-error text-[11px]">
           {error}
