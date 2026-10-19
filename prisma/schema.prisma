@@ -614,6 +614,8 @@ model Audit {
   project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// The roster id, such as "secops". See src/lib/sentinels/roster.ts.
   sentinel   String
+  /// "audit" scores the code against a rubric; "calibrate" writes the rubric.
+  kind       String    @default("audit")
   /// "running", "done" or "failed".
   status     String    @default("running")
   /// Steps reached so far, oldest first.
@@ -623,6 +625,8 @@ model Audit {
   summary    String?
   /// likes, dislikes, wrong and missing: each a list of { text, ref }.
   report     Json?
+  /// A calibration's star ladder, or the one an audit was scored against.
+  rubric     Json?
   error      String?
   model      String?
   /// Files the sentinel read.

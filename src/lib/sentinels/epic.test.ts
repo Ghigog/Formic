@@ -37,4 +37,31 @@ describe("requestFromReport", () => {
     expect(r.length).toBeLessThanOrEqual(REQUEST_CAP);
     expect(r).toContain("point 0 ");
   });
+
+  it("puts the rubric checks the audit found unmet first, lowest star first", () => {
+    const rubric = {
+      context: "c",
+      rungs: [2, 3, 4, 5].map((stars) => ({ stars, checks: [{ id: `${stars}a`, text: `Bar ${stars}.`, how: "h" }] })),
+    };
+    const r = requestFromReport(s, {
+      stars: 3,
+      summary: null,
+      rubric,
+      report: {
+        likes: [],
+        dislikes: [],
+        wrong: [pt("Off by one")],
+        missing: [],
+        checks: [
+          { id: "2a", met: true, evidence: "ok" },
+          { id: "3a", met: true, evidence: "ok" },
+          { id: "4a", met: false, evidence: "No floor in CI." },
+          { id: "5a", met: false, evidence: "" },
+        ],
+      },
+    });
+    expect(r).toContain("- (4 stars) Bar 4. Found: No floor in CI.\n- (5 stars) Bar 5.");
+    expect(r).not.toContain("Bar 3.");
+    expect(r.indexOf("Bar 4.")).toBeLessThan(r.indexOf("Off by one"));
+  });
 });

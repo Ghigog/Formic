@@ -764,6 +764,25 @@ function contract(name: string, make: () => Repository) {
         ]);
         expect(other.status).toBe("running");
       });
+
+      it("keeps a calibration's rubric apart from the audits scored against it", async () => {
+        const p = await project();
+        const rubric = { context: "c", rungs: [{ stars: 2, checks: [{ id: "2a", text: "t", how: "h" }] }] };
+        const cal = await repo.startAudit(p.id, "qa", "calibrate");
+        await repo.finishAudit(cal.id, { status: "done", rubric, summary: "c", files: [] });
+        const scored = { ...report, checks: [{ id: "2a", met: true, evidence: "e" }] };
+        for (const stars of [2, 3]) {
+          const a = await repo.startAudit(p.id, "qa", "audit", rubric);
+          await repo.finishAudit(a.id, { status: "done", stars, quote: "q", summary: "s", report: scored, files: [] });
+        }
+        const audits = await repo.auditsFor(p.id);
+        expect(audits.map((a) => [a.kind, a.stars])).toEqual([
+          ["calibrate", null],
+          ["audit", 3],
+        ]);
+        expect(audits.map((a) => a.rubric)).toEqual([rubric, rubric]);
+        expect(audits[1]!.report).toEqual(scored);
+      });
     });
 
     describe("queens", () => {

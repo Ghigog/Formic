@@ -14,7 +14,7 @@ import {
   type Sentinel,
 } from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
-import type { AuditPoint } from "@/lib/db/repository";
+import type { AuditKind, AuditPoint } from "@/lib/db/repository";
 import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
 
@@ -366,9 +366,9 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
 
   const unlocked = SENTINELS.filter((x) => isUnlocked(x, s.level)).length;
   const nBusy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
-  const summon = (id: string) => {
+  const summon = (id: string, kind?: AuditKind) => {
     c.sfx("emerge");
-    void s.summon(id);
+    void s.summon(id, kind ?? (s.states[id]?.rubric ? "audit" : "calibrate"));
   };
   const reporting = SENTINELS.find((x) => x.id === reportId);
 
@@ -516,7 +516,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
               st={s.states[reporting.id]!}
               now={now}
               locked={!isUnlocked(reporting, s.level)}
-              onSummon={() => summon(reporting.id)}
+              onSummon={(kind) => summon(reporting.id, kind)}
             />
           </div>
         </div>
@@ -546,7 +546,7 @@ function Card({
 }) {
   const running = !!st.running;
   const done = !running && st.stars !== null;
-  const steps = stepsFor(x);
+  const steps = stepsFor(x, st.running?.kind);
   const step = st.running?.log.length ? st.running.log.length - 1 : 0;
   return (
     <div
@@ -650,6 +650,8 @@ function Card({
               <span className="text-muted font-mono text-[10px]">
                 Audited {ago(st.at, now)}
               </span>
+            ) : st.rubric && !locked ? (
+              <span className="text-muted text-[11px]">Calibrated</span>
             ) : locked ? (
               <span className="text-muted text-[11px]">
                 Unlocks at Lv {x.unlockLevel}
@@ -673,7 +675,7 @@ function Card({
                 )}
               >
                 {!done && <PlayIcon size={10} />}
-                {done ? "Re-run" : "Summon"}
+                {summonLabel(st)}
               </button>
             )}
           </div>
@@ -705,13 +707,13 @@ function Report({
   st: SentinelState;
   now: number;
   locked: boolean;
-  onSummon: () => void;
+  onSummon: (kind: AuditKind) => void;
 }) {
   const running = !!st.running;
   const done = st.stars !== null && !!st.report;
   const first = x.who.split(" ").at(-1);
   const meta = running
-    ? `${x.name} · auditing…`
+    ? `${x.name} · ${st.running!.kind === "calibrate" ? "calibrating" : "auditing"}…`
     : st.stars !== null
       ? `${x.name} · ${st.stars} of 5 · ${ago(st.at, now)}`
       : `${x.name} · not audited`;
@@ -761,17 +763,11 @@ function Report({
         </div>
         <button
           type="button"
-          onClick={onSummon}
+          onClick={() => onSummon(st.rubric ? "audit" : "calibrate")}
           disabled={running || locked}
           className="border-line bg-cream text-ink hover:border-terracotta h-8 rounded-lg border px-3 text-[12px] font-semibold active:scale-[0.96] disabled:opacity-60"
         >
-          {running
-            ? "Running…"
-            : locked
-              ? `Lv ${x.unlockLevel}`
-              : st.stars !== null
-                ? "Re-run"
-                : "Summon"}
+          {running ? "Running…" : locked ? `Lv ${x.unlockLevel}` : summonLabel(st)}
         </button>
       </div>
 
@@ -781,7 +777,7 @@ function Report({
           className="bg-crimson-chip text-crimson-chip-text m-0 rounded-lg px-3.5 py-2.5 text-[13px] leading-[1.45]"
         >
           {st.error}
-          {st.stars !== null ? " The last report below still counts." : ""}
+          {st.stars !== null || st.rubric ? " What was saved before still counts." : ""}
         </p>
       )}
 
@@ -815,6 +811,12 @@ function Report({
               {st.summary}
             </p>
           </div>
+          <Ladder
+            st={st}
+            now={now}
+            busy={running || locked}
+            onCalibrate={() => onSummon("calibrate")}
+          />
           {SECTIONS.map((sec) => (
             <Section
               key={sec.key}
@@ -866,21 +868,32 @@ function Report({
         </div>
       )}
 
+      {!done && st.rubric && (
+        <Ladder
+          st={st}
+          now={now}
+          busy={running || locked}
+          onCalibrate={() => onSummon("calibrate")}
+        />
+      )}
+
       {!done && !running && (
         <div className="border-line-dashed flex flex-col gap-3 rounded-[10px] border border-dashed p-4">
           <span className="text-muted text-[13px] leading-normal text-pretty">
             {locked
               ? `${x.who} unlocks at colony Lv ${x.unlockLevel}, and counts toward the grade from then.`
-              : `${x.who} hasn't audited this project yet, so this seat adds zero stars to the grade.`}
+              : st.rubric
+                ? `${x.who} has a rubric for this project. Audit to score the code against it; until then this seat adds zero stars to the grade.`
+                : `${x.who} hasn't calibrated on this project yet. Calibrating reads the project and writes the checks each star needs, so every audit after it is scored the same way.`}
           </span>
           <button
             type="button"
-            onClick={onSummon}
+            onClick={() => onSummon(st.rubric ? "audit" : "calibrate")}
             disabled={locked}
             className="bg-anthracite text-cream inline-flex h-9 disabled:opacity-50 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
           >
             <PlayIcon size={12} />
-            Summon {first}
+            {st.rubric ? "Audit" : "Calibrate"} {first}
           </button>
         </div>
       )}
@@ -894,6 +907,115 @@ function Report({
         </p>
       </div>
     </aside>
+  );
+}
+
+/** What the next summon does: calibrate first, then audit against the rubric. */
+function summonLabel(st: SentinelState): string {
+  if (!st.rubric) return "Calibrate";
+  return st.stars !== null && st.scoredWith ? "Re-audit" : "Audit";
+}
+
+/**
+ * The sentinel's rubric for this project: the checks each star needs, marked
+ * with how the last audit scored them, and the way to write it again.
+ */
+function Ladder({
+  st,
+  now,
+  busy,
+  onCalibrate,
+}: {
+  st: SentinelState;
+  now: number;
+  busy: boolean;
+  onCalibrate: () => void;
+}) {
+  const rubric = st.rubric?.rubric ?? st.scoredWith;
+  // Marks only where the checks are the ones the last audit was scored on.
+  const scored = !st.rubricChanged && st.scoredWith ? st.report?.checks : undefined;
+  const marks = new Map((scored ?? []).map((c) => [c.id, c]));
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-2">
+        <span className="bg-clay size-2 rounded-[2px]" />
+        <span className="text-ink text-[11px] font-bold tracking-[0.08em] uppercase">
+          Rubric
+        </span>
+        {st.rubric?.at && (
+          <span className="text-muted font-mono text-[10px]">
+            calibrated {ago(st.rubric.at, now)}
+          </span>
+        )}
+        <span className="grow" />
+        <button
+          type="button"
+          onClick={onCalibrate}
+          disabled={busy}
+          title="Reads the project again and writes a new rubric. Audits after it are scored against the new one."
+          className="border-line bg-cream text-ink hover:border-terracotta h-7 rounded-md border px-2.5 text-[12px] font-semibold active:scale-[0.96] disabled:opacity-60"
+        >
+          {st.rubric ? "Recalibrate" : "Calibrate"}
+        </button>
+      </div>
+      {!rubric ? (
+        <span className="text-muted pl-4 text-[13px] leading-normal text-pretty">
+          These stars were given before rubrics. Calibrate to write the checks
+          each star needs, then audit to be scored against them.
+        </span>
+      ) : (
+        <>
+          <span className="text-muted pl-4 text-[13px] leading-normal text-pretty">
+            {rubric.context} Each star needs all of its checks and every star
+            below it.
+          </span>
+          {st.rubricChanged && (
+            <span className="text-muted pl-4 text-[12px] leading-normal text-pretty italic">
+              The stars above were scored against an earlier rubric. Audit
+              again to be scored against this one.
+            </span>
+          )}
+          {rubric.rungs.map((r) => (
+            <div key={r.stars} className="flex flex-col gap-1.5 pl-4">
+              <span className="flex items-center gap-2">
+                <Stars n={r.stars} size={12} />
+              </span>
+              {r.checks.map((k) => {
+                const m = marks.get(k.id);
+                return (
+                  <div
+                    key={k.id}
+                    className="border-hairline flex gap-2 border-b pb-1.5"
+                  >
+                    <span
+                      aria-label={m ? (m.met ? "Met" : "Not met") : "Not scored"}
+                      className="w-3 shrink-0 text-[12px] leading-[1.45] font-bold"
+                      style={{
+                        color: m
+                          ? m.met
+                            ? "var(--jade)"
+                            : "var(--crimson)"
+                          : "var(--dot-idle)",
+                      }}
+                    >
+                      {m ? (m.met ? "✓" : "✗") : "·"}
+                    </span>
+                    <span className="flex min-w-0 flex-col gap-[2px]">
+                      <span className="text-ink text-[13px] leading-[1.45] text-pretty">
+                        {k.text}
+                      </span>
+                      <span className="text-muted text-[11px] leading-[1.4] text-pretty">
+                        {m?.evidence || k.how}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
   );
 }
 

@@ -36,9 +36,11 @@ describe("summonSentinel", () => {
     expect(startAudit).not.toHaveBeenCalled();
   });
 
-  it("runs it once the colony reaches its level", async () => {
+  it("runs it once the colony reaches its level, calibrating before it audits", async () => {
     cards = merged(2); // 100 XP: Lv 3
-    expect(await summonSentinel("p", locked.id)).toEqual({ ok: true });
-    expect(startAudit).toHaveBeenCalledOnce();
+    expect(await summonSentinel("p", locked.id)).toMatchObject({ ok: false, status: 409 });
+    expect(startAudit).not.toHaveBeenCalled();
+    expect(await summonSentinel("p", locked.id, "calibrate")).toEqual({ ok: true });
+    expect(startAudit).toHaveBeenCalledWith("p", locked.id, "calibrate", null);
   });
 });
