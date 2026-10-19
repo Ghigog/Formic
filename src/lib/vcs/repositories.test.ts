@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createRepository } from "./repositories";
+import { createRepository, listRepositories } from "./repositories";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -38,5 +38,44 @@ describe("createRepository", () => {
     const denied = await createRepository("fresh", "tok");
     expect(denied.ok).toBe(false);
     expect(!denied.ok && denied.reason).toMatch(/updated permissions/);
+  });
+});
+
+describe("listRepositories", () => {
+  const raw = (full_name: string, pushed_at: string | null) => ({
+    full_name,
+    default_branch: "main",
+    private: false,
+    description: null,
+    pushed_at,
+  });
+
+  it("maps a personal token's repositories", async () => {
+    vi.stubGlobal("fetch", async () => Response.json([raw("ada/one", "2026-01-01T00:00:00Z")]));
+    expect(await listRepositories("tok", "pat")).toEqual({
+      ok: true,
+      repos: [
+        { fullName: "ada/one", defaultBranch: "main", private: false, description: null, pushedAt: "2026-01-01T00:00:00Z" },
+      ],
+    });
+  });
+
+  it("gathers an app token's installations, most recently pushed first", async () => {
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (url.includes("/user/installations?")) return Response.json({ installations: [{ id: 1 }, { id: 2 }] });
+      const repositories =
+        url.includes("/installations/1/") ? [raw("ada/old", "2025-01-01T00:00:00Z")] : [raw("ada/new", "2026-01-01T00:00:00Z")];
+      return Response.json({ repositories });
+    });
+    const result = await listRepositories("tok", "app");
+    expect(result.ok && result.repos.map((r) => r.fullName)).toEqual(["ada/new", "ada/old"]);
+  });
+
+  it("gives the reason when GitHub refuses", async () => {
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 401 }));
+    expect(await listRepositories("tok", "pat")).toEqual({
+      ok: false,
+      reason: "GitHub refused the repository list (401).",
+    });
   });
 });
