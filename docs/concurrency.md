@@ -60,7 +60,10 @@ start as soon as the one it depends on has its pull request open
   can never merge as it is: the sweep stops it and says so.
 
 Queens use the same rule, so a Queen moves a chain along as each layer opens
-its pull request rather than as each merges.
+its pull request rather than as each merges. A Queen also moves again when a
+ticket returns to To Do. She starts nothing while any ticket in her work is
+blocked or failed: she stays on the card until a person resolves it. A ticket
+waiting on two unmerged prerequisites also waits until all but one have merged.
 
 ## 3. A merge queue that fails closed
 
