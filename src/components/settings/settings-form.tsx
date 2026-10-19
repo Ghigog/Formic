@@ -8,6 +8,7 @@ import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
 import { ColonySection } from "@/components/settings/colony-section";
+import { DesktopAppSection } from "@/components/settings/desktop-app-section";
 import { EffortSection } from "@/components/settings/effort-section";
 import { ScoutAgentSection } from "@/components/settings/scout-agent-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
@@ -174,6 +175,8 @@ export function SettingsForm({
         <EffortSection initial={effortByPoints} />
 
         <RenewalDaySection initial={renewal} />
+
+        <DesktopAppSection />
 
         <p className="text-muted px-1 text-[12px] leading-[1.5]">
           AI provider keys live on each agent, not here: pick or create one from
