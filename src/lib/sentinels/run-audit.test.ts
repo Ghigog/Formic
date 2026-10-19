@@ -42,8 +42,18 @@ const answer = (value: unknown) => ({
   content: [{ type: "text", text: JSON.stringify(value) }],
 });
 
+const rubric = {
+  context: "A board.",
+  rungs: [2, 3, 4, 5].map((stars) => ({ stars, checks: [{ id: `${stars}a`, text: `Bar ${stars}.`, how: "Read it." }] })),
+};
+
 const report = {
-  stars: 4,
+  checks: [
+    { id: "2a", evidence: "Seen.", met: true },
+    { id: "3a", evidence: "Seen.", met: true },
+    { id: "4a", evidence: "Seen.", met: true },
+    { id: "5a", evidence: "Missing.", met: false },
+  ],
   quote: "Tested, mostly.",
   summary: "Good. One gap.",
   likes: [],
@@ -75,6 +85,7 @@ describe("runAudit", () => {
       { model: "claude-sonnet-5" } as never,
       {
         sentinel: sentinel("tester")!,
+        goal: { kind: "audit", rubric },
         repoFullName: "o/r",
         files: ["src/a.ts", "src/b.ts"],
         read,
@@ -104,9 +115,31 @@ describe("runAudit", () => {
 
     const scoring = create.mock.calls[2]![0];
     expect(scoring.system).toContain("You cannot run anything");
+    expect(scoring.system).toContain("[5a] Bar 5. (Verify: Read it.)");
     const [image, text] = scoring.messages[0].content;
     expect(image).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "AQI=" } });
     expect(text.text).toContain("Facts gathered for your role:\nCI on main: all green.");
     expect(text.text).toContain("=== src/b.ts (1 lines) ===\nexport const b = 1;");
+  });
+
+  it("calibrates: the same reading, then a rubric instead of stars", async () => {
+    create
+      .mockResolvedValueOnce(answer({ paths: ["src/a.ts"] }))
+      .mockResolvedValueOnce(answer({ more: [] }))
+      .mockResolvedValueOnce(
+        answer({ context: "A board.", rungs: [2, 3, 4, 5].map((n) => ({ checks: [{ text: `Bar ${n}.`, how: "Read it." }] })) }),
+      );
+    const out = await runAudit({ model: "claude-sonnet-5" } as never, {
+      sentinel: sentinel("tester")!,
+      goal: { kind: "calibrate" },
+      repoFullName: "o/r",
+      files: ["src/a.ts"],
+      read: async () => "export const a = 1;",
+      log: async () => {},
+      signal: new AbortController().signal,
+    });
+    expect(out).toMatchObject({ ok: true, rubric });
+    expect(out.ok && out.stars).toBeUndefined();
+    expect(create.mock.calls[2]![0].system).toContain("You are calibrating, not auditing");
   });
 });

@@ -31,7 +31,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const card = await createBacklogItem(
     project.id,
-    requestFromReport(sentinel, { stars: state.stars, summary: state.summary, report: state.report }),
+    requestFromReport(sentinel, {
+      stars: state.stars,
+      summary: state.summary,
+      report: state.report,
+      rubric: state.scoredWith,
+    }),
   );
   if (state.auditId) await repository().markAuditEpic(state.auditId, card.id);
   return Response.json({ card }, { status: 201 });

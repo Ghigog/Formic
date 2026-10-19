@@ -156,7 +156,42 @@ export interface AuditReport {
   dislikes: AuditPoint[];
   wrong: AuditPoint[];
   missing: AuditPoint[];
+  /** How the audit scored each of its rubric's checks. */
+  checks?: AuditCheck[];
 }
+
+/** One pass/fail statement in a rubric, worded so every audit reads it alike. */
+export interface RubricCheck {
+  /** Stable within its rubric: "3b" is the second check on the 3-star rung. */
+  id: string;
+  text: string;
+  /** How an audit verifies it: a file to read or a command to run. */
+  how: string;
+}
+
+/**
+ * A sentinel's star ladder for one project, written by calibrating: rung 2
+ * to 5, each earned when all its checks pass and every rung below is.
+ */
+export interface Rubric {
+  /** What the project is, and what matters most for this role. */
+  context: string;
+  rungs: Array<{ stars: number; checks: RubricCheck[] }>;
+}
+
+export interface AuditCheck {
+  id: string;
+  met: boolean;
+  /** The file and line read, or the command run and what it showed. */
+  evidence: string;
+}
+
+/**
+ * Calibrating writes a rubric; auditing scores the code against one. A
+ * project keeps at most two of each per sentinel: the last one that
+ * finished, and a newer one running or failed.
+ */
+export type AuditKind = "audit" | "calibrate";
 
 /**
  * One sentinel's audit of a project. A project keeps at most two per
@@ -166,6 +201,7 @@ export interface AuditRecord {
   id: string;
   projectId: string;
   sentinel: string;
+  kind: AuditKind;
   status: "running" | "done" | "failed";
   /** Steps reached so far, oldest first. */
   log: string[];
@@ -174,6 +210,8 @@ export interface AuditRecord {
   quote: string | null;
   summary: string | null;
   report: AuditReport | null;
+  /** A calibration's rubric, or the one an audit was scored against. */
+  rubric: Rubric | null;
   error: string | null;
   model: string | null;
   /** Files the sentinel read. */
@@ -193,6 +231,8 @@ export interface AuditResult {
   quote?: string;
   summary?: string;
   report?: AuditReport;
+  /** A calibration's rubric. An audit keeps the one it started with. */
+  rubric?: Rubric;
   error?: string;
   model?: string | null;
   files?: string[];
@@ -838,14 +878,16 @@ export interface Repository {
 
   /** Every audit a project keeps, oldest first. */
   auditsFor(projectId: string): Promise<AuditRecord[]>;
-  startAudit(projectId: string, sentinel: string): Promise<AuditRecord>;
+  /** An audit is started with the rubric it will be scored against. */
+  startAudit(projectId: string, sentinel: string, kind?: AuditKind, rubric?: Rubric | null): Promise<AuditRecord>;
   /** Adds a step to a running audit's log. */
   logAudit(id: string, step: string): Promise<void>;
   /** Records the GitHub Actions job a CLI agent audits in; only its result is taken. */
   setAuditJob(id: string, job: string | null, agent: string | null): Promise<void>;
   /**
-   * Ends an audit. A report replaces the sentinel's earlier ones; a failure
-   * keeps the last report, so a bad run never costs the project its stars.
+   * Ends an audit. A report replaces the sentinel's earlier ones of the same
+   * kind; a failure keeps the last report, so a bad run never costs the
+   * project its stars or its rubric.
    */
   finishAudit(id: string, result: AuditResult): Promise<void>;
   /** Records the Epic made from an audit's report. */
