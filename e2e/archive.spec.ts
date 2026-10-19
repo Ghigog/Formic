@@ -3,14 +3,14 @@ import { card, dragTo, gotoBoard } from "./board";
 
 test("dragging a ticket onto the archive zone archives it", async ({ page }) => {
   await gotoBoard(page);
-  // The first ticket on screen that is not running: epics cannot be archived.
+  // The first ticket on screen that is not running and has no active run: epics cannot be archived.
   const board = await page.request.get("/api/board");
   const { cards } = (await board.json()) as {
-    cards: Array<{ id: string; kind: string; status: string }>;
+    cards: Array<{ id: string; kind: string; status: string; workingSince?: unknown }>;
   };
   let id = "";
   for (const c of cards) {
-    if (c.kind !== "ticket" || c.status === "running") continue;
+    if (c.kind !== "ticket" || c.status === "running" || c.workingSince) continue;
     if (await card(page, c.id).isVisible()) {
       id = c.id;
       break;
