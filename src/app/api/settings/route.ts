@@ -31,6 +31,7 @@ const bodySchema = z.object({
   e2bKey: keySchema,
   projectId: z.string().min(1).optional(),
   autoMerge: z.boolean().optional(),
+  autoEscalate: z.boolean().optional(),
 });
 
 function sealed(value: string | null | undefined, cipher: string, hint: string) {
@@ -112,7 +113,7 @@ export async function GET(req?: Request) {
   if (projectId !== null) {
     const found = await ownedProject(user, projectId);
     if (found.refusal) return found.refusal;
-    return Response.json({ autoMerge: found.project.autoMerge });
+    return Response.json({ autoMerge: found.project.autoMerge, autoEscalate: found.project.autoEscalate });
   }
   return Response.json({
     ...(await getRunTimeBudgetSettings(user.id)),
@@ -216,14 +217,19 @@ export async function PUT(req: Request) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
   }
 
-  if ((body.data.autoMerge === undefined) !== (body.data.projectId === undefined)) {
-    return Response.json({ error: "autoMerge and projectId go together." }, { status: 400 });
+  const { projectId, autoMerge, autoEscalate } = body.data;
+  if ((autoMerge !== undefined || autoEscalate !== undefined) !== (projectId !== undefined)) {
+    return Response.json({ error: "autoMerge, autoEscalate and projectId go together." }, { status: 400 });
   }
-  if (body.data.projectId !== undefined && body.data.autoMerge !== undefined) {
-    const found = await ownedProject(user, body.data.projectId);
+  if (projectId !== undefined) {
+    const found = await ownedProject(user, projectId);
     if (found.refusal) return found.refusal;
-    await repository().setAutoMerge(found.project.id, body.data.autoMerge);
-    return Response.json({ autoMerge: body.data.autoMerge });
+    if (autoMerge !== undefined) await repository().setAutoMerge(found.project.id, autoMerge);
+    if (autoEscalate !== undefined) await repository().setAutoEscalate(found.project.id, autoEscalate);
+    return Response.json({
+      ...(autoMerge !== undefined && { autoMerge }),
+      ...(autoEscalate !== undefined && { autoEscalate }),
+    });
   }
 
   const updated = await repository().updateUser(user.id, {
