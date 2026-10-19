@@ -133,13 +133,51 @@ export async function createRepository(
     return { ok: false, reason: `You already have a repository called ${name}.` };
   }
   if (res.status === 403 || res.status === 404) {
-    return {
-      ok: false,
-      reason:
-        "GitHub won't let Formic create repositories yet. Accept Formic's updated permissions on GitHub, then try again.",
-    };
+    const said = await res
+      .json()
+      .then((b: { message?: string }) => b.message ?? "")
+      .catch(() => "");
+    return { ok: false, reason: await whyCreateWasRefused(token, said) };
   }
   return { ok: false, reason: `GitHub refused to create the repository (${res.status}).` };
+}
+
+interface RawInstallation {
+  account: { login: string } | null;
+  repository_selection: "all" | "selected";
+  permissions: Record<string, string>;
+}
+
+/**
+ * Which of the app's settings stopped a repository being created. GitHub
+ * answers 403 or 404 for all of them, so ask about the installation on the
+ * person's own account rather than guess.
+ */
+async function whyCreateWasRefused(token: string, said: string): Promise<string> {
+  const github = said ? ` GitHub said: "${said}"` : "";
+  const fallback = `GitHub won't let Formic create repositories.${github}`;
+
+  const [me, found] = await Promise.all([
+    fetch(`${API}/user`, { headers: headers(token), cache: "no-store" }).catch(() => null),
+    fetch(`${API}/user/installations?per_page=100`, { headers: headers(token), cache: "no-store" }).catch(
+      () => null,
+    ),
+  ]);
+  if (!me?.ok || !found?.ok) return fallback;
+  const { login } = (await me.json()) as { login: string };
+  const { installations } = (await found.json()) as { installations: RawInstallation[] };
+  const own = installations.find((i) => i.account?.login.toLowerCase() === login.toLowerCase());
+
+  if (!own) {
+    return `Formic isn't installed on your own account (${login}), only on organisations. Install it on ${login} to create repositories there.`;
+  }
+  if (own.permissions.administration !== "write") {
+    return "Your installation of Formic hasn't accepted the Administration permission. Open it on GitHub (Settings → Applications → Formic → Configure), accept the updated permissions, then try again.";
+  }
+  if (own.repository_selection === "selected") {
+    return `Formic can only see the repositories you picked, and GitHub only lets it create new ones with access to all of them. Set it to "All repositories" (Settings → Applications → Formic → Configure), then try again.${github}`;
+  }
+  return fallback;
 }
 
 /**
