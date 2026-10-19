@@ -428,14 +428,18 @@ export async function applyTickets(
       });
     }
   }
+  // The agent's key is only a handle for dependsOn; the ticket is stored as
+  // EPIC-n-Tm so codes stay unique across the project.
+  const epicKey = (await repo.cardById(epicId))?.key;
   const taken = new Set(kept.map((t) => t.key));
   const keyFor = new Map<string, string>();
-  for (const t of tickets) {
-    let key = t.key;
-    for (let n = 2; taken.has(key); n++) key = `${t.key}-${n}`;
+  tickets.forEach((t, i) => {
+    const base = `${epicKey}-T${i + 1}`;
+    let key = base;
+    for (let n = 2; taken.has(key); n++) key = `${base}-${n}`;
     taken.add(key);
     keyFor.set(t.key, key);
-  }
+  });
 
   const positions = await repo.columnPositions(projectId, "todo");
   let cursor = positions.length;
