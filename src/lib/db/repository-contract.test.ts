@@ -735,6 +735,18 @@ function contract(name: string, make: () => Repository) {
         expect(audits[0]!.report).toEqual(report);
       });
 
+      it("marks the Epic made from an audit, and a re-run starts unmarked", async () => {
+        const p = await project();
+        const a = await repo.startAudit(p.id, "qa");
+        await repo.finishAudit(a.id, { status: "done", stars: 3, quote: "q", summary: "s", report, files: [] });
+        expect((await repo.auditsFor(p.id))[0]!.epicId).toBeNull();
+        await repo.markAuditEpic(a.id, "epic-1");
+        expect((await repo.auditsFor(p.id))[0]!.epicId).toBe("epic-1");
+        const b = await repo.startAudit(p.id, "qa");
+        await repo.finishAudit(b.id, { status: "done", stars: 4, quote: "q", summary: "s", report, files: [] });
+        expect((await repo.auditsFor(p.id)).map((x) => x.epicId)).toEqual([null]);
+      });
+
       it("keeps the last report when a newer run fails", async () => {
         const p = await project();
         const done = await repo.startAudit(p.id, "qa");
