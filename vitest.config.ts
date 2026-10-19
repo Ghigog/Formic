@@ -36,19 +36,29 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/generated/**"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/test/**",
+        "src/generated/**",
+        // Only exercised by the Postgres half of the contract suite, which
+        // needs TEST_DATABASE_URL. Without it the file would count as
+        // uncovered, so local runs would measure less than CI does.
+        ...(process.env.TEST_DATABASE_URL
+          ? []
+          : ["src/lib/db/prisma-repository.ts"]),
+      ],
       reporter: ["json-summary", "text-summary"],
       // A floor, not a target. CI runs with `--coverage`; a change that drops
       // below these — even one that only removes a test's reach — turns the
       // `test` check red. Set just under where the suite is today so a small
       // legitimate drift does not fail it, while a real regression still does.
-      // (The Postgres half of the contract suite only runs in CI, so these are
-      // measured against the in-memory half and CI has more headroom still.)
+      // (Measured without TEST_DATABASE_URL, which also leaves
+      // prisma-repository.ts out of the count, so local and CI agree.)
       thresholds: {
-        lines: 71,
-        statements: 68,
-        branches: 64,
-        functions: 67,
+        lines: 76,
+        statements: 73,
+        branches: 68,
+        functions: 72,
       },
     },
     projects: [
