@@ -12,6 +12,7 @@ vi.mock("@/lib/agents/pipeline", () => ({ launch }));
 const { repository } = await import("@/lib/db");
 const { currentUser } = await import("@/lib/auth/user");
 const { GET, POST } = await import("./route");
+const { dailyBudget, utcDay } = await import("@/lib/usage/governor");
 const { NextRequest } = await import("next/server");
 
 const post = (body: unknown) =>
@@ -20,6 +21,7 @@ const post = (body: unknown) =>
 beforeEach(() => {
   globalThis.__formicMemoryStore = undefined;
   launch.mockClear();
+  vi.unstubAllEnvs();
 });
 
 describe("GET /api/projects", () => {
@@ -64,5 +66,21 @@ describe("POST /api/projects", () => {
 
   it("answers 404 for a project that does not exist", async () => {
     expect((await post({ projectId: "missing" })).status).toBe(404);
+  });
+
+  it("near the host allowance, still switches to an existing board but opens no new one", async () => {
+    const first = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
+    vi.stubEnv("FORMIC_USAGE_LIMITS", "on");
+    const today = utcDay(Date.now());
+    await repository().addPlatformUsage(
+      today,
+      { requests: dailyBudget().requests * 0.9, busyMs: 0, cpuMs: 0 },
+      today,
+    );
+
+    expect((await post({ projectId: first.project.id })).status).toBe(200);
+    expect((await post({ repoFullName: "acme/widgets" })).status).toBe(200);
+    expect((await post({ repoFullName: "acme/gadgets" })).status).toBe(503);
+    expect(launch).toHaveBeenCalledTimes(1);
   });
 });
