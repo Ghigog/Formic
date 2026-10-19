@@ -9,6 +9,7 @@ import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-sect
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
 import { ColonySection } from "@/components/settings/colony-section";
 import { EffortSection } from "@/components/settings/effort-section";
+import { ScoutAgentSection } from "@/components/settings/scout-agent-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
@@ -26,6 +27,8 @@ interface ProjectSetting {
   name: string;
   autoMerge: boolean;
   autoEscalate: boolean;
+  /** The saved agent that runs scouts; null follows the column. */
+  scoutPresetId?: string | null;
 }
 
 /**
@@ -42,6 +45,7 @@ export function SettingsForm({
   limits,
   renewal,
   effortByPoints,
+  presets = [],
 }: {
   account: Account;
   installUrl: string | null;
@@ -57,6 +61,8 @@ export function SettingsForm({
   renewal?: Renewal;
   /** Whether thinking effort follows story points; on when omitted. */
   effortByPoints?: boolean;
+  /** Saved agents the scout picker offers. */
+  presets?: { id: string; name: string }[];
 }) {
   return (
     <div className="bg-cream min-h-dvh">
@@ -137,6 +143,14 @@ export function SettingsForm({
             </p>
             <AutoEscalateToggle project={project} />
           </Section>
+        )}
+
+        {project && (
+          <ScoutAgentSection
+            projectId={project.id}
+            presets={presets}
+            initial={project.scoutPresetId ?? null}
+          />
         )}
 
         <SoundSection />
