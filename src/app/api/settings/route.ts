@@ -32,6 +32,8 @@ const bodySchema = z.object({
   projectId: z.string().min(1).optional(),
   autoMerge: z.boolean().optional(),
   autoEscalate: z.boolean().optional(),
+  /** An existing agent preset id, or null for the In Progress column's agent. */
+  scoutPresetId: z.string().min(1).nullable().optional(),
 });
 
 function sealed(value: string | null | undefined, cipher: string, hint: string) {
@@ -113,7 +115,11 @@ export async function GET(req?: Request) {
   if (projectId !== null) {
     const found = await ownedProject(user, projectId);
     if (found.refusal) return found.refusal;
-    return Response.json({ autoMerge: found.project.autoMerge, autoEscalate: found.project.autoEscalate });
+    return Response.json({
+      autoMerge: found.project.autoMerge,
+      autoEscalate: found.project.autoEscalate,
+      scoutPresetId: found.project.scoutPresetId,
+    });
   }
   return Response.json({
     ...(await getRunTimeBudgetSettings(user.id)),
@@ -217,18 +223,23 @@ export async function PUT(req: Request) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
   }
 
-  const { projectId, autoMerge, autoEscalate } = body.data;
-  if ((autoMerge !== undefined || autoEscalate !== undefined) !== (projectId !== undefined)) {
-    return Response.json({ error: "autoMerge, autoEscalate and projectId go together." }, { status: 400 });
+  const { projectId, autoMerge, autoEscalate, scoutPresetId } = body.data;
+  if ((autoMerge !== undefined || autoEscalate !== undefined || scoutPresetId !== undefined) !== (projectId !== undefined)) {
+    return Response.json({ error: "autoMerge, autoEscalate, scoutPresetId and projectId go together." }, { status: 400 });
   }
   if (projectId !== undefined) {
     const found = await ownedProject(user, projectId);
     if (found.refusal) return found.refusal;
+    if (scoutPresetId && !(await repository().presetForRun(scoutPresetId))) {
+      return Response.json({ error: "That agent does not exist." }, { status: 400 });
+    }
     if (autoMerge !== undefined) await repository().setAutoMerge(found.project.id, autoMerge);
     if (autoEscalate !== undefined) await repository().setAutoEscalate(found.project.id, autoEscalate);
+    if (scoutPresetId !== undefined) await repository().setScoutAgent(found.project.id, scoutPresetId);
     return Response.json({
       ...(autoMerge !== undefined && { autoMerge }),
       ...(autoEscalate !== undefined && { autoEscalate }),
+      ...(scoutPresetId !== undefined && { scoutPresetId }),
     });
   }
 
