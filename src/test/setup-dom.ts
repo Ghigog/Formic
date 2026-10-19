@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import type { EventEmitter } from "node:events";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { installMatchMedia, resetViewport } from "./viewport";
@@ -42,3 +43,21 @@ if (!("ResizeObserver" in globalThis)) {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
 }
+
+/**
+ * jsdom has no canvas and logs "Not implemented" on every getContext call.
+ * Returning null is what a browser without canvas support does.
+ */
+HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
+
+/**
+ * jsdom reports `location.href = …` and `location.reload()` as "Not
+ * implemented: navigation" and ignores them. `location` cannot be replaced in
+ * the shared window, so drop just that report; other jsdom errors still print.
+ */
+const { virtualConsole } = (globalThis as unknown as { jsdom: { virtualConsole: EventEmitter } }).jsdom;
+virtualConsole.removeAllListeners("jsdomError");
+virtualConsole.on("jsdomError", (error: Error) => {
+  if (error.message.includes("Not implemented: navigation")) return;
+  console.error(error);
+});
