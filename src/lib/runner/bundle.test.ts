@@ -66,6 +66,7 @@ describe("the loop entry as a build artifact", () => {
       stdout = execFileSync("node", [path.join(dir, "loop-entry.mjs")], {
         input: JSON.stringify(PAYLOAD),
         encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"], // keep the expected failure message off the test output
       });
     } catch (e) {
       stdout = String((e as { stdout?: string }).stdout ?? "");
