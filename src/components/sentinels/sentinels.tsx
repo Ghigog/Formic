@@ -572,12 +572,12 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
       ? `${x.name} · ${st.stars} of 5 · ${ago(st.at, now)}`
       : `${x.name} · not audited`;
   const prompt = useMemo(() => promptFor(x), [x]);
-  // The report an Epic was made from, so it is not sent twice.
+  // The report an Epic was just made from, until the store brings st.epicId.
   const reportKey = `${x.id}@${st.at}`;
-  const [sentKey, setSentKey] = useState<string | null>(null);
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [epicError, setEpicError] = useState<string | null>(null);
-  const sent = sentKey === reportKey;
+  const sent = !!st.epicId || createdKey === reportKey;
   const noGaps = st.stars === 5;
 
   async function createEpic() {
@@ -585,7 +585,9 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
     setEpicError(null);
     const res = await fetch(`/api/sentinels/${x.id}/epic`, { method: "POST" }).catch(() => null);
     setSending(false);
-    if (res?.ok) setSentKey(reportKey);
+    if (res?.ok) {
+      setCreatedKey(reportKey);
+    }
     else setEpicError(((await res?.json().catch(() => null)) as { error?: string } | null)?.error ?? "Could not create the epic.");
   }
 
@@ -667,9 +669,9 @@ function Report({ x, st, now, locked, onSummon }: { x: Sentinel; st: SentinelSta
               title={noGaps ? "A 5-star report leaves nothing to fix." : running ? "An audit is running." : undefined}
               className="bg-anthracite text-cream h-9 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97] disabled:opacity-50"
             >
-              Create epic from this report
+              {sent ? "Epic created" : "Create epic from this report"}
             </button>
-            {sent && (
+            {createdKey === reportKey && (
               <span role="status" className="text-muted text-[12px]">
                 Epic added to Backlog.
               </span>

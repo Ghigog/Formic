@@ -1369,6 +1369,7 @@ export class MemoryRepository implements Repository {
       files: [],
       runnerJob: null,
       runnerAgent: null,
+      epicId: null,
       startedAt: new Date(),
       finishedAt: null,
     };
@@ -1383,6 +1384,11 @@ export class MemoryRepository implements Repository {
   async setAuditJob(id: string, job: string | null, agent: string | null): Promise<void> {
     const audit = store().audits.find((a) => a.id === id);
     if (audit) Object.assign(audit, { runnerJob: job, runnerAgent: agent });
+  }
+
+  async markAuditEpic(auditId: string, epicId: string): Promise<void> {
+    const audit = store().audits.find((a) => a.id === auditId);
+    if (audit) audit.epicId = epicId;
   }
 
   async finishAudit(id: string, result: AuditResult): Promise<void> {

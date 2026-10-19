@@ -3,6 +3,7 @@ import { createBacklogItem } from "@/lib/board/service";
 import { requestFromReport } from "@/lib/sentinels/epic";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import { sentinelsFor } from "@/lib/sentinels/service";
+import { repository } from "@/lib/db";
 import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +26,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (state.stars === 5) {
     return Response.json({ error: "A 5-star report leaves nothing to fix." }, { status: 409 });
   }
+  if (state.epicId) {
+    return Response.json({ error: "An epic was already created from this report." }, { status: 409 });
+  }
   const card = await createBacklogItem(
     project.id,
     requestFromReport(sentinel, { stars: state.stars, summary: state.summary, report: state.report }),
   );
+  if (state.auditId) await repository().markAuditEpic(state.auditId, card.id);
   return Response.json({ card }, { status: 201 });
 }
