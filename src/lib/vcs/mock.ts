@@ -72,6 +72,8 @@ interface MockRepo {
   baseMerges: Map<string, string>;
   /** Pull requests GitHub refuses to bring the base into, and what it says. */
   refusals: Map<number, string>;
+  /** Pull requests whose base has moved on since their head was made. */
+  behind: Set<number>;
   /** Merge commits Formic recorded, to the commit each merged in. */
   recordedMerges: Map<string, string>;
   /** Each card's checkpoint, with what it saved. */
@@ -121,6 +123,7 @@ function repo(): MockRepo {
     merges: [],
     baseMerges: new Map(),
     refusals: new Map(),
+    behind: new Set(),
     recordedMerges: new Map(),
     checkpoints: new Map(),
     branchRuns: new Map(),
@@ -217,6 +220,19 @@ export class MockVcsClient implements VcsClient {
     // A conflicted mock PR stands for one an agent just resolved: bringing
     // the base in now succeeds, as it would on GitHub.
     const pull = pulls().get(number);
+    if (pull && repo().behind.delete(number)) {
+      // A new head, so CI starts over on it. A new object too, as a fresh
+      // read from GitHub would be: whoever read the pull request before still
+      // holds the head it had.
+      const sha = fakeSha();
+      repo().baseMerges.set(sha, pull.headSha);
+      pulls().set(number, {
+        ...pull,
+        headSha: sha,
+        checks: pull.checks.map((c) => ({ ...c, status: "in_progress", conclusion: null })),
+      });
+      return { ok: true, updated: true };
+    }
     if (pull?.mergeable !== false) return { ok: true, updated: false };
     pull.mergeable = true;
     const sha = fakeSha();
@@ -245,7 +261,10 @@ export class MockVcsClient implements VcsClient {
     }
     pull.merged = true;
     pull.state = "closed";
-    return { ok: true, sha: fakeSha() };
+    const sha = fakeSha();
+    // The base moves on to the merge, as on GitHub, where Formic has seen it.
+    if (repo().branches.has(pull.baseBranch)) repo().branches.set(pull.baseBranch, sha);
+    return { ok: true, sha };
   }
 
   async comment(number: number, body: string): Promise<void> {
@@ -539,6 +558,11 @@ export class MockVcsClient implements VcsClient {
     repo().baseMerges.set(sha, pull.headSha);
     pull.headSha = sha;
     return sha;
+  }
+
+  /** Test seam: the base has moved on under a mock PR, so bringing it in makes a new head. */
+  static behindBase(number: number): void {
+    repo().behind.add(number);
   }
 
   /** Test seam: make GitHub refuse to bring the base into a mock PR. */

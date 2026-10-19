@@ -518,6 +518,8 @@ export interface Repository {
   acquireLease(key: string, holder: string, ttlMs: number): Promise<boolean>;
   /** Lets go of `key`, only if `holder` still has it. */
   releaseLease(key: string, holder: string): Promise<void>;
+  /** Who holds `key` now, or null when nobody does or the holder let it lapse. */
+  leaseHolder(key: string): Promise<string | null>;
 
   /* People. */
 
