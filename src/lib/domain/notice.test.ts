@@ -41,4 +41,15 @@ describe("classifyNotice", () => {
     expect(n?.shortDescription).toBe("Run failed");
     expect(n?.longDescription).toBe(reason);
   });
+
+  it("gives no notice for a blocked card with an agent working on it", () => {
+    const card = { status: "blocked" as const, stalledIn: "todo" as const, blockedReason: "Drafting the ticket…" };
+    expect(classifyNotice({ ...card, workingSince: "2026-01-01T00:00:00Z" })).toBeNull();
+    expect(classifyNotice({ ...card, workingSince: null })?.title).toBe("Waiting for you");
+  });
+
+  it("gives no notice for a failed card with an agent working on it", () => {
+    const card = { status: "failed" as const, stalledIn: "in_progress" as const, blockedReason: "Tests failed" };
+    expect(classifyNotice({ ...card, workingSince: "2026-01-01T00:00:00Z" })).toBeNull();
+  });
 });
