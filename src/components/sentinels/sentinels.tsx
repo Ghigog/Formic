@@ -82,6 +82,8 @@ const SLIDE_STAGGER_MS = 110;
 const VOICE_GAP_MS = 120;
 /** A wheel gesture ends once the wheel has been quiet this long. */
 const WHEEL_QUIET_MS = 160;
+/** Tailwind's md breakpoint: from here up the rail scrolls freely. */
+const DESKTOP = "(min-width: 768px)";
 
 function ago(iso: string | null, now: number): string {
   if (!iso) return "";
@@ -160,13 +162,14 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     setIdx(best);
   };
 
-  // A mouse wheel gesture is one step: further wheel events are swallowed
+  // On mobile a mouse wheel gesture is one step: further wheel events are swallowed
   // until the wheel has been quiet, which also absorbs trackpad inertia.
   useEffect(() => {
     const el = rail.current;
     if (!el) return;
     let quiet: ReturnType<typeof setTimeout> | undefined;
     const onWheel = (e: WheelEvent) => {
+      if (window.matchMedia(DESKTOP).matches) return;
       e.preventDefault();
       if (quiet === undefined)
         step(
@@ -447,7 +450,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             role="list"
             aria-label="Sentinels"
             onScroll={onScroll}
-            className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain px-[calc(50%-132px)] pb-2"
+            className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain px-[calc(50%-132px)] pb-2 md:snap-none md:px-1"
           >
             {SENTINELS.map((x, i) => (
               <Card
@@ -567,7 +570,7 @@ function Card({
         }
       }}
       className={cn(
-        "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-center snap-always flex-col overflow-hidden rounded-[14px] border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
+        "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-center snap-always flex-col md:snap-align-none md:snap-normal overflow-hidden rounded-[14px] border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
         !reported(st) && "sentinel-motion animate-[sentinelFade_0.4s_ease-out]",
         on
           ? "border-terracotta shadow-[0_0_0_3px_rgb(217_107_39/0.14)]"
@@ -575,7 +578,7 @@ function Card({
       )}
     >
       <div
-        className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden"
+        className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden md:h-auto md:min-h-[120px] md:flex-1 md:shrink"
         style={{ background: portraitGround(x.id) }}
       >
         <div
@@ -603,7 +606,7 @@ function Card({
           </>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-4 md:flex-none">
         <div className="flex flex-col gap-[3px]">
           <span className="text-ink font-serif text-[21px] leading-[1.1] font-semibold">
             {x.who}

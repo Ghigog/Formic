@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyFx } from "@/components/colony/fx";
 import { SoundEngine } from "@/components/colony/sound";
+import { resetViewport, setViewportMatches } from "@/test/viewport";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import type { SentinelStates } from "@/lib/sentinels/view";
 import { SentinelsPage } from "./sentinels";
@@ -232,6 +233,19 @@ describe("SentinelsPage carousel and report modal", () => {
       expect(centred()).toBe(0);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("leaves the wheel to the browser from md up", async () => {
+    setViewportMatches(true);
+    try {
+      await open();
+      const e = new WheelEvent("wheel", { deltaY: 40, bubbles: true, cancelable: true });
+      act(() => void list().dispatchEvent(e));
+      expect(e.defaultPrevented).toBe(false);
+      expect(centred()).toBe(0);
+    } finally {
+      resetViewport();
     }
   });
 
