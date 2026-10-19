@@ -1565,6 +1565,10 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: { assistantPresetId: presetId } });
   }
 
+  async setScoutAgent(projectId: string, presetId: string | null): Promise<void> {
+    await prisma().project.update({ where: { id: projectId }, data: { scoutPresetId: presetId } });
+  }
+
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
     await prisma().project.update({ where: { id: projectId }, data: { autoEscalate } });
   }

@@ -7,12 +7,10 @@ import { launch, startRun } from "@/lib/agents/pipeline";
 import { agentFor, runTargetFor, withColumnPreset } from "@/lib/agents/presets";
 import { MAX_DIFF_CHARS, type ScoutCandidate } from "@/lib/agents/judge";
 import type { CodeChange, Usage } from "@/lib/agents/ports";
-import { ownerScope } from "@/lib/auth/user";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { withLease } from "@/lib/board/lease";
-import { scoreOf } from "@/lib/colony/game";
-import { maxScouts, slotsInUse } from "@/lib/colony/reserve";
+import { slotsInUse } from "@/lib/colony/reserve";
 import { AUTO_SCOUTED, blockerOf, colonyOf } from "@/lib/board/queue";
 import { byPosition } from "@/lib/ordering";
 import { columnFor } from "@/lib/domain/status";
@@ -44,8 +42,6 @@ const STAGE_CODE_RUN = 5;
  * The parent ticket holds the file reservation for all of them and counts one
  * colony slot per scout while they are out.
  */
-
-export const MIN_SCOUTS = 2;
 
 /** The approaches scouts are told to take, one each, in order. */
 export const SCOUT_APPROACHES = [
@@ -90,24 +86,27 @@ export function scouting(ticket: TicketDetail): boolean {
 export type ScoutAnswer = { ok: true } | { ok: false; reason: string };
 
 /**
- * A person sends `count` scouts on a ticket in To Do; `presets` names the
- * agent template for each (null or absent: the column's). The ticket moves
- * to In Progress, where it starts or waits its turn like any other.
+ * A person sends one scout on a ticket in In Progress: a second attempt, on
+ * the scout agent the board sets (the column's agent when it sets none). A
+ * ticket whose attempt failed starts again to send it, or waits its turn.
  */
 export async function sendScouts(
   projectId: string,
   ticketId: string,
-  input: { count: number; presets?: Array<string | null>; auto?: boolean },
+  input: { auto?: boolean } = {},
 ): Promise<ScoutAnswer> {
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket || ticket.projectId !== projectId || ticket.scoutOf) return { ok: false, reason: "That ticket is not on this board." };
-  // The reserve may also scout a ticket whose one attempt failed.
-  const retry = !!input.auto && ticket.status === "failed" && ticket.stalledIn === "in_progress";
-  if ((ticket.status !== "ready" && !retry) || ticket.prNumber) {
-    return { ok: false, reason: "Scouts go out from To Do, before any work has started." };
+  if (columnFor(ticket.status, ticket.stalledIn) !== "in_progress" || ticket.prNumber) {
+    return { ok: false, reason: "A scout goes out on a ticket in In Progress." };
   }
   if (ticket.needsHuman) return { ok: false, reason: "This ticket is work for a person." };
+
+  const before = await repo.scoutsOf(ticketId);
+  if (before.some((s) => s.status === "running" || s.status === "ready")) {
+    return { ok: false, reason: "A scout is already out on this ticket." };
+  }
 
   const cards = await repo.boardCards(projectId);
   const card = cards.find((c) => c.id === ticketId);
@@ -116,69 +115,58 @@ export async function sendScouts(
   const open = card.dependsOn.map((id) => cards.find((c) => c.id === id)).filter((c) => c && c.status !== "merged");
   if (open.length > 0) return { ok: false, reason: "Scouts go out once everything the ticket depends on has merged." };
 
-  const most = maxScouts(scoreOf(cards).level);
-  if (input.count < MIN_SCOUTS || input.count > most) {
-    return { ok: false, reason: `Send ${MIN_SCOUTS} to ${most} scouts at this level.` };
+  const project = await repo.projectById(projectId);
+  // A ticket already running holds one slot: its scout needs another.
+  const running = ticket.status === "running";
+  if (running && !input.auto && project && project.colonySize !== null) {
+    const size = colonyOf(project, cards).colonySize ?? project.colonySize;
+    if (slotsInUse(cards) + 1 > size) return { ok: false, reason: `The colony is full: ${slotsInUse(cards)} of ${size} slots in use.` };
   }
 
-  const project = await projectFor(projectId);
-  const presets = (input.presets ?? []).slice(0, input.count);
-  if (presets.some(Boolean)) {
-    const owner = project.ownerId ? await repo.userById(project.ownerId) : null;
-    const visible = new Set(
-      (await repo.listPresets(owner ? ownerScope(owner) : { ownerId: "", includeUnowned: true })).map((p) => p.id),
-    );
-    if (presets.some((p) => p && !visible.has(p))) return { ok: false, reason: "Pick agents from your own templates." };
-  }
-
-  // Scouts sent before and never picked from are replaced.
-  const before = await repo.scoutsOf(ticketId);
+  // A scout sent before and never picked from is replaced.
   if (before.length) await repo.deleteTickets(before.map((s) => s.id));
-  await repo.createScouts(
-    ticketId,
-    Array.from({ length: input.count }, (_, i) => ({
-      brief: SCOUT_APPROACHES[i % SCOUT_APPROACHES.length]!,
-      presetId: presets[i] ?? null,
-    })),
-  );
-  await repo.updateTicket(ticketId, { scouts: input.count, scoutPick: null, scoutWhy: input.auto ? AUTO_SCOUTED : null });
+  await repo.createScouts(ticketId, [{ brief: SCOUT_APPROACHES[3], presetId: project?.scoutPresetId ?? null }]);
+  await repo.updateTicket(ticketId, { scouts: 1, scoutPick: null, scoutWhy: input.auto ? AUTO_SCOUTED : null });
 
-  // The reserve's own scouts take its idle slots: no move, no colony check.
-  if (input.auto) {
-    const { claimOrQueue } = await import("@/lib/board/queue");
-    const write = (status: "running" | "queued") =>
-      repo.updateTicket(ticketId, { status, stalledIn: null, blockedReason: null, attempts: 0 });
-    const { status } = await claimOrQueue(projectId, { ...card, scouts: input.count }, write, { reserve: true });
-    await publish(projectId, {
-      type: "card.status",
-      cardId: ticketId,
-      kind: "ticket",
-      status,
-      stalledIn: null,
-      stage: STAGE_CODE_RUN,
-      blockedReason: null,
-    });
-    if (status === "running") {
-      const { runCoderAgent } = await import("./pipeline");
-      launch(() => runCoderAgent(projectId, ticketId), `scouts for ${ticket.key}, from the reserve`);
-    }
+  // Already running its own attempt: the scout goes out beside it. Queued,
+  // it goes out when the ticket starts.
+  if (running) {
+    const [scout] = await repo.scoutsOf(ticketId);
+    await launchScout(projectId, scout!);
     return { ok: true };
   }
+  if (ticket.status === "queued") return { ok: true };
 
-  const { applyTransition } = await import("@/lib/board/service");
-  const moved = await applyTransition(projectId, {
+  // Stopped in In Progress: it starts again to send its scout. The reserve's
+  // own scouts take its idle slots, with no colony check.
+  const { claimOrQueue } = await import("@/lib/board/queue");
+  const write = (status: "running" | "queued") =>
+    repo.updateTicket(ticketId, { status, stalledIn: null, blockedReason: null, attempts: 0 });
+  const { status } = await claimOrQueue(projectId, { ...card, scouts: 1 }, write, { reserve: !!input.auto });
+  await publish(projectId, {
+    type: "card.status",
     cardId: ticketId,
     kind: "ticket",
-    from: "todo",
-    to: "in_progress",
-    position: Number.MAX_SAFE_INTEGER,
-    actor: "user",
+    status,
+    stalledIn: null,
+    stage: STAGE_CODE_RUN,
+    blockedReason: null,
   });
-  if (!moved.ok) {
-    await recallScouts(projectId, ticketId);
-    return { ok: false, reason: moved.reason };
+  if (status === "running") {
+    const { runCoderAgent } = await import("./pipeline");
+    launch(() => runCoderAgent(projectId, ticketId), `scout for ${ticket.key}`);
   }
   return { ok: true };
+}
+
+/** Starts a scout's run on the scout agent, or the column's when none is set. */
+async function launchScout(projectId: string, scout: TicketDetail): Promise<void> {
+  await repository().updateTicket(scout.id, { status: "running", stalledIn: null, blockedReason: null });
+  const { runCoderAgent } = await import("./pipeline");
+  launch(
+    () => withColumnPreset("in_progress", scout.scoutPresetId, () => runCoderAgent(projectId, scout.id)),
+    `scout ${scout.key}`,
+  );
 }
 
 /**
@@ -201,22 +189,17 @@ export async function runScouts(projectId: string, parent: TicketDetail): Promis
   const live = new Set(
     (await repo.unfinishedRuns(new Date())).map((r) => r.ticketId).filter((id): id is string => !!id),
   );
-  const { runCoderAgent } = await import("./pipeline");
   for (const scout of scouts) {
     const lost = scout.status === "running" && !scout.runnerJob && !live.has(scout.id);
     if (scout.status !== "ready" && !lost) continue;
-    await repo.updateTicket(scout.id, { status: "running", stalledIn: null, blockedReason: null });
-    launch(
-      () => withColumnPreset("in_progress", scout.scoutPresetId, () => runCoderAgent(projectId, scout.id)),
-      `scout ${scout.key}`,
-    );
+    await launchScout(projectId, scout);
   }
   await publish(projectId, {
     type: "run.progress",
     runId: `scouts:${parent.id}`,
     ticketId: parent.id,
     role: "coder",
-    label: `${scouts.length} scouts out`,
+    label: "Scout out",
     fraction: 0,
   });
 }
@@ -487,8 +470,7 @@ export async function scoutViews(parentId: string): Promise<{ why: string | null
 /**
  * Auto-scouting, once the level unlocks it and the person turns it on: when
  * nothing is waiting and the reserve has slots standing idle, they scout one
- * ticket that could use it: a spike in To Do, or a ticket whose attempt
- * failed. One at a time, two scouts each. Urgent work calls them back
+ * ticket whose attempt failed. One at a time, one scout each. Urgent work calls them back
  * (src/lib/board/queue.ts). Run from the idle sweep.
  */
 export async function autoScout(projectId: string): Promise<void> {
@@ -501,7 +483,7 @@ export async function autoScout(projectId: string): Promise<void> {
   const tickets = cards.filter((c) => c.kind === "ticket");
   if (tickets.some((c) => c.status === "queued")) return;
   if (tickets.some((c) => c.status === "running" && (c.scouts ?? 0) > 0 && !c.scoutPick)) return;
-  if (colony.colonySize - slotsInUse(cards) < MIN_SCOUTS) return;
+  if (colony.colonySize - slotsInUse(cards) < 1) return;
 
   const merged = (id: string) => cards.find((c) => c.id === id)?.status === "merged";
   const candidates = tickets
@@ -511,13 +493,13 @@ export async function autoScout(projectId: string): Promise<void> {
         !c.prNumber &&
         !c.misplacedIn &&
         c.dependsOn.every(merged) &&
-        ((c.status === "ready" && columnFor(c.status, c.stalledIn) === "todo" && c.workType === "spike") ||
-          (c.status === "failed" && c.stalledIn === "in_progress")),
+        c.status === "failed" &&
+        c.stalledIn === "in_progress",
     )
     .sort(byPosition);
   for (const card of candidates) {
     if (await blockerOf(projectId, card)) continue;
-    const sent = await sendScouts(projectId, card.id, { count: MIN_SCOUTS, auto: true });
+    const sent = await sendScouts(projectId, card.id, { auto: true });
     if (sent.ok) return;
   }
 }

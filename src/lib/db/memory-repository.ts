@@ -205,6 +205,7 @@ function store(): Store {
     colonySize: null,
     colonyReserve: 0,
     autoScout: false,
+    scoutPresetId: null,
   };
   const s: Store = {
     project,
@@ -504,6 +505,7 @@ export class MemoryRepository implements Repository {
       colonySize: null,
       colonyReserve: 0,
       autoScout: false,
+      scoutPresetId: null,
     };
     s.projects.set(project.id, project);
     return project;
@@ -1533,6 +1535,11 @@ export class MemoryRepository implements Repository {
     const s = store();
     if (presetId === null) s.columnAgents.delete(`${projectId}:assistant`);
     else s.columnAgents.set(`${projectId}:assistant`, presetId);
+  }
+
+  async setScoutAgent(projectId: string, presetId: string | null): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) project.scoutPresetId = presetId;
   }
 
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
