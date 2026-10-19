@@ -75,6 +75,39 @@ function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
   return { send, onOpenEpic, onOpenTicket };
 }
 
+describe("TicketDrawer notice", () => {
+  const stalled = (status: "failed" | "blocked" | "waiting", reason: string): TicketView => ({
+    ...VIEW,
+    card: { ...card, status, stalledIn: "in_review", blockedReason: reason },
+  });
+
+  it("shows a red Warning banner with title, short and long description", async () => {
+    open(stalled("failed", "CI broke\nline two of the log"));
+    const banner = await screen.findByRole("alert");
+    expect(banner.dataset.severity).toBe("warning");
+    expect(banner.className).toContain("bg-crimson");
+    expect(within(banner).getByText("Warning")).toBeInTheDocument();
+    expect(within(banner).getByText("Failed")).toBeInTheDocument();
+    expect(within(banner).getAllByText(/CI broke/).length).toBeGreaterThan(0);
+    expect(within(banner).getByText(/line two of the log/)).toBeInTheDocument();
+  });
+
+  it("shows a yellow Alert banner for a ticket paused for authorization", async () => {
+    open(stalled("blocked", "Needs files outside its scope: src/a.ts\nmore"));
+    const banner = await screen.findByRole("alert");
+    expect(banner.dataset.severity).toBe("alert");
+    expect(banner.className).toContain("bg-clay");
+    expect(within(banner).getByText("Alert")).toBeInTheDocument();
+    expect(within(banner).getByText("Needs authorization")).toBeInTheDocument();
+  });
+
+  it("shows only the neutral text for a dependency wait", async () => {
+    open(stalled("waiting", "Waiting on PROT-1"));
+    await screen.findByText("Waiting on PROT-1");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
 describe("TicketDrawer work type", () => {
   const todoView = (workType: TicketView["card"]["workType"] = null): TicketView => ({
     ...VIEW,
@@ -278,9 +311,9 @@ describe("TicketDrawer", () => {
     const link = await screen.findByRole("link", { name: url });
     expect(link).toHaveAttribute("href", url);
     expect(link).toHaveAttribute("target", "_blank");
-    // The sentence around the link is still a sentence, under "This needs you."
-    expect(screen.getByText(/Merge the setup pull request once/)).toBeInTheDocument();
-    expect(screen.getByText(/This needs you\./)).toBeInTheDocument();
+    // The sentence around the link is still a sentence, in the alert banner
+    expect(screen.getAllByText(/Merge the setup pull request once/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Alert")).toBeInTheDocument();
   });
 
   it("does the same for a reason that is a wait, not a stall, such as a dependency", async () => {

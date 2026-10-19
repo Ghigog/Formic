@@ -16,7 +16,8 @@ import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
-import { ProblemNotice, WorkTimer } from "./card";
+import { NoticeIcon, ProblemNotice, WorkTimer } from "./card";
+import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
 import { ScoutsPanel } from "./scouts-panel";
 import {
@@ -128,6 +129,7 @@ export function TicketDrawer({
   if (!ticketId) return null;
 
   const card = view?.card;
+  const notice = card && !card.misplacedReason ? classifyNotice(card) : null;
   const progress = card ? ticketProgress(card) : { current: 3, working: false, failedAt: null };
 
   return (
@@ -143,7 +145,12 @@ export function TicketDrawer({
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
-          {card && <ProblemNotice card={card} className="mb-3" />}
+          {card &&
+            (notice ? (
+              <NoticeBanner notice={notice} className="mb-3" />
+            ) : (
+              <ProblemNotice card={card} className="mb-3" />
+            ))}
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -314,6 +321,36 @@ export function TicketDrawer({
 }
 
 /** The ticket as it was written. */
+/** A warning (red) or alert (yellow) in full: title, the short line, then the long text. */
+function NoticeBanner({ notice, className }: { notice: Notice; className?: string }) {
+  const warning = notice.severity === "warning";
+  return (
+    <div
+      role="alert"
+      data-severity={notice.severity}
+      className={cn(
+        "text-ink rounded-md px-2.5 py-2 text-[12px] leading-5",
+        warning ? "bg-crimson/10" : "bg-clay/10",
+        className,
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <NoticeIcon severity={notice.severity} />
+        <span className={cn("text-[10px] font-bold uppercase", warning ? "text-crimson" : "text-clay")}>
+          {warning ? "Warning" : "Alert"}
+        </span>
+        <span className="font-semibold">{notice.title}</span>
+      </div>
+      {notice.shortDescription && <p className="mt-1">{notice.shortDescription}</p>}
+      {notice.longDescription && (
+        <pre className="bg-sunken mt-1.5 max-h-40 overflow-auto rounded px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">
+          <LinkifiedText text={notice.longDescription} />
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (ticketId: string) => void }) {
   return (
     <div className="text-fg space-y-4 text-[13px] leading-6">
