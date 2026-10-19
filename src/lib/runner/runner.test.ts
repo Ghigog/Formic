@@ -18,6 +18,7 @@ import {
   startJobRun,
   stopTicket,
   usageOf,
+  whyItFailed,
 } from "./runner";
 import { addNote } from "@/lib/coder/notes";
 import {
@@ -122,6 +123,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
   resetEnvCache();
   setLoopBundleDir(null);
+});
+
+describe("whyItFailed", () => {
+  const url = "https://github.com/acme/widgets/actions/runs/7";
+  const why = (conclusion: string, link: string | null = url) =>
+    whyItFailed(PROJECT, {} as never, { conclusion, url: link } as never, null);
+
+  it("puts the error type first and the log link in the detail", async () => {
+    expect(await why("cancelled")).toBe(`The run was cancelled\nLog: ${url}`);
+    expect(await why("timed_out")).toBe(`The run timed out\nLog: ${url}`);
+    expect(await why("failure", null)).toBe("The run ended as failure");
+  });
 });
 
 describe("CLI agent templates", () => {
@@ -1233,7 +1246,7 @@ describe("collecting a run whose webhook never came", () => {
 
     const card = (await repository().cardById(epic.id))!;
     expect(card).toMatchObject({ status: "failed", stalledIn: "backlog" });
-    expect(card.blockedReason).toContain("time limit");
+    expect(card.blockedReason).toBe("The run timed out\nLog: https://github.com/acme/widgets/actions/runs/41");
   });
 });
 

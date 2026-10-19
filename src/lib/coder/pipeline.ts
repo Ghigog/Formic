@@ -362,7 +362,8 @@ export async function runCoderAgent(
     }
 
     if (changed.length === 0) {
-      const reason = "The agent finished without changing anything.";
+      const said = (outcome.value.summary ?? "").trim();
+      const reason = ["The agent changed nothing", said].filter(Boolean).join("\n");
       await stallTicket(projectId, ticket, reason, {
         blocked: false,
         stalledIn: "in_progress",

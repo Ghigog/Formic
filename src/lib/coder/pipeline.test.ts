@@ -359,7 +359,7 @@ describe("the Coder Agent pipeline", () => {
 
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.status).toBe("failed");
-    expect(after.blockedReason).toContain("without changing anything");
+    expect(after.blockedReason).toBe("The agent changed nothing\ndid the thing");
     expect(after.prNumber).toBeNull();
   });
 
