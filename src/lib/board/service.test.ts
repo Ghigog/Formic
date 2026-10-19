@@ -16,7 +16,7 @@ vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn(), stallTicket: vi
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
-const { advanceQueens, applyTransition, canRetryEpic, createTodoItem, deleteEpic, generateShowcase, retryEpic } = await import(
+const { advanceQueens, applyTransition, canRetryEpic, createBacklogItem, createTodoItem, deleteEpic, generateShowcase, retryEpic } = await import(
   "./service"
 );
 const { repository } = await import("@/lib/db");
@@ -492,6 +492,33 @@ describe("an Epic's tickets following it", () => {
     await move(epic!.id, "backlog", "todo");
 
     expect(launched).toEqual([`architect agent for ${epic!.key}`]);
+  });
+});
+
+describe("createBacklogItem", () => {
+  it("claims attachments uploaded against the request id onto the Epic", async () => {
+    const repo = repository();
+    const project = await repo.defaultProject();
+    await repo.createAttachment({
+      projectId: project.id,
+      requestId: "req-1",
+      filename: "a.txt",
+      mimeType: "text/plain",
+      kind: "file",
+      size: 1,
+      bytes: new Uint8Array([1]),
+    });
+
+    const card = await createBacklogItem(PROJECT, "Add a retry button.", undefined, "req-1");
+
+    expect(await repo.attachmentsFor({ epicId: card.id })).toHaveLength(1);
+    expect(await repo.attachmentsFor({ requestId: "req-1" })).toEqual([]);
+  });
+
+  it("creates the Epic with no attachments when there is no request id", async () => {
+    const card = await createBacklogItem(PROJECT, "Add a retry button.");
+
+    expect(await repository().attachmentsFor({ epicId: card.id })).toEqual([]);
   });
 });
 
