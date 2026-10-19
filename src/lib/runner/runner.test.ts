@@ -14,6 +14,7 @@ import {
   reviewVerdictOf,
   secretNameFor,
   signedAttachmentUrl,
+  attachmentsPrompt,
   startJobRun,
   stopTicket,
   usageOf,
@@ -295,7 +296,7 @@ describe("a CLI agent planning an Epic", () => {
     await completeCliRun(PROJECT, { job: second.job!, mode: "architect", conclusion: "success", url: null });
 
     const tickets = await repository().ticketsForEpic(epic.id);
-    expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2"]);
+    expect(tickets.map((t) => t.key).sort()).toEqual(["EPIC-1-T1", "EPIC-1-T2"]);
     expect((await repository().epicDetail(epic.id))!.runnerJob).toBeNull();
   });
 
@@ -1392,6 +1393,18 @@ describe("signed attachment URLs for a CLI agent with no Formic session", () => 
     vi.stubEnv("FORMIC_URL", "");
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
     expect(signedAttachmentUrl("att_1")).toBeNull();
+  });
+
+  it("tells the agent its attachments cannot be downloaded, naming each, without a public origin", () => {
+    vi.stubEnv("FORMIC_URL", "");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
+    const file = (id: string, filename: string) =>
+      ({ id, filename, mimeType: "text/plain", kind: "file", size: 1, url: "" }) as const;
+    const prompt = attachmentsPrompt([file("att_1", "design.md"), file("att_2", "spec.txt")]);
+    expect(prompt).toContain("could not be made available");
+    expect(prompt).toContain("design.md");
+    expect(prompt).toContain("spec.txt");
+    expect(attachmentsPrompt([])).toBeNull();
   });
 });
 

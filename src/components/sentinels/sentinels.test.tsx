@@ -15,6 +15,8 @@ const states = (reported: string[]): SentinelStates =>
       x.id,
       {
         id: x.id,
+        auditId: null,
+        epicId: null,
         stars: reported.includes(x.id) ? 4 : null,
         quote: null,
         summary: null,
@@ -110,11 +112,12 @@ describe("Report: create epic", () => {
   const x = SENTINELS[0]!;
   const report = { likes: [], dislikes: [], wrong: [{ text: "Bug", ref: "a.ts" }], missing: [] };
 
-  async function openWith(stars: number, running = false) {
+  async function openWith(stars: number, running = false, epicId: string | null = null) {
     const base = states([]);
     base[x.id] = {
       ...base[x.id]!,
       stars,
+      epicId,
       summary: "Summary",
       report,
       at: new Date().toISOString(),
@@ -130,7 +133,7 @@ describe("Report: create epic", () => {
     );
     await userEvent.click(screen.getByText("open sentinels"));
     await userEvent.click(document.querySelector(`[data-card="${x.id}"]`)!);
-    return screen.getByRole("button", { name: "Create epic from this report" });
+    return screen.getByRole("button", { name: epicId ? "Epic created" : "Create epic from this report" });
   }
 
   afterEach(() => vi.unstubAllGlobals());
@@ -142,6 +145,12 @@ describe("Report: create epic", () => {
     await userEvent.click(button);
     expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${x.id}/epic`, { method: "POST" });
     expect(await screen.findByText("Epic added to Backlog.")).toBeTruthy();
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("reads Epic created and is disabled once the report has an epic", async () => {
+    const button = await openWith(3, false, "epic-1");
+    expect(button.textContent).toBe("Epic created");
     expect((button as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -271,5 +280,17 @@ describe("SentinelsPage carousel and report modal", () => {
     expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${SENTINELS[0]!.id}`, { method: "POST" });
     expect(screen.queryByRole("dialog")).toBeNull();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("SentinelsPage summary layout", () => {
+  it("keeps the grade on the right of the stats on one row", async () => {
+    await open();
+    const grade = screen.getByTitle(/^Grade = average/);
+    const stats = screen.getByText(/avg$/);
+    expect(stats.compareDocumentPosition(grade) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const section = grade.closest("section")!;
+    expect(section.className).not.toMatch(/flex-col/);
+    expect(grade.parentElement!.className).not.toMatch(/flex-(col|wrap)/);
   });
 });
