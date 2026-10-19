@@ -34,10 +34,47 @@ describe("createRepository", () => {
       ok: false,
       reason: "You already have a repository called fresh.",
     });
-    vi.stubGlobal("fetch", async () => new Response("{}", { status: 403 }));
-    const denied = await createRepository("fresh", "tok");
-    expect(denied.ok).toBe(false);
-    expect(!denied.ok && denied.reason).toMatch(/updated permissions/);
+  });
+
+  /** GitHub refuses the create, then describes the installation on ada's own account. */
+  function refusedWith(installations: unknown[]) {
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (url.endsWith("/user/repos")) {
+        return Response.json({ message: "Resource not accessible by integration" }, { status: 403 });
+      }
+      if (url.endsWith("/user")) return Response.json({ login: "ada" });
+      return Response.json({ installations });
+    });
+  }
+  const install = (over: object) => ({
+    account: { login: "Ada" },
+    repository_selection: "all",
+    permissions: { administration: "write" },
+    ...over,
+  });
+  const reason = async () => {
+    const r = await createRepository("fresh", "tok");
+    return !r.ok && r.reason;
+  };
+
+  it("says when the app is not installed on the person's own account", async () => {
+    refusedWith([install({ account: { login: "some-org" } })]);
+    expect(await reason()).toMatch(/isn't installed on your own account \(ada\)/);
+  });
+
+  it("says when the installation has not accepted Administration", async () => {
+    refusedWith([install({ permissions: { contents: "write" } })]);
+    expect(await reason()).toMatch(/hasn't accepted the Administration permission/);
+  });
+
+  it("says when the installation only sees selected repositories", async () => {
+    refusedWith([install({ repository_selection: "selected" })]);
+    expect(await reason()).toMatch(/All repositories/);
+  });
+
+  it("passes on GitHub's own words when the installation looks right", async () => {
+    refusedWith([install({})]);
+    expect(await reason()).toMatch(/Resource not accessible by integration/);
   });
 });
 
