@@ -108,17 +108,25 @@ export async function publish(
     await startQueued(projectId);
   }
 
-  // A Queen pushes its card's prerequisites along: when one is placed,
-  // whenever something merges, and whenever a pull request opens, since a
-  // ticket can build on an open one (src/lib/domain/stack.ts).
-  if (
-    event.type === "card.queen" ||
-    (event.type === "card.status" && (event.status === "merged" || (event.kind === "ticket" && event.status === "review")))
-  ) {
+  // A Queen pushes its card's prerequisites along (see movesQueens).
+  if (movesQueens(event)) {
     const { advanceQueens } = await import("@/lib/board/service");
     await advanceQueens(projectId);
   }
   return seq;
+}
+
+/**
+ * Whether an event can let a Queen start something: one is placed, something
+ * merges, a pull request opens (a ticket can build on an open one, see
+ * src/lib/domain/stack.ts), or a ticket comes back to To Do, which is how a
+ * person resolves a blocked or failed one that was stopping the Queen.
+ */
+export function movesQueens(event: FormicEvent): boolean {
+  if (event.type === "card.queen") return true;
+  if (event.type !== "card.status") return false;
+  if (event.status === "merged") return true;
+  return event.kind === "ticket" && (event.status === "review" || event.status === "ready" || event.status === "waiting");
 }
 
 /**
