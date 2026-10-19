@@ -478,6 +478,13 @@
   }
 }
 
+@keyframes reqSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+}
+
 @keyframes columnSlideFromRight {
   from {
     opacity: 0;
