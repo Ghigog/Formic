@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { applyTransition } from "@/lib/board/service";
 import { cardTransitionSchema } from "@/lib/domain/transitions";
 import { activeProject, noProject } from "@/lib/board/project";
+import { repository } from "@/lib/db";
+import { columnOf } from "@/lib/domain/status";
 import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -18,11 +20,13 @@ export async function POST(req: NextRequest) {
   const parsed = cardTransitionSchema.safeParse(body);
 
   if (!parsed.success) {
+    const cardId = (body as { cardId?: unknown } | null)?.cardId;
+    const card = typeof cardId === "string" && cardId ? await repository().cardById(cardId) : null;
     return Response.json(
       {
         ok: false,
         reason: "Malformed transition request.",
-        revertTo: "backlog",
+        ...(card && { revertTo: columnOf(card) }),
       },
       { status: 400 },
     );

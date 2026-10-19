@@ -16,6 +16,7 @@ vi.mock("@/lib/board/service", () => ({ createTodoItem }));
 
 const { GET } = await import("./archived/route");
 const { PATCH } = await import("./[id]/archive/route");
+const { clearBuckets } = await import("@/lib/rate-limit");
 
 const project = { id: "project_default" };
 
@@ -28,9 +29,10 @@ function archiveRequest(id: string): NextRequest {
 describe("PATCH /api/tickets/{id}/archive", () => {
   it("archives the ticket and it leaves the active board list", async () => {
     const projectOfCard = vi.fn().mockResolvedValue(project.id);
-    const ticketDetail = vi.fn().mockResolvedValue({ id: "ticket-1" });
+    const ticketDetail = vi.fn().mockResolvedValue({ id: "ticket-1", status: "stopped" });
+    const cardById = vi.fn().mockResolvedValue({ id: "ticket-1" });
     const updateTicket = vi.fn().mockResolvedValue(undefined);
-    repository.mockReturnValue({ projectOfCard, ticketDetail, updateTicket });
+    repository.mockReturnValue({ projectOfCard, ticketDetail, cardById, updateTicket });
     activeProject.mockResolvedValue(project);
 
     const res = await PATCH(archiveRequest("ticket-1"), {
@@ -44,9 +46,10 @@ describe("PATCH /api/tickets/{id}/archive", () => {
 
   it("succeeds again on a ticket that is already archived, without changing anything", async () => {
     const projectOfCard = vi.fn().mockResolvedValue(project.id);
-    const ticketDetail = vi.fn().mockResolvedValue({ id: "ticket-1" });
+    const ticketDetail = vi.fn().mockResolvedValue({ id: "ticket-1", status: "stopped" });
+    const cardById = vi.fn().mockResolvedValue({ id: "ticket-1" });
     const updateTicket = vi.fn().mockResolvedValue(undefined);
-    repository.mockReturnValue({ projectOfCard, ticketDetail, updateTicket });
+    repository.mockReturnValue({ projectOfCard, ticketDetail, cardById, updateTicket });
     activeProject.mockResolvedValue(project);
 
     const res = await PATCH(archiveRequest("ticket-1"), {
@@ -61,6 +64,41 @@ describe("PATCH /api/tickets/{id}/archive", () => {
     expect(again.status).toBe(200);
     expect(updateTicket).toHaveBeenCalledTimes(2);
     expect(updateTicket).toHaveBeenLastCalledWith("ticket-1", { archived: true });
+  });
+
+  it("refuses with 409 and a reason while an agent is working the ticket", async () => {
+    const updateTicket = vi.fn();
+    repository.mockReturnValue({
+      projectOfCard: vi.fn().mockResolvedValue(project.id),
+      ticketDetail: vi.fn().mockResolvedValue({ id: "ticket-1", status: "running" }),
+      cardById: vi.fn().mockResolvedValue({ id: "ticket-1" }),
+      updateTicket,
+    });
+    activeProject.mockResolvedValue(project);
+
+    const res = await PATCH(archiveRequest("ticket-1"), {
+      params: Promise.resolve({ id: "ticket-1" }),
+    });
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).reason).toBeTruthy();
+    expect(updateTicket).not.toHaveBeenCalled();
+  });
+
+  it("429s over the limit", async () => {
+    clearBuckets();
+    repository.mockReturnValue({
+      projectOfCard: vi.fn().mockResolvedValue(project.id),
+      ticketDetail: vi.fn().mockResolvedValue({ id: "ticket-1", status: "stopped" }),
+      cardById: vi.fn().mockResolvedValue({ id: "ticket-1" }),
+      updateTicket: vi.fn(),
+    });
+    activeProject.mockResolvedValue(project);
+    const call = () =>
+      PATCH(archiveRequest("ticket-1"), { params: Promise.resolve({ id: "ticket-1" }) });
+    for (let i = 0; i < 60; i++) expect((await call()).status).toBe(200);
+    expect((await call()).status).toBe(429);
+    clearBuckets();
   });
 
   it("404s for a ticket of another project, or one that is not a ticket", async () => {
