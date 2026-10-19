@@ -1819,21 +1819,25 @@ export function attachmentUrlAllowed(id: string, expires: string, token: string)
  * The prompt text for an epic or ticket's attachments: one line per
  * attachment with its filename, kind and a signed URL, since a CLI agent
  * running in someone else's GitHub Actions cannot reach Formic's database to
- * read the bytes directly the way an API agent does. Null with nothing to
- * say, whether there are no attachments or no public origin to sign a URL
- * from.
+ * read the bytes directly the way an API agent does. Without a public origin
+ * to sign a URL from it says the files cannot be downloaded, naming them, so
+ * the agent reports the real cause. Null when there are no attachments.
  */
 export function attachmentsPrompt(attachments: AttachmentSummary[]): string | null {
-  const lines = attachments
-    .map((a) => {
-      const url = signedAttachmentUrl(a.id);
-      return url ? `- ${a.filename} (${a.kind}): ${url}` : null;
-    })
-    .filter((line): line is string => line !== null);
-  if (lines.length === 0) return null;
+  if (attachments.length === 0) return null;
+  const lines = attachments.map((a) => {
+    const url = signedAttachmentUrl(a.id);
+    return url ? `- ${a.filename} (${a.kind}): ${url}` : null;
+  });
+  if (lines.some((line) => line === null)) {
+    return [
+      "Attachments exist but could not be made available: this board has no public origin (FORMIC_URL is unset), so there is no URL to download them from. Tell the person this is why you cannot read them:",
+      ...attachments.map((a) => `- ${a.filename} (${a.kind})`),
+    ].join("\n");
+  }
   return [
     `Attachments. Download each with curl into the directory named by the ${ATTACHMENTS_DIR_VAR} environment variable, and read them from there. Do not commit that directory.`,
-    ...lines,
+    ...(lines as string[]),
   ].join("\n");
 }
 
