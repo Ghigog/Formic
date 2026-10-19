@@ -41,7 +41,14 @@ const VIEW: TicketView = {
     { step: "Test it", status: "pending" },
   ],
   canStop: false,
-  activity: [{ seq: 1, at: "2026-09-23T16:00:00Z", kind: "thinking", text: "The model has a cards table." }],
+  activity: [
+    {
+      seq: 1,
+      at: "2026-09-23T16:00:00Z",
+      kind: "thinking",
+      text: "The model has a cards table.",
+    },
+  ],
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -51,7 +58,8 @@ function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
     "fetch",
     vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/attachments")) return Response.json({ attachments });
+      if (url.includes("/api/attachments"))
+        return Response.json({ attachments });
       return Response.json(view);
     }),
   );
@@ -71,12 +79,16 @@ function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
       subscribe={subscribe}
     />,
   );
-  const send = (e: FormicEvent, seq: number) => act(() => listeners.forEach((l) => l(e, seq)));
+  const send = (e: FormicEvent, seq: number) =>
+    act(() => listeners.forEach((l) => l(e, seq)));
   return { send, onOpenEpic, onOpenTicket };
 }
 
 describe("TicketDrawer notice", () => {
-  const stalled = (status: "failed" | "blocked" | "waiting", reason: string): TicketView => ({
+  const stalled = (
+    status: "failed" | "blocked" | "waiting",
+    reason: string,
+  ): TicketView => ({
     ...VIEW,
     card: { ...card, status, stalledIn: "in_review", blockedReason: reason },
   });
@@ -109,7 +121,9 @@ describe("TicketDrawer notice", () => {
 });
 
 describe("TicketDrawer work type", () => {
-  const todoView = (workType: TicketView["card"]["workType"] = null): TicketView => ({
+  const todoView = (
+    workType: TicketView["card"]["workType"] = null,
+  ): TicketView => ({
     ...VIEW,
     card: { ...card, status: "ready", workType },
   });
@@ -117,7 +131,9 @@ describe("TicketDrawer work type", () => {
   it("offers Bug and Spike only while the ticket is in To Do", async () => {
     open();
     await screen.findByText("Export endpoint");
-    expect(screen.queryByRole("group", { name: "Work type" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Work type" }),
+    ).not.toBeInTheDocument();
   });
 
   it("presses Bug by sending the PATCH, and sends null when it is pressed again", async () => {
@@ -128,11 +144,19 @@ describe("TicketDrawer work type", () => {
     expect(screen.getByText(/Tagged as bug · −5 points/)).toBeInTheDocument();
     fireEvent.click(bug);
     await vi.waitFor(() =>
-      expect(fetched).toContainEqual(["/api/tickets/t-1", "PATCH", JSON.stringify({ workType: null })]),
+      expect(fetched).toContainEqual([
+        "/api/tickets/t-1",
+        "PATCH",
+        JSON.stringify({ workType: null }),
+      ]),
     );
     fireEvent.click(within(group).getByRole("button", { name: "spike" }));
     await vi.waitFor(() =>
-      expect(fetched).toContainEqual(["/api/tickets/t-1", "PATCH", JSON.stringify({ workType: "spike" })]),
+      expect(fetched).toContainEqual([
+        "/api/tickets/t-1",
+        "PATCH",
+        JSON.stringify({ workType: "spike" }),
+      ]),
     );
   });
 });
@@ -147,12 +171,19 @@ function openTodo(view: TicketView) {
         fetched.push([url, "PATCH", init.body as string]);
         return Response.json({ ok: true });
       }
-      if (url.includes("/api/attachments")) return Response.json({ attachments: [] });
+      if (url.includes("/api/attachments"))
+        return Response.json({ attachments: [] });
       return Response.json(view);
     }),
   );
   render(
-    <TicketDrawer ticketId="t-1" onClose={() => {}} onOpenEpic={() => {}} onOpenTicket={() => {}} subscribe={() => () => {}} />,
+    <TicketDrawer
+      ticketId="t-1"
+      onClose={() => {}}
+      onOpenEpic={() => {}}
+      onOpenTicket={() => {}}
+      subscribe={() => () => {}}
+    />,
   );
   return { fetched };
 }
@@ -168,23 +199,31 @@ describe("TicketDrawer", () => {
     setViewportMatches(false);
     open();
     const ticket = await screen.findByRole("region", { name: "Ticket" });
-    expect(screen.queryByRole("region", { name: "Agent" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Agent" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("separator")).not.toBeInTheDocument();
     // The pane is the only child of the content area, so it takes the whole row.
     expect(ticket.parentElement?.children).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Agent" }));
     const agent = await screen.findByRole("region", { name: "Agent" });
-    expect(screen.queryByRole("region", { name: "Ticket" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Ticket" }),
+    ).not.toBeInTheDocument();
     expect(agent.parentElement?.children).toHaveLength(1);
   });
 
   it("on desktop keeps both panes side by side with a divider", async () => {
     setViewportMatches(true);
     open();
-    expect(await screen.findByRole("region", { name: "Ticket" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("region", { name: "Ticket" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Agent" })).toBeInTheDocument();
-    expect(screen.getByRole("separator", { name: "Resize the panes" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("separator", { name: "Resize the panes" }),
+    ).toBeInTheDocument();
   });
 
   it("shows the ticket as it was written, with its story points", async () => {
@@ -195,7 +234,9 @@ describe("TicketDrawer", () => {
     expect(within(ticket).getByText("Stream the CSV")).toBeInTheDocument();
     expect(within(ticket).getByText(/I get a CSV/)).toBeInTheDocument();
     expect(screen.getByTitle("5 story points")).toHaveTextContent("5 pt");
-    expect(screen.getByRole("list", { name: "Ticket progress" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("list", { name: "Ticket progress" }),
+    ).toBeInTheDocument();
   });
 
   it("shows the agent's plan and thinking, and follows them live", async () => {
@@ -203,14 +244,33 @@ describe("TicketDrawer", () => {
     const { send } = open();
     const agent = await screen.findByRole("region", { name: "Agent" });
     const plan = within(agent).getByRole("list", { name: "Agent's plan" });
-    expect(within(plan).getByText("Add the endpoint")).toHaveTextContent("in progress");
-    expect(within(agent).getByText("The model has a cards table.")).toBeInTheDocument();
+    expect(within(plan).getByText("Add the endpoint")).toHaveTextContent(
+      "in progress",
+    );
+    expect(
+      within(agent).getByText("The model has a cards table."),
+    ).toBeInTheDocument();
 
     send(
-      { type: "run.thought", runId: "r", ticketId: "t-1", kind: "text", text: "Writing the handler now." },
+      {
+        type: "run.thought",
+        runId: "r",
+        ticketId: "t-1",
+        kind: "text",
+        text: "Writing the handler now.",
+      },
       2,
     );
-    send({ type: "run.thought", runId: "r", ticketId: "other", kind: "text", text: "Not this ticket." }, 3);
+    send(
+      {
+        type: "run.thought",
+        runId: "r",
+        ticketId: "other",
+        kind: "text",
+        text: "Not this ticket.",
+      },
+      3,
+    );
     send(
       {
         type: "ticket.plan",
@@ -224,26 +284,39 @@ describe("TicketDrawer", () => {
       4,
     );
 
-    expect(within(agent).getByText("Writing the handler now.")).toBeInTheDocument();
-    expect(within(agent).queryByText("Not this ticket.")).not.toBeInTheDocument();
+    expect(
+      within(agent).getByText("Writing the handler now."),
+    ).toBeInTheDocument();
+    expect(
+      within(agent).queryByText("Not this ticket."),
+    ).not.toBeInTheDocument();
     expect(within(plan).getByText("Test it")).toHaveTextContent("in progress");
   });
 
   it("leads back to its Epic", async () => {
     const { onOpenEpic } = open();
-    (await screen.findByRole("button", { name: /EPIC-1: Board export/ })).click();
+    (
+      await screen.findByRole("button", { name: /EPIC-1: Board export/ })
+    ).click();
     expect(onOpenEpic).toHaveBeenCalledWith("e-1");
   });
 
   it("lists what it waits on as buttons that open that ticket", async () => {
-    const dep = (id: string, key: string, title: string) => ({ id, key, title, status: "running" });
+    const dep = (id: string, key: string, title: string) => ({
+      id,
+      key,
+      title,
+      status: "running",
+    });
     const { onOpenTicket } = open({
       ...VIEW,
       dependsOn: [dep("t-8", "T-8", "Schema"), dep("t-9", "T-9", "Auth")],
     });
     (await screen.findByRole("button", { name: /T-9.*Auth/ })).click();
     expect(onOpenTicket).toHaveBeenCalledWith("t-9");
-    expect(screen.getByRole("button", { name: /T-8.*Schema/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /T-8.*Schema/ }),
+    ).toBeInTheDocument();
   });
 
   it("shows no Waits on section without dependencies", async () => {
@@ -255,7 +328,9 @@ describe("TicketDrawer", () => {
   it("shows no What the agent changed section for a ticket that has been run", async () => {
     open({ ...VIEW, summary: "Added the CSV endpoint." } as TicketView);
     await screen.findByRole("button", { name: /EPIC-1: Board export/ });
-    expect(screen.queryByText("What the agent changed")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("What the agent changed"),
+    ).not.toBeInTheDocument();
   });
 
   it("says nothing about a reroute for a ticket that was never moved", async () => {
@@ -267,32 +342,58 @@ describe("TicketDrawer", () => {
   it("shows where a rerouted ticket came from and why, so it survives after the toast is gone", async () => {
     const rerouted: TicketView = {
       ...VIEW,
-      card: { ...VIEW.card, rerouteFrom: "todo", rerouteReason: "Too big for one ticket; needs a PRD." },
+      card: {
+        ...VIEW.card,
+        rerouteFrom: "todo",
+        rerouteReason: "Too big for one ticket; needs a PRD.",
+      },
     };
     open(rerouted);
     await screen.findByRole("region", { name: "Ticket" });
-    expect(screen.getByText("Moved from To Do: Too big for one ticket; needs a PRD.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Moved from To Do: Too big for one ticket; needs a PRD.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows an image thumbnail and a downloadable file chip for its attachments", async () => {
     const attachments: AttachmentSummary[] = [
-      { id: "a-1", filename: "mock.png", mimeType: "image/png", kind: "image", size: 2048, url: "/api/attachments/a-1" },
-      { id: "a-2", filename: "notes.txt", mimeType: "text/plain", kind: "file", size: 512, url: "/api/attachments/a-2" },
+      {
+        id: "a-1",
+        filename: "mock.png",
+        mimeType: "image/png",
+        kind: "image",
+        size: 2048,
+        url: "/api/attachments/a-1",
+      },
+      {
+        id: "a-2",
+        filename: "notes.txt",
+        mimeType: "text/plain",
+        kind: "file",
+        size: 512,
+        url: "/api/attachments/a-2",
+      },
     ];
     open(VIEW, attachments);
     const ticket = await screen.findByRole("region", { name: "Ticket" });
 
-    const thumb = await within(ticket).findByRole("button", { name: "Enlarge mock.png" });
+    const thumb = await within(ticket).findByRole("button", {
+      name: "Enlarge mock.png",
+    });
     expect(within(ticket).getByText("notes.txt")).toBeInTheDocument();
     expect(within(ticket).getByText("512 B")).toBeInTheDocument();
-    expect(within(ticket).getByRole("link", { name: "Download" })).toHaveAttribute(
-      "href",
-      "/api/attachments/a-2",
-    );
+    expect(
+      within(ticket).getByRole("link", { name: "Download" }),
+    ).toHaveAttribute("href", "/api/attachments/a-2");
 
     thumb.click();
     const lightbox = await screen.findByRole("dialog", { name: "mock.png" });
-    expect(within(lightbox).getByAltText("mock.png")).toHaveAttribute("src", "/api/attachments/a-1");
+    expect(within(lightbox).getByAltText("mock.png")).toHaveAttribute(
+      "src",
+      "/api/attachments/a-1",
+    );
   });
 
   it("links the setup pull request a blocked ticket's reason names, so it can be clicked through", async () => {
@@ -312,7 +413,9 @@ describe("TicketDrawer", () => {
     expect(link).toHaveAttribute("href", url);
     expect(link).toHaveAttribute("target", "_blank");
     // The sentence around the link is still a sentence, in the alert banner
-    expect(screen.getAllByText(/Merge the setup pull request once/).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/Merge the setup pull request once/).length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText("Alert")).toBeInTheDocument();
   });
 
@@ -347,5 +450,29 @@ describe("PlanSteps", () => {
     expect(container.querySelectorAll(".ant-trail-vertical")).toHaveLength(1);
     rerender(<PlanSteps steps={steps} working={false} />);
     expect(container.querySelectorAll(".ant-trail-vertical")).toHaveLength(0);
+  });
+});
+
+describe("TicketDrawer on-screen keyboard", () => {
+  it("lifts the drawer above the keyboard and caps its height", () => {
+    const vv = Object.assign(new EventTarget(), { height: 500, offsetTop: 0 });
+    vi.stubGlobal("innerHeight", 800);
+    vi.stubGlobal("visualViewport", vv);
+    try {
+      render(
+        <TicketDrawer
+          ticketId="t-1"
+          onClose={() => {}}
+          onOpenEpic={() => {}}
+          onOpenTicket={() => {}}
+          subscribe={() => () => {}}
+        />,
+      );
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toHaveStyle({ paddingBottom: "300px" });
+      expect(dialog.firstElementChild).toHaveStyle({ maxHeight: "500px" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
