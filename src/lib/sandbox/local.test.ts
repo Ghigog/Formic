@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { LocalSandboxProvider, shellQuote } from "./local";
 import type { SandboxHandle } from "./types";
@@ -29,7 +29,10 @@ beforeAll(async () => {
 
   await writeFile(path.join(originDir, "README.md"), "# fixture\n");
   await run("mkdir", ["-p", path.join(originDir, "src")]);
-  await writeFile(path.join(originDir, "src", "index.js"), "export const x = 1;\n");
+  await writeFile(
+    path.join(originDir, "src", "index.js"),
+    "export const x = 1;\n",
+  );
   await git(["add", "-A"]);
   await git(["commit", "-qm", "initial"]);
 }, 60_000);
@@ -107,7 +110,9 @@ describe("LocalSandboxProvider", () => {
   it("stops a command when its signal aborts", async () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 200);
-    const result = await sandbox!.exec("sleep 10", { signal: controller.signal });
+    const result = await sandbox!.exec("sleep 10", {
+      signal: controller.signal,
+    });
     expect(result.timedOut).toBe(true);
   }, 30_000);
 
@@ -119,15 +124,21 @@ describe("LocalSandboxProvider", () => {
   }, 30_000);
 
   it("disposes itself when its TTL expires", async () => {
-    const shortLived = await new LocalSandboxProvider().spawn({
-      repoFullName: "fixture/repo",
-      cloneUrl: originDir,
-      baseBranch: "main",
-      ttlMs: 500,
-    });
-    expect(shortLived.state()).toBe("ready");
-    await new Promise((r) => setTimeout(r, 1200));
-    expect(shortLived.state()).toBe("disposed");
+    // Only the timers are faked: the clone still runs on real child processes.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const shortLived = await new LocalSandboxProvider().spawn({
+        repoFullName: "fixture/repo",
+        cloneUrl: originDir,
+        baseBranch: "main",
+        ttlMs: 500,
+      });
+      expect(shortLived.state()).toBe("ready");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(shortLived.state()).toBe("disposed");
+    } finally {
+      vi.useRealTimers();
+    }
   }, 60_000);
 });
 

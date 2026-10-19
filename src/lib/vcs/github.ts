@@ -703,6 +703,14 @@ export class GitHubClient implements VcsClient {
         for (const line of Buffer.from(blob.content, "base64").toString("utf8").split("\n")) {
           const path = line.trim();
           if (!path) continue;
+          if (
+            path.startsWith("/") ||
+            path.split("/").includes("..") ||
+            path === CARRY_DIR ||
+            path.startsWith(`${CARRY_DIR}/`)
+          ) {
+            throw new VcsError(`Refusing to delete ${path}: not a path inside the repository.`);
+          }
           entries.push({ path, mode: "100644", type: "blob", sha: null });
           files.push(path);
         }
