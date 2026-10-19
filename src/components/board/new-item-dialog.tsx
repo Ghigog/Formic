@@ -144,7 +144,7 @@ export function NewItemDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-end justify-center bg-[color-mix(in_srgb,var(--anthracite)_32%,transparent)] p-0 backdrop-blur-[3px] motion-safe:animate-[reqFade_160ms_ease-out] sm:items-center sm:p-6"
+      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-[color-mix(in_srgb,var(--anthracite)_32%,transparent)] p-0 backdrop-blur-[3px] motion-safe:animate-[reqFade_160ms_ease-out] sm:items-center sm:p-6"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -158,7 +158,7 @@ export function NewItemDialog({
           e.preventDefault();
           void submit();
         }}
-        className="bg-card border-line box-border flex w-full max-w-[520px] flex-col gap-3.5 rounded-t-xl border p-5 shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)] sm:rounded-xl"
+        className="bg-card border-line box-border flex w-full max-w-[520px] flex-col gap-3.5 rounded-b-xl border p-5 pt-[max(1.25rem,env(safe-area-inset-top))] shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqSlideDown_240ms_ease-out] sm:rounded-xl sm:pt-5 sm:motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)]"
       >
         <div className="flex items-baseline justify-between gap-3">
           <h2 id={titleId} className="text-ink m-0 text-[16px] font-semibold">
