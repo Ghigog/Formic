@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { ColonyProvider, crewPhase, levelUpText } from "./colony";
-import { SENTINEL_UNLOCKS } from "@/lib/colony/game";
+import { ColonyProvider, crewPhase, scoutCrews, levelUpText } from "./colony";
+import { SENTINEL_UNLOCKS, pointsOf } from "@/lib/colony/game";
 import { SoundEngine } from "./sound";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
@@ -195,5 +195,28 @@ describe("levelUpText", () => {
     const text = levelUpText(SENTINEL_UNLOCKS[0]!.lv);
     expect(text).toContain(SENTINEL_UNLOCKS[0]!.label);
     expect(text).toContain("Queen");
+  });
+});
+
+describe("scoutCrews", () => {
+  const since = new Date().toISOString();
+  const running = (o: object) => makeCard({ status: "running", workingSince: since, ...o } as never);
+
+  it("adds a half-size crew per scout out on a running card", () => {
+    const card = running({ scouts: 2, storyPoints: 5 });
+    const crews = scoutCrews(card);
+    expect([...crews.keys()]).toEqual([`${card.id}#scout1`, `${card.id}#scout2`]);
+    for (const c of crews.values()) expect(c).toEqual({ phase: "work", sp: pointsOf(card) / 2 });
+  });
+
+  it("rounds to at least one ant", () => {
+    const card = running({ scouts: 1, storyPoints: 1 });
+    expect([...scoutCrews(card).values()][0]!.sp).toBe(0.5);
+  });
+
+  it("adds none when not running, with a pick, or with no scouts", () => {
+    expect(scoutCrews(makeCard({ status: "review", scouts: 2 } as never)).size).toBe(0);
+    expect(scoutCrews(running({ scouts: 2, scoutPick: "x" })).size).toBe(0);
+    expect(scoutCrews(running({ scouts: 0 })).size).toBe(0);
   });
 });

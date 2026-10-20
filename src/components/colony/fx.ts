@@ -187,7 +187,9 @@ function cardWidth(id: string): number {
 }
 
 export function cardEl(id: string): HTMLElement | null {
-  return document.querySelector<HTMLElement>(`[data-tid="${CSS.escape(id)}"]`);
+  // A scout crew's id is its card's id plus "#scoutN".
+  const tid = id.replace(/#scout\d+$/, "");
+  return document.querySelector<HTMLElement>(`[data-tid="${CSS.escape(tid)}"]`);
 }
 
 /**
