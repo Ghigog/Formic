@@ -32,6 +32,8 @@ const bodySchema = z.object({
   projectId: z.string().min(1).optional(),
   autoMerge: z.boolean().optional(),
   autoEscalate: z.boolean().optional(),
+  /** Whether members may run on the owner's keys when they have none of their own. */
+  shareKeys: z.boolean().optional(),
   /** An existing agent preset id, or null for the In Progress column's agent. */
   scoutPresetId: z.string().min(1).nullable().optional(),
 });
@@ -118,6 +120,7 @@ export async function GET(req?: Request) {
     return Response.json({
       autoMerge: found.project.autoMerge,
       autoEscalate: found.project.autoEscalate,
+      shareKeys: found.project.shareKeys,
       scoutPresetId: found.project.scoutPresetId,
     });
   }
@@ -223,9 +226,14 @@ export async function PUT(req: Request) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
   }
 
-  const { projectId, autoMerge, autoEscalate, scoutPresetId } = body.data;
-  if ((autoMerge !== undefined || autoEscalate !== undefined || scoutPresetId !== undefined) !== (projectId !== undefined)) {
-    return Response.json({ error: "autoMerge, autoEscalate, scoutPresetId and projectId go together." }, { status: 400 });
+  const { projectId, autoMerge, autoEscalate, shareKeys, scoutPresetId } = body.data;
+  const forProject =
+    autoMerge !== undefined || autoEscalate !== undefined || shareKeys !== undefined || scoutPresetId !== undefined;
+  if (forProject !== (projectId !== undefined)) {
+    return Response.json(
+      { error: "autoMerge, autoEscalate, shareKeys, scoutPresetId and projectId go together." },
+      { status: 400 },
+    );
   }
   if (projectId !== undefined) {
     const found = await ownedProject(user, projectId);
@@ -235,10 +243,12 @@ export async function PUT(req: Request) {
     }
     if (autoMerge !== undefined) await repository().setAutoMerge(found.project.id, autoMerge);
     if (autoEscalate !== undefined) await repository().setAutoEscalate(found.project.id, autoEscalate);
+    if (shareKeys !== undefined) await repository().setShareKeys(found.project.id, shareKeys);
     if (scoutPresetId !== undefined) await repository().setScoutAgent(found.project.id, scoutPresetId);
     return Response.json({
       ...(autoMerge !== undefined && { autoMerge }),
       ...(autoEscalate !== undefined && { autoEscalate }),
+      ...(shareKeys !== undefined && { shareKeys }),
       ...(scoutPresetId !== undefined && { scoutPresetId }),
     });
   }

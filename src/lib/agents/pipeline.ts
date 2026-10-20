@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
@@ -32,6 +33,7 @@ import { typeOf } from "./decomposition";
 import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
+import { carryActor } from "@/lib/auth/actor";
 import { fileLayout } from "@/lib/vcs/repositories";
 import { holdFunction } from "@/lib/usage/governor";
 
@@ -381,7 +383,12 @@ export async function repoTree(projectId: string): Promise<string[]> {
  * whatever the person has asked of this breakdown and, when there is
  * anything to ask it about, the tickets that already exist under it.
  */
+/** The Architect Agent's breakdown of an Epic, on the keys of whoever set it going. */
 export async function decomposeEpic(projectId: string, epicId: string): Promise<void> {
+  return withCardActor(epicId, () => breakDownEpic(projectId, epicId));
+}
+
+async function breakDownEpic(projectId: string, epicId: string): Promise<void> {
   const detail = await repository().epicDetail(epicId);
   const prd = prdSchema.safeParse(detail?.prd);
   if (!detail || !prd.success) return;
@@ -566,7 +573,12 @@ async function attachmentsFor(ref: AttachmentRef): Promise<AgentAttachment[]> {
 }
 
 /** Stage 2. Raw backlog request becomes an Epic PRD. */
-export async function runProductAgent(
+/** The Product Agent's PRD for an Epic, on the keys of whoever set it going. */
+export async function runProductAgent(projectId: string, epicId: string, rawRequest: string): Promise<void> {
+  return withCardActor(epicId, () => draftPrd(projectId, epicId, rawRequest));
+}
+
+async function draftPrd(
   projectId: string,
   epicId: string,
   rawRequest: string,
@@ -664,6 +676,16 @@ export async function runArchitectAgent(
  * text, as thoroughly as one out of a DAG.
  */
 export async function runArchitectDraftTicket(
+  projectId: string,
+  epicId: string,
+  ticketId: string,
+  rawRequest: string,
+  repoTree: string[],
+): Promise<void> {
+  return withCardActor(ticketId, () => draftTicket(projectId, epicId, ticketId, rawRequest, repoTree));
+}
+
+async function draftTicket(
   projectId: string,
   epicId: string,
   ticketId: string,
@@ -813,7 +835,8 @@ export function fromStream<T>(work: () => T): T {
  * runs detached as before.
  */
 export function launch(work: () => Promise<void>, label: string): void {
-  const run = () => {
+  const asActor = carryActor();
+  const run = () => asActor(() => {
     // What keeps a function alive is counted against the host's allowance.
     const release = holdFunction();
     return work()
@@ -821,7 +844,7 @@ export function launch(work: () => Promise<void>, label: string): void {
         console.error(`[formic] ${label} failed:`, e);
       })
       .finally(release);
-  };
+  });
 
   if (streaming.getStore()) {
     void run();

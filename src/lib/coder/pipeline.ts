@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { startRun, launch } from "@/lib/agents/pipeline";
 import type { CoderTask } from "@/lib/agents/ports";
 import { repository } from "@/lib/db";
@@ -109,7 +110,16 @@ export async function stallTicket(
   });
 }
 
+/** The Coder Agent's run on a ticket, on the keys of whoever set it going. */
 export async function runCoderAgent(
+  projectId: string,
+  ticketId: string,
+  options: { instruction?: string } = {},
+): Promise<void> {
+  return withCardActor(ticketId, () => codeTicket(projectId, ticketId, options));
+}
+
+async function codeTicket(
   projectId: string,
   ticketId: string,
   /** What the person asked this run to do, from the ticket's chat. */

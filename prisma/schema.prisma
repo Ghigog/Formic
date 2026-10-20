@@ -145,8 +145,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  projects Project[]
-  presets  AgentPreset[]
+  projects     Project[]
+  presets      AgentPreset[]
+  memberships  ProjectMember[]
+  memberAgents MemberAgent[]
 
   @@map("user")
 }
@@ -189,7 +191,13 @@ model Project {
   /// The saved agent scouts run on. Null (the default) is the In Progress
   /// column's agent. Not a relation: a deleted template falls back to it.
   scoutPresetId              String?
+  /// Whether people the owner shares the board with may run on the owner's
+  /// keys and agents when they have none of their own. Off by default: each
+  /// person brings their own.
+  shareKeys                  Boolean  @default(false)
 
+  members           ProjectMember[]
+  memberAgents      MemberAgent[]
   epics             Epic[]
   queens            Queen[]
   events            Event[]
@@ -231,6 +239,9 @@ model Epic {
   runnerAgent      String?
   /// When that run was sent: how long the agent has been at it.
   runnerJobAt      DateTime?
+  /// Whose keys and agents this epic's work runs on: the person who last
+  /// set it going. Null is the board's owner.
+  actorId          String?
   /// The GitHub issue that tracks this epic, once created.
   issueNumber      Int?
 
@@ -328,6 +339,9 @@ model Ticket {
   runnerAgent     String?
   /// When that run was sent: how long the agent has been at it.
   runnerJobAt     DateTime?
+  /// Whose keys and agents this ticket's work runs on: the person who last
+  /// set it going. Null falls back to its epic's, then the board's owner.
+  actorId         String?
   /// The GitHub issue that tracks this ticket, a sub-issue of its epic's.
   issueNumber     Int?
   /// The GitHub issue this ticket was imported from, when it came in from one
@@ -535,10 +549,41 @@ model AgentPreset {
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
-  columns ColumnAgent[]
+  columns       ColumnAgent[]
+  memberColumns MemberAgent[]
 
   @@index([ownerId])
   @@map("agent_preset")
+}
+
+/// Someone a board is shared with: they reached its repository on GitHub and
+/// opened it. They see every card; their runs use their own keys and agents.
+model ProjectMember {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_member")
+}
+
+/// A member's own agent for a column (or "assistant") on a shared board. The
+/// owner's stay in ColumnAgent and assistantPresetId.
+model MemberAgent {
+  projectId String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slot      String
+  presetId  String
+  preset    AgentPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId, slot])
+  @@index([presetId])
+  @@map("member_agent")
 }
 
 /// Which preset runs a column's agent on one project's board.

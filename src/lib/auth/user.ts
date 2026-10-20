@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withActor } from "./actor";
 import { cookies } from "next/headers";
 import { repository } from "@/lib/db";
 import type { OwnerScope, UserRecord } from "@/lib/db/repository";
@@ -57,4 +58,17 @@ export function ownerScope(user: UserRecord): OwnerScope {
 
 export function canSee(user: UserRecord, ownerId: string | null): boolean {
   return ownerId === user.id || (ownerId === null && authMode() === "local");
+}
+
+/**
+ * A route handler that acts as whoever is signed in: on a shared board, the
+ * work it starts runs on their own keys and agents (./actor.ts).
+ */
+export function asSignedIn<A extends unknown[], R>(handler: (...args: A) => Promise<R>) {
+  return async (...args: A): Promise<R> => {
+    // Local mode has one person, and boards are only shared signed in.
+    if (authMode() !== "github") return handler(...args);
+    const user = await currentUser();
+    return withActor(user?.id ?? null, () => handler(...args));
+  };
 }

@@ -1,4 +1,5 @@
 import { activeProject, noProject } from "@/lib/board/project";
+import { asSignedIn } from "@/lib/auth/user";
 import { createBacklogItem } from "@/lib/board/service";
 import { requestFromReport } from "@/lib/sentinels/epic";
 import { SENTINELS } from "@/lib/sentinels/roster";
@@ -11,7 +12,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /** Turns a sentinel's latest report into a Backlog Epic. */
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const refused = limited(req, RUN, "run-start");
   if (refused) return refused;
 

@@ -29,6 +29,7 @@ import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
 import { columnLimit, columnUnassigned } from "@/lib/agents/presets";
+import { startedBy } from "@/lib/auth/actor";
 import { prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
 import { readiness } from "@/lib/domain/stack";
@@ -256,6 +257,10 @@ export async function applyTransition(
   // its status. A fresh Backlog item is `draft` with its Product Agent just
   // started, but so is one whose Product Agent was rerouted to a PRD and
   // never started, and that one waits forever if this guesses wrong.
+  // Whoever moved it now drives it: its agents run on their keys. A move the
+  // system makes (a Queen, the queue) leaves that as it was.
+  if (t.actor === "user") await startedBy(card.id);
+
   const met = dependenciesMet(card, cards);
   const toArchitect = card.kind === "epic" && t.to === "todo";
   const epicDetail = card.kind === "epic" ? await repo.epicDetail(card.id) : null;
@@ -505,6 +510,7 @@ export async function createBacklogItem(
   });
 
   if (requestId) await repo.claimAttachments(requestId, { epicId: card.id });
+  await startedBy(card.id);
 
   await publish(projectId, {
     type: "card.created",
@@ -556,6 +562,7 @@ export async function createTodoItem(
     position: 0,
   });
   await repo.setStandalone(epic.id, true);
+  await startedBy(epic.id);
 
   const positions = await repo.columnPositions(projectId, "todo");
   const position = positionForIndex(positions, positions.length);
@@ -618,6 +625,7 @@ export async function createTodoItem(
  * Architect Agent writes it. Returns false for any other ticket.
  */
 export async function redraftTicket(projectId: string, ticketId: string): Promise<boolean> {
+  await startedBy(ticketId);
   const repo = repository();
   const card = await repo.cardById(ticketId);
   const ticket = await repo.ticketDetail(ticketId);
@@ -681,6 +689,7 @@ export type EpicActionResult = { ok: true } | { ok: false; reason: string; statu
  */
 export async function retryEpic(projectId: string, epicId: string): Promise<EpicActionResult> {
   const repo = repository();
+  await startedBy(epicId);
   const card = await repo.cardById(epicId);
   const detail = await repo.epicDetail(epicId);
   if (!card || card.kind !== "epic" || !detail) {

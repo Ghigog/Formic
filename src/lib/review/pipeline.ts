@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { attemptsFor, inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
@@ -130,7 +131,9 @@ export async function reviewPullRequest(
   if (!ticket) return await reactToBatch(projectId, prNumber);
   if (ticket.status === "merged") return;
 
-  await inTicketLane(ticket.id, () => react(projectId, ticket.id, prNumber, headSha, options));
+  await inTicketLane(ticket.id, () =>
+    withCardActor(ticket.id, () => react(projectId, ticket.id, prNumber, headSha, options)),
+  );
 }
 
 /**
@@ -1121,7 +1124,12 @@ export async function completeEpic(
  * an Epic spends nothing. The caller has checked the Epic is done, has no
  * showcase and has no PM run active.
  */
+/** The showcase for a finished Epic, on the keys of whoever set it going. */
 export async function startShowcase(projectId: string, epicId: string): Promise<void> {
+  return withCardActor(epicId, () => showcaseEpic(projectId, epicId));
+}
+
+async function showcaseEpic(projectId: string, epicId: string): Promise<void> {
   const repo = repository();
   const detail = await repo.epicDetail(epicId);
   if (!detail) return;

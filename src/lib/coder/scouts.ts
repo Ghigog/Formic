@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
@@ -174,7 +175,12 @@ async function launchScout(projectId: string, scout: TicketDetail): Promise<void
  * (the idle sweep, a lost start), it sends only the scouts with nothing
  * working them.
  */
+/** A ticket's scouts, sent on the keys of whoever set the ticket going. */
 export async function runScouts(projectId: string, parent: TicketDetail): Promise<void> {
+  return withCardActor(parent.id, () => sendOut(projectId, parent));
+}
+
+async function sendOut(projectId: string, parent: TicketDetail): Promise<void> {
   const repo = repository();
   const scouts = await repo.scoutsOf(parent.id);
   if (scouts.length === 0) {
@@ -214,7 +220,12 @@ export type ScoutOutcome =
  * pushed change, a failure, a change outside its files, nothing to do) comes
  * here instead of moving a card. The last one back settles the ticket.
  */
+/** A scout's result, taken on the keys of whoever sent it. */
 export async function scoutReturned(projectId: string, scout: TicketDetail, outcome: ScoutOutcome): Promise<void> {
+  return withCardActor(scout.id, () => takeScoutResult(projectId, scout, outcome));
+}
+
+async function takeScoutResult(projectId: string, scout: TicketDetail, outcome: ScoutOutcome): Promise<void> {
   const repo = repository();
   // Replaced by scouts sent since: nothing is waiting for it.
   if (!(await repo.ticketDetail(scout.id))) return;

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
@@ -1557,7 +1558,13 @@ async function completeCliCardChat(
   await finishCliCardChat(message.id, answer);
 }
 
+/** A finished CLI run, taken on the keys of whoever set its card going. */
 export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
+  const card = cardOfJob(result.job);
+  return card ? withCardActor(card, () => takeCliRun(projectId, result)) : takeCliRun(projectId, result);
+}
+
+async function takeCliRun(projectId: string, result: RunnerResult): Promise<void> {
   const { mode } = result;
   if (mode === "ask") {
     await completeCliAsk(projectId, result);
@@ -2006,6 +2013,12 @@ export const STOPPED_BY_PERSON =
  * agent stops at its next turn. Returns whether there was anything to stop.
  */
 export async function stopTicket(projectId: string, ticketId: string): Promise<boolean> {
+  // Its sandbox was made with the key of whoever set it going; only that
+  // account can dispose of it.
+  return withCardActor(ticketId, () => stopTicketRun(projectId, ticketId));
+}
+
+async function stopTicketRun(projectId: string, ticketId: string): Promise<boolean> {
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket) return false;

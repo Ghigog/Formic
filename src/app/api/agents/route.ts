@@ -1,6 +1,7 @@
 import { repository } from "@/lib/db";
 import { activeProject } from "@/lib/board/project";
-import { currentUser, ownerScope } from "@/lib/auth/user";
+import { currentUser } from "@/lib/auth/user";
+import { agentView } from "@/lib/agents/board-agents";
 import { tokenWindow } from "@/lib/token-window";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +20,8 @@ export async function GET() {
     },
     new Date(),
   );
-  const [presets, columns, overrides, usage] = await Promise.all([
-    repo.listPresets(ownerScope(user)),
-    project ? repo.columnAgents(project.id) : {},
+  const [{ presets, columns }, overrides, usage] = await Promise.all([
+    agentView(project, user),
     project ? repo.columnOverrides(project.id) : {},
     repo.agentTokensByPreset(window.since),
   ]);

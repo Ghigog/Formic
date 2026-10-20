@@ -139,5 +139,9 @@ that cost it effort calls `share_note` (`src/lib/coder/shared-notes.ts`).
   the merge queue, so a collision with them is caught as a conflict or by CI,
   not before the code is written.
 - An agent in GitHub Actions does not hear notes shared after it started.
-- Each person still has their own board. They see each other's work as
-  reservations and on GitHub, not as cards.
+- Signed in with GitHub, a repository has one board, shared by everyone
+  whose access reaches it (`src/lib/board/sharing.ts`), so they see each
+  other's work as cards. A board someone made for the same repository before
+  boards were shared still exists and still holds reservations; its owner is
+  moved onto the shared one. Each person's runs use their own keys and agents
+  unless the owner turns on "Let others use my keys" (`src/lib/auth/actor.ts`).

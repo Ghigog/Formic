@@ -1,7 +1,8 @@
 import { z } from "zod";
 
+import { assistantPick } from "@/lib/agents/board-agents";
 import { applyAction, checkAction } from "@/lib/assistant/actions";
-import { currentUser } from "@/lib/auth/user";
+import { asSignedIn, currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 
@@ -17,7 +18,8 @@ const bodySchema = z.object({
  * The person's answer to one of the assistant's proposals. Applying is the
  * only way anything the assistant suggests reaches the board.
  */
-export async function POST(req: Request) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: Request) {
   const body = bodySchema.safeParse(await req.json().catch(() => null));
   if (!body.success) return Response.json({ error: "Malformed decision." }, { status: 400 });
 
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
   await repo.updateAssistantMessage(message.id, { proposals });
 
   return Response.json({
-    presetId: await repo.assistantAgent(project.id),
+    presetId: await assistantPick(project, user),
     messages: await repo.assistantMessages(project.id),
   });
 }

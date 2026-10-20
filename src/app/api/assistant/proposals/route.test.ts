@@ -15,7 +15,7 @@ const { repo, currentUser, activeProject, applyAction, checkAction } = vi.hoiste
 }));
 
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
-vi.mock("@/lib/auth/user", () => ({ currentUser }));
+vi.mock("@/lib/auth/user", () => ({ currentUser, asSignedIn: <T,>(handler: T) => handler }));
 vi.mock("@/lib/board/project", () => ({ activeProject, noProject: () => Response.json({}, { status: 409 }) }));
 vi.mock("@/lib/assistant/actions", () => ({ applyAction, checkAction }));
 

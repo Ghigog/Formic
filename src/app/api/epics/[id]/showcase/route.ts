@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { asSignedIn } from "@/lib/auth/user";
 import { repository } from "@/lib/db";
 import { activeProject } from "@/lib/board/project";
 import { generateShowcase } from "@/lib/board/service";
@@ -17,7 +18,8 @@ async function projectOwning(epicId: string) {
 }
 
 /** Starts the PM Agent on a done Epic's showcase. */
-export async function POST(
+export const POST = asSignedIn(postHandler);
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {

@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import { startedBy } from "@/lib/auth/actor";
+import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
 import { repository } from "@/lib/db";
 import { activeProject, noProject } from "@/lib/board/project";
@@ -26,7 +28,8 @@ export async function GET() {
  * Places a Queen on a ticket or an Epic. Queens are earned with levels; one
  * taken off again stays spent, so clearing never gives it back.
  */
-export async function POST(req: NextRequest) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Say which card." }, { status: 400 });
 
@@ -48,6 +51,8 @@ export async function POST(req: NextRequest) {
 
   const queen = await repo.placeQueen(project.id, card.id, card.kind);
   if (!queen) return Response.json({ error: "It already has a Queen." }, { status: 409 });
+  // The work the Queen starts runs on the keys of whoever placed her.
+  await startedBy(card.id);
 
   await publish(project.id, { type: "card.queen", cardId: card.id, kind: card.kind });
   return Response.json({ queen, unspent: unspent - 1 }, { status: 201 });

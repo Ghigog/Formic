@@ -17,7 +17,7 @@ const { repo, currentUser, activeProject, launch, answer, cancelPending, collect
 }));
 
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
-vi.mock("@/lib/auth/user", () => ({ currentUser }));
+vi.mock("@/lib/auth/user", () => ({ currentUser, asSignedIn: <T,>(handler: T) => handler }));
 vi.mock("@/lib/board/project", () => ({ activeProject, noProject: () => Response.json({}, { status: 409 }) }));
 vi.mock("@/lib/agents/pipeline", () => ({ launch }));
 vi.mock("@/lib/assistant/turn", () => ({ answer, cancelPending }));

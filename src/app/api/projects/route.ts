@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { repository } from "@/lib/db";
 import { PROJECT_COOKIE, activeProject } from "@/lib/board/project";
-import { canSee, currentUser, ownerScope } from "@/lib/auth/user";
+import { currentUser, ownerScope } from "@/lib/auth/user";
+import { boardFor, boardsFor, canSeeBoard, sharedBoard } from "@/lib/board/sharing";
 import { credentialsFor } from "@/lib/auth/credentials";
 import { authMode, cookieHeader } from "@/lib/auth/session";
 import { normalizeRepo } from "@/lib/secrets/repo";
@@ -15,13 +16,13 @@ import { verdict } from "@/lib/usage/governor";
 
 export const dynamic = "force-dynamic";
 
-/** This person's projects, and which one this browser is looking at. */
+/** The boards this person can open, and which one this browser is looking at. */
 export async function GET() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
   const [active, projects] = await Promise.all([
     activeProject(),
-    repository().listProjects(ownerScope(user)),
+    repository().listProjects(ownerScope(user)).then((own) => boardsFor(user, own)),
   ]);
   const repo = repository();
   const withActivity = await Promise.all(
@@ -42,8 +43,9 @@ const chooseSchema = z.union([
 ]);
 
 /**
- * Switch this browser to a project: one of this person's by id, or a
- * repository by name, which creates their project for it the first time.
+ * Switch this browser to a project: one this person can see, by id, or a
+ * repository by name. A repository someone already has a board for is joined
+ * (see src/lib/board/sharing.ts); otherwise its board is made the first time.
  */
 export async function POST(req: NextRequest) {
   const refused = limited(req, RUN, "run-start");
@@ -61,9 +63,10 @@ export async function POST(req: NextRequest) {
   let project;
   if ("projectId" in parsed.data) {
     project = await repo.projectById(parsed.data.projectId);
-    if (!project || !canSee(user, project.ownerId)) {
+    if (!project || !(await canSeeBoard(user, project))) {
       return Response.json({ error: "That project no longer exists." }, { status: 404 });
     }
+    project = await boardFor(user, project);
   } else {
     const fullName = normalizeRepo(parsed.data.repoFullName);
     if (!fullName) {
@@ -86,6 +89,15 @@ export async function POST(req: NextRequest) {
       );
     }
     const repoFullName = remote?.fullName ?? fullName;
+    // Signed in with GitHub, a repository has one board, shared by everyone
+    // whose access reaches it: the token check above is that access.
+    const shared = authMode() === "github" ? await sharedBoard(repoFullName) : null;
+    if (shared && shared.ownerId !== user.id) {
+      await repo.addMember(shared.id, user.id);
+      const res = Response.json({ project: shared });
+      res.headers.append("Set-Cookie", cookieHeader(PROJECT_COOKIE, encodeURIComponent(shared.id), 31536000));
+      return res;
+    }
     const existed = (await repo.projectsForRepo(repoFullName)).some((p) => p.ownerId === user.id);
     // Near the host allowance, switching between boards stays open (the
     // proxy lets it through) but a new board would start its setup run.

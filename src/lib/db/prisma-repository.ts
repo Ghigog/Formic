@@ -166,6 +166,70 @@ export class PrismaRepository implements Repository {
     return prisma().project.findUnique({ where: { id: projectId } });
   }
 
+  async addMember(projectId: string, userId: string): Promise<void> {
+    await prisma().projectMember.upsert({
+      where: { projectId_userId: { projectId, userId } },
+      create: { projectId, userId },
+      update: {},
+    });
+  }
+
+  async isMember(projectId: string, userId: string): Promise<boolean> {
+    return (await prisma().projectMember.count({ where: { projectId, userId } })) > 0;
+  }
+
+  async memberProjects(userId: string): Promise<ProjectSummary[]> {
+    return prisma().project.findMany({
+      where: { members: { some: { userId } } },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async memberAgents(projectId: string, userId: string): Promise<Record<string, string>> {
+    const rows = await prisma().memberAgent.findMany({ where: { projectId, userId } });
+    return Object.fromEntries(rows.map((r) => [r.slot, r.presetId]));
+  }
+
+  async setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void> {
+    const db = prisma();
+    if (presetId === null) {
+      await db.memberAgent.deleteMany({ where: { projectId, userId, slot } });
+      return;
+    }
+    await db.memberAgent.upsert({
+      where: { projectId_userId_slot: { projectId, userId, slot } },
+      create: { projectId, userId, slot, presetId },
+      update: { presetId },
+    });
+  }
+
+  async setShareKeys(projectId: string, shareKeys: boolean): Promise<void> {
+    await prisma().project.updateMany({ where: { id: projectId }, data: { shareKeys } });
+  }
+
+  async cardActor(cardId: string): Promise<string | null> {
+    const db = prisma();
+    const ticket = await db.ticket.findUnique({
+      where: { id: cardId },
+      select: { actorId: true, scoutOf: true, epic: { select: { actorId: true } } },
+    });
+    if (!ticket) {
+      return (await db.epic.findUnique({ where: { id: cardId }, select: { actorId: true } }))?.actorId ?? null;
+    }
+    if (ticket.actorId) return ticket.actorId;
+    if (ticket.scoutOf) {
+      const parent = await db.ticket.findUnique({ where: { id: ticket.scoutOf }, select: { actorId: true } });
+      if (parent?.actorId) return parent.actorId;
+    }
+    return ticket.epic.actorId;
+  }
+
+  async setCardActor(cardId: string, userId: string | null): Promise<void> {
+    const db = prisma();
+    const { count } = await db.ticket.updateMany({ where: { id: cardId }, data: { actorId: userId } });
+    if (count === 0) await db.epic.updateMany({ where: { id: cardId }, data: { actorId: userId } });
+  }
+
   async reservations(repoFullName: string): Promise<Reservation[]> {
     const rows = await prisma().ticket.findMany({
       where: {
