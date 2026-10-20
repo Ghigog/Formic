@@ -109,6 +109,20 @@ describe("signing in with GitHub", () => {
     expect(cookiesOf(res)[SESSION_COOKIE]).toBeUndefined();
   });
 
+  it("reads a quoted empty FORMIC_ALLOWED_USERS as no allow-list", async () => {
+    vi.stubEnv("FORMIC_ALLOWED_USERS", '""');
+    fakeGitHub();
+    const res = await signIn();
+    expect(cookiesOf(res)[SESSION_COOKIE]).toBeDefined();
+  });
+
+  it("reads quoted usernames as the usernames", async () => {
+    vi.stubEnv("FORMIC_ALLOWED_USERS", '"someone-else, octo"');
+    fakeGitHub();
+    const res = await signIn();
+    expect(cookiesOf(res)[SESSION_COOKIE]).toBeDefined();
+  });
+
   it("gives the first person the boards made before accounts", async () => {
     const demo = await repository().defaultProject();
     fakeGitHub();
