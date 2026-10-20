@@ -146,6 +146,13 @@ describe("score", () => {
     expect(s.squashed).toBe(0);
   });
 
+  it("costs bug points for a ticket typed bug whose title has no bug words", () => {
+    const t = card({ id: "n", epicId: null, title: "Rename the sidebar", status: "ready", workType: "bug" });
+    expect(isBug(t, new Map())).toBe(true);
+    expect(scoreOf([t]).bugs).toBe(1);
+    expect(scoreOf([t]).points).toBe(0);
+  });
+
   it("squashes a bug report once it leaves the Backlog", () => {
     const bug = card({ id: "b", epicId: null, title: "Fix the broken badge", status: "ready", workType: "bug" });
     expect(isBug(bug, new Map())).toBe(true);

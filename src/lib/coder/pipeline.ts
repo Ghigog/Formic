@@ -64,6 +64,7 @@ export function taskFor(
     description: ticket.description,
     acceptanceCriteria: ticket.acceptanceCriteria,
     fileScope: ticket.fileScope,
+    workType: ticket.workType,
     notes,
   };
 }

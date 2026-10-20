@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { decomposeEpic, launch, runProductAgent } from "./pipeline";
-import { checkSplit, ticketSpecSchema, toDraftTicket, type TicketSpec } from "./decomposition";
+import { checkSplit, ticketSpecSchema, toDraftTicket, typeOf, type TicketSpec } from "./decomposition";
 import { projectFor } from "@/lib/board/project";
 import { applyTransition, redraftTicket, retryEpic } from "@/lib/board/service";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -534,6 +534,7 @@ async function splitTicket(projectId: string, card: BoardCard, specs: TicketSpec
       fileScope: t.fileScope,
       storyPoints: t.storyPoints ?? null,
       needsHuman: t.needsHuman ?? null,
+      ...typeOf(t),
       position: childPositions[i]!,
       dependsOnKeys: t.dependsOn,
     })),

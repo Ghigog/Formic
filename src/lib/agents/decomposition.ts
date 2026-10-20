@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { STORY_POINTS, fileScopeSchema } from "@/lib/domain/entities";
+import { BUG_SEVERITIES, STORY_POINTS, WORK_TYPES, fileScopeSchema, severityFor } from "@/lib/domain/entities";
 import { validateDag } from "@/lib/domain/dag";
 import { describeProblem, describeProblems } from "@/lib/domain/problems";
 import { normalizeScope } from "@/lib/domain/scope";
@@ -18,7 +18,8 @@ import type { DraftTicket } from "./ports";
  * context or description field. A schema rather than a suggestion in a
  * prompt, so every provider fills in every required part.
  */
-export const ticketSpecSchema = z.object({
+export const ticketSpecSchema = z
+  .object({
   key: z.string().describe('Short local key, e.g. "T-1", used only so dependsOn can refer to it. The code stores the ticket as EPIC-n-Tm.'),
   title: z.string(),
   userStory: z
@@ -57,9 +58,23 @@ export const ticketSpecSchema = z.object({
     .describe(
       "Only for a ticket no coding agent can do, such as setting up an account, a manual test on production, or a decision: why it needs a person. Leave it out for every ticket an agent can do in the repository.",
     ),
-});
+  type: z.enum(WORK_TYPES).describe("What kind of ticket this is: user_story, task, feature, bug or spike."),
+  severity: z
+    .enum(BUG_SEVERITIES)
+    .optional()
+    .describe("How bad the bug is: low, medium, high or critical. Required when type is bug; leave it out for every other type."),
+  })
+  .refine((t) => (t.type === "bug") === (t.severity !== undefined), {
+    message: "severity is required when type is bug, and must be left out for any other type",
+    path: ["severity"],
+  });
 
 export type TicketSpec = z.infer<typeof ticketSpecSchema>;
+
+/** The type fields of a drafted ticket, as the repository stores them. A severity goes only with a bug. */
+export function typeOf(t: Pick<DraftTicket, "workType" | "bugSeverity">) {
+  return { workType: t.workType ?? null, bugSeverity: severityFor(t.workType, t.bugSeverity) };
+}
 
 /** One Gherkin scenario on one line, as tickets store acceptance criteria. */
 export function gherkin(c: { given: string; when: string; then: string }): string {
@@ -89,6 +104,8 @@ export function toDraftTicket(spec: TicketSpec): DraftTicket {
     storyPoints: spec.storyPoints,
     dependsOn: spec.dependsOn,
     ...(spec.needsHuman?.trim() ? { needsHuman: spec.needsHuman.trim() } : {}),
+    workType: spec.type,
+    ...(spec.severity ? { bugSeverity: spec.severity } : {}),
   };
 }
 

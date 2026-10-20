@@ -25,6 +25,7 @@ const spec: TicketSpec = {
   fileScope: ["src/app/api/export/"],
   storyPoints: 3,
   dependsOn: [],
+  type: "task",
 };
 
 describe("the ticket template", () => {
