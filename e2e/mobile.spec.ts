@@ -46,7 +46,7 @@ async function swipe(page: Page, dx: number) {
 
 test("a swipe moves from Backlog to To Do", async ({ page }) => {
   await expect(column(page, "Backlog")).toBeVisible();
-  await expect(page.getByRole("list", { name: "Columns" }).getByRole("button")).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Columns" }).getByRole("button")).toHaveCount(5);
 
   await swipe(page, -150);
 
