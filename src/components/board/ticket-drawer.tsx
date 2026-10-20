@@ -306,8 +306,35 @@ export function TicketDrawer({
               </p>
             )}
 
+          {/* Survives the toast that announced it: where it came from, and why. */}
+          {card?.rerouteFrom && (
+            <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
+              Moved from {COLUMN_LABELS[card.rerouteFrom]}: {card.rerouteReason}
+            </p>
+          )}
+        </header>
+
+        {/* Tabs show below the dual-pane breakpoint, where two columns do not
+            fit; the card actions sit on the right at every width. */}
+        <div
+          data-testid="drawer-tab-row"
+          className="border-line flex shrink-0 flex-wrap items-center gap-0.5 border-b px-2 py-1"
+        >
+          {(["ticket", "agent"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={cn(
+                "rounded px-2 py-1 text-[12px] font-medium lg:hidden",
+                tab === t ? "bg-amber text-on-amber" : "text-fg-muted",
+              )}
+            >
+              {t === "ticket" ? "Ticket" : "Agent"}
+            </button>
+          ))}
           {card && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
+            <div className="ml-auto flex flex-wrap items-center gap-2 text-[12px]">
               <QueenPanel
                 card={card}
                 onChanged={() => {
@@ -332,37 +359,13 @@ export function TicketDrawer({
                   Archive
                 </button>
               )}
-              {archiveError && (
-                <span role="alert" className="text-log-error w-full text-[11px]">
-                  {archiveError}
-                </span>
-              )}
             </div>
           )}
-
-          {/* Survives the toast that announced it: where it came from, and why. */}
-          {card?.rerouteFrom && (
-            <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
-              Moved from {COLUMN_LABELS[card.rerouteFrom]}: {card.rerouteReason}
-            </p>
+          {archiveError && (
+            <span role="alert" className="text-log-error w-full px-2 text-[11px]">
+              {archiveError}
+            </span>
           )}
-        </header>
-
-        {/* Tabs below the dual-pane breakpoint, where two columns do not fit. */}
-        <div className="border-line flex shrink-0 gap-0.5 border-b px-2 py-1 lg:hidden">
-          {(["ticket", "agent"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={cn(
-                "rounded px-2 py-1 text-[12px] font-medium",
-                tab === t ? "bg-amber text-on-amber" : "text-fg-muted",
-              )}
-            >
-              {t === "ticket" ? "Ticket" : "Agent"}
-            </button>
-          ))}
         </div>
 
         <SideBySide
