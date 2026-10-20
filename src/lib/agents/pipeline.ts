@@ -715,6 +715,7 @@ export async function applyDraftedTicket(
 ): Promise<void> {
   const repo = repository();
   const placeholder = await repo.cardById(ticketId);
+  const was = await repo.ticketDetail(ticketId);
   const position = placeholder?.position ?? 0;
   // The placeholder already carries the project's next standalone ticket
   // number from createTodoItem. Keep it rather than the agent's self-chosen
@@ -740,6 +741,17 @@ export async function applyDraftedTicket(
       },
     ])
   )[0]!;
+  // What the request came with stays with the ticket made from it: its
+  // attachments, its GitHub issue (renamed to the drafted ticket by the sync
+  // below, rather than a second one filed and the first left open), and the
+  // issue it was imported from.
+  await repo.moveTicketAttachments(ticketId, created.id);
+  if (was?.issueNumber || was?.sourceIssueNumber) {
+    await repo.updateTicket(created.id, {
+      issueNumber: was.issueNumber,
+      sourceIssueNumber: was.sourceIssueNumber,
+    });
+  }
   await repo.move({
     cardId: created.id,
     kind: "ticket",

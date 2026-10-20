@@ -903,6 +903,10 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async moveTicketAttachments(fromTicketId: string, toTicketId: string): Promise<void> {
+    await prisma().attachment.updateMany({ where: { ticketId: fromTicketId }, data: { ticketId: toTicketId } });
+  }
+
   async deleteAttachments(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
     await prisma().attachment.deleteMany({ where: { id: { in: ids } } });

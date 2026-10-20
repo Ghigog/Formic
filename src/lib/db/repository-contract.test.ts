@@ -376,6 +376,27 @@ function contract(name: string, make: () => Repository) {
         await repo.deleteAttachments([a.id]);
         expect(await repo.attachmentContent(a.id)).toBeNull();
       });
+
+      it("moves a ticket's attachments to another ticket", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [from, to] = await repo.createTickets([ticket(epic.id, "M-1"), ticket(epic.id, "M-2")]);
+        const requestId = randomUUID();
+        const a = await repo.createAttachment({
+          projectId: p.id,
+          requestId,
+          filename: "a.md",
+          mimeType: "text/markdown",
+          kind: "file",
+          size: 1,
+          bytes: new Uint8Array([1]),
+        });
+        await repo.claimAttachments(requestId, { ticketId: from!.id });
+
+        await repo.moveTicketAttachments(from!.id, to!.id);
+        expect(await repo.attachmentsFor({ ticketId: from!.id })).toEqual([]);
+        expect((await repo.attachmentsFor({ ticketId: to!.id })).map((x) => x.id)).toEqual([a.id]);
+      });
     });
 
     describe("events", () => {

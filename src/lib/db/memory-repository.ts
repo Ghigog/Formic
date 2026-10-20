@@ -821,6 +821,12 @@ export class MemoryRepository implements Repository {
     }
   }
 
+  async moveTicketAttachments(fromTicketId: string, toTicketId: string): Promise<void> {
+    for (const row of store().attachments.values()) {
+      if (row.ticketId === fromTicketId) row.ticketId = toTicketId;
+    }
+  }
+
   async deleteAttachments(ids: string[]): Promise<void> {
     const s = store();
     for (const id of ids) s.attachments.delete(id);

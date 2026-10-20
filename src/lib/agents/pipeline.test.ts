@@ -319,6 +319,37 @@ describe("runArchitectDraftTicket", () => {
     expect(detail?.acceptanceCriteria).toEqual(draftedTicket.acceptanceCriteria);
   });
 
+  it("keeps the request's attachments and GitHub issue on the drafted ticket", async () => {
+    // Made through the repository, so it has the details a seeded card lacks.
+    const epic = makeCard({ kind: "epic", status: "draft", standalone: true, size: null });
+    seedMemory([epic]);
+    const repo = repository();
+    const [ticket] = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "Raw", description: "", acceptanceCriteria: [], fileScope: [], size: "S", position: 1, dependsOnKeys: [] },
+    ]);
+    await repo.updateTicket(ticket!.id, { status: "blocked", stalledIn: "todo", issueNumber: 46, sourceIssueNumber: 12 });
+    await repo.createAttachment({
+      projectId: PROJECT,
+      requestId: "req-2",
+      filename: "design.md",
+      mimeType: "text/markdown",
+      kind: "file",
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+    await repo.claimAttachments("req-2", { ticketId: ticket!.id });
+    useArchitect(
+      new StubArchitect(async () => ({ ok: true, value: { kind: "ticket", ticket: draftedTicket }, usage: NO_USAGE })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket!.id, "raw request text", []);
+
+    const drafted = (await repo.boardCards(PROJECT)).find((c) => c.epicId === epic.id && c.kind === "ticket")!;
+    expect(drafted.id).not.toBe(ticket!.id);
+    expect(await repo.ticketDetail(drafted.id)).toMatchObject({ issueNumber: 46, sourceIssueNumber: 12 });
+    expect((await repo.attachmentsFor({ ticketId: drafted.id })).map((a) => a.filename)).toEqual(["design.md"]);
+  });
+
   it("keeps the placeholder's sequential key, not the agent's T-1 draft key", async () => {
     const [epic, ticket] = makeEpicWithChildren(
       { status: "draft", standalone: true, size: null },
