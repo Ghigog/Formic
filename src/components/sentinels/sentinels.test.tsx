@@ -56,15 +56,23 @@ async function open(level = 34) {
   await userEvent.click(screen.getByText("open sentinels"));
 }
 
+// jsdom has no Web Animations API; every test gets a fresh stub and none leaks.
+const animate = vi.fn();
+beforeEach(() => {
+  animate.mockReset();
+  HTMLElement.prototype.animate = animate as unknown as HTMLElement["animate"];
+  SVGElement.prototype.animate = animate as unknown as SVGElement["animate"];
+});
+afterEach(() => {
+  delete (HTMLElement.prototype as { animate?: unknown }).animate;
+  delete (SVGElement.prototype as { animate?: unknown }).animate;
+});
+
 describe("SentinelsPage motion and sound", () => {
-  const animate = vi.fn();
   let play: ReturnType<typeof vi.spyOn>;
   let reduced: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    animate.mockReset();
-    HTMLElement.prototype.animate = animate as unknown as HTMLElement["animate"];
-    SVGElement.prototype.animate = animate as unknown as SVGElement["animate"];
     play = vi.spyOn(SoundEngine.prototype, "play").mockImplementation(() => {});
     reduced = vi.spyOn(ColonyFx.prototype, "reducedMotion", "get").mockReturnValue(false);
   });
