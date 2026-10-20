@@ -97,11 +97,11 @@ export function BoardHeader({
             className="fixed top-14 left-4"
           />
         )}
-        <div className="flex-grow" />
-        <ColonyMobileStats />
         {assistant && isMobile && (
           <AskButton a={assistant} repoName={repo ?? repoFullName} />
         )}
+        <div className="flex-grow" />
+        <ColonyMobileStats />
         {account && <AccountMenu account={account} />}
       </header>
     </>

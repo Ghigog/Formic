@@ -114,8 +114,9 @@ function Composer({
   };
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Escape") a.setOpen(false);
-    // Enter alone does nothing; Shift+Enter is the textarea's own newline.
-    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    // Enter sends (also with Cmd/Ctrl); Shift+Enter is the textarea's own
+    // newline. Enter that confirms an IME composition is not a send.
+    else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void submit();
     }
