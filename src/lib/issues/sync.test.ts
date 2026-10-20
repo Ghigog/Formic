@@ -96,6 +96,7 @@ async function moveTicket(
 
 beforeEach(() => {
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
+  (globalThis as { __formicIssueLabels?: Set<string> }).__formicIssueLabels = undefined;
   MockVcsClient.reset();
   resetAgents();
   resetVcs();
