@@ -3,6 +3,8 @@ import { repository } from "@/lib/db";
 import {
   HEAVY_AT,
   REQUEST_BUSY_MS,
+  boost,
+  boostLapsed,
   countRequest,
   dailyBudget,
   holdFunction,
@@ -14,7 +16,14 @@ import {
   utcDay,
   verdict,
   windowBudget,
+  windowStart,
 } from "./governor";
+import { type VercelUsage, fetchVercelUsage, parseCosts } from "./vercel";
+
+vi.mock("./vercel", async (original) => ({
+  ...(await original<typeof import("./vercel")>()),
+  fetchVercelUsage: vi.fn(),
+}));
 
 const NOW = Date.parse("2026-10-08T12:00:00Z");
 const zero = { requests: 0, busyMs: 0, cpuMs: 0 };
@@ -25,7 +34,11 @@ beforeEach(() => {
   vi.stubEnv("FORMIC_USAGE_LIMITS", "on");
 });
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+  vi.mocked(fetchVercelUsage).mockReset();
+});
 
 describe("budgets", () => {
   it("budget 70% of Hobby over 30 days, and a tenth of that a day", () => {
@@ -134,5 +147,121 @@ describe("sweepInterval", () => {
     expect(sweepInterval(300_000)).toBe(300_000);
     vi.stubEnv("FORMIC_EVENTS", "stream");
     expect(sweepInterval(15_000)).toBe(15_000);
+  });
+});
+
+describe("boost", () => {
+  it("raises the budgets before its last day only, and asks to be removed after", () => {
+    vi.stubEnv("FORMIC_USAGE_BOOST", "3");
+    vi.stubEnv("FORMIC_USAGE_BOOST_UNTIL", "2026-11-07");
+    const before = Date.parse("2026-11-06T23:00:00Z");
+    const after = Date.parse("2026-11-07T00:00:00Z");
+    expect(boost(before)).toBe(3);
+    expect(windowBudget(before).cpuMs).toBeCloseTo(3 * windowBudget(after).cpuMs);
+    expect(boostLapsed(before)).toBe(false);
+    expect(boost(after)).toBe(1);
+    expect(boostLapsed(after)).toBe(true);
+  });
+
+  it("does nothing without a last day", () => {
+    vi.stubEnv("FORMIC_USAGE_BOOST", "3");
+    expect(boost(NOW)).toBe(1);
+    expect(boostLapsed(NOW)).toBe(false);
+  });
+});
+
+describe("checked against Vercel", () => {
+  const day = (n: number) => utcDay(NOW - n * 86_400_000);
+  const metered = (days: Record<string, number>, period?: VercelUsage["period"]): VercelUsage => ({
+    queriedAt: new Date(NOW).toISOString(),
+    period: period ?? null,
+    units: {},
+    days: Object.fromEntries(
+      Object.entries(days).map(([d, cpuHours]) => [d, { cpuHours, invocations: 0, memoryGbHours: 0 }]),
+    ),
+  });
+
+  beforeEach(() => vi.stubEnv("FORMIC_VERCEL_TOKEN", "t"));
+
+  it("lets work go on when Vercel's meter shows the count ran high", async () => {
+    const d = dailyBudget(NOW);
+    // Earlier days: the count says twice what Vercel metered.
+    const vercel: Record<string, number> = {};
+    for (let n = 2; n < 9; n++) {
+      await repository().addPlatformUsage(day(n), { ...zero, cpuMs: 600_000 }, day(30));
+      vercel[day(n)] = 300_000 / 3_600_000;
+    }
+    vi.mocked(fetchVercelUsage).mockResolvedValue(metered(vercel));
+    // Today, by the count: past the heavy line.
+    await repository().addPlatformUsage(utcDay(NOW), { ...zero, cpuMs: d.cpuMs * 0.9 }, utcDay(NOW));
+    const v = await verdict(NOW);
+    expect(fetchVercelUsage).toHaveBeenCalledTimes(1);
+    expect(v.standing).toBe("ok");
+    expect(v.used).toBeCloseTo(0.45, 2);
+
+    // Not asked again within the quarter hour.
+    await verdict(NOW + 60_000);
+    expect(fetchVercelUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses when Vercel's meter shows the window spent though the count is low", async () => {
+    const hours = (windowBudget(NOW).cpuMs / 3_600_000) * 1.01;
+    vi.mocked(fetchVercelUsage).mockResolvedValue(metered({ [day(5)]: hours }));
+    await usageReport(NOW);
+    expect((await verdict(NOW + 1_000)).standing).toBe("stopped");
+  });
+
+  it("judges the window over Vercel's billing period", async () => {
+    vi.mocked(fetchVercelUsage).mockResolvedValue(metered({}, { start: day(3), end: utcDay(NOW + 20 * 86_400_000) }));
+    await usageReport(NOW);
+    expect(windowStart(NOW)).toBe(day(3));
+  });
+
+  it("falls back on the count when Vercel can't be read", async () => {
+    vi.mocked(fetchVercelUsage).mockRejectedValue(new Error("403"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await repository().addPlatformUsage(utcDay(NOW), { ...zero, cpuMs: dailyBudget(NOW).cpuMs }, utcDay(NOW));
+    expect((await verdict(NOW)).standing).toBe("stopped");
+  });
+
+  it("never asks without a token", async () => {
+    vi.stubEnv("FORMIC_VERCEL_TOKEN", "");
+    await repository().addPlatformUsage(utcDay(NOW), { ...zero, cpuMs: dailyBudget(NOW).cpuMs }, utcDay(NOW));
+    await verdict(NOW);
+    expect(fetchVercelUsage).not.toHaveBeenCalled();
+  });
+});
+
+describe("parseCosts", () => {
+  it("reads each allowance per day, in hours for CPU, leaving Sandbox out", () => {
+    const parsed = parseCosts({
+      queriedAt: "2026-10-08T12:00:00Z",
+      metrics: [
+        { slug: "cpu_ms", unit: { kind: "duration", name: "milliseconds" } },
+        { slug: "invocations", unit: { kind: "custom", singular: "invocation", plural: "invocations" } },
+      ],
+      results: {
+        times: ["2026-10-07T00:00:00Z", "2026-10-08T00:00:00Z"],
+        dimensionsMeta: {
+          product: { values: { a: { title: "Fluid Active CPU" }, b: { title: "Sandbox Active CPU" } } },
+        },
+        views: {
+          byProduct: {
+            results: [
+              { dimensionValues: { product: "a" }, metrics: ["gross_cost", "cpu_ms"], values: [[0, 3_600_000], [0, 1_800_000]] },
+              { dimensionValues: { product: "b" }, metrics: ["gross_cost", "cpu_ms"], values: [[0, 9e9], [0, 9e9]] },
+              {
+                dimensionValues: { product: "function_invocations" },
+                metrics: ["gross_cost", "invocations"],
+                values: [[0, 10], [0, null]],
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(parsed.days["2026-10-07"]).toEqual({ cpuHours: 1, invocations: 10, memoryGbHours: 0 });
+    expect(parsed.days["2026-10-08"]).toEqual({ cpuHours: 0.5, invocations: 0, memoryGbHours: 0 });
+    expect(parsed.units).toEqual({ cpuHours: "milliseconds", invocations: "invocations" });
   });
 });

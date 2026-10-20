@@ -734,3 +734,13 @@ model PlatformUsage {
 
   @@map("platform_usage")
 }
+
+/// The last reading of the host's own meter (Vercel's billing API), one row.
+/// Corrects Formic's count above. See src/lib/usage/vercel.ts.
+model HostUsageCheck {
+  id        String   @id
+  checkedAt DateTime
+  data      Json
+
+  @@map("host_usage_check")
+}

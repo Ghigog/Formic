@@ -39,6 +39,7 @@ import type {
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
+  HostUsageCheck,
   Reservation,
 } from "./repository";
 import type {
@@ -1139,6 +1140,29 @@ export class PrismaRepository implements Repository {
     return { today, window };
   }
 
+  async platformUsageByDay(sinceDay: string): Promise<Record<string, PlatformUsage>> {
+    const rows = await prisma().platformUsage.findMany({ where: { day: { gte: sinceDay } } });
+    const out: Record<string, PlatformUsage> = {};
+    for (const r of rows) {
+      out[r.day] = { requests: Number(r.requests), busyMs: Number(r.busyMs), cpuMs: Number(r.cpuMs) };
+    }
+    return out;
+  }
+
+  async hostUsageCheck(): Promise<HostUsageCheck | null> {
+    const row = await prisma().hostUsageCheck.findUnique({ where: { id: HOST_METER } });
+    return row ? { checkedAt: row.checkedAt, data: row.data } : null;
+  }
+
+  async saveHostUsageCheck(check: HostUsageCheck): Promise<void> {
+    const data = check.data as Prisma.InputJsonValue;
+    await prisma().hostUsageCheck.upsert({
+      where: { id: HOST_METER },
+      create: { id: HOST_METER, checkedAt: check.checkedAt, data },
+      update: { checkedAt: check.checkedAt, data },
+    });
+  }
+
   async latestEventSeq(projectId: string): Promise<number> {
     const row = await prisma().event.findFirst({
       where: { projectId },
@@ -2153,3 +2177,6 @@ function toAuditRecord(row: {
     rubric: scale.success ? (scale.data satisfies Rubric) : null,
   };
 }
+
+/** The one row of host_usage_check: the meter of the host this deployment runs on. */
+const HOST_METER = "vercel";
