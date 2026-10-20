@@ -175,6 +175,50 @@ describe("GitHubClient", () => {
     await expect(client().updateBranch(7)).rejects.toMatchObject({ status: 500 });
   });
 
+  describe("hasCi", () => {
+    function repoWith(files: Record<string, string>) {
+      return stubFetch((url) => {
+        if (url.includes("/actions/workflows")) {
+          return Response.json({
+            workflows: [
+              { path: ".github/workflows/formic-agent.yml", state: "active" },
+              ...Object.keys(files).map((path) => ({ path, state: "active" })),
+            ],
+          });
+        }
+        if (url.includes("/branches/")) return Response.json({});
+        const path = Object.keys(files).find((p) => url.includes(p.split("/").map(encodeURIComponent).join("/")));
+        if (path) return Response.json({ content: Buffer.from(files[path]!).toString("base64") });
+        return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+      });
+    }
+
+    it("is false when the only other workflow never runs on a pull request", async () => {
+      repoWith({ ".github/workflows/build-apk.yml": "on:\n  workflow_dispatch:\n  push:\n    branches: [main]\n" });
+      expect(await client().hasCi("main")).toBe(false);
+    });
+
+    it("is true when a workflow runs on pull requests", async () => {
+      const calls = repoWith({
+        ".github/workflows/build-apk.yml": "on:\n  push:\n    branches: [main]\n",
+        ".github/workflows/ci.yml": "on: [pull_request]\n",
+      });
+      expect(await client().hasCi("main")).toBe(true);
+      expect(calls.some((c) => c.url.includes("formic-agent.yml"))).toBe(false);
+    });
+
+    it("is true when a workflow cannot be read", async () => {
+      stubFetch((url) => {
+        if (url.includes("/actions/workflows")) {
+          return Response.json({ workflows: [{ path: ".github/workflows/ci.yml", state: "active" }] });
+        }
+        if (url.includes("/branches/")) return Response.json({});
+        return new Response(JSON.stringify({ message: "boom" }), { status: 500 });
+      });
+      expect(await client().hasCi("main")).toBe(true);
+    });
+  });
+
   describe("bringsInBase", () => {
     it("is true when the second parent is already on base", async () => {
       const calls = stubFetch((url) =>
