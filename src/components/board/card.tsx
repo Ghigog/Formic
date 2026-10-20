@@ -87,6 +87,8 @@ export interface CardEnv {
   onAdvance: (card: BoardCard, to: ColumnId) => void;
   /** The card sliding out of its column after its arrow, and which way. */
   leaving?: { id: string; direction: "forward" | "back" } | null;
+  /** Cards dropped into a column whose move the server has not answered yet. */
+  pending?: ReadonlySet<string>;
   /** The running ticket a queued one is waiting on, or null when none is. */
   queuedBehind?: (card: BoardCard) => BoardCard | null;
   /** The repository runs no CI, so a review card has no checks to wait for. */
@@ -885,8 +887,10 @@ export function KanbanCard({
   extras: ExtrasMap;
   onOpen: (card: BoardCard) => void;
 }) {
-  const leaving = useContext(CardEnvContext)?.leaving;
+  const env = useContext(CardEnvContext);
+  const leaving = env?.leaving;
   const exit = leaving?.id === card.id ? leaving.direction : null;
+  const pending = !!env?.pending?.has(card.id);
   return (
     <Draggable draggableId={card.id} index={index}>
       {(provided, snapshot) => (
@@ -899,8 +903,16 @@ export function KanbanCard({
         >
           {/* Picked up, the card leans into the drag. */}
           <div
+            data-pending={pending ? "" : undefined}
             className={cn(
-              "rounded-lg transition-transform duration-150",
+              // Slower to settle than to pick up.
+              "rounded-lg transition-transform",
+              pending || snapshot.isDragging ? "duration-150" : "duration-[250ms]",
+              // Dropped, awaiting the server: a toned-down drag. Reduced
+              // motion keeps the shadow and drops the transform.
+              pending &&
+                !snapshot.isDragging &&
+                "scale-[1.02] rotate-[-1deg] shadow-[0_14px_28px_-14px_color-mix(in_srgb,var(--anthracite)_35%,transparent)] motion-reduce:scale-100 motion-reduce:rotate-0",
               exit && "pointer-events-none opacity-0 transition-all duration-200 ease-in",
               exit === "forward" && "translate-x-full",
               exit === "back" && "-translate-x-full",
