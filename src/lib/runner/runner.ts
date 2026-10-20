@@ -319,7 +319,13 @@ export async function whyItFailed(
   const diagnosis = diagnose(text, label);
   if (!diagnosis) {
     const last = lastWords(text);
-    return last ? failure("The run failed", last, log) : plain;
+    return last
+      ? failure(
+          `${label} stopped before finishing`,
+          `${label} ran into an error and stopped before the work was done. The last thing it said: "${last}"`,
+          log,
+        )
+      : plain;
   }
   if (diagnosis.kind === "limit" && diagnosis.until && found) {
     await repo.setPresetLimit(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
@@ -330,7 +336,12 @@ export async function whyItFailed(
       note: diagnosis.message,
     });
   }
-  const type = { limit: "Usage limit reached", credit: "Out of credit", auth: "Sign-in rejected" }[diagnosis.kind];
+  const type = {
+    limit: "Usage limit reached",
+    credit: "Out of credit",
+    auth: "Sign-in rejected",
+    silent: `${label} never reached its model`,
+  }[diagnosis.kind];
   return failure(type, diagnosis.message, log);
 }
 
