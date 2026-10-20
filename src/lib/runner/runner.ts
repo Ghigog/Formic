@@ -113,6 +113,7 @@ import {
 } from "./workflow";
 import { liveToken } from "@/lib/llm/cline-session";
 import { sweepInterval } from "@/lib/usage/governor";
+import { configuredOrigin } from "@/lib/origin";
 
 export { ALREADY_DONE_TRAILER, USAGE_TRAILER };
 
@@ -1770,7 +1771,7 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
  * public address, such as a laptop: the run then works as before, silently.
  */
 export function formicOrigin(): string | null {
-  const explicit = process.env.FORMIC_URL?.trim().replace(/\/+$/, "");
+  const explicit = configuredOrigin();
   if (explicit) return explicit;
   const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
   return vercel ? `https://${vercel}` : null;

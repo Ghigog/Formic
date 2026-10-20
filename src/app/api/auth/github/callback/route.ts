@@ -15,6 +15,7 @@ import {
   signSession,
   verifyValue,
 } from "@/lib/auth/session";
+import { publicUrl } from "@/lib/origin";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ function readCookie(req: Request, name: string): string | undefined {
 }
 
 function fail(req: Request, message: string): Response {
-  const back = new URL("/login", req.url);
+  const back = publicUrl("/login", req);
   back.searchParams.set("error", message);
   const res = new Response(null, { status: 303, headers: { Location: back.toString() } });
   res.headers.append("Set-Cookie", cookieHeader(OAUTH_COOKIE, "", 0));
@@ -37,7 +38,7 @@ function fail(req: Request, message: string): Response {
 
 /** GitHub sends people back here with a code. Trade it, and sign them in. */
 export async function GET(req: Request) {
-  if (!appConfig()) return Response.redirect(new URL("/", req.url), 303);
+  if (!appConfig()) return Response.redirect(publicUrl("/", req), 303);
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -51,7 +52,7 @@ export async function GET(req: Request) {
   let tokens;
   let profile;
   try {
-    tokens = await exchangeCode(code, `${url.origin}/api/auth/github/callback`);
+    tokens = await exchangeCode(code, publicUrl("/api/auth/github/callback", req).toString());
     profile = await fetchProfile(tokens.accessToken);
   } catch (e) {
     return fail(req, e instanceof Error ? e.message : "GitHub sign-in failed.");

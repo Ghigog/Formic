@@ -1,6 +1,7 @@
 import { CURRENT_TERMS_VERSION, currentUser } from "@/lib/auth/user";
 import { repository } from "@/lib/db";
 import { safeNext } from "@/lib/auth/session";
+import { publicUrl } from "@/lib/origin";
 
 export const dynamic = "force-dynamic";
 
@@ -15,5 +16,5 @@ export async function POST(req: Request) {
   const next = safeNext(String(form.get("next") ?? ""));
   await repository().acceptTerms(user.id, CURRENT_TERMS_VERSION);
 
-  return new Response(null, { status: 303, headers: { Location: new URL(next, req.url).toString() } });
+  return new Response(null, { status: 303, headers: { Location: publicUrl(next, req).toString() } });
 }
