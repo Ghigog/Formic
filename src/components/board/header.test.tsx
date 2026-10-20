@@ -70,4 +70,32 @@ describe("BoardHeader project button", () => {
     await userEvent.click(buttons[1]!);
     expect(screen.getAllByTestId("repo-picker")).toHaveLength(1);
   });
+
+  it("puts the mobile ask button after the logo and before the account menu", () => {
+    setViewportMatches(true);
+    render(
+      <BoardHeader
+        projectName="Formic"
+        repoFullName="acme/formic"
+        account={{ login: "ada", name: "Ada" } as never}
+        assistant={
+          {
+            open: false,
+            setOpen: vi.fn(),
+            messages: [],
+            presets: [],
+          } as never
+        }
+      />,
+    );
+    const logo = screen.getAllByRole("button", {
+      name: /Choose another project/,
+    })[1]!;
+    const ask = screen.getByRole("button", { name: "Ask the assistant" });
+    const account = screen.getAllByLabelText(/^Account:/)[1]!;
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(logo, ask)).toBe(true);
+    expect(follows(ask, account)).toBe(true);
+  });
 });
