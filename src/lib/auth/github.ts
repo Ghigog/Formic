@@ -110,11 +110,15 @@ export async function fetchProfile(token: string): Promise<GithubProfile> {
   return { githubId: u.id, login: u.login, name: u.name, avatarUrl: u.avatar_url };
 }
 
-/** FORMIC_ALLOWED_USERS, when set, is the only people who may sign in. */
+/**
+ * FORMIC_ALLOWED_USERS, when set, is the only people who may sign in. Quotes
+ * are dropped: `""` pasted from .env.example into a host's settings means
+ * empty, not a list with one user called `""`.
+ */
 export function isAllowed(login: string): boolean {
   const list = (process.env.FORMIC_ALLOWED_USERS ?? "")
     .split(",")
-    .map((s) => s.trim().toLowerCase())
+    .map((s) => s.replace(/["']/g, "").trim().toLowerCase())
     .filter(Boolean);
   return list.length === 0 || list.includes(login.toLowerCase());
 }

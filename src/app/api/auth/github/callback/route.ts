@@ -58,7 +58,7 @@ export async function GET(req: Request) {
   }
 
   if (!isAllowed(profile.login)) {
-    return fail(req, `${profile.login} is not on this board's list of users.`);
+    return fail(req, `${profile.login} is not on this Formic's list of allowed users. Ask whoever runs it to add them to FORMIC_ALLOWED_USERS.`);
   }
 
   const repo = repository();
