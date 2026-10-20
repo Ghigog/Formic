@@ -29,6 +29,7 @@ const TICKETS = [
     fileScope: ["src/app/api/export"],
     size: "S",
     storyPoints: 3,
+    type: "task",
     dependsOn: [],
   },
   {
@@ -40,6 +41,7 @@ const TICKETS = [
     fileScope: ["src/components/export"],
     size: "S",
     storyPoints: 3,
+    type: "task",
     dependsOn: ["T-1"],
   },
 ];

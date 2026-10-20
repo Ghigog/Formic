@@ -28,6 +28,7 @@ import { agentFor, cliAgentFor, runTargetFor } from "./presets";
 import { handoffSection } from "./handoff";
 import { startCliAnswer, startCliDraftTicket } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
+import { typeOf } from "./decomposition";
 import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -282,6 +283,7 @@ export async function applyReroute(
           size: input.ticket.size,
           storyPoints: input.ticket.storyPoints ?? null,
           needsHuman: input.ticket.needsHuman ?? null,
+          ...typeOf(input.ticket),
           position,
           dependsOnKeys: [],
         },
@@ -455,6 +457,7 @@ export async function applyTickets(
       size: t.size,
       storyPoints: t.storyPoints ?? null,
       needsHuman: t.needsHuman ?? null,
+      ...typeOf(t),
       position: positionForIndex(positions, cursor++),
       dependsOnKeys: t.dependsOn.map((k) => keyFor.get(k) ?? k),
     })),
@@ -731,6 +734,7 @@ export async function applyDraftedTicket(
         fileScope: ticket.fileScope,
         size: ticket.size,
         storyPoints: ticket.storyPoints ?? null,
+        ...typeOf(ticket),
         position,
         dependsOnKeys: [],
       },

@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { main, runLoopEntry } from "./loop-entry";
+import { SPIKE_RULE } from "@/lib/agents/prompts";
 import { MemoryWorkspace } from "@/lib/sandbox/workspace";
 import type { FormicEvent } from "@/lib/domain/events";
 
@@ -138,6 +139,19 @@ describe("the loop entry a GitHub Actions job runs", () => {
     expect(events.some((e) => e.type === "run.progress")).toBe(true);
     expect(lines).toContain("Writing src/app/retry.ts");
     expect(lines).toContain("Change complete");
+  });
+
+  it("briefs the coder for a spike by the ticket's type, not its title", async () => {
+    const run = async (workType: string) => {
+      const sent = fakeProvider([finish({ summary: "nothing to change" })]);
+      await runLoopEntry(payload({ ticket: { ...TICKET, title: "Pick a queue library", workType } }), {
+        workspace: new MemoryWorkspace(),
+        log: () => {},
+      });
+      return messages(sent, 0)[0]!.content;
+    };
+    expect(await run("spike")).toContain(SPIKE_RULE);
+    expect(await run("task")).not.toContain(SPIKE_RULE);
   });
 
   it("refuses a write outside the ticket's file scope before it reaches a file", async () => {

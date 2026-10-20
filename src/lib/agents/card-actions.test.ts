@@ -376,6 +376,7 @@ describe("splitting a ticket", () => {
       fileScope,
       storyPoints: 2,
       dependsOn,
+      type: "task",
     };
   }
 

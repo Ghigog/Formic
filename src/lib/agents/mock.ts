@@ -87,6 +87,7 @@ export class MockProductAgent implements ProductAgent {
             fileScope: ["src"],
             storyPoints: 3,
             dependsOn: [],
+            workType: "task",
           },
         },
         usage: MOCK_USAGE,
@@ -172,6 +173,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         fileScope: ["prisma"],
         storyPoints: 2,
         dependsOn: [],
+        workType: "task",
       },
       {
         key: "T-2",
@@ -184,6 +186,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         fileScope: ["src/app/api"],
         storyPoints: 5,
         dependsOn: ["T-1"],
+        workType: "task",
       },
       {
         key: "T-3",
@@ -205,6 +208,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         fileScope: ["src/lib/feature"],
         storyPoints: 3,
         dependsOn: ["T-2", "T-3"],
+        workType: "task",
       },
     ];
 
@@ -239,6 +243,7 @@ export class MockArchitectAgent implements ArchitectAgent {
       fileScope: ["src"],
       storyPoints: 3,
       dependsOn: [],
+      workType: "task",
     };
 
     return { ok: true, value: { kind: "ticket", ticket }, usage: MOCK_USAGE };

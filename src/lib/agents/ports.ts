@@ -1,4 +1,4 @@
-import type { Prd } from "@/lib/domain/entities";
+import type { BugSeverity, Prd, WorkType } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import type { Budget } from "@/lib/budget/budget-for";
@@ -122,6 +122,10 @@ export interface DraftTicket {
   dependsOn: string[];
   /** Work for a person, not an agent: why. */
   needsHuman?: string;
+  /** What kind of ticket the Architect Agent judged it to be. */
+  workType?: WorkType;
+  /** Only for a bug. */
+  bugSeverity?: BugSeverity;
 }
 
 /** One child ticket as it stands before a re-decomposition changes it. */
@@ -189,6 +193,8 @@ export interface CoderTask {
   description: string;
   acceptanceCriteria: string[];
   fileScope: string[];
+  /** Whether this is a spike, which the coder's brief follows. */
+  workType?: WorkType | null;
   /** What the person watching the ticket told its agents, oldest first. */
   notes?: string[];
   /**

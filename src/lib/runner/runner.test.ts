@@ -175,6 +175,7 @@ describe("a CLI agent planning an Epic", () => {
         fileScope: ["src/app/api/export"],
         size: "S",
         storyPoints: 3,
+        type: "task",
         dependsOn: [],
       },
       {
@@ -186,6 +187,7 @@ describe("a CLI agent planning an Epic", () => {
         fileScope: ["src/components/export"],
         size: "S",
         storyPoints: 3,
+        type: "task",
         dependsOn: ["T-1"],
       },
     ],
@@ -378,6 +380,7 @@ describe("a CLI agent planning an Epic", () => {
     fileScope: ["src/components/export"],
     size: "S",
     storyPoints: 3,
+    type: "task",
     dependsOn: [],
   };
 
@@ -443,6 +446,7 @@ describe("a CLI agent drafting a To Do request's single ticket", () => {
     fileScope: ["src/components/agents"],
     size: "S",
     storyPoints: 3,
+    type: "task",
     dependsOn: [],
   };
 

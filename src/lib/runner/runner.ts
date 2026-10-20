@@ -413,6 +413,7 @@ export function loopPayload(input: {
       description: ticket.description,
       acceptanceCriteria: ticket.acceptanceCriteria,
       fileScope: ticket.fileScope,
+      workType: ticket.workType,
       ...(input.notes.length ? { notes: input.notes } : {}),
       ...(input.sharedNotes?.length ? { sharedNotes: input.sharedNotes } : {}),
       ...(input.instruction ? { instruction: input.instruction } : {}),
