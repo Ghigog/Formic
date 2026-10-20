@@ -174,10 +174,13 @@ export class PrismaRepository implements Repository {
         id: true,
         key: true,
         fileScope: true,
+        scoutOf: true,
         epic: { select: { projectId: true, project: { select: { owner: { select: { login: true } } } } } },
       },
     });
-    return rows.map((r) => ({
+    // A running parent is on the same repository, so it is among the rows.
+    const running = new Set(rows.map((r) => r.id));
+    return rows.filter((r) => !r.scoutOf || running.has(r.scoutOf)).map((r) => ({
       ticketId: r.id,
       key: r.key,
       projectId: r.epic.projectId,

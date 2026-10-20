@@ -4,7 +4,7 @@ import { repository } from "@/lib/db";
 import type { BoardCard } from "@/lib/domain/entities";
 import type { Reservation } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
-import { heldBy } from "@/lib/domain/queue";
+import { claimLabel, heldBy } from "@/lib/domain/queue";
 import { byPosition } from "@/lib/ordering";
 import { LeaseBusy, repoKey, withLease } from "./lease";
 import type { ProjectSummary } from "@/lib/db/repository";
@@ -41,7 +41,19 @@ export function reservationLease(repoFullName: string): string {
 
 async function startQueuedOn(repoFullName: string): Promise<void> {
   const recalled: BoardCard[] = [];
-  const started = await withLease(reservationLease(repoFullName), () => claimQueued(repoFullName, recalled));
+  const waiting: Array<{ projectId: string; card: BoardCard }> = [];
+  const started = await withLease(reservationLease(repoFullName), () => claimQueued(repoFullName, recalled, waiting));
+  for (const { projectId, card } of waiting) {
+    await publish(projectId, {
+      type: "card.status",
+      cardId: card.id,
+      kind: "ticket",
+      status: "queued",
+      stalledIn: null,
+      stage: card.stage,
+      blockedReason: card.blockedReason,
+    });
+  }
   for (const card of recalled) {
     const projectId = await repository().projectOfCard(card.id);
     if (!projectId) continue;
@@ -77,6 +89,8 @@ async function startQueuedOn(repoFullName: string): Promise<void> {
 async function claimQueued(
   repoFullName: string,
   recalled: BoardCard[],
+  /** Queued tickets still waiting whose reason changed, to announce. */
+  waiting: Array<{ projectId: string; card: BoardCard }>,
 ): Promise<Array<{ projectId: string; card: BoardCard }>> {
   const repo = repository();
   const projects = await repo.projectsForRepo(repoFullName);
@@ -92,26 +106,49 @@ async function claimQueued(
     const colony = colonyOf(project, cards);
     const epics = epicsOf(cards);
     let inUse = slotsInUse(cards);
+    // Says on the card what a ticket still waits on, when that has changed.
+    const stillWaits = async (card: BoardCard, reason: string) => {
+      if (card.blockedReason === reason) return;
+      await repo.updateTicket(card.id, { blockedReason: reason });
+      card.blockedReason = reason;
+      waiting.push({ projectId, card });
+    };
     for (const card of cards.filter(isQueued).sort(byPosition)) {
-      if (heldBy(card, claims)) continue;
-      if (!colonyAdmits(card, inUse, colony, epics).ok) {
+      const blocker = heldBy(card, claims);
+      if (blocker) {
+        await stillWaits(card, heldReason(blocker, projectId));
+        continue;
+      }
+      let admits = colonyAdmits(card, inUse, colony, epics);
+      if (!admits.ok) {
         // Urgent work calls auto-scouts back out of the reserve it needs.
-        if (!isUrgent(card, epics)) continue;
-        const freed = await recallAutoScouts(projectId, cards, recalled);
-        if (!freed) continue;
+        const freed = isUrgent(card, epics) ? await recallAutoScouts(projectId, cards, recalled) : 0;
         inUse -= freed;
-        if (!colonyAdmits(card, inUse, colony, epics).ok) continue;
+        if (freed) admits = colonyAdmits(card, inUse, colony, epics);
+        if (!admits.ok) {
+          await stillWaits(card, admits.reason);
+          continue;
+        }
       }
       inUse += slotsOf(card);
       // A ticket sent back from review keeps its count of reviews: waiting
       // its turn is not a fresh start (a person's move already reset it).
-      await repo.updateTicket(card.id, { status: "running", ...(card.prNumber ? {} : { attempts: 0 }) });
+      await repo.updateTicket(card.id, {
+        status: "running",
+        blockedReason: null,
+        ...(card.prNumber ? {} : { attempts: 0 }),
+      });
       card.status = "running";
       claims.push({ ticketId: card.id, key: card.key, projectId, ownerLogin: null, fileScope: card.fileScope });
       started.push({ projectId, card });
     }
   }
   return started;
+}
+
+/** What a queued ticket's card says while another ticket holds its files. */
+export function heldReason(blocker: Reservation, projectId: string): string {
+  return `Waiting for ${claimLabel(blocker, projectId)}, which is writing the same files. It starts on its own then.`;
 }
 
 function isQueued(card: BoardCard): boolean {
@@ -175,18 +212,25 @@ export async function claimOrQueue(
   write: (status: "running" | "queued") => Promise<void>,
   /** Auto-scouting runs in the reserve itself: only its files are checked. */
   options: { reserve?: boolean } = {},
-): Promise<{ status: "running" | "queued"; blocker: Reservation | null }> {
+): Promise<{ status: "running" | "queued"; blocker: Reservation | null; reason: string | null }> {
   const repo = repository();
   const project = await repo.projectById(projectId);
   if (!project) {
     await write("running");
-    return { status: "running", blocker: null };
+    return { status: "running", blocker: null, reason: null };
   }
   return withLease(reservationLease(project.repoFullName), async () => {
     const blocker = heldBy(card, await repo.reservations(project.repoFullName));
-    const status = blocker || (!options.reserve && (await colonyHold(projectId, card))) ? "queued" : "running";
+    const reason = blocker
+      ? heldReason(blocker, projectId)
+      : options.reserve
+        ? null
+        : await colonyHold(projectId, card);
+    const status = reason ? "queued" : "running";
     await write(status);
-    return { status, blocker };
+    // Written after: every `write` clears the reason with the status.
+    if (reason) await repo.updateTicket(card.id, { blockedReason: reason });
+    return { status, blocker, reason };
   });
 }
 

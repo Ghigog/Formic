@@ -459,6 +459,8 @@ export class MemoryRepository implements Repository {
       if (card.kind !== "ticket" || card.status !== "running") continue;
       const project = projects.get(projectOf(s, card));
       if (!project) continue;
+      const parentId = s.ticketExtras.get(card.id)?.scoutOf;
+      if (parentId && s.cards.get(parentId)?.status !== "running") continue;
       held.push({
         ticketId: card.id,
         key: card.key,

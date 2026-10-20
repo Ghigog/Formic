@@ -149,3 +149,20 @@ describe("a card leaving its column", () => {
     expect(onAdvance).toHaveBeenCalledOnce();
   });
 });
+
+describe("a queued card", () => {
+  function renderQueued(card: BoardCard) {
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn(), queuedBehind: () => null };
+    return renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="in_progress" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+  }
+
+  it("names what it waits on from the server, even when nothing on this board holds it", () => {
+    const reason = "Waiting for HER-1 on @alice's board, which is writing the same files. It starts on its own then.";
+    const { container } = renderQueued(makeCard({ status: "queued", blockedReason: reason }));
+    expect(container.querySelector("[data-queue]")?.getAttribute("aria-label")).toBe(reason);
+  });
+});

@@ -287,8 +287,9 @@ export async function applyTransition(
   // that one stops (see startQueued). Decided and written under the
   // repository's reservation, so two moves landing together cannot both win.
   let status = dropped;
+  let waitReason: string | null = null;
   if (card.kind === "ticket" && dropped === "running") {
-    status = (await claimOrQueue(projectId, card, write)).status;
+    ({ status, reason: waitReason } = await claimOrQueue(projectId, card, write));
   } else {
     await write(status);
   }
@@ -301,7 +302,7 @@ export async function applyTransition(
     status,
     stalledIn: null,
     stage: needsPrd ? 1 : card.stage,
-    blockedReason: null,
+    blockedReason: waitReason,
   });
 
   if (card.kind === "epic" && t.to === "backlog") await parkTickets(projectId, card.id);

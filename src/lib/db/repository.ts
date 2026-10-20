@@ -548,7 +548,12 @@ export interface Repository {
 
   /* Coordination across boards and server instances. */
 
-  /** Every running ticket on every board of a repository, and the files it holds. */
+  /**
+   * Every running ticket on every board of a repository, and the files it
+   * holds. A scout counts only while its parent runs: one left marked running
+   * after its parent moved on has nothing working it, and would hold its
+   * files for good.
+   */
   reservations(repoFullName: string): Promise<Reservation[]>;
   /**
    * Takes `key` for `holder` for `ttlMs`, when nobody holds it, the holder
