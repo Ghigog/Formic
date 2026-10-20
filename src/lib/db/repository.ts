@@ -527,6 +527,13 @@ export interface PlatformUsageTotals {
   window: PlatformUsage;
 }
 
+/** The last reading of the host's own meter. See src/lib/usage/vercel.ts. */
+export interface HostUsageCheck {
+  checkedAt: Date;
+  /** A VercelUsage, as it was read. */
+  data: unknown;
+}
+
 /**
  * A running ticket's claim on its files. Claims are per repository, not per
  * board: two people's boards on one repository write the same files.
@@ -940,4 +947,9 @@ export interface Repository {
    * See src/lib/usage/governor.ts.
    */
   addPlatformUsage(day: string, delta: PlatformUsage, sinceDay: string): Promise<PlatformUsageTotals>;
+  /** Each counted day from `sinceDay` on. */
+  platformUsageByDay(sinceDay: string): Promise<Record<string, PlatformUsage>>;
+  /** The last reading of the host's own meter, or null before the first. */
+  hostUsageCheck(): Promise<HostUsageCheck | null>;
+  saveHostUsageCheck(check: HostUsageCheck): Promise<void>;
 }

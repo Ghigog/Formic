@@ -18,7 +18,7 @@ import { mergeTarget, usingMockVcs } from "@/lib/vcs";
 import { configWarnings, env } from "@/lib/secrets/env";
 import { redact } from "@/lib/secrets/redact";
 import { reportAllowed } from "@/lib/runner/runner";
-import { usageReport } from "@/lib/usage/governor";
+import { boostLapsed, usageReport } from "@/lib/usage/governor";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +124,11 @@ async function fullReport(): Promise<FullReport> {
   }
   const secretIssue = secretProblem();
   if (secretIssue) warnings.push(secretIssue);
+  if (boostLapsed()) {
+    warnings.push(
+      "FORMIC_USAGE_BOOST has lapsed (FORMIC_USAGE_BOOST_UNTIL is past). Remove both from the deployment's environment.",
+    );
+  }
 
   let database: "memory" | "postgres" | "unreachable" = "memory";
   let databaseError: string | undefined;

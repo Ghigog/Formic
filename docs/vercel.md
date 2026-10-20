@@ -145,6 +145,14 @@ table, and judges them over a rolling 30 days, so it holds whatever day
 Vercel's own period starts on. It budgets 70% of each allowance, and a day
 may spend a tenth of the 30-day budget.
 
+**It checks with Vercel** when `FORMIC_VERCEL_TOKEN` is set
+(`src/lib/usage/vercel.ts`): once a day, and before refusing anything, at
+most every 15 minutes. It reads the account's usage the way `vercel usage`
+does and uses Vercel's figures for every day Vercel has finished metering,
+and its own count, scaled by how far it ran from Vercel's on earlier days,
+for the last two. The window becomes Vercel's billing period. Without a
+token the count stands alone.
+
 | Used | What happens |
 | :-- | :-- |
 | under 85% | Everything works. |
@@ -159,6 +167,10 @@ not Vercel's meter.
 | :-- | :-- | :-- |
 | `FORMIC_USAGE_LIMITS` | on on Vercel | `on` or `off` to force it either way. |
 | `FORMIC_USAGE_SHARE` | `0.7` | The share of each Hobby allowance to budget. Lower it if the dashboard runs ahead of `hostUsage`. |
+| `FORMIC_VERCEL_TOKEN` | unset | A Vercel access token (Account Settings > Tokens), to check the count against Vercel's meter. |
+| `FORMIC_VERCEL_TEAM_ID` | unset | Only when the project belongs to a team. |
+| `FORMIC_USAGE_BOOST` | unset | A temporary multiplier on the Hobby allowances, when Vercel grants one (the dashboard shows "Limits increased"). Needs `FORMIC_USAGE_BOOST_UNTIL`. |
+| `FORMIC_USAGE_BOOST_UNTIL` | unset | The UTC day the boost ends (`YYYY-MM-DD`); from that day it is ignored. **Remove both variables once it has passed**: `/api/health` warns until you do. |
 | `FORMIC_EVENTS` | `poll` on Vercel | `stream` holds the event stream open, as on a server. |
 
 ## After a merge

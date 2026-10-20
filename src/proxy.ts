@@ -9,6 +9,7 @@ import {
 import { needsTermsAcceptance, userForSession } from "@/lib/auth/user";
 import type { UserRecord } from "@/lib/db/repository";
 import { countRequest, verdict } from "@/lib/usage/governor";
+import { publicUrl } from "@/lib/origin";
 
 /**
  * Nothing on the board without signing in. With a GitHub App configured
@@ -79,7 +80,7 @@ export async function proxy(req: NextRequest) {
     if (path.startsWith("/api/")) {
       return NextResponse.json({ error: "Sign in first." }, { status: 401 });
     }
-    const login = new URL("/login", req.url);
+    const login = publicUrl("/login", req);
     login.searchParams.set("next", path + req.nextUrl.search);
     return NextResponse.redirect(login);
   }
@@ -91,7 +92,7 @@ export async function proxy(req: NextRequest) {
       if (path.startsWith("/api/")) {
         return NextResponse.json({ error: "Accept the current terms first." }, { status: 403 });
       }
-      const legal = new URL("/legal", req.url);
+      const legal = publicUrl("/legal", req);
       legal.searchParams.set("next", path + req.nextUrl.search);
       return NextResponse.redirect(legal);
     }

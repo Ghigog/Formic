@@ -33,6 +33,7 @@ import type {
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
+  HostUsageCheck,
   Reservation,
 } from "./repository";
 import type {
@@ -116,6 +117,7 @@ interface Store {
   leases: Map<string, { holder: string; expiresAt: number }>;
   /** Host usage by UTC day, "YYYY-MM-DD". */
   platformUsage: Map<string, PlatformUsage>;
+  hostUsageCheck?: HostUsageCheck;
   /** The project the demo board belongs to, and the fallback. */
   project: ProjectSummary;
   projects: Map<string, ProjectSummary>;
@@ -1091,6 +1093,20 @@ export class MemoryRepository implements Repository {
       window.cpuMs += u.cpuMs;
     }
     return { today: { ...days.get(day)! }, window };
+  }
+
+  async platformUsageByDay(sinceDay: string): Promise<Record<string, PlatformUsage>> {
+    const out: Record<string, PlatformUsage> = {};
+    for (const [d, u] of store().platformUsage) if (d >= sinceDay) out[d] = { ...u };
+    return out;
+  }
+
+  async hostUsageCheck(): Promise<HostUsageCheck | null> {
+    return store().hostUsageCheck ?? null;
+  }
+
+  async saveHostUsageCheck(check: HostUsageCheck): Promise<void> {
+    store().hostUsageCheck = check;
   }
 
   async eventsOfTypes(projectIds: string[], types: string[], since: Date, limit = 200) {
