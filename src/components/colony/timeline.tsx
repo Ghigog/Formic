@@ -65,6 +65,8 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
   const [at] = useState(() => new Date());
   // Whole days back from the opening moment, in steps of one window.
   const [offset, setOffset] = useState(0);
+  // The left column starts compact; not persisted.
+  const [compact, setCompact] = useState(true);
   const live = offset === 0;
   const last = live ? TODAY : N - 1;
   const tl = useMemo(() => buildTimeline(c.cards, at, offset), [c.cards, at, offset]);
@@ -290,15 +292,38 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
           </div>
         </div>
 
-        <div className="border-line bg-card grid grid-cols-[300px_minmax(0,1fr)] overflow-hidden rounded-xl border">
+        <div className={`border-line bg-card grid ${compact ? "grid-cols-[90px_minmax(0,1fr)]" : "grid-cols-[300px_minmax(0,1fr)]"} overflow-hidden rounded-xl border`}>
           {/* Left: the burndown's numbers and the row labels. */}
           <div className="border-line flex min-w-0 flex-col border-r">
-            <div className="border-line box-border flex h-11 shrink-0 items-center justify-between border-b px-4">
-              <span className="text-[11px] font-semibold tracking-[0.1em] uppercase">Burndown</span>
-              <span className="text-muted font-mono text-[10px]">{tl.total} SP</span>
+            <div className={`border-line box-border flex h-11 shrink-0 items-center justify-between border-b ${compact ? "pr-1 pl-3" : "px-4"}`}>
+              {compact ? (
+                <span className="text-[11px] font-semibold tracking-[0.1em] uppercase">{fmt(0).split(" ")[0]}</span>
+              ) : (
+                <>
+                  <span className="text-[11px] font-semibold tracking-[0.1em] uppercase">Burndown</span>
+                  <span className="text-muted ml-auto font-mono text-[10px]">{tl.total} SP</span>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => setCompact((v) => !v)}
+                aria-label={compact ? "Expand details" : "Collapse details"}
+                aria-expanded={!compact}
+                className={`inline-flex size-[26px] shrink-0 items-center justify-center rounded-md hover:bg-hairline ${compact ? "" : "ml-1 -mr-2"}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path
+                    d={compact ? "M4.5 2.5 8 6 4.5 9.5" : "M7.5 2.5 4 6 7.5 9.5"}
+                    stroke="var(--text)"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
             </div>
             <div className="border-line box-border flex h-[232px] shrink-0 flex-col gap-3 border-b p-4">
-              {live && (
+              {!compact && live && (
               <div className="flex flex-col gap-1">
                 <span className="text-muted font-mono text-[9px] tracking-[0.12em]">FORECAST FINISH</span>
                 <div className="flex items-center gap-2.5">
@@ -315,6 +340,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                 </div>
               </div>
               )}
+              {!compact && (
               <div className="flex flex-col gap-1.5">
                 <Stat k="Velocity" v={`${tl.velocity.toFixed(1)} SP/day`} />
                 <Stat k="Remaining" v={`${tl.remaining} of ${tl.total} SP`} />
@@ -324,7 +350,8 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   v={live && tl.levels.length ? `Lv ${startLevel} → Lv ${c.score.level}` : `Lv ${c.score.level}`}
                 />
               </div>
-              {live && tl.boost && (
+              )}
+              {!compact && live && tl.boost && (
                 <div className="bg-epic-chip text-terracotta-deep flex items-center gap-2 rounded-lg px-2.5 py-2 text-[11px] leading-[1.35]">
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="shrink-0">
                     <path d="M6.8 1 2.5 7h3l-.6 4L9.5 5h-3z" fill="var(--terracotta)" />
@@ -338,7 +365,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
 
             {rows.map((r) =>
               r.kind === "epic" ? (
-                <div key={r.e.id} className="bg-card box-border flex h-[52px] items-center gap-2 border-t border-hairline pr-3 pl-2">
+                <div key={r.e.id} className={`bg-card box-border flex h-[52px] items-center border-t border-hairline ${compact ? "gap-1 pr-1 pl-1" : "gap-2 pr-3 pl-2"}`}>
                   <button
                     type="button"
                     onClick={() => toggle(r.e.id)}
@@ -348,15 +375,19 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   >
                     <Chevron open={r.open} />
                   </button>
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="text-muted font-mono text-[9px] tracking-[0.06em]">
-                      {r.e.key} · {r.e.doneSp}/{r.e.totalSp} SP
-                    </span>
-                    <span className="truncate font-serif text-[15px] font-semibold">{r.e.title}</span>
-                  </div>
+                  {compact ? (
+                    <span className="text-muted min-w-0 flex-1 truncate font-mono text-[9px] tracking-[0.06em]">{r.e.key}</span>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-muted font-mono text-[9px] tracking-[0.06em]">
+                        {r.e.key} · {r.e.doneSp}/{r.e.totalSp} SP
+                      </span>
+                      <span className="truncate font-serif text-[15px] font-semibold">{r.e.title}</span>
+                    </div>
+                  )}
                   {r.e.merged && r.e.grade ? (
                     <div className="flex shrink-0 items-center gap-1.5">
-                      <span className="text-muted font-mono text-[9px]">{r.e.yieldRatio!.toFixed(1)}× yield</span>
+                      {!compact && <span className="text-muted font-mono text-[9px]">{r.e.yieldRatio!.toFixed(1)}× yield</span>}
                       <span
                         data-tlstamp
                         data-color={r.e.grade.color}
@@ -367,6 +398,15 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                         {r.e.grade.grade}
                       </span>
                     </div>
+                  ) : compact ? (
+                    r.e.grade && (
+                      <span
+                        className="shrink-0 rounded-full px-[7px] py-[3px] font-mono text-[9px]"
+                        style={{ background: GRADE_CHIP[r.e.grade.grade][0], color: GRADE_CHIP[r.e.grade.grade][1] }}
+                      >
+                        {r.e.grade.grade}
+                      </span>
+                    )
                   ) : (
                     <span
                       className="shrink-0 rounded-full px-[7px] py-[3px] font-mono text-[9px] whitespace-nowrap"
@@ -380,13 +420,17 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   )}
                 </div>
               ) : (
-                <div key={r.t.id} className="box-border flex h-[34px] items-center gap-2 pr-3 pl-[42px]">
+                <div key={r.t.id} className={`box-border flex h-[34px] items-center gap-2 pr-3 ${compact ? "pl-[14px]" : "pl-[42px]"}`}>
                   <span className="size-1.5 shrink-0 rounded-full" style={{ background: TICKET_LOOK[r.t.phase].dot }} />
                   <span className="text-muted shrink-0 font-mono text-[10px]">{r.t.key}</span>
-                  <span className={`min-w-0 flex-1 truncate text-[12px] ${r.t.phase === "planned" ? "text-muted" : "text-ink"}`}>
-                    {r.t.title}
-                  </span>
-                  <span className="text-muted shrink-0 font-mono text-[10px]">{r.t.sp} SP</span>
+                  {!compact && (
+                    <>
+                      <span className={`min-w-0 flex-1 truncate text-[12px] ${r.t.phase === "planned" ? "text-muted" : "text-ink"}`}>
+                        {r.t.title}
+                      </span>
+                      <span className="text-muted shrink-0 font-mono text-[10px]">{r.t.sp} SP</span>
+                    </>
+                  )}
                 </div>
               ),
             )}
@@ -397,8 +441,12 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
             )}
 
             <div className="border-line box-border flex h-[88px] shrink-0 flex-col justify-center gap-1 border-t px-4">
-              <span className="text-[11px] font-semibold tracking-[0.1em] uppercase">Daily merges</span>
-              <span className="text-muted text-[12px] leading-[1.35]">{streakText}</span>
+              {!compact && (
+                <>
+                  <span className="text-[11px] font-semibold tracking-[0.1em] uppercase">Daily merges</span>
+                  <span className="text-muted text-[12px] leading-[1.35]">{streakText}</span>
+                </>
+              )}
             </div>
           </div>
 
