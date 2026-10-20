@@ -44,8 +44,16 @@ export const TICKET_SIZES = ["S", "M", "L", "XL"] as const;
 export type TicketSize = (typeof TICKET_SIZES)[number];
 
 /** What the owner chose a card to be, besides plain work. */
-export const WORK_TYPES = ["bug", "spike"] as const;
+export const WORK_TYPES = ["user_story", "task", "feature", "bug", "spike"] as const;
 export type WorkType = (typeof WORK_TYPES)[number];
+
+export const BUG_SEVERITIES = ["low", "medium", "high", "critical"] as const;
+export type BugSeverity = (typeof BUG_SEVERITIES)[number];
+
+/** Only a bug has a severity; any other type, or none, clears it. */
+export function severityFor(workType: WorkType | null | undefined, severity: BugSeverity | null | undefined): BugSeverity | null {
+  return workType === "bug" ? (severity ?? null) : null;
+}
 
 export const ATTACHMENT_KINDS = ["image", "file"] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
@@ -125,6 +133,7 @@ export const epicSchema = z.object({
   /** A holder for a ticket with no Epic of its own. See BoardCard.standalone. */
   standalone: z.boolean().default(false),
   workType: z.enum(WORK_TYPES).nullable().default(null),
+  bugSeverity: z.enum(BUG_SEVERITIES).nullable().default(null),
   rerouteFrom: z.enum(COLUMNS).nullable().default(null),
   rerouteReason: z.string().nullable().default(null),
   createdAt: z.coerce.date(),
@@ -148,6 +157,7 @@ export const ticketSchema = z.object({
   stage: z.number().int().min(1).max(8),
   position: z.number(),
   workType: z.enum(WORK_TYPES).nullable().default(null),
+  bugSeverity: z.enum(BUG_SEVERITIES).nullable().default(null),
   branchName: z.string().nullable().default(null),
   prNumber: z.number().int().nullable().default(null),
   prUrl: z.string().nullable().default(null),
@@ -205,8 +215,10 @@ export interface BoardCard {
    * renders alone, marked detached, exactly as today.
    */
   standalone?: boolean;
-  /** Bug or spike, as the owner chose when creating it. Null for neither. */
+  /** The kind of work, as the owner chose. Null for untyped. */
   workType?: WorkType | null;
+  /** How bad a bug is. Null unless workType is bug. */
+  bugSeverity?: BugSeverity | null;
   /** The column a request was rerouted from, and why. Null outside a reroute. */
   rerouteFrom?: (typeof COLUMNS)[number] | null;
   rerouteReason?: string | null;
