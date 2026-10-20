@@ -66,28 +66,33 @@ describe("levels", () => {
     expect(queensEarned(50)).toBe(49);
   });
 
-  it("unlocks exactly one thing at every level from 2 to 30", () => {
+  it("unlocks exactly one thing at every level from 2 to 34", () => {
     for (let lv = 2; lv <= MAX_UNLOCK_LEVEL; lv++) expect(unlocksAt(lv)).toHaveLength(1);
     expect(unlocksAt(MAX_UNLOCK_LEVEL + 1)).toEqual([]);
   });
 
   it("names Sentinels, styles and colony rules at the level they unlock", () => {
-    const at5 = SENTINEL_UNLOCKS.filter((u) => u.lv === 5).map((u) => u.label);
-    expect(unlocksAt(5)).toEqual(at5);
-    expect(unlocksAt(7)).toEqual(["Ladybird"]);
-    expect(unlocksAt(24)).toEqual(["Auto-scout"]);
+    const at6 = SENTINEL_UNLOCKS.filter((u) => u.lv === 6).map((u) => u.label);
+    expect(at6).toHaveLength(1);
+    expect(unlocksAt(6)).toEqual(at6);
+    expect(unlocksAt(1)).toEqual(["Ant", "Umber"]);
+    expect(unlocksAt(2)).toEqual(["Tester"]);
+    expect(unlocksAt(11)).toEqual(["Caterpillar"]);
+    expect(unlocksAt(24)).toEqual(["Bumblebee"]);
+    expect(unlocksAt(27)).toEqual(["Auto-scout"]);
+    expect(unlocksAt(31)).toEqual(["Mosquito"]);
   });
 
   it("checks a saved style against the level", () => {
     expect(styleUnlocked({ shape: "ant", color: "umber" }, 1)).toBe(true);
-    expect(styleUnlocked({ shape: "stag", color: "umber" }, 25)).toBe(false);
-    expect(styleUnlocked({ shape: "stag", color: "plum" }, 27)).toBe(true);
+    expect(styleUnlocked({ shape: "mosquito", color: "umber" }, 30)).toBe(false);
+    expect(styleUnlocked({ shape: "mosquito", color: "plum" }, 31)).toBe(true);
   });
 
   it("says what the next unlock is", () => {
-    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["QA"] });
-    expect(nextUnlock(29)).toEqual({ level: 30, labels: ["Sales"] });
-    expect(nextUnlock(30)).toBeNull();
+    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Tester"] });
+    expect(nextUnlock(33)).toEqual({ level: 34, labels: ["Sales"] });
+    expect(nextUnlock(34)).toBeNull();
   });
 });
 

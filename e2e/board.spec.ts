@@ -441,7 +441,7 @@ test("a sentinel calibrates, then audits against its rubric, and its stars count
   const sentinels = page.getByRole("region", { name: "Sentinels" });
   await expect(sentinels.getByRole("heading", { name: "Sentinels" })).toBeAttached();
 
-  // The Tester unlocks at Lv 1, so it is summonable at any colony level. It
+  // The Tester unlocks at Lv 2, where the demo board starts. It
   // calibrates first; the mock Tester then gives four stars against that
   // rubric, and the grade total counts unlocked seats only.
   const card = sentinels.getByRole("listitem", { name: /Professor O'Chumley/ });

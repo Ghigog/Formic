@@ -27,7 +27,7 @@ const merged = (n: number): BoardCard[] =>
   })) as BoardCard[];
 
 describe("summonSentinel", () => {
-  const locked = SENTINELS.find((s) => s.unlockLevel === 5)!;
+  const locked = SENTINELS.find((s) => s.unlockLevel === 6)!;
 
   it("refuses a Sentinel the colony has not unlocked", async () => {
     cards = []; // Lv 1
@@ -37,7 +37,7 @@ describe("summonSentinel", () => {
   });
 
   it("runs it once the colony reaches its level, calibrating before it audits", async () => {
-    cards = merged(4); // 200 XP: Lv 5
+    cards = merged(5); // 250 XP: Lv 6
     expect(await summonSentinel("p", locked.id)).toMatchObject({ ok: false, status: 409 });
     expect(startAudit).not.toHaveBeenCalled();
     expect(await summonSentinel("p", locked.id, "calibrate")).toEqual({ ok: true });

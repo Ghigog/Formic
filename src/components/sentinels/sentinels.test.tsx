@@ -44,7 +44,7 @@ function Open() {
   return <button onClick={() => c?.setSentinelsOpen(true)}>open sentinels</button>;
 }
 
-async function open(level = 30) {
+async function open(level = 34) {
   render(
     <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
       <SentinelsProvider initial={states([SENTINELS[0]!.id, SENTINELS[3]!.id])} level={level}>
@@ -100,11 +100,11 @@ describe("SentinelsPage motion and sound", () => {
 
 describe("SentinelsPage locked sentinels", () => {
   const card = (id: string) => document.querySelector(`[data-card="${id}"]`) as HTMLElement;
-  const locked = SENTINELS.find((x) => x.unlockLevel > 1)!;
-  const first = SENTINELS.find((x) => x.unlockLevel === 1)!;
+  const first = SENTINELS[0]!;
+  const locked = SENTINELS.find((x) => x.unlockLevel > first.unlockLevel)!;
 
   it("shows a locked sentinel's unlock level and no run button", async () => {
-    await open(1);
+    await open(first.unlockLevel);
     expect(within(card(locked.id)).getByText(`Unlocks at Lv ${locked.unlockLevel}`)).toBeTruthy();
     expect(within(card(locked.id)).queryByRole("button")).toBeNull();
     expect(within(card(first.id)).getByRole("button", { name: /calibrate|audit/i })).toBeTruthy();

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
+import { scoreOf } from "@/lib/colony/game";
 import { repository } from "@/lib/db";
 import { collectCliRuns, completeCliRun } from "@/lib/runner/runner";
 import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle } from "@/lib/runner/workflow";
@@ -16,7 +17,7 @@ import { summonSentinel, sentinelsFor } from "./service";
 /** A sentinel audited by a CLI agent, in a GitHub Actions job. */
 
 const PROJECT = "project_default";
-const first = SENTINELS.find((s) => s.unlockLevel === 1)!;
+const first = SENTINELS[0]!;
 
 const RUBRIC = {
   context: "A widget library.",
@@ -45,7 +46,20 @@ const REPORT = {
   files: ["src/index.ts"],
 };
 
+/** Merges enough work for the colony to reach the sentinel's level. */
+async function earnLevel(level: number) {
+  const repo = repository();
+  const epic = await repo.createEpic({ projectId: PROJECT, title: "Done", rawRequest: "Done", position: 9 });
+  for (let i = 0; scoreOf(await repo.boardCards(PROJECT)).level < level; i++) {
+    const [done] = await repo.createTickets([
+      { epicId: epic.id, key: `D-${i}`, title: "d", description: "d", acceptanceCriteria: [], fileScope: [`src/d${i}`], size: "S", storyPoints: 13, position: i, dependsOnKeys: [] },
+    ]);
+    await repo.updateTicket(done!.id, { status: "merged" });
+  }
+}
+
 async function setUp() {
+  await earnLevel(first.unlockLevel);
   const preset = await savePreset({ name: "claude-code", provider: "claude-code", model: "", prompt: "", apiKey: "tok" });
   await repository().setAssistantAgent(PROJECT, preset.id);
   const base = (await projectFor(PROJECT)).baseBranch;

@@ -33,12 +33,21 @@ export const RANKS = [
 ] as const;
 
 /**
- * The level schedule runs to Lv 30, one unlock a level after the first: a bug
+ * The level schedule runs to Lv 34, one unlock a level after the first: a bug
  * shape, a colour, a Sentinel (see roster.ts) or a colony rule (see reserve.ts).
  */
-export const MAX_UNLOCK_LEVEL = 30;
+export const MAX_UNLOCK_LEVEL = 34;
 
-export type BugShape = "ant" | "beetle" | "ladybird" | "spider" | "moth" | "stag";
+export type BugShape =
+  | "ant"
+  | "beetle"
+  | "ladybird"
+  | "caterpillar"
+  | "spider"
+  | "moth"
+  | "bumblebee"
+  | "stag"
+  | "mosquito";
 export type BugColor =
   | "umber"
   | "crimson"
@@ -52,35 +61,38 @@ export type BugColor =
 
 export const SHAPE_UNLOCKS: ReadonlyArray<{ key: BugShape; label: string; lv: number }> = [
   { key: "ant", label: "Ant", lv: 1 },
-  { key: "beetle", label: "Beetle", lv: 3 },
-  { key: "ladybird", label: "Ladybird", lv: 7 },
-  { key: "spider", label: "Spider", lv: 12 },
-  { key: "moth", label: "Moth", lv: 18 },
-  { key: "stag", label: "Stag beetle", lv: 26 },
+  { key: "beetle", label: "Beetle", lv: 4 },
+  { key: "ladybird", label: "Ladybird", lv: 8 },
+  { key: "caterpillar", label: "Caterpillar", lv: 11 },
+  { key: "spider", label: "Spider", lv: 14 },
+  { key: "moth", label: "Moth", lv: 20 },
+  { key: "bumblebee", label: "Bumblebee", lv: 24 },
+  { key: "stag", label: "Stag beetle", lv: 29 },
+  { key: "mosquito", label: "Mosquito", lv: 31 },
 ];
 
 export const COLOR_UNLOCKS: ReadonlyArray<{ key: BugColor; label: string; hex: string; lv: number }> = [
   { key: "umber", label: "Umber", hex: "#4A2F22", lv: 1 },
-  { key: "crimson", label: "Crimson", hex: "#B3261E", lv: 4 },
-  { key: "ochre", label: "Ochre", hex: "#A86A04", lv: 10 },
-  { key: "moss", label: "Moss", hex: "#5B6B2E", lv: 14 },
-  { key: "jade", label: "Jade", hex: "#2E6B31", lv: 17 },
-  { key: "slate", label: "Slate", hex: "#4A5A66", lv: 21 },
-  { key: "anthracite", label: "Anthracite", hex: "#1C1917", lv: 23 },
-  { key: "plum", label: "Plum", hex: "#6A2C55", lv: 27 },
-  { key: "terracotta", label: "Terracotta", hex: "#C4561A", lv: 29 },
+  { key: "crimson", label: "Crimson", hex: "#B3261E", lv: 5 },
+  { key: "ochre", label: "Ochre", hex: "#A86A04", lv: 12 },
+  { key: "moss", label: "Moss", hex: "#5B6B2E", lv: 16 },
+  { key: "jade", label: "Jade", hex: "#2E6B31", lv: 19 },
+  { key: "slate", label: "Slate", hex: "#4A5A66", lv: 23 },
+  { key: "anthracite", label: "Anthracite", hex: "#1C1917", lv: 26 },
+  { key: "plum", label: "Plum", hex: "#6A2C55", lv: 30 },
+  { key: "terracotta", label: "Terracotta", hex: "#C4561A", lv: 33 },
 ];
 
 /** The level that lowers the least reserve to one. */
-export const RESERVE_ONE_LEVEL = 6;
+export const RESERVE_ONE_LEVEL = 7;
 /** The level that lets 3 scouts go out on one ticket. */
-export const THREE_SCOUTS_LEVEL = 9;
+export const THREE_SCOUTS_LEVEL = 10;
 /** The level that drops the least reserve to none. */
-export const NO_RESERVE_LEVEL = 15;
+export const NO_RESERVE_LEVEL = 17;
 /** The level that lets 4 scouts go out on one ticket. */
-export const FOUR_SCOUTS_LEVEL = 20;
+export const FOUR_SCOUTS_LEVEL = 22;
 /** The level that lets idle reserve slots send scouts out on their own. */
-export const AUTO_SCOUT_LEVEL = 24;
+export const AUTO_SCOUT_LEVEL = 27;
 
 export const COLONY_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: number }> = [
   { key: "reserve-1", label: "a reserve of 1", lv: RESERVE_ONE_LEVEL },
@@ -109,8 +121,8 @@ export function levelOf(xp: number): number {
   return Math.floor(Math.max(0, xp) / XP_PER_LEVEL) + 1;
 }
 
-/** Levels spent at each rank: ten ranks across the thirty levels, Queen from Lv 28. */
-export const LEVELS_PER_RANK = MAX_UNLOCK_LEVEL / RANKS.length;
+/** Levels spent at each rank: a new rank every three levels, Queen from Lv 28. */
+export const LEVELS_PER_RANK = 3;
 
 export function rankOf(level: number): string {
   const i = Math.floor((Math.max(1, level) - 1) / LEVELS_PER_RANK);

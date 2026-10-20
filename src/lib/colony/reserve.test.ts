@@ -40,12 +40,12 @@ const colony = { colonySize: 4, colonyReserve: 1, autoScout: false };
 
 describe("what levels unlock", () => {
   it("lowers the reserve floor as the colony grows", () => {
-    expect([1, 5, 6, 14, 15, 30].map(reserveFloor)).toEqual([2, 2, 1, 1, 0, 0]);
-    expect([1, 6, 15].map(nextFloorLevel)).toEqual([6, 15, null]);
+    expect([1, 6, 7, 16, 17, 34].map(reserveFloor)).toEqual([2, 2, 1, 1, 0, 0]);
+    expect([1, 7, 17].map(nextFloorLevel)).toEqual([7, 17, null]);
   });
 
   it("allows more scouts per ticket", () => {
-    expect([1, 8, 9, 19, 20].map(maxScouts)).toEqual([2, 2, 3, 3, 4]);
+    expect([1, 9, 10, 21, 22].map(maxScouts)).toEqual([2, 2, 3, 3, 4]);
   });
 });
 
@@ -60,7 +60,7 @@ describe("effectiveColony", () => {
 
   it("holds the reserve to the level's floor, and below the size", () => {
     expect(effectiveColony({ colonySize: 4, colonyReserve: 0, autoScout: false }, 1).colonyReserve).toBe(2);
-    expect(effectiveColony({ colonySize: 4, colonyReserve: 0, autoScout: false }, 15).colonyReserve).toBe(0);
+    expect(effectiveColony({ colonySize: 4, colonyReserve: 0, autoScout: false }, 17).colonyReserve).toBe(0);
     expect(effectiveColony({ colonySize: 2, colonyReserve: 5, autoScout: false }, 1).colonyReserve).toBe(1);
   });
 

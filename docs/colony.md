@@ -28,45 +28,50 @@ The rules are in `src/lib/colony/reserve.ts`; the queue applies them in
 
 ## What levels unlock
 
-Levels run to 30, with one unlock at each level after the first. Lv 1 starts
-with the Ant, Umber and the Tester. Every level also earns a Queen, and the
-rank steps up every three levels (Queen from Lv 28).
+Levels run to 34, with one unlock at each level after the first. Lv 1 starts
+with the Ant and Umber; the first Sentinel, the Tester, comes at Lv 2. Every
+level also earns a Queen, and the rank steps up every three levels (Queen
+from Lv 28).
 
 | Level | Unlock |
 | :-- | :-- |
-| 2 | QA (Sentinel) |
-| 3 | Beetle |
-| 4 | Crimson |
-| 5 | Architect (Sentinel) |
-| 6 | Least reserve drops to 1 |
-| 7 | Ladybird |
-| 8 | SecOps (Sentinel) |
-| 9 | 3 scouts per ticket |
-| 10 | Ochre |
-| 11 | DevOps (Sentinel) |
-| 12 | Spider |
-| 13 | TechOps (Sentinel) |
-| 14 | Moss |
-| 15 | Least reserve drops to 0 |
-| 16 | Performance (Sentinel) |
-| 17 | Jade |
-| 18 | Moth |
-| 19 | Accessibility (Sentinel) |
-| 20 | 4 scouts per ticket |
-| 21 | Slate |
-| 22 | Designer (Sentinel) |
-| 23 | Anthracite |
-| 24 | Auto-scouting |
-| 25 | Legal (Sentinel) |
-| 26 | Stag beetle |
-| 27 | Plum |
-| 28 | Marketer (Sentinel) |
-| 29 | Terracotta |
-| 30 | Sales (Sentinel) |
+| 2 | Tester (Sentinel) |
+| 3 | QA (Sentinel) |
+| 4 | Beetle |
+| 5 | Crimson |
+| 6 | Architect (Sentinel) |
+| 7 | Least reserve drops to 1 |
+| 8 | Ladybird |
+| 9 | SecOps (Sentinel) |
+| 10 | 3 scouts per ticket |
+| 11 | Caterpillar |
+| 12 | Ochre |
+| 13 | DevOps (Sentinel) |
+| 14 | Spider |
+| 15 | TechOps (Sentinel) |
+| 16 | Moss |
+| 17 | Least reserve drops to 0 |
+| 18 | Performance (Sentinel) |
+| 19 | Jade |
+| 20 | Moth |
+| 21 | Accessibility (Sentinel) |
+| 22 | 4 scouts per ticket |
+| 23 | Slate |
+| 24 | Bumblebee |
+| 25 | Designer (Sentinel) |
+| 26 | Anthracite |
+| 27 | Auto-scouting |
+| 28 | Legal (Sentinel) |
+| 29 | Stag beetle |
+| 30 | Plum |
+| 31 | Mosquito |
+| 32 | Marketer (Sentinel) |
+| 33 | Terracotta |
+| 34 | Sales (Sentinel) |
 
 The schedule lives in `src/lib/colony/game.ts` (styles and colony rules) and
-`src/lib/sentinels/roster.ts` (Sentinels). Before Lv 6 the least reserve is 2,
-and a ticket may send 2 scouts before Lv 9.
+`src/lib/sentinels/roster.ts` (Sentinels). Before Lv 7 the least reserve is 2,
+and a ticket may send 2 scouts before Lv 10.
 
 A reserve below the level's floor is raised to it, and never above the
 colony size less one.
@@ -106,7 +111,7 @@ at its next turn.
 
 ## Auto-scouting
 
-At Lv 24, with a capped colony, the owner can let idle reserve slots scout on
+At Lv 27, with a capped colony, the owner can let idle reserve slots scout on
 their own. In the idle sweep, when nothing is waiting and at least two slots
 are free, the reserve sends two scouts on one ticket: a spike in To Do, or a
 ticket whose attempt failed. One at a time. Urgent work that needs the slots

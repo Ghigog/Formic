@@ -12,7 +12,8 @@ import type { AmbientStats } from "@/components/ui/ambient-drawer";
  * internally consistent while every card anatomy still has something to draw:
  * a backlog epic and a raw idea, a To Do DAG with one unlocked and one
  * blocked child, two running cards, a failing and a passing review, and a
- * merged group.
+ * merged group. That merged group scores enough to start the colony at Lv 2,
+ * where the first Sentinel unlocks.
  */
 
 /** An ISO time `days` ago, so the demo timeline always ends today. */
@@ -244,7 +245,9 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 1100,
     epicId: "epic-1",
     size: "M",
-    storyPoints: 3,
+    storyPoints: 8,
+    // Merged at 2.5× heat.
+    mergePoints: 20,
     fileScope: ["src/components/board/**"],
     prNumber: 114,
     prUrl: "https://github.com/formic-labs/formic-web/pull/114",
@@ -263,7 +266,9 @@ export const FIXTURE_CARDS: BoardCard[] = [
     position: 1200,
     epicId: "epic-1",
     size: "M",
-    storyPoints: 3,
+    storyPoints: 8,
+    // Merged at 2.5× heat.
+    mergePoints: 20,
     fileScope: ["prisma/**", "src/lib/db/**"],
     prNumber: 116,
     prUrl: "https://github.com/formic-labs/formic-web/pull/116",
