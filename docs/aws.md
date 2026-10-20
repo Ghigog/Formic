@@ -22,9 +22,11 @@ not capped by a function's `maxDuration`. That is the reason to move off Vercel.
   Gateway ends requests at about 30 seconds.
 - **Not S3 + CloudFront.** The app renders on the server and has API routes
   and webhooks. S3 only serves static files.
-- **Lightsail over EC2.** The same Ubuntu server, at a fixed monthly price that
-  already includes the public IPv4 address, the disk and the data transfer. A
-  comparable EC2 instance costs more once those are added, and the bill varies.
+- **Lightsail by default, EC2 when you want standard AWS.** Both are the same
+  Ubuntu server running the same scripts. Lightsail is cheaper at this size
+  because its price includes the public IPv4 address, the disk and the data
+  transfer. EC2 fits better with the rest of AWS (IAM roles, VPCs, RDS,
+  Terraform). EC2 has its own section: [On EC2 instead](#on-ec2-instead).
 
 ## Cost
 
@@ -51,6 +53,11 @@ Paid Plan before then; unused credits carry over.
 
 Everything else costs what it does on Vercel: the database, E2B and model usage
 do not change.
+
+**The server must be x86.** CI builds the release on an x86 GitHub runner and
+ships it with its `node_modules`, native binaries included, so the server runs
+exactly what was built. Lightsail instances are x86. On EC2, pick an x86 type
+(`t3`), not a Graviton one (`t4g`).
 
 ## 1. Account
 
@@ -158,3 +165,73 @@ snapshots are optional and cost extra.
 **Resizing.** Lightsail cannot change an instance's plan in place. Take a
 snapshot, create a larger instance from it, and move the static IP across. The
 address, and so the HTTPS hostname and `DEPLOY_HOST`, stay the same.
+
+## On EC2 instead
+
+The same server on plain EC2. Choose it when the app should live alongside
+other AWS resources (RDS, IAM roles, a VPC) or be managed in Terraform. It
+costs more at this size, and the bill varies with traffic.
+
+| Item (us-east-1) | Per month |
+| :-- | :-- |
+| `t3.small` (2 vCPU, 2 GB), on demand | about $15.20 |
+| Elastic IP (every public IPv4 address is charged) | about $3.65 |
+| 20 GB `gp3` disk | about $1.60 |
+| Data out, past the first 100 GB | $0.09 per GB |
+| **Total** | **about $20.50** |
+
+Prices last checked October 2026. A one-year Savings Plan lowers the instance
+line by roughly a third.
+
+Steps 1 (account and budget) and 5 onward are the same as for Lightsail. Steps
+2 to 4 become:
+
+### Launch the instance
+
+**EC2 > Instances > Launch instances:**
+
+- **Name:** `formic`.
+- **AMI:** Ubuntu Server 24.04 LTS, **64-bit (x86)**.
+- **Instance type:** `t3.small`. Not `t4g`: see "The server must be x86" above.
+- **Key pair:** create one (ED25519, `.pem`) and keep the file. It is how you
+  log in as `ubuntu`.
+- **Network settings:** create a security group that allows **SSH**, **HTTP**
+  and **HTTPS** from anywhere (`0.0.0.0/0`). SSH has to be open to anywhere,
+  not "My IP": CI deploys over SSH from GitHub's runners, whose addresses
+  change. Ubuntu's AMI only accepts keys, never passwords.
+- **Storage:** 20 GiB, `gp3`.
+
+### Give it a fixed address
+
+**EC2 > Elastic IPs > Allocate Elastic IP address**, then **Actions >
+Associate** it with `formic`. Do this **before** `setup.sh`, for the same
+reason as the static IP on Lightsail: the HTTPS hostname is built from the IP.
+
+### Set it up
+
+From the repository on your computer:
+
+```bash
+scp -i formic.pem deploy/server/setup.sh ubuntu@<elastic-ip>:
+ssh -i formic.pem ubuntu@<elastic-ip>
+sudo bash setup.sh
+```
+
+Or use **Connect > EC2 Instance Connect** in the console and paste the script
+into `nano setup.sh`, as in the Lightsail step. Then continue at
+[step 5](#5-fill-in-the-environment-connect-github-deploy).
+
+### In Terraform
+
+The whole server is three resources: `aws_instance`, `aws_security_group` and
+`aws_eip`, plus `aws_eip_association`. `setup.sh` stays as it is; it can run
+as the instance's `user_data`, though then its closing output (with the deploy
+key) goes to the system log instead of your terminal.
+
+### Moving from Lightsail to EC2 later
+
+Lightsail can export a snapshot to EC2: **Snapshots > Export to Amazon EC2**,
+then launch an instance from the resulting AMI in the EC2 console. The new
+instance gets a new IP, so update `DEPLOY_HOST`, `FORMIC_URL`,
+`PRODUCTION_URL` and the GitHub App URLs, or use your own domain from the start
+and only move its A record.
