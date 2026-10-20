@@ -13,7 +13,7 @@ import { EMPTY_VIEW, type ColumnView } from "./view";
 import { loadBoardView } from "./view-setting";
 import { adjacentColumn, ownsGesture, slideTowards, swipeDirection, type SwipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
-import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
+import { CardEnvContext, LEAVE_MS, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
 import { cardEl, colonyEl } from "@/components/colony/fx";
 import { ghostOf, type Ghost } from "@/components/colony/epic-flight";
@@ -145,6 +145,7 @@ export function Board({
   }, [archivedWanted, onArchivedWanted]);
 
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const colony = useColony();
 
   // A Queen picked up in the Colony panel: on a phone only one column shows,
@@ -458,6 +459,12 @@ export function Board({
    * To Do for anything, To Do to In Progress for a ticket that is ready,
    * and never into a column whose agent is out of usage.
    */
+  const [leaving, setLeaving] = useState<CardEnv["leaving"]>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+  }, []);
+
   const cardEnv = useMemo<CardEnv>(
     () => ({
       epics: epicsById,
@@ -474,12 +481,25 @@ export function Board({
         isMobile && column === "in_progress" && card.kind === "ticket" && !card.misplacedIn && accepts(column, "todo")
           ? "todo"
           : null,
-      onAdvance: (card, to) => void commit(card, to, Number.MAX_SAFE_INTEGER),
+      leaving,
+      onAdvance: (card, to) => {
+        const move = () => void commit(card, to, Number.MAX_SAFE_INTEGER);
+        // A phone shows one column, so the move would otherwise end the card
+        // in one frame: let it slide away first, and ignore taps meanwhile.
+        if (!isMobile || reducedMotion) return move();
+        if (leaveTimer.current) return;
+        setLeaving({ id: card.id, direction: to === "todo" && columnOf(card) === "in_progress" ? "back" : "forward" });
+        leaveTimer.current = setTimeout(() => {
+          leaveTimer.current = null;
+          setLeaving(null);
+          move();
+        }, LEAVE_MS);
+      },
       queuedBehind: (card) => runningConflict(card, live),
       noCi,
       autoMerge,
     }),
-    [epicsById, accepts, commit, live, isMobile, noCi, autoMerge],
+    [epicsById, accepts, commit, live, isMobile, reducedMotion, leaving, noCi, autoMerge],
   );
 
   return (
