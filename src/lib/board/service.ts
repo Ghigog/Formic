@@ -28,7 +28,7 @@ import { completeEpic, reviewPullRequest, startShowcase } from "@/lib/review/pip
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
-import { columnLimit } from "@/lib/agents/presets";
+import { columnLimit, columnUnassigned } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
 import { readiness } from "@/lib/domain/stack";
@@ -202,6 +202,13 @@ export async function applyTransition(
       return { ok: true, status: "merged", runId: null };
     }
     return { ok: false, reason: said, revertTo: shown };
+  }
+
+  // In Progress with no agent could only start a run that fails, so the
+  // card goes straight back and the board points at the column's agent menu.
+  if (card.kind === "ticket" && t.to === "in_progress" && canUserMove(home, t.to).ok) {
+    const unassigned = await columnUnassigned(projectId, t.to);
+    if (unassigned) return { ok: false, reason: unassigned, revertTo: shown, needsAgent: t.to };
   }
 
   // Somewhere it cannot work: it lands there anyway, as the person asked,

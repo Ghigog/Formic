@@ -24,9 +24,17 @@ const { seedMemory } = await import("@/lib/db/memory-repository");
 
 const PROJECT = "project_default";
 
-beforeEach(() => {
+/** An agent on In Progress, so tickets moved there start rather than being refused. */
+async function staffInProgress() {
+  const repo = repository();
+  const preset = await repo.savePreset({ name: "Coder", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
+  await repo.setColumnAgent(PROJECT, "in_progress", preset.id);
+}
+
+beforeEach(async () => {
   launched.length = 0;
   globalThis.__formicMemoryStore = undefined;
+  await staffInProgress();
 });
 
 /** Alice's board on the same repository as the demo board, with one ticket running on `scope`. */

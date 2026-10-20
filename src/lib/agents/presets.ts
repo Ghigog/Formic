@@ -181,6 +181,19 @@ export async function columnLimit(projectId: string, column: ColumnId): Promise<
 }
 
 /**
+ * Why a column cannot start work: nobody has given it an agent. Null when it
+ * has one. Checked as a card is dropped, so it goes straight back instead of
+ * starting a run that can only fail.
+ */
+export async function columnUnassigned(projectId: string, column: ColumnId): Promise<string | null> {
+  if (agentsOverridden()) return null;
+  const resolved = await resolveColumn(projectId, column);
+  return resolved.kind === "unassigned"
+    ? `Set an agent for ${COLUMN_LABELS[column]} first. Pick one from its agent menu, then move the card again.`
+    : null;
+}
+
+/**
  * The agent the Sentinels audit with: the one set for the board's assistant.
  * Their persona and task come from the roster, so it only supplies provider,
  * model and key; its own prompt is a chat brief and is left out. A CLI agent
