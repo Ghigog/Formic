@@ -509,7 +509,7 @@ describe("createBacklogItem", () => {
       bytes: new Uint8Array([1]),
     });
 
-    const card = await createBacklogItem(PROJECT, "Add a retry button.", undefined, "req-1");
+    const card = await createBacklogItem(PROJECT, "Add a retry button.", "req-1");
 
     expect(await repo.attachmentsFor({ epicId: card.id })).toHaveLength(1);
     expect(await repo.attachmentsFor({ requestId: "req-1" })).toEqual([]);

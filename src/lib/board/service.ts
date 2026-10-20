@@ -1,7 +1,7 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
-import type { BoardCard, WorkType } from "@/lib/domain/entities";
+import type { BoardCard } from "@/lib/domain/entities";
 import {
   type ColumnId,
   COLUMN_LABELS,
@@ -480,7 +480,6 @@ async function placeAmong(
 export async function createBacklogItem(
   projectId: string,
   rawRequest: string,
-  workType?: WorkType,
   /** The id the request's attachments were uploaded against, to move onto the Epic. */
   requestId?: string,
 ): Promise<BoardCard> {
@@ -496,7 +495,6 @@ export async function createBacklogItem(
     title,
     rawRequest: rawRequest.trim(),
     position,
-    workType,
   });
 
   if (requestId) await repo.claimAttachments(requestId, { epicId: card.id });
@@ -521,7 +519,6 @@ export async function createBacklogItem(
 export interface CreateTodoItemInput {
   /** Attachments uploaded against the request, to move onto the ticket. */
   requestId?: string;
-  workType?: WorkType;
   /**
    * The GitHub issue it came in from, when it came in from one. Recorded
    * before the ticket is mirrored, so the mirror adopts that issue as this
@@ -550,7 +547,6 @@ export async function createTodoItem(
     title,
     rawRequest: trimmed,
     position: 0,
-    workType: input.workType,
   });
   await repo.setStandalone(epic.id, true);
 
@@ -570,7 +566,6 @@ export async function createTodoItem(
         storyPoints: null,
         position,
         dependsOnKeys: [],
-        workType: input.workType,
       },
     ])
   )[0]!;

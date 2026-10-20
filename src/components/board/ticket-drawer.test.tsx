@@ -128,43 +128,11 @@ describe("TicketDrawer notice", () => {
 });
 
 describe("TicketDrawer work type", () => {
-  const todoView = (
-    workType: TicketView["card"]["workType"] = null,
-  ): TicketView => ({
-    ...VIEW,
-    card: { ...card, status: "ready", workType },
-  });
-
-  it("offers Bug and Spike only while the ticket is in To Do", async () => {
-    open();
+  it("offers no Bug or Spike buttons, even in To Do", async () => {
+    openTodo({ ...VIEW, card: { ...card, status: "ready" } });
     await screen.findByText("Export endpoint");
-    expect(
-      screen.queryByRole("group", { name: "Work type" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("presses Bug by sending the PATCH, and sends null when it is pressed again", async () => {
-    const { fetched } = openTodo(todoView("bug"));
-    const group = await screen.findByRole("group", { name: "Work type" });
-    const bug = within(group).getByRole("button", { name: "bug" });
-    expect(bug).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText(/Tagged as bug · −5 points/)).toBeInTheDocument();
-    fireEvent.click(bug);
-    await vi.waitFor(() =>
-      expect(fetched).toContainEqual([
-        "/api/tickets/t-1",
-        "PATCH",
-        JSON.stringify({ workType: null }),
-      ]),
-    );
-    fireEvent.click(within(group).getByRole("button", { name: "spike" }));
-    await vi.waitFor(() =>
-      expect(fetched).toContainEqual([
-        "/api/tickets/t-1",
-        "PATCH",
-        JSON.stringify({ workType: "spike" }),
-      ]),
-    );
+    expect(screen.queryByRole("group", { name: "Work type" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /bug|spike/i })).toBeNull();
   });
 });
 
