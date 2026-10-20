@@ -186,8 +186,8 @@ export interface VcsClient {
   checksFor(sha: string): Promise<CheckSummary[]>;
   /**
    * Whether anything in the repository reports checks on a pull request into
-   * `baseBranch`: a workflow besides Formic's own runner, or a check the
-   * branch requires. A brand-new repository has neither, and a head with no
+   * `baseBranch`: a workflow besides Formic's own runner that runs on pull
+   * requests, or a check the branch requires. A brand-new repository has neither, and a head with no
    * checks there is done with CI rather than waiting for it.
    */
   hasCi(baseBranch: string): Promise<boolean>;
