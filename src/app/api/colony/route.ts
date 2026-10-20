@@ -9,6 +9,7 @@ import {
   effectiveColony,
   maxScouts,
   nextFloorLevel,
+  nextScoutLevel,
   reserveFloor,
   slotsInUse,
 } from "@/lib/colony/reserve";
@@ -33,6 +34,7 @@ function view(project: ProjectSummary, cards: BoardCard[]) {
     floor: reserveFloor(level),
     nextFloorLevel: nextFloorLevel(level),
     maxScouts: maxScouts(level),
+    nextScoutLevel: nextScoutLevel(level),
     autoScoutLevel: AUTO_SCOUT_LEVEL,
     maxColony: MAX_COLONY,
     inUse: slotsInUse(cards),

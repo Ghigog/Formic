@@ -11,6 +11,8 @@ export interface ColonyView {
   floor: number;
   nextFloorLevel: number | null;
   maxScouts: number;
+  /** The next level that raises maxScouts, or null at the most. */
+  nextScoutLevel: number | null;
   autoScoutLevel: number;
   maxColony: number;
   inUse: number;

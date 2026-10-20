@@ -17,6 +17,7 @@ function view(patch: Partial<ColonyView> = {}): ColonyView {
     floor: 2,
     nextFloorLevel: 3,
     maxScouts: 2,
+    nextScoutLevel: 4,
     autoScoutLevel: 8,
     maxColony: 12,
     inUse: 1,
@@ -65,5 +66,34 @@ describe("the colony panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Auto-scout/ }));
     await waitFor(() => expect(posts).toEqual([{ colonySize: 4, colonyReserve: 2, autoScout: true }]));
     await waitFor(() => expect(screen.getByRole("button", { name: /Auto-scout/ }).getAttribute("aria-pressed")).toBe("true"));
+  });
+
+  it("shows the scout and reserve caps the level allows", async () => {
+    serve(view({ level: 3, floor: 1, nextFloorLevel: 6, colonyReserve: 1 }));
+    render(<ColonyPanel level={3} />);
+    await screen.findByText("Up to 2 per ticket · Lv 4 allows 3");
+    expect(document.querySelector("[data-scout-cap]")!.textContent).toBe("2");
+    expect(document.querySelector("[data-reserve-cap]")!.textContent).toBe("1");
+    expect(screen.getByText("1 of 4 slots kept for urgent work")).toBeTruthy();
+    expect(screen.getByText("At least 1 at Lv 3 · Lv 6 lowers it")).toBeTruthy();
+  });
+
+  it("says the reserve is off with no colony cap", async () => {
+    serve(view({ colonySize: null, colonyReserve: 0 }));
+    render(<ColonyPanel level={1} />);
+    await screen.findByText("No colony cap · set one in Settings");
+    expect(document.querySelector("[data-reserve-cap]")!.textContent).toBe("off");
+  });
+
+  it("opens each tip when pressed and closes it on a second press", async () => {
+    serve(view());
+    render(<ColonyPanel level={1} />);
+    const scouts = await screen.findByRole("button", { name: "How scouts work" });
+    fireEvent.click(scouts);
+    expect(screen.getByRole("tooltip").textContent).toMatch(/Reviewer picks the best/);
+    fireEvent.click(scouts);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "How the colony reserve works" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/routine work may not use/);
   });
 });
