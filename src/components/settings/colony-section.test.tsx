@@ -23,6 +23,7 @@ const first: ColonyView = {
   floor: 2,
   nextFloorLevel: 3,
   maxScouts: 2,
+  nextScoutLevel: 4,
   autoScoutLevel: 8,
   maxColony: 12,
   inUse: 1,

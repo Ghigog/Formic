@@ -36,6 +36,13 @@ export function maxScouts(level: number): number {
   return 2;
 }
 
+/** The next level that lets a ticket send more scouts, or null at the most. */
+export function nextScoutLevel(level: number): number | null {
+  if (level < 4) return 4;
+  if (level < 7) return 7;
+  return null;
+}
+
 /** The level that lets idle reserve slots send scouts out on their own. */
 export const AUTO_SCOUT_LEVEL = 8;
 
