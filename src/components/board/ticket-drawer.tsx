@@ -24,6 +24,7 @@ import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
+import { TypeTag } from "./type-tag";
 import { NoticeIcon, ProblemNotice, WorkTimer } from "./card";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
@@ -242,6 +243,7 @@ export function TicketDrawer({
               )}
               {card && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {card.workType && <TypeTag type={card.workType} severity={card.bugSeverity} />}
                   <StatusPill status={card.status} />
                   {card.workingSince && (
                     <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">

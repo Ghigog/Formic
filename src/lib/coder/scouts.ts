@@ -142,7 +142,7 @@ export async function sendScouts(
   const { claimOrQueue } = await import("@/lib/board/queue");
   const write = (status: "running" | "queued") =>
     repo.updateTicket(ticketId, { status, stalledIn: null, blockedReason: null, attempts: 0 });
-  const { status } = await claimOrQueue(projectId, { ...card, scouts: 1 }, write, { reserve: !!input.auto });
+  const { status, reason } = await claimOrQueue(projectId, { ...card, scouts: 1 }, write, { reserve: !!input.auto });
   await publish(projectId, {
     type: "card.status",
     cardId: ticketId,
@@ -150,7 +150,7 @@ export async function sendScouts(
     status,
     stalledIn: null,
     stage: STAGE_CODE_RUN,
-    blockedReason: null,
+    blockedReason: reason,
   });
   if (status === "running") {
     const { runCoderAgent } = await import("./pipeline");

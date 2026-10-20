@@ -12,6 +12,9 @@ const SORTS: [ColumnSort, string][] = [
 ];
 const TYPES: [TypeFilter, string][] = [
   ["ticket", "Tickets"],
+  ["user_story", "User stories"],
+  ["task", "Tasks"],
+  ["feature", "Features"],
   ["bug", "Bugs"],
   ["spike", "Spikes"],
   ["archived", "Archived"],

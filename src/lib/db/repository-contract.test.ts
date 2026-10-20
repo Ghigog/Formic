@@ -1131,6 +1131,20 @@ function contract(name: string, make: () => Repository) {
         expect(held.some((r) => r.ticketId === idle!.id)).toBe(false);
       });
 
+      it("drops a scout's claim once its parent is no longer running", async () => {
+        const repoName = `contract/${randomUUID()}`;
+        const p = await repo.ensureProject({ ownerId: null, repoFullName: repoName, baseBranch: "main" });
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [parent] = await repo.createTickets([ticket(epic.id, "S-1", { fileScope: ["src/api"] })]);
+        const [scout] = await repo.createScouts(parent!.id, [{ brief: "small", presetId: null }]);
+        await repo.updateTicket(parent!.id, { status: "running" });
+        await repo.updateTicket(scout!.id, { status: "running" });
+        expect((await repo.reservations(repoName)).map((r) => r.ticketId).sort()).toEqual([parent!.id, scout!.id].sort());
+
+        await repo.updateTicket(parent!.id, { status: "review" });
+        expect(await repo.reservations(repoName)).toEqual([]);
+      });
+
       it("gives a lease to one holder at a time, and to the next once it lapses or is let go", async () => {
         const key = `contract:${randomUUID()}`;
         expect(await repo.acquireLease(key, "a", 60_000)).toBe(true);
