@@ -37,15 +37,15 @@ function openPopoverAt(earned: number) {
     fx: { reducedMotion: true },
   } as unknown as ColonyApi;
   render(<ColonyPopover />);
-  const bar = screen.getByText(/Every style unlocked|unlocks/).nextElementSibling!.firstElementChild as HTMLElement;
+  const bar = screen.getByText(/Everything unlocked|unlocks/).nextElementSibling!.firstElementChild as HTMLElement;
   return bar.style.width;
 }
 
 describe("ColonyPopover progress bar", () => {
-  it("is full once every style is unlocked, and the header keeps the level XP", () => {
-    expect(openPopoverAt(11 * XP_PER_LEVEL + 20)).toBe("100%");
-    expect(screen.getByText("Every style unlocked")).toBeTruthy();
-    expect(screen.getByText(/570 XP earned · 20\/50 this level/)).toBeTruthy();
+  it("is full once everything is unlocked, and the header keeps the level XP", () => {
+    expect(openPopoverAt(33 * XP_PER_LEVEL + 20)).toBe("100%");
+    expect(screen.getByText("Everything unlocked")).toBeTruthy();
+    expect(screen.getByText(/1,?670 XP earned · 20\/50 this level/)).toBeTruthy();
   });
 
   it("shows progress into the level before the last unlock", () => {

@@ -283,7 +283,7 @@ export function ColonyPopover() {
   const next = nextUnlock(s.level);
   const nextText = next
     ? `Lv ${next.level} unlocks ${next.labels.join(" + ")} · ${(next.level - 1) * XP_PER_LEVEL - s.earned} XP to go`
-    : "Every style unlocked";
+    : "Everything unlocked";
 
   return (
     <>

@@ -287,7 +287,9 @@ export function spRadius(sp: number): number {
  * Draws one bug. Shared with the colony's style previews, and with the
  * ants themselves: `opts.rotate` turns a bug drawn head-up into one drawn
  * head-forward, and `opts.legSwing` drives its legs from a walk cycle
- * instead of the clock, so a walking ant can wear it as a skin.
+ * instead of the clock, so a walking ant can wear it as a skin. `opts.phase`
+ * is that walk cycle's angle, for bodies that move with the gait (the
+ * caterpillar's crawl); unset, it follows the clock like the legs do.
  */
 export function drawBug(
   ctx: CanvasRenderingContext2D,
@@ -298,11 +300,12 @@ export function drawBug(
   shape: BugShape,
   color: string,
   ink = cssAlpha("var(--text)", 0.82),
-  opts?: { rotate?: number; legSwing?: number },
+  opts?: { rotate?: number; legSwing?: number; phase?: number },
 ) {
   color = css(color);
   ink = css(ink);
   const w = opts?.legSwing ?? Math.sin(t * 60) * 0.9;
+  const ph = opts?.phase ?? t * 60;
   ctx.save();
   ctx.translate(x, y);
   if (opts?.rotate) ctx.rotate(opts.rotate);
@@ -375,6 +378,12 @@ export function drawBug(
     ctx.moveTo(0.4, -3.2);
     ctx.quadraticCurveTo(1.6, -5.6, 2.8, -6);
     ctx.stroke();
+  } else if (shape === "caterpillar") {
+    drawCaterpillar(ctx, ph, w, color, ink, E);
+  } else if (shape === "bumblebee") {
+    drawBumblebee(ctx, t, w, color, ink, E);
+  } else if (shape === "mosquito") {
+    drawMosquito(ctx, t, w, color, ink, E);
   } else {
     ctx.strokeStyle = ink;
     ctx.beginPath();
@@ -430,6 +439,285 @@ export function drawBug(
     }
   }
   ctx.restore();
+}
+
+type Fill = (cx: number, cy: number, rx: number, ry: number, rot?: number) => void;
+
+/**
+ * A pair of glassy wings, drawn in the ink so they read on either theme. A
+ * buzz between -1 and 1 sets the beat; the two faint copies either side of
+ * it are the blur a wing that fast leaves.
+ */
+function wings(
+  ctx: CanvasRenderingContext2D,
+  ink: string,
+  E: Fill,
+  at: { x: number; y: number; rx: number; ry: number; rot: number; sweep: number },
+  buzz: number,
+) {
+  const ga = ctx.globalAlpha;
+  ctx.fillStyle = ink;
+  ctx.strokeStyle = ink;
+  for (const side of [-1, 1]) {
+    for (const g of [-1, 1, 0]) {
+      const rot = side * (at.rot + g * at.sweep + buzz * at.sweep * 0.4);
+      // Rotate about the wing's root, by the body, not its middle.
+      const dx = Math.sin(rot) * at.ry * -0.9;
+      const dy = Math.cos(rot) * at.ry * 0.9;
+      const cx = side * at.x + dx;
+      const cy = at.y + dy;
+      ctx.globalAlpha = ga * (g ? 0.12 : 0.26);
+      E(cx, cy, at.rx, at.ry, rot);
+      if (g) continue;
+      ctx.globalAlpha = ga * 0.55;
+      ctx.lineWidth = 0.3;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, at.rx, at.ry, rot, 0, TAU);
+      // One vein down the wing, from the root.
+      ctx.moveTo(side * at.x, at.y);
+      ctx.lineTo(cx + dx * 0.6, cy + dy * 0.6);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = ga;
+}
+
+/**
+ * The caterpillar: seven soft segments behind a dark head. A wave runs from
+ * the tail to the head, bunching each segment up into a hump as it passes,
+ * and the prolegs under a hump lift while the rest grip. A hornworm's spike
+ * at the tail.
+ */
+function drawCaterpillar(ctx: CanvasRenderingContext2D, ph: number, w: number, color: string, ink: string, E: Fill) {
+  const N = 7;
+  const segs: Array<{ x: number; y: number; r: number; lift: number }> = [];
+  let y = 0;
+  for (let i = 0; i < N; i++) {
+    // Positive where the wave is: that segment is bunched and raised.
+    const lift = Math.max(0, Math.sin(ph + i * 0.95));
+    if (i) y += 1.85 - lift * 0.55;
+    segs.push({ x: Math.sin(ph * 0.5 + i * 0.75) * 0.6, y, r: (i ? 1.75 : 1.8) + lift * 0.35, lift });
+  }
+  // Centre the body, however long the wave has made it.
+  const mid = (segs[0]!.y + segs[N - 1]!.y) / 2 - 0.4;
+  for (const g of segs) g.y -= mid;
+
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  segs.forEach((g, i) => {
+    if (i === 0) return;
+    const o = (i % 2 ? w : -w) * 0.25;
+    if (i <= 3) {
+      // True legs: small and pointed, just behind the head.
+      ctx.moveTo(g.x - g.r * 0.8, g.y);
+      ctx.lineTo(g.x - g.r - 0.6, g.y - 0.4 + o);
+      ctx.moveTo(g.x + g.r * 0.8, g.y);
+      ctx.lineTo(g.x + g.r + 0.6, g.y - 0.4 - o);
+    } else if (i < N - 1) {
+      // Prolegs: stubby, and drawn in when their segment is up.
+      const reach = 0.6 - g.lift * 0.5;
+      ctx.moveTo(g.x - g.r * 0.85, g.y);
+      ctx.lineTo(g.x - g.r - reach, g.y + 0.2);
+      ctx.moveTo(g.x + g.r * 0.85, g.y);
+      ctx.lineTo(g.x + g.r + reach, g.y + 0.2);
+    }
+  });
+  // The horn, flicking with the crawl.
+  const tail = segs[N - 1]!;
+  ctx.moveTo(tail.x, tail.y + tail.r * 0.4);
+  ctx.quadraticCurveTo(tail.x + 0.9, tail.y + tail.r + 1.1, tail.x + 0.4 + w * 0.3, tail.y + tail.r + 2.1);
+  ctx.stroke();
+
+  // Tail to head, so each segment sits over the one behind it.
+  for (let i = N - 1; i > 0; i--) {
+    const g = segs[i]!;
+    ctx.fillStyle = color;
+    E(g.x, g.y, g.r, g.r * 0.92);
+    ctx.fillStyle = cssAlpha("var(--cream)", 0.3);
+    E(g.x, g.y - g.r * 0.35, g.r * 0.35, g.r * 0.22);
+    ctx.fillStyle = cssAlpha("var(--cream)", 0.55);
+    E(g.x - g.r * 0.62, g.y + 0.1, 0.24, 0.24);
+    E(g.x + g.r * 0.62, g.y + 0.1, 0.24, 0.24);
+  }
+  const head = segs[0]!;
+  ctx.fillStyle = ink;
+  E(head.x, head.y, head.r, head.r * 0.95);
+  ctx.fillStyle = cssAlpha("var(--cream)", 0.7);
+  E(head.x - 0.6, head.y - 0.45, 0.26, 0.26);
+  E(head.x + 0.6, head.y - 0.45, 0.26, 0.26);
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(head.x - 0.5, head.y - head.r * 0.8);
+  ctx.lineTo(head.x - 1, head.y - head.r - 0.9 + w * 0.2);
+  ctx.moveTo(head.x + 0.5, head.y - head.r * 0.8);
+  ctx.lineTo(head.x + 1, head.y - head.r - 0.9 - w * 0.2);
+  ctx.stroke();
+}
+
+/**
+ * The bumblebee: round, fuzzy and banded in ink, bobbing as it hovers, its
+ * wings a blur over its back. Pollen on the hind legs, a sting at the tail.
+ */
+function drawBumblebee(ctx: CanvasRenderingContext2D, t: number, w: number, color: string, ink: string, E: Fill) {
+  ctx.save();
+  ctx.translate(0, Math.sin(t * 34) * 0.35);
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  [-2.6, -1.6, -0.6].forEach((ly, i) => {
+    const o = (i % 2 ? w : -w) * 0.5;
+    ctx.moveTo(-1.6, ly);
+    ctx.lineTo(-3.1 - i * 0.2, ly + 0.7 + i * 0.6 + o);
+    ctx.moveTo(1.6, ly);
+    ctx.lineTo(3.1 + i * 0.2, ly + 0.7 + i * 0.6 - o);
+  });
+  // Elbowed antennae.
+  ctx.moveTo(-0.5, -4.9);
+  ctx.lineTo(-0.9, -6.4);
+  ctx.lineTo(-2.2, -7.1 + w * 0.3);
+  ctx.moveTo(0.5, -4.9);
+  ctx.lineTo(0.9, -6.4);
+  ctx.lineTo(2.2, -7.1 - w * 0.3);
+  ctx.stroke();
+  // Pollen baskets on the hind legs.
+  ctx.fillStyle = css("var(--clay-lit)");
+  E(-3.5, 0.9 - w * 0.5, 0.7, 0.6);
+  E(3.5, 0.9 + w * 0.5, 0.7, 0.6);
+
+  // The sting.
+  ctx.fillStyle = ink;
+  ctx.beginPath();
+  ctx.moveTo(-0.45, 5.3);
+  ctx.lineTo(0, 6.9);
+  ctx.lineTo(0.45, 5.3);
+  ctx.fill();
+
+  // Fuzz round the abdomen and thorax: a ring of short hairs, uneven.
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  for (const [cy, rx, ry, n] of [
+    [1.9, 3.3, 3.6, 26],
+    [-1.8, 2.5, 2.1, 18],
+  ] as const) {
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * TAU;
+      const out = 1.12 + 0.12 * Math.sin(k * 7.3);
+      ctx.moveTo(Math.cos(a) * rx * 0.9, cy + Math.sin(a) * ry * 0.9);
+      ctx.lineTo(Math.cos(a) * rx * out, cy + Math.sin(a) * ry * out);
+    }
+  }
+  ctx.stroke();
+  ctx.fillStyle = color;
+  E(0, 1.9, 3.3, 3.6);
+  // Ink bands across the abdomen, held to its outline.
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(0, 1.9, 3.3, 3.6, 0, 0, TAU);
+  ctx.clip();
+  ctx.fillStyle = ink;
+  ctx.fillRect(-4, 0.5, 8, 1.15);
+  ctx.fillRect(-4, 2.85, 8, 1.15);
+  ctx.fillRect(-4, 4.85, 8, 1);
+  ctx.restore();
+  ctx.fillStyle = color;
+  E(0, -1.8, 2.5, 2.1);
+  ctx.fillStyle = ink;
+  E(0, -1.7, 1.15, 0.95);
+  E(0, -4.3, 1.5, 1.25);
+  ctx.fillStyle = cssAlpha("var(--cream)", 0.6);
+  E(-0.8, -4.6, 0.3, 0.42, 0.3);
+  E(0.8, -4.6, 0.3, 0.42, -0.3);
+
+  wings(ctx, ink, E, { x: 1, y: -2.4, rx: 1.6, ry: 3.3, rot: -0.75, sweep: 0.3 }, Math.sin(t * 900));
+  ctx.restore();
+}
+
+/**
+ * The mosquito: spindly and too long in every direction. A needle out in
+ * front, plumed antennae, knees above the body and the hind pair cocked up
+ * behind it, narrow wings whining over the abdomen, and a belly that throbs
+ * red as it drinks.
+ */
+function drawMosquito(ctx: CanvasRenderingContext2D, t: number, w: number, color: string, ink: string, E: Fill) {
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  // Hip, knee, foot, for the front, middle and hind legs.
+  const legs: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
+    [0.6, -1.3, 3.0, -4.2, 5.2, -7.6],
+    [0.7, -0.5, 4.3, -1.6, 7.4, 2.2],
+    [0.6, 0.3, 3.6, 1.6, 5.4, 8.2],
+  ];
+  legs.forEach(([hx, hy, kx, ky, fx, fy], i) => {
+    const o = (i % 2 ? w : -w) * 0.6;
+    for (const side of [-1, 1]) {
+      ctx.moveTo(side * hx, hy);
+      ctx.lineTo(side * kx, ky + o * 0.3 * side);
+      ctx.lineTo(side * fx, fy + o * side);
+      // The hind feet curl out, as if feeling for skin.
+      if (i === 2) ctx.quadraticCurveTo(side * (fx + 1.2), fy + 0.8, side * (fx + 1.6), fy - 0.2);
+    }
+  });
+  // The needle, and a palp either side of it.
+  const probe = Math.sin(t * 22) * 0.18;
+  ctx.moveTo(0, -3);
+  ctx.lineTo(probe, -9.2);
+  ctx.moveTo(-0.3, -3);
+  ctx.lineTo(-0.45, -5.4);
+  ctx.moveTo(0.3, -3);
+  ctx.lineTo(0.45, -5.4);
+  ctx.stroke();
+  // Plumed antennae: a shaft, and fine hairs along it.
+  ctx.lineWidth = 0.25;
+  ctx.beginPath();
+  for (const side of [-1, 1]) {
+    const tip = { x: side * 1.9, y: -6 + w * 0.15 * side };
+    ctx.moveTo(side * 0.35, -3.1);
+    ctx.lineTo(tip.x, tip.y);
+    for (let k = 1; k <= 4; k++) {
+      const f = k / 5;
+      const px = side * 0.35 + (tip.x - side * 0.35) * f;
+      const py = -3.1 + (tip.y + 3.1) * f;
+      ctx.moveTo(px - 0.45, py - 0.2);
+      ctx.lineTo(px + 0.45, py + 0.2);
+    }
+  }
+  ctx.stroke();
+
+  // The abdomen, slender, segmented, filling with blood.
+  ctx.fillStyle = color;
+  E(0, 3.4, 0.95, 3.7);
+  const gorge = 0.5 + 0.5 * Math.sin(t * 9);
+  const ga = ctx.globalAlpha;
+  ctx.globalAlpha = ga * (0.35 + gorge * 0.35);
+  ctx.fillStyle = css("var(--crimson)");
+  E(0, 4, 0.62, 1.7 + gorge * 0.9);
+  ctx.globalAlpha = ga;
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 0.3;
+  ctx.beginPath();
+  for (const by of [1.3, 2.4, 3.5, 4.6, 5.7]) {
+    const half = 0.95 * Math.sqrt(Math.max(0, 1 - ((by - 3.4) / 3.7) ** 2));
+    ctx.moveTo(-half, by);
+    ctx.lineTo(half, by);
+  }
+  ctx.stroke();
+  // Halteres: the little knobs where hind wings would be.
+  ctx.fillStyle = ink;
+  E(-1.3, 0.9, 0.3, 0.3);
+  E(1.3, 0.9, 0.3, 0.3);
+  // The humped thorax, with a pale stripe, and a small dark head.
+  ctx.fillStyle = color;
+  E(0, -0.7, 1.35, 1.6);
+  ctx.fillStyle = cssAlpha("var(--cream)", 0.4);
+  E(0, -0.9, 0.3, 1.1);
+  ctx.fillStyle = ink;
+  E(0, -2.55, 0.8, 0.72);
+
+  wings(ctx, ink, E, { x: 0.6, y: -0.6, rx: 0.75, ry: 3.6, rot: -0.2, sweep: 0.12 }, Math.sin(t * 1100));
 }
 
 function oct(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rot: number) {
@@ -830,7 +1118,8 @@ export class ColonyFx {
         const k = (b.t - 0.42) / 1.78;
         top.save();
         top.globalAlpha = Math.max(0, 1 - k * k) * 0.85;
-        top.fillStyle = this.world.bugHex;
+        // A squashed mosquito leaves what it drank.
+        top.fillStyle = this.world.bugShape === "mosquito" ? css("var(--crimson)") : this.world.bugHex;
         top.beginPath();
         top.ellipse(b.x, b.y + 2, 10, 2.6, 0, 0, TAU);
         top.fill();
@@ -1007,10 +1296,13 @@ export class ColonyFx {
     // Ants wear whatever bug style the colony has equipped: same shapes and
     // colours as the picker, just rotated head-forward and leg-driven by the
     // walk cycle instead of the clock. Squashed bugs never take this path.
+    // Wings keep beating on the clock; the body moves with the gait.
     const sw = Math.sin(ph) * 1.3;
-    drawBug(ctx, 0, 0, this.world.bugShape === "ant" ? 1 : 0.62, 0, this.world.bugShape, this.world.bugHex, undefined, {
+    const t = this.reducedMotion ? 0 : (this.last / 1000) * 0.12;
+    drawBug(ctx, 0, 0, this.world.bugShape === "ant" ? 1 : 0.62, t, this.world.bugShape, this.world.bugHex, undefined, {
       rotate: Math.PI / 2,
       legSwing: sw,
+      phase: ph,
     });
     if (carry && typeof carry === "object") {
       const r = spRadius(carry.sp);

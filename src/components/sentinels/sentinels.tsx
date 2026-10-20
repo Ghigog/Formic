@@ -411,7 +411,9 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
                 />
               </span>
               <span className="text-muted text-[12px]">
-                {g.next
+                {g.total === 0
+                  ? `${SENTINELS[0]!.name} unlocks at Lv ${SENTINELS[0]!.unlockLevel}`
+                  : g.next
                   ? `${g.next.grade} at ${g.next.min.toFixed(1)} avg · ${g.next.need} more star${g.next.need === 1 ? "" : "s"}`
                   : "Top grade reached"}
               </span>

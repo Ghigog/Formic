@@ -64,7 +64,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "tester",
     name: "Tester",
     group: "BUILD",
-    unlockLevel: 1,
+    unlockLevel: 2,
     who: "Professor O'Chumley",
     kind: "Tyrannosaurus, tenured",
     persona:
@@ -77,7 +77,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "qa",
     name: "QA",
     group: "BUILD",
-    unlockLevel: 2,
+    unlockLevel: 3,
     who: "Nasty Toes",
     kind: "Zombie, doctor",
     persona:
@@ -90,7 +90,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "architect",
     name: "Architect",
     group: "BUILD",
-    unlockLevel: 3,
+    unlockLevel: 6,
     who: "Collum",
     kind: "Column, classical",
     persona:
@@ -103,7 +103,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "secops",
     name: "SecOps",
     group: "OPS",
-    unlockLevel: 4,
+    unlockLevel: 9,
     who: "Twodoodes",
     kind: "Hippie, assassin",
     persona:
@@ -116,7 +116,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "devops",
     name: "DevOps",
     group: "OPS",
-    unlockLevel: 5,
+    unlockLevel: 13,
     who: "Waterwheel",
     kind: "Robot, weary",
     persona:
@@ -129,7 +129,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "techops",
     name: "TechOps",
     group: "OPS",
-    unlockLevel: 6,
+    unlockLevel: 15,
     who: "Ground Pepper",
     kind: "Rock, friendly",
     persona:
@@ -142,7 +142,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "perf",
     name: "Performance",
     group: "OPS",
-    unlockLevel: 7,
+    unlockLevel: 18,
     who: "Longfoot Jhan",
     kind: "Monkey, astronaut",
     persona:
@@ -155,7 +155,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "a11y",
     name: "Accessibility",
     group: "PRODUCT",
-    unlockLevel: 8,
+    unlockLevel: 21,
     who: "Luca L'amico",
     kind: "Knight, seven years old",
     persona:
@@ -168,7 +168,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "design",
     name: "Designer",
     group: "PRODUCT",
-    unlockLevel: 9,
+    unlockLevel: 25,
     who: "That Barbon",
     kind: "Caveman, steampunk",
     persona:
@@ -182,7 +182,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "legal",
     name: "Legal",
     group: "BUSINESS",
-    unlockLevel: 10,
+    unlockLevel: 28,
     who: "Licio Maria",
     kind: "Demon, priest",
     persona:
@@ -195,7 +195,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "marketer",
     name: "Marketer",
     group: "BUSINESS",
-    unlockLevel: 11,
+    unlockLevel: 32,
     who: "Ptoughneigh",
     kind: "Alien, farmer",
     persona:
@@ -208,7 +208,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "sales",
     name: "Sales",
     group: "BUSINESS",
-    unlockLevel: 12,
+    unlockLevel: 34,
     who: "Turk",
     kind: "Rooster, cowboy",
     persona:

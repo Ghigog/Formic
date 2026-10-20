@@ -28,14 +28,50 @@ The rules are in `src/lib/colony/reserve.ts`; the queue applies them in
 
 ## What levels unlock
 
-| Level | Least reserve | Scouts per ticket | Auto-scouting |
-| :-- | :-- | :-- | :-- |
-| 1 to 2 | 2 | 2 | no |
-| 3 | 1 | 2 | no |
-| 4 to 5 | 1 | 3 | no |
-| 6 | 0 | 3 | no |
-| 7 | 0 | 4 | no |
-| 8 and up | 0 | 4 | yes |
+Levels run to 34, with one unlock at each level after the first. Lv 1 starts
+with the Ant and Umber; the first Sentinel, the Tester, comes at Lv 2. Every
+level also earns a Queen, and the rank steps up every three levels (Queen
+from Lv 28).
+
+| Level | Unlock |
+| :-- | :-- |
+| 2 | Tester (Sentinel) |
+| 3 | QA (Sentinel) |
+| 4 | Beetle |
+| 5 | Crimson |
+| 6 | Architect (Sentinel) |
+| 7 | Least reserve drops to 1 |
+| 8 | Ladybird |
+| 9 | SecOps (Sentinel) |
+| 10 | 3 scouts per ticket |
+| 11 | Caterpillar |
+| 12 | Ochre |
+| 13 | DevOps (Sentinel) |
+| 14 | Spider |
+| 15 | TechOps (Sentinel) |
+| 16 | Moss |
+| 17 | Least reserve drops to 0 |
+| 18 | Performance (Sentinel) |
+| 19 | Jade |
+| 20 | Moth |
+| 21 | Accessibility (Sentinel) |
+| 22 | 4 scouts per ticket |
+| 23 | Slate |
+| 24 | Bumblebee |
+| 25 | Designer (Sentinel) |
+| 26 | Anthracite |
+| 27 | Auto-scouting |
+| 28 | Legal (Sentinel) |
+| 29 | Stag beetle |
+| 30 | Plum |
+| 31 | Mosquito |
+| 32 | Marketer (Sentinel) |
+| 33 | Terracotta |
+| 34 | Sales (Sentinel) |
+
+The schedule lives in `src/lib/colony/game.ts` (styles and colony rules) and
+`src/lib/sentinels/roster.ts` (Sentinels). Before Lv 7 the least reserve is 2,
+and a ticket may send 2 scouts before Lv 10.
 
 A reserve below the level's floor is raised to it, and never above the
 colony size less one.
@@ -79,7 +115,7 @@ at its next turn.
 
 ## Auto-scouting
 
-At Lv 8, with a capped colony, the owner can let idle reserve slots scout on
+At Lv 27, with a capped colony, the owner can let idle reserve slots scout on
 their own. In the idle sweep, when nothing is waiting and at least two slots
 are free, the reserve sends two scouts on one ticket: a spike in To Do, or a
 ticket whose attempt failed. One at a time. Urgent work that needs the slots

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { NO_RESERVE_LEVEL, RESERVE_ONE_LEVEL } from "@/lib/colony/game";
 import { useColonySettings, type ColonyView } from "./colony-settings";
 import { InfoTip } from "./info-tip";
 
@@ -126,7 +127,7 @@ export function ColonyPanel({ level }: { level: number }) {
           <>
             The colony size caps how many agents this board runs at once. The reserve is the slots routine work may not
             use, so a bug, or a ticket back from review with its pull request open, can always start. Your level sets
-            the least reserve: 2 to start, 1 from Lv 3, none from Lv 6. Set both in Settings.
+            the least reserve: 2 to start, 1 from Lv {RESERVE_ONE_LEVEL}, none from Lv {NO_RESERVE_LEVEL}. Set both in Settings.
           </>
         }
       >
