@@ -89,10 +89,10 @@ On the instance, open the **Networking** tab.
    it to `formic`. Do this **before** running `setup.sh`: the script builds the
    HTTPS hostname from the server's IP, and without a static IP the address
    changes whenever the instance stops.
-2. **Open HTTPS.** Under **IPv4 Firewall**, SSH (22) and HTTP (80) are open by
-   default. Click **Add rule** and add **HTTPS** (443). Do the same under
-   **IPv6 Firewall**. Caddy needs both 80 and 443 to get and renew its
-   certificate.
+2. **Open HTTPS.** Under **Firewall rules**, SSH (22) and HTTP (80) are open
+   by default. Click **Add rule**, pick **HTTPS** (443) and leave it open to
+   any IPv4 or IPv6 address. One rule covers both. Caddy needs 80 and 443 to
+   get and renew its certificate.
 
 Note the static IP. It stays with you until you release it.
 
