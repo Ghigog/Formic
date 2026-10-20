@@ -912,7 +912,7 @@ export function KanbanCard({
               // motion keeps the shadow and drops the transform.
               pending &&
                 !snapshot.isDragging &&
-                "scale-[1.02] rotate-[-1deg] shadow-[0_14px_28px_-14px_color-mix(in_srgb,var(--anthracite)_35%,transparent)] motion-reduce:transform-none",
+                "scale-[1.02] rotate-[-1deg] shadow-[0_14px_28px_-14px_color-mix(in_srgb,var(--anthracite)_35%,transparent)] motion-reduce:scale-100 motion-reduce:rotate-0",
               exit && "pointer-events-none opacity-0 transition-all duration-200 ease-in",
               exit === "forward" && "translate-x-full",
               exit === "back" && "-translate-x-full",

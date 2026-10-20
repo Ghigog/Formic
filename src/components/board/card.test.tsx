@@ -179,6 +179,6 @@ describe("a card whose move is pending", () => {
     const el = document.querySelector("li")!.firstElementChild!;
     expect(el).toHaveAttribute("data-pending");
     expect(el).toHaveClass("scale-[1.02]", "rotate-[-1deg]");
-    expect(el).toHaveClass("motion-reduce:transform-none");
+    expect(el).toHaveClass("motion-reduce:scale-100", "motion-reduce:rotate-0");
   });
 });
