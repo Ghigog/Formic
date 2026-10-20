@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# One-time setup of an Ubuntu server (a Google Cloud e2-micro, see
-# docs/google-cloud.md) to run Formic. Upload this file to the server, then:
+# One-time setup of an Ubuntu server (a Google Cloud e2-micro or an AWS
+# Lightsail instance, see docs/google-cloud.md and docs/aws.md) to run Formic.
+# Upload this file to the server, then:
 #
 #   sudo bash setup.sh
 #

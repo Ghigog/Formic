@@ -60,6 +60,7 @@ Rollback and restore: [`docs/runbook.md`](docs/runbook.md).
 | :-- | :-- | :-- |
 | Vercel | [`docs/vercel.md`](docs/vercel.md) | Always on, multi-user. Includes GitHub App setup. |
 | Google Cloud | [`docs/google-cloud.md`](docs/google-cloud.md) | No function time limit. Set `DEPLOY_HOST` to deploy over SSH. |
+| AWS Lightsail | [`docs/aws.md`](docs/aws.md) | The same server setup on AWS, at a fixed monthly price. |
 | Your machine | [`docs/local.md`](docs/local.md) | Free, single user. `deploy/mac/` builds a Mac app. |
 
 ## Scripts

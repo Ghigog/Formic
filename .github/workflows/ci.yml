@@ -199,8 +199,8 @@ jobs:
   # failing check on a branch cannot gate a merge. Every job above still has to
   # pass before this one runs. vercel.json turns off Vercel's own Git deploy,
   # so this remains the only path to production. With the DEPLOY_HOST variable
-  # set it deploys to the server instead (deploy/server, docs/google-cloud.md);
-  # without it, to Vercel.
+  # set it deploys to the server instead (deploy/server, docs/google-cloud.md,
+  # docs/aws.md); without it, to Vercel.
   deploy:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: [lint, typecheck, test, build]
