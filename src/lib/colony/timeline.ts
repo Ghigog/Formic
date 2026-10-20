@@ -98,11 +98,20 @@ function dayOf(iso: string | null | undefined, start: Date): number | null {
   return Math.round((midnight(d).getTime() - start.getTime()) / DAY_MS);
 }
 
-export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeline {
-  const start = new Date(midnight(at).getTime() - TODAY * DAY_MS);
+/**
+ * `offsetDays` > 0 looks at an earlier window, anchored on `at` minus that many
+ * days. It is history: work merged after its last day still counts as open
+ * there, and there is no present to forecast from.
+ */
+export function buildTimeline(cards: BoardCard[], at: Date = new Date(), offsetDays = 0): Timeline {
+  const live = offsetDays <= 0;
+  // The last day with merges counted: today when live, else the window's end.
+  const last = live ? TODAY : WINDOW_DAYS - 1;
+  const anchor = new Date(at.getFullYear(), at.getMonth(), at.getDate() - (live ? 0 : offsetDays));
+  const start = new Date(anchor.getTime() - TODAY * DAY_MS);
   // DST moves a midnight by an hour; re-anchor so day arithmetic stays whole.
   const startDay = midnight(new Date(start.getTime() + DAY_MS / 2));
-  const now = TODAY + (at.getTime() - midnight(at).getTime()) / DAY_MS;
+  const now = live ? TODAY + (at.getTime() - midnight(at).getTime()) / DAY_MS : WINDOW_DAYS;
 
   const tickets = cards.filter((c) => c.kind === "ticket");
   const epicsById = new Map(cards.filter((c) => c.kind === "epic").map((c) => [c.id, c]));
@@ -119,9 +128,10 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
     const sp = pointsOf(t);
     const merged = t.status === "merged";
     // Older tickets merged before the server stamped merges: their last change.
-    const mergedDay = merged
-      ? Math.min(TODAY, dayOf(t.mergedAt ?? t.updatedAt, startDay) ?? TODAY)
-      : null;
+    let mergedDay = merged ? (dayOf(t.mergedAt ?? t.updatedAt, startDay) ?? last) : null;
+    // Live, a merge in the future is clock skew: it happened today. In
+    // history it had not happened yet, so the ticket is still open.
+    if (mergedDay !== null && mergedDay > last) mergedDay = live ? last : null;
     if (mergedDay !== null && mergedDay < 0) {
       xpBefore += mergePoints(t);
       continue;
@@ -134,13 +144,14 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
       mergedInWindow += sp;
       ptsInWindow += mergePoints(t);
     }
-    const phase: TicketPhase = merged
-      ? "done"
-      : t.status === "review"
-        ? "review"
-        : t.status === "running"
+    const phase: TicketPhase =
+      mergedDay !== null
+        ? "done"
+        : merged || t.status === "running"
           ? "progress"
-          : "planned";
+          : t.status === "review"
+            ? "review"
+            : "planned";
     const started = dayOf(t.startedAt, startDay);
     plotted.set(t.id, {
       id: t.id,
@@ -148,7 +159,7 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
       title: t.title,
       sp,
       phase,
-      start: Math.max(0, started ?? (phase === "planned" ? TODAY + 1 : Math.min(mergedDay ?? TODAY, TODAY))),
+      start: Math.max(0, started ?? (phase === "planned" ? last + 1 : (mergedDay ?? last))),
       end: 0,
       mergedDay,
     });
@@ -157,14 +168,16 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
   for (const epic of epicsById.values()) {
     if (epic.status !== "merged") continue;
     // An epic merges with its last ticket.
-    const last = tickets
+    const lastMerge = tickets
       .filter((t) => t.epicId === epic.id && t.mergedAt)
       .map((t) => t.mergedAt!)
       .sort()
       .at(-1);
-    const d = dayOf(last ?? epic.updatedAt, startDay);
+    const d = dayOf(lastMerge ?? epic.updatedAt, startDay);
     const bonus = epicBonus(epic, cards);
-    if (d === null || d > TODAY) xpByDay[TODAY]! += bonus;
+    if (d === null || d > last) {
+      if (live) xpByDay[last]! += bonus;
+    }
     else if (d < 0) xpBefore += bonus;
     else xpByDay[d]! += bonus;
   }
@@ -176,9 +189,10 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
     const known = ends.get(id);
     if (known !== undefined) return known;
     const t = plotted.get(id);
-    if (!t) return TODAY + 1;
+    if (!t) return last + 1;
     let end: number;
     if (t.mergedDay !== null) end = t.mergedDay + 1;
+    else if (!live) end = WINDOW_DAYS;
     else if (t.phase !== "planned") end = Math.max(now, TODAY + 1 + Math.ceil(t.sp / 4));
     else {
       seen.add(id);
@@ -186,7 +200,7 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
       const after = (card?.dependsOn ?? [])
         .filter((d) => !seen.has(d))
         .map((d) => endOf(d, seen));
-      t.start = Math.max(TODAY + 1, ...after);
+      t.start = Math.max(last + 1, ...after);
       end = t.start + Math.max(1, Math.round(t.sp / 2));
     }
     ends.set(id, end);
@@ -200,28 +214,28 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
   let remaining = openAtStart;
   const actual: Array<[number, number]> = [[0, openAtStart]];
   for (let d = 0; d < WINDOW_DAYS; d++) {
-    if (d <= TODAY) remaining -= byDay[d]!.sp;
+    if (d <= last) remaining -= byDay[d]!.sp;
     days.push({
       date: new Date(startDay.getFullYear(), startDay.getMonth(), startDay.getDate() + d),
       sp: byDay[d]!.sp,
       pts: byDay[d]!.pts,
       remaining,
     });
-    if (d < TODAY) actual.push([d + 1, remaining]);
+    if (d < last) actual.push([d + 1, remaining]);
   }
   actual.push([now, remaining]);
 
   const velocity = mergedInWindow / now;
-  const forecast = remaining === 0 ? now : velocity > 0 ? now + remaining / velocity : null;
+  const forecast = !live ? null : remaining === 0 ? now : velocity > 0 ? now + remaining / velocity : null;
 
   // Level-ups, from XP at the window's start through each day's merges.
   const levels: Timeline["levels"] = [];
   let xp = xpBefore;
-  for (let d = 0; d <= TODAY; d++) {
+  for (let d = 0; d <= last; d++) {
     const before = levelOf(xp);
     xp += xpByDay[d]!;
     for (let lv = before + 1; lv <= levelOf(xp); lv++) {
-      levels.push({ day: d === TODAY ? now : d + 0.7, level: lv });
+      levels.push({ day: d === last ? now : d + 0.7, level: lv });
     }
   }
 
@@ -233,7 +247,8 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
     if (!its.length) continue;
     const doneSp = its.filter((t) => t.mergedDay !== null).reduce((n, t) => n + t.sp, 0);
     const totalSp = its.reduce((n, t) => n + t.sp, 0);
-    const merged = epic.status === "merged";
+    // In history an epic is merged only if every ticket was by then.
+    const merged = epic.status === "merged" && (live || its.every((t) => t.mergedDay !== null));
     const pts = its
       .filter((t) => t.mergedDay !== null)
       .reduce((n, t) => n + mergePoints(tickets.find((c) => c.id === t.id)!), 0);
@@ -257,7 +272,7 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
   epics.sort((a, b) => a.start - b.start);
 
   let streak = 0;
-  let d = byDay[TODAY]!.sp > 0 ? TODAY : TODAY - 1;
+  let d = byDay[last]!.sp > 0 ? last : last - 1;
   while (d >= 0 && byDay[d]!.sp > 0) {
     streak++;
     d--;
@@ -271,7 +286,7 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date()): Timeli
   const candidate = tickets
     .filter((t) => t.status === "review")
     .sort((a, b) => pointsOf(b) - pointsOf(a))[0];
-  if (candidate && velocity > 0 && forecast !== null && remaining > 0) {
+  if (live && candidate && velocity > 0 && forecast !== null && remaining > 0) {
     const sp = pointsOf(candidate);
     const v2 = (mergedInWindow + sp) / now;
     const f2 = now + (remaining - sp) / v2;
