@@ -421,11 +421,14 @@ function QueueTimer({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
   const blocker = env?.queuedBehind?.(card) ?? null;
   const { view: colony } = useColonySettings();
-  const label = blocker
-    ? `Waiting for ${blocker.key} to finish. It starts on its own then.`
-    : colony?.colonySize
-      ? "Up next. It starts when a slot in the colony frees."
-      : "Up next. Starting now.";
+  // The server's own reason first: it sees every board on the repository.
+  const label = card.blockedReason
+    ? card.blockedReason
+    : blocker
+      ? `Waiting for ${blocker.key} to finish. It starts on its own then.`
+      : colony?.colonySize
+        ? "Up next. It starts when a slot in the colony frees."
+        : "Up next. Starting now.";
   return (
     <span
       data-queue

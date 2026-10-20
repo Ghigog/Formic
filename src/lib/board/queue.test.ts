@@ -74,6 +74,8 @@ describe("files reserved across every board on a repository", () => {
       ticketId: ticket.id,
       ownerLogin: "alice",
     });
+    // The board can only see its own cards, so the card says who it waits on.
+    expect((await repository().cardById(mine!.id))?.blockedReason).toContain("HER-1 on @alice's board");
   });
 
   it("starts the queued ticket once the one on the other board stops", async () => {
@@ -82,12 +84,15 @@ describe("files reserved across every board on a repository", () => {
     const { hers, ticket } = await hersRunning(["src/api/router.ts"]);
 
     await startQueued(PROJECT);
-    expect((await repository().cardById(mine!.id))?.status).toBe("queued");
+    expect((await repository().cardById(mine!.id))).toMatchObject({
+      status: "queued",
+      blockedReason: expect.stringContaining("HER-1 on @alice's board"),
+    });
 
     await repository().updateTicket(ticket.id, { status: "review" });
     // Her ticket stopping is what moves the queue on, from her board's events.
     await startQueued(hers.id);
-    expect((await repository().cardById(mine!.id))?.status).toBe("running");
+    expect((await repository().cardById(mine!.id))).toMatchObject({ status: "running", blockedReason: null });
     expect(launched).toEqual([`coder agent for ${mine!.key}`]);
   });
 
@@ -176,7 +181,10 @@ describe("the colony's cap", () => {
     await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: false });
 
     await startQueued(PROJECT);
-    expect((await repository().cardById(b!.id))?.status).toBe("queued");
+    expect((await repository().cardById(b!.id))).toMatchObject({
+      status: "queued",
+      blockedReason: expect.stringContaining("The colony is full"),
+    });
     expect((await repository().cardById(bug!.id))?.status).toBe("running");
     expect(launched).toEqual([`coder agent for ${bug!.key}`]);
   });

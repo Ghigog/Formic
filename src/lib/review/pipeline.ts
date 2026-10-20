@@ -1795,7 +1795,9 @@ export async function sendBack(
   const write = (status: "running" | "queued") =>
     repo.updateTicket(ticket.id, { reviewedSha: null, reviewedHead: null, status });
   const card = await repo.cardById(ticket.id);
-  const { status } = card ? await claimOrQueue(projectId, card, write) : (await write("running"), { status: "running" });
+  const { status, reason: waitReason } = card
+    ? await claimOrQueue(projectId, card, write)
+    : (await write("running"), { status: "running", reason: null });
   if (status === "queued") {
     await publish(projectId, {
       type: "card.status",
@@ -1804,7 +1806,7 @@ export async function sendBack(
       status: "queued",
       stalledIn: null,
       stage: card?.stage ?? ticket.stage,
-      blockedReason: null,
+      blockedReason: waitReason,
     });
     return;
   }
