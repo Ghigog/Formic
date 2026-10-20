@@ -296,7 +296,7 @@ export function ColonyPopover() {
         ref={panel}
         role="dialog"
         aria-label="Colony"
-        className={`border-line bg-card fixed right-4 bottom-16 z-[75] box-border flex max-h-[calc(100dvh-5rem)] w-[400px] overflow-y-auto overscroll-contain max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)] ${carrying ? "pointer-events-none" : ""} ${carrying && isMobile ? "invisible" : ""}`}
+        className={`border-line bg-card fixed right-4 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[75] box-border flex max-h-[calc(100dvh-5rem)] w-[400px] overflow-y-auto overscroll-contain max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)] ${carrying ? "pointer-events-none" : ""} ${carrying && isMobile ? "invisible" : ""}`}
       >
         <div className="flex items-center gap-3">
           <span className="bg-anthracite text-cream inline-flex size-[42px] shrink-0 flex-col items-center justify-center gap-px [clip-path:polygon(10px_0,calc(100%-10px)_0,100%_10px,100%_calc(100%-10px),calc(100%-10px)_100%,10px_100%,0_calc(100%-10px),0_10px)]">

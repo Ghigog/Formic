@@ -164,6 +164,21 @@ function openTodo(view: TicketView) {
 }
 
 describe("TicketDrawer", () => {
+  it("stacks the header below sm so the title takes the full width", async () => {
+    open();
+    await screen.findByTitle("5 story points");
+    const header = screen.getByTestId("drawer-header");
+    expect(header).toHaveClass("flex-col-reverse", "sm:flex-row");
+    const actions = screen.getByTestId("drawer-actions");
+    expect(actions).toHaveClass("justify-end");
+    expect(
+      within(actions).getByRole("button", { name: "Close" }),
+    ).toBeInTheDocument();
+    expect(actions.previousElementSibling).toContainElement(
+      screen.getByRole("heading", { level: 2 }),
+    );
+  });
+
   it("shows the story points and no T-shirt size", async () => {
     open();
     expect(await screen.findByTitle("5 story points")).toBeInTheDocument();
@@ -453,7 +468,10 @@ describe("TicketDrawer on-screen keyboard", () => {
 });
 
 describe("TicketDrawer archive", () => {
-  const todo: TicketView = { ...VIEW, card: { ...card, status: "ready", queen: false } };
+  const todo: TicketView = {
+    ...VIEW,
+    card: { ...card, status: "ready", queen: false },
+  };
 
   function openWith(archive: () => Response) {
     const calls: string[] = [];
@@ -465,7 +483,8 @@ describe("TicketDrawer archive", () => {
           calls.push(url);
           return archive();
         }
-        if (url.includes("/api/attachments")) return Response.json({ attachments: [] });
+        if (url.includes("/api/attachments"))
+          return Response.json({ attachments: [] });
         if (url.includes("/api/queens")) return Response.json({ unspent: 0 });
         return Response.json(todo);
       }),
@@ -486,7 +505,9 @@ describe("TicketDrawer archive", () => {
   }
 
   it("archives the ticket and closes the drawer", async () => {
-    const { calls, onClose, onChanged } = openWith(() => Response.json({ ok: true }));
+    const { calls, onClose, onChanged } = openWith(() =>
+      Response.json({ ok: true }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(calls).toEqual(["/api/tickets/t-1/archive"]);
@@ -494,9 +515,13 @@ describe("TicketDrawer archive", () => {
   });
 
   it("shows the error and stays open when archiving fails", async () => {
-    const { onClose } = openWith(() => Response.json({ error: "Still working." }, { status: 409 }));
+    const { onClose } = openWith(() =>
+      Response.json({ error: "Still working." }, { status: 409 }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Still working.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Still working.",
+    );
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -504,7 +529,9 @@ describe("TicketDrawer archive", () => {
     openWith(() => Response.json({ ok: true }));
     const archive = await screen.findByRole("button", { name: "Archive" });
     const addQueen = screen.getByRole("button", { name: "Add Queen" });
-    expect(addQueen.closest("[data-queen]")?.parentElement).toBe(archive.parentElement);
+    expect(addQueen.closest("[data-queen]")?.parentElement).toBe(
+      archive.parentElement,
+    );
     expect(await screen.findByText("No unspent Queens")).toBeInTheDocument();
     expect(archive).toBeEnabled();
   });
@@ -513,12 +540,20 @@ describe("TicketDrawer archive", () => {
     openWith(() => Response.json({ error: "Still working." }, { status: 409 }));
     const archive = await screen.findByRole("button", { name: "Archive" });
     const row = screen.getByTestId("drawer-tab-row");
-    expect(row).toContainElement(screen.getByRole("button", { name: "Ticket" }));
-    expect(row).toContainElement(screen.getByRole("button", { name: "Add Queen" }));
+    expect(row).toContainElement(
+      screen.getByRole("button", { name: "Ticket" }),
+    );
+    expect(row).toContainElement(
+      screen.getByRole("button", { name: "Add Queen" }),
+    );
     expect(row).toContainElement(archive);
-    expect(screen.getByRole("button", { name: "Ticket" })).toHaveClass("lg:hidden");
+    expect(screen.getByRole("button", { name: "Ticket" })).toHaveClass(
+      "lg:hidden",
+    );
     fireEvent.click(archive);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Still working.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Still working.",
+    );
     expect(row).toContainElement(screen.getByRole("alert"));
   });
 });
