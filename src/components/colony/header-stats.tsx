@@ -459,8 +459,8 @@ export function ColonyMobileStats() {
   const s = c.score;
   return (
     <>
-      <button
-        type="button"
+      <div
+        role="group"
         aria-label={`Level ${s.level} ${s.rank}, ${c.shownPoints} points`}
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-[10px] px-1"
       >
@@ -469,7 +469,7 @@ export function ColonyMobileStats() {
           value={c.shownPoints}
           className="origin-left text-[14px] max-[359px]:hidden"
         />
-      </button>
+      </div>
       <Heat c={c} />
       <TimelineButton c={c} iconOnly />
     </>

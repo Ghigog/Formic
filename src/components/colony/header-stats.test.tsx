@@ -77,6 +77,8 @@ describe("ColonyHeaderStats", () => {
 describe("ColonyMobileStats", () => {
   it("shows heat and an icon-only timeline button that toggles the timeline", async () => {
     renderHeader(<ColonyMobileStats />);
+    // The LV badge is the Audit button; it must not sit inside another button.
+    expect(document.querySelector("button button")).toBeNull();
     expect(document.querySelector('[data-colony="heat"]')).toBeInTheDocument();
 
     const open = screen.getByRole("button", { name: "Open timeline" });
