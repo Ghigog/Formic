@@ -1,6 +1,7 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
+import type { AuditKind } from "@/lib/db/repository";
 import { launch } from "@/lib/agents/pipeline";
 import { sentinelAgent } from "@/lib/agents/presets";
 import { projectFor } from "@/lib/board/project";
@@ -9,6 +10,7 @@ import { vcs } from "@/lib/vcs";
 import { startCliSentinel } from "@/lib/runner/runner";
 import { CANNED } from "./canned";
 import { runAudit } from "./agent";
+import { cannedChecks, cannedRubric, scoredReport, type Goal } from "./rubric";
 import { gatherEvidence } from "./gather";
 
 /** Bytes of repository a sentinel downloads at most. */
@@ -26,9 +28,11 @@ import { isUnlocked, sentinel as findSentinel, stepsFor } from "./roster";
 import { sentinelStates, type SentinelStates } from "./view";
 
 /**
- * Summoning a sentinel: the audit is journalled before it starts and runs
- * detached, and the page follows it by reading the journal, so a run on one
- * server instance shows up on a page served by another.
+ * Summoning a sentinel: calibrating writes its rubric for the project, and
+ * auditing scores the code against that rubric. Either run is journalled
+ * before it starts and runs detached, and the page follows it by reading the
+ * journal, so a run on one server instance shows up on a page served by
+ * another.
  */
 
 export async function sentinelsFor(projectId: string): Promise<SentinelStates> {
@@ -38,6 +42,7 @@ export async function sentinelsFor(projectId: string): Promise<SentinelStates> {
 export async function summonSentinel(
   projectId: string,
   sentinelId: string,
+  kind: AuditKind = "audit",
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const s = findSentinel(sentinelId);
   if (!s) return { ok: false, error: "No such sentinel.", status: 404 };
@@ -46,11 +51,16 @@ export async function summonSentinel(
   if (!isUnlocked(s, level)) {
     return { ok: false, error: `${s.name} unlocks at Lv ${s.unlockLevel}.`, status: 403 };
   }
-  const current = await sentinelsFor(projectId);
-  if (current[s.id]?.running) return { ok: true };
+  const current = (await sentinelsFor(projectId))[s.id];
+  if (current?.running) return { ok: true };
+  const rubric = current?.rubric?.rubric ?? null;
+  if (kind === "audit" && !rubric) {
+    return { ok: false, error: `Calibrate ${s.who} first: an audit is scored against the rubric calibrating writes.`, status: 409 };
+  }
+  const goal: Goal = kind === "calibrate" ? { kind } : { kind, rubric: rubric! };
 
   const repo = repository();
-  const audit = await repo.startAudit(projectId, s.id);
+  const audit = await repo.startAudit(projectId, s.id, kind, goal.kind === "audit" ? goal.rubric : null);
   const log = (step: string) => repo.logAudit(audit.id, step);
   const fail = (error: string, model: string | null = null) =>
     repo.finishAudit(audit.id, { status: "failed", error, model });
@@ -68,6 +78,7 @@ export async function summonSentinel(
           projectId,
           auditId: audit.id,
           sentinelId: s.id,
+          goal,
           agent: agent.agent,
         });
         if (!started.ok) await fail(started.reason);
@@ -75,12 +86,17 @@ export async function summonSentinel(
       }
       if (agent.kind === "mock") {
         // No key and no GitHub needed: a canned report at a believable pace.
-        for (const step of stepsFor(s).slice(1)) {
+        for (const step of stepsFor(s, kind).slice(1)) {
           await new Promise((r) => setTimeout(r, 700 + Math.random() * 400));
           await log(step);
         }
-        const canned = CANNED[s.id]!;
-        return await repo.finishAudit(audit.id, { status: "done", ...canned, model: "mock" });
+        if (goal.kind === "calibrate") {
+          const made = cannedRubric(s);
+          return await repo.finishAudit(audit.id, { status: "done", rubric: made, summary: made.context, model: "mock" });
+        }
+        const { stars, ...canned } = CANNED[s.id]!;
+        const scored = scoredReport(goal.rubric, canned.report, cannedChecks(goal.rubric, stars));
+        return await repo.finishAudit(audit.id, { status: "done", ...canned, ...scored, model: "mock" });
       }
 
       const project = await projectFor(projectId);
@@ -97,6 +113,7 @@ export async function summonSentinel(
       const evidence = await gatherEvidence({ client, branch: project.baseBranch, files, kinds: s.evidence, snapshot });
       const outcome = await runAudit(agent.config, {
         sentinel: s,
+        goal,
         repoFullName: project.repoFullName,
         files,
         read: async (path) => {
@@ -109,17 +126,10 @@ export async function summonSentinel(
         signal: AbortSignal.timeout(280_000),
       });
       if (!outcome.ok) return await fail(outcome.error, outcome.usage.model);
-      await repo.finishAudit(audit.id, {
-        status: "done",
-        stars: outcome.stars,
-        quote: outcome.quote,
-        summary: outcome.summary,
-        report: outcome.report,
-        files: outcome.files,
-        model: outcome.usage.model,
-      });
+      const { ok: _, usage, ...done } = outcome;
+      await repo.finishAudit(audit.id, { status: "done", ...done, model: usage.model });
     } catch (e) {
-      await fail(e instanceof Error ? e.message : "The audit failed.");
+      await fail(e instanceof Error ? e.message : kind === "calibrate" ? "Calibrating failed." : "The audit failed.");
     }
   }, `sentinel ${s.id}`);
 

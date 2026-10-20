@@ -29,6 +29,7 @@ const TICKETS = [
     fileScope: ["src/app/api/export"],
     size: "S",
     storyPoints: 3,
+    type: "task",
     dependsOn: [],
   },
   {
@@ -40,6 +41,7 @@ const TICKETS = [
     fileScope: ["src/components/export"],
     size: "S",
     storyPoints: 3,
+    type: "task",
     dependsOn: ["T-1"],
   },
 ];
@@ -340,7 +342,7 @@ describe("applying an approved proposal", () => {
     expect(epic.status).toBe("ready");
     const tickets = cards.filter((c) => c.kind === "ticket");
     expect(tickets.every((t) => t.epicId === epic.id)).toBe(true);
-    expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2"]);
+    expect(tickets.map((t) => t.key).sort()).toEqual([`${epic.key}-T1`, `${epic.key}-T2`]);
     expect(said).toContain("2 tickets");
   });
 });

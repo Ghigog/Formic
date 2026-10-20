@@ -61,13 +61,19 @@ describe("board view logic", () => {
       makeCard({ id: "1", workType: "bug" }),
       makeCard({ id: "2", workType: "spike" }),
       makeCard({ id: "3", workType: null }),
+      makeCard({ id: "4", workType: "user_story" }),
+      makeCard({ id: "5", workType: "task" }),
+      makeCard({ id: "6", workType: "feature" }),
     ];
     const ids = (types: TypeFilter[]) => applyView(cards, { ...EMPTY_VIEW, types }).map((c) => c.id);
+    expect(ids(["user_story"])).toEqual(["4"]);
+    expect(ids(["task"])).toEqual(["5"]);
+    expect(ids(["feature"])).toEqual(["6"]);
     expect(ids(["bug"])).toEqual(["1"]);
     expect(ids(["spike"])).toEqual(["2"]);
     expect(ids(["ticket"])).toEqual(["3"]);
     expect(ids(["bug", "spike"])).toEqual(["1", "2"]);
-    expect(ids([])).toEqual(["1", "2", "3"]);
+    expect(ids([])).toEqual(["1", "2", "3", "4", "5", "6"]);
   });
 
   it("shows archived cards of any type only when Archived is on", () => {

@@ -13,9 +13,10 @@ import type {
   ReviewerAgent,
 } from "./ports";
 import { runCodingLoop } from "./coding-loop";
+import type { ScoutCandidate, ScoutVerdict } from "./judge";
+import { provider as providerInfo } from "@/lib/llm/providers";
 import type { Workspace } from "@/lib/sandbox/workspace";
-import { isSpikeText } from "@/lib/colony/game";
-import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, withCodingRules } from "./prompts";
+import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, SHARED_NOTES_INTRO, withCodingRules } from "./prompts";
 
 /**
  * The two agents that write code. Same loop, different brief, and any
@@ -47,6 +48,13 @@ export function taskBrief(task: CoderTask): string {
           "",
           "Notes on this ticket, from the person watching it or from its review. Follow them; where they disagree, the newest wins:",
           ...task.notes.map((n) => `- ${n}`),
+        ]
+      : []),
+    ...(task.sharedNotes?.length
+      ? [
+          "",
+          SHARED_NOTES_INTRO,
+          ...task.sharedNotes.map((n) => `- ${n}`),
         ]
       : []),
   ].join("\n");
@@ -102,7 +110,7 @@ export class LoopCoderAgent implements CoderAgent {
       workspace: input.workspace,
       ticketId: input.task.ticketId,
       role: "coder",
-      system: withCodingRules(this.config.brief ?? CODER_BRIEF, "coder", { spike: isSpikeText(input.task.title) }),
+      system: withCodingRules(this.config.brief ?? CODER_BRIEF, "coder", { spike: input.task.workType === "spike" }),
       provider: this.config.provider,
       model: this.config.model,
       apiKey: this.config.apiKey,
@@ -115,6 +123,19 @@ export class LoopCoderAgent implements CoderAgent {
 
 export class LoopReviewerAgent implements ReviewerAgent {
   constructor(private readonly config: AgentConfig = {}) {}
+
+  async compare(
+    ctx: AgentContext,
+    input: { task: CoderTask; candidates: ScoutCandidate[] },
+  ): Promise<AgentOutcome<ScoutVerdict>> {
+    // The same provider and model the reviews run on, asked once.
+    if (providerInfo(this.config.provider ?? "anthropic")?.kind === "openai") {
+      const { compareScoutsOnOpenAi } = await import("./openai-agents");
+      return compareScoutsOnOpenAi(this.config, ctx, input);
+    }
+    const { compareScoutsOnClaude } = await import("./anthropic");
+    return compareScoutsOnClaude(this.config, ctx, input);
+  }
 
   review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
     return runCodingLoop({
@@ -132,15 +153,35 @@ export class LoopReviewerAgent implements ReviewerAgent {
 }
 
 /** A pull request that conflicts with its base: resolving that is the whole job. */
-function conflictsBrief(baseBranch: string, files: string[]): string {
+function conflictsBrief(
+  baseBranch: string,
+  files: string[],
+  history?: { base: string[]; branch: string[] },
+): string {
+  const commits = (title: string, list: string[] | undefined) =>
+    list?.length ? ["", title, ...list.map((c) => indent(c))] : [];
   return [
     `This pull request conflicts with ${baseBranch}, so CI cannot run on it. ${baseBranch} is already merged into the checkout, and the conflicted files still hold its conflict markers${files.length ? ":" : "."}`,
     ...files.map((f) => `- ${f}`),
+    ...commits(`Why ${baseBranch} changed them, newest first:`, history?.base),
+    ...commits("Why this pull request changed them, newest first:", history?.branch),
     "",
-    "Your job this time is only to resolve them. For each conflict, read both sides and keep what each meant: usually both changes belong together. Remove every conflict marker. Change nothing else, and do not review the ticket's work again.",
+    "Your job this time is only to resolve them, keeping what both sides meant:",
+    "1. Each conflict has three parts: this branch (<<<<<<< to |||||||), the common ancestor both started from (||||||| to =======), and the base (======= to >>>>>>>). Compare each side with the ancestor to see what it changed, and the commits above to see why.",
+    "2. Write the code both changes would have written had they known about each other. Usually both belong: a function one side renamed and the other gave a new check is the new name with the new check. Do not drop a side because it is harder to keep.",
+    "3. Check that what you settled still agrees with the code around it: search for the names either side changed or added, and fix their call sites, types and tests in the conflicted files to match. Run the tests that cover them if that is quick.",
+    "Remove every conflict marker. Change nothing else, and do not review the ticket's work again.",
     "Do not commit, abort the merge, or run git merge yourself: Formic records the merge once you are done.",
     "If the two sides cannot both be kept without redoing the ticket, leave the markers in place and say why in your summary: a person takes it from there.",
   ].join("\n");
+}
+
+function indent(text: string): string {
+  return text
+    .trim()
+    .split("\n")
+    .map((l, i) => (i === 0 ? `- ${l}` : `  ${l}`))
+    .join("\n");
 }
 
 /** What the Reviewer Agent is told about the pull request in front of it. */
@@ -155,7 +196,7 @@ export function reviewBrief(input: Omit<ReviewTask, "workspace">): string {
     ...(input.changedFiles.length ? input.changedFiles.map((f) => `- ${f}`) : ["(none listed)"]),
     "",
     input.conflicts
-      ? conflictsBrief(input.baseBranch, input.conflicts)
+      ? conflictsBrief(input.baseBranch, input.conflicts, input.conflictHistory)
       : input.checks.length
       ? ["CI is red. Failing checks:", "", failuresBrief(input.checks)].join("\n")
       : input.ciRunning

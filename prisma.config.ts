@@ -21,5 +21,7 @@ export default defineConfig({
       process.env.POSTGRES_PRISMA_URL ??
       process.env.POSTGRES_URL ??
       "",
+    // Only `migrate diff --from-migrations` (the CI drift check) needs one.
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });

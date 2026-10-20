@@ -46,7 +46,7 @@ async function swipe(page: Page, dx: number) {
 
 test("a swipe moves from Backlog to To Do", async ({ page }) => {
   await expect(column(page, "Backlog")).toBeVisible();
-  await expect(page.getByRole("list", { name: "Columns" }).getByRole("button")).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Columns" }).getByRole("button")).toHaveCount(5);
 
   await swipe(page, -150);
 
@@ -94,4 +94,17 @@ test("the app bar at 375px has heat and a timeline button, and no + button", asy
 
   await page.getByRole("button", { name: "Open timeline" }).click();
   await expect(page.getByRole("button", { name: "Back to board" })).toBeVisible();
+});
+
+test("the colony bar stays pinned to the bottom of the phone screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 });
+  const footer = page.locator("footer[data-colony-mask]");
+  const bottom = async () => (await footer.boundingBox())!.y + (await footer.boundingBox())!.height;
+
+  expect(await bottom()).toBeCloseTo(700, 0);
+
+  await page.mouse.move(195, 300);
+  await page.mouse.wheel(0, 2000);
+  await page.evaluate(() => window.scrollTo(0, 2000));
+  expect(await bottom()).toBeCloseTo(700, 0);
 });

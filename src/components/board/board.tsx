@@ -11,9 +11,9 @@ import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
 import { EMPTY_VIEW, type ColumnView } from "./view";
 import { loadBoardView } from "./view-setting";
-import { adjacentColumn, ownsGesture, swipeDirection, type SwipeDirection } from "./swipe";
+import { adjacentColumn, ownsGesture, slideTowards, swipeDirection, type SwipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
-import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
+import { CardEnvContext, LEAVE_MS, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
 import { cardEl, colonyEl } from "@/components/colony/fx";
 import { ghostOf, type Ghost } from "@/components/colony/epic-flight";
@@ -34,6 +34,7 @@ import type { CardTransition, TransitionResult } from "@/lib/domain/transitions"
 import { byCompletion, byPosition } from "@/lib/ordering";
 import { runningConflict } from "@/lib/domain/queue";
 import { placeDrop } from "./placement";
+import { QUEEN_CARRY_EVENT, type QueenCarryDetail } from "@/components/colony/queen-carry";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
 import { ARCHIVE_DROPPABLE_ID, ArchiveDropZone } from "./archive-drop-zone";
@@ -64,6 +65,12 @@ export interface BoardProps {
   onArchivedWanted?: (wanted: boolean) => void;
   /** Who is signed in, for the header's account menu. */
   account?: Account;
+  /** The repository runs no CI. */
+  noCi?: boolean;
+  /** No E2B key is set, so no agent can run: the board points to Settings. */
+  noSandboxKey?: boolean;
+  /** Whether Formic merges an approved ticket itself. */
+  autoMerge?: boolean;
   /** The board's assistant, in the header. */
   assistant?: AssistantControls;
   /** Per-column agent choice. Omitted, columns show no agent selector. */
@@ -89,6 +96,9 @@ export function Board({
   agents,
   account,
   assistant,
+  noCi = false,
+  noSandboxKey = false,
+  autoMerge = false,
 }: BoardProps) {
   /** The ticket last dropped on the archive zone, which does the archiving. */
   const [dropped, setDropped] = useState<{ ticketId: string } | null>(null);
@@ -98,6 +108,9 @@ export function Board({
   // first rendered, so nothing the server said about it afterwards showed.
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The column that last refused a card for want of an agent, until it has one. */
+  const [needsAgent, setNeedsAgent] = useState<ColumnId | null>(null);
+  const agentMissing = needsAgent !== null && !!agents && !agents.columns[needsAgent];
   const [activeTab, setActiveTab] = useState<ColumnId>("backlog");
   const [collapsed, setCollapsed] = useState<Record<ColumnId, Set<string>>>(
     () => ({
@@ -138,7 +151,19 @@ export function Board({
   }, [archivedWanted, onArchivedWanted]);
 
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const colony = useColony();
+
+  // A Queen picked up in the Colony panel: on a phone only one column shows,
+  // so bring up To Do, where she is most likely wanted.
+  useEffect(() => {
+    if (!isMobile) return;
+    const onCarry = (e: Event) => {
+      if ((e as CustomEvent<QueenCarryDetail>).detail?.on) setActiveTab("todo");
+    };
+    window.addEventListener(QUEEN_CARRY_EVENT, onCarry);
+    return () => window.removeEventListener(QUEEN_CARRY_EVENT, onCarry);
+  }, [isMobile]);
 
   const toggleCollapse = useCallback(
     (column: ColumnId, epicId: string) => {
@@ -213,6 +238,9 @@ export function Board({
       });
 
       setError(null);
+      // Into a column with no agent it goes nowhere: the server refuses it,
+      // and showing it start meanwhile would play a dispatch that never was.
+      const unstaffed = card.kind === "ticket" && to === "in_progress" && !!agents && !agents.columns[to];
       // The status the server will give it, so the card renders in the
       // column it was dropped in: the column is derived from status, and the
       // old one sent it straight back until the server answered.
@@ -238,30 +266,36 @@ export function Board({
               misplacedReason: to === from ? card.misplacedReason : null,
             }
           : { ...card, position, detached, misplacedIn: to };
-      setOptimistic((prev) => [...prev.filter((c) => c.id !== card.id), moved]);
+      if (!unstaffed) setOptimistic((prev) => [...prev.filter((c) => c.id !== card.id), moved]);
       // Only this drop's own entry: a second drop of the same card, made while
       // this one was in flight, has replaced it and must not be undone by it.
       const settle = () => setOptimistic((prev) => prev.filter((c) => c !== moved));
 
-      const result = await onTransition({
-        cardId: card.id,
-        kind: card.kind,
-        from,
-        to,
-        position,
-        detached: card.kind === "ticket" ? detached : undefined,
-        actor: "user",
-      });
+      let result: TransitionResult;
+      try {
+        result = await onTransition({
+          cardId: card.id,
+          kind: card.kind,
+          from,
+          to,
+          position,
+          detached: card.kind === "ticket" ? detached : undefined,
+          actor: "user",
+        });
+      } catch {
+        result = { ok: false, reason: "That move did not go through.", revertTo: from };
+      }
 
       if (!result.ok) {
         // Drop the optimistic entry and surface why. The card snaps back
         // because `live` falls through to server state.
         settle();
         setError(result.reason);
+        setNeedsAgent(result.needsAgent ?? null);
         // After the card has snapped back, so the flash lands on it. The
         // full reason is in the banner above and the card's "!"; the flash
         // itself just needs to say something went wrong.
-        requestAnimationFrame(() => colony?.reject(card.id, "Error"));
+        requestAnimationFrame(() => colony?.reject(card.id, result.needsAgent ? "Set an agent" : "Error"));
         return;
       }
 
@@ -272,7 +306,7 @@ export function Board({
         requestAnimationFrame(() => colony?.reject(card.id, "Needs you"));
       }
     },
-    [byColumn, collapsed, live, onTransition, colony],
+    [byColumn, collapsed, live, onTransition, colony, agents],
   );
 
   /** Whether a column would take a card dragged out of `from`. */
@@ -310,6 +344,12 @@ export function Board({
     setActiveTab(next);
   };
 
+  const jumpTo = (col: ColumnId) => {
+    if (col === activeTab) return;
+    setSlide(slideTowards(activeTab, col));
+    setActiveTab(col);
+  };
+
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
 
   const columnElements = visibleColumns.map((col) => (
@@ -339,6 +379,7 @@ export function Board({
           selected: agents.presets.find((p) => p.id === agents.columns[col]),
           onAssign: (presetId) => agents.onAssign(col, presetId),
           onEdit: (preset) => agents.onEdit(col, preset),
+          alert: agentMissing && needsAgent === col,
         }
       }
       composer={
@@ -429,6 +470,14 @@ export function Board({
    * To Do for anything, To Do to In Progress for a ticket that is ready,
    * and never into a column whose agent is out of usage.
    */
+  const [leaving, setLeaving] = useState<CardEnv["leaving"]>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+  }, []);
+
+  const pending = useMemo(() => new Set(optimistic.map((c) => c.id)), [optimistic]);
+
   const cardEnv = useMemo<CardEnv>(
     () => ({
       epics: epicsById,
@@ -445,10 +494,26 @@ export function Board({
         isMobile && column === "in_progress" && card.kind === "ticket" && !card.misplacedIn && accepts(column, "todo")
           ? "todo"
           : null,
-      onAdvance: (card, to) => void commit(card, to, Number.MAX_SAFE_INTEGER),
+      leaving,
+      pending,
+      onAdvance: (card, to) => {
+        const move = () => void commit(card, to, Number.MAX_SAFE_INTEGER);
+        // A phone shows one column, so the move would otherwise end the card
+        // in one frame: let it slide away first, and ignore taps meanwhile.
+        if (!isMobile || reducedMotion) return move();
+        if (leaveTimer.current) return;
+        setLeaving({ id: card.id, direction: to === "todo" && columnOf(card) === "in_progress" ? "back" : "forward" });
+        leaveTimer.current = setTimeout(() => {
+          leaveTimer.current = null;
+          setLeaving(null);
+          move();
+        }, LEAVE_MS);
+      },
       queuedBehind: (card) => runningConflict(card, live),
+      noCi,
+      autoMerge,
     }),
-    [epicsById, accepts, commit, live, isMobile],
+    [epicsById, accepts, commit, live, isMobile, reducedMotion, leaving, pending, noCi, autoMerge],
   );
 
   return (
@@ -475,14 +540,23 @@ export function Board({
               className={cn(
                 "inline-flex h-9 shrink-0 items-center rounded-full text-[13px] whitespace-nowrap transition-[color,background-color,padding] duration-200 ease-out",
                 active
-                  ? "bg-anthracite text-cream px-3.5 font-semibold"
-                  : "border-line bg-card text-muted border px-3 font-medium",
+                  ? "bg-anthracite text-cream font-semibold"
+                  : "border-line bg-card text-muted border font-medium",
               )}
             >
-              {COLUMN_LABELS[col]}{" "}
-              <span className="ml-1 tabular-nums">
-                {columnCount(byColumn[col], col)}
-              </span>
+              <button
+                type="button"
+                onClick={() => jumpTo(col)}
+                className={cn(
+                  "focus-visible:ring-anthracite h-full rounded-full focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+                  active ? "px-3.5" : "px-3",
+                )}
+              >
+                {COLUMN_LABELS[col]}{" "}
+                <span className="ml-1 tabular-nums">
+                  {columnCount(byColumn[col], col)}
+                </span>
+              </button>
             </li>
           );
         })}
@@ -490,6 +564,20 @@ export function Board({
       <p aria-live="polite" className="sr-only md:hidden">
         {COLUMN_LABELS[activeTab]}
       </p>
+
+      {noSandboxKey && (
+        <div
+          role="alert"
+          className="bg-clay/15 text-ink mx-4 mt-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-[12px] md:mx-6"
+        >
+          <span className="flex-1">
+            Agents can&apos;t run yet: they need a sandbox key from E2B. It takes a minute to set up.
+          </span>
+          <a href="/settings#sandbox" className="text-ink font-semibold whitespace-nowrap underline">
+            Add it in Settings
+          </a>
+        </div>
+      )}
 
       {error && (
         <div

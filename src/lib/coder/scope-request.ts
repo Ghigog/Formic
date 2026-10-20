@@ -4,7 +4,7 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { normalizeScope, pathInScope, violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { runningConflict } from "@/lib/domain/queue";
+import { widenClaim } from "@/lib/board/queue";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { VcsError, mergeTarget, type VcsClient } from "@/lib/vcs";
 import { projectFor } from "@/lib/board/project";
@@ -80,11 +80,24 @@ export async function widenScope(
 ): Promise<string[] | null> {
   const requested = normalizeScope(outside);
   const repo = repository();
-  const cards = await repo.boardCards(projectId);
-  if (runningConflict({ id: ticket.id, status: ticket.status, fileScope: requested }, cards)) return null;
-
   const fileScope = normalizeScope([...ticket.fileScope, ...requested]);
-  await repo.updateTicket(ticket.id, { fileScope });
+  // A scout widens its parent's claim with its own: the change it brings
+  // back may become the parent's, and its siblings share the parent's files.
+  const parent = ticket.scoutOf ? await repo.ticketDetail(ticket.scoutOf) : null;
+  const together = parent ? [parent.id, ...(await repo.scoutsOf(parent.id)).map((s) => s.id)] : [];
+  // Widening a running ticket's scope is a new claim on those files, held
+  // against every board on the repository, and taken under the same lease
+  // as any other start so nothing else claims them meanwhile.
+  const widened = await widenClaim(
+    projectId,
+    { id: ticket.id, fileScope: requested },
+    async () => {
+      await repo.updateTicket(ticket.id, { fileScope });
+      if (parent) await repo.updateTicket(parent.id, { fileScope: normalizeScope([...parent.fileScope, ...requested]) });
+    },
+    together,
+  );
+  if (!widened) return null;
   const text = `${ticket.key} needed files outside its scope, and no running ticket was using them, so I added them: ${listed(requested)}.`;
   await repo.addCardChatMessage({ projectId, cardKind: "ticket", cardId: ticket.id, role: "assistant", content: text });
   await publish(projectId, { type: "ticket.reply", ticketId: ticket.id, agent: "Coder Agent", text });
@@ -102,6 +115,15 @@ export async function askForScope(
   options: { kept: boolean },
 ): Promise<void> {
   const requested = normalizeScope(outside);
+  // A scout does not ask: it is one scout fewer.
+  if (ticket.scoutOf) {
+    const { scoutReturned } = await import("./scouts");
+    await scoutReturned(projectId, ticket, {
+      ok: false,
+      reason: `Needed files outside the ticket that another ticket is writing: ${listed(requested)}.`,
+    });
+    return;
+  }
   const reason = `Needs files outside its scope: ${listed(requested)}. Allow them in its chat to carry on.`;
   const repo = repository();
   await repo.updateTicket(ticket.id, {
@@ -183,8 +205,9 @@ export async function takeKeptWork(
   const project = await projectFor(projectId);
   // Only a branch that is gone means nothing was kept; any other failure
   // leaves the kept work where it is, to try again.
+  // A stacked ticket's own work is what it adds to the branch it was built on.
   const change = await client
-    .compare(mergeTarget(project.baseBranch), branch)
+    .compare(ticket.stackedOn ?? mergeTarget(project.baseBranch), branch)
     .catch((e: unknown) => {
       if (e instanceof VcsError && e.status === 404) return null;
       throw e;

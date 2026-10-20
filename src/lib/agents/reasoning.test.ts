@@ -40,3 +40,22 @@ describe("reasoning per role", () => {
     expect(reasoningFor(provider("deepseek")!, "coder").reasoningEffort).toBe("low");
   });
 });
+
+describe("reasoning by a ticket's effort", () => {
+  const all = info(["low", "high", "max"]);
+
+  it("asks high for a large ticket and low for a small or mid-sized one", () => {
+    expect(roleReasoning("coder", all, "high").reasoningEffort).toBe("high");
+    expect(roleReasoning("coder", all, "medium").reasoningEffort).toBe("low");
+    expect(roleReasoning("reviewer", all, "low").reasoningEffort).toBe("low");
+  });
+
+  it("keeps the role's own level when effort does not follow points", () => {
+    expect(roleReasoning("coder", all, null).reasoningEffort).toBe("low");
+  });
+
+  it("tells only DeepSeek", () => {
+    expect(reasoningFor(provider("openai")!, "coder", all, "high")).toEqual({});
+    expect(reasoningFor(provider("deepseek")!, "coder", all, "high").reasoningEffort).toBe("high");
+  });
+});

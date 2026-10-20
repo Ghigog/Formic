@@ -288,7 +288,8 @@ describe("editing a ticket that is asking for files outside its scope", () => {
     const after = (await repo.ticketDetail(ticket.id))!;
     expect(after.status).toBe("queued");
     expect(after.scopeRequest).toEqual([]);
-    expect(after.blockedReason).toBeNull();
+    // The scope question is gone; what it waits on now is said instead.
+    expect(after.blockedReason).toBe("Waiting for T-2, which is writing the same files. It starts on its own then.");
   });
 
   it("carries kept work on rather than doing it again", async () => {
@@ -376,6 +377,7 @@ describe("splitting a ticket", () => {
       fileScope,
       storyPoints: 2,
       dependsOn,
+      type: "task",
     };
   }
 

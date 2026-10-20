@@ -160,12 +160,12 @@ describe("Column", () => {
       { title: "Cache the layout", status: "merged" },
     ]);
     const { unmount } = column("todo", [epic!, todo!]);
-    expect(screen.getByText("BUG")).toBeInTheDocument();
+    expect(screen.getByText("Bug")).toBeInTheDocument();
     unmount();
 
     column("done", [epic!, done!]);
-    expect(screen.queryByText("BUG")).toBeNull();
-    expect(screen.getByText("SQUASHED")).toBeInTheDocument();
+    expect(screen.queryByText("Bug")).toBeNull();
+    expect(screen.getByText("Squashed")).toBeInTheDocument();
   });
 
   it("labels a spike card SPIKE, and not as a bug; an ordinary card gets no SPIKE", () => {
@@ -173,8 +173,8 @@ describe("Column", () => {
       makeCard({ title: "How does the merge queue handle conflicts?", workType: "spike" }),
       makeCard({ title: "Add CSV export" }),
     ]);
-    expect(screen.getAllByText("SPIKE")).toHaveLength(1);
-    expect(screen.queryByText("BUG")).toBeNull();
+    expect(screen.getAllByText("Spike")).toHaveLength(1);
+    expect(screen.queryByText("Bug")).toBeNull();
   });
 
   it("marks the bug and spike badges with their own icons", () => {
@@ -189,7 +189,7 @@ describe("Column", () => {
   it("gives a ticket of a feature Epic no bug label", () => {
     const [epic, kid] = makeEpicWithChildren({ title: "Dark mode" }, [{ title: "Fix the palette" }]);
     column("todo", [epic!, kid!]);
-    expect(screen.queryByText("BUG")).toBeNull();
+    expect(screen.queryByText("Bug")).toBeNull();
   });
 
   it("renders the composer it is given, above the cards", () => {

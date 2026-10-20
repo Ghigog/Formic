@@ -10,7 +10,11 @@ import {
 } from "@/lib/colony/game";
 import { useColony, type ColonyApi } from "./colony";
 import { drawBug } from "./fx";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import { QUEEN_CARRY_EVENT, edgeScrollSpeed, nextSway, MAX_SWAY_DEG, type QueenCarryDetail } from "./queen-carry";
 import { QueenIcon } from "./queen-icon";
+import { ColonyPanel } from "./colony-panel";
+import { InfoTip } from "./info-tip";
 
 /** The ant hill at the end of the ambient bar. Opens the colony. */
 export function NestButton() {
@@ -76,6 +80,50 @@ function QueenBug({ c, className }: { c: ColonyApi; className: string }) {
 }
 
 /**
+ * The Queen under the finger. Each frame her legs sway against the pointer's
+ * horizontal travel, and now and then (every 2-5 s) they jiggle briefly.
+ * Reduced motion draws her at rest.
+ */
+function DragQueen({ c, x }: { c: ColonyApi; x: { current: number } }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    const ctx = cv?.getContext("2d");
+    if (!cv || !ctx) return;
+    let raf = 0;
+    let sway = 0;
+    let lastX = x.current;
+    let jiggleStart = -1;
+    let nextJiggle = performance.now() + 2000 + Math.random() * 3000;
+    const paint = (now: number) => {
+      sway = nextSway(sway, x.current - lastX);
+      lastX = x.current;
+      let legs = (sway / MAX_SWAY_DEG) * 1.6;
+      if (now >= nextJiggle) {
+        jiggleStart = now;
+        nextJiggle = now + 2000 + Math.random() * 3000;
+      }
+      if (jiggleStart >= 0) {
+        const k = (now - jiggleStart) / 400;
+        if (k < 1) legs += Math.sin(k * Math.PI * 6) * 0.9 * (1 - k);
+        else jiggleStart = -1;
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      drawBug(ctx, cv.width / 2, cv.height / 2 + 2, 10, 0.26, c.shape, c.bugHex, undefined, { legSwing: legs });
+      raf = requestAnimationFrame(paint);
+    };
+    if (c.fx.reducedMotion) {
+      drawBug(ctx, cv.width / 2, cv.height / 2 + 2, 10, 0.26, c.shape, c.bugHex);
+    } else {
+      raf = requestAnimationFrame(paint);
+    }
+    return () => cancelAnimationFrame(raf);
+  }, [c.shape, c.bugHex, c.fx, c.fx.reducedMotion, x]);
+  return <canvas ref={ref} width={200} height={200} className="size-14" aria-hidden />;
+}
+
+/**
  * Unspent Queens, and one to drag onto a card. A pointer drag, like the rest
  * of the board's, not native HTML5 drag: the board's drag library owns
  * pointer events on its own cards, and a drop here is found with
@@ -85,6 +133,7 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
   const [unspent, setUnspent] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pointerX = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -117,9 +166,33 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
     if (e.button !== 0) return;
     e.preventDefault();
     setDrag({ x: e.clientX, y: e.clientY });
+    pointerX.current = e.clientX;
     onDragging(true);
-    const move = (m: PointerEvent) => setDrag({ x: m.clientX, y: m.clientY });
+    window.dispatchEvent(new CustomEvent<QueenCarryDetail>(QUEEN_CARRY_EVENT, { detail: { on: true } }));
+    let pointerY = e.clientY;
+    const move = (m: PointerEvent) => {
+      pointerX.current = m.clientX;
+      pointerY = m.clientY;
+      setDrag({ x: m.clientX, y: m.clientY });
+    };
+    // Scroll the visible column's list while she is held near its top or bottom edge.
+    let scrollRaf = 0;
+    const scroll = () => {
+      const px = pointerX.current;
+      const list = [...document.querySelectorAll<HTMLElement>("[data-column-list]")].find((l) => {
+        const r = l.getBoundingClientRect();
+        return px >= r.left && px <= r.right;
+      });
+      if (list) {
+        const r = list.getBoundingClientRect();
+        list.scrollTop += edgeScrollSpeed(pointerY, r.top, r.bottom);
+      }
+      scrollRaf = requestAnimationFrame(scroll);
+    };
+    scrollRaf = requestAnimationFrame(scroll);
     const end = (u: PointerEvent) => {
+      cancelAnimationFrame(scrollRaf);
+      window.dispatchEvent(new CustomEvent<QueenCarryDetail>(QUEEN_CARRY_EVENT, { detail: { on: false } }));
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
@@ -135,16 +208,21 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
 
   const count = unspent ?? 0;
   return (
-    <div className="bg-panel flex items-center gap-3 rounded-lg px-3 py-2.5">
+    <div className="bg-panel relative flex items-center gap-3 rounded-lg px-3 py-2.5">
       <span className="text-clay inline-flex shrink-0" data-queen-icon>
         <QueenIcon size={22} />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-ink text-[12px] font-semibold">
-          Queens <span data-queen-count>{count}</span>
+        <span className="text-ink flex items-center gap-1.5 text-[12px] font-semibold">
+          <span>
+            Queens <span data-queen-count>{count}</span>
+          </span>
+          <InfoTip label="How Queens work">
+            Drop a Queen on a ticket and the ants work through every ticket it needs, until that ticket is done. Each
+            level earns one more; a placed Queen is spent.
+          </InfoTip>
         </span>
         <span className="text-muted text-[11px]">Unlock a queen with each level</span>
-        <span className="text-muted text-[11px]">Drag a Queen onto a ticket or Epic to finish it without its prerequisites.</span>
         {error && (
           <span role="alert" className="text-log-error text-[11px]">
             {error}
@@ -169,7 +247,7 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
           className="pointer-events-none fixed z-[90] -translate-x-1/2 -translate-y-1/2"
           style={{ left: drag.x, top: drag.y }}
         >
-          <QueenBug c={c} className="size-14" />
+          <DragQueen c={c} x={pointerX} />
         </div>
       )}
     </div>
@@ -198,26 +276,27 @@ export function ColonyPopover() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   const [carrying, setCarrying] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 767px)");
   if (!c || !open) return null;
 
   const s = c.score;
   const next = nextUnlock(s.level);
   const nextText = next
     ? `Lv ${next.level} unlocks ${next.labels.join(" + ")} · ${(next.level - 1) * XP_PER_LEVEL - s.earned} XP to go`
-    : "Every style unlocked";
+    : "Everything unlocked";
 
   return (
     <>
       <div
         aria-hidden
         onClick={() => c.setColonyOpen(false)}
-        className={`fixed inset-0 z-[74] ${carrying ? "pointer-events-none" : ""}`}
+        className={`fixed inset-0 z-[74] ${carrying ? "pointer-events-none" : ""} ${carrying && isMobile ? "invisible" : ""}`}
       />
       <div
         ref={panel}
         role="dialog"
         aria-label="Colony"
-        className={`border-line bg-card fixed right-4 bottom-16 z-[75] box-border flex w-[400px] max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)] ${carrying ? "pointer-events-none" : ""}`}
+        className={`border-line bg-card fixed right-4 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[75] box-border flex max-h-[calc(100dvh-5rem)] w-[400px] overflow-y-auto overscroll-contain max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)] ${carrying ? "pointer-events-none" : ""} ${carrying && isMobile ? "invisible" : ""}`}
       >
         <div className="flex items-center gap-3">
           <span className="bg-anthracite text-cream inline-flex size-[42px] shrink-0 flex-col items-center justify-center gap-px [clip-path:polygon(10px_0,calc(100%-10px)_0,100%_10px,100%_calc(100%-10px),calc(100%-10px)_100%,10px_100%,0_calc(100%-10px),0_10px)]">
@@ -243,6 +322,8 @@ export function ColonyPopover() {
         </div>
 
         <QueenTray c={c} onDragging={setCarrying} />
+
+        <ColonyPanel level={s.level} />
 
         <div className="bg-panel flex flex-col gap-2 rounded-lg px-3 py-2.5">
           <span className="text-ink text-[12px] font-semibold">{nextText}</span>

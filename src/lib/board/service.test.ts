@@ -16,7 +16,7 @@ vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn(), stallTicket: vi
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
-const { advanceQueens, applyTransition, canRetryEpic, createTodoItem, deleteEpic, generateShowcase, retryEpic } = await import(
+const { advanceQueens, applyTransition, canRetryEpic, createBacklogItem, createTodoItem, deleteEpic, generateShowcase, retryEpic } = await import(
   "./service"
 );
 const { repository } = await import("@/lib/db");
@@ -25,7 +25,14 @@ const { MockVcsClient, resetVcs, setVcs } = await import("@/lib/vcs");
 
 const PROJECT = "project_default";
 
-beforeEach(() => {
+/** An agent on In Progress, so tickets moved there start rather than being refused. */
+async function staffInProgress() {
+  const repo = repository();
+  const preset = await repo.savePreset({ name: "Coder", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
+  await repo.setColumnAgent(PROJECT, "in_progress", preset.id);
+}
+
+beforeEach(async () => {
   launched.length = 0;
   globalThis.__formicMemoryStore = undefined;
   MockVcsClient.reset();
@@ -34,6 +41,7 @@ beforeEach(() => {
   delete process.env.DATABASE_URL;
   delete process.env.POSTGRES_PRISMA_URL;
   delete process.env.POSTGRES_URL;
+  await staffInProgress();
 });
 
 describe("applyTransition within one column", () => {
@@ -208,6 +216,28 @@ describe("applyTransition onto files another agent is writing", () => {
     expect(result).toMatchObject({ ok: true, status: "queued" });
     expect(result.ok && result.problem).toBeFalsy();
     expect(await repository().cardById(next!.id)).toMatchObject({ status: "queued", misplacedIn: null });
+    expect(launched).toEqual([]);
+  });
+});
+
+describe("applyTransition into In Progress with no agent", () => {
+  it("sends the ticket straight back and names the column to give one", async () => {
+    const [epic, ticket] = makeEpicWithChildren({ status: "ready" }, [{ status: "ready" }]);
+    seedMemory([epic!, ticket!]);
+    await repository().setColumnAgent(PROJECT, "in_progress", null);
+
+    const result = await applyTransition(PROJECT, {
+      cardId: ticket!.id,
+      kind: "ticket",
+      from: "todo",
+      to: "in_progress",
+      position: 1,
+      actor: "user",
+    });
+
+    expect(result).toMatchObject({ ok: false, revertTo: "todo", needsAgent: "in_progress" });
+    expect(result.ok ? "" : result.reason).toContain("Set an agent for In Progress first");
+    expect((await repository().cardById(ticket!.id))?.status).toBe("ready");
     expect(launched).toEqual([]);
   });
 });
@@ -492,6 +522,33 @@ describe("an Epic's tickets following it", () => {
     await move(epic!.id, "backlog", "todo");
 
     expect(launched).toEqual([`architect agent for ${epic!.key}`]);
+  });
+});
+
+describe("createBacklogItem", () => {
+  it("claims attachments uploaded against the request id onto the Epic", async () => {
+    const repo = repository();
+    const project = await repo.defaultProject();
+    await repo.createAttachment({
+      projectId: project.id,
+      requestId: "req-1",
+      filename: "a.txt",
+      mimeType: "text/plain",
+      kind: "file",
+      size: 1,
+      bytes: new Uint8Array([1]),
+    });
+
+    const card = await createBacklogItem(PROJECT, "Add a retry button.", "req-1");
+
+    expect(await repo.attachmentsFor({ epicId: card.id })).toHaveLength(1);
+    expect(await repo.attachmentsFor({ requestId: "req-1" })).toEqual([]);
+  });
+
+  it("creates the Epic with no attachments when there is no request id", async () => {
+    const card = await createBacklogItem(PROJECT, "Add a retry button.");
+
+    expect(await repository().attachmentsFor({ epicId: card.id })).toEqual([]);
   });
 });
 

@@ -64,7 +64,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "tester",
     name: "Tester",
     group: "BUILD",
-    unlockLevel: 1,
+    unlockLevel: 2,
     who: "Professor O'Chumley",
     kind: "Tyrannosaurus, tenured",
     persona:
@@ -77,7 +77,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "qa",
     name: "QA",
     group: "BUILD",
-    unlockLevel: 2,
+    unlockLevel: 3,
     who: "Nasty Toes",
     kind: "Zombie, doctor",
     persona:
@@ -90,7 +90,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "architect",
     name: "Architect",
     group: "BUILD",
-    unlockLevel: 3,
+    unlockLevel: 6,
     who: "Collum",
     kind: "Column, classical",
     persona:
@@ -103,7 +103,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "secops",
     name: "SecOps",
     group: "OPS",
-    unlockLevel: 4,
+    unlockLevel: 9,
     who: "Twodoodes",
     kind: "Hippie, assassin",
     persona:
@@ -116,7 +116,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "devops",
     name: "DevOps",
     group: "OPS",
-    unlockLevel: 5,
+    unlockLevel: 13,
     who: "Waterwheel",
     kind: "Robot, weary",
     persona:
@@ -129,7 +129,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "techops",
     name: "TechOps",
     group: "OPS",
-    unlockLevel: 6,
+    unlockLevel: 15,
     who: "Ground Pepper",
     kind: "Rock, friendly",
     persona:
@@ -142,7 +142,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "perf",
     name: "Performance",
     group: "OPS",
-    unlockLevel: 7,
+    unlockLevel: 18,
     who: "Longfoot Jhan",
     kind: "Monkey, astronaut",
     persona:
@@ -155,7 +155,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "a11y",
     name: "Accessibility",
     group: "PRODUCT",
-    unlockLevel: 8,
+    unlockLevel: 21,
     who: "Luca L'amico",
     kind: "Knight, seven years old",
     persona:
@@ -168,7 +168,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "design",
     name: "Designer",
     group: "PRODUCT",
-    unlockLevel: 9,
+    unlockLevel: 25,
     who: "That Barbon",
     kind: "Caveman, steampunk",
     persona:
@@ -182,7 +182,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "legal",
     name: "Legal",
     group: "BUSINESS",
-    unlockLevel: 10,
+    unlockLevel: 28,
     who: "Licio Maria",
     kind: "Demon, priest",
     persona:
@@ -195,7 +195,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "marketer",
     name: "Marketer",
     group: "BUSINESS",
-    unlockLevel: 11,
+    unlockLevel: 32,
     who: "Ptoughneigh",
     kind: "Alien, farmer",
     persona:
@@ -208,7 +208,7 @@ export const SENTINELS: readonly Sentinel[] = [
     id: "sales",
     name: "Sales",
     group: "BUSINESS",
-    unlockLevel: 12,
+    unlockLevel: 34,
     who: "Turk",
     kind: "Rooster, cowboy",
     persona:
@@ -228,7 +228,7 @@ export function sentinel(id: string): Sentinel | undefined {
 }
 
 /** What every sentinel is asked, after its own persona and brief. */
-export const REPORT_RULES = `Report what you like, what you dislike, what is wrong and what is missing, each point with the file it is about where there is one, then rate the codebase from 1 to 5 stars for your role. Five stars is rare and means you would sign off without changes; one star means it cannot ship. Stay in character only for the one-line quote; keep the summary and the report itself plain, specific and factual. Only cite files you were actually shown.`;
+export const REPORT_RULES = `Report what you like, what you dislike, what is wrong and what is missing, each point with the file it is about where there is one. Stay in character only for the one-line quote; keep the summary and the report itself plain, specific and factual. Only cite files you were actually shown.`;
 
 /** The full brief a sentinel runs on, as the page shows it. */
 export function promptFor(s: Sentinel): string {
@@ -236,14 +236,13 @@ export function promptFor(s: Sentinel): string {
 }
 
 /** The steps a run reports, in order. */
-export function stepsFor(s: Sentinel): string[] {
+export function stepsFor(s: Sentinel, kind: "audit" | "calibrate" = "audit"): string[] {
   return [
     "Listing files",
     "Gathering the facts",
     `Choosing what a ${s.name} reads`,
     "Reading the code",
     "Reading more",
-    `Scoring as ${s.name}`,
-    "Writing report",
+    ...(kind === "calibrate" ? ["Writing the rubric", "Saving the rubric"] : [`Scoring as ${s.name}`, "Writing report"]),
   ];
 }

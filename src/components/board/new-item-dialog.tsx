@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { BUG_COST } from "@/lib/colony/game";
-import type { WorkType } from "@/lib/domain/entities";
 import { AttachmentPicker, pastedFileName } from "./attachment-picker";
 
 /** Which column's capture dialog this is: swaps its copy and submit target. */
@@ -53,10 +51,9 @@ export function NewItemDialog({
   column: CaptureColumn;
   onClose: () => void;
   /** `requestId` is the id its attachments were uploaded against. */
-  onSubmit: (rawRequest: string, requestId: string, workType?: WorkType) => Promise<void>;
+  onSubmit: (rawRequest: string, requestId: string) => Promise<void>;
 }) {
   const [value, setValue] = useState("");
-  const [workType, setWorkType] = useState<WorkType | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
@@ -73,7 +70,6 @@ export function NewItemDialog({
     setWasOpen(open);
     if (open) {
       setValue("");
-      setWorkType(null);
       setError(null);
       setRequestId(crypto.randomUUID());
     }
@@ -131,7 +127,7 @@ export function NewItemDialog({
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(value.trim(), requestId, workType ?? undefined);
+      await onSubmit(value.trim(), requestId);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -140,11 +136,9 @@ export function NewItemDialog({
     }
   }
 
-  const bug = workType === "bug";
-
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-end justify-center bg-[color-mix(in_srgb,var(--anthracite)_32%,transparent)] p-0 backdrop-blur-[3px] motion-safe:animate-[reqFade_160ms_ease-out] sm:items-center sm:p-6"
+      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-[color-mix(in_srgb,var(--anthracite)_32%,transparent)] p-0 backdrop-blur-[3px] motion-safe:animate-[reqFade_160ms_ease-out] sm:items-center sm:p-6"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -158,15 +152,13 @@ export function NewItemDialog({
           e.preventDefault();
           void submit();
         }}
-        className="bg-card border-line box-border flex w-full max-w-[520px] flex-col gap-3.5 rounded-t-xl border p-5 shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)] sm:rounded-xl"
+        className="bg-card border-line box-border flex w-full max-w-[520px] flex-col gap-3.5 rounded-b-xl border p-5 pt-[max(1.25rem,env(safe-area-inset-top))] shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqSlideDown_240ms_ease-out] sm:rounded-xl sm:pt-5 sm:motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)]"
       >
         <div className="flex items-baseline justify-between gap-3">
           <h2 id={titleId} className="text-ink m-0 text-[16px] font-semibold">
             {copy.title}
           </h2>
-          <span className={bug ? "text-[11px] text-crimson-chip-text" : "text-muted text-[11px]"}>
-            {bug ? `Tagged as bug · −${BUG_COST} points` : copy.agentLabel}
-          </span>
+          <span className="text-muted text-[11px]">{copy.agentLabel}</span>
         </div>
 
         <label htmlFor={inputId} className="sr-only">
@@ -184,20 +176,6 @@ export function NewItemDialog({
           placeholder={copy.placeholder}
           className="border-line bg-cream text-ink placeholder:text-muted focus:outline-terracotta box-border min-h-[110px] w-full resize-y rounded-lg border px-3 py-2.5 text-[14px] leading-[1.5]"
         />
-
-        <div role="group" aria-label="Work type" className="-mt-1 flex gap-2">
-          {(["bug", "spike"] as const).map((type) => (
-            <button
-              key={type}
-              type="button"
-              aria-pressed={workType === type}
-              onClick={() => setWorkType(workType === type ? null : type)}
-              className="border-line bg-card text-ink aria-pressed:border-terracotta aria-pressed:bg-cream h-[28px] rounded-lg border px-2.5 text-[12px] font-medium capitalize"
-            >
-              {type}
-            </button>
-          ))}
-        </div>
 
         <AttachmentPicker
           requestId={requestId}

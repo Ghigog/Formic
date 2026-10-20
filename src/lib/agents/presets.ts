@@ -1,5 +1,6 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { repository } from "@/lib/db";
 import type { AgentPreset, AgentPresetInput } from "@/lib/domain/entities";
 import { formatReset } from "./limits";
@@ -19,6 +20,7 @@ import { agents, agentsOverridden } from "./registry";
 import { mockAgentsEnabled } from "./mock-mode";
 import { CODER_MODEL } from "./coding-loop";
 import { authMode } from "@/lib/auth/session";
+import { actingUserId } from "@/lib/auth/actor";
 import {
   provider as providerInfo,
   type ProviderId,
@@ -117,12 +119,61 @@ function envKey(id: ProviderId): string | null {
   return (name && process.env[name]) || null;
 }
 
-async function resolveColumn(projectId: string, column: ColumnId): Promise<Resolution> {
+/**
+ * A column's agent replaced for the work run inside it: a scout told to run
+ * on its own template (src/lib/coder/scouts.ts). Async-local, so it reaches
+ * every lookup the run makes and nothing else.
+ */
+const columnPreset = new AsyncLocalStorage<{ column: ColumnId; presetId: string }>();
+
+export function withColumnPreset<T>(column: ColumnId, presetId: string | null, work: () => T): T {
+  return presetId ? columnPreset.run({ column, presetId }, work) : work();
+}
+
+/**
+ * Whose agents the work in hand may run (../auth/actor.ts). The owner's own
+ * work, and anything off a shared board, runs the board's choices. A member's
+ * runs their own, and the owner's only when the owner shares keys.
+ */
+async function boardAgents(projectId: string): Promise<{ member: string | null; ownerId: string | null; shared: boolean }> {
+  const actorId = actingUserId();
+  const project = actorId && authMode() === "github" ? await repository().projectById(projectId) : null;
+  if (!project || !actorId || project.ownerId === actorId) return { member: null, ownerId: null, shared: false };
+  return { member: actorId, ownerId: project.ownerId, shared: project.shareKeys };
+}
+
+/**
+ * The saved agent for a slot (a column, or "assistant") for whoever the work
+ * runs as, and whether they may run it. A member's work never runs someone
+ * else's agent, and so never their key, unless the owner shares theirs.
+ */
+async function slotPreset(projectId: string, slot: ColumnId | "assistant", chosen?: string) {
   const repo = repository();
+  const keys = await boardAgents(projectId);
+  const boards = async () =>
+    slot === "assistant" ? repo.assistantAgent(projectId) : ((await repo.columnAgents(projectId))[slot] ?? null);
+  if (!keys.member) {
+    const presetId = chosen ?? (await boards());
+    return presetId ? repo.presetForRun(presetId) : null;
+  }
+  // A choice the member may not run (the owner's scout agent, unshared)
+  // gives way to their own, rather than leaving them with none.
+  const candidates = [chosen, (await repo.memberAgents(projectId, keys.member))[slot], keys.shared ? await boards() : null];
+  for (const presetId of candidates) {
+    const found = presetId ? await repo.presetForRun(presetId) : null;
+    if (!found) continue;
+    const theirs = found.preset.ownerId === keys.member;
+    const lent = keys.shared && found.preset.ownerId === keys.ownerId;
+    if (theirs || lent) return found;
+  }
+  return null;
+}
+
+async function resolveColumn(projectId: string, column: ColumnId): Promise<Resolution> {
   const local = authMode() === "local";
 
-  const presetId = (await repo.columnAgents(projectId))[column];
-  const found = presetId ? await repo.presetForRun(presetId) : null;
+  const override = columnPreset.getStore();
+  const found = await slotPreset(projectId, column, override?.column === column ? override.presetId : undefined);
   if (found) {
     found.preset = await gateAllowance(found.preset);
     const limited = limitReason(found.preset, COLUMN_LABELS[column]);
@@ -165,6 +216,19 @@ export async function columnLimit(projectId: string, column: ColumnId): Promise<
   if (agentsOverridden()) return null;
   const resolved = await resolveColumn(projectId, column);
   return resolved.kind === "limited" ? resolved.reason : null;
+}
+
+/**
+ * Why a column cannot start work: nobody has given it an agent. Null when it
+ * has one. Checked as a card is dropped, so it goes straight back instead of
+ * starting a run that can only fail.
+ */
+export async function columnUnassigned(projectId: string, column: ColumnId): Promise<string | null> {
+  if (agentsOverridden()) return null;
+  const resolved = await resolveColumn(projectId, column);
+  return resolved.kind === "unassigned"
+    ? `Set an agent for ${COLUMN_LABELS[column]} first. Pick one from its agent menu, then move the card again.`
+    : null;
 }
 
 /**
@@ -390,9 +454,7 @@ export type AssistantAgent =
   | { kind: "cli"; agent: CliAgent };
 
 export async function assistantAgentFor(projectId: string): Promise<AssistantAgent> {
-  const repo = repository();
-  const presetId = await repo.assistantAgent(projectId);
-  const found = presetId ? await repo.presetForRun(presetId) : null;
+  const found = await slotPreset(projectId, "assistant");
   if (!found) return { kind: "none" };
 
   const info = providerInfo(found.preset.provider);

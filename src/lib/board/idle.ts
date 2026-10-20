@@ -136,6 +136,10 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
       }, `review for ${ticket.key}, restarted`);
     }
   }
+
+  // Idle reserve slots scout on their own, where the person turned that on.
+  const { autoScout } = await import("@/lib/coder/scouts");
+  await autoScout(projectId).catch((e: unknown) => console.error("[formic] auto-scouting failed:", e));
 }
 
 /** Test seam. */

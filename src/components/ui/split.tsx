@@ -156,7 +156,9 @@ export function SideBySide({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const wide = useMediaQuery("(min-width: 1024px)");
-  const [percent, setPercent] = useStoredSize(`formic:${storageKey}:width`, 50);
+  const [stored, setPercent] = useStoredSize(`formic:${storageKey}:width`, 50);
+  // A saved size from an older layout, or by hand, must not squash a pane.
+  const percent = Math.min(75, Math.max(25, stored));
 
   if (!wide) {
     return (
@@ -168,7 +170,14 @@ export function SideBySide({
 
   return (
     <div ref={box} className="flex min-h-0 flex-1">
-      <div className="flex min-h-0 min-w-0 flex-none *:min-w-0 *:flex-1" style={{ width: `${percent}%` }}>
+      <div
+        className="flex min-h-0 min-w-0 flex-none *:min-w-0 *:flex-1"
+        style={{
+          width: `${percent}%`,
+          minWidth: MIN_PANE,
+          maxWidth: `calc(100% - ${MIN_PANE}px)`,
+        }}
+      >
         {first}
       </div>
       <SplitHandle
@@ -181,7 +190,9 @@ export function SideBySide({
         toValue={(offset, length) => (offset / length) * 100}
         label="Resize the panes"
       />
-      <div className="flex min-h-0 min-w-0 flex-1 *:min-w-0 *:flex-1">{second}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 *:min-w-0 *:flex-1" style={{ minWidth: MIN_PANE }}>
+        {second}
+      </div>
     </div>
   );
 }

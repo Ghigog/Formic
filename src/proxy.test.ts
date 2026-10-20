@@ -60,6 +60,17 @@ describe("proxy", () => {
     }
   });
 
+  it("lets a signed attachment URL through without a session, and nothing else on that path", async () => {
+    githubMode();
+    const url = "/api/attachments/att_1";
+    const signed = `${url}?expires=1&token=abc`;
+    expect((await proxy(request(signed))).headers.get("x-middleware-next")).toBe("1");
+    expect((await proxy(request(url))).status).toBe(401);
+    expect((await proxy(request(`${url}?expires=1`))).status).toBe(401);
+    const post = new NextRequest(`http://localhost${signed}`, { method: "POST" });
+    expect((await proxy(post)).status).toBe(401);
+  });
+
   it("is open in local mode with no password", async () => {
     expect((await proxy(request("/"))).headers.get("x-middleware-next")).toBe("1");
   });
@@ -140,6 +151,8 @@ describe("proxy, at the host allowance", () => {
       await proxy(request("/")),
       await proxy(post("/api/webhooks/github")),
       await proxy(post("/api/runner/report")),
+      await proxy(post("/api/projects")),
+      await proxy(request("/api/attachments/att_1?expires=1&token=abc")),
     ]) {
       expect(res.headers.get("x-middleware-next")).toBe("1");
     }

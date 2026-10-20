@@ -46,8 +46,18 @@ enum AgentRunStatus {
 }
 
 enum WorkType {
+  user_story
+  task
+  feature
   bug
   spike
+}
+
+enum BugSeverity {
+  low
+  medium
+  high
+  critical
 }
 
 enum TicketSize {
@@ -121,6 +131,10 @@ model User {
   tokenLimit   Json?
   attemptLimit Json?
 
+  /// Whether a coding run's thinking effort follows its ticket's story points
+  /// (low for small tickets, high for large ones). On unless switched off.
+  effortByPoints Boolean @default(true)
+
   /// Token window: the day of the month the plan renews (1-31) in
   /// tokenWindowTimezone (IANA), and when the person last reset the count by
   /// hand. See src/lib/token-window.
@@ -131,8 +145,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  projects Project[]
-  presets  AgentPreset[]
+  projects     Project[]
+  presets      AgentPreset[]
+  memberships  ProjectMember[]
+  memberAgents MemberAgent[]
 
   @@map("user")
 }
@@ -163,7 +179,25 @@ model Project {
   autoEscalate               Boolean  @default(false)
   /// Queens taken off the board, so clearing one never hands it back.
   queensSpent                Int      @default(0)
+  /// The most Coder Agents this board runs at once, scouts included. Null
+  /// (the default) is no cap: only file reservations hold work back.
+  colonySize                 Int?
+  /// Slots of colonySize kept for urgent work (bugs, tickets back from
+  /// review). The board's level sets the least it may be (docs/colony.md).
+  colonyReserve              Int      @default(0)
+  /// Whether idle reserve slots send scouts out on their own. Unlocked by
+  /// level; off until the owner turns it on.
+  autoScout                  Boolean  @default(false)
+  /// The saved agent scouts run on. Null (the default) is the In Progress
+  /// column's agent. Not a relation: a deleted template falls back to it.
+  scoutPresetId              String?
+  /// Whether people the owner shares the board with may run on the owner's
+  /// keys and agents when they have none of their own. Off by default: each
+  /// person brings their own.
+  shareKeys                  Boolean  @default(false)
 
+  members           ProjectMember[]
+  memberAgents      MemberAgent[]
   epics             Epic[]
   queens            Queen[]
   events            Event[]
@@ -189,8 +223,10 @@ model Epic {
   /// Structured PRD from the Product Agent. Null until stage 2 completes.
   prd              Json?
   prdEditedByHuman Boolean   @default(false)
-  /// Bug or spike, as the owner chose. Null for neither.
+  /// The kind of work, as the owner chose. Null for untyped.
   workType         WorkType?
+  /// Only for a bug. Null otherwise.
+  bugSeverity      BugSeverity?
   /// When the PRD last changed. Tickets made before it were made from an
   /// older PRD, so the Epic is broken down again.
   prdUpdatedAt     DateTime?
@@ -203,6 +239,9 @@ model Epic {
   runnerAgent      String?
   /// When that run was sent: how long the agent has been at it.
   runnerJobAt      DateTime?
+  /// Whose keys and agents this epic's work runs on: the person who last
+  /// set it going. Null is the board's owner.
+  actorId          String?
   /// The GitHub issue that tracks this epic, once created.
   issueNumber      Int?
 
@@ -267,8 +306,10 @@ model Ticket {
   /// The ticket is in the archive, off the board. The sort/filter epic
   /// reads it.
   archived        Boolean      @default(false)
-  /// Bug or spike, as the owner chose. Null for neither.
+  /// The kind of work, as the owner chose. Null for untyped.
   workType        WorkType?
+  /// Only for a bug. Null otherwise.
+  bugSeverity     BugSeverity?
   /// Where a person dropped it when it cannot work there. It shows there,
   /// with misplacedReason saying what is wrong and how to fix it; its status
   /// stays what is true. Cleared by its next move or status change.
@@ -279,6 +320,10 @@ model Ticket {
   rerouteReason   String?
 
   branchName      String?
+  /// A stacked ticket's start: the branch of the prerequisite whose open pull
+  /// request it builds on, which its own pull request targets until that one
+  /// merges. Null for a ticket on the merge target, and once retargeted.
+  stackedOn       String?
   /// One line describing what the Coder Agent actually changed. Feeds the
   /// Epic showcase, which would otherwise only know ticket titles.
   summary         String?
@@ -294,6 +339,9 @@ model Ticket {
   runnerAgent     String?
   /// When that run was sent: how long the agent has been at it.
   runnerJobAt     DateTime?
+  /// Whose keys and agents this ticket's work runs on: the person who last
+  /// set it going. Null falls back to its epic's, then the board's owner.
+  actorId         String?
   /// The GitHub issue that tracks this ticket, a sub-issue of its epic's.
   issueNumber     Int?
   /// The GitHub issue this ticket was imported from, when it came in from one
@@ -331,6 +379,17 @@ model Ticket {
   mergePoints     Int?
   mergeMultiplier Float?
 
+  /// Scouts (docs/colony.md). On a scout: the ticket it scouts for, the
+  /// approach it was told to take, and the agent template it runs on (null:
+  /// the column's). A scout is never on the board; its parent shows it.
+  scoutOf         String?
+  scoutBrief      String?
+  scoutPresetId   String?
+  /// On a parent: how many scouts it sent out, the one picked, and why.
+  scouts          Int       @default(0)
+  scoutPick       String?
+  scoutWhy        String?
+
   costCents Float @default(0)
   tokensIn  Int   @default(0)
   tokensOut Int   @default(0)
@@ -347,6 +406,7 @@ model Ticket {
   @@index([epicId, status])
   @@index([mergedAt])
   @@index([prNumber])
+  @@index([scoutOf])
   @@map("ticket")
 }
 
@@ -408,6 +468,17 @@ model WebhookDelivery {
 
   @@index([receivedAt])
   @@map("webhook_delivery")
+}
+
+/// A short-lived lock shared by every server instance: one queue pass, or one
+/// merge, at a time per repository, whichever board or instance asks. A
+/// holder that dies lets go when `expiresAt` passes. See src/lib/board/lease.ts.
+model Lease {
+  key       String   @id
+  holder    String
+  expiresAt DateTime
+
+  @@map("lease")
 }
 
 /// A file attached to a raw request. Stored as bytes in Postgres, not on
@@ -478,10 +549,41 @@ model AgentPreset {
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
-  columns ColumnAgent[]
+  columns       ColumnAgent[]
+  memberColumns MemberAgent[]
 
   @@index([ownerId])
   @@map("agent_preset")
+}
+
+/// Someone a board is shared with: they reached its repository on GitHub and
+/// opened it. They see every card; their runs use their own keys and agents.
+model ProjectMember {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_member")
+}
+
+/// A member's own agent for a column (or "assistant") on a shared board. The
+/// owner's stay in ColumnAgent and assistantPresetId.
+model MemberAgent {
+  projectId String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slot      String
+  presetId  String
+  preset    AgentPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId, slot])
+  @@index([presetId])
+  @@map("member_agent")
 }
 
 /// Which preset runs a column's agent on one project's board.
@@ -571,6 +673,8 @@ model Audit {
   project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// The roster id, such as "secops". See src/lib/sentinels/roster.ts.
   sentinel   String
+  /// "audit" scores the code against a rubric; "calibrate" writes the rubric.
+  kind       String    @default("audit")
   /// "running", "done" or "failed".
   status     String    @default("running")
   /// Steps reached so far, oldest first.
@@ -580,6 +684,8 @@ model Audit {
   summary    String?
   /// likes, dislikes, wrong and missing: each a list of { text, ref }.
   report     Json?
+  /// A calibration's star ladder, or the one an audit was scored against.
+  rubric     Json?
   error      String?
   model      String?
   /// Files the sentinel read.
@@ -588,6 +694,8 @@ model Audit {
   runnerJob   String?
   /// The saved agent running it, so a usage limit it hits is recorded on it.
   runnerAgent String?
+  /// The Backlog Epic made from this report, if any.
+  epicId     String?
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
 

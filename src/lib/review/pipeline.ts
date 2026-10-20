@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { attemptsFor, inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
@@ -17,12 +18,28 @@ import { positionForIndex } from "@/lib/ordering";
 import {
   AGENT_COMMIT_AUTHOR,
   type CheckSummary,
+  type MergeOutcome,
   type PullRequestDetail,
+  STAGING_PREFIX,
   mergeNeedsPromotion,
+  mergeTarget,
   vcs,
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
-import { inMergeLane, inTicketLane } from "./lane";
+import { inTicketLane } from "./lane";
+import {
+  type MergeBatch,
+  claimMergeSlot,
+  closeBatchRecord,
+  inRepoMergeLane,
+  mergeAlone,
+  mustMergeAlone,
+  openBatch,
+  recordBatch,
+  releaseMergeSlot,
+} from "./merge-lane";
+import { claimOrQueue } from "@/lib/board/queue";
+import { releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
@@ -81,6 +98,16 @@ function pending(checks: CheckSummary[]): CheckSummary[] {
 }
 
 /**
+ * Whether CI on this head has yet to report. No checks at all is CI that has
+ * not started, unless the repository runs none: a brand-new one has no
+ * workflow yet, and waiting on it would leave the card in review for good.
+ */
+async function ciPending(client: Client, checks: CheckSummary[], baseBranch: string): Promise<boolean> {
+  if (pending(checks).length > 0) return true;
+  return checks.length === 0 && (await client.hasCi(baseBranch));
+}
+
+/**
  * The entry point every CI signal funnels into. Idempotency is the caller's
  * (see ./deliveries.ts): by the time this runs, the event is known to be new.
  *
@@ -99,11 +126,14 @@ export async function reviewPullRequest(
   const ticket = await repo.ticketByPrNumber(projectId, prNumber);
 
   // A pull request Formic did not open. Not an error: the webhook is
-  // repository-wide and humans open pull requests too.
-  if (!ticket) return;
+  // repository-wide and humans open pull requests too. A merge batch's is
+  // Formic's, though, and its CI is news for the pull requests in it.
+  if (!ticket) return await reactToBatch(projectId, prNumber);
   if (ticket.status === "merged") return;
 
-  await inTicketLane(ticket.id, () => react(projectId, ticket.id, prNumber, headSha, options));
+  await inTicketLane(ticket.id, () =>
+    withCardActor(ticket.id, () => react(projectId, ticket.id, prNumber, headSha, options)),
+  );
 }
 
 /**
@@ -151,18 +181,22 @@ async function react(
   const client = vcs(project.repoFullName, creds.githubToken);
 
   const pull = await client.pullRequest(prNumber);
-  if (pull.merged) return;
+  // Anything but an approved head on its way to merging gives up the merge
+  // slot, if it has it, so the next one in line can go.
+  if (pull.merged) return await leaveMergeSlot(projectId, ticket.id);
   if (!ticket.runnerJob && pull.state === "open" && pull.mergeable === false) {
+    await leaveMergeSlot(projectId, ticket.id);
     if (parkedOnReview(ticket, pull.headSha)) return;
     await resolveConflicts(projectId, ticket, pull);
     return;
   }
   const stuck = ticket.runnerJob ? null : whyStuck(ticket.key, pull);
   if (stuck) {
+    await leaveMergeSlot(projectId, ticket.id);
     await stallTicket(projectId, ticket, stuck, { blocked: true, stalledIn: "in_review" });
     return;
   }
-  if (pull.merged || pull.state === "closed") return;
+  if (pull.state === "closed") return await leaveMergeSlot(projectId, ticket.id);
   if (pull.headSha !== headSha) return;
 
   // Bringing the base in moves the head without changing the work, so the
@@ -181,7 +215,7 @@ async function react(
   const checks = await client.checksFor(headSha);
   const red = failing(checks);
 
-  if (checks.length === 0 || pending(checks).length > 0) {
+  if (await ciPending(client, checks, pull.baseBranch)) {
     if (startReview) {
       await publish(projectId, {
         type: "ci.status",
@@ -191,6 +225,8 @@ async function react(
         checkName: pending(checks)[0]?.name ?? null,
       });
     }
+    // CI on the head it brought the base into is what the slot waits for.
+    if (reviewedSha !== headSha || red.length > 0) await leaveMergeSlot(projectId, ticket.id);
     // The review reads the diff while CI runs, rather than after it, and
     // the merge waits for both. Once it has approved this head, or once a
     // check has already failed, the rest of CI is worth waiting for.
@@ -205,23 +241,41 @@ async function react(
       type: "ci.status",
       ticketId: ticket.id,
       prNumber,
-      state: red.length === 0 ? "passing" : "failing",
+      state: checks.length === 0 ? "none" : red.length === 0 ? "passing" : "failing",
       checkName: red[0]?.name ?? null,
     });
   }
 
   // A reviewer is already on this pull request in GitHub Actions. More
   // reports about the same head are not a reason to start another.
-  if (ticket.runnerJob) return;
+  if (ticket.runnerJob) return await leaveMergeSlot(projectId, ticket.id);
 
   if (red.length === 0 && reviewedSha === headSha) {
+    // Stacked on a pull request that has not merged: this one merges after
+    // it, once it has been pointed at the merge target (restackOnto).
+    if (ticket.stackedOn && pull.baseBranch === ticket.stackedOn) return;
     if (!project.autoMerge) {
       await awaitPersonMerge(projectId, ticket);
       return;
     }
-    await inMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber));
+    // Another pull request is bringing the base in and waiting on CI. This
+    // one waits as it is, green on its own head: bringing the base in now
+    // would only be undone by that one landing. Its turn comes when that one
+    // lets go (leaveMergeSlot), or from the sweep.
+    if (!(await claimMergeSlot(projectId, ticket.id))) return;
+    const step = await inRepoMergeLane(
+      projectId,
+      () => mergeInBatch(projectId, client, ticket, pull, mergeTarget(project.baseBranch)),
+      (): BatchStep => "waiting",
+    );
+    if (step === "waiting") return;
+    if (step === "landed") return await leaveMergeSlot(projectId, ticket.id);
+    const result = await inRepoMergeLane(projectId, () => mergeTicket(projectId, ticket, prNumber), laneBusy);
+    if (result.merged || !result.waiting) await leaveMergeSlot(projectId, ticket.id);
     return;
   }
+
+  await leaveMergeSlot(projectId, ticket.id);
 
   // An approved head still merges above, on its own reports; what a card
   // parked on a review of this head is not asked for again is another review.
@@ -368,6 +422,26 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
       await markMergedExternally(projectId, pull.number);
       continue;
     }
+    if (ticket.stackedOn && pull.state === "open") {
+      const below = await ticketBelow(ticket);
+      // The one under it merged where this board did not see it (a person on
+      // GitHub, while no instance was listening): it moves on now.
+      if (below?.status === "merged") {
+        await restack(projectId, ticket, client, mergeTarget(project.baseBranch), below.key);
+        continue;
+      }
+      // The one under it started over on a new branch, or is gone: what this
+      // pull request was built on will never merge.
+      if (!below) {
+        await stallTicket(
+          projectId,
+          ticket,
+          `${ticket.key}'s pull request #${pull.number} is built on ${ticket.stackedOn}, which the ticket it depends on no longer uses, so it can never merge as it is. Close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`,
+          { blocked: true, stalledIn: "in_review" },
+        );
+        continue;
+      }
+    }
     if (pull.state === "open" && pull.mergeable === false) {
       // Detached: resolving is an agent's run, and the sweep has other
       // cards to look at meanwhile.
@@ -432,6 +506,13 @@ export async function markMergedExternally(
     blockedReason: null,
   });
 
+  // Merged by a person: whatever was stacked on it moves onto the target
+  // just as it would after a merge from the queue.
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  await restackOnto(projectId, ticket, vcs(project.repoFullName, creds.githubToken), mergeTarget(project.baseBranch)).catch(
+    (e: unknown) => console.error(`[formic] restacking on ${ticket.key} failed:`, e),
+  );
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
 }
@@ -452,6 +533,13 @@ export async function closeAlreadyDone(
   ticket: TicketDetail,
   evidence: { summary: string; detail: string },
 ): Promise<void> {
+  // A scout that finds nothing to do brings back no change; if they all do,
+  // the ticket says so with their reasons.
+  if (ticket.scoutOf) {
+    const { scoutReturned } = await import("@/lib/coder/scouts");
+    await scoutReturned(projectId, ticket, { ok: false, reason: `Found it already done: ${evidence.summary}` });
+    return;
+  }
   if (ticket.prNumber) {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
@@ -550,7 +638,243 @@ async function closeWithoutMerge(
   await completeEpic(projectId, ticket.epicId);
 }
 
-type MergeResult = { merged: true } | { merged: false; reason: string };
+/** `waiting`: not merged yet, but still on its way, so it keeps the merge slot. */
+type MergeResult = { merged: true } | { merged: false; reason: string; waiting?: boolean };
+
+const laneBusy = (reason: string): MergeResult => ({ merged: false, reason, waiting: true });
+
+/**
+ * Lets go of the merge slot if this ticket has it, and starts the next one in
+ * line straight away rather than at the next sweep.
+ */
+async function leaveMergeSlot(projectId: string, ticketId: string): Promise<void> {
+  if (!(await releaseMergeSlot(projectId, ticketId))) return;
+  lastSwept.delete(projectId);
+  launch(() => sweepOpenPullRequests(projectId), "the next merge in line");
+}
+
+/** At most this many pull requests are tested together. */
+const BATCH_MAX = 5;
+
+/**
+ * Where a batch goes next, for the ticket holding the merge slot: "waiting" on
+ * the batch's CI, "landed" with it merged, or "alone" to merge by itself,
+ * bringing the base in as it always has.
+ */
+type BatchStep = "waiting" | "landed" | "alone";
+type Client = ReturnType<typeof vcs>;
+type BatchMember = MergeBatch["members"][number];
+
+/**
+ * Merge batches. With several approved, green pull requests waiting, the
+ * slot holder does not bring the base into its own head: it merges itself and
+ * up to BATCH_MAX - 1 of the others onto the target on a branch of their own,
+ * and a pull request from that branch runs CI on exactly what they make
+ * together. Green, they land one after another with no CI in between; red,
+ * each goes back to merging alone, so the one that broke it meets its own red
+ * CI and the review that comes with it. One CI run then lands several pull
+ * requests where it used to land one.
+ *
+ * Runs inside the merge lane, so only one instance at a time opens, moves or
+ * ends a batch.
+ */
+async function mergeInBatch(
+  projectId: string,
+  client: Client,
+  lead: TicketDetail,
+  leadPull: PullRequestDetail,
+  target: string,
+): Promise<BatchStep> {
+  const open = await openBatch(projectId);
+  if (open) {
+    if (open.members.some((m) => m.ticketId === lead.id)) return driveBatch(projectId, client, open);
+    // The slot passed to a pull request outside it, so the one that held it
+    // for the batch dropped out, and nothing is going to land it.
+    await endBatch(client, open, "The pull request holding the merge queue for this batch dropped out of it, so it will not land.");
+  }
+  if (await mustMergeAlone(lead.id, leadPull.headSha)) return "alone";
+  const others = await batchCandidates(projectId, client, lead, target);
+  if (others.length === 0) return "alone";
+  const first = { ticketId: lead.id, key: lead.key, prNumber: leadPull.number, headSha: leadPull.headSha };
+  try {
+    return await startBatch(projectId, client, target, [first, ...others]);
+  } catch (e) {
+    console.error(`[formic] building a merge batch for ${lead.key} failed:`, e);
+    return "alone";
+  }
+}
+
+/** Other approved pull requests that could land alongside `lead`: green on the head that was approved, not stacked. */
+async function batchCandidates(
+  projectId: string,
+  client: Client,
+  lead: TicketDetail,
+  target: string,
+): Promise<BatchMember[]> {
+  const repo = repository();
+  const found: BatchMember[] = [];
+  for (const card of await repo.boardCards(projectId)) {
+    if (found.length >= BATCH_MAX - 1) break;
+    if (card.kind !== "ticket" || card.status !== "review" || !card.prNumber || card.id === lead.id) continue;
+    const ticket = await repo.ticketDetail(card.id);
+    if (!ticket?.prNumber || !ticket.reviewedSha || ticket.runnerJob || ticket.blockedReason) continue;
+    const pull = await client.pullRequest(ticket.prNumber).catch(() => null);
+    if (!pull || pull.merged || pull.state !== "open" || pull.mergeable === false) continue;
+    if (pull.baseBranch !== target || pull.headSha !== ticket.reviewedSha) continue;
+    const checks = await client.checksFor(pull.headSha);
+    if (failing(checks).length > 0 || (await ciPending(client, checks, pull.baseBranch))) continue;
+    if (await mustMergeAlone(ticket.id, pull.headSha)) continue;
+    found.push({ ticketId: ticket.id, key: ticket.key, prNumber: pull.number, headSha: pull.headSha });
+  }
+  return found;
+}
+
+async function startBatch(
+  projectId: string,
+  client: Client,
+  target: string,
+  candidates: BatchMember[],
+): Promise<BatchStep> {
+  const targetSha = await client.branchHead(target);
+  if (!targetSha) return "alone";
+  const branch = `${STAGING_PREFIX}merge-batch-${target.replace(/[^\w.-]/g, "-")}`;
+  // One left behind by an instance that died mid-batch starts over.
+  await client.deleteStagingBranch(branch).catch(() => undefined);
+  await client.moveBranch(branch, targetSha);
+
+  const members: BatchMember[] = [];
+  for (const candidate of candidates) {
+    const merged = await client.mergeBranch(branch, candidate.headSha);
+    if (merged.ok) members.push(candidate);
+    // The slot holder conflicts with the target itself: bringing the base in
+    // alone is what hands that conflict to the Reviewer Agent.
+    else if (members.length === 0) break;
+    // Any other that conflicts with the rest waits for a turn of its own.
+  }
+  if (members.length < 2) {
+    await client.deleteStagingBranch(branch).catch(() => undefined);
+    return "alone";
+  }
+
+  const keys = members.map((m) => m.key).join(", ");
+  const pull = await client.openPullRequest({
+    headBranch: branch,
+    baseBranch: target,
+    title: `Merge batch: ${keys}`,
+    body: [
+      `Formic is testing these pull requests together, merged onto \`${target}\` exactly as they will land:`,
+      "",
+      ...members.map((m) => `- #${m.prNumber} (${m.key})`),
+      "",
+      "Once CI passes here, Formic merges each of them and closes this one. Do not merge this pull request itself.",
+    ].join("\n"),
+  });
+  const batch: MergeBatch = { projectId, pr: pull.number, branch, targetSha, members };
+  if (!(await recordBatch(projectId, batch, null))) {
+    await endBatch(client, batch, "Another merge batch is already open.");
+    return "alone";
+  }
+  return "waiting";
+}
+
+/** Moves an open batch on: waits for its CI, lands it, or gives it up. */
+async function driveBatch(projectId: string, client: Client, batch: MergeBatch): Promise<BatchStep> {
+  const batchPull = await client.pullRequest(batch.pr);
+  if (batchPull.state !== "open") {
+    await endBatch(client, batch, "");
+    return "alone";
+  }
+
+  const repo = repository();
+  const left: BatchMember[] = [];
+  for (const m of batch.members) {
+    const pull = await client.pullRequest(m.prNumber);
+    if (pull.merged) continue;
+    const ticket = await repo.ticketDetail(m.ticketId);
+    if (pull.state !== "open" || pull.headSha !== m.headSha || ticket?.status !== "review") {
+      await endBatch(client, batch, `${m.key} changed since this batch was built, so it no longer tests what would land.`);
+      return "alone";
+    }
+    left.push(m);
+  }
+  if (left.length === 0) {
+    await endBatch(client, batch, "Every pull request in it has merged.");
+    return "landed";
+  }
+
+  const checks = await client.checksFor(batchPull.headSha);
+  if (await ciPending(client, checks, batchPull.baseBranch)) return "waiting";
+  const red = failing(checks);
+  if (red.length > 0) {
+    for (const m of left) await mergeAlone(m.ticketId, m.headSha);
+    await endBatch(
+      client,
+      batch,
+      `${red.map((c) => c.name).join(", ")} failed with these pull requests together, so each now merges on its own, with its own CI.`,
+    );
+    return "alone";
+  }
+
+  let current = batch;
+  for (const m of left) {
+    // Landing on anything but what CI ran on would land untested code.
+    if ((await client.branchHead(batchPull.baseBranch)) !== current.targetSha) {
+      await endBatch(client, current, `${batchPull.baseBranch} moved while this batch was landing, so the rest would not land as tested.`);
+      return "alone";
+    }
+    const merged = await mergeAsTested(client, m);
+    if (!merged.ok) {
+      await endBatch(client, current, `GitHub refused to merge ${m.key}: ${merged.reason}`);
+      return "alone";
+    }
+    const next = { ...current, targetSha: merged.sha };
+    await recordBatch(projectId, next, current);
+    current = next;
+    await markMergedExternally(projectId, m.prNumber);
+  }
+  await endBatch(client, current, `Landed ${left.map((m) => m.key).join(", ")}.`);
+  return "landed";
+}
+
+/**
+ * Merges one batch member at the head the batch tested. GitHub works out a
+ * pull request's mergeability again after each merge into its base, and
+ * refuses one asked for meanwhile, so it waits that out.
+ */
+async function mergeAsTested(client: Client, m: BatchMember): Promise<MergeOutcome> {
+  let last: MergeOutcome = { ok: false, reason: "GitHub never said whether it could be merged.", conflict: false };
+  for (let i = 0; i < SETTLE_TRIES; i++) {
+    const pull = await client.pullRequest(m.prNumber);
+    if (pull.mergeable !== null) {
+      last = await client.merge(m.prNumber, m.headSha).catch(
+        (e): MergeOutcome => ({ ok: false, reason: e instanceof Error ? e.message : String(e), conflict: false }),
+      );
+      if (last.ok || pull.mergeable === false) return last;
+    }
+    await new Promise((r) => setTimeout(r, SETTLE_EVERY_MS));
+  }
+  return last;
+}
+
+/** Closes a batch's pull request with `reason`, deletes its branch and forgets it. */
+async function endBatch(client: Client, batch: MergeBatch, reason: string): Promise<void> {
+  if (reason) {
+    await client
+      .closeSupersededPulls(batch.branch, "", reason)
+      .catch((e: unknown) => console.error(`[formic] closing merge batch #${batch.pr} failed:`, e));
+  }
+  await client.deleteStagingBranch(batch.branch).catch(() => undefined);
+  await closeBatchRecord(batch.projectId, batch);
+}
+
+/** A batch's CI reported: whichever of its pull requests holds the slot moves it on. */
+async function reactToBatch(projectId: string, prNumber: number): Promise<void> {
+  const batch = await openBatch(projectId);
+  if (!batch || batch.pr !== prNumber) return;
+  for (const m of batch.members) {
+    await inTicketLane(m.ticketId, () => react(projectId, m.ticketId, m.prNumber, m.headSha, { startReview: false }));
+  }
+}
 
 /**
  * A person asks for the ticket's pull request to merge, in its chat. Their
@@ -580,17 +904,22 @@ export async function mergeByPerson(
   if (red.length > 0) {
     return `${red.map((c) => c.name).join(", ")} is failing on pull request #${prNumber}. Red CI does not merge.`;
   }
-  if (checks.length === 0 || pending(checks).length > 0) {
+  if (await ciPending(client, checks, pull.baseBranch)) {
     return `CI is still running on pull request #${prNumber}. Ask again once it passes.`;
   }
 
   // The person vouches for this head, so bringing the base in carries it
   // across exactly as a review's approval would.
   await repository().updateTicket(ticket.id, { reviewedSha: pull.headSha });
-  const result = await inMergeLane(projectId, async () => {
-    const fresh = (await repository().ticketDetail(ticket.id)) ?? ticket;
-    return mergeTicket(projectId, fresh, prNumber);
-  });
+  const result = await inRepoMergeLane(
+    projectId,
+    async () => {
+      const fresh = (await repository().ticketDetail(ticket.id)) ?? ticket;
+      return mergeTicket(projectId, fresh, prNumber);
+    },
+    laneBusy,
+  );
+  if (result.merged) await leaveMergeSlot(projectId, ticket.id);
   if (!result.merged) return `Did not merge pull request #${prNumber}: ${result.reason}`;
   // Merged already, or just now by the lane: either way the card says so.
   await markMergedExternally(projectId, prNumber);
@@ -614,6 +943,13 @@ async function mergeTicket(
 
   const before = await client.pullRequest(prNumber);
   if (before.merged) return { merged: true };
+  const target = mergeTarget(project.baseBranch);
+  if (ticket.stackedOn && before.baseBranch === ticket.stackedOn) {
+    return {
+      merged: false,
+      reason: `${ticket.key} is stacked on ${ticket.stackedOn}, so it merges after that does, once it is pointed at ${target}.`,
+    };
+  }
 
   const update = await client.updateBranch(prNumber);
   if (!update.ok && update.conflict) {
@@ -632,7 +968,11 @@ async function mergeTicket(
   if (update.ok && update.updated) {
     const moved = await settle(client, prNumber, (p) => p.headSha !== before.headSha);
     if (moved) {
-      return { merged: false, reason: `Brought ${before.baseBranch} into it first; it merges once CI passes on the new head.` };
+      return {
+        merged: false,
+        reason: `Brought ${before.baseBranch} into it first; it merges once CI passes on the new head.`,
+        waiting: true,
+      };
     }
   }
 
@@ -660,8 +1000,8 @@ async function mergeTicket(
     // the card over: CI reporting in merges it, as above.
     if (!conflict && after) {
       const checks = await client.checksFor(after.headSha).catch(() => []);
-      if (checks.length === 0 || pending(checks).length > 0) {
-        return { merged: false, reason: `CI is still running on ${ticket.key}; it merges once it passes.` };
+      if (await ciPending(client, checks, after.baseBranch)) {
+        return { merged: false, reason: `CI is still running on ${ticket.key}; it merges once it passes.`, waiting: true };
       }
     }
     const reason = conflict
@@ -699,6 +1039,7 @@ async function mergeTicket(
     );
   }
 
+  await restackOnto(projectId, ticket, client, target);
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
   return { merged: true };
@@ -725,35 +1066,17 @@ async function settle(
 }
 
 /**
- * A merge can unblock siblings. Without this they sit in To Do as `waiting`
- * until someone drags them, which makes the dependency graph decorative.
+ * A merge can unblock siblings: anything waiting only on it, and anything
+ * that can now build on the one pull request still open under it.
  */
 async function releaseDependents(
   projectId: string,
   merged: TicketDetail,
 ): Promise<void> {
-  const repo = repository();
-  const cards = await repo.boardCards(projectId);
-  const mergedIds = new Set(
-    cards.filter((c) => c.status === "merged").map((c) => c.id),
-  );
-  mergedIds.add(merged.id);
-
-  for (const card of cards) {
-    if (card.kind !== "ticket" || card.status !== "waiting") continue;
-    if (!card.dependsOn.every((id) => mergedIds.has(id))) continue;
-
-    await repo.updateTicket(card.id, { status: "ready", stalledIn: null });
-    await publish(projectId, {
-      type: "card.status",
-      cardId: card.id,
-      kind: "ticket",
-      status: "ready",
-      stalledIn: null,
-      stage: card.stage,
-      blockedReason: null,
-    });
-  }
+  const cards = await repository().boardCards(projectId);
+  // The store may not show it merged yet to every reader; this one knows.
+  for (const card of cards) if (card.id === merged.id) card.status = "merged";
+  await releaseWaiting(projectId, cards);
 }
 
 /**
@@ -801,7 +1124,12 @@ export async function completeEpic(
  * an Epic spends nothing. The caller has checked the Epic is done, has no
  * showcase and has no PM run active.
  */
+/** The showcase for a finished Epic, on the keys of whoever set it going. */
 export async function startShowcase(projectId: string, epicId: string): Promise<void> {
+  return withCardActor(epicId, () => showcaseEpic(projectId, epicId));
+}
+
+async function showcaseEpic(projectId: string, epicId: string): Promise<void> {
   const repo = repository();
   const detail = await repo.epicDetail(epicId);
   if (!detail) return;
@@ -1165,6 +1493,7 @@ async function resolveConflicts(
     // changes (or its scope), and GitHub brings the base in.
     const real = checkout.sandboxId !== null;
     let conflicts = changedFiles.length ? changedFiles : ticket.fileScope;
+    let conflictHistory: { base: string[]; branch: string[] } | undefined;
     if (real) {
       const merged = await mergeInBase(checkout.raw, pull.baseBranch);
       if (!merged.ok) {
@@ -1193,6 +1522,7 @@ async function resolveConflicts(
         return;
       }
       conflicts = merged.conflicts;
+      if (conflicts.length > 0) conflictHistory = await historyOf(checkout.raw, conflicts);
     }
 
     let resolved: ReviewVerdict | null = null;
@@ -1204,6 +1534,7 @@ async function resolveConflicts(
         workspace: scopedWorkspace(checkout.raw, [...ticket.fileScope, ...conflicts]),
         ...review,
         conflicts,
+        ...(conflictHistory ? { conflictHistory } : {}),
       });
       if (!outcome.ok) {
         await stallTicket(projectId, ticket, outcome.error, { blocked: outcome.blocked, stalledIn: "in_review" });
@@ -1231,7 +1562,7 @@ async function resolveConflicts(
 
     const { raw } = checkout;
     const left = await raw.exec(
-      `git add -A && git diff --cached HEAD | grep -qE '^\\+(<<<<<<<|>>>>>>>)( |$)'`,
+      `git add -A && git diff --cached HEAD | grep -qE '^\\+(<<<<<<<|\\|\\|\\|\\|\\|\\|\\||>>>>>>>)( |$)'`,
     );
     if (left.exitCode === 0) {
       return await fail(`The Reviewer Agent could not resolve it${said ? `: ${said}` : "."}`);
@@ -1268,6 +1599,35 @@ async function resolveConflicts(
   } finally {
     await checkout.dispose();
   }
+}
+
+/** How many commits on each side a resolver is told about. */
+const HISTORY_COMMITS = 15;
+/** Ends each commit in the log historyOf reads; no commit message has it. */
+const COMMIT_END = "@@formic-commit-end@@";
+
+/**
+ * Why each side changed the conflicted files: the commits on the base and on
+ * the branch since they diverged, newest first. The base's are often other
+ * tickets, from this board or another on the repository, whose subject and
+ * body say what they were for.
+ */
+async function historyOf(raw: Workspace, files: string[]): Promise<{ base: string[]; branch: string[] }> {
+  const paths = files.map(shellQuote).join(" ");
+  const read = async (range: string) => {
+    const log = await raw.exec(
+      `git log --no-merges --max-count=${HISTORY_COMMITS} --format='%h %s%n%b%n${COMMIT_END}' ${range} -- ${paths}`,
+    );
+    if (log.exitCode !== 0) return [];
+    return log.stdout
+      .split(COMMIT_END)
+      .map((c) => c.trim().slice(0, 1_500))
+      .filter(Boolean);
+  };
+  // One at a time: a sandbox runs one command at a time.
+  const base = await read(`HEAD..${BASE_REF}`);
+  const branch = await read(`${BASE_REF}..HEAD`);
+  return { base, branch };
 }
 
 /** Where the base branch is fetched to in a checkout, to merge it from. */
@@ -1315,7 +1675,10 @@ async function mergeInBase(
     };
   }
   const identity = `-c user.name=${shellQuote(AGENT_COMMIT_AUTHOR.name)} -c user.email=${shellQuote(AGENT_COMMIT_AUTHOR.email)}`;
-  const merge = await raw.exec(`git ${identity} merge --no-commit --no-ff ${BASE_REF}`);
+  // diff3 markers carry the common ancestor between the two sides, which is
+  // what tells a resolver what each side changed rather than only how each
+  // side ended up.
+  const merge = await raw.exec(`git ${identity} -c merge.conflictStyle=diff3 merge --no-commit --no-ff ${BASE_REF}`);
   const conflicts = lines((await raw.exec("git diff --name-only --diff-filter=U")).stdout);
   if (merge.exitCode !== 0 && conflicts.length === 0) {
     return {
@@ -1362,7 +1725,7 @@ export async function approve(
   const pull = await client.pullRequest(prNumber);
   if (pull.merged || pull.state === "closed" || pull.headSha !== headSha) return;
   const checks = await client.checksFor(headSha);
-  if (checks.length === 0 || pending(checks).length > 0) return;
+  if (await ciPending(client, checks, pull.baseBranch)) return;
   const red = failing(checks);
   if (red.length > 0) {
     // CI failed while it read the diff, and that report was not a reason to
@@ -1377,7 +1740,7 @@ export async function approve(
   }
   const fresh = await repo.ticketDetail(ticket.id);
   if (!fresh || fresh.status === "merged") return;
-  await inMergeLane(projectId, () => mergeTicket(projectId, fresh, prNumber));
+  await inRepoMergeLane(projectId, () => mergeTicket(projectId, fresh, prNumber), laneBusy);
 }
 
 /**
@@ -1434,11 +1797,27 @@ export async function sendBack(
   await addNote(projectId, ticket.id, `Sent back by review: ${reason}`);
   // Running from here, not from when the Coder Agent gets going: a CI
   // result arriving in between would otherwise review the same head again.
-  await repository().updateTicket(ticket.id, {
-    reviewedSha: null,
-    reviewedHead: null,
-    status: "running",
-  });
+  // Back to writing code, it claims its files like any start: while another
+  // ticket on the repository is writing them, it waits its turn.
+  const repo = repository();
+  const write = (status: "running" | "queued") =>
+    repo.updateTicket(ticket.id, { reviewedSha: null, reviewedHead: null, status });
+  const card = await repo.cardById(ticket.id);
+  const { status, reason: waitReason } = card
+    ? await claimOrQueue(projectId, card, write)
+    : (await write("running"), { status: "running", reason: null });
+  if (status === "queued") {
+    await publish(projectId, {
+      type: "card.status",
+      cardId: ticket.id,
+      kind: "ticket",
+      status: "queued",
+      stalledIn: null,
+      stage: card?.stage ?? ticket.stage,
+      blockedReason: waitReason,
+    });
+    return;
+  }
   launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
 }
 

@@ -316,4 +316,22 @@ describe("ColonyFx crews on a card that is not rendered", () => {
     step();
     expect(inner.crewMap.get("c1")!.phase).toBe("tunnel");
   });
+
+  it("spawns a scout crew round its card's element, half the size", () => {
+    const { inner, want, step } = setup();
+    inner.crewMap.clear();
+    render();
+    fx_scout(inner);
+    step();
+    expect(inner.crewMap.get("c1#scout1")).toBeDefined();
+    expect(inner.crewMap.get("c1#scout1")!.ants).toHaveLength(3);
+    inner.crewMap.clear();
+    want("work");
+  });
 });
+
+function fx_scout(inner: { world: unknown }) {
+  (inner as unknown as { world: { crews: Map<string, unknown> } }).world.crews = new Map([
+    ["c1#scout1", { phase: "work", sp: 2.5 }],
+  ]);
+}

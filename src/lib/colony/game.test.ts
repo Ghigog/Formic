@@ -16,6 +16,8 @@ import {
   nextUnlock,
   queensEarned,
   rankOf,
+  styleUnlocked,
+  MAX_UNLOCK_LEVEL,
   scoreOf,
   unlocksAt,
 } from "./game";
@@ -53,6 +55,9 @@ describe("levels", () => {
     expect(levelOf(49)).toBe(1);
     expect(levelOf(50)).toBe(2);
     expect(rankOf(1)).toBe("Scout");
+    expect(rankOf(3)).toBe("Scout");
+    expect(rankOf(4)).toBe("Forager");
+    expect(rankOf(28)).toBe("Queen");
     expect(rankOf(99)).toBe("Queen");
   });
 
@@ -61,15 +66,33 @@ describe("levels", () => {
     expect(queensEarned(50)).toBe(49);
   });
 
-  it("names a Sentinel alongside shapes and colours at the level it unlocks", () => {
-    const at3 = SENTINEL_UNLOCKS.filter((u) => u.lv === 3).map((u) => u.label);
-    expect(at3.length).toBeGreaterThan(0);
-    expect(unlocksAt(3)).toEqual(expect.arrayContaining(["Ladybird", ...at3]));
+  it("unlocks exactly one thing at every level from 2 to 34", () => {
+    for (let lv = 2; lv <= MAX_UNLOCK_LEVEL; lv++) expect(unlocksAt(lv)).toHaveLength(1);
+    expect(unlocksAt(MAX_UNLOCK_LEVEL + 1)).toEqual([]);
+  });
+
+  it("names Sentinels, styles and colony rules at the level they unlock", () => {
+    const at6 = SENTINEL_UNLOCKS.filter((u) => u.lv === 6).map((u) => u.label);
+    expect(at6).toHaveLength(1);
+    expect(unlocksAt(6)).toEqual(at6);
+    expect(unlocksAt(1)).toEqual(["Ant", "Umber"]);
+    expect(unlocksAt(2)).toEqual(["Tester"]);
+    expect(unlocksAt(11)).toEqual(["Caterpillar"]);
+    expect(unlocksAt(24)).toEqual(["Bumblebee"]);
+    expect(unlocksAt(27)).toEqual(["Auto-scout"]);
+    expect(unlocksAt(31)).toEqual(["Mosquito"]);
+  });
+
+  it("checks a saved style against the level", () => {
+    expect(styleUnlocked({ shape: "ant", color: "umber" }, 1)).toBe(true);
+    expect(styleUnlocked({ shape: "mosquito", color: "umber" }, 30)).toBe(false);
+    expect(styleUnlocked({ shape: "mosquito", color: "plum" }, 31)).toBe(true);
   });
 
   it("says what the next unlock is", () => {
-    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Crimson", "QA"] });
-    expect(nextUnlock(12)).toBeNull();
+    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Tester"] });
+    expect(nextUnlock(33)).toEqual({ level: 34, labels: ["Sales"] });
+    expect(nextUnlock(34)).toBeNull();
   });
 });
 
@@ -121,6 +144,13 @@ describe("score", () => {
     expect(s.points).toBe(8 - BUG_COST);
     expect(s.bugs).toBe(1);
     expect(s.squashed).toBe(0);
+  });
+
+  it("costs bug points for a ticket typed bug whose title has no bug words", () => {
+    const t = card({ id: "n", epicId: null, title: "Rename the sidebar", status: "ready", workType: "bug" });
+    expect(isBug(t, new Map())).toBe(true);
+    expect(scoreOf([t]).bugs).toBe(1);
+    expect(scoreOf([t]).points).toBe(0);
   });
 
   it("squashes a bug report once it leaves the Backlog", () => {
@@ -241,6 +271,41 @@ describe("timeline", () => {
       card({ id: "c", status: "merged", updatedAt: daysAgo(3) }),
     ];
     expect(buildTimeline(cards, at).streak).toBe(2);
+  });
+
+  describe("with an offset", () => {
+    const cards = [
+      card({ id: "e1", kind: "epic", epicId: null, status: "ready" }),
+      card({ id: "a", status: "merged", storyPoints: 5, updatedAt: daysAgo(30) }),
+      card({ id: "b", status: "merged", storyPoints: 3, updatedAt: daysAgo(1) }),
+      card({ id: "c", status: "review", storyPoints: 2 }),
+    ];
+
+    it("is identical to the live window at offset 0", () => {
+      expect(buildTimeline(cards, at, 0)).toEqual(buildTimeline(cards, at));
+    });
+
+    it("steps the window back by whole days and keeps its length", () => {
+      const live = buildTimeline(cards, at);
+      const past = buildTimeline(cards, at, WINDOW_DAYS);
+      expect(past.days).toHaveLength(WINDOW_DAYS);
+      expect(live.start.getTime() - past.start.getTime()).toBe(WINDOW_DAYS * 86_400_000);
+    });
+
+    it("counts a ticket merged after the window as still open", () => {
+      const past = buildTimeline(cards, at, WINDOW_DAYS);
+      expect(past.total).toBe(10);
+      expect(past.days[4]!.sp).toBe(5);
+      expect(past.days.at(-1)!.remaining).toBe(5);
+      expect(past.remaining).toBe(5);
+    });
+
+    it("has no present: no forecast, boost or live now", () => {
+      const past = buildTimeline(cards, at, WINDOW_DAYS);
+      expect(past.forecast).toBeNull();
+      expect(past.boost).toBeNull();
+      expect(past.now).toBe(WINDOW_DAYS);
+    });
   });
 
   it("leaves work merged before the window out of the burndown", () => {

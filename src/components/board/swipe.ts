@@ -11,6 +11,11 @@ export function adjacentColumn(current: ColumnId, direction: SwipeDirection): Co
   return COLUMNS[Math.min(COLUMNS.length - 1, Math.max(0, i))]!;
 }
 
+/** Which way the board moves to get from one column to another, as the swipe that would do it. */
+export function slideTowards(from: ColumnId, to: ColumnId): SwipeDirection {
+  return COLUMNS.indexOf(to) > COLUMNS.indexOf(from) ? "next" : "previous";
+}
+
 /**
  * Which way a gesture moves the board, if it is a swipe at all. It must
  * travel past the threshold and mostly sideways, so a vertical scroll of the

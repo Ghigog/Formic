@@ -4,7 +4,7 @@ import { EMPTY_VIEW, type ColumnSort, type ColumnView, type TypeFilter } from ".
 export const BOARD_VIEW_KEY = "formic:board-view:v1";
 
 const SORTS: ColumnSort[] = ["position", "title", "newest", "points"];
-const TYPES: TypeFilter[] = ["ticket", "bug", "spike", "archived"];
+const TYPES: TypeFilter[] = ["ticket", "user_story", "task", "feature", "bug", "spike", "archived"];
 
 /** The board-wide view saved in this browser; the default view when missing or unreadable. */
 export function loadBoardView(): ColumnView {

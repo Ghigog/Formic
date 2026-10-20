@@ -11,10 +11,12 @@ import {
   type RunTimeBudgetSettings,
 } from "@/lib/run-time-budget";
 import {
+  getEffortByPoints,
   getLimitSettings,
   getRunTimeBudgetSettings,
   updateLimitSettings,
   updateRunTimeBudgetSettings,
+  setEffortByPoints,
 } from "@/lib/user-settings";
 import { authMode } from "@/lib/auth/session";
 import { LIMIT_AXES, validateLimitSetting } from "@/lib/domain/limit-settings";
@@ -29,6 +31,11 @@ const bodySchema = z.object({
   e2bKey: keySchema,
   projectId: z.string().min(1).optional(),
   autoMerge: z.boolean().optional(),
+  autoEscalate: z.boolean().optional(),
+  /** Whether members may run on the owner's keys when they have none of their own. */
+  shareKeys: z.boolean().optional(),
+  /** An existing agent preset id, or null for the In Progress column's agent. */
+  scoutPresetId: z.string().min(1).nullable().optional(),
 });
 
 function sealed(value: string | null | undefined, cipher: string, hint: string) {
@@ -110,9 +117,18 @@ export async function GET(req?: Request) {
   if (projectId !== null) {
     const found = await ownedProject(user, projectId);
     if (found.refusal) return found.refusal;
-    return Response.json({ autoMerge: found.project.autoMerge });
+    return Response.json({
+      autoMerge: found.project.autoMerge,
+      autoEscalate: found.project.autoEscalate,
+      shareKeys: found.project.shareKeys,
+      scoutPresetId: found.project.scoutPresetId,
+    });
   }
-  return Response.json({ ...(await getRunTimeBudgetSettings(user.id)), ...(await getLimitSettings(user.id)) });
+  return Response.json({
+    ...(await getRunTimeBudgetSettings(user.id)),
+    ...(await getLimitSettings(user.id)),
+    effortByPoints: await getEffortByPoints(user.id),
+  });
 }
 
 async function putRunTimeBudget(userId: string, json: unknown) {
@@ -197,6 +213,11 @@ export async function PUT(req: Request) {
   const json = await req.json().catch(() => null);
   if (json && typeof json === "object" && "mode" in json) return putRunTimeBudget(user.id, json);
   if (json && typeof json === "object" && "renewalDay" in json) return putRenewalDay(user.id, json);
+  if (json && typeof json === "object" && "effortByPoints" in json) {
+    const on = z.boolean().safeParse((json as { effortByPoints: unknown }).effortByPoints);
+    if (!on.success) return Response.json({ error: "effortByPoints is on or off." }, { status: 400 });
+    return Response.json({ effortByPoints: await setEffortByPoints(user.id, on.data) });
+  }
   if (json && typeof json === "object" && "githubToken" in json) {
     return putGithubToken(json as { githubToken: unknown });
   }
@@ -205,14 +226,31 @@ export async function PUT(req: Request) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
   }
 
-  if ((body.data.autoMerge === undefined) !== (body.data.projectId === undefined)) {
-    return Response.json({ error: "autoMerge and projectId go together." }, { status: 400 });
+  const { projectId, autoMerge, autoEscalate, shareKeys, scoutPresetId } = body.data;
+  const forProject =
+    autoMerge !== undefined || autoEscalate !== undefined || shareKeys !== undefined || scoutPresetId !== undefined;
+  if (forProject !== (projectId !== undefined)) {
+    return Response.json(
+      { error: "autoMerge, autoEscalate, shareKeys, scoutPresetId and projectId go together." },
+      { status: 400 },
+    );
   }
-  if (body.data.projectId !== undefined && body.data.autoMerge !== undefined) {
-    const found = await ownedProject(user, body.data.projectId);
+  if (projectId !== undefined) {
+    const found = await ownedProject(user, projectId);
     if (found.refusal) return found.refusal;
-    await repository().setAutoMerge(found.project.id, body.data.autoMerge);
-    return Response.json({ autoMerge: body.data.autoMerge });
+    if (scoutPresetId && !(await repository().presetForRun(scoutPresetId))) {
+      return Response.json({ error: "That agent does not exist." }, { status: 400 });
+    }
+    if (autoMerge !== undefined) await repository().setAutoMerge(found.project.id, autoMerge);
+    if (autoEscalate !== undefined) await repository().setAutoEscalate(found.project.id, autoEscalate);
+    if (shareKeys !== undefined) await repository().setShareKeys(found.project.id, shareKeys);
+    if (scoutPresetId !== undefined) await repository().setScoutAgent(found.project.id, scoutPresetId);
+    return Response.json({
+      ...(autoMerge !== undefined && { autoMerge }),
+      ...(autoEscalate !== undefined && { autoEscalate }),
+      ...(shareKeys !== undefined && { shareKeys }),
+      ...(scoutPresetId !== undefined && { scoutPresetId }),
+    });
   }
 
   const updated = await repository().updateUser(user.id, {

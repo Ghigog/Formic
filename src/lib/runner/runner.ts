@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
@@ -25,6 +26,7 @@ import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers
 import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
 import { reviewBrief, taskBrief } from "@/lib/agents/coder";
+import { hasActiveRun } from "@/lib/domain/status";
 import {
   ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
@@ -60,11 +62,13 @@ import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { repository } from "@/lib/db";
 import type { AuditRecord, TicketDetail } from "@/lib/db/repository";
+import type { Goal } from "@/lib/sentinels/rubric";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { signingSecret } from "@/lib/auth/session";
 import { abortTicketRuns } from "@/lib/budget/controller";
 import { ticketNotes } from "@/lib/coder/notes";
+import { rateNote, shareNote } from "@/lib/coder/shared-notes";
 import { readStream } from "./stream";
 import type { LoopEntryPayload } from "./loop-entry";
 import { loopBundle, loopEntryHash } from "./bundle";
@@ -294,18 +298,16 @@ export function explain(e: unknown): string {
  * already have switched that column to a different agent, and blaming the
  * new one for the old run's limit would mark it out of usage it never used.
  */
-async function whyItFailed(
+export async function whyItFailed(
   projectId: string,
   client: VcsClient,
   result: RunnerResult,
   presetId: string | null,
 ): Promise<string> {
-  const log = result.url ? ` Its log: ${result.url}` : "";
-  if (result.conclusion === "cancelled") return `The agent's GitHub Actions run was cancelled.${log}`;
-  if (result.conclusion === "timed_out") {
-    return `The agent ran past the job's time limit and was stopped.${log}`;
-  }
-  const plain = `The agent's GitHub Actions run ended as ${result.conclusion}.${log}`;
+  const log = result.url ? `Log: ${result.url}` : "";
+  if (result.conclusion === "cancelled") return failure("The run was cancelled", log);
+  if (result.conclusion === "timed_out") return failure("The run timed out", log);
+  const plain = failure(`The run ended as ${result.conclusion}`, log);
   const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
   if (!text) return plain;
 
@@ -318,7 +320,13 @@ async function whyItFailed(
   const diagnosis = diagnose(text, label);
   if (!diagnosis) {
     const last = lastWords(text);
-    return last ? `The agent's GitHub Actions run failed: "${last}".${log}` : plain;
+    return last
+      ? failure(
+          `${label} stopped before finishing`,
+          `${label} ran into an error and stopped before the work was done. The last thing it said: "${last}"`,
+          log,
+        )
+      : plain;
   }
   if (diagnosis.kind === "limit" && diagnosis.until && found) {
     await repo.setPresetLimit(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
@@ -329,7 +337,21 @@ async function whyItFailed(
       note: diagnosis.message,
     });
   }
-  return `${diagnosis.message}${log}`;
+  const type = {
+    limit: "Usage limit reached",
+    credit: "Out of credit",
+    auth: "Sign-in rejected",
+    silent: `${label} never reached its model`,
+  }[diagnosis.kind];
+  return failure(type, diagnosis.message, log);
+}
+
+/**
+ * A failure reason: the error type on the first line, then the detail (the
+ * agent's own words, then the log link). classifyNotice splits it there.
+ */
+function failure(type: string, ...detail: string[]): string {
+  return [type, ...detail.filter(Boolean)].join("\n");
 }
 
 /**
@@ -385,6 +407,8 @@ export function loopPayload(input: {
   model: string;
   /** What the person told this ticket, oldest first: it goes into the prompt. */
   notes: string[];
+  /** What agents on the repository's other tickets shared, one line each. */
+  sharedNotes?: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
   instruction?: string;
   /** What budgetFor gave this run on the loop path, fixed when the run starts. */
@@ -401,7 +425,9 @@ export function loopPayload(input: {
       description: ticket.description,
       acceptanceCriteria: ticket.acceptanceCriteria,
       fileScope: ticket.fileScope,
+      workType: ticket.workType,
       ...(input.notes.length ? { notes: input.notes } : {}),
+      ...(input.sharedNotes?.length ? { sharedNotes: input.sharedNotes } : {}),
       ...(input.instruction ? { instruction: input.instruction } : {}),
     },
     repo: { fullName: input.repoFullName, baseBranch: input.baseBranch },
@@ -415,6 +441,7 @@ export function loopPayload(input: {
       ...(budget.minutes.requested != null ? { budgetMs: budget.minutes.requested * 60_000 } : {}),
       ...(budget.tokens.value != null ? { maxTokens: budget.tokens.value } : {}),
       ...(budget.maxCents != null ? { maxCents: budget.maxCents } : {}),
+      ...(budget.effort ? { effort: budget.effort } : {}),
     },
   };
 }
@@ -454,7 +481,12 @@ const CLI_REVIEW = `How to finish your review. Do exactly one of these:
 To approve or send back, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
 
-const CLI_RESOLVE = `The conflicted files are the ones \`git diff --name-only --diff-filter=U\` lists. When every conflict is resolved, write the summary file as usual: what each conflict was and how you kept both sides. Do not commit.`;
+const CLI_RESOLVE = [
+  "The conflicted files are the ones `git diff --name-only --diff-filter=U` lists.",
+  "To see what each side changed rather than only how it ended up, rewrite a file's markers with the common ancestor in them: `git checkout --conflict=diff3 -- <file>`. To see why, read the commits each side made to it since they diverged: `git log HEAD..MERGE_HEAD -- <file>` for the base, `git log MERGE_HEAD..HEAD -- <file>` for this branch.",
+  "Write the code both changes would have written had they known about each other, and check the call sites, types and tests of whatever either side renamed or added still agree.",
+  "When every conflict is resolved, write the summary file as usual: what each conflict was and how you kept both sides. Do not commit.",
+].join(" ");
 
 /** What a CLI reviewer decided when it changed nothing, if it said. */
 export function reviewVerdictOf(messages: string[]): "approved" | "send-back" | null {
@@ -483,9 +515,11 @@ export function cliPrompt(
   notes: string[] = [],
   /** What the person asked this run to do, from the ticket's chat. */
   instruction?: string,
+  /** What agents on the repository's other tickets shared, one line each. */
+  sharedNotes: string[] = [],
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskFor(ticket, notes, instruction);
+  const task = taskFor(ticket, notes, instruction, sharedNotes);
   const work = review
     ? [reviewBrief({ ...review, task }), "", review.conflicts ? CLI_RESOLVE : CLI_REVIEW]
     : [
@@ -1287,6 +1321,7 @@ export async function startCliSentinel(input: {
   projectId: string;
   auditId: string;
   sentinelId: string;
+  goal: Goal;
   agent: CliAgent;
   /** A second attempt, after its report was sent back. */
   attempt?: number;
@@ -1307,7 +1342,7 @@ export async function startCliSentinel(input: {
     mode: "ask",
     cardKey: "sentinel",
     from: project.baseBranch,
-    prompt: cliAuditPrompt(s, project.repoFullName, input.retry),
+    prompt: cliAuditPrompt(s, project.repoFullName, input.goal, input.retry),
     record: (job) => repo.setAuditJob(input.auditId, job, input.agent.presetId),
   });
   return started.ok ? { ok: true } : { ok: false, reason: started.reason };
@@ -1336,18 +1371,14 @@ async function completeCliSentinel(
   const answer = await client.readFile(ANSWER_PATH, `${STAGING_PREFIX}${result.job}`).catch(() => null);
   await cleanUp();
 
+  const { goalOf } = await import("@/lib/sentinels/rubric");
+  const goal = goalOf(audit);
+  if (!goal) return void (await fail("This audit started without a rubric. Calibrate, then audit again."));
   const { parseCliReport } = await import("@/lib/sentinels/cli");
-  const report = parseCliReport(answer);
+  const report = parseCliReport(answer, goal);
   if (report.ok) {
-    await repo.finishAudit(audit.id, {
-      status: "done",
-      stars: report.stars,
-      quote: report.quote,
-      summary: report.summary,
-      report: report.report,
-      files: report.files,
-      model: null,
-    });
+    const { ok: _, ...done } = report;
+    await repo.finishAudit(audit.id, { status: "done", ...done, model: null });
     return;
   }
 
@@ -1362,6 +1393,7 @@ async function completeCliSentinel(
         projectId,
         auditId: audit.id,
         sentinelId: audit.sentinel,
+        goal,
         agent: agent.agent,
         attempt: attempt + 1,
         retry: { answer: answer ?? "", problem: report.problem },
@@ -1526,7 +1558,13 @@ async function completeCliCardChat(
   await finishCliCardChat(message.id, answer);
 }
 
+/** A finished CLI run, taken on the keys of whoever set its card going. */
 export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
+  const card = cardOfJob(result.job);
+  return card ? withCardActor(card, () => takeCliRun(projectId, result)) : takeCliRun(projectId, result);
+}
+
+async function takeCliRun(projectId: string, result: RunnerResult): Promise<void> {
   const { mode } = result;
   if (mode === "ask") {
     await completeCliAsk(projectId, result);
@@ -1565,7 +1603,7 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
 
   const stalledIn = isTicketImplementation(result.mode) ? "in_progress" : "in_review";
-  const log = result.url ? ` Its log: ${result.url}` : "";
+  const logLink = result.url ? `Log: ${result.url}` : "";
   const stop = async (reason: string, blocked: boolean) => {
     await cleanUp();
     await stallTicket(projectId, ticket, reason, { blocked, stalledIn });
@@ -1577,10 +1615,13 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
   }
 
   const branch = ticket.branchName!;
-  // A new ticket started from the branch it merges into; a re-run with its
-  // pull request open started from the ticket's own branch.
+  // A new ticket started from the branch it merges into, or the branch it is
+  // stacked on; a re-run with its pull request open started from the
+  // ticket's own branch.
   const from =
-    isTicketImplementation(result.mode) && !ticket.prNumber ? mergeTarget(project.baseBranch) : branch;
+    isTicketImplementation(result.mode) && !ticket.prNumber
+      ? (ticket.stackedOn ?? mergeTarget(project.baseBranch))
+      : branch;
 
   // The run finished and handed its work back whole: its checkpoint has
   // nothing more to give, unless taking the work fails and loses it.
@@ -1629,7 +1670,8 @@ export async function completeCliRun(projectId: string, result: RunnerResult): P
       }
     }
     if (change.files.length === 0 || !change.headSha) {
-      await stop(`The agent finished without changing anything.${log}`, result.mode === "fix");
+      const said = (change.messages.at(-1) ?? "").trim();
+      await stop(failure("The agent changed nothing", said, logLink), result.mode === "fix");
       return;
     }
 
@@ -1804,21 +1846,25 @@ export function attachmentUrlAllowed(id: string, expires: string, token: string)
  * The prompt text for an epic or ticket's attachments: one line per
  * attachment with its filename, kind and a signed URL, since a CLI agent
  * running in someone else's GitHub Actions cannot reach Formic's database to
- * read the bytes directly the way an API agent does. Null with nothing to
- * say, whether there are no attachments or no public origin to sign a URL
- * from.
+ * read the bytes directly the way an API agent does. Without a public origin
+ * to sign a URL from it says the files cannot be downloaded, naming them, so
+ * the agent reports the real cause. Null when there are no attachments.
  */
 export function attachmentsPrompt(attachments: AttachmentSummary[]): string | null {
-  const lines = attachments
-    .map((a) => {
-      const url = signedAttachmentUrl(a.id);
-      return url ? `- ${a.filename} (${a.kind}): ${url}` : null;
-    })
-    .filter((line): line is string => line !== null);
-  if (lines.length === 0) return null;
+  if (attachments.length === 0) return null;
+  const lines = attachments.map((a) => {
+    const url = signedAttachmentUrl(a.id);
+    return url ? `- ${a.filename} (${a.kind}): ${url}` : null;
+  });
+  if (lines.some((line) => line === null)) {
+    return [
+      "Attachments exist but could not be made available: this board has no public origin (FORMIC_URL is unset), so there is no URL to download them from. Tell the person this is why you cannot read them:",
+      ...attachments.map((a) => `- ${a.filename} (${a.kind})`),
+    ].join("\n");
+  }
   return [
     `Attachments. Download each with curl into the directory named by the ${ATTACHMENTS_DIR_VAR} environment variable, and read them from there. Do not commit that directory.`,
-    ...lines,
+    ...(lines as string[]),
   ].join("\n");
 }
 
@@ -1937,6 +1983,12 @@ export async function receiveReport(input: {
       case "log":
         await publish(projectId, { type: "run.log", runId, ticketId: ticket.id, stream: item.stream, line: item.line });
         break;
+      case "share":
+        await shareNote(projectId, ticket.id, item.text);
+        break;
+      case "rate":
+        await rateNote(projectId, ticket.id, item.noteSeq, item.verdict);
+        break;
     }
   }
   if (planChanged) await repo.updateTicket(ticket.id, { plan });
@@ -1961,12 +2013,17 @@ export const STOPPED_BY_PERSON =
  * agent stops at its next turn. Returns whether there was anything to stop.
  */
 export async function stopTicket(projectId: string, ticketId: string): Promise<boolean> {
+  // Its sandbox was made with the key of whoever set it going; only that
+  // account can dispose of it.
+  return withCardActor(ticketId, () => stopTicketRun(projectId, ticketId));
+}
+
+async function stopTicketRun(projectId: string, ticketId: string): Promise<boolean> {
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket) return false;
   const card = await repo.cardById(ticketId);
-  const working = ticket.status === "running" || !!ticket.runnerJob || !!card?.workingSince;
-  if (!working) return false;
+  if (!hasActiveRun(ticket, card)) return false;
 
   const job = ticket.runnerJob;
   await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });

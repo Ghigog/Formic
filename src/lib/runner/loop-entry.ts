@@ -39,11 +39,10 @@ import { coderPrompt } from "@/lib/agents/coder";
 import { runCodingLoop } from "@/lib/agents/coding-loop";
 import type { AgentContext, CoderTask, Usage } from "@/lib/agents/ports";
 import { budgetTokens } from "@/lib/agents/ports";
-import { isSpikeText } from "@/lib/colony/game";
 import { CODER_BRIEF, CHECKPOINT_RULE, withCodingRules } from "@/lib/agents/prompts";
 import { billingFor, spendCeilingNote, turnCeiling } from "@/lib/budget/limits";
 import type { Budget } from "@/lib/budget/budget-for";
-import type { PlanStep } from "@/lib/domain/entities";
+import { WORK_TYPES, type PlanStep } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import { isProviderId, provider, type ProviderId } from "@/lib/llm/providers";
 import { LocalSandboxProvider, localCheckout } from "@/lib/sandbox/local";
@@ -70,8 +69,12 @@ export const loopEntryPayloadSchema = z.object({
     description: z.string(),
     acceptanceCriteria: z.array(z.string()),
     fileScope: z.array(z.string()),
+    /** The ticket's type; a spike gets the spike brief. */
+    workType: z.enum(WORK_TYPES).nullable().optional(),
     /** What the person watching told this ticket's agents, oldest first. */
     notes: z.array(z.string()).optional(),
+    /** What agents on the repository's other tickets shared, one line each. */
+    sharedNotes: z.array(z.string()).optional(),
     /** What this run was asked to do from the ticket's chat, if anything. */
     instruction: z.string().optional(),
   }),
@@ -107,6 +110,8 @@ export const loopEntryPayloadSchema = z.object({
       maxTokens: z.number().int().positive().optional(),
       /** Derived from the tokens at a conservative rate; never shown as a budget. */
       maxCents: z.number().nonnegative().optional(),
+      /** Thinking effort for the ticket's size; the agent's default when omitted. */
+      effort: z.enum(["low", "medium", "high"]).optional(),
     })
     .optional(),
 });
@@ -172,8 +177,8 @@ export interface LoopEntryOptions {
  * run knows where the work got to but not why, and explores it all again.
  * The rule is the same one a CLI agent's prompt carries.
  */
-function jobBrief(title: string): string {
-  const brief = withCodingRules(CODER_BRIEF, "coder", { spike: isSpikeText(title) });
+function jobBrief(task: CoderTask): string {
+  const brief = withCodingRules(CODER_BRIEF, "coder", { spike: task.workType === "spike" });
   return process.env.FORMIC_PROGRESS ? `${brief}\n\n${CHECKPOINT_RULE}` : brief;
 }
 
@@ -280,7 +285,9 @@ export async function runLoopEntry(
       description: ticket.description,
       acceptanceCriteria: ticket.acceptanceCriteria,
       fileScope: ticket.fileScope,
+      workType: ticket.workType ?? null,
       notes: ticket.notes ?? [],
+      ...(ticket.sharedNotes?.length ? { sharedNotes: ticket.sharedNotes } : {}),
     };
 
     // The loop reads the token budget for two things this entry would otherwise
@@ -295,6 +302,7 @@ export async function runLoopEntry(
       tokens: { value: maxTokens ?? null, requested: null, clamp: null },
       attempts: { value: null, requested: null, clamp: null },
       maxCents: maxCents ?? null,
+      effort: payload.limits?.effort ?? null,
       enforcement: { minutes: "between-turns", tokens: "job", attempts: "between-turns" },
     };
 
@@ -326,7 +334,7 @@ export async function runLoopEntry(
       workspace,
       ticketId,
       role: "coder",
-      system: jobBrief(task.title),
+      system: jobBrief(task),
       prompt: coderPrompt(task),
       // The ticket's budget is the run's ceiling; the loop's turn ceiling is
       // derived from it, so the budget is what stops a run, not a wall of

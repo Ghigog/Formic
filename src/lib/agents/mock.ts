@@ -1,3 +1,4 @@
+import type { ScoutCandidate, ScoutVerdict } from "./judge";
 import type {
   AgentAttachment,
   AgentContext,
@@ -86,6 +87,7 @@ export class MockProductAgent implements ProductAgent {
             fileScope: ["src"],
             storyPoints: 3,
             dependsOn: [],
+            workType: "task",
           },
         },
         usage: MOCK_USAGE,
@@ -171,6 +173,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         fileScope: ["prisma"],
         storyPoints: 2,
         dependsOn: [],
+        workType: "task",
       },
       {
         key: "T-2",
@@ -183,6 +186,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         fileScope: ["src/app/api"],
         storyPoints: 5,
         dependsOn: ["T-1"],
+        workType: "task",
       },
       {
         key: "T-3",
@@ -204,6 +208,7 @@ export class MockArchitectAgent implements ArchitectAgent {
         fileScope: ["src/lib/feature"],
         storyPoints: 3,
         dependsOn: ["T-2", "T-3"],
+        workType: "task",
       },
     ];
 
@@ -238,6 +243,7 @@ export class MockArchitectAgent implements ArchitectAgent {
       fileScope: ["src"],
       storyPoints: 3,
       dependsOn: [],
+      workType: "task",
     };
 
     return { ok: true, value: { kind: "ticket", ticket }, usage: MOCK_USAGE };
@@ -358,6 +364,19 @@ export class MockCoderAgent implements CoderAgent {
 }
 
 export class MockReviewerAgent implements ReviewerAgent {
+  async compare(
+    ctx: AgentContext,
+    input: { task: CoderTask; candidates: ScoutCandidate[] },
+  ): Promise<AgentOutcome<ScoutVerdict>> {
+    await sleep(200, ctx.signal);
+    const pick = [...input.candidates].sort((a, b) => a.files.length - b.files.length)[0]!;
+    return {
+      ok: true,
+      value: { pick: pick.label, why: `${pick.label} meets the ticket with the smallest change (mock run).`, lessons: [] },
+      usage: MOCK_USAGE,
+    };
+  }
+
   async review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
     const red = input.checks[0]?.name;
     ctx.emit({

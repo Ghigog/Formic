@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 /**
@@ -18,6 +18,13 @@ export const metadata: Metadata = {
   title: "Formic",
   description:
     "An autonomous agent Kanban platform that orchestrates software builds from backlog idea to merged PR.",
+};
+
+/** Cover the notch area, so the colony bar can pad itself with the safe-area inset. */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

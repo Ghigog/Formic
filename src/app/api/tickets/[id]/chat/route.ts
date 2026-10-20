@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
 
 import { ChatBusyError, ask } from "@/lib/agents/card-chat";
@@ -40,7 +41,8 @@ export async function GET(
 }
 
 /** Asks the ticket's column agent something. The answer arrives on a later GET. */
-export async function POST(
+export const POST = asSignedIn(postHandler);
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {

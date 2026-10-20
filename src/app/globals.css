@@ -229,6 +229,18 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /*
+   * The board never scrolls as a document: its columns scroll inside the
+   * h-dvh root, so the colony bar stays on the bottom edge of the visible
+   * viewport while the browser toolbars show and hide.
+   */
+  html:has([data-board-root]),
+  html:has([data-board-root]) body {
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   a {
     color: var(--terracotta-cta);
   }
@@ -296,6 +308,16 @@
     50% {
       box-shadow: 0 0 0 4px rgb(194 120 3 / 0);
       border-color: var(--clay-lit);
+    }
+  }
+
+  /* The Audit grade face, revealed through a diagonal slice that sweeps across. */
+  @keyframes auditSweep {
+    from {
+      clip-path: polygon(-40% 0, -20% 0, -60% 100%, -80% 100%);
+    }
+    to {
+      clip-path: polygon(120% 0, 140% 0, 100% 100%, 80% 100%);
     }
   }
 
@@ -475,6 +497,13 @@
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.96);
+  }
+}
+
+@keyframes reqSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-24px);
   }
 }
 

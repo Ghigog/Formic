@@ -5,12 +5,23 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
 }));
 
+/** Setup would open a pull request; the route only has to start it. */
+const launch = vi.fn();
+vi.mock("@/lib/agents/pipeline", () => ({ launch }));
+
 const { repository } = await import("@/lib/db");
 const { currentUser } = await import("@/lib/auth/user");
-const { GET } = await import("./route");
+const { GET, POST } = await import("./route");
+const { dailyBudget, utcDay } = await import("@/lib/usage/governor");
+const { NextRequest } = await import("next/server");
+
+const post = (body: unknown) =>
+  POST(new NextRequest("http://localhost/api/projects", { method: "POST", body: JSON.stringify(body) }));
 
 beforeEach(() => {
   globalThis.__formicMemoryStore = undefined;
+  launch.mockClear();
+  vi.unstubAllEnvs();
 });
 
 describe("GET /api/projects", () => {
@@ -25,5 +36,51 @@ describe("GET /api/projects", () => {
       projects: Array<{ id: string; lastAssistantMessage: { id: string } | null }>;
     };
     expect(body.projects.find((p) => p.id === project.id)!.lastAssistantMessage?.id).toBe(done.id);
+  });
+});
+
+describe("POST /api/projects", () => {
+  it("creates the project for a repository and responds with it", async () => {
+    const res = await post({ repoFullName: "acme/widgets" });
+    expect(res.status).toBe(200);
+    const { project } = (await res.json()) as { project: { id: string; repoFullName: string } };
+    expect(project.repoFullName).toBe("acme/widgets");
+    expect(res.headers.get("set-cookie")).toContain(encodeURIComponent(project.id));
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses the project on a second request without setting it up again", async () => {
+    const first = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
+    const second = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
+    expect(second.project.id).toBe(first.project.id);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a body with neither a projectId nor a repoFullName", async () => {
+    expect((await post({})).status).toBe(400);
+  });
+
+  it("refuses a repository name that is not owner/repo", async () => {
+    expect((await post({ repoFullName: "not a repo" })).status).toBe(400);
+  });
+
+  it("answers 404 for a project that does not exist", async () => {
+    expect((await post({ projectId: "missing" })).status).toBe(404);
+  });
+
+  it("near the host allowance, still switches to an existing board but opens no new one", async () => {
+    const first = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
+    vi.stubEnv("FORMIC_USAGE_LIMITS", "on");
+    const today = utcDay(Date.now());
+    await repository().addPlatformUsage(
+      today,
+      { requests: dailyBudget().requests * 0.9, busyMs: 0, cpuMs: 0 },
+      today,
+    );
+
+    expect((await post({ projectId: first.project.id })).status).toBe(200);
+    expect((await post({ repoFullName: "acme/widgets" })).status).toBe(200);
+    expect((await post({ repoFullName: "acme/gadgets" })).status).toBe(503);
+    expect(launch).toHaveBeenCalledTimes(1);
   });
 });

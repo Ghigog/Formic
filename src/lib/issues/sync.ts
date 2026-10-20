@@ -244,7 +244,8 @@ async function syncTicket(
   await inLane(`ticket:${ticketId}`, async () => {
     const ticket = await repo.ticketDetail(ticketId);
     const card = await repo.cardById(ticketId);
-    if (!ticket || !card) return;
+    // A scout is not a ticket people track: its parent's issue is.
+    if (!ticket || !card || ticket.scoutOf) return;
 
     const { number, created } = await ensureTicketIssue(ctx, ticket, card);
     if (!created) {

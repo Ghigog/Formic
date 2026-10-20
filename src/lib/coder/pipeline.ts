@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { startRun, launch } from "@/lib/agents/pipeline";
 import type { CoderTask } from "@/lib/agents/ports";
 import { repository } from "@/lib/db";
@@ -8,8 +9,10 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { noteTexts } from "./notes";
+import { runScouts, scoutReturned, scouting, ticketNoteTexts } from "./scouts";
+import { sharedNoteLine, sharedNotesFor } from "./shared-notes";
 import { newBranchName } from "@/lib/sandbox";
+import { announceStack, releaseWaiting, restack, stackBase, ticketBelow } from "./stack";
 import { mergeTarget, vcs } from "@/lib/vcs";
 import {
   commitAndPush,
@@ -46,15 +49,23 @@ import { askForScope, hasKeptWork, takeKeptWork, widenScope } from "./scope-requ
 const STAGE_CODE_RUN = 5;
 const STAGE_PR_OPEN = 6;
 
-export function taskFor(ticket: TicketDetail, notes: string[] = [], instruction?: string): CoderTask {
+export function taskFor(
+  ticket: TicketDetail,
+  notes: string[] = [],
+  instruction?: string,
+  /** What agents on the repository's other tickets shared, one line each. */
+  sharedNotes: string[] = [],
+): CoderTask {
   return {
     ...(instruction ? { instruction } : {}),
+    ...(sharedNotes.length ? { sharedNotes } : {}),
     ticketId: ticket.id,
     key: ticket.key,
     title: ticket.title,
     description: ticket.description,
     acceptanceCriteria: ticket.acceptanceCriteria,
     fileScope: ticket.fileScope,
+    workType: ticket.workType,
     notes,
   };
 }
@@ -70,6 +81,11 @@ export async function stallTicket(
     stage?: number;
   },
 ): Promise<void> {
+  // A scout's failure is one scout fewer, not a card that stops.
+  if (ticket.scoutOf) {
+    await scoutReturned(projectId, ticket, { ok: false, reason });
+    return;
+  }
   const status = options.blocked ? "blocked" : "failed";
   const stage = options.stage ?? ticket.stage;
 
@@ -94,7 +110,16 @@ export async function stallTicket(
   });
 }
 
+/** The Coder Agent's run on a ticket, on the keys of whoever set it going. */
 export async function runCoderAgent(
+  projectId: string,
+  ticketId: string,
+  options: { instruction?: string } = {},
+): Promise<void> {
+  return withCardActor(ticketId, () => codeTicket(projectId, ticketId, options));
+}
+
+async function codeTicket(
   projectId: string,
   ticketId: string,
   /** What the person asked this run to do, from the ticket's chat. */
@@ -104,6 +129,12 @@ export async function runCoderAgent(
   const found = await repo.ticketDetail(ticketId);
   if (!found) return;
   let ticket: TicketDetail = found;
+
+  // A ticket with scouts sent does not code itself: its scouts do.
+  if (scouting(ticket)) {
+    await runScouts(projectId, ticket);
+    return;
+  }
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
@@ -157,7 +188,13 @@ export async function runCoderAgent(
       });
       return;
     }
-    startFrom = target.branch;
+    // Stacked on a prerequisite whose pull request is still open: built on
+    // its branch, so this ticket need not wait for that one to merge.
+    const below = await stackBase(projectId, ticket);
+    startFrom = below?.branch ?? target.branch;
+    ticket = { ...ticket, stackedOn: below?.branch ?? null };
+    await repo.updateTicket(ticket.id, { stackedOn: ticket.stackedOn });
+    if (below) await announceStack(projectId, ticket, below, target.branch);
   }
 
   const run = startRun(projectId, "coder", {
@@ -184,6 +221,10 @@ export async function runCoderAgent(
     blockedReason: null,
   });
 
+  // What the agents on the repository's other tickets have shared lately:
+  // the start of this run's view of them, whichever path it runs on.
+  const shared = (await sharedNotesFor(projectId, ticket.id).catch(() => [])).map(sharedNoteLine);
+
   // A CLI agent on the person's own plan works in GitHub Actions instead of
   // a sandbox here, and reports back on the workflow_run webhook.
   const cli = await cliAgentFor(projectId, "in_progress");
@@ -205,8 +246,9 @@ export async function runCoderAgent(
         "implement",
         ticket,
         undefined,
-        await noteTexts(projectId, ticket.id),
+        await ticketNoteTexts(projectId, ticket),
         options.instruction,
+        shared,
       ),
       run,
       stalledIn: "in_progress",
@@ -231,7 +273,7 @@ export async function runCoderAgent(
   // before the loop existed, and the card says which limit stopped it.
   const loop = await loopAgentFor(projectId, "in_progress");
   if (loop && (await loopRunnerReady(client, project.baseBranch))) {
-    const notes = await noteTexts(projectId, ticket.id);
+    const notes = await ticketNoteTexts(projectId, ticket);
     // Read once, here: a setting changed after this run starts is for the next.
     // A column's own values win over the person's rules.
     const budget = await budgetForRun(
@@ -262,6 +304,7 @@ export async function runCoderAgent(
             model: loop.model,
             budget,
             notes: resumed ? [...notes, resumeBrief(resumed, ticket.plan)] : notes,
+            sharedNotes: shared,
             ...(options.instruction ? { instruction: options.instruction } : {}),
           }),
         ),
@@ -303,7 +346,7 @@ export async function runCoderAgent(
 
   try {
     const outcome = await (await agentFor(projectId, "coder")).implement(run.ctx, {
-      task: taskFor(ticket, await noteTexts(projectId, ticket.id), options.instruction),
+      task: taskFor(ticket, await ticketNoteTexts(projectId, ticket), options.instruction, shared),
       // The scope guides the agent rather than fencing it in: the right
       // change may need a file outside it, and the diff check below asks
       // the person before any of that goes further.
@@ -330,7 +373,8 @@ export async function runCoderAgent(
     }
 
     if (changed.length === 0) {
-      const reason = "The agent finished without changing anything.";
+      const said = (outcome.value.summary ?? "").trim();
+      const reason = ["The agent changed nothing", said].filter(Boolean).join("\n");
       await stallTicket(projectId, ticket, reason, {
         blocked: false,
         stalledIn: "in_progress",
@@ -396,16 +440,27 @@ export async function openTicketPullRequest(
   client: VcsClient,
   input: { branch: string; change: CodeChange; usage?: Usage },
 ): Promise<void> {
+  // A scout's change stops at its branch: the Reviewer Agent picks among them.
+  if (ticket.scoutOf) {
+    await scoutReturned(projectId, ticket, { ok: true, branch: input.branch, change: input.change, usage: input.usage });
+    return;
+  }
   const repo = repository();
+  // A scout sent mid-run was kept first: its change is the pull request.
+  const current = await repo.ticketDetail(ticket.id);
+  if (current?.scoutPick && current.branchName !== input.branch) return;
   const project = await projectFor(projectId);
   const target = mergeTarget(project.baseBranch);
   await ensureMergeTarget(client, target, project.baseBranch);
 
+  // A stacked ticket's pull request targets the branch it was built on, so
+  // its diff is its own layer, until the one under it merges.
+  const stacked = (await repo.ticketDetail(ticket.id))?.stackedOn ?? null;
   const pull =
     (await client.findPullRequest(input.branch)) ??
     (await client.openPullRequest({
       headBranch: input.branch,
-      baseBranch: target,
+      baseBranch: stacked ?? target,
       title: pullRequestTitle(ticket, input.change),
       body: pullRequestBody(ticket, input.change),
     }));
@@ -445,6 +500,15 @@ export async function openTicketPullRequest(
     state: "pending",
     checkName: null,
   });
+
+  // The one under it merged while this one was being written: it moves onto
+  // the merge target now rather than waiting for a merge it already missed.
+  const opened = { ...ticket, prNumber: pull.number, stackedOn: stacked };
+  const below = await ticketBelow(opened);
+  if (stacked && below?.status === "merged") await restack(projectId, opened, client, target, below.key);
+
+  // Tickets waiting on this one can build on it now that its pull request is open.
+  await releaseWaiting(projectId);
 
   // The review starts now, alongside CI, rather than on CI's first webhook.
   // With a mock GitHub no webhook will ever arrive at all, so this is also

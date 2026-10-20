@@ -20,6 +20,8 @@ export interface Comparison {
   /** Commit messages on the head side, oldest first. */
   messages: string[];
   headSha: string;
+  /** Each changed file's patch, where the host gives one (not for binaries or huge files). */
+  patches?: Array<{ path: string; patch: string }>;
 }
 
 export interface PullRequestRef {
@@ -182,7 +184,19 @@ export interface VcsClient {
   openPullRequest(input: OpenPullRequestInput): Promise<PullRequestRef>;
   pullRequest(number: number): Promise<PullRequestDetail>;
   checksFor(sha: string): Promise<CheckSummary[]>;
+  /**
+   * Whether anything in the repository reports checks on a pull request into
+   * `baseBranch`: a workflow besides Formic's own runner that runs on pull
+   * requests, or a check the branch requires. A brand-new repository has neither, and a head with no
+   * checks there is done with CI rather than waiting for it.
+   */
+  hasCi(baseBranch: string): Promise<boolean>;
   checkLog(checkRunId: number): Promise<CheckLog>;
+  /**
+   * Points an open pull request at another base: a stacked one at the merge
+   * target, once the pull request it was built on has merged.
+   */
+  retargetPullRequest(number: number, baseBranch: string): Promise<void>;
   /** Merges the base branch into the PR head. Never rewrites history. */
   updateBranch(number: number): Promise<UpdateOutcome>;
   /**

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
-import type { BoardCard, WorkType } from "@/lib/domain/entities";
+import type { BoardCard } from "@/lib/domain/entities";
 import {
   type ColumnId,
   COLUMN_LABELS,
@@ -28,11 +28,12 @@ import { completeEpic, reviewPullRequest, startShowcase } from "@/lib/review/pip
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
-import { columnLimit } from "@/lib/agents/presets";
+import { columnLimit, columnUnassigned } from "@/lib/agents/presets";
+import { startedBy } from "@/lib/auth/actor";
 import { prdSchema } from "@/lib/domain/entities";
-import { runningConflict } from "@/lib/domain/queue";
 import { planQueen } from "@/lib/queen/plan";
-import { startQueued } from "@/lib/board/queue";
+import { readiness } from "@/lib/domain/stack";
+import { claimOrQueue, startQueued } from "@/lib/board/queue";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -45,12 +46,12 @@ function allMerged(epic: BoardCard): boolean {
   return epic.childCount > 0 && epic.doneCount === epic.childCount;
 }
 
+/**
+ * Whether a ticket's prerequisites let it start: all merged, or all but one
+ * that has its pull request open, which it then stacks on (src/lib/domain/stack.ts).
+ */
 function dependenciesMet(card: BoardCard, all: BoardCard[]): boolean {
-  if (card.dependsOn.length === 0) return true;
-  const merged = new Set(
-    all.filter((c) => c.status === "merged").map((c) => c.id),
-  );
-  return card.dependsOn.every((id) => merged.has(id));
+  return readiness(card, all).ready;
 }
 
 /**
@@ -109,7 +110,7 @@ async function whatIsWrong(
       .filter((c) => c && c.status !== "merged")
       .map((c) => c!.key)
       .join(", ");
-    return `${card.key} is waiting on ${blocking || "a dependency"} to merge first. Drag it back to To Do; it is ready to go once that merges.`;
+    return `${card.key} is waiting on ${blocking || "a dependency"}. It can start once every ticket it depends on has merged, or all but one have and that one has its pull request open, which it then builds on. Drag it back to To Do; it is ready to go then.`;
   }
 
   return null;
@@ -204,6 +205,13 @@ export async function applyTransition(
     return { ok: false, reason: said, revertTo: shown };
   }
 
+  // In Progress with no agent could only start a run that fails, so the
+  // card goes straight back and the board points at the column's agent menu.
+  if (card.kind === "ticket" && t.to === "in_progress" && canUserMove(home, t.to).ok) {
+    const unassigned = await columnUnassigned(projectId, t.to);
+    if (unassigned) return { ok: false, reason: unassigned, revertTo: shown, needsAgent: t.to };
+  }
+
   // Somewhere it cannot work: it lands there anyway, as the person asked,
   // keeping its real status and saying what is wrong until it moves again.
   const problem = await whatIsWrong(projectId, card, cards, home, t.to);
@@ -249,6 +257,10 @@ export async function applyTransition(
   // its status. A fresh Backlog item is `draft` with its Product Agent just
   // started, but so is one whose Product Agent was rerouted to a PRD and
   // never started, and that one waits forever if this guesses wrong.
+  // Whoever moved it now drives it: its agents run on their keys. A move the
+  // system makes (a Queen, the queue) leaves that as it was.
+  if (t.actor === "user") await startedBy(card.id);
+
   const met = dependenciesMet(card, cards);
   const toArchitect = card.kind === "epic" && t.to === "todo";
   const epicDetail = card.kind === "epic" ? await repo.epicDetail(card.id) : null;
@@ -265,26 +277,34 @@ export async function applyTransition(
   const breakDown = toArchitect && hasPrd && (parked.length === 0 || parked.some(madeBefore));
 
   // Back in Backlog, an Epic that has its PRD is still specified, not a draft.
-  // A ticket whose files another agent is writing waits its turn in In
-  // Progress, and starts once that one stops (see startQueued).
-  const status =
+  const dropped =
     toArchitect && !hasPrd
       ? "waiting"
       : card.kind === "epic" && t.to === "backlog" && hasPrd
         ? "specified"
-        : card.kind === "ticket" && t.to === "in_progress" && runningConflict(card, cards)
-          ? "queued"
-          : statusForUserDrop(t.to, met);
+        : statusForUserDrop(t.to, met);
   const position = await placeAmong(projectId, t.to, card, t.position);
+  const write = (status: typeof dropped) =>
+    repo.move({
+      cardId: card.id,
+      kind: card.kind,
+      status,
+      stalledIn: null,
+      position,
+      detached,
+    });
 
-  await repo.move({
-    cardId: card.id,
-    kind: card.kind,
-    status,
-    stalledIn: null,
-    position,
-    detached,
-  });
+  // A ticket whose files another agent is writing, on this board or anyone
+  // else's on the repository, waits its turn in In Progress and starts once
+  // that one stops (see startQueued). Decided and written under the
+  // repository's reservation, so two moves landing together cannot both win.
+  let status = dropped;
+  let waitReason: string | null = null;
+  if (card.kind === "ticket" && dropped === "running") {
+    ({ status, reason: waitReason } = await claimOrQueue(projectId, card, write));
+  } else {
+    await write(status);
+  }
   await repo.rebalanceColumn(projectId, t.to);
 
   await publish(projectId, {
@@ -294,7 +314,7 @@ export async function applyTransition(
     status,
     stalledIn: null,
     stage: needsPrd ? 1 : card.stage,
-    blockedReason: null,
+    blockedReason: waitReason,
   });
 
   if (card.kind === "epic" && t.to === "backlog") await parkTickets(projectId, card.id);
@@ -472,7 +492,8 @@ async function placeAmong(
 export async function createBacklogItem(
   projectId: string,
   rawRequest: string,
-  workType?: WorkType,
+  /** The id the request's attachments were uploaded against, to move onto the Epic. */
+  requestId?: string,
 ): Promise<BoardCard> {
   const repo = repository();
   const positions = await repo.columnPositions(projectId, "backlog");
@@ -486,8 +507,10 @@ export async function createBacklogItem(
     title,
     rawRequest: rawRequest.trim(),
     position,
-    workType,
   });
+
+  if (requestId) await repo.claimAttachments(requestId, { epicId: card.id });
+  await startedBy(card.id);
 
   await publish(projectId, {
     type: "card.created",
@@ -509,7 +532,6 @@ export async function createBacklogItem(
 export interface CreateTodoItemInput {
   /** Attachments uploaded against the request, to move onto the ticket. */
   requestId?: string;
-  workType?: WorkType;
   /**
    * The GitHub issue it came in from, when it came in from one. Recorded
    * before the ticket is mirrored, so the mirror adopts that issue as this
@@ -538,9 +560,9 @@ export async function createTodoItem(
     title,
     rawRequest: trimmed,
     position: 0,
-    workType: input.workType,
   });
   await repo.setStandalone(epic.id, true);
+  await startedBy(epic.id);
 
   const positions = await repo.columnPositions(projectId, "todo");
   const position = positionForIndex(positions, positions.length);
@@ -558,7 +580,6 @@ export async function createTodoItem(
         storyPoints: null,
         position,
         dependsOnKeys: [],
-        workType: input.workType,
       },
     ])
   )[0]!;
@@ -604,6 +625,7 @@ export async function createTodoItem(
  * Architect Agent writes it. Returns false for any other ticket.
  */
 export async function redraftTicket(projectId: string, ticketId: string): Promise<boolean> {
+  await startedBy(ticketId);
   const repo = repository();
   const card = await repo.cardById(ticketId);
   const ticket = await repo.ticketDetail(ticketId);
@@ -667,6 +689,7 @@ export type EpicActionResult = { ok: true } | { ok: false; reason: string; statu
  */
 export async function retryEpic(projectId: string, epicId: string): Promise<EpicActionResult> {
   const repo = repository();
+  await startedBy(epicId);
   const card = await repo.cardById(epicId);
   const detail = await repo.epicDetail(epicId);
   if (!card || card.kind !== "epic" || !detail) {

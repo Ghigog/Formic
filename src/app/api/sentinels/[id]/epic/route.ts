@@ -1,8 +1,10 @@
 import { activeProject, noProject } from "@/lib/board/project";
+import { asSignedIn } from "@/lib/auth/user";
 import { createBacklogItem } from "@/lib/board/service";
 import { requestFromReport } from "@/lib/sentinels/epic";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import { sentinelsFor } from "@/lib/sentinels/service";
+import { repository } from "@/lib/db";
 import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +12,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /** Turns a sentinel's latest report into a Backlog Epic. */
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const refused = limited(req, RUN, "run-start");
   if (refused) return refused;
 
@@ -25,9 +28,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (state.stars === 5) {
     return Response.json({ error: "A 5-star report leaves nothing to fix." }, { status: 409 });
   }
+  if (state.epicId) {
+    return Response.json({ error: "An epic was already created from this report." }, { status: 409 });
+  }
   const card = await createBacklogItem(
     project.id,
-    requestFromReport(sentinel, { stars: state.stars, summary: state.summary, report: state.report }),
+    requestFromReport(sentinel, {
+      stars: state.stars,
+      summary: state.summary,
+      report: state.report,
+      rubric: state.scoredWith,
+    }),
   );
+  if (state.auditId) await repository().markAuditEpic(state.auditId, card.id);
   return Response.json({ card }, { status: 201 });
 }

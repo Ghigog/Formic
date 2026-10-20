@@ -63,6 +63,41 @@ describe("diagnose", () => {
     expect(d?.message).toContain("claude setup-token");
   });
 
+  it("reads the reason inside Claude Code's closing JSON report", () => {
+    const report = JSON.stringify({
+      type: "result",
+      is_error: true,
+      duration_api_ms: 0,
+      result: "Invalid API key · Please run /login",
+      total_cost_usd: 0,
+      usage: { input_tokens: 0, output_tokens: 0 },
+    });
+    const d = diagnose(stepLog(report), "Claude Code");
+    expect(d?.kind).toBe("auth");
+    expect(d?.message).toContain('"Invalid API key · Please run /login"');
+    expect(d?.message).not.toContain("total_cost_usd");
+  });
+
+  it("says an agent that used no tokens never reached its model", () => {
+    const report = JSON.stringify({
+      duration_api_ms: 0,
+      stop_reason: "stop_sequence",
+      session_id: "c2ff4a0c",
+      total_cost_usd: 0,
+      usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 },
+    });
+    const d = diagnose(stepLog(report), "Claude Code");
+    expect(d?.kind).toBe("silent");
+    expect(d?.message).toContain("Claude Code stopped before it reached its model");
+    expect(d?.message).toContain("API key or sign-in");
+    expect(d?.message).not.toContain("stop_sequence");
+  });
+
+  it("leaves a report that used tokens to the agent's own words", () => {
+    const report = JSON.stringify({ type: "result", total_cost_usd: 0.4, usage: { input_tokens: 900, output_tokens: 80 } });
+    expect(diagnose(stepLog(report), "Claude Code")).toBeNull();
+  });
+
   it("tells an account out of credit apart", () => {
     const d = diagnose(stepLog("Credit balance is too low"), "Claude Code");
     expect(d?.kind).toBe("credit");

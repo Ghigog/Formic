@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  keyboardStyles,
+  useKeyboardInset,
+} from "@/lib/hooks/use-keyboard-inset";
 import { cn } from "@/components/ui/cn";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { SideBySide, WithChat } from "@/components/ui/split";
@@ -11,7 +15,12 @@ import { DagPane } from "./dag-pane";
 import { PrdPane } from "./prd-pane";
 import { AttachmentGallery } from "./attachment-gallery";
 import { ProblemNotice, WorkTimer } from "./card";
-import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type BoardCard, type Prd } from "@/lib/domain/entities";
+import {
+  AGENT_ROLE_LABELS,
+  COLUMN_AGENT_ROLE,
+  type BoardCard,
+  type Prd,
+} from "@/lib/domain/entities";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { epicProgress } from "@/lib/domain/stages";
 
@@ -115,7 +124,9 @@ export function EpicDrawer({
         body: JSON.stringify({ prd }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(body?.error ?? "Could not save the PRD.");
       }
       await load();
@@ -128,10 +139,16 @@ export function EpicDrawer({
     setBusy(true);
     setActionError(null);
     try {
-      const res = await fetch(`/api/epics/${epicId}/showcase`, { method: "POST" });
+      const res = await fetch(`/api/epics/${epicId}/showcase`, {
+        method: "POST",
+      });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setActionError(body?.error ?? "That did not work. Try again in a moment.");
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setActionError(
+          body?.error ?? "That did not work. Try again in a moment.",
+        );
         return;
       }
       await load();
@@ -150,8 +167,12 @@ export function EpicDrawer({
       try {
         const res = await fetch(`/api/epics/${epicId}`, { method });
         if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          setActionError(body?.error ?? "That did not work. Try again in a moment.");
+          const body = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          setActionError(
+            body?.error ?? "That did not work. Try again in a moment.",
+          );
           return;
         }
         if (method === "DELETE") onClose();
@@ -165,6 +186,8 @@ export function EpicDrawer({
     },
     [epicId, load, onClose],
   );
+
+  const kb = keyboardStyles(useKeyboardInset());
 
   if (!epicId) return null;
 
@@ -180,10 +203,12 @@ export function EpicDrawer({
       aria-modal
       aria-label="Epic detail"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      style={kb.backdrop}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        style={kb.panel}
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
@@ -201,7 +226,11 @@ export function EpicDrawer({
                   <StatusPill status={epic.status} />
                   {epic.workingSince && (
                     <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
-                      Working for <WorkTimer since={epic.workingSince} className="text-ochre-text" />
+                      Working for{" "}
+                      <WorkTimer
+                        since={epic.workingSince}
+                        className="text-ochre-text"
+                      />
                     </span>
                   )}
                   {epic.childCount > 0 && (
@@ -238,7 +267,10 @@ export function EpicDrawer({
                   type="button"
                   disabled={busy}
                   onClick={() => setConfirming(true)}
-                  className={cn(ACTION, "text-fg-muted hover:text-crimson-text")}
+                  className={cn(
+                    ACTION,
+                    "text-fg-muted hover:text-crimson-text",
+                  )}
                 >
                   Delete
                 </button>
@@ -254,7 +286,10 @@ export function EpicDrawer({
                     type="button"
                     disabled={busy}
                     onClick={() => void act("DELETE")}
-                    className={cn(ACTION, "bg-crimson text-on-crimson border-transparent")}
+                    className={cn(
+                      ACTION,
+                      "bg-crimson text-on-crimson border-transparent",
+                    )}
                   >
                     Delete
                   </button>
@@ -280,7 +315,10 @@ export function EpicDrawer({
           </div>
 
           {actionError && (
-            <p role="alert" className="text-crimson-text mt-2 text-[12px] leading-[1.5]">
+            <p
+              role="alert"
+              className="text-crimson-text mt-2 text-[12px] leading-[1.5]"
+            >
               {actionError}
             </p>
           )}
@@ -312,7 +350,9 @@ export function EpicDrawer({
                 tab === t ? "bg-amber text-on-amber" : "text-fg-muted",
               )}
             >
-              {t === "prd" ? "PRD" : `Tickets (${detail?.children.length ?? 0})`}
+              {t === "prd"
+                ? "PRD"
+                : `Tickets (${detail?.children.length ?? 0})`}
             </button>
           ))}
         </div>
@@ -323,9 +363,17 @@ export function EpicDrawer({
           first={
             <div className="min-h-0 overflow-y-auto">
               {detail?.showcase && (
-                <section aria-label="Showcase" className="border-line bg-jade-wash border-b p-4">
-                  <span className="text-jade-chip-text font-mono text-[10px] tracking-[0.12em]">SHOWCASE · PM AGENT</span>
-                  <MarkdownLite text={detail.showcase} className="text-fg mt-2 text-[13px] leading-[1.6]" />
+                <section
+                  aria-label="Showcase"
+                  className="border-line bg-jade-wash border-b p-4"
+                >
+                  <span className="text-jade-chip-text font-mono text-[10px] tracking-[0.12em]">
+                    SHOWCASE · PM AGENT
+                  </span>
+                  <MarkdownLite
+                    text={detail.showcase}
+                    className="text-fg mt-2 text-[13px] leading-[1.6]"
+                  />
                 </section>
               )}
               <PrdPane
@@ -351,12 +399,21 @@ export function EpicDrawer({
                     <CardChat
                       kind="epic"
                       cardId={epicId}
-                      agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(epic.status, epic.stalledIn)]]}
+                      agentLabel={
+                        AGENT_ROLE_LABELS[
+                          COLUMN_AGENT_ROLE[
+                            columnFor(epic.status, epic.stalledIn)
+                          ]
+                        ]
+                      }
                     />
                   )
                 }
               >
-                <DagPane tickets={detail?.children ?? []} onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))} />
+                <DagPane
+                  tickets={detail?.children ?? []}
+                  onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))}
+                />
               </WithChat>
             </div>
           }

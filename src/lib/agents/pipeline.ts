@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
@@ -17,6 +18,7 @@ import { repository } from "@/lib/db";
 import type { AttachmentRef } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
 import { ticketNotes } from "@/lib/coder/notes";
+import { sharedNoteLine, sharedNotesFor } from "@/lib/coder/shared-notes";
 import { epicNoteTexts, withEpicNotes } from "./epic-notes";
 import { beginRun, endRun, recordSpend } from "@/lib/budget/controller";
 import { budgetFor, type Budget } from "@/lib/budget/budget-for";
@@ -27,10 +29,12 @@ import { agentFor, cliAgentFor, runTargetFor } from "./presets";
 import { handoffSection } from "./handoff";
 import { startCliAnswer, startCliDraftTicket } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
+import { typeOf } from "./decomposition";
 import { unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
-import { directoryTree } from "@/lib/vcs/repositories";
+import { carryActor } from "@/lib/auth/actor";
+import { fileLayout } from "@/lib/vcs/repositories";
 import { holdFunction } from "@/lib/usage/governor";
 
 /**
@@ -100,6 +104,7 @@ export function startRun(
 
   const startedAt = new Date();
   const heard = new Set<number>();
+  const heardShared = new Set<number>();
   const ticketId = ids.ticketId ?? null;
 
   const ctx: AgentContext = {
@@ -128,7 +133,12 @@ export function startRun(
             (n) => !heard.has(n.seq),
           );
           for (const n of fresh) heard.add(n.seq);
-          return { stopped, notes: fresh.map((n) => n.text) };
+          // A board that cannot be read for shared notes still hears its person.
+          const shared = (await sharedNotesFor(projectId, ticketId, startedAt).catch(() => [])).filter(
+            (n) => !heardShared.has(n.seq),
+          );
+          for (const n of shared) heardShared.add(n.seq);
+          return { stopped, notes: fresh.map((n) => n.text), shared: shared.map(sharedNoteLine) };
         }
       : undefined,
     emit: (raw) => {
@@ -275,6 +285,7 @@ export async function applyReroute(
           size: input.ticket.size,
           storyPoints: input.ticket.storyPoints ?? null,
           needsHuman: input.ticket.needsHuman ?? null,
+          ...typeOf(input.ticket),
           position,
           dependsOnKeys: [],
         },
@@ -345,15 +356,16 @@ export async function applyReroute(
 }
 
 /**
- * Directories the Architect Agent uses to ground its file scopes: the picked
- * repository's real layout when GitHub can be read, and otherwise the known
+ * What the Architect Agent grounds its file scopes in: the picked
+ * repository's files, one line per directory, when GitHub can be read, so it
+ * can reserve files rather than whole directories; otherwise the known
  * layout of this repository, which is a better prompt than nothing.
  */
 export async function repoTree(projectId: string): Promise<string[]> {
   const project = await projectFor(projectId);
   const { githubToken } = await credentialsForProject(project);
   const tree = githubToken
-    ? await directoryTree(project.repoFullName, project.baseBranch, githubToken)
+    ? await fileLayout(project.repoFullName, project.baseBranch, githubToken)
     : null;
   if (tree && tree.length > 0) return tree;
   return [
@@ -371,7 +383,12 @@ export async function repoTree(projectId: string): Promise<string[]> {
  * whatever the person has asked of this breakdown and, when there is
  * anything to ask it about, the tickets that already exist under it.
  */
+/** The Architect Agent's breakdown of an Epic, on the keys of whoever set it going. */
 export async function decomposeEpic(projectId: string, epicId: string): Promise<void> {
+  return withCardActor(epicId, () => breakDownEpic(projectId, epicId));
+}
+
+async function breakDownEpic(projectId: string, epicId: string): Promise<void> {
   const detail = await repository().epicDetail(epicId);
   const prd = prdSchema.safeParse(detail?.prd);
   if (!detail || !prd.success) return;
@@ -420,14 +437,18 @@ export async function applyTickets(
       });
     }
   }
+  // The agent's key is only a handle for dependsOn; the ticket is stored as
+  // EPIC-n-Tm so codes stay unique across the project.
+  const epicKey = (await repo.cardById(epicId))?.key;
   const taken = new Set(kept.map((t) => t.key));
   const keyFor = new Map<string, string>();
-  for (const t of tickets) {
-    let key = t.key;
-    for (let n = 2; taken.has(key); n++) key = `${t.key}-${n}`;
+  tickets.forEach((t, i) => {
+    const base = `${epicKey}-T${i + 1}`;
+    let key = base;
+    for (let n = 2; taken.has(key); n++) key = `${base}-${n}`;
     taken.add(key);
     keyFor.set(t.key, key);
-  }
+  });
 
   const positions = await repo.columnPositions(projectId, "todo");
   let cursor = positions.length;
@@ -443,6 +464,7 @@ export async function applyTickets(
       size: t.size,
       storyPoints: t.storyPoints ?? null,
       needsHuman: t.needsHuman ?? null,
+      ...typeOf(t),
       position: positionForIndex(positions, cursor++),
       dependsOnKeys: t.dependsOn.map((k) => keyFor.get(k) ?? k),
     })),
@@ -551,7 +573,12 @@ async function attachmentsFor(ref: AttachmentRef): Promise<AgentAttachment[]> {
 }
 
 /** Stage 2. Raw backlog request becomes an Epic PRD. */
-export async function runProductAgent(
+/** The Product Agent's PRD for an Epic, on the keys of whoever set it going. */
+export async function runProductAgent(projectId: string, epicId: string, rawRequest: string): Promise<void> {
+  return withCardActor(epicId, () => draftPrd(projectId, epicId, rawRequest));
+}
+
+async function draftPrd(
   projectId: string,
   epicId: string,
   rawRequest: string,
@@ -655,6 +682,16 @@ export async function runArchitectDraftTicket(
   rawRequest: string,
   repoTree: string[],
 ): Promise<void> {
+  return withCardActor(ticketId, () => draftTicket(projectId, epicId, ticketId, rawRequest, repoTree));
+}
+
+async function draftTicket(
+  projectId: string,
+  epicId: string,
+  ticketId: string,
+  rawRequest: string,
+  repoTree: string[],
+): Promise<void> {
   const run = startRun(projectId, "architect", {
     epicId,
     ticketId,
@@ -700,6 +737,7 @@ export async function applyDraftedTicket(
 ): Promise<void> {
   const repo = repository();
   const placeholder = await repo.cardById(ticketId);
+  const was = await repo.ticketDetail(ticketId);
   const position = placeholder?.position ?? 0;
   // The placeholder already carries the project's next standalone ticket
   // number from createTodoItem. Keep it rather than the agent's self-chosen
@@ -719,11 +757,23 @@ export async function applyDraftedTicket(
         fileScope: ticket.fileScope,
         size: ticket.size,
         storyPoints: ticket.storyPoints ?? null,
+        ...typeOf(ticket),
         position,
         dependsOnKeys: [],
       },
     ])
   )[0]!;
+  // What the request came with stays with the ticket made from it: its
+  // attachments, its GitHub issue (renamed to the drafted ticket by the sync
+  // below, rather than a second one filed and the first left open), and the
+  // issue it was imported from.
+  await repo.moveTicketAttachments(ticketId, created.id);
+  if (was?.issueNumber || was?.sourceIssueNumber) {
+    await repo.updateTicket(created.id, {
+      issueNumber: was.issueNumber,
+      sourceIssueNumber: was.sourceIssueNumber,
+    });
+  }
   await repo.move({
     cardId: created.id,
     kind: "ticket",
@@ -785,7 +835,8 @@ export function fromStream<T>(work: () => T): T {
  * runs detached as before.
  */
 export function launch(work: () => Promise<void>, label: string): void {
-  const run = () => {
+  const asActor = carryActor();
+  const run = () => asActor(() => {
     // What keeps a function alive is counted against the host's allowance.
     const release = holdFunction();
     return work()
@@ -793,7 +844,7 @@ export function launch(work: () => Promise<void>, label: string): void {
         console.error(`[formic] ${label} failed:`, e);
       })
       .finally(release);
-  };
+  });
 
   if (streaming.getStore()) {
     void run();

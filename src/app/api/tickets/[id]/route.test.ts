@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { makeCard } from "@/test/cards";
 
 const { repo, activeProject } = vi.hoisted(() => ({
   repo: {
     projectOfCard: vi.fn(),
+    ticketDetail: vi.fn(),
     boardCards: vi.fn(),
-    updateTicket: vi.fn(),
+    ticketEvents: vi.fn(),
+    columnOverrides: vi.fn(),
+    ticketRunMs: vi.fn(),
   },
   activeProject: vi.fn(),
 }));
@@ -14,52 +16,56 @@ const { repo, activeProject } = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
 vi.mock("@/lib/board/project", () => ({ activeProject }));
 
-const { PATCH } = await import("./route");
-const { clearBuckets } = await import("@/lib/rate-limit");
+const { GET } = await import("./route");
 
-const params = { params: Promise.resolve({ id: "t-1" }) };
+const params = (id: string) => ({ params: Promise.resolve({ id }) });
+const call = (id = "t-1") => GET(new NextRequest(`http://localhost/api/tickets/${id}`), params(id));
 
-function patch(body: unknown) {
-  return PATCH(
-    new NextRequest("http://localhost/api/tickets/t-1", { method: "PATCH", body: JSON.stringify(body) }),
-    params,
-  );
-}
+const card = { id: "t-1", key: "T-1", title: "Ticket", status: "todo", dependsOn: [], workingSince: null };
 
 beforeEach(() => {
-  clearBuckets();
   vi.clearAllMocks();
-  activeProject.mockResolvedValue({ id: "p-1" });
+  activeProject.mockResolvedValue({ id: "p-1", ownerId: null });
   repo.projectOfCard.mockResolvedValue("p-1");
-  repo.boardCards.mockResolvedValue([makeCard({ id: "t-1", status: "ready" })]);
+  repo.ticketDetail.mockResolvedValue({
+    description: "Do it",
+    acceptanceCriteria: ["works"],
+    branchName: "t-1",
+    epicId: null,
+    plan: null,
+    handoff: null,
+    runnerJob: null,
+  });
+  repo.boardCards.mockResolvedValue([card]);
+  repo.ticketEvents.mockResolvedValue([]);
+  repo.columnOverrides.mockResolvedValue({});
+  repo.ticketRunMs.mockResolvedValue(120_000);
 });
 
-describe("PATCH /api/tickets/[id]", () => {
-  it("sets the work type", async () => {
-    expect((await patch({ workType: "bug" })).status).toBe(200);
-    expect(repo.updateTicket).toHaveBeenCalledWith("t-1", { workType: "bug" });
+describe("GET /api/tickets/[id]", () => {
+  it("returns the ticket's view", async () => {
+    const res = await call();
+    expect(res.status).toBe(200);
+    const view = await res.json();
+    expect(view).toMatchObject({
+      card: { id: "t-1" },
+      epic: null,
+      description: "Do it",
+      acceptanceCriteria: ["works"],
+      branchName: "t-1",
+      activity: [],
+      canStop: false,
+    });
+    expect(view.usage.usedMinutes).toBe(2);
   });
 
-  it("clears the work type with null", async () => {
-    expect((await patch({ workType: null })).status).toBe(200);
-    expect(repo.updateTicket).toHaveBeenCalledWith("t-1", { workType: null });
+  it("404s for an unknown ticket", async () => {
+    repo.projectOfCard.mockResolvedValue(null);
+    expect((await call("nope")).status).toBe(404);
   });
 
-  it("answers 409 and changes nothing once the ticket has left To Do", async () => {
-    repo.boardCards.mockResolvedValue([makeCard({ id: "t-1", status: "running" })]);
-    expect((await patch({ workType: "spike" })).status).toBe(409);
-    expect(repo.updateTicket).not.toHaveBeenCalled();
-  });
-
-  it("rejects a value that is not a work type", async () => {
-    expect((await patch({ workType: "chore" })).status).toBe(400);
-    expect((await patch({})).status).toBe(400);
-    expect(repo.updateTicket).not.toHaveBeenCalled();
-  });
-
-  it("answers 404 for a ticket of another project", async () => {
-    repo.projectOfCard.mockResolvedValue("p-2");
-    expect((await patch({ workType: "bug" })).status).toBe(404);
-    expect(repo.updateTicket).not.toHaveBeenCalled();
+  it("404s when the ticket has no detail", async () => {
+    repo.ticketDetail.mockResolvedValue(null);
+    expect((await call()).status).toBe(404);
   });
 });

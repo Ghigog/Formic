@@ -3,6 +3,9 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsForm } from "./settings-form";
 
+// It fetches the colony on mount; colony-section.test.tsx covers it.
+vi.mock("@/components/settings/colony-section", () => ({ ColonySection: () => null }));
+
 const account = { login: "octo", name: "Octo Cat", avatarUrl: null, signedIn: true };
 
 afterEach(() => {
@@ -90,6 +93,14 @@ describe("Sandbox key", () => {
     expect(screen.getByText(/12 sandbox minutes left this month/)).toBeInTheDocument();
   });
 
+  it("walks through getting a key, the free credit and where to check spend", () => {
+    form({ hint: null, serverFallback: false });
+    expect(screen.getByText(/free plan comes with \$100 of credit/)).toBeInTheDocument();
+    expect(screen.getByText(/press Verify workspace/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "E2B console" })).toHaveAttribute("href", "https://console.e2b.dev");
+    expect(screen.getByText(/check the Usage page/)).toBeInTheDocument();
+  });
+
   it("asks for their own key once the minutes are used", () => {
     form({ hint: null, serverFallback: true, fallbackMinutesLeft: 0 });
     expect(screen.getByText(/Add your own key to keep running/)).toBeInTheDocument();
@@ -97,7 +108,7 @@ describe("Sandbox key", () => {
 });
 
 describe("Auto-merge", () => {
-  const project = { id: "p1", name: "Formic", autoMerge: false };
+  const project = { id: "p1", name: "Formic", autoMerge: false, autoEscalate: false };
 
   it("shows only the current board, and the label follows the switch", async () => {
     const fetchMock = vi.fn(async () => Response.json({ autoMerge: true }));
@@ -154,6 +165,55 @@ describe("Auto-merge", () => {
       <SettingsForm account={account} installUrl={null} e2b={{ hint: null, serverFallback: false }} />,
     );
     expect(screen.queryByRole("checkbox", { name: /merge/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("Auto-escalation", () => {
+  const project = { id: "p1", name: "Formic", autoMerge: false, autoEscalate: false };
+  const e2b = { hint: null, serverFallback: false };
+
+  it("shows the stored value and saves a change", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ autoEscalate: false }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <SettingsForm
+        account={account}
+        installUrl={null}
+        project={{ ...project, autoEscalate: true }}
+        e2b={e2b}
+      />,
+    );
+    const toggle = screen.getByRole("checkbox", { name: "Escalate story points automatically" });
+    expect(toggle).toBeChecked();
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(toggle);
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ projectId: "p1", autoEscalate: false }),
+      }),
+    );
+    expect(toggle).not.toBeChecked();
+  });
+
+  it("stays as it was and says so when the save is refused", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "no" }, { status: 403 })));
+    render(<SettingsForm account={account} installUrl={null} project={project} e2b={e2b} />);
+    const toggle = screen.getByRole("checkbox", { name: "Escalate story points automatically" });
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(toggle);
+    });
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText("That did not save. Try again.")).toBeInTheDocument();
+  });
+
+  it("shows nothing when there is no board to set it on", () => {
+    render(<SettingsForm account={account} installUrl={null} e2b={e2b} />);
+    expect(screen.queryByRole("checkbox", { name: /escalate/i })).not.toBeInTheDocument();
   });
 });
 

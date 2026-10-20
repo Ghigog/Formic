@@ -72,6 +72,8 @@ interface MockRepo {
   baseMerges: Map<string, string>;
   /** Pull requests GitHub refuses to bring the base into, and what it says. */
   refusals: Map<number, string>;
+  /** Pull requests whose base has moved on since their head was made. */
+  behind: Set<number>;
   /** Merge commits Formic recorded, to the commit each merged in. */
   recordedMerges: Map<string, string>;
   /** Each card's checkpoint, with what it saved. */
@@ -80,6 +82,8 @@ interface MockRepo {
   branchRuns: Map<string, BranchRun[]>;
   /** Artifact files by branch, as a test says CI uploaded them. */
   artifacts: Map<string, ArtifactFiles>;
+  /** Set when a test says the repository runs no CI at all. */
+  noCi: boolean;
 }
 
 export interface MockIssue {
@@ -121,10 +125,12 @@ function repo(): MockRepo {
     merges: [],
     baseMerges: new Map(),
     refusals: new Map(),
+    behind: new Set(),
     recordedMerges: new Map(),
     checkpoints: new Map(),
     branchRuns: new Map(),
     artifacts: new Map(),
+    noCi: false,
   };
   return g.__formicMockRepo;
 }
@@ -190,6 +196,10 @@ export class MockVcsClient implements VcsClient {
     return [];
   }
 
+  async hasCi(): Promise<boolean> {
+    return !repo().noCi;
+  }
+
   async checkLog(checkRunId: number): Promise<CheckLog> {
     return {
       name: "ci / test",
@@ -205,12 +215,31 @@ export class MockVcsClient implements VcsClient {
     };
   }
 
+  async retargetPullRequest(number: number, baseBranch: string): Promise<void> {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    pull.baseBranch = baseBranch;
+  }
+
   async updateBranch(number: number): Promise<UpdateOutcome> {
     const refusal = repo().refusals.get(number);
     if (refusal) return { ok: false, reason: refusal, conflict: true };
     // A conflicted mock PR stands for one an agent just resolved: bringing
     // the base in now succeeds, as it would on GitHub.
     const pull = pulls().get(number);
+    if (pull && repo().behind.delete(number)) {
+      // A new head, so CI starts over on it. A new object too, as a fresh
+      // read from GitHub would be: whoever read the pull request before still
+      // holds the head it had.
+      const sha = fakeSha();
+      repo().baseMerges.set(sha, pull.headSha);
+      pulls().set(number, {
+        ...pull,
+        headSha: sha,
+        checks: pull.checks.map((c) => ({ ...c, status: "in_progress", conclusion: null })),
+      });
+      return { ok: true, updated: true };
+    }
     if (pull?.mergeable !== false) return { ok: true, updated: false };
     pull.mergeable = true;
     const sha = fakeSha();
@@ -239,7 +268,10 @@ export class MockVcsClient implements VcsClient {
     }
     pull.merged = true;
     pull.state = "closed";
-    return { ok: true, sha: fakeSha() };
+    const sha = fakeSha();
+    // The base moves on to the merge, as on GitHub, where Formic has seen it.
+    if (repo().branches.has(pull.baseBranch)) repo().branches.set(pull.baseBranch, sha);
+    return { ok: true, sha };
   }
 
   async comment(number: number, body: string): Promise<void> {
@@ -520,6 +552,15 @@ export class MockVcsClient implements VcsClient {
     return pull.headSha;
   }
 
+  /** Test seam: the repository runs no CI, so a mock PR's head gets no checks. */
+  static withoutCi(number: number): string {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    repo().noCi = true;
+    pull.checks = [];
+    return pull.headSha;
+  }
+
   /** Test seam: make merging `head` into `base` conflict. */
   static conflictOn(base: string, head: string): void {
     repo().conflicts.add(`${base}<-${head}`);
@@ -533,6 +574,11 @@ export class MockVcsClient implements VcsClient {
     repo().baseMerges.set(sha, pull.headSha);
     pull.headSha = sha;
     return sha;
+  }
+
+  /** Test seam: the base has moved on under a mock PR, so bringing it in makes a new head. */
+  static behindBase(number: number): void {
+    repo().behind.add(number);
   }
 
   /** Test seam: make GitHub refuse to bring the base into a mock PR. */

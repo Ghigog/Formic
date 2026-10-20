@@ -174,27 +174,59 @@ describe("applyTickets on an Epic broken down again", () => {
   });
 
   it("replaces the tickets nobody started, keeps the rest, and renames clashing keys", async () => {
-    const [epic, idle, busy] = makeEpicWithChildren({ status: "ready" }, [
-      { key: "T-1", status: "ready" },
-      { key: "T-2", status: "review", prNumber: 7 },
+    const [epic, idle, busy] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, [
+      { key: "EPIC-3-T1", status: "ready" },
+      { key: "EPIC-3-T2", status: "review", prNumber: 7 },
     ]);
     seedMemory([epic!, idle!, busy!]);
 
     await applyTickets(PROJECT, epic!.id, [draft("T-1"), draft("T-2", ["T-1"])]);
 
     const tickets = await repository().ticketsForEpic(epic!.id);
-    expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2", "T-2-2"]);
+    expect(tickets.map((t) => t.key).sort()).toEqual(["EPIC-3-T1", "EPIC-3-T2", "EPIC-3-T2-2"]);
     expect(tickets.some((t) => t.id === idle!.id)).toBe(false);
     expect(tickets.some((t) => t.id === busy!.id)).toBe(true);
-    const renamed = (await repository().boardCards(PROJECT)).find((c) => c.key === "T-2-2")!;
-    const first = tickets.find((t) => t.key === "T-1")!;
+    const renamed = (await repository().boardCards(PROJECT)).find((c) => c.key === "EPIC-3-T2-2")!;
+    const first = tickets.find((t) => t.key === "EPIC-3-T1")!;
     expect(renamed.dependsOn).toEqual([first.id]);
   });
 
+  it("stores the type the Architect gave each ticket, and a severity only for a bug", async () => {
+    const [epic] = makeEpicWithChildren({ key: "EPIC-5", status: "ready" }, []);
+    seedMemory([epic!]);
+
+    await applyTickets(PROJECT, epic!.id, [
+      { ...draft("T-1"), workType: "bug", bugSeverity: "high" },
+      { ...draft("T-2"), workType: "spike", bugSeverity: "low" },
+    ]);
+
+    const cards = (await repository().boardCards(PROJECT)).filter((c) => c.epicId === epic!.id);
+    expect(cards.find((c) => c.key === "EPIC-5-T1")).toMatchObject({ workType: "bug", bugSeverity: "high" });
+    expect(cards.find((c) => c.key === "EPIC-5-T2")).toMatchObject({ workType: "spike", bugSeverity: null });
+  });
+
+  it("keys tickets under their Epic and maps dependsOn to the new keys", async () => {
+    const [epic3] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, []);
+    const [epic4] = makeEpicWithChildren({ key: "EPIC-4", status: "ready" }, []);
+    seedMemory([epic3!, epic4!]);
+
+    for (const e of [epic3!, epic4!]) {
+      await applyTickets(PROJECT, e.id, [draft("T-1"), draft("T-2", ["T-1"])]);
+    }
+
+    const t3 = await repository().ticketsForEpic(epic3!.id);
+    const t4 = await repository().ticketsForEpic(epic4!.id);
+    expect(t3.map((t) => t.key).sort()).toEqual(["EPIC-3-T1", "EPIC-3-T2"]);
+    expect(t4.map((t) => t.key).sort()).toEqual(["EPIC-4-T1", "EPIC-4-T2"]);
+    const cards = await repository().boardCards(PROJECT);
+    const second = cards.find((c) => c.key === "EPIC-3-T2")!;
+    expect(second.dependsOn).toEqual([t3.find((t) => t.key === "EPIC-3-T1")!.id]);
+  });
+
   it("leaves a record in the Epic's chat of what it replaced and kept", async () => {
-    const [epic, idle, busy] = makeEpicWithChildren({ status: "ready" }, [
-      { key: "T-1", status: "ready" },
-      { key: "T-2", status: "review", prNumber: 7 },
+    const [epic, idle, busy] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, [
+      { key: "EPIC-3-T1", status: "ready" },
+      { key: "EPIC-3-T2", status: "review", prNumber: 7 },
     ]);
     seedMemory([epic!, idle!, busy!]);
 
@@ -203,12 +235,12 @@ describe("applyTickets on an Epic broken down again", () => {
     const messages = await repository().cardChatMessages(epic!.id);
     const record = messages.find((m) => m.role === "assistant");
     expect(record?.status).toBe("done");
-    expect(record?.content).toContain("Replaced T-1 (");
-    expect(record?.content).toContain("Kept T-2, already in flight.");
+    expect(record?.content).toContain("Replaced EPIC-3-T1 (");
+    expect(record?.content).toContain("Kept EPIC-3-T2, already in flight.");
   });
 
   it("leaves no record on the very first decomposition", async () => {
-    const [epic] = makeEpicWithChildren({ status: "ready" }, []);
+    const [epic] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, []);
     seedMemory([epic!]);
 
     await applyTickets(PROJECT, epic!.id, [draft("T-1")]);
@@ -285,6 +317,37 @@ describe("runArchitectDraftTicket", () => {
     const detail = await repository().ticketDetail(drafted!.id);
     expect(detail?.description).toBe(draftedTicket.description);
     expect(detail?.acceptanceCriteria).toEqual(draftedTicket.acceptanceCriteria);
+  });
+
+  it("keeps the request's attachments and GitHub issue on the drafted ticket", async () => {
+    // Made through the repository, so it has the details a seeded card lacks.
+    const epic = makeCard({ kind: "epic", status: "draft", standalone: true, size: null });
+    seedMemory([epic]);
+    const repo = repository();
+    const [ticket] = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "Raw", description: "", acceptanceCriteria: [], fileScope: [], size: "S", position: 1, dependsOnKeys: [] },
+    ]);
+    await repo.updateTicket(ticket!.id, { status: "blocked", stalledIn: "todo", issueNumber: 46, sourceIssueNumber: 12 });
+    await repo.createAttachment({
+      projectId: PROJECT,
+      requestId: "req-2",
+      filename: "design.md",
+      mimeType: "text/markdown",
+      kind: "file",
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+    await repo.claimAttachments("req-2", { ticketId: ticket!.id });
+    useArchitect(
+      new StubArchitect(async () => ({ ok: true, value: { kind: "ticket", ticket: draftedTicket }, usage: NO_USAGE })),
+    );
+
+    await runArchitectDraftTicket(PROJECT, epic.id, ticket!.id, "raw request text", []);
+
+    const drafted = (await repo.boardCards(PROJECT)).find((c) => c.epicId === epic.id && c.kind === "ticket")!;
+    expect(drafted.id).not.toBe(ticket!.id);
+    expect(await repo.ticketDetail(drafted.id)).toMatchObject({ issueNumber: 46, sourceIssueNumber: 12 });
+    expect((await repo.attachmentsFor({ ticketId: drafted.id })).map((a) => a.filename)).toEqual(["design.md"]);
   });
 
   it("keeps the placeholder's sequential key, not the agent's T-1 draft key", async () => {

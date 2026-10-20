@@ -7,6 +7,10 @@ import { useSound } from "@/components/colony/store";
 import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
+import { ColonySection } from "@/components/settings/colony-section";
+import { DesktopAppSection } from "@/components/settings/desktop-app-section";
+import { EffortSection } from "@/components/settings/effort-section";
+import { ScoutAgentSection } from "@/components/settings/scout-agent-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
@@ -23,6 +27,11 @@ interface ProjectSetting {
   id: string;
   name: string;
   autoMerge: boolean;
+  autoEscalate: boolean;
+  /** Whether people this board is shared with may run on the owner's keys. */
+  shareKeys?: boolean;
+  /** The saved agent that runs scouts; null follows the column. */
+  scoutPresetId?: string | null;
 }
 
 /**
@@ -38,6 +47,8 @@ export function SettingsForm({
   runTimeBudget,
   limits,
   renewal,
+  effortByPoints,
+  presets = [],
 }: {
   account: Account;
   installUrl: string | null;
@@ -51,6 +62,10 @@ export function SettingsForm({
   limits?: { tokens: LimitSetting; attempts: LimitSetting };
   /** Saved plan renewal day; none when omitted. */
   renewal?: Renewal;
+  /** Whether thinking effort follows story points; on when omitted. */
+  effortByPoints?: boolean;
+  /** Saved agents the scout picker offers. */
+  presets?: { id: string; name: string }[];
 }) {
   return (
     <div className="bg-cream min-h-dvh">
@@ -122,23 +137,89 @@ export function SettingsForm({
           </Section>
         )}
 
+        {project && (
+          <Section title="Auto-escalation">
+            <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+              Applies to {project.name}. Formic raises a ticket&apos;s story
+              points on its own when a run shows it is bigger than estimated;
+              off, points only change when you change them.
+            </p>
+            <AutoEscalateToggle project={project} />
+          </Section>
+        )}
+
+        {project && account.signedIn && (
+          <Section title="Sharing">
+            <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+              Applies to {project.name}. Anyone who can reach its repository on
+              GitHub shares this board and sees every card. Their agents run on
+              their own keys. On, anyone who hasn&apos;t set up their own agents
+              or sandbox key runs on yours instead, and you pay for it. Only you
+              see this.
+            </p>
+            <ShareKeysToggle project={project} />
+          </Section>
+        )}
+
+        {project && (
+          <ScoutAgentSection
+            projectId={project.id}
+            presets={presets}
+            initial={project.scoutPresetId ?? null}
+          />
+        )}
+
         <SoundSection />
 
         <BoardViewSection />
 
         <KeyField
           field="e2bKey"
+          id="sandbox"
           title="Sandbox (E2B)"
-          blurb="The cloud machines your coding agents work in, whichever AI provider they use."
+          blurb="The cloud machines your coding agents work in, whichever AI provider they use. All you need is an E2B API key."
           getFrom="https://e2b.dev/dashboard"
           getFromLabel="e2b.dev/dashboard → API Keys"
           placeholder="e2b_…"
           state={e2b}
+          steps={
+            <>
+              <ol className="text-muted mb-2.5 list-decimal space-y-1 pl-5 text-[12px] leading-[1.5]">
+                <li>
+                  Sign up at{" "}
+                  <a href="https://e2b.dev" target="_blank" rel="noreferrer" className="text-ink underline">
+                    e2b.dev
+                  </a>
+                  . The free plan comes with $100 of credit.
+                </li>
+                <li>
+                  In the{" "}
+                  <a href="https://console.e2b.dev" target="_blank" rel="noreferrer" className="text-ink underline">
+                    E2B console
+                  </a>
+                  , press Verify workspace if it asks you to: your key won&apos;t work until you do. It&apos;s a
+                  one-time payment that comes back to you as credit. Older workspaces may not be asked.
+                </li>
+                <li>Open API Keys and copy your key.</li>
+                <li>Paste it below and save.</li>
+              </ol>
+              <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+                It&apos;s unlikely to cost you anything: a run costs a fraction of a cent, so $100 lasts a long time.
+                To be sure, check the Usage page in your E2B console now and then.
+              </p>
+            </>
+          }
         />
 
         <RunTimeBudgetSection initial={runTimeBudget} tokens={limits?.tokens} attempts={limits?.attempts} />
 
+        <ColonySection />
+
+        <EffortSection initial={effortByPoints} />
+
         <RenewalDaySection initial={renewal} />
+
+        <DesktopAppSection />
 
         <p className="text-muted px-1 text-[12px] leading-[1.5]">
           AI provider keys live on each agent, not here: pick or create one from
@@ -183,6 +264,80 @@ function AutoMergeToggle({ project }: { project: ProjectSetting }) {
           onChange={(e) => void change(e.target.checked)}
         />
         {on ? "Auto-merge when review is finished" : "Merge when move to done"}
+      </label>
+      {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
+    </div>
+  );
+}
+
+function ShareKeysToggle({ project }: { project: ProjectSetting }) {
+  const [on, setOn] = useState(!!project.shareKeys);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function change(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, shareKeys: next }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      setError("That did not save. Try again.");
+      return;
+    }
+    setOn(next);
+  }
+
+  return (
+    <div>
+      <label className="text-ink flex items-center gap-2 text-[13px]">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void change(e.target.checked)}
+        />
+        Let others use my keys
+      </label>
+      {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
+    </div>
+  );
+}
+
+function AutoEscalateToggle({ project }: { project: ProjectSetting }) {
+  const [on, setOn] = useState(project.autoEscalate);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function change(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, autoEscalate: next }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      setError("That did not save. Try again.");
+      return;
+    }
+    setOn(next);
+  }
+
+  return (
+    <div>
+      <label className="text-ink flex items-center gap-2 text-[13px]">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void change(e.target.checked)}
+        />
+        Escalate story points automatically
       </label>
       {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>
@@ -262,9 +417,9 @@ function DangerZone() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="bg-card border-line rounded-xl border p-4">
+    <section id={id} className="bg-card border-line scroll-mt-4 rounded-xl border p-4">
       <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">
         {title}
       </h2>
@@ -275,6 +430,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function KeyField({
   field,
+  id,
   title,
   blurb,
   getFrom,
@@ -282,8 +438,11 @@ function KeyField({
   placeholder,
   state,
   fallbackText,
+  steps,
 }: {
   field: "e2bKey" | "githubToken";
+  /** The section's anchor, for links that send people straight to it. */
+  id?: string;
   title: string;
   blurb: string;
   getFrom: string;
@@ -292,6 +451,8 @@ function KeyField({
   state: KeyState;
   /** Overrides the "without one…" line under the field. */
   fallbackText?: string;
+  /** How to get a key, step by step, in place of the one-line "Get one at". */
+  steps?: React.ReactNode;
 }) {
   const [hint, setHint] = useState(state.hint);
   const [editing, setEditing] = useState(!state.hint);
@@ -337,14 +498,20 @@ function KeyField({
           : "You're on the server's key and have used this month's sandbox minutes. Add your own key to keep running.");
 
   return (
-    <Section title={title}>
+    <Section id={id} title={title}>
       <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
-        {blurb} Get one at{" "}
-        <a href={getFrom} target="_blank" rel="noreferrer" className="text-ink underline">
-          {getFromLabel}
-        </a>
-        .
+        {blurb}
+        {!steps && (
+          <>
+            {" "}Get one at{" "}
+            <a href={getFrom} target="_blank" rel="noreferrer" className="text-ink underline">
+              {getFromLabel}
+            </a>
+            .
+          </>
+        )}
       </p>
+      {steps}
 
       {editing ? (
         <form

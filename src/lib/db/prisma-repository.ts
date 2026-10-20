@@ -31,12 +31,15 @@ import type {
   AssistantMessage,
   AssistantProposal,
   CardChatMessage,
+  AuditKind,
   AuditRecord,
   AuditReport,
   AuditResult,
+  Rubric,
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
+  Reservation,
 } from "./repository";
 import type {
   AgentRole,
@@ -50,8 +53,9 @@ import type {
   ColumnOverrides,
   PlanStep,
   WorkType,
+  BugSeverity,
 } from "@/lib/domain/entities";
-import { planStepSchema } from "@/lib/domain/entities";
+import { planStepSchema, severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
@@ -72,6 +76,7 @@ type EpicRow = {
   misplacedReason: string | null;
   standalone: boolean;
   workType: WorkType | null;
+  bugSeverity: BugSeverity | null;
   rerouteFrom: ColumnId | null;
   rerouteReason: string | null;
   runnerJob: string | null;
@@ -161,6 +166,120 @@ export class PrismaRepository implements Repository {
     return prisma().project.findUnique({ where: { id: projectId } });
   }
 
+  async addMember(projectId: string, userId: string): Promise<void> {
+    await prisma().projectMember.upsert({
+      where: { projectId_userId: { projectId, userId } },
+      create: { projectId, userId },
+      update: {},
+    });
+  }
+
+  async isMember(projectId: string, userId: string): Promise<boolean> {
+    return (await prisma().projectMember.count({ where: { projectId, userId } })) > 0;
+  }
+
+  async memberProjects(userId: string): Promise<ProjectSummary[]> {
+    return prisma().project.findMany({
+      where: { members: { some: { userId } } },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async memberAgents(projectId: string, userId: string): Promise<Record<string, string>> {
+    const rows = await prisma().memberAgent.findMany({ where: { projectId, userId } });
+    return Object.fromEntries(rows.map((r) => [r.slot, r.presetId]));
+  }
+
+  async setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void> {
+    const db = prisma();
+    if (presetId === null) {
+      await db.memberAgent.deleteMany({ where: { projectId, userId, slot } });
+      return;
+    }
+    await db.memberAgent.upsert({
+      where: { projectId_userId_slot: { projectId, userId, slot } },
+      create: { projectId, userId, slot, presetId },
+      update: { presetId },
+    });
+  }
+
+  async setShareKeys(projectId: string, shareKeys: boolean): Promise<void> {
+    await prisma().project.updateMany({ where: { id: projectId }, data: { shareKeys } });
+  }
+
+  async cardActor(cardId: string): Promise<string | null> {
+    const db = prisma();
+    const ticket = await db.ticket.findUnique({
+      where: { id: cardId },
+      select: { actorId: true, scoutOf: true, epic: { select: { actorId: true } } },
+    });
+    if (!ticket) {
+      return (await db.epic.findUnique({ where: { id: cardId }, select: { actorId: true } }))?.actorId ?? null;
+    }
+    if (ticket.actorId) return ticket.actorId;
+    if (ticket.scoutOf) {
+      const parent = await db.ticket.findUnique({ where: { id: ticket.scoutOf }, select: { actorId: true } });
+      if (parent?.actorId) return parent.actorId;
+    }
+    return ticket.epic.actorId;
+  }
+
+  async setCardActor(cardId: string, userId: string | null): Promise<void> {
+    const db = prisma();
+    const { count } = await db.ticket.updateMany({ where: { id: cardId }, data: { actorId: userId } });
+    if (count === 0) await db.epic.updateMany({ where: { id: cardId }, data: { actorId: userId } });
+  }
+
+  async reservations(repoFullName: string): Promise<Reservation[]> {
+    const rows = await prisma().ticket.findMany({
+      where: {
+        status: "running",
+        epic: { project: { repoFullName: { equals: repoFullName, mode: "insensitive" } } },
+      },
+      select: {
+        id: true,
+        key: true,
+        fileScope: true,
+        scoutOf: true,
+        epic: { select: { projectId: true, project: { select: { owner: { select: { login: true } } } } } },
+      },
+    });
+    // A running parent is on the same repository, so it is among the rows.
+    const running = new Set(rows.map((r) => r.id));
+    return rows.filter((r) => !r.scoutOf || running.has(r.scoutOf)).map((r) => ({
+      ticketId: r.id,
+      key: r.key,
+      projectId: r.epic.projectId,
+      ownerLogin: r.epic.project.owner?.login ?? null,
+      fileScope: r.fileScope,
+    }));
+  }
+
+  async acquireLease(key: string, holder: string, ttlMs: number): Promise<boolean> {
+    // One statement, on the database's clock: instances never compare their
+    // own clocks, and two asking at once cannot both win.
+    const rows = await prisma().$queryRaw<Array<{ key: string }>>`
+      INSERT INTO "lease" ("key", "holder", "expiresAt")
+      VALUES (${key}, ${holder}, now() + ${ttlMs} * interval '1 millisecond')
+      ON CONFLICT ("key") DO UPDATE SET
+        "holder" = EXCLUDED."holder",
+        "expiresAt" = EXCLUDED."expiresAt"
+      WHERE "lease"."expiresAt" < now() OR "lease"."holder" = EXCLUDED."holder"
+      RETURNING "key"`;
+    return rows.length > 0;
+  }
+
+  async releaseLease(key: string, holder: string): Promise<void> {
+    await prisma().lease.deleteMany({ where: { key, holder } });
+  }
+
+  async leaseHolder(key: string): Promise<string | null> {
+    // On the database's clock, as acquireLease is.
+    const rows = await prisma().$queryRaw<Array<{ holder: string }>>`
+      SELECT "holder" FROM "lease" WHERE "key" = ${key} AND "expiresAt" >= now()`;
+    return rows[0]?.holder ?? null;
+  }
+
   async ensureProject(input: {
     ownerId: string | null;
     repoFullName: string;
@@ -217,7 +336,11 @@ export class PrismaRepository implements Repository {
       v === undefined ? undefined : v === null ? Prisma.DbNull : (v as Prisma.InputJsonObject);
     return prisma().user.update({
       where: { id: userId },
-      data: { tokenLimit: json(columns.tokenLimit), attemptLimit: json(columns.attemptLimit) },
+      data: {
+        tokenLimit: json(columns.tokenLimit),
+        attemptLimit: json(columns.attemptLimit),
+        effortByPoints: columns.effortByPoints,
+      },
     });
   }
 
@@ -353,6 +476,7 @@ export class PrismaRepository implements Repository {
         misplacedReason: true,
         standalone: true,
         workType: true,
+        bugSeverity: true,
         rerouteFrom: true,
         rerouteReason: true,
         runnerJob: true,
@@ -360,7 +484,7 @@ export class PrismaRepository implements Repository {
         position: true,
         createdAt: true,
         updatedAt: true,
-        tickets: { select: { id: true, status: true } },
+        tickets: { where: { scoutOf: null }, select: { id: true, status: true } },
         queen: { select: { id: true } },
         runs: {
           where: { status: { in: ["queued", "running"] } },
@@ -371,7 +495,7 @@ export class PrismaRepository implements Repository {
     });
 
     const tickets = await db.ticket.findMany({
-      where: { epic: { projectId }, archived: false },
+      where: { epic: { projectId }, archived: false, scoutOf: null },
       orderBy: { position: "asc" },
       select: {
         id: true,
@@ -388,6 +512,7 @@ export class PrismaRepository implements Repository {
         needsHuman: true,
         archived: true,
         workType: true,
+        bugSeverity: true,
         runnerJob: true,
         runnerJobAt: true,
         fileScope: true,
@@ -404,6 +529,8 @@ export class PrismaRepository implements Repository {
         mergedAt: true,
         mergePoints: true,
         mergeMultiplier: true,
+        scouts: true,
+        scoutPick: true,
         dependsOn: { select: { dependsOnTicketId: true } },
         queen: { select: { id: true } },
         // Every run, newest first: the live one names the agent, the
@@ -432,6 +559,7 @@ export class PrismaRepository implements Repository {
         epicId: null,
         standalone: epic.standalone,
         workType: epic.workType,
+        bugSeverity: epic.bugSeverity,
         rerouteFrom: epic.rerouteFrom,
         rerouteReason: epic.rerouteReason,
         size: null,
@@ -482,6 +610,7 @@ export class PrismaRepository implements Repository {
       needsHuman: t.needsHuman,
       archived: t.archived,
       workType: t.workType,
+      bugSeverity: t.bugSeverity,
       agentRole: live?.role ?? jobRole,
       model: live?.model ?? null,
       workingSince: since?.toISOString() ?? null,
@@ -506,6 +635,8 @@ export class PrismaRepository implements Repository {
       mergedAt: t.mergedAt?.toISOString() ?? null,
       mergePoints: t.mergePoints,
       mergeMultiplier: t.mergeMultiplier,
+      scouts: t.scouts,
+      scoutPick: t.scoutPick,
       };
     });
 
@@ -515,9 +646,9 @@ export class PrismaRepository implements Repository {
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
     const db = prisma();
     const tickets = await db.ticket.findMany({
-      where: { epic: { projectId }, archived: true },
+      where: { epic: { projectId }, archived: true, scoutOf: null },
       orderBy: { position: "asc" },
-      select: { id: true, key: true, title: true, position: true, archived: true, workType: true },
+      select: { id: true, key: true, title: true, position: true, archived: true, workType: true, bugSeverity: true },
     });
     // The archive list is not the board: only what names the ticket.
     return tickets.map((t) => ({
@@ -533,6 +664,7 @@ export class PrismaRepository implements Repository {
       size: null,
       archived: t.archived,
       workType: t.workType,
+      bugSeverity: t.bugSeverity,
       agentRole: null,
       model: null,
       fileScope: [],
@@ -557,6 +689,7 @@ export class PrismaRepository implements Repository {
         rawRequest: input.rawRequest,
         position: input.position,
         workType: input.workType ?? null,
+        bugSeverity: severityFor(input.workType, input.bugSeverity),
         status: "draft",
         stage: 1,
       },
@@ -574,6 +707,7 @@ export class PrismaRepository implements Repository {
       epicId: null,
       standalone: false,
       workType: epic.workType,
+      bugSeverity: epic.bugSeverity,
       rerouteFrom: null,
       rerouteReason: null,
       size: null,
@@ -669,6 +803,7 @@ export class PrismaRepository implements Repository {
             storyPoints: input.storyPoints ?? null,
             needsHuman: input.needsHuman ?? null,
             workType: input.workType ?? null,
+            bugSeverity: severityFor(input.workType, input.bugSeverity),
             position: input.position,
             status: input.dependsOnKeys.length === 0 ? "ready" : "waiting",
             stage: 3,
@@ -706,6 +841,7 @@ export class PrismaRepository implements Repository {
         storyPoints: t.storyPoints,
         needsHuman: t.needsHuman,
         workType: t.workType,
+        bugSeverity: t.bugSeverity,
         agentRole: null,
         model: null,
         fileScope: t.fileScope,
@@ -829,6 +965,10 @@ export class PrismaRepository implements Repository {
           ? { epicId: ref.epicId, requestId: null }
           : { ticketId: ref.ticketId, requestId: null },
     });
+  }
+
+  async moveTicketAttachments(fromTicketId: string, toTicketId: string): Promise<void> {
+    await prisma().attachment.updateMany({ where: { ticketId: fromTicketId }, data: { ticketId: toTicketId } });
   }
 
   async deleteAttachments(ids: string[]): Promise<void> {
@@ -1070,6 +1210,22 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async eventsOfTypes(projectIds: string[], types: string[], since: Date, limit = 200) {
+    if (projectIds.length === 0) return [];
+    const rows = await prisma().event.findMany({
+      where: { projectId: { in: projectIds }, type: { in: types }, at: { gte: since } },
+      orderBy: { seq: "desc" },
+      take: limit,
+    });
+    return rows.reverse().map((r) => ({
+      seq: Number(r.seq),
+      projectId: r.projectId,
+      type: r.type,
+      payload: r.payload,
+      at: r.at,
+    }));
+  }
+
   async ticketDetail(ticketId: string): Promise<TicketDetail | null> {
     const db = prisma();
     const row = await db.ticket.findUnique({
@@ -1115,11 +1271,21 @@ export class PrismaRepository implements Repository {
       }
     }
 
+    // Only a bug has a severity: a type other than bug clears it.
+    let severity = {};
+    if (rest.workType !== undefined || rest.bugSeverity !== undefined) {
+      const current = rest.workType === undefined
+        ? await db.ticket.findUnique({ where: { id: ticketId }, select: { workType: true } })
+        : null;
+      severity = { bugSeverity: severityFor(rest.workType ?? current?.workType, rest.bugSeverity) };
+    }
+
     await db.ticket.update({
       where: { id: ticketId },
       data: {
         ...rest,
         ...merge,
+        ...severity,
         ...(rest.fileScope !== undefined ? { fileScope: normalizeScope(rest.fileScope) } : {}),
         ...(plan !== undefined ? { plan: plan as never } : {}),
         ...(archived !== undefined ? { archived } : {}),
@@ -1141,8 +1307,51 @@ export class PrismaRepository implements Repository {
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
     const db = prisma();
     const rows = await db.ticket.findMany({
-      where: { epicId },
+      where: { epicId, scoutOf: null },
       orderBy: { position: "asc" },
+      include: { epic: { select: { projectId: true } } },
+    });
+    return rows.map(toTicketDetail);
+  }
+
+  async createScouts(parentId: string, briefs: Array<{ brief: string; presetId: string | null }>): Promise<TicketDetail[]> {
+    const db = prisma();
+    const parent = await db.ticket.findUnique({ where: { id: parentId } });
+    if (!parent) return [];
+    const made = [];
+    for (const [i, b] of briefs.entries()) {
+      made.push(
+        await db.ticket.create({
+          data: {
+            epicId: parent.epicId,
+            key: `${parent.key}-s${i + 1}`,
+            title: parent.title,
+            description: parent.description,
+            acceptanceCriteria: parent.acceptanceCriteria,
+            fileScope: parent.fileScope,
+            size: parent.size,
+            storyPoints: parent.storyPoints,
+            workType: parent.workType,
+            bugSeverity: parent.bugSeverity,
+            position: parent.position,
+            // Inert until the parent starts and sends them out.
+            status: "ready",
+            stage: parent.stage,
+            scoutOf: parent.id,
+            scoutBrief: b.brief,
+            scoutPresetId: b.presetId,
+          },
+          include: { epic: { select: { projectId: true } } },
+        }),
+      );
+    }
+    return made.map(toTicketDetail);
+  }
+
+  async scoutsOf(parentId: string): Promise<TicketDetail[]> {
+    const rows = await prisma().ticket.findMany({
+      where: { scoutOf: parentId },
+      orderBy: { key: "asc" },
       include: { epic: { select: { projectId: true } } },
     });
     return rows.map(toTicketDetail);
@@ -1458,6 +1667,10 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: { assistantPresetId: presetId } });
   }
 
+  async setScoutAgent(projectId: string, presetId: string | null): Promise<void> {
+    await prisma().project.update({ where: { id: projectId }, data: { scoutPresetId: presetId } });
+  }
+
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
     await prisma().project.update({ where: { id: projectId }, data: { autoEscalate } });
   }
@@ -1471,6 +1684,13 @@ export class PrismaRepository implements Repository {
 
   async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {
     await prisma().project.update({ where: { id: projectId }, data: { autoMerge } });
+  }
+
+  async setColony(
+    projectId: string,
+    colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean },
+  ): Promise<void> {
+    await prisma().project.update({ where: { id: projectId }, data: colony });
   }
 
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
@@ -1585,8 +1805,8 @@ export class PrismaRepository implements Repository {
     return rows.map(toAuditRecord);
   }
 
-  async startAudit(projectId: string, sentinel: string): Promise<AuditRecord> {
-    const row = await prisma().audit.create({ data: { projectId, sentinel } });
+  async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null): Promise<AuditRecord> {
+    const row = await prisma().audit.create({ data: { projectId, sentinel, kind, rubric: (rubric ?? undefined) as never } });
     return toAuditRecord(row);
   }
 
@@ -1596,6 +1816,10 @@ export class PrismaRepository implements Repository {
 
   async setAuditJob(id: string, job: string | null, agent: string | null): Promise<void> {
     await prisma().audit.update({ where: { id }, data: { runnerJob: job, runnerAgent: agent } });
+  }
+
+  async markAuditEpic(auditId: string, epicId: string): Promise<void> {
+    await prisma().audit.update({ where: { id: auditId }, data: { epicId } });
   }
 
   async finishAudit(id: string, result: AuditResult): Promise<void> {
@@ -1608,6 +1832,7 @@ export class PrismaRepository implements Repository {
         quote: result.quote ?? null,
         summary: result.summary ?? null,
         report: (result.report ?? undefined) as never,
+        ...(result.rubric ? { rubric: result.rubric as never } : {}),
         error: result.error ?? null,
         model: result.model ?? null,
         files: result.files ?? [],
@@ -1620,6 +1845,7 @@ export class PrismaRepository implements Repository {
       where: {
         projectId: row.projectId,
         sentinel: row.sentinel,
+        kind: row.kind,
         id: { not: id },
         status: result.status === "done" ? { not: "running" } : "failed",
       },
@@ -1684,8 +1910,17 @@ type TicketRow = {
   handoff: string[];
   reviewedSha: string | null;
   reviewedHead: string | null;
+  stackedOn: string | null;
   autoEscalatedAt: Date | null;
   needsHuman: string | null;
+  workType: WorkType | null;
+  bugSeverity: BugSeverity | null;
+  scoutOf: string | null;
+  scoutBrief: string | null;
+  scoutPresetId: string | null;
+  scouts: number;
+  scoutPick: string | null;
+  scoutWhy: string | null;
   epic: { projectId: string };
 };
 
@@ -1777,8 +2012,17 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     handoff: row.handoff,
     reviewedSha: row.reviewedSha,
     reviewedHead: row.reviewedHead,
+    stackedOn: row.stackedOn,
     autoEscalatedAt: row.autoEscalatedAt?.toISOString() ?? null,
     needsHuman: row.needsHuman,
+    workType: row.workType,
+    bugSeverity: row.bugSeverity,
+    scoutOf: row.scoutOf,
+    scoutBrief: row.scoutBrief,
+    scoutPresetId: row.scoutPresetId,
+    scouts: row.scouts,
+    scoutPick: row.scoutPick,
+    scoutWhy: row.scoutWhy,
   };
 }
 
@@ -1866,30 +2110,46 @@ const auditReport = z.object({
   dislikes: z.array(auditPoint),
   wrong: z.array(auditPoint),
   missing: z.array(auditPoint),
+  checks: z.array(z.object({ id: z.string(), met: z.boolean(), evidence: z.string() })).optional(),
+});
+const rubric = z.object({
+  context: z.string(),
+  rungs: z.array(
+    z.object({
+      stars: z.number(),
+      checks: z.array(z.object({ id: z.string(), text: z.string(), how: z.string() })),
+    }),
+  ),
 });
 
 function toAuditRecord(row: {
   id: string;
   projectId: string;
   sentinel: string;
+  kind: string;
   status: string;
   log: string[];
   stars: number | null;
   quote: string | null;
   summary: string | null;
   report: unknown;
+  rubric: unknown;
   error: string | null;
   model: string | null;
   files: string[];
   runnerJob: string | null;
   runnerAgent: string | null;
+  epicId: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }): AuditRecord {
   const report = auditReport.safeParse(row.report);
+  const scale = rubric.safeParse(row.rubric);
   return {
     ...row,
+    kind: row.kind === "calibrate" ? "calibrate" : "audit",
     status: row.status === "done" || row.status === "failed" ? row.status : "running",
     report: report.success ? (report.data satisfies AuditReport) : null,
+    rubric: scale.success ? (scale.data satisfies Rubric) : null,
   };
 }

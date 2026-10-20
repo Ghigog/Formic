@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board";
 import { NewItemDialog, type CaptureColumn } from "./new-item-dialog";
@@ -52,6 +53,9 @@ export function BoardShell({
   initialSentinels = {},
   initialOverrides = {},
   account,
+  noCi,
+  noSandboxKey,
+  autoMerge,
 }: {
   initialCards: BoardCard[];
   /** Demo detail for the mock board: elapsed times, CI counts, commits. */
@@ -71,6 +75,12 @@ export function BoardShell({
   /** Each column agent's own limits. */
   initialOverrides?: ColumnOverrides;
   account?: Account;
+  /** The repository runs no CI, as of this render. */
+  noCi?: boolean;
+  /** Neither the board's owner nor the server has an E2B key, so no agent can run. */
+  noSandboxKey?: boolean;
+  /** Whether Formic merges an approved ticket itself. */
+  autoMerge?: boolean;
 }) {
   const agentState = useAgents(initialPresets, initialColumnAgents, initialAgentUsage, initialTokenWindow, initialOverrides);
   // Views that follow the event stream themselves, such as an open ticket.
@@ -163,7 +173,7 @@ export function BoardShell({
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
     <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level}>
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}
         onArchivedWanted={setArchiveWanted}
@@ -178,6 +188,9 @@ export function BoardShell({
         onTransition={transition}
         onArchived={(id) => setArchivedIds((prev) => new Set(prev).add(id))}
         account={account}
+        noCi={noCi}
+        noSandboxKey={noSandboxKey}
+        autoMerge={autoMerge}
         assistant={{
           ...assistant,
           open: assistantOpen,
@@ -227,10 +240,10 @@ export function BoardShell({
         open={dialog !== null}
         column={dialog?.column ?? "backlog"}
         onClose={() => setDialog(null)}
-        onSubmit={(rawRequest, requestId, workType) =>
+        onSubmit={(rawRequest, requestId) =>
           dialog?.column === "todo"
-            ? createTicket(rawRequest, requestId, workType)
-            : createEpic(rawRequest, requestId, workType)
+            ? createTicket(rawRequest, requestId)
+            : createEpic(rawRequest, requestId)
         }
       />
 
@@ -253,7 +266,7 @@ export function BoardShell({
         }}
         onOpenTicket={setOpenTicketId}
         subscribe={subscribe}
-        onChanged={() => void refetch()}
+        onChanged={() => void refetch().catch(() => {})}
       />
 
       <SetupDialog
@@ -263,7 +276,7 @@ export function BoardShell({
         onRetry={() => void runner.check()}
       />
 
-      <ColonyAmbient stats={stats} onStopAll={() => void stopAll()} />
+      <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
       <ColonyTimeline repoName={repoName} />
       <SentinelsPage repoName={repoName} />
       <ColonyPopover />
@@ -274,7 +287,7 @@ export function BoardShell({
       {connection === "reconnecting" && (
         <div
           role="status"
-          className="bg-rust/12 text-ink fixed bottom-16 left-4 z-50 rounded-md px-2 py-1 text-[11px]"
+          className="bg-rust/12 text-ink fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] left-4 z-50 rounded-md px-2 py-1 text-[11px]"
         >
           Reconnecting to the agent stream…
         </div>
@@ -288,6 +301,7 @@ export function BoardShell({
 /** The ambient bar, with the colony's bug count and its nest. */
 function ColonyAmbient(props: {
   stats: AmbientStats;
+  connection: ComponentProps<typeof AmbientDrawer>["connection"];
   onStopAll: () => void;
 }) {
   const colony = useColony();

@@ -25,12 +25,15 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
+  AuditKind,
   AuditRecord,
   AuditResult,
+  Rubric,
   CardChatMessage,
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
+  Reservation,
 } from "./repository";
 import type {
   AgentPreset,
@@ -43,6 +46,7 @@ import type {
   ColumnOverrides,
   PlanStep,
 } from "@/lib/domain/entities";
+import { severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
@@ -81,8 +85,15 @@ interface TicketExtras {
   handoff?: string[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
+  stackedOn?: string | null;
   autoEscalatedAt?: string | null;
   scopeRequest?: string[];
+  /** On a scout: the ticket it scouts for, its approach and its agent template. */
+  scoutOf?: string | null;
+  scoutBrief?: string | null;
+  scoutPresetId?: string | null;
+  /** On a parent: why the pick was made. */
+  scoutWhy?: string | null;
 }
 
 /** A stored file, kept alongside its bytes until fetched or claimed. */
@@ -101,6 +112,8 @@ interface AttachmentRow {
 }
 
 interface Store {
+  /** Lease key to who holds it and until when (ms since epoch). */
+  leases: Map<string, { holder: string; expiresAt: number }>;
   /** Host usage by UTC day, "YYYY-MM-DD". */
   platformUsage: Map<string, PlatformUsage>;
   /** The project the demo board belongs to, and the fallback. */
@@ -153,6 +166,12 @@ interface Store {
   columnAgents: Map<string, string>;
   /** `${projectId}:${column}` to that column agent's override. */
   columnOverrides: Map<string, ColumnOverride>;
+  /** `${projectId}:${userId}` for each person a project is shared with. */
+  members: Set<string>;
+  /** `${projectId}:${userId}:${slot}` to a member's own preset id. */
+  memberAgents: Map<string, string>;
+  /** Card id to whose keys its work runs on. */
+  actors: Map<string, string>;
   assistant: AssistantMessage[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
@@ -181,6 +200,10 @@ function store(): Store {
     existing.attachments ??= new Map();
     existing.audits ??= [];
     existing.platformUsage ??= new Map();
+    existing.leases ??= new Map();
+    existing.members ??= new Set();
+    existing.memberAgents ??= new Map();
+    existing.actors ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -191,6 +214,11 @@ function store(): Store {
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
     autoMerge: false,
     autoEscalate: false,
+    colonySize: null,
+    colonyReserve: 0,
+    autoScout: false,
+    scoutPresetId: null,
+    shareKeys: false,
   };
   const s: Store = {
     project,
@@ -212,12 +240,16 @@ function store(): Store {
     queensSpent: new Map(),
     events: [],
     platformUsage: new Map(),
+    leases: new Map(),
     runs: new Map(),
     deliveries: new Set(),
     presets: new Map(),
     users: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
+    members: new Set(),
+    memberAgents: new Map(),
+    actors: new Map(),
     assistant: [],
     cardChat: [],
     attachments: new Map(),
@@ -311,6 +343,7 @@ export class MemoryRepository implements Repository {
       runTimeBudgetPerPointRate: null,
       tokenLimit: null,
       attemptLimit: null,
+      effortByPoints: true,
       tokenRenewalDay: null,
       tokenWindowTimezone: null,
       tokenResetAt: null,
@@ -338,6 +371,7 @@ export class MemoryRepository implements Repository {
     if (!user) throw new Error(`No user ${userId}.`);
     if (columns.tokenLimit !== undefined) user.tokenLimit = columns.tokenLimit;
     if (columns.attemptLimit !== undefined) user.attemptLimit = columns.attemptLimit;
+    if (columns.effortByPoints !== undefined) user.effortByPoints = columns.effortByPoints;
     return user;
   }
 
@@ -431,6 +465,94 @@ export class MemoryRepository implements Repository {
     return store().projects.get(projectId) ?? null;
   }
 
+  async addMember(projectId: string, userId: string): Promise<void> {
+    store().members.add(`${projectId}:${userId}`);
+  }
+
+  async isMember(projectId: string, userId: string): Promise<boolean> {
+    return store().members.has(`${projectId}:${userId}`);
+  }
+
+  async memberProjects(userId: string): Promise<ProjectSummary[]> {
+    const s = store();
+    return [...s.projects.values()].filter((p) => s.members.has(`${p.id}:${userId}`));
+  }
+
+  async memberAgents(projectId: string, userId: string): Promise<Record<string, string>> {
+    const prefix = `${projectId}:${userId}:`;
+    const out: Record<string, string> = {};
+    for (const [k, v] of store().memberAgents) if (k.startsWith(prefix)) out[k.slice(prefix.length)] = v;
+    return out;
+  }
+
+  async setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void> {
+    const key = `${projectId}:${userId}:${slot}`;
+    if (presetId === null) store().memberAgents.delete(key);
+    else store().memberAgents.set(key, presetId);
+  }
+
+  async setShareKeys(projectId: string, shareKeys: boolean): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) project.shareKeys = shareKeys;
+  }
+
+  async cardActor(cardId: string): Promise<string | null> {
+    const s = store();
+    const own = s.actors.get(cardId);
+    if (own) return own;
+    const card = s.cards.get(cardId);
+    if (!card || card.kind !== "ticket") return null;
+    const parent = s.ticketExtras.get(cardId)?.scoutOf;
+    const fromParent = parent ? s.actors.get(parent) : undefined;
+    if (fromParent) return fromParent;
+    return card.epicId ? (s.actors.get(card.epicId) ?? null) : null;
+  }
+
+  async setCardActor(cardId: string, userId: string | null): Promise<void> {
+    if (userId === null) store().actors.delete(cardId);
+    else store().actors.set(cardId, userId);
+  }
+
+  async reservations(repoFullName: string): Promise<Reservation[]> {
+    const s = store();
+    const projects = new Map((await this.projectsForRepo(repoFullName)).map((p) => [p.id, p]));
+    const held: Reservation[] = [];
+    for (const card of s.cards.values()) {
+      if (card.kind !== "ticket" || card.status !== "running") continue;
+      const project = projects.get(projectOf(s, card));
+      if (!project) continue;
+      const parentId = s.ticketExtras.get(card.id)?.scoutOf;
+      if (parentId && s.cards.get(parentId)?.status !== "running") continue;
+      held.push({
+        ticketId: card.id,
+        key: card.key,
+        projectId: project.id,
+        ownerLogin: project.ownerId ? (s.users.get(project.ownerId)?.login ?? null) : null,
+        fileScope: [...card.fileScope],
+      });
+    }
+    return held;
+  }
+
+  async acquireLease(key: string, holder: string, ttlMs: number): Promise<boolean> {
+    const s = store();
+    const now = Date.now();
+    const held = s.leases.get(key);
+    if (held && held.holder !== holder && held.expiresAt > now) return false;
+    s.leases.set(key, { holder, expiresAt: now + ttlMs });
+    return true;
+  }
+
+  async releaseLease(key: string, holder: string): Promise<void> {
+    const s = store();
+    if (s.leases.get(key)?.holder === holder) s.leases.delete(key);
+  }
+
+  async leaseHolder(key: string): Promise<string | null> {
+    const held = store().leases.get(key);
+    return held && held.expiresAt > Date.now() ? held.holder : null;
+  }
+
   async ensureProject(input: {
     ownerId: string | null;
     repoFullName: string;
@@ -451,6 +573,11 @@ export class MemoryRepository implements Repository {
       baseBranch: input.baseBranch,
       autoMerge: false,
       autoEscalate: false,
+      colonySize: null,
+      colonyReserve: 0,
+      autoScout: false,
+      scoutPresetId: null,
+      shareKeys: false,
     };
     s.projects.set(project.id, project);
     return project;
@@ -489,8 +616,9 @@ export class MemoryRepository implements Repository {
 
   async boardCards(projectId?: string): Promise<BoardCard[]> {
     const s = store();
+    // Scouts are never board cards: their parent shows them.
     const cards = [...s.cards.values()].filter(
-      (c) => projectId === undefined || projectOf(s, c) === projectId,
+      (c) => (projectId === undefined || projectOf(s, c) === projectId) && !isScout(s, c),
     );
     // Runs still going here, by the card they are for.
     const live = new Map<string, { role: BoardCard["agentRole"]; since: Date }>();
@@ -548,7 +676,7 @@ export class MemoryRepository implements Repository {
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
     const s = store();
     return [...s.cards.values()]
-      .filter((c) => c.kind === "ticket" && c.archived && projectOf(s, c) === projectId)
+      .filter((c) => c.kind === "ticket" && c.archived && projectOf(s, c) === projectId && !isScout(s, c))
       .sort(byPosition);
   }
 
@@ -575,6 +703,7 @@ export class MemoryRepository implements Repository {
       epicId: null,
       standalone: false,
       workType: input.workType ?? null,
+      bugSeverity: severityFor(input.workType, input.bugSeverity),
       rerouteFrom: null,
       rerouteReason: null,
       size: null,
@@ -632,6 +761,7 @@ export class MemoryRepository implements Repository {
         storyPoints: input.storyPoints ?? null,
         needsHuman: input.needsHuman ?? null,
         workType: input.workType ?? null,
+        bugSeverity: severityFor(input.workType, input.bugSeverity),
         agentRole: null,
         model: null,
         fileScope: normalizeScope(input.fileScope),
@@ -750,6 +880,12 @@ export class MemoryRepository implements Repository {
       row.requestId = null;
       if ("epicId" in ref) row.epicId = ref.epicId;
       else row.ticketId = ref.ticketId;
+    }
+  }
+
+  async moveTicketAttachments(fromTicketId: string, toTicketId: string): Promise<void> {
+    for (const row of store().attachments.values()) {
+      if (row.ticketId === fromTicketId) row.ticketId = toTicketId;
     }
   }
 
@@ -957,6 +1093,13 @@ export class MemoryRepository implements Repository {
     return { today: { ...days.get(day)! }, window };
   }
 
+  async eventsOfTypes(projectIds: string[], types: string[], since: Date, limit = 200) {
+    return store()
+      .events.filter((e) => projectIds.includes(e.projectId) && types.includes(e.type) && e.at >= since)
+      .slice(-limit)
+      .map(({ seq, projectId, type, payload, at }) => ({ seq, projectId, type, payload, at }));
+  }
+
   async latestEventSeq(projectId: string): Promise<number> {
     const mine = store().events.filter((e) => e.projectId === projectId);
     return mine.at(-1)?.seq ?? 0;
@@ -1015,7 +1158,10 @@ export class MemoryRepository implements Repository {
     const card = s.cards.get(ticketId);
     if (!card) return;
 
-    if (update.workType !== undefined) card.workType = update.workType;
+    if (update.workType !== undefined || update.bugSeverity !== undefined) {
+      if (update.workType !== undefined) card.workType = update.workType;
+      card.bugSeverity = severityFor(card.workType, update.bugSeverity !== undefined ? update.bugSeverity : card.bugSeverity);
+    }
     if (update.status !== undefined && update.status !== card.status) {
       card.updatedAt = new Date().toISOString();
       if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
@@ -1056,6 +1202,8 @@ export class MemoryRepository implements Repository {
       card.blockedReason = update.blockedReason;
     }
     if (update.costCents !== undefined) card.costCents += update.costCents;
+    if (update.scouts !== undefined) card.scouts = update.scouts;
+    if (update.scoutPick !== undefined) card.scoutPick = update.scoutPick;
 
     const extras = s.ticketExtras.get(ticketId);
     if (!extras) return;
@@ -1075,14 +1223,69 @@ export class MemoryRepository implements Repository {
     if (update.handoff !== undefined) extras.handoff = update.handoff;
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
     if (update.reviewedHead !== undefined) extras.reviewedHead = update.reviewedHead;
+    if (update.stackedOn !== undefined) extras.stackedOn = update.stackedOn;
     if (update.scopeRequest !== undefined) extras.scopeRequest = update.scopeRequest;
+    if (update.scoutWhy !== undefined) extras.scoutWhy = update.scoutWhy;
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
     const s = store();
     return [...s.cards.values()]
-      .filter((c) => c.kind === "ticket" && c.epicId === epicId)
+      .filter((c) => c.kind === "ticket" && c.epicId === epicId && !isScout(s, c))
       .sort(byPosition)
+      .map((c) => toDetail(c, s.ticketExtras.get(c.id), projectOf(s, c)));
+  }
+
+  async createScouts(parentId: string, briefs: Array<{ brief: string; presetId: string | null }>): Promise<TicketDetail[]> {
+    const s = store();
+    const parent = s.cards.get(parentId);
+    const extras = s.ticketExtras.get(parentId);
+    if (!parent || parent.kind !== "ticket" || !extras) return [];
+    const made: TicketDetail[] = [];
+    for (const [i, b] of briefs.entries()) {
+      const now = new Date().toISOString();
+      const card: BoardCard = {
+        ...parent,
+        id: id("ticket"),
+        key: `${parent.key}-s${i + 1}`,
+        // Inert until the parent starts and sends them out.
+        status: "ready",
+        stalledIn: null,
+        dependsOn: [],
+        prNumber: null,
+        prUrl: null,
+        blockedReason: null,
+        costCents: 0,
+        queen: false,
+        scouts: 0,
+        scoutPick: null,
+        createdAt: now,
+        startedAt: now,
+        updatedAt: now,
+      };
+      s.cards.set(card.id, card);
+      s.ticketExtras.set(card.id, {
+        description: extras.description,
+        acceptanceCriteria: [...extras.acceptanceCriteria],
+        branchName: null,
+        attempts: 0,
+        summary: null,
+        runnerJob: null,
+        issueNumber: null,
+        scoutOf: parentId,
+        scoutBrief: b.brief,
+        scoutPresetId: b.presetId,
+      });
+      made.push(toDetail(card, s.ticketExtras.get(card.id), projectOf(s, card)));
+    }
+    return made;
+  }
+
+  async scoutsOf(parentId: string): Promise<TicketDetail[]> {
+    const s = store();
+    return [...s.cards.values()]
+      .filter((c) => s.ticketExtras.get(c.id)?.scoutOf === parentId)
+      .sort((a, b) => a.key.localeCompare(b.key))
       .map((c) => toDetail(c, s.ticketExtras.get(c.id), projectOf(s, c)));
   }
 
@@ -1233,22 +1436,25 @@ export class MemoryRepository implements Repository {
       .map((a) => ({ ...a, log: [...a.log], files: [...a.files] }));
   }
 
-  async startAudit(projectId: string, sentinel: string): Promise<AuditRecord> {
+  async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null): Promise<AuditRecord> {
     const audit: AuditRecord = {
       id: `audit_${Math.random().toString(36).slice(2, 10)}`,
       projectId,
       sentinel,
+      kind,
       status: "running",
       log: [],
       stars: null,
       quote: null,
       summary: null,
       report: null,
+      rubric,
       error: null,
       model: null,
       files: [],
       runnerJob: null,
       runnerAgent: null,
+      epicId: null,
       startedAt: new Date(),
       finishedAt: null,
     };
@@ -1265,6 +1471,11 @@ export class MemoryRepository implements Repository {
     if (audit) Object.assign(audit, { runnerJob: job, runnerAgent: agent });
   }
 
+  async markAuditEpic(auditId: string, epicId: string): Promise<void> {
+    const audit = store().audits.find((a) => a.id === auditId);
+    if (audit) audit.epicId = epicId;
+  }
+
   async finishAudit(id: string, result: AuditResult): Promise<void> {
     const s = store();
     const audit = s.audits.find((a) => a.id === id);
@@ -1275,6 +1486,7 @@ export class MemoryRepository implements Repository {
       quote: result.quote ?? null,
       summary: result.summary ?? null,
       report: result.report ?? null,
+      rubric: result.rubric ?? audit.rubric,
       error: result.error ?? null,
       model: result.model ?? null,
       files: result.files ?? [],
@@ -1287,6 +1499,7 @@ export class MemoryRepository implements Repository {
         a === audit ||
         a.projectId !== audit.projectId ||
         a.sentinel !== audit.sentinel ||
+        a.kind !== audit.kind ||
         a.status === "running" ||
         (result.status === "failed" && a.status === "done"),
     );
@@ -1417,6 +1630,11 @@ export class MemoryRepository implements Repository {
     else s.columnAgents.set(`${projectId}:assistant`, presetId);
   }
 
+  async setScoutAgent(projectId: string, presetId: string | null): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) project.scoutPresetId = presetId;
+  }
+
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) project.autoEscalate = autoEscalate;
@@ -1425,6 +1643,14 @@ export class MemoryRepository implements Repository {
   async markTicketAutoEscalated(ticketId: string): Promise<void> {
     const extras = store().ticketExtras.get(ticketId);
     if (extras && !extras.autoEscalatedAt) extras.autoEscalatedAt = new Date().toISOString();
+  }
+
+  async setColony(
+    projectId: string,
+    colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean },
+  ): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) Object.assign(project, colony);
   }
 
   async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {
@@ -1598,9 +1824,22 @@ function toDetail(
     handoff: extras?.handoff ?? [],
     reviewedSha: extras?.reviewedSha ?? null,
     reviewedHead: extras?.reviewedHead ?? null,
+    stackedOn: extras?.stackedOn ?? null,
     autoEscalatedAt: extras?.autoEscalatedAt ?? null,
     needsHuman: card.needsHuman ?? null,
+    workType: card.workType ?? null,
+    bugSeverity: card.bugSeverity ?? null,
+    scoutOf: extras?.scoutOf ?? null,
+    scoutBrief: extras?.scoutBrief ?? null,
+    scoutPresetId: extras?.scoutPresetId ?? null,
+    scouts: card.scouts ?? 0,
+    scoutPick: card.scoutPick ?? null,
+    scoutWhy: extras?.scoutWhy ?? null,
   };
+}
+
+function isScout(s: Store, card: BoardCard): boolean {
+  return card.kind === "ticket" && !!s.ticketExtras.get(card.id)?.scoutOf;
 }
 
 function matchesAttachmentRef(row: AttachmentRow, ref: AttachmentRef): boolean {

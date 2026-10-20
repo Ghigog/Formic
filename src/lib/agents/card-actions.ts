@@ -1,9 +1,10 @@
 import "server-only";
 
+import { startedBy } from "@/lib/auth/actor";
 import { z } from "zod";
 
 import { decomposeEpic, launch, runProductAgent } from "./pipeline";
-import { checkSplit, ticketSpecSchema, toDraftTicket, type TicketSpec } from "./decomposition";
+import { checkSplit, ticketSpecSchema, toDraftTicket, typeOf, type TicketSpec } from "./decomposition";
 import { projectFor } from "@/lib/board/project";
 import { applyTransition, redraftTicket, retryEpic } from "@/lib/board/service";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -13,7 +14,8 @@ import { MAX_NOTE, addNote } from "@/lib/coder/notes";
 import { answerScope, hasKeptWork, resolveScopeRequest, scopeAsked, stillAsked } from "@/lib/coder/scope-request";
 import { repository } from "@/lib/db";
 import { fileScopeSchema, prdSchema, type BoardCard } from "@/lib/domain/entities";
-import { runningConflict } from "@/lib/domain/queue";
+import { claimLabel } from "@/lib/domain/queue";
+import { blockerOf, colonyHold } from "@/lib/board/queue";
 import { COLUMNS, COLUMN_LABELS, columnFor, columnOf, isStalled, type ColumnId } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { cancelJob, stopTicket } from "@/lib/runner/runner";
@@ -126,6 +128,8 @@ export async function applyCardAction(
   try {
     const card = await repository().cardById(cardId);
     if (!card) return "This card no longer exists.";
+    // Whoever directs a card from its chat now drives it: its agents run on their keys.
+    await startedBy(cardId);
     switch (action.type) {
       case "move":
         return await move(projectId, card, action.to);
@@ -229,8 +233,10 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
     return `Could not move ${card.key}: ${result.problem.replace(/\s*Drag it back to [^.]+ to undo this\./, "")}`;
   }
   if (result.status === "queued") {
-    const blocker = runningConflict(now, await repository().boardCards(projectId));
-    return `Moved ${card.key} to In Progress, queued behind ${blocker?.key ?? "a ticket writing the same files"}. The Coder Agent starts on it once that one is done.`;
+    const blocker = await blockerOf(projectId, now);
+    const held = blocker ? null : await colonyHold(projectId, now);
+    if (held) return `Moved ${card.key} to In Progress, up next. ${held} It starts when a slot frees.`;
+    return `Moved ${card.key} to In Progress, queued behind ${blocker ? claimLabel(blocker, projectId) : "a ticket writing the same files"}. The Coder Agent starts on it once that one is done.`;
   }
   return `Moved ${card.key} to ${COLUMN_LABELS[to]}.${
     card.kind === "ticket" && to === "in_progress" ? " The Coder Agent is starting on it." : ""
@@ -531,6 +537,7 @@ async function splitTicket(projectId: string, card: BoardCard, specs: TicketSpec
       fileScope: t.fileScope,
       storyPoints: t.storyPoints ?? null,
       needsHuman: t.needsHuman ?? null,
+      ...typeOf(t),
       position: childPositions[i]!,
       dependsOnKeys: t.dependsOn,
     })),

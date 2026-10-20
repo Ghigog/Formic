@@ -96,6 +96,7 @@ async function moveTicket(
 
 beforeEach(() => {
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
+  (globalThis as { __formicIssueLabels?: Set<string> }).__formicIssueLabels = undefined;
   MockVcsClient.reset();
   resetAgents();
   resetVcs();
@@ -144,11 +145,11 @@ describe("GitHub issues for an Epic", () => {
     const [t1, t2] = await repository().ticketsForEpic(epic.id);
     expect(parent.subIssues).toEqual([t1!.issueNumber, t2!.issueNumber]);
     expect(issue(t1!.issueNumber)).toMatchObject({
-      title: "T-1: Export endpoint",
+      title: "EPIC-1-T1: Export endpoint",
       labels: ["formic: to do"],
     });
     expect(issue(t1!.issueNumber).body).toContain("- [ ] It downloads");
-    expect(issue(t2!.issueNumber).body).toContain(`#${t1!.issueNumber} (T-1)`);
+    expect(issue(t2!.issueNumber).body).toContain(`#${t1!.issueNumber} (EPIC-1-T1)`);
   });
 });
 

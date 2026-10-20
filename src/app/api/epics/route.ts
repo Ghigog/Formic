@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
+import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
-import { WORK_TYPES } from "@/lib/domain/entities";
 import { createBacklogItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
 import { limited, RUN } from "@/lib/rate-limit";
@@ -11,11 +11,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  rawRequest: z.string().min(3, "Describe the feature in a sentence or two.").max(4000),
-  workType: z.enum(WORK_TYPES).optional(),
+  rawRequest: z.string().trim().min(3, "Describe the feature in a sentence or two.").max(4000),
+  requestId: z.string().optional(),
 });
 
-export async function POST(req: NextRequest) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: NextRequest) {
   const refused = limited(req, RUN, "run-start");
   if (refused) return refused;
 
@@ -29,6 +30,10 @@ export async function POST(req: NextRequest) {
 
   const project = await activeProject();
   if (!project) return noProject();
-  const card = await createBacklogItem(project.id, parsed.data.rawRequest, parsed.data.workType);
+  const card = await createBacklogItem(
+    project.id,
+    parsed.data.rawRequest,
+    parsed.data.requestId,
+  );
   return Response.json({ card }, { status: 201 });
 }

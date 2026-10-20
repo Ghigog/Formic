@@ -100,9 +100,9 @@ describe("/api/settings autoMerge", () => {
 
   it("is off for a new project and saved on update for the owner", async () => {
     const p = await project(userId);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false, autoEscalate: false, shareKeys: false, scoutPresetId: null });
     expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(200);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true, autoEscalate: false, shareKeys: false, scoutPresetId: null });
   });
 
   it("refuses someone who does not own the project and leaves the flag", async () => {
@@ -110,6 +110,67 @@ describe("/api/settings autoMerge", () => {
     const p = await project(other.id);
     expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(403);
     expect((await repository().projectById(p.id))?.autoMerge).toBe(false);
+  });
+});
+
+describe("/api/settings autoEscalate", () => {
+  it("is off for a new project and saved on update for the owner", async () => {
+    const p = await repository().ensureProject({ ownerId: userId, repoFullName: "a/esc", baseBranch: "main" });
+    expect((await (await GET(get(`?projectId=${p.id}`))).json()).autoEscalate).toBe(false);
+    const res = await PUT(put({ projectId: p.id, autoEscalate: true }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ autoEscalate: true });
+    expect((await repository().projectById(p.id))?.autoEscalate).toBe(true);
+    expect((await repository().projectById(p.id))?.autoMerge).toBe(false);
+  });
+
+  it("refuses someone who does not own the project and leaves the flag", async () => {
+    const other = await repository().upsertUser({ githubId: 3, login: "c", name: null, avatarUrl: null });
+    const p = await repository().ensureProject({ ownerId: other.id, repoFullName: "a/esc2", baseBranch: "main" });
+    expect((await PUT(put({ projectId: p.id, autoEscalate: true }))).status).toBe(403);
+    expect((await repository().projectById(p.id))?.autoEscalate).toBe(false);
+  });
+
+  it("needs a project id", async () => {
+    expect((await PUT(put({ autoEscalate: true }))).status).toBe(400);
+  });
+});
+
+describe("/api/settings scoutPresetId", () => {
+  async function preset() {
+    return repository().savePreset({
+      ownerId: userId,
+      provider: "anthropic",
+      name: "scout",
+      model: "claude-opus-5",
+      prompt: "p",
+      apiKeyCipher: null,
+      apiKeyHint: null,
+    });
+  }
+
+  it("is null for a new project, saved for the owner, and cleared by null", async () => {
+    const p = await repository().ensureProject({ ownerId: userId, repoFullName: "a/scout", baseBranch: "main" });
+    expect((await (await GET(get(`?projectId=${p.id}`))).json()).scoutPresetId).toBeNull();
+    const a = await preset();
+    const res = await PUT(put({ projectId: p.id, scoutPresetId: a.id }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ scoutPresetId: a.id });
+    expect((await (await GET(get(`?projectId=${p.id}`))).json()).scoutPresetId).toBe(a.id);
+    expect((await PUT(put({ projectId: p.id, scoutPresetId: null }))).status).toBe(200);
+    expect((await repository().projectById(p.id))?.scoutPresetId).toBeNull();
+  });
+
+  it("refuses an agent that does not exist and leaves the setting", async () => {
+    const p = await repository().ensureProject({ ownerId: userId, repoFullName: "a/scout2", baseBranch: "main" });
+    expect((await PUT(put({ projectId: p.id, scoutPresetId: "nope" }))).status).toBe(400);
+    expect((await repository().projectById(p.id))?.scoutPresetId).toBeNull();
+  });
+
+  it("refuses someone who does not own the project", async () => {
+    const other = await repository().upsertUser({ githubId: 4, login: "d", name: null, avatarUrl: null });
+    const p = await repository().ensureProject({ ownerId: other.id, repoFullName: "a/scout3", baseBranch: "main" });
+    expect((await PUT(put({ projectId: p.id, scoutPresetId: null }))).status).toBe(403);
   });
 });
 
@@ -193,5 +254,18 @@ describe("/api/settings token and attempt limits", () => {
     const body = await (await GET()).json();
     expect(body.tokens).toEqual({ mode: "PER_POINT", perPoint: 250_000 });
     expect(body.mode).toBe("PER_STORY_POINT");
+  });
+});
+
+describe("/api/settings thinking effort", () => {
+  it("follows story points unless switched off", async () => {
+    expect((await (await GET()).json()).effortByPoints).toBe(true);
+    expect((await (await PUT(put({ effortByPoints: false }))).json()).effortByPoints).toBe(false);
+    expect((await (await GET()).json()).effortByPoints).toBe(false);
+    expect((await (await PUT(put({ effortByPoints: true }))).json()).effortByPoints).toBe(true);
+  });
+
+  it("rejects anything but on or off", async () => {
+    expect((await PUT(put({ effortByPoints: "yes" }))).status).toBe(400);
   });
 });

@@ -1,8 +1,8 @@
-import type { BoardCard } from "@/lib/domain/entities";
+import type { BoardCard, WorkType } from "@/lib/domain/entities";
 
 export type ColumnSort = "position" | "title" | "newest" | "points";
 /** Tickets are the plain ones, with no work type. */
-export type TypeFilter = "ticket" | "bug" | "spike" | "archived";
+export type TypeFilter = "ticket" | WorkType | "archived";
 
 export interface ColumnView {
   query: string;

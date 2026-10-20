@@ -19,6 +19,30 @@ and it says so in its report instead of guessing why.
 A CLI Sentinel runs in GitHub Actions with a shell, so it can find all of
 this itself and isn't handed any of it.
 
+## How the stars are set
+
+A Sentinel's stars come from a rubric, not from its impression of the code.
+This follows the usual practice for LLM-as-a-judge and agent-as-a-judge
+evaluations: a fixed list of written requirements, one pass/fail verdict per
+requirement backed by evidence, and the score worked out from those verdicts
+in code.
+
+- **Calibrate** reads the project the same way an audit does, then writes the
+  Sentinel's rubric for it: four rungs, for 2 to 5 stars, each with 2 to 4
+  pass/fail checks naming the files, commands or thresholds that verify them.
+  It doesn't rate anything. The rubric is saved on the Sentinel's profile,
+  where you can read it and recalibrate if it's off.
+- **Audit** scores the code against the saved rubric. For each check it gives
+  the evidence first (what it read or ran), then met or not met. A check it
+  couldn't verify counts as not met. The stars are one plus every rung whose
+  checks all pass, stopping at the first rung that doesn't. Whatever else it
+  finds goes in the report but doesn't move the stars.
+
+Each audit keeps a copy of the rubric it was scored against. After you
+recalibrate, the profile says the stars came from an earlier rubric until
+the next audit. An Epic made from a report lists the unmet checks first,
+lowest star first, since those are what earn the next star.
+
 ## Who gets what
 
 | Sentinel | Facts |

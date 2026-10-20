@@ -8,8 +8,19 @@ import { requestShape } from "@/lib/agents/models";
 import type { AgentConfig, Usage } from "@/lib/agents/ports";
 import { chat, extractJson } from "@/lib/llm/openai-compat";
 import { provider } from "@/lib/llm/providers";
-import type { AuditReport } from "@/lib/db/repository";
+import type { AuditReport, Rubric } from "@/lib/db/repository";
 import { promptFor, type Sentinel } from "./roster";
+import {
+  CALIBRATE_RULES,
+  SCORE_RULES,
+  calibrationSchema,
+  finishedRubric,
+  rubricText,
+  scoredReport,
+  type Goal,
+} from "./rubric";
+
+export type { Goal } from "./rubric";
 import { outline } from "./analysis";
 import type { Evidence } from "./gather";
 
@@ -84,8 +95,21 @@ const point = z.object({
     .describe("The repository path it is about, with :line when known, or null."),
 });
 
+/**
+ * An audit's answer. Each check's evidence comes before its verdict, so the
+ * verdict follows from what was seen; the stars are worked out from the
+ * checks (see ./rubric), never asked for.
+ */
 export const reportSchema = z.object({
-  stars: z.number().describe("A whole number from 1 to 5, for this role only."),
+  checks: z
+    .array(
+      z.object({
+        id: z.string().describe("The check's id from the rubric, such as \"3b\"."),
+        evidence: z.string().describe("What you read or ran for it, and what that showed."),
+        met: z.boolean().describe("Whether the evidence shows the check passes. Not verified means false."),
+      }),
+    )
+    .describe("Every check in the rubric, in its order."),
   quote: z.string().describe("One line in character, under 140 characters."),
   summary: z.string().describe("Two plain sentences: the verdict and the biggest reason for it."),
   likes: z.array(point).describe("What works, for this role."),
@@ -96,18 +120,45 @@ export const reportSchema = z.object({
 
 export type SentinelReport = z.infer<typeof reportSchema>;
 
-/** A report as the page stores it: the stars clamped, the text trimmed. */
-export function finishedReport(r: SentinelReport) {
-  return {
-    stars: Math.min(5, Math.max(1, Math.round(r.stars))),
-    quote: r.quote.trim(),
-    summary: r.summary.trim(),
-    report: { likes: r.likes, dislikes: r.dislikes, wrong: r.wrong, missing: r.missing } satisfies AuditReport,
-  };
+/** What a finished run stores. */
+export interface Finished {
+  stars?: number;
+  quote?: string;
+  summary?: string;
+  report?: AuditReport;
+  rubric?: Rubric;
+}
+
+/** A report as the page stores it: the text trimmed, the stars from its checks. */
+export function finishedReport(rubric: Rubric, r: SentinelReport): Finished {
+  const { checks, quote, summary, ...points } = r;
+  return { ...scoredReport(rubric, points, checks), quote: quote.trim(), summary: summary.trim() };
+}
+
+/** A run's answer as the page stores it, or why it cannot be used. */
+export function finishedRun(goal: Goal, raw: unknown): { ok: true; value: Finished } | { ok: false; problem: string } {
+  if (goal.kind === "calibrate") {
+    const c = calibrationSchema.safeParse(raw);
+    if (!c.success) return { ok: false, problem: "The rubric did not match the expected shape." };
+    const r = finishedRubric(c.data);
+    return r.ok ? { ok: true, value: { rubric: r.rubric, summary: r.rubric.context } } : r;
+  }
+  const r = reportSchema.safeParse(raw);
+  return r.success
+    ? { ok: true, value: finishedReport(goal.rubric, r.data) }
+    : { ok: false, problem: "The report did not match the expected shape." };
+}
+
+/** The full brief for the last call: the role, then what this run is for. */
+export function briefFor(s: Sentinel, goal: Goal): string {
+  return goal.kind === "calibrate"
+    ? `${s.persona} ${s.task} ${CALIBRATE_RULES}`
+    : `${promptFor(s)} ${SCORE_RULES}\n\n${rubricText(goal.rubric)}`;
 }
 
 export interface AuditRun {
   sentinel: Sentinel;
+  goal: Goal;
   repoFullName: string;
   files: string[];
   read: (path: string) => Promise<string | null>;
@@ -118,19 +169,16 @@ export interface AuditRun {
 }
 
 export type AuditOutcome =
-  | {
+  | (Finished & {
       ok: true;
-      stars: number;
-      quote: string;
-      summary: string;
-      report: AuditReport;
       files: string[];
       usage: Usage;
-    }
+    })
   | { ok: false; error: string; usage: Usage };
 
 export async function runAudit(config: AgentConfig, run: AuditRun): Promise<AuditOutcome> {
-  const { sentinel: s } = run;
+  const { sentinel: s, goal } = run;
+  const doing = goal.kind === "calibrate" ? "calibrate on" : "audit";
   const model = config.model ?? SENTINEL_MODEL;
   let usage: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
   const add = (u: Usage) => {
@@ -147,7 +195,7 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
 
   await run.log(`Choosing what a ${s.name} reads`);
   const picked = await ask(config, model, run.signal, {
-    system: `${s.persona} ${s.task}\n\nYou are about to audit ${run.repoFullName}. Pick the files you most need to read for your role. Prefer source over generated files.`,
+    system: `${s.persona} ${s.task}\n\nYou are about to ${doing} ${run.repoFullName}. Pick the files you most need to read for your role. Prefer source over generated files.`,
     user: `Files in the repository${shown.length < run.files.length ? " (the most relevant, trimmed)" : ""}:\n${shown.join("\n")}`,
     schema: pickSchema,
     effort: "low",
@@ -180,7 +228,7 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
   await run.log("Reading more");
   const unread = shown.filter((p) => !texts.some((t) => t.path === p)).slice(0, 800);
   const followed = await ask(config, model, run.signal, {
-    system: `${s.persona} ${s.task}\n\nYou are auditing ${run.repoFullName} and have read the files below. Ask for what you still need to judge it for your role: the rest of a file that was cut short, or a file the ones you read depend on.`,
+    system: `${s.persona} ${s.task}\n\nYou are about to ${doing} ${run.repoFullName} and have read the files below. Ask for what you still need to judge it for your role: the rest of a file that was cut short, or a file the ones you read depend on.`,
     user: [
       "What you read:",
       ...texts.map((t) => `- ${t.path} (${t.note})${t.outline.length ? `; not shown:\n${t.outline.map((l) => `    ${l}`).join("\n")}` : ""}`),
@@ -208,11 +256,11 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
     texts.push(read);
   }
 
-  await run.log(`Scoring as ${s.name}`);
+  await run.log(goal.kind === "calibrate" ? "Writing the rubric" : `Scoring as ${s.name}`);
   const sections = run.evidence?.sections ?? [];
   const images = run.evidence?.images ?? [];
   const answer = await ask(config, model, run.signal, {
-    system: `${promptFor(s)} ${READ_ONLY}`,
+    system: `${briefFor(s, goal)}\n\n${READ_ONLY}`,
     user: [
       `Repository: ${run.repoFullName} (${run.files.length} files).`,
       "",
@@ -224,14 +272,16 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
       ...texts.map((t) => `\n=== ${t.path} (${t.note}) ===\n${t.text}`),
     ].join("\n"),
     images,
-    schema: reportSchema,
+    schema: goal.kind === "calibrate" ? (calibrationSchema as z.ZodType<unknown>) : (reportSchema as z.ZodType<unknown>),
     effort: "medium",
   });
   if (answer.usage) add(answer.usage);
   if (!answer.ok) return { ok: false, error: answer.error, usage };
+  const done = finishedRun(goal, answer.value);
+  if (!done.ok) return { ok: false, error: done.problem, usage };
 
-  await run.log("Writing report");
-  return { ok: true, ...finishedReport(answer.value), files: [...new Set(texts.map((t) => t.path))], usage };
+  await run.log(goal.kind === "calibrate" ? "Saving the rubric" : "Writing report");
+  return { ok: true, ...done.value, files: [...new Set(texts.map((t) => t.path))], usage };
 }
 
 interface Read {

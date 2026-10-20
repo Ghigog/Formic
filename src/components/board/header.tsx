@@ -97,18 +97,18 @@ export function BoardHeader({
             className="fixed top-14 left-4"
           />
         )}
-        <div className="flex-grow" />
-        <ColonyMobileStats />
         {assistant && isMobile && (
           <AskButton a={assistant} repoName={repo ?? repoFullName} />
         )}
+        <div className="flex-grow" />
+        <ColonyMobileStats />
         {account && <AccountMenu account={account} />}
       </header>
     </>
   );
 }
 
-/** The Formic mark (src/app/icon.svg), or the notification icon with the count of other projects' unseen answers. */
+/** The Formic mark (src/app/icon.svg), with a count badge for other projects' unseen answers. */
 function LogoButton({
   count,
   onClick,
@@ -133,29 +133,7 @@ function LogoButton({
       title={title}
       className={`inline-flex shrink-0 items-center justify-center ${className}`}
     >
-      {count > 0 ? (
-        <span className="relative inline-flex">
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-            data-testid="notification-icon"
-          >
-            <path
-              d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6ZM10 19a2 2 0 0 0 4 0"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span className="bg-terracotta absolute -top-1.5 -right-2 inline-flex size-4 items-center justify-center rounded-full text-[10px] font-semibold text-white">
-            {count}
-          </span>
-        </span>
-      ) : (
+      <span className="relative inline-flex">
         <svg
           width="28"
           height="28"
@@ -170,11 +148,16 @@ function LogoButton({
           <path
             fill="#fbf9f5"
             d="M 16.28 12.52 V 14.49 V 16.45 H 15.61 L 15.44 14.91 H 11.92 V 14.07 H 15.44 L 15.61 12.52 Z
-               M 17.38 9 H 17.55 L 18.11 12.34 L 17.71 12.43 L 16.22 10.01 L 17.11 10.29 H 11.77 V 9.45 H 16.48 Z
-               M 12.94 9.45 V 18.76 L 14.06 19.19 V 19.5 H 9.89 V 19.19 L 11.01 18.76 V 10.19 L 9.89 9.76 V 9.45 Z"
+                 M 17.38 9 H 17.55 L 18.11 12.34 L 17.71 12.43 L 16.22 10.01 L 17.11 10.29 H 11.77 V 9.45 H 16.48 Z
+                 M 12.94 9.45 V 18.76 L 14.06 19.19 V 19.5 H 9.89 V 19.19 L 11.01 18.76 V 10.19 L 9.89 9.76 V 9.45 Z"
           />
         </svg>
-      )}
+        {count > 0 && (
+          <span className="bg-terracotta absolute -top-1.5 -right-2 inline-flex size-4 items-center justify-center rounded-full text-[10px] font-semibold text-white">
+            {count}
+          </span>
+        )}
+      </span>
     </button>
   );
 }

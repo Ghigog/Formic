@@ -63,6 +63,14 @@ describe("ViewMenu", () => {
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ types: [] }));
   });
 
+  it("lists the five types and the untyped tickets", () => {
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={vi.fn()} scope="column" />);
+    fireEvent.click(screen.getByRole("button", { name: "Column options" }));
+    for (const name of ["Tickets", "User stories", "Tasks", "Features", "Bugs", "Spikes"]) {
+      expect(screen.getByRole("menuitemcheckbox", { name })).toBeInTheDocument();
+    }
+  });
+
   it("emits onChange when collapse/expand is clicked", () => {
     const onChange = vi.fn();
     renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} scope="column" />);

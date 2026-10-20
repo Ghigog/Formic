@@ -83,6 +83,20 @@ export async function publish(
     await syncIssues(projectId, event);
   }
 
+  // A ticket moved out of In Progress before its scouts were back calls
+  // them back (src/lib/coder/scouts.ts).
+  if (
+    event.type === "card.status" &&
+    event.kind === "ticket" &&
+    (event.status === "ready" || event.status === "blocked" || event.status === "failed")
+  ) {
+    const ticket = await repository().ticketDetail(event.cardId);
+    if (ticket && !ticket.scoutOf && ticket.scouts > 0 && !ticket.scoutPick) {
+      const { recallScouts } = await import("@/lib/coder/scouts");
+      await recallScouts(projectId, ticket.id);
+    }
+  }
+
   // A ticket that stopped running may free files a queued one is waiting
   // on. Every way a run ends says so here, so the queue is moved on here.
   // Imported late: the queue starts agents, and they publish.
@@ -94,13 +108,25 @@ export async function publish(
     await startQueued(projectId);
   }
 
-  // A Queen pushes its card's prerequisites along: when one is placed, and
-  // whenever something merges.
-  if (event.type === "card.queen" || (event.type === "card.status" && event.status === "merged")) {
+  // A Queen pushes its card's prerequisites along (see movesQueens).
+  if (movesQueens(event)) {
     const { advanceQueens } = await import("@/lib/board/service");
     await advanceQueens(projectId);
   }
   return seq;
+}
+
+/**
+ * Whether an event can let a Queen start something: one is placed, something
+ * merges, a pull request opens (a ticket can build on an open one, see
+ * src/lib/domain/stack.ts), or a ticket comes back to To Do, which is how a
+ * person resolves a blocked or failed one that was stopping the Queen.
+ */
+export function movesQueens(event: FormicEvent): boolean {
+  if (event.type === "card.queen") return true;
+  if (event.type !== "card.status") return false;
+  if (event.status === "merged") return true;
+  return event.kind === "ticket" && (event.status === "review" || event.status === "ready" || event.status === "waiting");
 }
 
 /**

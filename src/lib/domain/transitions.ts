@@ -43,6 +43,8 @@ export const transitionResultSchema = z.discriminatedUnion("ok", [
     reason: z.string(),
     /** Where the board should put the card back. */
     revertTo: z.enum(COLUMNS),
+    /** The column that refused the card because it has no agent yet. */
+    needsAgent: z.enum(COLUMNS).optional(),
   }),
 ]);
 

@@ -30,7 +30,8 @@ import {
 import { Readable } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { untar, unzip, type Keep } from "./archive";
-import { CARRY_DELETED, CARRY_DIR } from "@/lib/runner/workflow";
+import { runsOnPullRequests } from "./workflow-triggers";
+import { CARRY_DELETED, CARRY_DIR, RUNNER_WORKFLOW_PATH } from "@/lib/runner/workflow";
 
 /**
  * GitHub REST over fetch.
@@ -207,6 +208,41 @@ export class GitHubClient implements VcsClient {
     }));
   }
 
+  async hasCi(baseBranch: string): Promise<boolean> {
+    const [workflows, required] = await Promise.all([
+      this.request<{ workflows: Array<{ path: string; state: string }> }>(
+        "GET",
+        "/actions/workflows?per_page=100",
+      ).then(
+        ({ data }) => data.workflows,
+        // Unreadable workflows could be CI: wait for checks, as before.
+        () => null,
+      ),
+      this.request<{ protection?: { required_status_checks?: { contexts?: string[] } } }>(
+        "GET",
+        `/branches/${encodeURIComponent(baseBranch)}`,
+      ).then(
+        ({ data }) => data.protection?.required_status_checks?.contexts ?? [],
+        // A base GitHub cannot show requires nothing Formic can wait on.
+        () => [],
+      ),
+    ]);
+    if (!workflows || required.length > 0) return true;
+    const candidates = workflows.filter((w) => w.state === "active" && w.path !== RUNNER_WORKFLOW_PATH);
+    // A workflow that never runs on a pull request (by hand, on a schedule,
+    // on pushes to the base) leaves its heads without checks for good.
+    const runs = await Promise.all(
+      candidates.map((w) =>
+        this.readFile(w.path, baseBranch).then(
+          (source) => source === null || runsOnPullRequests(source, baseBranch),
+          // Unreadable could be CI: wait for checks, as above.
+          () => true,
+        ),
+      ),
+    );
+    return runs.some(Boolean);
+  }
+
   async checkLog(checkRunId: number): Promise<CheckLog> {
     const { data } = await this.request<{
       name: string;
@@ -238,6 +274,10 @@ export class GitHubClient implements VcsClient {
         .slice(0, 20_000),
       annotations,
     };
+  }
+
+  async retargetPullRequest(number: number, baseBranch: string): Promise<void> {
+    await this.request("PATCH", `/pulls/${number}`, { base: baseBranch });
   }
 
   async updateBranch(number: number): Promise<UpdateOutcome> {
@@ -658,19 +698,22 @@ export class GitHubClient implements VcsClient {
 
   async compare(base: string, head: string): Promise<Comparison> {
     const { data } = await this.request<{
-      files?: Array<{ filename: string; previous_filename?: string }>;
+      files?: Array<{ filename: string; previous_filename?: string; patch?: string }>;
       commits: Array<{ sha: string; commit: { message: string } }>;
     }>("GET", `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`);
     const files = new Set<string>();
+    const patches: Array<{ path: string; patch: string }> = [];
     for (const f of data.files ?? []) {
       files.add(f.filename);
       // A rename touches the path it left as well as the one it took.
       if (f.previous_filename) files.add(f.previous_filename);
+      if (f.patch) patches.push({ path: f.filename, patch: f.patch });
     }
     return {
       files: [...files],
       messages: data.commits.map((c) => c.commit.message),
       headSha: data.commits.at(-1)?.sha ?? "",
+      patches,
     };
   }
 
@@ -696,6 +739,14 @@ export class GitHubClient implements VcsClient {
         for (const line of Buffer.from(blob.content, "base64").toString("utf8").split("\n")) {
           const path = line.trim();
           if (!path) continue;
+          if (
+            path.startsWith("/") ||
+            path.split("/").includes("..") ||
+            path === CARRY_DIR ||
+            path.startsWith(`${CARRY_DIR}/`)
+          ) {
+            throw new VcsError(`Refusing to delete ${path}: not a path inside the repository.`);
+          }
           entries.push({ path, mode: "100644", type: "blob", sha: null });
           files.push(path);
         }

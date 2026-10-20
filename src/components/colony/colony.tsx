@@ -23,6 +23,7 @@ import {
   pointsOf,
   scoreOf,
   SHAPE_UNLOCKS,
+  styleUnlocked,
   unlocksAt,
   rankOf,
   epicBonus,
@@ -36,7 +37,7 @@ import type { ExtrasMap } from "@/components/board/card";
 import { ColonyFx, cardEl, centerOf, colonyEl, heldByDrag, type CrewPhase } from "./fx";
 import { flyHome, ghostOf, ghostRect, groupOf, type Ghost } from "./epic-flight";
 import { SoundEngine, type Sfx } from "./sound";
-import { useHydrated, useSaved, useSound } from "./store";
+import { DEFAULTS, useHydrated, useSaved, useSound } from "./store";
 
 /**
  * The colony layer over the board: score, level, heat, sound and the canvas
@@ -113,7 +114,7 @@ export function crewPhase(card: BoardCard, extras: ExtrasMap, handingOver = fals
   if (card.status === "review") {
     const ci = extras[card.id]?.ci;
     if (on || ci === "pending") return "tunnel";
-    return ci === "passing" ? "buried" : null;
+    return ci === "passing" || ci === "none" ? "buried" : null;
   }
   // Backlog and To Do: the card's words are the work. Nothing is built and
   // nothing is carried out of it, so the crew walks over the card and reads
@@ -121,6 +122,19 @@ export function crewPhase(card: BoardCard, extras: ExtrasMap, handingOver = fals
   const column = columnOf(card);
   if (column === "todo" || column === "backlog") return on ? "read" : null;
   return null;
+}
+
+/**
+ * A running card with scouts out gets a half-size crew for each one, round
+ * the same card, so the card shows how much work is going into it. They leave
+ * when the scouts come back or one is picked.
+ */
+export function scoutCrews(card: BoardCard): Map<string, { phase: CrewPhase; sp: number }> {
+  const crews = new Map<string, { phase: CrewPhase; sp: number }>();
+  const scouts = card.scouts ?? 0;
+  if (card.status !== "running" || card.scoutPick) return crews;
+  for (let n = 1; n <= scouts; n++) crews.set(`${card.id}#scout${n}`, { phase: "work", sp: pointsOf(card) / 2 });
+  return crews;
 }
 
 /** The level-up toast: the rank, what the level unlocks (Sentinels included) and the Queen it earns. */
@@ -144,7 +158,7 @@ export function ColonyProvider({
   extras: ExtrasMap;
   children: React.ReactNode;
 }) {
-  const [saved, setSaved] = useSaved(storageKey);
+  const [stored, setSaved] = useSaved(storageKey);
   const [soundOn] = useSound();
   const loaded = useHydrated();
 
@@ -167,6 +181,8 @@ export function ColonyProvider({
   const topRef = useRef<HTMLCanvasElement>(null);
 
   const score = useMemo(() => scoreOf(cards), [cards]);
+  // A style chosen under an older level schedule may now sit above the level.
+  const saved = styleUnlocked(stored, score.level) ? stored : DEFAULTS;
   const stacks = useMemo(() => heatStacks(cards, now), [cards, now]);
   const held = useMemo(() => {
     if (!landed) return 0;
@@ -203,6 +219,7 @@ export function ColonyProvider({
       }
       const phase = crewPhase(c, extras, handingOver);
       if (phase) crews.set(c.id, { phase, sp: pointsOf(c) });
+      for (const [key, crew] of scoutCrews(c)) crews.set(key, crew);
     }
     fx.setWorld({
       crews,
@@ -412,7 +429,7 @@ export function ColonyProvider({
       } else if (card.status === "failed" || card.status === "blocked") {
         later.push(() => {
           sfx("reject");
-          mark(card, "NEEDS YOU", card.blockedReason ?? null, "var(--crimson)");
+          mark(card, "NEEDS YOU", card.blockedReason?.split("\n", 1)[0] ?? null, "var(--crimson)");
         });
       }
       // A bug report squashes when handed to the agents; a bug ticket, when it is merged.
@@ -660,7 +677,7 @@ export function ColonyProvider({
         );
         return;
       }
-      setSaved((s) => ({ ...s, ...patch }));
+      setSaved((s) => ({ ...(styleUnlocked(s, lv) ? s : DEFAULTS), ...patch }));
       // A test squash in the new style, on the button that chose it.
       requestAnimationFrame(() => {
         const [x, y] = centerOf(from);

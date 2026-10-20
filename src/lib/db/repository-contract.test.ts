@@ -156,6 +156,28 @@ function contract(name: string, make: () => Repository) {
         expect([typeOf(epic.id), typeOf(plain.id), typeOf(t!.id), typeOf(u!.id)]).toEqual(["bug", null, "spike", null]);
       });
 
+      it("keeps a bug's severity and clears it for any other type", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1, workType: "bug", bugSeverity: "high" });
+        const [bug, feature] = await repo.createTickets([
+          ticket(epic.id, "S-1", { workType: "bug", bugSeverity: "high" }),
+          ticket(epic.id, "S-2", { position: 2, workType: "feature", bugSeverity: "low" }),
+        ]);
+        expect([epic.bugSeverity, bug!.bugSeverity, feature!.bugSeverity ?? null]).toEqual(["high", "high", null]);
+        const cards = await repo.boardCards(p.id);
+        const sev = (id: string) => cards.find((c) => c.id === id)?.bugSeverity ?? null;
+        expect([sev(epic.id), sev(bug!.id), sev(feature!.id)]).toEqual(["high", "high", null]);
+
+        await repo.updateTicket(bug!.id, { bugSeverity: "critical" });
+        await repo.updateTicket(feature!.id, { bugSeverity: "low" });
+        let after = await repo.boardCards(p.id);
+        expect([bug!.id, feature!.id].map((id) => after.find((c) => c.id === id)?.bugSeverity ?? null)).toEqual(["critical", null]);
+
+        await repo.updateTicket(bug!.id, { workType: "task" });
+        after = await repo.boardCards(p.id);
+        expect(after.find((c) => c.id === bug!.id)?.bugSeverity ?? null).toBeNull();
+      });
+
       it("sets and clears a ticket's work type", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
@@ -354,6 +376,27 @@ function contract(name: string, make: () => Repository) {
         await repo.deleteAttachments([a.id]);
         expect(await repo.attachmentContent(a.id)).toBeNull();
       });
+
+      it("moves a ticket's attachments to another ticket", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [from, to] = await repo.createTickets([ticket(epic.id, "M-1"), ticket(epic.id, "M-2")]);
+        const requestId = randomUUID();
+        const a = await repo.createAttachment({
+          projectId: p.id,
+          requestId,
+          filename: "a.md",
+          mimeType: "text/markdown",
+          kind: "file",
+          size: 1,
+          bytes: new Uint8Array([1]),
+        });
+        await repo.claimAttachments(requestId, { ticketId: from!.id });
+
+        await repo.moveTicketAttachments(from!.id, to!.id);
+        expect(await repo.attachmentsFor({ ticketId: from!.id })).toEqual([]);
+        expect((await repo.attachmentsFor({ ticketId: to!.id })).map((x) => x.id)).toEqual([a.id]);
+      });
     });
 
     describe("events", () => {
@@ -478,6 +521,25 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.projectById(p.id))?.autoEscalate).toBe(false);
       });
 
+      it("runs scouts on the column's agent until a scout agent is set, per project", async () => {
+        const p = await project();
+        const preset = await repo.savePreset({
+          ownerId: null,
+          provider: "anthropic",
+          name: `scout-${randomUUID()}`,
+          model: "claude-opus-5",
+          prompt: "p",
+          apiKeyCipher: null,
+          apiKeyHint: null,
+        });
+        expect((await repo.projectById(p.id))?.scoutPresetId).toBeNull();
+        await repo.setScoutAgent(p.id, preset.id);
+        expect((await repo.projectById(p.id))?.scoutPresetId).toBe(preset.id);
+        await repo.setScoutAgent(p.id, null);
+        expect((await repo.projectById(p.id))?.scoutPresetId).toBeNull();
+        await repo.deletePreset(preset.id);
+      });
+
       it("records that a ticket was auto-escalated, once", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
@@ -490,6 +552,40 @@ function contract(name: string, make: () => Repository) {
 
         await repo.markTicketAutoEscalated(t!.id);
         expect((await repo.ticketDetail(t!.id))?.autoEscalatedAt).toBe(first);
+      });
+
+      it("keeps the colony uncapped until set, per project", async () => {
+        const p = await project();
+        expect(await repo.projectById(p.id)).toMatchObject({ colonySize: null, colonyReserve: 0, autoScout: false });
+        await repo.setColony(p.id, { colonySize: 4, colonyReserve: 1, autoScout: true });
+        expect(await repo.projectById(p.id)).toMatchObject({ colonySize: 4, colonyReserve: 1, autoScout: true });
+        await repo.setColony(p.id, { colonySize: null, colonyReserve: 0, autoScout: false });
+        expect((await repo.projectById(p.id))?.colonySize).toBeNull();
+      });
+
+      it("makes scouts of a ticket, off the board and out of its Epic's tickets", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "S-1")]);
+        const made = await repo.createScouts(t!.id, [
+          { brief: "small", presetId: null },
+          { brief: "robust", presetId: null },
+        ]);
+        expect(made.map((s) => [s.key, s.status, s.scoutOf, s.scoutBrief])).toEqual([
+          ["S-1-s1", "ready", t!.id, "small"],
+          ["S-1-s2", "ready", t!.id, "robust"],
+        ]);
+        expect((await repo.scoutsOf(t!.id)).map((s) => s.key)).toEqual(["S-1-s1", "S-1-s2"]);
+
+        const cards = await repo.boardCards(p.id);
+        expect(cards.filter((c) => c.kind === "ticket").map((c) => c.key)).toEqual(["S-1"]);
+        expect(cards.find((c) => c.id === epic.id)?.childCount).toBe(1);
+        expect((await repo.ticketsForEpic(epic.id)).map((x) => x.key)).toEqual(["S-1"]);
+
+        await repo.updateTicket(t!.id, { scouts: 2, scoutPick: made[1]!.id, scoutWhy: "tests" });
+        expect(await repo.ticketDetail(t!.id)).toMatchObject({ scouts: 2, scoutPick: made[1]!.id, scoutWhy: "tests" });
+        expect(cards.length).toBeGreaterThan(0);
+        expect((await repo.boardCards(p.id)).find((c) => c.id === t!.id)).toMatchObject({ scouts: 2, scoutPick: made[1]!.id });
       });
 
       it("keeps auto-merge off until switched on, per project", async () => {
@@ -682,6 +778,18 @@ function contract(name: string, make: () => Repository) {
         expect(audits[0]!.report).toEqual(report);
       });
 
+      it("marks the Epic made from an audit, and a re-run starts unmarked", async () => {
+        const p = await project();
+        const a = await repo.startAudit(p.id, "qa");
+        await repo.finishAudit(a.id, { status: "done", stars: 3, quote: "q", summary: "s", report, files: [] });
+        expect((await repo.auditsFor(p.id))[0]!.epicId).toBeNull();
+        await repo.markAuditEpic(a.id, "epic-1");
+        expect((await repo.auditsFor(p.id))[0]!.epicId).toBe("epic-1");
+        const b = await repo.startAudit(p.id, "qa");
+        await repo.finishAudit(b.id, { status: "done", stars: 4, quote: "q", summary: "s", report, files: [] });
+        expect((await repo.auditsFor(p.id)).map((x) => x.epicId)).toEqual([null]);
+      });
+
       it("keeps the last report when a newer run fails", async () => {
         const p = await project();
         const done = await repo.startAudit(p.id, "qa");
@@ -698,6 +806,25 @@ function contract(name: string, make: () => Repository) {
           ["tester", "running", null],
         ]);
         expect(other.status).toBe("running");
+      });
+
+      it("keeps a calibration's rubric apart from the audits scored against it", async () => {
+        const p = await project();
+        const rubric = { context: "c", rungs: [{ stars: 2, checks: [{ id: "2a", text: "t", how: "h" }] }] };
+        const cal = await repo.startAudit(p.id, "qa", "calibrate");
+        await repo.finishAudit(cal.id, { status: "done", rubric, summary: "c", files: [] });
+        const scored = { ...report, checks: [{ id: "2a", met: true, evidence: "e" }] };
+        for (const stars of [2, 3]) {
+          const a = await repo.startAudit(p.id, "qa", "audit", rubric);
+          await repo.finishAudit(a.id, { status: "done", stars, quote: "q", summary: "s", report: scored, files: [] });
+        }
+        const audits = await repo.auditsFor(p.id);
+        expect(audits.map((a) => [a.kind, a.stars])).toEqual([
+          ["calibrate", null],
+          ["audit", 3],
+        ]);
+        expect(audits.map((a) => a.rubric)).toEqual([rubric, rubric]);
+        expect(audits[1]!.report).toEqual(scored);
       });
     });
 
@@ -998,6 +1125,78 @@ function contract(name: string, make: () => Repository) {
         expect(await read()).toMatchObject({ limitedUntil: until.toISOString(), limitNote: "Out of tokens" });
         await repo.setPresetLimit(preset.id, null);
         expect(await read()).toMatchObject({ limitedUntil: null, limitNote: null });
+      });
+    });
+
+    describe("coordination across boards", () => {
+      it("lists every board's running tickets on a repository, with whose board each is", async () => {
+        const repoName = `contract/${randomUUID()}`;
+        const alice = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `a${randomUUID()}`, name: null, avatarUrl: null });
+        const bob = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `b${randomUUID()}`, name: null, avatarUrl: null });
+        const hers = await repo.ensureProject({ ownerId: alice.id, repoFullName: repoName, baseBranch: "main" });
+        const his = await repo.ensureProject({ ownerId: bob.id, repoFullName: repoName.toUpperCase(), baseBranch: "main" });
+        const elsewhere = await project();
+
+        const [e1, e2, e3] = await Promise.all(
+          [hers, his, elsewhere].map((p) => repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 })),
+        );
+        const [running] = await repo.createTickets([ticket(e1!.id, "R-1", { fileScope: ["src/api"] })]);
+        const [idle] = await repo.createTickets([ticket(e2!.id, "R-2")]);
+        const [other] = await repo.createTickets([ticket(e3!.id, "R-3")]);
+        for (const t of [running!, other!]) await repo.updateTicket(t.id, { status: "running" });
+
+        const held = await repo.reservations(repoName);
+        expect(held).toEqual([
+          { ticketId: running!.id, key: "R-1", projectId: hers.id, ownerLogin: alice.login, fileScope: ["src/api"] },
+        ]);
+        expect(held.some((r) => r.ticketId === idle!.id)).toBe(false);
+      });
+
+      it("drops a scout's claim once its parent is no longer running", async () => {
+        const repoName = `contract/${randomUUID()}`;
+        const p = await repo.ensureProject({ ownerId: null, repoFullName: repoName, baseBranch: "main" });
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [parent] = await repo.createTickets([ticket(epic.id, "S-1", { fileScope: ["src/api"] })]);
+        const [scout] = await repo.createScouts(parent!.id, [{ brief: "small", presetId: null }]);
+        await repo.updateTicket(parent!.id, { status: "running" });
+        await repo.updateTicket(scout!.id, { status: "running" });
+        expect((await repo.reservations(repoName)).map((r) => r.ticketId).sort()).toEqual([parent!.id, scout!.id].sort());
+
+        await repo.updateTicket(parent!.id, { status: "review" });
+        expect(await repo.reservations(repoName)).toEqual([]);
+      });
+
+      it("gives a lease to one holder at a time, and to the next once it lapses or is let go", async () => {
+        const key = `contract:${randomUUID()}`;
+        expect(await repo.acquireLease(key, "a", 60_000)).toBe(true);
+        expect(await repo.acquireLease(key, "b", 60_000)).toBe(false);
+        // The holder renews its own.
+        expect(await repo.acquireLease(key, "a", 60_000)).toBe(true);
+        // Letting go is only the holder's to do.
+        await repo.releaseLease(key, "b");
+        expect(await repo.acquireLease(key, "b", 60_000)).toBe(false);
+        await repo.releaseLease(key, "a");
+        expect(await repo.acquireLease(key, "b", 1)).toBe(true);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(await repo.acquireLease(key, "c", 60_000)).toBe(true);
+      });
+
+      it("says who holds a lease, and nobody once it lapses", async () => {
+        const key = `contract:${randomUUID()}`;
+        expect(await repo.leaseHolder(key)).toBeNull();
+        await repo.acquireLease(key, "a", 60_000);
+        expect(await repo.leaseHolder(key)).toBe("a");
+        await repo.releaseLease(key, "a");
+        expect(await repo.leaseHolder(key)).toBeNull();
+        await repo.acquireLease(key, "b", 1);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(await repo.leaseHolder(key)).toBeNull();
+      });
+
+      it("never gives one lease to two holders asking at once", async () => {
+        const key = `contract:${randomUUID()}`;
+        const wins = await Promise.all(["a", "b", "c", "d", "e"].map((h) => repo.acquireLease(key, h, 60_000)));
+        expect(wins.filter(Boolean)).toHaveLength(1);
       });
     });
 

@@ -2,7 +2,10 @@ import { currentUser } from "@/lib/auth/user";
 import { credentialsFor } from "@/lib/auth/credentials";
 import { installUrl } from "@/lib/auth/github";
 import { authMode } from "@/lib/auth/session";
-import { listRepositories } from "@/lib/vcs/repositories";
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { createRepository, listRepositories, REPO_NAME } from "@/lib/vcs/repositories";
+import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -26,4 +29,32 @@ export async function GET() {
 
   const result = await listRepositories(githubToken, githubTokenKind);
   return Response.json({ ...result, installUrl: install });
+}
+
+const createSchema = z.object({ name: z.string().regex(REPO_NAME) });
+
+/** Create a new repository on this person's GitHub account. */
+export async function POST(req: NextRequest) {
+  const refused = limited(req, RUN, "repo-create");
+  if (refused) return refused;
+
+  const user = await currentUser();
+  if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
+
+  const parsed = createSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return Response.json(
+      { error: "Use letters, numbers, dots, dashes or underscores." },
+      { status: 400 },
+    );
+  }
+
+  const { githubToken } = await credentialsFor(user);
+  if (!githubToken) {
+    return Response.json({ error: "Connect GitHub to create repositories." }, { status: 400 });
+  }
+
+  const result = await createRepository(parsed.data.name, githubToken);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: 422 });
+  return Response.json({ repo: result.repo });
 }

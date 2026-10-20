@@ -7,6 +7,7 @@ import type {
   AgentContext,
   AgentOutcome,
   ArchitectAgent,
+  CoderTask,
   DraftTicket,
   ExistingTicket,
   ProductAgent,
@@ -33,6 +34,7 @@ import {
 } from "./decomposition";
 import { type ChatMessage, chat, extractJson } from "@/lib/llm/openai-compat";
 import { type ProviderInfo, provider } from "@/lib/llm/providers";
+import { JUDGE_BRIEF, acceptVerdict, judgePrompt, scoutVerdictSchema, type ScoutCandidate, type ScoutVerdict } from "./judge";
 
 /**
  * The Product, Architect and Showcase agents on any provider that speaks
@@ -256,8 +258,8 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
             "PRD:",
             JSON.stringify(input.prd, null, 2),
             "",
-            "Existing top-level directories in the repository:",
-            input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+            "The repository's layout, each directory with its files:",
+            input.repoTree.join("\n") || "(empty repository)",
             decompositionGuidance(input.existing, input.instructions),
           ].join("\n"),
         },
@@ -311,8 +313,8 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
             "Raw feature request:",
             input.rawRequest,
             "",
-            "Existing top-level directories in the repository:",
-            input.repoTree.slice(0, 200).join("\n") || "(empty repository)",
+            "The repository's layout, each directory with its files:",
+            input.repoTree.join("\n") || "(empty repository)",
           ].join("\n"),
           input.attachments,
         ),
@@ -381,4 +383,29 @@ export class OpenAiShowcaseAgent implements ShowcaseAgent {
       return failure(r.model, e instanceof Error ? e.message : String(e));
     }
   }
+}
+
+/** The Reviewer Agent's pick among a ticket's scouts, on an OpenAI-format provider. */
+export async function compareScoutsOnOpenAi(
+  config: AgentConfig,
+  ctx: AgentContext,
+  input: { task: CoderTask; candidates: ScoutCandidate[] },
+): Promise<AgentOutcome<ScoutVerdict>> {
+  const r = resolve(config);
+  if (typeof r === "string") return failure(config.model ?? "", r, true);
+  const result = await askForJson(
+    r,
+    ctx,
+    [
+      { role: "system", content: jsonSystem(JUDGE_BRIEF, scoutVerdictSchema) },
+      { role: "user", content: judgePrompt(input.task, input.candidates) },
+    ],
+    (raw) => {
+      const verdict = acceptVerdict(raw, input.candidates);
+      return typeof verdict === "string" ? { ok: false, correction: `${verdict} Return the corrected JSON object.` } : { ok: true, value: verdict };
+    },
+    2,
+  );
+  if (!result.ok) return failure(r.model, `The Reviewer Agent could not compare the scouts: ${result.error}`, false, result.usage);
+  return { ok: true, value: result.value, usage: result.usage };
 }

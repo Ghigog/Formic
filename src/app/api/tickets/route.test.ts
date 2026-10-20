@@ -53,16 +53,18 @@ describe("POST /api/tickets", () => {
     expect(res.status).toBe(400);
   });
 
-  it("passes a valid workType on and rejects any other", async () => {
+  it("ignores a workType in the body and still creates the ticket", async () => {
     activeProject.mockResolvedValue({ id: "project_default" });
     createTodoItem.mockResolvedValue({ id: "ticket-1", kind: "ticket" });
     expect((await POST(request({ rawRequest: "Look into it", workType: "spike" }))).status).toBe(201);
     expect(createTodoItem).toHaveBeenLastCalledWith("project_default", "Look into it", {
       requestId: undefined,
-      workType: "spike",
     });
+  });
+
+  it("rejects a whitespace-only rawRequest without starting the Architect", async () => {
     createTodoItem.mockClear();
-    expect((await POST(request({ rawRequest: "Look into it", workType: "epic-thing" }))).status).toBe(400);
+    expect((await POST(request({ rawRequest: "     \n  " }))).status).toBe(400);
     expect(createTodoItem).not.toHaveBeenCalled();
   });
 
@@ -94,7 +96,7 @@ describe("POST /api/tickets", () => {
     expect(createTodoItem).toHaveBeenCalledWith(
       "project_default",
       "Fix the broken footer link.",
-      { requestId: "req-1", workType: undefined },
+      { requestId: "req-1" },
     );
   });
 });

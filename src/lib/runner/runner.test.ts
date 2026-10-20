@@ -14,9 +14,11 @@ import {
   reviewVerdictOf,
   secretNameFor,
   signedAttachmentUrl,
+  attachmentsPrompt,
   startJobRun,
   stopTicket,
   usageOf,
+  whyItFailed,
 } from "./runner";
 import { addNote } from "@/lib/coder/notes";
 import {
@@ -123,6 +125,18 @@ afterEach(() => {
   setLoopBundleDir(null);
 });
 
+describe("whyItFailed", () => {
+  const url = "https://github.com/acme/widgets/actions/runs/7";
+  const why = (conclusion: string, link: string | null = url) =>
+    whyItFailed(PROJECT, {} as never, { conclusion, url: link } as never, null);
+
+  it("puts the error type first and the log link in the detail", async () => {
+    expect(await why("cancelled")).toBe(`The run was cancelled\nLog: ${url}`);
+    expect(await why("timed_out")).toBe(`The run timed out\nLog: ${url}`);
+    expect(await why("failure", null)).toBe("The run ended as failure");
+  });
+});
+
 describe("CLI agent templates", () => {
   it("run in any column", async () => {
     const preset = await assignClaudeCode();
@@ -161,6 +175,7 @@ describe("a CLI agent planning an Epic", () => {
         fileScope: ["src/app/api/export"],
         size: "S",
         storyPoints: 3,
+        type: "task",
         dependsOn: [],
       },
       {
@@ -172,6 +187,7 @@ describe("a CLI agent planning an Epic", () => {
         fileScope: ["src/components/export"],
         size: "S",
         storyPoints: 3,
+        type: "task",
         dependsOn: ["T-1"],
       },
     ],
@@ -295,7 +311,7 @@ describe("a CLI agent planning an Epic", () => {
     await completeCliRun(PROJECT, { job: second.job!, mode: "architect", conclusion: "success", url: null });
 
     const tickets = await repository().ticketsForEpic(epic.id);
-    expect(tickets.map((t) => t.key).sort()).toEqual(["T-1", "T-2"]);
+    expect(tickets.map((t) => t.key).sort()).toEqual(["EPIC-1-T1", "EPIC-1-T2"]);
     expect((await repository().epicDetail(epic.id))!.runnerJob).toBeNull();
   });
 
@@ -364,6 +380,7 @@ describe("a CLI agent planning an Epic", () => {
     fileScope: ["src/components/export"],
     size: "S",
     storyPoints: 3,
+    type: "task",
     dependsOn: [],
   };
 
@@ -429,6 +446,7 @@ describe("a CLI agent drafting a To Do request's single ticket", () => {
     fileScope: ["src/components/agents"],
     size: "S",
     storyPoints: 3,
+    type: "task",
     dependsOn: [],
   };
 
@@ -910,7 +928,9 @@ describe("taking a CLI agent's work", () => {
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.blockedReason).toContain("ENOSPC: no space left on device");
+    const [short, ...detail] = after.blockedReason!.split("\n");
+    expect(short).toMatch(/stopped before finishing$/);
+    expect(detail.join("\n")).toContain('The last thing it said: "Error: ENOSPC: no space left on device"');
   });
 
   it("closes a ticket that was already done, with no pull request", async () => {
@@ -1232,7 +1252,7 @@ describe("collecting a run whose webhook never came", () => {
 
     const card = (await repository().cardById(epic.id))!;
     expect(card).toMatchObject({ status: "failed", stalledIn: "backlog" });
-    expect(card.blockedReason).toContain("time limit");
+    expect(card.blockedReason).toBe("The run timed out\nLog: https://github.com/acme/widgets/actions/runs/41");
   });
 });
 
@@ -1392,6 +1412,18 @@ describe("signed attachment URLs for a CLI agent with no Formic session", () => 
     vi.stubEnv("FORMIC_URL", "");
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
     expect(signedAttachmentUrl("att_1")).toBeNull();
+  });
+
+  it("tells the agent its attachments cannot be downloaded, naming each, without a public origin", () => {
+    vi.stubEnv("FORMIC_URL", "");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
+    const file = (id: string, filename: string) =>
+      ({ id, filename, mimeType: "text/plain", kind: "file", size: 1, url: "" }) as const;
+    const prompt = attachmentsPrompt([file("att_1", "design.md"), file("att_2", "spec.txt")]);
+    expect(prompt).toContain("could not be made available");
+    expect(prompt).toContain("design.md");
+    expect(prompt).toContain("spec.txt");
+    expect(attachmentsPrompt([])).toBeNull();
   });
 });
 

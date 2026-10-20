@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  keyboardStyles,
+  useKeyboardInset,
+} from "@/lib/hooks/use-keyboard-inset";
 import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
@@ -8,16 +12,22 @@ import { PlanSteps } from "@/components/ui/plan-steps";
 import { SideBySide, WithChat } from "@/components/ui/split";
 import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
-import { BUG_COST } from "@/lib/colony/game";
 import type { FormicEvent } from "@/lib/domain/events";
-import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type WorkType } from "@/lib/domain/entities";
+import {
+  AGENT_ROLE_LABELS,
+  COLUMN_AGENT_ROLE,
+} from "@/lib/domain/entities";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
-import { ProblemNotice, WorkTimer } from "./card";
+import { TypeTag } from "./type-tag";
+import { NoticeIcon, ProblemNotice, WorkTimer } from "./card";
+import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
+import { ScoutsPanel } from "./scouts-panel";
+import { QueenPanel } from "./queen-panel";
 import {
   activityOf,
   appendActivity,
@@ -56,6 +66,8 @@ export function TicketDrawer({
 }) {
   const [view, setView] = useState<TicketView | null>(null);
   const [failed, setFailed] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [tab, setTab] = useState<"ticket" | "agent">("ticket");
 
   // Another ticket: nothing of the last one's stays on screen.
@@ -64,6 +76,7 @@ export function TicketDrawer({
     setShownFor(ticketId);
     setView(null);
     setFailed(false);
+    setArchiveError(null);
   }
 
   const load = useCallback(async () => {
@@ -90,14 +103,18 @@ export function TicketDrawer({
         return;
       }
       if (
-        ((event.type === "card.status" || event.type === "card.created") && event.cardId === ticketId) ||
+        ((event.type === "card.status" || event.type === "card.created") &&
+          event.cardId === ticketId) ||
         (event.type === "ci.status" && event.ticketId === ticketId)
       ) {
         void load();
         return;
       }
       const item = activityOf(event, ticketId, seq, new Date().toISOString());
-      if (item) setView((v) => (v ? { ...v, activity: appendActivity(v.activity, item) } : v));
+      if (item)
+        setView((v) =>
+          v ? { ...v, activity: appendActivity(v.activity, item) } : v,
+        );
     });
   }, [ticketId, subscribe, load]);
 
@@ -110,24 +127,37 @@ export function TicketDrawer({
     return () => window.removeEventListener("keydown", onKey);
   }, [ticketId, onClose]);
 
-  const setWorkType = useCallback(
-    async (workType: WorkType | null) => {
-      if (!ticketId) return;
-      const res = await fetch(`/api/tickets/${ticketId}`, {
+  const archive = useCallback(async () => {
+    if (!ticketId) return;
+    setArchiving(true);
+    setArchiveError(null);
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}/archive`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workType }),
-      }).catch(() => null);
-      if (res?.ok) onChanged?.();
-      await load();
-    },
-    [ticketId, load, onChanged],
-  );
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setArchiveError(body.error ?? "Could not archive this ticket.");
+        return;
+      }
+      onChanged?.();
+      onClose();
+    } catch {
+      setArchiveError("Could not archive this ticket.");
+    } finally {
+      setArchiving(false);
+    }
+  }, [ticketId, onChanged, onClose]);
+
+  const kb = keyboardStyles(useKeyboardInset());
 
   if (!ticketId) return null;
 
   const card = view?.card;
-  const progress = card ? ticketProgress(card) : { current: 3, working: false, failedAt: null };
+  const notice = card && !card.misplacedReason ? classifyNotice(card) : null;
+  const progress = card
+    ? ticketProgress(card)
+    : { current: 3, working: false, failedAt: null };
 
   return (
     <div
@@ -135,18 +165,30 @@ export function TicketDrawer({
       aria-modal
       aria-label="Ticket detail"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      style={kb.backdrop}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        style={kb.panel}
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
-          {card && <ProblemNotice card={card} className="mb-3" />}
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
+          {card &&
+            (notice ? (
+              <NoticeBanner notice={notice} className="mb-3" />
+            ) : (
+              <ProblemNotice card={card} className="mb-3" />
+            ))}
+          <div
+            data-testid="drawer-header"
+            className="flex flex-col-reverse gap-2 sm:flex-row sm:items-start"
+          >
+            <div className="min-w-0 sm:flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span className="text-fg-subtle font-mono text-[10px]">{card?.key ?? "TICKET"}</span>
+                <span className="text-fg-subtle font-mono text-[10px]">
+                  {card?.key ?? "TICKET"}
+                </span>
                 {view?.epic && (
                   <button
                     type="button"
@@ -160,38 +202,26 @@ export function TicketDrawer({
               <h2 className="mt-0.5 font-serif text-[18px] leading-tight font-semibold">
                 {card?.title ?? (failed ? "Ticket" : "Loading…")}
               </h2>
-              {card && columnFor(card.status, card.stalledIn) === "todo" && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <div role="group" aria-label="Work type" className="flex gap-2">
-                    {(["bug", "spike"] as const).map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        aria-pressed={card.workType === type}
-                        onClick={() => void setWorkType(card.workType === type ? null : type)}
-                        className="border-line bg-card text-ink aria-pressed:border-terracotta aria-pressed:bg-cream h-[28px] rounded-lg border px-2.5 text-[12px] font-medium capitalize"
-                      >
-                        {type}
-                      </button>
-                    ))}
-                  </div>
-                  {card.workType === "bug" && (
-                    <span className="text-[11px] text-crimson-chip-text">
-                      Tagged as bug · −{BUG_COST} points
-                    </span>
-                  )}
-                </div>
-              )}
               {card && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {card.workType && (
+                    <TypeTag type={card.workType} severity={card.bugSeverity} />
+                  )}
                   <StatusPill status={card.status} />
                   {card.workingSince && (
                     <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
-                      Working for <WorkTimer since={card.workingSince} className="text-ochre-text" />
+                      Working for{" "}
+                      <WorkTimer
+                        since={card.workingSince}
+                        className="text-ochre-text"
+                      />
                     </span>
                   )}
                   {card.storyPoints != null && (
-                    <CoinBadge title={`${card.storyPoints} story points`} className="tabular-nums">
+                    <CoinBadge
+                      title={`${card.storyPoints} story points`}
+                      className="tabular-nums"
+                    >
                       {card.storyPoints} pt
                     </CoinBadge>
                   )}
@@ -208,16 +238,23 @@ export function TicketDrawer({
                 </div>
               )}
             </div>
-            {view && <TicketUsage usage={view.usage} />}
-            {view?.canStop && <StopButton ticketId={ticketId} onStopped={load} />}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="text-fg-muted hover:text-fg border-line rounded border px-1.5 py-0.5 text-[12px]"
+            <div
+              data-testid="drawer-actions"
+              className="flex items-center justify-end gap-2 sm:items-start"
             >
-              Close
-            </button>
+              {view && <TicketUsage usage={view.usage} />}
+              {view?.canStop && (
+                <StopButton ticketId={ticketId} onStopped={load} />
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="text-fg-muted hover:text-fg border-line rounded border px-1.5 py-0.5 text-[12px]"
+              >
+                Close
+              </button>
+            </div>
           </div>
 
           <StepIndicator
@@ -231,11 +268,13 @@ export function TicketDrawer({
 
           {/* A reason it waits that is not a problem, such as a dependency. A
               reason that names a pull request is clickable. */}
-          {card?.blockedReason && !card.misplacedReason && !isStalled(card.status) && (
-            <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
-              <LinkifiedText text={card.blockedReason} />
-            </p>
-          )}
+          {card?.blockedReason &&
+            !card.misplacedReason &&
+            !isStalled(card.status) && (
+              <p className="bg-sunken text-fg-muted mt-3 rounded-md px-2 py-1.5 text-[12px] leading-5">
+                <LinkifiedText text={card.blockedReason} />
+              </p>
+            )}
 
           {/* Survives the toast that announced it: where it came from, and why. */}
           {card?.rerouteFrom && (
@@ -245,21 +284,61 @@ export function TicketDrawer({
           )}
         </header>
 
-        {/* Tabs below the dual-pane breakpoint, where two columns do not fit. */}
-        <div className="border-line flex shrink-0 gap-0.5 border-b px-2 py-1 lg:hidden">
+        {/* Tabs show below the dual-pane breakpoint, where two columns do not
+            fit; the card actions sit on the right at every width. */}
+        <div
+          data-testid="drawer-tab-row"
+          className="border-line flex shrink-0 flex-wrap items-center gap-0.5 border-b px-2 py-1"
+        >
           {(["ticket", "agent"] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
               className={cn(
-                "rounded px-2 py-1 text-[12px] font-medium",
+                "rounded px-2 py-1 text-[12px] font-medium lg:hidden",
                 tab === t ? "bg-amber text-on-amber" : "text-fg-muted",
               )}
             >
               {t === "ticket" ? "Ticket" : "Agent"}
             </button>
           ))}
+          {card && (
+            <div className="ml-auto flex flex-wrap items-center gap-2 text-[12px]">
+              <QueenPanel
+                card={card}
+                onChanged={() => {
+                  void load();
+                  onChanged?.();
+                }}
+              />
+              <ScoutsPanel
+                card={card}
+                onChanged={() => {
+                  void load();
+                  onChanged?.();
+                }}
+              />
+              {card.kind === "ticket" && (
+                <button
+                  type="button"
+                  disabled={archiving}
+                  onClick={() => void archive()}
+                  className="border-line bg-card rounded border px-2.5 py-1 font-medium disabled:opacity-50"
+                >
+                  Archive
+                </button>
+              )}
+            </div>
+          )}
+          {archiveError && (
+            <span
+              role="alert"
+              className="text-log-error w-full px-2 text-[11px]"
+            >
+              {archiveError}
+            </span>
+          )}
         </div>
 
         <SideBySide
@@ -287,12 +366,20 @@ export function TicketDrawer({
                       kind="ticket"
                       inputOnly
                       cardId={ticketId}
-                      agentLabel={AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[columnFor(view.card.status, view.card.stalledIn)]]}
+                      agentLabel={
+                        AGENT_ROLE_LABELS[
+                          COLUMN_AGENT_ROLE[
+                            columnFor(view.card.status, view.card.stalledIn)
+                          ]
+                        ]
+                      }
                     />
                   )
                 }
               >
-                <div className="p-4">{view && <AgentBody view={view} working={progress.working} />}</div>
+                <div className="p-4">
+                  {view && <AgentBody view={view} working={progress.working} />}
+                </div>
               </WithChat>
             </section>
           }
@@ -303,7 +390,58 @@ export function TicketDrawer({
 }
 
 /** The ticket as it was written. */
-function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (ticketId: string) => void }) {
+/** A warning (red) or alert (yellow) in full: title, the short line, then the long text. */
+function NoticeBanner({
+  notice,
+  className,
+}: {
+  notice: Notice;
+  className?: string;
+}) {
+  const warning = notice.severity === "warning";
+  return (
+    <div
+      role="alert"
+      data-severity={notice.severity}
+      className={cn(
+        "text-ink rounded-md px-2.5 py-2 text-[12px] leading-5",
+        warning ? "bg-crimson/10" : "bg-clay/10",
+        className,
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <NoticeIcon severity={notice.severity} />
+        <span
+          className={cn(
+            "text-[10px] font-bold uppercase",
+            warning ? "text-crimson" : "text-clay",
+          )}
+        >
+          {warning ? "Warning" : "Alert"}
+        </span>
+        <span className="font-semibold">{notice.title}</span>
+      </div>
+      {notice.shortDescription && (
+        <p className="mt-1">
+          <LinkifiedText text={notice.shortDescription} />
+        </p>
+      )}
+      {notice.longDescription && (
+        <pre className="bg-sunken mt-1.5 max-h-40 overflow-auto rounded px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">
+          <LinkifiedText text={notice.longDescription} />
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function TicketBody({
+  view,
+  onOpenTicket,
+}: {
+  view: TicketView;
+  onOpenTicket: (ticketId: string) => void;
+}) {
   return (
     <div className="text-fg space-y-4 text-[13px] leading-6">
       <MarkdownLite text={view.description} />
@@ -313,7 +451,10 @@ function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (t
           <Heading>Acceptance criteria</Heading>
           <ul className="mt-1 space-y-1.5">
             {view.acceptanceCriteria.map((c, i) => (
-              <li key={i} className="border-line bg-surface rounded-md border px-2 py-1.5">
+              <li
+                key={i}
+                className="border-line bg-surface rounded-md border px-2 py-1.5"
+              >
                 <Gherkin text={c} />
               </li>
             ))}
@@ -325,8 +466,9 @@ function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (t
         <div>
           <Heading>For you</Heading>
           <p className="text-fg-muted mt-1 text-[12px]">
-            Steps outside the repository no agent can take. The Epic&apos;s showcase, if you generate it, lists them again once
-            everything has merged.
+            Steps outside the repository no agent can take. The Epic&apos;s
+            showcase, if you generate it, lists them again once everything has
+            merged.
           </p>
           <ul className="mt-1 list-disc space-y-1 pl-5">
             {view.handoff.map((s, i) => (
@@ -358,9 +500,13 @@ function TicketBody({ view, onOpenTicket }: { view: TicketView; onOpenTicket: (t
                   onClick={() => onOpenTicket(d.id)}
                   className="hover:text-terracotta focus-visible:text-terracotta flex w-full items-center gap-2 text-left text-[12px] underline-offset-2 hover:underline focus-visible:underline"
                 >
-                  <span className="text-fg-subtle font-mono text-[10px]">{d.key}</span>
+                  <span className="text-fg-subtle font-mono text-[10px]">
+                    {d.key}
+                  </span>
                   <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                  <StatusPill status={d.status as TicketView["card"]["status"]} />
+                  <StatusPill
+                    status={d.status as TicketView["card"]["status"]}
+                  />
                 </button>
               </li>
             ))}
@@ -433,7 +579,13 @@ function AgentBody({ view, working }: { view: TicketView; working: boolean }) {
 }
 
 /** Stops the agent working the ticket, wherever it runs. */
-function StopButton({ ticketId, onStopped }: { ticketId: string; onStopped: () => void }) {
+function StopButton({
+  ticketId,
+  onStopped,
+}: {
+  ticketId: string;
+  onStopped: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   return (
     <button
@@ -441,7 +593,9 @@ function StopButton({ ticketId, onStopped }: { ticketId: string; onStopped: () =
       disabled={busy}
       onClick={async () => {
         setBusy(true);
-        await fetch(`/api/tickets/${ticketId}/stop`, { method: "POST" }).catch(() => undefined);
+        await fetch(`/api/tickets/${ticketId}/stop`, { method: "POST" }).catch(
+          () => undefined,
+        );
         setBusy(false);
         onStopped();
       }}
@@ -462,7 +616,11 @@ function ActivityLine({ item }: { item: TicketActivity }) {
     );
   }
   if (item.kind === "reply" && !item.agent) {
-    return <li className="text-fg-muted px-2 text-[11px] leading-5 italic">{item.text}</li>;
+    return (
+      <li className="text-fg-muted px-2 text-[11px] leading-5 italic">
+        {item.text}
+      </li>
+    );
   }
   if (item.kind === "reply") {
     return (
@@ -484,7 +642,9 @@ function ActivityLine({ item }: { item: TicketActivity }) {
     <li
       className={cn(
         "rounded-md px-2 py-1.5 text-[12px] leading-5 whitespace-pre-wrap",
-        item.kind === "thinking" ? "text-fg-muted border-line border italic" : "bg-surface text-fg",
+        item.kind === "thinking"
+          ? "text-fg-muted border-line border italic"
+          : "bg-surface text-fg",
       )}
     >
       {item.kind === "thinking" && <span className="sr-only">Thinking: </span>}
@@ -495,6 +655,8 @@ function ActivityLine({ item }: { item: TicketActivity }) {
 
 function Heading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-fg-subtle font-mono text-[10px] tracking-wide uppercase">{children}</h3>
+    <h3 className="text-fg-subtle font-mono text-[10px] tracking-wide uppercase">
+      {children}
+    </h3>
   );
 }

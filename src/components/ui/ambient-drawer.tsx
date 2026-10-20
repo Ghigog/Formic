@@ -77,6 +77,7 @@ export function AmbientDrawer({
   onStopAll,
   bugsSquashed,
   nest,
+  connection,
 }: {
   stats: AmbientStats;
   onStopAll?: () => void;
@@ -84,14 +85,26 @@ export function AmbientDrawer({
   bugsSquashed?: number;
   /** The colony's nest, at the bar's end. */
   nest?: React.ReactNode;
+  /** "reconnecting" turns the bar red: the colony is unreachable. */
+  connection?: "live" | "reconnecting" | string;
 }) {
   const [open, setOpen] = useState(false);
   const busy = stats.activeSandboxes > 0;
   const tokens = stats.tokensIn + stats.tokensOut;
   const provider = stats.provider.toUpperCase();
+  const lost = connection === "reconnecting";
+  const safeArea = "pb-[env(safe-area-inset-bottom)]";
 
   return (
-    <footer data-colony-mask className="bg-anthracite text-log-text shrink-0">
+    <footer
+      data-colony-mask
+      data-connection={lost ? "lost" : undefined}
+      className={cn(
+        "text-log-text shrink-0",
+        safeArea,
+        lost ? "bg-log-error/90 text-anthracite" : "bg-anthracite",
+      )}
+    >
       {open && (
         <div className="border-drawer-line max-h-56 overflow-y-auto border-b px-6 py-3">
           {stats.logLines.length === 0 ? (
@@ -124,8 +137,10 @@ export function AmbientDrawer({
           ) : (
             <span aria-hidden className="bg-drawer-line size-[5px] rounded-full" />
           )}
-          <span className="text-cream text-[12px] font-semibold">
-            {busy
+          <span className={cn("text-[12px] font-semibold", !lost && "text-cream")}>
+            {lost
+              ? "Connection to the colony lost"
+              : busy
               ? `${stats.activeSandboxes} agent${stats.activeSandboxes === 1 ? "" : "s"} active in ${provider}`
               : "Colony idle"}
           </span>
@@ -190,8 +205,12 @@ export function AmbientDrawer({
         ) : (
           <span aria-hidden className="bg-drawer-line size-[5px] rounded-full" />
         )}
-        <span className="text-cream text-[12px] font-semibold">
-          {busy ? `${stats.activeSandboxes} agents active` : "Colony idle"}
+        <span className={cn("text-[12px] font-semibold", !lost && "text-cream")}>
+          {lost
+            ? "Connection to the colony lost"
+            : busy
+              ? `${stats.activeSandboxes} agents active`
+              : "Colony idle"}
         </span>
         <div className="flex-grow" />
         <span className="text-drawer-muted font-mono text-[10px]">

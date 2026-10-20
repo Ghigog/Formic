@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useRef } from "react";
+import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
@@ -14,11 +15,13 @@ import {
   type BoardCard,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
-import { isBug, isSpike, isSquashed } from "@/lib/colony/game";
+import { isBug, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
+import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { LinkifiedText } from "./linkified-text";
+import { TypeTag } from "./type-tag";
 
 /**
  * Display-only detail that hangs off a card but is not part of the domain
@@ -27,7 +30,7 @@ import { LinkifiedText } from "./linkified-text";
  * them from fixtures.
  */
 export interface CardExtras {
-  ci?: "pending" | "passing" | "failing";
+  ci?: "pending" | "passing" | "failing" | "none";
   progress?: { label: string; fraction: number | null };
   /** One-line summary under a backlog epic's title. */
   summary?: string;
@@ -71,6 +74,9 @@ function modelTag(model: string | null): string | null {
 /** The white card surface the epic groups are built on. */
 const SHELL = "bg-card border-line rounded-lg border";
 
+/** How long a card takes to slide out after its arrow, in ms. */
+export const LEAVE_MS = 200;
+
 /** What a card needs from the board around it. */
 export interface CardEnv {
   epics: ReadonlyMap<string, BoardCard>;
@@ -79,8 +85,16 @@ export interface CardEnv {
   /** Where a card's left arrow sends it back to, or null when it has none. */
   returnFor?: (card: BoardCard, column: ColumnId) => ColumnId | null;
   onAdvance: (card: BoardCard, to: ColumnId) => void;
+  /** The card sliding out of its column after its arrow, and which way. */
+  leaving?: { id: string; direction: "forward" | "back" } | null;
+  /** Cards dropped into a column whose move the server has not answered yet. */
+  pending?: ReadonlySet<string>;
   /** The running ticket a queued one is waiting on, or null when none is. */
   queuedBehind?: (card: BoardCard) => BoardCard | null;
+  /** The repository runs no CI, so a review card has no checks to wait for. */
+  noCi?: boolean;
+  /** Whether Formic merges an approved ticket itself. */
+  autoMerge?: boolean;
 }
 
 const NO_EPICS: ReadonlyMap<string, BoardCard> = new Map();
@@ -157,57 +171,16 @@ export function SpBadge({ points, done = false }: { points: number | null | unde
   );
 }
 
-function BugBadge({ squashed }: { squashed: boolean }) {
-  return squashed ? (
-    <span className="oct inline-flex shrink-0 bg-idle p-px">
-      <span className="oct text-muted inline-flex items-center gap-1 bg-hairline py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
-        <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden="true">
-          <ellipse cx="6" cy="6.5" rx="5" ry="1.6" fill="var(--text-muted)" />
-          <circle cx="1.5" cy="4.5" r="0.8" fill="var(--text-muted)" />
-          <circle cx="10.2" cy="4" r="0.6" fill="var(--text-muted)" />
-        </svg>
-        SQUASHED
-      </span>
-    </span>
-  ) : (
-    <span data-bugicon className="oct bg-crimson inline-flex shrink-0 p-px">
-      <span className="oct inline-flex items-center gap-1 bg-crimson-chip py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap text-crimson-chip-text">
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <ellipse cx="5" cy="6" rx="2.4" ry="3" fill="var(--crimson-chip-text)" />
-          <circle cx="5" cy="2.2" r="1.3" fill="var(--crimson-chip-text)" />
-          <path
-            d="M2.6 4.5 1 3.6M2.6 6.2H.8M2.6 7.9 1 8.8M7.4 4.5 9 3.6M7.4 6.2h1.8M7.4 7.9 9 8.8"
-            stroke="var(--crimson-chip-text)"
-            strokeWidth="0.8"
-            strokeLinecap="round"
-          />
-        </svg>
-        BUG
-      </span>
-    </span>
-  );
-}
-
-function SpikeBadge() {
-  return (
-    <span data-spikeicon className="oct bg-line inline-flex shrink-0 p-px">
-      <span className="oct text-ink inline-flex items-center gap-1 bg-cream py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <circle cx="4" cy="4" r="2.8" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M6.2 6.2 9 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-        SPIKE
-      </span>
-    </span>
-  );
-}
-
 /** The arrow that sends a card on to the next column, where it may go. */
-/** The bug label, on any card that is a bug. */
-function CardBugBadge({ card }: { card: BoardCard }) {
+/** The type tag, on any card that has a type. A ticket of a bug Epic is a bug. */
+function CardTypeTag({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
-  if (!isBug(card, env?.epics ?? NO_EPICS)) return null;
-  return <BugBadge squashed={isSquashed(card)} />;
+  const epics = env?.epics ?? NO_EPICS;
+  const bug = isBug(card, epics);
+  const type = bug ? "bug" : card.workType;
+  if (!type) return null;
+  const severity = bug ? (card.bugSeverity ?? (card.epicId ? epics.get(card.epicId)?.bugSeverity : null)) : null;
+  return <TypeTag type={type} severity={severity} squashed={bug && isSquashed(card)} />;
 }
 
 /** A small chess queen on a card a Queen was placed on. */
@@ -220,11 +193,6 @@ function CardQueenMark({ card }: { card: BoardCard }) {
   );
 }
 
-/** The spike label, on any card that is a spike. */
-function CardSpikeBadge({ card }: { card: BoardCard }) {
-  return isSpike(card) ? <SpikeBadge /> : null;
-}
-
 function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) {
   const env = useContext(CardEnvContext);
   const to = env?.nextFor(card, column) ?? null;
@@ -235,6 +203,7 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
       aria-label={`Move ${card.key} to ${COLUMN_LABELS[to]}`}
       onClick={(e) => {
         e.stopPropagation();
+        if (env.leaving?.id === card.id) return;
         env.onAdvance(card, to);
       }}
       className="hover:bg-column -my-0.5 -mr-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
@@ -263,6 +232,7 @@ function ReturnButton({ card, column }: { card: BoardCard; column: ColumnId }) {
       aria-label={`Return ${card.key} to ${COLUMN_LABELS[to]}`}
       onClick={(e) => {
         e.stopPropagation();
+        if (env.leaving?.id === card.id) return;
         env.onAdvance(card, to);
       }}
       className="hover:bg-column -my-0.5 -ml-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
@@ -332,6 +302,24 @@ export function ProblemBadge({ card }: { card: BoardCard }) {
       className="bg-crimson text-on-crimson inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none font-bold"
     >
       !
+    </span>
+  );
+}
+
+/** The mark for a notice: a red warning triangle or a yellow alert bell-dot. */
+export function NoticeIcon({ severity }: { severity: Notice["severity"] }) {
+  return (
+    <span
+      role="img"
+      aria-label={severity === "warning" ? "Warning" : "Alert"}
+      className={cn(
+        "inline-flex size-4 shrink-0 items-center justify-center text-[10px] leading-none font-bold",
+        severity === "warning"
+          ? "bg-crimson text-on-crimson rounded-full"
+          : "bg-clay text-on-accent rounded-sm",
+      )}
+    >
+      {severity === "warning" ? "!" : "?"}
     </span>
   );
 }
@@ -434,9 +422,15 @@ function CardShell({
 function QueueTimer({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
   const blocker = env?.queuedBehind?.(card) ?? null;
-  const label = blocker
-    ? `Waiting for ${blocker.key} to finish. It starts on its own then.`
-    : "Up next. Starting now.";
+  const { view: colony } = useColonySettings();
+  // The server's own reason first: it sees every board on the repository.
+  const label = card.blockedReason
+    ? card.blockedReason
+    : blocker
+      ? `Waiting for ${blocker.key} to finish. It starts on its own then.`
+      : colony?.colonySize
+        ? "Up next. It starts when a slot in the colony frees."
+        : "Up next. Starting now.";
   return (
     <span
       data-queue
@@ -467,12 +461,16 @@ function TicketHead({
     <div className="flex min-h-[18px] items-center gap-1.5">
       <ReturnButton card={card} column={column} />
       {card.status === "queued" && <QueueTimer card={card} />}
-      <CardBugBadge card={card} />
-      <CardSpikeBadge card={card} />
+      <CardTypeTag card={card} />
         <CardQueenMark card={card} />
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
       <ProblemBadge card={card} />
+      {(card.scouts ?? 0) > 0 && !card.scoutPick && card.status === "running" && (
+        <CoinBadge title="Scouts trying it at once" className="shrink-0 whitespace-nowrap">
+          {card.scouts} scouts out
+        </CoinBadge>
+      )}
       {pr && card.prNumber && (
         <CoinBadge title="Pull request" className="shrink-0 whitespace-nowrap">
           PR #{card.prNumber}
@@ -511,8 +509,7 @@ function BacklogEpic({
         <CoinBadge tone="epic" className="tracking-[0.08em]">
           EPIC
         </CoinBadge>
-        <CardBugBadge card={card} />
-        <CardSpikeBadge card={card} />
+        <CardTypeTag card={card} />
         <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <div className="flex-grow" />
@@ -646,8 +643,11 @@ function ReviewCard({
   extras: CardExtras;
   agentLabel: string | null;
 }) {
+  const env = useContext(CardEnvContext);
   const failed = extras.checks?.failed ?? 0;
   const passed = extras.checks?.passed ?? 0;
+  // A check reported on this head outranks what the board knew at load.
+  const noCi = extras.ci === "none" || (!extras.ci && failed === 0 && passed === 0 && env?.noCi === true);
   const green = extras.ci === "passing" || (failed === 0 && passed > 0);
   // Approved, green and at the merge stage: nothing but the merge is left, and
   // it is not this card's move — with auto-merge off it waits for a person to
@@ -671,6 +671,10 @@ function ReviewCard({
         {failed > 0 || extras.ci === "failing" ? (
           <StatusChip tone="crimson">
             {failed > 0 ? `${failed} check${failed === 1 ? "" : "s"} failed` : "Checks failed"}
+          </StatusChip>
+        ) : noCi ? (
+          <StatusChip tone="jade">
+            {env?.autoMerge ? "No CI · auto-merging…" : "No CI · please merge manually"}
           </StatusChip>
         ) : green ? (
           <StatusChip tone="jade">
@@ -777,8 +781,8 @@ function PlainTicket({
   column: ColumnId;
   extras: CardExtras;
 }) {
-  const failed = card.status === "failed";
   const held = card.status === "waiting" || card.status === "blocked";
+  const notice = classifyNotice(card);
   return (
     <CardShell
       card={card}
@@ -787,23 +791,28 @@ function PlainTicket({
       <TicketHead card={card} column={column} />
       <Title muted={held}>{card.title}</Title>
       <EpicLine card={card} />
-      {card.blockedReason &&
-        (failed ? (
-          // Failure reasons can be raw CLI output; keep them to one line so
-          // they never push the card wider than its column.
-          <StatusChip tone="crimson" className="max-w-full self-start">
-            <span className="truncate" title={card.blockedReason}>
-              {card.blockedReason}
-            </span>
-          </StatusChip>
-        ) : (
+      {notice ? (
+        <span
+          data-testid="card-notice"
+          data-severity={notice.severity}
+          className={cn(
+            "inline-flex min-w-0 items-center gap-1.5 text-[11px] font-semibold",
+            notice.severity === "warning" ? "text-crimson" : "text-clay",
+          )}
+        >
+          <NoticeIcon severity={notice.severity} />
+          <span className="truncate">{notice.title}</span>
+        </span>
+      ) : (
+        card.blockedReason && (
           <span className="text-muted inline-flex min-w-0 items-center gap-1.5 font-mono text-[9px]">
             <span aria-hidden className="bg-idle size-[5px] shrink-0 rounded-full" />
             <span className="truncate" title={card.blockedReason}>
               {card.blockedReason}
             </span>
           </span>
-        ))}
+        )
+      )}
       {extras.progress && (
         <ProgressBar
           value={extras.progress.fraction}
@@ -878,6 +887,10 @@ export function KanbanCard({
   extras: ExtrasMap;
   onOpen: (card: BoardCard) => void;
 }) {
+  const env = useContext(CardEnvContext);
+  const leaving = env?.leaving;
+  const exit = leaving?.id === card.id ? leaving.direction : null;
+  const pending = !!env?.pending?.has(card.id);
   return (
     <Draggable draggableId={card.id} index={index}>
       {(provided, snapshot) => (
@@ -890,8 +903,19 @@ export function KanbanCard({
         >
           {/* Picked up, the card leans into the drag. */}
           <div
+            data-pending={pending ? "" : undefined}
             className={cn(
-              "rounded-lg transition-transform duration-150",
+              // Slower to settle than to pick up.
+              "rounded-lg transition-transform",
+              pending || snapshot.isDragging ? "duration-150" : "duration-[250ms]",
+              // Dropped, awaiting the server: a toned-down drag. Reduced
+              // motion keeps the shadow and drops the transform.
+              pending &&
+                !snapshot.isDragging &&
+                "scale-[1.02] rotate-[-1deg] shadow-[0_14px_28px_-14px_color-mix(in_srgb,var(--anthracite)_35%,transparent)] motion-reduce:scale-100 motion-reduce:rotate-0",
+              exit && "pointer-events-none opacity-0 transition-all duration-200 ease-in",
+              exit === "forward" && "translate-x-full",
+              exit === "back" && "-translate-x-full",
               snapshot.isDragging &&
                 "scale-[1.04] rotate-[-2deg] shadow-[0_28px_48px_-18px_color-mix(in_srgb,var(--anthracite)_45%,transparent),0_2px_6px_color-mix(in_srgb,var(--anthracite)_8%,transparent)]",
             )}
@@ -933,8 +957,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
             card.status === "ready" && "pulse-dot",
           )}
         />
-        <CardBugBadge card={card} />
-        <CardSpikeBadge card={card} />
+        <CardTypeTag card={card} />
         <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <ProblemBadge card={card} />
@@ -974,8 +997,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
     >
       <div className="flex items-center gap-1.5">
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
-        <CardBugBadge card={card} />
-        <CardSpikeBadge card={card} />
+        <CardTypeTag card={card} />
         <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <h4 className="text-ink truncate text-[12px] font-medium">

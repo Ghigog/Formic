@@ -13,6 +13,7 @@ import type {
   ColumnOverrides,
   PlanStep,
   WorkType,
+  BugSeverity,
 } from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
@@ -29,6 +30,7 @@ export interface CreateEpicInput {
   rawRequest: string;
   position: number;
   workType?: WorkType | null;
+  bugSeverity?: BugSeverity | null;
 }
 
 export interface CreateTicketInput {
@@ -44,6 +46,7 @@ export interface CreateTicketInput {
   position: number;
   dependsOnKeys: string[];
   workType?: WorkType | null;
+  bugSeverity?: BugSeverity | null;
   /** Work for a person, not an agent: why. */
   needsHuman?: string | null;
 }
@@ -156,7 +159,42 @@ export interface AuditReport {
   dislikes: AuditPoint[];
   wrong: AuditPoint[];
   missing: AuditPoint[];
+  /** How the audit scored each of its rubric's checks. */
+  checks?: AuditCheck[];
 }
+
+/** One pass/fail statement in a rubric, worded so every audit reads it alike. */
+export interface RubricCheck {
+  /** Stable within its rubric: "3b" is the second check on the 3-star rung. */
+  id: string;
+  text: string;
+  /** How an audit verifies it: a file to read or a command to run. */
+  how: string;
+}
+
+/**
+ * A sentinel's star ladder for one project, written by calibrating: rung 2
+ * to 5, each earned when all its checks pass and every rung below is.
+ */
+export interface Rubric {
+  /** What the project is, and what matters most for this role. */
+  context: string;
+  rungs: Array<{ stars: number; checks: RubricCheck[] }>;
+}
+
+export interface AuditCheck {
+  id: string;
+  met: boolean;
+  /** The file and line read, or the command run and what it showed. */
+  evidence: string;
+}
+
+/**
+ * Calibrating writes a rubric; auditing scores the code against one. A
+ * project keeps at most two of each per sentinel: the last one that
+ * finished, and a newer one running or failed.
+ */
+export type AuditKind = "audit" | "calibrate";
 
 /**
  * One sentinel's audit of a project. A project keeps at most two per
@@ -166,6 +204,7 @@ export interface AuditRecord {
   id: string;
   projectId: string;
   sentinel: string;
+  kind: AuditKind;
   status: "running" | "done" | "failed";
   /** Steps reached so far, oldest first. */
   log: string[];
@@ -174,6 +213,8 @@ export interface AuditRecord {
   quote: string | null;
   summary: string | null;
   report: AuditReport | null;
+  /** A calibration's rubric, or the one an audit was scored against. */
+  rubric: Rubric | null;
   error: string | null;
   model: string | null;
   /** Files the sentinel read. */
@@ -181,6 +222,8 @@ export interface AuditRecord {
   /** The GitHub Actions job a CLI agent audits in, while it runs. */
   runnerJob: string | null;
   runnerAgent: string | null;
+  /** The Backlog Epic made from this report, if any. */
+  epicId: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 }
@@ -191,6 +234,8 @@ export interface AuditResult {
   quote?: string;
   summary?: string;
   report?: AuditReport;
+  /** A calibration's rubric. An audit keeps the one it started with. */
+  rubric?: Rubric;
   error?: string;
   model?: string | null;
   files?: string[];
@@ -247,10 +292,30 @@ export interface TicketDetail {
    * back, and after a person moves the card.
    */
   reviewedHead: string | null;
+  /**
+   * Stacked: the branch of the prerequisite whose open pull request this
+   * ticket builds on, and its own pull request's base until that one merges.
+   * Null on the merge target.
+   */
+  stackedOn: string | null;
   /** Work for a person, not an agent: why. Null when an agent can do it. */
   needsHuman: string | null;
   /** When story points were auto-escalated (ISO), so it happens once. Null if never. */
   autoEscalatedAt: string | null;
+  /** The kind of work, as the owner chose. Null for untyped. */
+  workType: WorkType | null;
+  /** How bad a bug is. Null unless workType is bug. */
+  bugSeverity: BugSeverity | null;
+  /** On a scout: the ticket it scouts for (docs/colony.md). Null on any other ticket. */
+  scoutOf: string | null;
+  /** On a scout: the approach it was told to take. */
+  scoutBrief: string | null;
+  /** On a scout: the agent template it runs on; null runs the column's. */
+  scoutPresetId: string | null;
+  /** On a parent: how many scouts it sent out, the one picked, and why. */
+  scouts: number;
+  scoutPick: string | null;
+  scoutWhy: string | null;
 }
 
 export interface TicketUpdate {
@@ -261,8 +326,9 @@ export interface TicketUpdate {
   fileScope?: string[];
   /** 1, 2, 3, 5, 8 or 13; null clears the estimate. */
   storyPoints?: number | null;
-  /** Bug or spike; null clears it. */
+  /** The ticket type; null clears it. A type other than bug clears the severity. */
   workType?: WorkType | null;
+  bugSeverity?: BugSeverity | null;
   scopeRequest?: string[];
   needsHuman?: string | null;
   status?: TicketStatus;
@@ -285,6 +351,10 @@ export interface TicketUpdate {
   handoff?: string[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
+  stackedOn?: string | null;
+  scouts?: number;
+  scoutPick?: string | null;
+  scoutWhy?: string | null;
   costCents?: number;
   tokensIn?: number;
   tokensOut?: number;
@@ -327,6 +397,16 @@ export interface ProjectSummary {
   autoMerge: boolean;
   /** Formic raises a ticket's story points on its own when it outgrows its estimate. Off until the owner opts in. */
   autoEscalate: boolean;
+  /** The most Coder Agents the board runs at once, scouts included. Null: no cap. */
+  colonySize: number | null;
+  /** Slots of colonySize kept for urgent work. */
+  colonyReserve: number;
+  /** Whether idle reserve slots send scouts out on their own. */
+  autoScout: boolean;
+  /** The saved agent scouts run on. Null: the In Progress column's agent. */
+  scoutPresetId: string | null;
+  /** Whether members may run on the owner's keys and agents when they have none. Off by default. */
+  shareKeys: boolean;
 }
 
 /** Whose projects and presets a query sees. */
@@ -369,6 +449,8 @@ export interface UserRecord {
   /** Stored limit settings (JSON), or null for the default. Read through src/lib/user-settings. */
   tokenLimit?: unknown;
   attemptLimit?: unknown;
+  /** Whether thinking effort follows story points; on when absent. */
+  effortByPoints?: boolean;
   /** Token window: renewal day of the month (1-31) in `tokenWindowTimezone` (IANA), or null. */
   tokenRenewalDay: number | null;
   tokenWindowTimezone: string | null;
@@ -380,6 +462,7 @@ export interface UserRecord {
 export interface LimitColumns {
   tokenLimit?: Record<string, unknown> | null;
   attemptLimit?: Record<string, unknown> | null;
+  effortByPoints?: boolean;
 }
 
 /** What a person's run time budget is stored as on their row. */
@@ -444,6 +527,19 @@ export interface PlatformUsageTotals {
   window: PlatformUsage;
 }
 
+/**
+ * A running ticket's claim on its files. Claims are per repository, not per
+ * board: two people's boards on one repository write the same files.
+ */
+export interface Reservation {
+  ticketId: string;
+  key: string;
+  projectId: string;
+  /** The GitHub login of the board's owner. Null for the demo board. */
+  ownerLogin: string | null;
+  fileScope: string[];
+}
+
 export interface Repository {
   /** The demo board: the first unowned project, created on demand. */
   defaultProject(): Promise<ProjectSummary>;
@@ -451,12 +547,51 @@ export interface Repository {
   /** Every project on a repository, whoever owns it. For webhooks. */
   projectsForRepo(repoFullName: string): Promise<ProjectSummary[]>;
   projectById(projectId: string): Promise<ProjectSummary | null>;
+  /* Sharing a board. */
+
+  /** Shares a project with someone. Doing it twice is harmless. */
+  addMember(projectId: string, userId: string): Promise<void>;
+  isMember(projectId: string, userId: string): Promise<boolean>;
+  /** The projects shared with someone, oldest first. Not the ones they own. */
+  memberProjects(userId: string): Promise<ProjectSummary[]>;
+  /** A member's own agents on a shared board, by column or "assistant". */
+  memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
+  setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
+  setShareKeys(projectId: string, shareKeys: boolean): Promise<void>;
+  /**
+   * Whose keys a card's work runs on: the person who last set it going. A
+   * ticket with none takes its scout parent's, then its epic's. Null is the
+   * board's owner.
+   */
+  cardActor(cardId: string): Promise<string | null>;
+  setCardActor(cardId: string, userId: string | null): Promise<void>;
+
   /** Someone's project for a repository, created the first time they pick it. */
   ensureProject(input: {
     ownerId: string | null;
     repoFullName: string;
     baseBranch: string;
   }): Promise<ProjectSummary>;
+
+  /* Coordination across boards and server instances. */
+
+  /**
+   * Every running ticket on every board of a repository, and the files it
+   * holds. A scout counts only while its parent runs: one left marked running
+   * after its parent moved on has nothing working it, and would hold its
+   * files for good.
+   */
+  reservations(repoFullName: string): Promise<Reservation[]>;
+  /**
+   * Takes `key` for `holder` for `ttlMs`, when nobody holds it, the holder
+   * let it lapse, or `holder` already has it. True when it is now theirs.
+   * Atomic across instances.
+   */
+  acquireLease(key: string, holder: string, ttlMs: number): Promise<boolean>;
+  /** Lets go of `key`, only if `holder` still has it. */
+  releaseLease(key: string, holder: string): Promise<void>;
+  /** Who holds `key` now, or null when nobody does or the holder let it lapse. */
+  leaseHolder(key: string): Promise<string | null>;
 
   /* People. */
 
@@ -528,6 +663,8 @@ export interface Repository {
     ref: { epicId: string } | { ticketId: string },
   ): Promise<void>;
   deleteAttachments(ids: string[]): Promise<void>;
+  /** Moves a ticket's attachments to another, such as the ticket drafted from a placeholder. */
+  moveTicketAttachments(fromTicketId: string, toTicketId: string): Promise<void>;
   /** Positions in a column, ascending, for fractional index placement. */
   columnPositions(projectId: string, column: ColumnId): Promise<number[]>;
   cardById(id: string): Promise<BoardCard | null>;
@@ -584,6 +721,16 @@ export interface Repository {
     types: string[],
     limit?: number,
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
+  /**
+   * Events of the given types on any of these boards from `since` on, oldest
+   * first. At most `limit`, the latest ones.
+   */
+  eventsOfTypes(
+    projectIds: string[],
+    types: string[],
+    since: Date,
+    limit?: number,
+  ): Promise<Array<{ seq: number; projectId: string; type: string; payload: unknown; at: Date }>>;
   /** Highest event sequence number so far, or 0 with none. */
   latestEventSeq(projectId: string): Promise<number>;
   /**
@@ -605,8 +752,15 @@ export interface Repository {
     prNumber: number,
   ): Promise<TicketDetail | null>;
   updateTicket(ticketId: string, update: TicketUpdate): Promise<void>;
-  /** Every ticket under an Epic, for dependency gating and the showcase. */
+  /** Every ticket under an Epic, for dependency gating and the showcase. Never scouts. */
   ticketsForEpic(epicId: string): Promise<TicketDetail[]>;
+  /**
+   * Makes a scout of `parentId` for each brief: a copy of the ticket, off the
+   * board, numbered after it (FOR-14-s1, -s2, ...), ready to be sent out.
+   */
+  createScouts(parentId: string, briefs: Array<{ brief: string; presetId: string | null }>): Promise<TicketDetail[]>;
+  /** A ticket's scouts, in the order they were sent. */
+  scoutsOf(parentId: string): Promise<TicketDetail[]>;
   /**
    * Every GitHub issue number this project's mirror owns: each Epic's, and
    * each ticket's own or the one it was imported from. What the intake skips
@@ -694,6 +848,9 @@ export interface Repository {
   assistantAgent(projectId: string): Promise<string | null>;
   setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoMerge(projectId: string, autoMerge: boolean): Promise<void>;
+  /** The colony's size, reserve and auto-scouting (docs/colony.md). */
+  setColony(projectId: string, colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean }): Promise<void>;
+  setScoutAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
   /** Records that the ticket's story points were auto-escalated; keeps the first time if already marked. */
   markTicketAutoEscalated(ticketId: string): Promise<void>;
@@ -755,16 +912,20 @@ export interface Repository {
 
   /** Every audit a project keeps, oldest first. */
   auditsFor(projectId: string): Promise<AuditRecord[]>;
-  startAudit(projectId: string, sentinel: string): Promise<AuditRecord>;
+  /** An audit is started with the rubric it will be scored against. */
+  startAudit(projectId: string, sentinel: string, kind?: AuditKind, rubric?: Rubric | null): Promise<AuditRecord>;
   /** Adds a step to a running audit's log. */
   logAudit(id: string, step: string): Promise<void>;
   /** Records the GitHub Actions job a CLI agent audits in; only its result is taken. */
   setAuditJob(id: string, job: string | null, agent: string | null): Promise<void>;
   /**
-   * Ends an audit. A report replaces the sentinel's earlier ones; a failure
-   * keeps the last report, so a bad run never costs the project its stars.
+   * Ends an audit. A report replaces the sentinel's earlier ones of the same
+   * kind; a failure keeps the last report, so a bad run never costs the
+   * project its stars or its rubric.
    */
   finishAudit(id: string, result: AuditResult): Promise<void>;
+  /** Records the Epic made from an audit's report. */
+  markAuditEpic(auditId: string, epicId: string): Promise<void>;
 
   /**
    * Records a webhook delivery, returning false when it has been seen before.

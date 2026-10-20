@@ -199,6 +199,7 @@ export function Column({
             ref={provided.innerRef}
             {...provided.droppableProps}
             data-colony-clip
+            data-column-list
             className={cn(
               // Room around the cards for their lift, tilt and ants.
               "scroll-area -mx-2 flex min-h-16 flex-1 flex-col overflow-x-hidden rounded-lg px-2 pt-2.5 pb-3 transition-colors [&>li:not(:last-child)]:mb-2",

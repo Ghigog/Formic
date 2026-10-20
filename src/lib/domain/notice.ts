@@ -19,14 +19,19 @@ export function classifyNotice(card: {
   status: TicketStatus;
   stalledIn?: ColumnId | null;
   blockedReason?: string | null;
+  workingSince?: string | null;
 }): Notice | null {
+  // An agent is on it (e.g. drafting the ticket), so nothing is asked of a person; same rule as cardProblem.
+  if (card.workingSince) return null;
   if (!isStalled(card.status)) return null;
-  const longDescription = card.blockedReason ?? "";
-  const shortDescription = longDescription.split("\n", 1)[0]?.trim() ?? "";
+  // First line is the error type; the rest is the detail (see whyItFailed in runner/runner.ts).
+  const [first = "", ...rest] = (card.blockedReason ?? "").split("\n");
+  const shortDescription = first.trim();
+  const longDescription = rest.join("\n").trim();
 
   if (card.status === "failed") {
     return { severity: "warning", title: "Failed", shortDescription, longDescription };
   }
-  const title = SCOPE_REQUEST_REASON.test(longDescription) ? "Needs authorization" : "Waiting for you";
+  const title = SCOPE_REQUEST_REASON.test(shortDescription) ? "Needs authorization" : "Waiting for you";
   return { severity: "alert", title, shortDescription, longDescription };
 }

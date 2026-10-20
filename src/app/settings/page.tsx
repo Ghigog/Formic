@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
-import { currentUser } from "@/lib/auth/user";
+import { canSee, currentUser, ownerScope } from "@/lib/auth/user";
 import { authMode } from "@/lib/auth/session";
 import { installUrl } from "@/lib/auth/github";
 import { activeProject } from "@/lib/board/project";
 import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
-import { getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
+import { getEffortByPoints, getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
+import { repository } from "@/lib/db";
 import { env } from "@/lib/secrets/env";
 import { hintFor } from "@/lib/secrets/vault";
 import { SettingsForm } from "@/components/settings/settings-form";
@@ -16,11 +17,20 @@ export default async function SettingsPage() {
   if (!user) redirect("/login?next=/settings");
   const config = env();
   // Auto-merge is per board, so settings only offer the one this browser is
-  // on; there is nothing to choose among.
+  // on; there is nothing to choose among. Only its owner sets them: on a board
+  // shared with them, a member has only their own settings here.
   const current = await activeProject();
-  const project = current
-    ? { id: current.id, name: current.name, autoMerge: current.autoMerge }
-    : null;
+  const project =
+    current && canSee(user, current.ownerId)
+      ? {
+          id: current.id,
+          name: current.name,
+          autoMerge: current.autoMerge,
+          autoEscalate: current.autoEscalate,
+          shareKeys: current.shareKeys,
+          scoutPresetId: current.scoutPresetId,
+        }
+      : null;
 
   return (
     <SettingsForm
@@ -32,6 +42,7 @@ export default async function SettingsPage() {
       }}
       installUrl={installUrl()}
       project={project}
+      presets={(await repository().listPresets(ownerScope(user))).map(({ id, name }) => ({ id, name }))}
       // Local mode only: GitHub mode's credential is the sign-in itself.
       github={
         authMode() === "local"
@@ -40,6 +51,7 @@ export default async function SettingsPage() {
       }
       runTimeBudget={await getRunTimeBudgetSettings(user.id)}
       limits={await getLimitSettings(user.id)}
+      effortByPoints={await getEffortByPoints(user.id)}
       renewal={{ day: user.tokenRenewalDay, timezone: user.tokenWindowTimezone }}
       e2b={{
         hint: user.e2bKeyHint,

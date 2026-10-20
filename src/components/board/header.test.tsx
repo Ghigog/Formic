@@ -26,7 +26,8 @@ afterEach(() => {
   activity.count = 0;
 });
 
-const renderHeader = () => render(<BoardHeader projectName="Formic" repoFullName="acme/formic" />);
+const renderHeader = () =>
+  render(<BoardHeader projectName="Formic" repoFullName="acme/formic" />);
 
 describe("BoardHeader project button", () => {
   it("shows the Formic logo and no count when no other project has news", () => {
@@ -36,18 +37,23 @@ describe("BoardHeader project button", () => {
     expect(screen.queryByText("acme / formic")).toBeNull();
   });
 
-  it("swaps to the notification icon with the count", () => {
+  it("keeps the Formic logo and adds the count badge", () => {
     activity.count = 2;
     renderHeader();
-    expect(screen.queryByTestId("formic-logo")).toBeNull();
-    const button = screen.getAllByRole("button", { name: /2 other projects have a new assistant answer/ })[0]!;
+    expect(screen.getAllByTestId("formic-logo")).toHaveLength(2);
+    expect(screen.queryByTestId("notification-icon")).toBeNull();
+    const button = screen.getAllByRole("button", {
+      name: /2 other projects have a new assistant answer/,
+    })[0]!;
     expect(button).toHaveTextContent("2");
   });
 
   it("opens the picker on click and closes it on a second click", async () => {
     setViewportMatches(false);
     renderHeader();
-    const button = screen.getAllByRole("button", { name: /Choose another project/ })[0]!;
+    const button = screen.getAllByRole("button", {
+      name: /Choose another project/,
+    })[0]!;
     await userEvent.click(button);
     expect(screen.getAllByTestId("repo-picker")).toHaveLength(1);
     expect(button).toHaveAttribute("aria-expanded", "true");
@@ -58,8 +64,38 @@ describe("BoardHeader project button", () => {
   it("mounts a single picker from the mobile app bar", async () => {
     setViewportMatches(true);
     renderHeader();
-    const buttons = screen.getAllByRole("button", { name: /Choose another project/ });
+    const buttons = screen.getAllByRole("button", {
+      name: /Choose another project/,
+    });
     await userEvent.click(buttons[1]!);
     expect(screen.getAllByTestId("repo-picker")).toHaveLength(1);
+  });
+
+  it("puts the mobile ask button after the logo and before the account menu", () => {
+    setViewportMatches(true);
+    render(
+      <BoardHeader
+        projectName="Formic"
+        repoFullName="acme/formic"
+        account={{ login: "ada", name: "Ada" } as never}
+        assistant={
+          {
+            open: false,
+            setOpen: vi.fn(),
+            messages: [],
+            presets: [],
+          } as never
+        }
+      />,
+    );
+    const logo = screen.getAllByRole("button", {
+      name: /Choose another project/,
+    })[1]!;
+    const ask = screen.getByRole("button", { name: "Ask the assistant" });
+    const account = screen.getAllByLabelText(/^Account:/)[1]!;
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(logo, ask)).toBe(true);
+    expect(follows(ask, account)).toBe(true);
   });
 });

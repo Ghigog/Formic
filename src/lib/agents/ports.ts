@@ -1,8 +1,9 @@
-import type { Prd } from "@/lib/domain/entities";
+import type { BugSeverity, Prd, WorkType } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import type { Budget } from "@/lib/budget/budget-for";
 import type { ProviderId } from "@/lib/llm/providers";
+import type { ScoutCandidate, ScoutVerdict } from "./judge";
 
 /**
  * The agent boundary. Every pipeline is reachable through one of these, and
@@ -31,10 +32,12 @@ export interface AgentContext {
   /** When the run started, in epoch milliseconds, for the time limit. */
   startedAt?: number;
   /**
-   * Whether the person watching the ticket stopped the run, and the notes
-   * they sent it since it started. A loop asks between turns.
+   * Whether the person watching the ticket stopped the run, the notes they
+   * sent it since it started, and what the agents on other tickets of the
+   * repository shared since (src/lib/coder/shared-notes.ts), one line each.
+   * A loop asks between turns.
    */
-  interrupts?: () => Promise<{ stopped: string | null; notes: string[] }>;
+  interrupts?: () => Promise<{ stopped: string | null; notes: string[]; shared?: string[] }>;
 }
 
 /**
@@ -119,6 +122,10 @@ export interface DraftTicket {
   dependsOn: string[];
   /** Work for a person, not an agent: why. */
   needsHuman?: string;
+  /** What kind of ticket the Architect Agent judged it to be. */
+  workType?: WorkType;
+  /** Only for a bug. */
+  bugSeverity?: BugSeverity;
 }
 
 /** One child ticket as it stands before a re-decomposition changes it. */
@@ -186,8 +193,15 @@ export interface CoderTask {
   description: string;
   acceptanceCriteria: string[];
   fileScope: string[];
+  /** Whether this is a spike, which the coder's brief follows. */
+  workType?: WorkType | null;
   /** What the person watching the ticket told its agents, oldest first. */
   notes?: string[];
+  /**
+   * What agents on other tickets of the repository shared lately, oldest
+   * first, one line each (src/lib/coder/shared-notes.ts).
+   */
+  sharedNotes?: string[];
   /**
    * What the person asked this run, from the ticket's chat, to do. The
    * ticket is then background: the run does this, not the ticket over.
@@ -243,6 +257,13 @@ export interface ReviewTask {
    * into the checkout, and these files hold the conflicts to resolve.
    */
   conflicts?: string[];
+  /**
+   * Why each side of the conflicts changed: the commits on each side since
+   * they diverged that touch the conflicted files, newest first, each its
+   * subject and body. What lets a resolution keep what both authors meant,
+   * rather than whichever lines look right.
+   */
+  conflictHistory?: { base: string[]; branch: string[] };
   attempt: number;
   maxAttempts: number;
 }
@@ -262,6 +283,15 @@ export interface ReviewVerdict extends CodeChange {
  */
 export interface ReviewerAgent {
   review(ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>>;
+  /**
+   * A ticket's scouts are back: which of their changes to keep
+   * (src/lib/coder/scouts.ts). An agent that cannot answer here leaves it
+   * out, and the smallest change is kept.
+   */
+  compare?(
+    ctx: AgentContext,
+    input: { task: CoderTask; candidates: ScoutCandidate[] },
+  ): Promise<AgentOutcome<ScoutVerdict>>;
 }
 
 export interface AgentRegistry {
