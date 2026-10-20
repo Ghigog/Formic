@@ -1,5 +1,12 @@
 import type { BoardCard } from "@/lib/domain/entities";
-import { isBug } from "./game";
+import {
+  AUTO_SCOUT_LEVEL,
+  FOUR_SCOUTS_LEVEL,
+  NO_RESERVE_LEVEL,
+  RESERVE_ONE_LEVEL,
+  THREE_SCOUTS_LEVEL,
+  isBug,
+} from "./game";
 
 /**
  * The colony: how many Coder Agents a board runs at once, and how many of
@@ -17,27 +24,26 @@ export const MAX_COLONY = 12;
 
 /** The least reserve a board may keep, by level: a new colony keeps two back. */
 export function reserveFloor(level: number): number {
-  if (level >= 6) return 0;
-  if (level >= 3) return 1;
+  if (level >= NO_RESERVE_LEVEL) return 0;
+  if (level >= RESERVE_ONE_LEVEL) return 1;
   return 2;
 }
 
 /** The next level that lowers the reserve floor, or null at the lowest. */
 export function nextFloorLevel(level: number): number | null {
-  if (level < 3) return 3;
-  if (level < 6) return 6;
+  if (level < RESERVE_ONE_LEVEL) return RESERVE_ONE_LEVEL;
+  if (level < NO_RESERVE_LEVEL) return NO_RESERVE_LEVEL;
   return null;
 }
 
 /** How many scouts one ticket may send, by level. */
 export function maxScouts(level: number): number {
-  if (level >= 7) return 4;
-  if (level >= 4) return 3;
+  if (level >= FOUR_SCOUTS_LEVEL) return 4;
+  if (level >= THREE_SCOUTS_LEVEL) return 3;
   return 2;
 }
 
-/** The level that lets idle reserve slots send scouts out on their own. */
-export const AUTO_SCOUT_LEVEL = 8;
+export { AUTO_SCOUT_LEVEL };
 
 export interface ColonySettings {
   /** Null: no cap. */

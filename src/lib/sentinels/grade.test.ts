@@ -16,10 +16,10 @@ describe("gradeOf", () => {
     const stars = all(5);
     delete stars[SENTINELS[0]!.id];
     // 55 / 12 = 4.58
-    expect(gradeOf(stars, 12).grade).toBe("S");
+    expect(gradeOf(stars, 30).grade).toBe("S");
     delete stars[SENTINELS[1]!.id];
     // 50 / 12 = 4.17
-    expect(gradeOf(stars, 12).grade).toBe("A");
+    expect(gradeOf(stars, 30).grade).toBe("A");
   });
 
   it("leaves a locked sentinel out of the average and the total", () => {
@@ -33,14 +33,14 @@ describe("gradeOf", () => {
   });
 
   it("lands exactly on a threshold", () => {
-    expect(gradeOf(all(4), 12).grade).toBe("A");
-    expect(gradeOf(all(3), 12).grade).toBe("C");
-    expect(gradeOf(all(5), 12).next).toBeNull();
+    expect(gradeOf(all(4), 30).grade).toBe("A");
+    expect(gradeOf(all(3), 30).grade).toBe("C");
+    expect(gradeOf(all(5), 30).next).toBeNull();
   });
 
   it("says how many stars reach the next grade", () => {
     // 36 stars is C; B needs 3.5 × 12 = 42.
-    const g = gradeOf(all(3), 12);
+    const g = gradeOf(all(3), 30);
     expect(g.next).toEqual({ grade: "B", min: 3.5, need: 6 });
   });
 

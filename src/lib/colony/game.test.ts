@@ -16,6 +16,8 @@ import {
   nextUnlock,
   queensEarned,
   rankOf,
+  styleUnlocked,
+  MAX_UNLOCK_LEVEL,
   scoreOf,
   unlocksAt,
 } from "./game";
@@ -53,6 +55,9 @@ describe("levels", () => {
     expect(levelOf(49)).toBe(1);
     expect(levelOf(50)).toBe(2);
     expect(rankOf(1)).toBe("Scout");
+    expect(rankOf(3)).toBe("Scout");
+    expect(rankOf(4)).toBe("Forager");
+    expect(rankOf(28)).toBe("Queen");
     expect(rankOf(99)).toBe("Queen");
   });
 
@@ -61,15 +66,28 @@ describe("levels", () => {
     expect(queensEarned(50)).toBe(49);
   });
 
-  it("names a Sentinel alongside shapes and colours at the level it unlocks", () => {
-    const at3 = SENTINEL_UNLOCKS.filter((u) => u.lv === 3).map((u) => u.label);
-    expect(at3.length).toBeGreaterThan(0);
-    expect(unlocksAt(3)).toEqual(expect.arrayContaining(["Ladybird", ...at3]));
+  it("unlocks exactly one thing at every level from 2 to 30", () => {
+    for (let lv = 2; lv <= MAX_UNLOCK_LEVEL; lv++) expect(unlocksAt(lv)).toHaveLength(1);
+    expect(unlocksAt(MAX_UNLOCK_LEVEL + 1)).toEqual([]);
+  });
+
+  it("names Sentinels, styles and colony rules at the level they unlock", () => {
+    const at5 = SENTINEL_UNLOCKS.filter((u) => u.lv === 5).map((u) => u.label);
+    expect(unlocksAt(5)).toEqual(at5);
+    expect(unlocksAt(7)).toEqual(["Ladybird"]);
+    expect(unlocksAt(24)).toEqual(["Auto-scout"]);
+  });
+
+  it("checks a saved style against the level", () => {
+    expect(styleUnlocked({ shape: "ant", color: "umber" }, 1)).toBe(true);
+    expect(styleUnlocked({ shape: "stag", color: "umber" }, 25)).toBe(false);
+    expect(styleUnlocked({ shape: "stag", color: "plum" }, 27)).toBe(true);
   });
 
   it("says what the next unlock is", () => {
-    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Crimson", "QA"] });
-    expect(nextUnlock(12)).toBeNull();
+    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["QA"] });
+    expect(nextUnlock(29)).toEqual({ level: 30, labels: ["Sales"] });
+    expect(nextUnlock(30)).toBeNull();
   });
 });
 

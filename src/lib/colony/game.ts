@@ -32,26 +32,70 @@ export const RANKS = [
   "Queen",
 ] as const;
 
+/**
+ * The level schedule runs to Lv 30, one unlock a level after the first: a bug
+ * shape, a colour, a Sentinel (see roster.ts) or a colony rule (see reserve.ts).
+ */
+export const MAX_UNLOCK_LEVEL = 30;
+
 export type BugShape = "ant" | "beetle" | "ladybird" | "spider" | "moth" | "stag";
-export type BugColor = "umber" | "crimson" | "ochre" | "jade" | "anthracite" | "terracotta";
+export type BugColor =
+  | "umber"
+  | "crimson"
+  | "ochre"
+  | "moss"
+  | "jade"
+  | "slate"
+  | "anthracite"
+  | "plum"
+  | "terracotta";
 
 export const SHAPE_UNLOCKS: ReadonlyArray<{ key: BugShape; label: string; lv: number }> = [
   { key: "ant", label: "Ant", lv: 1 },
-  { key: "beetle", label: "Beetle", lv: 1 },
-  { key: "ladybird", label: "Ladybird", lv: 3 },
-  { key: "spider", label: "Spider", lv: 5 },
-  { key: "moth", label: "Moth", lv: 6 },
-  { key: "stag", label: "Stag beetle", lv: 8 },
+  { key: "beetle", label: "Beetle", lv: 3 },
+  { key: "ladybird", label: "Ladybird", lv: 7 },
+  { key: "spider", label: "Spider", lv: 12 },
+  { key: "moth", label: "Moth", lv: 18 },
+  { key: "stag", label: "Stag beetle", lv: 26 },
 ];
 
 export const COLOR_UNLOCKS: ReadonlyArray<{ key: BugColor; label: string; hex: string; lv: number }> = [
   { key: "umber", label: "Umber", hex: "#4A2F22", lv: 1 },
-  { key: "crimson", label: "Crimson", hex: "#B3261E", lv: 2 },
-  { key: "ochre", label: "Ochre", hex: "#A86A04", lv: 4 },
-  { key: "jade", label: "Jade", hex: "#2E6B31", lv: 6 },
-  { key: "anthracite", label: "Anthracite", hex: "#1C1917", lv: 7 },
-  { key: "terracotta", label: "Terracotta", hex: "#C4561A", lv: 9 },
+  { key: "crimson", label: "Crimson", hex: "#B3261E", lv: 4 },
+  { key: "ochre", label: "Ochre", hex: "#A86A04", lv: 10 },
+  { key: "moss", label: "Moss", hex: "#5B6B2E", lv: 14 },
+  { key: "jade", label: "Jade", hex: "#2E6B31", lv: 17 },
+  { key: "slate", label: "Slate", hex: "#4A5A66", lv: 21 },
+  { key: "anthracite", label: "Anthracite", hex: "#1C1917", lv: 23 },
+  { key: "plum", label: "Plum", hex: "#6A2C55", lv: 27 },
+  { key: "terracotta", label: "Terracotta", hex: "#C4561A", lv: 29 },
 ];
+
+/** The level that lowers the least reserve to one. */
+export const RESERVE_ONE_LEVEL = 6;
+/** The level that lets 3 scouts go out on one ticket. */
+export const THREE_SCOUTS_LEVEL = 9;
+/** The level that drops the least reserve to none. */
+export const NO_RESERVE_LEVEL = 15;
+/** The level that lets 4 scouts go out on one ticket. */
+export const FOUR_SCOUTS_LEVEL = 20;
+/** The level that lets idle reserve slots send scouts out on their own. */
+export const AUTO_SCOUT_LEVEL = 24;
+
+export const COLONY_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: number }> = [
+  { key: "reserve-1", label: "a reserve of 1", lv: RESERVE_ONE_LEVEL },
+  { key: "scouts-3", label: "3 scouts a ticket", lv: THREE_SCOUTS_LEVEL },
+  { key: "reserve-0", label: "no reserve", lv: NO_RESERVE_LEVEL },
+  { key: "scouts-4", label: "4 scouts a ticket", lv: FOUR_SCOUTS_LEVEL },
+  { key: "auto-scout", label: "Auto-scout", lv: AUTO_SCOUT_LEVEL },
+];
+
+/** Whether a bug style is open at this level. Unknown keys read as locked. */
+export function styleUnlocked(style: { shape: BugShape; color: BugColor }, level: number): boolean {
+  const shape = SHAPE_UNLOCKS.find((u) => u.key === style.shape);
+  const color = COLOR_UNLOCKS.find((u) => u.key === style.color);
+  return Boolean(shape && color && shape.lv <= level && color.lv <= level);
+}
 
 export const SENTINEL_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: number }> = SENTINELS.map((s) => ({
   key: s.id,
@@ -59,14 +103,18 @@ export const SENTINEL_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: n
   lv: s.unlockLevel,
 }));
 
-const ALL_UNLOCKS = [...SHAPE_UNLOCKS, ...COLOR_UNLOCKS, ...SENTINEL_UNLOCKS];
+const ALL_UNLOCKS = [...SHAPE_UNLOCKS, ...COLOR_UNLOCKS, ...SENTINEL_UNLOCKS, ...COLONY_UNLOCKS];
 
 export function levelOf(xp: number): number {
   return Math.floor(Math.max(0, xp) / XP_PER_LEVEL) + 1;
 }
 
+/** Levels spent at each rank: ten ranks across the thirty levels, Queen from Lv 28. */
+export const LEVELS_PER_RANK = MAX_UNLOCK_LEVEL / RANKS.length;
+
 export function rankOf(level: number): string {
-  return RANKS[Math.min(Math.max(1, level), RANKS.length) - 1]!;
+  const i = Math.floor((Math.max(1, level) - 1) / LEVELS_PER_RANK);
+  return RANKS[Math.min(i, RANKS.length - 1)]!;
 }
 
 /** Queens earned at a level: one for each level gained since Lv 1, with no cap. */

@@ -23,6 +23,7 @@ import {
   pointsOf,
   scoreOf,
   SHAPE_UNLOCKS,
+  styleUnlocked,
   unlocksAt,
   rankOf,
   epicBonus,
@@ -36,7 +37,7 @@ import type { ExtrasMap } from "@/components/board/card";
 import { ColonyFx, cardEl, centerOf, colonyEl, heldByDrag, type CrewPhase } from "./fx";
 import { flyHome, ghostOf, ghostRect, groupOf, type Ghost } from "./epic-flight";
 import { SoundEngine, type Sfx } from "./sound";
-import { useHydrated, useSaved, useSound } from "./store";
+import { DEFAULTS, useHydrated, useSaved, useSound } from "./store";
 
 /**
  * The colony layer over the board: score, level, heat, sound and the canvas
@@ -144,7 +145,7 @@ export function ColonyProvider({
   extras: ExtrasMap;
   children: React.ReactNode;
 }) {
-  const [saved, setSaved] = useSaved(storageKey);
+  const [stored, setSaved] = useSaved(storageKey);
   const [soundOn] = useSound();
   const loaded = useHydrated();
 
@@ -167,6 +168,8 @@ export function ColonyProvider({
   const topRef = useRef<HTMLCanvasElement>(null);
 
   const score = useMemo(() => scoreOf(cards), [cards]);
+  // A style chosen under an older level schedule may now sit above the level.
+  const saved = styleUnlocked(stored, score.level) ? stored : DEFAULTS;
   const stacks = useMemo(() => heatStacks(cards, now), [cards, now]);
   const held = useMemo(() => {
     if (!landed) return 0;
@@ -660,7 +663,7 @@ export function ColonyProvider({
         );
         return;
       }
-      setSaved((s) => ({ ...s, ...patch }));
+      setSaved((s) => ({ ...(styleUnlocked(s, lv) ? s : DEFAULTS), ...patch }));
       // A test squash in the new style, on the button that chose it.
       requestAnimationFrame(() => {
         const [x, y] = centerOf(from);

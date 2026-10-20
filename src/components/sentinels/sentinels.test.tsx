@@ -44,7 +44,7 @@ function Open() {
   return <button onClick={() => c?.setSentinelsOpen(true)}>open sentinels</button>;
 }
 
-async function open(level = 13) {
+async function open(level = 30) {
   render(
     <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
       <SentinelsProvider initial={states([SENTINELS[0]!.id, SENTINELS[3]!.id])} level={level}>
