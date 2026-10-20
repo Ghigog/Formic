@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyFx } from "@/components/colony/fx";
@@ -95,6 +95,23 @@ describe("SentinelsPage motion and sound", () => {
     await userEvent.hover(cards[3]!);
     expect(play.mock.calls.filter(([n]: unknown[]) => n === "sentinelVoice")).toEqual([["sentinelVoice", 2]]);
     expect(animate).toHaveBeenCalled();
+  });
+});
+
+describe("SentinelsPage scroll lock", () => {
+  it("locks background scroll while open and releases it on close", async () => {
+    await open();
+    expect(document.body.style.overflow).toBe("hidden");
+    expect(screen.getByRole("region", { name: "Sentinels" })).toHaveClass("overscroll-none");
+  });
+
+  it("restores the previous overflow on unmount", async () => {
+    document.body.style.overflow = "scroll";
+    await open();
+    expect(document.body.style.overflow).toBe("hidden");
+    cleanup();
+    expect(document.body.style.overflow).toBe("scroll");
+    document.body.style.overflow = "";
   });
 });
 

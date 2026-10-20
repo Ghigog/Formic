@@ -73,6 +73,9 @@ function modelTag(model: string | null): string | null {
 /** The white card surface the epic groups are built on. */
 const SHELL = "bg-card border-line rounded-lg border";
 
+/** How long a card takes to slide out after its arrow, in ms. */
+export const LEAVE_MS = 200;
+
 /** What a card needs from the board around it. */
 export interface CardEnv {
   epics: ReadonlyMap<string, BoardCard>;
@@ -81,6 +84,8 @@ export interface CardEnv {
   /** Where a card's left arrow sends it back to, or null when it has none. */
   returnFor?: (card: BoardCard, column: ColumnId) => ColumnId | null;
   onAdvance: (card: BoardCard, to: ColumnId) => void;
+  /** The card sliding out of its column after its arrow, and which way. */
+  leaving?: { id: string; direction: "forward" | "back" } | null;
   /** The running ticket a queued one is waiting on, or null when none is. */
   queuedBehind?: (card: BoardCard) => BoardCard | null;
   /** The repository runs no CI, so a review card has no checks to wait for. */
@@ -241,6 +246,7 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
       aria-label={`Move ${card.key} to ${COLUMN_LABELS[to]}`}
       onClick={(e) => {
         e.stopPropagation();
+        if (env.leaving?.id === card.id) return;
         env.onAdvance(card, to);
       }}
       className="hover:bg-column -my-0.5 -mr-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
@@ -269,6 +275,7 @@ function ReturnButton({ card, column }: { card: BoardCard; column: ColumnId }) {
       aria-label={`Return ${card.key} to ${COLUMN_LABELS[to]}`}
       onClick={(e) => {
         e.stopPropagation();
+        if (env.leaving?.id === card.id) return;
         env.onAdvance(card, to);
       }}
       className="hover:bg-column -my-0.5 -ml-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
@@ -922,6 +929,8 @@ export function KanbanCard({
   extras: ExtrasMap;
   onOpen: (card: BoardCard) => void;
 }) {
+  const leaving = useContext(CardEnvContext)?.leaving;
+  const exit = leaving?.id === card.id ? leaving.direction : null;
   return (
     <Draggable draggableId={card.id} index={index}>
       {(provided, snapshot) => (
@@ -936,6 +945,9 @@ export function KanbanCard({
           <div
             className={cn(
               "rounded-lg transition-transform duration-150",
+              exit && "pointer-events-none opacity-0 transition-all duration-200 ease-in",
+              exit === "forward" && "translate-x-full",
+              exit === "back" && "-translate-x-full",
               snapshot.isDragging &&
                 "scale-[1.04] rotate-[-2deg] shadow-[0_28px_48px_-18px_color-mix(in_srgb,var(--anthracite)_45%,transparent),0_2px_6px_color-mix(in_srgb,var(--anthracite)_8%,transparent)]",
             )}

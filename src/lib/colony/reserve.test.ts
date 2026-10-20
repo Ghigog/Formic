@@ -6,6 +6,7 @@ import {
   effectiveColony,
   maxScouts,
   nextFloorLevel,
+  nextScoutLevel,
   reserveFloor,
   slotsInUse,
 } from "./reserve";
@@ -46,6 +47,7 @@ describe("what levels unlock", () => {
 
   it("allows more scouts per ticket", () => {
     expect([1, 9, 10, 21, 22].map(maxScouts)).toEqual([2, 2, 3, 3, 4]);
+    expect([1, 10, 22].map(nextScoutLevel)).toEqual([10, 22, null]);
   });
 });
 

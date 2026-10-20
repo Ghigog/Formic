@@ -71,7 +71,8 @@ describe("ColonyPopover Queens", () => {
     await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2"));
     expect(document.querySelector("[data-queen-icon] svg")).toBeTruthy();
     expect(screen.getByText("Unlock a queen with each level")).toBeTruthy();
-    expect(screen.getByText(/Drop a Queen on a ticket and the ants work through every ticket it needs/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "How Queens work" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/Drop a Queen on a ticket and the ants work through every ticket it needs/);
     expect(screen.getByLabelText("Drag a Queen onto a card")).toBeTruthy();
   });
 

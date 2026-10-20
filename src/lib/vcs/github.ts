@@ -30,6 +30,7 @@ import {
 import { Readable } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { untar, unzip, type Keep } from "./archive";
+import { runsOnPullRequests } from "./workflow-triggers";
 import { CARRY_DELETED, CARRY_DIR, RUNNER_WORKFLOW_PATH } from "@/lib/runner/workflow";
 
 /**
@@ -227,7 +228,19 @@ export class GitHubClient implements VcsClient {
       ),
     ]);
     if (!workflows || required.length > 0) return true;
-    return workflows.some((w) => w.state === "active" && w.path !== RUNNER_WORKFLOW_PATH);
+    const candidates = workflows.filter((w) => w.state === "active" && w.path !== RUNNER_WORKFLOW_PATH);
+    // A workflow that never runs on a pull request (by hand, on a schedule,
+    // on pushes to the base) leaves its heads without checks for good.
+    const runs = await Promise.all(
+      candidates.map((w) =>
+        this.readFile(w.path, baseBranch).then(
+          (source) => source === null || runsOnPullRequests(source, baseBranch),
+          // Unreadable could be CI: wait for checks, as above.
+          () => true,
+        ),
+      ),
+    );
+    return runs.some(Boolean);
   }
 
   async checkLog(checkRunId: number): Promise<CheckLog> {

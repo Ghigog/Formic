@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
@@ -278,9 +278,8 @@ describe("Board, below 768px", () => {
     renderBoard([makeCard({ status: "draft" }), epic!, ...kids]);
 
     const bar = await screen.findByRole("list", { name: "Columns" });
-    expect(within(bar).queryAllByRole("button")).toHaveLength(0);
-    expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 2");
-    expect(within(bar).getByText("Backlog")).toHaveAttribute("aria-current", "true");
+    expect(within(bar).getByRole("button", { name: "To Do 2" })).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: /^Backlog/ }).closest("li")).toHaveAttribute("aria-current", "true");
     expect(screen.queryByRole("region", { name: "To Do" })).toBeNull();
   });
 
@@ -299,6 +298,39 @@ describe("Board, below 768px", () => {
     renderBoard([makeCard({ status: "ready" })]);
     carry();
     expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+  });
+
+  describe("tapping a column chip", () => {
+    const chip = (name: RegExp) => within(screen.getByRole("list", { name: "Columns" })).getByRole("button", { name });
+    const setup = async () => {
+      setViewportMatches(true);
+      renderBoard([makeCard({ status: "draft" })]);
+      await screen.findByRole("region", { name: "Backlog" });
+    };
+
+    it("jumps to that column and marks its chip current", async () => {
+      await setup();
+      await userEvent.click(chip(/^Done/));
+      expect(await screen.findByRole("region", { name: "Done" })).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Backlog" })).toBeNull();
+      expect(chip(/^Done/).closest("li")).toHaveAttribute("aria-current", "true");
+      expect(document.querySelector("[data-slide]")).toHaveAttribute("data-slide", "next");
+    });
+
+    it("slides in from the previous side when going back", async () => {
+      await setup();
+      await userEvent.click(chip(/^Done/));
+      await userEvent.click(chip(/^Backlog/));
+      expect(await screen.findByRole("region", { name: "Backlog" })).toBeInTheDocument();
+      expect(document.querySelector("[data-slide]")).toHaveAttribute("data-slide", "previous");
+    });
+
+    it("does nothing when the active chip is tapped", async () => {
+      await setup();
+      await userEvent.click(chip(/^Backlog/));
+      expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+      expect(document.querySelector("[data-slide]")).toBeNull();
+    });
   });
 
   describe("swiping", () => {
@@ -438,5 +470,56 @@ describe("Board archived filter", () => {
     expect(screen.getByText("Old archived")).toBeInTheDocument();
     expect(screen.queryByText("Shipped one")).not.toBeInTheDocument();
     expect(onArchivedWanted).toHaveBeenLastCalledWith(true);
+  });
+});
+
+describe("Board, an arrow move on a phone", () => {
+  /** Answers each media query on its own: phone width, and reduced motion or not. */
+  const stubMedia = (reduced: boolean, phone = true) => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches: query.includes("reduced-motion") ? reduced : phone,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    });
+  };
+
+  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  afterEach(() => vi.useRealTimers());
+
+  const tap = async () => {
+    const arrow = await screen.findByRole("button", { name: "Move PROT-09 to To Do" });
+    fireEvent.click(arrow);
+    return arrow;
+  };
+
+  it("sends the move only after the card has slid out, and once for a double tap", async () => {
+    stubMedia(false);
+    const { onTransition } = renderBoard([makeCard({ key: "PROT-09", status: "draft" })]);
+    const arrow = await tap();
+
+    expect(onTransition).not.toHaveBeenCalled();
+    expect(arrow.closest("li")!.firstElementChild).toHaveClass("translate-x-full");
+    fireEvent.click(arrow);
+    act(() => void vi.advanceTimersByTime(250));
+    expect(onTransition).toHaveBeenCalledOnce();
+  });
+
+  it("sends the move at once with reduced motion", async () => {
+    stubMedia(true);
+    const { onTransition } = renderBoard([makeCard({ key: "PROT-09", status: "draft" })]);
+    await tap();
+    expect(onTransition).toHaveBeenCalledOnce();
+  });
+
+  it("sends the move at once on a wide screen", async () => {
+    stubMedia(false, false);
+    const { onTransition } = renderBoard([makeCard({ key: "PROT-09", status: "draft" })]);
+    await tap();
+    expect(onTransition).toHaveBeenCalledOnce();
   });
 });

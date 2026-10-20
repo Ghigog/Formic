@@ -76,6 +76,10 @@ and a ticket may send 2 scouts before Lv 10.
 A reserve below the level's floor is raised to it, and never above the
 colony size less one.
 
+The colony popover (the ant hill, bottom right) shows each of these beside
+the Queens: the scouts a ticket may send and the reserve held now, with the
+level that raises the next one. Each row's "i" opens a note on how it works.
+
 ## Scouts
 
 Sent from a ticket's drawer while it is in To Do, with everything it

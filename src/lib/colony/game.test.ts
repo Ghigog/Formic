@@ -266,6 +266,41 @@ describe("timeline", () => {
     expect(buildTimeline(cards, at).streak).toBe(2);
   });
 
+  describe("with an offset", () => {
+    const cards = [
+      card({ id: "e1", kind: "epic", epicId: null, status: "ready" }),
+      card({ id: "a", status: "merged", storyPoints: 5, updatedAt: daysAgo(30) }),
+      card({ id: "b", status: "merged", storyPoints: 3, updatedAt: daysAgo(1) }),
+      card({ id: "c", status: "review", storyPoints: 2 }),
+    ];
+
+    it("is identical to the live window at offset 0", () => {
+      expect(buildTimeline(cards, at, 0)).toEqual(buildTimeline(cards, at));
+    });
+
+    it("steps the window back by whole days and keeps its length", () => {
+      const live = buildTimeline(cards, at);
+      const past = buildTimeline(cards, at, WINDOW_DAYS);
+      expect(past.days).toHaveLength(WINDOW_DAYS);
+      expect(live.start.getTime() - past.start.getTime()).toBe(WINDOW_DAYS * 86_400_000);
+    });
+
+    it("counts a ticket merged after the window as still open", () => {
+      const past = buildTimeline(cards, at, WINDOW_DAYS);
+      expect(past.total).toBe(10);
+      expect(past.days[4]!.sp).toBe(5);
+      expect(past.days.at(-1)!.remaining).toBe(5);
+      expect(past.remaining).toBe(5);
+    });
+
+    it("has no present: no forecast, boost or live now", () => {
+      const past = buildTimeline(cards, at, WINDOW_DAYS);
+      expect(past.forecast).toBeNull();
+      expect(past.boost).toBeNull();
+      expect(past.now).toBe(WINDOW_DAYS);
+    });
+  });
+
   it("leaves work merged before the window out of the burndown", () => {
     const cards = [
       card({ id: "a", status: "merged", storyPoints: 8, updatedAt: daysAgo(40) }),

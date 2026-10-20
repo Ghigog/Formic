@@ -43,6 +43,13 @@ export function maxScouts(level: number): number {
   return 2;
 }
 
+/** The next level that lets a ticket send more scouts, or null at the most. */
+export function nextScoutLevel(level: number): number | null {
+  if (level < THREE_SCOUTS_LEVEL) return THREE_SCOUTS_LEVEL;
+  if (level < FOUR_SCOUTS_LEVEL) return FOUR_SCOUTS_LEVEL;
+  return null;
+}
+
 export { AUTO_SCOUT_LEVEL };
 
 export interface ColonySettings {
