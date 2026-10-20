@@ -15,12 +15,13 @@ import {
   type BoardCard,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
-import { isBug, isSpike, isSquashed } from "@/lib/colony/game";
+import { isBug, isSquashed } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { LinkifiedText } from "./linkified-text";
+import { TypeTag } from "./type-tag";
 
 /**
  * Display-only detail that hangs off a card but is not part of the domain
@@ -168,57 +169,16 @@ export function SpBadge({ points, done = false }: { points: number | null | unde
   );
 }
 
-function BugBadge({ squashed }: { squashed: boolean }) {
-  return squashed ? (
-    <span className="oct inline-flex shrink-0 bg-idle p-px">
-      <span className="oct text-muted inline-flex items-center gap-1 bg-hairline py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
-        <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden="true">
-          <ellipse cx="6" cy="6.5" rx="5" ry="1.6" fill="var(--text-muted)" />
-          <circle cx="1.5" cy="4.5" r="0.8" fill="var(--text-muted)" />
-          <circle cx="10.2" cy="4" r="0.6" fill="var(--text-muted)" />
-        </svg>
-        SQUASHED
-      </span>
-    </span>
-  ) : (
-    <span data-bugicon className="oct bg-crimson inline-flex shrink-0 p-px">
-      <span className="oct inline-flex items-center gap-1 bg-crimson-chip py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap text-crimson-chip-text">
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <ellipse cx="5" cy="6" rx="2.4" ry="3" fill="var(--crimson-chip-text)" />
-          <circle cx="5" cy="2.2" r="1.3" fill="var(--crimson-chip-text)" />
-          <path
-            d="M2.6 4.5 1 3.6M2.6 6.2H.8M2.6 7.9 1 8.8M7.4 4.5 9 3.6M7.4 6.2h1.8M7.4 7.9 9 8.8"
-            stroke="var(--crimson-chip-text)"
-            strokeWidth="0.8"
-            strokeLinecap="round"
-          />
-        </svg>
-        BUG
-      </span>
-    </span>
-  );
-}
-
-function SpikeBadge() {
-  return (
-    <span data-spikeicon className="oct bg-line inline-flex shrink-0 p-px">
-      <span className="oct text-ink inline-flex items-center gap-1 bg-cream py-0.5 pr-[7px] pl-1.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap">
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <circle cx="4" cy="4" r="2.8" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M6.2 6.2 9 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-        SPIKE
-      </span>
-    </span>
-  );
-}
-
 /** The arrow that sends a card on to the next column, where it may go. */
-/** The bug label, on any card that is a bug. */
-function CardBugBadge({ card }: { card: BoardCard }) {
+/** The type tag, on any card that has a type. A ticket of a bug Epic is a bug. */
+function CardTypeTag({ card }: { card: BoardCard }) {
   const env = useContext(CardEnvContext);
-  if (!isBug(card, env?.epics ?? NO_EPICS)) return null;
-  return <BugBadge squashed={isSquashed(card)} />;
+  const epics = env?.epics ?? NO_EPICS;
+  const bug = isBug(card, epics);
+  const type = bug ? "bug" : card.workType;
+  if (!type) return null;
+  const severity = bug ? (card.bugSeverity ?? (card.epicId ? epics.get(card.epicId)?.bugSeverity : null)) : null;
+  return <TypeTag type={type} severity={severity} squashed={bug && isSquashed(card)} />;
 }
 
 /** A small chess queen on a card a Queen was placed on. */
@@ -229,11 +189,6 @@ function CardQueenMark({ card }: { card: BoardCard }) {
       <QueenIcon size={12} />
     </span>
   );
-}
-
-/** The spike label, on any card that is a spike. */
-function CardSpikeBadge({ card }: { card: BoardCard }) {
-  return isSpike(card) ? <SpikeBadge /> : null;
 }
 
 function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) {
@@ -501,8 +456,7 @@ function TicketHead({
     <div className="flex min-h-[18px] items-center gap-1.5">
       <ReturnButton card={card} column={column} />
       {card.status === "queued" && <QueueTimer card={card} />}
-      <CardBugBadge card={card} />
-      <CardSpikeBadge card={card} />
+      <CardTypeTag card={card} />
         <CardQueenMark card={card} />
       <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
@@ -550,8 +504,7 @@ function BacklogEpic({
         <CoinBadge tone="epic" className="tracking-[0.08em]">
           EPIC
         </CoinBadge>
-        <CardBugBadge card={card} />
-        <CardSpikeBadge card={card} />
+        <CardTypeTag card={card} />
         <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <div className="flex-grow" />
@@ -989,8 +942,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
             card.status === "ready" && "pulse-dot",
           )}
         />
-        <CardBugBadge card={card} />
-        <CardSpikeBadge card={card} />
+        <CardTypeTag card={card} />
         <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <ProblemBadge card={card} />
@@ -1030,8 +982,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
     >
       <div className="flex items-center gap-1.5">
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
-        <CardBugBadge card={card} />
-        <CardSpikeBadge card={card} />
+        <CardTypeTag card={card} />
         <CardQueenMark card={card} />
         <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <h4 className="text-ink truncate text-[12px] font-medium">
