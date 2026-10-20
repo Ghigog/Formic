@@ -540,4 +540,17 @@ describe("TicketDrawer archive", () => {
     expect(await screen.findByText("No unspent Queens")).toBeInTheDocument();
     expect(archive).toBeEnabled();
   });
+
+  it("shares the Ticket/Agent tab row, with the error below it", async () => {
+    openWith(() => Response.json({ error: "Still working." }, { status: 409 }));
+    const archive = await screen.findByRole("button", { name: "Archive" });
+    const row = screen.getByTestId("drawer-tab-row");
+    expect(row).toContainElement(screen.getByRole("button", { name: "Ticket" }));
+    expect(row).toContainElement(screen.getByRole("button", { name: "Add Queen" }));
+    expect(row).toContainElement(archive);
+    expect(screen.getByRole("button", { name: "Ticket" })).toHaveClass("lg:hidden");
+    fireEvent.click(archive);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Still working.");
+    expect(row).toContainElement(screen.getByRole("alert"));
+  });
 });
