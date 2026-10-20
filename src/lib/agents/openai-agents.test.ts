@@ -60,6 +60,7 @@ const TICKET_SPEC = {
   acceptanceCriteria: [{ given: "a failed run", when: "I click retry", then: "the run starts again" }],
   fileScope: ["src/components/board"],
   storyPoints: 2,
+  type: "task",
   dependsOn: [],
 };
 
@@ -417,6 +418,7 @@ describe("structured answers from OpenAI-format providers", () => {
       fileScope: ["src/lib"],
       size: "S",
       storyPoints: 3,
+      type: "task",
       dependsOn,
     });
     const sent = fakeProvider([

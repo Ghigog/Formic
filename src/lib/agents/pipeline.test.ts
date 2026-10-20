@@ -191,6 +191,20 @@ describe("applyTickets on an Epic broken down again", () => {
     expect(renamed.dependsOn).toEqual([first.id]);
   });
 
+  it("stores the type the Architect gave each ticket, and a severity only for a bug", async () => {
+    const [epic] = makeEpicWithChildren({ key: "EPIC-5", status: "ready" }, []);
+    seedMemory([epic!]);
+
+    await applyTickets(PROJECT, epic!.id, [
+      { ...draft("T-1"), workType: "bug", bugSeverity: "high" },
+      { ...draft("T-2"), workType: "spike", bugSeverity: "low" },
+    ]);
+
+    const cards = (await repository().boardCards(PROJECT)).filter((c) => c.epicId === epic!.id);
+    expect(cards.find((c) => c.key === "EPIC-5-T1")).toMatchObject({ workType: "bug", bugSeverity: "high" });
+    expect(cards.find((c) => c.key === "EPIC-5-T2")).toMatchObject({ workType: "spike", bugSeverity: null });
+  });
+
   it("keys tickets under their Epic and maps dependsOn to the new keys", async () => {
     const [epic3] = makeEpicWithChildren({ key: "EPIC-3", status: "ready" }, []);
     const [epic4] = makeEpicWithChildren({ key: "EPIC-4", status: "ready" }, []);
