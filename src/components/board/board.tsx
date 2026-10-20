@@ -67,6 +67,8 @@ export interface BoardProps {
   account?: Account;
   /** The repository runs no CI. */
   noCi?: boolean;
+  /** No E2B key is set, so no agent can run: the board points to Settings. */
+  noSandboxKey?: boolean;
   /** Whether Formic merges an approved ticket itself. */
   autoMerge?: boolean;
   /** The board's assistant, in the header. */
@@ -95,6 +97,7 @@ export function Board({
   account,
   assistant,
   noCi = false,
+  noSandboxKey = false,
   autoMerge = false,
 }: BoardProps) {
   /** The ticket last dropped on the archive zone, which does the archiving. */
@@ -553,6 +556,20 @@ export function Board({
       <p aria-live="polite" className="sr-only md:hidden">
         {COLUMN_LABELS[activeTab]}
       </p>
+
+      {noSandboxKey && (
+        <div
+          role="alert"
+          className="bg-clay/15 text-ink mx-4 mt-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-[12px] md:mx-6"
+        >
+          <span className="flex-1">
+            Agents can&apos;t run yet: they need a sandbox key from E2B. It takes a minute to set up.
+          </span>
+          <a href="/settings#sandbox" className="text-ink font-semibold whitespace-nowrap underline">
+            Add it in Settings
+          </a>
+        </div>
+      )}
 
       {error && (
         <div

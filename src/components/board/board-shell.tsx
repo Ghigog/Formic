@@ -54,6 +54,7 @@ export function BoardShell({
   initialOverrides = {},
   account,
   noCi,
+  noSandboxKey,
   autoMerge,
 }: {
   initialCards: BoardCard[];
@@ -76,6 +77,8 @@ export function BoardShell({
   account?: Account;
   /** The repository runs no CI, as of this render. */
   noCi?: boolean;
+  /** Neither the board's owner nor the server has an E2B key, so no agent can run. */
+  noSandboxKey?: boolean;
   /** Whether Formic merges an approved ticket itself. */
   autoMerge?: boolean;
 }) {
@@ -186,6 +189,7 @@ export function BoardShell({
         onArchived={(id) => setArchivedIds((prev) => new Set(prev).add(id))}
         account={account}
         noCi={noCi}
+        noSandboxKey={noSandboxKey}
         autoMerge={autoMerge}
         assistant={{
           ...assistant,

@@ -160,6 +160,7 @@ export function SettingsForm({
 
         <KeyField
           field="e2bKey"
+          id="sandbox"
           title="Sandbox (E2B)"
           blurb="The cloud machines your coding agents work in, whichever AI provider they use."
           getFrom="https://e2b.dev/dashboard"
@@ -337,9 +338,9 @@ function DangerZone() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="bg-card border-line rounded-xl border p-4">
+    <section id={id} className="bg-card border-line scroll-mt-4 rounded-xl border p-4">
       <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">
         {title}
       </h2>
@@ -350,6 +351,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function KeyField({
   field,
+  id,
   title,
   blurb,
   getFrom,
@@ -359,6 +361,8 @@ function KeyField({
   fallbackText,
 }: {
   field: "e2bKey" | "githubToken";
+  /** The section's anchor, for links that send people straight to it. */
+  id?: string;
   title: string;
   blurb: string;
   getFrom: string;
@@ -412,7 +416,7 @@ function KeyField({
           : "You're on the server's key and have used this month's sandbox minutes. Add your own key to keep running.");
 
   return (
-    <Section title={title}>
+    <Section id={id} title={title}>
       <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
         {blurb} Get one at{" "}
         <a href={getFrom} target="_blank" rel="noreferrer" className="text-ink underline">

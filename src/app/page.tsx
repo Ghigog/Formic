@@ -37,7 +37,9 @@ export default async function BoardPage() {
     },
     new Date(),
   );
-  const [cards, presets, columnAgents, columnOverrides, sentinels, agentUsage, hasCi] = await Promise.all([
+  const provider = process.env.SANDBOX_PROVIDER ?? "local";
+  const credentials = credentialsForProject(project).catch(() => null);
+  const [cards, presets, columnAgents, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey] = await Promise.all([
     repo.boardCards(project.id),
     repo.listPresets(ownerScope(user)),
     repo.columnAgents(project.id),
@@ -48,11 +50,13 @@ export default async function BoardPage() {
     repo.agentTokensByPreset(window.since),
     // Whether review cards have checks to wait for. Unknown reads as yes,
     // so the card says CI is running, as it did before it could tell.
-    credentialsForProject(project)
-      .then((creds) => vcs(project.repoFullName, creds.githubToken).hasCi(project.baseBranch))
+    credentials
+      .then((creds) => (creds ? vcs(project.repoFullName, creds.githubToken).hasCi(project.baseBranch) : true))
       .catch(() => true),
+    // No agent can run without a sandbox, so the board says so before
+    // anyone starts a ticket rather than when the first one fails.
+    credentials.then((creds) => provider === "e2b" && !!creds && !creds.e2bKey),
   ]);
-  const provider = process.env.SANDBOX_PROVIDER ?? "local";
 
   // With no database the default project runs on the demo fixtures, so the
   // ambient bar and the card detail are seeded to match. Anywhere else both
@@ -68,6 +72,7 @@ export default async function BoardPage() {
       projectName={project.name}
       repoFullName={project.repoFullName}
       noCi={!hasCi}
+      noSandboxKey={noSandboxKey}
       autoMerge={project.autoMerge}
       baseBranch={project.baseBranch}
       initialPresets={presets}

@@ -116,6 +116,17 @@ describe("Board seeded from the saved board view", () => {
 });
 
 describe("Board, on a wide screen", () => {
+  it("points to the sandbox key in Settings when there is none", () => {
+    renderBoard([makeCard()], { noSandboxKey: true });
+    expect(screen.getByRole("alert")).toHaveTextContent("Agents can't run yet");
+    expect(screen.getByRole("link", { name: "Add it in Settings" })).toHaveAttribute("href", "/settings#sandbox");
+  });
+
+  it("says nothing about the sandbox key when there is one", () => {
+    renderBoard([makeCard()]);
+    expect(screen.queryByRole("link", { name: "Add it in Settings" })).not.toBeInTheDocument();
+  });
+
   it("renders all five columns", () => {
     renderBoard([makeCard()]);
     for (const name of ["Backlog", "To Do", "In Progress", "In Review", "Done"]) {
