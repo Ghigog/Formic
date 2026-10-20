@@ -148,7 +148,9 @@ export function TicketDrawer({
     setArchiving(true);
     setArchiveError(null);
     try {
-      const res = await fetch(`/api/tickets/${ticketId}/archive`, { method: "PATCH" });
+      const res = await fetch(`/api/tickets/${ticketId}/archive`, {
+        method: "PATCH",
+      });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setArchiveError(body.error ?? "Could not archive this ticket.");
@@ -194,8 +196,11 @@ export function TicketDrawer({
             ) : (
               <ProblemNotice card={card} className="mb-3" />
             ))}
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
+          <div
+            data-testid="drawer-header"
+            className="flex flex-col-reverse gap-2 sm:flex-row sm:items-start"
+          >
+            <div className="min-w-0 sm:flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-fg-subtle font-mono text-[10px]">
                   {card?.key ?? "TICKET"}
@@ -243,7 +248,9 @@ export function TicketDrawer({
               )}
               {card && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  {card.workType && <TypeTag type={card.workType} severity={card.bugSeverity} />}
+                  {card.workType && (
+                    <TypeTag type={card.workType} severity={card.bugSeverity} />
+                  )}
                   <StatusPill status={card.status} />
                   {card.workingSince && (
                     <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
@@ -275,18 +282,23 @@ export function TicketDrawer({
                 </div>
               )}
             </div>
-            {view && <TicketUsage usage={view.usage} />}
-            {view?.canStop && (
-              <StopButton ticketId={ticketId} onStopped={load} />
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="text-fg-muted hover:text-fg border-line rounded border px-1.5 py-0.5 text-[12px]"
+            <div
+              data-testid="drawer-actions"
+              className="flex items-center justify-end gap-2 sm:items-start"
             >
-              Close
-            </button>
+              {view && <TicketUsage usage={view.usage} />}
+              {view?.canStop && (
+                <StopButton ticketId={ticketId} onStopped={load} />
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="text-fg-muted hover:text-fg border-line rounded border px-1.5 py-0.5 text-[12px]"
+              >
+                Close
+              </button>
+            </div>
           </div>
 
           <StepIndicator
@@ -364,7 +376,10 @@ export function TicketDrawer({
             </div>
           )}
           {archiveError && (
-            <span role="alert" className="text-log-error w-full px-2 text-[11px]">
+            <span
+              role="alert"
+              className="text-log-error w-full px-2 text-[11px]"
+            >
               {archiveError}
             </span>
           )}
