@@ -76,6 +76,15 @@ describe("ColonyPopover Queens", () => {
     expect(screen.getByLabelText("Drag a Queen onto a card")).toBeTruthy();
   });
 
+  it("scrolls within the viewport on a short screen", () => {
+    stubQueens(2);
+    openPopoverAt(3 * XP_PER_LEVEL);
+    const cls = document.querySelector<HTMLElement>("[role=dialog]")!.className;
+    expect(cls).toContain("max-h-[calc(100dvh-5rem)]");
+    expect(cls).toContain("overflow-y-auto");
+    expect(cls).toContain("overscroll-contain");
+  });
+
   it("has no Queen to drag at 0", async () => {
     const fetchMock = stubQueens(0);
     openPopoverAt(XP_PER_LEVEL - 1);
