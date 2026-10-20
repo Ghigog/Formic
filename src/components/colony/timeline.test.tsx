@@ -55,6 +55,41 @@ describe("ColonyTimeline", () => {
     expect(screen.getByText("DONE-1")).toBeInTheDocument();
   });
 
+  describe("compact left column", () => {
+    const setup = async () => {
+      const cards = makeEpicWithChildren({ key: "E-1", title: "Epic heading" }, [
+        { key: "T-1", title: "Ticket heading", status: "running", storyPoints: 2, startedAt: new Date().toISOString() },
+      ]);
+      render(
+        <ColonyProvider storageKey="colony-test-timeline-compact" cards={cards} extras={{}}>
+          <Open />
+          <ColonyTimeline repoName="repo" />
+        </ColonyProvider>,
+      );
+      await userEvent.click(screen.getByText("open timeline"));
+    };
+
+    it("starts compact, expands to the detail and compacts again", async () => {
+      await setup();
+      expect(screen.getByText("E-1")).toBeInTheDocument();
+      expect(screen.getByText("T-1")).toBeInTheDocument();
+      expect(screen.queryByText("Epic heading")).not.toBeInTheDocument();
+      expect(screen.queryByText("Burndown")).not.toBeInTheDocument();
+      expect(screen.queryByText("Velocity")).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Expand details" }));
+      expect(screen.getByRole("button", { name: "Collapse details" })).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByText("Epic heading")).toBeInTheDocument();
+      expect(screen.getByText("Ticket heading")).toBeInTheDocument();
+      expect(screen.getByText("Burndown")).toBeInTheDocument();
+      expect(screen.getByText("Velocity")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Collapse details" }));
+      expect(screen.getByRole("button", { name: "Expand details" })).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByText("Epic heading")).not.toBeInTheDocument();
+    });
+  });
+
   describe("browsing earlier windows", () => {
     const setup = async (createdAt = new Date(Date.now() - 100 * 86_400_000).toISOString()) => {
       const cards = makeEpicWithChildren({ key: "E" }, [
