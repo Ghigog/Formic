@@ -177,19 +177,20 @@ export function SettingsForm({
                   </a>
                   . The free plan comes with $100 of credit.
                 </li>
-                <li>E2B may ask you to verify a card once. That checks the card; your runs use the free credit.</li>
                 <li>
                   In the{" "}
-                  <a href="https://e2b.dev/dashboard" target="_blank" rel="noreferrer" className="text-ink underline">
-                    E2B dashboard
+                  <a href="https://console.e2b.dev" target="_blank" rel="noreferrer" className="text-ink underline">
+                    E2B console
                   </a>
-                  , open API Keys and copy your key.
+                  , press Verify workspace. Your key won&apos;t work until you do. It&apos;s a one-time payment that
+                  comes back to you as credit.
                 </li>
+                <li>Open API Keys and copy your key.</li>
                 <li>Paste it below and save.</li>
               </ol>
               <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
                 It&apos;s unlikely to cost you anything: a run costs a fraction of a cent, so $100 lasts a long time.
-                To be sure, check the Usage page in your E2B dashboard now and then.
+                To be sure, check the Usage page in your E2B console now and then.
               </p>
             </>
           }

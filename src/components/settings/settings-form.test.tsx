@@ -96,8 +96,8 @@ describe("Sandbox key", () => {
   it("walks through getting a key, the free credit and where to check spend", () => {
     form({ hint: null, serverFallback: false });
     expect(screen.getByText(/free plan comes with \$100 of credit/)).toBeInTheDocument();
-    expect(screen.getByText(/may ask you to verify a card once/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "E2B dashboard" })).toHaveAttribute("href", "https://e2b.dev/dashboard");
+    expect(screen.getByText(/press Verify workspace/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "E2B console" })).toHaveAttribute("href", "https://console.e2b.dev");
     expect(screen.getByText(/check the Usage page/)).toBeInTheDocument();
   });
 
