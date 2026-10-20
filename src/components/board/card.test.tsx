@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { Column } from "./column";
 import { EMPTY_VIEW } from "./view";
 import { CardEnvContext } from "./card";
@@ -103,5 +103,49 @@ describe("a notice on a card", () => {
   it("shows neither for a ticket waiting on a dependency", () => {
     renderTodo(makeCard({ status: "waiting", blockedReason: "Waiting on PROT-1" }));
     expect(screen.queryByTestId("card-notice")).toBeNull();
+  });
+});
+
+describe("a card leaving its column", () => {
+  function renderLeaving(direction: "forward" | "back", leavingId?: string) {
+    const card = makeCard({ key: "PROT-01", status: "ready" });
+    const onAdvance = vi.fn();
+    const env = {
+      epics: new Map(),
+      nextFor: () => "in_progress" as const,
+      onAdvance,
+      leaving: { id: leavingId ?? card.id, direction },
+    };
+    renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+    return { onAdvance, arrow: screen.getByRole("button", { name: /^Move PROT-01/ }) };
+  }
+
+  it("slides right and fades going forward, left going back, on the inner wrapper", () => {
+    const { arrow } = renderLeaving("forward");
+    const li = arrow.closest("li")!;
+    expect(li.firstElementChild).toHaveClass("translate-x-full", "opacity-0");
+    expect(li).not.toHaveClass("translate-x-full");
+  });
+
+  it("slides left going back", () => {
+    const { arrow } = renderLeaving("back");
+    expect(arrow.closest("li")!.firstElementChild).toHaveClass("-translate-x-full");
+  });
+
+  it("ignores its arrow while leaving", () => {
+    const { arrow, onAdvance } = renderLeaving("forward");
+    fireEvent.click(arrow);
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("stays put when another card is the one leaving", () => {
+    const { arrow, onAdvance } = renderLeaving("forward", "other");
+    expect(arrow.closest("li")!.firstElementChild).not.toHaveClass("opacity-0");
+    fireEvent.click(arrow);
+    expect(onAdvance).toHaveBeenCalledOnce();
   });
 });

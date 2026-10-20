@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
@@ -438,5 +438,56 @@ describe("Board archived filter", () => {
     expect(screen.getByText("Old archived")).toBeInTheDocument();
     expect(screen.queryByText("Shipped one")).not.toBeInTheDocument();
     expect(onArchivedWanted).toHaveBeenLastCalledWith(true);
+  });
+});
+
+describe("Board, an arrow move on a phone", () => {
+  /** Answers each media query on its own: phone width, and reduced motion or not. */
+  const stubMedia = (reduced: boolean, phone = true) => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches: query.includes("reduced-motion") ? reduced : phone,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    });
+  };
+
+  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  afterEach(() => vi.useRealTimers());
+
+  const tap = async () => {
+    const arrow = await screen.findByRole("button", { name: "Move PROT-09 to To Do" });
+    fireEvent.click(arrow);
+    return arrow;
+  };
+
+  it("sends the move only after the card has slid out, and once for a double tap", async () => {
+    stubMedia(false);
+    const { onTransition } = renderBoard([makeCard({ key: "PROT-09", status: "draft" })]);
+    const arrow = await tap();
+
+    expect(onTransition).not.toHaveBeenCalled();
+    expect(arrow.closest("li")!.firstElementChild).toHaveClass("translate-x-full");
+    fireEvent.click(arrow);
+    act(() => void vi.advanceTimersByTime(250));
+    expect(onTransition).toHaveBeenCalledOnce();
+  });
+
+  it("sends the move at once with reduced motion", async () => {
+    stubMedia(true);
+    const { onTransition } = renderBoard([makeCard({ key: "PROT-09", status: "draft" })]);
+    await tap();
+    expect(onTransition).toHaveBeenCalledOnce();
+  });
+
+  it("sends the move at once on a wide screen", async () => {
+    stubMedia(false, false);
+    const { onTransition } = renderBoard([makeCard({ key: "PROT-09", status: "draft" })]);
+    await tap();
+    expect(onTransition).toHaveBeenCalledOnce();
   });
 });
