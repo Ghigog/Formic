@@ -36,8 +36,9 @@ sign up, and update this table if they have changed.
 
 | Plan (Linux, dual-stack) | Per month | Fit |
 | :-- | :-- | :-- |
-| 1 GB memory | $7 | Works, like the e2-micro, with the 2 GB swap file `setup.sh` adds. |
-| **2 GB memory** | **$12** | **Recommended.** Agent runs fit without leaning on swap. |
+| 512 MB memory | $5 | Too small. The app, Caddy and a deploy's migrations together outgrow it. |
+| **1 GB memory** | **$7** | **Start here.** The same memory as the e2-micro, with the 2 GB swap file `setup.sh` adds. Agent work runs in E2B and GitHub Actions, not on this server. |
+| 2 GB memory | $12 | If the app is often swapping (see Resizing below). |
 
 Pick a **dual-stack** plan (IPv4 and IPv6). The cheaper IPv6-only plans cannot
 be reached by everyone, and `setup.sh` looks up the server's IPv4 address.
@@ -75,7 +76,7 @@ Open https://lightsail.aws.amazon.com and **Create instance**:
 - **Region:** the one nearest you and your database. Keeping the app and the
   database in the same region keeps every query fast.
 - **Platform:** Linux/Unix. **Blueprint:** OS Only > **Ubuntu 24.04 LTS**.
-- **Plan:** Dual-stack, 2 GB ($12). See [Cost](#cost).
+- **Plan:** Dual-stack, 1 GB ($7). See [Cost](#cost).
 - **Name:** `formic`.
 
 Create it and wait for it to show **Running**.
@@ -162,7 +163,8 @@ so a lost instance is rebuilt by repeating steps 2 to 5. Keep a copy of the
 `.env` values somewhere safe (a password manager). Lightsail's automatic
 snapshots are optional and cost extra.
 
-**Resizing.** Lightsail cannot change an instance's plan in place. Take a
+**Resizing.** If `free -h` shows swap steadily in use or the app restarts
+under load, move up a plan. Lightsail cannot change an instance's plan in place. Take a
 snapshot, create a larger instance from it, and move the static IP across. The
 address, and so the HTTPS hostname and `DEPLOY_HOST`, stay the same.
 
