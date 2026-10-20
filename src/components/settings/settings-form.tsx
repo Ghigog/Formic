@@ -160,12 +160,40 @@ export function SettingsForm({
 
         <KeyField
           field="e2bKey"
+          id="sandbox"
           title="Sandbox (E2B)"
-          blurb="The cloud machines your coding agents work in, whichever AI provider they use."
+          blurb="The cloud machines your coding agents work in, whichever AI provider they use. All you need is an E2B API key."
           getFrom="https://e2b.dev/dashboard"
           getFromLabel="e2b.dev/dashboard → API Keys"
           placeholder="e2b_…"
           state={e2b}
+          steps={
+            <>
+              <ol className="text-muted mb-2.5 list-decimal space-y-1 pl-5 text-[12px] leading-[1.5]">
+                <li>
+                  Sign up at{" "}
+                  <a href="https://e2b.dev" target="_blank" rel="noreferrer" className="text-ink underline">
+                    e2b.dev
+                  </a>
+                  . The free plan comes with $100 of credit.
+                </li>
+                <li>
+                  In the{" "}
+                  <a href="https://console.e2b.dev" target="_blank" rel="noreferrer" className="text-ink underline">
+                    E2B console
+                  </a>
+                  , press Verify workspace if it asks you to: your key won&apos;t work until you do. It&apos;s a
+                  one-time payment that comes back to you as credit. Older workspaces may not be asked.
+                </li>
+                <li>Open API Keys and copy your key.</li>
+                <li>Paste it below and save.</li>
+              </ol>
+              <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+                It&apos;s unlikely to cost you anything: a run costs a fraction of a cent, so $100 lasts a long time.
+                To be sure, check the Usage page in your E2B console now and then.
+              </p>
+            </>
+          }
         />
 
         <RunTimeBudgetSection initial={runTimeBudget} tokens={limits?.tokens} attempts={limits?.attempts} />
@@ -337,9 +365,9 @@ function DangerZone() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="bg-card border-line rounded-xl border p-4">
+    <section id={id} className="bg-card border-line scroll-mt-4 rounded-xl border p-4">
       <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">
         {title}
       </h2>
@@ -350,6 +378,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function KeyField({
   field,
+  id,
   title,
   blurb,
   getFrom,
@@ -357,8 +386,11 @@ function KeyField({
   placeholder,
   state,
   fallbackText,
+  steps,
 }: {
   field: "e2bKey" | "githubToken";
+  /** The section's anchor, for links that send people straight to it. */
+  id?: string;
   title: string;
   blurb: string;
   getFrom: string;
@@ -367,6 +399,8 @@ function KeyField({
   state: KeyState;
   /** Overrides the "without one…" line under the field. */
   fallbackText?: string;
+  /** How to get a key, step by step, in place of the one-line "Get one at". */
+  steps?: React.ReactNode;
 }) {
   const [hint, setHint] = useState(state.hint);
   const [editing, setEditing] = useState(!state.hint);
@@ -412,14 +446,20 @@ function KeyField({
           : "You're on the server's key and have used this month's sandbox minutes. Add your own key to keep running.");
 
   return (
-    <Section title={title}>
+    <Section id={id} title={title}>
       <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
-        {blurb} Get one at{" "}
-        <a href={getFrom} target="_blank" rel="noreferrer" className="text-ink underline">
-          {getFromLabel}
-        </a>
-        .
+        {blurb}
+        {!steps && (
+          <>
+            {" "}Get one at{" "}
+            <a href={getFrom} target="_blank" rel="noreferrer" className="text-ink underline">
+              {getFromLabel}
+            </a>
+            .
+          </>
+        )}
       </p>
+      {steps}
 
       {editing ? (
         <form
