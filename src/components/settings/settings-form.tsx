@@ -182,8 +182,8 @@ export function SettingsForm({
                   <a href="https://console.e2b.dev" target="_blank" rel="noreferrer" className="text-ink underline">
                     E2B console
                   </a>
-                  , press Verify workspace. Your key won&apos;t work until you do. It&apos;s a one-time payment that
-                  comes back to you as credit.
+                  , press Verify workspace if it asks you to: your key won&apos;t work until you do. It&apos;s a
+                  one-time payment that comes back to you as credit. Older workspaces may not be asked.
                 </li>
                 <li>Open API Keys and copy your key.</li>
                 <li>Paste it below and save.</li>
