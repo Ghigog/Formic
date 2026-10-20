@@ -11,7 +11,7 @@ import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
 import { EMPTY_VIEW, type ColumnView } from "./view";
 import { loadBoardView } from "./view-setting";
-import { adjacentColumn, ownsGesture, swipeDirection, type SwipeDirection } from "./swipe";
+import { adjacentColumn, ownsGesture, slideTowards, swipeDirection, type SwipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
 import { CardEnvContext, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
@@ -333,6 +333,12 @@ export function Board({
     setActiveTab(next);
   };
 
+  const jumpTo = (col: ColumnId) => {
+    if (col === activeTab) return;
+    setSlide(slideTowards(activeTab, col));
+    setActiveTab(col);
+  };
+
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
 
   const columnElements = visibleColumns.map((col) => (
@@ -500,14 +506,23 @@ export function Board({
               className={cn(
                 "inline-flex h-9 shrink-0 items-center rounded-full text-[13px] whitespace-nowrap transition-[color,background-color,padding] duration-200 ease-out",
                 active
-                  ? "bg-anthracite text-cream px-3.5 font-semibold"
-                  : "border-line bg-card text-muted border px-3 font-medium",
+                  ? "bg-anthracite text-cream font-semibold"
+                  : "border-line bg-card text-muted border font-medium",
               )}
             >
-              {COLUMN_LABELS[col]}{" "}
-              <span className="ml-1 tabular-nums">
-                {columnCount(byColumn[col], col)}
-              </span>
+              <button
+                type="button"
+                onClick={() => jumpTo(col)}
+                className={cn(
+                  "focus-visible:ring-anthracite h-full rounded-full focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+                  active ? "px-3.5" : "px-3",
+                )}
+              >
+                {COLUMN_LABELS[col]}{" "}
+                <span className="ml-1 tabular-nums">
+                  {columnCount(byColumn[col], col)}
+                </span>
+              </button>
             </li>
           );
         })}
