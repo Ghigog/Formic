@@ -292,7 +292,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
           </div>
         </div>
 
-        <div className={`border-line bg-card grid ${compact ? "grid-cols-[90px_minmax(0,1fr)]" : "grid-cols-[300px_minmax(0,1fr)]"} overflow-hidden rounded-xl border`}>
+        <div className={`border-line bg-card grid ${compact ? "grid-cols-[90px_minmax(0,1fr)]" : "grid-cols-[360px_minmax(0,1fr)]"} overflow-hidden rounded-xl border`}>
           {/* Left: the burndown's numbers and the row labels. */}
           <div className="border-line flex min-w-0 flex-col border-r">
             <div className={`border-line box-border flex h-11 shrink-0 items-center justify-between border-b ${compact ? "pr-1 pl-3" : "px-4"}`}>
