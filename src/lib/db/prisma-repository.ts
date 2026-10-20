@@ -53,8 +53,9 @@ import type {
   ColumnOverrides,
   PlanStep,
   WorkType,
+  BugSeverity,
 } from "@/lib/domain/entities";
-import { planStepSchema } from "@/lib/domain/entities";
+import { planStepSchema, severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
@@ -75,6 +76,7 @@ type EpicRow = {
   misplacedReason: string | null;
   standalone: boolean;
   workType: WorkType | null;
+  bugSeverity: BugSeverity | null;
   rerouteFrom: ColumnId | null;
   rerouteReason: string | null;
   runnerJob: string | null;
@@ -407,6 +409,7 @@ export class PrismaRepository implements Repository {
         misplacedReason: true,
         standalone: true,
         workType: true,
+        bugSeverity: true,
         rerouteFrom: true,
         rerouteReason: true,
         runnerJob: true,
@@ -442,6 +445,7 @@ export class PrismaRepository implements Repository {
         needsHuman: true,
         archived: true,
         workType: true,
+        bugSeverity: true,
         runnerJob: true,
         runnerJobAt: true,
         fileScope: true,
@@ -488,6 +492,7 @@ export class PrismaRepository implements Repository {
         epicId: null,
         standalone: epic.standalone,
         workType: epic.workType,
+        bugSeverity: epic.bugSeverity,
         rerouteFrom: epic.rerouteFrom,
         rerouteReason: epic.rerouteReason,
         size: null,
@@ -538,6 +543,7 @@ export class PrismaRepository implements Repository {
       needsHuman: t.needsHuman,
       archived: t.archived,
       workType: t.workType,
+      bugSeverity: t.bugSeverity,
       agentRole: live?.role ?? jobRole,
       model: live?.model ?? null,
       workingSince: since?.toISOString() ?? null,
@@ -575,7 +581,7 @@ export class PrismaRepository implements Repository {
     const tickets = await db.ticket.findMany({
       where: { epic: { projectId }, archived: true, scoutOf: null },
       orderBy: { position: "asc" },
-      select: { id: true, key: true, title: true, position: true, archived: true, workType: true },
+      select: { id: true, key: true, title: true, position: true, archived: true, workType: true, bugSeverity: true },
     });
     // The archive list is not the board: only what names the ticket.
     return tickets.map((t) => ({
@@ -591,6 +597,7 @@ export class PrismaRepository implements Repository {
       size: null,
       archived: t.archived,
       workType: t.workType,
+      bugSeverity: t.bugSeverity,
       agentRole: null,
       model: null,
       fileScope: [],
@@ -615,6 +622,7 @@ export class PrismaRepository implements Repository {
         rawRequest: input.rawRequest,
         position: input.position,
         workType: input.workType ?? null,
+        bugSeverity: severityFor(input.workType, input.bugSeverity),
         status: "draft",
         stage: 1,
       },
@@ -632,6 +640,7 @@ export class PrismaRepository implements Repository {
       epicId: null,
       standalone: false,
       workType: epic.workType,
+      bugSeverity: epic.bugSeverity,
       rerouteFrom: null,
       rerouteReason: null,
       size: null,
@@ -727,6 +736,7 @@ export class PrismaRepository implements Repository {
             storyPoints: input.storyPoints ?? null,
             needsHuman: input.needsHuman ?? null,
             workType: input.workType ?? null,
+            bugSeverity: severityFor(input.workType, input.bugSeverity),
             position: input.position,
             status: input.dependsOnKeys.length === 0 ? "ready" : "waiting",
             stage: 3,
@@ -764,6 +774,7 @@ export class PrismaRepository implements Repository {
         storyPoints: t.storyPoints,
         needsHuman: t.needsHuman,
         workType: t.workType,
+        bugSeverity: t.bugSeverity,
         agentRole: null,
         model: null,
         fileScope: t.fileScope,
@@ -1189,11 +1200,21 @@ export class PrismaRepository implements Repository {
       }
     }
 
+    // Only a bug has a severity: a type other than bug clears it.
+    let severity = {};
+    if (rest.workType !== undefined || rest.bugSeverity !== undefined) {
+      const current = rest.workType === undefined
+        ? await db.ticket.findUnique({ where: { id: ticketId }, select: { workType: true } })
+        : null;
+      severity = { bugSeverity: severityFor(rest.workType ?? current?.workType, rest.bugSeverity) };
+    }
+
     await db.ticket.update({
       where: { id: ticketId },
       data: {
         ...rest,
         ...merge,
+        ...severity,
         ...(rest.fileScope !== undefined ? { fileScope: normalizeScope(rest.fileScope) } : {}),
         ...(plan !== undefined ? { plan: plan as never } : {}),
         ...(archived !== undefined ? { archived } : {}),
@@ -1240,6 +1261,7 @@ export class PrismaRepository implements Repository {
             size: parent.size,
             storyPoints: parent.storyPoints,
             workType: parent.workType,
+            bugSeverity: parent.bugSeverity,
             position: parent.position,
             // Inert until the parent starts and sends them out.
             status: "ready",
@@ -1821,6 +1843,7 @@ type TicketRow = {
   autoEscalatedAt: Date | null;
   needsHuman: string | null;
   workType: WorkType | null;
+  bugSeverity: BugSeverity | null;
   scoutOf: string | null;
   scoutBrief: string | null;
   scoutPresetId: string | null;
@@ -1922,6 +1945,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     autoEscalatedAt: row.autoEscalatedAt?.toISOString() ?? null,
     needsHuman: row.needsHuman,
     workType: row.workType,
+    bugSeverity: row.bugSeverity,
     scoutOf: row.scoutOf,
     scoutBrief: row.scoutBrief,
     scoutPresetId: row.scoutPresetId,

@@ -13,6 +13,7 @@ import type {
   ColumnOverrides,
   PlanStep,
   WorkType,
+  BugSeverity,
 } from "@/lib/domain/entities";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
@@ -29,6 +30,7 @@ export interface CreateEpicInput {
   rawRequest: string;
   position: number;
   workType?: WorkType | null;
+  bugSeverity?: BugSeverity | null;
 }
 
 export interface CreateTicketInput {
@@ -44,6 +46,7 @@ export interface CreateTicketInput {
   position: number;
   dependsOnKeys: string[];
   workType?: WorkType | null;
+  bugSeverity?: BugSeverity | null;
   /** Work for a person, not an agent: why. */
   needsHuman?: string | null;
 }
@@ -299,8 +302,10 @@ export interface TicketDetail {
   needsHuman: string | null;
   /** When story points were auto-escalated (ISO), so it happens once. Null if never. */
   autoEscalatedAt: string | null;
-  /** Bug or spike, as the owner chose. Null for neither. */
+  /** The kind of work, as the owner chose. Null for untyped. */
   workType: WorkType | null;
+  /** How bad a bug is. Null unless workType is bug. */
+  bugSeverity: BugSeverity | null;
   /** On a scout: the ticket it scouts for (docs/colony.md). Null on any other ticket. */
   scoutOf: string | null;
   /** On a scout: the approach it was told to take. */
@@ -321,8 +326,9 @@ export interface TicketUpdate {
   fileScope?: string[];
   /** 1, 2, 3, 5, 8 or 13; null clears the estimate. */
   storyPoints?: number | null;
-  /** Bug or spike; null clears it. */
+  /** The ticket type; null clears it. A type other than bug clears the severity. */
   workType?: WorkType | null;
+  bugSeverity?: BugSeverity | null;
   scopeRequest?: string[];
   needsHuman?: string | null;
   status?: TicketStatus;
