@@ -642,6 +642,8 @@ export interface Repository {
     ref: { epicId: string } | { ticketId: string },
   ): Promise<void>;
   deleteAttachments(ids: string[]): Promise<void>;
+  /** Moves a ticket's attachments to another, such as the ticket drafted from a placeholder. */
+  moveTicketAttachments(fromTicketId: string, toTicketId: string): Promise<void>;
   /** Positions in a column, ascending, for fractional index placement. */
   columnPositions(projectId: string, column: ColumnId): Promise<number[]>;
   cardById(id: string): Promise<BoardCard | null>;
