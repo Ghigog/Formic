@@ -156,6 +156,28 @@ function contract(name: string, make: () => Repository) {
         expect([typeOf(epic.id), typeOf(plain.id), typeOf(t!.id), typeOf(u!.id)]).toEqual(["bug", null, "spike", null]);
       });
 
+      it("keeps a bug's severity and clears it for any other type", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1, workType: "bug", bugSeverity: "high" });
+        const [bug, feature] = await repo.createTickets([
+          ticket(epic.id, "S-1", { workType: "bug", bugSeverity: "high" }),
+          ticket(epic.id, "S-2", { position: 2, workType: "feature", bugSeverity: "low" }),
+        ]);
+        expect([epic.bugSeverity, bug!.bugSeverity, feature!.bugSeverity ?? null]).toEqual(["high", "high", null]);
+        const cards = await repo.boardCards(p.id);
+        const sev = (id: string) => cards.find((c) => c.id === id)?.bugSeverity ?? null;
+        expect([sev(epic.id), sev(bug!.id), sev(feature!.id)]).toEqual(["high", "high", null]);
+
+        await repo.updateTicket(bug!.id, { bugSeverity: "critical" });
+        await repo.updateTicket(feature!.id, { bugSeverity: "low" });
+        let after = await repo.boardCards(p.id);
+        expect([bug!.id, feature!.id].map((id) => after.find((c) => c.id === id)?.bugSeverity ?? null)).toEqual(["critical", null]);
+
+        await repo.updateTicket(bug!.id, { workType: "task" });
+        after = await repo.boardCards(p.id);
+        expect(after.find((c) => c.id === bug!.id)?.bugSeverity ?? null).toBeNull();
+      });
+
       it("sets and clears a ticket's work type", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });

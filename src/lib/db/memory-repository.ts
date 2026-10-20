@@ -46,6 +46,7 @@ import type {
   ColumnOverrides,
   PlanStep,
 } from "@/lib/domain/entities";
+import { severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
@@ -638,6 +639,7 @@ export class MemoryRepository implements Repository {
       epicId: null,
       standalone: false,
       workType: input.workType ?? null,
+      bugSeverity: severityFor(input.workType, input.bugSeverity),
       rerouteFrom: null,
       rerouteReason: null,
       size: null,
@@ -695,6 +697,7 @@ export class MemoryRepository implements Repository {
         storyPoints: input.storyPoints ?? null,
         needsHuman: input.needsHuman ?? null,
         workType: input.workType ?? null,
+        bugSeverity: severityFor(input.workType, input.bugSeverity),
         agentRole: null,
         model: null,
         fileScope: normalizeScope(input.fileScope),
@@ -1085,7 +1088,10 @@ export class MemoryRepository implements Repository {
     const card = s.cards.get(ticketId);
     if (!card) return;
 
-    if (update.workType !== undefined) card.workType = update.workType;
+    if (update.workType !== undefined || update.bugSeverity !== undefined) {
+      if (update.workType !== undefined) card.workType = update.workType;
+      card.bugSeverity = severityFor(card.workType, update.bugSeverity !== undefined ? update.bugSeverity : card.bugSeverity);
+    }
     if (update.status !== undefined && update.status !== card.status) {
       card.updatedAt = new Date().toISOString();
       if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
@@ -1752,6 +1758,7 @@ function toDetail(
     autoEscalatedAt: extras?.autoEscalatedAt ?? null,
     needsHuman: card.needsHuman ?? null,
     workType: card.workType ?? null,
+    bugSeverity: card.bugSeverity ?? null,
     scoutOf: extras?.scoutOf ?? null,
     scoutBrief: extras?.scoutBrief ?? null,
     scoutPresetId: extras?.scoutPresetId ?? null,
