@@ -188,6 +188,15 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The board behind must not scroll while the screen is up.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   // Focus moves into the report modal when it opens.
   useEffect(() => {
     if (reportId)
@@ -380,7 +389,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
       ref={root}
       role="region"
       aria-label="Sentinels"
-      className="bg-cream fixed top-14 right-0 bottom-14 left-0 z-[60] box-border overflow-hidden px-4 pt-5 pb-6 md:top-16 md:px-6"
+      className="bg-cream fixed top-14 right-0 bottom-14 left-0 z-[60] box-border overflow-hidden overscroll-none px-4 pt-5 pb-6 md:top-16 md:px-6"
     >
       <div className="mx-auto flex h-full max-w-[1640px] flex-col gap-4">
         <h1 className="sr-only">Sentinels</h1>
@@ -450,7 +459,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             role="list"
             aria-label="Sentinels"
             onScroll={onScroll}
-            className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain px-[calc(50%-132px)] pb-2 md:snap-none md:px-1"
+            className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-contain touch-pan-x px-[calc(50%-132px)] pb-2 md:snap-none md:px-1"
           >
             {SENTINELS.map((x, i) => (
               <Card
