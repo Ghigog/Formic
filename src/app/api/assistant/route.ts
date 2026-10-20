@@ -3,9 +3,11 @@ import { z } from "zod";
 import { launch } from "@/lib/agents/pipeline";
 import { answer, cancelPending } from "@/lib/assistant/turn";
 import { collectCliRuns } from "@/lib/runner/runner";
-import { currentUser } from "@/lib/auth/user";
+import { asSignedIn, currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
+import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
+import { assistantPick } from "@/lib/agents/board-agents";
 import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +20,11 @@ async function board() {
   if (!user) return { error: Response.json({ error: "Sign in first." }, { status: 401 }) };
   const project = await activeProject();
   if (!project) return { error: noProject() };
-  return { project };
+  return { project, user };
 }
 
-async function state(projectId: string) {
+async function state(project: ProjectSummary, user: UserRecord) {
+  const projectId = project.id;
   const repo = repository();
   // An answer from GitHub Actions is collected here too, not only when the
   // webhook arrives. Never fails the read.
@@ -29,7 +32,7 @@ async function state(projectId: string) {
     console.warn("[formic] could not check the agents' runs:", e),
   );
   return {
-    presetId: await repo.assistantAgent(projectId),
+    presetId: await assistantPick(project, user),
     messages: await repo.assistantMessages(projectId),
   };
 }
@@ -38,11 +41,12 @@ async function state(projectId: string) {
 export async function GET() {
   const found = await board();
   if ("error" in found) return found.error;
-  return Response.json(await state(found.project.id));
+  return Response.json(await state(found.project, found.user));
 }
 
 /** Asks the assistant something. The answer arrives on a later GET. */
-export async function POST(req: Request) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: Request) {
   const refused = limited(req, RUN, "run-start");
   if (refused) return refused;
 
@@ -66,7 +70,7 @@ export async function POST(req: Request) {
     status: "pending",
   });
   launch(() => answer(projectId, reply.id), `assistant answer ${reply.id}`);
-  return Response.json(await state(projectId));
+  return Response.json(await state(found.project, found.user));
 }
 
 /** Stops waiting for the pending answer; a new question is accepted after. */
@@ -74,7 +78,7 @@ export async function PATCH() {
   const found = await board();
   if ("error" in found) return found.error;
   await cancelPending(found.project.id);
-  return Response.json(await state(found.project.id));
+  return Response.json(await state(found.project, found.user));
 }
 
 /** Starts the conversation over. */
@@ -82,5 +86,5 @@ export async function DELETE() {
   const found = await board();
   if ("error" in found) return found.error;
   await repository().clearAssistant(found.project.id);
-  return Response.json(await state(found.project.id));
+  return Response.json(await state(found.project, found.user));
 }

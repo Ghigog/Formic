@@ -4,12 +4,14 @@ import { Welcome } from "@/components/board/welcome";
 import { hasDatabase, repository } from "@/lib/db";
 import { FIXTURE_EXTRAS, FIXTURE_STATS } from "@/lib/fixtures/board";
 import { activeProject } from "@/lib/board/project";
-import { currentUser, ownerScope } from "@/lib/auth/user";
+import { currentUser } from "@/lib/auth/user";
 import { tokenWindow } from "@/lib/token-window";
 import { authMode } from "@/lib/auth/session";
 import { sentinelsFor } from "@/lib/sentinels/service";
 import type { Account } from "@/components/board/account-menu";
 import { credentialsForProject } from "@/lib/auth/credentials";
+import { withActor } from "@/lib/auth/actor";
+import { agentView } from "@/lib/agents/board-agents";
 import { vcs } from "@/lib/vcs";
 
 export const dynamic = "force-dynamic";
@@ -38,11 +40,11 @@ export default async function BoardPage() {
     new Date(),
   );
   const provider = process.env.SANDBOX_PROVIDER ?? "local";
-  const credentials = credentialsForProject(project).catch(() => null);
-  const [cards, presets, columnAgents, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey] = await Promise.all([
+  // The viewer's own keys: on a shared board, theirs are what their runs use.
+  const credentials = withActor(user.id, () => credentialsForProject(project)).catch(() => null);
+  const [cards, { presets, columns: columnAgents }, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey] = await Promise.all([
     repo.boardCards(project.id),
-    repo.listPresets(ownerScope(user)),
-    repo.columnAgents(project.id),
+    agentView(project, user),
     repo.columnOverrides(project.id),
     sentinelsFor(project.id),
     // What each agent has used, in tokens: counted per agent since the

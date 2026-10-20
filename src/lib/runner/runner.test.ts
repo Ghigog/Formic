@@ -928,7 +928,9 @@ describe("taking a CLI agent's work", () => {
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.blockedReason).toContain("ENOSPC: no space left on device");
+    const [short, ...detail] = after.blockedReason!.split("\n");
+    expect(short).toMatch(/stopped before finishing$/);
+    expect(detail.join("\n")).toContain('The last thing it said: "Error: ENOSPC: no space left on device"');
   });
 
   it("closes a ticket that was already done, with no pull request", async () => {

@@ -28,6 +28,8 @@ interface ProjectSetting {
   name: string;
   autoMerge: boolean;
   autoEscalate: boolean;
+  /** Whether people this board is shared with may run on the owner's keys. */
+  shareKeys?: boolean;
   /** The saved agent that runs scouts; null follows the column. */
   scoutPresetId?: string | null;
 }
@@ -146,6 +148,19 @@ export function SettingsForm({
           </Section>
         )}
 
+        {project && account.signedIn && (
+          <Section title="Sharing">
+            <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+              Applies to {project.name}. Anyone who can reach its repository on
+              GitHub shares this board and sees every card. Their agents run on
+              their own keys. On, anyone who hasn&apos;t set up their own agents
+              or sandbox key runs on yours instead, and you pay for it. Only you
+              see this.
+            </p>
+            <ShareKeysToggle project={project} />
+          </Section>
+        )}
+
         {project && (
           <ScoutAgentSection
             projectId={project.id}
@@ -249,6 +264,43 @@ function AutoMergeToggle({ project }: { project: ProjectSetting }) {
           onChange={(e) => void change(e.target.checked)}
         />
         {on ? "Auto-merge when review is finished" : "Merge when move to done"}
+      </label>
+      {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
+    </div>
+  );
+}
+
+function ShareKeysToggle({ project }: { project: ProjectSetting }) {
+  const [on, setOn] = useState(!!project.shareKeys);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function change(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, shareKeys: next }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      setError("That did not save. Try again.");
+      return;
+    }
+    setOn(next);
+  }
+
+  return (
+    <div>
+      <label className="text-ink flex items-center gap-2 text-[13px]">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void change(e.target.checked)}
+        />
+        Let others use my keys
       </label>
       {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>

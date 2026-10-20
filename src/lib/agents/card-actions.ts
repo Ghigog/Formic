@@ -1,5 +1,6 @@
 import "server-only";
 
+import { startedBy } from "@/lib/auth/actor";
 import { z } from "zod";
 
 import { decomposeEpic, launch, runProductAgent } from "./pipeline";
@@ -127,6 +128,8 @@ export async function applyCardAction(
   try {
     const card = await repository().cardById(cardId);
     if (!card) return "This card no longer exists.";
+    // Whoever directs a card from its chat now drives it: its agents run on their keys.
+    await startedBy(cardId);
     switch (action.type) {
       case "move":
         return await move(projectId, card, action.to);

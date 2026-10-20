@@ -100,9 +100,9 @@ describe("/api/settings autoMerge", () => {
 
   it("is off for a new project and saved on update for the owner", async () => {
     const p = await project(userId);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false, autoEscalate: false, scoutPresetId: null });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false, autoEscalate: false, shareKeys: false, scoutPresetId: null });
     expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(200);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true, autoEscalate: false, scoutPresetId: null });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true, autoEscalate: false, shareKeys: false, scoutPresetId: null });
   });
 
   it("refuses someone who does not own the project and leaves the flag", async () => {

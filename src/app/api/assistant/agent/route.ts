@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
-import { repository } from "@/lib/db";
+import { assignAgent } from "@/lib/agents/board-agents";
 import { ownsPreset } from "../../agents/presets/validate";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,6 @@ export async function PUT(req: Request) {
   const project = await activeProject();
   if (!project) return noProject();
 
-  await repository().setAssistantAgent(project.id, body.data.presetId);
+  await assignAgent(project, user, "assistant", body.data.presetId);
   return Response.json({ presetId: body.data.presetId });
 }

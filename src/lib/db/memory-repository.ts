@@ -166,6 +166,12 @@ interface Store {
   columnAgents: Map<string, string>;
   /** `${projectId}:${column}` to that column agent's override. */
   columnOverrides: Map<string, ColumnOverride>;
+  /** `${projectId}:${userId}` for each person a project is shared with. */
+  members: Set<string>;
+  /** `${projectId}:${userId}:${slot}` to a member's own preset id. */
+  memberAgents: Map<string, string>;
+  /** Card id to whose keys its work runs on. */
+  actors: Map<string, string>;
   assistant: AssistantMessage[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
@@ -195,6 +201,9 @@ function store(): Store {
     existing.audits ??= [];
     existing.platformUsage ??= new Map();
     existing.leases ??= new Map();
+    existing.members ??= new Set();
+    existing.memberAgents ??= new Map();
+    existing.actors ??= new Map();
     return existing;
   }
   const project: ProjectSummary = {
@@ -209,6 +218,7 @@ function store(): Store {
     colonyReserve: 0,
     autoScout: false,
     scoutPresetId: null,
+    shareKeys: false,
   };
   const s: Store = {
     project,
@@ -237,6 +247,9 @@ function store(): Store {
     users: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
+    members: new Set(),
+    memberAgents: new Map(),
+    actors: new Map(),
     assistant: [],
     cardChat: [],
     attachments: new Map(),
@@ -452,6 +465,54 @@ export class MemoryRepository implements Repository {
     return store().projects.get(projectId) ?? null;
   }
 
+  async addMember(projectId: string, userId: string): Promise<void> {
+    store().members.add(`${projectId}:${userId}`);
+  }
+
+  async isMember(projectId: string, userId: string): Promise<boolean> {
+    return store().members.has(`${projectId}:${userId}`);
+  }
+
+  async memberProjects(userId: string): Promise<ProjectSummary[]> {
+    const s = store();
+    return [...s.projects.values()].filter((p) => s.members.has(`${p.id}:${userId}`));
+  }
+
+  async memberAgents(projectId: string, userId: string): Promise<Record<string, string>> {
+    const prefix = `${projectId}:${userId}:`;
+    const out: Record<string, string> = {};
+    for (const [k, v] of store().memberAgents) if (k.startsWith(prefix)) out[k.slice(prefix.length)] = v;
+    return out;
+  }
+
+  async setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void> {
+    const key = `${projectId}:${userId}:${slot}`;
+    if (presetId === null) store().memberAgents.delete(key);
+    else store().memberAgents.set(key, presetId);
+  }
+
+  async setShareKeys(projectId: string, shareKeys: boolean): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) project.shareKeys = shareKeys;
+  }
+
+  async cardActor(cardId: string): Promise<string | null> {
+    const s = store();
+    const own = s.actors.get(cardId);
+    if (own) return own;
+    const card = s.cards.get(cardId);
+    if (!card || card.kind !== "ticket") return null;
+    const parent = s.ticketExtras.get(cardId)?.scoutOf;
+    const fromParent = parent ? s.actors.get(parent) : undefined;
+    if (fromParent) return fromParent;
+    return card.epicId ? (s.actors.get(card.epicId) ?? null) : null;
+  }
+
+  async setCardActor(cardId: string, userId: string | null): Promise<void> {
+    if (userId === null) store().actors.delete(cardId);
+    else store().actors.set(cardId, userId);
+  }
+
   async reservations(repoFullName: string): Promise<Reservation[]> {
     const s = store();
     const projects = new Map((await this.projectsForRepo(repoFullName)).map((p) => [p.id, p]));
@@ -516,6 +577,7 @@ export class MemoryRepository implements Repository {
       colonyReserve: 0,
       autoScout: false,
       scoutPresetId: null,
+      shareKeys: false,
     };
     s.projects.set(project.id, project);
     return project;

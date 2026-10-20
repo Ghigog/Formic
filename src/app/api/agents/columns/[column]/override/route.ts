@@ -3,6 +3,7 @@ import { repository } from "@/lib/db";
 import { activeProject, noProject } from "@/lib/board/project";
 import { currentUser } from "@/lib/auth/user";
 import { COLUMNS } from "@/lib/domain/status";
+import { ownsBoard } from "@/lib/agents/board-agents";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,9 @@ export async function PUT(
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
   const project = await activeProject();
   if (!project) return noProject();
+  if (!ownsBoard(project, user)) {
+    return Response.json({ error: "Only the board's owner sets its column limits." }, { status: 403 });
+  }
   const repo = repository();
   if (!(await repo.setColumnOverride(project.id, col.data, body.data))) {
     return Response.json({ error: "Pick an agent for that column first." }, { status: 404 });

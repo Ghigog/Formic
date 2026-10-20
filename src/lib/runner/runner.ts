@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withCardActor } from "@/lib/auth/actor";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
@@ -319,7 +320,13 @@ export async function whyItFailed(
   const diagnosis = diagnose(text, label);
   if (!diagnosis) {
     const last = lastWords(text);
-    return last ? failure("The run failed", last, log) : plain;
+    return last
+      ? failure(
+          `${label} stopped before finishing`,
+          `${label} ran into an error and stopped before the work was done. The last thing it said: "${last}"`,
+          log,
+        )
+      : plain;
   }
   if (diagnosis.kind === "limit" && diagnosis.until && found) {
     await repo.setPresetLimit(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
@@ -330,7 +337,12 @@ export async function whyItFailed(
       note: diagnosis.message,
     });
   }
-  const type = { limit: "Usage limit reached", credit: "Out of credit", auth: "Sign-in rejected" }[diagnosis.kind];
+  const type = {
+    limit: "Usage limit reached",
+    credit: "Out of credit",
+    auth: "Sign-in rejected",
+    silent: `${label} never reached its model`,
+  }[diagnosis.kind];
   return failure(type, diagnosis.message, log);
 }
 
@@ -1546,7 +1558,13 @@ async function completeCliCardChat(
   await finishCliCardChat(message.id, answer);
 }
 
+/** A finished CLI run, taken on the keys of whoever set its card going. */
 export async function completeCliRun(projectId: string, result: RunnerResult): Promise<void> {
+  const card = cardOfJob(result.job);
+  return card ? withCardActor(card, () => takeCliRun(projectId, result)) : takeCliRun(projectId, result);
+}
+
+async function takeCliRun(projectId: string, result: RunnerResult): Promise<void> {
   const { mode } = result;
   if (mode === "ask") {
     await completeCliAsk(projectId, result);
@@ -1995,6 +2013,12 @@ export const STOPPED_BY_PERSON =
  * agent stops at its next turn. Returns whether there was anything to stop.
  */
 export async function stopTicket(projectId: string, ticketId: string): Promise<boolean> {
+  // Its sandbox was made with the key of whoever set it going; only that
+  // account can dispose of it.
+  return withCardActor(ticketId, () => stopTicketRun(projectId, ticketId));
+}
+
+async function stopTicketRun(projectId: string, ticketId: string): Promise<boolean> {
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket) return false;

@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
 import { createTodoItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
@@ -15,7 +16,8 @@ const bodySchema = z.object({
   requestId: z.string().optional(),
 });
 
-export async function POST(req: NextRequest) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: NextRequest) {
   const refused = limited(req, RUN, "run-start");
   if (refused) return refused;
 

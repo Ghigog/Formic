@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
 import { repository } from "@/lib/db";
 import { activeProject, noProject } from "@/lib/board/project";
@@ -27,7 +28,8 @@ export async function GET(req: NextRequest) {
 }
 
 /** Sends a scout on a ticket in In Progress, or swaps the one picked. */
-export async function POST(req: NextRequest) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Say what to do with which ticket's scouts." }, { status: 400 });
   const project = await activeProject();

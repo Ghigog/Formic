@@ -16,7 +16,7 @@ export type Diagnosis =
       until: Date | null;
       message: string;
     }
-  | { kind: "auth" | "credit"; until: null; message: string };
+  | { kind: "auth" | "credit" | "silent"; until: null; message: string };
 
 /* ------------------------------------------------------------------------ */
 /* Reading the log.                                                          */
@@ -35,6 +35,11 @@ interface Line {
    * wrote itself (see `QUOTED_CODE`).
    */
   carried?: boolean;
+  /**
+   * A CLI's closing report that used no tokens at all: the agent stopped
+   * before it ever reached its model (see `resultReport`).
+   */
+  silent?: boolean;
 }
 
 function lines(log: string): Line[] {
@@ -82,6 +87,35 @@ function stepOutput(log: string): Line[] {
 const ENVELOPE = /^\{"type":"(?:run\.|ticket\.)/;
 
 /**
+ * A CLI's own closing report: one JSON object with the run's cost and usage,
+ * and, when it failed, its reason in `result`. Claude Code prints it as its
+ * last line. Read for that reason, so a card quotes the agent's words rather
+ * than the JSON around them, and for whether any tokens were used at all.
+ */
+function resultReport(text: string): { text: string | null; silent: boolean } | null {
+  if (!text.startsWith("{")) return null;
+  let report: unknown;
+  try {
+    report = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!report || typeof report !== "object" || Array.isArray(report)) return null;
+  const r = report as Record<string, unknown>;
+  if (r.type !== "result" && !("total_cost_usd" in r) && !("duration_api_ms" in r)) return null;
+  const error = r.error && typeof r.error === "object" ? (r.error as Record<string, unknown>).message : r.error;
+  const reason = [r.result, error].find((v): v is string => typeof v === "string" && v.trim() !== "");
+  // Silent only on the report's own say-so: a CLI whose report counts tokens
+  // some other way is never taken to have used none.
+  const usage = (r.usage ?? {}) as Record<string, unknown>;
+  const counts = ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
+    .map((k) => usage[k])
+    .filter((n): n is number => typeof n === "number");
+  const silent = r.duration_api_ms === 0 || (counts.length > 0 && counts.every((n) => n === 0));
+  return { text: reason?.trim() ?? null, silent };
+}
+
+/**
  * The lines a person or a tool wrote. A loop reports itself by printing JSON
  * envelopes to stderr, and what they carry is the interesting part; one that
  * carries no line of output is dropped rather than quoted, so a card can
@@ -89,6 +123,11 @@ const ENVELOPE = /^\{"type":"(?:run\.|ticket\.)/;
  */
 function said(lines: Line[]): Line[] {
   return lines.flatMap((line) => {
+    const report = resultReport(line.text);
+    if (report) {
+      if (!report.text && !report.silent) return [];
+      return [{ ...line, text: report.text ?? "It gave no reason.", silent: report.silent }];
+    }
     if (!ENVELOPE.test(line.text)) return [line];
     try {
       const inner = (JSON.parse(line.text) as { line?: unknown }).line;
@@ -380,6 +419,13 @@ export function diagnose(text: string, label: string, now = new Date()): Diagnos
         kind: "auth",
         until: null,
         message: `${label} rejected its sign-in: ${quoted} ${signInHelp(label)}`,
+      };
+    }
+    if (all[i]!.silent) {
+      return {
+        kind: "silent",
+        until: null,
+        message: `${label} stopped before it reached its model: it used no tokens at all, and said ${quoted} That almost always means its API key or sign-in is missing or wrong. ${signInHelp(label)}`,
       };
     }
   }

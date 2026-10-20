@@ -405,6 +405,8 @@ export interface ProjectSummary {
   autoScout: boolean;
   /** The saved agent scouts run on. Null: the In Progress column's agent. */
   scoutPresetId: string | null;
+  /** Whether members may run on the owner's keys and agents when they have none. Off by default. */
+  shareKeys: boolean;
 }
 
 /** Whose projects and presets a query sees. */
@@ -545,6 +547,25 @@ export interface Repository {
   /** Every project on a repository, whoever owns it. For webhooks. */
   projectsForRepo(repoFullName: string): Promise<ProjectSummary[]>;
   projectById(projectId: string): Promise<ProjectSummary | null>;
+  /* Sharing a board. */
+
+  /** Shares a project with someone. Doing it twice is harmless. */
+  addMember(projectId: string, userId: string): Promise<void>;
+  isMember(projectId: string, userId: string): Promise<boolean>;
+  /** The projects shared with someone, oldest first. Not the ones they own. */
+  memberProjects(userId: string): Promise<ProjectSummary[]>;
+  /** A member's own agents on a shared board, by column or "assistant". */
+  memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
+  setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
+  setShareKeys(projectId: string, shareKeys: boolean): Promise<void>;
+  /**
+   * Whose keys a card's work runs on: the person who last set it going. A
+   * ticket with none takes its scout parent's, then its epic's. Null is the
+   * board's owner.
+   */
+  cardActor(cardId: string): Promise<string | null>;
+  setCardActor(cardId: string, userId: string | null): Promise<void>;
+
   /** Someone's project for a repository, created the first time they pick it. */
   ensureProject(input: {
     ownerId: string | null;

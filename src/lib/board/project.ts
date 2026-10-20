@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { repository } from "@/lib/db";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { authMode } from "@/lib/auth/session";
-import { canSee, currentUser, ownerScope } from "@/lib/auth/user";
+import { currentUser, ownerScope } from "@/lib/auth/user";
+import { boardFor, boardsFor, canSeeBoard } from "./sharing";
 
 /**
  * Which repository this browser is working on.
@@ -12,7 +13,8 @@ import { canSee, currentUser, ownerScope } from "@/lib/auth/user";
  * A cookie rather than a path segment: every board route (the page, the
  * event stream, moves, captures) reads the same choice without each one
  * growing a project id, and switching is one write. The cookie only picks
- * among the signed-in person's own projects; it cannot open anyone else's.
+ * among the boards the signed-in person can see: their own, and those shared
+ * with them (./sharing.ts).
  */
 export const PROJECT_COOKIE = "formic_project";
 
@@ -28,11 +30,11 @@ export async function activeProject(): Promise<ProjectSummary | null> {
   const chosen = (await cookies()).get(PROJECT_COOKIE)?.value;
   if (chosen) {
     const project = await repo.projectById(chosen);
-    if (project && canSee(user, project.ownerId)) return project;
+    if (project && (await canSeeBoard(user, project))) return boardFor(user, project);
   }
 
-  const mine = await repo.listProjects(ownerScope(user));
-  if (mine[0]) return mine[0];
+  const mine = await boardsFor(user, await repo.listProjects(ownerScope(user)));
+  if (mine[0]) return boardFor(user, mine[0]);
   // Local mode always has a board to show: the demo one.
   return authMode() === "local" ? repo.defaultProject() : null;
 }

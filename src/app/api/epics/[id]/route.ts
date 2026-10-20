@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
 import { repository } from "@/lib/db";
 import { prdSchema } from "@/lib/domain/entities";
@@ -52,7 +53,8 @@ export async function GET(
 const patchSchema = z.object({ prd: prdSchema });
 
 /** Human edit of a generated PRD. The agent's output is a draft, not a verdict. */
-export async function PATCH(
+export const PATCH = asSignedIn(patchHandler);
+async function patchHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -77,7 +79,8 @@ export async function PATCH(
 }
 
 /** Starts a stalled Epic's planning again. */
-export async function POST(
+export const POST = asSignedIn(postHandler);
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {

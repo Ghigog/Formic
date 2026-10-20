@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { asSignedIn } from "@/lib/auth/user";
 import { applyTransition } from "@/lib/board/service";
 import { cardTransitionSchema } from "@/lib/domain/transitions";
 import { activeProject, noProject } from "@/lib/board/project";
@@ -12,7 +13,8 @@ export const dynamic = "force-dynamic";
 // function cap; DEFAULT_RUN_BUDGET stays under it.
 export const maxDuration = 300;
 
-export async function POST(req: NextRequest) {
+export const POST = asSignedIn(postHandler);
+async function postHandler(req: NextRequest) {
   const refused = limited(req, RUN, "run-start");
   if (refused) return refused;
 

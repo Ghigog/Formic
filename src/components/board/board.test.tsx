@@ -116,6 +116,29 @@ describe("Board seeded from the saved board view", () => {
 });
 
 describe("Board, on a wide screen", () => {
+  it("keeps a ticket in To Do and outlines In Progress's agent menu when that column has no agent", async () => {
+    const ticket = makeCard({ kind: "ticket", status: "ready", key: "T-1" });
+    const onTransition = vi.fn(
+      async (): Promise<TransitionResult> => ({
+        ok: false,
+        reason: "Set an agent for In Progress first. Pick one from its agent menu, then move the card again.",
+        revertTo: "todo",
+        needsAgent: "in_progress",
+      }),
+    );
+    renderBoard([ticket], {
+      onTransition,
+      agents: { presets: [], columns: {}, onAssign: vi.fn(), onEdit: vi.fn() },
+    });
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Move T-1 to In Progress" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Set an agent for In Progress first");
+    expect(within(screen.getByRole("region", { name: "To Do" })).getByText(ticket.title)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Agent for In Progress/ })).toHaveClass("border-crimson");
+    expect(screen.getByRole("button", { name: /Agent for To Do/ })).not.toHaveClass("border-crimson");
+  });
+
   it("points to the sandbox key in Settings when there is none", () => {
     renderBoard([makeCard()], { noSandboxKey: true });
     expect(screen.getByRole("alert")).toHaveTextContent("Agents can't run yet");

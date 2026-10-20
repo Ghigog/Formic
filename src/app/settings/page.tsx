@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { currentUser, ownerScope } from "@/lib/auth/user";
+import { canSee, currentUser, ownerScope } from "@/lib/auth/user";
 import { authMode } from "@/lib/auth/session";
 import { installUrl } from "@/lib/auth/github";
 import { activeProject } from "@/lib/board/project";
@@ -17,11 +17,20 @@ export default async function SettingsPage() {
   if (!user) redirect("/login?next=/settings");
   const config = env();
   // Auto-merge is per board, so settings only offer the one this browser is
-  // on; there is nothing to choose among.
+  // on; there is nothing to choose among. Only its owner sets them: on a board
+  // shared with them, a member has only their own settings here.
   const current = await activeProject();
-  const project = current
-    ? { id: current.id, name: current.name, autoMerge: current.autoMerge, autoEscalate: current.autoEscalate, scoutPresetId: current.scoutPresetId }
-    : null;
+  const project =
+    current && canSee(user, current.ownerId)
+      ? {
+          id: current.id,
+          name: current.name,
+          autoMerge: current.autoMerge,
+          autoEscalate: current.autoEscalate,
+          shareKeys: current.shareKeys,
+          scoutPresetId: current.scoutPresetId,
+        }
+      : null;
 
   return (
     <SettingsForm

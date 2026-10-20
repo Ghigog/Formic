@@ -6,6 +6,7 @@ import { env } from "@/lib/secrets/env";
 import { open } from "@/lib/secrets/vault";
 import { githubTokenFor } from "./github";
 import { authMode } from "./session";
+import { actingUserId } from "./actor";
 
 /**
  * Whose keys a piece of work runs on.
@@ -55,8 +56,20 @@ export async function credentialsFor(user: UserRecord | null): Promise<Credentia
   };
 }
 
-/** The credentials of whoever owns a project. Runs happen on their behalf. */
+/**
+ * The credentials work on a project runs on: the owner's, or, on a shared
+ * board, the member's own whose work it is (./actor.ts). A member with no E2B
+ * key of their own falls back to the owner's only when the owner shares keys.
+ */
 export async function credentialsForProject(project: ProjectSummary): Promise<Credentials> {
-  const owner = project.ownerId ? await repository().userById(project.ownerId) : null;
-  return credentialsFor(owner);
+  const repo = repository();
+  const owner = project.ownerId ? await repo.userById(project.ownerId) : null;
+  const actorId = actingUserId();
+  if (!actorId || actorId === project.ownerId || authMode() !== "github") return credentialsFor(owner);
+  const member = await repo.userById(actorId);
+  if (!member) return credentialsFor(owner);
+  const own = await credentialsFor(member);
+  if (own.e2bKey || !project.shareKeys) return own;
+  const shared = await credentialsFor(owner);
+  return { ...own, e2bKey: shared.e2bKey, e2bFallbackUserId: shared.e2bFallbackUserId };
 }

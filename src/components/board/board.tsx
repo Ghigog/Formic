@@ -108,6 +108,9 @@ export function Board({
   // first rendered, so nothing the server said about it afterwards showed.
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The column that last refused a card for want of an agent, until it has one. */
+  const [needsAgent, setNeedsAgent] = useState<ColumnId | null>(null);
+  const agentMissing = needsAgent !== null && !!agents && !agents.columns[needsAgent];
   const [activeTab, setActiveTab] = useState<ColumnId>("backlog");
   const [collapsed, setCollapsed] = useState<Record<ColumnId, Set<string>>>(
     () => ({
@@ -235,6 +238,9 @@ export function Board({
       });
 
       setError(null);
+      // Into a column with no agent it goes nowhere: the server refuses it,
+      // and showing it start meanwhile would play a dispatch that never was.
+      const unstaffed = card.kind === "ticket" && to === "in_progress" && !!agents && !agents.columns[to];
       // The status the server will give it, so the card renders in the
       // column it was dropped in: the column is derived from status, and the
       // old one sent it straight back until the server answered.
@@ -260,7 +266,7 @@ export function Board({
               misplacedReason: to === from ? card.misplacedReason : null,
             }
           : { ...card, position, detached, misplacedIn: to };
-      setOptimistic((prev) => [...prev.filter((c) => c.id !== card.id), moved]);
+      if (!unstaffed) setOptimistic((prev) => [...prev.filter((c) => c.id !== card.id), moved]);
       // Only this drop's own entry: a second drop of the same card, made while
       // this one was in flight, has replaced it and must not be undone by it.
       const settle = () => setOptimistic((prev) => prev.filter((c) => c !== moved));
@@ -285,10 +291,11 @@ export function Board({
         // because `live` falls through to server state.
         settle();
         setError(result.reason);
+        setNeedsAgent(result.needsAgent ?? null);
         // After the card has snapped back, so the flash lands on it. The
         // full reason is in the banner above and the card's "!"; the flash
         // itself just needs to say something went wrong.
-        requestAnimationFrame(() => colony?.reject(card.id, "Error"));
+        requestAnimationFrame(() => colony?.reject(card.id, result.needsAgent ? "Set an agent" : "Error"));
         return;
       }
 
@@ -299,7 +306,7 @@ export function Board({
         requestAnimationFrame(() => colony?.reject(card.id, "Needs you"));
       }
     },
-    [byColumn, collapsed, live, onTransition, colony],
+    [byColumn, collapsed, live, onTransition, colony, agents],
   );
 
   /** Whether a column would take a card dragged out of `from`. */
@@ -372,6 +379,7 @@ export function Board({
           selected: agents.presets.find((p) => p.id === agents.columns[col]),
           onAssign: (presetId) => agents.onAssign(col, presetId),
           onEdit: (preset) => agents.onEdit(col, preset),
+          alert: agentMissing && needsAgent === col,
         }
       }
       composer={
