@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import {
   HEAT_MAX,
@@ -8,7 +8,8 @@ import {
   XP_PER_LEVEL,
   pointsOf,
 } from "@/lib/colony/game";
-import { GradeBadge } from "@/components/sentinels/sentinels";
+import { SENTINELS } from "@/lib/sentinels/roster";
+import { useSentinels } from "@/components/sentinels/store";
 import { useColony, type ColonyApi } from "./colony";
 
 /** Counts toward the value it is given rather than jumping to it. */
@@ -271,25 +272,122 @@ function TimelineButton({
   );
 }
 
-/** The grade-free level: the LV badge and the rank and XP bar. */
+const LEVEL_UP_DELAY_MS = 1500;
+const FLASH_MS = 500;
+
+/**
+ * The black LV octagon. With Sentinels around it is also the Audit button:
+ * hover or focus swaps LV for the grade, and after each level-up the grade
+ * flashes once as a diagonal slice.
+ */
+export function LevelBadge({
+  level,
+  size,
+}: {
+  level: number;
+  size: 36 | 32;
+}) {
+  const c = useColony();
+  const s = useSentinels();
+  const [flashing, setFlashing] = useState(false);
+  const prev = useRef(level);
+  const reduced = c?.fx.reducedMotion ?? false;
+  useEffect(() => {
+    const was = prev.current;
+    prev.current = level;
+    if (level <= was) return;
+    let off: ReturnType<typeof setTimeout>;
+    const on = setTimeout(() => {
+      setFlashing(true);
+      off = setTimeout(() => setFlashing(false), FLASH_MS);
+    }, LEVEL_UP_DELAY_MS);
+    return () => {
+      clearTimeout(on);
+      clearTimeout(off);
+      setFlashing(false);
+    };
+  }, [level]);
+
+  const big = size === 36;
+  const face = "absolute inset-0 flex flex-col items-center justify-center gap-px";
+  const label = cn("font-mono tracking-[0.1em]", big ? "text-[8px]" : "text-[7px]");
+  const num = cn(
+    "font-serif leading-none font-semibold",
+    big ? "text-[16px]" : "text-[14px]",
+  );
+  const box = cn(
+    "oct-lg bg-anthracite text-cream relative inline-flex shrink-0",
+    big ? "size-9" : "size-8",
+  );
+  const lv = (
+    <span
+      className={cn(
+        face,
+        "transition-opacity duration-150",
+        s && "group-hover:opacity-0 group-focus-visible:opacity-0",
+        flashing && reduced && "opacity-0",
+      )}
+    >
+      <span className={cn(label, "text-drawer-muted")}>LV</span>
+      <span className={num}>{level}</span>
+    </span>
+  );
+  if (!c || !s) {
+    return (
+      <span data-colony="level" className={box} title={`Level ${level}`}>
+        {lv}
+      </span>
+    );
+  }
+  const g = s.grade;
+  const busy = SENTINELS.some((x) => s.states[x.id]?.running);
+  const audit = (extra: string, sweep?: boolean) => (
+    <span
+      data-audit-face={sweep ? "flash" : "hover"}
+      aria-hidden
+      className={cn(face, "bg-anthracite", extra)}
+      style={{ color: g.ink }}
+    >
+      <span className={label}>AUDIT</span>
+      <span className={num}>{g.grade}</span>
+    </span>
+  );
+  return (
+    <button
+      type="button"
+      data-colony="level"
+      onClick={() => c.setSentinelsOpen(!c.sentinelsOpen)}
+      aria-expanded={c.sentinelsOpen}
+      aria-label={`Audit grade ${g.grade}, Level ${level}, ${g.avg.toFixed(1)} of 5 from ${g.done} of ${g.total} sentinels. ${c.sentinelsOpen ? "Back to board" : "Open sentinels"}`}
+      title={`Sentinels · grade ${g.grade} · ${g.avg.toFixed(2)} avg · Level ${level}`}
+      className={cn(
+        box,
+        "group transition-transform active:scale-[0.94] focus-visible:outline-2",
+      )}
+    >
+      {lv}
+      {audit(
+        "opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
+      )}
+      {flashing &&
+        (reduced
+          ? audit("", true)
+          : audit("animate-[auditSweep_500ms_ease-in-out_both]", true))}
+      {busy && (
+        <span className="bg-clay-lit absolute top-0.5 right-0.5 size-1.5 animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
+      )}
+    </button>
+  );
+}
+
+/** The level badge and the LV badge and the rank and XP bar. */
 export function ColonyLevelStats() {
   const c = useColony();
   if (!c) return null;
   const s = c.score;
   return (
     <div className="flex shrink-0 items-center gap-2.5">
-      <span
-        data-colony="level"
-        className="oct-lg bg-anthracite text-cream inline-flex size-9 flex-col items-center justify-center gap-px"
-        title={`Level ${s.level}`}
-      >
-        <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">
-          LV
-        </span>
-        <span className="font-serif text-[16px] leading-none font-semibold">
-          {s.level}
-        </span>
-      </span>
+      <LevelBadge level={s.level} size={36} />
       <div className="flex flex-col gap-1.5 max-xl:hidden">
         <div className="flex items-baseline gap-2">
           <span className="text-ink text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap uppercase">
@@ -318,7 +416,7 @@ export function ColonyLevelStats() {
 }
 
 /**
- * The colony's corner of the header: the Sentinels' grade and the level,
+ * The colony's corner of the header: the level,
  * rank, points and heat, and the way into the timeline.
  */
 export function ColonyHeaderStats({
@@ -331,7 +429,6 @@ export function ColonyHeaderStats({
   return (
     <>
       <div className="flex shrink-0 items-center gap-2.5">
-        <GradeBadge />
         {showLevel && <ColonyLevelStats />}
       </div>
 
@@ -353,7 +450,7 @@ export function ColonyHeaderStats({
 }
 
 /**
- * The colony in the app bar below 768px: the grade, a level and points
+ * The colony in the app bar below 768px: a level and points
  * button, heat, and an icon-only timeline button.
  */
 export function ColonyMobileStats() {
@@ -362,23 +459,12 @@ export function ColonyMobileStats() {
   const s = c.score;
   return (
     <>
-      <GradeBadge compact />
       <button
         type="button"
         aria-label={`Level ${s.level} ${s.rank}, ${c.shownPoints} points`}
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-[10px] px-1"
       >
-        <span
-          data-colony="level"
-          className="oct-lg bg-anthracite text-cream inline-flex size-8 flex-col items-center justify-center"
-        >
-          <span className="text-drawer-muted font-mono text-[7px] tracking-[0.1em]">
-            LV
-          </span>
-          <span className="font-serif text-[14px] leading-none font-semibold">
-            {s.level}
-          </span>
-        </span>
+        <LevelBadge level={s.level} size={32} />
         <PointsCounter
           value={c.shownPoints}
           className="origin-left text-[14px] max-[359px]:hidden"
