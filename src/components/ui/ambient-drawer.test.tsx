@@ -101,4 +101,15 @@ describe("AmbientDrawer", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Stop all" }));
     expect(onStopAll).toHaveBeenCalledOnce();
   });
+
+  it("turns red and says so while the connection to the colony is lost", () => {
+    const { container, rerender } = render(<AmbientDrawer stats={stats()} connection="reconnecting" />);
+    const bar = container.querySelector("footer")!;
+    expect(bar).toHaveClass("bg-log-error/90");
+    expect(screen.getAllByText("Connection to the colony lost").length).toBeGreaterThan(0);
+
+    rerender(<AmbientDrawer stats={stats()} connection="live" />);
+    expect(bar).toHaveClass("bg-anthracite");
+    expect(screen.queryByText("Connection to the colony lost")).toBeNull();
+  });
 });
