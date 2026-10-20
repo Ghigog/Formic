@@ -124,6 +124,19 @@ export function crewPhase(card: BoardCard, extras: ExtrasMap, handingOver = fals
   return null;
 }
 
+/**
+ * A running card with scouts out gets a half-size crew for each one, round
+ * the same card, so the card shows how much work is going into it. They leave
+ * when the scouts come back or one is picked.
+ */
+export function scoutCrews(card: BoardCard): Map<string, { phase: CrewPhase; sp: number }> {
+  const crews = new Map<string, { phase: CrewPhase; sp: number }>();
+  const scouts = card.scouts ?? 0;
+  if (card.status !== "running" || card.scoutPick) return crews;
+  for (let n = 1; n <= scouts; n++) crews.set(`${card.id}#scout${n}`, { phase: "work", sp: pointsOf(card) / 2 });
+  return crews;
+}
+
 /** The level-up toast: the rank, what the level unlocks (Sentinels included) and the Queen it earns. */
 export function levelUpText(lv: number): string {
   const got = [...unlocksAt(lv), "a Queen"];
@@ -206,6 +219,7 @@ export function ColonyProvider({
       }
       const phase = crewPhase(c, extras, handingOver);
       if (phase) crews.set(c.id, { phase, sp: pointsOf(c) });
+      for (const [key, crew] of scoutCrews(c)) crews.set(key, crew);
     }
     fx.setWorld({
       crews,
