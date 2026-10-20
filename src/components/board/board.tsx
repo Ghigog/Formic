@@ -465,6 +465,8 @@ export function Board({
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
   }, []);
 
+  const pending = useMemo(() => new Set(optimistic.map((c) => c.id)), [optimistic]);
+
   const cardEnv = useMemo<CardEnv>(
     () => ({
       epics: epicsById,
@@ -482,6 +484,7 @@ export function Board({
           ? "todo"
           : null,
       leaving,
+      pending,
       onAdvance: (card, to) => {
         const move = () => void commit(card, to, Number.MAX_SAFE_INTEGER);
         // A phone shows one column, so the move would otherwise end the card
@@ -499,7 +502,7 @@ export function Board({
       noCi,
       autoMerge,
     }),
-    [epicsById, accepts, commit, live, isMobile, reducedMotion, leaving, noCi, autoMerge],
+    [epicsById, accepts, commit, live, isMobile, reducedMotion, leaving, pending, noCi, autoMerge],
   );
 
   return (

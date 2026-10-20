@@ -166,3 +166,19 @@ describe("a queued card", () => {
     expect(container.querySelector("[data-queue]")?.getAttribute("aria-label")).toBe(reason);
   });
 });
+
+describe("a card whose move is pending", () => {
+  it("hovers lifted, tilted and marked pending", () => {
+    const card = makeCard({ key: "PROT-01", status: "ready" });
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn(), pending: new Set([card.id]) };
+    renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+    const el = document.querySelector("li")!.firstElementChild!;
+    expect(el).toHaveAttribute("data-pending");
+    expect(el).toHaveClass("scale-[1.02]", "rotate-[-1deg]");
+    expect(el).toHaveClass("motion-reduce:transform-none");
+  });
+});

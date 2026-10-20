@@ -427,6 +427,30 @@ describe("Board, below 768px", () => {
     expect(screen.queryByRole("button", { name: /^Return/ })).toBeNull();
   });
 
+  it("hovers a moved card in its destination column until the server answers", async () => {
+    let answer!: (r: TransitionResult) => void;
+    const onTransition = vi.fn(() => new Promise<TransitionResult>((res) => (answer = res)));
+    renderBoard([makeCard({ key: "PROT-09", status: "draft" })], { onTransition });
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Move PROT-09 to To Do" }));
+
+    const todo = screen.getByRole("region", { name: "To Do" });
+    expect(todo.querySelector("[data-pending]")).not.toBeNull();
+    await act(async () => answer({ ok: true, status: "ready", runId: null }));
+    expect(document.querySelector("[data-pending]")).toBeNull();
+  });
+
+  it("lets go of the hover when the move is refused", async () => {
+    let answer!: (r: TransitionResult) => void;
+    const onTransition = vi.fn(() => new Promise<TransitionResult>((res) => (answer = res)));
+    renderBoard([makeCard({ key: "PROT-09", status: "draft" })], { onTransition });
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Move PROT-09 to To Do" }));
+    expect(document.querySelector("[data-pending]")).not.toBeNull();
+    await act(async () => answer({ ok: false, reason: "No.", revertTo: "backlog" }));
+    expect(document.querySelector("[data-pending]")).toBeNull();
+  });
+
   it("puts the card back and says why when the server refuses", async () => {
     setViewportMatches(true);
     const onTransition = vi.fn(
