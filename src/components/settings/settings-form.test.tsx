@@ -93,6 +93,14 @@ describe("Sandbox key", () => {
     expect(screen.getByText(/12 sandbox minutes left this month/)).toBeInTheDocument();
   });
 
+  it("walks through getting a key, the free credit and where to check spend", () => {
+    form({ hint: null, serverFallback: false });
+    expect(screen.getByText(/free plan comes with \$100 of credit/)).toBeInTheDocument();
+    expect(screen.getByText(/may ask you to verify a card once/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "E2B dashboard" })).toHaveAttribute("href", "https://e2b.dev/dashboard");
+    expect(screen.getByText(/check the Usage page/)).toBeInTheDocument();
+  });
+
   it("asks for their own key once the minutes are used", () => {
     form({ hint: null, serverFallback: true, fallbackMinutesLeft: 0 });
     expect(screen.getByText(/Add your own key to keep running/)).toBeInTheDocument();
