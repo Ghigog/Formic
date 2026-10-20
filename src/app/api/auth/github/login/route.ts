@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { authorizeUrl, appConfig } from "@/lib/auth/github";
 import { OAUTH_COOKIE, cookieHeader, safeNext, signValue } from "@/lib/auth/session";
 import { limit, limited } from "@/lib/rate-limit";
+import { publicUrl } from "@/lib/origin";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,11 @@ export async function GET(req: Request) {
   if (refused) return refused;
 
   const url = new URL(req.url);
-  if (!appConfig()) return Response.redirect(new URL("/", url), 303);
+  if (!appConfig()) return Response.redirect(publicUrl("/", req), 303);
 
   const nonce = randomBytes(16).toString("hex");
   const next = safeNext(url.searchParams.get("next"));
-  const redirectUri = `${url.origin}/api/auth/github/callback`;
+  const redirectUri = publicUrl("/api/auth/github/callback", req).toString();
 
   const res = new Response(null, {
     status: 303,

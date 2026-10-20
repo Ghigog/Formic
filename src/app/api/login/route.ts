@@ -7,6 +7,7 @@ import {
   safeNext,
 } from "@/lib/auth/session";
 import { limit, limited } from "@/lib/rate-limit";
+import { publicUrl } from "@/lib/origin";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +24,11 @@ export async function POST(req: Request) {
   const next = safeNext(String(form?.get("next") ?? "/"));
 
   const password = gatePassword();
-  if (!password) return Response.redirect(new URL(next, req.url), 303);
+  if (!password) return Response.redirect(publicUrl(next, req), 303);
 
   const expected = await passwordToken(password);
   if (!safeEqual(await passwordToken(given), expected)) {
-    const back = new URL("/login", req.url);
+    const back = publicUrl("/login", req);
     back.searchParams.set("next", next);
     back.searchParams.set("error", "1");
     return Response.redirect(back, 303);
