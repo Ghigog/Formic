@@ -87,36 +87,13 @@ describe("NewItemDialog", () => {
     expect(screen.getByText("Product Agent")).toBeInTheDocument();
     expect(screen.queryByText(/Tagged as bug/)).toBeNull();
     await user.click(screen.getByRole("button", { name: "Draft PRD" }));
-    expect(onSubmit).toHaveBeenCalledWith("Fix the error page", expect.any(String), undefined);
+    expect(onSubmit).toHaveBeenCalledWith("Fix the error page", expect.any(String));
   });
 
-  it("toggles Bug and Spike, one at a time, and submits the choice", async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={onSubmit} />);
-    const user = userEvent.setup();
-    const bug = screen.getByRole("button", { name: "bug" });
-    const spike = screen.getByRole("button", { name: "spike" });
-    expect(bug).toHaveAttribute("aria-pressed", "false");
-    expect(spike).toHaveAttribute("aria-pressed", "false");
-
-    await user.click(bug);
-    expect(bug).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Tagged as bug · −5 points")).toBeInTheDocument();
-
-    await user.click(spike);
-    expect(bug).toHaveAttribute("aria-pressed", "false");
-    expect(spike).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByText(/Tagged as bug/)).toBeNull();
-
-    await user.click(bug);
-    await user.click(bug);
-    expect(bug).toHaveAttribute("aria-pressed", "false");
-    expect(screen.queryByText(/Tagged as bug/)).toBeNull();
-
-    await user.click(bug);
-    await user.type(screen.getByLabelText("New ticket request"), "Crash on save");
-    await user.click(screen.getByRole("button", { name: "Draft ticket" }));
-    expect(onSubmit).toHaveBeenCalledWith("Crash on save", expect.any(String), "bug");
+  it("offers no Bug or Spike buttons", () => {
+    render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /bug|spike/i })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Work type" })).toBeNull();
   });
 
   it("drafts on submit and closes", async () => {
@@ -128,7 +105,7 @@ describe("NewItemDialog", () => {
     await user.type(screen.getByLabelText("New feature request"), "Rate-limit the merge queue");
     await user.click(screen.getByRole("button", { name: "Draft PRD" }));
 
-    expect(onSubmit).toHaveBeenCalledWith("Rate-limit the merge queue", expect.any(String), undefined);
+    expect(onSubmit).toHaveBeenCalledWith("Rate-limit the merge queue", expect.any(String));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -148,7 +125,7 @@ describe("NewItemDialog", () => {
     await user.type(screen.getByLabelText("New ticket request"), "Fix the flaky retry test");
     await user.click(screen.getByRole("button", { name: "Draft ticket" }));
 
-    expect(onSubmit).toHaveBeenCalledWith("Fix the flaky retry test", expect.any(String), undefined);
+    expect(onSubmit).toHaveBeenCalledWith("Fix the flaky retry test", expect.any(String));
   });
 
   describe("attachments", () => {
@@ -214,7 +191,7 @@ describe("NewItemDialog", () => {
 
       await user.type(screen.getByLabelText("New feature request"), "Ship it without the 6th file");
       await user.click(screen.getByRole("button", { name: "Draft PRD" }));
-      expect(onSubmit).toHaveBeenCalledWith("Ship it without the 6th file", expect.any(String), undefined);
+      expect(onSubmit).toHaveBeenCalledWith("Ship it without the 6th file", expect.any(String));
     });
 
     it("offers the device camera on a mobile viewport, and not on a wide one", () => {
