@@ -107,6 +107,9 @@ export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
           {(
             [
               ["ticket", "Tickets"],
+              ["user_story", "User stories"],
+              ["task", "Tasks"],
+              ["feature", "Features"],
               ["bug", "Bugs"],
               ["spike", "Spikes"],
               ["archived", "Archived"],
