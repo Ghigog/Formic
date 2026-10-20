@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board";
 import { NewItemDialog, type CaptureColumn } from "./new-item-dialog";
@@ -169,7 +170,7 @@ export function BoardShell({
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
     <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level}>
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}
         onArchivedWanted={setArchiveWanted}
@@ -271,7 +272,7 @@ export function BoardShell({
         onRetry={() => void runner.check()}
       />
 
-      <ColonyAmbient stats={stats} onStopAll={() => void stopAll()} />
+      <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
       <ColonyTimeline repoName={repoName} />
       <SentinelsPage repoName={repoName} />
       <ColonyPopover />
@@ -282,7 +283,7 @@ export function BoardShell({
       {connection === "reconnecting" && (
         <div
           role="status"
-          className="bg-rust/12 text-ink fixed bottom-16 left-4 z-50 rounded-md px-2 py-1 text-[11px]"
+          className="bg-rust/12 text-ink fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] left-4 z-50 rounded-md px-2 py-1 text-[11px]"
         >
           Reconnecting to the agent stream…
         </div>
@@ -296,6 +297,7 @@ export function BoardShell({
 /** The ambient bar, with the colony's bug count and its nest. */
 function ColonyAmbient(props: {
   stats: AmbientStats;
+  connection: ComponentProps<typeof AmbientDrawer>["connection"];
   onStopAll: () => void;
 }) {
   const colony = useColony();

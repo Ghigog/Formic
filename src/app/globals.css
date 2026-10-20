@@ -229,6 +229,18 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /*
+   * The board never scrolls as a document: its columns scroll inside the
+   * h-dvh root, so the colony bar stays on the bottom edge of the visible
+   * viewport while the browser toolbars show and hide.
+   */
+  html:has([data-board-root]),
+  html:has([data-board-root]) body {
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   a {
     color: var(--terracotta-cta);
   }
