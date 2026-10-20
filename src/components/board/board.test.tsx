@@ -278,9 +278,8 @@ describe("Board, below 768px", () => {
     renderBoard([makeCard({ status: "draft" }), epic!, ...kids]);
 
     const bar = await screen.findByRole("list", { name: "Columns" });
-    expect(within(bar).queryAllByRole("button")).toHaveLength(0);
-    expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 2");
-    expect(within(bar).getByText("Backlog")).toHaveAttribute("aria-current", "true");
+    expect(within(bar).getByRole("button", { name: "To Do 2" })).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: /^Backlog/ }).closest("li")).toHaveAttribute("aria-current", "true");
     expect(screen.queryByRole("region", { name: "To Do" })).toBeNull();
   });
 
@@ -299,6 +298,39 @@ describe("Board, below 768px", () => {
     renderBoard([makeCard({ status: "ready" })]);
     carry();
     expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+  });
+
+  describe("tapping a column chip", () => {
+    const chip = (name: RegExp) => within(screen.getByRole("list", { name: "Columns" })).getByRole("button", { name });
+    const setup = async () => {
+      setViewportMatches(true);
+      renderBoard([makeCard({ status: "draft" })]);
+      await screen.findByRole("region", { name: "Backlog" });
+    };
+
+    it("jumps to that column and marks its chip current", async () => {
+      await setup();
+      await userEvent.click(chip(/^Done/));
+      expect(await screen.findByRole("region", { name: "Done" })).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Backlog" })).toBeNull();
+      expect(chip(/^Done/).closest("li")).toHaveAttribute("aria-current", "true");
+      expect(document.querySelector("[data-slide]")).toHaveAttribute("data-slide", "next");
+    });
+
+    it("slides in from the previous side when going back", async () => {
+      await setup();
+      await userEvent.click(chip(/^Done/));
+      await userEvent.click(chip(/^Backlog/));
+      expect(await screen.findByRole("region", { name: "Backlog" })).toBeInTheDocument();
+      expect(document.querySelector("[data-slide]")).toHaveAttribute("data-slide", "previous");
+    });
+
+    it("does nothing when the active chip is tapped", async () => {
+      await setup();
+      await userEvent.click(chip(/^Backlog/));
+      expect(screen.getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+      expect(document.querySelector("[data-slide]")).toBeNull();
+    });
   });
 
   describe("swiping", () => {

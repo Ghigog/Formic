@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjacentColumn, swipeDirection } from "./swipe";
+import { adjacentColumn, slideTowards, swipeDirection } from "./swipe";
 
 describe("adjacentColumn", () => {
   it("steps through the columns", () => {
@@ -23,5 +23,12 @@ describe("swipeDirection", () => {
   it("ignores a mostly vertical gesture with drift", () => {
     expect(swipeDirection(-60, 120)).toBeNull();
     expect(swipeDirection(60, 40)).toBeNull();
+  });
+});
+
+describe("slideTowards", () => {
+  it("reads a later column as next and an earlier one as previous", () => {
+    expect(slideTowards("backlog", "done")).toBe("next");
+    expect(slideTowards("done", "backlog")).toBe("previous");
   });
 });
