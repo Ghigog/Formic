@@ -304,7 +304,7 @@ export function TicketDrawer({
             </button>
           ))}
           {card && (
-            <div className="ml-auto flex flex-nowrap items-center gap-2 text-[12px]">
+            <div className="ml-auto flex flex-wrap items-center gap-2 text-[12px]">
               <QueenPanel
                 card={card}
                 onChanged={() => {
