@@ -32,6 +32,7 @@ describe("the scouts panel", () => {
     render(<ScoutsPanel card={card} onChanged={changed} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Send scout" }));
+    expect(screen.queryByText(/second attempt/)).toBeNull();
     await waitFor(() => expect(posts).toEqual([{ action: "send", ticketId: card.id }]));
     expect(changed).toHaveBeenCalled();
     expect(screen.queryByRole("combobox")).toBeNull();
