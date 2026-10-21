@@ -182,3 +182,28 @@ describe("a card whose move is pending", () => {
     expect(el).toHaveClass("motion-reduce:scale-100", "motion-reduce:rotate-0");
   });
 });
+
+describe("dragging a card", () => {
+  function handle(pending: boolean) {
+    const card = makeCard({ key: "PROT-02", status: "ready" });
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn(), pending: new Set(pending ? [card.id] : []) };
+    renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+    return document.querySelector("li")!;
+  }
+
+  it("is locked while the move is pending", () => {
+    const li = handle(true);
+    expect(li.getAttribute("data-rfd-drag-handle-draggable-id")).toBeNull();
+    expect(li).not.toHaveClass("cursor-grab");
+  });
+
+  it("works as before when nothing is pending", () => {
+    const li = handle(false);
+    expect(li.getAttribute("data-rfd-drag-handle-draggable-id")).not.toBeNull();
+    expect(li).toHaveClass("cursor-grab");
+  });
+});
