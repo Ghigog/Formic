@@ -8,6 +8,10 @@ import {
   type AgentPresetInput,
   type ColumnOverride,
 } from "@/lib/domain/entities";
+import {
+  keyboardStyles,
+  useKeyboardInset,
+} from "@/lib/hooks/use-keyboard-inset";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { DEFAULT_BRIEF } from "@/lib/agents/prompts";
 import {
@@ -258,6 +262,7 @@ export function AgentEditor({
     }
   }
 
+  const kb = keyboardStyles(useKeyboardInset());
   const label = "text-ink text-[12px] font-semibold";
   const field =
     "border-line bg-cream text-ink focus:border-clay w-full rounded-md border px-2.5 text-[13px] outline-none";
@@ -273,9 +278,11 @@ export function AgentEditor({
       aria-modal
       aria-label={preset ? `Edit ${preset.name}` : "New agent"}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      style={kb.backdrop}
       onClick={onClose}
     >
       <form
+        style={kb.panel}
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();

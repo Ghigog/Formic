@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AskBox, type AssistantControls } from "./assistant";
+import { AskBox, AskButton, type AssistantControls } from "./assistant";
 
 const controls: AssistantControls = {
   open: true,
@@ -88,5 +88,32 @@ describe("AskBox", () => {
     await userEvent.setup().click(screen.getByLabelText("Stop"));
     expect(stop).toHaveBeenCalled();
     expect(box).toHaveFocus();
+  });
+});
+
+describe("AskButton on a phone", () => {
+  Element.prototype.scrollTo = vi.fn();
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("caps the shade above the keyboard and restores it when it closes", () => {
+    const vv = Object.assign(new EventTarget(), { height: 800, offsetTop: 0 });
+    vi.stubGlobal("innerHeight", 800);
+    vi.stubGlobal("visualViewport", vv);
+    const { container } = render(<AskButton a={controls} repoName="demo" />);
+    const shade = container.querySelector<HTMLElement>(
+      "section[aria-label=Assistant]",
+    )!;
+    const normal = shade.style.height;
+    expect(normal).not.toContain("480px");
+    act(() => {
+      vv.height = 536;
+      vv.dispatchEvent(new Event("resize"));
+    });
+    expect(shade.style.height).toContain("480px");
+    act(() => {
+      vv.height = 800;
+      vv.dispatchEvent(new Event("resize"));
+    });
+    expect(shade.style.height).toBe(normal);
   });
 });
