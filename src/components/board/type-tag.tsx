@@ -8,21 +8,23 @@ const LABELS: Record<WorkType, string> = {
   bug: "Bug",
 };
 
-/** Tag colours; a bug darkens from low to critical. */
+/**
+ * Tag colours: fixed Formic palette tones (not theme variables) so the dark text reads in both themes.
+ * A bug steps up from the crimson chip to rust as severity rises.
+ */
 const COLORS: Record<Exclude<WorkType, "bug">, string> = {
-  user_story: "#7bc47f",
-  task: "#8ecae6",
-  feature: "#5fd4b8",
-  spike: "#f2d649",
+  user_story: "#a5c8a7", // jade-line
+  task: "#fbf0da", // clay-chip
+  feature: "#ee9a62", // terracotta-lit
+  spike: "#e0a33c", // clay-lit
 };
 const BUG_COLORS: Record<BugSeverity, string> = {
-  low: "#ef9a9a",
-  medium: "#e57373",
-  high: "#c62828",
-  critical: "#7f1d1d",
+  low: "#fbeaea", // crimson-chip
+  medium: "#f28b82", // crimson-chip-text in dark theme
+  high: "#e85d54",
+  critical: "#e65100", // rust
 };
-const DARK_TEXT = "#1f2328";
-const LIGHT_TEXT = "#ffffff";
+const TEXT = "#1c1917"; // anthracite
 
 /** The one coloured tag a card or the drawer shows for its type; a done bug reads SQUASHED. */
 export function TypeTag({
@@ -42,11 +44,10 @@ export function TypeTag({
         ? `${LABELS[type]} · ${severity[0]!.toUpperCase()}${severity.slice(1)}`
         : LABELS[type];
   const background = bug ? BUG_COLORS[severity ?? "medium"] : COLORS[type];
-  const dark = bug && (severity === "high" || severity === "critical" || severity == null);
   const style =
     bug && squashed
       ? undefined
-      : { backgroundColor: background, color: dark ? LIGHT_TEXT : DARK_TEXT };
+      : { backgroundColor: background, color: TEXT };
   return (
     <span
       data-type-tag={type}
