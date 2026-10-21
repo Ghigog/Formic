@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
-import { saveBoardView, BOARD_VIEW_KEY } from "./view-setting";
+import { saveBoardView, saveColumnViews, loadColumnViews, BOARD_VIEW_KEY, COLUMN_VIEWS_KEY } from "./view-setting";
 import { EMPTY_VIEW } from "./view";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 import { setViewportMatches } from "@/test/viewport";
@@ -605,5 +605,52 @@ describe("Board, an arrow move on a phone", () => {
     const { onTransition } = renderBoard([makeCard({ key: "PROT-09", status: "draft" })]);
     await tap();
     expect(onTransition).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Board remembering each column's view", () => {
+  afterEach(() => window.localStorage.clear());
+  const allEmpty = { backlog: EMPTY_VIEW, todo: EMPTY_VIEW, in_progress: EMPTY_VIEW, in_review: EMPTY_VIEW, done: EMPTY_VIEW };
+  const cards = () => [
+    makeCard({ status: "ready", title: "Plain" }),
+    makeCard({ status: "ready", title: "Some bug", workType: "bug" }),
+    makeCard({ status: "draft", title: "Backlog plain" }),
+  ];
+
+  it("restores a column's saved view, leaving the others unfiltered", async () => {
+    saveColumnViews({ ...allEmpty, todo: { ...EMPTY_VIEW, types: ["bug"] } });
+    renderBoard(cards());
+    const todo = screen.getByRole("region", { name: "To Do" });
+    await waitFor(() => expect(within(todo).queryByText("Plain")).toBeNull());
+    expect(within(todo).getByText("Some bug")).toBeInTheDocument();
+    const backlog = screen.getByRole("region", { name: "Backlog" });
+    expect(within(backlog).getByText("Backlog plain")).toBeInTheDocument();
+  });
+
+  it("uses the Settings view for a column with none of its own", async () => {
+    saveBoardView({ ...EMPTY_VIEW, types: ["bug"] });
+    window.localStorage.setItem(COLUMN_VIEWS_KEY, JSON.stringify({ backlog: EMPTY_VIEW }));
+    renderBoard(cards());
+    const todo = screen.getByRole("region", { name: "To Do" });
+    await waitFor(() => expect(within(todo).queryByText("Plain")).toBeNull());
+    const backlog = screen.getByRole("region", { name: "Backlog" });
+    expect(within(backlog).getByText("Backlog plain")).toBeInTheDocument();
+  });
+
+  it("saves a change made on one column, without disturbing the saved views before mount", async () => {
+    saveColumnViews({ ...allEmpty, done: { ...EMPTY_VIEW, sort: "newest" } });
+    renderBoard(cards());
+    const user = userEvent.setup();
+    const todo = screen.getByRole("region", { name: "To Do" });
+    await user.click(within(todo).getByRole("button", { name: "Column options" }));
+    await user.type(screen.getByPlaceholderText("Search key or title..."), "bug");
+    await waitFor(() => expect(loadColumnViews().todo?.query).toBe("bug"));
+    expect(loadColumnViews().done?.sort).toBe("newest");
+  });
+
+  it("renders default views when the saved column views are corrupt", () => {
+    window.localStorage.setItem(COLUMN_VIEWS_KEY, "{nope");
+    renderBoard(cards());
+    expect(screen.getByText("Plain")).toBeInTheDocument();
   });
 });
