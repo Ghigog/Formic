@@ -55,10 +55,10 @@ export default defineConfig({
       // (Measured without TEST_DATABASE_URL, which also leaves
       // prisma-repository.ts out of the count, so local and CI agree.)
       thresholds: {
-        lines: 79,
-        statements: 77,
-        branches: 72,
-        functions: 77,
+        lines: 88,
+        statements: 85,
+        branches: 78,
+        functions: 81,
       },
     },
     projects: [
