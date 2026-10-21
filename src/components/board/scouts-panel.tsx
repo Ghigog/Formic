@@ -29,6 +29,7 @@ const STATUS_TEXT: Record<ScoutView["status"], string> = { out: "Out", back: "Ba
 export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: () => void }) {
   const [answer, setAnswer] = useState<ScoutsAnswer | null>(null);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const canSend =
@@ -76,27 +77,36 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
   const scouts = answer?.scouts ?? [];
   const swappable = card.status === "review" && !!card.scoutPick;
 
+  const count = card.scouts ?? scouts.length;
+  const label = `Scouts: ${count}`;
+
   return (
-    <div
-      data-scouts
-      className={
-        canSend && !hasScouts
-          ? "flex items-center gap-2 text-[12px]"
-          : "bg-sunken order-last flex w-full flex-col gap-2 rounded-md px-3 py-2 text-[12px]"
-      }
-    >
-      {canSend && !hasScouts ? (
+    <div data-scouts className="relative flex items-center gap-1 text-[12px]">
+      {canSend ? (
         <button
           type="button"
           disabled={busy}
           onClick={() => void post({ action: "send", ticketId: card.id })}
           className="bg-ink text-bg rounded px-2.5 py-1 font-medium whitespace-nowrap disabled:opacity-50"
         >
-          Send scout
+          {label}
         </button>
       ) : (
-        <>
-          <span className="text-ink font-semibold">Scouts</span>
+        <span className="text-ink font-semibold whitespace-nowrap">{label}</span>
+      )}
+      {hasScouts && (
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label="Scout details"
+          onClick={() => setOpen((o) => !o)}
+          className="text-fg-muted px-1 py-0.5"
+        >
+          {open ? "▴" : "▾"}
+        </button>
+      )}
+      {open && (
+        <div className="bg-sunken border-line absolute top-full left-0 z-10 mt-1 flex w-80 flex-col gap-2 rounded-md border px-3 py-2">
           {answer?.why && <p className="text-fg-muted m-0">{answer.why}</p>}
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {scouts.map((s) => (
@@ -120,7 +130,7 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
       {error && (
         <span role="alert" className="text-log-error text-[11px]">
