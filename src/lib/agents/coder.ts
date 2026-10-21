@@ -43,6 +43,7 @@ export function taskBrief(task: CoderTask): string {
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
     "",
     `File scope (where this change is expected to go): ${task.fileScope.join(", ")}`,
+    ...(task.storyPoints ? [`Estimate: ${task.storyPoints} story points.`] : []),
     ...(task.notes?.length
       ? [
           "",

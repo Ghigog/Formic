@@ -1,3 +1,4 @@
+import type { FollowUp } from "@/lib/agents/follow-ups";
 import type { BoardCard, PlanStep } from "./entities";
 import type { FormicEvent } from "./events";
 
@@ -31,6 +32,8 @@ export interface TicketView {
   plan: PlanStep[];
   /** Steps outside the repository the person has to take themselves. */
   handoff: string[];
+  /** Work its agents found that is not its own, proposed as tickets for the person to add or dismiss. */
+  followUps: FollowUp[];
   activity: TicketActivity[];
   /** What its agent runs have taken, against the budget they were given; null budget means none. */
   usage: { usedMinutes: number; budgetMinutes: number | null };

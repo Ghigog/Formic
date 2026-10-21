@@ -65,6 +65,7 @@ export async function GET(
     }),
     plan: detail.plan,
     handoff: detail.handoff,
+    followUps: detail.followUps,
     activity,
     usage: { usedMinutes: Math.round(usedMs / 60_000), budgetMinutes: budget.minutes.requested },
     canStop: card.status === "running" || !!detail.runnerJob || !!card.workingSince,

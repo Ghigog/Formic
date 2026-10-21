@@ -22,6 +22,7 @@ import { HELPER_MODEL, requestShape } from "./models";
 import { SHARED_NOTES_INTRO } from "./prompts";
 import { MAX_SHARED_NOTE } from "@/lib/domain/events";
 import { MAX_PLAN_STEPS, checkPlan, currentStep, planFraction } from "./plan";
+import { checkFollowUps } from "./follow-ups";
 import { checkHandoff } from "./handoff";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
 import { type ChatMessage, type ModelInfo, type ToolSpec, advertisedModel, chat } from "@/lib/llm/openai-compat";
@@ -266,6 +267,7 @@ const finishInput = z.object({
   already_done: z.boolean().optional(),
   send_back: z.string().nullable().optional(),
   for_you: z.array(z.string()).optional(),
+  follow_ups: z.array(z.unknown()).optional(),
   blocked_reason: z.string().nullable().optional(),
 });
 
@@ -432,6 +434,22 @@ const FOR_YOU = {
     "Steps outside the repository the person has to take themselves, one instruction each. Empty when there are none.",
 };
 
+const FOLLOW_UPS = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      why: { type: "string", description: "What the work is and why it was left out of this ticket." },
+      points: { type: ["integer", "null"], description: "The estimate: 1, 2, 3, 5, 8 or 13." },
+    },
+    required: ["title", "why", "points"],
+    additionalProperties: false,
+  },
+  description:
+    "Work this ticket uncovered that is not its own: a criterion too big for its estimate, or one that waits on other tickets. The person may add each as its own ticket. Empty when there is none.",
+};
+
 const BLOCKED = {
   type: ["string", "null"],
   description:
@@ -460,9 +478,10 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
             "True only when the repository already met every acceptance criterion and you changed nothing.",
         },
         for_you: FOR_YOU,
+        follow_ups: FOLLOW_UPS,
         blocked_reason: BLOCKED,
       },
-      required: ["summary", "detail", "verified_with", "already_done", "for_you", "blocked_reason"],
+      required: ["summary", "detail", "verified_with", "already_done", "for_you", "follow_ups", "blocked_reason"],
       additionalProperties: false,
     },
     strict: true,
@@ -490,9 +509,10 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
             "To send the ticket back to the Coder Agent: what is wrong and what to do about it. Change nothing when you send it back. Null to approve or fix.",
         },
         for_you: FOR_YOU,
+        follow_ups: FOLLOW_UPS,
         blocked_reason: BLOCKED,
       },
-      required: ["summary", "detail", "verified_with", "send_back", "for_you", "blocked_reason"],
+      required: ["summary", "detail", "verified_with", "send_back", "for_you", "follow_ups", "blocked_reason"],
       additionalProperties: false,
     },
     strict: true,
@@ -959,6 +979,7 @@ export async function runCodingLoop(
               verifiedWith: parsed.data.verified_with ?? null,
               alreadyDone: parsed.data.already_done ?? false,
               handoff: checkHandoff(parsed.data.for_you),
+              followUps: checkFollowUps(parsed.data.follow_ups),
               sendBack: parsed.data.send_back?.trim() || null,
             },
             usage: total,

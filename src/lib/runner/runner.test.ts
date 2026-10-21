@@ -21,6 +21,7 @@ import {
   whyItFailed,
 } from "./runner";
 import { addNote } from "@/lib/coder/notes";
+import { FOLLOW_UP_RULE, REVIEWER_FOLLOW_UP_RULE } from "@/lib/agents/prompts";
 import {
   ALREADY_DONE_TRAILER,
   ANSWER_PATH,
@@ -987,6 +988,40 @@ describe("taking a CLI agent's work", () => {
     expect((await repository().ticketDetail(ticket.id))!.status).toBe("failed");
   });
 
+  it("keeps the follow-ups its summary proposes on the ticket", async () => {
+    const { ticket, job, staging } = await dispatched();
+    MockVcsClient.stage(
+      staging,
+      ["vitest.config.ts"],
+      [
+        "T-1: Set thresholds to measured",
+        "",
+        "Branches are at 74%, short of the 78% asked for.",
+        "",
+        "Follow-ups:",
+        "- Raise branch coverage to 78% (5 pt): about 540 branches are uncovered, far past this ticket's estimate.",
+      ].join("\n"),
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    expect((await repository().ticketDetail(ticket.id))!.followUps).toEqual([
+      {
+        title: "Raise branch coverage to 78%",
+        why: "about 540 branches are uncovered, far past this ticket's estimate.",
+        points: 5,
+      },
+    ]);
+  });
+
+  it("holds the agent to the ticket's estimate, with follow-ups for what does not fit", async () => {
+    await dispatched();
+    const prompt = MockVcsClient.runner().dispatches[0]!.inputs.prompt!;
+    expect(prompt).toContain(FOLLOW_UP_RULE);
+    expect(prompt).toContain('"Follow-ups:" section');
+    expect(prompt).toContain("Estimate: 3 story points.");
+  });
+
   it("tells the agent how to report a ticket that is already done", async () => {
     await dispatched();
     const prompt = MockVcsClient.runner().dispatches[0]!.inputs.prompt!;
@@ -1156,6 +1191,22 @@ describe("a CLI agent fixing red CI", () => {
     expect((await repository().ticketDetail(ticket.id))!.status).not.toBe("merged");
   });
 
+  it("approves a change whose reported gap the reviewer proposes as a follow-up", async () => {
+    const { ticket } = await reviewed(
+      [
+        "Every criterion this ticket can meet is met; the coverage target needs far more than 2 points of work.",
+        "",
+        "Follow-ups:",
+        "- Raise branch coverage to 78% (5 pt): about 540 branches are uncovered.",
+        "",
+        "Formic-Review: approved",
+      ].join("\n"),
+    );
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("merged");
+    expect(after.followUps.map((f) => f.title)).toEqual(["Raise branch coverage to 78%"]);
+  });
+
   it("tells the reviewer how to approve or send back", async () => {
     const { ticket } = await reviewed("Formic-Review: approved");
     const prompt = cliPrompt(
@@ -1169,6 +1220,7 @@ describe("a CLI agent fixing red CI", () => {
     expect(prompt).toContain("whatever the ticket says");
     expect(prompt).toContain("CI is green on this head.");
     expect(prompt).toContain(PLAN_FIRST_RULE);
+    expect(prompt).toContain(REVIEWER_FOLLOW_UP_RULE);
   });
 });
 

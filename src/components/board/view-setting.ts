@@ -8,7 +8,7 @@ export const BOARD_VIEW_KEY = "formic:board-view:v1";
 export const COLUMN_VIEWS_KEY = "formic:column-views:v1";
 
 const SORTS: ColumnSort[] = ["position", "title", "newest", "points"];
-const TYPES: TypeFilter[] = ["ticket", "user_story", "task", "feature", "bug", "spike", "archived"];
+const TYPES: TypeFilter[] = ["ticket", "user_story", "task", "feature", "bug", "spike", "tech_debt", "archived"];
 
 /** Checks each field of a stored view; anything unreadable falls back to the default. */
 function parseView(parsed: unknown): ColumnView {

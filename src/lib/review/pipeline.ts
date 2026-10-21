@@ -14,6 +14,7 @@ import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
+import { recordFollowUps } from "@/lib/board/follow-ups";
 import { positionForIndex } from "@/lib/ordering";
 import {
   AGENT_COMMIT_AUTHOR,
@@ -1291,6 +1292,7 @@ async function reviewTicket(
     }
 
     const verdict = outcome.value;
+    await recordFollowUps(ticket.id, verdict.followUps ?? []);
     // The review answered, whatever it is about to be asked to do with the
     // answer: this head is no longer one a report can hand to it again.
     await repo.updateTicket(ticket.id, {

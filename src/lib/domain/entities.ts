@@ -44,7 +44,7 @@ export const TICKET_SIZES = ["S", "M", "L", "XL"] as const;
 export type TicketSize = (typeof TICKET_SIZES)[number];
 
 /** What the owner chose a card to be, besides plain work. */
-export const WORK_TYPES = ["user_story", "task", "feature", "bug", "spike"] as const;
+export const WORK_TYPES = ["user_story", "task", "feature", "bug", "spike", "tech_debt"] as const;
 export type WorkType = (typeof WORK_TYPES)[number];
 
 export const BUG_SEVERITIES = ["low", "medium", "high", "critical"] as const;
