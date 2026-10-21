@@ -10,7 +10,7 @@ import {
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
 import { EMPTY_VIEW, type ColumnView } from "./view";
-import { loadBoardView } from "./view-setting";
+import { loadBoardView, loadColumnViews, saveColumnViews } from "./view-setting";
 import { adjacentColumn, ownsGesture, slideTowards, swipeDirection, type SwipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
 import { CardEnvContext, LEAVE_MS, type CardEnv, type ExtrasMap } from "./card";
@@ -141,20 +141,31 @@ export function Board({
     done: EMPTY_VIEW,
   }));
 
-  // The Settings choice seeds every column once mounted (not in useState's
-  // initialiser, which would differ from the server render).
+  // Each column starts from its own saved view, else the Settings choice
+  // (browser storage is only readable after mount, so not in useState's
+  // initialiser, which would differ from the server render). Saving waits
+  // for `viewsLoaded` so the empty initial state never overwrites it.
+  const [viewsLoaded, setViewsLoaded] = useState(false);
+  // Only columns the person changed are saved, so the rest keep following Settings.
+  const ownViews = useRef<Partial<Record<ColumnId, ColumnView>>>({});
   useEffect(() => {
-    const saved = loadBoardView();
-    if (saved === EMPTY_VIEW) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is only readable after mount
+    const boardWide = loadBoardView();
+    const own = loadColumnViews();
+    ownViews.current = own;
+    /* eslint-disable react-hooks/set-state-in-effect -- browser storage is only readable after mount */
     setViews({
-      backlog: saved,
-      todo: saved,
-      in_progress: saved,
-      in_review: saved,
-      done: saved,
+      backlog: own.backlog ?? boardWide,
+      todo: own.todo ?? boardWide,
+      in_progress: own.in_progress ?? boardWide,
+      in_review: own.in_review ?? boardWide,
+      done: own.done ?? boardWide,
     });
+    setViewsLoaded(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
+  useEffect(() => {
+    if (viewsLoaded) saveColumnViews(ownViews.current);
+  }, [views, viewsLoaded]);
 
   const archivedWanted = COLUMNS.some((c) => views[c].types.includes("archived"));
   useEffect(() => {
@@ -390,7 +401,10 @@ export function Board({
       bare={isMobile}
       collapsed={collapsed[col]}
       view={views[col]}
-      onViewChange={(view) => setViews((prev) => ({ ...prev, [col]: view }))}
+      onViewChange={(view) => {
+        ownViews.current = { ...ownViews.current, [col]: view };
+        setViews((prev) => ({ ...prev, [col]: view }));
+      }}
       accepts={(cardId) => {
         const card = live.find((c) => c.id === cardId);
         // Where it can work: its own column, or a move the rules allow
