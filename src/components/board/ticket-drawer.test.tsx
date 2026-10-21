@@ -467,6 +467,42 @@ describe("TicketDrawer on-screen keyboard", () => {
   });
 });
 
+describe("TicketDrawer with the keyboard open", () => {
+  it("hides the banner, progress strip and epic link, then restores them", async () => {
+    const vv = Object.assign(new EventTarget(), { height: 800, offsetTop: 0 });
+    vi.stubGlobal("innerHeight", 800);
+    vi.stubGlobal("visualViewport", vv);
+    open({
+      ...VIEW,
+      card: {
+        ...card,
+        status: "failed",
+        stalledIn: "in_review",
+        blockedReason: "CI broke",
+      },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Agent" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ticket progress")).toBeInTheDocument();
+    act(() => {
+      vv.height = 400;
+      vv.dispatchEvent(new Event("resize"));
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Ticket progress")).not.toBeInTheDocument();
+    expect(screen.queryByText(/in EPIC-1/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Agent" })).toBeInTheDocument();
+    act(() => {
+      vv.height = 800;
+      vv.dispatchEvent(new Event("resize"));
+    });
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ticket progress")).toBeInTheDocument();
+    expect(screen.getByText(/in EPIC-1/)).toBeInTheDocument();
+  });
+});
+
 describe("TicketDrawer archive", () => {
   const todo: TicketView = {
     ...VIEW,

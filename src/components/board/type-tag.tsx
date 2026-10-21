@@ -37,7 +37,12 @@ export function TypeTag({
   squashed?: boolean;
 }) {
   const bug = type === "bug";
-  const label = bug && squashed ? "Squashed" : LABELS[type];
+  const label =
+    bug && squashed
+      ? "Squashed"
+      : bug && severity
+        ? `${LABELS[type]} · ${severity[0]!.toUpperCase()}${severity.slice(1)}`
+        : LABELS[type];
   const background = bug ? BUG_COLORS[severity ?? "medium"] : COLORS[type];
   const style =
     bug && squashed
