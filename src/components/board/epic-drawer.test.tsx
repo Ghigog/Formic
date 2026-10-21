@@ -265,9 +265,7 @@ describe("EpicDrawer on-screen keyboard", () => {
       vv.height = 400;
       vv.dispatchEvent(new Event("resize"));
     });
-    expect(document.querySelectorAll("[aria-label$='progress']").length).toBe(
-      0,
-    );
+    expect(screen.queryByLabelText("Epic lifecycle")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
 });
