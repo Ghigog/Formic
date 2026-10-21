@@ -86,16 +86,14 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
       }
     >
       {canSend && !hasScouts ? (
-        <>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void post({ action: "send", ticketId: card.id })}
-            className="bg-ink text-bg rounded px-2.5 py-1 font-medium whitespace-nowrap disabled:opacity-50"
-          >
-            Send scout
-          </button>
-        </>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void post({ action: "send", ticketId: card.id })}
+          className="bg-ink text-bg rounded px-2.5 py-1 font-medium whitespace-nowrap disabled:opacity-50"
+        >
+          Send scout
+        </button>
       ) : (
         <>
           <span className="text-ink font-semibold">Scouts</span>

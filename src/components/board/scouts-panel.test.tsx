@@ -38,6 +38,13 @@ describe("the scouts panel", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
+  it("shows the Send scout button alone, with no text beside it", async () => {
+    serve({ why: null, scouts: [] });
+    const { container } = render(<ScoutsPanel card={makeCard({ status: "running", stalledIn: null })} onChanged={() => {}} />);
+    await screen.findByRole("button", { name: "Send scout" });
+    expect(container.textContent).toBe("Send scout");
+  });
+
   it.each(["ready", "review", "merged"] as const)("has no Send scout button on a %s ticket", (status) => {
     serve({ why: null, scouts: [] });
     render(<ScoutsPanel card={makeCard({ status, stalledIn: null })} onChanged={() => {}} />);
