@@ -212,9 +212,9 @@ export function EpicDrawer({
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
-          {epic && <ProblemNotice card={epic} className="mb-3" />}
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
+          {epic && !kb.open && <ProblemNotice card={epic} className="mb-3" />}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <div className="min-w-0 sm:flex-1">
               <span className="text-fg-subtle font-mono text-[10px]">
                 {epic?.key ?? "EPIC"}
               </span>
@@ -222,7 +222,7 @@ export function EpicDrawer({
                 {detail?.title ?? (loading ? "Loading…" : "Epic")}
               </h2>
               {epic && (
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <StatusPill status={epic.status} />
                   {epic.workingSince && (
                     <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
@@ -241,7 +241,7 @@ export function EpicDrawer({
                 </div>
               )}
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <div className="flex flex-wrap items-center justify-start gap-1.5 sm:justify-end">
               {detail?.canRetry && !confirming && (
                 <button
                   type="button"
@@ -323,12 +323,14 @@ export function EpicDrawer({
             </p>
           )}
 
-          <StepIndicator
-            className="mt-3"
-            current={progress.current}
-            failedAt={failedAt}
-            working={progress.working}
-          />
+          {!kb.open && (
+            <StepIndicator
+              className="mt-3"
+              current={progress.current}
+              failedAt={failedAt}
+              working={progress.working}
+            />
+          )}
 
           {/* Survives the toast that announced it: where it came from, and why. */}
           {epic?.rerouteFrom && (

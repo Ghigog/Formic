@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
@@ -84,6 +84,8 @@ export interface CardEnv {
   nextFor: (card: BoardCard, column: ColumnId) => ColumnId | null;
   /** Where a card's left arrow sends it back to, or null when it has none. */
   returnFor?: (card: BoardCard, column: ColumnId) => ColumnId | null;
+  /** A phone: the arrows sit in a footer at the card's bottom corners. */
+  mobile?: boolean;
   onAdvance: (card: BoardCard, to: ColumnId) => void;
   /** The card sliding out of its column after its arrow, and which way. */
   leaving?: { id: string; direction: "forward" | "back" } | null;
@@ -185,18 +187,56 @@ function CardTypeTag({ card }: { card: BoardCard }) {
 
 /** A small chess queen on a card a Queen was placed on. */
 function CardQueenMark({ card }: { card: BoardCard }) {
+  const colony = useColony();
+  const colonyRef = useRef(colony);
+  useEffect(() => {
+    colonyRef.current = colony;
+  }, [colony]);
+  const ref = useRef<HTMLSpanElement>(null);
+  const had = useRef(card.queen);
+  const placed = !!card.queen;
+  // Only a Queen placed while the card is mounted grows in; one the card loaded with is just there.
+  useEffect(() => {
+    if (!placed || had.current) {
+      had.current = placed;
+      return;
+    }
+    had.current = true;
+    colonyRef.current?.sfx("hiss");
+    const pop = () => colonyRef.current?.sfx("pop");
+    const grow = colonyRef.current?.fx.reducedMotion
+      ? undefined
+      : ref.current?.animate?.([{ transform: "scale(0)" }, { transform: "scale(1)" }], { duration: 600, easing: "ease-out" });
+    if (!grow) return pop();
+    grow.onfinish = pop;
+    return () => {
+      grow.onfinish = null;
+      grow.cancel();
+    };
+  }, [placed]);
   if (!card.queen) return null;
   return (
-    <span data-queenmark role="img" aria-label="Queen placed" title="Queen placed" className="text-clay inline-flex shrink-0">
+    <span ref={ref} data-queenmark role="img" aria-label="Queen placed" title="Queen placed" className="text-clay inline-flex shrink-0">
       <QueenIcon size={12} />
     </span>
   );
 }
 
-function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) {
+function AdvanceButton({
+  card,
+  column,
+  place = "inline",
+}: {
+  card: BoardCard;
+  column: ColumnId;
+  /** "head" gives way to the footer on a phone; "footer" shows only there. */
+  place?: "inline" | "head" | "footer";
+}) {
   const env = useContext(CardEnvContext);
   const to = env?.nextFor(card, column) ?? null;
   if (!env || !to) return null;
+  if (place === "head" && env.mobile) return null;
+  const footer = place === "footer";
   return (
     <button
       type="button"
@@ -206,7 +246,10 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
         if (env.leaving?.id === card.id) return;
         env.onAdvance(card, to);
       }}
-      className="hover:bg-column -my-0.5 -mr-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
+      className={cn(
+        "hover:bg-column inline-flex shrink-0 items-center justify-center rounded-md",
+        footer ? "-mb-1 -mr-1 size-7" : "-my-0.5 -mr-1 size-[22px]",
+      )}
     >
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path
@@ -221,7 +264,7 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
   );
 }
 
-/** The arrow that sends a card back a column, on the left of its head. */
+/** The arrow that sends a card back a column, at the bottom left of its footer. */
 function ReturnButton({ card, column }: { card: BoardCard; column: ColumnId }) {
   const env = useContext(CardEnvContext);
   const to = env?.returnFor?.(card, column) ?? null;
@@ -235,7 +278,7 @@ function ReturnButton({ card, column }: { card: BoardCard; column: ColumnId }) {
         if (env.leaving?.id === card.id) return;
         env.onAdvance(card, to);
       }}
-      className="hover:bg-column -my-0.5 -ml-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
+      className="hover:bg-column -mb-1 -ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md"
     >
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path
@@ -448,36 +491,42 @@ function QueueTimer({ card }: { card: BoardCard }) {
   );
 }
 
-function TicketHead({
-  card,
-  column,
-  pr = false,
-}: {
-  card: BoardCard;
-  column: ColumnId;
-  pr?: boolean;
-}) {
+/** Mobile only: the return arrow at the bottom left, the advance arrow at the bottom right. */
+function CardFooter({ card, column }: { card: BoardCard; column: ColumnId }) {
+  const env = useContext(CardEnvContext);
+  if (!env?.mobile) return null;
+  const hasReturn = !!env.returnFor?.(card, column);
+  const hasAdvance = !!env.nextFor(card, column);
+  if (!hasReturn && !hasAdvance) return null;
   return (
-    <div className="flex min-h-[18px] items-center gap-1.5">
+    <div className="-mt-1 flex items-center justify-between">
       <ReturnButton card={card} column={column} />
-      {card.status === "queued" && <QueueTimer card={card} />}
-      <CardTypeTag card={card} />
-        <CardQueenMark card={card} />
-      <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
       <div className="flex-grow" />
-      <ProblemBadge card={card} />
-      {(card.scouts ?? 0) > 0 && !card.scoutPick && card.status === "running" && (
-        <CoinBadge title="Scouts trying it at once" className="shrink-0 whitespace-nowrap">
-          {card.scouts} scouts out
-        </CoinBadge>
-      )}
-      {pr && card.prNumber && (
-        <CoinBadge title="Pull request" className="shrink-0 whitespace-nowrap">
-          PR #{card.prNumber}
-        </CoinBadge>
-      )}
-      <SpBadge points={card.storyPoints} done={card.status === "merged"} />
-      <AdvanceButton card={card} column={column} />
+      <AdvanceButton card={card} column={column} place="footer" />
+    </div>
+  );
+}
+
+function TicketHead({ card, column }: { card: BoardCard; column: ColumnId }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex min-h-[18px] items-center gap-1.5">
+        {card.status === "queued" && <QueueTimer card={card} />}
+        <CardQueenMark card={card} />
+        <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
+        <div className="flex-grow" />
+        <ProblemBadge card={card} />
+        <AdvanceButton card={card} column={column} place="head" />
+      </div>
+      <div data-testid="card-tags" className="flex flex-wrap items-center gap-1.5">
+        <CardTypeTag card={card} />
+        {(card.scouts ?? 0) > 0 && !card.scoutPick && card.status === "running" && (
+          <CoinBadge title="Scouts trying it at once" className="shrink-0 whitespace-nowrap">
+            {card.scouts} scouts out
+          </CoinBadge>
+        )}
+        <SpBadge points={card.storyPoints} done={card.status === "merged"} />
+      </div>
     </div>
   );
 }
@@ -551,6 +600,7 @@ function RawIdea({
         {isBug(card, NO_EPICS) ? "Triage" : "Raw idea"}
         {extras.age ? ` · ${extras.age}` : ""}
       </span>
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -610,6 +660,7 @@ function RunningCard({
           </span>
         </div>
       )}
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -621,6 +672,7 @@ function QueuedCard({ card, column }: { card: BoardCard; column: ColumnId }) {
       <TicketHead card={card} column={column} />
       <Title muted>{card.title}</Title>
       <EpicLine card={card} />
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -663,7 +715,7 @@ function ReviewCard({
       card={card}
       className={cn("bg-card flex flex-col gap-2 p-3", green ? "border-jade-line" : "border-line")}
     >
-      <TicketHead card={card} column={column} pr />
+      <TicketHead card={card} column={column} />
       <Title>{card.title}</Title>
       <EpicLine card={card} />
 
@@ -739,6 +791,7 @@ function ReviewCard({
           )}
         </div>
       )}
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -756,13 +809,14 @@ function DoneCard({ card, column, extras }: { card: BoardCard; column: ColumnId;
     .join(" · ");
   return (
     <CardShell card={card} className="flex flex-col gap-2 border-done-card-line bg-done-card p-3">
-      <TicketHead card={card} column={column} pr />
+      <TicketHead card={card} column={column} />
       <Title>{card.title}</Title>
       <EpicLine card={card} />
       <span className="text-muted inline-flex items-center gap-1.5 font-mono text-[9px]">
         <span aria-hidden className="bg-jade size-[5px] rounded-full" />
         {trail}
       </span>
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -820,6 +874,7 @@ function PlainTicket({
           caption={extras.progress.label}
         />
       )}
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -892,14 +947,17 @@ export function KanbanCard({
   const exit = leaving?.id === card.id ? leaving.direction : null;
   const pending = !!env?.pending?.has(card.id);
   return (
-    <Draggable draggableId={card.id} index={index}>
+    <Draggable draggableId={card.id} index={index} isDragDisabled={pending}>
       {(provided, snapshot) => (
         <li
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={() => onOpen(card)}
-          className="cursor-grab rounded-lg outline-none active:cursor-grabbing"
+          className={cn(
+            "rounded-lg outline-none",
+            !pending && "cursor-grab active:cursor-grabbing",
+          )}
         >
           {/* Picked up, the card leans into the drag. */}
           <div
@@ -1067,6 +1125,7 @@ export function EpicGroup({
   const own = extras[epic.id] ?? {};
   const done = column === "done";
   const colony = useColony();
+  const pending = useContext(CardEnvContext)?.pending;
 
   return (
     // Never shrunk to fit: a full column scrolls instead. Without this an
@@ -1075,8 +1134,9 @@ export function EpicGroup({
       <Draggable
         draggableId={epic.id}
         index={index}
-        // Done's order is the epic's completion time, not the person's call.
-        isDragDisabled={done}
+        // Done's order is the epic's completion time, not the person's call;
+        // a pending epic waits for the server.
+        isDragDisabled={done || !!pending?.has(epic.id)}
       >
         {(provided, snapshot) => (
           <div
@@ -1184,6 +1244,7 @@ export function EpicGroup({
                 key={child.id}
                 draggableId={child.id}
                 index={index + 1 + i}
+                isDragDisabled={!!pending?.has(child.id)}
               >
                 {(provided, snapshot) => (
                   <div
@@ -1192,7 +1253,8 @@ export function EpicGroup({
                     {...provided.dragHandleProps}
                     onClick={() => onOpen(child)}
                     className={cn(
-                      "cursor-grab rounded-md outline-none active:cursor-grabbing",
+                      "rounded-md outline-none",
+                      !pending?.has(child.id) && "cursor-grab active:cursor-grabbing",
                       snapshot.isDragging && "shadow-lift",
                     )}
                   >

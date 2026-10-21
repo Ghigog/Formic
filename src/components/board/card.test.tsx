@@ -1,5 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ColonyApi } from "@/components/colony/colony";
+
+let colonyApi: ColonyApi | null = null;
+vi.mock("@/components/colony/colony", async (orig) => ({
+  ...(await orig<typeof import("@/components/colony/colony")>()),
+  useColony: () => colonyApi,
+}));
+afterEach(() => {
+  colonyApi = null;
+});
+import { DragDropContext } from "@hello-pangea/dnd";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { Column } from "./column";
 import { EMPTY_VIEW } from "./view";
 import { CardEnvContext } from "./card";
@@ -58,6 +69,27 @@ describe("a card in review", () => {
   });
 });
 
+describe("a ticket card's head", () => {
+  it("keeps the tags out of the key row and puts them in a wrapping row beneath it", () => {
+    const card = makeCard({ status: "merged", stage: 8, prNumber: 4, workType: "user_story", storyPoints: 5 });
+    renderReview(card);
+    const keyRow = screen.getByText(card.key).parentElement!;
+    expect(keyRow.querySelector("[data-type-tag]")).toBeNull();
+    expect(keyRow.querySelector("[data-sp]")).toBeNull();
+    const tags = screen.getByTestId("card-tags");
+    expect(tags.className).toContain("flex-wrap");
+    expect(tags.querySelector("[data-type-tag]")).not.toBeNull();
+    expect(tags.querySelector("[data-sp]")).not.toBeNull();
+    expect(keyRow.nextElementSibling).toBe(tags);
+  });
+
+  it("shows no Pull request badge in the head", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
+    expect(screen.queryByTitle("Pull request")).toBeNull();
+    expect(screen.queryByText("PR #4")).toBeNull();
+  });
+});
+
 describe("the queen mark", () => {
   it("shows on a card with a Queen and not on one without", () => {
     renderReview(makeCard({ status: "review", stage: 6, prNumber: 4, queen: true }));
@@ -67,6 +99,61 @@ describe("the queen mark", () => {
   it("is absent without a Queen", () => {
     renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
     expect(screen.queryByLabelText("Queen placed")).toBeNull();
+  });
+
+  function withColony(reducedMotion: boolean) {
+    const sfx = vi.fn();
+    const finish: { run?: () => void } = {};
+    HTMLElement.prototype.animate = vi.fn(() => {
+      const a = {} as { onfinish: (() => void) | null; cancel: () => void };
+      a.cancel = () => {};
+      Object.defineProperty(a, "onfinish", { set: (f) => (finish.run = f ?? undefined), get: () => finish.run });
+      return a;
+    }) as never;
+    colonyApi = { sfx, fx: { reducedMotion } } as unknown as ColonyApi;
+    return { sfx, finish };
+  }
+
+  function reviewTree(card: BoardCard) {
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
+    return (
+      <DragDropContext onDragEnd={() => {}}>
+        <CardEnvContext.Provider value={env}>
+          <Column id="in_review" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+        </CardEnvContext.Provider>
+      </DragDropContext>
+    );
+  }
+
+  it("grows in with a hiss, then a pop, when a Queen is placed on a mounted card", () => {
+    const { sfx, finish } = withColony(false);
+    const card = makeCard({ status: "review", stage: 6, prNumber: 4 });
+    const { rerender } = render(reviewTree(card));
+    expect(sfx).not.toHaveBeenCalled();
+    rerender(reviewTree({ ...card, queen: true }));
+    expect(screen.getByLabelText("Queen placed")).toBeTruthy();
+    expect(sfx).toHaveBeenCalledTimes(1);
+    expect(sfx).toHaveBeenCalledWith("hiss");
+    expect(HTMLElement.prototype.animate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ duration: 600 }));
+    finish.run?.();
+    expect(sfx).toHaveBeenLastCalledWith("pop");
+  });
+
+  it("skips the scale under reduced motion but keeps the sounds", () => {
+    const { sfx } = withColony(true);
+    const card = makeCard({ status: "review", stage: 6, prNumber: 4 });
+    const { rerender } = render(reviewTree(card));
+    rerender(reviewTree({ ...card, queen: true }));
+    expect(HTMLElement.prototype.animate).not.toHaveBeenCalled();
+    expect(sfx.mock.calls.map((c) => c[0])).toEqual(["hiss", "pop"]);
+  });
+
+  it("shows a Queen the card loaded with at once and silently", () => {
+    const { sfx } = withColony(false);
+    render(reviewTree(makeCard({ status: "review", stage: 6, prNumber: 4, queen: true })));
+    expect(screen.getByLabelText("Queen placed")).toBeTruthy();
+    expect(sfx).not.toHaveBeenCalled();
+    expect(HTMLElement.prototype.animate).not.toHaveBeenCalled();
   });
 });
 
@@ -180,5 +267,70 @@ describe("a card whose move is pending", () => {
     expect(el).toHaveAttribute("data-pending");
     expect(el).toHaveClass("scale-[1.02]", "rotate-[-1deg]");
     expect(el).toHaveClass("motion-reduce:scale-100", "motion-reduce:rotate-0");
+  });
+});
+
+describe("dragging a card", () => {
+  function handle(pending: boolean) {
+    const card = makeCard({ key: "PROT-02", status: "ready" });
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn(), pending: new Set(pending ? [card.id] : []) };
+    renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+    return document.querySelector("li")!;
+  }
+
+  it("is locked while the move is pending", () => {
+    const li = handle(true);
+    expect(li.getAttribute("data-rfd-drag-handle-draggable-id")).toBeNull();
+    expect(li).not.toHaveClass("cursor-grab");
+  });
+
+  it("works as before when nothing is pending", () => {
+    const li = handle(false);
+    expect(li.getAttribute("data-rfd-drag-handle-draggable-id")).not.toBeNull();
+    expect(li).toHaveClass("cursor-grab");
+  });
+});
+
+describe("a card's footer arrows", () => {
+  function renderTodo(mobile: boolean, returnTo: "backlog" | null = "backlog") {
+    const card = makeCard({ key: "PROT-02", status: "ready" });
+    const env = {
+      epics: new Map(),
+      nextFor: () => "in_progress" as const,
+      returnFor: () => returnTo,
+      mobile,
+      onAdvance: vi.fn(),
+    };
+    renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+    return env;
+  }
+
+  it("puts the return arrow at the bottom left and the advance arrow at the bottom right on a phone", () => {
+    renderTodo(true);
+    const back = screen.getByRole("button", { name: "Return PROT-02 to Backlog" });
+    const next = screen.getByRole("button", { name: "Move PROT-02 to In Progress" });
+    expect(back.parentElement).toBe(next.parentElement);
+    expect(back.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(back.parentElement).not.toHaveClass("min-h-[18px]");
+  });
+
+  it("shows only the arrows that apply", () => {
+    renderTodo(true, null);
+    expect(screen.queryByRole("button", { name: /^Return/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Move/ })).toBeInTheDocument();
+  });
+
+  it("keeps the advance arrow in the head on a wide screen, with no return arrow", () => {
+    renderTodo(false);
+    expect(screen.queryByRole("button", { name: /^Return/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Move/ }).parentElement).toHaveClass("min-h-[18px]");
   });
 });

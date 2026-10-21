@@ -10,6 +10,7 @@ import {
 import { cn } from "@/components/ui/cn";
 import type { AgentPreset } from "@/lib/domain/entities";
 import type { AssistantMessageView } from "@/lib/hooks/use-assistant";
+import { useKeyboardInset } from "@/lib/hooks/use-keyboard-inset";
 import { provider as providerInfo } from "@/lib/llm/providers";
 
 /**
@@ -221,6 +222,9 @@ export function AskBox({
   );
 }
 
+/** The mobile shade's top offset in px (Tailwind top-14). */
+const MOBILE_SHADE_TOP = 56;
+
 /** The mobile app bar's way in: a button, and a shade that carries its own composer. */
 export function AskButton({
   a,
@@ -244,6 +248,7 @@ export function AskButton({
         a={a}
         repoName={repoName}
         withComposer
+        keyboardTop={MOBILE_SHADE_TOP}
         className="fixed top-14 right-0 left-0"
       />
     </>
@@ -385,12 +390,21 @@ function Shade({
   repoName,
   className,
   withComposer = false,
+  keyboardTop,
 }: {
   a: AssistantControls;
   repoName: string;
   className?: string;
   withComposer?: boolean;
+  /** Top offset in px; when set, the shade shrinks to stay above the on-screen keyboard. */
+  keyboardTop?: number;
 }) {
+  const { visibleHeight } = useKeyboardInset();
+  const height = "min(60vh, 620px, calc(100vh - 4rem - 16px))";
+  const keyboardHeight =
+    keyboardTop !== undefined && visibleHeight !== null
+      ? Math.max(0, visibleHeight - keyboardTop)
+      : null;
   const list = useRef<HTMLDivElement>(null);
   const selected = a.presets.find((p) => p.id === a.presetId) ?? null;
   const cli = selected
@@ -424,7 +438,12 @@ function Shade({
         "assistant-shade border-line bg-card z-50 flex flex-col rounded-b-2xl border border-t-0 shadow-[0_18px_40px_-12px_rgba(28,25,23,0.28)]",
         className,
       )}
-      style={{ height: "min(60vh, 620px, calc(100vh - 4rem - 16px))" }}
+      style={{
+        height:
+          keyboardHeight === null
+            ? height
+            : `min(${height}, ${keyboardHeight}px)`,
+      }}
     >
       <header className="border-hairline flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
         <span className="text-muted text-[11px] font-semibold tracking-[0.06em] uppercase">

@@ -59,9 +59,14 @@ export function useKeyboardInset(): KeyboardInset {
   return state;
 }
 
-/** Style for a drawer's backdrop and panel so both stay above the keyboard. */
+/**
+ * Style for a drawer's backdrop and panel so both stay above the keyboard.
+ * `open` tells the drawer to collapse its header extras (notice, progress,
+ * epic link) so the content below keeps the height.
+ */
 export function keyboardStyles({ inset, visibleHeight }: KeyboardInset) {
   return {
+    open: visibleHeight !== null,
     backdrop: inset > 0 ? { paddingBottom: inset } : undefined,
     panel: visibleHeight !== null ? { maxHeight: visibleHeight } : undefined,
   };
