@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -251,5 +252,22 @@ describe("EpicDrawer on-screen keyboard", () => {
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveStyle({ paddingBottom: "300px" });
     expect(dialog.firstElementChild).toHaveStyle({ maxHeight: "500px" });
+  });
+
+  it("hides the progress strip while the keyboard is open", async () => {
+    const vv = Object.assign(new EventTarget(), { height: 800, offsetTop: 0 });
+    vi.stubGlobal("innerHeight", 800);
+    vi.stubGlobal("visualViewport", vv);
+    open();
+    await screen.findByText("Board export");
+    expect(screen.getByLabelText("Epic lifecycle")).toBeInTheDocument();
+    act(() => {
+      vv.height = 400;
+      vv.dispatchEvent(new Event("resize"));
+    });
+    expect(document.querySelectorAll("[aria-label$='progress']").length).toBe(
+      0,
+    );
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
 });
