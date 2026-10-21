@@ -35,6 +35,7 @@ function openPopoverAt(earned: number) {
     bugHex: "#000",
     tryStyle: vi.fn(),
     fx: { reducedMotion: true },
+    sfx: vi.fn(),
   } as unknown as ColonyApi;
   render(<ColonyPopover />);
   const bar = screen.getByText(/Everything unlocked|unlocks/).nextElementSibling!.firstElementChild as HTMLElement;
@@ -190,5 +191,59 @@ describe("ColonyPopover Queen carry", () => {
     fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
     expect(document.querySelector("[role=dialog]")!.className).not.toContain("invisible");
     fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+  });
+});
+
+describe("ColonyPopover Queen sounds", () => {
+  function carry(overCard: boolean, post: Response) {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST" ? post : new Response(JSON.stringify({ unspent: 2 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    openPopoverAt(3 * XP_PER_LEVEL);
+    const sfx = vi.fn();
+    api!.sfx = sfx;
+    const card = document.createElement("div");
+    card.dataset.tid = "t-1";
+    document.body.append(card);
+    document.elementFromPoint = vi.fn(() => (overCard ? card : document.body));
+    return { sfx, fetchMock, card };
+  }
+
+  it("skitters as the carried Queen moves far enough, and not on a tiny nudge", async () => {
+    const { sfx, card } = carry(true, new Response("{}", { status: 201 }));
+    fireEvent.pointerDown(await screen.findByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerMove(window, { clientX: 7, clientY: 5 });
+    expect(sfx).not.toHaveBeenCalled();
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 5 });
+    expect(sfx).toHaveBeenCalledWith("skitter", expect.any(Number));
+    fireEvent.pointerUp(window, { clientX: 60, clientY: 5 });
+    card.remove();
+  });
+
+  it("squashes on the drop over a card, before the answer", async () => {
+    const { sfx, card } = carry(true, new Response("{}", { status: 201 }));
+    fireEvent.pointerDown(await screen.findByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+    expect(sfx).toHaveBeenCalledWith("squash");
+    expect(sfx).not.toHaveBeenCalledWith("reject");
+    card.remove();
+  });
+
+  it("plays reject when the placement is refused", async () => {
+    const { sfx, card } = carry(true, new Response(JSON.stringify({ error: "No." }), { status: 422 }));
+    fireEvent.pointerDown(await screen.findByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+    await waitFor(() => expect(sfx).toHaveBeenCalledWith("reject"));
+    card.remove();
+  });
+
+  it("plays no squash on a drop over nothing", async () => {
+    const { sfx, fetchMock, card } = carry(false, new Response("{}", { status: 201 }));
+    fireEvent.pointerDown(await screen.findByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+    expect(sfx).not.toHaveBeenCalledWith("squash");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/queens", expect.objectContaining({ method: "POST" }));
+    card.remove();
   });
 });
