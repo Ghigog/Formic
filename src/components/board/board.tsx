@@ -146,9 +146,12 @@ export function Board({
   // initialiser, which would differ from the server render). Saving waits
   // for `viewsLoaded` so the empty initial state never overwrites it.
   const [viewsLoaded, setViewsLoaded] = useState(false);
+  // Only columns the person changed are saved, so the rest keep following Settings.
+  const ownViews = useRef<Partial<Record<ColumnId, ColumnView>>>({});
   useEffect(() => {
     const boardWide = loadBoardView();
     const own = loadColumnViews();
+    ownViews.current = own;
     /* eslint-disable react-hooks/set-state-in-effect -- browser storage is only readable after mount */
     setViews({
       backlog: own.backlog ?? boardWide,
@@ -161,7 +164,7 @@ export function Board({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
   useEffect(() => {
-    if (viewsLoaded) saveColumnViews(views);
+    if (viewsLoaded) saveColumnViews(ownViews.current);
   }, [views, viewsLoaded]);
 
   const archivedWanted = COLUMNS.some((c) => views[c].types.includes("archived"));
@@ -398,7 +401,10 @@ export function Board({
       bare={isMobile}
       collapsed={collapsed[col]}
       view={views[col]}
-      onViewChange={(view) => setViews((prev) => ({ ...prev, [col]: view }))}
+      onViewChange={(view) => {
+        ownViews.current = { ...ownViews.current, [col]: view };
+        setViews((prev) => ({ ...prev, [col]: view }));
+      }}
       accepts={(cardId) => {
         const card = live.find((c) => c.id === cardId);
         // Where it can work: its own column, or a move the rules allow

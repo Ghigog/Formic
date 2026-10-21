@@ -60,7 +60,7 @@ export function loadColumnViews(): Partial<Record<ColumnId, ColumnView>> {
   }
 }
 
-export function saveColumnViews(views: Record<ColumnId, ColumnView>): void {
+export function saveColumnViews(views: Partial<Record<ColumnId, ColumnView>>): void {
   try {
     window.localStorage.setItem(COLUMN_VIEWS_KEY, JSON.stringify(views));
   } catch {
