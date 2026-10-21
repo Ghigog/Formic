@@ -5,9 +5,29 @@ import { BUG_SEVERITIES, WORK_TYPES } from "@/lib/domain/entities";
 
 const NAMES = { user_story: "User story", task: "Task", feature: "Feature", spike: "Spike", bug: "Bug" } as const;
 
-function luminance(hex: string): number {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const TEXT = "#1c1917";
+
+function channels(hex: string): number[] {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+}
+
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = channels(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+}
+
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+/** How strong a tint is: its spread between the brightest and dimmest channel. */
+function strength(hex: string): number {
+  const c = channels(hex);
+  return Math.max(...c) - Math.min(...c);
 }
 
 function background(): string {
@@ -32,14 +52,35 @@ describe("TypeTag", () => {
     expect(colours.size).toBe(4);
   });
 
-  it("darkens a bug tag from low to critical", () => {
-    const lums = BUG_SEVERITIES.map((severity) => {
+  it("steps a bug tag up in strength from low to critical", () => {
+    const strengths = BUG_SEVERITIES.map((severity) => {
       const { unmount } = render(<TypeTag type="bug" severity={severity} />);
-      const l = luminance(background());
+      const v = strength(background());
       unmount();
-      return l;
+      return v;
     });
-    expect([...lums].sort((a, b) => b - a)).toEqual(lums);
-    expect(new Set(lums).size).toBe(4);
+    expect([...strengths].sort((a, b) => a - b)).toEqual(strengths);
+    expect(new Set(strengths).size).toBe(4);
+  });
+
+  it("keeps black text at 4.5:1 or better on every type and severity", () => {
+    const cases = [
+      ...(["user_story", "task", "feature", "spike"] as const).map((type) => ({ type })),
+      ...BUG_SEVERITIES.map((severity) => ({ type: "bug" as const, severity })),
+    ];
+    for (const c of cases) {
+      const { unmount } = render(<TypeTag {...c} />);
+      const el = screen.getByText(/./);
+      expect(el.style.color).toBe("rgb(28, 25, 23)");
+      expect(contrast(background(), TEXT)).toBeGreaterThanOrEqual(4.5);
+      unmount();
+    }
+  });
+
+  it("keeps a squashed bug in the muted style", () => {
+    render(<TypeTag type="bug" severity="high" squashed />);
+    const el = screen.getByText("Squashed");
+    expect(el.style.backgroundColor).toBe("");
+    expect(el).toHaveClass("text-muted");
   });
 });
