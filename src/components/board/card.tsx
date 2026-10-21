@@ -84,6 +84,8 @@ export interface CardEnv {
   nextFor: (card: BoardCard, column: ColumnId) => ColumnId | null;
   /** Where a card's left arrow sends it back to, or null when it has none. */
   returnFor?: (card: BoardCard, column: ColumnId) => ColumnId | null;
+  /** A phone: the arrows sit in a footer at the card's bottom corners. */
+  mobile?: boolean;
   onAdvance: (card: BoardCard, to: ColumnId) => void;
   /** The card sliding out of its column after its arrow, and which way. */
   leaving?: { id: string; direction: "forward" | "back" } | null;
@@ -220,10 +222,21 @@ function CardQueenMark({ card }: { card: BoardCard }) {
   );
 }
 
-function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) {
+function AdvanceButton({
+  card,
+  column,
+  place = "inline",
+}: {
+  card: BoardCard;
+  column: ColumnId;
+  /** "head" gives way to the footer on a phone; "footer" shows only there. */
+  place?: "inline" | "head" | "footer";
+}) {
   const env = useContext(CardEnvContext);
   const to = env?.nextFor(card, column) ?? null;
   if (!env || !to) return null;
+  if (place === "head" && env.mobile) return null;
+  const footer = place === "footer";
   return (
     <button
       type="button"
@@ -233,7 +246,10 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
         if (env.leaving?.id === card.id) return;
         env.onAdvance(card, to);
       }}
-      className="hover:bg-column -my-0.5 -mr-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
+      className={cn(
+        "hover:bg-column inline-flex shrink-0 items-center justify-center rounded-md",
+        footer ? "-mb-1 -mr-1 size-7" : "-my-0.5 -mr-1 size-[22px]",
+      )}
     >
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path
@@ -248,7 +264,7 @@ function AdvanceButton({ card, column }: { card: BoardCard; column: ColumnId }) 
   );
 }
 
-/** The arrow that sends a card back a column, on the left of its head. */
+/** The arrow that sends a card back a column, at the bottom left of its footer. */
 function ReturnButton({ card, column }: { card: BoardCard; column: ColumnId }) {
   const env = useContext(CardEnvContext);
   const to = env?.returnFor?.(card, column) ?? null;
@@ -262,7 +278,7 @@ function ReturnButton({ card, column }: { card: BoardCard; column: ColumnId }) {
         if (env.leaving?.id === card.id) return;
         env.onAdvance(card, to);
       }}
-      className="hover:bg-column -my-0.5 -ml-1 inline-flex size-[22px] shrink-0 items-center justify-center rounded-md"
+      className="hover:bg-column -mb-1 -ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md"
     >
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path
@@ -475,17 +491,32 @@ function QueueTimer({ card }: { card: BoardCard }) {
   );
 }
 
+/** Mobile only: the return arrow at the bottom left, the advance arrow at the bottom right. */
+function CardFooter({ card, column }: { card: BoardCard; column: ColumnId }) {
+  const env = useContext(CardEnvContext);
+  if (!env?.mobile) return null;
+  const hasReturn = !!env.returnFor?.(card, column);
+  const hasAdvance = !!env.nextFor(card, column);
+  if (!hasReturn && !hasAdvance) return null;
+  return (
+    <div className="-mt-1 flex items-center justify-between">
+      <ReturnButton card={card} column={column} />
+      <div className="flex-grow" />
+      <AdvanceButton card={card} column={column} place="footer" />
+    </div>
+  );
+}
+
 function TicketHead({ card, column }: { card: BoardCard; column: ColumnId }) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex min-h-[18px] items-center gap-1.5">
-        <ReturnButton card={card} column={column} />
         {card.status === "queued" && <QueueTimer card={card} />}
         <CardQueenMark card={card} />
         <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
         <div className="flex-grow" />
         <ProblemBadge card={card} />
-        <AdvanceButton card={card} column={column} />
+        <AdvanceButton card={card} column={column} place="head" />
       </div>
       <div data-testid="card-tags" className="flex flex-wrap items-center gap-1.5">
         <CardTypeTag card={card} />
@@ -569,6 +600,7 @@ function RawIdea({
         {isBug(card, NO_EPICS) ? "Triage" : "Raw idea"}
         {extras.age ? ` · ${extras.age}` : ""}
       </span>
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -628,6 +660,7 @@ function RunningCard({
           </span>
         </div>
       )}
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -639,6 +672,7 @@ function QueuedCard({ card, column }: { card: BoardCard; column: ColumnId }) {
       <TicketHead card={card} column={column} />
       <Title muted>{card.title}</Title>
       <EpicLine card={card} />
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -757,6 +791,7 @@ function ReviewCard({
           )}
         </div>
       )}
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -781,6 +816,7 @@ function DoneCard({ card, column, extras }: { card: BoardCard; column: ColumnId;
         <span aria-hidden className="bg-jade size-[5px] rounded-full" />
         {trail}
       </span>
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }
@@ -838,6 +874,7 @@ function PlainTicket({
           caption={extras.progress.label}
         />
       )}
+      <CardFooter card={card} column={column} />
     </CardShell>
   );
 }

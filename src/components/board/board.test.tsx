@@ -456,6 +456,22 @@ describe("Board, below 768px", () => {
     });
   });
 
+  it.each([
+    ["draft", "Backlog", null],
+    ["ready", "To Do", "Backlog"],
+    ["review", "In Review", "In Progress"],
+    ["merged", "Done", null],
+  ] as const)("returns a %s ticket in %s to %s on a phone", async (status, column, back) => {
+    setViewportMatches(true);
+    renderBoard([makeCard({ key: "PROT-15", status })]);
+    const user = userEvent.setup();
+    await screen.findByRole("region", { name: "Backlog" });
+    await user.click(within(screen.getByRole("list", { name: "Columns" })).getByRole("button", { name: new RegExp(`^${column}`) }));
+    const arrow = screen.queryByRole("button", { name: /^Return PROT-15/ });
+    if (back) expect(arrow).toHaveAccessibleName(`Return PROT-15 to ${back}`);
+    else expect(arrow).toBeNull();
+  });
+
   it("gives no return arrow on a wide screen", () => {
     renderBoard([makeCard({ key: "PROT-14", status: "running" })]);
     expect(screen.queryByRole("button", { name: /^Return/ })).toBeNull();
@@ -554,6 +570,16 @@ describe("Board, an arrow move on a phone", () => {
     fireEvent.click(arrow);
     return arrow;
   };
+
+  it("slides a card back when its return arrow is tapped", async () => {
+    stubMedia(false);
+    renderBoard([makeCard({ key: "PROT-09", status: "ready" })]);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await screen.findByRole("region", { name: "Backlog" });
+    await user.click(within(screen.getByRole("list", { name: "Columns" })).getByRole("button", { name: /^To Do/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Return PROT-09 to Backlog" }));
+    expect(document.querySelector("li > div")).toHaveClass("-translate-x-full");
+  });
 
   it("sends the move only after the card has slid out, and once for a double tap", async () => {
     stubMedia(false);

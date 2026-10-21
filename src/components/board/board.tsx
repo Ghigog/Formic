@@ -49,6 +49,13 @@ const NEXT_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
   todo: "in_progress",
 };
 
+/** The column a card's mobile return arrow sends it back to. */
+const PREVIOUS_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
+  todo: "backlog",
+  in_progress: "todo",
+  in_review: "in_progress",
+};
+
 export interface BoardProps {
   cards: BoardCard[];
   extras?: ExtrasMap;
@@ -537,10 +544,11 @@ export function Board({
         return accepts(column, to) ? to : null;
       },
       // Mobile only: drag is replaced there by the cards' own arrows.
-      returnFor: (card, column) =>
-        isMobile && column === "in_progress" && card.kind === "ticket" && !card.misplacedIn && accepts(column, "todo")
-          ? "todo"
-          : null,
+      returnFor: (card, column) => {
+        const to = PREVIOUS_COLUMN[column];
+        return isMobile && to && !card.misplacedIn && accepts(column, to) ? to : null;
+      },
+      mobile: isMobile,
       leaving,
       pending,
       onAdvance: (card, to) => {
@@ -549,7 +557,7 @@ export function Board({
         // in one frame: let it slide away first, and ignore taps meanwhile.
         if (!isMobile || reducedMotion) return move();
         if (leaveTimer.current) return;
-        setLeaving({ id: card.id, direction: to === "todo" && columnOf(card) === "in_progress" ? "back" : "forward" });
+        setLeaving({ id: card.id, direction: PREVIOUS_COLUMN[columnOf(card)] === to ? "back" : "forward" });
         leaveTimer.current = setTimeout(() => {
           leaveTimer.current = null;
           setLeaving(null);

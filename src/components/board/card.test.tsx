@@ -294,3 +294,43 @@ describe("dragging a card", () => {
     expect(li).toHaveClass("cursor-grab");
   });
 });
+
+describe("a card's footer arrows", () => {
+  function renderTodo(mobile: boolean, returnTo: "backlog" | null = "backlog") {
+    const card = makeCard({ key: "PROT-02", status: "ready" });
+    const env = {
+      epics: new Map(),
+      nextFor: () => "in_progress" as const,
+      returnFor: () => returnTo,
+      mobile,
+      onAdvance: vi.fn(),
+    };
+    renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+    return env;
+  }
+
+  it("puts the return arrow at the bottom left and the advance arrow at the bottom right on a phone", () => {
+    renderTodo(true);
+    const back = screen.getByRole("button", { name: "Return PROT-02 to Backlog" });
+    const next = screen.getByRole("button", { name: "Move PROT-02 to In Progress" });
+    expect(back.parentElement).toBe(next.parentElement);
+    expect(back.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(back.parentElement).not.toHaveClass("min-h-[18px]");
+  });
+
+  it("shows only the arrows that apply", () => {
+    renderTodo(true, null);
+    expect(screen.queryByRole("button", { name: /^Return/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Move/ })).toBeInTheDocument();
+  });
+
+  it("keeps the advance arrow in the head on a wide screen, with no return arrow", () => {
+    renderTodo(false);
+    expect(screen.queryByRole("button", { name: /^Return/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Move/ }).parentElement).toHaveClass("min-h-[18px]");
+  });
+});
