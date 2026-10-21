@@ -69,6 +69,27 @@ describe("a card in review", () => {
   });
 });
 
+describe("a ticket card's head", () => {
+  it("keeps the tags out of the key row and puts them in a wrapping row beneath it", () => {
+    const card = makeCard({ status: "merged", stage: 8, prNumber: 4, workType: "user_story", storyPoints: 5 });
+    renderReview(card);
+    const keyRow = screen.getByText(card.key).parentElement!;
+    expect(keyRow.querySelector("[data-type-tag]")).toBeNull();
+    expect(keyRow.querySelector("[data-sp]")).toBeNull();
+    const tags = screen.getByTestId("card-tags");
+    expect(tags.className).toContain("flex-wrap");
+    expect(tags.querySelector("[data-type-tag]")).not.toBeNull();
+    expect(tags.querySelector("[data-sp]")).not.toBeNull();
+    expect(keyRow.nextElementSibling).toBe(tags);
+  });
+
+  it("shows no Pull request badge in the head", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
+    expect(screen.queryByTitle("Pull request")).toBeNull();
+    expect(screen.queryByText("PR #4")).toBeNull();
+  });
+});
+
 describe("the queen mark", () => {
   it("shows on a card with a Queen and not on one without", () => {
     renderReview(makeCard({ status: "review", stage: 6, prNumber: 4, queen: true }));

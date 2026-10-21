@@ -475,36 +475,27 @@ function QueueTimer({ card }: { card: BoardCard }) {
   );
 }
 
-function TicketHead({
-  card,
-  column,
-  pr = false,
-}: {
-  card: BoardCard;
-  column: ColumnId;
-  pr?: boolean;
-}) {
+function TicketHead({ card, column }: { card: BoardCard; column: ColumnId }) {
   return (
-    <div className="flex min-h-[18px] items-center gap-1.5">
-      <ReturnButton card={card} column={column} />
-      {card.status === "queued" && <QueueTimer card={card} />}
-      <CardTypeTag card={card} />
+    <div className="flex flex-col gap-1">
+      <div className="flex min-h-[18px] items-center gap-1.5">
+        <ReturnButton card={card} column={column} />
+        {card.status === "queued" && <QueueTimer card={card} />}
         <CardQueenMark card={card} />
-      <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
-      <div className="flex-grow" />
-      <ProblemBadge card={card} />
-      {(card.scouts ?? 0) > 0 && !card.scoutPick && card.status === "running" && (
-        <CoinBadge title="Scouts trying it at once" className="shrink-0 whitespace-nowrap">
-          {card.scouts} scouts out
-        </CoinBadge>
-      )}
-      {pr && card.prNumber && (
-        <CoinBadge title="Pull request" className="shrink-0 whitespace-nowrap">
-          PR #{card.prNumber}
-        </CoinBadge>
-      )}
-      <SpBadge points={card.storyPoints} done={card.status === "merged"} />
-      <AdvanceButton card={card} column={column} />
+        <span className="text-muted shrink-0 font-mono text-[10px] whitespace-nowrap">{card.key}</span>
+        <div className="flex-grow" />
+        <ProblemBadge card={card} />
+        <AdvanceButton card={card} column={column} />
+      </div>
+      <div data-testid="card-tags" className="flex flex-wrap items-center gap-1.5">
+        <CardTypeTag card={card} />
+        {(card.scouts ?? 0) > 0 && !card.scoutPick && card.status === "running" && (
+          <CoinBadge title="Scouts trying it at once" className="shrink-0 whitespace-nowrap">
+            {card.scouts} scouts out
+          </CoinBadge>
+        )}
+        <SpBadge points={card.storyPoints} done={card.status === "merged"} />
+      </div>
     </div>
   );
 }
@@ -690,7 +681,7 @@ function ReviewCard({
       card={card}
       className={cn("bg-card flex flex-col gap-2 p-3", green ? "border-jade-line" : "border-line")}
     >
-      <TicketHead card={card} column={column} pr />
+      <TicketHead card={card} column={column} />
       <Title>{card.title}</Title>
       <EpicLine card={card} />
 
@@ -783,7 +774,7 @@ function DoneCard({ card, column, extras }: { card: BoardCard; column: ColumnId;
     .join(" · ");
   return (
     <CardShell card={card} className="flex flex-col gap-2 border-done-card-line bg-done-card p-3">
-      <TicketHead card={card} column={column} pr />
+      <TicketHead card={card} column={column} />
       <Title>{card.title}</Title>
       <EpicLine card={card} />
       <span className="text-muted inline-flex items-center gap-1.5 font-mono text-[9px]">
