@@ -304,7 +304,7 @@ export function TicketDrawer({
             </button>
           ))}
           {card && (
-            <div className="ml-auto flex flex-wrap items-center gap-2 text-[12px]">
+            <div className="ml-auto flex flex-nowrap items-center gap-2 text-[12px]">
               <QueenPanel
                 card={card}
                 onChanged={() => {
@@ -324,7 +324,7 @@ export function TicketDrawer({
                   type="button"
                   disabled={archiving}
                   onClick={() => void archive()}
-                  className="border-line bg-card rounded border px-2.5 py-1 font-medium disabled:opacity-50"
+                  className="border-line bg-card rounded border px-2.5 py-1 font-medium whitespace-nowrap disabled:opacity-50"
                 >
                   Archive
                 </button>
