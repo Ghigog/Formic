@@ -123,6 +123,9 @@ function DragQueen({ c, x }: { c: ColonyApi; x: { current: number } }) {
   return <canvas ref={ref} width={200} height={200} className="size-14" aria-hidden />;
 }
 
+/** How far the pointer travels, in px, between two leg-ticks of a carried Queen. */
+const SKITTER_EVERY = 28;
+
 /**
  * Unspent Queens, and one to drag onto a card. A pointer drag, like the rest
  * of the board's, not native HTML5 drag: the board's drag library owns
@@ -154,10 +157,14 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
         body: JSON.stringify({ cardId }),
       });
       const body = (await res.json().catch(() => ({}))) as { unspent?: number; error?: string };
-      if (!res.ok) return setError(body.error ?? "Could not place the Queen.");
+      if (!res.ok) {
+        c.sfx("reject");
+        return setError(body.error ?? "Could not place the Queen.");
+      }
       setError(null);
       if (typeof body.unspent === "number") setUnspent(body.unspent);
     } catch {
+      c.sfx("reject");
       setError("Could not place the Queen.");
     }
   };
@@ -170,9 +177,18 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
     onDragging(true);
     window.dispatchEvent(new CustomEvent<QueenCarryDetail>(QUEEN_CARRY_EVENT, { detail: { on: true } }));
     let pointerY = e.clientY;
+    let tickX = e.clientX;
+    let tickY = e.clientY;
+    let ticks = 0;
     const move = (m: PointerEvent) => {
       pointerX.current = m.clientX;
       pointerY = m.clientY;
+      // A leg-tick for every stretch of ground covered, not for every event.
+      if (Math.hypot(m.clientX - tickX, m.clientY - tickY) >= SKITTER_EVERY) {
+        tickX = m.clientX;
+        tickY = m.clientY;
+        c.sfx("skitter", ticks++ % 3);
+      }
       setDrag({ x: m.clientX, y: m.clientY });
     };
     // Scroll the visible column's list while she is held near its top or bottom edge.
@@ -199,7 +215,12 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
       setDrag(null);
       onDragging(false);
       const id = u.type === "pointerup" ? document.elementFromPoint(u.clientX, u.clientY)?.closest<HTMLElement>("[data-tid]")?.dataset.tid : null;
-      if (id) void place(id);
+      if (id) {
+        // The smush is on the drop, not on the answer, so it feels immediate.
+        c.sfx("squash");
+        if (!c.fx.reducedMotion) c.fx.squash(u.clientX, u.clientY, () => {});
+        void place(id);
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
