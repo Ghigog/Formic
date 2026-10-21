@@ -38,6 +38,10 @@ import { QUEEN_CARRY_EVENT, type QueenCarryDetail } from "@/components/colony/qu
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
 import { ARCHIVE_DROPPABLE_ID, ArchiveDropZone } from "./archive-drop-zone";
+import { EdgeDropZones, edgeDestination, edgeTargets } from "./edge-drop-zones";
+
+/** How long after a drag ends its touchend still counts as part of the drag. */
+const DRAG_END_GRACE_MS = 400;
 
 /** The next column a card can advance to with its arrow. */
 const NEXT_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
@@ -191,7 +195,14 @@ export function Board({
    * snapshot for the life of the drag keeps any such update from touching
    * that subtree until the gesture is over.
    */
-  const [dragSnapshot, setDragSnapshot] = useState<React.ReactNode[] | null>(null);
+  const [dragSnapshot, setDragSnapshot] = useState<React.ReactNode | null>(null);
+  /** The card being dragged, for which edge zones to offer. */
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  /**
+   * Whether a drag is on, or ended a moment ago. The touchend that releases a
+   * card reaches the swipe handlers too, and must not change the tab.
+   */
+  const dragGuard = useRef<"active" | number | null>(null);
 
   // Server state wins whenever it changes; optimistic state only bridges the
   // gap between a drop and its response.
@@ -335,6 +346,8 @@ export function Board({
     const start = swipeStart.current;
     const t = e.changedTouches[0];
     swipeStart.current = null;
+    const guard = dragGuard.current;
+    if (guard === "active" || (guard !== null && Date.now() - guard < DRAG_END_GRACE_MS)) return;
     if (!start || !t || document.querySelector("[role='dialog']")) return;
     const direction = swipeDirection(t.clientX - start.x, t.clientY - start.y);
     if (!direction) return;
@@ -351,6 +364,15 @@ export function Board({
   };
 
   const visibleColumns = isMobile ? [activeTab] : COLUMNS;
+
+  const dragged = draggedId ? live.find((c) => c.id === draggedId) : undefined;
+  const edges = useMemo(
+    () =>
+      dragged
+        ? edgeTargets(columnOf(dragged), columnFor(dragged.status, dragged.stalledIn), accepts)
+        : { next: null, previous: null },
+    [dragged, accepts],
+  );
 
   const columnElements = visibleColumns.map((col) => (
     <Column
@@ -392,21 +414,36 @@ export function Board({
     />
   ));
 
-  const onDragStart = useCallback(
-    (start: DragStart) => {
-      dragOver.current = start.source.droppableId as ColumnId;
-      colony?.sfx("pickup");
-      setDragSnapshot(columnElements);
-    },
-    [colony, columnElements],
+  // What the board shows in place of the columns' own list. It must keep the
+  // same shape for the whole drag, or the dragged card remounts under the finger.
+  const columnContent = isMobile ? (
+    <div
+      key={activeTab}
+      data-slide={slide ?? undefined}
+      className="column-slide flex min-h-0 flex-1 flex-col"
+    >
+      {columnElements}
+    </div>
+  ) : (
+    columnElements
   );
+
+  const onDragStart = (start: DragStart) => {
+    dragOver.current = start.source.droppableId as ColumnId;
+    dragGuard.current = "active";
+    swipeStart.current = null;
+    colony?.sfx("pickup");
+    setDraggedId(start.draggableId);
+    setDragSnapshot(columnContent);
+  };
 
   const onDragUpdate = useCallback(
     (update: DragUpdate) => {
-      const over = (update.destination?.droppableId as ColumnId | undefined) ?? null;
+      const from = update.source.droppableId as ColumnId;
+      const id = update.destination?.droppableId;
+      const over = id ? ((edgeDestination(id, from) ?? id) as ColumnId) : null;
       if (over === dragOver.current) return;
       dragOver.current = over;
-      const from = update.source.droppableId as ColumnId;
       if (over && over !== from) colony?.sfx(accepts(from, over) ? "hover" : "deny");
     },
     [accepts, colony],
@@ -415,7 +452,9 @@ export function Board({
   const onDragEnd = useCallback(
     (result: DropResult) => {
       dragOver.current = null;
+      dragGuard.current = Date.now();
       setDragSnapshot(null);
+      setDraggedId(null);
       const { source, destination, draggableId } = result;
       if (!destination) {
         colony?.sfx("drop");
@@ -437,9 +476,17 @@ export function Board({
         }
         return;
       }
+      const edge = edgeDestination(destination.droppableId, source.droppableId as ColumnId);
+      if (edge) {
+        // Only a side that was offered: the rules are the same as for a column.
+        if (edge === edges.next || edge === edges.previous) {
+          void commit(card, edge, Number.MAX_SAFE_INTEGER);
+        }
+        return;
+      }
       void commit(card, destination.droppableId as ColumnId, destination.index);
     },
-    [commit, live, colony],
+    [commit, live, colony, edges],
   );
 
   /**
@@ -600,25 +647,13 @@ export function Board({
             isMobile ? "touch-pan-y flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
           )}
         >
-          {dragSnapshot ??
-            (isMobile ? (
-              <div
-                key={activeTab}
-                data-slide={slide ?? undefined}
-                className="column-slide flex min-h-0 flex-1 flex-col"
-              >
-                {columnElements}
-              </div>
-            ) : (
-              columnElements
-            ))}
-          {!isMobile && (
-            <ArchiveDropZone
-              dragging={dragSnapshot !== null}
-              dropped={dropped}
-              onArchived={archived}
-            />
-          )}
+          {dragSnapshot ?? columnContent}
+          {isMobile && <EdgeDropZones dragging={dragSnapshot !== null} {...edges} />}
+          <ArchiveDropZone
+            dragging={dragSnapshot !== null}
+            dropped={dropped}
+            onArchived={archived}
+          />
         </main>
       </DragDropContext>
       </CardEnvContext.Provider>
