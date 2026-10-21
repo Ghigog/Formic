@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ATTEMPT_DEFAULTS } from "@/lib/budget/budget-for";
 import { runCoderAgent } from "./pipeline";
 import { reviewBrief } from "@/lib/agents/coder";
+import type { FollowUp } from "@/lib/agents/follow-ups";
 import { setCheckoutFactory } from "./checkout";
 import {
   resetPullRequestSweep,
@@ -64,6 +65,7 @@ class StubCoder implements CoderAgent {
       task: CoderTask,
     ) => Promise<void>,
     private readonly handoff: string[] = [],
+    private readonly followUps: FollowUp[] = [],
   ) {}
 
   async implement(
@@ -79,6 +81,7 @@ class StubCoder implements CoderAgent {
         detail: "details",
         verifiedWith: "npm test",
         handoff: this.handoff,
+        followUps: this.followUps,
       },
       usage: NO_USAGE,
     };
@@ -98,6 +101,7 @@ class StubReviewer implements ReviewerAgent {
       workspace: Workspace,
       input: ReviewTask,
     ) => Promise<string | void> = async () => {},
+    private readonly followUps: FollowUp[] = [],
   ) {}
 
   async review(_ctx: AgentContext, input: ReviewTask): Promise<AgentOutcome<ReviewVerdict>> {
@@ -105,7 +109,13 @@ class StubReviewer implements ReviewerAgent {
     const sendBack = await this.act(input.workspace, input);
     return {
       ok: true,
-      value: { summary: "reviewed it", detail: "details", verifiedWith: null, sendBack: sendBack ?? null },
+      value: {
+        summary: "reviewed it",
+        detail: "details",
+        verifiedWith: null,
+        sendBack: sendBack ?? null,
+        followUps: this.followUps,
+      },
       usage: NO_USAGE,
     };
   }
@@ -328,6 +338,23 @@ describe("the Coder Agent pipeline", () => {
       const epic = await repository().cardById(ticket.epicId);
       return epic?.status === "merged";
     }, "the Epic to be done");
+  });
+
+  it("keeps the follow-ups the Coder and Reviewer Agents propose on the ticket", async () => {
+    const coderFound: FollowUp = { title: "Raise branch coverage to 78%", why: "About 540 branches are uncovered.", points: 5 };
+    const reviewerFound: FollowUp = { title: "Fix order-dependent tests", why: "They fail when shuffled.", points: 2 };
+    const reviewer = new StubReviewer(async () => {}, [reviewerFound]);
+    useAgents(new StubCoder(writesInScope(), [], [coderFound]), reviewer);
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+    await until(async () => reviewer.reviews.length > 0, "the review");
+
+    await until(
+      async () => (await repository().ticketDetail(ticket.id))!.followUps.length === 2,
+      "both follow-ups on the ticket",
+    );
+    expect((await repository().ticketDetail(ticket.id))!.followUps).toEqual([coderFound, reviewerFound]);
   });
 
   it("carries steps outside the repository through to the Epic's showcase", async () => {

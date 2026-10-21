@@ -47,6 +47,7 @@ import type {
   ColumnOverrides,
   PlanStep,
 } from "@/lib/domain/entities";
+import type { FollowUp } from "@/lib/agents/follow-ups";
 import { severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { type ColumnId, columnOf } from "@/lib/domain/status";
@@ -84,6 +85,7 @@ interface TicketExtras {
   sourceIssueNumber?: number | null;
   plan?: PlanStep[];
   handoff?: string[];
+  followUps?: FollowUp[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
   stackedOn?: string | null;
@@ -1237,6 +1239,7 @@ export class MemoryRepository implements Repository {
     if (update.sourceIssueNumber !== undefined) extras.sourceIssueNumber = update.sourceIssueNumber;
     if (update.plan !== undefined) extras.plan = update.plan;
     if (update.handoff !== undefined) extras.handoff = update.handoff;
+    if (update.followUps !== undefined) extras.followUps = update.followUps;
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
     if (update.reviewedHead !== undefined) extras.reviewedHead = update.reviewedHead;
     if (update.stackedOn !== undefined) extras.stackedOn = update.stackedOn;
@@ -1838,6 +1841,7 @@ function toDetail(
     storyPoints: card.storyPoints ?? null,
     plan: extras?.plan ?? [],
     handoff: extras?.handoff ?? [],
+    followUps: extras?.followUps ?? [],
     reviewedSha: extras?.reviewedSha ?? null,
     reviewedHead: extras?.reviewedHead ?? null,
     stackedOn: extras?.stackedOn ?? null,

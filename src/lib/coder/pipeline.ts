@@ -9,6 +9,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
+import { recordFollowUps } from "@/lib/board/follow-ups";
 import { runScouts, scoutReturned, scouting, ticketNoteTexts } from "./scouts";
 import { sharedNoteLine, sharedNotesFor } from "./shared-notes";
 import { newBranchName } from "@/lib/sandbox";
@@ -66,6 +67,7 @@ export function taskFor(
     acceptanceCriteria: ticket.acceptanceCriteria,
     fileScope: ticket.fileScope,
     workType: ticket.workType,
+    storyPoints: ticket.storyPoints,
     notes,
   };
 }
@@ -446,6 +448,7 @@ export async function openTicketPullRequest(
     return;
   }
   const repo = repository();
+  await recordFollowUps(ticket.id, input.change.followUps ?? []);
   // A scout sent mid-run was kept first: its change is the pull request.
   const current = await repo.ticketDetail(ticket.id);
   if (current?.scoutPick && current.branchName !== input.branch) return;

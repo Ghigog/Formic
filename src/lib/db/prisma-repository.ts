@@ -56,6 +56,7 @@ import type {
   WorkType,
   BugSeverity,
 } from "@/lib/domain/entities";
+import { checkFollowUps } from "@/lib/agents/follow-ups";
 import { planStepSchema, severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { z } from "zod";
@@ -1273,7 +1274,7 @@ export class PrismaRepository implements Repository {
 
   async updateTicket(ticketId: string, update: TicketUpdate): Promise<void> {
     const db = prisma();
-    const { costCents, tokensIn, tokensOut, plan, archived, ...rest } = update;
+    const { costCents, tokensIn, tokensOut, plan, followUps, archived, ...rest } = update;
 
     // The first move to merged is scored against the project's heat then.
     let merge = {};
@@ -1312,6 +1313,7 @@ export class PrismaRepository implements Repository {
         ...severity,
         ...(rest.fileScope !== undefined ? { fileScope: normalizeScope(rest.fileScope) } : {}),
         ...(plan !== undefined ? { plan: plan as never } : {}),
+        ...(followUps !== undefined ? { followUps: followUps as never } : {}),
         ...(archived !== undefined ? { archived } : {}),
         ...(rest.runnerJob !== undefined
           ? { runnerJobAt: rest.runnerJob ? new Date() : null }
@@ -1932,6 +1934,7 @@ type TicketRow = {
   storyPoints: number | null;
   plan: unknown;
   handoff: string[];
+  followUps: unknown;
   reviewedSha: string | null;
   reviewedHead: string | null;
   stackedOn: string | null;
@@ -2034,6 +2037,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     storyPoints: row.storyPoints,
     plan: planOf(row.plan),
     handoff: row.handoff,
+    followUps: checkFollowUps(row.followUps),
     reviewedSha: row.reviewedSha,
     reviewedHead: row.reviewedHead,
     stackedOn: row.stackedOn,

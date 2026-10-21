@@ -17,6 +17,7 @@ const TYPES: [TypeFilter, string][] = [
   ["feature", "Features"],
   ["bug", "Bugs"],
   ["spike", "Spikes"],
+  ["tech_debt", "Tech debt"],
   ["archived", "Archived"],
 ];
 

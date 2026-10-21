@@ -5,6 +5,7 @@ const LABELS: Record<WorkType, string> = {
   task: "Task",
   feature: "Feature",
   spike: "Spike",
+  tech_debt: "Tech debt",
   bug: "Bug",
 };
 
@@ -17,6 +18,7 @@ const COLORS: Record<Exclude<WorkType, "bug">, string> = {
   task: "#fbf0da", // clay-chip
   feature: "#ee9a62", // terracotta-lit
   spike: "#e0a33c", // clay-lit
+  tech_debt: "#d6d0c6", // done-card-line
 };
 const BUG_COLORS: Record<BugSeverity, string> = {
   low: "#fbeaea", // crimson-chip

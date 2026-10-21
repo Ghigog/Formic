@@ -112,6 +112,7 @@ export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
               ["feature", "Features"],
               ["bug", "Bugs"],
               ["spike", "Spikes"],
+              ["tech_debt", "Tech debt"],
               ["archived", "Archived"],
             ] as const
           ).map(([typeVal, typeLabel]) => {

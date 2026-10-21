@@ -4,6 +4,7 @@ import type { Workspace } from "@/lib/sandbox/workspace";
 import type { Budget } from "@/lib/budget/budget-for";
 import type { ProviderId } from "@/lib/llm/providers";
 import type { ScoutCandidate, ScoutVerdict } from "./judge";
+import type { FollowUp } from "./follow-ups";
 
 /**
  * The agent boundary. Every pipeline is reachable through one of these, and
@@ -195,6 +196,8 @@ export interface CoderTask {
   fileScope: string[];
   /** Whether this is a spike, which the coder's brief follows. */
   workType?: WorkType | null;
+  /** The estimate, which the work is held to: more than it allows is a follow-up. */
+  storyPoints?: number | null;
   /** What the person watching the ticket told its agents, oldest first. */
   notes?: string[];
   /**
@@ -223,6 +226,8 @@ export interface CodeChange {
   alreadyDone?: boolean;
   /** Steps outside the repository the person has to take, if any. */
   handoff?: string[];
+  /** Work found that is not this ticket's, for the person to add as its own (FOLLOW_UP_RULE). */
+  followUps?: FollowUp[];
 }
 
 /** PROT-06. Ticket in, edited workspace out. Commits and pushes are the caller's. */
