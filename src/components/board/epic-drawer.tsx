@@ -213,8 +213,8 @@ export function EpicDrawer({
       >
         <header className="border-line shrink-0 border-b p-4">
           {epic && !kb.open && <ProblemNotice card={epic} className="mb-3" />}
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <div className="min-w-0 sm:flex-1">
               <span className="text-fg-subtle font-mono text-[10px]">
                 {epic?.key ?? "EPIC"}
               </span>
@@ -222,7 +222,7 @@ export function EpicDrawer({
                 {detail?.title ?? (loading ? "Loading…" : "Epic")}
               </h2>
               {epic && (
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <StatusPill status={epic.status} />
                   {epic.workingSince && (
                     <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
@@ -241,7 +241,7 @@ export function EpicDrawer({
                 </div>
               )}
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <div className="flex flex-wrap items-center justify-start gap-1.5 sm:justify-end">
               {detail?.canRetry && !confirming && (
                 <button
                   type="button"
