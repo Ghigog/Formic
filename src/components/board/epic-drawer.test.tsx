@@ -74,6 +74,15 @@ describe("EpicDrawer", () => {
     ).toBeInTheDocument();
   });
 
+  it("stacks the header below sm so the title gets the full width", async () => {
+    open();
+    const title = await screen.findByText("Board export");
+    const row = title.closest("header")!.querySelector(".flex-col")!;
+    expect(row).toHaveClass("flex-col", "sm:flex-row");
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close.parentElement).toHaveClass("justify-start", "sm:justify-end");
+  });
+
   it("says nothing about a reroute for an Epic that was never moved", async () => {
     open();
     await screen.findByText("Board export");
