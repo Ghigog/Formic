@@ -13,6 +13,8 @@ export type Sfx =
   | "blip"
   | "ding"
   | "squash"
+  | "skitter"
+  | "hiss"
   | "reject"
   | "unlock"
   | "ready"
@@ -300,6 +302,14 @@ export class SoundEngine {
         this.tone(170, 0.14, { to: 55, gain: 0.18 });
         this.tone(2349, 0.2, { type: "triangle", gain: 0.05, delay: 0.03 });
         this.tone(3136, 0.14, { gain: 0.03, delay: 0.05 });
+        break;
+      case "skitter":
+        // A quiet, spindly leg-tick; v nudges the pitch so ticks differ.
+        this.tone(2400 + v * 300, 0.014, { type: "square", gain: 0.006 });
+        this.noise(0.01, { freq: 7000, hp: true, gain: 0.006 });
+        break;
+      case "hiss":
+        this.noise(0.6, { freq: 4000, to: 7000, hp: true, gain: 0.05, q: 0.6 });
         break;
       case "reject":
         this.tone(196, 0.09, { type: "square", gain: 0.035 });

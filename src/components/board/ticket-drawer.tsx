@@ -13,10 +13,7 @@ import { SideBySide, WithChat } from "@/components/ui/split";
 import { StatusPill } from "@/components/ui/status-pill";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
-import {
-  AGENT_ROLE_LABELS,
-  COLUMN_AGENT_ROLE,
-} from "@/lib/domain/entities";
+import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE } from "@/lib/domain/entities";
 import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
@@ -175,6 +172,7 @@ export function TicketDrawer({
       >
         <header className="border-line shrink-0 border-b p-4">
           {card &&
+            !kb.open &&
             (notice ? (
               <NoticeBanner notice={notice} className="mb-3" />
             ) : (
@@ -189,7 +187,7 @@ export function TicketDrawer({
                 <span className="text-fg-subtle font-mono text-[10px]">
                   {card?.key ?? "TICKET"}
                 </span>
-                {view?.epic && (
+                {view?.epic && !kb.open && (
                   <button
                     type="button"
                     onClick={() => onOpenEpic(view.epic!.id)}
@@ -257,14 +255,16 @@ export function TicketDrawer({
             </div>
           </div>
 
-          <StepIndicator
-            className="mt-3"
-            stages={TICKET_STAGES}
-            label="Ticket progress"
-            current={progress.current}
-            failedAt={progress.failedAt}
-            working={progress.working}
-          />
+          {!kb.open && (
+            <StepIndicator
+              className="mt-3"
+              stages={TICKET_STAGES}
+              label="Ticket progress"
+              current={progress.current}
+              failedAt={progress.failedAt}
+              working={progress.working}
+            />
+          )}
 
           {/* A reason it waits that is not a problem, such as a dependency. A
               reason that names a pull request is clickable. */}
@@ -324,7 +324,7 @@ export function TicketDrawer({
                   type="button"
                   disabled={archiving}
                   onClick={() => void archive()}
-                  className="border-line bg-card rounded border px-2.5 py-1 font-medium disabled:opacity-50"
+                  className="border-line bg-card rounded border px-2.5 py-1 font-medium whitespace-nowrap disabled:opacity-50"
                 >
                   Archive
                 </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
@@ -185,9 +185,36 @@ function CardTypeTag({ card }: { card: BoardCard }) {
 
 /** A small chess queen on a card a Queen was placed on. */
 function CardQueenMark({ card }: { card: BoardCard }) {
+  const colony = useColony();
+  const colonyRef = useRef(colony);
+  useEffect(() => {
+    colonyRef.current = colony;
+  }, [colony]);
+  const ref = useRef<HTMLSpanElement>(null);
+  const had = useRef(card.queen);
+  const placed = !!card.queen;
+  // Only a Queen placed while the card is mounted grows in; one the card loaded with is just there.
+  useEffect(() => {
+    if (!placed || had.current) {
+      had.current = placed;
+      return;
+    }
+    had.current = true;
+    colonyRef.current?.sfx("hiss");
+    const pop = () => colonyRef.current?.sfx("pop");
+    const grow = colonyRef.current?.fx.reducedMotion
+      ? undefined
+      : ref.current?.animate?.([{ transform: "scale(0)" }, { transform: "scale(1)" }], { duration: 600, easing: "ease-out" });
+    if (!grow) return pop();
+    grow.onfinish = pop;
+    return () => {
+      grow.onfinish = null;
+      grow.cancel();
+    };
+  }, [placed]);
   if (!card.queen) return null;
   return (
-    <span data-queenmark role="img" aria-label="Queen placed" title="Queen placed" className="text-clay inline-flex shrink-0">
+    <span ref={ref} data-queenmark role="img" aria-label="Queen placed" title="Queen placed" className="text-clay inline-flex shrink-0">
       <QueenIcon size={12} />
     </span>
   );

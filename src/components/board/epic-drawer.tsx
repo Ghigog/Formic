@@ -212,7 +212,7 @@ export function EpicDrawer({
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
-          {epic && <ProblemNotice card={epic} className="mb-3" />}
+          {epic && !kb.open && <ProblemNotice card={epic} className="mb-3" />}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
             <div className="min-w-0 sm:flex-1">
               <span className="text-fg-subtle font-mono text-[10px]">
@@ -323,12 +323,14 @@ export function EpicDrawer({
             </p>
           )}
 
-          <StepIndicator
-            className="mt-3"
-            current={progress.current}
-            failedAt={failedAt}
-            working={progress.working}
-          />
+          {!kb.open && (
+            <StepIndicator
+              className="mt-3"
+              current={progress.current}
+              failedAt={failedAt}
+              working={progress.working}
+            />
+          )}
 
           {/* Survives the toast that announced it: where it came from, and why. */}
           {epic?.rerouteFrom && (
