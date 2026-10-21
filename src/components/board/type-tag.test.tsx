@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { TypeTag } from "./type-tag";
 import { BUG_SEVERITIES, WORK_TYPES } from "@/lib/domain/entities";
 
-const NAMES = { user_story: "User story", task: "Task", feature: "Feature", spike: "Spike", bug: "Bug" } as const;
+const NAMES = { user_story: "User story", task: "Task", feature: "Feature", spike: "Spike", tech_debt: "Tech debt", bug: "Bug" } as const;
 
 const TEXT = "#1c1917";
 
@@ -44,12 +44,12 @@ describe("TypeTag", () => {
 
   it("gives each non-bug type its own colour", () => {
     const colours = new Set<string>();
-    for (const type of ["user_story", "task", "feature", "spike"] as const) {
+    for (const type of ["user_story", "task", "feature", "spike", "tech_debt"] as const) {
       const { unmount } = render(<TypeTag type={type} />);
       colours.add(background());
       unmount();
     }
-    expect(colours.size).toBe(4);
+    expect(colours.size).toBe(5);
   });
 
   it("steps a bug tag up in strength from low to critical", () => {
@@ -65,7 +65,7 @@ describe("TypeTag", () => {
 
   it("keeps black text at 4.5:1 or better on every type and severity", () => {
     const cases = [
-      ...(["user_story", "task", "feature", "spike"] as const).map((type) => ({ type })),
+      ...(["user_story", "task", "feature", "spike", "tech_debt"] as const).map((type) => ({ type })),
       ...BUG_SEVERITIES.map((severity) => ({ type: "bug" as const, severity })),
     ];
     for (const c of cases) {

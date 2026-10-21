@@ -3,7 +3,8 @@ import { Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { main, runLoopEntry } from "./loop-entry";
-import { SPIKE_RULE } from "@/lib/agents/prompts";
+import { followUpsFromSummary } from "@/lib/agents/follow-ups";
+import { FOLLOW_UP_RULE, SPIKE_RULE } from "@/lib/agents/prompts";
 import { MemoryWorkspace } from "@/lib/sandbox/workspace";
 import type { FormicEvent } from "@/lib/domain/events";
 
@@ -152,6 +153,26 @@ describe("the loop entry a GitHub Actions job runs", () => {
     };
     expect(await run("spike")).toContain(SPIKE_RULE);
     expect(await run("task")).not.toContain(SPIKE_RULE);
+  });
+
+  it("holds the coder to the ticket's estimate and writes its follow-ups where Formic reads them", async () => {
+    const sent = fakeProvider([
+      finish({
+        already_done: false,
+        follow_ups: [{ title: "Retry from the run log too", why: "The log page has no card to click.", points: 3 }],
+      }),
+    ]);
+
+    const report = await runLoopEntry(payload({ ticket: { ...TICKET, storyPoints: 2 } }), {
+      workspace: new MemoryWorkspace({ "src/app/page.ts": "export {};\n" }),
+      log: () => {},
+    });
+
+    expect(messages(sent, 0)[0]!.content).toContain(FOLLOW_UP_RULE);
+    expect(messages(sent, 0)[1]!.content).toContain("Estimate: 2 story points.");
+    expect(report.ok && followUpsFromSummary(report.detail)).toEqual([
+      { title: "Retry from the run log too", why: "The log page has no card to click.", points: 3 },
+    ]);
   });
 
   it("refuses a write outside the ticket's file scope before it reaches a file", async () => {

@@ -51,6 +51,7 @@ enum WorkType {
   feature
   bug
   spike
+  tech_debt
 }
 
 enum BugSeverity {
@@ -356,6 +357,10 @@ model Ticket {
   /// Steps outside the repository the person has to take, one per entry.
   /// The Epic's showcase hands them over once everything has merged.
   handoff         String[]  @default([])
+  /// Work an agent found that is bigger than this ticket or belongs to
+  /// another: [{ title, why, points }]. The person adds each as its own
+  /// tech debt ticket on this Epic, or dismisses it.
+  followUps       Json      @default("[]")
   /// Set when the ticket is work for a person, not an agent (an account to
   /// set up, a manual test on production): why. Agents do not start it; the
   /// person does it and closes it from its chat.

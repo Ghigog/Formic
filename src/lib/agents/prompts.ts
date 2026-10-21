@@ -71,6 +71,21 @@ export const CHECKPOINT_RULE = `This run can stop at any moment, for reasons nob
 export const CODER_DESIGN_RULE = `The ticket's requirements are the Architect's design. Follow it: it was planned against the whole codebase. Where you find it does not work, or a clearly simpler change meets every acceptance criterion, change course instead of forcing it, and say in your summary what you did differently and why. The tests it names are a suggestion; test each behaviour at the level the engineering practices below give.`;
 
 /**
+ * A ticket's estimate bounds its work. A criterion that needs far more, or
+ * that only holds once other tickets are done, is proposed as a follow-up
+ * the person can add as its own ticket (src/lib/agents/follow-ups.ts),
+ * instead of being ground through until the run's time runs out.
+ */
+export const FOLLOW_UP_RULE = `Keep the work to the ticket's size. When an acceptance criterion needs far more than the ticket's estimate allows (tens of tests where it asks for a few, a refactor across modules), or only holds once other tickets are done, do not do that work here. Do the part that fits, say in your summary which criterion is not met and why, and propose the rest as a follow-up: a short title, an estimate in story points, and a sentence or two on what the work is and why it was left out. The person decides whether it becomes its own ticket. Propose only work this ticket uncovered, not ideas.`;
+
+/**
+ * The Reviewer's side of FOLLOW_UP_RULE: a gap the Coder reported, and was
+ * right to leave, is not a send-back. Sending it back asks for exactly the
+ * work the Coder was right to refuse.
+ */
+export const REVIEWER_FOLLOW_UP_RULE = `Read the Coder Agent's report before you judge the diff: it is in the branch's commit messages (git log FETCH_HEAD..HEAD --format=%B, once you have fetched the base branch the way the diff command below does). When it says a criterion is not met because meeting it needs far more than the ticket's estimate, or waits on other tickets, check that claim. If it holds, the gap is not a reason to send the change back: judge the rest, and propose the gap as a follow-up (a short title, an estimate in story points, a sentence or two on what and why). Send back only for work that fits the ticket's estimate. Propose a follow-up as well for anything you find that is real but not this ticket's.`;
+
+/**
  * Agents on other tickets work on the same repository at the same time
  * (docs/concurrency.md). What one of them changes that the others rely on
  * reaches them as a shared note, not first as a merge conflict.
@@ -127,7 +142,7 @@ Check that the change does what the ticket asks on its main path. Read the diff 
 Then do exactly one of three things:
 - Approve: the main flow works and every criterion is met. Change nothing and say why, criterion by criterion. Style and how you would have written it are not reasons to hold a change up.
 - Fix: something small is wrong, such as red CI, a missed edge case or a broken test. Fix its cause inside the file scope and verify that fix. A test that fails because the code is wrong is fixed in the code; do not chase a green tick by changing what is being asserted.
-- Send back: the change misses the ticket, or needs more than a small fix. Change nothing and give the Coder Agent a reason it can act on.
+- Send back: the change misses the ticket, or needs more than a small fix, in work that fits the ticket's estimate. Change nothing and give the Coder Agent a reason it can act on.
 
 Red CI is never approved.`;
 
@@ -156,8 +171,8 @@ export const TICKET_TEMPLATE = `Size the breakdown to the work. As few tickets a
 How to write each ticket:
 - userStory: who wants it, what they would like to do, and why, all in one sentence: "As a <role>, I'd like to <capability>, so that <benefit>." Use the product's own roles, not "user" when a sharper one exists. The story carries the what and the why, so there is no separate context or description field.
 - requirements: how, as a list, and only when it earns its keep: the technical requirements, constraints and intended approach, including the tests that prove it, each at the lowest level that can see its behaviour (see the testing practice below). An approach you have checked against the code and libraries it relies on, not one that reads well. Leave it empty when the acceptance criteria already make the approach obvious.
-- acceptanceCriteria: Gherkin scenarios, each one observable and testable: given <a starting state>, when <an action>, then <an outcome>. Cover the main path and the edge cases that matter.
-- type: what kind of ticket it is. user_story: a user-visible capability, written from a role's point of view. feature: a larger piece of product functionality that several stories add up to. task: technical work with no user-visible behaviour of its own, such as a refactor, a migration or tooling. bug: existing behaviour that is wrong, to be fixed. spike: time-boxed research that produces findings, not product code. Type every ticket.
+- acceptanceCriteria: Gherkin scenarios, each one observable and testable: given <a starting state>, when <an action>, then <an outcome>. Cover the main path and the edge cases that matter. Each one is met by this ticket's own change: never one that holds only once other tickets are done ("given the earlier tickets merged"). Order the work with dependsOn instead, and give a target the ticket cannot reach on its own (a coverage figure, a performance budget) to the ticket that does the work to reach it, estimated for that work.
+- type: what kind of ticket it is. user_story: a user-visible capability, written from a role's point of view. feature: a larger piece of product functionality that several stories add up to. task: technical work with no user-visible behaviour of its own, such as a refactor, a migration or tooling. bug: existing behaviour that is wrong, to be fixed. spike: time-boxed research that produces findings, not product code. tech_debt: paying down debt found along the way, such as missing tests, a workaround to remove or a slow path to fix. Type every ticket.
 - severity: only for a bug, and required then; leave it out for every other type. critical: data loss, a security hole, or the product down for everyone, with no workaround. high: a main flow is broken for many people, or it has only an awkward workaround. medium: a feature misbehaves but a reasonable workaround exists. low: cosmetic or rare, with no real harm.
 - storyPoints: the estimate on the Fibonacci scale, 1, 2, 3, 5, 8 or 13, relative to the other tickets. Estimate the work, not the diff. The reading a ticket has to do before it can be written, and the review it will take afterwards, are most of a small ticket's cost — and a ticket whose whole job is to read the codebase (writing a conventions file, a map of the layers, the first documentation) is not a 2 whatever it finally changes. Past 8, consider splitting the ticket.`
 
@@ -216,6 +231,10 @@ export function withCodingRules(
   role: "coder" | "reviewer",
   options: { spike?: boolean } = {},
 ): string {
-  const rules = codingRules(role === "coder" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}` : REVIEWER_SCOPE_RULE);
+  const rules = codingRules(
+    role === "coder"
+      ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE} Put each in finish's follow_ups.`
+      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.`,
+  );
   return `${brief.trim()}\n\n${rules}\n\n${HANDOFF_RULE}${options.spike ? `\n\n${SPIKE_RULE}` : ""}\n\n${ENGINEERING_PRACTICES}`;
 }

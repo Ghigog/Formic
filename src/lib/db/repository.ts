@@ -15,6 +15,7 @@ import type {
   WorkType,
   BugSeverity,
 } from "@/lib/domain/entities";
+import type { FollowUp } from "@/lib/agents/follow-ups";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
 
@@ -283,6 +284,8 @@ export interface TicketDetail {
   plan: PlanStep[];
   /** Steps outside the repository the person has to take. */
   handoff: string[];
+  /** Work an agent proposed as tickets of their own, for the person to add or dismiss. */
+  followUps: FollowUp[];
   /** The head commit the Reviewer Agent last approved or pushed. */
   reviewedSha: string | null;
   /**
@@ -349,6 +352,7 @@ export interface TicketUpdate {
   archived?: boolean;
   plan?: PlanStep[];
   handoff?: string[];
+  followUps?: FollowUp[];
   reviewedSha?: string | null;
   reviewedHead?: string | null;
   stackedOn?: string | null;

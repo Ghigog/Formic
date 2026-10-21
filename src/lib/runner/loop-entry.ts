@@ -40,6 +40,7 @@ import { runCodingLoop } from "@/lib/agents/coding-loop";
 import type { AgentContext, CoderTask, Usage } from "@/lib/agents/ports";
 import { budgetTokens } from "@/lib/agents/ports";
 import { CODER_BRIEF, CHECKPOINT_RULE, withCodingRules } from "@/lib/agents/prompts";
+import { followUpsSection } from "@/lib/agents/follow-ups";
 import { billingFor, spendCeilingNote, turnCeiling } from "@/lib/budget/limits";
 import type { Budget } from "@/lib/budget/budget-for";
 import { WORK_TYPES, type PlanStep } from "@/lib/domain/entities";
@@ -71,6 +72,7 @@ export const loopEntryPayloadSchema = z.object({
     fileScope: z.array(z.string()),
     /** The ticket's type; a spike gets the spike brief. */
     workType: z.enum(WORK_TYPES).nullable().optional(),
+    storyPoints: z.number().nullable().optional(),
     /** What the person watching told this ticket's agents, oldest first. */
     notes: z.array(z.string()).optional(),
     /** What agents on the repository's other tickets shared, one line each. */
@@ -286,6 +288,7 @@ export async function runLoopEntry(
       acceptanceCriteria: ticket.acceptanceCriteria,
       fileScope: ticket.fileScope,
       workType: ticket.workType ?? null,
+      storyPoints: ticket.storyPoints ?? null,
       notes: ticket.notes ?? [],
       ...(ticket.sharedNotes?.length ? { sharedNotes: ticket.sharedNotes } : {}),
     };
@@ -374,7 +377,9 @@ export async function runLoopEntry(
     return {
       ok: true,
       summary: change.summary,
-      detail: change.detail,
+      // The job writes the detail into the commit's message, where Formic
+      // reads follow-ups the way it reads a CLI agent's.
+      detail: [change.detail, followUpsSection(change.followUps ?? [])].filter(Boolean).join("\n\n"),
       verifiedWith: change.verifiedWith,
       alreadyDone: change.alreadyDone ?? false,
       handoff: change.handoff ?? [],

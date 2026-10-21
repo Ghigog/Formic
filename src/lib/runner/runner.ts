@@ -34,8 +34,10 @@ import {
   CODER_BRIEF,
   CODER_DESIGN_RULE,
   CODER_SCOPE_RULE,
+  FOLLOW_UP_RULE,
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
+  REVIEWER_FOLLOW_UP_RULE,
   REVIEWER_SCOPE_RULE,
   SHOWCASE_BRIEF,
   ENGINEERING_PRACTICES,
@@ -47,6 +49,8 @@ import {
 import type { DraftTicket, ReviewTask, Usage } from "@/lib/agents/ports";
 import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
+import { followUpsFromSummary } from "@/lib/agents/follow-ups";
+import { recordFollowUps } from "@/lib/board/follow-ups";
 import { askForScope, widenScope } from "@/lib/coder/scope-request";
 import {
   checkDecomposition,
@@ -142,7 +146,7 @@ const MAX_REPORT = 20_000;
 const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${PLAN_FIRST_RULE}
 - ${CHECKPOINT_RULE}
-- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}` : REVIEWER_SCOPE_RULE}
+- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- Title (N pt): what and why" per line, before the plan.
 - Match the surrounding code. Read neighbouring files before you write.
 - ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
@@ -427,6 +431,7 @@ export function loopPayload(input: {
       acceptanceCriteria: ticket.acceptanceCriteria,
       fileScope: ticket.fileScope,
       workType: ticket.workType,
+      storyPoints: ticket.storyPoints,
       ...(input.notes.length ? { notes: input.notes } : {}),
       ...(input.sharedNotes?.length ? { sharedNotes: input.sharedNotes } : {}),
       ...(input.instruction ? { instruction: input.instruction } : {}),
@@ -1629,6 +1634,9 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
   let lost = false;
   try {
     const change = await client.compare(from, staging);
+    // What it proposed as tickets of their own stands whatever else it did,
+    // a send-back included.
+    await recordFollowUps(ticket.id, followUpsFromSummary(change.messages.at(-1) ?? ""));
     if (
       isTicketImplementation(result.mode) &&
       change.files.length === 0 &&

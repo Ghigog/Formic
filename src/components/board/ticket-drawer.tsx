@@ -25,6 +25,7 @@ import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
 import { ScoutsPanel } from "./scouts-panel";
 import { QueenPanel } from "./queen-panel";
+import { FollowUps } from "./follow-ups";
 import {
   activityOf,
   appendActivity,
@@ -349,7 +350,16 @@ export function TicketDrawer({
               aria-label="Ticket"
               className="min-h-0 overflow-y-auto p-4"
             >
-              {view && <TicketBody view={view} onOpenTicket={onOpenTicket} />}
+              {view && (
+                <TicketBody
+                  view={view}
+                  onOpenTicket={onOpenTicket}
+                  onChanged={() => {
+                    void load();
+                    onChanged?.();
+                  }}
+                />
+              )}
             </section>
           }
           second={
@@ -438,9 +448,11 @@ function NoticeBanner({
 function TicketBody({
   view,
   onOpenTicket,
+  onChanged,
 }: {
   view: TicketView;
   onOpenTicket: (ticketId: string) => void;
+  onChanged: () => void;
 }) {
   return (
     <div className="text-fg space-y-4 text-[13px] leading-6">
@@ -479,6 +491,8 @@ function TicketBody({
           </ul>
         </div>
       )}
+
+      <FollowUps ticketId={view.card.id} followUps={view.followUps} onChanged={onChanged} />
 
       <div>
         <Heading>File scope</Heading>

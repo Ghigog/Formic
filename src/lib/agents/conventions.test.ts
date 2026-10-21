@@ -3,6 +3,8 @@ import { checkDecomposition, gherkin, toDraftTicket, type TicketSpec } from "./d
 import {
   ALREADY_DONE_RULE,
   ENGINEERING_PRACTICES,
+  FOLLOW_UP_RULE,
+  REVIEWER_FOLLOW_UP_RULE,
   SPIKE_RULE,
   VERIFY_RULE,
   withCodingRules,
@@ -142,6 +144,40 @@ describe("work for a person", () => {
 
   it("is something every Architect Agent is told to mark, whatever its prompt", () => {
     expect(withPlanningConventions("Custom brief.")).toContain("needsHuman");
+  });
+});
+
+describe("work bigger than the ticket", () => {
+  it("is a follow-up for the Coder, whatever its prompt, not work to grind through", () => {
+    const prompt = withCodingRules("Custom coder.", "coder");
+    expect(prompt).toContain(FOLLOW_UP_RULE);
+    expect(prompt).toContain("follow_ups");
+    expect(prompt).not.toContain(REVIEWER_FOLLOW_UP_RULE);
+  });
+
+  it("is not a reason for the Reviewer to send the change back", () => {
+    const prompt = withCodingRules("Custom reviewer.", "reviewer");
+    expect(prompt).toContain(REVIEWER_FOLLOW_UP_RULE);
+    expect(REVIEWER_FOLLOW_UP_RULE).toContain("Send back only for work that fits the ticket's estimate");
+  });
+
+  it("never sits in a ticket's acceptance criteria as a wait on other tickets", () => {
+    const prompt = withPlanningConventions("Custom architect.");
+    expect(prompt).toContain("never one that holds only once other tickets are done");
+    expect(prompt).toContain("tech_debt");
+  });
+
+  it("is held to the ticket's estimate, which the brief carries", () => {
+    const task = {
+      ticketId: "t1",
+      key: "T-1",
+      title: "Raise coverage thresholds",
+      description: "Set them to measured.",
+      acceptanceCriteria: ["Each threshold is within 3 points of measured"],
+      fileScope: ["vitest.config.ts"],
+    };
+    expect(taskBrief({ ...task, storyPoints: 2 })).toContain("Estimate: 2 story points.");
+    expect(taskBrief({ ...task, storyPoints: null })).not.toContain("Estimate:");
   });
 });
 
