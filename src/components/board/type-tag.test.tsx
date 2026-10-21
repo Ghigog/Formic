@@ -42,4 +42,20 @@ describe("TypeTag", () => {
     expect([...lums].sort((a, b) => b - a)).toEqual(lums);
     expect(new Set(lums).size).toBe(4);
   });
+
+  it.each(BUG_SEVERITIES)("reads a %s bug's severity in its label", (severity) => {
+    render(<TypeTag type="bug" severity={severity} />);
+    const name = severity[0]!.toUpperCase() + severity.slice(1);
+    expect(screen.getByText(`Bug · ${name}`)).toHaveAttribute("data-severity", severity);
+  });
+
+  it("keeps the plain Bug label without a severity", () => {
+    render(<TypeTag type="bug" />);
+    expect(screen.getByText("Bug")).toBeInTheDocument();
+  });
+
+  it("reads Squashed, without severity, for a done bug", () => {
+    render(<TypeTag type="bug" severity="high" squashed />);
+    expect(screen.getByText("Squashed")).toBeInTheDocument();
+  });
 });
