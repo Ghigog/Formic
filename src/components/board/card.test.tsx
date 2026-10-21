@@ -334,3 +334,29 @@ describe("a card's footer arrows", () => {
     expect(screen.getByRole("button", { name: /^Move/ }).parentElement).toHaveClass("min-h-[18px]");
   });
 });
+
+describe("a card's scout badge", () => {
+  function renderRunning(partial: Partial<BoardCard>) {
+    const card = makeCard({ status: "running", stage: 3, ...partial });
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
+    return renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="in_progress" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+  }
+
+  it("shows the count beside an ant, not the words 'scouts out'", () => {
+    renderRunning({ scouts: 1, scoutPick: null });
+    const tags = screen.getByTestId("card-tags");
+    expect(tags.querySelector("[data-scouts]")?.textContent).toBe("1");
+    expect(tags.querySelector("canvas[data-testid='scout-ant']")).not.toBeNull();
+    expect(screen.getByLabelText("1 scout out")).toBeTruthy();
+    expect(tags.textContent).not.toContain("scouts out");
+  });
+
+  it("shows no ant without scouts", () => {
+    renderRunning({ scouts: 0 });
+    expect(screen.queryByTestId("scout-ant")).toBeNull();
+  });
+});
