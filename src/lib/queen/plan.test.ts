@@ -35,6 +35,15 @@ describe("planQueen", () => {
     }
   });
 
+  it("queues every ready ticket in an epic, a dependency before its dependent", () => {
+    const { epic, a, b } = board();
+    const c = makeCard({ epicId: epic.id, status: "ready" });
+    const plan = planQueen([epic, b, c, a], epic);
+    expect(plan).toContain(a.id);
+    expect(plan).toContain(c.id);
+    expect(plan).not.toContain(b.id);
+  });
+
   it("includes dependencies outside the epic for a ticket target", () => {
     const dep = makeCard({ status: "ready" });
     const t = makeCard({ status: "waiting", dependsOn: [dep.id] });

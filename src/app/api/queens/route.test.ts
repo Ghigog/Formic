@@ -77,6 +77,18 @@ describe("POST /api/queens", () => {
     expect(repo.placeQueen).toHaveBeenCalledWith("p-1", "e-1", "epic");
   });
 
+  it("rejects an Epic with no tickets, whatever its column", async () => {
+    repo.boardCards.mockResolvedValue(board(makeCard({ id: "e-1", kind: "epic", childCount: 0 })));
+    expect((await post("e-1")).status).toBe(422);
+    expect(repo.placeQueen).not.toHaveBeenCalled();
+  });
+
+  it("rejects a second Queen on the same Epic", async () => {
+    repo.boardCards.mockResolvedValue(board(makeCard({ id: "e-1", kind: "epic", childCount: 2, queen: true })));
+    expect((await post("e-1")).status).toBe(409);
+    expect(repo.placeQueen).not.toHaveBeenCalled();
+  });
+
   it("answers 404 for a card of another project", async () => {
     expect((await post("elsewhere")).status).toBe(404);
     expect(repo.placeQueen).not.toHaveBeenCalled();
