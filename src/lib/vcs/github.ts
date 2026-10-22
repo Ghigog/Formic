@@ -43,6 +43,8 @@ import { CARRY_DELETED, CARRY_DIR, RUNNER_WORKFLOW_PATH } from "@/lib/runner/wor
  */
 
 const API = "https://api.github.com";
+/** How much of a red job's log a fixing agent sees: enough for a test runner's failure report. */
+const LOG_TAIL_LINES = 60;
 
 interface RawPull {
   number: number;
@@ -266,14 +268,29 @@ export class GitHubClient implements VcsClient {
       // A check run without annotations is normal, not a failure.
     }
 
+    // An Actions check often annotates nothing but "exit code 1"; the failing
+    // test is in its job's log, under the same id. Other checks have none.
+    const tail = await this.jobLogTail(checkRunId);
+    const output = [data.output?.title, data.output?.summary, data.output?.text].filter(Boolean).join("\n\n");
     return {
       name: data.name,
-      summary: [data.output?.title, data.output?.summary, data.output?.text]
-        .filter(Boolean)
-        .join("\n\n")
-        .slice(0, 20_000),
+      summary: [output.slice(0, 20_000 - (tail ? tail.length + 2 : 0)), tail].filter(Boolean).join("\n\n"),
       annotations,
     };
+  }
+
+  /** The last lines a job printed before its cleanup, or "" when there is no log. */
+  private async jobLogTail(jobId: number): Promise<string> {
+    const response = await fetch(`${API}/repos/${this.repoFullName}/actions/jobs/${jobId}/logs`, {
+      headers: this.headers(),
+    }).catch(() => null);
+    if (!response?.ok) return "";
+    const lines = (await response.text().catch(() => ""))
+      .split("\n")
+      .map((line) => line.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /, "").replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+    const cleanup = lines.findIndex((line) => line === "Post job cleanup.");
+    const tail = (cleanup === -1 ? lines : lines.slice(0, cleanup)).slice(-LOG_TAIL_LINES).join("\n").trim();
+    return tail ? `End of the job's log:\n${tail}`.slice(-8_000) : "";
   }
 
   async retargetPullRequest(number: number, baseBranch: string): Promise<void> {
