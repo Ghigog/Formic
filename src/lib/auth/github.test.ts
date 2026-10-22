@@ -149,6 +149,35 @@ describe("GitHub tokens", () => {
     expect(await githubTokenFor((await repository().userById(user.id))!)).toBe("ghu_refreshed");
   });
 
+  it("spends a refresh token once when two lookups find the token expired", async () => {
+    const spent = new Set<string>();
+    let n = 0;
+    vi.stubGlobal("fetch", async (_input: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { refresh_token: string };
+      if (spent.has(body.refresh_token)) return Response.json({ error: "bad_refresh_token" });
+      spent.add(body.refresh_token);
+      n++;
+      return Response.json({
+        access_token: `ghu_new${n}`,
+        expires_in: 28800,
+        refresh_token: `ghr_new${n}`,
+        refresh_token_expires_in: 15811200,
+      });
+    });
+    const user = await repository().upsertUser({ githubId: 9, login: "z", name: null, avatarUrl: null });
+    await storeTokens(user.id, {
+      accessToken: "ghu_old",
+      expiresAt: new Date(Date.now() - 1000),
+      refreshToken: "ghr_once",
+      refreshExpiresAt: new Date(Date.now() + 86_400_000),
+    });
+    const stale = (await repository().userById(user.id))!;
+
+    expect(await Promise.all([githubTokenFor(stale), githubTokenFor(stale)])).toEqual(["ghu_new1", "ghu_new1"]);
+    // One that read the user before the refresh, arriving after it: the stored token.
+    expect(await githubTokenFor(stale)).toBe("ghu_new1");
+  });
+
   it("gives up when the refresh token has lapsed too", async () => {
     fakeGitHub();
     const user = await repository().upsertUser({ githubId: 8, login: "y", name: null, avatarUrl: null });
