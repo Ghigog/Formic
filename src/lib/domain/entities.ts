@@ -259,6 +259,8 @@ export interface BoardCard {
   startedAt?: string | null;
   /** ISO time it last changed. */
   updatedAt?: string;
+  /** Tickets: ISO time it entered the column it is in. */
+  enteredAt?: string | null;
   /**
    * ISO time the agent working on it now started, or null when none is.
    * Drives the timer on a card while it is being worked on, and only then.

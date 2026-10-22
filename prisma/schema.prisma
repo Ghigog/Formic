@@ -406,6 +406,8 @@ model Ticket {
   dependents TicketDependency[] @relation("dependency")
   runs       AgentRun[]
   queen      Queen?
+  columnEntries TicketColumnEntry[]
+  changes       TicketChange[]
 
   @@unique([epicId, key])
   @@index([epicId, status])
@@ -413,6 +415,43 @@ model Ticket {
   @@index([prNumber])
   @@index([scoutOf])
   @@map("ticket")
+}
+
+enum TicketChangeKind {
+  points
+  edit
+  split
+}
+
+/// A stay in one board column: when a ticket entered it and when it left
+/// (null while it is still there). Written when a move changes the column,
+/// not the status. KPIs derive from these. Synthetic entries stand in for
+/// history from before this was recorded; durations skip them.
+model TicketColumnEntry {
+  id        String    @id @default(cuid())
+  ticketId  String
+  ticket    Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  column    ColumnId
+  enteredAt DateTime  @default(now())
+  exitedAt  DateTime?
+  synthetic Boolean   @default(false)
+
+  @@index([ticketId])
+  @@map("ticket_column_entry")
+}
+
+/// A change made to a ticket after it was planned: its points, its text, or
+/// a split into more tickets.
+model TicketChange {
+  id       String               @id @default(cuid())
+  ticketId String
+  ticket   Ticket               @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  kind     TicketChangeKind
+  at       DateTime             @default(now())
+  detail   Json?
+
+  @@index([ticketId])
+  @@map("ticket_change")
 }
 
 model TicketDependency {

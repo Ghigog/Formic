@@ -10,6 +10,7 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  TicketColumnEntry,
   GithubProfile,
   OwnerScope,
   PresetRecord,
@@ -127,6 +128,8 @@ interface Store {
   epicProject: Map<string, string>;
   cards: Map<string, BoardCard>;
   ticketExtras: Map<string, TicketExtras>;
+  /** Ticket id to its column history, oldest first. */
+  columnEntries: Map<string, TicketColumnEntry[]>;
   prds: Map<string, unknown>;
   prdTimes: Map<string, Date>;
   rawRequests: Map<string, string>;
@@ -230,6 +233,7 @@ function store(): Store {
     epicProject: new Map(),
     cards: new Map(),
     ticketExtras: new Map(),
+    columnEntries: new Map(),
     prds: new Map(),
     prdTimes: new Map(),
     rawRequests: new Map(),
@@ -264,6 +268,28 @@ function store(): Store {
 }
 
 /** The project a card belongs to. Seeded cards belong to the default one. */
+/**
+ * A ticket's column history. A ticket that has none (the demo board's, made
+ * before any was recorded) gets one synthetic open entry for where it is,
+ * as the migration does for existing rows.
+ */
+function historyOf(s: Store, card: BoardCard): TicketColumnEntry[] {
+  let history = s.columnEntries.get(card.id);
+  if (!history) {
+    const column = columnOf(card);
+    history = [
+      {
+        column,
+        enteredAt: (column === "backlog" ? card.createdAt : card.updatedAt) ?? new Date().toISOString(),
+        exitedAt: null,
+        synthetic: true,
+      },
+    ];
+    s.columnEntries.set(card.id, history);
+  }
+  return history;
+}
+
 function projectOf(s: Store, card: BoardCard): string {
   const epicId = card.kind === "epic" ? card.id : card.epicId;
   return (epicId && s.epicProject.get(epicId)) || s.project.id;
@@ -618,6 +644,12 @@ export class MemoryRepository implements Repository {
     return store().queensSpent.get(projectId) ?? 0;
   }
 
+  async ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]> {
+    const s = store();
+    const card = s.cards.get(ticketId);
+    return card && card.kind === "ticket" ? historyOf(s, card).map((e) => ({ ...e })) : [];
+  }
+
   async boardCards(projectId?: string): Promise<BoardCard[]> {
     const s = store();
     // Scouts are never board cards: their parent shows them.
@@ -633,6 +665,7 @@ export class MemoryRepository implements Repository {
     }
     for (const card of cards) {
       card.queen = s.queens.has(card.id);
+      if (card.kind === "ticket") card.enteredAt = historyOf(s, card).at(-1)?.enteredAt ?? null;
       // An agent at work: a run here, or a CLI agent's job on GitHub Actions,
       // whose run here ends at dispatch.
       const job =
@@ -783,6 +816,9 @@ export class MemoryRepository implements Repository {
         updatedAt: new Date().toISOString(),
       };
       made.set(input.key, card);
+      s.columnEntries.set(card.id, [
+        { column: columnOf(card), enteredAt: card.createdAt!, exitedAt: null, synthetic: false },
+      ]);
       s.ticketExtras.set(card.id, {
         description: input.description,
         acceptanceCriteria: input.acceptanceCriteria,
@@ -809,6 +845,21 @@ export class MemoryRepository implements Repository {
   async move(input: MoveInput): Promise<void> {
     const card = store().cards.get(input.cardId);
     if (!card) return;
+    if (card.kind === "ticket") {
+      const s = store();
+      const history = historyOf(s, card);
+      const to = columnOf({
+        status: input.status,
+        stalledIn: input.stalledIn,
+        misplacedIn: input.misplaced?.in,
+      });
+      if (history.at(-1)?.column !== to) {
+        const now = new Date().toISOString();
+        const open = history.at(-1);
+        if (open) open.exitedAt = now;
+        history.push({ column: to, enteredAt: now, exitedAt: null, synthetic: false });
+      }
+    }
     if (card.status !== input.status) {
       card.updatedAt = new Date().toISOString();
       if (input.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
@@ -906,7 +957,10 @@ export class MemoryRepository implements Repository {
   }
 
   async cardById(cardId: string): Promise<BoardCard | null> {
-    return store().cards.get(cardId) ?? null;
+    const s = store();
+    const card = s.cards.get(cardId);
+    if (card?.kind === "ticket") card.enteredAt = historyOf(s, card).at(-1)?.enteredAt ?? null;
+    return card ?? null;
   }
 
   async epicDetail(epicId: string) {

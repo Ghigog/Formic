@@ -52,6 +52,15 @@ export interface CreateTicketInput {
   needsHuman?: string | null;
 }
 
+/** A ticket's stay in one column. `exitedAt` is null while it is still there. */
+export interface TicketColumnEntry {
+  column: ColumnId;
+  enteredAt: string;
+  exitedAt: string | null;
+  /** Stands in for history from before it was recorded: duration KPIs skip it. */
+  synthetic: boolean;
+}
+
 export interface MoveInput {
   cardId: string;
   kind: "epic" | "ticket";
@@ -633,6 +642,8 @@ export interface Repository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
+  /** Every column a ticket has been in, oldest first. */
+  ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]>;
   /** Places a Queen on a card, or returns null when it already has one. */
   placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null>;
   /** The Queens placed in a project. */
