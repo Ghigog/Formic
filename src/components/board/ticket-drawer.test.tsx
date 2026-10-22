@@ -54,11 +54,22 @@ const VIEW: TicketView = {
 
 afterEach(() => vi.unstubAllGlobals());
 
-function open(view: TicketView = VIEW, attachments: AttachmentSummary[] = []) {
+const NO_KPIS = {
+  entries: [],
+  passRate: null,
+  precision: { changes: 0, precise: true },
+};
+
+function open(
+  view: TicketView = VIEW,
+  attachments: AttachmentSummary[] = [],
+  kpis: unknown = NO_KPIS,
+) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/kpi/")) return Response.json(kpis);
       if (url.includes("/api/attachments"))
         return Response.json({ attachments });
       return Response.json(view);
@@ -592,5 +603,41 @@ describe("TicketDrawer archive", () => {
       "Still working.",
     );
     expect(row).toContainElement(screen.getByRole("alert"));
+  });
+});
+
+describe("TicketDrawer KPIs", () => {
+  const entry = (column: string, enteredAt: string, exitedAt: string | null, durationMs: number) => ({
+    column,
+    enteredAt,
+    exitedAt,
+    durationMs,
+  });
+
+  it("shows each column's entry, exit and duration", async () => {
+    open(VIEW, [], {
+      entries: [
+        entry("in_progress", "2026-09-23T10:00:00Z", "2026-09-23T11:30:00Z", 5_400_000),
+        entry("in_review", "2026-09-23T11:30:00Z", "2026-09-23T11:45:00Z", 900_000),
+      ],
+      passRate: null,
+      precision: { changes: 0, precise: true },
+    });
+    const items = await screen.findAllByText(/entered/);
+    expect(items).toHaveLength(2);
+    expect(items[0]!.parentElement).toHaveTextContent("1h 30m");
+    expect(items[1]!.parentElement).toHaveTextContent("15m");
+    expect(items[1]!.parentElement).toHaveTextContent(/exited/);
+  });
+
+  it("shows the pass rate of a ticket sent back once then passed", async () => {
+    open(VIEW, [], { ...NO_KPIS, passRate: 0.5 });
+    expect(await screen.findByText("50%")).toBeInTheDocument();
+  });
+
+  it("shows the precision count", async () => {
+    open(VIEW, [], { ...NO_KPIS, precision: { changes: 2, precise: false } });
+    const label = await screen.findByText("Precision");
+    expect(label.nextElementSibling).toHaveTextContent("2");
   });
 });
