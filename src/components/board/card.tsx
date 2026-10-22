@@ -5,6 +5,7 @@ import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
+import { WalkingAnt } from "@/components/colony/walking-ant";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { StatusChip } from "@/components/ui/status-pill";
 import { ProgressBar } from "@/components/ui/progress-bar";
@@ -509,7 +510,7 @@ function CardFooter({ card, column }: { card: BoardCard; column: ColumnId }) {
 
 function TicketHead({ card, column }: { card: BoardCard; column: ColumnId }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <div className="flex min-h-[18px] items-center gap-1.5">
         {card.status === "queued" && <QueueTimer card={card} />}
         <CardQueenMark card={card} />
@@ -518,12 +519,15 @@ function TicketHead({ card, column }: { card: BoardCard; column: ColumnId }) {
         <ProblemBadge card={card} />
         <AdvanceButton card={card} column={column} place="head" />
       </div>
-      <div data-testid="card-tags" className="flex flex-wrap items-center gap-1.5">
+      <div data-testid="card-tags" className="flex min-w-0 flex-wrap items-center gap-1.5">
         <CardTypeTag card={card} />
         {(card.scouts ?? 0) > 0 && !card.scoutPick && card.status === "running" && (
-          <CoinBadge title="Scouts trying it at once" className="shrink-0 whitespace-nowrap">
-            {card.scouts} scouts out
-          </CoinBadge>
+          <span data-scouts aria-label={`${card.scouts} ${card.scouts === 1 ? "scout" : "scouts"} out`} className="inline-flex">
+            <CoinBadge title="Scouts trying it at once">
+              {card.scouts}
+              <WalkingAnt />
+            </CoinBadge>
+          </span>
         )}
         <SpBadge points={card.storyPoints} done={card.status === "merged"} />
       </div>
