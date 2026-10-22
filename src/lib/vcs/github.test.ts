@@ -499,6 +499,25 @@ describe("GitHubClient: reads and writes", () => {
       expect(await client().checkLog(5)).toEqual({ name: "ci", summary: "", annotations: [] });
     });
 
+    it("adds the end of an Actions job's log, before its cleanup", async () => {
+      const log = [
+        "2026-10-22T13:32:33.9523621Z OverlayShellStateTest > theTypePillStepsThroughTheTypes FAILED",
+        "2026-10-22T13:32:40.3134444Z \u001b[31m##[error]Process completed with exit code 1.\u001b[0m",
+        "2026-10-22T13:32:40.3335823Z Post job cleanup.",
+        "2026-10-22T13:32:41.0139885Z Cleaning up orphan processes",
+      ].join("\n");
+      route({
+        "GET /check-runs/5": RUN,
+        "GET /check-runs/5/annotations?per_page=50": [],
+        "GET /actions/jobs/5/logs": () => new Response(log),
+      });
+      expect((await client().checkLog(5)).summary).toBe(
+        "T\n\nbody\n\nEnd of the job's log:\n" +
+          "OverlayShellStateTest > theTypePillStepsThroughTheTypes FAILED\n" +
+          "##[error]Process completed with exit code 1.",
+      );
+    });
+
     it("caps the summary", async () => {
       route({
         "GET /check-runs/5": { name: "ci", output: { title: null, summary: null, text: "x".repeat(30_000) } },
