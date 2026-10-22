@@ -232,11 +232,13 @@ export class GitHubClient implements VcsClient {
     if (!workflows || required.length > 0) return true;
     const candidates = workflows.filter((w) => w.state === "active" && w.path !== RUNNER_WORKFLOW_PATH);
     // A workflow that never runs on a pull request (by hand, on a schedule,
-    // on pushes to the base) leaves its heads without checks for good.
+    // on pushes to the base) leaves its heads without checks for good. So does
+    // one GitHub lists only because it ran on a pull request's own branch: it
+    // is not on the base, so no other pull request runs it.
     const runs = await Promise.all(
       candidates.map((w) =>
         this.readFile(w.path, baseBranch).then(
-          (source) => source === null || runsOnPullRequests(source, baseBranch),
+          (source) => source !== null && runsOnPullRequests(source, baseBranch),
           // Unreadable could be CI: wait for checks, as above.
           () => true,
         ),

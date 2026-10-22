@@ -207,6 +207,17 @@ describe("GitHubClient", () => {
       expect(calls.some((c) => c.url.includes("formic-agent.yml"))).toBe(false);
     });
 
+    it("is false when a workflow is listed but not on the base branch", async () => {
+      stubFetch((url) => {
+        if (url.includes("/actions/workflows")) {
+          return Response.json({ workflows: [{ path: ".github/workflows/unit-tests.yml", state: "active" }] });
+        }
+        if (url.includes("/branches/")) return Response.json({});
+        return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+      });
+      expect(await client().hasCi("main")).toBe(false);
+    });
+
     it("is true when a workflow cannot be read", async () => {
       stubFetch((url) => {
         if (url.includes("/actions/workflows")) {
