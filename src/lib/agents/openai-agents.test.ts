@@ -252,8 +252,8 @@ describe("the coding loop on an OpenAI-format provider", () => {
       type: "ticket.plan",
       ticketId: "t-9",
       steps: [
-        { step: "Read the handler", status: "in_progress" },
-        { step: "Write the fix", status: "pending" },
+        { step: "Read the handler", status: "in_progress", role: "coder" },
+        { step: "Write the fix", status: "pending", role: "coder" },
       ],
     });
   });

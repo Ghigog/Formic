@@ -15,6 +15,7 @@ import type {
 } from "./ports";
 import { budgetTokens } from "./ports";
 import { repository } from "@/lib/db";
+import { mergePlan, planRole } from "@/lib/agents/plan";
 import type { AttachmentRef } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
 import { ticketNotes } from "@/lib/coder/notes";
@@ -149,7 +150,10 @@ export function startRun(
       if (event.type === "ticket.plan") {
         const { ticketId, steps } = event;
         planWrites = planWrites
-          .then(() => repository().updateTicket(ticketId, { plan: steps }))
+          .then(async () => {
+            const stored = (await repository().ticketDetail(ticketId))?.plan ?? [];
+            await repository().updateTicket(ticketId, { plan: mergePlan(stored, steps, planRole(steps)) });
+          })
           .catch((e) => console.error("[formic] could not save the plan:", e));
       }
       // Fire and forget: an agent must not block on the event bus, and a

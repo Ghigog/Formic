@@ -311,6 +311,7 @@ export class MockCoderAgent implements CoderAgent {
       steps.map((step, i) => ({
         step,
         status: i < done ? "done" : i === done ? "in_progress" : "pending",
+        role: "coder",
       }));
 
     for (const [i, label] of steps.entries()) {

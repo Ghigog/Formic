@@ -21,7 +21,7 @@ import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
 import { attemptsFor } from "@/lib/budget/in-process";
 import { diagnose, lastWords } from "@/lib/agents/limits";
-import { planFraction, planFromSummary } from "@/lib/agents/plan";
+import { mergePlan, planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers";
 import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
@@ -457,11 +457,18 @@ export function loopPayload(input: {
  * in GitHub Actions, so its plan and its account of the work are read from
  * its summary once it is done.
  */
-async function recordCliWork(projectId: string, ticketId: string, summary: string): Promise<void> {
-  const steps = planFromSummary(summary);
-  if (steps.length > 0) {
+async function recordCliWork(
+  projectId: string,
+  ticketId: string,
+  summary: string,
+  role: "coder" | "reviewer" = "coder",
+): Promise<void> {
+  const incoming = planFromSummary(summary);
+  if (incoming.length > 0) {
+    const stored = (await repository().ticketDetail(ticketId))?.plan ?? [];
+    const steps = mergePlan(stored, incoming, role);
     await repository().updateTicket(ticketId, { plan: steps });
-    await publish(projectId, { type: "ticket.plan", ticketId, steps });
+    await publish(projectId, { type: "ticket.plan", ticketId, steps: steps.filter((s) => s.role === role) });
   }
   const text = summary.trim();
   if (text) {
@@ -1742,14 +1749,14 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
 
     if (result.mode === "fix") {
       const message = change.messages.at(-1) ?? "";
-      await recordCliWork(projectId, ticket.id, message);
+      await recordCliWork(projectId, ticket.id, message, ticket.status === "review" ? "reviewer" : "coder");
       const { recordFix } = await import("@/lib/review/pipeline");
       await recordFix(projectId, ticket, ticket.prNumber!, head, handoffFromSummary(message));
       return;
     }
 
     const message = change.messages.at(-1) ?? "";
-    await recordCliWork(projectId, ticket.id, message);
+    await recordCliWork(projectId, ticket.id, message, ticket.status === "review" ? "reviewer" : "coder");
     const [first, ...rest] = message.split("\n");
     const line = (first ?? "").trim();
     const summary =
@@ -1974,6 +1981,7 @@ export async function receiveReport(input: {
   // Seeded from the ticket's last known plan, so early actions in a batch
   // still get a real fraction instead of falling back to indeterminate.
   let plan: PlanStep[] = ticket.plan;
+  const planOwner = ticket.status === "review" ? "reviewer" : "coder";
   let planChanged = false;
   for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
     switch (item.kind) {
@@ -1991,9 +1999,13 @@ export async function receiveReport(input: {
         });
         break;
       case "plan":
-        plan = item.steps;
+        plan = mergePlan(plan, item.steps, planOwner);
         planChanged = true;
-        await publish(projectId, { type: "ticket.plan", ticketId: ticket.id, steps: item.steps });
+        await publish(projectId, {
+          type: "ticket.plan",
+          ticketId: ticket.id,
+          steps: plan.filter((s) => s.role === planOwner),
+        });
         break;
       case "log":
         await publish(projectId, { type: "run.log", runId, ticketId: ticket.id, stream: item.stream, line: item.line });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkPlan, currentStep, planFromSummary } from "./plan";
+import { checkPlan, currentStep, mergePlan, planFromSummary } from "./plan";
 
 describe("checkPlan", () => {
   it("takes a well-formed plan", () => {
@@ -44,5 +44,46 @@ describe("currentStep", () => {
     expect(currentStep([{ step: "a", status: "done" }, { step: "b", status: "in_progress" }])).toBe(1);
     expect(currentStep([{ step: "a", status: "done" }, { step: "b", status: "pending" }])).toBe(1);
     expect(currentStep([{ step: "a", status: "done" }])).toBe(-1);
+  });
+});
+
+describe("mergePlan", () => {
+  const coder = [
+    { step: "Write", status: "done" as const },
+    { step: "Test", status: "pending" as const },
+  ];
+  const review = [{ step: "Read the diff", status: "pending" as const }];
+
+  it("takes a first plan, stamped with its role", () => {
+    expect(mergePlan([], coder, "coder")).toEqual([
+      { step: "Write", status: "done", role: "coder" },
+      { step: "Test", status: "pending", role: "coder" },
+    ]);
+  });
+
+  it("replaces the same role's steps", () => {
+    const first = mergePlan([], coder, "coder");
+    expect(mergePlan(first, review, "coder").map((s) => s.step)).toEqual(["Read the diff"]);
+  });
+
+  it("appends a reviewer's plan after the coder's", () => {
+    const merged = mergePlan(mergePlan([], coder, "coder"), review, "reviewer");
+    expect(merged.map((s) => [s.step, s.role])).toEqual([
+      ["Write", "coder"],
+      ["Test", "coder"],
+      ["Read the diff", "reviewer"],
+    ]);
+  });
+
+  it("replaces only the reviewer's steps when it re-plans", () => {
+    const both = mergePlan(mergePlan([], coder, "coder"), review, "reviewer");
+    const again = mergePlan(both, [{ step: "Run it", status: "done" }], "reviewer");
+    expect(again.map((s) => s.step)).toEqual(["Write", "Test", "Run it"]);
+  });
+
+  it("counts steps stored without a role as the coder's", () => {
+    const merged = mergePlan(coder, review, "reviewer");
+    expect(merged.map((s) => s.step)).toEqual(["Write", "Test", "Read the diff"]);
+    expect(mergePlan(coder, review, "coder")).toHaveLength(1);
   });
 });
