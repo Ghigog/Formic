@@ -22,6 +22,7 @@ import {
   type MergeOutcome,
   type PullRequestDetail,
   STAGING_PREFIX,
+  type VcsClient,
   mergeNeedsPromotion,
   mergeTarget,
   vcs,
@@ -544,7 +545,8 @@ export async function closeAlreadyDone(
   if (ticket.prNumber) {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
-    const pull = await vcs(project.repoFullName, creds.githubToken).pullRequest(ticket.prNumber);
+    const client = vcs(project.repoFullName, creds.githubToken);
+    const pull = await client.pullRequest(ticket.prNumber);
     if (pull.merged) {
       await markMergedExternally(projectId, pull.number);
       return;
@@ -558,6 +560,12 @@ export async function closeAlreadyDone(
       );
       return;
     }
+    // Nothing in the code needed changing, so a red check on this unchanged
+    // head is not the code's: it failed on its own (a network stall in an
+    // install, a lost runner). Left as it is, the review sends the ticket
+    // back for the same red check, the coder finds nothing to do again, and
+    // the two go round for as long as the attempts last.
+    await rerunRedActions(client, pull.headBranch, await client.checksFor(pull.headSha)).catch(() => 0);
     await repository().updateTicket(ticket.id, {
       status: "review",
       stalledIn: null,
@@ -585,6 +593,35 @@ export async function closeAlreadyDone(
       ? `**Already done.** The Coder Agent found this in place and changed nothing.\n\n${evidence.detail.trim()}`
       : null,
   });
+}
+
+/**
+ * Runs the failed jobs of each red Actions check again, once: a run already
+ * on a later attempt failed twice, and that is the code's. Returns how many
+ * runs it started again. Checks from outside Actions have no run to repeat.
+ */
+export async function rerunRedActions(
+  client: VcsClient,
+  branch: string,
+  checks: CheckSummary[],
+): Promise<number> {
+  const runIds = [
+    ...new Set(
+      failing(checks)
+        .map((c) => /\/actions\/runs\/(\d+)/.exec(c.detailsUrl ?? "")?.[1])
+        .filter((id): id is string => !!id),
+    ),
+  ];
+  if (runIds.length === 0) return 0;
+  const runs = await client.branchRuns(branch);
+  let started = 0;
+  for (const id of runIds) {
+    const run = runs.find((r) => /\/runs\/(\d+)/.exec(r.url)?.[1] === id);
+    if (run && run.attempt > 1) continue;
+    await client.rerunFailedJobs(Number(id));
+    started++;
+  }
+  return started;
 }
 
 /**

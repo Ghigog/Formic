@@ -49,7 +49,6 @@ export type Sfx =
   | "unfold"
   | "close"
   | "crumble"
-  | "sentinelsOpen"
   | "sentinelLand"
   | "sentinelVoice";
 
@@ -475,10 +474,6 @@ export class SoundEngine {
         this.noise(0.3, { freq: 1800, to: 300, gain: 0.07, q: 1.2 });
         this.tone(110, 0.22, { to: 45, gain: 0.18, delay: 0.5 });
         this.noise(0.12, { freq: 400, to: 90, gain: 0.12, delay: 0.5 });
-        break;
-      case "sentinelsOpen":
-        this.tone(330, 0.45, { to: 990, gain: 0.03, type: "triangle", attack: 0.06 });
-        this.noise(0.4, { freq: 600, to: 3200, gain: 0.04, q: 1.4 });
         break;
       case "sentinelLand":
         this.noise(0.03, { freq: 2200, to: 600, gain: 0.05 });
