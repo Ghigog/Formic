@@ -33,3 +33,11 @@ export function nextSway(current: number, vx: number): number {
   const target = Math.max(-MAX_SWAY_DEG, Math.min(MAX_SWAY_DEG, -vx * 2));
   return current + (target - current) * 0.2;
 }
+
+/** How far below a finger, in px, a dragged Queen is drawn so the finger does not cover her. */
+export const QUEEN_TOUCH_OFFSET_Y = 56;
+
+/** Where the Queen is for a pointer at (`x`, `y`): lower on touch, on the pointer for mouse and pen. */
+export function queenPoint(x: number, y: number, pointerType: string): { x: number; y: number } {
+  return { x, y: pointerType === "touch" ? y + QUEEN_TOUCH_OFFSET_Y : y };
+}
