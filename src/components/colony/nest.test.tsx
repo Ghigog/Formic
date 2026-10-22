@@ -1,3 +1,4 @@
+import { QUEEN_TOUCH_OFFSET_Y } from "./queen-carry";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { XP_PER_LEVEL, levelOf, rankOf, type Score } from "@/lib/colony/game";
@@ -114,6 +115,38 @@ describe("ColonyPopover Queens", () => {
     );
     expect(document.querySelector("[data-queen-image]")).toBeNull();
     card.remove();
+  });
+
+  it("draws a touch-dragged Queen below the finger and drops on the card under her", async () => {
+    stubQueens(1);
+    openPopoverAt(3 * XP_PER_LEVEL);
+    const card = document.createElement("div");
+    card.dataset.tid = "t-1";
+    document.body.append(card);
+    const lookup = vi.fn(() => card);
+    document.elementFromPoint = lookup;
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("1"));
+
+    fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 100, clientY: 200, pointerType: "touch" });
+    const image = document.querySelector<HTMLElement>("[data-queen-image]")!;
+    expect(image.style.left).toBe("100px");
+    expect(image.style.top).toBe(`${200 + QUEEN_TOUCH_OFFSET_Y}px`);
+    fireEvent.pointerUp(window, { clientX: 100, clientY: 200, pointerType: "touch" });
+    expect(lookup).toHaveBeenCalledWith(100, 200 + QUEEN_TOUCH_OFFSET_Y);
+    card.remove();
+  });
+
+  it("keeps a mouse-dragged Queen on the pointer", async () => {
+    stubQueens(1);
+    openPopoverAt(3 * XP_PER_LEVEL);
+    document.elementFromPoint = vi.fn(() => document.body);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("1"));
+
+    fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 100, clientY: 200, pointerType: "mouse" });
+    const image = document.querySelector<HTMLElement>("[data-queen-image]")!;
+    expect(image.style.top).toBe("200px");
+    fireEvent.pointerUp(window, { clientX: 100, clientY: 200, pointerType: "mouse" });
+    expect(document.elementFromPoint).toHaveBeenCalledWith(100, 200);
   });
 
   it("places on the Epic whose header holds the drop, and shows the 422 message", async () => {

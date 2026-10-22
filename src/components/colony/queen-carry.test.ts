@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_SWAY_DEG, edgeScrollSpeed, nextSway } from "./queen-carry";
+import { MAX_SWAY_DEG, QUEEN_TOUCH_OFFSET_Y, edgeScrollSpeed, nextSway, queenPoint } from "./queen-carry";
 
 describe("edgeScrollSpeed", () => {
   it("is 0 away from the edges and outside the area", () => {
@@ -31,5 +31,15 @@ describe("nextSway", () => {
     let a = -20;
     for (let i = 0; i < 60; i++) a = nextSway(a, 0);
     expect(Math.abs(a)).toBeLessThan(0.1);
+  });
+});
+
+describe("queenPoint", () => {
+  it("shifts a touch pointer down by the offset", () => {
+    expect(queenPoint(100, 200, "touch")).toEqual({ x: 100, y: 200 + QUEEN_TOUCH_OFFSET_Y });
+  });
+  it("leaves mouse and pen unchanged", () => {
+    expect(queenPoint(100, 200, "mouse")).toEqual({ x: 100, y: 200 });
+    expect(queenPoint(100, 200, "pen")).toEqual({ x: 100, y: 200 });
   });
 });
