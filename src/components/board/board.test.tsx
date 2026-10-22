@@ -8,6 +8,22 @@ import { makeCard, makeEpicWithChildren } from "@/test/cards";
 import { setViewportMatches } from "@/test/viewport";
 import type { BoardCard } from "@/lib/domain/entities";
 import type { TransitionResult } from "@/lib/domain/transitions";
+import type { DropResult } from "@hello-pangea/dnd";
+
+// jsdom reports every box as 0×0, so a real drag cannot land anywhere. The
+// drop context hands its onDragEnd to the test, which drops a card by id.
+const dnd = vi.hoisted(() => ({ onDragEnd: null as null | ((r: DropResult, p: never) => void) }));
+
+vi.mock("@hello-pangea/dnd", async (orig) => {
+  const actual = await orig<typeof import("@hello-pangea/dnd")>();
+  return {
+    ...actual,
+    DragDropContext: (p: React.ComponentProps<typeof actual.DragDropContext>) => {
+      dnd.onDragEnd = p.onDragEnd;
+      return <actual.DragDropContext {...p} />;
+    },
+  };
+});
 
 /**
  * Integration level: the board wired to its columns and cards, with the
@@ -529,6 +545,40 @@ describe("Board, below 768px", () => {
 });
 
 describe("Board archived filter", () => {
+  it("returns a dragged card to its column and shows the banner when the move fails at the network", async () => {
+    setViewportMatches(true);
+    const card = makeCard({ key: "PROT-09", status: "draft" });
+    const onTransition = vi.fn(
+      async (): Promise<TransitionResult> => ({
+        ok: false,
+        reason: "The server did not respond to that move.",
+        revertTo: "backlog",
+      }),
+    );
+    renderBoard([card], { onTransition });
+
+    act(() =>
+      dnd.onDragEnd!(
+        {
+          draggableId: card.id,
+          type: "DEFAULT",
+          reason: "DROP",
+          mode: "FLUID",
+          source: { droppableId: "backlog", index: 0 },
+          destination: { droppableId: "todo", index: 0 },
+          combine: null,
+        },
+        { announce: () => {} } as never,
+      ),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server did not respond to that move.");
+    expect(onTransition).toHaveBeenCalledWith(expect.objectContaining({ from: "backlog", to: "todo" }));
+    const bar = screen.getByRole("list", { name: "Columns" });
+    expect(within(bar).getByText("Backlog")).toHaveTextContent("Backlog 1");
+    expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 0");
+  });
+
   it("shows archived cards in Done once Archived is toggled on, and asks for them", async () => {
     const onArchivedWanted = vi.fn();
     const live = makeCard({ status: "merged", title: "Shipped one" });
