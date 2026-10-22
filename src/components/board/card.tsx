@@ -704,13 +704,19 @@ function ReviewCard({
   const passed = extras.checks?.passed ?? 0;
   // A check reported on this head outranks what the board knew at load.
   const noCi = extras.ci === "none" || (!extras.ci && failed === 0 && passed === 0 && env?.noCi === true);
-  const green = extras.ci === "passing" || (failed === 0 && passed > 0);
+  // No CI detail is unknown, not running: only a pending report says running.
+  // A card at the merge stage is past CI by construction, whatever the board
+  // has heard, unless a check on this head said otherwise.
+  const atMerge = card.status === "review" && card.stage === MERGE_STAGE;
+  const green =
+    extras.ci === "passing" || (failed === 0 && passed > 0) || (atMerge && !extras.ci && failed === 0);
   // Approved, green and at the merge stage: nothing but the merge is left, and
   // it is not this card's move — with auto-merge off it waits for a person to
   // merge on GitHub, with it on Formic does it. Either way it is *ready* to
   // merge, not mid-merge, so the chip says so rather than implying a merge that
   // is already in flight and never lands.
-  const readyToMerge = card.status === "review" && card.stage === MERGE_STAGE;
+  const readyToMerge = atMerge;
+  const reviewerAtWork = !!extras.reviewState || !!(card.workingSince && agentLabel);
   // A merge that failed rolls the card back with why; say it on the card.
   const problem = cardProblem(card);
 
@@ -736,12 +742,20 @@ function ReviewCard({
           <StatusChip tone="jade">
             {passed > 0 ? `${passed} check${passed === 1 ? "" : "s"} passed` : "Checks passed"}
           </StatusChip>
-        ) : (
+        ) : extras.ci === "pending" ? (
           <StatusChip tone="clay" pulsing>
             CI running
           </StatusChip>
+        ) : (
+          <StatusChip tone="neutral">CI status unknown</StatusChip>
         )}
         {readyToMerge && <StatusChip tone="jade">Ready to merge</StatusChip>}
+        {readyToMerge && env?.autoMerge === false && !noCi && (
+          <StatusChip tone="neutral">Waiting for you to merge on GitHub</StatusChip>
+        )}
+        {green && !readyToMerge && !reviewerAtWork && (
+          <StatusChip tone="neutral">Waiting for review</StatusChip>
+        )}
         {extras.reviewState && (
           <StatusChip tone="rust">{extras.reviewState}</StatusChip>
         )}
