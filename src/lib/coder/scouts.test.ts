@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setCheckoutFactory } from "./checkout";
 import { MemoryWorkspace, scopedWorkspace, type Workspace } from "@/lib/sandbox/workspace";
 import { resetMergeLanes } from "@/lib/review/lane";
@@ -145,6 +145,19 @@ beforeEach(() => {
     const raw = new MemoryWorkspace();
     return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: null, async dispose() {} };
   });
+});
+
+/**
+ * Runs and scouts are launched detached. Let them end before the next test
+ * resets the store, or they write into it.
+ */
+afterEach(async () => {
+  const repo = repository();
+  await until(async () => {
+    const cards = await repo.boardCards(PROJECT);
+    const scouts = (await Promise.all(cards.map((c) => repo.scoutsOf(c.id)))).flat();
+    return ![...cards, ...scouts].some((c) => c.status === "running");
+  }, "background runs to end", 2000).catch(() => {});
 });
 
 describe("scouts", () => {

@@ -1592,8 +1592,9 @@ describe("a CLI agent seen while it works", () => {
       const reply = await receiveReport({ job, since: Date.now(), after: 0, lines: [text] });
       expect(reply.stop).toBe(false);
     }
+    // Only this question's lines: another test's run may still be writing events.
     const events = (await repository().eventsAfter(PROJECT, 0)).slice(before);
-    expect(events.map((e) => e.payload)).toMatchObject([
+    expect(events.map((e) => e.payload).filter((p) => (p as { runId?: string }).runId === job)).toMatchObject([
       { type: "run.log", runId: job, line: "reading the board" },
       { type: "run.log", runId: job, line: "still reading" },
     ]);
