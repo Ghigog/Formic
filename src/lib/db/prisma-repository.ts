@@ -14,6 +14,7 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  TicketColumnEntry,
   GithubProfile,
   OwnerScope,
   PresetRecord,
@@ -535,6 +536,7 @@ export class PrismaRepository implements Repository {
         scoutPick: true,
         dependsOn: { select: { dependsOnTicketId: true } },
         queen: { select: { id: true } },
+        columnEntries: { where: { exitedAt: null }, select: { enteredAt: true }, take: 1 },
         // Every run, newest first: the live one names the agent, the
         // oldest says when work started.
         runs: {
@@ -634,6 +636,7 @@ export class PrismaRepository implements Repository {
         ? new Date(Math.min(...started.map((d) => d.getTime()))).toISOString()
         : null,
       updatedAt: t.updatedAt.toISOString(),
+      enteredAt: t.columnEntries[0]?.enteredAt.toISOString() ?? null,
       mergedAt: t.mergedAt?.toISOString() ?? null,
       mergePoints: t.mergePoints,
       mergeMultiplier: t.mergeMultiplier,
@@ -643,6 +646,19 @@ export class PrismaRepository implements Repository {
     });
 
     return [...epicCards, ...ticketCards].sort(byPosition);
+  }
+
+  async ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]> {
+    const rows = await prisma().ticketColumnEntry.findMany({
+      where: { ticketId },
+      orderBy: [{ enteredAt: "asc" }, { id: "asc" }],
+    });
+    return rows.map((e) => ({
+      column: e.column,
+      enteredAt: e.enteredAt.toISOString(),
+      exitedAt: e.exitedAt?.toISOString() ?? null,
+      synthetic: e.synthetic,
+    }));
   }
 
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
@@ -809,6 +825,9 @@ export class PrismaRepository implements Repository {
             position: input.position,
             status: input.dependsOnKeys.length === 0 ? "ready" : "waiting",
             stage: 3,
+            columnEntries: {
+              create: { column: columnOf({ status: input.dependsOnKeys.length === 0 ? "ready" : "waiting" }) },
+            },
           },
         });
         created.push(row);
@@ -874,12 +893,34 @@ export class PrismaRepository implements Repository {
     if (input.kind === "epic") {
       await db.epic.update({ where: { id: input.cardId }, data });
     } else {
-      await db.ticket.update({
-        where: { id: input.cardId },
-        data: {
-          ...data,
-          ...(input.detached !== undefined ? { detached: input.detached } : {}),
-        },
+      await db.$transaction(async (tx) => {
+        const before = await tx.ticket.findUnique({
+          where: { id: input.cardId },
+          select: { status: true, stalledIn: true, misplacedIn: true },
+        });
+        await tx.ticket.update({
+          where: { id: input.cardId },
+          data: {
+            ...data,
+            ...(input.detached !== undefined ? { detached: input.detached } : {}),
+          },
+        });
+        if (!before) return;
+        const to = columnOf({
+          status: input.status,
+          stalledIn: input.stalledIn,
+          misplacedIn: input.misplaced?.in,
+        });
+        if (columnOf(before) === to) return;
+        // One instant closes the old stay and starts the new one.
+        const now = new Date();
+        await tx.ticketColumnEntry.updateMany({
+          where: { ticketId: input.cardId, exitedAt: null },
+          data: { exitedAt: now },
+        });
+        await tx.ticketColumnEntry.create({
+          data: { ticketId: input.cardId, column: to, enteredAt: now },
+        });
       });
     }
   }

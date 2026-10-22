@@ -56,6 +56,46 @@ function contract(name: string, make: () => Repository) {
       ...over,
     });
 
+    describe("a ticket's column history", () => {
+      const move = (cardId: string, status: "ready" | "waiting" | "running" | "review") =>
+        repo.move({ cardId, kind: "ticket", status, stalledIn: null, position: 1 });
+
+      const started = async (over: Partial<CreateTicketInput> = {}) => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "T1", over)]);
+        if (!t) throw new Error("no ticket created");
+        return { p, t };
+      };
+
+      it("opens one entry for the starting column when a ticket is created", async () => {
+        const { t } = await started();
+        const entries = await repo.ticketColumnEntries(t.id);
+        expect(entries).toHaveLength(1);
+        expect(entries[0]).toMatchObject({ column: "todo", exitedAt: null, synthetic: false });
+        expect((await repo.cardById(t.id))?.enteredAt).toBe(entries[0]?.enteredAt);
+      });
+
+      it("closes the old entry and opens the next at the same instant when the column changes", async () => {
+        const { t } = await started();
+        await move(t.id, "running");
+        await move(t.id, "review");
+        const entries = await repo.ticketColumnEntries(t.id);
+        expect(entries.map((e) => e.column)).toEqual(["todo", "in_progress", "in_review"]);
+        expect(entries[0]?.exitedAt).toBe(entries[1]?.enteredAt);
+        expect(entries[1]?.exitedAt).toBe(entries[2]?.enteredAt);
+        expect(entries[2]?.exitedAt).toBeNull();
+        expect((await repo.cardById(t.id))?.enteredAt).toBe(entries[2]?.enteredAt);
+      });
+
+      it("writes nothing when the status changes within a column", async () => {
+        const { t } = await started();
+        await move(t.id, "waiting");
+        await move(t.id, "ready");
+        expect(await repo.ticketColumnEntries(t.id)).toHaveLength(1);
+      });
+    });
+
     describe("the board's log", () => {
       it("drops the oldest frames it was told to, and keeps state changes", async () => {
         const p = await project();
