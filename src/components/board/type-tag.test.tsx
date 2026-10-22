@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { TypeTag } from "./type-tag";
+import { COLOR_UNLOCKS } from "@/lib/colony/game";
+import { tint } from "@/components/ui/tint";
 import { BUG_SEVERITIES, WORK_TYPES } from "@/lib/domain/entities";
 
 const NAMES = { user_story: "User story", task: "Task", feature: "Feature", spike: "Spike", tech_debt: "Tech debt", bug: "Bug" } as const;
@@ -50,6 +52,29 @@ describe("TypeTag", () => {
       unmount();
     }
     expect(colours.size).toBe(5);
+  });
+
+  it.each([
+    ["user_story", "jade"],
+    ["task", "moss"],
+    ["feature", "terracotta"],
+    ["spike", "ochre"],
+  ] as const)("tints a %s tag from the %s insect hex", (type, key) => {
+    render(<TypeTag type={type} />);
+    expect(background()).toBe(tint(COLOR_UNLOCKS.find((u) => u.key === key)!.hex));
+    expect(screen.getByText(/./).style.color).toBe("rgb(28, 25, 23)");
+  });
+
+  it("keeps every bug severity on the crimson hue", () => {
+    const crimson = channels(COLOR_UNLOCKS.find((u) => u.key === "crimson")!.hex);
+    for (const severity of BUG_SEVERITIES) {
+      const { unmount } = render(<TypeTag type="bug" severity={severity} />);
+      const [r, g, b] = channels(background());
+      // a mix with white keeps the channel order of the hue: red above green and blue
+      expect(r! > g! && r! > b!).toBe(true);
+      expect(crimson[0]! > crimson[1]!).toBe(true);
+      unmount();
+    }
   });
 
   it("steps a bug tag up in strength from low to critical", () => {

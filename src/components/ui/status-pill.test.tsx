@@ -23,6 +23,13 @@ describe("StatusPill", () => {
     expect(chip).toHaveTextContent(STATUS_LABEL[status]);
   });
 
+  it("fills the chip with a palette tint under ink text", () => {
+    const { container } = render(<StatusChip tone="jade">Done</StatusChip>);
+    const chip = container.firstElementChild as HTMLElement;
+    expect(chip).toHaveClass("text-ink");
+    expect(chip.style.backgroundColor).toBe("rgb(192, 211, 193)");
+  });
+
   it("breathes only while an agent is live", () => {
     const { container, rerender } = render(<StatusPill status="running" />);
     expect(container.querySelector(".pulse-dot")).not.toBeNull();
@@ -40,9 +47,9 @@ describe("StatusPill", () => {
 });
 
 describe("StatusChip", () => {
-  it("tints its ground at 12% of the tone", () => {
+  it("tints its ground from the tone's insect colour", () => {
     const { container } = render(<StatusChip tone="crimson">2 checks failed</StatusChip>);
-    expect(container.firstElementChild!.className).toContain("bg-crimson/12");
+    expect((container.firstElementChild as HTMLElement).style.backgroundColor).toBe("rgb(232, 190, 188)");
   });
 
   it("pulses only when told to", () => {
