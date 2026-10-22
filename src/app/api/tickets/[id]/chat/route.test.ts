@@ -34,7 +34,7 @@ const del = () => DELETE(new NextRequest("http://localhost/api/tickets/t-1/chat"
 
 beforeEach(() => {
   clearBuckets();
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   activeProject.mockResolvedValue({ id: "p-1" });
   repo.projectOfCard.mockResolvedValue("p-1");
   repo.cardChatMessages.mockResolvedValue([{ role: "user", text: "hi" }]);
