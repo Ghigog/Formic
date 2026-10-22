@@ -47,6 +47,13 @@ describe("POST /api/sentinels/[id]", () => {
     expect(await res.json()).toEqual({ error: "Unknown sentinel." });
   });
 
+  it("answers 429 once the run bucket is exhausted", async () => {
+    for (let i = 0; i < 60; i++) expect((await call()).status).toBe(202);
+    const res = await call();
+    expect(res.status).toBe(429);
+    expect(summonSentinel).toHaveBeenCalledTimes(60);
+  });
+
   it("answers 409 without a project", async () => {
     activeProject.mockResolvedValue(null);
     expect((await call()).status).toBe(409);
