@@ -222,9 +222,8 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     const landed = SENTINELS.map((x, i) => ({ x, i })).filter(({ x }) =>
       reported(s.states[x.id]),
     );
-    if (landed.length) c.sfx("sentinelsOpen");
     if (landed.length && !c.fx.reducedMotion) {
-      landed.forEach(({ x, i }, n) => {
+      landed.forEach(({ x }, n) => {
         const delay = n * SLIDE_STAGGER_MS;
         root.current
           ?.querySelector<HTMLElement>(`[data-card="${x.id}"]`)
@@ -244,7 +243,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             },
           );
         timers.push(
-          setTimeout(() => c.sfx("sentinelLand", i), delay + SLIDE_MS),
+          setTimeout(() => c.sfx("sentinelLand", n), delay + SLIDE_MS),
         );
       });
     }
