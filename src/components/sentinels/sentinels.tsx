@@ -15,6 +15,7 @@ import {
 } from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditKind, AuditPoint } from "@/lib/db/repository";
+import { KpiSection } from "./kpi";
 import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
 
@@ -389,9 +390,9 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
       ref={root}
       role="region"
       aria-label="Sentinels"
-      className="bg-cream fixed top-14 right-0 bottom-14 left-0 z-[60] box-border overflow-hidden overscroll-none px-4 pt-5 pb-6 md:top-16 md:px-6"
+      className="bg-cream fixed top-14 right-0 bottom-14 left-0 z-[60] box-border overflow-x-hidden overflow-y-auto overscroll-none px-4 pt-5 pb-6 md:top-16 md:px-6"
     >
-      <div className="mx-auto flex h-full max-w-[1640px] flex-col gap-4">
+      <div className="mx-auto flex min-h-full max-w-[1640px] flex-col gap-4">
         <h1 className="sr-only">Sentinels</h1>
         <section className="border-line bg-card flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-[14px] border px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
@@ -455,7 +456,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
           </p>
         )}
 
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="relative flex min-h-[460px] flex-1 flex-col">
           <div
             ref={rail}
             role="list"
@@ -503,6 +504,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             ›
           </button>
         </div>
+        <KpiSection />
       </div>
 
       {reporting && (

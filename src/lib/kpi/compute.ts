@@ -65,6 +65,8 @@ export interface ProjectKpis {
   /** Tickets reaching Done per day, oldest first. */
   throughput: Array<{ date: string; done: number }>;
   cycleTime: Array<{ doneAt: string; days: number }>;
+  /** Per day tickets reached Done, oldest first: mean review pass rate (null with no review) and share of precise tickets. */
+  quality: Array<{ date: string; passRate: number | null; precision: number }>;
 }
 
 const day = (t: number) => new Date(t).toISOString().slice(0, 10);
@@ -75,6 +77,7 @@ export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: 
   const perDay = new Map<string, number>();
   const cycle: Array<{ doneAt: string; days: number }> = [];
   const rates: number[] = [];
+  const doneByDay = new Map<string, Array<{ rate: number | null; precise: boolean }>>();
   let done = 0;
   let inFlight = 0;
   let precise = 0;
@@ -93,6 +96,8 @@ export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: 
     if (doneEntry && ms(doneEntry.enteredAt) >= from) {
       done++;
       perDay.set(day(ms(doneEntry.enteredAt)), (perDay.get(day(ms(doneEntry.enteredAt))) ?? 0) + 1);
+      const key = day(ms(doneEntry.enteredAt));
+      doneByDay.set(key, [...(doneByDay.get(key) ?? []), { rate: passRate(entries), precise: changes.length === 0 }]);
       const started = entries.find((e) => e.column !== "backlog" && !e.synthetic);
       if (started) cycle.push({ doneAt: doneEntry.enteredAt, days: Math.max(0, ms(doneEntry.enteredAt) - ms(started.enteredAt)) / DAY });
     }
@@ -124,5 +129,12 @@ export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: 
     ) as ProjectKpis["timeInColumn"],
     throughput: [...perDay].sort(([a], [b]) => a.localeCompare(b)).map(([date, n]) => ({ date, done: n })),
     cycleTime: cycle,
+    quality: [...doneByDay]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, ts]) => ({
+        date,
+        passRate: mean(ts.flatMap((t) => (t.rate === null ? [] : [t.rate]))),
+        precision: ts.filter((t) => t.precise).length / ts.length,
+      })),
   };
 }
