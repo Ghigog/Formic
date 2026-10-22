@@ -638,9 +638,9 @@ function ActivityLine({ item }: { item: TicketActivity }) {
   }
   if (item.kind === "reply") {
     return (
-      <li className="bg-surface text-fg mr-6 rounded-md px-2 py-1.5 text-[12px] leading-5 whitespace-pre-wrap">
+      <li className="bg-surface text-fg mr-6 rounded-md px-2 py-1.5 text-[12px] leading-5">
         <span className="text-fg-muted mr-1 font-semibold">{item.agent}:</span>
-        {item.text}
+        <MarkdownLite text={item.text} keepLineBreaks className="inline" />
       </li>
     );
   }

@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { cn } from "@/components/ui/cn";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import type { AgentPreset } from "@/lib/domain/entities";
 import type { AssistantMessageView } from "@/lib/hooks/use-assistant";
 import { useKeyboardInset } from "@/lib/hooks/use-keyboard-inset";
@@ -381,11 +382,11 @@ function Message({
     <div className="max-w-[92%]">
       <div
         className={cn(
-          "text-[13px] leading-[1.55] whitespace-pre-wrap",
-          m.status === "failed" ? "text-crimson" : "text-ink",
+          "text-[13px] leading-[1.55]",
+          m.status === "failed" ? "text-crimson whitespace-pre-wrap" : "text-ink",
         )}
       >
-        {m.content}
+        {m.status === "failed" ? m.content : <MarkdownLite text={m.content} keepLineBreaks />}
       </div>
       {m.proposals.map((p, i) => (
         <ProposalCard key={i} p={p} onDecide={(d) => onDecide(i, d)} />
