@@ -138,7 +138,7 @@ describe("Auto-merge", () => {
     );
     expect(toggle).toBeChecked();
     // The label now describes the behaviour it was switched into.
-    expect(toggle).toHaveAccessibleName("Auto-merge when review is finished");
+    expect(toggle).toHaveAccessibleName("Auto-merge when review finished and CI green");
   });
 
   it("stays off and says so when the save is refused", async () => {

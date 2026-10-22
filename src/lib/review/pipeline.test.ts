@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
+import { approve, closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
 import { resetMergeLanes } from "./lane";
 import { repository } from "@/lib/db";
 import { subscribe } from "@/lib/events/bus";
@@ -121,6 +121,45 @@ describe("a repository with no CI", () => {
 
     expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
     expect((await repository().ticketDetail(ticketId))!.status).toBe("review");
+  });
+});
+
+describe("approval arriving after the last CI report", () => {
+  const verdict = { summary: "ok", detail: "ok" };
+  async function approveHead(prNumber: number, ticketId: string, headSha: string) {
+    // Approval is not yet recorded: the reviewer finishes after every report.
+    await repository().updateTicket(ticketId, { reviewedSha: null });
+    await approve(PROJECT, (await repository().ticketDetail(ticketId))!, prNumber, headSha, verdict);
+  }
+
+  it("merges on approval when the repository runs no CI, with no report to come", async () => {
+    const { ticketId, prNumber } = await seedApproved(true);
+    const headSha = MockVcsClient.withoutCi(prNumber);
+
+    await approveHead(prNumber, ticketId, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(true);
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("merged");
+  });
+
+  it("does not merge on approval while checks are still running", async () => {
+    const { ticketId, prNumber, headSha } = await seedApproved(true);
+    (await vcs.pullRequest(prNumber) as { checks?: unknown[] }).checks = [
+      { name: "ci", status: "in_progress", conclusion: null },
+    ];
+
+    await approveHead(prNumber, ticketId, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
+  });
+
+  it("does not merge on approval when a check has failed", async () => {
+    const { ticketId, prNumber } = await seedApproved(true);
+    const headSha = MockVcsClient.setChecks(prNumber, "failure");
+
+    await approveHead(prNumber, ticketId, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
   });
 });
 
