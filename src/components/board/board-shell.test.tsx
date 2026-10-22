@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { BoardShell } from "./board-shell";
 import { makeCard } from "@/test/cards";
 import type { BoardCard } from "@/lib/domain/entities";
@@ -64,7 +64,7 @@ const stats: AmbientStats = {
   logLines: [],
 };
 
-function renderShell(cards: BoardCard[]) {
+function renderShell(cards: BoardCard[], props: Partial<React.ComponentProps<typeof BoardShell>> = {}) {
   board.cards = cards;
   render(
     <BoardShell
@@ -72,6 +72,7 @@ function renderShell(cards: BoardCard[]) {
       projectName="Formic"
       repoFullName="formic-labs/formic-web"
       initialStats={stats}
+      {...props}
     />,
   );
 }
@@ -92,5 +93,44 @@ describe("BoardShell", () => {
     renderShell([]);
     const todo = screen.getByRole("region", { name: "To Do" });
     expect(within(todo).getByText("Nothing here.")).toBeInTheDocument();
+  });
+
+  describe("colony bar", () => {
+    /** The bar is the root's last in-flow child, so nothing pushes it out of the h-dvh column. */
+    function expectBarAtBottom() {
+      const root = document.querySelector("[data-board-root]")!;
+      const bar = screen.getByRole("contentinfo");
+      expect(bar.parentElement).toBe(root);
+      expect(bar).toHaveClass("shrink-0");
+      expect(root).toHaveClass("h-dvh", "overflow-hidden");
+      // The bar renders its nest once per layout (wide and narrow).
+      expect(within(bar).getAllByRole("button", { name: /open colony/i }).length).toBeGreaterThan(0);
+    }
+
+    it("is shown on a board with cards", () => {
+      renderShell([makeCard({ status: "ready" })]);
+      expectBarAtBottom();
+    });
+
+    it("is shown on a board with no cards", () => {
+      renderShell([]);
+      expectBarAtBottom();
+    });
+
+    it("is shown with the setup banners up", () => {
+      renderShell([], { noCi: true, noSandboxKey: true });
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expectBarAtBottom();
+    });
+
+    it("opens the colony from the nest", () => {
+      // jsdom has no Web Animations; the popover animates open.
+      Element.prototype.animate ??= () => ({ finished: Promise.resolve(), cancel() {}, onfinish: null }) as unknown as Animation;
+      renderShell([]);
+      const nest = within(screen.getByRole("contentinfo")).getAllByRole("button", { name: /open colony/i })[0]!;
+      expect(nest).toHaveAttribute("aria-expanded", "false");
+      fireEvent.click(nest);
+      expect(nest).toHaveAttribute("aria-expanded", "true");
+    });
   });
 });
