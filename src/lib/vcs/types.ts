@@ -258,6 +258,8 @@ export interface VcsClient {
   recentRuns(file: string): Promise<Array<WorkflowRunRef & { id: number; title: string }>>;
   /** Cancels a workflow run that has not finished. */
   cancelRun(runId: number): Promise<void>;
+  /** Runs a finished workflow run's failed jobs again, as a new attempt of the same run. */
+  rerunFailedJobs(runId: number): Promise<void>;
   /**
    * The log of a finished run's failed job, by the run's URL, or null when
    * there is none to read.

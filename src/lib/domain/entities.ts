@@ -79,11 +79,14 @@ export type StoryPoints = (typeof STORY_POINTS)[number];
 export interface PlanStep {
   step: string;
   status: "pending" | "in_progress" | "done";
+  /** Who made the step. A step stored before roles existed is the coder's. */
+  role?: "coder" | "reviewer";
 }
 
 export const planStepSchema = z.object({
   step: z.string().trim().min(1).max(300),
   status: z.enum(["pending", "in_progress", "done"]),
+  role: z.enum(["coder", "reviewer"]).optional(),
 });
 
 /** A directory prefix. Validated further by normalizeScopePath. */
