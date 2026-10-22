@@ -399,6 +399,22 @@ describe("splitting a ticket", () => {
     expect(children.find((c) => c.key === "T-1A")!.position).toBe(before.position);
   });
 
+  it("records the split on the child that replaces the ticket", async () => {
+    const ticket = await seedReady();
+    const repo = repository();
+
+    await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "split_ticket",
+      tickets: [spec("T-1A", ["src/lib/feature/a"]), spec("T-1B", ["src/lib/feature/b"])],
+    });
+
+    const children = (await repo.boardCards(PROJECT)).filter((c) => c.epicId === ticket.epicId);
+    const first = children.find((c) => c.key === "T-1A")!;
+    const second = children.find((c) => c.key === "T-1B")!;
+    expect((await repo.ticketChanges(first.id)).map((c) => c.kind)).toEqual(["split"]);
+    expect(await repo.ticketChanges(second.id)).toEqual([]);
+  });
+
   it("splits a ticket whose agent stopped with a branch but no pull request", async () => {
     const ticket = await seedReady();
     await repository().updateTicket(ticket.id, { branchName: "formic/t-1", status: "failed", stalledIn: "todo" });

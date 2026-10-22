@@ -10,6 +10,7 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  TicketChange,
   TicketColumnEntry,
   GithubProfile,
   OwnerScope,
@@ -37,6 +38,7 @@ import type {
   HostUsageCheck,
   Reservation,
 } from "./repository";
+import { precisionChanges } from "./ticket-changes";
 import type {
   AgentPreset,
   AgentRunStatus,
@@ -130,6 +132,8 @@ interface Store {
   ticketExtras: Map<string, TicketExtras>;
   /** Ticket id to its column history, oldest first. */
   columnEntries: Map<string, TicketColumnEntry[]>;
+  /** Ticket id to its recorded changes, oldest first. */
+  ticketChanges: Map<string, TicketChange[]>;
   prds: Map<string, unknown>;
   prdTimes: Map<string, Date>;
   rawRequests: Map<string, string>;
@@ -234,6 +238,7 @@ function store(): Store {
     cards: new Map(),
     ticketExtras: new Map(),
     columnEntries: new Map(),
+    ticketChanges: new Map(),
     prds: new Map(),
     prdTimes: new Map(),
     rawRequests: new Map(),
@@ -648,6 +653,18 @@ export class MemoryRepository implements Repository {
     const s = store();
     const card = s.cards.get(ticketId);
     return card && card.kind === "ticket" ? historyOf(s, card).map((e) => ({ ...e })) : [];
+  }
+
+  async ticketChanges(ticketId: string): Promise<TicketChange[]> {
+    return (store().ticketChanges.get(ticketId) ?? []).map((c) => ({ ...c }));
+  }
+
+  async recordTicketChange(ticketId: string, change: Pick<TicketChange, "kind" | "detail">): Promise<void> {
+    const s = store();
+    if (!s.cards.has(ticketId)) return;
+    const list = s.ticketChanges.get(ticketId) ?? [];
+    list.push({ ...change, at: new Date().toISOString() });
+    s.ticketChanges.set(ticketId, list);
   }
 
   async boardCards(projectId?: string): Promise<BoardCard[]> {
@@ -1230,6 +1247,23 @@ export class MemoryRepository implements Repository {
     const card = s.cards.get(ticketId);
     if (!card) return;
 
+    const extrasBefore = s.ticketExtras.get(ticketId);
+    if (extrasBefore) {
+      for (const change of precisionChanges(
+        {
+          status: card.status,
+          title: card.title,
+          description: extrasBefore.description,
+          acceptanceCriteria: extrasBefore.acceptanceCriteria,
+          fileScope: card.fileScope,
+          storyPoints: card.storyPoints ?? null,
+        },
+        update,
+      )) {
+        await this.recordTicketChange(ticketId, change);
+      }
+    }
+
     if (update.workType !== undefined || update.bugSeverity !== undefined) {
       if (update.workType !== undefined) card.workType = update.workType;
       card.bugSeverity = severityFor(card.workType, update.bugSeverity !== undefined ? update.bugSeverity : card.bugSeverity);
@@ -1715,7 +1749,10 @@ export class MemoryRepository implements Repository {
 
   async markTicketAutoEscalated(ticketId: string): Promise<void> {
     const extras = store().ticketExtras.get(ticketId);
-    if (extras && !extras.autoEscalatedAt) extras.autoEscalatedAt = new Date().toISOString();
+    if (extras && !extras.autoEscalatedAt) {
+      extras.autoEscalatedAt = new Date().toISOString();
+      await this.recordTicketChange(ticketId, { kind: "points", detail: { autoEscalated: true } });
+    }
   }
 
   async setColony(
