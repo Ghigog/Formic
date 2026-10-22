@@ -307,6 +307,12 @@ describe("editing a ticket that is asking for files outside its scope", () => {
       async () => !!(await repository().ticketDetail(ticket.id))?.prNumber,
       "the kept work's pull request",
     );
+    // The detached run is still writing the ticket after its pull request opens;
+    // let it finish so it cannot land in the next test's store.
+    await until(
+      async () => (await repository().ticketDetail(ticket.id))?.status !== "blocked",
+      "the kept work's review",
+    );
     expect(coder.tasks).toHaveLength(0);
   });
 
