@@ -59,6 +59,11 @@ describe("/api/tickets/[id]/chat", () => {
     expect(ask).not.toHaveBeenCalled();
   });
 
+  it("POST 429s over the limit", async () => {
+    for (let i = 0; i < 60; i++) expect((await post({ text: "hello" })).status).toBe(200);
+    expect((await post({ text: "hello" })).status).toBe(429);
+  });
+
   it("POST 409s while the agent is busy", async () => {
     ask.mockRejectedValue(new ChatBusyError());
     expect((await post({ text: "hello" })).status).toBe(409);

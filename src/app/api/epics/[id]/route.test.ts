@@ -115,6 +115,12 @@ describe("POST and DELETE /api/epics/[id]", () => {
     expect(await res.json()).toEqual({ error: "No." });
   });
 
+  it("answers 429 over the limit", async () => {
+    m.retryEpic.mockResolvedValue({ ok: true });
+    for (let i = 0; i < 60; i++) expect((await POST(req("POST"), ctx)).status).toBe(200);
+    expect((await POST(req("POST"), ctx)).status).toBe(429);
+  });
+
   it("deletes an Epic, and 404s for an unknown one", async () => {
     m.deleteEpic.mockResolvedValue({ ok: true });
     expect((await DELETE(req("DELETE"), ctx)).status).toBe(200);

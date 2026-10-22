@@ -69,6 +69,11 @@ describe("/api/epics/[id]/chat", () => {
     expect(m.ask).not.toHaveBeenCalled();
   });
 
+  it("POST answers 429 over the limit", async () => {
+    for (let i = 0; i < 60; i++) expect((await POST(req("POST", { text: "x" }), ctx)).status).toBe(200);
+    expect((await POST(req("POST", { text: "x" }), ctx)).status).toBe(429);
+  });
+
   it("POST answers 409 while the agent is busy", async () => {
     m.ask.mockRejectedValue(new ChatBusyError("Busy."));
     const res = await POST(req("POST", { text: "x" }), ctx);
