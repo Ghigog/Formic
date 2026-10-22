@@ -543,6 +543,15 @@ async function splitTicket(projectId: string, card: BoardCard, specs: TicketSpec
     })),
   );
 
+  // The original is gone, and its changes with it: the split is recorded on
+  // the first child, the ticket that takes its place.
+  if (created[0]) {
+    await repo.recordTicketChange(created[0].id, {
+      kind: "split",
+      detail: { from: card.key, into: created.map((c) => c.key) },
+    });
+  }
+
   // Dependencies onto tickets that already exist are added after the batch,
   // because createTickets only resolves keys within its own batch.
   const createdByKey = new Map(created.map((c) => [c.key, c.id]));

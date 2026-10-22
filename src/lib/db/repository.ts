@@ -61,6 +61,13 @@ export interface TicketColumnEntry {
   synthetic: boolean;
 }
 
+/** A change to a ticket after it was specified: its points, its text, or a split. */
+export interface TicketChange {
+  kind: "points" | "edit" | "split";
+  at: string;
+  detail: Record<string, unknown> | null;
+}
+
 export interface MoveInput {
   cardId: string;
   kind: "epic" | "ticket";
@@ -644,6 +651,10 @@ export interface Repository {
   boardCards(projectId: string): Promise<BoardCard[]>;
   /** Every column a ticket has been in, oldest first. */
   ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]>;
+  /** Every change recorded on a ticket after it was specified, oldest first. */
+  ticketChanges(ticketId: string): Promise<TicketChange[]>;
+  /** Records a change on a ticket. A split is recorded on the ticket that replaces the original. */
+  recordTicketChange(ticketId: string, change: Pick<TicketChange, "kind" | "detail">): Promise<void>;
   /** Places a Queen on a card, or returns null when it already has one. */
   placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null>;
   /** The Queens placed in a project. */

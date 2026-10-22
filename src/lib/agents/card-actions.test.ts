@@ -307,6 +307,12 @@ describe("editing a ticket that is asking for files outside its scope", () => {
       async () => !!(await repository().ticketDetail(ticket.id))?.prNumber,
       "the kept work's pull request",
     );
+    // The detached run is still writing the ticket after its pull request opens;
+    // let it finish so it cannot land in the next test's store.
+    await until(
+      async () => (await repository().ticketDetail(ticket.id))?.status !== "blocked",
+      "the kept work's review",
+    );
     expect(coder.tasks).toHaveLength(0);
   });
 
@@ -397,6 +403,22 @@ describe("splitting a ticket", () => {
     expect(children.map((c) => c.key).sort()).toEqual(["T-1A", "T-1B"]);
     // The first child keeps the original's place, and both stay under the Epic.
     expect(children.find((c) => c.key === "T-1A")!.position).toBe(before.position);
+  });
+
+  it("records the split on the child that replaces the ticket", async () => {
+    const ticket = await seedReady();
+    const repo = repository();
+
+    await applyCardAction(PROJECT, "ticket", ticket.id, {
+      type: "split_ticket",
+      tickets: [spec("T-1A", ["src/lib/feature/a"]), spec("T-1B", ["src/lib/feature/b"])],
+    });
+
+    const children = (await repo.boardCards(PROJECT)).filter((c) => c.epicId === ticket.epicId);
+    const first = children.find((c) => c.key === "T-1A")!;
+    const second = children.find((c) => c.key === "T-1B")!;
+    expect((await repo.ticketChanges(first.id)).map((c) => c.kind)).toEqual(["split"]);
+    expect(await repo.ticketChanges(second.id)).toEqual([]);
   });
 
   it("splits a ticket whose agent stopped with a branch but no pull request", async () => {
