@@ -205,3 +205,25 @@ describe("message formatting", () => {
     expect(screen.getByText("y").tagName).toBe("CODE");
   });
 });
+
+describe("list scrolling", () => {
+  it("scrolls to the bottom on open, and not again when messages change", () => {
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    const msg = (content: string) => ({
+      id: "a",
+      role: "assistant" as const,
+      content,
+      status: "done" as const,
+      proposals: [],
+    });
+    const { rerender } = render(
+      <AskBox a={{ ...controls, messages: [msg("one")] }} repoName="demo" />,
+    );
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    rerender(
+      <AskBox a={{ ...controls, messages: [msg("one two")] }} repoName="demo" />,
+    );
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+});

@@ -421,14 +421,15 @@ function Shade({
     ? providerInfo(selected.provider)?.kind === "cli"
     : false;
 
-  // Newest at the bottom, where the eye already is.
+  // Land on the newest message when the panel opens. Not on every streamed
+  // update: that would yank the list away from whatever the person is reading.
   useEffect(() => {
     if (a.open)
       list.current?.scrollTo({
         top: list.current.scrollHeight,
         behavior: "smooth",
       });
-  }, [a.open, a.messages]);
+  }, [a.open]);
 
   useEffect(() => {
     if (!a.open) return;
