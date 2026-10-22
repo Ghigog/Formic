@@ -117,3 +117,73 @@ describe("AskButton on a phone", () => {
     expect(shade.style.height).toBe(normal);
   });
 });
+
+describe("proposal cards", () => {
+  Element.prototype.scrollTo = vi.fn();
+
+  const withProposal = (
+    state: "proposed" | "applied" | "dismissed" | "failed",
+    error?: string,
+  ): AssistantControls => ({
+    ...controls,
+    messages: [
+      {
+        id: "m1",
+        role: "assistant",
+        content: "Here is a plan",
+        status: "done",
+        proposals: [
+          {
+            summary: "Add dark mode",
+            action: { type: "create_backlog_item", request: "Do it" },
+            state,
+            error,
+          },
+        ],
+      },
+    ],
+  });
+  const card = () =>
+    screen.getByText("Add dark mode").closest<HTMLElement>("[data-state]")!;
+
+  const body = () => screen.getByText("Add dark mode").parentElement!;
+
+  it("shows a proposed card at full strength with enabled buttons", () => {
+    render(<AskBox a={withProposal("proposed")} repoName="demo" />);
+    expect(card()).toHaveAttribute("data-state", "proposed");
+    expect(body()).not.toHaveClass("opacity-60");
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeEnabled();
+  });
+
+  it("grays out an approved card and drops the buttons", () => {
+    render(<AskBox a={withProposal("applied")} repoName="demo" />);
+    expect(card()).toHaveAttribute("data-state", "applied");
+    expect(body()).toHaveClass("opacity-60");
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+
+  it("grays out a dismissed card", () => {
+    render(<AskBox a={withProposal("dismissed")} repoName="demo" />);
+    expect(card()).toHaveAttribute("data-state", "dismissed");
+    expect(body()).toHaveClass("opacity-60");
+    expect(screen.getByText("Dismissed")).toBeInTheDocument();
+  });
+
+  it("grays out a failed card but keeps the error", () => {
+    render(<AskBox a={withProposal("failed", "boom")} repoName="demo" />);
+    expect(card()).toHaveAttribute("data-state", "failed");
+    expect(body()).toHaveClass("opacity-60");
+    expect(screen.getByText("Could not apply: boom")).toBeInTheDocument();
+  });
+
+  it("grays out once the decision completes, without a reload", () => {
+    const { rerender } = render(
+      <AskBox a={withProposal("proposed")} repoName="demo" />,
+    );
+    rerender(<AskBox a={withProposal("applied")} repoName="demo" />);
+    expect(body()).toHaveClass("opacity-60");
+  });
+});
