@@ -464,4 +464,34 @@ describe("closeAlreadyDone", () => {
     expect(after.status).toBe("blocked");
     expect(after.blockedReason).toContain("closed without merging");
   });
+  it("runs a red check again once, rather than send the unchanged head back for it", async () => {
+    // A check that failed on its own (a network stall in npm ci) stays red on
+    // a head nobody changes: review sent the ticket back for it, the coder
+    // found nothing to do, and the two went round until the attempts ran out.
+    const { ticketId } = await seedTicketWithPull({ merged: false, state: "open" });
+    const ticket = (await repository().ticketDetail(ticketId))!;
+    const pull = await vcs.pullRequest(ticket.prNumber!);
+    MockVcsClient.setChecks(pull.number, "failure");
+    (await vcs.checksFor(pull.headSha))[0]!.detailsUrl = `https://github.com/${REPO}/actions/runs/77/job/9`;
+    const run = {
+      name: "CI",
+      sha: pull.headSha,
+      status: "completed",
+      conclusion: "failure",
+      attempt: 1,
+      startedAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      url: `https://github.com/${REPO}/actions/runs/77`,
+    };
+    MockVcsClient.runner().branchRuns.set(pull.headBranch, [run]);
+
+    await closeAlreadyDone(PROJECT, ticket, { summary: "already there", detail: "found in place" });
+    expect(MockVcsClient.runner().reruns).toEqual([77]);
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("review");
+
+    // Red again on its second attempt: that is the code's, and it is not run a third time.
+    run.attempt = 2;
+    await closeAlreadyDone(PROJECT, (await repository().ticketDetail(ticketId))!, { summary: "s", detail: "d" });
+    expect(MockVcsClient.runner().reruns).toEqual([77]);
+  });
 });

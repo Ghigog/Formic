@@ -89,6 +89,7 @@ import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipelin
 import {
   ALREADY_DONE_TRAILER,
   ANSWER_PATH,
+  ASSISTANT_CHANGE_SUFFIX,
   ATTACHMENTS_DIR_VAR,
   CHECKPOINT_TRAILER,
   JOB_HEADROOM_MINUTES,
@@ -1505,7 +1506,14 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
-  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+  // The board's assistant may also have changed the code: the workflow
+  // keeps that on a staging branch of its own, beside the answer.
+  const changed = `${staging}${ASSISTANT_CHANGE_SUFFIX}`;
+  const cleanUp = () =>
+    Promise.all([
+      client.deleteStagingBranch(staging).catch(() => undefined),
+      client.deleteStagingBranch(changed).catch(() => undefined),
+    ]);
 
   // A sentinel's audit is the other thing an "ask" run can be for.
   const audit = messageId ? (await repo.auditsFor(projectId)).find((a) => a.id === messageId) : undefined;
@@ -1536,10 +1544,21 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
     return;
   }
   const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
+  // Its change moves to a branch that outlives the run, for the pull request.
+  const changeSha = await client.branchHead(changed).catch(() => null);
+  let change: string | null = null;
+  if (changeSha) {
+    const { changeBranchFor } = await import("@/lib/assistant/turn");
+    change = changeBranchFor(result.job.slice(result.job.lastIndexOf("--") + 2));
+    await client.moveBranch(change, changeSha).catch(() => {
+      change = null;
+    });
+  }
   await cleanUp();
   await finishCliAnswer(message.id, answer, undefined, {
     projectId,
     attempt: attemptOfJob(result.job),
+    change,
   });
 }
 

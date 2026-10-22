@@ -695,6 +695,10 @@ export class GitHubClient implements VcsClient {
     await this.request("POST", `/actions/runs/${runId}/cancel`);
   }
 
+  async rerunFailedJobs(runId: number): Promise<void> {
+    await this.request("POST", `/actions/runs/${runId}/rerun-failed-jobs`);
+  }
+
   async runLog(runUrl: string): Promise<string | null> {
     const runId = /\/actions\/runs\/(\d+)/.exec(runUrl)?.[1];
     if (!runId) return null;

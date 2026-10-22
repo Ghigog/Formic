@@ -1,4 +1,4 @@
-# formic-runner: 414a8b178ea7
+# formic-runner: 4cec7ebe3038
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -140,7 +140,7 @@ jobs:
       # the tests and the build to back its report. A failure here is not
       # fatal: the agent can still install what it needs itself.
       - name: Install the project's dependencies
-        if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop' || (inputs.mode == 'ask' && inputs.ticket == 'sentinel')
+        if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop' || (inputs.mode == 'ask' && (inputs.ticket == 'sentinel' || inputs.ticket == 'assistant'))
         continue-on-error: true
         run: |
           # Installed, never handed back: kept out of what the agent commits.
@@ -421,7 +421,18 @@ jobs:
           git config user.email "formic-agent@users.noreply.github.com"
           case "$MODE" in
             product|architect|showcase|ask)
-              # An answer, not a change: only the answer leaves this run.
+              # The board's assistant may have changed the code: that goes to
+              # a branch of its own, for Formic to offer as a pull request.
+              # Workflow changes stay behind; this token may not push them.
+              if [ "$MODE" = "ask" ] && [ "$TICKET" = "assistant" ]; then
+                git add -A
+                git reset -q -- .github/workflows
+                if ! git diff --cached --quiet; then
+                  git commit -q -m "Changes from the board's assistant"
+                  git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}-change"
+                fi
+              fi
+              # The answer, on its own: only it leaves on this branch.
               git reset -q --hard "$FORMIC_START"
               git clean -qfdx
               answer="$FORMIC_OUTPUT"
