@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
+import { approve, closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
 import { resetMergeLanes } from "./lane";
 import { repository } from "@/lib/db";
 import { subscribe } from "@/lib/events/bus";
@@ -121,6 +121,45 @@ describe("a repository with no CI", () => {
 
     expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
     expect((await repository().ticketDetail(ticketId))!.status).toBe("review");
+  });
+});
+
+describe("approval arriving after the last CI report", () => {
+  const verdict = { summary: "ok", detail: "ok" };
+  async function approveHead(prNumber: number, ticketId: string, headSha: string) {
+    // Approval is not yet recorded: the reviewer finishes after every report.
+    await repository().updateTicket(ticketId, { reviewedSha: null });
+    await approve(PROJECT, (await repository().ticketDetail(ticketId))!, prNumber, headSha, verdict);
+  }
+
+  it("merges on approval when the repository runs no CI, with no report to come", async () => {
+    const { ticketId, prNumber } = await seedApproved(true);
+    const headSha = MockVcsClient.withoutCi(prNumber);
+
+    await approveHead(prNumber, ticketId, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(true);
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("merged");
+  });
+
+  it("does not merge on approval while checks are still running", async () => {
+    const { ticketId, prNumber, headSha } = await seedApproved(true);
+    (await vcs.pullRequest(prNumber) as { checks?: unknown[] }).checks = [
+      { name: "ci", status: "in_progress", conclusion: null },
+    ];
+
+    await approveHead(prNumber, ticketId, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
+  });
+
+  it("does not merge on approval when a check has failed", async () => {
+    const { ticketId, prNumber } = await seedApproved(true);
+    const headSha = MockVcsClient.setChecks(prNumber, "failure");
+
+    await approveHead(prNumber, ticketId, headSha);
+
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
   });
 });
 
@@ -424,5 +463,35 @@ describe("closeAlreadyDone", () => {
     const after = (await repository().ticketDetail(ticketId))!;
     expect(after.status).toBe("blocked");
     expect(after.blockedReason).toContain("closed without merging");
+  });
+  it("runs a red check again once, rather than send the unchanged head back for it", async () => {
+    // A check that failed on its own (a network stall in npm ci) stays red on
+    // a head nobody changes: review sent the ticket back for it, the coder
+    // found nothing to do, and the two went round until the attempts ran out.
+    const { ticketId } = await seedTicketWithPull({ merged: false, state: "open" });
+    const ticket = (await repository().ticketDetail(ticketId))!;
+    const pull = await vcs.pullRequest(ticket.prNumber!);
+    MockVcsClient.setChecks(pull.number, "failure");
+    (await vcs.checksFor(pull.headSha))[0]!.detailsUrl = `https://github.com/${REPO}/actions/runs/77/job/9`;
+    const run = {
+      name: "CI",
+      sha: pull.headSha,
+      status: "completed",
+      conclusion: "failure",
+      attempt: 1,
+      startedAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      url: `https://github.com/${REPO}/actions/runs/77`,
+    };
+    MockVcsClient.runner().branchRuns.set(pull.headBranch, [run]);
+
+    await closeAlreadyDone(PROJECT, ticket, { summary: "already there", detail: "found in place" });
+    expect(MockVcsClient.runner().reruns).toEqual([77]);
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("review");
+
+    // Red again on its second attempt: that is the code's, and it is not run a third time.
+    run.attempt = 2;
+    await closeAlreadyDone(PROJECT, (await repository().ticketDetail(ticketId))!, { summary: "s", detail: "d" });
+    expect(MockVcsClient.runner().reruns).toEqual([77]);
   });
 });

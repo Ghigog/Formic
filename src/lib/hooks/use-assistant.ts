@@ -11,9 +11,18 @@ export interface AssistantMessageView {
   proposals: Array<{
     summary: string;
     action: {
-      type: "create_backlog_item" | "create_epic_with_tickets";
+      type:
+        | "create_backlog_item"
+        | "create_epic_with_tickets"
+        | "add_tickets_to_epic"
+        | "rerun_ci"
+        | "open_pull_request"
+        | "move_card"
+        | "close_card";
       title?: string;
       request?: string;
+      /** open_pull_request: what the pull request says. */
+      body?: string;
       tickets?: Array<{ key: string; title: string; dependsOn: string[] }>;
     };
     state: "proposed" | "applied" | "dismissed" | "failed";

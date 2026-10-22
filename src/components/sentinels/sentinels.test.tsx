@@ -83,7 +83,26 @@ describe("SentinelsPage motion and sound", () => {
   it("slides up only the cards that have reported", async () => {
     await open();
     expect(animated().sort()).toEqual([SENTINELS[0]!.id, SENTINELS[3]!.id].sort());
-    expect(play).toHaveBeenCalledWith("sentinelsOpen", 0);
+    expect(play).not.toHaveBeenCalledWith("sentinelsOpen", expect.anything());
+  });
+
+  it("plays one toc per reported card as it lands, none for the sweep", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await open();
+      const lands = () => play.mock.calls.filter(([n]: unknown[]) => n === "sentinelLand");
+      expect(lands()).toHaveLength(0);
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(lands()).toEqual([
+        ["sentinelLand", 0],
+        ["sentinelLand", 1],
+      ]);
+      expect(play.mock.calls.some(([n]: unknown[]) => n === "sentinelsOpen")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("animates nothing under reduced motion", async () => {

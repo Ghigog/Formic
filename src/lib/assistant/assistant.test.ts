@@ -345,6 +345,38 @@ describe("applying an approved proposal", () => {
     expect(tickets.map((t) => t.key).sort()).toEqual([`${epic.key}-T1`, `${epic.key}-T2`]);
     expect(said).toContain("2 tickets");
   });
+
+  async function plannedTickets() {
+    const checked = checkAction({ type: "create_epic_with_tickets", title: "Export", summary: "CSV export", tickets: TICKETS });
+    if (!checked.ok) throw new Error(checked.problem);
+    const before = new Set((await repository().boardCards(PROJECT)).map((c) => c.id));
+    await applyAction(PROJECT, checked.action);
+    return (await repository().boardCards(PROJECT)).filter((c) => !before.has(c.id));
+  }
+
+  it("moves a card the way a drag would, and refuses what a drag would", async () => {
+    const [epic, first] = (await plannedTickets()).sort((a, b) => a.key.localeCompare(b.key));
+
+    expect(await applyAction(PROJECT, { type: "move_card", key: first!.key, to: "backlog" })).toContain("Backlog");
+    expect((await repository().cardById(first!.id))?.status).toBe("draft");
+
+    await expect(applyAction(PROJECT, { type: "move_card", key: epic!.key, to: "done" })).rejects.toThrow(/Epic is not worked on/);
+    const after = (await repository().boardCards(PROJECT)).find((c) => c.id === epic!.id)!;
+    expect([after.status, after.misplacedIn]).toEqual(["ready", null]);
+    await expect(applyAction(PROJECT, { type: "move_card", key: "NOPE-1", to: "todo" })).rejects.toThrow(/not on the board/);
+  });
+
+  it("closes a ticket by archiving it, and an Epic by deleting it", async () => {
+    const cards = await plannedTickets();
+    const epic = cards.find((c) => c.kind === "epic")!;
+    const ticket = cards.find((c) => c.kind === "ticket")!;
+
+    expect(await applyAction(PROJECT, { type: "close_card", key: ticket.key, reason: "A duplicate." })).toContain("Archived");
+    expect((await repository().boardCards(PROJECT)).some((c) => c.id === ticket.id)).toBe(false);
+
+    await applyAction(PROJECT, { type: "close_card", key: epic.key, reason: "Built already." });
+    expect((await repository().boardCards(PROJECT)).some((c) => c.id === epic.id)).toBe(false);
+  });
 });
 
 describe("the assistant on a CLI plan", () => {
