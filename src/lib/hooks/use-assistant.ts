@@ -11,7 +11,7 @@ export interface AssistantMessageView {
   proposals: Array<{
     summary: string;
     action: {
-      type: "create_backlog_item" | "create_epic_with_tickets";
+      type: "create_backlog_item" | "create_epic_with_tickets" | "move_card" | "close_card";
       title?: string;
       request?: string;
       tickets?: Array<{ key: string; title: string; dependsOn: string[] }>;
