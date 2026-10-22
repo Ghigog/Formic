@@ -13,16 +13,20 @@ import { DragDropContext } from "@hello-pangea/dnd";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Column } from "./column";
 import { EMPTY_VIEW } from "./view";
-import { CardEnvContext } from "./card";
+import { CardEnvContext, type CardExtras } from "./card";
 import { renderInDnd } from "@/test/render";
 import { makeCard } from "@/test/cards";
 import type { BoardCard } from "@/lib/domain/entities";
 
-function renderReview(card: BoardCard, repo: { noCi?: boolean; autoMerge?: boolean } = {}) {
+function renderReview(
+  card: BoardCard,
+  repo: { noCi?: boolean; autoMerge?: boolean } = {},
+  extras: CardExtras = {},
+) {
   const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn(), ...repo };
   return renderInDnd(
     <CardEnvContext.Provider value={env}>
-      <Column id="in_review" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      <Column id="in_review" cards={[card]} extras={{ [card.id]: extras }} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
     </CardEnvContext.Provider>,
   );
 }
@@ -39,9 +43,44 @@ describe("a card in review", () => {
     expect(screen.queryByText("Ready to merge")).toBeNull();
   });
 
-  it("says CI is running while checks are expected", () => {
-    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
+  it("says CI is running only when a pending report says so", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }), {}, { ci: "pending" });
     expect(screen.getByText("CI running")).toBeTruthy();
+  });
+
+  it("does not claim CI is running when it does not know", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }));
+    expect(screen.queryByText("CI running")).toBeNull();
+    expect(screen.getByText("CI status unknown")).toBeTruthy();
+  });
+
+  it("shows Checks passed and Ready to merge at the merge stage with no CI detail", () => {
+    renderReview(makeCard({ status: "review", stage: 7, prNumber: 4 }));
+    expect(screen.queryByText("CI running")).toBeNull();
+    expect(screen.getByText("Checks passed")).toBeTruthy();
+    expect(screen.getByText("Ready to merge")).toBeTruthy();
+  });
+
+  it("shows Checks failed when a failing report arrives", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }), {}, { ci: "failing" });
+    expect(screen.getByText("Checks failed")).toBeTruthy();
+  });
+
+  it("shows Checks passed and Waiting for review once green before the merge stage", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }), {}, { ci: "passing" });
+    expect(screen.getByText("Checks passed")).toBeTruthy();
+    expect(screen.getByText("Waiting for review")).toBeTruthy();
+  });
+
+  it("leaves Waiting for review to the reviewer's own chip while it works", () => {
+    renderReview(makeCard({ status: "review", stage: 6, prNumber: 4 }), {}, { ci: "passing", reviewState: "Reviewing" });
+    expect(screen.queryByText("Waiting for review")).toBeNull();
+    expect(screen.getByText("Reviewing")).toBeTruthy();
+  });
+
+  it("says a person merges on GitHub when auto-merge is off", () => {
+    renderReview(makeCard({ status: "review", stage: 7, prNumber: 4 }), { autoMerge: false });
+    expect(screen.getByText("Waiting for you to merge on GitHub")).toBeTruthy();
   });
 
   it("says there is no CI and that a person merges it, with auto-merge off", () => {

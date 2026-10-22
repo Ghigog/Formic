@@ -13,6 +13,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { withActor } from "@/lib/auth/actor";
 import { agentView } from "@/lib/agents/board-agents";
 import { vcs } from "@/lib/vcs";
+import { seedReviewCi } from "@/lib/board/review-ci";
 
 export const dynamic = "force-dynamic";
 
@@ -66,11 +67,20 @@ export default async function BoardPage() {
   const demo =
     !hasDatabase() && project.id === (await repo.defaultProject()).id;
 
+  // Review cards start from what GitHub says about their checks, not from the
+  // live events a reload has missed. No credentials or a failed lookup leaves
+  // them unknown.
+  const reviewCi = demo
+    ? {}
+    : await credentials
+        .then((creds) => (creds ? seedReviewCi(vcs(project.repoFullName, creds.githubToken), cards) : {}))
+        .catch(() => ({}));
+
   return (
     <BoardShell
       account={account}
       initialCards={cards}
-      initialExtras={demo ? FIXTURE_EXTRAS : {}}
+      initialExtras={demo ? FIXTURE_EXTRAS : reviewCi}
       projectName={project.name}
       repoFullName={project.repoFullName}
       noCi={!hasCi}
