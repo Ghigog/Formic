@@ -86,4 +86,13 @@ describe("mergePlan", () => {
     expect(merged.map((s) => s.step)).toEqual(["Write", "Test", "Read the diff"]);
     expect(mergePlan(coder, review, "coder")).toHaveLength(1);
   });
+
+  it("keeps the coder's steps first when the coder re-plans after a review", () => {
+    const reviewed = mergePlan(mergePlan([], coder, "coder"), review, "reviewer");
+    const reworked = mergePlan(reviewed, [{ step: "Fix the finding", status: "in_progress" }], "coder");
+    expect(reworked.map((s) => [s.step, s.role])).toEqual([
+      ["Fix the finding", "coder"],
+      ["Read the diff", "reviewer"],
+    ]);
+  });
 });

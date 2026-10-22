@@ -44,14 +44,17 @@ const roleOf = (s: PlanStep) => s.role ?? "coder";
 
 /**
  * A ticket's plan after one role sends its own: the other role's steps stay,
- * this role's are replaced, and the incoming steps come last.
+ * this role's are replaced. The coder's steps always come first and the
+ * reviewer's after them, whoever sent last: a coder re-planning after a
+ * send-back does not drop its steps below the review that asked for them.
  */
 export function mergePlan(
   existing: readonly PlanStep[],
   incoming: readonly PlanStep[],
   role: "coder" | "reviewer",
 ): PlanStep[] {
-  return [...existing.filter((s) => roleOf(s) !== role), ...incoming.map((s) => ({ ...s, role }))];
+  const steps = [...existing.filter((s) => roleOf(s) !== role), ...incoming.map((s) => ({ ...s, role }))];
+  return [...steps.filter((s) => roleOf(s) === "coder"), ...steps.filter((s) => roleOf(s) === "reviewer")];
 }
 
 /** The role an event's steps were stamped with. */
