@@ -225,16 +225,45 @@ describe("TicketDrawer", () => {
     expect(within(ticket).getByText("Stream the CSV")).toBeInTheDocument();
     expect(within(ticket).getByText(/I get a CSV/)).toBeInTheDocument();
     expect(screen.getByTitle("5 story points")).toHaveTextContent("5 pt");
-    expect(
-      screen.getByRole("list", { name: "Ticket progress" }),
-    ).toBeInTheDocument();
+  });
+
+  it("shows the agent's plan under the title in place of the stage timeline", async () => {
+    open();
+    const plan = await screen.findByRole("list", { name: "Agent's plan" });
+    expect(within(screen.getByTestId("drawer-plan")).getByText("Test it")).toBeInTheDocument();
+    expect(plan).toHaveTextContent("Read the board model");
+    expect(screen.queryByRole("list", { name: "Ticket progress" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Sandbox")).not.toBeInTheDocument();
+  });
+
+  it("shows no plan, no timeline and no Plan section until the agent has a plan", async () => {
+    open({ ...VIEW, plan: [] });
+    await screen.findByRole("region", { name: "Ticket" });
+    expect(screen.queryByRole("list", { name: "Agent's plan" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Ticket progress" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan")).not.toBeInTheDocument();
+  });
+
+  it("adds a reviewer's plan after the coder's, then replaces only its own", async () => {
+    const { send } = open();
+    await screen.findByRole("list", { name: "Agent's plan" });
+    const reviewer = (step: string) => ({ step, status: "pending" as const, role: "reviewer" as const });
+    send({ type: "ticket.plan", ticketId: "t-1", steps: [reviewer("Check the diff")] }, 5);
+    send({ type: "ticket.plan", ticketId: "t-1", steps: [reviewer("Check the tests")] }, 6);
+    const items = within(screen.getByRole("list", { name: "Agent's plan" })).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent?.replace(/:.*$/, "").replace(/^\d+|^✓/, ""))).toEqual([
+      "Read the board model",
+      "Add the endpoint",
+      "Test it",
+      "Check the tests",
+    ]);
   });
 
   it("shows the agent's plan and thinking, and follows them live", async () => {
     setViewportMatches(true);
     const { send } = open();
     const agent = await screen.findByRole("region", { name: "Agent" });
-    const plan = within(agent).getByRole("list", { name: "Agent's plan" });
+    const plan = screen.getByRole("list", { name: "Agent's plan" });
     expect(within(plan).getByText("Add the endpoint")).toHaveTextContent(
       "in progress",
     );
@@ -469,7 +498,7 @@ describe("TicketDrawer on-screen keyboard", () => {
 });
 
 describe("TicketDrawer with the keyboard open", () => {
-  it("hides the banner, progress strip and epic link, then restores them", async () => {
+  it("hides the banner, plan and epic link, then restores them", async () => {
     const vv = Object.assign(new EventTarget(), { height: 800, offsetTop: 0 });
     vi.stubGlobal("innerHeight", 800);
     vi.stubGlobal("visualViewport", vv);
@@ -484,13 +513,13 @@ describe("TicketDrawer with the keyboard open", () => {
     });
     fireEvent.click(await screen.findByRole("button", { name: "Agent" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.getByLabelText("Ticket progress")).toBeInTheDocument();
+    expect(screen.getByLabelText("Agent's plan")).toBeInTheDocument();
     act(() => {
       vv.height = 400;
       vv.dispatchEvent(new Event("resize"));
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Ticket progress")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Agent's plan")).not.toBeInTheDocument();
     expect(screen.queryByText(/in EPIC-1/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Agent" })).toBeInTheDocument();
@@ -499,7 +528,7 @@ describe("TicketDrawer with the keyboard open", () => {
       vv.dispatchEvent(new Event("resize"));
     });
     expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(screen.getByLabelText("Ticket progress")).toBeInTheDocument();
+    expect(screen.getByLabelText("Agent's plan")).toBeInTheDocument();
     expect(screen.getByText(/in EPIC-1/)).toBeInTheDocument();
   });
 });

@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { cn } from "@/components/ui/cn";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import type { AgentPreset } from "@/lib/domain/entities";
 import type { AssistantMessageView } from "@/lib/hooks/use-assistant";
 import { useKeyboardInset } from "@/lib/hooks/use-keyboard-inset";
@@ -288,6 +289,11 @@ function ProposalCard({
             {p.action.request}
           </p>
         )}
+        {p.action.type === "open_pull_request" && p.action.body && (
+          <p className="text-muted mt-1 line-clamp-4 text-[12px] whitespace-pre-line">
+            {p.action.body}
+          </p>
+        )}
         {tickets.length > 0 && (
           <ul className="text-muted mt-1.5 space-y-0.5 text-[12px]">
             {tickets.map((t) => (
@@ -381,11 +387,11 @@ function Message({
     <div className="max-w-[92%]">
       <div
         className={cn(
-          "text-[13px] leading-[1.55] whitespace-pre-wrap",
-          m.status === "failed" ? "text-crimson" : "text-ink",
+          "text-[13px] leading-[1.55]",
+          m.status === "failed" ? "text-crimson whitespace-pre-wrap" : "text-ink",
         )}
       >
-        {m.content}
+        {m.status === "failed" ? m.content : <MarkdownLite text={m.content} keepLineBreaks />}
       </div>
       {m.proposals.map((p, i) => (
         <ProposalCard key={i} p={p} onDecide={(d) => onDecide(i, d)} />
@@ -420,14 +426,15 @@ function Shade({
     ? providerInfo(selected.provider)?.kind === "cli"
     : false;
 
-  // Newest at the bottom, where the eye already is.
+  // Land on the newest message when the panel opens. Not on every streamed
+  // update: that would yank the list away from whatever the person is reading.
   useEffect(() => {
     if (a.open)
       list.current?.scrollTo({
         top: list.current.scrollHeight,
         behavior: "smooth",
       });
-  }, [a.open, a.messages]);
+  }, [a.open]);
 
   useEffect(() => {
     if (!a.open) return;

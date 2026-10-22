@@ -37,6 +37,13 @@ export const RUNNER_SETUP_PREFIX = "formic/setup-runner-";
 export const ANSWER_PATH = ".formic/answer.md";
 
 /**
+ * The board's assistant may change the code as well as answer. Its change
+ * goes to the answer's staging branch with this after it, so the answer
+ * branch stays the answer alone.
+ */
+export const ASSISTANT_CHANGE_SUFFIX = "-change";
+
+/**
  * How long a job may run: GitHub's own maximum is 360, and this is what Formic
  * writes into every repository's workflow. It is the backstop, not the plan —
  * the plan is the ticket's budget, which a run is clamped to when it is
@@ -496,7 +503,7 @@ jobs:
       # the tests and the build to back its report. A failure here is not
       # fatal: the agent can still install what it needs itself.
       - name: Install the project's dependencies
-        if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop' || (inputs.mode == 'ask' && inputs.ticket == 'sentinel')
+        if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop' || (inputs.mode == 'ask' && (inputs.ticket == 'sentinel' || inputs.ticket == 'assistant'))
         continue-on-error: true
         run: |
           # Installed, never handed back: kept out of what the agent commits.
@@ -665,7 +672,18 @@ ${indent(REPORTER_SCRIPT, 10)}
           git config user.email "formic-agent@users.noreply.github.com"
           case "$MODE" in
             product|architect|showcase|ask)
-              # An answer, not a change: only the answer leaves this run.
+              # The board's assistant may have changed the code: that goes to
+              # a branch of its own, for Formic to offer as a pull request.
+              # Workflow changes stay behind; this token may not push them.
+              if [ "$MODE" = "ask" ] && [ "$TICKET" = "assistant" ]; then
+                git add -A
+                git reset -q -- .github/workflows
+                if ! git diff --cached --quiet; then
+                  git commit -q -m "Changes from the board's assistant"
+                  git push "https://x-access-token:\${GH_TOKEN}@github.com/\${REPO}.git" "HEAD:refs/heads/formic-staging/\${JOB}${ASSISTANT_CHANGE_SUFFIX}"
+                fi
+              fi
+              # The answer, on its own: only it leaves on this branch.
               git reset -q --hard "$FORMIC_START"
               git clean -qfdx
               answer="$FORMIC_OUTPUT"

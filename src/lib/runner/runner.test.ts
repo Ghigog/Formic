@@ -1549,12 +1549,32 @@ describe("a CLI agent seen while it works", () => {
       { type: "run.progress", label: "Reading src/lib/db/repository.ts" },
     ]);
     expect((await repository().ticketDetail(ticket.id))!.plan).toEqual([
-      { step: "Add the model", status: "in_progress" },
+      { step: "Add the model", status: "in_progress", role: "coder" },
     ]);
 
     // A note it has been sent is not sent again.
     const again = await receiveReport({ job, since, after: reply.notes[0]!.seq, lines: [] });
     expect(again.notes).toEqual([]);
+  });
+
+  it("appends a reviewer's plan to the coder's and keeps the coder's steps", async () => {
+    const { ticket, job } = await dispatched();
+    const plan = (step: string) =>
+      line({
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "p", name: "TodoWrite", input: { todos: [{ content: step, status: "pending" }] } }],
+        },
+      });
+    await receiveReport({ job, since: Date.now() - 1_000, after: 0, lines: [plan("Add the model")] });
+    await repository().updateTicket(ticket.id, { status: "review" });
+    await receiveReport({ job, since: Date.now() - 1_000, after: 0, lines: [plan("Check the diff")] });
+    await receiveReport({ job, since: Date.now() - 1_000, after: 0, lines: [plan("Check the tests")] });
+
+    expect((await repository().ticketDetail(ticket.id))!.plan).toEqual([
+      { step: "Add the model", status: "pending", role: "coder" },
+      { step: "Check the tests", status: "pending", role: "reviewer" },
+    ]);
   });
 
   it("shows an assistant question's output in the terminal while it is pending, and stops once it is not", async () => {
