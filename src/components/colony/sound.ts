@@ -51,7 +51,8 @@ export type Sfx =
   | "crumble"
   | "sentinelsOpen"
   | "sentinelLand"
-  | "sentinelVoice";
+  | "sentinelVoice"
+  | "kpi";
 
 /** One sentinel's voice: a pitch, a wave and a glide to another pitch. */
 export interface SentinelVoice {
@@ -483,6 +484,12 @@ export class SoundEngine {
       case "sentinelLand":
         this.noise(0.03, { freq: 2200, to: 600, gain: 0.05 });
         this.tone(900 + v * 40, 0.04, { type: "triangle", gain: 0.02 });
+        break;
+      case "kpi":
+        // A soft rising chime: the numbers have arrived.
+        [784, 988, 1319].forEach((f, i) =>
+          this.tone(f, 0.28, { type: "triangle", gain: 0.025, delay: i * 0.08 }),
+        );
         break;
       case "sentinelVoice": {
         // v: the sentinel's place in the roster.
