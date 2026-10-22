@@ -14,6 +14,7 @@ import type {
   CreateEpicInput,
   CreateTicketInput,
   MoveInput,
+  TicketChange,
   TicketColumnEntry,
   GithubProfile,
   OwnerScope,
@@ -43,6 +44,7 @@ import type {
   HostUsageCheck,
   Reservation,
 } from "./repository";
+import { precisionChanges } from "./ticket-changes";
 import type {
   AgentRole,
   AgentRunStatus,
@@ -646,6 +648,24 @@ export class PrismaRepository implements Repository {
     });
 
     return [...epicCards, ...ticketCards].sort(byPosition);
+  }
+
+  async ticketChanges(ticketId: string): Promise<TicketChange[]> {
+    const rows = await prisma().ticketChange.findMany({
+      where: { ticketId },
+      orderBy: [{ at: "asc" }, { id: "asc" }],
+    });
+    return rows.map((c) => ({
+      kind: c.kind,
+      at: c.at.toISOString(),
+      detail: (c.detail as Record<string, unknown> | null) ?? null,
+    }));
+  }
+
+  async recordTicketChange(ticketId: string, change: Pick<TicketChange, "kind" | "detail">): Promise<void> {
+    await prisma().ticketChange.create({
+      data: { ticketId, kind: change.kind, detail: (change.detail ?? undefined) as never },
+    });
   }
 
   async ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]> {
@@ -1317,6 +1337,29 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const { costCents, tokensIn, tokensOut, plan, followUps, archived, ...rest } = update;
 
+    // A change to a ticket past its specified state is recorded as it is made.
+    let changes: ReturnType<typeof precisionChanges> = [];
+    if (
+      rest.storyPoints !== undefined ||
+      rest.title !== undefined ||
+      rest.description !== undefined ||
+      rest.acceptanceCriteria !== undefined ||
+      rest.fileScope !== undefined
+    ) {
+      const before = await db.ticket.findUnique({
+        where: { id: ticketId },
+        select: {
+          status: true,
+          title: true,
+          description: true,
+          acceptanceCriteria: true,
+          fileScope: true,
+          storyPoints: true,
+        },
+      });
+      if (before) changes = precisionChanges(before, rest);
+    }
+
     // The first move to merged is scored against the project's heat then.
     let merge = {};
     if (rest.status === "merged") {
@@ -1369,6 +1412,7 @@ export class PrismaRepository implements Repository {
         ...(tokensOut !== undefined ? { tokensOut: { increment: tokensOut } } : {}),
       },
     });
+    for (const change of changes) await this.recordTicketChange(ticketId, change);
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
@@ -1743,10 +1787,11 @@ export class PrismaRepository implements Repository {
   }
 
   async markTicketAutoEscalated(ticketId: string): Promise<void> {
-    await prisma().ticket.updateMany({
+    const { count } = await prisma().ticket.updateMany({
       where: { id: ticketId, autoEscalatedAt: null },
       data: { autoEscalatedAt: new Date() },
     });
+    if (count > 0) await this.recordTicketChange(ticketId, { kind: "points", detail: { autoEscalated: true } });
   }
 
   async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {

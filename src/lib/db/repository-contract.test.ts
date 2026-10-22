@@ -56,6 +56,57 @@ function contract(name: string, make: () => Repository) {
       ...over,
     });
 
+    describe("a ticket's precision changes", () => {
+      const specified = async (over: Partial<CreateTicketInput> = {}) => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([
+          ticket(epic.id, "T1", { storyPoints: 3, acceptanceCriteria: ["a"], ...over }),
+        ]);
+        if (!t) throw new Error("no ticket created");
+        return t;
+      };
+      const kinds = async (id: string) => (await repo.ticketChanges(id)).map((c) => c.kind);
+
+      it("records one points change when story points are raised", async () => {
+        const t = await specified();
+        await repo.updateTicket(t.id, { storyPoints: 5 });
+        expect(await kinds(t.id)).toEqual(["points"]);
+      });
+
+      it("records one edit change when the acceptance criteria are edited", async () => {
+        const t = await specified();
+        await repo.updateTicket(t.id, { acceptanceCriteria: ["a", "b"] });
+        expect(await kinds(t.id)).toEqual(["edit"]);
+      });
+
+      it("records one points change when the runner auto-escalates a ticket", async () => {
+        const t = await specified();
+        await repo.markTicketAutoEscalated(t.id);
+        await repo.markTicketAutoEscalated(t.id);
+        expect(await kinds(t.id)).toEqual(["points"]);
+      });
+
+      it("writes nothing when it is saved with identical values", async () => {
+        const t = await specified();
+        await repo.updateTicket(t.id, {
+          title: "T1",
+          description: "T1",
+          acceptanceCriteria: ["a"],
+          fileScope: ["src/T1"],
+          storyPoints: 3,
+        });
+        expect(await kinds(t.id)).toEqual([]);
+      });
+
+      it("writes nothing for a ticket that is still a draft", async () => {
+        const t = await specified();
+        await repo.updateTicket(t.id, { status: "draft" });
+        await repo.updateTicket(t.id, { storyPoints: 8, title: "New" });
+        expect(await kinds(t.id)).toEqual([]);
+      });
+    });
+
     describe("a ticket's column history", () => {
       const move = (cardId: string, status: "ready" | "waiting" | "running" | "review") =>
         repo.move({ cardId, kind: "ticket", status, stalledIn: null, position: 1 });
