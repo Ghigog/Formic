@@ -11,7 +11,7 @@ import {
 import { useColony, type ColonyApi } from "./colony";
 import { drawBug } from "./fx";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
-import { QUEEN_CARRY_EVENT, edgeScrollSpeed, nextSway, MAX_SWAY_DEG, type QueenCarryDetail } from "./queen-carry";
+import { QUEEN_CARRY_EVENT, edgeScrollSpeed, queenPoint, nextSway, MAX_SWAY_DEG, type QueenCarryDetail } from "./queen-carry";
 import { QueenIcon } from "./queen-icon";
 import { ColonyPanel } from "./colony-panel";
 import { InfoTip } from "./info-tip";
@@ -172,24 +172,24 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
   const start = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    setDrag({ x: e.clientX, y: e.clientY });
+    const pointerType = e.pointerType;
+    setDrag(queenPoint(e.clientX, e.clientY, pointerType));
     pointerX.current = e.clientX;
     onDragging(true);
     window.dispatchEvent(new CustomEvent<QueenCarryDetail>(QUEEN_CARRY_EVENT, { detail: { on: true } }));
     let pointerY = e.clientY;
-    let tickX = e.clientX;
-    let tickY = e.clientY;
+    let tick = queenPoint(e.clientX, e.clientY, pointerType);
     let ticks = 0;
     const move = (m: PointerEvent) => {
       pointerX.current = m.clientX;
       pointerY = m.clientY;
       // A leg-tick for every stretch of ground covered, not for every event.
-      if (Math.hypot(m.clientX - tickX, m.clientY - tickY) >= SKITTER_EVERY) {
-        tickX = m.clientX;
-        tickY = m.clientY;
+      const q = queenPoint(m.clientX, m.clientY, pointerType);
+      if (Math.hypot(q.x - tick.x, q.y - tick.y) >= SKITTER_EVERY) {
+        tick = q;
         c.sfx("skitter", ticks++ % 3);
       }
-      setDrag({ x: m.clientX, y: m.clientY });
+      setDrag(q);
     };
     // Scroll the visible column's list while she is held near its top or bottom edge.
     let scrollRaf = 0;
@@ -214,11 +214,12 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
       window.removeEventListener("pointercancel", end);
       setDrag(null);
       onDragging(false);
-      const id = u.type === "pointerup" ? document.elementFromPoint(u.clientX, u.clientY)?.closest<HTMLElement>("[data-tid]")?.dataset.tid : null;
+      const q = queenPoint(u.clientX, u.clientY, pointerType);
+      const id = u.type === "pointerup" ? document.elementFromPoint(q.x, q.y)?.closest<HTMLElement>("[data-tid]")?.dataset.tid : null;
       if (id) {
         // The smush is on the drop, not on the answer, so it feels immediate.
         c.sfx("squash");
-        if (!c.fx.reducedMotion) c.fx.squash(u.clientX, u.clientY, () => {});
+        if (!c.fx.reducedMotion) c.fx.squash(q.x, q.y, () => {});
         void place(id);
       }
     };
