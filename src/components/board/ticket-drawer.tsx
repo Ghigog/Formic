@@ -22,6 +22,7 @@ import { TypeTag } from "./type-tag";
 import { NoticeIcon, ProblemNotice, WorkTimer } from "./card";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
+import { TicketKpis } from "./ticket-kpis";
 import { ScoutsPanel } from "./scouts-panel";
 import { QueenPanel } from "./queen-panel";
 import { FollowUps } from "./follow-ups";
@@ -489,7 +490,11 @@ function TicketBody({
         </div>
       )}
 
-      <FollowUps ticketId={view.card.id} followUps={view.followUps} onChanged={onChanged} />
+      <FollowUps
+        ticketId={view.card.id}
+        followUps={view.followUps}
+        onChanged={onChanged}
+      />
 
       <div>
         <Heading>File scope</Heading>
@@ -499,6 +504,8 @@ function TicketBody({
       </div>
 
       <AttachmentGallery ticketId={view.card.id} />
+
+      <TicketKpis key={view.card.id} ticketId={view.card.id} />
 
       {view.dependsOn.length > 0 && (
         <div>
