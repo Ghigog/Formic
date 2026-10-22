@@ -289,6 +289,11 @@ function ProposalCard({
             {p.action.request}
           </p>
         )}
+        {p.action.type === "open_pull_request" && p.action.body && (
+          <p className="text-muted mt-1 line-clamp-4 text-[12px] whitespace-pre-line">
+            {p.action.body}
+          </p>
+        )}
         {tickets.length > 0 && (
           <ul className="text-muted mt-1.5 space-y-0.5 text-[12px]">
             {tickets.map((t) => (
