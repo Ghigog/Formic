@@ -69,7 +69,7 @@ import type { AuditRecord, TicketDetail } from "@/lib/db/repository";
 import type { Goal } from "@/lib/sentinels/rubric";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { signingSecret } from "@/lib/auth/session";
+import { authMode, signingSecret } from "@/lib/auth/session";
 import { abortTicketRuns } from "@/lib/budget/controller";
 import { ticketNotes } from "@/lib/coder/notes";
 import { rateNote, shareNote } from "@/lib/coder/shared-notes";
@@ -1524,6 +1524,12 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   }
 
   const { finishCliAnswer } = await import("@/lib/assistant/turn");
+  // Without a token the client is the mock, which has no answer to read: say
+  // so, rather than blame an agent whose answer is waiting on GitHub.
+  if (!creds.githubToken && authMode() === "github") {
+    await finishCliAnswer(message.id, null, "Formic lost its GitHub sign-in for this board. Sign in again, then ask again.");
+    return;
+  }
   if (result.conclusion !== "success") {
     await cleanUp();
     await finishCliAnswer(message.id, null, await whyItFailed(projectId, client, result, message.runnerAgent));
