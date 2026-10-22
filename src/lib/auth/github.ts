@@ -175,11 +175,32 @@ export async function githubTokenFor(user: UserRecord, now = Date.now()): Promis
   const refreshExpires = user.githubRefreshExpiresAt?.getTime() ?? null;
   if (!refresh || (refreshExpires !== null && refreshExpires <= now)) return null;
 
+  // A refresh token works once. Two lookups that both find the token expired
+  // (a webhook and the board's own sweep, say) must share one refresh: the
+  // second would spend a token already spent, and lose the person's GitHub.
+  let pending = refreshing.get(refresh);
+  if (!pending) {
+    pending = refreshAndStore(user, refresh).finally(() => refreshing.delete(refresh));
+    refreshing.set(refresh, pending);
+  }
+  return pending;
+}
+
+const refreshing = new Map<string, Promise<string | null>>();
+
+async function refreshAndStore(user: UserRecord, refresh: string): Promise<string | null> {
   try {
     const fresh = await refreshTokens(refresh);
     await storeTokens(user.id, fresh);
     return fresh.accessToken;
   } catch (e) {
+    // Another instance may have spent it first and stored what it got.
+    const stored = await repository().userById(user.id);
+    const token = stored?.githubTokenCipher ? open(stored.githubTokenCipher) : null;
+    const expires = stored?.githubTokenExpiresAt?.getTime() ?? null;
+    if (token && stored?.githubRefreshCipher !== user.githubRefreshCipher && (expires === null || expires > Date.now())) {
+      return token;
+    }
     console.error(`[formic] could not refresh the GitHub token for ${user.login}:`, e);
     return null;
   }
