@@ -7,7 +7,7 @@ import { EDGE_NEXT_ID, EDGE_PREVIOUS_ID, EdgeDropZones, edgeDestination, edgeTar
 const allow = () => true;
 
 describe("edgeDestination", () => {
-  it("resolves the left edge to the next column and the right to the previous", () => {
+  it("resolves the right edge to the next column and the left to the previous", () => {
     expect(edgeDestination(EDGE_NEXT_ID, "todo")).toBe("in_progress");
     expect(edgeDestination(EDGE_PREVIOUS_ID, "todo")).toBe("backlog");
   });
@@ -42,6 +42,14 @@ describe("EdgeDropZones", () => {
     expect(bar("Move to In Progress")).toHaveTextContent("In Progress");
     expect(bar("Move to Backlog")).toHaveTextContent("Backlog");
     expect(bar("Move to In Progress")).not.toHaveAttribute("data-over");
+  });
+
+  it("anchors the next column on the right and the previous on the left", () => {
+    renderInDnd(<EdgeDropZones dragging next="in_progress" previous="backlog" />);
+    expect(screen.getByRole("region", { name: "Move to In Progress" })).toHaveClass("right-0");
+    expect(bar("Move to In Progress")).toHaveClass("right-0");
+    expect(screen.getByRole("region", { name: "Move to Backlog" })).toHaveClass("left-0");
+    expect(bar("Move to Backlog")).toHaveClass("left-0");
   });
 
   it("is hidden until a drag starts", () => {
