@@ -399,3 +399,26 @@ describe("a card's scout badge", () => {
     expect(screen.queryByTestId("scout-ant")).toBeNull();
   });
 });
+
+describe("a card's entry time", () => {
+  const enteredAt = "2026-03-05T14:30:00Z";
+  const renderIn = (id: "todo" | "done", card: BoardCard) =>
+    renderInDnd(<Column id={id} cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />);
+  const short = new Date(enteredAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+  it("shows the date and time, labelled as done, in Done", () => {
+    renderIn("done", makeCard({ status: "merged", enteredAt }));
+    expect(screen.getByText(`Done ${short}`)).toBeTruthy();
+  });
+
+  it("holds the full timestamp in the title", () => {
+    renderIn("todo", makeCard({ status: "ready", enteredAt }));
+    const el = screen.getByText(short);
+    expect(el.getAttribute("title")).toBe(new Date(enteredAt).toLocaleString("en-US", { dateStyle: "full", timeStyle: "long" }));
+  });
+
+  it("shows nothing before it has entered", () => {
+    const { container } = renderIn("todo", makeCard({ status: "ready", enteredAt: null }));
+    expect(container.querySelector("time")).toBeNull();
+  });
+});

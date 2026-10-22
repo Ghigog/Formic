@@ -129,9 +129,10 @@ export function SettingsForm({
         {project && (
           <Section title="Auto-merge">
             <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
-              Applies to {project.name}. Formic merges an approved, green pull
-              request on its own once review finishes; off, nothing lands on
-              the base branch until you merge it.
+              Applies to {project.name}. Formic merges a pull request on its own
+              once the review is finished and CI is green; with no CI, once
+              the review is finished. Off, nothing lands on the base branch
+              until you merge it.
             </p>
             <AutoMergeToggle project={project} />
           </Section>
@@ -263,7 +264,7 @@ function AutoMergeToggle({ project }: { project: ProjectSetting }) {
           disabled={busy}
           onChange={(e) => void change(e.target.checked)}
         />
-        {on ? "Auto-merge when review is finished" : "Merge when move to done"}
+        {on ? "Auto-merge when review finished and CI green" : "Merge when move to done"}
       </label>
       {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>

@@ -80,7 +80,7 @@ describe("Board, dragging to the edges on a phone", () => {
     vi.useRealTimers();
   });
 
-  it("moves a ticket dropped on the left edge to the next column", () => {
+  it("moves a ticket dropped on the right edge to the next column", () => {
     const onTransition = renderBoard();
     startDrag();
     drop("edge-next");
@@ -89,7 +89,7 @@ describe("Board, dragging to the edges on a phone", () => {
     );
   });
 
-  it("moves a ticket dropped on the right edge to the previous column", () => {
+  it("moves a ticket dropped on the left edge to the previous column", () => {
     const onTransition = renderBoard();
     startDrag();
     drop("edge-previous");

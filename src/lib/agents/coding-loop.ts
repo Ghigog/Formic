@@ -1002,9 +1002,10 @@ export async function runCodingLoop(
       if (call.name === "update_plan") {
         const steps = checkPlan(call.input);
         if (steps) {
-          plan = steps;
+          const stamped = steps.map((s): PlanStep => ({ ...s, role: role === "reviewer" ? "reviewer" : "coder" }));
+          plan = stamped;
           planTurn = iteration;
-          ctx.emit({ type: "ticket.plan", ticketId, steps });
+          ctx.emit({ type: "ticket.plan", ticketId, steps: stamped });
           // In the feed and the job log as well as the plan itself: without
           // this a plan update is invisible, and a plan that stopped moving
           // is the only sign a run has lost its way that is not a tool call.

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { cn } from "@/components/ui/cn";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { compact } from "@/components/ui/compact-number";
 import { useCardChat, type CardChatMessageView } from "@/lib/hooks/use-card-chat";
 
@@ -43,11 +44,11 @@ function Message({ m }: { m: CardChatMessageView }) {
   return (
     <div
       className={cn(
-        "max-w-[92%] text-[12px] leading-[1.55] whitespace-pre-wrap",
-        m.status === "failed" ? "text-crimson-text" : "text-fg",
+        "max-w-[92%] text-[12px] leading-[1.55]",
+        m.status === "failed" ? "text-crimson-text whitespace-pre-wrap" : "text-fg",
       )}
     >
-      {m.content}
+      {m.status === "failed" ? m.content : <MarkdownLite text={m.content} keepLineBreaks />}
       {used && <p className="text-fg-subtle mt-1 font-mono text-[11px]">{used}</p>}
     </div>
   );
