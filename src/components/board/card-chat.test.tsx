@@ -5,11 +5,11 @@ import { CardChat } from "./card-chat";
 vi.mock("@/lib/hooks/use-card-chat", () => ({
   useCardChat: () => ({
     messages: [
-      { id: "1", role: "user", content: "How's it going?", status: "done" },
+      { id: "1", role: "user", content: "How's it going? **stars**", status: "done" },
       {
         id: "2",
         role: "assistant",
-        content: "Halfway there.",
+        content: "Halfway **there**.",
         status: "done",
         tokensIn: 141_200,
         tokensOut: 41_200,
@@ -26,7 +26,7 @@ vi.mock("@/lib/hooks/use-card-chat", () => ({
 describe("CardChat", () => {
   it("shows the conversation with its input", () => {
     render(<CardChat kind="epic" cardId="e1" agentLabel="Architect" />);
-    expect(screen.getByText("Halfway there.")).toBeInTheDocument();
+    expect(screen.getByText(/Halfway/)).toBeInTheDocument();
     expect(screen.getByLabelText("Message the Architect Agent")).toBeInTheDocument();
   });
 
@@ -42,7 +42,13 @@ describe("CardChat", () => {
   it("is only the input when the conversation shows elsewhere, as on a ticket", () => {
     render(<CardChat kind="ticket" cardId="t1" agentLabel="Coder" inputOnly />);
     expect(screen.getByLabelText("Message the Coder Agent")).toBeInTheDocument();
-    expect(screen.queryByText("Halfway there.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Halfway/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear chat" })).not.toBeInTheDocument();
+  });
+
+  it("formats an agent reply but shows the person's own message as typed", () => {
+    render(<CardChat kind="epic" cardId="e1" agentLabel="Architect" />);
+    expect(screen.getByText("there").tagName).toBe("STRONG");
+    expect(screen.getByText("How's it going? **stars**")).toBeInTheDocument();
   });
 });

@@ -187,3 +187,21 @@ describe("proposal cards", () => {
     expect(body()).toHaveClass("opacity-60");
   });
 });
+
+describe("message formatting", () => {
+  Element.prototype.scrollTo = vi.fn();
+
+  it("formats an assistant reply but leaves the person's message literal", () => {
+    const a: AssistantControls = {
+      ...controls,
+      messages: [
+        { id: "u", role: "user", content: "say **x**", status: "done", proposals: [] },
+        { id: "a", role: "assistant", content: "- **x** and `y`", status: "done", proposals: [] },
+      ],
+    };
+    render(<AskBox a={a} repoName="demo" />);
+    expect(screen.getByText("say **x**")).toBeInTheDocument();
+    expect(screen.getByText("x").tagName).toBe("STRONG");
+    expect(screen.getByText("y").tagName).toBe("CODE");
+  });
+});
