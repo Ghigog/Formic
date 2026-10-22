@@ -157,6 +157,22 @@ describe("NewItemDialog", () => {
       expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
     });
 
+    it("submits the same requestId its attachment was uploaded under", async () => {
+      const fetchSpy = serveUploads();
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={onSubmit} />);
+
+      const user = userEvent.setup();
+      await user.upload(screen.getByLabelText("Attach files"), file("notes.txt", "text/plain"));
+      await waitFor(() => expect(screen.getByText("notes.txt")).toBeInTheDocument());
+      await user.type(screen.getByLabelText("New feature request"), "Ship it with notes");
+      await user.click(screen.getByRole("button", { name: "Draft PRD" }));
+
+      const upload = fetchSpy.mock.calls.find((c) => String(c[0]).includes("/api/attachments"));
+      const uploadedUnder = (upload![1]!.body as FormData).get("requestId");
+      expect(onSubmit).toHaveBeenCalledWith("Ship it with notes", uploadedUnder);
+    });
+
     it("rejects a disallowed file type immediately, without uploading it", async () => {
       const fetchSpy = vi.fn();
       vi.stubGlobal("fetch", fetchSpy);
