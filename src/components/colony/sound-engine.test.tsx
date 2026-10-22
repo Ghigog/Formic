@@ -43,7 +43,6 @@ const SFX: Sfx[] = [
   "unfold",
   "close",
   "crumble",
-  "sentinelsOpen",
   "sentinelLand",
   "sentinelVoice",
 ];

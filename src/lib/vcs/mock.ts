@@ -84,6 +84,8 @@ interface MockRepo {
   artifacts: Map<string, ArtifactFiles>;
   /** Set when a test says the repository runs no CI at all. */
   noCi: boolean;
+  /** Every workflow run whose failed jobs were run again, in order. */
+  reruns: number[];
 }
 
 export interface MockIssue {
@@ -131,6 +133,7 @@ function repo(): MockRepo {
     branchRuns: new Map(),
     artifacts: new Map(),
     noCi: false,
+    reruns: [],
   };
   return g.__formicMockRepo;
 }
@@ -337,6 +340,18 @@ export class MockVcsClient implements VcsClient {
       if (run.url.endsWith(`/runs/${runId}`) && run.status !== "completed") {
         run.status = "completed";
         run.conclusion = "cancelled";
+      }
+    }
+  }
+
+  async rerunFailedJobs(runId: number): Promise<void> {
+    repo().reruns.push(runId);
+    for (const runs of repo().branchRuns.values()) {
+      for (const run of runs) {
+        if (!run.url.endsWith(`/runs/${runId}`)) continue;
+        run.attempt += 1;
+        run.status = "queued";
+        run.conclusion = null;
       }
     }
   }

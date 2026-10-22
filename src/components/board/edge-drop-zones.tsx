@@ -40,8 +40,8 @@ export function edgeTargets(
 
 /**
  * The mobile board shows one column, so there is no other column to drop on.
- * These two Droppables stand for its neighbours: the left edge is the next
- * column, the right edge the previous one. They are mounted all the while
+ * These two Droppables stand for its neighbours: the right edge is the next
+ * column, the left edge the previous one. They are mounted all the while
  * (the library cannot register a Droppable mid-drag) and inert until
  * `dragging`. A side with no target is not offered.
  *
@@ -60,8 +60,8 @@ export function EdgeDropZones({
 }) {
   return (
     <>
-      <EdgeZone id={EDGE_NEXT_ID} side="left" target={next} dragging={dragging} />
-      <EdgeZone id={EDGE_PREVIOUS_ID} side="right" target={previous} dragging={dragging} />
+      <EdgeZone id={EDGE_NEXT_ID} side="right" target={next} dragging={dragging} />
+      <EdgeZone id={EDGE_PREVIOUS_ID} side="left" target={previous} dragging={dragging} />
     </>
   );
 }
