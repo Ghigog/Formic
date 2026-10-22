@@ -36,6 +36,7 @@ describe("kpi compute", () => {
     const k = projectKpis([{ entries: history, changes: [] }], "30d", now);
     expect(k.tiles).toMatchObject({ done: 1, inFlight: 0, cycleTimeDays: 5, passRate: 0.5, precision: 1 });
     expect(k.throughput).toEqual([{ date: "2026-10-07", done: 1 }]);
+    expect(k.quality).toEqual([{ date: "2026-10-07", passRate: 0.5, precision: 1 }]);
     expect(k.timeInColumn.in_progress).toBe(1.5);
   });
 
