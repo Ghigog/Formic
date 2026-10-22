@@ -1,3 +1,4 @@
+import { INK, TINT_WHITE, insectTint, type InsectColor } from "@/components/ui/tint";
 import type { BugSeverity, WorkType } from "@/lib/domain/entities";
 
 const LABELS: Record<WorkType, string> = {
@@ -10,23 +11,23 @@ const LABELS: Record<WorkType, string> = {
 };
 
 /**
- * Tag colours: fixed Formic palette tones (not theme variables) so the dark text reads in both themes.
- * A bug steps up from the crimson chip to rust as severity rises.
+ * Tag fills: a fixed light tint of an insect-palette colour (not a theme variable), so the
+ * anthracite text reads in both themes. A bug stays crimson and gets a stronger tint as severity rises.
  */
-const COLORS: Record<Exclude<WorkType, "bug">, string> = {
-  user_story: "#a5c8a7", // jade-line
-  task: "#fbf0da", // clay-chip
-  feature: "#ee9a62", // terracotta-lit
-  spike: "#e0a33c", // clay-lit
-  tech_debt: "#d6d0c6", // done-card-line
+const HUES: Record<Exclude<WorkType, "bug">, InsectColor> = {
+  user_story: "jade",
+  task: "moss",
+  feature: "terracotta",
+  spike: "ochre",
+  tech_debt: "slate",
 };
-const BUG_COLORS: Record<BugSeverity, string> = {
-  low: "#fbeaea", // crimson-chip
-  medium: "#f28b82", // crimson-chip-text in dark theme
-  high: "#e85d54",
-  critical: "#e65100", // rust
+const BUG_WHITE: Record<BugSeverity, number> = {
+  low: 0.8,
+  medium: TINT_WHITE,
+  high: 0.6,
+  critical: 0.5,
 };
-const TEXT = "#1c1917"; // anthracite
+const TEXT = INK;
 
 /** The one coloured tag a card or the drawer shows for its type; a done bug reads SQUASHED. */
 export function TypeTag({
@@ -45,7 +46,7 @@ export function TypeTag({
       : bug && severity
         ? `${LABELS[type]} · ${severity[0]!.toUpperCase()}${severity.slice(1)}`
         : LABELS[type];
-  const background = bug ? BUG_COLORS[severity ?? "medium"] : COLORS[type];
+  const background = bug ? insectTint("crimson", BUG_WHITE[severity ?? "medium"]) : insectTint(HUES[type]);
   const style =
     bug && squashed
       ? undefined

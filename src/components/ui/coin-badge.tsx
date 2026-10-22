@@ -1,4 +1,5 @@
 import { cn } from "./cn";
+import { insectTint } from "./tint";
 
 /**
  * The octagonal coin badge — the 8-motif that frames every piece of ticket
@@ -13,18 +14,20 @@ import { cn } from "./cn";
 
 export type CoinTone = "neutral" | "epic" | "merged";
 
-/** Ring colour, fill and label colour, per the artboard. */
-const TONES: Record<CoinTone, { ring: string; fill: string; text: string }> = {
+/** Ring colour, fill and label colour, per the artboard. Epic and merged fill with a palette tint under ink text. */
+const TONES: Record<CoinTone, { ring: string; fill: string; text: string; tint?: string }> = {
   neutral: { ring: "bg-line", fill: "bg-card", text: "text-muted" },
   epic: {
     ring: "bg-terracotta",
-    fill: "bg-epic-chip",
-    text: "text-epic-chip-text",
+    fill: "",
+    text: "text-ink",
+    tint: insectTint("terracotta"),
   },
   merged: {
     ring: "bg-jade",
-    fill: "bg-jade-chip",
-    text: "text-jade-chip-text",
+    fill: "",
+    text: "text-ink",
+    tint: insectTint("jade"),
   },
 };
 
@@ -54,6 +57,7 @@ export function CoinBadge({
       className={cn("oct inline-flex p-px", t.ring, outerClassName)}
     >
       <span
+        style={t.tint ? { backgroundColor: t.tint } : undefined}
         className={cn(
           "oct inline-flex items-center gap-1 px-[7px] py-[2px]",
           "font-mono text-[9px] whitespace-nowrap",

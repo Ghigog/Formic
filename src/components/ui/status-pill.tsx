@@ -1,9 +1,20 @@
 import { cn } from "./cn";
-import { STATUS_LABEL, TONES, isLive, toneFor, type ToneName } from "@/lib/tokens";
+import { insectTint, type InsectColor } from "./tint";
+import { STATUS_LABEL, STATUS_TONE, TONES, isLive, type ToneName } from "@/lib/tokens";
 import type { TicketStatus } from "@/lib/domain/status";
 
+/** The insect-palette colour each status tone's chip fill is tinted from. */
+const CHIP_HUE: Record<ToneName, InsectColor> = {
+  neutral: "slate",
+  terracotta: "terracotta",
+  clay: "ochre",
+  jade: "jade",
+  rust: "umber",
+  crimson: "crimson",
+};
+
 /**
- * A status chip: 12% tint of the status colour, anthracite label, 5px dot.
+ * A status chip: a light tint of the status's insect colour, anthracite label, 5px dot.
  *
  * The colour lives in the dot alone. Tinting the label instead would force a
  * darker variant of every status colour to clear 4.5:1, and the palette would
@@ -27,9 +38,9 @@ export function StatusChip({
       className={cn(
         "text-ink inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
         "text-[10px] leading-4 font-semibold whitespace-nowrap",
-        t.chip,
         className,
       )}
+      style={{ backgroundColor: insectTint(CHIP_HUE[tone]) }}
     >
       <span
         aria-hidden
@@ -54,15 +65,16 @@ export function StatusPill({
   detail?: string | null;
   className?: string;
 }) {
-  const tone = toneFor(status);
+  const toneName = STATUS_TONE[status];
+  const tone = TONES[toneName];
   return (
     <span
       className={cn(
         "text-ink inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
         "text-[10px] leading-4 font-semibold whitespace-nowrap",
-        tone.chip,
         className,
       )}
+      style={{ backgroundColor: insectTint(CHIP_HUE[toneName]) }}
     >
       <span
         aria-hidden

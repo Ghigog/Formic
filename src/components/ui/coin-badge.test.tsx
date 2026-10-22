@@ -23,10 +23,15 @@ describe("CoinBadge", () => {
 
   it("tints the epic and merged tones differently", () => {
     const { rerender } = render(<CoinBadge tone="epic">EPIC</CoinBadge>);
-    expect(screen.getByText("EPIC").className).toContain("bg-epic-chip");
+    const epic = screen.getByText("EPIC");
+    const epicFill = epic.style.backgroundColor;
+    expect(epicFill).toBe("rgb(237, 204, 186)");
+    expect(epic).toHaveClass("text-ink");
 
     rerender(<CoinBadge tone="merged">EPIC</CoinBadge>);
-    expect(screen.getByText("EPIC").className).toContain("bg-jade-chip");
+    const merged = screen.getByText("EPIC");
+    expect(merged.style.backgroundColor).not.toBe(epicFill);
+    expect(merged).toHaveClass("text-ink");
   });
 
   it("changes a neutral badge's fill to sit on a cream ground", () => {
