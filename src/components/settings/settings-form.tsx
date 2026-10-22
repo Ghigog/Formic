@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Account } from "@/components/board/account-menu";
 import { useSound } from "@/components/colony/store";
@@ -367,6 +368,7 @@ function SoundSection() {
 }
 
 function DangerZone() {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -391,7 +393,7 @@ function DangerZone() {
       setBusy(false);
       return;
     }
-    window.location.href = "/login";
+    router.push("/login");
   }
 
   return (

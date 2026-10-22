@@ -6,6 +6,9 @@ import { SettingsForm } from "./settings-form";
 // It fetches the colony on mount; colony-section.test.tsx covers it.
 vi.mock("@/components/settings/colony-section", () => ({ ColonySection: () => null }));
 
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+
 const account = { login: "octo", name: "Octo Cat", avatarUrl: null, signedIn: true };
 
 afterEach(() => {
@@ -52,9 +55,6 @@ describe("Danger zone", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const fetchMock = vi.fn(async () => Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
-    // jsdom does not implement navigation; deleting the account sends the
-    // browser to /login, which jsdom reports and ignores. `location` cannot
-    // be replaced in the shared window, so it is left alone.
 
     render(
       <SettingsForm account={account} installUrl={null} e2b={{ hint: null, serverFallback: false }} />,
@@ -69,6 +69,7 @@ describe("Danger zone", () => {
       "/api/account",
       expect.objectContaining({ method: "DELETE", body: JSON.stringify({ confirm: true }) }),
     );
+    expect(push).toHaveBeenCalledWith("/login");
   });
 
   it("is not shown in local mode, where there is no account to delete", () => {
