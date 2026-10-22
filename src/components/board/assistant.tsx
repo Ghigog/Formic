@@ -272,27 +272,36 @@ function ProposalCard({
     }
   };
   const tickets = p.action.tickets ?? [];
+  const decided = p.state !== "proposed";
   return (
-    <div className="border-line bg-card mt-2 rounded-lg border p-3">
-      <div className="text-ink text-[13px] font-semibold">{p.summary}</div>
-      {p.action.type === "create_backlog_item" && p.action.request && (
-        <p className="text-muted mt-1 line-clamp-3 text-[12px]">
-          {p.action.request}
-        </p>
+    <div
+      data-state={p.state}
+      className={cn(
+        "mt-2 rounded-lg border p-3",
+        decided ? "border-line/60 bg-column" : "border-line bg-card",
       )}
-      {tickets.length > 0 && (
-        <ul className="text-muted mt-1.5 space-y-0.5 text-[12px]">
-          {tickets.map((t) => (
-            <li key={t.key}>
-              <span className="text-ink font-mono text-[11px]">{t.key}</span>{" "}
-              {t.title}
-              {t.dependsOn.length > 0 && (
-                <span> · after {t.dependsOn.join(", ")}</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+    >
+      <div className={cn(decided && "opacity-60")}>
+        <div className="text-ink text-[13px] font-semibold">{p.summary}</div>
+        {p.action.type === "create_backlog_item" && p.action.request && (
+          <p className="text-muted mt-1 line-clamp-3 text-[12px]">
+            {p.action.request}
+          </p>
+        )}
+        {tickets.length > 0 && (
+          <ul className="text-muted mt-1.5 space-y-0.5 text-[12px]">
+            {tickets.map((t) => (
+              <li key={t.key}>
+                <span className="text-ink font-mono text-[11px]">{t.key}</span>{" "}
+                {t.title}
+                {t.dependsOn.length > 0 && (
+                  <span> · after {t.dependsOn.join(", ")}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <div className="mt-2.5 flex items-center gap-2">
         {p.state === "proposed" ? (
           <>
