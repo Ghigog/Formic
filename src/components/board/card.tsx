@@ -492,18 +492,36 @@ function QueueTimer({ card }: { card: BoardCard }) {
   );
 }
 
-/** Mobile only: the return arrow at the bottom left, the advance arrow at the bottom right. */
+/** When the card entered its column, short; the full timestamp is the title. */
+function EnteredAt({ card, column }: { card: BoardCard; column: ColumnId }) {
+  if (!card.enteredAt) return null;
+  const at = new Date(card.enteredAt);
+  if (Number.isNaN(at.getTime())) return null;
+  const short = at.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return (
+    <time
+      dateTime={card.enteredAt}
+      title={at.toLocaleString("en-US", { dateStyle: "full", timeStyle: "long" })}
+      className="text-muted font-mono text-[10px] whitespace-nowrap"
+    >
+      {column === "done" ? `Done ${short}` : short}
+    </time>
+  );
+}
+
+/** The entry time, and on a phone the return arrow at the bottom left and the advance arrow at the bottom right. */
 function CardFooter({ card, column }: { card: BoardCard; column: ColumnId }) {
   const env = useContext(CardEnvContext);
-  if (!env?.mobile) return null;
-  const hasReturn = !!env.returnFor?.(card, column);
-  const hasAdvance = !!env.nextFor(card, column);
-  if (!hasReturn && !hasAdvance) return null;
+  const mobile = !!env?.mobile;
+  const hasReturn = mobile && !!env?.returnFor?.(card, column);
+  const hasAdvance = mobile && !!env?.nextFor(card, column);
+  if (!card.enteredAt && !hasReturn && !hasAdvance) return null;
   return (
-    <div className="-mt-1 flex items-center justify-between">
-      <ReturnButton card={card} column={column} />
+    <div className={cn("flex items-center justify-between", (hasReturn || hasAdvance) && "-mt-1")}>
+      {hasReturn && <ReturnButton card={card} column={column} />}
+      <EnteredAt card={card} column={column} />
       <div className="flex-grow" />
-      <AdvanceButton card={card} column={column} place="footer" />
+      {hasAdvance && <AdvanceButton card={card} column={column} place="footer" />}
     </div>
   );
 }

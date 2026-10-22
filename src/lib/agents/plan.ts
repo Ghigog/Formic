@@ -39,6 +39,28 @@ export function planFromSummary(text: string): PlanStep[] {
   return steps;
 }
 
+/** The plan role a step belongs to; a step without one is the coder's. */
+const roleOf = (s: PlanStep) => s.role ?? "coder";
+
+/**
+ * A ticket's plan after one role sends its own: the other role's steps stay,
+ * this role's are replaced. The coder's steps always come first and the
+ * reviewer's after them, whoever sent last: a coder re-planning after a
+ * send-back does not drop its steps below the review that asked for them.
+ */
+export function mergePlan(
+  existing: readonly PlanStep[],
+  incoming: readonly PlanStep[],
+  role: "coder" | "reviewer",
+): PlanStep[] {
+  const steps = [...existing.filter((s) => roleOf(s) !== role), ...incoming.map((s) => ({ ...s, role }))];
+  return [...steps.filter((s) => roleOf(s) === "coder"), ...steps.filter((s) => roleOf(s) === "reviewer")];
+}
+
+/** The role an event's steps were stamped with. */
+export const planRole = (steps: readonly PlanStep[]): "coder" | "reviewer" =>
+  steps[0] ? roleOf(steps[0]) : "coder";
+
 /** The step being worked on, or the next one due. -1 when all are done. */
 export function currentStep(steps: readonly PlanStep[]): number {
   const active = steps.findIndex((s) => s.status === "in_progress");

@@ -11,10 +11,9 @@ import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { PlanSteps } from "@/components/ui/plan-steps";
 import { SideBySide, WithChat } from "@/components/ui/split";
 import { StatusPill } from "@/components/ui/status-pill";
-import { StepIndicator } from "@/components/ui/step-indicator";
 import type { FormicEvent } from "@/lib/domain/events";
 import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE } from "@/lib/domain/entities";
-import { TICKET_STAGES, ticketProgress } from "@/lib/domain/stages";
+import { mergePlan, planRole } from "@/lib/agents/plan";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
@@ -23,6 +22,7 @@ import { TypeTag } from "./type-tag";
 import { NoticeIcon, ProblemNotice, WorkTimer } from "./card";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
+import { TicketKpis } from "./ticket-kpis";
 import { ScoutsPanel } from "./scouts-panel";
 import { QueenPanel } from "./queen-panel";
 import { FollowUps } from "./follow-ups";
@@ -41,8 +41,8 @@ export type SubscribeToEvents = (
 /**
  * A ticket's own view. On the left, the ticket as it was written: the user
  * story, why, what, how and its acceptance criteria. On the right, the
- * agent working it: its plan, stepped through like the Epic's lifecycle,
- * and what it thought and did, live while it works.
+ * agent working it: what it thought and did, live while it works. The
+ * agent's plan sits under the title.
  *
  * Full-screen bottom sheet on mobile, like the Epic drawer.
  */
@@ -97,7 +97,9 @@ export function TicketDrawer({
     if (!ticketId) return;
     return subscribe((event, seq) => {
       if (event.type === "ticket.plan" && event.ticketId === ticketId) {
-        setView((v) => (v ? { ...v, plan: event.steps } : v));
+        setView((v) =>
+          v ? { ...v, plan: mergePlan(v.plan, event.steps, planRole(event.steps)) } : v,
+        );
         return;
       }
       if (
@@ -153,9 +155,7 @@ export function TicketDrawer({
 
   const card = view?.card;
   const notice = card && !card.misplacedReason ? classifyNotice(card) : null;
-  const progress = card
-    ? ticketProgress(card)
-    : { current: 3, working: false, failedAt: null };
+  const working = card?.status === "running" || card?.status === "review";
 
   return (
     <div
@@ -256,15 +256,13 @@ export function TicketDrawer({
             </div>
           </div>
 
-          {!kb.open && (
-            <StepIndicator
-              className="mt-3"
-              stages={TICKET_STAGES}
-              label="Ticket progress"
-              current={progress.current}
-              failedAt={progress.failedAt}
-              working={progress.working}
-            />
+          {!kb.open && view && view.plan.length > 0 && (
+            <div
+              data-testid="drawer-plan"
+              className="mt-3 max-h-40 overflow-y-auto sm:max-h-56"
+            >
+              <PlanSteps steps={view.plan} working={working} />
+            </div>
           )}
 
           {/* A reason it waits that is not a problem, such as a dependency. A
@@ -388,7 +386,7 @@ export function TicketDrawer({
                 }
               >
                 <div className="p-4">
-                  {view && <AgentBody view={view} working={progress.working} />}
+                  {view && <AgentBody view={view} />}
                 </div>
               </WithChat>
             </section>
@@ -492,7 +490,11 @@ function TicketBody({
         </div>
       )}
 
-      <FollowUps ticketId={view.card.id} followUps={view.followUps} onChanged={onChanged} />
+      <FollowUps
+        ticketId={view.card.id}
+        followUps={view.followUps}
+        onChanged={onChanged}
+      />
 
       <div>
         <Heading>File scope</Heading>
@@ -502,6 +504,8 @@ function TicketBody({
       </div>
 
       <AttachmentGallery ticketId={view.card.id} />
+
+      <TicketKpis key={view.card.id} ticketId={view.card.id} />
 
       {view.dependsOn.length > 0 && (
         <div>
@@ -549,8 +553,8 @@ function Gherkin({ text }: { text: string }) {
   );
 }
 
-/** The agent: its plan, then what it thought and did, newest at the bottom. */
-function AgentBody({ view, working }: { view: TicketView; working: boolean }) {
+/** The agent: what it thought and did, newest at the bottom. */
+function AgentBody({ view }: { view: TicketView }) {
   const end = useRef<HTMLDivElement>(null);
   const count = view.activity.length;
   // Follow the feed as it grows, the way a terminal does.
@@ -560,18 +564,6 @@ function AgentBody({ view, working }: { view: TicketView; working: boolean }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <Heading>Plan</Heading>
-        {view.plan.length > 0 ? (
-          <PlanSteps className="mt-2" steps={view.plan} working={working} />
-        ) : (
-          <p className="text-fg-subtle mt-1 text-[12px]">
-            {working
-              ? "The agent has not shared a plan yet."
-              : "No plan yet. The agent shares one when it starts on this ticket."}
-          </p>
-        )}
-      </div>
 
       <div>
         <Heading>Thought process</Heading>
@@ -638,9 +630,9 @@ function ActivityLine({ item }: { item: TicketActivity }) {
   }
   if (item.kind === "reply") {
     return (
-      <li className="bg-surface text-fg mr-6 rounded-md px-2 py-1.5 text-[12px] leading-5 whitespace-pre-wrap">
+      <li className="bg-surface text-fg mr-6 rounded-md px-2 py-1.5 text-[12px] leading-5">
         <span className="text-fg-muted mr-1 font-semibold">{item.agent}:</span>
-        {item.text}
+        <MarkdownLite text={item.text} keepLineBreaks className="inline" />
       </li>
     );
   }
