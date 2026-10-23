@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { useColony, type ColonyApi } from "@/components/colony/colony";
 import { centerOf } from "@/components/colony/fx";
+import { cappedByFindings } from "@/lib/sentinels/rubric";
 import { GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
 import {
   GROUP_INK,
@@ -26,9 +27,9 @@ const BIG_OCT =
 const STAR =
   "M8 1.2l2.1 4.3 4.7.7-3.4 3.3.8 4.7L8 11.9l-4.2 2.3.8-4.7L1.2 6.2l4.7-.7z";
 
-function Stars({ n, size, id }: { n: number; size: number; id?: string }) {
+function Stars({ n, size, id, dull }: { n: number; size: number; id?: string; dull?: boolean }) {
   return (
-    <span className="flex gap-0.5" aria-hidden>
+    <span className={cn("flex items-center gap-0.5", dull && "opacity-50")} aria-hidden data-dull={dull || undefined}>
       {[0, 1, 2, 3, 4].map((i) => (
         <svg
           key={i}
@@ -40,6 +41,9 @@ function Stars({ n, size, id }: { n: number; size: number; id?: string }) {
           <path d={STAR} fill={i < n ? "var(--clay)" : "var(--border)"} />
         </svg>
       ))}
+      {dull && (
+        <span className="text-muted ml-1 font-mono text-[12px] leading-none">?</span>
+      )}
     </span>
   );
 }
@@ -568,7 +572,7 @@ function Card({
       role="listitem"
       data-card={x.id}
       tabIndex={0}
-      aria-label={`${x.who}, ${x.name}. ${st.stars !== null ? `${st.stars} of 5 stars` : "Not audited"}`}
+      aria-label={`${x.who}, ${x.name}. ${st.stars !== null ? `${st.stars} of 5 stars${st.auditStale ? ", out of date" : ""}` : "Not audited"}`}
       aria-current={on || undefined}
       onClick={onActivate}
       onPointerEnter={() => onReact(x.id)}
@@ -625,7 +629,7 @@ function Card({
           </span>
           <span className="text-muted text-[12px]">{x.kind}</span>
         </div>
-        <Stars n={st.stars ?? 0} size={17} id={x.id} />
+        <Stars n={st.stars ?? 0} size={17} id={x.id} dull={st.auditStale} />
         <p
           className={cn(
             "m-0 font-serif text-[16px] leading-[1.4] text-pretty italic",
@@ -740,6 +744,7 @@ function Report({
   const [epicError, setEpicError] = useState<string | null>(null);
   const sent = !!st.epicId || createdKey === reportKey;
   const noGaps = st.stars === 5;
+  const capped = !!st.rubric && !!st.report && cappedByFindings(st.rubric.rubric, st.report);
 
   async function createEpic() {
     setSending(true);
@@ -780,7 +785,7 @@ function Report({
           type="button"
           onClick={() => onSummon(st.rubric ? "audit" : "calibrate")}
           disabled={running || locked}
-          className="border-line bg-cream text-ink hover:border-terracotta h-8 rounded-lg border px-3 text-[12px] font-semibold active:scale-[0.96] disabled:opacity-60"
+          className="border-line bg-cream text-ink hover:border-terracotta h-8 shrink-0 rounded-lg border px-3 text-[12px] font-semibold whitespace-nowrap active:scale-[0.96] disabled:opacity-60"
         >
           {running ? "Running…" : locked ? `Lv ${x.unlockLevel}` : summonLabel(st)}
         </button>
@@ -821,7 +826,27 @@ function Report({
       {done && (
         <div className="flex flex-col gap-[18px]">
           <div className="bg-panel flex flex-col gap-2 rounded-[10px] px-4 py-3.5">
-            <Stars n={st.stars ?? 0} size={20} />
+            <Stars n={st.stars ?? 0} size={20} dull={st.auditStale} />
+            {st.auditStale && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-muted text-[13px]">
+                  Much has changed. Shall we re-audit?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onSummon("audit")}
+                  disabled={running || locked}
+                  className="border-line bg-cream text-ink hover:border-terracotta h-8 rounded-lg border px-3 text-[12px] font-semibold whitespace-nowrap active:scale-[0.96] disabled:opacity-60"
+                >
+                  Re-audit
+                </button>
+              </div>
+            )}
+            {capped && (
+              <p className="text-muted m-0 text-[12px] leading-[1.45]">
+                These stars are capped by the findings listed below, not by a rubric failure.
+              </p>
+            )}
             <p className="text-ink m-0 font-serif text-[17px] leading-[1.4] text-pretty">
               {st.summary}
             </p>
