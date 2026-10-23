@@ -3,13 +3,13 @@ import { render } from "@testing-library/react";
 import { ColumnTrail } from "./pheromone-trail";
 
 /**
- * The trail's geometry is arithmetic, not layout: rows are a fixed 60px with
+ * The trail's geometry is arithmetic, not layout: rows are a fixed 120px with
  * an 8px gap precisely so the curve endpoints land on a row's vertical centre
  * without measuring anything. That makes it the one piece of the design that
  * a unit test can pin exactly — and worth pinning, because a change to the
  * row height silently leaves the curves pointing at nothing.
  */
-const ROW = 60;
+const ROW = 120;
 const GAP = 8;
 const STEP = ROW + GAP;
 
