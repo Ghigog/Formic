@@ -108,3 +108,30 @@ test("the colony bar stays pinned to the bottom of the phone screen", async ({ p
   await page.evaluate(() => window.scrollTo(0, 2000));
   expect(await bottom()).toBeCloseTo(700, 0);
 });
+
+test("the sentinel Re-audit label stays on one line at 390px", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.getByRole("button", { name: /Audit grade/ }).click();
+  const card = page.getByRole("region", { name: "Sentinels" }).getByRole("listitem", { name: /Professor O'Chumley/ });
+  // The store is shared across the run, so an earlier test may already have
+  // calibrated or audited this sentinel; take it only as far as it needs.
+  if (await card.getByRole("button", { name: "Calibrate" }).isVisible()) {
+    await card.getByRole("button", { name: "Calibrate" }).click();
+    await expect(card.getByRole("button", { name: "Audit", exact: true })).toBeVisible({ timeout: 15_000 });
+  }
+  if (await card.getByRole("button", { name: "Audit", exact: true }).isVisible()) {
+    await card.getByRole("button", { name: "Audit", exact: true }).click();
+  }
+  await expect(card).toHaveAccessibleName(/4 of 5 stars/, { timeout: 15_000 });
+  await card.click();
+
+  const button = page.getByRole("dialog").getByRole("button", { name: "Re-audit" }).first();
+  const lineHeight = await button.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || 0);
+  const label = await button.evaluate((el) => {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    return r.getBoundingClientRect().height;
+  });
+  expect(lineHeight).toBeGreaterThan(0);
+  expect(label).toBeLessThanOrEqual(lineHeight + 1);
+});
