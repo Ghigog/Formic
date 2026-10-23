@@ -9,7 +9,7 @@ import { byPosition } from "@/lib/ordering";
 import { LeaseBusy, repoKey, withLease } from "./lease";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { scoreOf } from "@/lib/colony/game";
-import { colonyAdmits, effectiveColony, isUrgent, slotsInUse, slotsOf, type ColonySettings } from "@/lib/colony/reserve";
+import { colonyAdmits, effectiveColony, isTopPriority, isUrgent, slotsInUse, slotsOf, type ColonySettings } from "@/lib/colony/reserve";
 
 /**
  * Starts every queued ticket whose files no running ticket is writing any
@@ -113,7 +113,18 @@ async function claimQueued(
       card.blockedReason = reason;
       waiting.push({ projectId, card });
     };
-    for (const card of cards.filter(isQueued).sort(byPosition)) {
+    // Critical and high bugs go first, and while one is queued or running on
+    // this board nothing else starts. Only starts are held: a running agent is left alone.
+    const topPriority = (c: BoardCard) => c.kind === "ticket" && isTopPriority(c, epics);
+    const topOnBoard = cards.some((c) => topPriority(c) && (c.status === "queued" || c.status === "running"));
+    const queue = cards
+      .filter(isQueued)
+      .sort((a, b) => Number(topPriority(b)) - Number(topPriority(a)) || byPosition(a, b));
+    for (const card of queue) {
+      if (topOnBoard && !topPriority(card)) {
+        await stillWaits(card, TOP_PRIORITY_REASON);
+        continue;
+      }
       const blocker = heldBy(card, claims);
       if (blocker) {
         await stillWaits(card, heldReason(blocker, projectId));
@@ -145,6 +156,9 @@ async function claimQueued(
   }
   return started;
 }
+
+/** What a queued ticket's card says while a critical or high bug is ahead of it. */
+export const TOP_PRIORITY_REASON = "Waiting for critical and high bugs to be cleared first.";
 
 /** What a queued ticket's card says while another ticket holds its files. */
 export function heldReason(blocker: Reservation, projectId: string): string {

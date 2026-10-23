@@ -423,6 +423,26 @@ describe("a card's entry time", () => {
   });
 });
 
+describe("a bug's tag on the board", () => {
+  const renderIn = (id: "in_progress" | "done", card: BoardCard) =>
+    renderInDnd(
+      <CardEnvContext.Provider value={{ epics: new Map(), nextFor: () => null, onAdvance: vi.fn() }}>
+        <Column id={id} cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+
+  it("keeps Bug · Critical on a critical bug in progress", () => {
+    renderIn("in_progress", makeCard({ status: "running", workType: "bug", bugSeverity: "critical" }));
+    expect(screen.getByText("Bug · Critical")).toBeTruthy();
+    expect(screen.queryByText("Squashed")).toBeNull();
+  });
+
+  it("says Squashed on a merged high bug", () => {
+    renderIn("done", makeCard({ status: "merged", workType: "bug", bugSeverity: "high" }));
+    expect(screen.getByText("Squashed")).toBeTruthy();
+  });
+});
+
 describe("a child ticket row in an epic's To Do group", () => {
   function renderGroup(child: BoardCard, env: Partial<import("./card").CardEnv> = {}) {
     const onAdvance = vi.fn();

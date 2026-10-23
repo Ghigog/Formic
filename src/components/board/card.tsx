@@ -16,7 +16,7 @@ import {
   type BoardCard,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
-import { isBug, isSquashed } from "@/lib/colony/game";
+import { bugSeverityOf, isBug } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
@@ -182,8 +182,8 @@ function CardTypeTag({ card }: { card: BoardCard }) {
   const bug = isBug(card, epics);
   const type = bug ? "bug" : card.workType;
   if (!type) return null;
-  const severity = bug ? (card.bugSeverity ?? (card.epicId ? epics.get(card.epicId)?.bugSeverity : null)) : null;
-  return <TypeTag type={type} severity={severity} squashed={bug && isSquashed(card)} />;
+  // The tag says Squashed only once the bug is merged; until then it keeps its severity.
+  return <TypeTag type={type} severity={bugSeverityOf(card, epics)} squashed={bug && card.status === "merged"} />;
 }
 
 /** A small chess queen on a card a Queen was placed on. */

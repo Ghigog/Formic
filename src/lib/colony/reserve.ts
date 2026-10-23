@@ -5,6 +5,7 @@ import {
   NO_RESERVE_LEVEL,
   RESERVE_ONE_LEVEL,
   THREE_SCOUTS_LEVEL,
+  bugSeverityOf,
   isBug,
 } from "./game";
 
@@ -77,6 +78,12 @@ export function effectiveColony(settings: ColonySettings, level: number): Colony
  */
 export function isUrgent(card: BoardCard, epics: ReadonlyMap<string, BoardCard>): boolean {
   return card.workType === "bug" || isBug(card, epics) || card.prNumber !== null;
+}
+
+/** A bug of critical or high severity (its own, or its Epic's): worked before any other ticket. */
+export function isTopPriority(card: BoardCard, epics: ReadonlyMap<string, BoardCard>): boolean {
+  const severity = bugSeverityOf(card, epics);
+  return severity === "critical" || severity === "high";
 }
 
 /** Slots a ticket takes while it runs: one, or one per scout it has out. */
