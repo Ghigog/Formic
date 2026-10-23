@@ -13,6 +13,8 @@ import {
 import {
   getEffortByPoints,
   getLimitSettings,
+  getNotificationSettings,
+  setNotificationSettings,
   getRunTimeBudgetSettings,
   updateLimitSettings,
   updateRunTimeBudgetSettings,
@@ -66,6 +68,11 @@ const budgetSchema = z
     attempts: z.unknown().optional(),
   })
   // Money is not a setting: a cents field, or any other stray one, is refused.
+  .strict();
+
+const notificationsSchema = z
+  .object({ ticketMoved: z.boolean(), epicCompleted: z.boolean(), needsAttention: z.boolean() })
+  .partial()
   .strict();
 
 const renewalSchema = z.object({
@@ -128,6 +135,7 @@ export async function GET(req?: Request) {
     ...(await getRunTimeBudgetSettings(user.id)),
     ...(await getLimitSettings(user.id)),
     effortByPoints: await getEffortByPoints(user.id),
+    notifications: await getNotificationSettings(user.id),
   });
 }
 
@@ -217,6 +225,13 @@ export async function PUT(req: Request) {
     const on = z.boolean().safeParse((json as { effortByPoints: unknown }).effortByPoints);
     if (!on.success) return Response.json({ error: "effortByPoints is on or off." }, { status: 400 });
     return Response.json({ effortByPoints: await setEffortByPoints(user.id, on.data) });
+  }
+  if (json && typeof json === "object" && "notifications" in json) {
+    const prefs = notificationsSchema.safeParse((json as { notifications: unknown }).notifications);
+    if (!prefs.success) {
+      return Response.json({ error: "Each notification kind is on or off." }, { status: 400 });
+    }
+    return Response.json({ notifications: await setNotificationSettings(user.id, prefs.data) });
   }
   if (json && typeof json === "object" && "githubToken" in json) {
     return putGithubToken(json as { githubToken: unknown });

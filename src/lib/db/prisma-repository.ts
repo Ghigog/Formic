@@ -445,6 +445,14 @@ export class PrismaRepository implements Repository {
     return user ?? { ticketMoved: false, epicCompleted: false, needsAttention: false };
   }
 
+  async setPushPreferences(userId: string, prefs: Partial<PushPreferences>): Promise<PushPreferences> {
+    return prisma().user.update({
+      where: { id: userId },
+      data: prefs,
+      select: { ticketMoved: true, epicCompleted: true, needsAttention: true },
+    });
+  }
+
   async deleteUser(userId: string): Promise<void> {
     // Their projects and presets cascade to everything under them: epics,
     // tickets, runs, dependencies, events, column agents, and both kinds of
