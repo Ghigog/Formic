@@ -20,6 +20,7 @@ import type {
   LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
+  PushSubscriptionRecord,
   UserSecrets,
   Repository,
   RunOutcome,
@@ -173,6 +174,8 @@ interface Store {
   deliveries: Set<string>;
   presets: Map<string, AgentPreset & { apiKeyCipher: string | null }>;
   users: Map<string, UserRecord>;
+  /** endpoint to the subscription and the person it belongs to. */
+  pushSubscriptions: Map<string, PushSubscriptionRecord & { userId: string }>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
   /** `${projectId}:${column}` to that column agent's override. */
@@ -203,6 +206,7 @@ function store(): Store {
     existing.columnAgents ??= new Map();
     existing.columnOverrides ??= new Map();
     existing.users ??= new Map();
+    existing.pushSubscriptions ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
     existing.queens ??= new Map();
@@ -261,6 +265,7 @@ function store(): Store {
     deliveries: new Set(),
     presets: new Map(),
     users: new Map(),
+    pushSubscriptions: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
     members: new Set(),
@@ -498,6 +503,9 @@ export class MemoryRepository implements Repository {
       if (preset.ownerId === userId) await this.deletePreset(preset.id);
     }
     s.users.delete(userId);
+    for (const [endpoint, sub] of s.pushSubscriptions) {
+      if (sub.userId === userId) s.pushSubscriptions.delete(endpoint);
+    }
   }
 
   async projectById(projectId: string): Promise<ProjectSummary | null> {
@@ -519,6 +527,23 @@ export class MemoryRepository implements Repository {
     return new Map(
       [...store().opens].filter(([k]) => k.startsWith(prefix)).map(([k, at]) => [k.slice(prefix.length), at]),
     );
+  }
+
+  async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
+    const { endpoint, p256dh, auth } = subscription;
+    store().pushSubscriptions.set(endpoint, { userId, endpoint, p256dh, auth });
+  }
+
+  async deletePushSubscription(endpoint: string, userId?: string): Promise<void> {
+    const s = store();
+    const found = s.pushSubscriptions.get(endpoint);
+    if (found && (userId === undefined || found.userId === userId)) s.pushSubscriptions.delete(endpoint);
+  }
+
+  async pushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]> {
+    return [...store().pushSubscriptions.values()]
+      .filter((p) => p.userId === userId)
+      .map(({ endpoint, p256dh, auth }) => ({ endpoint, p256dh, auth }));
   }
 
   async isMember(projectId: string, userId: string): Promise<boolean> {
