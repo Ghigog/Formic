@@ -84,6 +84,12 @@ jobs:
           REQUIRE_TEST_DATABASE: "1"
           # Fails the run, rather than skipping, if the loop-branch suite lacks a tool.
           REQUIRE_LOOP_TOOLS: "1"
+      # Order dependencies between tests fail the build here.
+      - run: npx vitest run --sequence.shuffle.files --sequence.shuffle.tests
+        env:
+          TEST_DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
+          REQUIRE_TEST_DATABASE: "1"
+          REQUIRE_LOOP_TOOLS: "1"
 
       - name: Keep the coverage summary for the Sentinels
         if: github.event_name == 'push'
