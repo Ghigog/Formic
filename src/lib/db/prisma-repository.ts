@@ -179,6 +179,20 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async markOpened(userId: string, projectId: string): Promise<void> {
+    if ((await prisma().project.count({ where: { id: projectId } })) === 0) return;
+    await prisma().projectOpen.upsert({
+      where: { projectId_userId: { projectId, userId } },
+      create: { projectId, userId },
+      update: { openedAt: new Date() },
+    });
+  }
+
+  async openedAtByProject(userId: string): Promise<Map<string, Date>> {
+    const rows = await prisma().projectOpen.findMany({ where: { userId } });
+    return new Map(rows.map((r) => [r.projectId, r.openedAt]));
+  }
+
   async isMember(projectId: string, userId: string): Promise<boolean> {
     return (await prisma().projectMember.count({ where: { projectId, userId } })) > 0;
   }

@@ -179,6 +179,8 @@ interface Store {
   columnOverrides: Map<string, ColumnOverride>;
   /** `${projectId}:${userId}` for each person a project is shared with. */
   members: Set<string>;
+  /** `${userId}:${projectId}` to when that person last opened it. */
+  opens: Map<string, Date>;
   /** `${projectId}:${userId}:${slot}` to a member's own preset id. */
   memberAgents: Map<string, string>;
   /** Card id to whose keys its work runs on. */
@@ -213,6 +215,7 @@ function store(): Store {
     existing.platformUsage ??= new Map();
     existing.leases ??= new Map();
     existing.members ??= new Set();
+    existing.opens ??= new Map();
     existing.memberAgents ??= new Map();
     existing.actors ??= new Map();
     return existing;
@@ -261,6 +264,7 @@ function store(): Store {
     columnAgents: new Map(),
     columnOverrides: new Map(),
     members: new Set(),
+    opens: new Map(),
     memberAgents: new Map(),
     actors: new Map(),
     assistant: [],
@@ -502,6 +506,19 @@ export class MemoryRepository implements Repository {
 
   async addMember(projectId: string, userId: string): Promise<void> {
     store().members.add(`${projectId}:${userId}`);
+  }
+
+  async markOpened(userId: string, projectId: string): Promise<void> {
+    const s = store();
+    if (!s.projects.has(projectId)) return;
+    s.opens.set(`${userId}:${projectId}`, new Date());
+  }
+
+  async openedAtByProject(userId: string): Promise<Map<string, Date>> {
+    const prefix = `${userId}:`;
+    return new Map(
+      [...store().opens].filter(([k]) => k.startsWith(prefix)).map(([k, at]) => [k.slice(prefix.length), at]),
+    );
   }
 
   async isMember(projectId: string, userId: string): Promise<boolean> {
