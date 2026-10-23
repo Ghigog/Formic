@@ -312,7 +312,7 @@ describe("a CLI agent planning an Epic", () => {
     await completeCliRun(PROJECT, { job: second.job!, mode: "architect", conclusion: "success", url: null });
 
     const tickets = await repository().ticketsForEpic(epic.id);
-    expect(tickets.map((t) => t.key).sort()).toEqual(["EPIC-1-T1", "EPIC-1-T2"]);
+    expect(tickets.map((t) => t.key).sort()).toEqual([`${epic.key}-T1`, `${epic.key}-T2`]);
     expect((await repository().epicDetail(epic.id))!.runnerJob).toBeNull();
   });
 
