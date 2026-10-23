@@ -262,3 +262,42 @@ describe("GitHub access (local mode)", () => {
     expect(screen.queryByText("GitHub access")).not.toBeInTheDocument();
   });
 });
+
+describe("Agents", () => {
+  const project = { id: "p1", name: "Board", autoMerge: false, autoEscalate: false, shareKeys: true, agents: false };
+  const e2b = { hint: null, serverFallback: false };
+
+  it("hides the provider, key, colony, scout, auto-merge and sharing settings when off", () => {
+    render(<SettingsForm account={account} installUrl={null} e2b={e2b} project={project} />);
+
+    expect(screen.getByRole("switch", { name: "Agents" })).not.toBeChecked();
+    expect(screen.queryByLabelText(/API key/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Auto-merge")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sharing")).not.toBeInTheDocument();
+    expect(screen.queryByText(/AI provider keys live/)).not.toBeInTheDocument();
+  });
+
+  it("saves the owner's flip and shows the agent sections", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ agents: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SettingsForm account={account} installUrl={null} e2b={e2b} project={project} />);
+
+    await userEvent.click(screen.getByRole("switch", { name: "Agents" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/settings",
+      expect.objectContaining({ body: JSON.stringify({ projectId: "p1", agents: true }) }),
+    );
+    expect(await screen.findByText("Auto-merge")).toBeInTheDocument();
+    expect(screen.getByLabelText(/API key/)).toBeInTheDocument();
+  });
+
+  it("is not editable for a non-owner", () => {
+    render(
+      <SettingsForm account={account} installUrl={null} e2b={e2b} project={{ ...project, owner: false }} />,
+    );
+
+    expect(screen.getByRole("switch", { name: "Agents" })).toBeDisabled();
+    expect(screen.queryByText("Auto-merge")).not.toBeInTheDocument();
+  });
+});
