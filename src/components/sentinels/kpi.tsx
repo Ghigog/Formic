@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { useColony } from "@/components/colony/colony";
+import { useSound } from "@/components/colony/store";
 import { cn } from "@/components/ui/cn";
 import { COLUMNS, COLUMN_LABELS } from "@/lib/domain/status";
 import type { ProjectKpis, KpiWindow } from "@/lib/kpi/compute";
@@ -16,7 +18,23 @@ const PAD = { l: 34, r: 8, t: 8, b: 22 };
 const pct = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%`);
 const days = (v: number | null) => (v === null ? "–" : `${v < 10 ? v.toFixed(1) : Math.round(v)} d`);
 
+const COUNT_UP_MS = 900;
+
+/** How far the reveal animation has got, 0 to 1; charts and tiles read it. */
+const Progress = createContext(1);
+
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 export function KpiSection() {
+  const c = useColony();
+  const [soundOn] = useSound();
+  const ref = useRef<HTMLElement>(null);
+  const [revealed, setRevealed] = useState(false);
+  // Without an observer there is nothing to wait for: show the values at once.
+  const [progress, setProgress] = useState(() => (typeof IntersectionObserver === "undefined" ? 1 : 0));
+  const animating = useRef(false);
   const [win, setWin] = useState<KpiWindow>("30d");
   const [data, setData] = useState<ProjectKpis | null>(null);
   const [failed, setFailed] = useState(false);
@@ -37,8 +55,39 @@ export function KpiSection() {
     };
   }, [win]);
 
+  // First reveal only: the cue and the animation never repeat.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      setRevealed(true);
+      if (prefersReducedMotion()) setProgress(1);
+      if (soundOn) c?.sfx("kpi");
+    });
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loaded = data !== null;
+  useEffect(() => {
+    if (!revealed || !loaded || animating.current || prefersReducedMotion()) return;
+    animating.current = true;
+    let start: number | null = null;
+    const step = (t: number) => {
+      start ??= t;
+      const p = Math.min(1, (t - start) / COUNT_UP_MS);
+      setProgress(1 - Math.pow(1 - p, 3));
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [revealed, loaded]);
+
   return (
-    <section aria-label="KPIs" className="flex shrink-0 flex-col gap-3 pt-2">
+    <Progress.Provider value={progress}>
+    <section ref={ref} aria-label="KPIs" className="flex shrink-0 flex-col gap-3 pt-2">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-ink m-0 font-serif text-[20px] font-semibold">Board KPIs</h2>
         <div role="group" aria-label="KPI window" className="border-line bg-card flex rounded-[10px] border p-0.5">
@@ -81,19 +130,28 @@ export function KpiSection() {
         </>
       )}
     </section>
+    </Progress.Provider>
   );
 }
 
+/** `value` with its number scaled by `p`, keeping the number's decimals and its suffix. */
+function counted(value: string, p: number): string {
+  if (p >= 1) return value;
+  return value.replace(/\d+(\.\d+)?/, (n) => (Number(n) * p).toFixed(n.split(".")[1]?.length ?? 0));
+}
+
 function Tile({ label, value }: { label: string; value: string }) {
+  const p = useContext(Progress);
   return (
     <div role="group" aria-label={label} className="border-line bg-card rounded-[14px] border px-4 py-3">
       <div className="text-muted text-[12px]">{label}</div>
-      <div className="text-ink font-mono text-[26px] leading-tight font-medium">{value}</div>
+      <div className="text-ink font-mono text-[26px] leading-tight font-medium">{counted(value, p)}</div>
     </div>
   );
 }
 
 function Chart({ title, empty, children }: { title: string; empty: boolean; children: React.ReactNode }) {
+  const p = useContext(Progress);
   return (
     <figure role="group" aria-label={title} className="border-line bg-card m-0 rounded-[14px] border px-4 py-3">
       <figcaption className="text-ink mb-2 text-[13px] font-semibold">{title}</figcaption>
@@ -101,7 +159,12 @@ function Chart({ title, empty, children }: { title: string; empty: boolean; chil
         <p className="text-muted m-0 text-[12px]">No data in this window.</p>
       ) : (
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title} className="block h-auto w-full">
-          {children}
+          <g
+            data-progress={p}
+            style={p < 1 ? { opacity: p, transform: `scaleY(${p})`, transformOrigin: `0px ${base}px` } : undefined}
+          >
+            {children}
+          </g>
         </svg>
       )}
     </figure>
