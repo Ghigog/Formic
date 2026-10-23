@@ -24,6 +24,7 @@ import type {
   LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
+  PushSubscriptionRecord,
   UserSecrets,
   Repository,
   RunOutcome,
@@ -413,6 +414,26 @@ export class PrismaRepository implements Repository {
       db.project.updateMany({ where: { ownerId: null }, data: { ownerId: userId } }),
       db.agentPreset.updateMany({ where: { ownerId: null }, data: { ownerId: userId } }),
     ]);
+  }
+
+  async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
+    const { endpoint, p256dh, auth } = subscription;
+    await prisma().pushSubscription.upsert({
+      where: { endpoint },
+      create: { userId, endpoint, p256dh, auth },
+      update: { userId, p256dh, auth },
+    });
+  }
+
+  async deletePushSubscription(endpoint: string, userId?: string): Promise<void> {
+    await prisma().pushSubscription.deleteMany({ where: { endpoint, ...(userId ? { userId } : {}) } });
+  }
+
+  async pushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]> {
+    return prisma().pushSubscription.findMany({
+      where: { userId },
+      select: { endpoint: true, p256dh: true, auth: true },
+    });
   }
 
   async deleteUser(userId: string): Promise<void> {

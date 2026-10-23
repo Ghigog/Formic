@@ -143,14 +143,20 @@ model User {
   tokenWindowTimezone String?
   tokenResetAt        DateTime?
 
+  /// Which push messages this person wants. See src/lib/push.
+  ticketMoved    Boolean @default(true)
+  epicCompleted  Boolean @default(true)
+  needsAttention Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  projects     Project[]
-  presets      AgentPreset[]
-  memberships  ProjectMember[]
-  opens        ProjectOpen[]
-  memberAgents MemberAgent[]
+  projects          Project[]
+  presets           AgentPreset[]
+  memberships       ProjectMember[]
+  opens             ProjectOpen[]
+  memberAgents      MemberAgent[]
+  pushSubscriptions PushSubscription[]
 
   @@map("user")
 }
@@ -225,7 +231,7 @@ model Epic {
   rawRequest       String
   /// Structured PRD from the Product Agent. Null until stage 2 completes.
   prd              Json?
-  prdEditedByHuman Boolean   @default(false)
+  prdEditedByHuman Boolean      @default(false)
   /// The kind of work, as the owner chose. Null for untyped.
   workType         WorkType?
   /// Only for a bug. Null otherwise.
@@ -322,80 +328,80 @@ model Ticket {
   rerouteFrom     ColumnId?
   rerouteReason   String?
 
-  branchName      String?
+  branchName        String?
   /// A stacked ticket's start: the branch of the prerequisite whose open pull
   /// request it builds on, which its own pull request targets until that one
   /// merges. Null for a ticket on the merge target, and once retargeted.
-  stackedOn       String?
+  stackedOn         String?
   /// One line describing what the Coder Agent actually changed. Feeds the
   /// Epic showcase, which would otherwise only know ticket titles.
-  summary         String?
-  prNumber        Int?
-  prUrl           String?
-  blockedReason   String?
-  attempts        Int       @default(0)
+  summary           String?
+  prNumber          Int?
+  prUrl             String?
+  blockedReason     String?
+  attempts          Int       @default(0)
   /// The GitHub Actions run a CLI agent is doing for this ticket, if any.
   /// Only that run's result is taken; any other is stale.
-  runnerJob       String?
+  runnerJob         String?
   /// The preset that run was dispatched with, so a failure is blamed on the
   /// agent that actually ran it, not whichever one the column has now.
-  runnerAgent     String?
+  runnerAgent       String?
   /// When that run was sent: how long the agent has been at it.
-  runnerJobAt     DateTime?
+  runnerJobAt       DateTime?
   /// Whose keys and agents this ticket's work runs on: the person who last
   /// set it going. Null falls back to its epic's, then the board's owner.
-  actorId         String?
+  actorId           String?
   /// The GitHub issue that tracks this ticket, a sub-issue of its epic's.
-  issueNumber     Int?
+  issueNumber       Int?
   /// The GitHub issue this ticket was imported from, when it came in from one
   /// (see src/lib/issues/intake.ts). The mirror adopts it as this ticket's
   /// issue instead of filing a second, so the person's issue is the one its
   /// pull request closes. Null for a ticket Formic made itself.
   sourceIssueNumber Int?
   /// The estimate on the Fibonacci scale, 1 to 13.
-  storyPoints     Int?
+  storyPoints       Int?
   /// The steps the agent is working the ticket through: [{ step, status }].
-  plan            Json?
+  plan              Json?
   /// Steps outside the repository the person has to take, one per entry.
   /// The Epic's showcase hands them over once everything has merged.
-  handoff         String[]  @default([])
+  handoff           String[]  @default([])
   /// Work an agent found that is bigger than this ticket or belongs to
   /// another: [{ title, why, points }]. The person adds each as its own
   /// tech debt ticket on this Epic, or dismisses it.
-  followUps       Json      @default("[]")
+  followUps         Json      @default("[]")
   /// Set when the ticket is work for a person, not an agent (an account to
   /// set up, a manual test on production): why. Agents do not start it; the
   /// person does it and closes it from its chat.
-  needsHuman      String?
+  needsHuman        String?
   /// The head commit the Reviewer Agent last approved or pushed. Green CI on
   /// exactly this commit merges; anything newer is reviewed again.
-  reviewedSha     String?
+  reviewedSha       String?
   /// The head a review has already been given, whether it answered or not. A
   /// commit finishing several checks arrives as that many reports, and every
   /// report about a head a review is still parked on would start another
   /// review of it: a review ceiling spent on one CI run, and a card saying it
   /// was reviewed four times when nothing was read. Cleared when the review
   /// answers, and when a person moves the card.
-  reviewedHead    String?
+  reviewedHead      String?
   /// When its story points were auto-escalated. Set once, so it happens once.
-  autoEscalatedAt DateTime?
+  autoEscalatedAt   DateTime?
   /// When it merged, and what the merge scored: its story points times the
   /// project's heat at that moment (1 + 0.5 per merge in the 45s before,
   /// at most six). Set once, on the first move to merged.
-  mergedAt        DateTime?
-  mergePoints     Int?
-  mergeMultiplier Float?
+  mergedAt          DateTime?
+  mergePoints       Int?
+  mergeMultiplier   Float?
 
   /// Scouts (docs/colony.md). On a scout: the ticket it scouts for, the
   /// approach it was told to take, and the agent template it runs on (null:
   /// the column's). A scout is never on the board; its parent shows it.
-  scoutOf         String?
-  scoutBrief      String?
-  scoutPresetId   String?
+  scoutOf       String?
+  scoutBrief    String?
+  scoutPresetId String?
   /// On a parent: how many scouts it sent out, the one picked, and why.
-  scouts          Int       @default(0)
-  scoutPick       String?
-  scoutWhy        String?
+  scouts        Int     @default(0)
+  scoutPick     String?
+  scoutWhy      String?
 
   costCents Float @default(0)
   tokensIn  Int   @default(0)
@@ -404,10 +410,10 @@ model Ticket {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  dependsOn  TicketDependency[] @relation("dependent")
-  dependents TicketDependency[] @relation("dependency")
-  runs       AgentRun[]
-  queen      Queen?
+  dependsOn     TicketDependency[]  @relation("dependent")
+  dependents    TicketDependency[]  @relation("dependency")
+  runs          AgentRun[]
+  queen         Queen?
   columnEntries TicketColumnEntry[]
   changes       TicketChange[]
 
@@ -445,11 +451,11 @@ model TicketColumnEntry {
 /// A change made to a ticket after it was planned: its points, its text, or
 /// a split into more tickets.
 model TicketChange {
-  id       String               @id @default(cuid())
+  id       String           @id @default(cuid())
   ticketId String
-  ticket   Ticket               @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket   Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   kind     TicketChangeKind
-  at       DateTime             @default(now())
+  at       DateTime         @default(now())
   detail   Json?
 
   @@index([ticketId])
@@ -728,38 +734,38 @@ model CardChatMessage {
 /// report. At most two per sentinel are kept, the last report and a newer
 /// run in progress or failed.
 model Audit {
-  id         String    @id @default(cuid())
-  projectId  String
-  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// The roster id, such as "secops". See src/lib/sentinels/roster.ts.
-  sentinel   String
+  sentinel    String
   /// "audit" scores the code against a rubric; "calibrate" writes the rubric.
-  kind       String    @default("audit")
+  kind        String    @default("audit")
   /// "running", "done" or "failed".
-  status     String    @default("running")
+  status      String    @default("running")
   /// Steps reached so far, oldest first.
-  log        String[]  @default([])
-  stars      Int?
-  quote      String?
-  summary    String?
+  log         String[]  @default([])
+  stars       Int?
+  quote       String?
+  summary     String?
   /// likes, dislikes, wrong and missing: each a list of { text, ref }.
-  report     Json?
+  report      Json?
   /// A calibration's star ladder, or the one an audit was scored against.
-  rubric     Json?
-  error      String?
-  model      String?
+  rubric      Json?
+  error       String?
+  model       String?
   /// Files the sentinel read.
-  files      String[]  @default([])
+  files       String[]  @default([])
   /// The base branch head the audit read, or null when it could not be resolved.
-  commitSha  String?
+  commitSha   String?
   /// The GitHub Actions job a CLI agent audits in, while it runs.
   runnerJob   String?
   /// The saved agent running it, so a usage limit it hits is recorded on it.
   runnerAgent String?
   /// The Backlog Epic made from this report, if any.
-  epicId     String?
-  startedAt  DateTime  @default(now())
-  finishedAt DateTime?
+  epicId      String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
 
   @@index([projectId, sentinel])
   @@map("audit")
@@ -805,4 +811,19 @@ model HostUsageCheck {
   data      Json
 
   @@map("host_usage_check")
+}
+
+/// One device's Web Push subscription. The endpoint names the device; the push
+/// service answers 404 or 410 once it is gone, and sendPush then deletes the row.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("push_subscription")
 }

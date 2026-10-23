@@ -440,6 +440,13 @@ export interface OwnerScope {
   includeUnowned: boolean;
 }
 
+/** One device's Web Push subscription. */
+export interface PushSubscriptionRecord {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
 /** A person, with their credentials still sealed. */
 export interface UserRecord {
   id: string;
@@ -589,6 +596,11 @@ export interface Repository {
   markOpened(userId: string, projectId: string): Promise<void>;
   /** When this person last opened each project, by project id. Never-opened ones are absent. */
   openedAtByProject(userId: string): Promise<Map<string, Date>>;
+  /** Saves a device's push subscription; a known endpoint moves to this person with fresh keys. */
+  savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void>;
+  /** Forgets a device, whoever it is saved for when `userId` is omitted. */
+  deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
+  pushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]>;
   /** A member's own agents on a shared board, by column or "assistant". */
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
