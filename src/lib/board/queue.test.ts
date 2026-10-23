@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { makeEpicWithChildren } from "@/test/cards";
+import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 const launched = vi.hoisted(() => [] as string[]);
 
@@ -234,5 +234,46 @@ describe("the colony's cap", () => {
     await startQueued(PROJECT);
     expect((await repository().cardById(scouting!.id))?.status).toBe("running");
     expect((await repository().cardById(bug!.id))?.status).toBe("queued");
+  });
+});
+
+describe("critical and high bugs first", () => {
+  const WAIT = "Waiting for critical and high bugs to be cleared first.";
+  const get = async (id: string) => (await repository().cardById(id))!;
+
+  it("starts a critical bug ahead of a routine ticket and holds the routine one", async () => {
+    const routine = makeCard({ status: "queued", position: 1000 });
+    const bug = makeCard({ status: "queued", position: 2000, workType: "bug", bugSeverity: "critical" });
+    seedMemory([routine, bug]);
+
+    await startQueued(PROJECT);
+
+    expect(launched).toEqual([`coder agent for ${bug.key}`]);
+    expect(await get(routine.id)).toMatchObject({ status: "queued", blockedReason: WAIT });
+  });
+
+  it("holds routine tickets while a high bug runs, then starts them on its own", async () => {
+    const routine = makeCard({ status: "queued", position: 1000 });
+    const bug = makeCard({ status: "running", position: 2000, workType: "bug", bugSeverity: "high" });
+    seedMemory([routine, bug]);
+
+    await startQueued(PROJECT);
+    expect(launched).toEqual([]);
+    expect(await get(routine.id)).toMatchObject({ status: "queued", blockedReason: WAIT });
+
+    await repository().updateTicket(bug.id, { status: "review" });
+    await startQueued(PROJECT);
+    expect(await get(routine.id)).toMatchObject({ status: "running", blockedReason: null });
+    expect(launched).toEqual([`coder agent for ${routine.key}`]);
+  });
+
+  it("holds nothing for a medium or low bug", async () => {
+    const routine = makeCard({ status: "queued", position: 1000 });
+    const bug = makeCard({ status: "queued", position: 2000, workType: "bug", bugSeverity: "medium" });
+    seedMemory([routine, bug]);
+
+    await startQueued(PROJECT);
+
+    expect(launched.sort()).toEqual([`coder agent for ${routine.key}`, `coder agent for ${bug.key}`].sort());
   });
 });

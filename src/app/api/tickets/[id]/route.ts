@@ -55,7 +55,7 @@ export async function GET(
 
   const view: TicketView = {
     card,
-    epic: epic ? { id: epic.id, key: epic.key, title: epic.title } : null,
+    epic: epic ? { id: epic.id, key: epic.key, title: epic.title, workType: epic.workType, bugSeverity: epic.bugSeverity } : null,
     description: detail.description,
     acceptanceCriteria: detail.acceptanceCriteria,
     branchName: detail.branchName,

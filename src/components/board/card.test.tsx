@@ -9,11 +9,11 @@ vi.mock("@/components/colony/colony", async (orig) => ({
 afterEach(() => {
   colonyApi = null;
 });
-import { DragDropContext } from "@hello-pangea/dnd";
+import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Column } from "./column";
 import { EMPTY_VIEW } from "./view";
-import { CardEnvContext, type CardExtras } from "./card";
+import { CardEnvContext, EpicGroup, type CardExtras } from "./card";
 import { renderInDnd } from "@/test/render";
 import { makeCard } from "@/test/cards";
 import type { BoardCard } from "@/lib/domain/entities";
@@ -420,5 +420,69 @@ describe("a card's entry time", () => {
   it("shows nothing before it has entered", () => {
     const { container } = renderIn("todo", makeCard({ status: "ready", enteredAt: null }));
     expect(container.querySelector("time")).toBeNull();
+  });
+});
+
+describe("a bug's tag on the board", () => {
+  const renderIn = (id: "in_progress" | "done", card: BoardCard) =>
+    renderInDnd(
+      <CardEnvContext.Provider value={{ epics: new Map(), nextFor: () => null, onAdvance: vi.fn() }}>
+        <Column id={id} cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+
+  it("keeps Bug · Critical on a critical bug in progress", () => {
+    renderIn("in_progress", makeCard({ status: "running", workType: "bug", bugSeverity: "critical" }));
+    expect(screen.getByText("Bug · Critical")).toBeTruthy();
+    expect(screen.queryByText("Squashed")).toBeNull();
+  });
+
+  it("says Squashed on a merged high bug", () => {
+    renderIn("done", makeCard({ status: "merged", workType: "bug", bugSeverity: "high" }));
+    expect(screen.getByText("Squashed")).toBeTruthy();
+  });
+});
+
+describe("a child ticket row in an epic's To Do group", () => {
+  function renderGroup(child: BoardCard, env: Partial<import("./card").CardEnv> = {}) {
+    const onAdvance = vi.fn();
+    const onOpen = vi.fn();
+    const full = { epics: new Map(), nextFor: () => "in_progress" as const, onAdvance, ...env };
+    renderInDnd(
+      <CardEnvContext.Provider value={full}>
+        <Droppable droppableId="todo">
+          {(p) => (
+            <ul ref={p.innerRef} {...p.droppableProps}>
+          <EpicGroup
+            epic={makeCard({ id: "e1", key: "EPIC-138" })}
+            tickets={[child]}
+            column="todo"
+            index={0}
+            extras={{}}
+            collapsed={false}
+            onToggle={vi.fn()}
+            onOpen={onOpen}
+          />
+            </ul>
+          )}
+        </Droppable>
+      </CardEnvContext.Provider>,
+    );
+    return { onAdvance, onOpen };
+  }
+  const child = () => makeCard({ id: "c1", key: "EPIC-138-T3", title: "A very long ticket title", storyPoints: 5 });
+
+  it("shows the key unwrapped and the title clamped to two lines", () => {
+    renderGroup(child());
+    expect(screen.getByText("EPIC-138-T3").className).toContain("whitespace-nowrap");
+    expect(screen.getByText("A very long ticket title").className).toContain("line-clamp-2");
+    expect(screen.getByText("5 SP")).toBeTruthy();
+  });
+
+  it("shows the advance arrow without mobile and moves the ticket without opening it", () => {
+    const { onAdvance, onOpen } = renderGroup(child());
+    fireEvent.click(screen.getByLabelText(/^Move EPIC-138-T3 to/));
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import type { FollowUp } from "@/lib/agents/follow-ups";
-import type { BoardCard, PlanStep } from "./entities";
+import type { BoardCard, BugSeverity, PlanStep, WorkType } from "./entities";
 import type { FormicEvent } from "./events";
 
 /**
@@ -24,7 +24,7 @@ export interface TicketActivity {
 
 export interface TicketView {
   card: BoardCard;
-  epic: { id: string; key: string; title: string } | null;
+  epic: { id: string; key: string; title: string; workType?: WorkType | null; bugSeverity?: BugSeverity | null } | null;
   description: string;
   acceptanceCriteria: string[];
   branchName: string | null;

@@ -125,9 +125,18 @@ export async function dragCardToBottom(
 ): Promise<void> {
   const source = card(page, cardId);
   const from = await source.boundingBox();
-  const into = await dropzone(page, to).boundingBox();
+  const zone = dropzone(page, to);
+  const into = await zone.boundingBox();
+  const last = await zone.locator("> li").last().boundingBox();
   if (!from || !into) throw new Error(`Cannot drag ${cardId}: nothing to measure.`);
-  await dragTo(page, from, into.x + into.width / 2, into.y + into.height - 12);
+  // Under the last card, but high enough that the dragged card, which hangs
+  // below the pointer, stays inside the column: from the bottom of a tall one
+  // it reaches the "Drop to archive" strip that appears mid-drag.
+  const y = Math.min(
+    last ? last.y + last.height + 24 : into.y + 40,
+    into.y + into.height - from.height - 12,
+  );
+  await dragTo(page, from, into.x + into.width / 2, y);
   await waitForDragSettle(source);
 }
 
