@@ -29,6 +29,10 @@ const OPEN = [
   /^\/api\/webhooks\//,
   /^\/api\/runner\/report$/,
   /^\/api\/runner\/bundle$/,
+  // What installing the app fetches, possibly without the session cookie.
+  /^\/manifest\.webmanifest$/,
+  /^\/sw\.js$/,
+  /^\/icons\//,
 ];
 
 /**
