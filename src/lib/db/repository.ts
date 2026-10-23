@@ -489,6 +489,10 @@ export interface UserRecord {
   attemptLimit?: unknown;
   /** Whether thinking effort follows story points; on when absent. */
   effortByPoints?: boolean;
+  /** Push preferences; on when absent. */
+  ticketMoved?: boolean;
+  epicCompleted?: boolean;
+  needsAttention?: boolean;
   /** Token window: renewal day of the month (1-31) in `tokenWindowTimezone` (IANA), or null. */
   tokenRenewalDay: number | null;
   tokenWindowTimezone: string | null;
@@ -609,6 +613,8 @@ export interface Repository {
   deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
   pushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]>;
   pushPreferences(userId: string): Promise<PushPreferences>;
+  /** Stores the kinds given, leaves the rest; returns all three. */
+  setPushPreferences(userId: string, prefs: Partial<PushPreferences>): Promise<PushPreferences>;
   /** A member's own agents on a shared board, by column or "assistant". */
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;

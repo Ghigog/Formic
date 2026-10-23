@@ -1,7 +1,7 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
-import type { RunTimeBudgetColumns, UserRecord } from "@/lib/db/repository";
+import type { PushPreferences, RunTimeBudgetColumns, UserRecord } from "@/lib/db/repository";
 import type { LimitSetting } from "@/lib/budget/budget-for";
 import { limitSettingFromStored, type LimitAxis } from "@/lib/domain/limit-settings";
 import {
@@ -84,6 +84,18 @@ export async function getEffortByPoints(userId: string): Promise<boolean> {
 export async function setEffortByPoints(userId: string, on: boolean): Promise<boolean> {
   const row = await repository().updateLimits(userId, { effortByPoints: on });
   return row.effortByPoints ?? true;
+}
+
+/** Which push messages this person gets; all on until they choose. */
+export async function getNotificationSettings(userId: string): Promise<PushPreferences> {
+  return repository().pushPreferences(userId);
+}
+
+export async function setNotificationSettings(
+  userId: string,
+  prefs: Partial<PushPreferences>,
+): Promise<PushPreferences> {
+  return repository().setPushPreferences(userId, prefs);
 }
 
 export async function getRunTimeBudgetSettings(userId: string): Promise<RunTimeBudgetSettings> {
