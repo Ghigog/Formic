@@ -262,6 +262,10 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   // then is overwritten when React takes over the input.
   await page.waitForLoadState("networkidle");
 
+  // Boards start with agents off, which hides the AI sections.
+  await page.getByRole("switch", { name: "Agents" }).check();
+  await expect(page.getByRole("heading", { name: "Sandbox (E2B)" })).toBeVisible();
+
   // The page has more than one Save button (GitHub access, limits, renewal), so
   // this targets the sandbox field's own section rather than the first on the page.
   const sandbox = page
