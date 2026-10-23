@@ -42,7 +42,7 @@ describe("the scouts panel", () => {
     serve({ why: null, scouts: [{ id: "s1", label: "S1", approach: "a", status: "out", summary: null, reason: null, picked: false }] });
     const { container } = render(<ScoutsPanel card={makeCard({ status: "running", stalledIn: null, scouts: 1 })} onChanged={() => {}} />);
     await screen.findByRole("button", { name: "Scouts: 1" });
-    expect(container.textContent).toBe("Scouts: 1▾");
+    expect(container.textContent).toBe("Scouts: 1Remove scout▾");
     expect(container.querySelector(".w-full")).toBeNull();
   });
 
@@ -76,5 +76,26 @@ describe("the scouts panel", () => {
     serve({ why: null, scouts: [] });
     const { container } = render(<ScoutsPanel card={makeCard({ status: "ready", stalledIn: null })} onChanged={() => {}} />);
     expect(container.innerHTML).toBe("");
+  });
+
+  it("keeps the add control and has a separate Remove scout button that removes one scout", async () => {
+    const posts = serve({
+      why: null,
+      scouts: [
+        { id: "s1", label: "S1", approach: "a", status: "out", summary: null, reason: null, picked: false },
+        { id: "s2", label: "S2", approach: "b", status: "out", summary: null, reason: null, picked: false },
+      ],
+    });
+    const card = makeCard({ status: "running", stalledIn: null, scouts: 2 });
+    render(<ScoutsPanel card={card} onChanged={() => {}} />);
+    expect(screen.getByRole("button", { name: "Scouts: 2" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Remove scout" }));
+    await waitFor(() => expect(posts).toEqual([{ action: "remove", ticketId: card.id, scoutId: "s2" }]));
+  });
+
+  it("has no Remove scout button without scouts", () => {
+    serve({ why: null, scouts: [] });
+    render(<ScoutsPanel card={makeCard({ status: "running", stalledIn: null })} onChanged={() => {}} />);
+    expect(screen.queryByRole("button", { name: "Remove scout" })).toBeNull();
   });
 });

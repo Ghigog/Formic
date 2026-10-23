@@ -94,6 +94,16 @@ export function ScoutsPanel({ card, onChanged }: { card: BoardCard; onChanged: (
       ) : (
         <span className="text-ink font-semibold whitespace-nowrap">{label}</span>
       )}
+      {count > 0 && scouts.length > 0 && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void post({ action: "remove", ticketId: card.id, scoutId: scouts[scouts.length - 1]!.id })}
+          className="border-line bg-card rounded border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap disabled:opacity-50"
+        >
+          Remove scout
+        </button>
+      )}
       {hasScouts && (
         <button
           type="button"

@@ -429,6 +429,35 @@ export async function swapScout(projectId: string, parentId: string, scoutId: st
   return { ok: true };
 }
 
+/** Why a scout that was called back is marked failed. */
+const RECALLED = "Recalled.";
+
+/**
+ * A person takes one scout off a ticket that has several. It is marked failed
+ * the way recallScouts does, so a run still going stops, and it is no longer
+ * counted. The others keep running.
+ */
+export async function removeScout(projectId: string, parentId: string, scoutId: string): Promise<ScoutAnswer> {
+  const repo = repository();
+  const parent = await repo.ticketDetail(parentId);
+  if (!parent || parent.projectId !== projectId) return { ok: false, reason: "That ticket is not on this board." };
+  const scout = (await repo.scoutsOf(parentId)).find((s) => s.id === scoutId);
+  if (!scout || isRecalled(scout)) return { ok: false, reason: "That scout is not on this ticket." };
+
+  await repo.updateTicket(scout.id, { status: "failed", blockedReason: RECALLED });
+  await repo.updateTicket(parentId, {
+    scouts: Math.max(0, parent.scouts - 1),
+    ...(parent.scoutPick === scout.id ? { scoutPick: null, scoutWhy: null } : {}),
+  });
+  // It may have been the last one out: the others can be judged now.
+  await settle(projectId, parentId);
+  return { ok: true };
+}
+
+function isRecalled(scout: TicketDetail): boolean {
+  return scout.status === "failed" && scout.blockedReason === RECALLED;
+}
+
 /**
  * Calls a ticket's scouts back before they are done: the person moved it out
  * of In Progress, or its start was refused. A scout still working stops at
@@ -442,7 +471,7 @@ export async function recallScouts(projectId: string, parentId: string): Promise
   // replaced the next time scouts are sent.
   for (const s of scouts) {
     if (s.status === "running" || s.status === "ready") {
-      await repo.updateTicket(s.id, { status: "failed", blockedReason: "Recalled." });
+      await repo.updateTicket(s.id, { status: "failed", blockedReason: RECALLED });
     }
   }
   await repo.updateTicket(parentId, { scouts: 0, scoutPick: null, scoutWhy: null });
@@ -466,7 +495,7 @@ export async function scoutViews(parentId: string): Promise<{ why: string | null
   const scouts = await repo.scoutsOf(parentId);
   return {
     why: parent?.scoutWhy && parent.scoutWhy !== AUTO_SCOUTED ? parent.scoutWhy : null,
-    scouts: scouts.map((s) => ({
+    scouts: scouts.filter((s) => !isRecalled(s)).map((s) => ({
       id: s.id,
       label: label(s),
       approach: approachName(s.scoutBrief),

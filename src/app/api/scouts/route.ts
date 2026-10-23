@@ -3,7 +3,7 @@ import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
 import { repository } from "@/lib/db";
 import { activeProject, noProject } from "@/lib/board/project";
-import { scoutViews, sendScouts, swapScout } from "@/lib/coder/scouts";
+import { scoutViews, sendScouts, removeScout, swapScout } from "@/lib/coder/scouts";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,7 @@ const bodySchema = z.discriminatedUnion("action", [
     ticketId: z.string().min(1),
   }),
   z.object({ action: z.literal("swap"), ticketId: z.string().min(1), scoutId: z.string().min(1) }),
+  z.object({ action: z.literal("remove"), ticketId: z.string().min(1), scoutId: z.string().min(1) }),
 ]);
 
 /** A ticket's scouts. */
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
   return Response.json(await scoutViews(ticketId));
 }
 
-/** Sends a scout on a ticket in In Progress, or swaps the one picked. */
+/** Sends a scout on a ticket in In Progress, swaps the one picked, or takes one off. */
 export const POST = asSignedIn(postHandler);
 async function postHandler(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
@@ -35,10 +36,13 @@ async function postHandler(req: NextRequest) {
   const project = await activeProject();
   if (!project) return noProject();
 
+  const body = parsed.data;
   const answer =
-    parsed.data.action === "send"
-      ? await sendScouts(project.id, parsed.data.ticketId)
-      : await swapScout(project.id, parsed.data.ticketId, parsed.data.scoutId);
+    body.action === "send"
+      ? await sendScouts(project.id, body.ticketId)
+      : body.action === "swap"
+        ? await swapScout(project.id, body.ticketId, body.scoutId)
+        : await removeScout(project.id, body.ticketId, body.scoutId);
   if (!answer.ok) return Response.json({ error: answer.reason }, { status: 409 });
   return Response.json(await scoutViews(parsed.data.ticketId));
 }

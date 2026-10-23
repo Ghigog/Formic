@@ -57,3 +57,21 @@ async function postHandler(req: NextRequest) {
   await publish(project.id, { type: "card.queen", cardId: card.id, kind: card.kind });
   return Response.json({ queen, unspent: unspent - 1 }, { status: 201 });
 }
+
+/** Takes a Queen off a card. She stays spent: nothing is given back. */
+export const DELETE = asSignedIn(deleteHandler);
+async function deleteHandler(req: NextRequest) {
+  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return Response.json({ error: "Say which card." }, { status: 400 });
+
+  const project = await activeProject();
+  if (!project) return noProject();
+  const repo = repository();
+
+  const card = (await repo.boardCards(project.id)).find((c) => c.id === parsed.data.cardId);
+  if (!card) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await repo.clearQueen(card.id))) return Response.json({ error: "It has no Queen." }, { status: 409 });
+
+  await publish(project.id, { type: "card.queen", cardId: card.id, kind: card.kind });
+  return Response.json({ ok: true });
+}
