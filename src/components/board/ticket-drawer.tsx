@@ -265,7 +265,7 @@ export function TicketDrawer({
           {!kb.open && view && view.plan.length > 0 && (
             <div
               data-testid="drawer-plan"
-              className="mt-3 max-h-40 overflow-y-auto sm:max-h-56"
+              className="mt-3 overflow-x-auto"
             >
               <PlanSteps steps={view.plan} working={working} />
             </div>

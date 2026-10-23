@@ -475,12 +475,19 @@ describe("TicketDrawer", () => {
 });
 
 describe("PlanSteps", () => {
+  it("lists the steps in plan order, the current one in progress", () => {
+    render(<PlanSteps steps={VIEW.plan} />);
+    const items = within(screen.getByRole("list", { name: "Agent's plan" })).getAllByRole("listitem");
+    expect(items.map((li) => li.querySelector("p")?.textContent?.split(":")[0])).toEqual(VIEW.plan.map((s) => s.step));
+    expect(items.filter((li) => li.textContent?.includes("in progress"))).toHaveLength(1);
+  });
+
   it("marches ants from the current step while the agent works, and only then", () => {
     const steps = VIEW.plan;
     const { container, rerender } = render(<PlanSteps steps={steps} working />);
-    expect(container.querySelectorAll(".ant-trail-vertical")).toHaveLength(1);
+    expect(container.querySelectorAll(".ant-trail")).toHaveLength(1);
     rerender(<PlanSteps steps={steps} working={false} />);
-    expect(container.querySelectorAll(".ant-trail-vertical")).toHaveLength(0);
+    expect(container.querySelectorAll(".ant-trail")).toHaveLength(0);
   });
 });
 
