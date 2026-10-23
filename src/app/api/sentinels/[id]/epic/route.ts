@@ -38,6 +38,8 @@ async function postHandler(req: Request, { params }: { params: Promise<{ id: str
       summary: state.summary,
       report: state.report,
       rubric: state.scoredWith,
+      commitSha: state.commitSha,
+      at: state.at,
     }),
   );
   if (state.auditId) await repository().markAuditEpic(state.auditId, card.id);

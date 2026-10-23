@@ -31,6 +31,7 @@ const states = (reported: string[]): SentinelStates =>
         at: reported.includes(x.id) ? new Date().toISOString() : null,
         model: null,
         files: [],
+        commitSha: null,
         rubric: reported.includes(x.id) ? { rubric: RUBRIC, at: null, model: null } : null,
         rubricChanged: false,
         running: null,

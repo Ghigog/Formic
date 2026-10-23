@@ -236,6 +236,8 @@ export interface AuditRecord {
   model: string | null;
   /** Files the sentinel read. */
   files: string[];
+  /** The base branch head the audit read, or null when it could not be resolved. */
+  commitSha: string | null;
   /** The GitHub Actions job a CLI agent audits in, while it runs. */
   runnerJob: string | null;
   runnerAgent: string | null;
@@ -256,6 +258,8 @@ export interface AuditResult {
   error?: string;
   model?: string | null;
   files?: string[];
+  /** Overrides the commit the audit started with. */
+  commitSha?: string | null;
 }
 
 /** Everything a coding agent and its pipeline need about one ticket. */
@@ -946,7 +950,13 @@ export interface Repository {
   /** Every audit a project keeps, oldest first. */
   auditsFor(projectId: string): Promise<AuditRecord[]>;
   /** An audit is started with the rubric it will be scored against. */
-  startAudit(projectId: string, sentinel: string, kind?: AuditKind, rubric?: Rubric | null): Promise<AuditRecord>;
+  startAudit(
+    projectId: string,
+    sentinel: string,
+    kind?: AuditKind,
+    rubric?: Rubric | null,
+    commitSha?: string | null,
+  ): Promise<AuditRecord>;
   /** Adds a step to a running audit's log. */
   logAudit(id: string, step: string): Promise<void>;
   /** Records the GitHub Actions job a CLI agent audits in; only its result is taken. */

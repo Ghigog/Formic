@@ -17,6 +17,7 @@ const snapshot = vi.fn();
 const readFile = vi.fn();
 const gatherEvidence = vi.fn();
 const runAudit = vi.fn();
+const branchHead = vi.fn(async (..._args: unknown[]): Promise<string | null> => null);
 
 vi.mock("@/lib/db", () => ({
   repository: () => ({
@@ -36,7 +37,7 @@ vi.mock("@/lib/agents/presets", () => ({ sentinelAgent: (...a: unknown[]) => sen
 vi.mock("@/lib/runner/runner", () => ({ startCliSentinel: (...a: unknown[]) => startCliSentinel(...a) }));
 vi.mock("@/lib/board/project", () => ({ projectFor: (...a: unknown[]) => projectFor(...a) }));
 vi.mock("@/lib/auth/credentials", () => ({ credentialsForProject: (...a: unknown[]) => credentialsForProject(...a) }));
-vi.mock("@/lib/vcs", () => ({ vcs: () => ({ listFiles, snapshot, readFile }) }));
+vi.mock("@/lib/vcs", () => ({ vcs: () => ({ listFiles, snapshot, readFile, branchHead }) }));
 vi.mock("./gather", () => ({ gatherEvidence: (...a: unknown[]) => gatherEvidence(...a) }));
 vi.mock("./agent", () => ({ runAudit: (...a: unknown[]) => runAudit(...a) }));
 
@@ -104,13 +105,27 @@ describe("summonSentinel", () => {
     expect(await summonSentinel("p", locked.id)).toMatchObject({ ok: false, status: 409 });
     expect(startAudit).not.toHaveBeenCalled();
     expect(await summonSentinel("p", locked.id, "calibrate")).toEqual({ ok: true });
-    expect(startAudit).toHaveBeenCalledWith("p", locked.id, "calibrate", null);
+    expect(startAudit).toHaveBeenCalledWith("p", locked.id, "calibrate", null, null);
   });
 
   it("audits against the calibrated rubric", async () => {
     audits = [calibrated];
     expect(await summonSentinel("p", locked.id)).toEqual({ ok: true });
-    expect(startAudit).toHaveBeenCalledWith("p", locked.id, "audit", rubric);
+    expect(startAudit).toHaveBeenCalledWith("p", locked.id, "audit", rubric, null);
+  });
+
+  it("stamps the audit with the base branch head, or null when it cannot be resolved", async () => {
+    audits = [calibrated];
+    projectFor.mockResolvedValue({ repoFullName: "o/r", baseBranch: "main" });
+    credentialsForProject.mockResolvedValue({ githubToken: "tok" });
+    branchHead.mockResolvedValueOnce("abc1234");
+    await summonSentinel("p", locked.id);
+    expect(branchHead).toHaveBeenCalledWith("main");
+    expect(startAudit).toHaveBeenLastCalledWith("p", locked.id, "audit", rubric, "abc1234");
+
+    branchHead.mockRejectedValueOnce(new Error("rate limited"));
+    expect(await summonSentinel("p", locked.id)).toEqual({ ok: true });
+    expect(startAudit).toHaveBeenLastCalledWith("p", locked.id, "audit", rubric, null);
   });
 
   it("does not start a second run while one is running", async () => {

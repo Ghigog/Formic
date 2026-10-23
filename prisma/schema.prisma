@@ -734,6 +734,8 @@ model Audit {
   model      String?
   /// Files the sentinel read.
   files      String[]  @default([])
+  /// The base branch head the audit read, or null when it could not be resolved.
+  commitSha  String?
   /// The GitHub Actions job a CLI agent audits in, while it runs.
   runnerJob   String?
   /// The saved agent running it, so a usage limit it hits is recorded on it.
