@@ -39,10 +39,28 @@ describe("the queen panel", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("shows nothing once the ticket has a Queen", () => {
+  it("shows Remove Queen in place of Add Queen once the ticket has a Queen", () => {
     serve(1);
-    const { container } = render(<QueenPanel card={makeCard({ ...todo, queen: true })} onChanged={() => {}} />);
-    expect(container.innerHTML).toBe("");
+    render(<QueenPanel card={makeCard({ ...todo, queen: true })} onChanged={() => {}} />);
+    expect(screen.getByRole("button", { name: "Remove Queen" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add Queen" })).toBeNull();
+  });
+
+  it("deletes the Queen on clicking Remove Queen and reports the change", async () => {
+    const calls: { method?: string; body: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        calls.push({ method: init?.method, body: init?.body && JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ ok: true }));
+      }),
+    );
+    const card = makeCard({ ...todo, queen: true });
+    const changed = vi.fn();
+    render(<QueenPanel card={card} onChanged={changed} />);
+    fireEvent.click(screen.getByRole("button", { name: "Remove Queen" }));
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    expect(calls).toEqual([{ method: "DELETE", body: { cardId: card.id } }]);
   });
 
   it("disables the button and says why at 0 unspent", async () => {

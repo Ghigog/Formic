@@ -8,6 +8,7 @@ const { repo, activeProject, publish } = vi.hoisted(() => ({
     listQueens: vi.fn(),
     queensSpent: vi.fn(),
     placeQueen: vi.fn(),
+    clearQueen: vi.fn(),
   },
   activeProject: vi.fn(),
   publish: vi.fn(),
@@ -17,7 +18,7 @@ vi.mock("@/lib/db", () => ({ repository: () => repo }));
 vi.mock("@/lib/board/project", () => ({ activeProject, noProject: () => Response.json({}, { status: 409 }) }));
 vi.mock("@/lib/events/bus", () => ({ publish }));
 
-const { POST } = await import("./route");
+const { POST, DELETE } = await import("./route");
 
 function post(cardId: string) {
   return POST(new NextRequest("http://localhost/api/queens", { method: "POST", body: JSON.stringify({ cardId }) }));
@@ -92,5 +93,28 @@ describe("POST /api/queens", () => {
   it("answers 404 for a card of another project", async () => {
     expect((await post("elsewhere")).status).toBe(404);
     expect(repo.placeQueen).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/queens", () => {
+  const del = (cardId: string) =>
+    DELETE(new NextRequest("http://localhost/api/queens", { method: "DELETE", body: JSON.stringify({ cardId }) }));
+
+  it("clears the Queen and publishes the change", async () => {
+    repo.clearQueen.mockResolvedValue(true);
+    expect((await del("t-1")).status).toBe(200);
+    expect(repo.clearQueen).toHaveBeenCalledWith("t-1");
+    expect(publish).toHaveBeenCalledWith("p-1", { type: "card.queen", cardId: "t-1", kind: "ticket" });
+  });
+
+  it("answers 409 and publishes nothing when the card has no Queen", async () => {
+    repo.clearQueen.mockResolvedValue(false);
+    expect((await del("t-1")).status).toBe(409);
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for an unknown card", async () => {
+    expect((await del("nope")).status).toBe(404);
+    expect(repo.clearQueen).not.toHaveBeenCalled();
   });
 });

@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { activeProject, ticketDetail, scoutViews, sendScouts, swapScout } = vi.hoisted(() => ({
+const { activeProject, ticketDetail, scoutViews, sendScouts, removeScout, swapScout } = vi.hoisted(() => ({
   activeProject: vi.fn(),
   ticketDetail: vi.fn(),
   scoutViews: vi.fn(),
   sendScouts: vi.fn(),
+  removeScout: vi.fn(),
   swapScout: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ repository: () => ({ ticketDetail }) }));
-vi.mock("@/lib/coder/scouts", () => ({ scoutViews, sendScouts, swapScout }));
+vi.mock("@/lib/coder/scouts", () => ({ scoutViews, sendScouts, removeScout, swapScout }));
 vi.mock("@/lib/board/project", () => ({
   activeProject,
   noProject: () => Response.json({ error: "Pick a repository first." }, { status: 409 }),
@@ -28,6 +29,7 @@ beforeEach(() => {
   scoutViews.mockReset().mockResolvedValue([{ id: "s1" }]);
   sendScouts.mockReset().mockResolvedValue({ ok: true });
   swapScout.mockReset().mockResolvedValue({ ok: true });
+  removeScout.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("GET /api/scouts", () => {
@@ -66,6 +68,17 @@ describe("POST /api/scouts", () => {
     const res = await post({ action: "swap", ticketId: "t1", scoutId: "s1" });
     expect(res.status).toBe(200);
     expect(swapScout).toHaveBeenCalledWith("p1", "t1", "s1");
+  });
+
+  it("removes a scout", async () => {
+    const res = await post({ action: "remove", ticketId: "t1", scoutId: "s1" });
+    expect(res.status).toBe(200);
+    expect(removeScout).toHaveBeenCalledWith("p1", "t1", "s1");
+  });
+
+  it("answers 409 with the reason when a scout cannot be removed", async () => {
+    removeScout.mockResolvedValue({ ok: false, reason: "That scout is not on this ticket." });
+    expect((await post({ action: "remove", ticketId: "t1", scoutId: "x" })).status).toBe(409);
   });
 
   it("answers 400 for a bad body", async () => {
