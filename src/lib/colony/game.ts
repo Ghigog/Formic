@@ -1,4 +1,4 @@
-import type { BoardCard } from "@/lib/domain/entities";
+import type { BoardCard, BugSeverity } from "@/lib/domain/entities";
 import { columnFor } from "@/lib/domain/status";
 import { SENTINELS } from "@/lib/sentinels/roster";
 
@@ -174,6 +174,12 @@ export function isBug(card: BoardCard, epics: ReadonlyMap<string, BoardCard>): b
   if (isOwnCard(card)) return card.workType === "bug";
   const epic = epics.get(card.epicId!);
   return epic ? epic.workType === "bug" : false;
+}
+
+/** A bug's severity: its own, or its Epic's when it has none. Null for anything that is not a bug. */
+export function bugSeverityOf(card: BoardCard, epics: ReadonlyMap<string, BoardCard>): BugSeverity | null {
+  if (!isBug(card, epics)) return null;
+  return card.bugSeverity ?? (card.epicId ? (epics.get(card.epicId)?.bugSeverity ?? null) : null);
 }
 
 /** A card the owner marked as a spike. Never costs points. */
