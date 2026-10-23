@@ -20,6 +20,7 @@ function audit(patch: Partial<AuditRecord>): AuditRecord {
     error: null,
     model: "m",
     files: [],
+    commitSha: null,
     runnerJob: null,
     runnerAgent: null,
     epicId: null,
@@ -34,6 +35,14 @@ describe("sentinelStates", () => {
     const s = sentinelStates([], T0);
     expect(Object.keys(s)).toHaveLength(12);
     expect(s.secops).toMatchObject({ stars: null, running: null, error: null });
+  });
+
+  it("carries the newest audit's commit, and null for one without", () => {
+    const first = audit({ commitSha: "abc1234", startedAt: new Date(T0) });
+    const second = audit({ commitSha: "def5678", startedAt: new Date(T0 + 5000), finishedAt: new Date(T0 + 6000) });
+    expect(sentinelStates([first, second], T0).secops!.commitSha).toBe("def5678");
+    expect(sentinelStates([first], T0).secops).toMatchObject({ commitSha: "abc1234", at: new Date(T0 + 1000).toISOString() });
+    expect(sentinelStates([audit({})], T0).secops!.commitSha).toBeNull();
   });
 
   it("exposes the epic made from the latest done audit", () => {

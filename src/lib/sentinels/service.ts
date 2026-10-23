@@ -39,6 +39,16 @@ export async function sentinelsFor(projectId: string): Promise<SentinelStates> {
   return sentinelStates(await repository().auditsFor(projectId));
 }
 
+async function baseHead(projectId: string): Promise<string | null> {
+  try {
+    const project = await projectFor(projectId);
+    const { githubToken } = await credentialsForProject(project);
+    return await vcs(project.repoFullName, githubToken).branchHead(project.baseBranch);
+  } catch {
+    return null;
+  }
+}
+
 export async function summonSentinel(
   projectId: string,
   sentinelId: string,
@@ -60,7 +70,9 @@ export async function summonSentinel(
   const goal: Goal = kind === "calibrate" ? { kind } : { kind, rubric: rubric! };
 
   const repo = repository();
-  const audit = await repo.startAudit(projectId, s.id, kind, goal.kind === "audit" ? goal.rubric : null);
+  // The code this run reads, resolved once. An audit that cannot is stamped null and still runs.
+  const commitSha = await baseHead(projectId);
+  const audit = await repo.startAudit(projectId, s.id, kind, goal.kind === "audit" ? goal.rubric : null, commitSha);
   const log = (step: string) => repo.logAudit(audit.id, step);
   const fail = (error: string, model: string | null = null) =>
     repo.finishAudit(audit.id, { status: "failed", error, model });

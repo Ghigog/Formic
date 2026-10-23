@@ -28,6 +28,8 @@ export interface SentinelState {
   at: string | null;
   model: string | null;
   files: string[];
+  /** The commit the report read, or null for an audit from before stamping or one that could not resolve it. */
+  commitSha: string | null;
   /** The rubric the next audit is scored against, from the last calibration. */
   rubric: { rubric: Rubric; at: string | null; model: string | null } | null;
   /** Whether the report was scored against a rubric since replaced by calibrating again. */
@@ -64,6 +66,7 @@ export function sentinelStates(audits: AuditRecord[], now = Date.now()): Sentine
       at: done?.finishedAt ? new Date(done.finishedAt).toISOString() : null,
       model: done?.model ?? null,
       files: done?.files ?? [],
+      commitSha: done?.commitSha ?? null,
       rubric: calibrated
         ? {
             rubric: calibrated.rubric!,

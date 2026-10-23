@@ -872,6 +872,16 @@ function contract(name: string, make: () => Repository) {
         expect(audits[0]!.report).toEqual(report);
       });
 
+      it("stamps an audit with the commit it read, null when unresolved", async () => {
+        const p = await project();
+        const a = await repo.startAudit(p.id, "qa", "audit", null, "abc1234");
+        await repo.finishAudit(a.id, { status: "done", stars: 3, quote: "q", summary: "s", report, files: [] });
+        expect((await repo.auditsFor(p.id))[0]!.commitSha).toBe("abc1234");
+        const b = await repo.startAudit(p.id, "qa");
+        await repo.finishAudit(b.id, { status: "done", stars: 3, quote: "q", summary: "s", report, files: [] });
+        expect((await repo.auditsFor(p.id))[0]!.commitSha).toBeNull();
+      });
+
       it("marks the Epic made from an audit, and a re-run starts unmarked", async () => {
         const p = await project();
         const a = await repo.startAudit(p.id, "qa");
