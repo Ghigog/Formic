@@ -547,8 +547,20 @@ export class MemoryRepository implements Repository {
       .map(({ endpoint, p256dh, auth }) => ({ endpoint, p256dh, auth }));
   }
 
-  async pushPreferences(): Promise<PushPreferences> {
-    return { ticketMoved: true, epicCompleted: true, needsAttention: true };
+  async pushPreferences(userId: string): Promise<PushPreferences> {
+    const user = store().users.get(userId);
+    return {
+      ticketMoved: user?.ticketMoved ?? true,
+      epicCompleted: user?.epicCompleted ?? true,
+      needsAttention: user?.needsAttention ?? true,
+    };
+  }
+
+  async setPushPreferences(userId: string, prefs: Partial<PushPreferences>): Promise<PushPreferences> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    Object.assign(user, prefs);
+    return this.pushPreferences(userId);
   }
 
   async isMember(projectId: string, userId: string): Promise<boolean> {

@@ -269,3 +269,20 @@ describe("/api/settings thinking effort", () => {
     expect((await PUT(put({ effortByPoints: "yes" }))).status).toBe(400);
   });
 });
+
+describe("/api/settings notifications", () => {
+  it("are all on until switched off, and stay off", async () => {
+    expect((await (await GET()).json()).notifications).toEqual({
+      ticketMoved: true,
+      epicCompleted: true,
+      needsAttention: true,
+    });
+    const res = await PUT(put({ notifications: { epicCompleted: false } }));
+    expect((await res.json()).notifications).toEqual({ ticketMoved: true, epicCompleted: false, needsAttention: true });
+    expect((await (await GET()).json()).notifications.epicCompleted).toBe(false);
+  });
+
+  it("rejects anything but on or off", async () => {
+    expect((await PUT(put({ notifications: { epicCompleted: "yes" } }))).status).toBe(400);
+  });
+});
