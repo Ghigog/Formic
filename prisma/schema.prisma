@@ -149,6 +149,7 @@ model User {
   projects     Project[]
   presets      AgentPreset[]
   memberships  ProjectMember[]
+  opens        ProjectOpen[]
   memberAgents MemberAgent[]
 
   @@map("user")
@@ -199,6 +200,7 @@ model Project {
 
   members           ProjectMember[]
   memberAgents      MemberAgent[]
+  opens             ProjectOpen[]
   epics             Epic[]
   queens            Queen[]
   events            Event[]
@@ -612,6 +614,20 @@ model ProjectMember {
   @@id([projectId, userId])
   @@index([userId])
   @@map("project_member")
+}
+
+/// When one person last opened a board. Per person, since a shared board is
+/// opened by several; the repo picker orders their boards by it.
+model ProjectOpen {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  openedAt  DateTime @default(now())
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_open")
 }
 
 /// A member's own agent for a column (or "assistant") on a shared board. The

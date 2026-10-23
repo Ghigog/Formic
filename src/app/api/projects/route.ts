@@ -3,6 +3,7 @@ import { z } from "zod";
 import { repository } from "@/lib/db";
 import { PROJECT_COOKIE, activeProject } from "@/lib/board/project";
 import { currentUser, ownerScope } from "@/lib/auth/user";
+import { byLastOpened } from "@/lib/board/last-opened";
 import { boardFor, boardsFor, canSeeBoard, sharedBoard } from "@/lib/board/sharing";
 import { credentialsFor } from "@/lib/auth/credentials";
 import { authMode, cookieHeader } from "@/lib/auth/session";
@@ -20,13 +21,14 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
-  const [active, projects] = await Promise.all([
+  const [active, projects, openedAt] = await Promise.all([
     activeProject(),
     repository().listProjects(ownerScope(user)).then((own) => boardsFor(user, own)),
+    repository().openedAtByProject(user.id),
   ]);
   const repo = repository();
   const withActivity = await Promise.all(
-    projects.map(async (p) => {
+    byLastOpened(projects, openedAt).map(async (p) => {
       const answered = (await repo.assistantMessages(p.id)).filter(
         (m) => m.role === "assistant" && m.status !== "pending",
       );
@@ -94,6 +96,7 @@ export async function POST(req: NextRequest) {
     const shared = authMode() === "github" ? await sharedBoard(repoFullName) : null;
     if (shared && shared.ownerId !== user.id) {
       await repo.addMember(shared.id, user.id);
+      await repo.markOpened(user.id, shared.id);
       const res = Response.json({ project: shared });
       res.headers.append("Set-Cookie", cookieHeader(PROJECT_COOKIE, encodeURIComponent(shared.id), 31536000));
       return res;
@@ -124,6 +127,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  await repo.markOpened(user.id, project.id);
   const res = Response.json({ project });
   res.headers.append(
     "Set-Cookie",

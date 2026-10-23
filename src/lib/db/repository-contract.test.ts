@@ -23,6 +23,22 @@ function contract(name: string, make: () => Repository) {
       repo = make();
     });
 
+    it("records when a person last opened a project, moving it forward, and ignores an unknown one", async () => {
+      const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+      const project = await repo.ensureProject({ ownerId: user.id, repoFullName: `acme/${randomUUID()}`, baseBranch: "main" });
+      await repo.markOpened(user.id, project.id);
+      const first = (await repo.openedAtByProject(user.id)).get(project.id)!;
+      await new Promise((r) => setTimeout(r, 5));
+      await repo.markOpened(user.id, project.id);
+      const second = (await repo.openedAtByProject(user.id)).get(project.id)!;
+      expect(second.getTime()).toBeGreaterThan(first.getTime());
+
+      await repo.markOpened(user.id, "no-such-project");
+      expect([...(await repo.openedAtByProject(user.id)).keys()]).toEqual([project.id]);
+      const other = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+      expect((await repo.openedAtByProject(other.id)).size).toBe(0);
+    });
+
     it("adds host usage per day and totals it from a given day on", async () => {
       // A random year far in the past, so this case meets neither a real
       // deployment's days nor an earlier run's on a database that is kept.

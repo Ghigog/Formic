@@ -39,7 +39,39 @@ describe("GET /api/projects", () => {
   });
 });
 
+describe("GET /api/projects order", () => {
+  it("lists the boards most recently opened first, then the unopened in creation order", async () => {
+    const repo = repository();
+    const user = (await currentUser())!;
+    const ids: string[] = [];
+    for (const name of ["a", "b", "c", "d"]) {
+      ids.push((await repo.ensureProject({ ownerId: user.id, repoFullName: `acme/${name}`, baseBranch: "main" })).id);
+    }
+    await repo.markOpened(user.id, ids[2]!);
+    await new Promise((r) => setTimeout(r, 5));
+    await repo.markOpened(user.id, ids[1]!);
+
+    const body = (await (await GET()).json()) as { projects: Array<{ id: string; lastOpenedAt: string | null }> };
+    const mine = body.projects.filter((p) => ids.includes(p.id));
+    expect(mine.map((p) => p.id)).toEqual([ids[1], ids[2], ids[0], ids[3]]);
+    expect(mine[0]!.lastOpenedAt).toEqual(expect.any(String));
+    expect(mine[3]!.lastOpenedAt).toBeNull();
+    // Boards never opened, the default one included, come after every opened board.
+    expect(body.projects.slice(0, 2).map((p) => p.id)).toEqual([ids[1], ids[2]]);
+  });
+});
+
 describe("POST /api/projects", () => {
+  it("records the board as opened, new or switched to", async () => {
+    const user = (await currentUser())!;
+    const { project } = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
+    const first = (await repository().openedAtByProject(user.id)).get(project.id);
+    expect(first).toBeInstanceOf(Date);
+    await new Promise((r) => setTimeout(r, 5));
+    await post({ projectId: project.id });
+    expect((await repository().openedAtByProject(user.id)).get(project.id)!.getTime()).toBeGreaterThan(first!.getTime());
+  });
+
   it("creates the project for a repository and responds with it", async () => {
     const res = await post({ repoFullName: "acme/widgets" });
     expect(res.status).toBe(200);

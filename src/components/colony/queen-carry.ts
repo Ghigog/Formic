@@ -34,6 +34,15 @@ export function nextSway(current: number, vx: number): number {
   return current + (target - current) * 0.2;
 }
 
+/** Steady leg wiggle of a carried Queen: amplitude (leg-swing units) and frequency (Hz). */
+export const WIGGLE_AMPLITUDE = 0.5;
+export const WIGGLE_HZ = 4;
+
+/** Leg swing of the constant wiggle at `nowMs`, in -WIGGLE_AMPLITUDE..WIGGLE_AMPLITUDE. */
+export function legWiggle(nowMs: number): number {
+  return Math.sin((nowMs / 1000) * WIGGLE_HZ * 2 * Math.PI) * WIGGLE_AMPLITUDE;
+}
+
 /** How far below a finger, in px, a dragged Queen is drawn so the finger does not cover her. */
 export const QUEEN_TOUCH_OFFSET_Y = 56;
 
