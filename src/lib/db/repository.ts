@@ -415,8 +415,11 @@ export interface ProjectSummary {
   /** Null for the demo board, which belongs to no one. */
   ownerId: string | null;
   name: string;
+  /** Empty for a board with no repository (stored as null). */
   repoFullName: string;
   baseBranch: string;
+  /** Agents work on this board. Off: a plain board a person moves cards on. */
+  agents: boolean;
   /** Formic merges approved, green pull requests on its own. Off until the owner opts in. */
   autoMerge: boolean;
   /** Formic raises a ticket's story points on its own when it outgrows its estimate. Off until the owner opts in. */

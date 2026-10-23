@@ -167,7 +167,8 @@ model Project {
   ownerId                    String?
   owner                      User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name                       String
-  repoFullName               String
+  /// Null for a board with no repository (a game-like board without agents).
+  repoFullName               String?
   baseBranch                 String   @default("main")
   createdAt                  DateTime @default(now())
   /// The saved agent the board's assistant runs on. Not a relation: a
@@ -182,6 +183,9 @@ model Project {
   /// Whether Formic merges an approved pull request itself. Off (the default),
   /// it waits in Merging for a person to merge it.
   autoMerge                  Boolean  @default(false)
+  /// Whether agents work on this board. Off (the default) it is a plain board a
+  /// person moves cards on; existing boards were migrated to on.
+  agents                     Boolean  @default(false)
   /// Whether Formic raises a ticket's story points itself when it outgrows
   /// its estimate. Off (the default) until the owner opts in.
   autoEscalate               Boolean  @default(false)
