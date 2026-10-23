@@ -1,12 +1,16 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import { cn } from "./cn";
 import type { PlanStep } from "@/lib/domain/entities";
 import { currentStep } from "@/lib/agents/plan";
 
 /**
- * The plan an agent is working a ticket through, top to bottom, in the
+ * The plan an agent is working a ticket through, left to right, in the
  * lifecycle stepper's language: jade when done, ochre where it is now, and
- * while the agent works, a trail of ants marching down from the current
- * step to the next.
+ * while the agent works, a trail of ants marching on from the current step to
+ * the next. A plan wider than its container scrolls there; the current step
+ * is brought into view on mount.
  */
 export function PlanSteps({
   steps,
@@ -19,15 +23,19 @@ export function PlanSteps({
   className?: string;
 }) {
   const now = currentStep(steps);
+  const activeRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView?.({ block: "nearest", inline: "center" });
+  }, []);
   return (
-    <ol aria-label="Agent's plan" className={cn("flex flex-col", className)}>
+    <ol aria-label="Agent's plan" className={cn("flex w-max", className)}>
       {steps.map((s, i) => {
         const state = s.status === "done" ? "done" : i === now ? "active" : "pending";
         const isLast = i === steps.length - 1;
         const marching = working && i === now && !isLast;
         return (
-          <li key={i} className="flex gap-2.5">
-            <div className="flex flex-col items-center">
+          <li key={i} ref={i === now ? activeRef : undefined} className="flex w-32 shrink-0 flex-col gap-1.5">
+            <div className="flex items-center">
               <span
                 aria-hidden
                 className={cn(
@@ -43,15 +51,15 @@ export function PlanSteps({
                 <span
                   aria-hidden
                   className={cn(
-                    "my-0.5 min-h-3 flex-1",
-                    marching ? "ant-trail-vertical" : cn("w-px", state === "done" ? "bg-jade" : "bg-line"),
+                    "mx-0.5 min-w-3 flex-1",
+                    marching ? "ant-trail" : cn("h-px", state === "done" ? "bg-jade" : "bg-line"),
                   )}
                 />
               )}
             </div>
             <p
               className={cn(
-                "pb-3 text-[13px] leading-5",
+                "pr-3 text-[13px] leading-5",
                 state === "pending" ? "text-fg-subtle" : "text-fg",
                 state === "active" && "font-medium",
               )}
