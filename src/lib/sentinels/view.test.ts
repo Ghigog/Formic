@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuditRecord } from "@/lib/db/repository";
+import { SENTINELS } from "./roster";
 import { STALE_AFTER_MS, sentinelStates } from "./view";
 
 const T0 = Date.parse("2026-09-27T10:00:00Z");
@@ -94,5 +95,29 @@ describe("sentinelStates", () => {
     s = sentinelStates([calibration, scored, running], T0 + 9000).secops!;
     expect(s.running).toMatchObject({ kind: "calibrate" });
     expect(s.rubric?.rubric).toEqual(rubric("old"));
+  });
+
+  describe("auditStale", () => {
+    const threshold = SENTINELS.find((s) => s.id === "secops")!.staleAfterPoints;
+    const after = T0 + 5000;
+    const shipped = (points: number, doneAt = after) => [{ doneAt, points }];
+
+    it("is stale when Done points since the audit exceed the threshold", () => {
+      const s = sentinelStates([audit({})], T0, shipped(threshold + 1)).secops!;
+      expect(s).toMatchObject({ doneSince: threshold + 1, auditStale: true });
+    });
+
+    it("is not stale at the threshold", () => {
+      expect(sentinelStates([audit({})], T0, shipped(threshold)).secops).toMatchObject({ auditStale: false });
+    });
+
+    it("does not count tickets that reached Done before the audit finished", () => {
+      const s = sentinelStates([audit({})], T0, shipped(threshold + 10, T0 + 1000)).secops!;
+      expect(s).toMatchObject({ doneSince: 0, auditStale: false });
+    });
+
+    it("is never stale without an audit", () => {
+      expect(sentinelStates([], T0, shipped(1000)).secops).toMatchObject({ doneSince: 0, auditStale: false });
+    });
   });
 });

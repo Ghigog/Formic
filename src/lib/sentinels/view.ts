@@ -34,6 +34,10 @@ export interface SentinelState {
   rubric: { rubric: Rubric; at: string | null; model: string | null } | null;
   /** Whether the report was scored against a rubric since replaced by calibrating again. */
   rubricChanged: boolean;
+  /** Story points of tickets that reached Done since the report was written. */
+  doneSince: number;
+  /** Whether more than the sentinel's threshold shipped since the report: its stars describe older code. */
+  auditStale: boolean;
   running: { kind: AuditKind; log: string[]; startedAt: string } | null;
   /** The newest run failed: why. The last report and rubric still stand. */
   error: string | null;
@@ -41,7 +45,13 @@ export interface SentinelState {
 
 export type SentinelStates = Record<string, SentinelState>;
 
-export function sentinelStates(audits: AuditRecord[], now = Date.now()): SentinelStates {
+/** A ticket that reached Done: when, and its story points (0 when unestimated). */
+export interface Shipped {
+  doneAt: number;
+  points: number;
+}
+
+export function sentinelStates(audits: AuditRecord[], now = Date.now(), shipped: Shipped[] = []): SentinelStates {
   const out: SentinelStates = {};
   for (const s of SENTINELS) {
     const mine = audits
@@ -54,6 +64,9 @@ export function sentinelStates(audits: AuditRecord[], now = Date.now()): Sentine
     const stale =
       later?.status === "running" &&
       now - new Date(later.startedAt).getTime() > (later.runnerJob ? STALE_JOB_AFTER_MS : STALE_AFTER_MS);
+    const finishedAt = done?.finishedAt ? new Date(done.finishedAt).getTime() : null;
+    const doneSince =
+      finishedAt === null ? 0 : shipped.filter((t) => t.doneAt > finishedAt).reduce((n, t) => n + t.points, 0);
     out[s.id] = {
       id: s.id,
       auditId: done?.id ?? null,
@@ -75,6 +88,8 @@ export function sentinelStates(audits: AuditRecord[], now = Date.now()): Sentine
           }
         : null,
       rubricChanged: !!done?.rubric && !!calibrated && !sameRubric(done.rubric, calibrated.rubric),
+      doneSince,
+      auditStale: finishedAt !== null && doneSince > s.staleAfterPoints,
       running:
         later?.status === "running" && !stale
           ? { kind: later.kind, log: later.log, startedAt: new Date(later.startedAt).toISOString() }

@@ -3,6 +3,7 @@ import type { BoardCard } from "@/lib/domain/entities";
 
 let cards: BoardCard[] = [];
 let audits: unknown[] = [];
+let doneEntries: Record<string, string> = {};
 let job: (() => Promise<void>) | null = null;
 
 const startAudit = vi.fn(async (..._args: unknown[]) => ({ id: "a1" }));
@@ -23,6 +24,8 @@ vi.mock("@/lib/db", () => ({
   repository: () => ({
     boardCards: async () => cards,
     auditsFor: async () => audits,
+    ticketColumnEntries: async (id: string) =>
+      doneEntries[id] ? [{ column: "done", enteredAt: doneEntries[id], exitedAt: null, synthetic: false }] : [],
     startAudit,
     logAudit,
     finishAudit,
@@ -72,6 +75,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   cards = merged(5); // 250 XP: Lv 6
   audits = [];
+  doneEntries = {};
   job = null;
 });
 
@@ -86,6 +90,26 @@ describe("sentinelsFor", () => {
     const states = await sentinelsFor("p");
     expect(Object.keys(states).sort()).toEqual(SENTINELS.map((s) => s.id).sort());
     expect(states[locked.id]!.rubric?.rubric).toEqual(rubric);
+  });
+});
+
+describe("sentinelsFor staleness", () => {
+  const threshold = locked.staleAfterPoints;
+  const audited = { id: "a", sentinel: locked.id, kind: "audit", status: "done", stars: 3, startedAt: new Date(1000).toISOString(), finishedAt: new Date(2000), log: [] };
+
+  it("counts the points of tickets that reached Done after the audit, unestimated as 0", async () => {
+    audits = [audited];
+    cards = [
+      { id: "a", kind: "ticket", status: "merged", storyPoints: threshold } as BoardCard,
+      { id: "b", kind: "ticket", status: "merged", storyPoints: null } as BoardCard,
+      { id: "old", kind: "ticket", status: "merged", storyPoints: 8 } as BoardCard,
+    ];
+    doneEntries = { a: new Date(3000).toISOString(), b: new Date(3000).toISOString(), old: new Date(1500).toISOString() };
+    expect((await sentinelsFor("p"))[locked.id]).toMatchObject({ doneSince: threshold, auditStale: false });
+
+    cards.push({ id: "c", kind: "ticket", status: "merged", storyPoints: 1 } as BoardCard);
+    doneEntries.c = new Date(4000).toISOString();
+    expect((await sentinelsFor("p"))[locked.id]).toMatchObject({ doneSince: threshold + 1, auditStale: true });
   });
 });
 
