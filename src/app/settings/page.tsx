@@ -4,7 +4,7 @@ import { authMode } from "@/lib/auth/session";
 import { installUrl } from "@/lib/auth/github";
 import { activeProject } from "@/lib/board/project";
 import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
-import { getEffortByPoints, getLimitSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
+import { getEffortByPoints, getLimitSettings, getNotificationSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { repository } from "@/lib/db";
 import { env } from "@/lib/secrets/env";
 import { hintFor } from "@/lib/secrets/vault";
@@ -52,6 +52,8 @@ export default async function SettingsPage() {
       runTimeBudget={await getRunTimeBudgetSettings(user.id)}
       limits={await getLimitSettings(user.id)}
       effortByPoints={await getEffortByPoints(user.id)}
+      notifications={await getNotificationSettings(user.id)}
+      vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null}
       renewal={{ day: user.tokenRenewalDay, timezone: user.tokenWindowTimezone }}
       e2b={{
         hint: user.e2bKeyHint,
