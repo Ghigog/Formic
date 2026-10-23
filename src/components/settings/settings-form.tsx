@@ -10,9 +10,11 @@ import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-sect
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
 import { ColonySection } from "@/components/settings/colony-section";
 import { DesktopAppSection } from "@/components/settings/desktop-app-section";
+import { NotificationsSection } from "@/components/settings/notifications-section";
 import { EffortSection } from "@/components/settings/effort-section";
 import { ScoutAgentSection } from "@/components/settings/scout-agent-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
+import type { PushPreferences } from "@/lib/db/repository";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
 
 interface KeyState {
@@ -49,6 +51,8 @@ export function SettingsForm({
   limits,
   renewal,
   effortByPoints,
+  notifications,
+  vapidPublicKey = null,
   presets = [],
 }: {
   account: Account;
@@ -65,6 +69,8 @@ export function SettingsForm({
   renewal?: Renewal;
   /** Whether thinking effort follows story points; on when omitted. */
   effortByPoints?: boolean;
+  notifications?: PushPreferences;
+  vapidPublicKey?: string | null;
   /** Saved agents the scout picker offers. */
   presets?: { id: string; name: string }[];
 }) {
@@ -221,6 +227,7 @@ export function SettingsForm({
 
         <RenewalDaySection initial={renewal} />
 
+        <NotificationsSection initial={notifications} vapidPublicKey={vapidPublicKey} />
         <DesktopAppSection />
 
         <p className="text-muted px-1 text-[12px] leading-[1.5]">
