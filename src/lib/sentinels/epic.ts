@@ -1,6 +1,6 @@
 import type { AuditPoint, AuditReport, Rubric } from "@/lib/db/repository";
 import type { Sentinel } from "./roster";
-import { unmetChecks } from "./rubric";
+import { cappedByFindings, unmetChecks } from "./rubric";
 
 /** createBacklogItem refuses a request longer than this (see POST /api/epics). */
 export const REQUEST_CAP = 4000;
@@ -38,7 +38,11 @@ export function requestFromReport(
           (c) => `- (${c.stars} stars) ${c.text}${c.evidence ? ` Found: ${c.evidence}` : ""}`,
         )
       : [];
+  const capped = !!audit.rubric && cappedByFindings(audit.rubric, audit.report);
   const blocks = [
+    ...(capped
+      ? [{ title: "What stands between 4 and 5 stars", lines: SECTIONS.flatMap((s) => audit.report[s.key].map(line)) }]
+      : []),
     { title: "Rubric checks not met, lowest star first", lines: unmet },
     ...SECTIONS.map((s) => ({ title: s.title, lines: audit.report[s.key].map(line) })),
   ].filter((b) => b.lines.length > 0);
