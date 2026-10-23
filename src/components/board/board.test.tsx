@@ -579,6 +579,32 @@ describe("Board archived filter", () => {
     expect(within(bar).getByText("To Do")).toHaveTextContent("To Do 0");
   });
 
+  it("lands a card dragged to Done when agents are off", async () => {
+    const card = makeCard({ key: "PROT-10", status: "review" });
+    const { onTransition } = renderBoard([card]);
+    expect(screen.queryByRole("button", { name: /^Agent for / })).not.toBeInTheDocument();
+
+    act(() =>
+      dnd.onDragEnd!(
+        {
+          draggableId: card.id,
+          type: "DEFAULT",
+          reason: "DROP",
+          mode: "FLUID",
+          source: { droppableId: "in_review", index: 0 },
+          destination: { droppableId: "done", index: 0 },
+          combine: null,
+        },
+        { announce: () => {} } as never,
+      ),
+    );
+
+    expect(onTransition).toHaveBeenCalledWith(expect.objectContaining({ from: "in_review", to: "done" }));
+    await waitFor(() =>
+      expect(within(screen.getByRole("region", { name: "Done" })).getByText(card.title)).toBeInTheDocument(),
+    );
+  });
+
   it("shows archived cards in Done once Archived is toggled on, and asks for them", async () => {
     const onArchivedWanted = vi.fn();
     const live = makeCard({ status: "merged", title: "Shipped one" });

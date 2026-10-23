@@ -80,6 +80,7 @@ async function latestNotifications(
 const chooseSchema = z.union([
   z.object({ projectId: z.string().min(1) }),
   z.object({ repoFullName: z.string().min(1) }),
+  z.object({ noRepository: z.literal(true), name: z.string().trim().min(1).max(100).optional() }),
 ]);
 
 /**
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = chooseSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return Response.json({ error: "Expected a projectId or a repoFullName." }, { status: 400 });
+    return Response.json({ error: "Expected a projectId, a repoFullName or noRepository." }, { status: 400 });
   }
 
   const repo = repository();
@@ -107,6 +108,15 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "That project no longer exists." }, { status: 404 });
     }
     project = await boardFor(user, project);
+  } else if ("noRepository" in parsed.data) {
+    // A board of cards and levels: no repository to reach, no setup run, and
+    // no AGENTS.md ticket, since no agent will read it.
+    project = await repo.ensureProject({
+      ownerId: user.id,
+      repoFullName: null,
+      name: parsed.data.name ?? "My board",
+      baseBranch: "main",
+    });
   } else {
     const fullName = normalizeRepo(parsed.data.repoFullName);
     if (!fullName) {

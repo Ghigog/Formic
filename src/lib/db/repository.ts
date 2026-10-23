@@ -633,7 +633,9 @@ export interface Repository {
   /** Someone's project for a repository, created the first time they pick it. */
   ensureProject(input: {
     ownerId: string | null;
-    repoFullName: string;
+    /** Null for a board with no repository: always a new one, named by `name`. */
+    repoFullName: string | null;
+    name?: string;
     baseBranch: string;
   }): Promise<ProjectSummary>;
 
