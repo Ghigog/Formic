@@ -43,7 +43,7 @@ describe("BoardHeader project button", () => {
     expect(screen.getAllByTestId("formic-logo")).toHaveLength(2);
     expect(screen.queryByTestId("notification-icon")).toBeNull();
     const button = screen.getAllByRole("button", {
-      name: /2 other projects have a new assistant answer/,
+      name: /2 other projects have something new/,
     })[0]!;
     expect(button).toHaveTextContent("2");
   });
