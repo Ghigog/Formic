@@ -12,7 +12,10 @@ function serve(repos: unknown[]) {
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.localStorage.clear();
+});
 
 describe("RepoPicker", () => {
   it("says the app is installed nowhere, rather than 'no match'", async () => {
@@ -23,6 +26,25 @@ describe("RepoPicker", () => {
       "href",
       "https://github.com/apps/formic-board/installations/new",
     );
+  });
+
+  it("marks a board with the kind waiting on it", async () => {
+    vi.stubGlobal("fetch", async (url: string) =>
+      Response.json(
+        url.includes("/api/projects")
+          ? {
+              active: { id: "p0" },
+              projects: [
+                { id: "p1", repoFullName: "acme/api", baseBranch: "main", notifications: { needsAttention: { seq: 4 } } },
+                { id: "p2", repoFullName: "acme/web", baseBranch: "main", notifications: {} },
+              ],
+            }
+          : { ok: true, repos: [], installUrl: null },
+      ),
+    );
+    render(<RepoPicker current={null} inline onClose={() => {}} />);
+    expect(await screen.findByRole("img", { name: "Needs attention" })).toBeInTheDocument();
+    expect(screen.getAllByRole("img")).toHaveLength(1);
   });
 
   it("creates a new repository from a bare name, then opens its board", async () => {

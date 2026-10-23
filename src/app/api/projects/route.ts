@@ -13,6 +13,8 @@ import { launch } from "@/lib/agents/pipeline";
 import { addOnboardingTicket } from "@/lib/board/onboarding";
 import { runnerSetup } from "@/lib/runner/setup";
 import { limited, RUN } from "@/lib/rate-limit";
+import { classifyEvent, type NotificationKind } from "@/lib/notifications/classify";
+import type { FormicEvent } from "@/lib/domain/events";
 import { verdict } from "@/lib/usage/governor";
 
 export const dynamic = "force-dynamic";
@@ -27,16 +29,52 @@ export async function GET() {
     repository().openedAtByProject(user.id),
   ]);
   const repo = repository();
+  const prefs = await repo.pushPreferences(user.id);
+  const latest = await latestNotifications(
+    projects.map((p) => p.id),
+    prefs,
+  );
   const withActivity = await Promise.all(
     byLastOpened(projects, openedAt).map(async (p) => {
       const answered = (await repo.assistantMessages(p.id)).filter(
         (m) => m.role === "assistant" && m.status !== "pending",
       );
       const last = answered[answered.length - 1];
-      return { ...p, lastAssistantMessage: last ? { id: last.id, createdAt: last.createdAt } : null };
+      return { ...p, lastAssistantMessage: last ? { id: last.id, createdAt: last.createdAt } : null,
+        notifications: latest.get(p.id) ?? {},
+      };
     }),
   );
   return Response.json({ active, projects: withActivity });
+}
+
+const NOTIFICATION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Each board's latest notification of every kind the person has switched on,
+ * as the event's sequence number: what the logo badge compares to what they
+ * last saw.
+ */
+async function latestNotifications(
+  projectIds: string[],
+  prefs: Record<NotificationKind, boolean>,
+): Promise<Map<string, Partial<Record<NotificationKind, { seq: number }>>>> {
+  const found = new Map<string, Partial<Record<NotificationKind, { seq: number }>>>();
+  if (projectIds.length === 0) return found;
+  const events = await repository().eventsOfTypes(
+    projectIds,
+    ["card.status", "budget.exhausted"],
+    new Date(Date.now() - NOTIFICATION_WINDOW_MS),
+    1000,
+  );
+  for (const e of events) {
+    const n = classifyEvent(e.payload as FormicEvent, { cardKey: "", cardTitle: "", boardName: "" });
+    if (!n || !prefs[n.kind]) continue;
+    const kinds = found.get(e.projectId) ?? {};
+    kinds[n.kind] = { seq: e.seq };
+    found.set(e.projectId, kinds);
+  }
+  return found;
 }
 
 const chooseSchema = z.union([
