@@ -567,14 +567,17 @@ function contract(name: string, make: () => Repository) {
           agentPresetId: mine,
         });
 
-        expect(await repo.agentTokensByPreset()).toEqual({
-          [mine]: { tokensIn: 2_400, tokensOut: 600 },
-          [theirs]: { tokensIn: 5_000, tokensOut: 5_000 },
-        });
+        // The totals are global across the shared database, so look only at
+        // these two presets.
+        const totals = await repo.agentTokensByPreset();
+        expect(totals[mine]).toEqual({ tokensIn: 2_400, tokensOut: 600 });
+        expect(totals[theirs]).toEqual({ tokensIn: 5_000, tokensOut: 5_000 });
         // A cutoff after the work leaves nothing in the window: what a plan
         // that resets monthly would count itself from.
         const cutoff = new Date(Date.now() + 60_000);
-        expect(await repo.agentTokensByPreset(cutoff)).toEqual({});
+        const windowed = await repo.agentTokensByPreset(cutoff);
+        expect(windowed).not.toHaveProperty(mine);
+        expect(windowed).not.toHaveProperty(theirs);
       });
     });
 
