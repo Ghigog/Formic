@@ -115,13 +115,9 @@ export const CANNED: Record<string, CannedAudit> = {
         p("Every PR gets a preview deployment with seeded data", ".github/workflows/preview.yml"),
         p("Migrations run as a gated step before deploy", ".github/workflows/deploy.yml"),
       ],
-      dislikes: [
-        p("Node version is pinned in CI but not in .nvmrc", ".nvmrc"),
-      ],
+      dislikes: [],
       wrong: [],
-      missing: [
-        p("No dependency cache for the Prisma engine", ".github/workflows/ci.yml"),
-      ],
+      missing: [],
     },
   },
   techops: {
@@ -202,13 +198,9 @@ export const CANNED: Record<string, CannedAudit> = {
         p("The octagon motif carries from logo to level badge to buttons", "components/Octagon.tsx"),
         p("Empty states explain the next action", "components/Column.tsx"),
       ],
-      dislikes: [
-        p("Mono labels drop to 9px in a few places", "components/Header.tsx"),
-      ],
+      dislikes: [],
       wrong: [],
-      missing: [
-        p("No dark theme"),
-      ],
+      missing: [],
     },
   },
   legal: {

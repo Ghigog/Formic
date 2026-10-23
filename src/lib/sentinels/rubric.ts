@@ -30,7 +30,7 @@ export const MAX_CHECKS = 4;
 export const CALIBRATE_RULES = `You are calibrating, not auditing: do not rate the project. Learn what it is (its purpose, stack, size and stage) and write the star ladder you will audit it against for your role, from 2 to 5 stars; 1 star is the floor. A rung is earned only when all its checks pass and every rung below it is earned. 2 stars is the basics any project of this kind needs, 3 is safe to ship, 4 is solid, 5 is what you would sign off without changes. Give each rung 2 to ${MAX_CHECKS} checks. Each check is one pass/fail statement about this project that a later audit can verify the same way every time, from the code or by running a command: name the files, commands and thresholds, and avoid words like "good", "clean" or "enough". Fit the checks to this project and leave out what does not apply to it. Write the ladder as the bar to meet, whether or not the project meets it today. Only name files you were actually shown.`;
 
 /** What every audit is asked about its rubric. */
-export const SCORE_RULES = `Your stars are not yours to choose: they come from the rubric below, which you wrote when you calibrated on this project. For every check, say whether it is met and give the evidence: the file and line you read, or the command you ran and what it showed. A check you could not verify is not met; say why. Judge each check exactly as written: do not raise or lower its bar, and do not add checks. Everything else you find goes in the report, where it informs the next calibration but does not change the stars.`;
+export const SCORE_RULES = `Your stars are not yours to choose: they come from the rubric below, which you wrote when you calibrated on this project. For every check, say whether it is met and give the evidence: the file and line you read, or the command you ran and what it showed. A check you could not verify is not met; say why. Judge each check exactly as written: do not raise or lower its bar, and do not add checks. Everything else you find goes in the report, where it informs the next calibration. 5 stars means you have no findings: every finding you report (what does not work, what is wrong, what is missing) holds the project below 5, so an audit that meets every check but lists a finding is scored 4.`;
 
 export const calibrationSchema = z.object({
   context: z.string().describe("Two plain sentences: what this project is, and what matters most in it for your role."),
@@ -148,8 +148,18 @@ export function cannedChecks(rubric: Rubric, stars: number): AuditCheck[] {
   );
 }
 
-/** A finished audit's report with its checks, and the stars they earn. */
+/** Whether a report lists any finding: something that does not work, is wrong or is missing. */
+const hasFindings = (report: Omit<AuditReport, "checks">) =>
+  report.dislikes.length + report.wrong.length + report.missing.length > 0;
+
+/** Whether findings hold an audit at 4 stars though its checks would give it 5. */
+export function cappedByFindings(rubric: Rubric, report: AuditReport): boolean {
+  return starsFrom(rubric, report.checks ?? []) === 5 && hasFindings(report);
+}
+
+/** A finished audit's report with its checks, and the stars they earn: 5 only with no findings. */
 export function scoredReport(rubric: Rubric, report: Omit<AuditReport, "checks">, answered: AuditCheck[]) {
   const checks = scoredChecks(rubric, answered);
-  return { stars: starsFrom(rubric, checks), report: { ...report, checks } satisfies AuditReport };
+  const stars = starsFrom(rubric, checks);
+  return { stars: stars === 5 && hasFindings(report) ? 4 : stars, report: { ...report, checks } satisfies AuditReport };
 }

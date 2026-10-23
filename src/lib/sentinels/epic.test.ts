@@ -85,4 +85,17 @@ describe("requestFromReport", () => {
     expect(r).not.toContain("Bar 3.");
     expect(r.indexOf("Bar 4.")).toBeLessThan(r.indexOf("Off by one"));
   });
+
+  it("lists every finding under what stands between 4 and 5 stars when capped", () => {
+    const rubric = {
+      context: "c",
+      rungs: [2, 3, 4, 5].map((stars) => ({ stars, checks: [{ id: `${stars}a`, text: `Bar ${stars}.`, how: "h" }] })),
+    };
+    const checks = [2, 3, 4, 5].map((n) => ({ id: `${n}a`, met: true, evidence: "ok" }));
+    const base = { likes: [], dislikes: [pt("Slow")], wrong: [pt("Off")], missing: [pt("Gap")], checks };
+    const r = requestFromReport(s, { stars: 4, summary: null, rubric, report: base });
+    expect(r).toContain("What stands between 4 and 5 stars:\n- Slow\n- Off\n- Gap");
+    const clean = requestFromReport(s, { stars: 4, summary: null, rubric, report: { ...base, dislikes: [], wrong: [], missing: [] } });
+    expect(clean).not.toContain("What stands between");
+  });
 });

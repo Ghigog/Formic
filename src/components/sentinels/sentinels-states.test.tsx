@@ -33,6 +33,8 @@ function blank(id: string): SentinelState {
     commitSha: null,
     rubric: null,
     rubricChanged: false,
+    doneSince: 0,
+    auditStale: false,
     running: null,
     error: null,
   };
