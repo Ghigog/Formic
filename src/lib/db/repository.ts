@@ -585,6 +585,10 @@ export interface Repository {
   isMember(projectId: string, userId: string): Promise<boolean>;
   /** The projects shared with someone, oldest first. Not the ones they own. */
   memberProjects(userId: string): Promise<ProjectSummary[]>;
+  /** Records that this person opened the project just now. An unknown project is ignored. */
+  markOpened(userId: string, projectId: string): Promise<void>;
+  /** When this person last opened each project, by project id. Never-opened ones are absent. */
+  openedAtByProject(userId: string): Promise<Map<string, Date>>;
   /** A member's own agents on a shared board, by column or "assistant". */
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
