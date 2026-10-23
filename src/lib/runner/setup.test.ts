@@ -27,6 +27,15 @@ afterEach(() => {
 });
 
 describe("runner setup", () => {
+  it("reports ready without contacting GitHub when agents are off", async () => {
+    const project = { ...(await repository().defaultProject()), agents: false };
+    const read = vi.spyOn(client, "readFile");
+
+    expect(await runnerSetup(project)).toEqual({ state: "ready" });
+    expect(read).not.toHaveBeenCalled();
+    expect(MockVcsClient.runner().files.size).toBe(0);
+  });
+
   it("opens the setup pull request on a new repository, once", async () => {
     const project = await repository().defaultProject();
 
