@@ -4,6 +4,7 @@ import { repository } from "@/lib/db";
 import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
 import { redactDeep } from "@/lib/secrets/redact";
 import { syncIssues } from "@/lib/issues/sync";
+import { notifyOwner } from "@/lib/notifications/notify";
 import { pingBoards } from "./realtime";
 
 /**
@@ -82,6 +83,10 @@ export async function publish(
   if (event.type === "card.status" || event.type === "card.created" || event.type === "card.deleted") {
     await syncIssues(projectId, event);
   }
+
+  // The board's owner hears about moves, finished Epics and anything that
+  // waits on them. Awaited like the above; never throws.
+  await notifyOwner(projectId, event);
 
   // A ticket moved out of In Progress before its scouts were back calls
   // them back (src/lib/coder/scouts.ts).

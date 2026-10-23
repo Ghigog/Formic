@@ -24,6 +24,7 @@ import type {
   LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
+  PushPreferences,
   PushSubscriptionRecord,
   UserSecrets,
   Repository,
@@ -434,6 +435,14 @@ export class PrismaRepository implements Repository {
       where: { userId },
       select: { endpoint: true, p256dh: true, auth: true },
     });
+  }
+
+  async pushPreferences(userId: string): Promise<PushPreferences> {
+    const user = await prisma().user.findUnique({
+      where: { id: userId },
+      select: { ticketMoved: true, epicCompleted: true, needsAttention: true },
+    });
+    return user ?? { ticketMoved: false, epicCompleted: false, needsAttention: false };
   }
 
   async deleteUser(userId: string): Promise<void> {
