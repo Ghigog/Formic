@@ -447,6 +447,13 @@ export interface PushSubscriptionRecord {
   auth: string;
 }
 
+/** Which push messages a person wants. */
+export interface PushPreferences {
+  ticketMoved: boolean;
+  epicCompleted: boolean;
+  needsAttention: boolean;
+}
+
 /** A person, with their credentials still sealed. */
 export interface UserRecord {
   id: string;
@@ -601,6 +608,7 @@ export interface Repository {
   /** Forgets a device, whoever it is saved for when `userId` is omitted. */
   deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
   pushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]>;
+  pushPreferences(userId: string): Promise<PushPreferences>;
   /** A member's own agents on a shared board, by column or "assistant". */
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
