@@ -1543,7 +1543,7 @@ export class MemoryRepository implements Repository {
       .map((a) => ({ ...a, log: [...a.log], files: [...a.files] }));
   }
 
-  async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null): Promise<AuditRecord> {
+  async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null, commitSha: string | null = null): Promise<AuditRecord> {
     const audit: AuditRecord = {
       id: `audit_${Math.random().toString(36).slice(2, 10)}`,
       projectId,
@@ -1559,6 +1559,7 @@ export class MemoryRepository implements Repository {
       error: null,
       model: null,
       files: [],
+      commitSha,
       runnerJob: null,
       runnerAgent: null,
       epicId: null,
@@ -1597,6 +1598,7 @@ export class MemoryRepository implements Repository {
       error: result.error ?? null,
       model: result.model ?? null,
       files: result.files ?? [],
+      commitSha: result.commitSha === undefined ? audit.commitSha : result.commitSha,
       runnerJob: null,
       runnerAgent: null,
       finishedAt: new Date(),

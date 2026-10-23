@@ -1917,8 +1917,8 @@ export class PrismaRepository implements Repository {
     return rows.map(toAuditRecord);
   }
 
-  async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null): Promise<AuditRecord> {
-    const row = await prisma().audit.create({ data: { projectId, sentinel, kind, rubric: (rubric ?? undefined) as never } });
+  async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null, commitSha: string | null = null): Promise<AuditRecord> {
+    const row = await prisma().audit.create({ data: { projectId, sentinel, kind, commitSha, rubric: (rubric ?? undefined) as never } });
     return toAuditRecord(row);
   }
 
@@ -1948,6 +1948,7 @@ export class PrismaRepository implements Repository {
         error: result.error ?? null,
         model: result.model ?? null,
         files: result.files ?? [],
+        ...(result.commitSha !== undefined ? { commitSha: result.commitSha } : {}),
         runnerJob: null,
         runnerAgent: null,
         finishedAt: new Date(),
@@ -2251,6 +2252,7 @@ function toAuditRecord(row: {
   error: string | null;
   model: string | null;
   files: string[];
+  commitSha: string | null;
   runnerJob: string | null;
   runnerAgent: string | null;
   epicId: string | null;
