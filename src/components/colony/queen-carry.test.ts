@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_SWAY_DEG, QUEEN_TOUCH_OFFSET_Y, edgeScrollSpeed, nextSway, queenPoint } from "./queen-carry";
+import { MAX_SWAY_DEG, QUEEN_TOUCH_OFFSET_Y, WIGGLE_AMPLITUDE, edgeScrollSpeed, legWiggle, nextSway, queenPoint } from "./queen-carry";
 
 describe("edgeScrollSpeed", () => {
   it("is 0 away from the edges and outside the area", () => {
@@ -41,5 +41,20 @@ describe("queenPoint", () => {
   it("leaves mouse and pen unchanged", () => {
     expect(queenPoint(100, 200, "mouse")).toEqual({ x: 100, y: 200 });
     expect(queenPoint(100, 200, "pen")).toEqual({ x: 100, y: 200 });
+  });
+});
+
+describe("legWiggle", () => {
+  it("is non-zero at several times and stays within the amplitude", () => {
+    for (const t of [30, 77, 130, 410, 1234, 5000.5]) {
+      const w = legWiggle(t);
+      expect(w).not.toBe(0);
+      expect(Math.abs(w)).toBeLessThanOrEqual(WIGGLE_AMPLITUDE);
+    }
+  });
+  it("swings both ways", () => {
+    const samples = Array.from({ length: 40 }, (_, i) => legWiggle(i * 10));
+    expect(Math.min(...samples)).toBeLessThan(0);
+    expect(Math.max(...samples)).toBeGreaterThan(0);
   });
 });

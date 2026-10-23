@@ -11,7 +11,7 @@ import {
 import { useColony, type ColonyApi } from "./colony";
 import { drawBug } from "./fx";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
-import { QUEEN_CARRY_EVENT, edgeScrollSpeed, queenPoint, nextSway, MAX_SWAY_DEG, type QueenCarryDetail } from "./queen-carry";
+import { QUEEN_CARRY_EVENT, edgeScrollSpeed, queenPoint, nextSway, legWiggle, MAX_SWAY_DEG, type QueenCarryDetail } from "./queen-carry";
 import { QueenIcon } from "./queen-icon";
 import { ColonyPanel } from "./colony-panel";
 import { InfoTip } from "./info-tip";
@@ -81,7 +81,7 @@ function QueenBug({ c, className }: { c: ColonyApi; className: string }) {
 
 /**
  * The Queen under the finger. Each frame her legs sway against the pointer's
- * horizontal travel, and now and then (every 2-5 s) they jiggle briefly.
+ * horizontal travel, on top of a constant wiggle.
  * Reduced motion draws her at rest.
  */
 function DragQueen({ c, x }: { c: ColonyApi; x: { current: number } }) {
@@ -93,21 +93,10 @@ function DragQueen({ c, x }: { c: ColonyApi; x: { current: number } }) {
     let raf = 0;
     let sway = 0;
     let lastX = x.current;
-    let jiggleStart = -1;
-    let nextJiggle = performance.now() + 2000 + Math.random() * 3000;
     const paint = (now: number) => {
       sway = nextSway(sway, x.current - lastX);
       lastX = x.current;
-      let legs = (sway / MAX_SWAY_DEG) * 1.6;
-      if (now >= nextJiggle) {
-        jiggleStart = now;
-        nextJiggle = now + 2000 + Math.random() * 3000;
-      }
-      if (jiggleStart >= 0) {
-        const k = (now - jiggleStart) / 400;
-        if (k < 1) legs += Math.sin(k * Math.PI * 6) * 0.9 * (1 - k);
-        else jiggleStart = -1;
-      }
+      const legs = (sway / MAX_SWAY_DEG) * 1.6 + legWiggle(now);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
       drawBug(ctx, cv.width / 2, cv.height / 2 + 2, 10, 0.26, c.shape, c.bugHex, undefined, { legSwing: legs });
