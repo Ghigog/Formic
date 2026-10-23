@@ -111,6 +111,13 @@ function epicAgent(
   return { role, model: null, since: epic.runnerJobAt };
 }
 
+/** A board with no repository is stored with a null one; callers see it empty. */
+function toProjectSummary<T extends { repoFullName: string | null }>(
+  row: T,
+): Omit<T, "repoFullName"> & { repoFullName: string } {
+  return { ...row, repoFullName: row.repoFullName ?? "" };
+}
+
 function epicKey(number: number): string {
   return `EPIC-${number}`;
 }
@@ -138,39 +145,46 @@ export class PrismaRepository implements Repository {
       const repo =
         normalizeRepo(existing.repoFullName) ?? normalizeRepo(process.env.GITHUB_REPO);
       if (repo && repo !== existing.repoFullName) {
-        return db.project.update({
-          where: { id: existing.id },
-          data: { repoFullName: repo },
-        });
+        return toProjectSummary(
+          await db.project.update({
+            where: { id: existing.id },
+            data: { repoFullName: repo },
+          }),
+        );
       }
-      return existing;
+      return toProjectSummary(existing);
     }
 
-    return db.project.create({
-      data: {
-        name: "Formic",
-        repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
-        baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
-      },
-    });
+    return toProjectSummary(
+      await db.project.create({
+        data: {
+          name: "Formic",
+          repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
+          baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
+        },
+      }),
+    );
   }
 
   async listProjects(scope: OwnerScope): Promise<ProjectSummary[]> {
-    return prisma().project.findMany({
+    const rows = await prisma().project.findMany({
       where: ownerWhere(scope),
       orderBy: { createdAt: "asc" },
     });
+    return rows.map(toProjectSummary);
   }
 
   async projectsForRepo(repoFullName: string): Promise<ProjectSummary[]> {
-    return prisma().project.findMany({
+    const rows = await prisma().project.findMany({
       where: { repoFullName: { equals: repoFullName, mode: "insensitive" } },
       orderBy: { createdAt: "asc" },
     });
+    return rows.map(toProjectSummary);
   }
 
   async projectById(projectId: string): Promise<ProjectSummary | null> {
-    return prisma().project.findUnique({ where: { id: projectId } });
+    const row = await prisma().project.findUnique({ where: { id: projectId } });
+    return row ? toProjectSummary(row) : null;
   }
 
   async addMember(projectId: string, userId: string): Promise<void> {
@@ -200,10 +214,11 @@ export class PrismaRepository implements Repository {
   }
 
   async memberProjects(userId: string): Promise<ProjectSummary[]> {
-    return prisma().project.findMany({
+    const rows = await prisma().project.findMany({
       where: { members: { some: { userId } } },
       orderBy: { createdAt: "asc" },
     });
+    return rows.map(toProjectSummary);
   }
 
   async memberAgents(projectId: string, userId: string): Promise<Record<string, string>> {
@@ -314,15 +329,17 @@ export class PrismaRepository implements Repository {
       },
       orderBy: { createdAt: "asc" },
     });
-    if (found) return found;
-    return db.project.create({
-      data: {
-        ownerId: input.ownerId,
-        name: input.repoFullName.split("/")[1] ?? input.repoFullName,
-        repoFullName: input.repoFullName,
-        baseBranch: input.baseBranch,
-      },
-    });
+    if (found) return toProjectSummary(found);
+    return toProjectSummary(
+      await db.project.create({
+        data: {
+          ownerId: input.ownerId,
+          name: input.repoFullName.split("/")[1] ?? input.repoFullName,
+          repoFullName: input.repoFullName,
+          baseBranch: input.baseBranch,
+        },
+      }),
+    );
   }
 
   async userById(userId: string): Promise<UserRecord | null> {
@@ -968,12 +985,34 @@ export class PrismaRepository implements Repository {
       await db.$transaction(async (tx) => {
         const before = await tx.ticket.findUnique({
           where: { id: input.cardId },
-          select: { status: true, stalledIn: true, misplacedIn: true },
+          select: {
+            status: true,
+            stalledIn: true,
+            misplacedIn: true,
+            mergedAt: true,
+            storyPoints: true,
+            epic: { select: { projectId: true, project: { select: { agents: true } } } },
+          },
         });
+        // With no agents on the board, a person moving a card to Done scores
+        // it like a merge, once.
+        let merge = {};
+        if (before && input.status === "merged" && !before.mergedAt && !before.epic.project.agents) {
+          const now = new Date();
+          const recent = await tx.ticket.count({
+            where: {
+              epic: { projectId: before.epic.projectId },
+              mergedAt: { gt: new Date(now.getTime() - HEAT_WINDOW_MS) },
+            },
+          });
+          const { pts, mult } = mergeScore(before.storyPoints, recent);
+          merge = { mergedAt: now, mergePoints: pts, mergeMultiplier: mult };
+        }
         await tx.ticket.update({
           where: { id: input.cardId },
           data: {
             ...data,
+            ...merge,
             ...(input.detached !== undefined ? { detached: input.detached } : {}),
           },
         });

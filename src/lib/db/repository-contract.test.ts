@@ -163,6 +163,25 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("a person moving a ticket to Done on a board without agents", () => {
+      const done = (cardId: string) =>
+        repo.move({ cardId, kind: "ticket", status: "merged", stalledIn: null, position: 1 });
+
+      it("scores it like a merge, once", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "T1", { storyPoints: 3 })]);
+        if (!t) throw new Error("no ticket created");
+        expect((await repo.cardById(t.id))?.mergedAt).toBeFalsy();
+        await done(t.id);
+        const first = await repo.cardById(t.id);
+        expect(first).toMatchObject({ mergePoints: 3, mergeMultiplier: 1 });
+        expect(first?.mergedAt).toBeTruthy();
+        await done(t.id);
+        expect((await repo.cardById(t.id))?.mergedAt).toBe(first?.mergedAt);
+      });
+    });
+
     describe("the board's log", () => {
       it("drops the oldest frames it was told to, and keeps state changes", async () => {
         const p = await project();
@@ -209,6 +228,12 @@ function contract(name: string, make: () => Repository) {
         expect(b.id).toBe(a.id);
         expect(await repo.projectById(a.id)).toEqual(a);
         expect((await repo.projectsForRepo(repoName.toUpperCase())).map((p) => p.id)).toEqual([a.id]);
+      });
+
+      it("starts a new project with agents off", async () => {
+        const p = await repo.ensureProject({ ownerId: null, repoFullName: `contract/${randomUUID()}`, baseBranch: "main" });
+        expect(p.agents).toBe(false);
+        expect((await repo.projectById(p.id))?.agents).toBe(false);
       });
 
       it("returns null for a project that does not exist", async () => {

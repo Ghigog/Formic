@@ -231,6 +231,7 @@ function store(): Store {
     name: "Formic",
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
+    agents: false,
     autoMerge: false,
     autoEscalate: false,
     colonySize: null,
@@ -308,6 +309,22 @@ function historyOf(s: Store, card: BoardCard): TicketColumnEntry[] {
 function projectOf(s: Store, card: BoardCard): string {
   const epicId = card.kind === "epic" ? card.id : card.epicId;
   return (epicId && s.epicProject.get(epicId)) || s.project.id;
+}
+
+/** Scores a ticket's merge against its project's heat now, and stamps it. */
+function stampMerge(s: Store, card: BoardCard): void {
+  const now = Date.now();
+  const project = projectOf(s, card);
+  const recent = [...s.cards.values()].filter(
+    (c) =>
+      c.mergedAt &&
+      projectOf(s, c) === project &&
+      new Date(c.mergedAt).getTime() > now - HEAT_WINDOW_MS,
+  ).length;
+  const { pts, mult } = mergeScore(card.storyPoints, recent);
+  card.mergedAt = new Date(now).toISOString();
+  card.mergePoints = pts;
+  card.mergeMultiplier = mult;
 }
 
 /** The project a run belongs to, by its Epic or, failing that, its ticket's. */
@@ -665,6 +682,7 @@ export class MemoryRepository implements Repository {
       name: input.repoFullName.split("/")[1] ?? input.repoFullName,
       repoFullName: input.repoFullName,
       baseBranch: input.baseBranch,
+      agents: false,
       autoMerge: false,
       autoEscalate: false,
       colonySize: null,
@@ -939,6 +957,12 @@ export class MemoryRepository implements Repository {
     if (card.status !== input.status) {
       card.updatedAt = new Date().toISOString();
       if (input.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
+    }
+    // With no agents on the board, a person moving a card to Done scores it
+    // like a merge, once.
+    if (card.kind === "ticket" && input.status === "merged" && !card.mergedAt) {
+      const s = store();
+      if (!s.projects.get(projectOf(s, card))?.agents) stampMerge(s, card);
     }
     card.status = input.status;
     card.stalledIn = input.stalledIn;
@@ -1333,18 +1357,7 @@ export class MemoryRepository implements Repository {
     }
     // The first move to merged is scored against the project's heat then.
     if (update.status === "merged" && !card.mergedAt) {
-      const now = Date.now();
-      const project = projectOf(s, card);
-      const recent = [...s.cards.values()].filter(
-        (c) =>
-          c.mergedAt &&
-          projectOf(s, c) === project &&
-          new Date(c.mergedAt).getTime() > now - HEAT_WINDOW_MS,
-      ).length;
-      const { pts, mult } = mergeScore(card.storyPoints, recent);
-      card.mergedAt = new Date(now).toISOString();
-      card.mergePoints = pts;
-      card.mergeMultiplier = mult;
+      stampMerge(s, card);
     }
     if (update.status !== undefined) {
       card.status = update.status;
