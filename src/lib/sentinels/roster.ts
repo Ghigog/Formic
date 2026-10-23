@@ -37,7 +37,12 @@ export interface Sentinel {
   evidence?: EvidenceKind[];
   /** Files it may read that every other role skips as noise. */
   include?: RegExp[];
+  /** Story points that may ship after its audit before the audit is stale. */
+  staleAfterPoints: number;
 }
+
+/** Story points shipped after an audit before it no longer describes the code. */
+export const DEFAULT_STALE_AFTER_POINTS = 40;
 
 export const GROUP_INK: Record<SentinelGroup, string> = {
   BUILD: "var(--text)",
@@ -62,6 +67,7 @@ export const GROUP_GROUND: Record<SentinelGroup, string> = {
 export const SENTINELS: readonly Sentinel[] = [
   {
     id: "tester",
+    staleAfterPoints: 30,
     name: "Tester",
     group: "BUILD",
     unlockLevel: 2,
@@ -75,6 +81,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "qa",
+    staleAfterPoints: 30,
     name: "QA",
     group: "BUILD",
     unlockLevel: 3,
@@ -88,6 +95,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "architect",
+    staleAfterPoints: 60,
     name: "Architect",
     group: "BUILD",
     unlockLevel: 6,
@@ -101,6 +109,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "secops",
+    staleAfterPoints: 30,
     name: "SecOps",
     group: "OPS",
     unlockLevel: 9,
@@ -114,6 +123,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "devops",
+    staleAfterPoints: 60,
     name: "DevOps",
     group: "OPS",
     unlockLevel: 13,
@@ -127,6 +137,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "techops",
+    staleAfterPoints: 60,
     name: "TechOps",
     group: "OPS",
     unlockLevel: 15,
@@ -140,6 +151,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "perf",
+    staleAfterPoints: DEFAULT_STALE_AFTER_POINTS,
     name: "Performance",
     group: "OPS",
     unlockLevel: 18,
@@ -153,6 +165,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "a11y",
+    staleAfterPoints: 30,
     name: "Accessibility",
     group: "PRODUCT",
     unlockLevel: 21,
@@ -166,6 +179,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "design",
+    staleAfterPoints: 30,
     name: "Designer",
     group: "PRODUCT",
     unlockLevel: 25,
@@ -180,6 +194,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "legal",
+    staleAfterPoints: 80,
     name: "Legal",
     group: "BUSINESS",
     unlockLevel: 28,
@@ -193,6 +208,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "marketer",
+    staleAfterPoints: 60,
     name: "Marketer",
     group: "BUSINESS",
     unlockLevel: 32,
@@ -206,6 +222,7 @@ export const SENTINELS: readonly Sentinel[] = [
   },
   {
     id: "sales",
+    staleAfterPoints: 80,
     name: "Sales",
     group: "BUSINESS",
     unlockLevel: 34,

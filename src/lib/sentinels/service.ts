@@ -25,7 +25,7 @@ function snapshotWanted(path: string, size: number): boolean {
 }
 import { scoreOf } from "@/lib/colony/game";
 import { isUnlocked, sentinel as findSentinel, stepsFor } from "./roster";
-import { sentinelStates, type SentinelStates } from "./view";
+import { sentinelStates, type SentinelStates, type Shipped } from "./view";
 
 /**
  * Summoning a sentinel: calibrating writes its rubric for the project, and
@@ -36,7 +36,22 @@ import { sentinelStates, type SentinelStates } from "./view";
  */
 
 export async function sentinelsFor(projectId: string): Promise<SentinelStates> {
-  return sentinelStates(await repository().auditsFor(projectId));
+  const repo = repository();
+  const [audits, shipped] = await Promise.all([repo.auditsFor(projectId), shippedTickets(projectId)]);
+  return sentinelStates(audits, Date.now(), shipped);
+}
+
+/** When each ticket in or past Done first got there, with its points; unestimated tickets are worth 0. */
+async function shippedTickets(projectId: string): Promise<Shipped[]> {
+  const repo = repository();
+  const tickets = (await repo.boardCards(projectId)).filter((c) => c.kind === "ticket");
+  const entered = await Promise.all(
+    tickets.map(async (t) => {
+      const entry = (await repo.ticketColumnEntries(t.id)).find((e) => e.column === "done");
+      return entry ? { doneAt: new Date(entry.enteredAt).getTime(), points: t.storyPoints ?? 0 } : null;
+    }),
+  );
+  return entered.filter((s) => s !== null);
 }
 
 async function baseHead(projectId: string): Promise<string | null> {
