@@ -20,6 +20,7 @@ import type {
   LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
+  PushPreferences,
   PushSubscriptionRecord,
   UserSecrets,
   Repository,
@@ -544,6 +545,10 @@ export class MemoryRepository implements Repository {
     return [...store().pushSubscriptions.values()]
       .filter((p) => p.userId === userId)
       .map(({ endpoint, p256dh, auth }) => ({ endpoint, p256dh, auth }));
+  }
+
+  async pushPreferences(): Promise<PushPreferences> {
+    return { ticketMoved: true, epicCompleted: true, needsAttention: true };
   }
 
   async isMember(projectId: string, userId: string): Promise<boolean> {
