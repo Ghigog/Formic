@@ -16,9 +16,13 @@ beforeAll(() => {
   HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as never;
 });
 
+// jsdom has no elementFromPoint; tests assign it, so put it back afterwards.
+const originalElementFromPoint = document.elementFromPoint;
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  document.elementFromPoint = originalElementFromPoint;
 });
 
 function scoreAt(earned: number): Score {
@@ -220,6 +224,7 @@ describe("ColonyPopover Queen carry", () => {
 
   it("leaves the dialog visible on desktop while carrying", async () => {
     dragAndDrop(false);
+    document.elementFromPoint = vi.fn(() => document.body);
     await screen.findByLabelText("Drag a Queen onto a card");
     fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
     expect(document.querySelector("[role=dialog]")!.className).not.toContain("invisible");
