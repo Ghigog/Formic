@@ -424,17 +424,31 @@ export function supportedEffort(
 
 /**
  * A JSON object out of a model's text. Tolerates a code fence or a sentence
- * around it, which models without JSON mode like to add.
+ * around it, which models without JSON mode like to add. The whole text is
+ * tried first: a JSON answer can hold code fences of its own, in a Markdown
+ * reply, and the first fence in it is not the answer.
  */
 export function extractJson(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1];
-  const candidate = (fenced ?? text).trim();
-  try {
-    return JSON.parse(candidate);
-  } catch {
+  const whole = text.trim();
+  const fenced = whole.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1]?.trim();
+  for (const candidate of [whole, fenced]) {
+    if (candidate === undefined) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try the next reading.
+    }
+  }
+  for (const candidate of [whole, fenced]) {
+    if (candidate === undefined) continue;
     const start = candidate.indexOf("{");
     const end = candidate.lastIndexOf("}");
-    if (start >= 0 && end > start) return JSON.parse(candidate.slice(start, end + 1));
-    throw new Error("The answer was not JSON.");
+    if (start < 0 || end <= start) continue;
+    try {
+      return JSON.parse(candidate.slice(start, end + 1));
+    } catch {
+      // Try the next reading.
+    }
   }
+  throw new Error("The answer was not JSON.");
 }
