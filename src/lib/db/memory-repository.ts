@@ -231,7 +231,7 @@ function store(): Store {
     name: "Formic",
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
-    agents: false,
+    agents: true, // the local-mode board is the one tests and a bare checkout run agents on
     autoMerge: false,
     autoEscalate: false,
     colonySize: null,
