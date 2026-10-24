@@ -20,17 +20,18 @@ export default async function SettingsPage() {
   // on; there is nothing to choose among. Only its owner sets them: on a board
   // shared with them, a member has only their own settings here.
   const current = await activeProject();
-  const project =
-    current && canSee(user, current.ownerId)
-      ? {
+  const project = current
+    ? {
           id: current.id,
           name: current.name,
+          agents: current.agents,
+          owner: canSee(user, current.ownerId),
           autoMerge: current.autoMerge,
           autoEscalate: current.autoEscalate,
           shareKeys: current.shareKeys,
           scoutPresetId: current.scoutPresetId,
         }
-      : null;
+    : null;
 
   return (
     <SettingsForm
