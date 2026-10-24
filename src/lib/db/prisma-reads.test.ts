@@ -23,8 +23,21 @@ const { calls, fake } = vi.hoisted(() => {
     return Promise.resolve([]);
   };
   const fake = {
-    epic: { findMany: empty("epic.findMany") },
-    ticket: { findMany: empty("ticket.findMany") },
+    epic: {
+      findMany: empty("epic.findMany"),
+      findUnique: (args: Record<string, unknown>) => {
+        calls.push({ method: "epic.findUnique", args });
+        return Promise.resolve(null);
+      },
+    },
+    ticket: {
+      findMany: empty("ticket.findMany"),
+      findUnique: (args: Record<string, unknown>) => {
+        calls.push({ method: "ticket.findUnique", args });
+        return Promise.resolve({ epic: { projectId: "project-1" } });
+      },
+    },
+    agentRun: { groupBy: empty("agentRun.groupBy") },
     attachment: {
       findMany: empty("attachment.findMany"),
       findUnique: empty("attachment.findUnique"),
@@ -145,5 +158,20 @@ describe("what a read asks Postgres for", () => {
       "ticket.findMany",
     );
     expect(select).toMatchObject({ id: true, key: true, title: true, status: true, position: true });
+  });
+
+  it("reads only a ticket's live runs, not every run it ever had", async () => {
+    await new PrismaRepository().boardCards("project-1");
+
+    expect(selectOf("ticket.findMany").runs).toMatchObject({
+      where: { status: { in: ["queued", "running"] } },
+    });
+  });
+
+  it("finds one ticket card without reading the board", async () => {
+    await new PrismaRepository().cardById("ticket-1");
+
+    expect(argsOf("ticket.findMany").where).toMatchObject({ id: "ticket-1" });
+    expect(calls.map((c) => c.method)).not.toContain("epic.findMany");
   });
 });
