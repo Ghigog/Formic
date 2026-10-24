@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyCardAction, cardActionSchema } from "./card-actions";
+import { settleLaunched } from "./pipeline";
 import type { TicketSpec } from "./decomposition";
 import { resetAgents, setAgents } from "./registry";
 import { repository } from "@/lib/db";
@@ -130,7 +131,9 @@ beforeEach(() => {
   resetEnvCache();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Work a test launched finishes before the next test's store exists.
+  await settleLaunched();
   vi.unstubAllEnvs();
   resetEnvCache();
   resetVcs();
