@@ -265,7 +265,7 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   // With agents off the AI sections are hidden, so turn them on if they are
   // not. The switch flips once the server has saved it, so wait for that
   // rather than check().
-  const agents = page.getByRole("switch", { name: "Agents" });
+  const agents = page.getByRole("switch", { name: "Agents", exact: true });
   if (!(await agents.isChecked())) await agents.click();
   await expect(agents).toBeChecked();
   await expect(page.getByRole("heading", { name: "Sandbox (E2B)" })).toBeVisible();
