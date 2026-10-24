@@ -622,6 +622,7 @@ export interface Repository {
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
   setShareKeys(projectId: string, shareKeys: boolean): Promise<void>;
+  setAgents(projectId: string, agents: boolean): Promise<void>;
   /**
    * Whose keys a card's work runs on: the person who last set it going. A
    * ticket with none takes its scout parent's, then its epic's. Null is the

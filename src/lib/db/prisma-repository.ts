@@ -243,6 +243,10 @@ export class PrismaRepository implements Repository {
     await prisma().project.updateMany({ where: { id: projectId }, data: { shareKeys } });
   }
 
+  async setAgents(projectId: string, agents: boolean): Promise<void> {
+    await prisma().project.updateMany({ where: { id: projectId }, data: { agents } });
+  }
+
   async cardActor(cardId: string): Promise<string | null> {
     const db = prisma();
     const ticket = await db.ticket.findUnique({

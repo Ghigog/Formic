@@ -100,9 +100,9 @@ describe("/api/settings autoMerge", () => {
 
   it("is off for a new project and saved on update for the owner", async () => {
     const p = await project(userId);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false, autoEscalate: false, shareKeys: false, scoutPresetId: null });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false, autoEscalate: false, shareKeys: false, agents: false, scoutPresetId: null });
     expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(200);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true, autoEscalate: false, shareKeys: false, scoutPresetId: null });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true, autoEscalate: false, shareKeys: false, agents: false, scoutPresetId: null });
   });
 
   it("refuses someone who does not own the project and leaves the flag", async () => {
@@ -284,5 +284,29 @@ describe("/api/settings notifications", () => {
 
   it("rejects anything but on or off", async () => {
     expect((await PUT(put({ notifications: { epicCompleted: "yes" } }))).status).toBe(400);
+  });
+});
+
+describe("/api/settings agents", () => {
+  it("lets the owner of a board with a repository turn agents on and offers the setup", async () => {
+    const p = await repository().ensureProject({ ownerId: userId, repoFullName: "a/agents", baseBranch: "main" });
+    const res = await PUT(put({ projectId: p.id, agents: true }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ agents: true, setup: { state: "ready" } });
+    expect((await repository().projectById(p.id))?.agents).toBe(true);
+  });
+
+  it("rejects turning agents on for a board without a repository", async () => {
+    const p = await repository().ensureProject({ ownerId: userId, repoFullName: "", baseBranch: "main" });
+    expect((await PUT(put({ projectId: p.id, agents: true }))).status).toBe(400);
+    expect((await repository().projectById(p.id))?.agents).toBe(false);
+  });
+
+  it("rejects a member who does not own the board", async () => {
+    const owner = await repository().upsertUser({ githubId: 2, login: "b", name: null, avatarUrl: null });
+    const p = await repository().ensureProject({ ownerId: owner.id, repoFullName: "a/theirs", baseBranch: "main" });
+    await repository().addMember(p.id, userId);
+    expect((await PUT(put({ projectId: p.id, agents: true }))).status).toBe(403);
+    expect((await repository().projectById(p.id))?.agents).toBe(false);
   });
 });

@@ -607,6 +607,11 @@ export class MemoryRepository implements Repository {
     if (project) project.shareKeys = shareKeys;
   }
 
+  async setAgents(projectId: string, agents: boolean): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) project.agents = agents;
+  }
+
   async cardActor(cardId: string): Promise<string | null> {
     const s = store();
     const own = s.actors.get(cardId);
