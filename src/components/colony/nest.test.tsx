@@ -222,6 +222,18 @@ describe("ColonyPopover Queen carry", () => {
     card.remove();
   });
 
+  it("keeps the drag image out of any hidden ancestor on a phone while carrying", async () => {
+    dragAndDrop(true);
+    document.elementFromPoint = vi.fn(() => null);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2"));
+    fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    const image = document.querySelector<HTMLElement>("[data-queen-image]")!;
+    expect(image).toBeTruthy();
+    for (let el: HTMLElement | null = image; el; el = el.parentElement) expect(el.className).not.toContain("invisible");
+    expect(document.querySelector("[role=dialog]")!.contains(image)).toBe(false);
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+  });
+
   it("leaves the dialog visible on desktop while carrying", async () => {
     dragAndDrop(false);
     document.elementFromPoint = vi.fn(() => document.body);

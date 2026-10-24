@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   COLOR_UNLOCKS,
   SHAPE_UNLOCKS,
@@ -81,7 +82,7 @@ function QueenBug({ c, className }: { c: ColonyApi; className: string }) {
 
 /**
  * The Queen under the finger. Each frame her legs sway against the pointer's
- * horizontal travel, on top of a constant wiggle.
+ * horizontal travel, on top of a constant wiggle, and her body leans the same way.
  * Reduced motion draws her at rest.
  */
 function DragQueen({ c, x }: { c: ColonyApi; x: { current: number } }) {
@@ -97,12 +98,14 @@ function DragQueen({ c, x }: { c: ColonyApi; x: { current: number } }) {
       sway = nextSway(sway, x.current - lastX);
       lastX = x.current;
       const legs = (sway / MAX_SWAY_DEG) * 1.6 + legWiggle(now);
+      cv.style.transform = `rotate(${sway}deg)`;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
       drawBug(ctx, cv.width / 2, cv.height / 2 + 2, 10, 0.26, c.shape, c.bugHex, undefined, { legSwing: legs });
       raf = requestAnimationFrame(paint);
     };
     if (c.fx.reducedMotion) {
+      cv.style.transform = "";
       drawBug(ctx, cv.width / 2, cv.height / 2 + 2, 10, 0.26, c.shape, c.bugHex);
     } else {
       raf = requestAnimationFrame(paint);
@@ -251,16 +254,19 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
           <QueenBug c={c} className="size-10" />
         </button>
       )}
-      {drag && (
-        <div
-          data-queen-image
-          aria-hidden
-          className="pointer-events-none fixed z-[90] -translate-x-1/2 -translate-y-1/2"
-          style={{ left: drag.x, top: drag.y }}
-        >
-          <DragQueen c={c} x={pointerX} />
-        </div>
-      )}
+      {drag &&
+        // Portalled out of the panel, which is hidden on a phone while she is carried.
+        createPortal(
+          <div
+            data-queen-image
+            aria-hidden
+            className="pointer-events-none fixed z-[90] -translate-x-1/2 -translate-y-1/2"
+            style={{ left: drag.x, top: drag.y }}
+          >
+            <DragQueen c={c} x={pointerX} />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
