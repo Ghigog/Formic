@@ -157,6 +157,7 @@ model User {
   opens             ProjectOpen[]
   memberAgents      MemberAgent[]
   pushSubscriptions PushSubscription[]
+  accessTokens      AccessToken[]
 
   @@map("user")
 }
@@ -830,4 +831,22 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscription")
+}
+
+/// A personal access token. Only the sha256 of the secret is kept; the secret is shown once, when made.
+model AccessToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  lastFour   String
+  readOnly   Boolean   @default(true)
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+  @@map("access_token")
 }

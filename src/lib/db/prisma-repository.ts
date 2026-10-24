@@ -26,6 +26,8 @@ import type {
   UserRecord,
   PushPreferences,
   PushSubscriptionRecord,
+  AccessTokenRecord,
+  NewAccessToken,
   UserSecrets,
   Repository,
   RunOutcome,
@@ -440,6 +442,30 @@ export class PrismaRepository implements Repository {
       db.project.updateMany({ where: { ownerId: null }, data: { ownerId: userId } }),
       db.agentPreset.updateMany({ where: { ownerId: null }, data: { ownerId: userId } }),
     ]);
+  }
+
+  async createAccessToken(token: NewAccessToken): Promise<AccessTokenRecord> {
+    return prisma().accessToken.create({ data: token });
+  }
+
+  async accessTokenByHash(tokenHash: string): Promise<AccessTokenRecord | null> {
+    return prisma().accessToken.findUnique({ where: { tokenHash } });
+  }
+
+  async accessTokensForUser(userId: string): Promise<AccessTokenRecord[]> {
+    return prisma().accessToken.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
+  }
+
+  async revokeAccessToken(userId: string, id: string): Promise<boolean> {
+    const { count } = await prisma().accessToken.updateMany({
+      where: { id, userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return count > 0;
+  }
+
+  async touchAccessToken(id: string, at: Date): Promise<void> {
+    await prisma().accessToken.updateMany({ where: { id }, data: { lastUsedAt: at } });
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
