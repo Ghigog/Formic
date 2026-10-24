@@ -65,6 +65,12 @@ describe("canUserMove", () => {
     expect(canUserMove("todo", "backlog").ok).toBe(true);
   });
 
+  it("allows asking for the merge from In Review, and nowhere else into Done", () => {
+    expect(canUserMove("in_review", "done").ok).toBe(true);
+    expect(canUserMove("in_progress", "done").ok).toBe(false);
+    expect(canUserMove("backlog", "done").ok).toBe(false);
+  });
+
   it("refuses to move anything out of Done", () => {
     expect(canUserMove("done", "in_review").ok).toBe(false);
   });

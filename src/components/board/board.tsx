@@ -47,6 +47,7 @@ const DRAG_END_GRACE_MS = 400;
 const NEXT_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
   backlog: "todo",
   todo: "in_progress",
+  in_review: "done",
 };
 
 /** The column a card's mobile return arrow sends it back to. */
@@ -551,8 +552,11 @@ export function Board({
       epics: epicsById,
       nextFor: (card, column) => {
         const to = NEXT_COLUMN[column];
-        if (!to || card.misplacedIn || card.status === "running" || card.status === "review") {
-          return null;
+        if (!to || card.misplacedIn || card.status === "running") return null;
+        // In Review the arrow merges the pull request, which Formic does itself
+        // with auto-merge on, and which waits while an agent works the card.
+        if (card.status === "review") {
+          if (autoMerge || card.kind !== "ticket" || !card.prNumber || card.workingSince) return null;
         }
         if (to === "in_progress" && (card.kind !== "ticket" || card.status !== "ready")) return null;
         return accepts(column, to) ? to : null;
