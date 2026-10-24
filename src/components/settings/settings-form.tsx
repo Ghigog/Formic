@@ -30,6 +30,8 @@ interface ProjectSetting {
   id: string;
   name: string;
   autoMerge: boolean;
+  /** Whether agents are switched off on this board; off when omitted. */
+  agentsOff?: boolean;
   autoEscalate: boolean;
   /** Whether people this board is shared with may run on the owner's keys. */
   shareKeys?: boolean;
@@ -148,6 +150,17 @@ export function SettingsForm({
               settings are hidden.
             </p>
             <AgentsToggle project={project} on={agents} onChange={setAgents} />
+          </Section>
+        )}
+
+        {own && (
+          <Section title="Agents off">
+            <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+              Applies to {own.name}. Cards move between columns with no runs,
+              no column agent needed and no merge, for use with your own
+              coding agent.
+            </p>
+            <AgentsOffToggle project={own} />
           </Section>
         )}
 
@@ -308,6 +321,45 @@ function AgentsToggle({
         Run AI agents on this board
       </label>
       {!owner && <p className="text-muted mt-1 text-[11px]">Only the board&apos;s owner can change this.</p>}
+      {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
+    </div>
+  );
+}
+
+function AgentsOffToggle({ project }: { project: ProjectSetting }) {
+  const [on, setOn] = useState(!!project.agentsOff);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function change(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, agentsOff: next }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      setError("That did not save. Try again.");
+      return;
+    }
+    setOn(next);
+  }
+
+  return (
+    <div>
+      <label className="text-ink flex items-center gap-2 text-[13px]">
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label="Agents off"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void change(e.target.checked)}
+        />
+        Agents off
+      </label>
       {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>
   );

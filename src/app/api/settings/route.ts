@@ -34,6 +34,7 @@ const bodySchema = z.object({
   e2bKey: keySchema,
   projectId: z.string().min(1).optional(),
   autoMerge: z.boolean().optional(),
+  agentsOff: z.boolean().optional(),
   autoEscalate: z.boolean().optional(),
   /** Whether members may run on the owner's keys when they have none of their own. */
   shareKeys: z.boolean().optional(),
@@ -129,6 +130,7 @@ export async function GET(req?: Request) {
     if (found.refusal) return found.refusal;
     return Response.json({
       autoMerge: found.project.autoMerge,
+      agentsOff: found.project.agentsOff,
       autoEscalate: found.project.autoEscalate,
       shareKeys: found.project.shareKeys,
       agents: found.project.agents,
@@ -245,14 +247,14 @@ export async function PUT(req: Request) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
   }
 
-  const { projectId, autoMerge, autoEscalate, shareKeys, agents, scoutPresetId } = body.data;
+  const { projectId, autoMerge, agentsOff, autoEscalate, shareKeys, agents, scoutPresetId } = body.data;
   const forProject =
-    autoMerge !== undefined || autoEscalate !== undefined || shareKeys !== undefined ||
+    autoMerge !== undefined || agentsOff !== undefined || autoEscalate !== undefined || shareKeys !== undefined ||
     agents !== undefined ||
     scoutPresetId !== undefined;
   if (forProject !== (projectId !== undefined)) {
     return Response.json(
-      { error: "autoMerge, autoEscalate, shareKeys, agents, scoutPresetId and projectId go together." },
+      { error: "autoMerge, agentsOff, autoEscalate, shareKeys, agents, scoutPresetId and projectId go together." },
       { status: 400 },
     );
   }
@@ -266,6 +268,7 @@ export async function PUT(req: Request) {
       return Response.json({ error: "Link a repository before turning agents on." }, { status: 400 });
     }
     if (autoMerge !== undefined) await repository().setAutoMerge(found.project.id, autoMerge);
+    if (agentsOff !== undefined) await repository().setAgentsOff(found.project.id, agentsOff);
     if (autoEscalate !== undefined) await repository().setAutoEscalate(found.project.id, autoEscalate);
     if (shareKeys !== undefined) await repository().setShareKeys(found.project.id, shareKeys);
     if (scoutPresetId !== undefined) await repository().setScoutAgent(found.project.id, scoutPresetId);
@@ -274,6 +277,7 @@ export async function PUT(req: Request) {
     const setup = agents ? await runnerSetup({ ...found.project, agents }) : undefined;
     return Response.json({
       ...(autoMerge !== undefined && { autoMerge }),
+      ...(agentsOff !== undefined && { agentsOff }),
       ...(autoEscalate !== undefined && { autoEscalate }),
       ...(shareKeys !== undefined && { shareKeys }),
       ...(scoutPresetId !== undefined && { scoutPresetId }),
