@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ATTEMPT_DEFAULTS } from "@/lib/budget/budget-for";
 import { runCoderAgent } from "./pipeline";
+import { settleLaunched } from "@/lib/agents/pipeline";
 import { reviewBrief } from "@/lib/agents/coder";
 import type { FollowUp } from "@/lib/agents/follow-ups";
 import { setCheckoutFactory } from "./checkout";
@@ -196,6 +197,9 @@ async function until(
   }
   throw new Error(`Timed out waiting for ${what}.`);
 }
+
+// Work a test launched finishes before the next test's store exists.
+afterEach(() => settleLaunched());
 
 beforeEach(() => {
   // A fresh board per test: the in-memory store is a module global, which is

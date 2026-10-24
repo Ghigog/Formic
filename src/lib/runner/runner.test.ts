@@ -39,7 +39,7 @@ import { currentRunnerFiles, setLoopBundleDir } from "./bundle";
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { reviewPullRequest } from "@/lib/review/pipeline";
 import { cliAgentFor, loopAgentFor, savePreset } from "@/lib/agents/presets";
-import { runArchitectAgent, runArchitectDraftTicket, runProductAgent, startRun } from "@/lib/agents/pipeline";
+import { runArchitectAgent, runArchitectDraftTicket, runProductAgent, settleLaunched, startRun } from "@/lib/agents/pipeline";
 import type { ColumnId } from "@/lib/domain/status";
 import { provider } from "@/lib/llm/providers";
 import { resetAgents } from "@/lib/agents/registry";
@@ -119,7 +119,9 @@ beforeEach(() => {
   resetEnvCache();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Work a test launched finishes before the next test's store exists.
+  await settleLaunched();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   resetEnvCache();

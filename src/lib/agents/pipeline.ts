@@ -827,6 +827,21 @@ export function fromStream<T>(work: () => T): T {
   return streaming.run(true, work);
 }
 
+/** Detached work still running, so a test can let it finish before the next. */
+const launched = new Set<Promise<void>>();
+
+/**
+ * Waits for detached work to settle, up to `timeoutMs`. Tests call it between
+ * cases: work one test launched would otherwise land in the next one's store,
+ * where the same ids name different cards.
+ */
+export async function settleLaunched(timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (launched.size > 0 && Date.now() < deadline) {
+    await Promise.race([Promise.allSettled([...launched]), new Promise((r) => setTimeout(r, deadline - Date.now()))]);
+  }
+}
+
 /**
  * Detached launcher. A rejected promise here must not become an unhandled
  * rejection that takes the server down.
@@ -846,11 +861,14 @@ export function launch(work: () => Promise<void>, label: string): void {
   const run = () => asActor(() => {
     // What keeps a function alive is counted against the host's allowance.
     const release = holdFunction();
-    return work()
+    const running = work()
       .catch((e) => {
         console.error(`[formic] ${label} failed:`, e);
       })
       .finally(release);
+    launched.add(running);
+    void running.finally(() => launched.delete(running));
+    return running;
   });
 
   if (streaming.getStore()) {
