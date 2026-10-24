@@ -5,12 +5,15 @@ import type { TicketDetail } from "@/lib/db/repository";
 import { FALLBACK_CAP_MESSAGE } from "@/lib/sandbox/fallback-cap";
 
 const spawnSandbox = vi.hoisted(() => vi.fn());
+const exec = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/sandbox", () => ({ spawnSandbox }));
 
 beforeEach(() => {
   globalThis.__formicMemoryStore = undefined;
   spawnSandbox.mockReset();
-  spawnSandbox.mockResolvedValue({ id: "sbx", dispose: async () => {} });
+  exec.mockReset();
+  exec.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "", timedOut: false });
+  spawnSandbox.mockResolvedValue({ id: "sbx", exec, dispose: async () => {} });
   vi.stubEnv("SANDBOX_PROVIDER", "e2b");
   vi.stubEnv("E2B_FALLBACK_MINUTES_PER_USER", "1");
 });
@@ -31,6 +34,18 @@ async function request(fallback: boolean): Promise<CheckoutRequest> {
     e2bFallbackUserId: fallback ? user.id : null,
   } as unknown as CheckoutRequest;
 }
+
+describe("a sandbox's setup", () => {
+  it("sets up the checkout's toolchains before the agent gets it", async () => {
+    await openCheckout(await request(false));
+    expect(exec).toHaveBeenCalledWith(expect.stringContaining("[ -f project.godot ]"), expect.anything());
+  });
+
+  it("never fails the checkout", async () => {
+    exec.mockRejectedValue(new Error("sandbox gone"));
+    await expect(openCheckout(await request(false))).resolves.toBeDefined();
+  });
+});
 
 describe("the operator's fallback E2B key", () => {
   it("refuses a new sandbox once the person has used their minutes", async () => {

@@ -14,6 +14,13 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { env } from "@/lib/secrets/env";
 import { capMonth, FALLBACK_CAP_MESSAGE, fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
+import { setupScript } from "@/lib/toolchains";
+
+/**
+ * The most a sandbox's setup may take of an in-process run's minutes: enough
+ * to download an engine, not enough to starve the agent of its budget.
+ */
+const SANDBOX_SETUP_MS = 3 * 60 * 1000;
 
 /**
  * Getting a coding agent a checkout, and getting its work back out again.
@@ -102,6 +109,17 @@ export async function openCheckout(
     onLog: (stream, line) =>
       request.ctx.emit({ type: "run.log", runId: request.ctx.runId, stream, line }),
   });
+
+  // What the checkout's toolchains need on this host (src/lib/toolchains): an
+  // engine the agent could not guess how to install, and the note that tells
+  // it how to run the checks. Never fatal: the agent can still install what it
+  // needs, and a ticket that needs none of it loses nothing.
+  await sandbox
+    .exec(`cd "$(git rev-parse --show-toplevel 2>/dev/null || echo repo)" || exit 0\n${setupScript("sandbox")}`, {
+      timeoutMs: SANDBOX_SETUP_MS,
+      signal: request.ctx.signal,
+    })
+    .catch(() => undefined);
 
   let spent = false;
   const raw = sandboxWorkspace(sandbox);

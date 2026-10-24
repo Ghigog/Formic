@@ -19,6 +19,9 @@
 
 import { createHash } from "node:crypto";
 
+import { REPO_SETUP_HOOK, setupScript } from "../toolchains";
+import { CHECKOUT_ACTION, cacheStep } from "../toolchains/actions";
+
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
 
@@ -430,7 +433,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: \${{ fromJSON(inputs.timeout) }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ${CHECKOUT_ACTION}
         with:
           ref: \${{ inputs.from }}
           persist-credentials: false
@@ -473,18 +476,10 @@ jobs:
         with:
           node-version: 22
 
-      # Every run is a fresh machine. The package caches carry the agent's
-      # own install and the project's dependencies from one run to the next,
-      # so neither is downloaded from scratch each time.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/pip
-            ~/.cache/yarn
-            ~/.local/share/pnpm/store
-          key: formic-\${{ runner.os }}-\${{ hashFiles('**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/requirements*.txt') }}
-          restore-keys: formic-\${{ runner.os }}-
+      # Every run is a fresh machine. The caches carry the agent's own install
+      # and the project's dependencies and engines from one run to the next, so
+      # neither is downloaded from scratch each time.
+${cacheStep()}
 
       - name: Install the agent
         if: inputs.mode != 'loop'
@@ -498,21 +493,16 @@ jobs:
             *) echo "Unknown agent: $CLI"; exit 1 ;;
           esac
 
-      # Ready before the agent starts, so it spends its turns on the ticket.
-      # The coding modes need them, and so does a sentinel's audit, which runs
+      # Ready before the agent starts, so it spends its turns on the ticket:
+      # whatever toolchains the checkout uses (src/lib/toolchains), then the
+      # repository's own ${REPO_SETUP_HOOK}. The coding modes need them, and so does a sentinel's audit, which runs
       # the tests and the build to back its report. A failure here is not
       # fatal: the agent can still install what it needs itself.
       - name: Install the project's dependencies
         if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop' || (inputs.mode == 'ask' && (inputs.ticket == 'sentinel' || inputs.ticket == 'assistant'))
         continue-on-error: true
         run: |
-          # Installed, never handed back: kept out of what the agent commits.
-          echo "node_modules/" >> .git/info/exclude
-          if [ -f package-lock.json ]; then npm ci --prefer-offline --no-audit --fund=false
-          elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile
-          elif [ -f yarn.lock ]; then corepack enable && yarn install
-          elif [ -f requirements.txt ]; then pip install -r requirements.txt
-          fi
+${indent(setupScript("job").trimEnd(), 10)}
 
       - name: Run the agent
         env:

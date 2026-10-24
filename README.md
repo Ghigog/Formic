@@ -82,6 +82,7 @@ Rollback and restore: [`docs/runbook.md`](docs/runbook.md).
 | Agents, CLI agents, the assistant, GitHub issues, webhooks | [`docs/how-it-works.md`](docs/how-it-works.md) |
 | Many agents and people on one repo | [`docs/concurrency.md`](docs/concurrency.md) |
 | Where agent work runs | [`docs/agent-execution.md`](docs/agent-execution.md) |
+| Engines and packages per project (Node, Python, Godot) | [`docs/toolchains.md`](docs/toolchains.md) |
 | Database, migrations, backups | [`docs/database.md`](docs/database.md) |
 | Security | [`docs/security.md`](docs/security.md) |
 | Limits and run time budgets | [`docs/limits.md`](docs/limits.md), [`docs/run-time-budgets.md`](docs/run-time-budgets.md) |
@@ -106,5 +107,6 @@ src/lib/
   review/        Webhook, fix-or-merge loop, merge lane
   runner/        CLI agents in the repo's GitHub Actions
   colony/        Levels, scouts, reserve
+  toolchains/    What each kind of project needs set up, and its checks
   db/  vcs/  sandbox/  events/  budget/  usage/  secrets/
 ```
