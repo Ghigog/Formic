@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chat, listOpenAiModels } from "./openai-compat";
+import { chat, extractJson, listOpenAiModels } from "./openai-compat";
 import { PROVIDERS, provider } from "./providers";
 
 /**
@@ -397,5 +397,23 @@ describe("the OpenAI-format client", () => {
       const reply = await chat(provider("clinepass")!, "k", { ...ask, messages: [...ask.messages] });
       expect(reply.message.tool_calls).toHaveLength(1);
     });
+  });
+});
+
+describe("extractJson", () => {
+  it("reads a bare object, a fenced one, and one with a sentence around it", () => {
+    expect(extractJson('{"a":1}')).toEqual({ a: 1 });
+    expect(extractJson('```json\n{"a":1}\n```')).toEqual({ a: 1 });
+    expect(extractJson('Here it is: {"a":1} done.')).toEqual({ a: 1 });
+  });
+
+  it("keeps a reply whose Markdown holds a code fence", () => {
+    const answer = { reply: "Run this:\n```sh\ngit push\n```\nThen merge.", proposals: [] };
+    expect(extractJson(JSON.stringify(answer))).toEqual(answer);
+    expect(extractJson(`Answer:\n${JSON.stringify(answer)}`)).toEqual(answer);
+  });
+
+  it("refuses text with no JSON in it", () => {
+    expect(() => extractJson("no json here")).toThrow("The answer was not JSON.");
   });
 });
