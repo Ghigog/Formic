@@ -25,12 +25,12 @@ import {
 } from "@/lib/agents/pipeline";
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { completeEpic, reviewPullRequest, startShowcase } from "@/lib/review/pipeline";
-import { projectFor } from "@/lib/board/project";
+import { boardRunsAgents, projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
 import { columnLimit, columnUnassigned } from "@/lib/agents/presets";
 import { startedBy } from "@/lib/auth/actor";
-import { prdSchema } from "@/lib/domain/entities";
+import { agentsEnabled, prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
 import { readiness } from "@/lib/domain/stack";
 import { claimOrQueue, startQueued } from "@/lib/board/queue";
@@ -176,6 +176,33 @@ export async function applyTransition(
       blockedReason: card.blockedReason,
     });
     return { ok: true, status: card.status, runId: null, problem: misplaced?.reason ?? null };
+  }
+
+  // With agents off a card is only moved: nothing starts, nothing is asked of
+  // a provider or GitHub, and a card dropped in Done is scored by the
+  // repository (see move). Dependencies and column agents do not apply.
+  if (!agentsEnabled(await projectFor(projectId))) {
+    const status = card.kind === "epic" && t.to === "todo" ? "ready" : statusForUserDrop(t.to, true);
+    const position = await placeAmong(projectId, t.to, card, t.position);
+    await repo.move({
+      cardId: card.id,
+      kind: card.kind,
+      status,
+      stalledIn: null,
+      position,
+      detached,
+    });
+    await repo.rebalanceColumn(projectId, t.to);
+    await publish(projectId, {
+      type: "card.status",
+      cardId: card.id,
+      kind: card.kind,
+      status,
+      stalledIn: null,
+      stage: card.stage,
+      blockedReason: null,
+    });
+    return { ok: true, status, runId: null };
   }
 
   // A ticket reaches Done by its pull request merging — never by being closed
@@ -376,6 +403,7 @@ export async function applyTransition(
  * prerequisite that is blocked or failed stops the Queen (see planQueen).
  */
 export async function advanceQueens(projectId: string): Promise<void> {
+  if (!(await boardRunsAgents(projectId))) return;
   const repo = repository();
   for (const queen of await repo.listQueens(projectId)) {
     const cards = await repo.boardCards(projectId);
