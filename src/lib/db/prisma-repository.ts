@@ -322,23 +322,27 @@ export class PrismaRepository implements Repository {
 
   async ensureProject(input: {
     ownerId: string | null;
-    repoFullName: string;
+    repoFullName: string | null;
+    name?: string;
     baseBranch: string;
   }): Promise<ProjectSummary> {
     const db = prisma();
-    const found = await db.project.findFirst({
-      where: {
-        ownerId: input.ownerId,
-        repoFullName: { equals: input.repoFullName, mode: "insensitive" },
-      },
-      orderBy: { createdAt: "asc" },
-    });
+    const found =
+      input.repoFullName === null
+        ? null
+        : await db.project.findFirst({
+            where: {
+              ownerId: input.ownerId,
+              repoFullName: { equals: input.repoFullName, mode: "insensitive" },
+            },
+            orderBy: { createdAt: "asc" },
+          });
     if (found) return toProjectSummary(found);
     return toProjectSummary(
       await db.project.create({
         data: {
           ownerId: input.ownerId,
-          name: input.repoFullName.split("/")[1] ?? input.repoFullName,
+          name: input.name ?? input.repoFullName?.split("/")[1] ?? input.repoFullName ?? "Board",
           repoFullName: input.repoFullName,
           baseBranch: input.baseBranch,
         },

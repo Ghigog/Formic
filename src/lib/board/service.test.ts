@@ -44,6 +44,37 @@ beforeEach(async () => {
   await staffInProgress();
 });
 
+/** A board with agents off: cards only move. */
+function agentsOff() {
+  globalThis.__formicMemoryStore!.projects.get(PROJECT)!.agents = false;
+}
+
+describe("a board with agents off", () => {
+  it.each([
+    ["ticket", "todo", "in_progress", "running"],
+    ["ticket", "todo", "in_review", "review"],
+    ["epic", "backlog", "todo", "ready"],
+  ] as const)("moves a %s from %s to %s and starts nothing", async (kind, from, to, status) => {
+    const card = makeCard({ kind, status: kind === "epic" ? "draft" : "ready" });
+    seedMemory([card]);
+    agentsOff();
+    const result = await applyTransition(PROJECT, { cardId: card.id, kind, from, to, position: 1, actor: "user" });
+
+    expect(result).toMatchObject({ ok: true, status });
+    expect(launched).toEqual([]);
+    expect(MockVcsClient.runner().files.size).toBe(0);
+  });
+
+  it("starts no Queen step", async () => {
+    const card = makeCard({ kind: "ticket", status: "ready" });
+    seedMemory([card]);
+    agentsOff();
+    await repository().placeQueen(PROJECT, card.id, "ticket");
+    await advanceQueens(PROJECT);
+    expect(launched).toEqual([]);
+  });
+});
+
 describe("applyTransition within one column", () => {
   it("reorders an epic in To Do without re-running its Architect Agent", async () => {
     const [epic, child] = makeEpicWithChildren({ status: "ready" }, [{}]);

@@ -32,7 +32,7 @@ import { startCliAnswer, startCliDraftTicket } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
 import { typeOf } from "./decomposition";
 import { unstarted } from "@/lib/domain/status";
-import { projectFor } from "@/lib/board/project";
+import { boardRunsAgents, projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { carryActor } from "@/lib/auth/actor";
 import { fileLayout } from "@/lib/vcs/repositories";
@@ -389,6 +389,7 @@ export async function repoTree(projectId: string): Promise<string[]> {
  */
 /** The Architect Agent's breakdown of an Epic, on the keys of whoever set it going. */
 export async function decomposeEpic(projectId: string, epicId: string): Promise<void> {
+  if (!(await boardRunsAgents(projectId))) return;
   return withCardActor(epicId, () => breakDownEpic(projectId, epicId));
 }
 
@@ -579,6 +580,7 @@ async function attachmentsFor(ref: AttachmentRef): Promise<AgentAttachment[]> {
 /** Stage 2. Raw backlog request becomes an Epic PRD. */
 /** The Product Agent's PRD for an Epic, on the keys of whoever set it going. */
 export async function runProductAgent(projectId: string, epicId: string, rawRequest: string): Promise<void> {
+  if (!(await boardRunsAgents(projectId))) return;
   return withCardActor(epicId, () => draftPrd(projectId, epicId, rawRequest));
 }
 
@@ -686,6 +688,7 @@ export async function runArchitectDraftTicket(
   rawRequest: string,
   repoTree: string[],
 ): Promise<void> {
+  if (!(await boardRunsAgents(projectId))) return;
   return withCardActor(ticketId, () => draftTicket(projectId, epicId, ticketId, rawRequest, repoTree));
 }
 

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { credentialsForProject } from "@/lib/auth/credentials";
+import { agentsEnabled } from "@/lib/domain/entities";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { vcs, VcsError } from "@/lib/vcs";
 import { closeStaleSetupPulls, ensureRunner, explain } from "./runner";
@@ -25,6 +26,8 @@ export type RunnerSetup =
  * already open, one once it has merged.
  */
 export async function runnerSetup(project: ProjectSummary): Promise<RunnerSetup> {
+  // With agents off there is nothing to install, and GitHub is not asked.
+  if (!agentsEnabled(project) || !project.repoFullName) return { state: "ready" };
   const creds = await credentialsForProject(project);
   // No GitHub token means the mock repository: nothing to install.
   if (!creds.githubToken) return { state: "ready" };

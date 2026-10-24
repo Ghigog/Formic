@@ -13,6 +13,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { withActor } from "@/lib/auth/actor";
 import { agentView } from "@/lib/agents/board-agents";
 import { vcs } from "@/lib/vcs";
+import { agentsEnabled } from "@/lib/domain/entities";
 import { seedReviewCi } from "@/lib/board/review-ci";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +55,7 @@ export default async function BoardPage() {
     // Whether review cards have checks to wait for. Unknown reads as yes,
     // so the card says CI is running, as it did before it could tell.
     credentials
-      .then((creds) => (creds ? vcs(project.repoFullName, creds.githubToken).hasCi(project.baseBranch) : true))
+      .then((creds) => (creds && project.repoFullName ? vcs(project.repoFullName, creds.githubToken).hasCi(project.baseBranch) : true))
       .catch(() => true),
     // No agent can run without a sandbox, so the board says so before
     // anyone starts a ticket rather than when the first one fails.
@@ -70,7 +71,7 @@ export default async function BoardPage() {
   // Review cards start from what GitHub says about their checks, not from the
   // live events a reload has missed. No credentials or a failed lookup leaves
   // them unknown.
-  const reviewCi = demo
+  const reviewCi = demo || !project.repoFullName
     ? {}
     : await credentials
         .then((creds) => (creds ? seedReviewCi(vcs(project.repoFullName, creds.githubToken), cards) : {}))
@@ -83,6 +84,7 @@ export default async function BoardPage() {
       initialExtras={demo ? FIXTURE_EXTRAS : reviewCi}
       projectName={project.name}
       repoFullName={project.repoFullName}
+      agentsOn={agentsEnabled(project)}
       noCi={!hasCi}
       noSandboxKey={noSandboxKey}
       autoMerge={project.autoMerge}

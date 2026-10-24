@@ -4,7 +4,7 @@ import { withCardActor } from "@/lib/auth/actor";
 import { startRun, launch } from "@/lib/agents/pipeline";
 import type { CoderTask } from "@/lib/agents/ports";
 import { repository } from "@/lib/db";
-import { projectFor } from "@/lib/board/project";
+import { boardRunsAgents, projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
 import { violationsInDiff } from "@/lib/domain/scope";
@@ -118,6 +118,7 @@ export async function runCoderAgent(
   ticketId: string,
   options: { instruction?: string } = {},
 ): Promise<void> {
+  if (!(await boardRunsAgents(projectId))) return;
   return withCardActor(ticketId, () => codeTicket(projectId, ticketId, options));
 }
 

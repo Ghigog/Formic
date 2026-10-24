@@ -8,6 +8,7 @@
  */
 
 import type { ColumnId } from "@/lib/domain/status";
+import { CHECKS_NOTE } from "@/lib/toolchains";
 
 export const PRODUCT_BRIEF = `You expand a raw feature request into a product requirements document for a single Epic.
 
@@ -54,6 +55,14 @@ Output Markdown. No preamble, no other sections, no sign-off.`;
  * three-point ticket into an hour; review runs CI, which is where the full
  * suite belongs.
  */
+/**
+ * Where an agent learns what the machine has for this project: Formic sets up
+ * each toolchain the checkout uses (src/lib/toolchains) and writes down what
+ * it installed and how to run the checks, which a Godot project, say, cannot
+ * be guessed from.
+ */
+export const CHECKS_RULE = `If ${CHECKS_NOTE} exists, read it before you run anything: it says what Formic installed on this machine for this project, and the commands for its checks.`;
+
 export const VERIFY_RULE = `Verify before you finish. Run the project's fast checks: typecheck, lint, and the unit and component tests. Of the slow tests (end-to-end, browser), run only the ones you added or changed; the full suite runs in CI when the change is reviewed. "It should work" is not a verification. Run each check once; repeat a run only when the ticket is about a flaky test, and then a few times, not until you are sure. When a test fails and you do not know why, find the cause in the code, its types or its docs before you run it again: rerunning to see what changes is the slowest way to learn. Reviewing a pull request, CI is the verification: run a check yourself only to reproduce a failure you are fixing, and then only that check.`;
 
 /**
@@ -105,6 +114,7 @@ Rules that are enforced, not advisory:
 - Start by reading AGENTS.md at the repository root, or CLAUDE.md if there is no AGENTS.md: it is this repository's own guide for agents, and it wins over your defaults.
 - Read economically. Prefer the repository's own documents (AGENTS.md/CLAUDE.md, README, docs/) and targeted reads over rediscovering the layout; use a file listing and grep/sed ranges, not cat of whole files or trees. Every tool result is re-sent on every later turn, so a large read early is paid for again and again.
 - Match the surrounding code. Read neighbouring files before you write; the conventions in this repository are not the ones in your training data.
+- ${CHECKS_RULE}
 - ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
 - Do not commit, push, or touch git history. The platform does that after it has checked your diff.

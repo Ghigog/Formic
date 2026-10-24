@@ -5,6 +5,7 @@ import { repository } from "@/lib/db";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { authMode } from "@/lib/auth/session";
 import { currentUser, ownerScope } from "@/lib/auth/user";
+import { agentsEnabled } from "@/lib/domain/entities";
 import { boardFor, boardsFor, canSeeBoard } from "./sharing";
 
 /**
@@ -55,4 +56,9 @@ export function noProject(): Response {
 export async function projectFor(projectId: string): Promise<ProjectSummary> {
   const repo = repository();
   return (await repo.projectById(projectId)) ?? repo.defaultProject();
+}
+
+/** Whether agents work on this board: the one gate every agent entry point asks. */
+export async function boardRunsAgents(projectId: string): Promise<boolean> {
+  return agentsEnabled(await projectFor(projectId));
 }

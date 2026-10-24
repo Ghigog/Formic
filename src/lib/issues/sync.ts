@@ -289,6 +289,8 @@ async function sync(projectId: string, event: FormicEvent): Promise<void> {
 
   const project = await projectFor(projectId);
   if (project.id !== projectId) return;
+  // A board with no repository linked has no issues to mirror onto.
+  if (!project.repoFullName) return;
   const creds = await credentialsForProject(project);
   const ctx: Context = {
     client: vcs(project.repoFullName, creds.githubToken),

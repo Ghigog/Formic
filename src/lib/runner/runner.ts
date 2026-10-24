@@ -27,6 +27,8 @@ import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
 import { reviewBrief, taskBrief } from "@/lib/agents/coder";
 import { hasActiveRun } from "@/lib/domain/status";
+import { detectToolchains } from "@/lib/toolchains";
+import { CHECKS_WORKFLOW_PATH, checksWorkflow } from "@/lib/toolchains/actions";
 import {
   ALREADY_DONE_RULE,
   ARCHITECT_BRIEF,
@@ -42,6 +44,7 @@ import {
   SHOWCASE_BRIEF,
   ENGINEERING_PRACTICES,
   HANDOFF_RULE,
+  CHECKS_RULE,
   VERIFY_RULE,
   withPlanningConventions,
   withProductConventions,
@@ -149,6 +152,7 @@ const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${CHECKPOINT_RULE}
 - ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- Title (N pt): what and why" per line, before the plan.
 - Match the surrounding code. Read neighbouring files before you write.
+- ${CHECKS_RULE}
 - ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
@@ -247,6 +251,10 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
   if (entry && !(await client.readFile(RUNNER_ENTRY_PATH, branch))?.includes(entry.hash)) {
     await client.commitFile(branch, RUNNER_ENTRY_PATH, entry.code, "Add Formic's loop entry");
   }
+  const checks = await proposedChecks(client, baseBranch);
+  if (checks && (await client.readFile(CHECKS_WORKFLOW_PATH, branch)) === null) {
+    await client.commitFile(branch, CHECKS_WORKFLOW_PATH, checks.workflow, `Add CI for ${checks.names}`);
+  }
 
   const pull =
     (await client.findPullRequest(branch)) ??
@@ -261,10 +269,36 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
         "",
         "Planning agents (PRDs, tickets, showcases) run here too. They read the repository and hand back an answer; nothing they touch is kept.",
         "",
+        ...(checks
+          ? [
+              `This repository has no CI, so it also adds \`${CHECKS_WORKFLOW_PATH}\`: ${checks.names}'s checks on every pull request, the same setup Formic's agents get. Without CI, Formic's Reviewer Agent cannot tell a change that works from one that does not. It is yours once merged; Formic never replaces it.`,
+              "",
+            ]
+          : []),
         "Merge this once, then retry the card.",
       ].join("\n"),
     }));
   return { ready: false, setupUrl: pull.url, update };
+}
+
+/**
+ * The CI workflow the setup pull request carries, for a repository with no CI
+ * whose toolchains Formic has checks for (src/lib/toolchains). Anything Formic
+ * cannot read proposes nothing: a second CI on top of one it could not see
+ * would run every check twice.
+ */
+async function proposedChecks(
+  client: VcsClient,
+  baseBranch: string,
+): Promise<{ workflow: string; names: string } | null> {
+  if (await client.hasCi(baseBranch).catch(() => true)) return null;
+  const files = await client.listFiles(baseBranch).catch(() => null);
+  if (!files) return null;
+  const toolchains = detectToolchains(files);
+  const workflow = checksWorkflow(toolchains, baseBranch);
+  if (!workflow) return null;
+  const names = toolchains.filter((t) => t.ci).map((t) => t.name).join(" and ");
+  return { workflow, names };
 }
 
 /**
@@ -1710,7 +1744,10 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
         return;
       }
     }
-    if (change.files.length === 0 || !change.headSha) {
+    // A merge whose resolution kept the branch's side changes no files, and
+    // is still the change: the branch now counts the base as brought in.
+    const merged = result.mode === "fix" ? mergedFrom(change.messages) : null;
+    if ((change.files.length === 0 && !merged) || !change.headSha) {
       const said = (change.messages.at(-1) ?? "").trim();
       await stop(failure("The agent changed nothing", said, logLink), result.mode === "fix");
       return;
@@ -1728,7 +1765,6 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
 
     // It merged another branch in: what came with that branch is not the
     // agent's change, so only the rest is held to the scope.
-    const merged = result.mode === "fix" ? mergedFrom(change.messages) : null;
     if (merged) {
       const brought = new Set((await client.compare(branch, merged)).files);
       files = files.filter((f) => !brought.has(f));
