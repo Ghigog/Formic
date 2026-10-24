@@ -36,7 +36,7 @@ export function BoardHeader({
   const activity = useAssistantActivity();
   const label = `Project: ${projectName}. Choose another project${
     activity.count > 0
-      ? `. ${activity.count} other ${activity.count === 1 ? "project has" : "projects have"} a new assistant answer`
+      ? `. ${activity.count} other ${activity.count === 1 ? "project has" : "projects have"} something new`
       : ""
   }`;
   const toggle = () => setPicker((v) => !v);

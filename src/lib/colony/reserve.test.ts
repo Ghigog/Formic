@@ -4,6 +4,7 @@ import {
   AUTO_SCOUT_LEVEL,
   colonyAdmits,
   effectiveColony,
+  isTopPriority,
   maxScouts,
   nextFloorLevel,
   nextScoutLevel,
@@ -97,5 +98,27 @@ describe("colonyAdmits", () => {
 
   it("starts a ticket bigger than the room when nothing else runs", () => {
     expect(colonyAdmits(card({ id: "a", scouts: 4 }), 0, colony, NO_EPICS).ok).toBe(true);
+  });
+});
+
+describe("isTopPriority", () => {
+  const epic = card({ id: "e", kind: "epic", workType: "bug", bugSeverity: "high" });
+  const epics = new Map([["e", epic]]);
+
+  it("is true for a critical or high bug", () => {
+    expect(isTopPriority(card({ id: "a", workType: "bug", bugSeverity: "critical" }), NO_EPICS)).toBe(true);
+    expect(isTopPriority(card({ id: "a", workType: "bug", bugSeverity: "high" }), NO_EPICS)).toBe(true);
+  });
+
+  it("is false for a medium, low or unrated bug and for routine work", () => {
+    expect(isTopPriority(card({ id: "a", workType: "bug", bugSeverity: "medium" }), NO_EPICS)).toBe(false);
+    expect(isTopPriority(card({ id: "a", workType: "bug", bugSeverity: "low" }), NO_EPICS)).toBe(false);
+    expect(isTopPriority(card({ id: "a", workType: "bug" }), NO_EPICS)).toBe(false);
+    expect(isTopPriority(card({ id: "a", workType: "task", bugSeverity: "critical" }), NO_EPICS)).toBe(false);
+  });
+
+  it("takes the severity of a bug Epic for its ticket", () => {
+    expect(isTopPriority(card({ id: "a", epicId: "e" }), epics)).toBe(true);
+    expect(isTopPriority(card({ id: "a", epicId: "e", bugSeverity: "low" }), epics)).toBe(false);
   });
 });

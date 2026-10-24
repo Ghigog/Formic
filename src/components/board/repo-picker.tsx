@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
-import { markSeen, readSeen, unseenProjects, type ProjectActivity } from "@/lib/hooks/use-assistant-activity";
+import {
+  markSeen,
+  readSeen,
+  readSeenNotifications,
+  waitingOn,
+  type ProjectActivity,
+  type Waiting,
+} from "@/lib/hooks/use-assistant-activity";
 
 interface Project extends ProjectActivity {
   id: string;
@@ -16,6 +23,13 @@ interface RepoOption {
   private: boolean;
   description: string | null;
 }
+
+const WAITING_LABELS: Record<Waiting, string> = {
+  answer: "New assistant answer",
+  ticketMoved: "A ticket moved",
+  epicCompleted: "Epic completed",
+  needsAttention: "Needs attention",
+};
 
 const OWNER_REPO = /^[\w.-]+\/[\w.-]+$/;
 const REPO_NAME = /^[\w.-]{1,100}$/;
@@ -50,7 +64,7 @@ export function RepoPicker({
   const [install, setInstall] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [unseen, setUnseen] = useState<string[]>([]);
+  const [waiting, setWaiting] = useState<Record<string, Waiting[]>>({});
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -59,7 +73,15 @@ export function RepoPicker({
       .then((r) => r.json())
       .then((d: { active?: { id: string } | null; projects: Project[] }) => {
         setProjects(d.projects);
-        setUnseen(unseenProjects(d.projects, d.active?.id ?? null, readSeen()));
+        const seen = readSeen();
+        const seenNotifications = readSeenNotifications();
+        setWaiting(
+          Object.fromEntries(
+            d.projects
+              .filter((p) => p.id !== (d.active?.id ?? null))
+              .map((p) => [p.id, waitingOn(p, seen, seenNotifications)]),
+          ),
+        );
       })
       .catch(() => setProjects([]));
     void fetch("/api/github/repos", { cache: "no-store" })
@@ -232,13 +254,18 @@ export function RepoPicker({
                       {p.repoFullName}
                     </span>
                     <span className="text-muted font-mono text-[10px]">{p.baseBranch}</span>
-                    {unseen.includes(p.id) && (
+                    {(waiting[p.id] ?? []).map((kind) => (
                       <span
+                        key={kind}
                         role="img"
-                        aria-label="New assistant answer"
-                        className="bg-terracotta size-2 shrink-0 rounded-full"
+                        aria-label={WAITING_LABELS[kind]}
+                        title={WAITING_LABELS[kind]}
+                        className={cn(
+                          "size-2 shrink-0 rounded-full",
+                          kind === "needsAttention" ? "bg-crimson-text" : "bg-terracotta",
+                        )}
                       />
-                    )}
+                    ))}
                     {selected && <Check />}
                     {busy === p.id && <span className="text-muted text-[11px]">…</span>}
                   </button>

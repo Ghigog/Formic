@@ -16,7 +16,7 @@ import {
   type BoardCard,
 } from "@/lib/domain/entities";
 import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
-import { isBug, isSquashed } from "@/lib/colony/game";
+import { bugSeverityOf, isBug } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
@@ -182,8 +182,8 @@ function CardTypeTag({ card }: { card: BoardCard }) {
   const bug = isBug(card, epics);
   const type = bug ? "bug" : card.workType;
   if (!type) return null;
-  const severity = bug ? (card.bugSeverity ?? (card.epicId ? epics.get(card.epicId)?.bugSeverity : null)) : null;
-  return <TypeTag type={type} severity={severity} squashed={bug && isSquashed(card)} />;
+  // The tag says Squashed only once the bug is merged; until then it keeps its severity.
+  return <TypeTag type={type} severity={bugSeverityOf(card, epics)} squashed={bug && card.status === "merged"} />;
 }
 
 /** A small chess queen on a card a Queen was placed on. */
@@ -1026,19 +1026,23 @@ export function KanbanCard({
  * Epic groups: the To Do DAG accordion and the Done merged group
  * ---------------------------------------------------------------------- */
 
-/** A child row in a To Do accordion. Fixed 60px so the trail curves land. */
+/**
+ * A child row in a To Do accordion, stacked so the key and title stay
+ * readable: tag and points, key, title, arrows. Fixed 120px so the trail
+ * curves land.
+ */
 function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
   const blocked = card.status === "waiting" || card.status === "blocked";
   const failed = card.status === "failed";
-  const caption = blocked
+  const reason = blocked
     ? card.blockedReason ?? `blocked by ${card.dependsOn.length} ticket(s)`
-    : (card.fileScope[0] ?? "");
+    : undefined;
 
   return (
     <div
       data-tid={card.id}
       className={cn(
-        "border-line relative isolate flex h-[60px] flex-col justify-center gap-1 rounded-md border px-2.5 py-2 leading-[normal]",
+        "border-line relative isolate flex h-[120px] flex-col gap-1 rounded-md border px-2.5 py-2 leading-[normal]",
         blocked || failed ? "bg-nested-muted" : "bg-card",
       )}
     >
@@ -1053,24 +1057,27 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
         />
         <CardTypeTag card={card} />
         <CardQueenMark card={card} />
-        <span className="text-muted font-mono text-[10px]">{card.key}</span>
         <ProblemBadge card={card} />
-        <h4
-          className={cn(
-            "min-w-0 flex-1 truncate text-[12px] font-medium",
-            blocked ? "text-muted" : "text-ink",
-          )}
-        >
-          {card.title}
-        </h4>
         {card.storyPoints != null && (
-          <span className="text-muted shrink-0 font-mono text-[9px]">{card.storyPoints} SP</span>
+          <span className="text-muted ml-auto shrink-0 font-mono text-[9px]">{card.storyPoints} SP</span>
         )}
-        <AdvanceButton card={card} column={column} />
       </div>
-      {caption && (
-        <span className="text-muted truncate font-mono text-[9px]">{caption}</span>
-      )}
+      <span className="text-muted font-mono text-[10px] whitespace-nowrap">{card.key}</span>
+      <h4
+        title={reason}
+        className={cn(
+          "line-clamp-2 min-h-[34px] text-[12px] leading-[17px] font-medium",
+          blocked ? "text-muted" : "text-ink",
+        )}
+      >
+        {card.title}
+      </h4>
+      <div className="mt-auto flex items-center justify-between">
+        <ReturnButton card={card} column={column} />
+        <span className="ml-auto">
+          <AdvanceButton card={card} column={column} place="footer" />
+        </span>
+      </div>
     </div>
   );
 }

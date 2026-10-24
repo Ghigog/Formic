@@ -125,3 +125,15 @@ describe("TypeTag", () => {
     expect(screen.getByText("Squashed")).toBeInTheDocument();
   });
 });
+
+describe("a bug's label", () => {
+  it("keeps its severity until it is squashed", () => {
+    render(<TypeTag type="bug" severity="critical" />);
+    expect(screen.getByText("Bug · Critical")).toBeTruthy();
+  });
+
+  it("reads Squashed once squashed, whatever its severity", () => {
+    render(<TypeTag type="bug" severity="high" squashed />);
+    expect(screen.getByText("Squashed")).toBeTruthy();
+  });
+});

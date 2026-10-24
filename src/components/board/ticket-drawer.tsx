@@ -154,6 +154,8 @@ export function TicketDrawer({
   if (!ticketId) return null;
 
   const card = view?.card;
+  // A ticket of a bug Epic is a bug too.
+  const tagType = card ? (card.workType ?? (view?.epic?.workType === "bug" ? "bug" : null)) : null;
   const notice = card && !card.misplacedReason ? classifyNotice(card) : null;
   const working = card?.status === "running" || card?.status === "review";
 
@@ -203,8 +205,12 @@ export function TicketDrawer({
               </h2>
               {card && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  {card.workType && (
-                    <TypeTag type={card.workType} severity={card.bugSeverity} />
+                  {tagType && (
+                    <TypeTag
+                      type={tagType}
+                      severity={tagType === "bug" ? (card.bugSeverity ?? view?.epic?.bugSeverity) : null}
+                      squashed={tagType === "bug" && card.status === "merged"}
+                    />
                   )}
                   <StatusPill status={card.status} />
                   {card.workingSince && (
@@ -259,7 +265,7 @@ export function TicketDrawer({
           {!kb.open && view && view.plan.length > 0 && (
             <div
               data-testid="drawer-plan"
-              className="mt-3 max-h-40 overflow-y-auto sm:max-h-56"
+              className="mt-3 overflow-x-auto"
             >
               <PlanSteps steps={view.plan} working={working} />
             </div>

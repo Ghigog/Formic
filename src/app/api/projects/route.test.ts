@@ -39,6 +39,25 @@ describe("GET /api/projects", () => {
   });
 });
 
+describe("GET /api/projects notifications", () => {
+  it("names the latest event of each kind, leaving out kinds switched off", async () => {
+    const repo = repository();
+    const user = (await currentUser())!;
+    const project = await repo.ensureProject({ ownerId: user.id, repoFullName: "acme/gadgets", baseBranch: "main" });
+    const status = (cardId: string, status: string) => ({
+      type: "card.status", cardId, kind: "ticket", status, stalledIn: null, stage: 0, blockedReason: null,
+    });
+    await repo.appendEvent(project.id, "card.status", status("c1", "blocked"));
+    const moved = await repo.appendEvent(project.id, "card.status", status("c1", "in_review"));
+    const body = (await (await GET()).json()) as {
+      projects: Array<{ id: string; notifications: Record<string, { seq: number }> }>;
+    };
+    const mine = body.projects.find((p) => p.id === project.id)!;
+    expect(mine.notifications.ticketMoved?.seq).toBe(moved);
+    expect(mine.notifications.needsAttention).toBeDefined();
+  });
+});
+
 describe("GET /api/projects order", () => {
   it("lists the boards most recently opened first, then the unopened in creation order", async () => {
     const repo = repository();

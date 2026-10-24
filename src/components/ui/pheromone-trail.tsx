@@ -80,13 +80,13 @@ export function TrailLayer({
  * The board-column variant: a fixed-geometry trail drawn in the 22px gutter
  * left of an epic's child tickets.
  *
- * Fixed rather than measured because the rows are a known height (60px in a
+ * Fixed rather than measured because the rows are a known height (120px in a
  * board column, 92px in the drawer) precisely so the curve endpoints land on
  * a row's vertical centre without a layout pass. A spine runs the height of
  * the group at 22% opacity; one quadratic branch per child leaves it at 45%,
  * or in jade when the dependency has already unlocked.
  */
-const ROW = 60;
+const ROW = 120;
 const GAP = 8;
 const STEP = ROW + GAP;
 

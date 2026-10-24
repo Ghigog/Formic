@@ -1744,7 +1744,10 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
         return;
       }
     }
-    if (change.files.length === 0 || !change.headSha) {
+    // A merge whose resolution kept the branch's side changes no files, and
+    // is still the change: the branch now counts the base as brought in.
+    const merged = result.mode === "fix" ? mergedFrom(change.messages) : null;
+    if ((change.files.length === 0 && !merged) || !change.headSha) {
       const said = (change.messages.at(-1) ?? "").trim();
       await stop(failure("The agent changed nothing", said, logLink), result.mode === "fix");
       return;
@@ -1762,7 +1765,6 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
 
     // It merged another branch in: what came with that branch is not the
     // agent's change, so only the rest is held to the scope.
-    const merged = result.mode === "fix" ? mergedFrom(change.messages) : null;
     if (merged) {
       const brought = new Set((await client.compare(branch, merged)).files);
       files = files.filter((f) => !brought.has(f));
