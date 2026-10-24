@@ -8,7 +8,7 @@ import { runnerSetupBranch, runnerVersion, runnerWorkflow } from "./workflow";
 /**
  * The loop entry as one file, for a job in someone else's repository to run.
  *
- * The file is a build artifact, not source: `scripts/build-loop-entry.mjs`
+ * The file is a build artifact, not source: `scripts/build-runner-action.mjs`
  * produces it before `next build` and this reads it, so what a job runs is
  * always a build of the commit being deployed. Where the artifact is missing —
  * a development server, or a deploy whose build did not produce one — this

@@ -51,7 +51,7 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   /**
    * The loop entry a job runs is a build artifact (`npm run build` produces it
-   * with scripts/build-loop-entry.mjs before Next compiles), so the function
+   * with scripts/build-runner-action.mjs before Next compiles), so the function
    * that serves it has to carry the file with it: nothing imports it, and a
    * tracer cannot see a file read at runtime.
    */
