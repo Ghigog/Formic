@@ -1,4 +1,4 @@
-# formic-runner: 9af80100e1d1
+# formic-runner: 027874b88d72
 # Installed by Formic (https://formic-board.vercel.app). Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -110,17 +110,18 @@ jobs:
         with:
           node-version: 22
 
-      # Every run is a fresh machine. The package caches carry the agent's
-      # own install and the project's dependencies from one run to the next,
-      # so neither is downloaded from scratch each time.
+      # Every run is a fresh machine. The caches carry the agent's own install
+      # and the project's dependencies and engines from one run to the next, so
+      # neither is downloaded from scratch each time.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.npm
-            ~/.cache/pip
             ~/.cache/yarn
             ~/.local/share/pnpm/store
-          key: formic-${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/requirements*.txt') }}
+            ~/.cache/pip
+            ~/.cache/formic/godot
+          key: formic-${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/requirements*.txt', 'project.godot', '.github/formic/godot-version') }}
           restore-keys: formic-${{ runner.os }}-
 
       - name: Install the agent
@@ -135,20 +136,129 @@ jobs:
             *) echo "Unknown agent: $CLI"; exit 1 ;;
           esac
 
-      # Ready before the agent starts, so it spends its turns on the ticket.
-      # The coding modes need them, and so does a sentinel's audit, which runs
+      # Ready before the agent starts, so it spends its turns on the ticket:
+      # whatever toolchains the checkout uses (src/lib/toolchains), then the
+      # repository's own .github/formic/setup.sh. The coding modes need them, and so does a sentinel's audit, which runs
       # the tests and the build to back its report. A failure here is not
       # fatal: the agent can still install what it needs itself.
       - name: Install the project's dependencies
         if: inputs.mode == 'implement' || inputs.mode == 'fix' || inputs.mode == 'loop' || (inputs.mode == 'ask' && (inputs.ticket == 'sentinel' || inputs.ticket == 'assistant'))
         continue-on-error: true
         run: |
-          # Installed, never handed back: kept out of what the agent commits.
-          echo "node_modules/" >> .git/info/exclude
-          if [ -f package-lock.json ]; then npm ci --prefer-offline --no-audit --fund=false
-          elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile
-          elif [ -f yarn.lock ]; then corepack enable && yarn install
-          elif [ -f requirements.txt ]; then pip install -r requirements.txt
+          set +e
+          FORMIC_CHECKS="$HOME/.formic/checks.md"
+          FORMIC_BIN="$HOME/.formic/bin"
+          mkdir -p "$FORMIC_BIN"
+          : > "$FORMIC_CHECKS"
+          export FORMIC_CHECKS FORMIC_BIN PATH="$FORMIC_BIN:$PATH"
+          formic_bin() {
+            chmod +x "$1"
+            ln -sf "$1" "$FORMIC_BIN/$2"
+            if [ -n "${GITHUB_PATH:-}" ]; then echo "$FORMIC_BIN" >> "$GITHUB_PATH"; fi
+          }
+          formic_note() { printf '%s\n' "$*" >> "$FORMIC_CHECKS"; }
+          export -f formic_bin formic_note
+
+          if [ -f package-lock.json ] || [ -f pnpm-lock.yaml ] || [ -f yarn.lock ]; then
+            echo "Setting up Node..."
+            (
+              set -e
+              # Installed, never handed back: kept out of what the agent commits.
+              echo "node_modules/" >> .git/info/exclude
+              if [ -f package-lock.json ]; then npm ci --prefer-offline --no-audit --fund=false
+              elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile
+              elif [ -f yarn.lock ]; then corepack enable && yarn install
+              fi
+            )
+            if [ "$?" -ne 0 ]; then echo "Setting up Node failed; the agent can still install what it needs."; fi
+          fi
+
+          if [ -f requirements.txt ]; then
+            echo "Setting up Python..."
+            (
+              set -e
+              pip install -r requirements.txt
+            )
+            if [ "$?" -ne 0 ]; then echo "Setting up Python failed; the agent can still install what it needs."; fi
+          fi
+
+          if [ -f project.godot ]; then
+            echo "Setting up Godot..."
+            (
+              set -e
+              want=""
+              if [ -f .github/formic/godot-version ]; then want="$(tr -d '[:space:]' < .github/formic/godot-version)"; fi
+              if [ -z "$want" ]; then
+                want="$(sed -n 's/^config\/features=PackedStringArray("\([0-9][0-9.]*\)".*/\1/p' project.godot | head -n 1)"
+              fi
+              if [ -z "$want" ]; then
+                echo "project.godot names no Godot version. Pin one in .github/formic/godot-version, for example 4.7.1."
+                exit 1
+              fi
+              if grep -q '^config/features=.*"C#"' project.godot; then
+                formic_note "This is a C# Godot project. Formic does not install the .NET build of Godot yet, so there is no engine here to build or test it with."
+                echo "C# Godot projects are not supported yet."
+                exit 1
+              fi
+
+              case "$want" in
+                *-*) tag="$want" ;;
+                *)
+                  pattern="^$(printf '%s' "$want" | sed 's/\./\\./g')(\.[0-9]+)*-stable$"
+                  tag="$(git ls-remote --tags --refs https://github.com/godotengine/godot-builds | sed -n 's#.*refs/tags/##p' | grep -E "$pattern" | sort -V | tail -n 1)"
+                  ;;
+              esac
+              if [ -z "$tag" ]; then
+                echo "No stable Godot release matches $want."
+                exit 1
+              fi
+              case "$(uname -m)" in
+                x86_64) arch=x86_64 ;;
+                aarch64 | arm64) arch=arm64 ;;
+                *) echo "No Linux Godot build for $(uname -m)."; exit 1 ;;
+              esac
+
+              dir="$HOME/.cache/formic/godot/$tag"
+              bin="$dir/Godot_v$tag""_linux.$arch"
+              if [ ! -f "$bin" ]; then
+                echo "Downloading Godot $tag..."
+                mkdir -p "$dir"
+                curl -fsSL --retry 3 --max-time 600 -o "$dir/godot.zip" \
+                  "https://github.com/godotengine/godot-builds/releases/download/$tag/Godot_v$tag""_linux.$arch.zip"
+                unzip -q -o "$dir/godot.zip" -d "$dir" 2>/dev/null || python3 -m zipfile -e "$dir/godot.zip" "$dir"
+                rm -f "$dir/godot.zip"
+              fi
+              formic_bin "$bin" godot
+              godot --headless --version
+
+              formic_note "## Godot"
+              formic_note "Godot $tag, headless, is installed: run it as \`godot\`. There is no display, so always pass --headless."
+              formic_note "A fresh checkout has nothing imported. When there is no .godot/ folder, or after you add or change an asset, run \`godot --headless --import\` first: a script that loads an unimported resource fails."
+              if [ -f addons/gut/gut_cmdln.gd ]; then formic_note 'Tests (GUT): `godot --headless -s addons/gut/gut_cmdln.gd -gexit`. A non-zero exit means a test failed; read the log above the summary for which.'
+              else formic_note "No test framework Formic knows (GUT) is installed in addons/."
+              fi
+            )
+            if [ "$?" -ne 0 ]; then echo "Setting up Godot failed; the agent can still install what it needs."; fi
+          fi
+
+          if [ -f .github/formic/setup.sh ]; then
+            echo "Running .github/formic/setup.sh..."
+            FORMIC_HOST=job bash .github/formic/setup.sh
+            if [ "$?" -ne 0 ]; then echo ".github/formic/setup.sh failed; carrying on without it."; fi
+          fi
+
+          if [ -f project.godot ]; then
+            echo "Preparing the Godot project..."
+            (
+              set -e
+              echo "Importing the project..."
+              log="$HOME/.formic/godot-import.log"
+              if ! timeout 1200 godot --headless --import > "$log" 2>&1; then
+                echo "The import did not finish cleanly; the agent will see the same when it runs it."
+              fi
+              tail -n 20 "$log"
+            )
+            if [ "$?" -ne 0 ]; then echo "Preparing the Godot project failed; the agent can still install what it needs."; fi
           fi
 
       - name: Run the agent

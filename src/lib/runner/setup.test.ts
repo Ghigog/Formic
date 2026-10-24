@@ -6,6 +6,7 @@ import { currentRunnerFiles } from "./bundle";
 import { repository } from "@/lib/db";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, VcsError, resetVcs, setVcs } from "@/lib/vcs";
+import { CHECKS_WORKFLOW_PATH } from "@/lib/toolchains/actions";
 
 /** The board asking, as it loads, whether its repository can run CLI agents yet. */
 
@@ -82,6 +83,33 @@ describe("runner setup", () => {
 
     expect(await runnerSetup(project)).toEqual({ state: "ready" });
     expect((await client.pullRequest(old.number)).state).toBe("closed");
+  });
+
+  it("proposes CI for a Godot repository that has none, in the same pull request", async () => {
+    const project = await repository().defaultProject();
+    await client.commitFile(project.baseBranch, "project.godot", 'config/features=PackedStringArray("4.7")\n', "game");
+    MockVcsClient.runner().noCi = true;
+
+    await runnerSetup(project);
+
+    const checks = MockVcsClient.runner().files.get(`${(await currentRunnerFiles()).branch}:${CHECKS_WORKFLOW_PATH}`);
+    expect(checks).toContain("godot --headless -s addons/gut/gut_cmdln.gd");
+  });
+
+  it("proposes no CI where the repository has its own, or Formic has none for its toolchain", async () => {
+    const project = await repository().defaultProject();
+    await client.commitFile(project.baseBranch, "project.godot", "", "game");
+    await runnerSetup(project);
+    const branch = (await currentRunnerFiles()).branch;
+    expect(MockVcsClient.runner().files.get(`${branch}:${CHECKS_WORKFLOW_PATH}`)).toBeUndefined();
+
+    MockVcsClient.reset();
+    client = new MockVcsClient("acme/widgets");
+    setVcs(client);
+    await client.commitFile(project.baseBranch, "package-lock.json", "{}", "node");
+    MockVcsClient.runner().noCi = true;
+    await runnerSetup(project);
+    expect(MockVcsClient.runner().files.get(`${branch}:${CHECKS_WORKFLOW_PATH}`)).toBeUndefined();
   });
 
   it("says what permission is missing when GitHub refuses", async () => {
