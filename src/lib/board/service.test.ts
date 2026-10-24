@@ -75,6 +75,45 @@ describe("a board with agents off", () => {
   });
 });
 
+describe("a board with agentsOff set", () => {
+  const flag = (on: boolean) => {
+    globalThis.__formicMemoryStore!.projects.get(PROJECT)!.agentsOff = on;
+  };
+  const drop = (id: string, from: "todo" | "in_review", to: "in_progress" | "done") =>
+    applyTransition(PROJECT, { cardId: id, kind: "ticket", from, to, position: 1, actor: "user" });
+
+  async function unstaff() {
+    await repository().setColumnAgent(PROJECT, "in_progress", null);
+  }
+
+  it("moves a ticket to In Progress with no column agent and starts no run", async () => {
+    const card = makeCard({ kind: "ticket", status: "ready" });
+    seedMemory([card]);
+    await unstaff();
+    flag(true);
+    const result = await drop(card.id, "todo", "in_progress");
+    expect(result).toMatchObject({ ok: true, status: "running" });
+    expect(launched).toEqual([]);
+  });
+
+  it("moves a ticket with a pull request to Done without a merge", async () => {
+    const card = makeCard({ kind: "ticket", status: "review", prNumber: 7 });
+    seedMemory([card]);
+    flag(true);
+    const result = await drop(card.id, "in_review", "done");
+    expect(result).toMatchObject({ ok: true, status: "merged" });
+    expect(MockVcsClient.runner().files.size).toBe(0);
+  });
+
+  it("still refuses In Progress with no column agent when agents are on", async () => {
+    const card = makeCard({ kind: "ticket", status: "ready" });
+    seedMemory([card]);
+    await unstaff();
+    const result = await drop(card.id, "todo", "in_progress");
+    expect(result).toMatchObject({ ok: false, needsAgent: "in_progress" });
+  });
+});
+
 describe("applyTransition within one column", () => {
   it("reorders an epic in To Do without re-running its Architect Agent", async () => {
     const [epic, child] = makeEpicWithChildren({ status: "ready" }, [{}]);

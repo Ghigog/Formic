@@ -187,6 +187,9 @@ model Project {
   /// Whether agents work on this board. Off (the default) it is a plain board a
   /// person moves cards on; existing boards were migrated to on.
   agents                     Boolean  @default(false)
+  /// Whether the owner turned agents off on this board: cards only move between
+  /// columns, with no run, column agent or merge. Off by default.
+  agentsOff                  Boolean  @default(false)
   /// Whether Formic raises a ticket's story points itself when it outgrows
   /// its estimate. Off (the default) until the owner opts in.
   autoEscalate               Boolean  @default(false)
