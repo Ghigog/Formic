@@ -158,12 +158,14 @@ export function isTerminal(status: TicketStatus): boolean {
  * recovery (pulling a failed card back to To Do, or a reviewed card back to
  * In Progress so its Coder Agent continues on the open pull request),
  * forwards moves only one column at a time so a card cannot skip its agent.
+ * In Review to Done is a request to merge the pull request (see
+ * applyTransition), so it is the one forward step into Done.
  */
 const ALLOWED_USER_MOVES: Record<ColumnId, readonly ColumnId[]> = {
   backlog: ["todo"],
   todo: ["backlog", "in_progress"],
   in_progress: ["todo"],
-  in_review: ["todo", "in_progress"],
+  in_review: ["todo", "in_progress", "done"],
   done: [],
 };
 
