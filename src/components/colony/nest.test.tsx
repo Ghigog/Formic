@@ -121,7 +121,7 @@ describe("ColonyPopover Queens", () => {
     card.remove();
   });
 
-  it("draws a touch-dragged Queen below the finger and drops on the card under her", async () => {
+  it("draws a touch-dragged Queen below the finger and drops on the card under the finger", async () => {
     stubQueens(1);
     openPopoverAt(3 * XP_PER_LEVEL);
     const card = document.createElement("div");
@@ -136,7 +136,7 @@ describe("ColonyPopover Queens", () => {
     expect(image.style.left).toBe("100px");
     expect(image.style.top).toBe(`${200 + QUEEN_TOUCH_OFFSET_Y}px`);
     fireEvent.pointerUp(window, { clientX: 100, clientY: 200, pointerType: "touch" });
-    expect(lookup).toHaveBeenCalledWith(100, 200 + QUEEN_TOUCH_OFFSET_Y);
+    expect(lookup).toHaveBeenCalledWith(100, 200);
     card.remove();
   });
 
@@ -220,6 +220,18 @@ describe("ColonyPopover Queen carry", () => {
     expect(dialog.className).not.toContain("invisible");
     expect(carryEvents).toEqual([true, false]);
     card.remove();
+  });
+
+  it("keeps the drag image out of any hidden ancestor on a phone while carrying", async () => {
+    dragAndDrop(true);
+    document.elementFromPoint = vi.fn(() => null);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2"));
+    fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    const image = document.querySelector<HTMLElement>("[data-queen-image]")!;
+    expect(image).toBeTruthy();
+    for (let el: HTMLElement | null = image; el; el = el.parentElement) expect(el.className).not.toContain("invisible");
+    expect(document.querySelector("[role=dialog]")!.contains(image)).toBe(false);
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
   });
 
   it("leaves the dialog visible on desktop while carrying", async () => {
