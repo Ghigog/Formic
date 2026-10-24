@@ -17,3 +17,4 @@ prisma/dev.db
 /e2e/.evidence
 /playwright-report
 /test-results
+/runner-action/dist/

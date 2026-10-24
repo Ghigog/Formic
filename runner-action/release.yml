@@ -1,0 +1,34 @@
+# Template: copied into the public repository that publishes the runner Action.
+# On a version tag it builds the Action from that tag's source and attests the
+# build, so what runs in an Actions job can be traced to the code at the tag.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/build-runner-action.mjs
+        env:
+          FORMIC_BUILD_COMMIT: ${{ github.sha }}
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: runner-action/dist/index.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runner-action-dist
+          path: runner-action/dist

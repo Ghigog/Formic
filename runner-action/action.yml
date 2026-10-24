@@ -1,0 +1,40 @@
+name: Formic runner
+description: Runs a Formic job in this repository. The source is readable, and each release carries a build provenance attestation.
+author: Formic
+inputs:
+  job:
+    description: Formic job id
+    required: true
+  mode:
+    description: implement, fix, loop, product, architect, showcase or ask
+    required: true
+  ticket:
+    description: Ticket key
+    required: true
+  cli:
+    description: claude, codex or gemini
+    required: true
+  model:
+    description: Model, or empty for the agent's default
+    required: false
+    default: ""
+  from:
+    description: Branch to start from
+    required: true
+  secret:
+    description: The Actions secret holding this agent's sign-in
+    required: true
+  prompt:
+    description: What to do
+    required: true
+  report:
+    description: Where to post what the agent does as it works, or empty
+    required: false
+    default: ""
+  merge:
+    description: A branch to merge in first, its conflicts left for the agent, or empty
+    required: false
+    default: ""
+runs:
+  using: node22
+  main: dist/index.mjs
