@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isPrunableEventType } from "@/lib/domain/events";
 
@@ -20,6 +21,8 @@ import type {
   LimitColumns,
   RunTimeBudgetColumns,
   UserRecord,
+  AccessTokenRecord,
+  NewAccessToken,
   PushPreferences,
   PushSubscriptionRecord,
   UserSecrets,
@@ -177,6 +180,7 @@ interface Store {
   users: Map<string, UserRecord>;
   /** endpoint to the subscription and the person it belongs to. */
   pushSubscriptions: Map<string, PushSubscriptionRecord & { userId: string }>;
+  accessTokens: Map<string, AccessTokenRecord>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
   /** `${projectId}:${column}` to that column agent's override. */
@@ -208,6 +212,7 @@ function store(): Store {
     existing.columnOverrides ??= new Map();
     existing.users ??= new Map();
     existing.pushSubscriptions ??= new Map();
+    existing.accessTokens ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
     existing.queens ??= new Map();
@@ -268,6 +273,7 @@ function store(): Store {
     presets: new Map(),
     users: new Map(),
     pushSubscriptions: new Map(),
+    accessTokens: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
     members: new Set(),
@@ -524,6 +530,9 @@ export class MemoryRepository implements Repository {
     for (const [endpoint, sub] of s.pushSubscriptions) {
       if (sub.userId === userId) s.pushSubscriptions.delete(endpoint);
     }
+    for (const [id, token] of s.accessTokens) {
+      if (token.userId === userId) s.accessTokens.delete(id);
+    }
   }
 
   async projectById(projectId: string): Promise<ProjectSummary | null> {
@@ -545,6 +554,36 @@ export class MemoryRepository implements Repository {
     return new Map(
       [...store().opens].filter(([k]) => k.startsWith(prefix)).map(([k, at]) => [k.slice(prefix.length), at]),
     );
+  }
+
+  async createAccessToken(token: NewAccessToken): Promise<AccessTokenRecord> {
+    const record: AccessTokenRecord = { ...token, id: randomUUID(), revokedAt: null, createdAt: new Date(), lastUsedAt: null };
+    store().accessTokens.set(record.id, record);
+    return { ...record };
+  }
+
+  async accessTokenByHash(tokenHash: string): Promise<AccessTokenRecord | null> {
+    const found = [...store().accessTokens.values()].find((t) => t.tokenHash === tokenHash);
+    return found ? { ...found } : null;
+  }
+
+  async accessTokensForUser(userId: string): Promise<AccessTokenRecord[]> {
+    return [...store().accessTokens.values()]
+      .filter((t) => t.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((t) => ({ ...t }));
+  }
+
+  async revokeAccessToken(userId: string, id: string): Promise<boolean> {
+    const found = store().accessTokens.get(id);
+    if (!found || found.userId !== userId || found.revokedAt) return false;
+    found.revokedAt = new Date();
+    return true;
+  }
+
+  async touchAccessToken(id: string, at: Date): Promise<void> {
+    const found = store().accessTokens.get(id);
+    if (found) found.lastUsedAt = at;
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {

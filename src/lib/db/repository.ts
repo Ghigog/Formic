@@ -450,6 +450,22 @@ export interface PushSubscriptionRecord {
   auth: string;
 }
 
+/** A personal access token as stored: the sha256 of its secret, never the secret. */
+export interface AccessTokenRecord {
+  id: string;
+  userId: string;
+  name: string;
+  tokenHash: string;
+  lastFour: string;
+  readOnly: boolean;
+  expiresAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+}
+
+export type NewAccessToken = Pick<AccessTokenRecord, "userId" | "name" | "tokenHash" | "lastFour" | "readOnly" | "expiresAt">;
+
 /** Which push messages a person wants. */
 export interface PushPreferences {
   ticketMoved: boolean;
@@ -610,6 +626,13 @@ export interface Repository {
   markOpened(userId: string, projectId: string): Promise<void>;
   /** When this person last opened each project, by project id. Never-opened ones are absent. */
   openedAtByProject(userId: string): Promise<Map<string, Date>>;
+  createAccessToken(token: NewAccessToken): Promise<AccessTokenRecord>;
+  accessTokenByHash(tokenHash: string): Promise<AccessTokenRecord | null>;
+  /** A person's tokens, newest first. */
+  accessTokensForUser(userId: string): Promise<AccessTokenRecord[]>;
+  /** Revokes a token only when it belongs to `userId`; false when nothing changed. */
+  revokeAccessToken(userId: string, id: string): Promise<boolean>;
+  touchAccessToken(id: string, at: Date): Promise<void>;
   /** Saves a device's push subscription; a known endpoint moves to this person with fresh keys. */
   savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void>;
   /** Forgets a device, whoever it is saved for when `userId` is omitted. */
