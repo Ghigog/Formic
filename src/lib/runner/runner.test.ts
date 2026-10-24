@@ -1102,6 +1102,18 @@ describe("a CLI agent resolving a conflict", () => {
     expect(after.reviewedSha).toBe(head);
   });
 
+  it("records a resolution that kept the branch's side as the merge, though it changes no files", async () => {
+    const { ticket, job, merged } = await conflicted();
+    MockVcsClient.stage(`${STAGING_PREFIX}${job}`, [], `T-1: bring main in\n\nKept ours.\n\nFormic-Merged: ${merged}`);
+
+    await completeCliRun(PROJECT, { job, mode: "fix", conclusion: "success", url: null });
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    const head = MockVcsClient.runner().branches.get("formic/t-1-abc")!;
+    expect(after.status).toBe("review");
+    expect(MockVcsClient.runner().recordedMerges.get(head)).toBe(merged);
+  });
+
   it("refuses a resolution that changes files neither side brought, outside the scope", async () => {
     const { ticket, job, merged } = await conflicted();
     MockVcsClient.stage(

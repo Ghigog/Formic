@@ -709,7 +709,9 @@ ${indent(REPORTER_SCRIPT, 10)}
             git reset -q --soft "$FORMIC_START"
           fi
           git add -A
-          if git diff --cached --quiet && [ "$(git rev-parse HEAD)" = "$FORMIC_START" ]; then
+          # A resolution that kept the branch's side changes no files, yet is
+          # still the merge: Formic records it as one.
+          if [ -z "\${FORMIC_MERGED:-}" ] && git diff --cached --quiet && [ "$(git rev-parse HEAD)" = "$FORMIC_START" ]; then
             echo "The agent finished without changing anything."
             exit 1
           fi
