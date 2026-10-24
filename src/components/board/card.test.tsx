@@ -10,7 +10,7 @@ afterEach(() => {
   colonyApi = null;
 });
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Column } from "./column";
 import { EMPTY_VIEW } from "./view";
 import { CardEnvContext, EpicGroup, type CardExtras } from "./card";
@@ -415,6 +415,42 @@ describe("a card's entry time", () => {
     renderIn("todo", makeCard({ status: "ready", enteredAt }));
     const el = screen.getByText(short);
     expect(el.getAttribute("title")).toBe(new Date(enteredAt).toLocaleString("en-US", { dateStyle: "full", timeStyle: "long" }));
+  });
+
+  describe("time in the column", () => {
+    afterEach(() => vi.useRealTimers());
+    const at = (agoMs: number) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-05T14:30:00Z").getTime() + agoMs);
+      return new Date("2026-03-05T14:30:00Z").toISOString();
+    };
+
+    it("follows the date outside Done", async () => {
+      const entered = at(125 * 60_000);
+      const { container } = renderIn("todo", makeCard({ status: "ready", enteredAt: entered }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(container.querySelector("time")?.textContent).toBe(`${short} 2h 5m`);
+    });
+
+    it("reads <1m for under a minute", async () => {
+      const entered = at(10_000);
+      const { container } = renderIn("todo", makeCard({ status: "ready", enteredAt: entered }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(container.querySelector("time")?.textContent).toBe(`${short} <1m`);
+    });
+
+    it("is left out of Done", async () => {
+      const entered = at(125 * 60_000);
+      const { container } = renderIn("done", makeCard({ status: "merged", enteredAt: entered }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(container.querySelector("time")?.textContent).toBe(`Done ${short}`);
+    });
   });
 
   it("shows nothing before it has entered", () => {
