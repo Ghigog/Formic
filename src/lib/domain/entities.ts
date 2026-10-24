@@ -116,8 +116,8 @@ export const projectSchema = z.object({
 export type Project = z.infer<typeof projectSchema>;
 
 /** Whether agents work on this board. Every agent feature gates through here. */
-export function agentsEnabled(project: { agents: boolean }): boolean {
-  return project.agents;
+export function agentsEnabled(project: { agents: boolean; agentsOff?: boolean }): boolean {
+  return project.agents && !project.agentsOff;
 }
 
 export const prdSchema = z.object({
