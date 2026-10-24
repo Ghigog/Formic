@@ -671,21 +671,24 @@ export class MemoryRepository implements Repository {
 
   async ensureProject(input: {
     ownerId: string | null;
-    repoFullName: string;
+    repoFullName: string | null;
+    name?: string;
     baseBranch: string;
   }): Promise<ProjectSummary> {
     const s = store();
-    const found = [...s.projects.values()].find(
-      (p) =>
-        p.ownerId === input.ownerId &&
-        p.repoFullName.toLowerCase() === input.repoFullName.toLowerCase(),
-    );
+    const wanted = input.repoFullName?.toLowerCase();
+    const found =
+      wanted === undefined
+        ? undefined
+        : [...s.projects.values()].find(
+            (p) => p.ownerId === input.ownerId && p.repoFullName.toLowerCase() === wanted,
+          );
     if (found) return found;
     const project: ProjectSummary = {
       id: id("project"),
       ownerId: input.ownerId,
-      name: input.repoFullName.split("/")[1] ?? input.repoFullName,
-      repoFullName: input.repoFullName,
+      name: input.name ?? input.repoFullName?.split("/")[1] ?? input.repoFullName ?? "Board",
+      repoFullName: input.repoFullName ?? "",
       baseBranch: input.baseBranch,
       agents: false,
       autoMerge: false,

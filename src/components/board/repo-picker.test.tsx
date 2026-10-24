@@ -28,6 +28,21 @@ describe("RepoPicker", () => {
     );
   });
 
+  it("starts a board without a repository", async () => {
+    const calls: unknown[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        calls.push(JSON.parse(String(init.body)));
+        return Response.json({ project: { id: "p1" } });
+      }
+      return Response.json(url.includes("/api/projects") ? { projects: [] } : { ok: true, repos: [] });
+    });
+    render(<RepoPicker current={null} inline onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Start without a repository/ }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls).toEqual([{ noRepository: true }]);
+  });
+
   it("marks a board with the kind waiting on it", async () => {
     vi.stubGlobal("fetch", async (url: string) =>
       Response.json(

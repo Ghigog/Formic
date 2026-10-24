@@ -162,7 +162,7 @@ export function RepoPicker({
     await choose({ repoFullName: data.repo.fullName }, `create:${name}`);
   }
 
-  async function choose(body: { projectId: string } | { repoFullName: string }, key: string) {
+  async function choose(body: { projectId: string } | { repoFullName: string } | { noRepository: true }, key: string) {
     const project = "projectId" in body ? projects?.find((p) => p.id === body.projectId) : undefined;
     setBusy(key);
     setError(null);
@@ -251,7 +251,7 @@ export function RepoPicker({
                     }
                   >
                     <span className="text-ink min-w-0 flex-1 truncate font-medium">
-                      {p.repoFullName}
+                      {p.repoFullName || "No repository"}
                     </span>
                     <span className="text-muted font-mono text-[10px]">{p.baseBranch}</span>
                     {(waiting[p.id] ?? []).map((kind) => (
@@ -318,6 +318,16 @@ export function RepoPicker({
             )}
           </Section>
         </div>
+
+        <button
+          type="button"
+          className="text-terracotta border-hairline disabled:opacity-60 border-t px-3 py-2.5 text-left text-[12px] font-semibold"
+          disabled={busy !== null}
+          onClick={() => void choose({ noRepository: true }, "none")}
+        >
+          Start without a repository
+          {busy === "none" && <span className="text-muted ml-1.5 text-[11px]">…</span>}
+        </button>
 
         {install && (
           <a
