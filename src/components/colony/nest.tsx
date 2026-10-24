@@ -206,7 +206,8 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
       window.removeEventListener("pointercancel", end);
       setDrag(null);
       onDragging(false);
-      const q = queenPoint(u.clientX, u.clientY, pointerType);
+      // She is drawn below a touch, but lands where the finger points.
+      const q = { x: u.clientX, y: u.clientY };
       const id = u.type === "pointerup" ? document.elementFromPoint(q.x, q.y)?.closest<HTMLElement>("[data-tid]")?.dataset.tid : null;
       if (id) {
         // The smush is on the drop, not on the answer, so it feels immediate.

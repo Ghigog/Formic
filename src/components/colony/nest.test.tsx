@@ -121,7 +121,7 @@ describe("ColonyPopover Queens", () => {
     card.remove();
   });
 
-  it("draws a touch-dragged Queen below the finger and drops on the card under her", async () => {
+  it("draws a touch-dragged Queen below the finger and drops on the card under the finger", async () => {
     stubQueens(1);
     openPopoverAt(3 * XP_PER_LEVEL);
     const card = document.createElement("div");
@@ -136,7 +136,7 @@ describe("ColonyPopover Queens", () => {
     expect(image.style.left).toBe("100px");
     expect(image.style.top).toBe(`${200 + QUEEN_TOUCH_OFFSET_Y}px`);
     fireEvent.pointerUp(window, { clientX: 100, clientY: 200, pointerType: "touch" });
-    expect(lookup).toHaveBeenCalledWith(100, 200 + QUEEN_TOUCH_OFFSET_Y);
+    expect(lookup).toHaveBeenCalledWith(100, 200);
     card.remove();
   });
 
