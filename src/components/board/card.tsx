@@ -21,6 +21,7 @@ import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
+import { formatDuration } from "./format-duration";
 import { LinkifiedText } from "./linkified-text";
 import { TypeTag } from "./type-tag";
 
@@ -492,8 +493,9 @@ function QueueTimer({ card }: { card: BoardCard }) {
   );
 }
 
-/** When the card entered its column, short; the full timestamp is the title. */
+/** When the card entered its column, short, and outside Done how long it has been there; the full timestamp is the title. */
 function EnteredAt({ card, column }: { card: BoardCard; column: ColumnId }) {
+  const inColumn = useElapsed(card.enteredAt);
   if (!card.enteredAt) return null;
   const at = new Date(card.enteredAt);
   if (Number.isNaN(at.getTime())) return null;
@@ -505,6 +507,7 @@ function EnteredAt({ card, column }: { card: BoardCard; column: ColumnId }) {
       className="text-muted font-mono text-[10px] whitespace-nowrap"
     >
       {column === "done" ? `Done ${short}` : short}
+      {column !== "done" && inColumn != null && <span> {formatDuration(Math.max(0, inColumn))}</span>}
     </time>
   );
 }
