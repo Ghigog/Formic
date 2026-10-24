@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
 import { saveBoardView, saveColumnViews, loadColumnViews, BOARD_VIEW_KEY, COLUMN_VIEWS_KEY } from "./view-setting";
@@ -226,6 +226,24 @@ describe("Board, on a wide screen", () => {
     expect(
       screen.getByRole("button", { name: "Move PROT-12 to In Progress" }),
     ).toBeInTheDocument();
+  });
+
+  it("gives an In Review ticket with a pull request an arrow to Done when auto-merge is off", async () => {
+    const card = makeCard({ key: "PROT-13", status: "review", prNumber: 7 });
+    const { onTransition } = renderBoard([card], { autoMerge: false });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Move PROT-13 to Done" }));
+    expect(onTransition.mock.calls[0]![0]).toMatchObject({ cardId: card.id, from: "in_review", to: "done" });
+  });
+
+  it("gives an In Review ticket no arrow with auto-merge on, no pull request, or an agent at work", () => {
+    renderBoard([makeCard({ key: "PROT-14", status: "review", prNumber: 7 })], { autoMerge: true });
+    expect(screen.queryByRole("button", { name: /^Move PROT-14/ })).toBeNull();
+    cleanup();
+    renderBoard([makeCard({ key: "PROT-16", status: "review", prNumber: null })], { autoMerge: false });
+    expect(screen.queryByRole("button", { name: /^Move PROT-16/ })).toBeNull();
+    cleanup();
+    renderBoard([makeCard({ key: "PROT-17", status: "review", prNumber: 7, workingSince: new Date().toISOString() })], { autoMerge: false });
+    expect(screen.queryByRole("button", { name: /^Move PROT-17/ })).toBeNull();
   });
 
   it("has no logo, sync badge, board options menu or app bar + button", () => {
