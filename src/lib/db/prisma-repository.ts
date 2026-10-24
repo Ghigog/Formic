@@ -568,13 +568,28 @@ export class PrismaRepository implements Repository {
   }
 
   async boardCards(projectId: string): Promise<BoardCard[]> {
+    return this.cards(projectId);
+  }
+
+  /**
+   * The board, or one card of it. One card is read on its own: `cardById` is
+   * called on most transitions and pipeline steps, and reading the whole
+   * board for it (every merged ticket, every run) was most of the egress
+   * left once the long text was gone.
+   */
+  private async cards(
+    projectId: string,
+    only?: { epicId: string } | { ticketId: string },
+  ): Promise<BoardCard[]> {
     const db = prisma();
+    const epicId = only && "epicId" in only ? only.epicId : undefined;
+    const ticketId = only && "ticketId" in only ? only.ticketId : undefined;
 
     // Only what a card shows. The board is read on every refresh, and the
     // long text (a PRD, a request, a ticket's description and criteria) is
     // most of each row: reading it here was most of the database's egress.
-    const epics = await db.epic.findMany({
-      where: { projectId },
+    const epics = ticketId ? [] : await db.epic.findMany({
+      where: { projectId, ...(epicId ? { id: epicId } : {}) },
       orderBy: { position: "asc" },
       select: {
         id: true,
@@ -606,8 +621,8 @@ export class PrismaRepository implements Repository {
       },
     });
 
-    const tickets = await db.ticket.findMany({
-      where: { epic: { projectId }, archived: false, scoutOf: null },
+    const tickets = epicId ? [] : await db.ticket.findMany({
+      where: { epic: { projectId }, archived: false, scoutOf: null, ...(ticketId ? { id: ticketId } : {}) },
       orderBy: { position: "asc" },
       select: {
         id: true,
@@ -646,16 +661,32 @@ export class PrismaRepository implements Repository {
         dependsOn: { select: { dependsOnTicketId: true } },
         queen: { select: { id: true } },
         columnEntries: { where: { exitedAt: null }, select: { enteredAt: true }, take: 1 },
-        // Every run, newest first: the live one names the agent, the
-        // oldest says when work started.
+        // Only the live run, which names the agent. When work started is
+        // the earliest run's start, read below as one row per ticket rather
+        // than every run a ticket ever had.
         runs: {
+          where: { status: { in: ["queued", "running"] } },
           orderBy: { createdAt: "desc" },
           select: { role: true, model: true, status: true, startedAt: true },
         },
       },
     });
 
-    const numbers = epicNumbers(epics);
+    const firstStarts = tickets.length
+      ? await db.agentRun.groupBy({
+          by: ["ticketId"],
+          where: { ticketId: { in: tickets.map((t) => t.id) }, startedAt: { not: null } },
+          _min: { startedAt: true },
+        })
+      : [];
+    const startedAt = new Map(firstStarts.map((r) => [r.ticketId, r._min.startedAt]));
+
+    // A legacy Epic with no number is numbered by age among all of them.
+    const numbers = epicNumbers(
+      epicId && epics.some((e) => e.number === null)
+        ? await db.epic.findMany({ where: { projectId }, select: { id: true, number: true, createdAt: true } })
+        : epics,
+    );
     // A standalone Epic is a holder, not its own card: its child ticket
     // renders alone, detached, exactly as today.
     const epicCards: BoardCard[] = epics
@@ -695,8 +726,8 @@ export class PrismaRepository implements Repository {
       }));
 
     const ticketCards: BoardCard[] = tickets.map((t) => {
-      const live = t.runs.find((r) => r.status === "queued" || r.status === "running");
-      const started = t.runs.map((r) => r.startedAt).filter((d): d is Date => !!d);
+      const live = t.runs[0];
+      const started = startedAt.get(t.id) ?? null;
       // A CLI agent's Formic run ends at dispatch; its job on GitHub Actions
       // is the agent still at work.
       const jobRole: AgentRole | null = t.runnerJob
@@ -741,9 +772,7 @@ export class PrismaRepository implements Repository {
       childCount: 0,
       doneCount: 0,
       createdAt: t.createdAt.toISOString(),
-      startedAt: started.length
-        ? new Date(Math.min(...started.map((d) => d.getTime()))).toISOString()
-        : null,
+      startedAt: started?.toISOString() ?? null,
       updatedAt: t.updatedAt.toISOString(),
       enteredAt: t.columnEntries[0]?.enteredAt.toISOString() ?? null,
       mergedAt: t.mergedAt?.toISOString() ?? null,
@@ -1180,16 +1209,15 @@ export class PrismaRepository implements Repository {
     const db = prisma();
     const epic = await db.epic.findUnique({ where: { id }, select: { projectId: true } });
     if (epic) {
-      // Its own project's board: any other has no such card.
-      const cards = await this.boardCards(epic.projectId);
+      const cards = await this.cards(epic.projectId, { epicId: id });
       return cards.find((c) => c.id === id) ?? null;
     }
     const ticket = await db.ticket.findUnique({
       where: { id },
-      include: { epic: { select: { projectId: true } } },
+      select: { epic: { select: { projectId: true } } },
     });
     if (!ticket) return null;
-    const cards = await this.boardCards(ticket.epic.projectId);
+    const cards = await this.cards(ticket.epic.projectId, { ticketId: id });
     return cards.find((c) => c.id === id) ?? null;
   }
 
