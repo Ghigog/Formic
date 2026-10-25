@@ -127,7 +127,7 @@ Either way, on the server:
 sudo bash setup.sh
 ```
 
-It is safe to run again. It adds swap, installs Node 22, Caddy and Postgres 17,
+It is safe to run again. It adds swap, installs Node 22, Caddy and Postgres 18,
 creates the `formic` database with a nightly backup, creates the `formic` user
 and service, writes a starter `/opt/formic/shared/.env`, makes a
 deploy key, and prints what to do next, including the private key for GitHub.

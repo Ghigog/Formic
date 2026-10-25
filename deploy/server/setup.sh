@@ -58,7 +58,7 @@ fi
 # Postgres lives on this server: the app reaches it over localhost, so there
 # is no egress meter or monthly cap to run out of. PGDG's packages rather than
 # Ubuntu's, so pg_dump is new enough to copy a database off Neon or Supabase.
-PG_MAJOR=17
+PG_MAJOR=18
 echo "==> Postgres $PG_MAJOR"
 if ! command -v "/usr/lib/postgresql/$PG_MAJOR/bin/postgres" >/dev/null; then
   curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --yes -o /usr/share/keyrings/postgresql.gpg
@@ -126,15 +126,16 @@ echo "==> Database"
 LOCAL_DB="$APP/shared/local-database-url"
 if [ ! -f "$LOCAL_DB" ]; then
   # Hex, so the password needs no escaping inside a URL.
-  pw="$(openssl rand -hex 24)"
-  if sudo -u postgres psql -tAc "select 1 from pg_roles where rolname = 'formic'" | grep -q 1; then
-    sudo -u postgres psql -qc "alter role formic with login password '$pw'"
-  else
-    sudo -u postgres psql -qc "create role formic with login password '$pw'"
-  fi
-  echo "postgresql://formic:$pw@127.0.0.1:5432/formic" > "$LOCAL_DB"
+  echo "postgresql://formic:$(openssl rand -hex 24)@127.0.0.1:5432/formic" > "$LOCAL_DB"
   chown formic:formic "$LOCAL_DB"
   chmod 600 "$LOCAL_DB"
+fi
+# The role always gets the saved password, so a rebuilt cluster matches it.
+pw="$(sed -E 's#^postgresql://formic:([^@]*)@.*#\1#' "$LOCAL_DB")"
+if sudo -u postgres psql -tAc "select 1 from pg_roles where rolname = 'formic'" | grep -q 1; then
+  sudo -u postgres psql -qc "alter role formic with login password '$pw'"
+else
+  sudo -u postgres psql -qc "create role formic with login password '$pw'"
 fi
 if ! sudo -u postgres psql -tAc "select 1 from pg_database where datname = 'formic'" | grep -q 1; then
   sudo -u postgres createdb --owner formic formic
