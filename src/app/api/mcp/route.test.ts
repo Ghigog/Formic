@@ -37,12 +37,22 @@ describe("/api/mcp", () => {
     expect((await call("tools/list", expired.secret)).status).toBe(401);
   });
 
-  it("lists the read tools for a valid token", async () => {
+  it("lists the read and write tools for a valid token", async () => {
     const user = await repo.upsertUser({ githubId: 2, login: "b", name: null, avatarUrl: null });
     const { secret } = await createToken(user.id, { name: "ro", readOnly: true });
     const res = await call("tools/list", secret);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.result.tools.map((t: { name: string }) => t.name).sort()).toEqual(["get_card", "get_colony", "list_boards", "list_cards"]);
+    expect(body.result.tools.map((t: { name: string }) => t.name).sort()).toEqual([
+      "comment_card",
+      "create_backlog_card",
+      "create_epic",
+      "get_card",
+      "get_colony",
+      "list_boards",
+      "list_cards",
+      "move_card",
+      "update_card",
+    ]);
   });
 });

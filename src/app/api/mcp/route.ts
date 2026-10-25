@@ -15,7 +15,7 @@ async function handle(req: Request): Promise<Response> {
   if (!verified) return unauthorized();
 
   return withActor(verified.user.id, async () => {
-    const server = mcpServerFor(verified.user);
+    const server = mcpServerFor(verified.user, verified.readOnly);
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await server.connect(transport);
     return transport.handleRequest(req);
