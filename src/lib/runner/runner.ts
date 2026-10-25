@@ -117,7 +117,6 @@ import {
   type LoopMode,
   type RunnerMode,
 } from "./workflow";
-import { liveToken } from "@/lib/llm/cline-session";
 import { sweepInterval } from "@/lib/usage/governor";
 import { configuredOrigin } from "@/lib/origin";
 
@@ -401,7 +400,6 @@ export type JobAgent = {
   presetId: string | null;
   info: ProviderInfo;
   model: string | null;
-  credential: string | null;
 };
 
 /**
@@ -616,7 +614,7 @@ async function carryOnFrom(
 }
 
 /**
- * Sets the repository up, stores the credential, records the job and
+ * Sets the repository up, records the job and
  * dispatches it. Returns why it could not, if it could not.
  */
 async function dispatch(input: {
@@ -636,9 +634,6 @@ async function dispatch(input: {
   record: (job: string) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
   const { client, agent } = input;
-  if (!agent.credential) {
-    return { ok: false, reason: `This agent has no ${agent.info.keyName}. Edit it and add one.`, blocked: true };
-  }
   try {
     const runner = await ensureRunner(client, input.baseBranch);
     if (!runner.ready) {
@@ -649,13 +644,9 @@ async function dispatch(input: {
       };
     }
 
-    // Set on every run, so a replaced token takes effect on the next one. A
-    // ClinePass credential is a plan session, not a key, and the job in GitHub
-    // has nothing it could refresh one with: hand it a live token, minted here
-    // when the credential is a session (see ./llm/cline-session). Every other
-    // provider's credential is passed through exactly as it was.
+    // The job reads the credential from the repository's secrets by this name;
+    // Formic never writes it there.
     const secret = secretNameFor(agent);
-    await client.setSecret(secret, await liveToken(agent.info, agent.credential, { force: true }));
 
     // A workflow from before the timeout input keeps its own ceiling.
     const ceiling = workflowCeiling(await client.readFile(RUNNER_WORKFLOW_PATH, input.baseBranch));

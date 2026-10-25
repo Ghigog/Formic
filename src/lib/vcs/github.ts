@@ -490,25 +490,6 @@ export class GitHubClient implements VcsClient {
     return stale.map((p) => p.number);
   }
 
-  async setSecret(name: string, value: string): Promise<void> {
-    const { data: key } = await this.request<{ key_id: string; key: string }>(
-      "GET",
-      "/actions/secrets/public-key",
-    );
-    // GitHub requires a libsodium sealed box to the repository's public key:
-    // only Actions can open it, and nothing reading the API can.
-    const sodium = (await import("libsodium-wrappers")).default;
-    await sodium.ready;
-    const sealed = sodium.crypto_box_seal(
-      sodium.from_string(value),
-      sodium.from_base64(key.key, sodium.base64_variants.ORIGINAL),
-    );
-    await this.request("PUT", `/actions/secrets/${encodeURIComponent(name)}`, {
-      encrypted_value: sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL),
-      key_id: key.key_id,
-    });
-  }
-
   async dispatchWorkflow(file: string, ref: string, inputs: Record<string, string>): Promise<void> {
     await this.request("POST", `/actions/workflows/${encodeURIComponent(file)}/dispatches`, {
       ref,

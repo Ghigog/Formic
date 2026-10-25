@@ -246,8 +246,6 @@ export interface VcsClient {
    * numbers it closed.
    */
   closeSupersededPulls(prefix: string, keepBranch: string, reason: string): Promise<number[]>;
-  /** Stores an Actions secret, encrypted to the repository's key. */
-  setSecret(name: string, value: string): Promise<void>;
   dispatchWorkflow(file: string, ref: string, inputs: Record<string, string>): Promise<void>;
   /**
    * A recent dispatched run of a workflow, found by its title. For when the
