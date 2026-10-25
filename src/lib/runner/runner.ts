@@ -78,7 +78,6 @@ import { ticketNotes } from "@/lib/coder/notes";
 import { rateNote, shareNote } from "@/lib/coder/shared-notes";
 import { readStream } from "./stream";
 import type { LoopEntryPayload } from "./loop-entry";
-import { loopBundle, loopEntryHash } from "./bundle";
 import {
   STAGING_PREFIX,
   VcsError,
@@ -97,7 +96,6 @@ import {
   CHECKPOINT_TRAILER,
   JOB_HEADROOM_MINUTES,
   MERGED_TRAILER,
-  RUNNER_ENTRY_PATH,
   RUNNER_SETUP_PREFIX,
   RUNNER_WORKFLOW_FILE,
   RUNNER_WORKFLOW_PATH,
@@ -206,10 +204,10 @@ export function usageOf(messages: string[]): Usage | null {
  * the file matches its generator, whether or not a new one is needed: a
  * deploy that lags a merged workflow change opens one for the old version.
  */
-export async function closeStaleSetupPulls(client: VcsClient, entryHash: string | null): Promise<void> {
+export async function closeStaleSetupPulls(client: VcsClient): Promise<void> {
   await client.closeSupersededPulls(
     RUNNER_SETUP_PREFIX,
-    runnerSetupBranch(entryHash),
+    runnerSetupBranch(),
     "The Formic agent workflow changed since this was opened, so this version is out of date. Closing it.",
   );
 }
@@ -226,14 +224,10 @@ export type RunnerState =
  * merges it, once.
  */
 export async function ensureRunner(client: VcsClient, baseBranch: string): Promise<RunnerState> {
-  // What this board would install, if it has built a loop entry: the workflow
-  // and the entry are one version, so both are read here.
-  const entry = await loopBundle();
-  const hash = entry?.hash || null;
-  const version = runnerVersion(hash);
-  const branch = runnerSetupBranch(hash);
+  const version = runnerVersion();
+  const branch = runnerSetupBranch();
 
-  await closeStaleSetupPulls(client, hash);
+  await closeStaleSetupPulls(client);
   const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch);
   if (current?.includes(version)) return { ready: true };
   const update = current !== null;
@@ -241,15 +235,7 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
   await client.ensureBranch(branch, baseBranch);
   const onBranch = await client.readFile(RUNNER_WORKFLOW_PATH, branch);
   if (!onBranch?.includes(version)) {
-    await client.commitFile(branch, RUNNER_WORKFLOW_PATH, runnerWorkflow(hash), "Add the Formic agent workflow");
-  }
-  // Formic's own loop, in the repository rather than fetched from the board:
-  // the job runs it out of its own checkout, so a board with no public address
-  // runs a loop agent like any other. Committed with the workflow, on the
-  // workflow's branch, so the pair arrives in one merge — and the version above
-  // names it, so a repository with one and not the other is not this version.
-  if (entry && !(await client.readFile(RUNNER_ENTRY_PATH, branch))?.includes(entry.hash)) {
-    await client.commitFile(branch, RUNNER_ENTRY_PATH, entry.code, "Add Formic's loop entry");
+    await client.commitFile(branch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "Add the Formic agent workflow");
   }
   const checks = await proposedChecks(client, baseBranch);
   if (checks && (await client.readFile(CHECKS_WORKFLOW_PATH, branch)) === null) {
@@ -265,7 +251,7 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
       body: [
         "Formic runs CLI agents (Claude Code, Codex, Gemini CLI) in this repository's GitHub Actions, on your own plan.",
         "",
-        "This adds the workflow that does it, and the loop entry it runs for an agent on an API key: one file, committed here, so a loop agent works in this repository without GitHub having to reach Formic's board. The workflow only runs when Formic starts it, pushes the agent's work to a `formic-staging/` branch, and never to a real branch: Formic checks the change against the ticket's file scope first, then opens a pull request as usual.",
+        "This adds the workflow that does it. For an agent on an API key it uses Formic's runner Action, pinned to one release by its commit SHA, so nothing is downloaded from Formic when a job runs. The workflow only runs when Formic starts it, pushes the agent's work to a `formic-staging/` branch, and never to a real branch: Formic checks the change against the ticket's file scope first, then opens a pull request as usual.",
         "",
         "Planning agents (PRDs, tickets, showcases) run here too. They read the repository and hand back an answer; nothing they touch is kept.",
         "",
@@ -310,9 +296,7 @@ async function proposedChecks(
  * because a feature exists.
  */
 export async function loopRunnerReady(client: VcsClient, baseBranch: string): Promise<boolean> {
-  // The version names the loop entry the repository must carry, so this also
-  // answers whether that entry is there and is this build's.
-  const version = runnerVersion(await loopEntryHash());
+  const version = runnerVersion();
   const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch).catch(() => null);
   return current !== null && current.includes(version);
 }
@@ -646,8 +630,6 @@ async function dispatch(input: {
   prompt: string;
   /** A branch to merge in before the agent starts, its conflicts left for it. */
   merge?: string;
-  /** `mode: loop`: where the job fetches Formic's loop entry from. */
-  bundle?: string;
   /** The run's time budget; the job's timeout follows it, within the workflow's ceiling. */
   budgetMinutes?: number | null;
   /** Recorded before the dispatch: only this job's result is taken. */
@@ -683,15 +665,14 @@ async function dispatch(input: {
       job: input.job,
       mode: input.mode,
       ticket: input.cardKey,
-      // There is no CLI to install for a loop run: the job runs the loop entry
-      // the repository carries beside the workflow.
+      // There is no CLI to install for a loop run: the job runs the pinned
+      // runner Action.
       cli: input.mode === "loop" ? "loop" : agent.info.cli ?? "",
       model: agent.model ?? "",
       from: input.from,
       secret,
       prompt: cap(input.prompt),
       report: reportUrl(input.job, Date.now()) ?? "",
-      ...(input.bundle ? { bundle: input.bundle } : {}),
       ...(input.merge ? { merge: input.merge } : {}),
       ...(ceiling.takesTimeout
         ? { timeout: String(jobTimeoutMinutes(input.budgetMinutes ?? null, ceiling.minutes)) }
@@ -759,42 +740,24 @@ export async function startJobRun(input: {
   const resumed = input.merge ? null : await carryOnFrom(client, ticket, mode, input.from).catch(() => null);
 
   const job = jobId(ticket.id, randomUUID().slice(0, 8));
-  // A loop run's entry travels in the repository, installed with the workflow
-  // (see ensureRunner), so a board normally needs no address for one. A board
-  // that has a public address still hands over a signed URL — good for this one
-  // job, and only while the card waits on it (see loopBundleUrl) — which is
-  // what a repository set up before the entry shipped with the workflow uses,
-  // and all a board with no entry to install has.
-  const bundle = input.mode === "loop" ? loopBundleUrl(job, Date.now()) : null;
-
-  const started =
-    input.mode === "loop" && !bundle && !(await loopEntryHash())
-      ? {
-          ok: false as const,
-          reason:
-            "There is no Formic loop entry to run: this board has no public address to serve one from, and no entry built to install in the repository.",
-          blocked: true,
-        }
-      : await dispatch({
-          client,
-          baseBranch: project.baseBranch,
-          agent,
-          job,
-          mode: input.mode,
-          cardKey: ticket.key,
-          from: resumed?.sha ?? input.from,
-          prompt:
-            typeof input.prompt === "string"
-              ? resumed
-                ? `${input.prompt}\n\n${resumeBrief(resumed, ticket.plan)}`
-                : input.prompt
-              : input.prompt(resumed),
-          merge: input.merge,
-          budgetMinutes: input.budget?.minutes.value ?? null,
-          bundle: bundle ?? undefined,
-          record: (job) =>
-            repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
-        });
+  const started = await dispatch({
+    client,
+    baseBranch: project.baseBranch,
+    agent,
+    job,
+    mode: input.mode,
+    cardKey: ticket.key,
+    from: resumed?.sha ?? input.from,
+    prompt:
+      typeof input.prompt === "string"
+        ? resumed
+          ? `${input.prompt}\n\n${resumeBrief(resumed, ticket.plan)}`
+          : input.prompt
+        : input.prompt(resumed),
+    merge: input.merge,
+    budgetMinutes: input.budget?.minutes.value ?? null,
+    record: (job) => repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
+  });
 
   if (!started.ok) {
     await repository().updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
@@ -1874,20 +1837,6 @@ export function reportAllowed(job: string, since: string, token: string): boolea
   const expected = Buffer.from(reportToken(job, Number(since)));
   const given = Buffer.from(token);
   return expected.length === given.length && timingSafeEqual(expected, given);
-}
-
-/**
- * The address a job fetches the loop entry from: the coding loop built into
- * one file, for an agent on an API key to run where a CLI agent runs. Signed
- * exactly like the report address beside it, because it is the same claim —
- * this is one job, and it is still the job its card waits on. Null with no
- * public origin, same as reportUrl.
- */
-export function loopBundleUrl(job: string, since: number): string | null {
-  const origin = formicOrigin();
-  if (!origin) return null;
-  const q = new URLSearchParams({ job, since: String(since), token: reportToken(job, since) });
-  return `${origin}/api/runner/bundle?${q.toString()}`;
 }
 
 /** How long a signed attachment URL stays good: past the workflow's own 180-minute timeout, so a job that is slow to start never finds it expired. */

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,7 @@ import { parse } from "yaml";
 
 import {
   ALREADY_DONE_TRAILER,
+  RUNNER_ACTION,
   RUNNER_WORKFLOW_PATH,
   workflowCeiling,
   RUNNER_JOB_MINUTES,
@@ -83,11 +84,12 @@ function shellReads(script: string): Set<string> {
  * be what the generator just produced.
  */
 
-const text = runnerWorkflow(null);
+const text = runnerWorkflow();
 
 interface Step {
   name?: string;
   if?: string;
+  uses?: string;
   run?: string;
   env?: Record<string, string>;
 }
@@ -126,7 +128,7 @@ describe("the installed workflow", () => {
     // a person, the board — can see which one it is.
     expect(text.split("\n")[0]).toMatch(/^# formic-runner: [0-9a-f]{12}$/);
     expect(Object.keys(doc.on?.workflow_dispatch?.inputs ?? {})).toEqual(
-      expect.arrayContaining(["job", "mode", "ticket", "cli", "model", "from", "secret", "prompt", "bundle", "report", "merge"]),
+      expect.arrayContaining(["job", "mode", "ticket", "cli", "model", "from", "secret", "prompt", "report", "merge"]),
     );
   });
 
@@ -139,21 +141,38 @@ describe("the installed workflow", () => {
     }
   });
 
-  it("carries mode loop: fetch the entry, run it, hand its report back", () => {
-    const run = step("Run the agent");
-    expect(run.if).toBeUndefined();
-    expect(run.env?.MODE).toBe("${{ inputs.mode }}");
-    expect(run.env?.FORMIC_API_KEY).toContain("FORMIC_API_KEY_");
-    expect(run.run).toContain('case "$MODE" in');
-    expect(run.run).toContain("formic-loop.mjs");
-    // The checkout it works in is the job's own, not a clone of its own.
-    expect(run.run).toContain(".repo.dir = $dir");
+  it("runs mode loop as the Action pinned by commit, and downloads nothing from Formic", () => {
+    const loop = step("Run the loop");
+    expect(loop.if).toBe("inputs.mode == 'loop'");
+    // The full SHA, with the release it is as a comment.
+    expect(loop.uses).toBe(`${RUNNER_ACTION.repo}@${RUNNER_ACTION.sha}`);
+    expect(text).toMatch(/uses: \S+@[0-9a-f]{40} # v\d/);
+    expect(text).toContain(`@${RUNNER_ACTION.sha} # ${RUNNER_ACTION.version}`);
+    expect(loop.env?.FORMIC_API_KEY).toContain("FORMIC_API_KEY_");
+    // Nothing to fetch, no loop entry file, and no address of Formic's.
+    expect(text).not.toMatch(/bundle|loop-entry|vercel\.app/i);
     // What the ticket gets from the run's report.
-    expect(run.run).toContain(USAGE_TRAILER);
-    expect(run.run).toContain(ALREADY_DONE_TRAILER);
+    const report = step("Write the loop's report");
+    expect(report.run).toContain(USAGE_TRAILER);
+    expect(report.run).toContain(ALREADY_DONE_TRAILER);
     // A loop run needs the repository's dependencies, but no CLI agent.
     expect(step("Install the project's dependencies").if).toContain("inputs.mode == 'loop'");
     expect(step("Install the agent").if).toBe("inputs.mode != 'loop'");
+    expect(step("Run the agent").if).toBe("inputs.mode != 'loop'");
+  });
+
+  it("fails first, pointing at Settings, when the named secret is empty", () => {
+    expect(steps[0]!.name).toBe("Check the agent's secret");
+    const check = steps[0]!;
+    expect(check.run).toContain('[ -z "$VALUE" ]');
+    expect(check.run).toContain("Add $SECRET in Settings: $SECRETS_PAGE");
+    expect(check.env?.SECRETS_PAGE).toContain("/settings/secrets/actions");
+    const ran = spawnSync("bash", ["-c", check.run!], {
+      env: { NODE_ENV: "test", PATH: process.env.PATH, SECRET: "FORMIC_API_KEY_X", VALUE: "", SECRETS_PAGE: "https://github.com/a/b/settings/secrets/actions" },
+      encoding: "utf8",
+    });
+    expect(ran.status).toBe(1);
+    expect(ran.stdout).toContain("Add FORMIC_API_KEY_X in Settings: https://github.com/a/b/settings/secrets/actions");
   });
 
   it("gives every script in it the variables that script reads", () => {
@@ -209,13 +228,7 @@ describe("the installed workflow", () => {
   it("is what this repository has checked in, refreshed by the generator alone", () => {
     const root = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
     const checkedIn = readFileSync(path.join(root, RUNNER_WORKFLOW_PATH), "utf8");
-    // Generated for whichever loop entry the copy names — this repository's own
-    // install is written by its own setup pull request — so the file has to be
-    // the generator's output for that entry and not a hand edit. Which entry it
-    // names is the other half: `loopRunnerReady` reads it, so a copy naming an
-    // entry the checkout does not carry is not current.
-    const named = (/^# formic-loop-entry: (.+)$/m.exec(checkedIn)?.[1] ?? "none").trim();
-    expect(checkedIn).toBe(runnerWorkflow(named === "none" ? null : named));
+    expect(checkedIn).toBe(runnerWorkflow());
   });
 
   it("puts loop runs in a title its completion can read back", () => {

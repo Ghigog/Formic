@@ -28,7 +28,6 @@ const OPEN = [
   /^\/api\/health$/,
   /^\/api\/webhooks\//,
   /^\/api\/runner\/report$/,
-  /^\/api\/runner\/bundle$/,
   // What installing the app fetches, possibly without the session cookie.
   /^\/manifest\.webmanifest$/,
   /^\/sw\.js$/,
@@ -45,7 +44,6 @@ const FINISHES_WORK = [
   /^\/api\/projects$/,
   /^\/api\/webhooks\//,
   /^\/api\/runner\/report$/,
-  /^\/api\/runner\/bundle$/,
   /^\/api\/runs\/stop$/,
   /^\/api\/tickets\/[^/]+\/stop$/,
   /^\/api\/login$/,

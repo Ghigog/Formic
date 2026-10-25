@@ -6,7 +6,6 @@ import type { ProjectSummary } from "@/lib/db/repository";
 import { vcs, VcsError } from "@/lib/vcs";
 import { closeStaleSetupPulls, ensureRunner, explain } from "./runner";
 import { RUNNER_WORKFLOW_PATH, runnerSetupBranch, runnerVersion } from "./workflow";
-import { loopEntryHash } from "./bundle";
 
 /**
  * Where a project stands on the one pull request a person has to merge
@@ -34,13 +33,10 @@ export async function runnerSetup(project: ProjectSummary): Promise<RunnerSetup>
   const client = vcs(project.repoFullName, creds.githubToken);
 
   try {
-    // One version covers the workflow and the loop entry installed with it, so
-    // a repository is up to date only when it has both of this build's.
-    const hash = await loopEntryHash();
-    await closeStaleSetupPulls(client, hash);
+    await closeStaleSetupPulls(client);
     const current = await client.readFile(RUNNER_WORKFLOW_PATH, project.baseBranch);
-    if (current?.includes(runnerVersion(hash))) return { state: "ready" };
-    const open = await client.findPullRequest(runnerSetupBranch(hash));
+    if (current?.includes(runnerVersion())) return { state: "ready" };
+    const open = await client.findPullRequest(runnerSetupBranch());
     if (open) return { state: "waiting", setupUrl: open.url, update: current !== null };
 
     const runner = await ensureRunner(client, project.baseBranch);

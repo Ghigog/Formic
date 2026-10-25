@@ -5,9 +5,8 @@
   "type": "module",
   "scripts": {
     "postinstall": "prisma generate",
-    "predev": "npm run build:loop-entry || true",
     "dev": "next dev",
-    "build": "bash scripts/db-push.sh && node scripts/build-portraits.mjs && node scripts/build-runner-action.mjs && next build",
+    "build": "bash scripts/db-push.sh && node scripts/build-portraits.mjs && next build",
     "build:portraits": "node scripts/build-portraits.mjs",
     "build:loop-entry": "node scripts/build-runner-action.mjs",
     "start": "next start",

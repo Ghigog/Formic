@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runnerSetup } from "./setup";
-import { RUNNER_SETUP_PREFIX, RUNNER_WORKFLOW_PATH } from "./workflow";
-import { currentRunnerFiles } from "./bundle";
+import { RUNNER_SETUP_PREFIX, RUNNER_WORKFLOW_PATH, runnerWorkflow, runnerSetupBranch } from "./workflow";
 import { repository } from "@/lib/db";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, VcsError, resetVcs, setVcs } from "@/lib/vcs";
@@ -45,14 +44,14 @@ describe("runner setup", () => {
 
     expect(first).toMatchObject({ state: "waiting", update: false });
     expect(second).toEqual(first);
-    expect(MockVcsClient.runner().files.get(`${(await currentRunnerFiles()).branch}:${RUNNER_WORKFLOW_PATH}`)).toBeTruthy();
+    expect(MockVcsClient.runner().files.get(`${runnerSetupBranch()}:${RUNNER_WORKFLOW_PATH}`)).toBeTruthy();
   });
 
   it("is ready once the workflow is on the base branch", async () => {
     const project = await repository().defaultProject();
     await runnerSetup(project);
 
-    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "merged");
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "merged");
 
     expect(await runnerSetup(project)).toEqual({ state: "ready" });
   });
@@ -62,6 +61,28 @@ describe("runner setup", () => {
     await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, "name: Formic agent\n", "old");
 
     expect(await runnerSetup(project)).toMatchObject({ state: "waiting", update: true });
+  });
+
+  it("offers an update pull request to a workflow that fetches the bundle", async () => {
+    const project = await repository().defaultProject();
+    const old = runnerWorkflow()
+      .replace(/^# formic-runner: .*/m, "# formic-runner: 000000000000")
+      .replace(/uses: \S+@[0-9a-f]{40} # v[\d.]+/, "run: curl -fsSL -o loop.mjs \"$BUNDLE\"");
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, old, "old");
+
+    const setup = await runnerSetup(project);
+
+    expect(setup).toMatchObject({ state: "waiting", update: true });
+    expect(await client.readFile(RUNNER_WORKFLOW_PATH, runnerSetupBranch())).toMatch(/@[0-9a-f]{40} # v\d/);
+  });
+
+  it("adds only the workflow, with no generated file", async () => {
+    const project = await repository().defaultProject();
+
+    await runnerSetup(project);
+
+    const onBranch = [...MockVcsClient.runner().files.keys()].filter((k) => k.startsWith(`${runnerSetupBranch()}:`));
+    expect(onBranch).toEqual([`${runnerSetupBranch()}:${RUNNER_WORKFLOW_PATH}`]);
   });
 
   it("closes a setup pull request left over from an older workflow version", async () => {
@@ -82,7 +103,7 @@ describe("runner setup", () => {
 
   it("closes a stale setup pull request even when the workflow is already current", async () => {
     const project = await repository().defaultProject();
-    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "merged");
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "merged");
     const old = await client.openPullRequest({
       headBranch: `${RUNNER_SETUP_PREFIX}000000000000`,
       baseBranch: project.baseBranch,
@@ -101,7 +122,7 @@ describe("runner setup", () => {
 
     await runnerSetup(project);
 
-    const checks = MockVcsClient.runner().files.get(`${(await currentRunnerFiles()).branch}:${CHECKS_WORKFLOW_PATH}`);
+    const checks = MockVcsClient.runner().files.get(`${runnerSetupBranch()}:${CHECKS_WORKFLOW_PATH}`);
     expect(checks).toContain("godot --headless -s addons/gut/gut_cmdln.gd");
   });
 
@@ -109,7 +130,7 @@ describe("runner setup", () => {
     const project = await repository().defaultProject();
     await client.commitFile(project.baseBranch, "project.godot", "", "game");
     await runnerSetup(project);
-    const branch = (await currentRunnerFiles()).branch;
+    const branch = runnerSetupBranch();
     expect(MockVcsClient.runner().files.get(`${branch}:${CHECKS_WORKFLOW_PATH}`)).toBeUndefined();
 
     MockVcsClient.reset();
