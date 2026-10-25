@@ -75,9 +75,9 @@ describe("a board with agents off", () => {
   });
 });
 
-describe("a board with agentsOff set", () => {
-  const flag = (on: boolean) => {
-    globalThis.__formicMemoryStore!.projects.get(PROJECT)!.agentsOff = on;
+describe("a board with agents switched off", () => {
+  const flag = (off: boolean) => {
+    globalThis.__formicMemoryStore!.projects.get(PROJECT)!.agents = !off;
   };
   const drop = (id: string, from: "todo" | "in_review", to: "in_progress" | "done") =>
     applyTransition(PROJECT, { cardId: id, kind: "ticket", from, to, position: 1, actor: "user" });

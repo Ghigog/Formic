@@ -237,7 +237,6 @@ function store(): Store {
     name: "Formic",
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
-    agentsOff: false,
     agents: true, // the local-mode board is the one tests and a bare checkout run agents on
     autoMerge: false,
     autoEscalate: false,
@@ -648,11 +647,6 @@ export class MemoryRepository implements Repository {
     if (project) project.shareKeys = shareKeys;
   }
 
-  async setAgentsOff(projectId: string, agentsOff: boolean): Promise<void> {
-    const project = store().projects.get(projectId);
-    if (project) project.agentsOff = agentsOff;
-  }
-
   async setAgents(projectId: string, agents: boolean): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) project.agents = agents;
@@ -737,7 +731,6 @@ export class MemoryRepository implements Repository {
       repoFullName: input.repoFullName ?? "",
       baseBranch: input.baseBranch,
       agents: false,
-      agentsOff: false,
       autoMerge: false,
       autoEscalate: false,
       colonySize: null,
@@ -1018,7 +1011,7 @@ export class MemoryRepository implements Repository {
     if (card.kind === "ticket" && input.status === "merged" && !card.mergedAt) {
       const s = store();
       const board = s.projects.get(projectOf(s, card));
-      if (!board?.agents || board.agentsOff) stampMerge(s, card);
+      if (!board?.agents) stampMerge(s, card);
     }
     card.status = input.status;
     card.stalledIn = input.stalledIn;
