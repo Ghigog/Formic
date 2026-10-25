@@ -571,6 +571,8 @@ export interface PresetRecord {
   /** Sealed key; null clears it; omitted keeps it. */
   apiKeyCipher?: string | null;
   apiKeyHint?: string | null;
+  /** A CLI agent's Actions secret; null clears it; omitted keeps it. */
+  secretName?: string | null;
 }
 
 /** What the host has done for this deployment, as Formic counts it. */

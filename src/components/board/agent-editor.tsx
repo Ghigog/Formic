@@ -125,6 +125,12 @@ export function AgentEditor({
   const [prompt, setPrompt] = useState(preset?.prompt ?? defaultPrompt);
   /** Undefined keeps the saved key, null removes it, a string replaces it. */
   const [apiKey, setApiKey] = useState<string | null | undefined>(undefined);
+  /** The Actions secret a CLI agent signs in with. Older agents keep the name they had. */
+  const [secretName, setSecretName] = useState(() => {
+    const own = providerInfo(preset?.provider ?? "anthropic");
+    if (!preset || own?.kind !== "cli") return own?.secretName ?? "";
+    return secretNameFor({ presetId: preset.id, info: own, secretName: preset.secretName });
+  });
   const [limits, setLimits] = useState<Record<LimitAxis, string>>({
     minutes: override?.minutes?.toString() ?? "",
     tokens: override?.tokens?.toString() ?? "",
@@ -213,6 +219,10 @@ export function AgentEditor({
     // Read the override before the agent is written, so a limit that is not a
     // whole number of at least 1 stops the save and says so, rather than
     // leaving the agent saved with its old limits.
+    if (cli && !secretName.trim().startsWith(info.secretName ?? "")) {
+      setError(`Start the secret's name with ${info.secretName}.`);
+      return;
+    }
     const count = (axis: LimitAxis) => (limits[axis].trim() === "" ? null : Number(limits[axis]));
     const next: ColumnOverride = {
       minutes: count("minutes"),
@@ -232,8 +242,8 @@ export function AgentEditor({
         model: model.trim(),
         prompt,
         // An empty box keeps a saved key; Remove clears it; a typed one replaces it.
-        // A CLI agent has no key here: its secret lives in the repository.
-        ...(cli ? {} : apiKey === null
+        // A CLI agent has no key here: its secret lives in the repository, under this name.
+        ...(cli ? { secretName: secretName.trim() } : apiKey === null
           ? { apiKey: null }
           : typedKey
             ? { apiKey: typedKey }
@@ -328,6 +338,7 @@ export function AgentEditor({
               value={provider}
               onChange={(e) => {
                 setProvider(e.target.value as ProviderId);
+                setSecretName(providerInfo(e.target.value as ProviderId)?.secretName ?? "");
                 setModel("");
                 setApiKey(undefined);
               }}
@@ -348,17 +359,20 @@ export function AgentEditor({
           </label>
 
           {cli ? (
-            <div className="flex flex-col gap-1">
-              <span className={label}>{info.keyName}</span>
-              {preset ? (
-                <code className="border-line bg-cream text-ink flex h-9 items-center rounded-md border px-2.5 font-mono text-[13px]">
-                  {secretNameFor({ presetId: preset.id, info })}
-                </code>
-              ) : (
-                <span className="text-muted text-[11px]">The secret&apos;s name appears here once you save the agent.</span>
-              )}
+            <label className="flex flex-col gap-1">
+              <span className={label}>{`${info.keyName} secret`}</span>
+              <input
+                aria-label="Secret name"
+                value={secretName}
+                onChange={(e) => setSecretName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))}
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={100}
+                className={`${field} h-9 font-mono`}
+              />
               <span className="text-muted text-[11px] leading-[1.5]">
-                Add it as a secret in{" "}
+                The name of the secret in{" "}
                 <a
                   href={`https://github.com/${repoFullName}/settings/secrets/actions`}
                   target="_blank"
@@ -367,11 +381,13 @@ export function AgentEditor({
                 >
                   your repository&apos;s Actions secrets
                 </a>
-                . Formic keeps only its name, never the value.
+                . It starts with {info.secretName}. Use the same name on several agents to share one{" "}
+                {info.keyName}, or add a suffix (like {info.secretName}_WORK) for another account. Formic keeps only
+                the name, never the value.
                 <br />
                 {info.howToGetKey} Paste the value as it is.
               </span>
-            </div>
+            </label>
           ) : (
           <div className="flex flex-col gap-1">
             <span className={label} id="agent-key-label">

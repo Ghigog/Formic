@@ -315,6 +315,8 @@ export interface AgentPreset {
   /** False means runs use the server's ANTHROPIC_API_KEY. */
   hasKey: boolean;
   keyHint: string | null;
+  /** A CLI agent's Actions secret, or null for the name it had before names could be chosen. */
+  secretName?: string | null;
   /**
    * ISO time this agent's plan is out of usage until, or null. A column
    * running it takes no work until then.
@@ -340,7 +342,23 @@ export const agentPresetInputSchema = z
     prompt: z.string().trim().max(20_000),
     /** A new key; null clears the saved one; omitted keeps it. A Codex sign-in is a JSON file, hence the length. */
     apiKey: z.string().trim().min(1).max(20_000).nullable().optional(),
+    /** A CLI agent's Actions secret. Omitted keeps it; it must start with the CLI's own prefix. */
+    secretName: z
+      .string()
+      .trim()
+      .max(100)
+      .regex(/^[A-Z0-9_]+$/, "A secret name is capital letters, digits and underscores.")
+      .nullable()
+      .optional(),
   })
+  .refine(
+    (p) => {
+      if (!p.secretName) return true;
+      const prefix = providerInfo(p.provider)?.secretName;
+      return !!prefix && p.secretName.startsWith(prefix);
+    },
+    { message: "Start the secret's name with the one shown, so only this agent's secrets can be named.", path: ["secretName"] },
+  )
   .refine((p) => p.model !== "" || providerInfo(p.provider)?.kind === "cli", {
     message: "Pick a model.",
     path: ["model"],

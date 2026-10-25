@@ -58,6 +58,7 @@ describe("agent templates", () => {
       model: "claude-sonnet-5",
       brief: worker.prompt,
       apiKey: "sk-ant-worker-1234",
+      secretName: null,
     });
     expect(await agentFor(PROJECT, "coder")).toBeInstanceOf(LoopCoderAgent);
   });

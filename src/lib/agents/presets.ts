@@ -50,6 +50,7 @@ export async function savePreset(
     name: input.name,
     model: input.model,
     prompt: input.prompt,
+    secretName: input.secretName,
     // A CLI agent's credential is a repository Actions secret that the person
     // adds themselves; Formic keeps only its name.
     ...(input.apiKey === undefined || providerInfo(input.provider)?.kind === "cli"
@@ -189,6 +190,7 @@ async function resolveColumn(projectId: string, column: ColumnId): Promise<Resol
         model: found.preset.model,
         // An empty prompt keeps the column's built-in brief.
         brief: found.preset.prompt.trim() || undefined,
+        secretName: found.preset.secretName ?? null,
         // A key sealed under a secret that has since changed cannot be
         // opened; the agent then reports it has no key, which is the fix.
         apiKey:
@@ -389,6 +391,8 @@ export interface CliAgent {
   info: ProviderInfo & { kind: "cli"; cli: NonNullable<ProviderInfo["cli"]>; secretName: string };
   model: string | null;
   brief: string | null;
+  /** The Actions secret its sign-in is in, or null for the name it had before names could be chosen. */
+  secretName: string | null;
 }
 
 /** The CLI agent a column runs, or null when it runs anything else. */
@@ -406,6 +410,7 @@ export async function cliAgentFor(
     info: info as CliAgent["info"],
     model: resolved.config.model || null,
     brief: resolved.config.brief || null,
+    secretName: resolved.config.secretName ?? null,
   };
 }
 
@@ -470,7 +475,13 @@ export async function assistantAgentFor(projectId: string): Promise<AssistantAge
     if (!info.cli || !info.secretName) return { kind: "none" };
     return {
       kind: "cli",
-      agent: { presetId: found.preset.id, info: info as CliAgent["info"], model, brief },
+      agent: {
+        presetId: found.preset.id,
+        info: info as CliAgent["info"],
+        model,
+        brief,
+        secretName: found.preset.secretName ?? null,
+      },
     };
   }
   return { kind: "api", info, model, apiKey, brief };

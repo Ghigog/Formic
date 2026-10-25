@@ -57,7 +57,7 @@ describe("the setup dialog", () => {
         repoFullName="acme/widgets"
         keyless={[
           {
-            name: "Claude Code",
+            names: ["Claude Code"],
             keyName: "Claude Code token",
             secretName: "FORMIC_CLAUDE_CODE_TOKEN_P1",
           },
@@ -73,6 +73,23 @@ describe("the setup dialog", () => {
         .getAttribute("href"),
     ).toBe("https://github.com/acme/widgets/settings/secrets/actions");
     expect(screen.queryByRole("button", { name: "Add key" })).toBeNull();
+  });
+
+  it("lists agents that share a secret on one row", () => {
+    render(
+      <SetupDialog
+        setup={waiting}
+        repoName="widgets"
+        repoFullName="acme/widgets"
+        keyless={[
+          { names: ["architect", "worker"], keyName: "Claude Code token", secretName: "FORMIC_CLAUDE_CODE_TOKEN" },
+        ]}
+        onRetry={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Add a secret for architect, worker")).toBeTruthy();
+    expect(screen.getAllByText("FORMIC_CLAUDE_CODE_TOKEN")).toHaveLength(1);
   });
 
   it("folds into a reminder on Not now, and opens again from it", async () => {
