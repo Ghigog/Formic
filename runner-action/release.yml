@@ -1,6 +1,12 @@
-# Template: copied into the public repository that publishes the runner Action.
-# On a version tag it builds the Action from that tag's source and attests the
-# build, so what runs in an Actions job can be traced to the code at the tag.
+# Template: copied into the public repository that publishes the runner Action,
+# as .github/workflows/release.yml. See docs/runner-action-release.md.
+#
+# The public repository holds action.yml and the built dist/ at its root, because
+# a workflow that pins the Action by commit runs the files at that commit and
+# builds nothing. On a version tag this job checks that the committed
+# dist/index.mjs is exactly what Formic's source builds at the commit its first
+# line names, then attests it, so what runs in an Actions job can be traced to
+# that source.
 name: Release
 
 on:
@@ -16,19 +22,50 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the Formic commit the runner was built from
+        id: source
+        run: |
+          commit=$(head -1 dist/index.mjs | grep -oE 'commit [0-9a-f]{40}' | cut -d' ' -f2)
+          if [ -z "$commit" ]; then
+            echo "::error::dist/index.mjs does not name a full Formic commit on its first line."
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Ghigog/Formic
+          ref: ${{ steps.source.outputs.commit }}
+          path: formic
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: formic/package-lock.json
+
       - run: npm ci
-      - run: node scripts/build-runner-action.mjs
+        working-directory: formic
+
+      - name: Rebuild the runner from that commit
+        run: node scripts/build-runner-action.mjs "$RUNNER_TEMP/rebuilt"
+        working-directory: formic
         env:
-          FORMIC_BUILD_COMMIT: ${{ github.sha }}
-      - uses: actions/attest-build-provenance@v2
+          FORMIC_BUILD_COMMIT: ${{ steps.source.outputs.commit }}
+
+      # The first line is the banner, which carries the build time.
+      - name: Check the committed runner matches the source
+        run: |
+          if ! diff -q <(tail -n +2 dist/index.mjs) <(tail -n +2 "$RUNNER_TEMP/rebuilt/index.mjs") > /dev/null; then
+            echo "::error::dist/index.mjs is not what Formic ${{ steps.source.outputs.commit }} builds. Rebuild it from that commit and commit it again."
+            exit 1
+          fi
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: runner-action/dist/index.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: runner-action-dist
-          path: runner-action/dist
+          subject-path: dist/index.mjs
