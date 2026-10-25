@@ -131,6 +131,7 @@ function LogoButton({
       aria-expanded={expanded}
       aria-label={label}
       title={title}
+      data-tour="logo"
       className={`inline-flex shrink-0 items-center justify-center ${className}`}
     >
       <span className="relative inline-flex">

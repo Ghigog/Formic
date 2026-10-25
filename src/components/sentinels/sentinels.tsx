@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { useColony, type ColonyApi } from "@/components/colony/colony";
@@ -397,7 +398,8 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     >
       <div className="mx-auto flex min-h-full max-w-[1640px] flex-col gap-4">
         <h1 className="sr-only">Sentinels</h1>
-        <section className="border-line bg-card flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-[14px] border px-4 py-3 sm:px-5 sm:py-4">
+        <AutoTour id="sentinels" delay={450} />
+        <section data-tour="sentinels-grade" className="border-line bg-card flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-[14px] border px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
             <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
               <div className="flex items-baseline gap-2.5">
@@ -443,6 +445,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
               s.summonAll();
             }}
             disabled={nBusy === unlocked}
+            data-tour="sentinels-summon"
             className="bg-anthracite text-cream inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
           >
             <PlayIcon />
@@ -462,6 +465,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
         <div className="relative flex min-h-[460px] flex-1 flex-col">
           <div
             ref={rail}
+            data-tour="sentinels-roster"
             role="list"
             aria-label="Sentinels"
             onScroll={onScroll}
@@ -522,6 +526,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             onClick={(e) => e.stopPropagation()}
             className="relative max-h-full w-full max-w-[460px] overflow-auto rounded-[14px]"
           >
+            <AutoTour id="sentinel-report" delay={450} />
             <button
               type="button"
               aria-label="Close"
@@ -764,6 +769,7 @@ function Report({
   return (
     <aside
       aria-label="Audit report"
+      data-tour="sentinel-report"
       className="border-line bg-card box-border flex flex-col gap-[18px] rounded-[14px] border p-5 pt-12"
     >
       <div className="flex items-center gap-3">

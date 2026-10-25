@@ -1,5 +1,6 @@
 "use client";
 
+import { ONBOARDING_TICKET_TITLE } from "@/lib/board/onboarding-ticket";
 import { createContext, useContext, useEffect, useRef } from "react";
 import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
@@ -993,6 +994,7 @@ export function KanbanCard({
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={() => onOpen(card)}
+          data-tour={card.title === ONBOARDING_TICKET_TITLE ? "first-ticket" : undefined}
           className={cn(
             "rounded-lg outline-none",
             !pending && "cursor-grab active:cursor-grabbing",

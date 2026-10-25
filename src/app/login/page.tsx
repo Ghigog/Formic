@@ -1,4 +1,5 @@
 import { authMode, safeNext, secretProblem } from "@/lib/auth/session";
+import { AutoTour } from "@/components/onboarding/tour";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export default async function LoginPage({
 
   return (
     <main className="bg-cream flex min-h-dvh items-center justify-center p-4">
-      <div className="bg-card border-line flex w-full max-w-sm flex-col gap-3 rounded-xl border p-5">
+      <div data-tour="login" className="bg-card border-line flex w-full max-w-sm flex-col gap-3 rounded-xl border p-5">
         <h1 className="font-serif text-[22px] font-semibold">Formic</h1>
 
         {github ? (
@@ -64,6 +65,7 @@ export default async function LoginPage({
           </p>
         )}
       </div>
+      {github && !problem && <AutoTour id="login" delay={500} />}
     </main>
   );
 }

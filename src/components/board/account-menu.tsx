@@ -1,6 +1,8 @@
 "use client";
 
+import { replayTours } from "@/components/onboarding/store";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 export interface Account {
   login: string;
@@ -46,6 +48,7 @@ export function AccountMenu({ account }: { account: Account }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Account: ${label}`}
+        data-tour="account"
         className="border-line bg-cream inline-flex size-11 items-center justify-center overflow-hidden rounded-full border md:size-9"
       >
         {account.avatarUrl ? (
@@ -72,6 +75,18 @@ export function AccountMenu({ account }: { account: Account }) {
           <a role="menuitem" href="/settings" className={item}>
             Settings
           </a>
+          {/* On the board the tour starts here; anywhere else the link goes to the board, where it plays. */}
+          <Link
+            role="menuitem"
+            href="/"
+            className={item}
+            onClick={(e) => {
+              setOpen(false);
+              if (replayTours()) e.preventDefault();
+            }}
+          >
+            Replay the tour
+          </Link>
           <a role="menuitem" href={`mailto:${SUPPORT_EMAIL}`} className={item}>
             Contact support
           </a>

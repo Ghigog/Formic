@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   keyboardStyles,
@@ -352,8 +353,10 @@ export function TicketDrawer({
           first={
             <section
               aria-label="Ticket"
+              data-tour="ticket-body"
               className="min-h-0 overflow-y-auto p-4"
             >
+              {view && <AutoTour id="ticket" delay={450} />}
               {view && (
                 <TicketBody
                   view={view}
@@ -369,6 +372,7 @@ export function TicketDrawer({
           second={
             <section
               aria-label="Agent"
+              data-tour="ticket-agent"
               className="bg-sunken flex min-h-0 flex-col"
             >
               <WithChat

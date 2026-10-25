@@ -1,5 +1,6 @@
 "use client";
 
+import { useActiveTour } from "@/components/onboarding/store";
 import { useEffect, useId, useRef, useState } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
 
@@ -33,7 +34,9 @@ export function SetupDialog({
   const [hidden, setHidden] = useState(false);
   const titleId = useId();
   const primary = useRef<HTMLAnchorElement & HTMLButtonElement>(null);
-  const open = !!setup && setup.state !== "ready" && !hidden;
+  // The guided tour goes first: setup can wait the minute it takes.
+  const touring = useActiveTour() !== null;
+  const open = !!setup && setup.state !== "ready" && !hidden && !touring;
 
   useEffect(() => {
     if (!open) return;
@@ -45,7 +48,7 @@ export function SetupDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  if (!setup || setup.state === "ready") return null;
+  if (!setup || setup.state === "ready" || touring) return null;
 
   if (hidden) {
     return (

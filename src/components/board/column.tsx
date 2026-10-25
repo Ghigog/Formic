@@ -140,6 +140,7 @@ export function Column({
     <section
       aria-label={COLUMN_LABELS[id]}
       data-limited={limited || undefined}
+      data-tour={bare ? undefined : "column"}
       className={cn(
         "flex min-h-0 min-w-0 flex-1 flex-col gap-2.5",
         !bare && "bg-column border-column-line rounded-xl border p-3",
@@ -147,7 +148,7 @@ export function Column({
       )}
     >
       {!bare && (
-      <div className="flex items-center gap-2 px-0.5">
+      <div data-tour={agent ? undefined : "column-head"} className="flex items-center gap-2 px-0.5">
         <span
           aria-hidden
           className={cn("size-1.5 rounded-full", dot.color, dot.live && "pulse-dot")}

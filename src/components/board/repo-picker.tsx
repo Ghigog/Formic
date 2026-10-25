@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
 import {
@@ -162,7 +163,10 @@ export function RepoPicker({
     await choose({ repoFullName: data.repo.fullName }, `create:${name}`);
   }
 
-  async function choose(body: { projectId: string } | { repoFullName: string } | { noRepository: true }, key: string) {
+  async function choose(
+    body: { projectId: string } | { repoFullName: string } | { noRepository: true } | { example: true },
+    key: string,
+  ) {
     const project = "projectId" in body ? projects?.find((p) => p.id === body.projectId) : undefined;
     setBusy(key);
     setError(null);
@@ -195,7 +199,8 @@ export function RepoPicker({
           className,
         )}
       >
-        <div className="border-hairline border-b p-2.5">
+        {!inline && <AutoTour id="switch" delay={450} />}
+        <div data-tour="switch-search" className="border-hairline border-b p-2.5">
           <input
             ref={input}
             value={query}
@@ -235,8 +240,32 @@ export function RepoPicker({
             </button>
           )}
 
+          {!q && (
+            <div data-tour="examples">
+              <Section label="Example project">
+                <button
+                  type="button"
+                  className={row}
+                  disabled={busy !== null}
+                  onClick={() => void choose({ example: true }, "example")}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="text-ink block truncate font-medium">Try the example project</span>
+                    <span className="text-muted block truncate text-[11px]">
+                      A safe board to experiment on. Nothing touches your code.
+                    </span>
+                  </span>
+                  <span className="bg-jade-chip text-jade-chip-text rounded-full px-1.5 py-px font-mono text-[9px]">
+                    example
+                  </span>
+                  {busy === "example" && <span className="text-muted text-[11px]">…</span>}
+                </button>
+              </Section>
+            </div>
+          )}
+
           {onBoard.length > 0 && (
-            <Section label="Your boards">
+            <Section label="Your boards" tour="switch-boards">
               {onBoard.map((p) => {
                 const selected = p.repoFullName === current;
                 return (
@@ -348,9 +377,9 @@ export function RepoPicker({
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({ label, tour, children }: { label: string; tour?: string; children: React.ReactNode }) {
   return (
-    <div className="mt-1 first:mt-0">
+    <div data-tour={tour} className="mt-1 first:mt-0">
       <h3 className="text-muted px-2.5 pt-2 pb-1 text-[10px] font-semibold tracking-[0.08em] uppercase">
         {label}
       </h3>

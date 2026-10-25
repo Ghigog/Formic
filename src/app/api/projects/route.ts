@@ -11,6 +11,7 @@ import { normalizeRepo } from "@/lib/secrets/repo";
 import { getRepository } from "@/lib/vcs/repositories";
 import { launch } from "@/lib/agents/pipeline";
 import { addOnboardingTicket } from "@/lib/board/onboarding";
+import { openExampleProject } from "@/lib/board/example";
 import { runnerSetup } from "@/lib/runner/setup";
 import { limited, RUN } from "@/lib/rate-limit";
 import { classifyEvent, type NotificationKind } from "@/lib/notifications/classify";
@@ -82,6 +83,7 @@ const chooseSchema = z.union([
   z.object({ projectId: z.string().min(1) }),
   z.object({ repoFullName: z.string().min(1) }),
   z.object({ noRepository: z.literal(true), name: z.string().trim().min(1).max(100).optional() }),
+  z.object({ example: z.literal(true) }),
 ]);
 
 /**
@@ -98,7 +100,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = chooseSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return Response.json({ error: "Expected a projectId, a repoFullName or noRepository." }, { status: 400 });
+    return Response.json({ error: "Expected a projectId, a repoFullName, noRepository or example." }, { status: 400 });
   }
 
   const repo = repository();
@@ -109,6 +111,9 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "That project no longer exists." }, { status: 404 });
     }
     project = await boardFor(user, project);
+  } else if ("example" in parsed.data) {
+    // A safe board to try Formic on: no repository, so nothing touches code.
+    project = await openExampleProject(user.id);
   } else if ("noRepository" in parsed.data) {
     // A board of cards and levels: no repository to reach, no setup run, and
     // no AGENTS.md ticket, since no agent will read it.

@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -24,6 +25,7 @@ export function NestButton() {
   return (
     <button
       data-colony="nest"
+      data-tour="colony"
       type="button"
       onClick={() => c.setColonyOpen(!c.colonyOpen)}
       aria-label="Open colony: levels and bug styles"
@@ -316,7 +318,8 @@ export function ColonyPopover() {
         aria-label="Colony"
         className={`border-line bg-card fixed right-4 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[75] box-border flex max-h-[calc(100dvh-5rem)] w-[400px] overflow-y-auto overscroll-contain max-w-[calc(100vw-32px)] origin-bottom-right flex-col gap-4 rounded-xl border p-5 shadow-[0_28px_56px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)] ${carrying ? "pointer-events-none" : ""} ${carrying && isMobile ? "invisible" : ""}`}
       >
-        <div className="flex items-center gap-3">
+        <AutoTour id="colony" delay={800} />
+        <div data-tour="colony-rank" className="flex items-center gap-3">
           <span className="bg-anthracite text-cream inline-flex size-[42px] shrink-0 flex-col items-center justify-center gap-px [clip-path:polygon(10px_0,calc(100%-10px)_0,100%_10px,100%_calc(100%-10px),calc(100%-10px)_100%,10px_100%,0_calc(100%-10px),0_10px)]">
             <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">LV</span>
             <span className="font-serif text-[18px] leading-none font-semibold">{s.level}</span>
@@ -343,7 +346,7 @@ export function ColonyPopover() {
 
         <ColonyPanel level={s.level} />
 
-        <div className="bg-panel flex flex-col gap-2 rounded-lg px-3 py-2.5">
+        <div data-tour="colony-next" className="bg-panel flex flex-col gap-2 rounded-lg px-3 py-2.5">
           <span className="text-ink text-[12px] font-semibold">{nextText}</span>
           <span className="bg-line block h-1 overflow-hidden rounded-sm">
             <span
@@ -353,7 +356,7 @@ export function ColonyPopover() {
           </span>
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div data-tour="colony-shapes" className="flex flex-col gap-2">
           <h3 className="text-ink m-0 text-[11px] font-semibold tracking-[0.1em] uppercase">Bug shape</h3>
           <div className="grid grid-cols-6 gap-1.5">
             {SHAPE_UNLOCKS.map((u) => {
@@ -386,7 +389,7 @@ export function ColonyPopover() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div data-tour="colony-colours" className="flex flex-col gap-2">
           <h3 className="text-ink m-0 text-[11px] font-semibold tracking-[0.1em] uppercase">Bug colour</h3>
           <div className="grid grid-cols-6 gap-1.5">
             {COLOR_UNLOCKS.map((u) => {

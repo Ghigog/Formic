@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -97,6 +98,7 @@ export function SettingsForm({
         <span aria-hidden className="bg-line h-6 w-px" />
         <h1 className="font-serif text-[19px] font-semibold">Settings</h1>
       </header>
+      <AutoTour id="settings" delay={600} />
 
       <main className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-6">
         <Section title="GitHub">
@@ -507,9 +509,14 @@ function DangerZone() {
   );
 }
 
+/** "Sandbox (E2B)" → "settings-sandbox": the section's guided-tour stop. */
+function tourStop(title: string): string {
+  return `settings-${title.toLowerCase().replace(/\(.*?\)/g, "").trim().split(/\s+/).slice(0, 2).join("-")}`;
+}
+
 function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="bg-card border-line scroll-mt-4 rounded-xl border p-4">
+    <section id={id} data-tour={tourStop(title)} className="bg-card border-line scroll-mt-4 rounded-xl border p-4">
       <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">
         {title}
       </h2>

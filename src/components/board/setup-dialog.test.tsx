@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SetupDialog } from "./setup-dialog";
+import { endTour, startTour } from "@/components/onboarding/store";
 
 const waiting = {
   state: "waiting",
@@ -10,6 +11,16 @@ const waiting = {
 } as const;
 
 describe("the setup dialog", () => {
+  it("waits for the guided tour to finish", () => {
+    act(() => startTour("board"));
+    render(
+      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} />,
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => endTour());
+    expect(screen.getByRole("dialog", { name: "Getting widgets ready" })).toBeTruthy();
+  });
+
   it("asks for the setup pull request, and mentions the first ticket", () => {
     render(
       <SetupDialog

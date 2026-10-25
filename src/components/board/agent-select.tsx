@@ -75,7 +75,7 @@ export function AgentSelect({
     "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-cream outline-none focus-visible:bg-cream";
 
   return (
-    <div ref={root} className="relative">
+    <div ref={root} data-tour="column-head" className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

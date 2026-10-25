@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import type { ComponentProps } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board";
@@ -292,6 +293,7 @@ export function BoardShell({
       />
 
       <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
+      <AutoTour id="board" delay={900} />
       <ColonyTimeline repoName={repoName} />
       <SentinelsPage repoName={repoName} />
       <ColonyPopover />

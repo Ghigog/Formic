@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { levelOf, rankOf } from "@/lib/colony/game";
 import { WINDOW_DAYS as N, TODAY, buildTimeline, isEpicComplete, type TimelineTicket } from "@/lib/colony/timeline";
@@ -242,13 +243,14 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
       aria-label="Timeline"
       className="bg-cream fixed top-14 right-0 bottom-14 left-0 md:top-16 z-[60] box-border overflow-auto px-6 pt-5 pb-8"
     >
+      <AutoTour id="timeline" delay={450} />
       <div className="mx-auto flex max-w-[1520px] min-w-[960px] flex-col gap-4">
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1">
             <span className="text-muted font-mono text-[10px] tracking-[0.12em] uppercase">Roadmap · {repoName}</span>
             <h1 className="m-0 font-serif text-[28px] leading-none font-semibold tracking-[-0.01em]">Timeline</h1>
           </div>
-          <div className="text-muted flex items-center gap-1.5 pb-[3px] text-[13px]">
+          <div data-tour="timeline-nav" className="text-muted flex items-center gap-1.5 pb-[3px] text-[13px]">
             <button
               type="button"
               aria-label="Earlier"
@@ -277,7 +279,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
             )}
           </div>
           <div className="flex-grow" />
-          <div className="text-muted flex items-center gap-3.5 pb-1 text-[11px]">
+          <div data-tour="timeline-legend" className="text-muted flex items-center gap-3.5 pb-1 text-[11px]">
             <Legend swatch={{ background: "var(--text-muted)" }}>Merged</Legend>
             <Legend swatch={{ background: "repeating-linear-gradient(45deg,var(--terracotta) 0 4px,var(--terracotta-lit) 4px 8px)" }}>In review</Legend>
             <Legend swatch={{ background: "repeating-linear-gradient(45deg,var(--clay) 0 4px,var(--clay-lit) 4px 8px)" }}>In progress</Legend>
@@ -292,7 +294,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
           </div>
         </div>
 
-        <div className={`border-line bg-card grid ${compact ? "grid-cols-[90px_minmax(0,1fr)]" : "grid-cols-[360px_minmax(0,1fr)]"} overflow-hidden rounded-xl border`}>
+        <div data-tour="timeline-chart" className={`border-line bg-card grid ${compact ? "grid-cols-[90px_minmax(0,1fr)]" : "grid-cols-[360px_minmax(0,1fr)]"} overflow-hidden rounded-xl border`}>
           {/* Left: the burndown's numbers and the row labels. */}
           <div className="border-line flex min-w-0 flex-col border-r">
             <div className={`border-line box-border flex h-11 shrink-0 items-center justify-between border-b ${compact ? "pr-1 pl-3" : "px-4"}`}>

@@ -3,6 +3,7 @@ import "server-only";
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
+import { ONBOARDING_TICKET_TITLE } from "./onboarding-ticket";
 
 /**
  * The first ticket on a new board: an AGENTS.md for the repository. Every
@@ -15,7 +16,7 @@ import { positionForIndex } from "@/lib/ordering";
  * reads it as is.
  */
 export const ONBOARDING_TICKET = {
-  title: "Write an AGENTS.md so agents can find their way around this repo",
+  title: ONBOARDING_TICKET_TITLE,
   description: [
     "Generate an AGENTS.md with the most useful things for agents working on this repo to know, including where to find various files and functions. Keep it short — point to files rather than pasting them in.",
     "",
