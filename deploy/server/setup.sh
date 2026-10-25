@@ -55,6 +55,38 @@ if ! command -v caddy >/dev/null; then
   apt-get install -yq caddy
 fi
 
+# Postgres lives on this server: the app reaches it over localhost, so there
+# is no egress meter or monthly cap to run out of. PGDG's packages rather than
+# Ubuntu's, so pg_dump is new enough to copy a database off Neon or Supabase.
+PG_MAJOR=18
+echo "==> Postgres $PG_MAJOR"
+if ! command -v "/usr/lib/postgresql/$PG_MAJOR/bin/postgres" >/dev/null; then
+  curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --yes -o /usr/share/keyrings/postgresql.gpg
+  echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+  apt-get update -q
+  apt-get install -yq "postgresql-$PG_MAJOR"
+fi
+
+# Sized for a 1 GB server shared with the app. It listens on localhost only,
+# which is Postgres's default.
+cat > "/etc/postgresql/$PG_MAJOR/main/conf.d/formic.conf" <<'EOF'
+max_connections = 20
+shared_buffers = 64MB
+effective_cache_size = 256MB
+work_mem = 4MB
+maintenance_work_mem = 32MB
+EOF
+systemctl restart postgresql
+
+# Nightly dump, a week kept. It sits on the same disk, so it covers mistakes
+# in the data; Lightsail's automatic snapshots cover losing the disk.
+mkdir -p /var/backups/formic
+chown postgres:postgres /var/backups/formic
+chmod 700 /var/backups/formic
+cat > /etc/cron.d/formic-backup <<'EOF'
+30 3 * * * postgres pg_dump --format=custom --file /var/backups/formic/formic-$(date -u +\%Y\%m\%d).dump formic && find /var/backups/formic -name '*.dump' -mtime +7 -delete
+EOF
+
 echo "==> formic user"
 if ! id formic >/dev/null 2>&1; then
   useradd --system --create-home --home-dir /home/formic --shell /bin/bash formic
@@ -88,6 +120,30 @@ E2B_API_KEY=""
 EOF
   chown formic:formic "$APP/shared/.env"
   chmod 600 "$APP/shared/.env"
+fi
+
+echo "==> Database"
+LOCAL_DB="$APP/shared/local-database-url"
+if [ ! -f "$LOCAL_DB" ]; then
+  # Hex, so the password needs no escaping inside a URL.
+  echo "postgresql://formic:$(openssl rand -hex 24)@127.0.0.1:5432/formic" > "$LOCAL_DB"
+  chown formic:formic "$LOCAL_DB"
+  chmod 600 "$LOCAL_DB"
+fi
+# The role always gets the saved password, so a rebuilt cluster matches it.
+pw="$(sed -E 's#^postgresql://formic:([^@]*)@.*#\1#' "$LOCAL_DB")"
+if sudo -u postgres psql -tAc "select 1 from pg_roles where rolname = 'formic'" | grep -q 1; then
+  sudo -u postgres psql -qc "alter role formic with login password '$pw'"
+else
+  sudo -u postgres psql -qc "create role formic with login password '$pw'"
+fi
+if ! sudo -u postgres psql -tAc "select 1 from pg_database where datname = 'formic'" | grep -q 1; then
+  sudo -u postgres createdb --owner formic formic
+fi
+# A fresh .env gets the local database. One already pointing elsewhere is
+# left alone: docs/aws.md says how to move that data across first.
+if grep -q '^DATABASE_URL=""$' "$APP/shared/.env"; then
+  sed -i "s#^DATABASE_URL=\"\"\$#DATABASE_URL=\"$(cat "$LOCAL_DB")\"#" "$APP/shared/.env"
 fi
 
 echo "==> Deploy key for GitHub Actions"
@@ -135,7 +191,9 @@ cat <<EOF
 ==> Done. Next:
 
 1. Fill in $APP/shared/.env (sudo -u formic nano $APP/shared/.env)
-   with the values from Vercel.
+   with the values from Vercel. DATABASE_URL is the local database
+   unless it already pointed somewhere else; to move existing data here,
+   see "Database" in docs/aws.md.
 
 2. In GitHub (Settings > Secrets and variables > Actions):
    variable  DEPLOY_HOST      $ip
