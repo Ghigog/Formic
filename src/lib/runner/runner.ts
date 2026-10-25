@@ -22,7 +22,7 @@ import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
 import { attemptsFor } from "@/lib/budget/in-process";
 import { diagnose, lastWords } from "@/lib/agents/limits";
 import { mergePlan, planFraction, planFromSummary } from "@/lib/agents/plan";
-import { provider as providerInfo, type ProviderInfo } from "@/lib/llm/providers";
+import { provider as providerInfo, secretNameFor, type ProviderInfo } from "@/lib/llm/providers";
 import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
 import { reviewBrief, taskBrief } from "@/lib/agents/coder";
@@ -377,19 +377,7 @@ function failure(type: string, ...detail: string[]): string {
   return [type, ...detail.filter(Boolean)].join("\n");
 }
 
-/**
- * The Actions secret an agent's credential lives in: its own, so two accounts
- * on one repository never swap keys between runs. A CLI agent's sign-in and an
- * API key both live here, because the job reads `secrets[inputs.secret]` —
- * never a key in an input, which the run's own event keeps for anyone who can
- * read the repository.
- */
-export function secretNameFor(agent: { presetId: string | null; info: ProviderInfo }): string {
-  const base =
-    agent.info.secretName ?? `FORMIC_API_KEY_${agent.info.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
-  if (!agent.presetId) return base;
-  return `${base}_${agent.presetId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
-}
+export { secretNameFor };
 
 /**
  * The agent a job runs. A CLI tool loops itself on the person's plan; Formic's

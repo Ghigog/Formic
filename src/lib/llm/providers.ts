@@ -239,3 +239,17 @@ export function isProviderId(id: string): id is ProviderId {
 export function shortModelName(model: string): string {
   return model.replace(/^models\//, "").replace(/^[\w-]+\//, "");
 }
+
+/**
+ * The Actions secret an agent's credential lives in: its own, so two accounts
+ * on one repository never swap keys between runs. A CLI agent's sign-in and an
+ * API key both live here, because the job reads `secrets[inputs.secret]` —
+ * never a key in an input, which the run's own event keeps for anyone who can
+ * read the repository. Formic never stores the value, only this name.
+ */
+export function secretNameFor(agent: { presetId: string | null; info: ProviderInfo }): string {
+  const base =
+    agent.info.secretName ?? `FORMIC_API_KEY_${agent.info.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+  if (!agent.presetId) return base;
+  return `${base}_${agent.presetId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}

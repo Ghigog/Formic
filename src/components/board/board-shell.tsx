@@ -19,7 +19,7 @@ import { useAssistant } from "@/lib/hooks/use-assistant";
 import { AgentEditor } from "./agent-editor";
 import { SetupDialog, type KeylessAgent } from "./setup-dialog";
 import { useRunnerSetup } from "@/lib/hooks/use-runner-setup";
-import { provider } from "@/lib/llm/providers";
+import { provider, secretNameFor } from "@/lib/llm/providers";
 import type { AgentPreset, ColumnAgents, ColumnOverrides } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
@@ -163,14 +163,14 @@ export function BoardShell({
 
   const repoName = repoFullName.split("/")[1] ?? repoFullName;
 
-  // CLI agents on a column that have no key yet: the other half of setup.
+  // CLI agents on a column, each needing its secret in the repository: the other half of setup.
   const keyless: KeylessAgent[] = [];
-  for (const [column, presetId] of Object.entries(agentState.columns) as Array<[ColumnId, string]>) {
+  for (const [, presetId] of Object.entries(agentState.columns) as Array<[ColumnId, string]>) {
     const preset = agentState.presets.find((p) => p.id === presetId);
     const info = preset && provider(preset.provider);
-    if (!preset || preset.hasKey || info?.kind !== "cli") continue;
+    if (!preset || info?.kind !== "cli") continue;
     if (keyless.some((k) => k.name === preset.name)) continue;
-    keyless.push({ name: preset.name, keyName: info.keyName, onAdd: () => setEditing({ column, preset }) });
+    keyless.push({ name: preset.name, keyName: info.keyName, secretName: secretNameFor({ presetId: preset.id, info }) });
   }
 
   return (
@@ -223,6 +223,7 @@ export function BoardShell({
 
       {editing && (
         <AgentEditor
+          repoFullName={repoFullName}
           column={editing.column}
           preset={editing.preset}
           usage={editing.preset ? agentState.usage[editing.preset.id] : undefined}
@@ -279,6 +280,7 @@ export function BoardShell({
       <SetupDialog
         setup={runner.setup}
         repoName={repoName}
+        repoFullName={repoFullName}
         keyless={keyless}
         onRetry={() => void runner.check()}
       />

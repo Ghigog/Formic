@@ -18,6 +18,7 @@ import {
   PROVIDERS,
   type ProviderId,
   provider as providerInfo,
+  secretNameFor,
 } from "@/lib/llm/providers";
 import { reasoningNote, reasoningRoleFor, roleReasoning } from "@/lib/agents/reasoning";
 import type { ModelInfo } from "@/lib/llm/openai-compat";
@@ -79,6 +80,7 @@ type ModelList =
  */
 export function AgentEditor({
   column,
+  repoFullName,
   preset,
   usage,
   window: tokenWindow = { kind: "all-time", since: null, timezone: null },
@@ -91,6 +93,8 @@ export function AgentEditor({
 }: {
   /** The column it was opened from, or the board's assistant. */
   column: ColumnId | "assistant";
+  /** "owner/repo", where a CLI agent's secret is added. */
+  repoFullName: string;
   /** Null creates a new agent. */
   preset: AgentPreset | null;
   /** What this agent has used, in tokens, if it has been saved and run. */
@@ -202,7 +206,7 @@ export function AgentEditor({
   }, [provider, noKey, typedKey, preset?.id]);
 
   async function submit() {
-    if (!hasSavedKey && !typedKey) {
+    if (!cli && !hasSavedKey && !typedKey) {
       setError(`Add your ${info.keyName}. This agent runs on it.`);
       return;
     }
@@ -228,7 +232,8 @@ export function AgentEditor({
         model: model.trim(),
         prompt,
         // An empty box keeps a saved key; Remove clears it; a typed one replaces it.
-        ...(apiKey === null
+        // A CLI agent has no key here: its secret lives in the repository.
+        ...(cli ? {} : apiKey === null
           ? { apiKey: null }
           : typedKey
             ? { apiKey: typedKey }
@@ -342,9 +347,35 @@ export function AgentEditor({
             <span className="text-muted text-[11px]">{info.note}</span>
           </label>
 
+          {cli ? (
+            <div className="flex flex-col gap-1">
+              <span className={label}>{info.keyName}</span>
+              {preset ? (
+                <code className="border-line bg-cream text-ink flex h-9 items-center rounded-md border px-2.5 font-mono text-[13px]">
+                  {secretNameFor({ presetId: preset.id, info })}
+                </code>
+              ) : (
+                <span className="text-muted text-[11px]">The secret&apos;s name appears here once you save the agent.</span>
+              )}
+              <span className="text-muted text-[11px] leading-[1.5]">
+                Add it as a secret in{" "}
+                <a
+                  href={`https://github.com/${repoFullName}/settings/secrets/actions`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-ink underline"
+                >
+                  your repository&apos;s Actions secrets
+                </a>
+                . Formic keeps only its name, never the value.
+                <br />
+                {info.howToGetKey} Paste the value as it is.
+              </span>
+            </div>
+          ) : (
           <div className="flex flex-col gap-1">
             <span className={label} id="agent-key-label">
-              {cli ? info.keyName : `${info.label} ${info.keyName}`}
+              {`${info.label} ${info.keyName}`}
             </span>
             {savedKey ? (
               <div className="border-line bg-cream flex h-9 items-center gap-2 rounded-md border px-2.5 text-[13px]">
@@ -370,33 +401,19 @@ export function AgentEditor({
                 className={`${field} h-9 font-mono`}
               />
             )}
-            {cli ? (
-              <span className="text-muted text-[11px] leading-[1.5]">
-                {info.howToGetKey} Stored encrypted, and saved as a secret in
-                your repository&apos;s GitHub Actions when the agent runs.{" "}
-                <a
-                  href={info.keyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-ink underline"
-                >
-                  How it works
-                </a>
-              </span>
-            ) : (
-              <span className="text-muted text-[11px]">
-                Stored encrypted and never shown again.{" "}
-                <a
-                  href={info.keyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-ink underline"
-                >
-                  Get a key from {info.label}
-                </a>
-              </span>
-            )}
+            <span className="text-muted text-[11px]">
+              Stored encrypted and never shown again.{" "}
+              <a
+                href={info.keyUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-ink underline"
+              >
+                Get a key from {info.label}
+              </a>
+            </span>
           </div>
+          )}
 
           <label className="flex flex-col gap-1">
             <span className={label}>Model</span>

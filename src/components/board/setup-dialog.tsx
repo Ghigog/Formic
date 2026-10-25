@@ -3,11 +3,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
 
-/** A column whose CLI agent has no key yet: it cannot run until it has one. */
+/** A column's CLI agent, which cannot run until its secret is in the repository's Actions secrets. */
 export interface KeylessAgent {
   name: string;
   keyName: string;
-  onAdd: () => void;
+  secretName: string;
 }
 
 /**
@@ -19,11 +19,13 @@ export interface KeylessAgent {
 export function SetupDialog({
   setup,
   repoName,
+  repoFullName,
   keyless,
   onRetry,
 }: {
   setup: RunnerSetup | null;
   repoName: string;
+  repoFullName: string;
   keyless: KeylessAgent[];
   onRetry: () => void;
 }) {
@@ -98,17 +100,25 @@ export function SetupDialog({
                 </a>
               </Step>
               {keyless.map((agent, i) => (
-                <Step key={agent.name} n={i + 2} label={`Add a ${agent.keyName} to ${agent.name}`}>
-                  <button
-                    type="button"
-                    onClick={agent.onAdd}
-                    className="border-line bg-card text-ink h-[30px] rounded-lg border px-3 text-[12px] font-medium whitespace-nowrap"
-                  >
-                    Add key
-                  </button>
+                <Step key={agent.name} n={i + 2} label={`Add ${agent.name}'s ${agent.keyName} as a secret`}>
+                  <code className="text-ink font-mono text-[11px]">{agent.secretName}</code>
                 </Step>
               ))}
             </ol>
+            {keyless.length > 0 && (
+              <p className="text-muted m-0 text-[12px] leading-[1.6]">
+                Add each secret to{" "}
+                <a
+                  href={`https://github.com/${repoFullName}/settings/secrets/actions`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-ink underline"
+                >
+                  your repository&apos;s Actions secrets
+                </a>
+                . Formic keeps only its name, never the value.
+              </p>
+            )}
             {!setup.update && (
               <p className="text-muted m-0 text-[12px] leading-[1.6]">
                 Your first ticket is waiting in To Do: an AGENTS.md that tells every agent how this codebase is
