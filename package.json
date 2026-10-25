@@ -34,6 +34,7 @@
     "@anthropic-ai/sdk": "^0.129.0",
     "@e2b/code-interpreter": "^2.8.0",
     "@hello-pangea/dnd": "^18.0.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@supabase/realtime-js": "2.117.2",
