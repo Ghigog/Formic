@@ -420,8 +420,6 @@ export interface ProjectSummary {
   baseBranch: string;
   /** Agents work on this board. Off: a plain board a person moves cards on. */
   agents: boolean;
-  /** The owner switched agents off: cards only move, with no run, column agent or merge. */
-  agentsOff: boolean;
   /** Formic merges approved, green pull requests on its own. Off until the owner opts in. */
   autoMerge: boolean;
   /** Formic raises a ticket's story points on its own when it outgrows its estimate. Off until the owner opts in. */
@@ -648,7 +646,6 @@ export interface Repository {
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
   setShareKeys(projectId: string, shareKeys: boolean): Promise<void>;
   setAgents(projectId: string, agents: boolean): Promise<void>;
-  setAgentsOff(projectId: string, agentsOff: boolean): Promise<void>;
   /**
    * Whose keys a card's work runs on: the person who last set it going. A
    * ticket with none takes its scout parent's, then its epic's. Null is the

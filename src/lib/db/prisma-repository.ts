@@ -246,10 +246,6 @@ export class PrismaRepository implements Repository {
     await prisma().project.updateMany({ where: { id: projectId }, data: { shareKeys } });
   }
 
-  async setAgentsOff(projectId: string, agentsOff: boolean): Promise<void> {
-    await prisma().project.updateMany({ where: { id: projectId }, data: { agentsOff } });
-  }
-
   async setAgents(projectId: string, agents: boolean): Promise<void> {
     await prisma().project.updateMany({ where: { id: projectId }, data: { agents } });
   }
@@ -1059,13 +1055,13 @@ export class PrismaRepository implements Repository {
             misplacedIn: true,
             mergedAt: true,
             storyPoints: true,
-            epic: { select: { projectId: true, project: { select: { agents: true, agentsOff: true } } } },
+            epic: { select: { projectId: true, project: { select: { agents: true } } } },
           },
         });
         // With no agents on the board, a person moving a card to Done scores
         // it like a merge, once.
         let merge = {};
-        if (before && input.status === "merged" && !before.mergedAt && (!before.epic.project.agents || before.epic.project.agentsOff)) {
+        if (before && input.status === "merged" && !before.mergedAt && !before.epic.project.agents) {
           const now = new Date();
           const recent = await tx.ticket.count({
             where: {
