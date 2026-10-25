@@ -72,7 +72,7 @@ export function SetupDialog({
         role="dialog"
         aria-modal
         aria-labelledby={titleId}
-        className="bg-card border-line box-border flex w-full max-w-[480px] flex-col gap-4 rounded-t-xl border p-5 shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)] sm:rounded-xl"
+        className="bg-card border-line box-border flex max-h-[92dvh] w-full max-w-[480px] flex-col gap-4 overflow-y-auto rounded-t-xl border p-5 shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)] sm:rounded-xl"
       >
         <h2 id={titleId} className="text-ink m-0 text-[16px] font-semibold">
           {title}
@@ -100,14 +100,17 @@ export function SetupDialog({
                 </a>
               </Step>
               {keyless.map((agent, i) => (
-                <Step key={agent.name} n={i + 2} label={`Add ${agent.name}'s ${agent.keyName} as a secret`}>
-                  <code className="text-ink font-mono text-[11px]">{agent.secretName}</code>
+                <Step key={agent.name} n={i + 2} label={`Add a secret for ${agent.name}`}>
+                  <p className="text-muted m-0 text-[12px] leading-[1.5]">
+                    Name it exactly this. The value is {agent.name}&apos;s {agent.keyName}.
+                  </p>
+                  <SecretName value={agent.secretName} />
                 </Step>
               ))}
             </ol>
             {keyless.length > 0 && (
               <p className="text-muted m-0 text-[12px] leading-[1.6]">
-                Add each secret to{" "}
+                On GitHub, choose New repository secret in{" "}
                 <a
                   href={`https://github.com/${repoFullName}/settings/secrets/actions`}
                   target="_blank"
@@ -116,7 +119,7 @@ export function SetupDialog({
                 >
                   your repository&apos;s Actions secrets
                 </a>
-                . Formic keeps only its name, never the value.
+                , then paste the name and the value. Formic keeps only the name, never the value.
               </p>
             )}
             {!setup.update && (
@@ -159,14 +162,41 @@ export function SetupDialog({
   );
 }
 
-function Step({ n, label, children }: { n: number; label: string; children: React.ReactNode }) {
+function Step({ n, label, children }: { n: number; label: string; children?: React.ReactNode }) {
   return (
-    <li className="border-line flex items-center gap-3 rounded-lg border px-3 py-2">
-      <span className="bg-cream text-muted inline-flex size-5 shrink-0 items-center justify-center rounded-full font-mono text-[11px]">
+    <li className="border-line flex items-start gap-3 rounded-lg border px-3 py-2.5">
+      <span className="bg-cream text-muted mt-px inline-flex size-5 shrink-0 items-center justify-center rounded-full font-mono text-[11px]">
         {n}
       </span>
-      <span className="text-ink flex-1">{label}</span>
-      {children}
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+        <span className="text-ink font-medium">{label}</span>
+        {children}
+      </div>
     </li>
+  );
+}
+
+function SecretName({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+  return (
+    <div className="flex w-full flex-col gap-1.5">
+      <code className="bg-cream text-ink w-full rounded-md px-2 py-1.5 font-mono text-[11px] leading-[1.5] break-all">
+        {value}
+      </code>
+      <button
+        type="button"
+        onClick={copy}
+        className="border-line bg-card text-ink h-[28px] self-start rounded-md border px-2.5 text-[12px] font-medium active:scale-[0.96]"
+      >
+        {copied ? "Copied" : "Copy name"}
+      </button>
+    </div>
   );
 }
