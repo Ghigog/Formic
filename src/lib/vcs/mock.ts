@@ -46,13 +46,12 @@ function pulls(): Map<number, MockPull> {
   return globalThis.__formicMockPulls;
 }
 
-/** Branches, files, secrets and dispatches: the rest of the mock repository. */
+/** Branches, files and dispatches: the rest of the mock repository. */
 interface MockRepo {
   /** Branch name to head sha. */
   branches: Map<string, string>;
   /** `${ref}:${path}` to file text. */
   files: Map<string, string>;
-  secrets: Map<string, string>;
   dispatches: Array<{ file: string; ref: string; inputs: Record<string, string> }>;
   /** Head sha to what that commit changed relative to its base. */
   commits: Map<string, { files: string[]; message: string }>;
@@ -115,7 +114,6 @@ function repo(): MockRepo {
   g.__formicMockRepo ??= {
     branches: new Map(),
     files: new Map(),
-    secrets: new Map(),
     dispatches: [],
     commits: new Map(),
     issues: new Map(),
@@ -396,10 +394,6 @@ export class MockVcsClient implements VcsClient {
       closed.push(pull.number);
     }
     return closed;
-  }
-
-  async setSecret(name: string, value: string): Promise<void> {
-    repo().secrets.set(name, value);
   }
 
   async dispatchWorkflow(file: string, ref: string, inputs: Record<string, string>): Promise<void> {

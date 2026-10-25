@@ -561,10 +561,9 @@ describe("starting a CLI agent", () => {
     // A branch per version, so each setup starts from the base as it is now.
     expect(branch).toBe(`formic/setup-runner-${version.split(": ")[1]}`);
     expect(runner.dispatches).toHaveLength(0);
-    expect(runner.secrets.size).toBe(0);
   });
 
-  it("stores the plan token as the agent's own secret and dispatches the workflow", async () => {
+  it("dispatches the workflow with the agent's own secret name and writes no secret", async () => {
     const preset = await assignClaudeCode();
     const base = await installRunner();
     const ticket = await seedTicket();
@@ -574,7 +573,8 @@ describe("starting a CLI agent", () => {
     const runner = MockVcsClient.runner();
     const secret = secretNameFor({ presetId: preset.id, info: { secretName: "FORMIC_CLAUDE_CODE_TOKEN" } as never });
     expect(secret).toMatch(/^FORMIC_CLAUDE_CODE_TOKEN_[A-Z0-9_]+$/);
-    expect(runner.secrets.get(secret)).toBe(TOKEN);
+    expect(runner).not.toHaveProperty("secrets");
+    expect(MockVcsClient.prototype).not.toHaveProperty("setSecret");
     expect(runner.dispatches).toHaveLength(1);
     const { file, ref, inputs } = runner.dispatches[0]!;
     expect(file).toBe("formic-agent.yml");
@@ -607,27 +607,6 @@ describe("starting a CLI agent", () => {
     const b = (await cliAgentFor(PROJECT, "backlog"))!;
     expect(a.presetId).toBe(work.id);
     expect(secretNameFor(a)).not.toBe(secretNameFor(b));
-  });
-
-  it("refuses without a token", async () => {
-    const preset = await assignClaudeCode();
-    await savePreset({
-      id: preset.id,
-      name: preset.name,
-      provider: "claude-code",
-      model: "",
-      prompt: "p",
-      apiKey: null,
-    });
-    await installRunner();
-    const ticket = await seedTicket();
-
-    await runCoderAgent(PROJECT, ticket.id);
-
-    const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.status).toBe("blocked");
-    expect(after.blockedReason).toContain("no Claude Code token");
-    expect(MockVcsClient.runner().dispatches).toHaveLength(0);
   });
 });
 
@@ -1793,7 +1772,6 @@ describe("an API-key coder running in a job", () => {
     const runner = MockVcsClient.runner();
     const secret = secretNameFor({ presetId: preset.id, info: provider("deepseek")! });
     expect(secret).toMatch(/^FORMIC_API_KEY_DEEPSEEK_[A-Z0-9_]+$/);
-    expect(runner.secrets.get(secret)).toBe(API_KEY);
 
     const { inputs } = runner.dispatches[0]!;
     expect(inputs).toMatchObject({ mode: "loop", cli: "loop", ticket: "T-1", from: base, secret });
@@ -1942,7 +1920,6 @@ describe("an API-key coder running in a job", () => {
     await runCoderAgent(PROJECT, ticket.id);
 
     expect(MockVcsClient.runner().dispatches).toHaveLength(0);
-    expect(MockVcsClient.runner().secrets.size).toBe(0);
     expect((await repository().ticketDetail(ticket.id))!.runnerJob).toBeNull();
   });
 
