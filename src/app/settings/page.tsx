@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { canSee, currentUser, ownerScope } from "@/lib/auth/user";
 import { authMode } from "@/lib/auth/session";
@@ -6,6 +7,7 @@ import { activeProject } from "@/lib/board/project";
 import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
 import { getEffortByPoints, getLimitSettings, getNotificationSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { listTokens } from "@/lib/access-tokens";
+import { configuredOrigin } from "@/lib/origin";
 import { repository } from "@/lib/db";
 import { env } from "@/lib/secrets/env";
 import { hintFor } from "@/lib/secrets/vault";
@@ -17,6 +19,8 @@ export default async function SettingsPage() {
   const user = await currentUser();
   if (!user) redirect("/login?next=/settings");
   const config = env();
+  const host = (await headers()).get("host");
+  const origin = configuredOrigin() ?? (host ? `${host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https"}://${host}` : null);
   // Auto-merge is per board, so settings only offer the one this browser is
   // on; there is nothing to choose among. Only its owner sets them: on a board
   // shared with them, a member has only their own settings here.
@@ -65,6 +69,7 @@ export default async function SettingsPage() {
           readOnly,
           expiresAt: expiresAt?.toISOString() ?? null,
         }))}
+      mcpEndpoint={origin ? `${origin}/api/mcp` : undefined}
       vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null}
       renewal={{ day: user.tokenRenewalDay, timezone: user.tokenWindowTimezone }}
       e2b={{
