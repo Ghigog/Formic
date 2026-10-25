@@ -2,8 +2,8 @@
 
 Formic runs on Google Cloud's free **e2-micro** server: Node serves the app,
 Caddy puts HTTPS in front of it, and a manual CI run builds the app and ships
-it over SSH. The database stays where it is (Supabase or Neon); only the app
-moves.
+it over SSH. Postgres runs on the same server; see **Database** in
+`docs/aws.md` for moving data across and for backups.
 
 The e2-micro has 1 GB of memory — enough to run the app, not to build it — so
 GitHub Actions builds and the server only unpacks, migrates and restarts. On a
