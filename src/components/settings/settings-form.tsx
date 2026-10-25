@@ -11,6 +11,7 @@ import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-d
 import { ColonySection } from "@/components/settings/colony-section";
 import { DesktopAppSection } from "@/components/settings/desktop-app-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
+import { AccessTokensSection, type Token as AccessToken } from "@/components/settings/access-tokens-section";
 import { EffortSection } from "@/components/settings/effort-section";
 import { ScoutAgentSection } from "@/components/settings/scout-agent-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
@@ -58,6 +59,7 @@ export function SettingsForm({
   renewal,
   effortByPoints,
   notifications,
+  accessTokens,
   vapidPublicKey = null,
   presets = [],
 }: {
@@ -76,6 +78,7 @@ export function SettingsForm({
   /** Whether thinking effort follows story points; on when omitted. */
   effortByPoints?: boolean;
   notifications?: PushPreferences;
+  accessTokens?: AccessToken[];
   vapidPublicKey?: string | null;
   /** Saved agents the scout picker offers. */
   presets?: { id: string; name: string }[];
@@ -262,6 +265,7 @@ export function SettingsForm({
 
         <NotificationsSection initial={notifications} vapidPublicKey={vapidPublicKey} />
         <DesktopAppSection />
+        <AccessTokensSection initial={accessTokens} />
 
         {agents && (
           <p className="text-muted px-1 text-[12px] leading-[1.5]">
