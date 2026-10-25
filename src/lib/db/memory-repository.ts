@@ -60,6 +60,7 @@ import { severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
+import { provider as providerInfo } from "@/lib/llm/providers";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
@@ -1767,7 +1768,8 @@ export class MemoryRepository implements Repository {
   async savePreset(record: PresetRecord): Promise<AgentPreset> {
     const s = store();
     const existing = record.id ? s.presets.get(record.id) : undefined;
-    const keep = record.apiKeyCipher === undefined;
+    const cli = providerInfo(record.provider)?.kind === "cli";
+    const keep = record.apiKeyCipher === undefined && !cli;
     const row = {
       id: existing?.id ?? id("preset"),
       ownerId: existing ? existing.ownerId : (record.ownerId ?? null),
@@ -1776,8 +1778,8 @@ export class MemoryRepository implements Repository {
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
-      apiKeyCipher: keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
-      keyHint: keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
+      apiKeyCipher: cli ? null : keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
+      keyHint: cli ? null : keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
       hasKey: false,
       // A new key is likely a new account, with its own usage.
       limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,

@@ -148,7 +148,6 @@ describe("CLI agent templates", () => {
 
     for (const column of ["backlog", "todo", "in_progress", "in_review", "done"] as const) {
       expect(await cliAgentFor(PROJECT, column)).toMatchObject({
-        credential: TOKEN,
         model: null,
         info: { cli: "claude", secretName: "FORMIC_CLAUDE_CODE_TOKEN" },
       });

@@ -196,7 +196,7 @@ describe("the sentinels' agent", () => {
   it("hands a CLI agent back to audit in GitHub Actions", async () => {
     await assistantOn({ name: "claude-code", provider: "claude-code", model: "", prompt: "chat brief", apiKey: "token" });
     const agent = await sentinelAgent(PROJECT);
-    expect(agent).toMatchObject({ kind: "cli", agent: { credential: "token", info: { cli: "claude" } } });
+    expect(agent).toMatchObject({ kind: "cli", agent: { info: { cli: "claude" } } });
   });
 
   it("runs the mock in local mode when the assistant has no agent", async () => {

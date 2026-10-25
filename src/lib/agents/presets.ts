@@ -50,7 +50,9 @@ export async function savePreset(
     name: input.name,
     model: input.model,
     prompt: input.prompt,
-    ...(input.apiKey === undefined
+    // A CLI agent's credential is a repository Actions secret that the person
+    // adds themselves; Formic keeps only its name.
+    ...(input.apiKey === undefined || providerInfo(input.provider)?.kind === "cli"
       ? {}
       : input.apiKey === null
         ? { apiKeyCipher: null, apiKeyHint: null }
@@ -387,8 +389,6 @@ export interface CliAgent {
   info: ProviderInfo & { kind: "cli"; cli: NonNullable<ProviderInfo["cli"]>; secretName: string };
   model: string | null;
   brief: string | null;
-  /** The person's plan token or key. Null when the template has none. */
-  credential: string | null;
 }
 
 /** The CLI agent a column runs, or null when it runs anything else. */
@@ -406,7 +406,6 @@ export async function cliAgentFor(
     info: info as CliAgent["info"],
     model: resolved.config.model || null,
     brief: resolved.config.brief || null,
-    credential: resolved.config.apiKey || null,
   };
 }
 
@@ -471,7 +470,7 @@ export async function assistantAgentFor(projectId: string): Promise<AssistantAge
     if (!info.cli || !info.secretName) return { kind: "none" };
     return {
       kind: "cli",
-      agent: { presetId: found.preset.id, info: info as CliAgent["info"], model, brief, credential: apiKey },
+      agent: { presetId: found.preset.id, info: info as CliAgent["info"], model, brief },
     };
   }
   return { kind: "api", info, model, apiKey, brief };

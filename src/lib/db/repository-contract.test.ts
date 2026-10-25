@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MemoryRepository } from "./memory-repository";
 import { PrismaRepository } from "./prisma-repository";
+import { prisma } from "./client";
+import { readFileSync } from "node:fs";
 import type { CreateTicketInput, Repository } from "./repository";
 
 /**
@@ -645,6 +647,20 @@ function contract(name: string, make: () => Repository) {
         await repo.deletePreset(preset.id);
         expect(await repo.presetForRun(preset.id)).toBeNull();
         expect(await repo.columnAgents(p.id)).toEqual({});
+      });
+
+      it("keeps no credential for a CLI agent, only for an API provider", async () => {
+        const base = { ownerId: null, model: "", prompt: "p", apiKeyCipher: "sealed", apiKeyHint: "…1234" };
+        const cli = await repo.savePreset({ ...base, provider: "claude-code", name: `contract-${randomUUID()}` });
+        expect(cli).toMatchObject({ hasKey: false, keyHint: null });
+        expect((await repo.presetForRun(cli.id))?.apiKeyCipher).toBeNull();
+
+        // Switching an API agent to a CLI provider drops the key it held.
+        const api = await repo.savePreset({ ...base, provider: "anthropic", model: "m", name: `contract-${randomUUID()}` });
+        expect(api.hasKey).toBe(true);
+        const switched = await repo.savePreset({ ...base, id: api.id, provider: "codex", name: api.name });
+        expect(switched.hasKey).toBe(false);
+        expect((await repo.presetForRun(api.id))?.apiKeyCipher).toBeNull();
       });
 
       it("keeps auto-escalation off until switched on, per project", async () => {
@@ -1386,4 +1402,17 @@ describe.skipIf(!TEST_DATABASE_URL)("on Postgres", () => {
   });
 
   contract("postgres", () => new PrismaRepository());
+
+  it("migration forgets stored CLI credentials and leaves API keys alone", async () => {
+    const db = prisma();
+    const mk = (provider: string) =>
+      db.agentPreset.create({
+        data: { name: `mig-${randomUUID()}`, provider, model: "m", prompt: "p", apiKeyCipher: "sealed", apiKeyHint: "1234" },
+      });
+    const [cli, api] = [await mk("gemini-cli"), await mk("anthropic")];
+    const sql = readFileSync("prisma/migrations/20261102000000_cli_presets_keyless/migration.sql", "utf8");
+    await db.$executeRawUnsafe(sql);
+    expect(await db.agentPreset.findUnique({ where: { id: cli.id } })).toMatchObject({ apiKeyCipher: null, apiKeyHint: null });
+    expect(await db.agentPreset.findUnique({ where: { id: api.id } })).toMatchObject({ apiKeyCipher: "sealed", apiKeyHint: "1234" });
+  });
 });

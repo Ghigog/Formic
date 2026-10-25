@@ -3,47 +3,95 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SetupDialog } from "./setup-dialog";
 
-const waiting = { state: "waiting", setupUrl: "https://github.com/acme/widgets/pull/7", update: false } as const;
+const waiting = {
+  state: "waiting",
+  setupUrl: "https://github.com/acme/widgets/pull/7",
+  update: false,
+} as const;
 
 describe("the setup dialog", () => {
   it("asks for the setup pull request, and mentions the first ticket", () => {
-    render(<SetupDialog setup={waiting} repoName="widgets" keyless={[]} onRetry={() => {}} />);
-
-    expect(screen.getByRole("dialog", { name: "Getting widgets ready" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Open pull request/ }).getAttribute("href")).toBe(waiting.setupUrl);
-    expect(screen.getByText(/AGENTS\.md/)).toBeTruthy();
-  });
-
-  it("says it is an update when the workflow changed", () => {
-    render(<SetupDialog setup={{ ...waiting, update: true }} repoName="widgets" keyless={[]} onRetry={() => {}} />);
-
-    expect(screen.getByRole("dialog", { name: "Formic's agent workflow changed" })).toBeTruthy();
-    expect(screen.queryByText(/AGENTS\.md/)).toBeNull();
-  });
-
-  it("lists agents that still need a key", async () => {
-    const onAdd = vi.fn();
     render(
       <SetupDialog
         setup={waiting}
         repoName="widgets"
-        keyless={[{ name: "Claude Code", keyName: "Claude Code token", onAdd }]}
+        repoFullName="acme/widgets"
+        keyless={[]}
         onRetry={() => {}}
       />,
     );
 
-    expect(screen.getByText("Add a Claude Code token to Claude Code")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Add key" }));
-    expect(onAdd).toHaveBeenCalled();
+    expect(
+      screen.getByRole("dialog", { name: "Getting widgets ready" }),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: /Open pull request/ })
+        .getAttribute("href"),
+    ).toBe(waiting.setupUrl);
+    expect(screen.getByText(/AGENTS\.md/)).toBeTruthy();
+  });
+
+  it("says it is an update when the workflow changed", () => {
+    render(
+      <SetupDialog
+        setup={{ ...waiting, update: true }}
+        repoName="widgets"
+        repoFullName="acme/widgets"
+        keyless={[]}
+        onRetry={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Formic's agent workflow changed" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/AGENTS\.md/)).toBeNull();
+  });
+
+  it("lists the secret each CLI agent needs, linking to the repository's Actions secrets", () => {
+    render(
+      <SetupDialog
+        setup={waiting}
+        repoName="widgets"
+        repoFullName="acme/widgets"
+        keyless={[
+          {
+            name: "Claude Code",
+            keyName: "Claude Code token",
+            secretName: "FORMIC_CLAUDE_CODE_TOKEN_P1",
+          },
+        ]}
+        onRetry={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("FORMIC_CLAUDE_CODE_TOKEN_P1")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: /Actions secrets/ })
+        .getAttribute("href"),
+    ).toBe("https://github.com/acme/widgets/settings/secrets/actions");
+    expect(screen.queryByRole("button", { name: "Add key" })).toBeNull();
   });
 
   it("folds into a reminder on Not now, and opens again from it", async () => {
-    render(<SetupDialog setup={waiting} repoName="widgets" keyless={[]} onRetry={() => {}} />);
+    render(
+      <SetupDialog
+        setup={waiting}
+        repoName="widgets"
+        repoFullName="acme/widgets"
+        keyless={[]}
+        onRetry={() => {}}
+      />,
+    );
 
     await userEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    await userEvent.click(screen.getByRole("button", { name: /Setup pull request waiting/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /Setup pull request waiting/ }),
+    );
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
@@ -51,8 +99,12 @@ describe("the setup dialog", () => {
     const onRetry = vi.fn();
     render(
       <SetupDialog
-        setup={{ state: "blocked", reason: "Formic's GitHub App needs Workflows access." }}
+        setup={{
+          state: "blocked",
+          reason: "Formic's GitHub App needs Workflows access.",
+        }}
         repoName="widgets"
+        repoFullName="acme/widgets"
         keyless={[]}
         onRetry={onRetry}
       />,
@@ -65,7 +117,13 @@ describe("the setup dialog", () => {
 
   it("shows nothing once the repository is ready", () => {
     const { container } = render(
-      <SetupDialog setup={{ state: "ready" }} repoName="widgets" keyless={[]} onRetry={() => {}} />,
+      <SetupDialog
+        setup={{ state: "ready" }}
+        repoName="widgets"
+        repoFullName="acme/widgets"
+        keyless={[]}
+        onRetry={() => {}}
+      />,
     );
     expect(container.innerHTML).toBe("");
   });

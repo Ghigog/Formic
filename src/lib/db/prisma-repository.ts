@@ -69,6 +69,7 @@ import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
+import { provider as providerInfo } from "@/lib/llm/providers";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
@@ -1835,8 +1836,11 @@ export class PrismaRepository implements Repository {
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
-      // A new key is likely a new account, with its own usage.
-      ...(record.apiKeyCipher !== undefined
+      // A CLI agent's credential lives in the repository's Actions secrets,
+      // never here. A new key is likely a new account, with its own usage.
+      ...(providerInfo(record.provider)?.kind === "cli"
+        ? { apiKeyCipher: null, apiKeyHint: null }
+        : record.apiKeyCipher !== undefined
         ? {
             apiKeyCipher: record.apiKeyCipher,
             apiKeyHint: record.apiKeyHint ?? null,
