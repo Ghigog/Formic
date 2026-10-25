@@ -18,7 +18,14 @@ const EXPIRIES = [
 ];
 
 /** Personal access tokens: make, name and revoke the ones other tools use to reach your boards. */
-export function AccessTokensSection({ initial = [] }: { initial?: Token[] }) {
+export function AccessTokensSection({
+  initial = [],
+  onSecret,
+}: {
+  initial?: Token[];
+  /** Told the secret just made, and null once it is dismissed. */
+  onSecret?: (secret: string | null) => void;
+}) {
   const [tokens, setTokens] = useState<Token[]>(initial);
   const [name, setName] = useState("");
   const [days, setDays] = useState(30);
@@ -44,7 +51,9 @@ export function AccessTokensSection({ initial = [] }: { initial?: Token[] }) {
       setError("That did not save. Give the token a name and try again.");
       return;
     }
-    setSecret(((await res.json()) as { secret: string }).secret);
+    const made = ((await res.json()) as { secret: string }).secret;
+    setSecret(made);
+    onSecret?.(made);
     setCopied(false);
     setName("");
     await load();
@@ -108,7 +117,10 @@ export function AccessTokensSection({ initial = [] }: { initial?: Token[] }) {
             <button type="button" onClick={() => void copy()} className="border-line text-ink rounded-md border px-3 py-1 text-[12px]">
               {copied ? "Copied" : "Copy"}
             </button>
-            <button type="button" onClick={() => setSecret(null)} className="text-muted text-[12px]">
+            <button type="button" onClick={() => {
+                setSecret(null);
+                onSecret?.(null);
+              }} className="text-muted text-[12px]">
               Done
             </button>
           </div>
