@@ -109,4 +109,4 @@ Same steps 2 to 5 with the next version (`v1.0.1`, `v1.1.0`, …). The repositor
 
 | Version | Commit SHA | Built from Formic |
 | --- | --- | --- |
-| v1.0.0 | _not published yet_ | |
+| v1.0.0 | `90a9f3cb8e99ae7592998805361d23e6c7cde474` | `0a77209fde34dd2974afce502fd6fef3f0e1a93d` |
