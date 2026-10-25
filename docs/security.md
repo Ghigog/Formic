@@ -34,6 +34,16 @@ being a pin on a version anyone has looked at, so don't let them queue up.
 changes; Formic pins the actions in it the same way, and Formic's own
 Dependabot keeps them current.
 
+The loop that runs an agent on an API key is one of those actions: the runner
+Action (`runner-action/`, published as `Ghigog/formic-runner`). The workflow
+names it by the full commit SHA of a release, with the version as a comment, and
+downloads nothing from Formic when a job runs. A compromise of Formic therefore
+cannot run code in a repository: a new runner reaches it only as a setup pull
+request that changes the SHA, which the owner reads and merges. The SHA and the
+release's build provenance are recorded in `docs/runner-action-release.md`.
+The workflow's first step also fails a job at once, pointing at the repository's
+secrets page, when the secret it names is empty.
+
 ## npm audit and the Prisma tooling overrides
 
 `npm audit` should report no vulnerabilities. The tooling dependencies

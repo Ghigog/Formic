@@ -16,9 +16,9 @@ Formic's loop is different. It is TypeScript in this repository —
 `runCodingLoop` and the shapes around it. A job in someone else's repository does
 not have it, and that is the whole of the problem. There are two ways to solve it:
 
-**Route 1 — ship the loop to the job.** Build the loop into one bundle at deploy
-time, leave it where the job can fetch it (the house already signs expiring URLs
-for attachments: `runner.ts:1440`), and have the job run it. The loop then lives
+**Route 1 — ship the loop to the job.** Build the loop into one file, publish it
+as an Action the job runs (first built as a bundle the job fetched from Formic),
+and have the job run it. The loop then lives
 in one process for as long as the job runs, and its tools run in the job through
 the **local** workspace, which already exists (`src/lib/sandbox/local.ts`).
 
@@ -64,10 +64,10 @@ Two things to be honest about:
    workspace, a ticket payload, a provider key, and progress posted back the way
    the CLI runner posts it. `import "server-only"` is the only Next-specific line
    in the loop today; the entry is new code.
-2. **A bundle and a way to fetch it**: one file built in CI, served at a signed,
-   expiring URL, with the commit it was built from.
+2. **A way to get it to the job**: one file built in CI and published as an
+   Action pinned by commit, with the commit it was built from.
 3. **A workflow mode**, `mode: loop`, in `src/lib/runner/workflow.ts`: the job
-   fetches the bundle, runs it, and reports progress, failures and usage the way
+   runs the Action, and reports progress, failures and usage the way
    the CLI modes already do. `timeout-minutes` becomes the real ceiling.
 4. **Then the budget**: the ticket's own time budget (minutes per story point)
    becomes the plan, and the job ceiling is the backstop.
@@ -82,7 +82,7 @@ Two things to be honest about:
 - A run that hits the job ceiling says so and stays retryable.
 - Nothing can loop forever: the ticket's budget, the run's attempt ceiling and the
   job's timeout all still apply.
-- The bundle's commit is recorded on the run, so what ran is identifiable.
+- The Action's commit is recorded on the run, so what ran is identifiable.
 
 ## Where this stands
 
@@ -94,41 +94,30 @@ the Coder Agent's loop against a checkout and produces a diff with no network
 and no database. The payload carries the ticket's budget as `limits`, and a run
 that hits one says which limit stopped it.
 
-**Step 2** — the bundle and where to fetch it. `scripts/build-loop-entry.mjs`
-builds the entry into one file before `next build` (aliased `server-only` to a
-no-op, exactly as `vitest.config.ts` does), records the commit it was built
-from in a banner inside the file and in the sidecar, and leaves both in
-`src/generated/loop-entry/`. `/api/runner/bundle` serves them to a job at the
-signed address `loopBundleUrl` builds — the same HMAC and the same claim as
-`reportUrl`: this one job, while its card waits on it — and answers 503 (never
-an empty script) where a build produced no bundle. The bundle is
-`outputFileTracingIncludes`d into that function's deployment.
-
-Where the entry *goes* changed once the desktop app met it, and this is where
-that is recorded. It is installed **in the repository, with the workflow**:
-`ensureRunner` commits both to the same setup branch, so the pair arrives in
-one merge, and the workflow's version is hashed over both — a repository with
-one file and not the other, or with an older pair, is not the current version
-(see `runnerVersion`). The job runs the entry out of its own checkout
-(`RUNNER_ENTRY_PATH`), so it fetches nothing, which is what lets a board with
-no public address — a laptop, `docs/local.md` — run a loop agent at all. The
-entry's hash is a hash of its *code*, not of the build of it, or every deploy
-would make every repository out of date.
-
-The signed address above is still handed over, and still means what it meant:
-a repository set up before the entry shipped with the workflow uses it, and so
-does a board that was built without an entry to install.
+**Step 2** — the runner Action. The entry used to be built into one bundle and
+fetched by the job from the board, then committed to the repository beside the
+workflow. Either way a compromise of the board could change the code a job ran.
+It is now a GitHub Action, `runner-action/`, published as
+`Ghigog/formic-runner` and built by `scripts/build-runner-action.mjs`
+(`npm run build:loop-entry`) from `src/lib/runner/loop-entry.ts`: readable,
+unminified, with a source map, the commit it was built from in its first line,
+and a build provenance attestation (`docs/runner-action-release.md`). The
+workflow names a release by its full commit SHA (`RUNNER_ACTION`), so the
+version is part of the workflow's own hash: a new release is a new setup pull
+request, which the owner merges. Nothing is fetched from Formic, so a board with
+no public address — a laptop, `docs/local.md` — runs a loop agent as well as any
+other, and nothing is built when Formic is deployed.
 
 **Step 3** — `mode: loop` in `src/lib/runner/workflow.ts`, and the dispatch
-behind it. The job runs the entry — out of its own checkout, or fetched at the
-signed address when the repository predates that — hands it the job's own
+behind it. The job runs the
+runner Action, which it hands the job's own
 checkout (`repo.dir`) with the key injected from the repository's Actions
 secrets, appends its progress to the same stream a CLI agent's is read from,
 and writes the run's report as the commit: its summary and handoff, a
 `Formic-Usage:` trailer the runner counts on the ticket, and
 `Formic-Already-Done` when the ticket was already done. `startJobRun` dispatches
 it, `completeCliRun` collects it, and `loopRunnerReady` decides: a repository
-whose workflow and entry are current runs its API-key coders this way, and one
+whose workflow is current runs its API-key coders this way, and one
 that is not keeps running them in-process until it is updated — no card changes
 behaviour because a feature exists.
 

@@ -11,7 +11,7 @@ turns"). This is the record of why it is built this way and where it is going.
 | | In Formic's function | In GitHub Actions |
 | :-- | :-- | :-- |
 | Who runs there | every API provider: Anthropic, OpenAI, Gemini, DeepSeek, ClinePass | CLI agents: Claude Code, Codex, Gemini CLI — and, since `mode: loop`, the API providers too |
-| The loop | `src/lib/agents/coding-loop.ts`, in-process | the CLI tool loops itself, or the same `runCodingLoop` as a bundle (`src/lib/runner/loop-entry.ts`) |
+| The loop | `src/lib/agents/coding-loop.ts`, in-process | the CLI tool loops itself, or the same `runCodingLoop` as the runner Action (`runner-action/`, built from `src/lib/runner/loop-entry.ts`) |
 | The tools | an E2B sandbox (`src/lib/sandbox/e2b.ts`) holding a checkout | the job's own checkout (`repo.dir` hands it to the entry) |
 | Started by | `launch()` → `after()` in the request (`src/lib/agents/pipeline.ts:707`) | `startJobRun` (`src/lib/runner/runner.ts`), from `src/lib/coder/pipeline.ts` |
 | Ceiling | the platform's 300 s per invocation (`maxDuration = 300` on every route that starts a run) | the job's `timeout-minutes` (`RUNNER_JOB_MINUTES`, written for each repository by `src/lib/runner/workflow.ts`) |
@@ -74,9 +74,9 @@ Formic knows a remedy for.
 Work moves to the job host and stays there:
 
 - **Now**: a repository whose workflow is current runs its API-key coders in a
-  job, through `mode: loop`: the job fetches the loop as one bundle, runs it in
-  its own checkout, and posts what it does back the way a CLI agent does
-  (`src/lib/runner/loop-entry.ts`, `/api/runner/bundle`). Such a run works for
+  job, through `mode: loop`: the job runs the loop as the runner Action pinned by
+  commit in the workflow, in its own checkout, and posts what it does back the
+  way a CLI agent does (`src/lib/runner/loop-entry.ts`). Such a run works for
   the ticket's budget — ten minutes a story point — instead of four minutes,
   and the key travels as a repository secret, never in a dispatch input.
 - **Now**: short work still runs in-process where a repository has not updated
