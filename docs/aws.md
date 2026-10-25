@@ -2,8 +2,9 @@
 
 Formic runs on an AWS **Lightsail** instance the same way it runs on Google
 Cloud's e2-micro: Node serves the app, Caddy puts HTTPS in front of it, and a
-manual CI run builds the app and ships it over SSH. The database stays where it
-is (Supabase or Neon); only the app moves.
+manual CI run builds the app and ships it over SSH. Postgres runs on the same
+server, so there is no database bill and no transfer cap to run out of (see
+[Database](#database)).
 
 Everything on the server side is shared with `docs/google-cloud.md`: the same
 `deploy/server/setup.sh`, the same `deploy.sh`, the same `DEPLOY_HOST` switch in
@@ -52,8 +53,8 @@ for months, but AWS **closes the account** after 6 months or when the credits
 run out, whichever comes first, and Formic goes offline with it. Upgrade to the
 Paid Plan before then; unused credits carry over.
 
-Everything else costs what it does on Vercel: the database, E2B and model usage
-do not change.
+The database runs on the instance and costs nothing extra. E2B and model usage
+cost what they did on Vercel.
 
 **The server must be x86.** CI builds the release on an x86 GitHub runner and
 ships it with its `node_modules`, native binaries included, so the server runs
@@ -126,8 +127,9 @@ Either way, on the server:
 sudo bash setup.sh
 ```
 
-It is safe to run again. It adds swap, installs Node 22 and Caddy, creates the
-`formic` user and service, writes a starter `/opt/formic/shared/.env`, makes a
+It is safe to run again. It adds swap, installs Node 22, Caddy and Postgres 18,
+creates the `formic` database with a nightly backup, creates the `formic` user
+and service, writes a starter `/opt/formic/shared/.env`, makes a
 deploy key, and prints what to do next, including the private key for GitHub.
 
 It serves on `https://<ip-with-dashes>.sslip.io`, a hostname that resolves to
@@ -158,82 +160,56 @@ Cloud: see **Day to day** and **Edge cases worth knowing** in
 `docs/google-cloud.md`. The one difference is how you get a shell: **Connect
 using SSH** in Lightsail, or `ssh ubuntu@<static-ip>` with the key from step 4.
 
-**Backups.** The app keeps no state on the server beyond `/opt/formic/shared/.env`,
-so a lost instance is rebuilt by repeating steps 2 to 5. Keep a copy of the
-`.env` values somewhere safe (a password manager). Lightsail's automatic
-snapshots are optional and cost extra.
+## Database
 
-**Resizing.** If `free -h` shows swap steadily in use or the app restarts
-under load, move up a plan. Lightsail cannot change an instance's plan in place. Take a
-snapshot, create a larger instance from it, and move the static IP across. The
-address, and so the HTTPS hostname and `DEPLOY_HOST`, stay the same.
+`setup.sh` installs Postgres on the instance and creates a `formic` database
+reachable only from the server itself. On a fresh `.env` it fills in
+`DATABASE_URL`; the same URL, with its generated password, is kept in
+`/opt/formic/shared/local-database-url`. Migrations run on every deploy, as
+before.
 
-## On EC2 instead
+It is sized for the 1 GB plan (about 100 MB of memory). If the app starts
+swapping, move up a plan (see Resizing above).
 
-The same server on plain EC2. Choose it when the app should live alongside
-other AWS resources (RDS, IAM roles, a VPC) or be managed in Terraform. It
-costs more at this size, and the bill varies with traffic.
+### Moving data from Neon or Supabase
 
-| Item (us-east-1) | Per month |
-| :-- | :-- |
-| `t3.small` (2 vCPU, 2 GB), on demand | about $15.20 |
-| Elastic IP (every public IPv4 address is charged) | about $3.65 |
-| 20 GB `gp3` disk | about $1.60 |
-| Data out, past the first 100 GB | $0.09 per GB |
-| **Total** | **about $20.50** |
-
-Prices last checked October 2026. A one-year Savings Plan lowers the instance
-line by roughly a third.
-
-Steps 1 (account and budget) and 5 onward are the same as for Lightsail. Steps
-2 to 4 become:
-
-### Launch the instance
-
-**EC2 > Instances > Launch instances:**
-
-- **Name:** `formic`.
-- **AMI:** Ubuntu Server 24.04 LTS, **64-bit (x86)**.
-- **Instance type:** `t3.small`. Not `t4g`: see "The server must be x86" above.
-- **Key pair:** create one (ED25519, `.pem`) and keep the file. It is how you
-  log in as `ubuntu`.
-- **Network settings:** create a security group that allows **SSH**, **HTTP**
-  and **HTTPS** from anywhere (`0.0.0.0/0`). SSH has to be open to anywhere,
-  not "My IP": CI deploys over SSH from GitHub's runners, whose addresses
-  change. Ubuntu's AMI only accepts keys, never passwords.
-- **Storage:** 20 GiB, `gp3`.
-
-### Give it a fixed address
-
-**EC2 > Elastic IPs > Allocate Elastic IP address**, then **Actions >
-Associate** it with `formic`. Do this **before** `setup.sh`, for the same
-reason as the static IP on Lightsail: the HTTPS hostname is built from the IP.
-
-### Set it up
-
-From the repository on your computer:
+Do this once, on the server. Copying the data out counts as transfer, so a
+Neon project over its free allowance must be upgraded first (downgrade again
+afterwards) or wait for the monthly reset.
 
 ```bash
-scp -i formic.pem deploy/server/setup.sh ubuntu@<elastic-ip>:
-ssh -i formic.pem ubuntu@<elastic-ip>
-sudo bash setup.sh
+sudo systemctl stop formic
+
+# The direct (unpooled) connection string from the provider's Connect dialog.
+OLD='postgresql://...'
+pg_dump --format=custom --no-owner --no-privileges --file /tmp/old.dump "$OLD"
+pg_restore --clean --if-exists --no-owner --no-privileges \
+  --dbname "$(sudo cat /opt/formic/shared/local-database-url)" /tmp/old.dump
 ```
 
-Or use **Connect > EC2 Instance Connect** in the console and paste the script
-into `nano setup.sh`, as in the Lightsail step. Then continue at
-[step 5](#5-fill-in-the-environment-connect-github-deploy).
+Then `sudo -u formic nano /opt/formic/shared/.env`: set `DATABASE_URL` to the
+contents of `/opt/formic/shared/local-database-url`, and delete any
+`DATABASE_URL_UNPOOLED`, `POSTGRES_URL`, `POSTGRES_PRISMA_URL` and
+`POSTGRES_URL_NON_POOLING` lines, or migrations keep going to the old database.
 
-### In Terraform
+```bash
+sudo systemctl start formic
+rm /tmp/old.dump
+```
 
-The whole server is three resources: `aws_instance`, `aws_security_group` and
-`aws_eip`, plus `aws_eip_association`. `setup.sh` stays as it is; it can run
-as the instance's `user_data`, though then its closing output (with the deploy
-key) goes to the system log instead of your terminal.
+Check `/api/health` and the board, then delete the old project.
 
-### Moving from Lightsail to EC2 later
+### Backups
 
-Lightsail can export a snapshot to EC2: **Snapshots > Export to Amazon EC2**,
-then launch an instance from the resulting AMI in the EC2 console. The new
-instance gets a new IP, so update `DEPLOY_HOST`, `FORMIC_URL`,
-`PRODUCTION_URL` and the GitHub App URLs, or use your own domain from the start
-and only move its A record.
+Two layers, both cheap:
+
+- **Nightly dump.** At 03:30 UTC `pg_dump` writes
+  `/var/backups/formic/formic-<date>.dump` and keeps a week. It is on the
+  same disk, so it covers mistakes in the data, not a lost instance. Restore
+  one with `scripts/restore.sh` (see `docs/runbook.md`).
+- **Automatic snapshots.** On the instance's **Snapshots** tab, turn on
+  **Automatic snapshots**. A daily copy of the whole disk, database included,
+  charged per GB (cents a month at this size). Rebuilding from one is the
+  same as Resizing above.
+
+Keep a copy of the `.env` values somewhere safe (a password manager) too.
