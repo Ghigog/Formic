@@ -30,7 +30,7 @@ import "server-only";
  */
 
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { appendFileSync, realpathSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { z } from "zod";
@@ -398,7 +398,9 @@ export async function runLoopEntry(
  * What the job is handed, and what it prints.
  *
  * The payload arrives on stdin, never in argv: argv is visible to anything
- * that can list processes, and the payload carries the person's API key.
+ * that can list processes, and the payload carries the person's API key. Run
+ * as the runner Action, it comes from the Action's inputs instead
+ * (`actionPayload`).
  *
  * The options are for a caller that already has a checkout — a test, or a job
  * that passed `actions/checkout` its own — and default to the entry spawning
@@ -407,14 +409,34 @@ export async function runLoopEntry(
 export async function main(
   input: NodeJS.ReadableStream = process.stdin,
   options: LoopEntryOptions = {},
+  env: Record<string, string | undefined> = process.env,
 ): Promise<number> {
-  try {
-    const report = await runLoopEntry(JSON.parse(await readAll(input)), options);
+  const action = env.INPUT_PROMPT === undefined ? null : env;
+  /** The report, on stdout and, for a run as the Action, where the workflow reads it. */
+  const print = (report: LoopEntryReport): void => {
     process.stdout.write(`${JSON.stringify(report)}\n`);
+    if (action?.FORMIC_REPORT) writeFileSync(action.FORMIC_REPORT, `${JSON.stringify(report)}\n`);
+  };
+  try {
+    const stream = action?.FORMIC_STREAM;
+    const report = action
+      ? await runLoopEntry(actionPayload(action), {
+          ...options,
+          // A step that uses an Action cannot tee its stderr, so the events
+          // the reporter posts go to the stream file as well.
+          onEvent: (event) => {
+            options.onEvent?.(event);
+            if (stream) appendFileSync(stream, `${JSON.stringify(event)}\n`);
+          },
+        })
+      : await runLoopEntry(JSON.parse(await readAll(input)), options);
+    print(report);
+    if (action && !report.ok) process.stdout.write(`::error::${report.error}\n`);
     return report.ok ? 0 : 1;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     process.stderr.write(`The loop entry could not run: ${message}\n`);
+    if (action) process.stdout.write(`::error::${message}\n`);
     // Still JSON, still on stdout: a caller reads one shape whether the run
     // happened or the payload could not be used at all.
     const report: LoopEntryReport = {
@@ -426,9 +448,32 @@ export async function main(
       changedFiles: [],
       diff: "",
     };
-    process.stdout.write(`${JSON.stringify(report)}\n`);
+    print(report);
     return 2;
   }
+}
+
+/**
+ * The payload of a run as the runner Action (`uses: Ghigog/formic-runner@…`).
+ *
+ * GitHub hands an Action its inputs as `INPUT_*` variables, not on stdin, so
+ * this does what the workflow's own `jq` line does for the piped entry: the
+ * `prompt` input is the payload, the key comes from the step's
+ * `FORMIC_API_KEY` (an Actions secret, never an input, which the run's event
+ * keeps for anyone who can read it), and the repository is the job's checkout.
+ * Only the loop runs here; a CLI agent runs in the workflow itself.
+ */
+export function actionPayload(env: Record<string, string | undefined>): unknown {
+  if (env.INPUT_MODE !== "loop") {
+    throw new Error(`The runner Action runs mode loop, not ${env.INPUT_MODE || "an empty mode"}.`);
+  }
+  if (!env.FORMIC_API_KEY) throw new Error("No API key for this agent. Add it to the agent in Formic.");
+  const payload = JSON.parse(env.INPUT_PROMPT ?? "") as { repo?: Record<string, unknown> };
+  return {
+    ...payload,
+    apiKey: env.FORMIC_API_KEY,
+    repo: { ...payload.repo, dir: env.GITHUB_WORKSPACE || process.cwd() },
+  };
 }
 
 async function readAll(input: NodeJS.ReadableStream): Promise<string> {
@@ -490,7 +535,7 @@ function planLine(step: PlanStep): string {
 }
 
 /**
- * Run directly, as the bundle is, and not imported by a test: read stdin, run,
+ * Run directly, as the bundle and the Action are, and not imported by a test: read the payload, run,
  * print, and set the exit code — 0 for a reported change, 1 for a run that
  * failed, 2 for a payload that could not be used.
  *

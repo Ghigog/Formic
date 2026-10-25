@@ -1,8 +1,11 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { main, runLoopEntry } from "./loop-entry";
+import { actionPayload, main, runLoopEntry } from "./loop-entry";
 import { followUpsFromSummary } from "@/lib/agents/follow-ups";
 import { FOLLOW_UP_RULE, SPIKE_RULE } from "@/lib/agents/prompts";
 import { MemoryWorkspace } from "@/lib/sandbox/workspace";
@@ -368,6 +371,59 @@ describe("the entry as the job's command", () => {
     const report = JSON.parse(out.written.join("")) as Record<string, unknown>;
     expect(report).toMatchObject({ ok: false, limit: null });
     expect(report.error).toBeTruthy();
+  });
+
+  describe("run as the runner Action", () => {
+    async function asAction(env: Record<string, string | undefined>) {
+      const dir = await mkdtemp(path.join(tmpdir(), "formic-action-"));
+      const files = { FORMIC_REPORT: path.join(dir, "report.json"), FORMIC_STREAM: path.join(dir, "stream.jsonl") };
+      const out = captureStdout();
+      const code = await main(Readable.from([]), { workspace: new MemoryWorkspace(), log: () => {} }, {
+        ...files,
+        ...env,
+      });
+      out.restore();
+      return { code, stdout: out.written.join(""), ...files };
+    }
+
+    it("takes the payload from its inputs and the key from the step, and writes where the workflow reads", async () => {
+      const sent = fakeProvider([finish()]);
+      const { apiKey: _key, ...prompt } = payload();
+
+      const run = await asAction({
+        INPUT_MODE: "loop",
+        INPUT_PROMPT: JSON.stringify(prompt),
+        FORMIC_API_KEY: "sk-from-secret",
+        GITHUB_WORKSPACE: "/home/runner/work/widgets",
+      });
+
+      expect(run.code).toBe(0);
+      expect(sent[0]!.auth).toBe("Bearer sk-from-secret");
+      expect(JSON.parse(await readFile(run.FORMIC_REPORT, "utf8"))).toMatchObject({ ok: true, summary: "Added a retry button" });
+      const events = (await readFile(run.FORMIC_STREAM, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+      expect(events.length).toBeGreaterThan(0);
+    });
+
+    it("works in the job's checkout", () => {
+      const env = { INPUT_MODE: "loop", INPUT_PROMPT: JSON.stringify(payload()), FORMIC_API_KEY: "k", GITHUB_WORKSPACE: "/w" };
+
+      expect(actionPayload(env)).toMatchObject({ apiKey: "k", repo: { fullName: "acme/widgets", dir: "/w" } });
+    });
+
+    it("refuses a run with no key, in words the job log shows", async () => {
+      const run = await asAction({ INPUT_MODE: "loop", INPUT_PROMPT: JSON.stringify(payload()) });
+
+      expect(run.code).toBe(2);
+      expect(run.stdout).toContain("::error::No API key for this agent.");
+      expect(JSON.parse(await readFile(run.FORMIC_REPORT, "utf8"))).toMatchObject({ ok: false });
+    });
+
+    it("runs only the loop", async () => {
+      const run = await asAction({ INPUT_MODE: "implement", INPUT_PROMPT: "Fix it", FORMIC_API_KEY: "k" });
+
+      expect(run.code).toBe(2);
+      expect(run.stdout).toContain("::error::The runner Action runs mode loop, not implement.");
+    });
   });
 
   it("reports a checkout it cannot get, rather than hanging", async () => {
