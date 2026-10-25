@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SetupDialog } from "./setup-dialog";
 import { endTour, startTour } from "@/components/onboarding/store";
@@ -154,5 +154,57 @@ describe("the setup dialog", () => {
       />,
     );
     expect(container.innerHTML).toBe("");
+  });
+
+  describe("once the workflow is merged", () => {
+    beforeEach(() => localStorage.clear());
+    const keyless = [
+      { names: ["worker"], keyName: "Claude Code token", secretName: "FORMIC_CLAUDE_CODE_TOKEN" },
+    ];
+    const show = () =>
+      render(
+        <SetupDialog
+          setup={{ state: "ready" }}
+          repoName="widgets"
+          repoFullName="acme/widgets"
+          keyless={keyless}
+          onRetry={() => {}}
+        />,
+      );
+
+    it("still asks for the secrets, without the pull request step", async () => {
+      show();
+      expect(await screen.findByRole("dialog", { name: "Add your agents' secrets" })).toBeTruthy();
+      expect(screen.getByText("FORMIC_CLAUDE_CODE_TOKEN")).toBeTruthy();
+      expect(screen.queryByRole("link", { name: /Open pull request/ })).toBeNull();
+    });
+
+    it("stays away once the person says they added them, and asks again for a new secret", async () => {
+      const first = show();
+      await userEvent.click(await screen.findByRole("button", { name: "I've added them" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      first.unmount();
+
+      const again = show();
+      await waitFor(() => expect(again.container.innerHTML).toBe(""));
+      again.unmount();
+
+      render(
+        <SetupDialog
+          setup={{ state: "ready" }}
+          repoName="widgets"
+          repoFullName="acme/widgets"
+          keyless={[{ ...keyless[0]!, secretName: "FORMIC_CLAUDE_CODE_TOKEN_WORK" }]}
+          onRetry={() => {}}
+        />,
+      );
+      expect(await screen.findByRole("dialog")).toBeTruthy();
+    });
+
+    it("folds into a reminder on Not now", async () => {
+      show();
+      await userEvent.click(await screen.findByRole("button", { name: "Not now" }));
+      expect(screen.getByRole("button", { name: /Agent secrets not added/ })).toBeTruthy();
+    });
   });
 });

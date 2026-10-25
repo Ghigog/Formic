@@ -1,7 +1,7 @@
 "use client";
 
 import { useActiveTour } from "@/components/onboarding/store";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
 
 /** A secret that column CLI agents sign in with, which they cannot run without in the repository's Actions secrets. */
@@ -12,11 +12,44 @@ export interface KeylessAgent {
   secretName: string;
 }
 
+const ackKey = (repoFullName: string) => `formic:secrets-ack:${repoFullName}`;
+
+const ackChanged = "formic:secrets-ack";
+
+/** The secrets this person has said they added, as saved text; Formic cannot see them. */
+function readAcked(repoFullName: string): string {
+  try {
+    return localStorage.getItem(ackKey(repoFullName)) ?? "[]";
+  } catch {
+    return "[]";
+  }
+}
+
+function parseAcked(saved: string): string[] {
+  try {
+    const raw: unknown = JSON.parse(saved);
+    return Array.isArray(raw) ? raw.filter((n): n is string => typeof n === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function watchAcked(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(ackChanged, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(ackChanged, onChange);
+  };
+}
+
 /**
- * The one thing a person has to do before agents can run in their
- * repository: merge the pull request that installs Formic's workflow. Shown
- * as the board loads, not as a card's error once they have already asked an
- * agent for something. It closes itself when the merge lands.
+ * What a person has to do before agents can run in their repository: merge
+ * the pull request that installs Formic's workflow, then add the secrets the
+ * agents sign in with. Shown as the board loads, not as a card's error once
+ * they have already asked an agent for something. Once the workflow is
+ * merged it comes back for any secret not yet marked as added, since Formic
+ * never reads the repository's secrets and cannot tell.
  */
 export function SetupDialog({
   setup,
@@ -32,11 +65,29 @@ export function SetupDialog({
   onRetry: () => void;
 }) {
   const [hidden, setHidden] = useState(false);
+  // Null on the server and until the browser answers: nothing is asked before then.
+  const saved = useSyncExternalStore(
+    watchAcked,
+    () => readAcked(repoFullName),
+    () => null,
+  );
+  const acked = saved === null ? null : parseAcked(saved);
   const titleId = useId();
   const primary = useRef<HTMLAnchorElement & HTMLButtonElement>(null);
   // The guided tour goes first: setup can wait the minute it takes.
   const touring = useActiveTour() !== null;
-  const open = !!setup && setup.state !== "ready" && !hidden && !touring;
+  const pending = acked ? keyless.filter((k) => !acked.includes(k.secretName)) : [];
+  const secretsOnly = setup?.state === "ready";
+  const needed = !!setup && (secretsOnly ? pending.length > 0 : true);
+  const open = needed && !hidden && !touring;
+
+  const markAdded = () => {
+    const next = [...new Set([...(acked ?? []), ...pending.map((k) => k.secretName)])];
+    try {
+      localStorage.setItem(ackKey(repoFullName), JSON.stringify(next));
+    } catch {}
+    window.dispatchEvent(new Event(ackChanged));
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -48,7 +99,7 @@ export function SetupDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  if (!setup || setup.state === "ready" || touring) return null;
+  if (!setup || !needed || touring) return null;
 
   if (hidden) {
     return (
@@ -58,15 +109,21 @@ export function SetupDialog({
         className="bg-card border-line text-ink fixed bottom-16 left-4 z-50 flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium shadow-sm"
       >
         <span aria-hidden className="bg-clay pulse-dot size-1.5 rounded-full" />
-        {setup.state === "waiting" ? "Setup pull request waiting" : "Agents can't run yet"}
+        {secretsOnly
+          ? "Agent secrets not added"
+          : setup.state === "waiting"
+            ? "Setup pull request waiting"
+            : "Agents can't run yet"}
       </button>
     );
   }
 
-  const title =
-    setup.state === "blocked"
+  const merging = setup.state === "waiting" ? setup : null;
+  const title = secretsOnly
+    ? "Add your agents' secrets"
+    : setup.state === "blocked"
       ? `Formic can't set up ${repoName} yet`
-      : setup.update
+      : merging?.update
         ? "Formic's agent workflow changed"
         : `Getting ${repoName} ready`;
 
@@ -87,15 +144,18 @@ export function SetupDialog({
         ) : (
           <>
             <p className="text-muted m-0 text-[13px] leading-[1.6]">
-              {setup.update
-                ? `Merge this update to ${repoName} so its agents keep running.`
-                : "Agents run in this repository's own GitHub Actions. That takes one workflow file, which you merge yourself because it runs with the repository's secrets."}
+              {secretsOnly
+                ? `${repoName}'s agents sign in with secrets stored on GitHub. Until they are added, an agent's run stops straight away.`
+                : merging?.update
+                  ? `Merge this update to ${repoName} so its agents keep running.`
+                  : "Agents run in this repository's own GitHub Actions. That takes one workflow file, which you merge yourself because it runs with the repository's secrets."}
             </p>
             <ol className="m-0 flex list-none flex-col gap-2.5 p-0 text-[13px]">
+              {!secretsOnly && (
               <Step n={1} label="Merge the setup pull request">
                 <a
                   ref={primary}
-                  href={setup.setupUrl}
+                  href={merging?.setupUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="bg-terracotta-cta inline-flex h-[30px] items-center rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
@@ -103,8 +163,9 @@ export function SetupDialog({
                   Open pull request ↗
                 </a>
               </Step>
-              {keyless.map((agent, i) => (
-                <Step key={agent.secretName} n={i + 2} label={`Add a secret for ${agent.names.join(", ")}`}>
+              )}
+              {(secretsOnly ? pending : keyless).map((agent, i) => (
+                <Step key={agent.secretName} n={i + (secretsOnly ? 1 : 2)} label={`Add a secret for ${agent.names.join(", ")}`}>
                   <p className="text-muted m-0 text-[12px] leading-[1.5]">
                     Name it exactly this. The value is the {agent.keyName}.
                   </p>
@@ -112,7 +173,7 @@ export function SetupDialog({
                 </Step>
               ))}
             </ol>
-            {keyless.length > 0 && (
+            {(secretsOnly ? pending : keyless).length > 0 && (
               <p className="text-muted m-0 text-[12px] leading-[1.6]">
                 On GitHub, choose New repository secret in{" "}
                 <a
@@ -126,7 +187,7 @@ export function SetupDialog({
                 , then paste the name and the value. Formic keeps only the name, never the value. Agents can share a secret or each use their own: choose in the agent&apos;s settings.
               </p>
             )}
-            {!setup.update && (
+            {!merging?.update && !secretsOnly && (
               <p className="text-muted m-0 text-[12px] leading-[1.6]">
                 Your first ticket is waiting in To Do: an AGENTS.md that tells every agent how this codebase is
                 built and tested. Start it once the pull request is merged.
@@ -143,6 +204,16 @@ export function SetupDialog({
             </span>
           )}
           <div className="flex-grow" />
+          {secretsOnly && (
+            <button
+              ref={primary}
+              type="button"
+              onClick={markAdded}
+              className="bg-terracotta-cta h-[34px] rounded-lg px-3.5 text-[13px] font-semibold text-white hover:opacity-90"
+            >
+              I&apos;ve added them
+            </button>
+          )}
           {setup.state === "blocked" && (
             <button
               ref={primary}
