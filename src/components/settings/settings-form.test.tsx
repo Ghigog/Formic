@@ -33,6 +33,22 @@ describe("Sound", () => {
   });
 });
 
+describe("Guided tours", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("forgets every tour seen, so each screen's plays again", async () => {
+    window.localStorage.setItem("formic:tours:seen", JSON.stringify(["board", "timeline"]));
+    render(
+      <SettingsForm account={account} installUrl={null} e2b={{ hint: null, serverFallback: false }} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tours again" }));
+
+    expect(JSON.parse(window.localStorage.getItem("formic:tours:seen")!)).toEqual([]);
+    expect(screen.getByText(/plays again the next time you open it/)).toBeInTheDocument();
+  });
+});
+
 describe("Danger zone", () => {
   it("deletes nothing when the confirmation is declined", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);

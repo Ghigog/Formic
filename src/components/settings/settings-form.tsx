@@ -1,6 +1,7 @@
 "use client";
 
 import { AutoTour } from "@/components/onboarding/tour";
+import { forgetTours } from "@/components/onboarding/store";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -205,6 +206,7 @@ export function SettingsForm({
         )}
 
         <SoundSection />
+        <ToursSection />
 
         <BoardViewSection />
 
@@ -452,6 +454,32 @@ function SoundSection() {
           className="size-4 shrink-0"
         />
       </label>
+    </Section>
+  );
+}
+
+function ToursSection() {
+  const [done, setDone] = useState(false);
+  return (
+    <Section title="Guided tours">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-muted text-[12px] leading-[1.5]">
+          {done
+            ? "Done. Each screen's tour plays again the next time you open it."
+            : "Want a refresher? The ant shows you around each screen again, the next time you open it."}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            forgetTours();
+            setDone(true);
+          }}
+          disabled={done}
+          className="border-line bg-card text-ink hover:border-terracotta h-9 shrink-0 rounded-lg border px-3 text-[13px] font-semibold disabled:opacity-60"
+        >
+          Show tours again
+        </button>
+      </div>
     </Section>
   );
 }

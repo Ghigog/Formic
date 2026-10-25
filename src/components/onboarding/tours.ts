@@ -177,6 +177,12 @@ export const TOURS: Record<TourId, TourDef> = {
         title: "Sound",
         text: "And if my voice gets too much, you can turn me down here. I won't be offended. Much.",
       },
+      {
+        target: "settings-guided-tours",
+        side: "left",
+        title: "Guided tours",
+        text: "Miss me already? This brings every screen's tour back, for a refresher.",
+      },
       { target: "settings-danger-zone", side: "left", title: "Danger zone", text: "Careful down here. This removes your account for good." },
     ],
   },
