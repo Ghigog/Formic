@@ -54,7 +54,6 @@ describe("proxy", () => {
       "/api/health",
       "/api/webhooks/github",
       "/api/runner/report",
-      "/api/runner/bundle",
     ]) {
       expect((await proxy(request(path))).headers.get("x-middleware-next")).toBe("1");
     }

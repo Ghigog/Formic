@@ -9,8 +9,7 @@ import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 import type { BoardCard } from "@/lib/domain/entities";
 import { completeCliRun } from "@/lib/runner/runner";
-import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle } from "@/lib/runner/workflow";
-import { currentRunnerFiles } from "@/lib/runner/bundle";
+import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle, runnerWorkflow } from "@/lib/runner/workflow";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
 
@@ -193,7 +192,7 @@ describe("what the assistant knows of the board", () => {
   it("hands a CLI agent the live state of the cards it is asked about", async () => {
     await useAgent("claude-code");
     const base = (await projectFor(PROJECT)).baseBranch;
-    await new MockVcsClient(REPO).commitFile(base, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "install");
+    await new MockVcsClient(REPO).commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
     const { ticket } = await seedRedTicket();
     MockVcsClient.runner().runs.set(runTitle("fix", "T-94", `${ticket.id}--abc`), {
       status: "completed",
@@ -272,7 +271,7 @@ describe("changing the code without a ticket", () => {
     await useAgent("claude-code");
     const client = new MockVcsClient(REPO);
     const base = (await projectFor(PROJECT)).baseBranch;
-    await client.commitFile(base, RUNNER_WORKFLOW_PATH, (await currentRunnerFiles()).workflow, "install");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
     const pending = await ask("Fix mergePlan's ordering");
     await answer(PROJECT, pending.id);
     const job = MockVcsClient.runner().dispatches.at(-1)!.inputs.job!;

@@ -46,7 +46,7 @@ what a path cannot deliver:
   360 minutes per job, so a budget of 10 to 175 minutes is expressible. This is the
   path the budget is really for.
 - **An agent on an API key runs in the same kind of job**, through `mode: loop`
-  (`docs/long-runs.md`): Formic's own loop is fetched as a bundle, runs in the
+  (`docs/long-runs.md`): Formic's own loop runs, as the pinned runner Action, in the
   job's checkout, and stops on the budget in its payload. Its allowance is
   `min(the budget, the job's 180 minutes less 5 of headroom)`, that is 175 —
   `loopBudgetMs` — and the job is the backstop. The sandbox it runs in lives

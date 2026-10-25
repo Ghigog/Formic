@@ -131,8 +131,8 @@ Whichever you pick, put `DATABASE_URL` in `.env` so `npm run dev` and the
   provider key. An agent on an API key runs in the repository's GitHub Actions
   — where the ticket's own budget lives — once the setup pull request is
   merged, and in-process until then, bounded by `DEFAULT_RUN_BUDGET`
-  (`docs/agent-execution.md`). Formic installs its own loop entry with that
-  workflow, in the same merge, so a job in Actions needs no address of yours to
+  (`docs/agent-execution.md`). The workflow runs Formic's loop as a runner Action pinned
+  by commit, so a job in Actions needs no address of yours to
   fetch anything: this is the one piece of the cloud path a laptop can do
   completely, and it is why the setup pull request is worth merging here.
 - CLI agents (Claude Code, Codex, Gemini CLI) still run in the repository's
