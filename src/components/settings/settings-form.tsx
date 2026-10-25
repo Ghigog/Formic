@@ -12,6 +12,7 @@ import { ColonySection } from "@/components/settings/colony-section";
 import { DesktopAppSection } from "@/components/settings/desktop-app-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
 import { AccessTokensSection, type Token as AccessToken } from "@/components/settings/access-tokens-section";
+import { McpSetupSection } from "@/components/settings/mcp-setup-section";
 import { EffortSection } from "@/components/settings/effort-section";
 import { ScoutAgentSection } from "@/components/settings/scout-agent-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
@@ -60,6 +61,7 @@ export function SettingsForm({
   effortByPoints,
   notifications,
   accessTokens,
+  mcpEndpoint,
   vapidPublicKey = null,
   presets = [],
 }: {
@@ -79,6 +81,7 @@ export function SettingsForm({
   effortByPoints?: boolean;
   notifications?: PushPreferences;
   accessTokens?: AccessToken[];
+  mcpEndpoint?: string;
   vapidPublicKey?: string | null;
   /** Saved agents the scout picker offers. */
   presets?: { id: string; name: string }[];
@@ -86,6 +89,7 @@ export function SettingsForm({
   // A board shared with this person shows its Agents switch, but not the owner's settings.
   const own = project?.owner === false ? null : project;
   const [agents, setAgents] = useState(project?.agents ?? true);
+  const [newToken, setNewToken] = useState<string | null>(null);
   return (
     <div className="bg-cream min-h-dvh">
       <header className="border-line bg-card flex h-16 items-center gap-3 border-b px-4 md:px-6">
@@ -265,7 +269,8 @@ export function SettingsForm({
 
         <NotificationsSection initial={notifications} vapidPublicKey={vapidPublicKey} />
         <DesktopAppSection />
-        <AccessTokensSection initial={accessTokens} />
+        <AccessTokensSection initial={accessTokens} onSecret={setNewToken} />
+        {mcpEndpoint && <McpSetupSection endpoint={mcpEndpoint} token={newToken} />}
 
         {agents && (
           <p className="text-muted px-1 text-[12px] leading-[1.5]">
