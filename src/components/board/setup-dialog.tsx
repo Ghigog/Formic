@@ -3,9 +3,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
 
-/** A column's CLI agent, which cannot run until its secret is in the repository's Actions secrets. */
+/** A secret that column CLI agents sign in with, which they cannot run without in the repository's Actions secrets. */
 export interface KeylessAgent {
-  name: string;
+  /** The agents that sign in with this secret. */
+  names: string[];
   keyName: string;
   secretName: string;
 }
@@ -100,9 +101,9 @@ export function SetupDialog({
                 </a>
               </Step>
               {keyless.map((agent, i) => (
-                <Step key={agent.name} n={i + 2} label={`Add a secret for ${agent.name}`}>
+                <Step key={agent.secretName} n={i + 2} label={`Add a secret for ${agent.names.join(", ")}`}>
                   <p className="text-muted m-0 text-[12px] leading-[1.5]">
-                    Name it exactly this. The value is {agent.name}&apos;s {agent.keyName}.
+                    Name it exactly this. The value is the {agent.keyName}.
                   </p>
                   <SecretName value={agent.secretName} />
                 </Step>
@@ -119,7 +120,7 @@ export function SetupDialog({
                 >
                   your repository&apos;s Actions secrets
                 </a>
-                , then paste the name and the value. Formic keeps only the name, never the value.
+                , then paste the name and the value. Formic keeps only the name, never the value. Agents can share a secret or each use their own: choose in the agent&apos;s settings.
               </p>
             )}
             {!setup.update && (

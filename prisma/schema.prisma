@@ -595,6 +595,9 @@ model AgentPreset {
   apiKeyCipher             String?
   /// Last four characters, so the editor can say which key is saved.
   apiKeyHint               String?
+  /// A CLI agent's Actions secret, by name. Null means the name Formic gave
+  /// it before names could be chosen.
+  secretName               String?
   /// Out of usage on its plan until then. Cleared by a new key.
   limitedUntil             DateTime?
   /// What the agent said when it ran out, for the board to show.

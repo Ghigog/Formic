@@ -360,7 +360,7 @@ describe("AgentEditor CLI agent secret", () => {
         onDelete={vi.fn()}
       />,
     );
-    expect(screen.getByText("FORMIC_CLAUDE_CODE_TOKEN_P1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Secret name")).toHaveValue("FORMIC_CLAUDE_CODE_TOKEN_P1");
     expect(
       screen.getByRole("link", { name: /Actions secrets/ }),
     ).toHaveAttribute(
@@ -394,5 +394,54 @@ describe("AgentEditor CLI agent secret", () => {
     expect(onSave).toHaveBeenCalledWith(
       expect.not.objectContaining({ apiKey: expect.anything() }),
     );
+  });
+
+  it("starts a new CLI agent on the shared secret name, and saves the one chosen", async () => {
+    stubModelsFetch();
+    const onSave = vi.fn(async () => {});
+    render(
+      <AgentEditor
+        repoFullName="acme/widgets"
+        column="todo"
+        preset={null}
+        onClose={vi.fn()}
+        onSave={onSave}
+        onDelete={vi.fn()}
+      />,
+    );
+    await settled();
+    await userEvent.type(screen.getByLabelText("Name"), "cc");
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "claude-code");
+    const secret = screen.getByLabelText("Secret name");
+    expect(secret).toHaveValue("FORMIC_CLAUDE_CODE_TOKEN");
+
+    await userEvent.type(secret, "_work");
+    await userEvent.click(screen.getByRole("button", { name: "Create agent" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ secretName: "FORMIC_CLAUDE_CODE_TOKEN_WORK" }),
+    );
+  });
+
+  it("will not save a secret name outside the CLI's own prefix", async () => {
+    stubModelsFetch();
+    const onSave = vi.fn(async () => {});
+    render(
+      <AgentEditor
+        repoFullName="acme/widgets"
+        column="todo"
+        preset={null}
+        onClose={vi.fn()}
+        onSave={onSave}
+        onDelete={vi.fn()}
+      />,
+    );
+    await settled();
+    await userEvent.type(screen.getByLabelText("Name"), "cc");
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "claude-code");
+    await userEvent.clear(screen.getByLabelText("Secret name"));
+    await userEvent.type(screen.getByLabelText("Secret name"), "DEPLOY_KEY");
+    await userEvent.click(screen.getByRole("button", { name: "Create agent" }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText(/Start the secret's name with FORMIC_CLAUDE_CODE_TOKEN/)).toBeInTheDocument();
   });
 });

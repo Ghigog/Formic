@@ -52,6 +52,8 @@ export interface AgentConfig {
   /** Replaces the built-in brief. Coding rules are still appended. */
   brief?: string;
   apiKey?: string | null;
+  /** A CLI agent's Actions secret, or null for its default name. */
+  secretName?: string | null;
 }
 
 export interface Usage {

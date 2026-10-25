@@ -163,14 +163,20 @@ export function BoardShell({
 
   const repoName = repoFullName.split("/")[1] ?? repoFullName;
 
-  // CLI agents on a column, each needing its secret in the repository: the other half of setup.
+  // The secrets the CLI agents on columns sign in with: the other half of setup. Agents
+  // sharing a secret share a row.
   const keyless: KeylessAgent[] = [];
   for (const [, presetId] of Object.entries(agentState.columns) as Array<[ColumnId, string]>) {
     const preset = agentState.presets.find((p) => p.id === presetId);
     const info = preset && provider(preset.provider);
     if (!preset || info?.kind !== "cli") continue;
-    if (keyless.some((k) => k.name === preset.name)) continue;
-    keyless.push({ name: preset.name, keyName: info.keyName, secretName: secretNameFor({ presetId: preset.id, info }) });
+    const secretName = secretNameFor({ presetId: preset.id, info, secretName: preset.secretName });
+    const same = keyless.find((k) => k.secretName === secretName);
+    if (same) {
+      if (!same.names.includes(preset.name)) same.names.push(preset.name);
+      continue;
+    }
+    keyless.push({ names: [preset.name], keyName: info.keyName, secretName });
   }
 
   return (

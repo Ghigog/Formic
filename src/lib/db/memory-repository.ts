@@ -1773,6 +1773,11 @@ export class MemoryRepository implements Repository {
       prompt: record.prompt,
       apiKeyCipher: cli ? null : keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
       keyHint: cli ? null : keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
+      secretName: cli
+        ? record.secretName === undefined
+          ? (existing?.secretName ?? null)
+          : record.secretName
+        : null,
       hasKey: false,
       // A new key is likely a new account, with its own usage.
       limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,

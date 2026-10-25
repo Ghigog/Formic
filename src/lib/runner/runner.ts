@@ -388,6 +388,8 @@ export type JobAgent = {
   presetId: string | null;
   info: ProviderInfo;
   model: string | null;
+  /** A CLI agent's chosen Actions secret, or null for its default name. */
+  secretName?: string | null;
 };
 
 /**

@@ -1832,6 +1832,11 @@ export class PrismaRepository implements Repository {
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
+      ...(providerInfo(record.provider)?.kind !== "cli"
+        ? { secretName: null }
+        : record.secretName !== undefined
+          ? { secretName: record.secretName }
+          : {}),
       // A CLI agent's credential lives in the repository's Actions secrets,
       // never here. A new key is likely a new account, with its own usage.
       ...(providerInfo(record.provider)?.kind === "cli"
@@ -2353,6 +2358,7 @@ function toPreset(row: {
   prompt: string;
   apiKeyCipher: string | null;
   apiKeyHint: string | null;
+  secretName: string | null;
   limitedUntil: Date | null;
   limitNote: string | null;
   tokenAllowance: number | null;
@@ -2369,6 +2375,7 @@ function toPreset(row: {
     prompt: row.prompt,
     hasKey: row.apiKeyCipher !== null,
     keyHint: row.apiKeyHint,
+    secretName: row.secretName,
     limitedUntil: row.limitedUntil?.toISOString() ?? null,
     limitNote: row.limitNote,
     tokenAllowance: row.tokenAllowance,
