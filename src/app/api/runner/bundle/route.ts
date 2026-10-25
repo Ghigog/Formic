@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  * The loop entry, as one file: what a GitHub Actions job runs so an agent on
  * an API key can work where a CLI agent works, for as long as its budget
  * allows instead of the serverless window. Built at deploy time from the
- * commit being deployed (scripts/build-loop-entry.mjs), and served only to
+ * commit being deployed (scripts/build-runner-action.mjs), and served only to
  * the job it belongs to: the same signed address as the report endpoint, so
  * the token is good for one pending job and no longer.
  *

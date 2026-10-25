@@ -94,6 +94,12 @@ Supabase free plan that was most of the monthly egress — around 18 GB against
 a 5 GB allowance. `boardCards` now selects only the fields a card is built
 from, which is the single largest cut to that traffic.
 
+The board still grows with every merged ticket, and it was read whole far more
+often than it was drawn: `cardById` read the entire board to return one card,
+on most transitions and pipeline steps, and each ticket brought every run it
+ever had. One card is now read on its own, and a ticket brings only its live
+run plus one row for when work started.
+
 Two consequences worth knowing:
 
 - A free Supabase project can exceed its egress allowance and be **paused**
