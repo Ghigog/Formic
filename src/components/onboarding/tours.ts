@@ -32,6 +32,12 @@ export interface TourDef {
   steps: TourStep[];
   /** After the last step the ant walks back into the nest. */
   endInNest?: boolean;
+  /**
+   * Everything it points at is on screen when it starts, so a step whose
+   * target is missing is left out from the start rather than waited for.
+   * Off for tours of things that load in after they open.
+   */
+  allThere?: boolean;
 }
 
 export type TourId =
@@ -78,6 +84,7 @@ export const TOURS: Record<TourId, TourDef> = {
   board: {
     id: "board",
     endInNest: true,
+    allThere: true,
     steps: [
       {
         target: "column",
@@ -274,10 +281,3 @@ export const TOURS: Record<TourId, TourDef> = {
     ],
   },
 };
-
-/** The Next button's label for a step. */
-export function nextLabel(def: TourDef, index: number): string {
-  const step = def.steps[index];
-  if (step?.next) return step.next;
-  return index === def.steps.length - 1 ? "Done" : "Next";
-}

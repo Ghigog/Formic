@@ -463,6 +463,7 @@ export function ColonyMobileStats() {
       <div
         role="group"
         aria-label={`Level ${s.level} ${s.rank}, ${c.shownPoints} points`}
+        data-tour="points sentinels"
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-[10px] px-1"
       >
         <LevelBadge level={s.level} size={32} />

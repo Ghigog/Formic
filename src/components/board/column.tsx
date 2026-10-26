@@ -140,7 +140,7 @@ export function Column({
     <section
       aria-label={COLUMN_LABELS[id]}
       data-limited={limited || undefined}
-      data-tour={bare ? undefined : "column"}
+      data-tour="column"
       className={cn(
         "flex min-h-0 min-w-0 flex-1 flex-col gap-2.5",
         !bare && "bg-column border-column-line rounded-xl border p-3",

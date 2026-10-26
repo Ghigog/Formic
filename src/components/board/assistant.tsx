@@ -242,6 +242,7 @@ export function AskButton({
         onClick={() => a.setOpen(!a.open)}
         aria-label={a.open ? "Roll the assistant up" : "Ask the assistant"}
         aria-expanded={a.open}
+        data-tour="chat"
         className="border-line text-ink inline-flex size-11 items-center justify-center rounded-[10px] border"
       >
         <SparkIcon />

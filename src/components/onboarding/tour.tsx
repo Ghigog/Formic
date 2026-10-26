@@ -16,8 +16,8 @@ import {
   type Spot,
 } from "./placement";
 import { endTour, offerTour, activeTour, useActiveTour, useAntVoice } from "./store";
-import { TOURS, nextLabel, type TourDef, type TourId } from "./tours";
-import { mutter, speaks, wakeVoice } from "./voice";
+import { TOURS, type TourDef, type TourId } from "./tours";
+import { attachVoice, mutter, speaks } from "./voice";
 
 /** At most this many boxes are lit at once: the five columns, say. */
 const MAX_HOLES = 5;
@@ -66,16 +66,8 @@ export function TourHost() {
   const id = useActiveTour();
   const hydrated = useHydrated();
 
-  useEffect(() => {
-    // Browsers only allow sound after a gesture: the first one opens the voice.
-    const wake = () => wakeVoice();
-    window.addEventListener("pointerdown", wake, { capture: true });
-    window.addEventListener("keydown", wake, { capture: true });
-    return () => {
-      window.removeEventListener("pointerdown", wake, { capture: true });
-      window.removeEventListener("keydown", wake, { capture: true });
-    };
-  }, []);
+  // Browsers only allow sound after a gesture: the voice listens for it.
+  useEffect(() => attachVoice(), []);
 
   if (!hydrated || !id) return null;
   return createPortal(<Tour key={id} def={TOURS[id]} onEnd={endTour} />, document.body);
@@ -112,6 +104,16 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   const [soundOn] = useSound();
   const [voiceOn, setVoiceOn] = useAntVoice();
   const [index, setIndex] = useState(0);
+  // The steps this screen can show. One whose target is hidden here (a
+  // desktop-only control on a phone) is dropped up front, and one whose
+  // target never turns up is dropped when it is reached, so the counter
+  // only counts what is shown and Back never lands on a skipped step.
+  const [steps, setSteps] = useState(() =>
+    def.steps.filter((s) => {
+      const found = findTargets(s.target);
+      return found.boxes.length > 0 || (!found.exists && !def.allThere);
+    }),
+  );
   const [holes, setHoles] = useState<Box[]>([]);
   const [ant, setAnt] = useState<AntState>(() => {
     const e = entrance();
@@ -129,9 +131,9 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   const voiceRef = useRef(voice);
   const reduced = prefersReducedMotion();
 
-  const step = def.steps[index];
+  const step = steps[index];
   const text = step?.text ?? "";
-  const last = index === def.steps.length - 1;
+  const last = index === steps.length - 1;
 
   useEffect(() => {
     voiceRef.current = voice;
@@ -202,7 +204,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   }
 
   function go(i: number, tries: number) {
-    const s = def.steps[i];
+    const s = steps[i];
     if (!s) return finish();
     let found = findTargets(s.target);
     if (found.first && tries === 0) {
@@ -214,8 +216,9 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
       // control on a phone): move straight on.
       if (!found.exists && tries < FIND_TRIES) {
         timers.current.find = window.setTimeout(() => go(i, tries + 1), FIND_MS);
-      } else if (i + 1 < def.steps.length) {
-        setIndex(i + 1);
+      } else if (i < steps.length - 1) {
+        // The next step slides into this index; the effect below runs it.
+        setSteps(steps.filter((x) => x !== s));
       } else {
         finish();
       }
@@ -248,7 +251,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
       cancelAnimationFrame(raf);
       clear();
     };
-  }, [index]);
+  }, [index, steps]);
 
   // The page moved under the tour: keep the holes and the ant on their targets.
   const settle = useEffectEvent(() => {
@@ -278,13 +281,18 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
     };
   }, []);
 
+  // Only while the bubble is up: the ant is walking otherwise, and a second
+  // quick click would skip a step it never got to talk about.
   const next = () => {
-    wakeVoice();
+    if (!bubble) return;
+    setBubble(false);
     if (last) finish();
     else setIndex(index + 1);
   };
   const back = () => {
-    if (index > 0) setIndex(index - 1);
+    if (!bubble || index === 0) return;
+    setBubble(false);
+    setIndex(index - 1);
   };
   const finishLine = () => {
     window.clearInterval(timers.current.type);
@@ -310,7 +318,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   const spot: Spot = { x: ant.x, y: ant.y, face: ant.angle };
   const where = bubblePlace(spot, step?.side ?? "below", view.w, view.h);
   const talking = bubble && typed < text.length;
-  const boardSteps = def.steps.length;
+  const boardSteps = steps.length;
 
   return (
     <div data-testid="tour" className="pointer-events-none fixed inset-0 z-[1000]">
@@ -414,10 +422,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
             <span className="text-ink flex-1 text-[13px] font-bold">{step.title}</span>
             <button
               type="button"
-              onClick={() => {
-                wakeVoice();
-                setVoiceOn(!voiceOn);
-              }}
+              onClick={() => setVoiceOn(!voiceOn)}
               aria-label={voiceOn ? "Mute the ant" : "Let the ant talk"}
               aria-pressed={!voiceOn}
               title={soundOn ? undefined : "Sound is off in Settings"}
@@ -461,7 +466,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
                 onClick={next}
                 className="bg-terracotta-cta h-9 rounded-lg px-4 text-[13px] font-semibold text-white"
               >
-                {nextLabel(def, index)}
+                {step.next ?? (last ? "Done" : "Next")}
               </button>
             )}
           </div>
