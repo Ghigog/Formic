@@ -68,4 +68,51 @@ describe("NotificationsSection", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(subscribe).not.toHaveBeenCalled();
   });
+
+  describe("with a subscription the browser already has", () => {
+    function existing(key: Uint8Array) {
+      const unsubscribe = vi.fn().mockResolvedValue(true);
+      const sub = { ...subscription, options: { applicationServerKey: key.buffer }, unsubscribe };
+      const registration = { pushManager: { subscribe, getSubscription: async () => sub } };
+      Object.defineProperty(navigator, "serviceWorker", {
+        configurable: true,
+        value: { register: vi.fn(), ready: Promise.resolve(registration), getRegistration: async () => registration },
+      });
+      return { unsubscribe };
+    }
+
+    it("saves it to the server again and reads Enabled", async () => {
+      existing(new Uint8Array([0, 0, 0]));
+      render(<NotificationsSection vapidPublicKey="AAAA" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Enabled" })).toBeDisabled());
+      expect(fetchMock).toHaveBeenCalledWith("/api/push/subscriptions", expect.objectContaining({ method: "POST" }));
+    });
+
+    it("drops one made with another key, so the device can enable again", async () => {
+      const { unsubscribe } = existing(new Uint8Array([1, 2, 3]));
+      render(<NotificationsSection vapidPublicKey="AAAA" />);
+      await waitFor(() => expect(unsubscribe).toHaveBeenCalled());
+      expect(screen.getByRole("button", { name: "Enable on this device" })).toBeEnabled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("sends a test and says so", async () => {
+      existing(new Uint8Array([0, 0, 0]));
+      render(<NotificationsSection vapidPublicKey="AAAA" />);
+      const button = await screen.findByRole("button", { name: "Send a test" });
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) });
+      await userEvent.click(button);
+      expect(fetchMock).toHaveBeenCalledWith("/api/push/test", { method: "POST" });
+      expect(await screen.findByText(/It should arrive/)).toBeInTheDocument();
+    });
+
+    it("shows why a test did not send", async () => {
+      existing(new Uint8Array([0, 0, 0]));
+      render(<NotificationsSection vapidPublicKey="AAAA" />);
+      const button = await screen.findByRole("button", { name: "Send a test" });
+      fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({ error: "Its VAPID keys are missing." }) });
+      await userEvent.click(button);
+      expect(await screen.findByRole("alert")).toHaveTextContent("VAPID keys are missing");
+    });
+  });
 });

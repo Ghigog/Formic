@@ -83,6 +83,7 @@ and `SANDBOX_PROVIDER=e2b`. Copy the rest from the Vercel project:
 | `GITHUB_WEBHOOK_SECRET` | Same as Vercel. |
 | `FORMIC_ALLOWED_USERS` | Optional; same as Vercel. |
 | `E2B_API_KEY` | Same as Vercel (a fallback for people without their own). |
+| `VAPID_PUBLIC_KEY` / `_PRIVATE_KEY` / `_SUBJECT` | Same as Vercel, for notifications. None there? Run `npx web-push generate-vapid-keys`; the subject is `mailto:` your email. Without all three, nothing is pushed. |
 | `FORMIC_URL` | Already set. Leave it as the new `https://` address. |
 | `SANDBOX_PROVIDER` | Leave `e2b`. |
 

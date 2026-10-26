@@ -117,6 +117,10 @@ GITHUB_APP_SLUG=""
 GITHUB_WEBHOOK_SECRET=""
 FORMIC_ALLOWED_USERS=""
 E2B_API_KEY=""
+# Web Push. Generate a pair with \`npx web-push generate-vapid-keys\`.
+VAPID_PUBLIC_KEY=""
+VAPID_PRIVATE_KEY=""
+VAPID_SUBJECT="mailto:you@example.com"
 EOF
   chown formic:formic "$APP/shared/.env"
   chmod 600 "$APP/shared/.env"
