@@ -291,11 +291,11 @@ export function heatStacks(cards: BoardCard[], now: number): number[] {
     .slice(-HEAT_MAX);
 }
 
-/** Grade for points per story point merged. Colours are design tokens. */
+/** Grade for points per story point merged (merge heat; 2.0 is the floor, 5.0 the ceiling). Colours are design tokens. */
 export const GRADES: ReadonlyArray<{ min: number; grade: "S" | "A" | "B" | "C"; color: string }> = [
-  { min: 2.5, grade: "S", color: "var(--clay)" },
-  { min: 2, grade: "A", color: "var(--jade)" },
-  { min: 1.5, grade: "B", color: "var(--text-muted)" },
+  { min: 4.5, grade: "S", color: "var(--clay)" },
+  { min: 3.5, grade: "A", color: "var(--jade)" },
+  { min: 2.5, grade: "B", color: "var(--text-muted)" },
   { min: 0, grade: "C", color: "var(--crimson)" },
 ];
 

@@ -256,7 +256,7 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date(), offsetD
       .filter((t) => t.mergedDay !== null)
       .reduce((n, t) => n + mergePoints(tickets.find((c) => c.id === t.id)!), 0);
     // The completion bonus counts once merged, and is assumed on the way:
-    // an epic merged at 1× throughout grades A, and heat is what makes an S.
+    // an epic merged at 1× throughout grades C, and heat is what makes an S.
     const ratio = doneSp ? (pts + doneSp) / doneSp : null;
     epics.push({
       id: epic.id,
