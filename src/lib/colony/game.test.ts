@@ -229,10 +229,21 @@ describe("heat", () => {
   });
 
   it("grades yield", () => {
-    expect(gradeOf(2.6).grade).toBe("S");
-    expect(gradeOf(2).grade).toBe("A");
-    expect(gradeOf(1.5).grade).toBe("B");
-    expect(gradeOf(1).grade).toBe("C");
+    expect(gradeOf(5).grade).toBe("S");
+    expect(gradeOf(4.5).grade).toBe("S");
+    expect(gradeOf(3.5).grade).toBe("A");
+    expect(gradeOf(2.5).grade).toBe("B");
+    expect(gradeOf(2.49).grade).toBe("C");
+  });
+
+  it("does not give S to a back-to-back epic with minimal heat", () => {
+    // 1× throughout plus the completion bonus is exactly 2.0.
+    expect(gradeOf(2).grade).toBe("C");
+  });
+
+  it("spreads the measured yields across grades", () => {
+    const yields = [2, 2.5, 3, 3.5, 4, 4.5, 5];
+    expect(new Set(yields.map((y) => gradeOf(y).grade)).size).toBe(4);
   });
 });
 
@@ -258,7 +269,7 @@ describe("timeline", () => {
     const [epic] = tl.epics;
     expect(epic).toMatchObject({ doneSp: 5, totalSp: 10, merged: false });
     // 1× on the tickets plus the bonus to come.
-    expect(epic!.grade?.grade).toBe("A");
+    expect(epic!.grade?.grade).toBe("C");
     const planned = epic!.tickets.find((t) => t.id === "c")!;
     const running = epic!.tickets.find((t) => t.id === "b")!;
     expect(planned.start).toBeGreaterThanOrEqual(running.end);
