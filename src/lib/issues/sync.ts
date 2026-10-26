@@ -85,7 +85,7 @@ async function ensureLabels(client: VcsClient, repoFullName: string): Promise<vo
 
 function labelsFor(card: BoardCard): string[] {
   const labels = [columnLabel(columnFor(card.status, card.stalledIn))];
-  if (isStalled(card.status)) labels.push(BLOCKED_LABEL);
+  if (isStalled(card.status) || (card.needsHuman && card.status !== "merged")) labels.push(BLOCKED_LABEL);
   return labels;
 }
 

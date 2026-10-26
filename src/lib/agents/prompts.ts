@@ -208,7 +208,7 @@ export function withProductConventions(brief: string): string {
  * It is marked, so no coding agent is started on it and the board asks the
  * person instead.
  */
-export const NEEDS_HUMAN_RULE = `A ticket no coding agent can do in the repository (setting up an account or a service, a manual test on real infrastructure, a decision only the person can make) still belongs in the plan when other work depends on it. Set its needsHuman to one line saying what the person has to do. Leave needsHuman out of every ticket an agent can do, including ones that only write documentation.`;
+export const NEEDS_HUMAN_RULE = `A ticket no coding agent can do in the repository (setting up an account or a service, a manual test on real infrastructure, a decision only the person can make) still belongs in the plan when other work depends on it. Set its needsHuman to one line saying what the person has to do. Keep that ticket to the one step only the person can take, as small as it can be: running a command an agent wrote, pasting back its output, answering a question. Any work an agent can do around that step is its own ticket without needsHuman: writing the script or query the person runs goes before it, and analysing what they paste back, writing up findings or acting on them goes after it, ordered with dependsOn so it waits. Leave needsHuman out of every ticket an agent can do, including ones that only write documentation.`;
 
 /** The Architect's brief with the ticket template and the engineering practices. */
 export function withPlanningConventions(brief: string): string {
