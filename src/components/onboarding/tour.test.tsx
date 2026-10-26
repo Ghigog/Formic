@@ -59,7 +59,7 @@ const flush = () =>
   });
 
 describe("Tour", () => {
-  it("talks about each step in turn, skipping one whose target is hidden", async () => {
+  it("talks about each step in turn, leaving out and not counting one whose target is hidden", async () => {
     target("one");
     hiddenTarget("phone-hidden");
     target("two");
@@ -69,7 +69,7 @@ describe("Tour", () => {
 
     expect(screen.getByRole("dialog", { name: "Tour: First" })).toBeTruthy();
     expect(screen.getByText("The first thing.")).toBeTruthy();
-    expect(screen.getByText("1 / 3")).toBeTruthy();
+    expect(screen.getByText("1 / 2")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await flush();
@@ -91,6 +91,37 @@ describe("Tour", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await flush();
     expect(screen.getByText("The first thing.")).toBeTruthy();
+  });
+
+  it("goes back past a step that never turned up, instead of bouncing forward", async () => {
+    target("one");
+    target("two");
+    // "phone-hidden" is not in the page at all: it is waited for, then dropped.
+    render(<Tour def={def} onEnd={() => {}} />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await flush();
+    await flush();
+    expect(screen.getByText("The second thing.")).toBeTruthy();
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await flush();
+    expect(screen.getByText("The first thing.")).toBeTruthy();
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+  });
+
+  it("moves one step for a double click on Next", async () => {
+    target("one");
+    target("phone-hidden");
+    target("two");
+    render(<Tour def={def} onEnd={() => {}} />);
+    await flush();
+    const next = screen.getByRole("button", { name: "Next" });
+    fireEvent.click(next);
+    fireEvent.click(next);
+    await flush();
+    expect(screen.getByText("Not on this screen.")).toBeTruthy();
   });
 
   it("ends on Skip and on Escape", async () => {

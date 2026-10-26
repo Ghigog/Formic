@@ -271,6 +271,36 @@ export class SoundEngine {
     src.stop(t + dur + 0.05);
   }
 
+  /**
+   * One syllable of the guide ant's mutter (src/components/onboarding/voice.ts):
+   * a square and a saw an octave down, bent by `bend` over 75ms, through a
+   * band-pass so it buzzes rather than beeps.
+   */
+  syllable(freq: number, bend: number) {
+    const a = this.audio();
+    if (!a || !this.out) return;
+    const t = a.currentTime;
+    const f = a.createBiquadFilter();
+    const g = a.createGain();
+    f.type = "bandpass";
+    f.frequency.setValueAtTime(1500, t);
+    f.Q.value = 0.9;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.07, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    for (const [type, hz] of [["square", freq], ["sawtooth", freq / 2]] as const) {
+      const o = a.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(hz, t);
+      o.frequency.exponentialRampToValueAtTime(hz * bend, t + 0.075);
+      o.connect(f);
+      o.start(t);
+      o.stop(t + 0.1);
+    }
+    f.connect(g);
+    g.connect(this.out);
+  }
+
   play(n: Sfx, v = 0) {
     if (!this.enabled || !this.unlocked()) return;
     switch (n) {
