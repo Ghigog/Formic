@@ -8,6 +8,7 @@ import { parse } from "yaml";
 
 import {
   ALREADY_DONE_TRAILER,
+  ATTACHMENTS_DIR_VAR,
   RUNNER_ACTION,
   RUNNER_WORKFLOW_PATH,
   workflowCeiling,
@@ -222,6 +223,27 @@ describe("the installed workflow", () => {
       // `$TICKET` in a step whose env never set it, so `set -u` killed the job
       // one line before it committed the work.
       expect(missing, `${s.name ?? "a step"} reads ${missing.join(", ")}: nothing sets it`).toEqual([]);
+    }
+  });
+
+  it("gives the agent every file path its prompt tells it to use", () => {
+    // A reviewer told to write "$FORMIC_SUMMARY" found it empty, so it could
+    // neither approve nor send back, and the run failed with nothing changed.
+    const prompts = readFileSync(fileURLToPath(new URL("./runner.ts", import.meta.url)), "utf8");
+    const named = new Set(
+      [...prompts.matchAll(/\b(FORMIC_[A-Z_]+) environment variable|"\$(FORMIC_[A-Z_]+)"/g)].map(
+        (m) => (m[1] ?? m[2])!,
+      ),
+    );
+    named.add(ATTACHMENTS_DIR_VAR);
+    expect(named).toContain("FORMIC_SUMMARY");
+    expect(named).toContain("FORMIC_OUTPUT");
+
+    const agent = step("Run the agent").env ?? {};
+    const handOff = step("Hand the work to Formic").env ?? {};
+    for (const name of named) {
+      expect(agent[name], `Run the agent does not set ${name}`).toBeTruthy();
+      if (name in handOff) expect(agent[name]).toBe(handOff[name]);
     }
   });
 

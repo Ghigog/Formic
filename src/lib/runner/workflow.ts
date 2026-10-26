@@ -601,6 +601,10 @@ ${indent(REPORTER_SCRIPT, 10)}
           CLI: \${{ inputs.cli }}
           MODEL: \${{ inputs.model }}
           PROMPT: \${{ inputs.prompt }}
+          # Where the agent's prompt tells it to write its summary and answer;
+          # the hand-off step reads them from the same paths.
+          FORMIC_SUMMARY: \${{ runner.temp }}/formic-summary.md
+          FORMIC_OUTPUT: \${{ runner.temp }}/formic-answer.md
           FORMIC_STDOUT: \${{ runner.temp }}/formic-stdout.md
           FORMIC_STREAM: \${{ runner.temp }}/formic-stream.jsonl
           FORMIC_NOTES: \${{ runner.temp }}/formic-notes.md
