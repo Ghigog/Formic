@@ -34,8 +34,8 @@ export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
  */
 export const RUNNER_ACTION = {
   repo: "Ghigog/formic-runner",
-  sha: "5a93137f6112c207402fc451a45f3cabc9bc533a",
-  version: "v1.0.1",
+  sha: "d9fc607520b3842efee2b885e9c2ee4e4130237c",
+  version: "v1.0.2",
 } as const;
 export const RUNNER_WORKFLOW_NAME = "Formic agent";
 /** Every version's setup branch starts with this; see RUNNER_SETUP_BRANCH. */

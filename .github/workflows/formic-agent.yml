@@ -1,4 +1,4 @@
-# formic-runner: 108b69354e18
+# formic-runner: cbf1b01896e9
 # Installed by Formic. Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -411,7 +411,7 @@ jobs:
       # above and the step after.
       - name: Run the loop
         if: inputs.mode == 'loop'
-        uses: Ghigog/formic-runner@5a93137f6112c207402fc451a45f3cabc9bc533a # v1.0.1
+        uses: Ghigog/formic-runner@d9fc607520b3842efee2b885e9c2ee4e4130237c # v1.0.2
         with:
           job: ${{ inputs.job }}
           mode: ${{ inputs.mode }}
