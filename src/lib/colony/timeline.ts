@@ -1,4 +1,5 @@
 import type { BoardCard } from "@/lib/domain/entities";
+import { measureVelocity } from "./velocity";
 import { epicBonus, gradeOf, levelOf, mergePoints, pointsOf } from "./game";
 
 /**
@@ -183,7 +184,9 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date(), offsetD
   }
 
   // Ends: merged and in-flight work is known; planned work queues behind
-  // whatever it depends on, a day per two story points.
+  // whatever it depends on, a day per two story points, or at the measured velocity.
+  // At the project's measured pace when it has one, else the fixed guesses.
+  const pace = live ? measureVelocity(cards, at) : null;
   const ends = new Map<string, number>();
   const endOf = (id: string, seen = new Set<string>()): number => {
     const known = ends.get(id);
@@ -193,7 +196,7 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date(), offsetD
     let end: number;
     if (t.mergedDay !== null) end = t.mergedDay + 1;
     else if (!live) end = WINDOW_DAYS;
-    else if (t.phase !== "planned") end = Math.max(now, TODAY + 1 + Math.ceil(t.sp / 4));
+    else if (t.phase !== "planned") end = Math.max(now, TODAY + 1 + (pace ? t.sp / pace : Math.ceil(t.sp / 4)));
     else {
       seen.add(id);
       const card = tickets.find((c) => c.id === id);
@@ -201,7 +204,7 @@ export function buildTimeline(cards: BoardCard[], at: Date = new Date(), offsetD
         .filter((d) => !seen.has(d))
         .map((d) => endOf(d, seen));
       t.start = Math.max(last + 1, ...after);
-      end = t.start + Math.max(1, Math.round(t.sp / 2));
+      end = t.start + (pace ? t.sp / pace : Math.max(1, Math.round(t.sp / 2)));
     }
     ends.set(id, end);
     t.end = end;
