@@ -20,6 +20,23 @@ function keyBytes(base64Url: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+/** Whether a subscription was made with this server's current VAPID key. */
+function sameKey(subscription: PushSubscription, base64Url: string): boolean {
+  const key = subscription.options?.applicationServerKey;
+  if (!key) return true;
+  const a = new Uint8Array(key);
+  const b = keyBytes(base64Url);
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
+function saveSubscription(subscription: PushSubscription): Promise<Response> {
+  return fetch("/api/push/subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(subscription.toJSON()),
+  });
+}
+
 function supported(): boolean {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
@@ -36,15 +53,25 @@ export function NotificationsSection({
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tested, setTested] = useState<string | null>(null);
 
+  // The browser remembering a subscription is not enough: the server may
+  // have lost it (a new database) or changed its keys. So one made with old
+  // keys is dropped, and a current one is saved again.
   useEffect(() => {
     if (!supported()) return;
-    void navigator.serviceWorker
-      .getRegistration("/sw.js")
-      .then((registration) => registration?.pushManager.getSubscription())
-      .then((subscription) => setEnabled(!!subscription))
-      .catch(() => {});
-  }, []);
+    void (async () => {
+      const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+      const subscription = await registration?.pushManager.getSubscription();
+      if (!subscription) return;
+      if (!vapidPublicKey || !sameKey(subscription, vapidPublicKey)) {
+        await subscription.unsubscribe();
+        return;
+      }
+      const res = await saveSubscription(subscription);
+      setEnabled(res.ok);
+    })().catch(() => {});
+  }, [vapidPublicKey]);
 
   async function change(key: keyof PushPreferences, next: boolean) {
     setError(null);
@@ -75,15 +102,27 @@ export function NotificationsSection({
         userVisibleOnly: true,
         applicationServerKey: keyBytes(vapidPublicKey),
       });
-      const res = await fetch("/api/push/subscriptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(subscription.toJSON()),
-      });
+      const res = await saveSubscription(subscription);
       if (!res.ok) throw new Error("That did not save. Try again.");
       setEnabled(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not enable notifications.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function test() {
+    setBusy(true);
+    setError(null);
+    setTested(null);
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "The test did not send.");
+      setTested("Sent. It should arrive in a few seconds.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The test did not send.");
     } finally {
       setBusy(false);
     }
@@ -110,14 +149,27 @@ export function NotificationsSection({
           </label>
         ))}
       </div>
-      <button
-        type="button"
-        disabled={busy || enabled || !supported()}
-        onClick={() => void enable()}
-        className="border-line text-ink rounded-md border px-3 py-1.5 text-[12px] disabled:opacity-60"
-      >
-        {enabled ? "Enabled" : "Enable on this device"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy || enabled || !supported()}
+          onClick={() => void enable()}
+          className="border-line text-ink rounded-md border px-3 py-1.5 text-[12px] disabled:opacity-60"
+        >
+          {enabled ? "Enabled" : "Enable on this device"}
+        </button>
+        {enabled && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void test()}
+            className="border-line text-ink rounded-md border px-3 py-1.5 text-[12px] disabled:opacity-60"
+          >
+            Send a test
+          </button>
+        )}
+      </div>
+      {tested && <p className="text-muted mt-1 text-[11px]">{tested}</p>}
       {error && (
         <p role="alert" className="text-crimson-text mt-1 text-[11px]">
           {error}

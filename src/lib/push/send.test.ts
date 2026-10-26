@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe("sendPush", () => {
   it("pushes the payload to each of the person's devices", async () => {
-    await sendPush("u1", { title: "T", body: "B" });
+    expect(await sendPush("u1", { title: "T", body: "B" })).toEqual({ sent: 2, failed: 0 });
     expect(sendNotification).toHaveBeenCalledTimes(2);
     expect(sendNotification).toHaveBeenCalledWith(
       { endpoint: a.endpoint, keys: { p256dh: "pa", auth: "aa" } },
@@ -43,15 +43,21 @@ describe("sendPush", () => {
     expect(repo.deletePushSubscription).toHaveBeenCalledWith(a.endpoint, "u1");
   });
 
-  it("keeps a subscription after another failure", async () => {
+  it("keeps and logs a subscription after another failure", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     sendNotification.mockRejectedValue(Object.assign(new Error("busy"), { statusCode: 500 }));
-    await sendPush("u1", { title: "T", body: "B" });
+    expect(await sendPush("u1", { title: "T", body: "B" })).toEqual({ sent: 0, failed: 2 });
     expect(repo.deletePushSubscription).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it("does nothing without VAPID keys", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("VAPID_PRIVATE_KEY", "");
-    await sendPush("u1", { title: "T", body: "B" });
+    expect(await sendPush("u1", { title: "T", body: "B" })).toEqual({ sent: 0, failed: 0 });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
     expect(sendNotification).not.toHaveBeenCalled();
   });
 });
