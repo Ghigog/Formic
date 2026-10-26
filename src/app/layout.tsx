@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { TourHost } from "@/components/onboarding/tour";
 
 /**
  * Fonts come from a single Google Fonts `css2` link, exactly as the artboards
@@ -41,7 +42,10 @@ export default function RootLayout({
         />
         <link rel="stylesheet" href={GOOGLE_FONTS} />
       </head>
-      <body className="bg-cream text-ink min-h-dvh">{children}</body>
+      <body className="bg-cream text-ink min-h-dvh">
+        {children}
+        <TourHost />
+      </body>
     </html>
   );
 }

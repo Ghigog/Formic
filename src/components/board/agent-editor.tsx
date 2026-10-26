@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useRef, useState } from "react";
 import {
   AGENT_ROLE_LABELS,
@@ -296,6 +297,7 @@ export function AgentEditor({
       style={kb.backdrop}
       onClick={onClose}
     >
+      <AutoTour id="agent" />
       <form
         style={kb.panel}
         onClick={(e) => e.stopPropagation()}
@@ -331,7 +333,7 @@ export function AgentEditor({
             />
           </label>
 
-          <label className="flex flex-col gap-1">
+          <label data-tour="agent-provider" className="flex flex-col gap-1">
             <span className={label}>Provider</span>
             <select
               aria-label="Provider"
@@ -431,7 +433,7 @@ export function AgentEditor({
           </div>
           )}
 
-          <label className="flex flex-col gap-1">
+          <label data-tour="agent-model" className="flex flex-col gap-1">
             <span className={label}>Model</span>
             <input
               value={model}
@@ -523,7 +525,7 @@ export function AgentEditor({
             </fieldset>
           )}
 
-          <label className="flex flex-col gap-1">
+          <label data-tour="agent-prompt" className="flex flex-col gap-1">
             <span className="flex items-center gap-2">
               <span className={label}>Prompt</span>
               <span className="flex-grow" />
@@ -577,6 +579,7 @@ export function AgentEditor({
           <button
             type="submit"
             disabled={busy}
+            data-tour="agent-save"
             className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy ? "Saving…" : preset ? "Save" : "Create agent"}

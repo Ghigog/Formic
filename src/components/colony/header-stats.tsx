@@ -154,6 +154,7 @@ function TimelineButton({
   return (
     <button
       data-colony="timeline"
+      data-tour="timeline"
       type="button"
       onClick={() => c.setTimelineOpen(!open)}
       aria-label={open ? "Back to board" : "Open timeline"}
@@ -386,7 +387,7 @@ export function ColonyLevelStats() {
   if (!c) return null;
   const s = c.score;
   return (
-    <div className="flex shrink-0 items-center gap-2.5">
+    <div data-tour="sentinels" className="flex shrink-0 items-center gap-2.5">
       <LevelBadge level={s.level} size={36} />
       <div className="flex flex-col gap-1.5 max-xl:hidden">
         <div className="flex items-baseline gap-2">
@@ -434,7 +435,7 @@ export function ColonyHeaderStats({
 
       <span aria-hidden className="bg-line h-6 w-px shrink-0 max-xl:hidden" />
 
-      <div className="flex shrink-0 items-center gap-2.5">
+      <div data-tour="points" className="flex shrink-0 items-center gap-2.5">
         <div className="flex flex-col items-end gap-[3px]">
           <span className="text-muted font-mono text-[9px] tracking-[0.12em]">
             POINTS

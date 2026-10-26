@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoTour } from "@/components/onboarding/tour";
 import {
   useEffect,
   useRef,
@@ -212,7 +213,7 @@ export function AskBox({
   repoName: string;
 }) {
   return (
-    <div className="relative w-full max-w-[520px]">
+    <div data-tour="chat" className="relative w-full max-w-[520px]">
       <Composer a={a} repoName={repoName} />
       <Shade
         a={a}
@@ -446,6 +447,7 @@ function Shade({
   return (
     <section
       aria-label="Assistant"
+      data-tour="chat-shade"
       aria-hidden={!a.open}
       inert={!a.open}
       data-open={a.open}
@@ -461,6 +463,7 @@ function Shade({
             : `min(${height}, ${keyboardHeight}px)`,
       }}
     >
+      {a.open && <AutoTour id="chat" delay={500} />}
       <header className="border-hairline flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
         <span className="text-muted text-[11px] font-semibold tracking-[0.06em] uppercase">
           Runs on

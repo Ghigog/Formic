@@ -122,6 +122,19 @@ describe("POST /api/projects", () => {
     expect(launch).not.toHaveBeenCalled();
   });
 
+  it("opens an example board with no repository, seeded once and reused after", async () => {
+    const first = (await (await post({ example: true })).json()) as { project: { id: string; repoFullName: string; name: string } };
+    expect(first.project).toMatchObject({ repoFullName: "", name: "Example project" });
+    const cards = await repository().boardCards(first.project.id);
+    expect(cards.some((c) => c.title.includes("AGENTS.md"))).toBe(true);
+    expect(cards.length).toBeGreaterThan(1);
+
+    const second = (await (await post({ example: true })).json()) as { project: { id: string } };
+    expect(second.project.id).toBe(first.project.id);
+    expect(await repository().boardCards(first.project.id)).toHaveLength(cards.length);
+    expect(launch).not.toHaveBeenCalled();
+  });
+
   it("refuses a body with neither a projectId nor a repoFullName", async () => {
     expect((await post({})).status).toBe(400);
   });

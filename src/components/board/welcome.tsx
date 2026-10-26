@@ -2,6 +2,7 @@
 
 import { AccountMenu, type Account } from "./account-menu";
 import { RepoPicker } from "./repo-picker";
+import { AutoTour } from "@/components/onboarding/tour";
 
 /**
  * Someone signed in with no repository yet. The board needs one before it
@@ -36,6 +37,7 @@ export function Welcome({ account }: { account: Account }) {
         <a href="/settings" className="text-muted hover:text-ink text-[12px] font-medium">
           Add your sandbox key in Settings
         </a>
+        <AutoTour id="pick" delay={700} />
       </main>
     </div>
   );

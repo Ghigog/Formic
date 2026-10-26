@@ -43,6 +43,23 @@ describe("RepoPicker", () => {
     expect(calls).toEqual([{ noRepository: true }]);
   });
 
+  it("opens the example project, and hides it while searching", async () => {
+    const calls: unknown[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        calls.push(JSON.parse(String(init.body)));
+        return Response.json({ project: { id: "p1" } });
+      }
+      return Response.json(url.includes("/api/projects") ? { projects: [] } : { ok: true, repos: [] });
+    });
+    render(<RepoPicker current={null} inline onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Try the example project/ }));
+    await waitFor(() => expect(calls).toEqual([{ example: true }]));
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search repositories" }), { target: { value: "acme" } });
+    expect(screen.queryByRole("button", { name: /Try the example project/ })).toBeNull();
+  });
+
   it("marks a board with the kind waiting on it", async () => {
     vi.stubGlobal("fetch", async (url: string) =>
       Response.json(

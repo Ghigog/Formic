@@ -566,3 +566,127 @@
     animation: none !important;
   }
 }
+
+/*
+ * The guide ant and its tour (src/components/onboarding). The legs swing as
+ * drawBug swings them: the outer pair on one side against the middle leg on
+ * the other, both sides in opposition.
+ */
+.guide-ant {
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.45)) drop-shadow(0 0 6px rgb(251 249 245 / 0.16));
+}
+
+.guide-ant-antennae {
+  transform-origin: 0 -3px;
+  animation: guideAntIdle 2.6s ease-in-out infinite;
+}
+
+.guide-ant-walk .guide-ant-legs-a {
+  animation: guideAntLegsA 0.19s ease-in-out infinite alternate;
+}
+
+.guide-ant-walk .guide-ant-legs-b {
+  animation: guideAntLegsB 0.19s ease-in-out infinite alternate;
+}
+
+.guide-ant-walk .guide-ant-bob {
+  animation: guideAntBob 0.19s ease-in-out infinite alternate;
+}
+
+.guide-ant-talk .guide-ant-antennae {
+  animation: guideAntTalk 0.32s ease-in-out infinite alternate;
+}
+
+/* Going into the nest: shrinks down the hole. */
+.guide-ant-enter {
+  transform: scale(0.12);
+  opacity: 0;
+  transition:
+    transform 0.9s ease-in,
+    opacity 0.9s ease-in;
+}
+
+.tour-hole {
+  transition:
+    x 0.45s ease,
+    y 0.45s ease,
+    width 0.45s ease,
+    height 0.45s ease;
+}
+
+.tour-bubble {
+  animation: tourBubbleIn 0.22s ease-out;
+}
+
+@keyframes guideAntLegsA {
+  from {
+    d: path("M0 -1.2L-3.3 -3.5M0 1.2L-3.3 1.7M0 0L3.3 -0.9");
+  }
+  to {
+    d: path("M0 -1.2L-3.3 -1.7M0 1.2L-3.3 3.5M0 0L3.3 0.9");
+  }
+}
+
+@keyframes guideAntLegsB {
+  from {
+    d: path("M0 -1.2L3.3 -1.7M0 1.2L3.3 3.5M0 0L-3.3 0.9");
+  }
+  to {
+    d: path("M0 -1.2L3.3 -3.5M0 1.2L3.3 1.7M0 0L-3.3 -0.9");
+  }
+}
+
+@keyframes guideAntBob {
+  from {
+    transform: translateY(-0.12px);
+  }
+  to {
+    transform: translateY(0.12px);
+  }
+}
+
+@keyframes guideAntIdle {
+  0%,
+  80%,
+  100% {
+    transform: rotate(0);
+  }
+  88% {
+    transform: rotate(-6deg);
+  }
+  94% {
+    transform: rotate(5deg);
+  }
+}
+
+@keyframes guideAntTalk {
+  from {
+    transform: rotate(-7deg);
+  }
+  to {
+    transform: rotate(7deg);
+  }
+}
+
+@keyframes tourBubbleIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-ant-antennae,
+  .guide-ant-walk .guide-ant-legs-a,
+  .guide-ant-walk .guide-ant-legs-b,
+  .guide-ant-walk .guide-ant-bob,
+  .guide-ant-talk .guide-ant-antennae,
+  .tour-bubble {
+    animation: none;
+  }
+
+  .tour-hole,
+  .guide-ant-enter {
+    transition: none;
+  }
+}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useActiveTour } from "@/components/onboarding/store";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
 
@@ -73,10 +74,12 @@ export function SetupDialog({
   const acked = saved === null ? null : parseAcked(saved);
   const titleId = useId();
   const primary = useRef<HTMLAnchorElement & HTMLButtonElement>(null);
+  // The guided tour goes first: setup can wait the minute it takes.
+  const touring = useActiveTour() !== null;
   const pending = acked ? keyless.filter((k) => !acked.includes(k.secretName)) : [];
   const secretsOnly = setup?.state === "ready";
   const needed = !!setup && (secretsOnly ? pending.length > 0 : true);
-  const open = needed && !hidden;
+  const open = needed && !hidden && !touring;
 
   const markAdded = () => {
     const next = [...new Set([...(acked ?? []), ...pending.map((k) => k.secretName)])];
@@ -96,7 +99,7 @@ export function SetupDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  if (!setup || !needed) return null;
+  if (!setup || !needed || touring) return null;
 
   if (hidden) {
     return (
