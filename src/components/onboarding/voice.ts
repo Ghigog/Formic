@@ -19,6 +19,15 @@ export function attachVoice(): () => void {
   return engine.attach();
 }
 
+/**
+ * Runs `f` once the voice can be heard: now if the page has had a gesture,
+ * otherwise at its first click or keypress.
+ */
+export function whenHeard(f: () => void) {
+  if (engine) engine.whenAudible(f);
+  else f();
+}
+
 /** Whether this letter, `index` letters into a line, gets a syllable. */
 export function speaks(ch: string | undefined, index: number): boolean {
   return !!ch && /[a-z0-9]/i.test(ch) && index % 3 === 0;

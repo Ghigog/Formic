@@ -17,7 +17,7 @@ import {
 } from "./placement";
 import { endTour, offerTour, activeTour, useActiveTour, useAntVoice } from "./store";
 import { TOURS, type TourDef, type TourId } from "./tours";
-import { attachVoice, mutter, speaks } from "./voice";
+import { attachVoice, mutter, speaks, whenHeard } from "./voice";
 
 /** At most this many boxes are lit at once: the five columns, say. */
 const MAX_HOLES = 5;
@@ -129,6 +129,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   const nextButton = useRef<HTMLButtonElement>(null);
   const voice = soundOn && voiceOn;
   const voiceRef = useRef(voice);
+  const spoken = useRef(0);
   const reduced = prefersReducedMotion();
 
   const step = steps[index];
@@ -145,6 +146,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
     window.clearTimeout(t.find);
     window.clearTimeout(t.end);
     window.clearInterval(t.type);
+    spoken.current += 1;
   };
 
   const place = (next: AntState) => {
@@ -174,20 +176,28 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
 
   function speak(line: string) {
     window.clearInterval(timers.current.type);
+    const turn = ++spoken.current;
     setBubble(true);
     if (reduced) {
       setTyped(line.length);
       return;
     }
-    let n = 0;
     setTyped(0);
-    timers.current.type = window.setInterval(() => {
-      n += 1;
-      const ch = line[n - 1];
-      if (voiceRef.current && ch && speaks(ch, n)) mutter(ch);
-      setTyped(n);
-      if (n >= line.length) window.clearInterval(timers.current.type);
-    }, TYPE_MS);
+    const type = () => {
+      if (turn !== spoken.current) return;
+      let n = 0;
+      timers.current.type = window.setInterval(() => {
+        n += 1;
+        const ch = line[n - 1];
+        if (voiceRef.current && ch && speaks(ch, n)) mutter(ch);
+        setTyped(n);
+        if (n >= line.length) window.clearInterval(timers.current.type);
+      }, TYPE_MS);
+    };
+    // A tour that opens on its own has had no click yet, and the browser keeps
+    // the page silent until one: hold the first line for it, so it is heard.
+    if (voiceRef.current) whenHeard(type);
+    else type();
   }
 
   function finish() {
