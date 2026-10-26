@@ -144,6 +144,7 @@ describe("work for a person", () => {
 
   it("is something every Architect Agent is told to mark, whatever its prompt", () => {
     expect(withPlanningConventions("Custom brief.")).toContain("needsHuman");
+    expect(withPlanningConventions("Custom brief.")).toContain("its own ticket without needsHuman");
   });
 });
 

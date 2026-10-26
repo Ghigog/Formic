@@ -232,6 +232,14 @@ describe("GitHub issues for a ticket", () => {
     expect(comments(t.issueNumber).at(-1)).toContain("Out of scope: package.json");
   });
 
+  it("flags work for a person from the start", async () => {
+    const epic = await newEpic();
+    await applyTickets(PROJECT, epic.id, [{ ...TICKETS[0]!, needsHuman: "Run the query on production" }]);
+    const t = (await repository().ticketsForEpic(epic.id))[0]!;
+
+    expect(issue(t.issueNumber).labels).toContain("formic: needs a human");
+  });
+
   it("links the pull request to the issue", async () => {
     const t = await ticket();
     const body = pullRequestBody(t, { summary: "s", detail: "d", verifiedWith: null });
