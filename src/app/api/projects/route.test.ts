@@ -102,7 +102,7 @@ describe("POST /api/projects", () => {
     expect(await repository().boardCards(project.id)).toHaveLength(0);
   });
 
-  it("reuses the project on a second request", async () => {
+  it("reuses the project on a second request without setting it up again", async () => {
     const first = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
     const second = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
     expect(second.project.id).toBe(first.project.id);
