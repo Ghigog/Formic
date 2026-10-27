@@ -1006,12 +1006,10 @@ export class MemoryRepository implements Repository {
       card.updatedAt = new Date().toISOString();
       if (input.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
     }
-    // With no agents on the board, a person moving a card to Done scores it
-    // like a merge, once.
-    if (card.kind === "ticket" && input.status === "merged" && !card.mergedAt) {
-      const s = store();
-      const board = s.projects.get(projectOf(s, card));
-      if (!board?.agents) stampMerge(s, card);
+    // In a plain column, a person moving a card to Done scores it like a
+    // merge, once.
+    if (card.kind === "ticket" && input.status === "merged" && !card.mergedAt && input.plain) {
+      stampMerge(store(), card);
     }
     card.status = input.status;
     card.stalledIn = input.stalledIn;

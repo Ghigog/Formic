@@ -16,6 +16,7 @@ vi.mock("@/lib/agents/pipeline", () => ({
   applyShowcase: vi.fn(),
 }));
 vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn(), stallTicket: vi.fn(), taskFor: vi.fn() }));
+vi.mock("@/lib/review/pipeline", () => ({ mergeByPerson: vi.fn(async () => "Red CI does not merge.") }));
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn(async (_project: string, event: { type: string }) => void published.push(event)) }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
@@ -121,9 +122,14 @@ describe("write tools", () => {
   it("returns the board's reason when it refuses a move", async () => {
     const id = await ticketOnBoard();
     setAgents(true);
-    const result = await moveCard(rw(), { board, card: id, to: "in_progress" });
+    const repo = repository();
+    const preset = await repo.savePreset({ name: "Coder", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
+    await repo.setColumnAgent(board, "done", preset.id);
+    // A pull request that will not merge: the move is refused with the reason.
+    globalThis.__formicMemoryStore!.cards.get(id)!.prNumber = 7;
+    const result = await moveCard(rw(), { board, card: id, to: "done" });
     expect(result).toMatchObject({ ok: false });
-    expect(!result.ok && result.error).toMatch(/agent/i);
+    expect(!result.ok && result.error).toMatch(/Red CI/);
   });
 
   it("updates a ticket's fields", async () => {

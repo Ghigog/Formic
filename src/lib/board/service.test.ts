@@ -25,11 +25,13 @@ const { MockVcsClient, resetVcs, setVcs } = await import("@/lib/vcs");
 
 const PROJECT = "project_default";
 
-/** An agent on In Progress, so tickets moved there start rather than being refused. */
-async function staffInProgress() {
+/** An agent on every column, so cards moved into one start rather than only being moved. */
+async function staffColumns() {
   const repo = repository();
   const preset = await repo.savePreset({ name: "Coder", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
-  await repo.setColumnAgent(PROJECT, "in_progress", preset.id);
+  for (const column of ["backlog", "todo", "in_progress", "in_review", "done"] as const) {
+    await repo.setColumnAgent(PROJECT, column, preset.id);
+  }
 }
 
 beforeEach(async () => {
@@ -41,7 +43,7 @@ beforeEach(async () => {
   delete process.env.DATABASE_URL;
   delete process.env.POSTGRES_PRISMA_URL;
   delete process.env.POSTGRES_URL;
-  await staffInProgress();
+  await staffColumns();
 });
 
 /** A board with agents off: cards only move. */
@@ -103,14 +105,6 @@ describe("a board with agents switched off", () => {
     const result = await drop(card.id, "in_review", "done");
     expect(result).toMatchObject({ ok: true, status: "merged" });
     expect(MockVcsClient.runner().files.size).toBe(0);
-  });
-
-  it("still refuses In Progress with no column agent when agents are on", async () => {
-    const card = makeCard({ kind: "ticket", status: "ready" });
-    seedMemory([card]);
-    await unstaff();
-    const result = await drop(card.id, "todo", "in_progress");
-    expect(result).toMatchObject({ ok: false, needsAgent: "in_progress" });
   });
 });
 
@@ -291,7 +285,7 @@ describe("applyTransition onto files another agent is writing", () => {
 });
 
 describe("applyTransition into In Progress with no agent", () => {
-  it("sends the ticket straight back and names the column to give one", async () => {
+  it("only moves the ticket: no run starts and no agent is asked for", async () => {
     const [epic, ticket] = makeEpicWithChildren({ status: "ready" }, [{ status: "ready" }]);
     seedMemory([epic!, ticket!]);
     await repository().setColumnAgent(PROJECT, "in_progress", null);
@@ -305,10 +299,25 @@ describe("applyTransition into In Progress with no agent", () => {
       actor: "user",
     });
 
-    expect(result).toMatchObject({ ok: false, revertTo: "todo", needsAgent: "in_progress" });
-    expect(result.ok ? "" : result.reason).toContain("Set an agent for In Progress first");
-    expect((await repository().cardById(ticket!.id))?.status).toBe("ready");
+    expect(result).toMatchObject({ ok: true });
+    expect(result.ok ? undefined : result.needsAgent).toBeUndefined();
     expect(launched).toEqual([]);
+  });
+
+  it("scores a ticket dropped in Done with no agent as merged", async () => {
+    const card = makeCard({ kind: "ticket", status: "review", storyPoints: 3 });
+    seedMemory([card]);
+    await repository().setColumnAgent(PROJECT, "done", null);
+    const result = await applyTransition(PROJECT, {
+      cardId: card.id,
+      kind: "ticket",
+      from: "in_review",
+      to: "done",
+      position: 1,
+      actor: "user",
+    });
+    expect(result).toMatchObject({ ok: true, status: "merged" });
+    expect((await repository().cardById(card.id))?.mergedAt).toBeTruthy();
   });
 });
 

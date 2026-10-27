@@ -1070,13 +1070,13 @@ export class PrismaRepository implements Repository {
             misplacedIn: true,
             mergedAt: true,
             storyPoints: true,
-            epic: { select: { projectId: true, project: { select: { agents: true } } } },
+            epic: { select: { projectId: true } },
           },
         });
-        // With no agents on the board, a person moving a card to Done scores
-        // it like a merge, once.
+        // In a plain column, a person moving a card to Done scores it like a
+        // merge, once.
         let merge = {};
-        if (before && input.status === "merged" && !before.mergedAt && !before.epic.project.agents) {
+        if (before && input.status === "merged" && !before.mergedAt && input.plain) {
           const now = new Date();
           const recent = await tx.ticket.count({
             where: {

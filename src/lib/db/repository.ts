@@ -77,6 +77,11 @@ export interface MoveInput {
   /** Tickets only. Omitted leaves it as it was. */
   detached?: boolean;
   /**
+   * Tickets only. Dropped in a plain column ("No agent"): reaching merged
+   * scores it like a merge, once, since no agent will merge it.
+   */
+  plain?: boolean;
+  /**
    * Dropped somewhere it cannot work: that column, and what is wrong. The
    * status above is then what is still true of it. Omitted clears it.
    */
