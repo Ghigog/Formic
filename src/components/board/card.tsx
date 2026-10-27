@@ -497,9 +497,9 @@ function QueueTimer({ card }: { card: BoardCard }) {
 /** When the card entered its column, short, and outside Done how long it has been there; the full timestamp is the title. */
 function EnteredAt({ card, column }: { card: BoardCard; column: ColumnId }) {
   const inColumn = useElapsed(card.enteredAt);
-  if (!card.enteredAt) return null;
+  if (!card.enteredAt) return <WorkTimer since={card.workingSince} />;
   const at = new Date(card.enteredAt);
-  if (Number.isNaN(at.getTime())) return null;
+  if (Number.isNaN(at.getTime())) return <WorkTimer since={card.workingSince} />;
   const short = at.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   return (
     <time
@@ -508,7 +508,12 @@ function EnteredAt({ card, column }: { card: BoardCard; column: ColumnId }) {
       className="text-muted font-mono text-[10px] whitespace-nowrap"
     >
       {column === "done" ? `Done ${short}` : short}
-      {column !== "done" && inColumn != null && <span> {formatDuration(Math.max(0, inColumn))}</span>}
+      {column !== "done" &&
+        (card.workingSince ? (
+          <> <WorkTimer since={card.workingSince} /></>
+        ) : (
+          inColumn != null && <span> {formatDuration(Math.max(0, inColumn))}</span>
+        ))}
     </time>
   );
 }
@@ -519,7 +524,7 @@ function CardFooter({ card, column }: { card: BoardCard; column: ColumnId }) {
   const mobile = !!env?.mobile;
   const hasReturn = mobile && !!env?.returnFor?.(card, column);
   const hasAdvance = mobile && !!env?.nextFor(card, column);
-  if (!card.enteredAt && !hasReturn && !hasAdvance) return null;
+  if (!card.enteredAt && !card.workingSince && !hasReturn && !hasAdvance) return null;
   return (
     <div className={cn("flex items-center justify-between", (hasReturn || hasAdvance) && "-mt-1")}>
       {hasReturn && <ReturnButton card={card} column={column} />}
@@ -661,13 +666,6 @@ function RunningCard({
             </StatusChip>
           </span>
         )}
-        {extras.elapsed ? (
-          <span className="text-muted font-mono text-[10px] tabular-nums">
-            {extras.elapsed}
-          </span>
-        ) : (
-          <WorkTimer since={card.workingSince} />
-        )}
       </div>
 
       {extras.progress && (
@@ -786,7 +784,6 @@ function ReviewCard({
             <StatusChip tone="clay" pulsing>
               {agentLabel}
             </StatusChip>
-            <WorkTimer since={card.workingSince} />
           </span>
         )}
       </div>
