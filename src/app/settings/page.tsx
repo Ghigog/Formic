@@ -29,7 +29,6 @@ export default async function SettingsPage() {
     ? {
           id: current.id,
           name: current.name,
-          agents: current.agents,
           owner: canSee(user, current.ownerId),
           autoMerge: current.autoMerge,
           autoEscalate: current.autoEscalate,

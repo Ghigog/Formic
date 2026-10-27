@@ -16,7 +16,6 @@ import { runnerSetup } from "@/lib/runner/setup";
 import { limited, RUN } from "@/lib/rate-limit";
 import { classifyEvent, type NotificationKind } from "@/lib/notifications/classify";
 import type { FormicEvent } from "@/lib/domain/events";
-import { agentsEnabled } from "@/lib/domain/entities";
 import { verdict } from "@/lib/usage/governor";
 
 export const dynamic = "force-dynamic";
@@ -172,7 +171,7 @@ export async function POST(req: NextRequest) {
       repoFullName,
       baseBranch: remote?.defaultBranch ?? "main",
     });
-    if (!existed && agentsEnabled(project)) {
+    if (!existed && project.repoFullName) {
       // A new board starts with its AGENTS.md ticket, and its setup pull
       // request already open by the time the board asks for it.
       await addOnboardingTicket(project.id);

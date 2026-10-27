@@ -97,29 +97,16 @@ describe("POST /api/projects", () => {
     const { project } = (await res.json()) as { project: { id: string; repoFullName: string } };
     expect(project.repoFullName).toBe("acme/widgets");
     expect(res.headers.get("set-cookie")).toContain(encodeURIComponent(project.id));
-    // Agents start off: no setup pull request, no onboarding ticket.
-    expect(launch).not.toHaveBeenCalled();
-    const cards = await repository().boardCards(project.id);
-    expect(cards).toEqual([]);
-  });
-
-  it("sets a board with agents on up: an onboarding ticket and the setup pull request", async () => {
-    const repo = repository();
-    vi.spyOn(repo, "ensureProject").mockImplementationOnce(async (input) => {
-      const p = await repo.ensureProject(input);
-      return { ...p, agents: true };
-    });
-    const res = await post({ repoFullName: "acme/robots" });
-    const { project } = (await res.json()) as { project: { id: string } };
+    // A new board gets an onboarding ticket and its setup pull request.
     expect(launch).toHaveBeenCalledTimes(1);
-    expect((await repo.boardCards(project.id)).length).toBeGreaterThan(0);
+    expect((await repository().boardCards(project.id)).length).toBeGreaterThan(0);
   });
 
   it("reuses the project on a second request without setting it up again", async () => {
     const first = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
     const second = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
     expect(second.project.id).toBe(first.project.id);
-    expect(launch).not.toHaveBeenCalled();
+    expect(launch).toHaveBeenCalledTimes(1);
   });
 
   it("opens an example board with no repository, seeded once and reused after", async () => {
@@ -160,6 +147,6 @@ describe("POST /api/projects", () => {
     expect((await post({ projectId: first.project.id })).status).toBe(200);
     expect((await post({ repoFullName: "acme/widgets" })).status).toBe(200);
     expect((await post({ repoFullName: "acme/gadgets" })).status).toBe(503);
-    expect(launch).not.toHaveBeenCalled();
+    expect(launch).toHaveBeenCalledTimes(1);
   });
 });

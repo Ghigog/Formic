@@ -27,8 +27,8 @@ afterEach(() => {
 });
 
 describe("runner setup", () => {
-  it("reports ready without contacting GitHub when agents are off", async () => {
-    const project = { ...(await repository().defaultProject()), agents: false };
+  it("reports ready without contacting GitHub when the board has no repository", async () => {
+    const project = { ...(await repository().defaultProject()), repoFullName: "" };
     const read = vi.spyOn(client, "readFile");
 
     expect(await runnerSetup(project)).toEqual({ state: "ready" });

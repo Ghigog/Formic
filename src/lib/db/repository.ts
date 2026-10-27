@@ -423,8 +423,6 @@ export interface ProjectSummary {
   /** Empty for a board with no repository (stored as null). */
   repoFullName: string;
   baseBranch: string;
-  /** Agents work on this board. Off: a plain board a person moves cards on. */
-  agents: boolean;
   /** Formic merges approved, green pull requests on its own. Off until the owner opts in. */
   autoMerge: boolean;
   /** Formic raises a ticket's story points on its own when it outgrows its estimate. Off until the owner opts in. */
@@ -652,7 +650,6 @@ export interface Repository {
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
   setShareKeys(projectId: string, shareKeys: boolean): Promise<void>;
-  setAgents(projectId: string, agents: boolean): Promise<void>;
   /**
    * Whose keys a card's work runs on: the person who last set it going. A
    * ticket with none takes its scout parent's, then its epic's. Null is the

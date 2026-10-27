@@ -262,12 +262,6 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   // then is overwritten when React takes over the input.
   await page.waitForLoadState("networkidle");
 
-  // With agents off the AI sections are hidden, so turn them on if they are
-  // not. The switch flips once the server has saved it, so wait for that
-  // rather than check().
-  const agents = page.getByRole("switch", { name: "Agents", exact: true });
-  if (!(await agents.isChecked())) await agents.click();
-  await expect(agents).toBeChecked();
   await expect(page.getByRole("heading", { name: "Sandbox (E2B)" })).toBeVisible();
 
   // The page has more than one Save button (GitHub access, limits, renewal), so

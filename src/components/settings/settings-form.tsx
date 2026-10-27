@@ -39,8 +39,6 @@ interface ProjectSetting {
   shareKeys?: boolean;
   /** The saved agent that runs scouts; null follows the column. */
   scoutPresetId?: string | null;
-  /** Whether agents run on this board; on when omitted. */
-  agents?: boolean;
   /** Whether this person owns the board; only owners change its settings. On when omitted. */
   owner?: boolean;
 }
@@ -86,9 +84,8 @@ export function SettingsForm({
   /** Saved agents the scout picker offers. */
   presets?: { id: string; name: string }[];
 }) {
-  // A board shared with this person shows its Agents switch, but not the owner's settings.
+  // A board shared with this person does not show the owner's settings.
   const own = project?.owner === false ? null : project;
-  const [agents, setAgents] = useState(project?.agents ?? true);
   const [newToken, setNewToken] = useState<string | null>(null);
   return (
     <div className="bg-cream min-h-dvh">
@@ -150,18 +147,7 @@ export function SettingsForm({
           />
         )}
 
-        {project && (
-          <Section title="Agents">
-            <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
-              Applies to {project.name}. Off, the board is for tracking only,
-              or for your own coding agent over MCP: the AI provider, sandbox
-              key, colony, scout, auto-merge and sharing settings are hidden.
-            </p>
-            <AgentsToggle project={project} on={agents} onChange={setAgents} />
-          </Section>
-        )}
-
-        {own && agents && (
+        {own && (
           <Section title="Auto-merge">
             <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
               Applies to {own.name}. Formic merges a pull request on its own
@@ -184,7 +170,7 @@ export function SettingsForm({
           </Section>
         )}
 
-        {own && agents && account.signedIn && (
+        {own && account.signedIn && (
           <Section title="Sharing">
             <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
               Applies to {own.name}. Anyone who can reach its repository on
@@ -197,7 +183,7 @@ export function SettingsForm({
           </Section>
         )}
 
-        {own && agents && (
+        {own && (
           <ScoutAgentSection
             projectId={own.id}
             presets={presets}
@@ -210,7 +196,6 @@ export function SettingsForm({
 
         <BoardViewSection />
 
-        {agents && (
         <KeyField
           field="e2bKey"
           id="sandbox"
@@ -248,11 +233,10 @@ export function SettingsForm({
             </>
           }
         />
-        )}
 
         <RunTimeBudgetSection initial={runTimeBudget} tokens={limits?.tokens} attempts={limits?.attempts} />
 
-        {agents && <ColonySection />}
+        <ColonySection />
 
         <EffortSection initial={effortByPoints} />
 
@@ -263,65 +247,14 @@ export function SettingsForm({
         <AccessTokensSection initial={accessTokens} onSecret={setNewToken} />
         {mcpEndpoint && <McpSetupSection endpoint={mcpEndpoint} token={newToken} />}
 
-        {agents && (
-          <p className="text-muted px-1 text-[12px] leading-[1.5]">
-            AI provider keys live on each agent, not here: pick or create one from
-            a column&apos;s agent menu on the board, and give it the key for its
-            provider.
-          </p>
-        )}
+        <p className="text-muted px-1 text-[12px] leading-[1.5]">
+          AI provider keys live on each agent, not here: pick or create one from
+          a column&apos;s agent menu on the board, and give it the key for its
+          provider.
+        </p>
 
         {account.signedIn && <DangerZone />}
       </main>
-    </div>
-  );
-}
-
-function AgentsToggle({
-  project,
-  on,
-  onChange,
-}: {
-  project: ProjectSetting;
-  on: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const owner = project.owner !== false;
-
-  async function change(next: boolean) {
-    setBusy(true);
-    setError(null);
-    const res = await fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: project.id, agents: next }),
-    }).catch(() => null);
-    setBusy(false);
-    if (!res?.ok) {
-      const body = (await res?.json().catch(() => null)) as { error?: string } | null;
-      setError(body?.error ?? "That did not save. Try again.");
-      return;
-    }
-    onChange(next);
-  }
-
-  return (
-    <div>
-      <label className="text-ink flex items-center gap-2 text-[13px]">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label="Agents"
-          checked={on}
-          disabled={busy || !owner}
-          onChange={(e) => void change(e.target.checked)}
-        />
-        Run AI agents on this board
-      </label>
-      {!owner && <p className="text-muted mt-1 text-[11px]">Only the board&apos;s owner can change this.</p>}
-      {error && <p className="text-crimson-text mt-1 text-[11px]">{error}</p>}
     </div>
   );
 }

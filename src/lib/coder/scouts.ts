@@ -9,7 +9,7 @@ import { agentFor, runTargetFor, withColumnPreset } from "@/lib/agents/presets";
 import { MAX_DIFF_CHARS, type ScoutCandidate } from "@/lib/agents/judge";
 import type { CodeChange, Usage } from "@/lib/agents/ports";
 import { credentialsForProject } from "@/lib/auth/credentials";
-import { boardRunsAgents, projectFor } from "@/lib/board/project";
+import { projectFor } from "@/lib/board/project";
 import { withLease } from "@/lib/board/lease";
 import { slotsInUse } from "@/lib/colony/reserve";
 import { AUTO_SCOUTED, blockerOf, colonyOf } from "@/lib/board/queue";
@@ -96,7 +96,6 @@ export async function sendScouts(
   ticketId: string,
   input: { auto?: boolean } = {},
 ): Promise<ScoutAnswer> {
-  if (!(await boardRunsAgents(projectId))) return { ok: false, reason: "Agents are off on this board." };
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket || ticket.projectId !== projectId || ticket.scoutOf) return { ok: false, reason: "That ticket is not on this board." };

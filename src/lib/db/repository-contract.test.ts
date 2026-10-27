@@ -241,12 +241,6 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.projectsForRepo(repoName.toUpperCase())).map((p) => p.id)).toEqual([a.id]);
       });
 
-      it("starts a new project with agents off", async () => {
-        const p = await repo.ensureProject({ ownerId: null, repoFullName: `contract/${randomUUID()}`, baseBranch: "main" });
-        expect(p.agents).toBe(false);
-        expect((await repo.projectById(p.id))?.agents).toBe(false);
-      });
-
       it("returns null for a project that does not exist", async () => {
         expect(await repo.projectById(randomUUID())).toBeNull();
       });

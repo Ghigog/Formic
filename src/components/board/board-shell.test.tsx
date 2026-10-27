@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { BoardShell } from "./board-shell";
 import { makeCard } from "@/test/cards";
 import type { BoardCard } from "@/lib/domain/entities";
@@ -104,12 +104,9 @@ describe("BoardShell", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows an agent menu on every working column, and none when agents are off", () => {
+  it("shows an agent menu on every working column", () => {
     renderShell([makeCard({ status: "ready" })]);
     expect(screen.getAllByRole("button", { name: /^Agent for / }).length).toBeGreaterThan(0);
-    cleanup();
-    renderShell([makeCard({ status: "ready" })], { agentsOn: false });
-    expect(screen.queryByRole("button", { name: /^Agent for / })).not.toBeInTheDocument();
   });
 
   it("shows an empty state in each column when the board has no cards", () => {

@@ -237,7 +237,6 @@ function store(): Store {
     name: "Formic",
     repoFullName: normalizeRepo(process.env.GITHUB_REPO) ?? "Ghigog/Formic",
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
-    agents: true, // the local-mode board is the one tests and a bare checkout run agents on
     autoMerge: false,
     autoEscalate: false,
     colonySize: null,
@@ -647,11 +646,6 @@ export class MemoryRepository implements Repository {
     if (project) project.shareKeys = shareKeys;
   }
 
-  async setAgents(projectId: string, agents: boolean): Promise<void> {
-    const project = store().projects.get(projectId);
-    if (project) project.agents = agents;
-  }
-
   async cardActor(cardId: string): Promise<string | null> {
     const s = store();
     const own = s.actors.get(cardId);
@@ -730,7 +724,6 @@ export class MemoryRepository implements Repository {
       name: input.name ?? input.repoFullName?.split("/")[1] ?? input.repoFullName ?? "Board",
       repoFullName: input.repoFullName ?? "",
       baseBranch: input.baseBranch,
-      agents: false,
       autoMerge: false,
       autoEscalate: false,
       colonySize: null,

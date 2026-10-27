@@ -25,12 +25,12 @@ import {
 } from "@/lib/agents/pipeline";
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { completeEpic, reviewPullRequest, startShowcase } from "@/lib/review/pipeline";
-import { boardRunsAgents, projectFor } from "@/lib/board/project";
+import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
 import { columnIsPlain, columnLimit } from "@/lib/agents/presets";
 import { startedBy } from "@/lib/auth/actor";
-import { agentsEnabled, prdSchema } from "@/lib/domain/entities";
+import { prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
 import { readiness } from "@/lib/domain/stack";
 import { claimOrQueue, startQueued } from "@/lib/board/queue";
@@ -178,11 +178,11 @@ export async function applyTransition(
     return { ok: true, status: card.status, runId: null, problem: misplaced?.reason ?? null };
   }
 
-  // Into a plain column (agents off, or "No agent" chosen for it) a card is
+  // Into a plain column ("No agent" chosen for it) a card is
   // only moved: nothing starts, nothing is asked of a provider or GitHub, and
   // a card dropped in Done is scored by the repository (see move).
   // Dependencies and column agents do not apply.
-  if (!agentsEnabled(await projectFor(projectId)) || (await columnIsPlain(projectId, t.to))) {
+  if (await columnIsPlain(projectId, t.to)) {
     const status = card.kind === "epic" && t.to === "todo" ? "ready" : statusForUserDrop(t.to, true);
     const position = await placeAmong(projectId, t.to, card, t.position);
     await repo.move({
@@ -398,7 +398,6 @@ export async function applyTransition(
  * prerequisite that is blocked or failed stops the Queen (see planQueen).
  */
 export async function advanceQueens(projectId: string): Promise<void> {
-  if (!(await boardRunsAgents(projectId))) return;
   const repo = repository();
   for (const queen of await repo.listQueens(projectId)) {
     const cards = await repo.boardCards(projectId);

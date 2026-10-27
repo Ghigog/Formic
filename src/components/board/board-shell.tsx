@@ -47,7 +47,6 @@ export function BoardShell({
   projectName,
   repoFullName,
   initialStats,
-  agentsOn = true,
   initialPresets = [],
   initialColumnAgents = {},
   initialAgentUsage = {},
@@ -67,8 +66,6 @@ export function BoardShell({
   /** No longer shown; callers may still pass it. */
   baseBranch?: string;
   initialStats: AmbientStats;
-  /** Whether agents work on this board. Off, columns show no agent menus or pickers. */
-  agentsOn?: boolean;
   initialPresets?: AgentPreset[];
   initialColumnAgents?: ColumnAgents;
   /** What each saved agent has used, in tokens, as of this render. */
@@ -229,20 +226,16 @@ export function BoardShell({
             void agentState.refreshUsage();
           },
         }}
-        agents={
-          agentsOn
-            ? {
-                presets: agentState.presets,
-                columns: agentState.columns,
-                onAssign: agentState.assign,
-                onEdit: (column, preset) => {
-                  setEditing({ column, preset });
-                  // Opening an agent asks what it has used since this page loaded.
-                  if (preset) void agentState.refreshUsage();
-                },
-              }
-            : undefined
-        }
+        agents={{
+          presets: agentState.presets,
+          columns: agentState.columns,
+          onAssign: agentState.assign,
+          onEdit: (column, preset) => {
+            setEditing({ column, preset });
+            // Opening an agent asks what it has used since this page loaded.
+            if (preset) void agentState.refreshUsage();
+          },
+        }}
       />
 
       {editing && (
