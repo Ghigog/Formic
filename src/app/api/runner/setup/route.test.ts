@@ -8,13 +8,27 @@ vi.mock("@/lib/board/project", () => ({
 }));
 vi.mock("@/lib/runner/setup", () => ({ runnerSetup }));
 
+const { repository } = await import("@/lib/db");
 const { GET } = await import("./route");
 
-const project = { id: "p-1", repoFullName: "a/board", baseBranch: "main" };
+let project: { id: string; repoFullName: string; baseBranch: string };
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
+  globalThis.__formicMemoryStore = undefined;
+  const repo = repository();
+  project = await repo.ensureProject({ ownerId: null, repoFullName: "a/board", baseBranch: "main" });
+  const preset = await repo.savePreset({ provider: "anthropic", name: "Coder", model: "m", prompt: "p", ownerId: null });
+  await repo.setColumnAgent(project.id, "in_progress", preset.id);
   activeProject.mockResolvedValue(project);
+});
+
+describe("GET /api/runner/setup with no agent on the board", () => {
+  it("says ready without opening a pull request", async () => {
+    await repository().setColumnAgent(project.id, "in_progress", null);
+    expect(await (await GET()).json()).toEqual({ state: "ready" });
+    expect(runnerSetup).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/runner/setup", () => {
