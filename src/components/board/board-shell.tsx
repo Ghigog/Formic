@@ -210,7 +210,10 @@ export function BoardShell({
         onShowcase={(epic) => setOpenEpicId(epic.id)}
         onNewItem={(column) => setDialog({ column })}
         onTransition={transition}
-        onArchived={(id) => setArchivedIds((prev) => new Set(prev).add(id))}
+        onArchived={(id) => {
+          setArchivedIds((prev) => new Set(prev).add(id));
+          setRestored((prev) => prev.filter((c) => c.id !== id));
+        }}
         account={account}
         noCi={noCi}
         noSandboxKey={noSandboxKey}
