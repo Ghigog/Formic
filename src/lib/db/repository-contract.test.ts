@@ -165,9 +165,9 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
-    describe("a person moving a ticket to Done on a board without agents", () => {
+    describe("a person moving a ticket to Done in a plain column", () => {
       const done = (cardId: string) =>
-        repo.move({ cardId, kind: "ticket", status: "merged", stalledIn: null, position: 1 });
+        repo.move({ cardId, kind: "ticket", status: "merged", stalledIn: null, position: 1, plain: true });
 
       it("scores it like a merge, once", async () => {
         const p = await project();
@@ -181,6 +181,15 @@ function contract(name: string, make: () => Repository) {
         expect(first?.mergedAt).toBeTruthy();
         await done(t.id);
         expect((await repo.cardById(t.id))?.mergedAt).toBe(first?.mergedAt);
+      });
+
+      it("does not score it when the column has an agent", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "T1", { storyPoints: 3 })]);
+        if (!t) throw new Error("no ticket created");
+        await repo.move({ cardId: t.id, kind: "ticket", status: "merged", stalledIn: null, position: 1 });
+        expect((await repo.cardById(t.id))?.mergedAt).toBeFalsy();
       });
     });
 

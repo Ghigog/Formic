@@ -28,7 +28,7 @@ import { completeEpic, reviewPullRequest, startShowcase } from "@/lib/review/pip
 import { boardRunsAgents, projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
-import { columnLimit, columnUnassigned } from "@/lib/agents/presets";
+import { columnIsPlain, columnLimit } from "@/lib/agents/presets";
 import { startedBy } from "@/lib/auth/actor";
 import { agentsEnabled, prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
@@ -178,10 +178,11 @@ export async function applyTransition(
     return { ok: true, status: card.status, runId: null, problem: misplaced?.reason ?? null };
   }
 
-  // With agents off a card is only moved: nothing starts, nothing is asked of
-  // a provider or GitHub, and a card dropped in Done is scored by the
-  // repository (see move). Dependencies and column agents do not apply.
-  if (!agentsEnabled(await projectFor(projectId))) {
+  // Into a plain column (agents off, or "No agent" chosen for it) a card is
+  // only moved: nothing starts, nothing is asked of a provider or GitHub, and
+  // a card dropped in Done is scored by the repository (see move).
+  // Dependencies and column agents do not apply.
+  if (!agentsEnabled(await projectFor(projectId)) || (await columnIsPlain(projectId, t.to))) {
     const status = card.kind === "epic" && t.to === "todo" ? "ready" : statusForUserDrop(t.to, true);
     const position = await placeAmong(projectId, t.to, card, t.position);
     await repo.move({
@@ -191,6 +192,7 @@ export async function applyTransition(
       stalledIn: null,
       position,
       detached,
+      plain: true,
     });
     await repo.rebalanceColumn(projectId, t.to);
     await publish(projectId, {
@@ -230,13 +232,6 @@ export async function applyTransition(
       return { ok: true, status: "merged", runId: null };
     }
     return { ok: false, reason: said, revertTo: shown };
-  }
-
-  // In Progress with no agent could only start a run that fails, so the
-  // card goes straight back and the board points at the column's agent menu.
-  if (card.kind === "ticket" && t.to === "in_progress" && canUserMove(home, t.to).ok) {
-    const unassigned = await columnUnassigned(projectId, t.to);
-    if (unassigned) return { ok: false, reason: unassigned, revertTo: shown, needsAgent: t.to };
   }
 
   // Somewhere it cannot work: it lands there anyway, as the person asked,

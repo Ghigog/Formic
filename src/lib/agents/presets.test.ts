@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agentConfigFor, agentFor, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
+import { agentConfigFor, agentFor, columnIsPlain, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
 import { AnthropicProductAgent } from "./anthropic";
@@ -139,6 +139,21 @@ describe("agent templates", () => {
     const outcome = await (await agentFor(PROJECT, "coder")).implement({} as never, {} as never);
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.error).toMatch(/No agent is set for In Progress/);
+  });
+
+  it("treats a column with no agent as a plain one", async () => {
+    vi.stubEnv("AGENT_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    expect(await columnIsPlain(PROJECT, "in_progress")).toBe(true);
+  });
+
+  it("does not treat a column with a chosen agent as plain, even without a key", async () => {
+    vi.stubEnv("AGENT_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    const preset = await savePreset({ ...worker, apiKey: null });
+    await repository().setColumnAgent(PROJECT, "in_progress", preset.id);
+    expect(await columnIsPlain(PROJECT, "in_progress")).toBe(false);
+    expect(await agentConfigFor(PROJECT, "in_progress")).toMatchObject({ apiKey: null });
   });
 
   it("in local mode, runs Claude on the server key when there is one", async () => {

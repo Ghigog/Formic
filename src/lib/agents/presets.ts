@@ -74,7 +74,8 @@ export async function savePreset(
 type Resolution =
   | { kind: "configured"; config: AgentConfig; presetId: string | null }
   | { kind: "mock" }
-  | { kind: "unassigned" }
+  /** "No agent": a plain column. Cards are moved through it by hand and nothing runs. */
+  | { kind: "plain" }
   | { kind: "limited"; reason: string };
 
 /** The reason a preset takes no work right now, or null when it can. */
@@ -200,10 +201,11 @@ async function resolveColumn(projectId: string, column: ColumnId): Promise<Resol
     };
   }
 
-  if (!local) return { kind: "unassigned" };
+  if (!local) return { kind: "plain" };
   // Mocks are a development and test affordance, chosen explicitly. On a board
-  // a person is using, a column with no agent is unassigned — its card stops
-  // and asks for one — rather than quietly running a mock.
+  // a person is using, a column with no agent is a plain column rather than
+  // quietly running a mock. (A column with an agent chosen but no usable key
+  // is `configured` above: its card stops and asks for the key when it runs.)
   if (mockAgentsEnabled()) return { kind: "mock" };
   if (envKey("anthropic")) {
     return {
@@ -212,7 +214,7 @@ async function resolveColumn(projectId: string, column: ColumnId): Promise<Resol
       presetId: null,
     };
   }
-  return { kind: "unassigned" };
+  return { kind: "plain" };
 }
 
 /** Why a column takes no work right now: its agent is out of usage. */
@@ -223,16 +225,12 @@ export async function columnLimit(projectId: string, column: ColumnId): Promise<
 }
 
 /**
- * Why a column cannot start work: nobody has given it an agent. Null when it
- * has one. Checked as a card is dropped, so it goes straight back instead of
- * starting a run that can only fail.
+ * Whether a column is a plain one: "No agent" is chosen for it, so a card
+ * dropped there is only moved. Nothing starts and nothing is asked of it.
  */
-export async function columnUnassigned(projectId: string, column: ColumnId): Promise<string | null> {
-  if (agentsOverridden()) return null;
-  const resolved = await resolveColumn(projectId, column);
-  return resolved.kind === "unassigned"
-    ? `Set an agent for ${COLUMN_LABELS[column]} first. Pick one from its agent menu, then move the card again.`
-    : null;
+export async function columnIsPlain(projectId: string, column: ColumnId): Promise<boolean> {
+  if (agentsOverridden()) return false;
+  return (await resolveColumn(projectId, column)).kind === "plain";
 }
 
 /**
@@ -313,8 +311,8 @@ function refusing(error: string): AgentRegistry[keyof AgentRegistry] {
   } as unknown as AgentRegistry[keyof AgentRegistry];
 }
 
-/** An agent for a column nobody has given one. Every call says so. */
-function unassigned(column: ColumnId): AgentRegistry[keyof AgentRegistry] {
+/** An agent for a plain column. Every call says so. */
+function plainColumn(column: ColumnId): AgentRegistry[keyof AgentRegistry] {
   return refusing(
     `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
   );
@@ -328,7 +326,7 @@ export async function agentFor<K extends keyof AgentRegistry>(
   if (agentsOverridden()) return agents()[role];
   const { column, make } = BUILD[role];
   const resolved = await resolveColumn(projectId, column);
-  if (resolved.kind === "unassigned") return unassigned(column) as AgentRegistry[K];
+  if (resolved.kind === "plain") return plainColumn(column) as AgentRegistry[K];
   if (resolved.kind === "limited") return refusing(resolved.reason) as AgentRegistry[K];
   if (resolved.kind === "mock") return agents()[role];
   const info = providerInfo(resolved.config.provider ?? "anthropic");
@@ -513,7 +511,7 @@ export async function columnChatAgentFor(projectId: string, column: ColumnId): P
     reason: `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
   };
   const resolved = await resolveColumn(projectId, column);
-  if (resolved.kind === "unassigned" || resolved.kind === "mock") return unavailable;
+  if (resolved.kind === "plain" || resolved.kind === "mock") return unavailable;
   if (resolved.kind === "limited") return { kind: "limited", reason: resolved.reason };
   const info = providerInfo(resolved.config.provider ?? "anthropic");
   if (!info) return unavailable;
