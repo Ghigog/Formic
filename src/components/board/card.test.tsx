@@ -459,6 +459,63 @@ describe("a card's entry time", () => {
   });
 });
 
+describe("the agent timer in the footer", () => {
+  afterEach(() => vi.useRealTimers());
+  const TIMER = "[title='Time the agent has been working on this']";
+  const enteredAt = "2026-03-05T14:30:00Z";
+  const now = new Date(enteredAt).getTime() + 14 * 60_000 + 40_000;
+  const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
+  async function renderCol(id: "in_progress" | "in_review" | "todo", card: BoardCard, extras: CardExtras = {}) {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const out = renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id={id} cards={[card]} extras={{ [card.id]: extras }} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    return out;
+  }
+  const since = new Date(now - 14 * 60_000 - 40_000).toISOString();
+
+  it("replaces the in-column duration on a running card, with no second timer", async () => {
+    const { container } = await renderCol(
+      "in_progress",
+      makeCard({ status: "running", stage: 3, enteredAt, agentRole: "coder", workingSince: since }),
+    );
+    expect(container.querySelectorAll(TIMER)).toHaveLength(1);
+    const footer = container.querySelector("time")!;
+    expect(footer.querySelector(TIMER)?.textContent).toMatch(/^14:4\d$/);
+    expect(footer.textContent).not.toContain("14m");
+  });
+
+  it("shows one timer on a review card, in the footer", async () => {
+    const { container } = await renderCol(
+      "in_review",
+      makeCard({ status: "review", enteredAt, agentRole: "reviewer", workingSince: since }),
+    );
+    expect(container.querySelectorAll(TIMER)).toHaveLength(1);
+    expect(container.querySelector("time")!.querySelector(TIMER)).not.toBeNull();
+    expect(container.querySelector("time")!.textContent).not.toContain("14m");
+  });
+
+  it("shows the timer alone when the card has no entry time", async () => {
+    const { container } = await renderCol(
+      "in_progress",
+      makeCard({ status: "running", stage: 3, enteredAt: null, agentRole: "coder", workingSince: since }),
+    );
+    expect(container.querySelectorAll(TIMER)).toHaveLength(1);
+  });
+
+  it("keeps the in-column duration on a card with no agent", async () => {
+    const { container } = await renderCol("todo", makeCard({ status: "ready", enteredAt }));
+    expect(container.querySelector("time")?.textContent).toMatch(/14m$/);
+    expect(container.querySelector(TIMER)).toBeNull();
+  });
+});
+
 describe("a bug's tag on the board", () => {
   const renderIn = (id: "in_progress" | "done", card: BoardCard) =>
     renderInDnd(
