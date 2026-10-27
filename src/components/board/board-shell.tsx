@@ -108,10 +108,13 @@ export function BoardShell({
   // Tickets archived from this board. The server leaves them out of the next
   // fetch; this hides them in the meantime.
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
-  const cards = useMemo(
-    () => boardCards.filter((c) => !c.archived && !archivedIds.has(c.id)),
-    [boardCards, archivedIds],
-  );
+  // Cards restored from the Archived view, until the server's board has them.
+  const [restored, setRestored] = useState<BoardCard[]>([]);
+  const cards = useMemo(() => {
+    const live = boardCards.filter((c) => !c.archived && !archivedIds.has(c.id));
+    const have = new Set(live.map((c) => c.id));
+    return [...live, ...restored.filter((c) => !have.has(c.id))];
+  }, [boardCards, archivedIds, restored]);
   // The archive, fetched once the first time a filter asks for it.
   const [archiveWanted, setArchiveWanted] = useState(false);
   const [archive, setArchive] = useState<BoardCard[]>([]);
@@ -126,6 +129,16 @@ export function BoardShell({
         fetchedArchive.current = false;
       });
   }, [archiveWanted]);
+  const restore = (card: BoardCard) => {
+    setArchivedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(card.id);
+      return next;
+    });
+    setArchive((prev) => prev.filter((c) => c.id !== card.id));
+    setRestored((prev) => [...prev.filter((c) => c.id !== card.id), card]);
+    void refetch();
+  };
   // Cards archived this session stay in the list, marked archived.
   const boardShown = useMemo(() => {
     if (!archiveWanted) return cards;
@@ -187,6 +200,7 @@ export function BoardShell({
       <Board
         cards={boardShown}
         onArchivedWanted={setArchiveWanted}
+        onRestored={restore}
         extras={merged}
         projectName={projectName}
         repoFullName={repoFullName}

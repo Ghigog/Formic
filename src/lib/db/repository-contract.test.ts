@@ -1149,7 +1149,16 @@ function contract(name: string, make: () => Repository) {
 
         await repo.updateTicket(a!.id, { archived: true });
 
-        expect((await repo.archivedTickets(p.id)).map((c) => c.id)).toEqual([a!.id]);
+        const archived = await repo.archivedTickets(p.id);
+        expect(archived.map((c) => c.id)).toEqual([a!.id]);
+        // It keeps the column it came from, not a placeholder.
+        expect(archived[0]).toMatchObject({
+          status: a!.status,
+          stalledIn: a!.stalledIn ?? null,
+          stage: a!.stage,
+          epicId: epic.id,
+          size: a!.size ?? null,
+        });
         const board = (await repo.boardCards(p.id)).map((c) => c.id);
         expect(board).toContain(b!.id);
         expect(board).not.toContain(a!.id);
