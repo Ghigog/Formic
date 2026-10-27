@@ -604,7 +604,7 @@ export class PrismaRepository implements Repository {
         position: true,
         createdAt: true,
         updatedAt: true,
-        tickets: { where: { scoutOf: null }, select: { id: true, status: true } },
+        tickets: { where: { scoutOf: null, archived: false }, select: { id: true, status: true } },
         queen: { select: { id: true } },
         runs: {
           where: { status: { in: ["queued", "running"] } },
@@ -1583,7 +1583,7 @@ export class PrismaRepository implements Repository {
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
     const db = prisma();
     const rows = await db.ticket.findMany({
-      where: { epicId, scoutOf: null },
+      where: { epicId, scoutOf: null, archived: false },
       orderBy: { position: "asc" },
       include: { epic: { select: { projectId: true } } },
     });
