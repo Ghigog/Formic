@@ -10,6 +10,7 @@ import {
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { modelLabel } from "@/lib/agents/models";
 import { provider as providerInfo, shortModelName } from "@/lib/llm/providers";
+import { AutoTour } from "@/components/onboarding/tour";
 import { useCountdown } from "@/lib/hooks/use-countdown";
 
 /** "Sonnet 5" for a known Claude model, the bare id for anything else. */
@@ -45,7 +46,10 @@ export function AgentSelect({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Element;
+      // The ant is portaled out of the menu; using it must not close the menu and end its tour.
+      if (t.closest?.("[data-tour-overlay]")) return;
+      if (!root.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -102,11 +106,14 @@ export function AgentSelect({
         <div
           role="menu"
           aria-label={`Agents for ${COLUMN_LABELS[column]}`}
+          data-tour="agent-menu-agents"
           className="bg-card border-line shadow-lift absolute top-full right-0 left-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-lg border p-1"
         >
+          <AutoTour id="agent-menu" />
           <button
             type="button"
             role="menuitemradio"
+            data-tour="agent-menu-none"
             aria-checked={!selected}
             className={item}
             onClick={() => void pick(null)}
@@ -158,7 +165,7 @@ export function AgentSelect({
           ))}
 
           {!presets.some((p) => p.hasKey) && (
-            <p className="text-muted px-2 py-1.5 text-[11px]">
+            <p data-tour="agent-menu-key" className="text-muted px-2 py-1.5 text-[11px]">
               Agents need an API key.{" "}
               <a href="/settings" className="text-ink font-semibold underline">
                 Add a key in Settings
@@ -169,6 +176,7 @@ export function AgentSelect({
           <button
             type="button"
             role="menuitem"
+            data-tour="agent-menu-key"
             className={cn(item, "text-terracotta font-semibold")}
             onClick={() => {
               setOpen(false);
