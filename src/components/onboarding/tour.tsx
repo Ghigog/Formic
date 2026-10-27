@@ -331,7 +331,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   const boardSteps = steps.length;
 
   return (
-    <div data-testid="tour" className="pointer-events-none fixed inset-0 z-[1000]">
+    <div data-testid="tour" data-tour-overlay className="pointer-events-none fixed inset-0 z-[1000]">
       <svg
         aria-hidden="true"
         width="100%"
