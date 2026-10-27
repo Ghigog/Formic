@@ -245,6 +245,7 @@ describe("the agent drop-down's tour", () => {
     render(menu());
     await open();
     expect(screen.getByRole("dialog", { name: "Tour: No agent" }).textContent).toContain("by hand");
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await flush();
     expect(screen.getByRole("dialog", { name: "Tour: Pick an agent" })).toBeTruthy();

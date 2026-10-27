@@ -46,7 +46,10 @@ export function AgentSelect({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Element;
+      // The ant is portaled out of the menu; using it must not close the menu and end its tour.
+      if (t.closest?.("[data-tour-overlay]")) return;
+      if (!root.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
