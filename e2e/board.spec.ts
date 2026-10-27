@@ -198,8 +198,8 @@ test("picking another repository switches the board to it", async ({ page }) => 
   await picker.getByLabel("Search repositories").fill("acme/widgets");
   await picker.getByRole("button", { name: /Use\s*acme\/widgets/ }).click();
 
-  // A new repository starts a board of its own. It starts with its
-  // AGENTS.md ticket in To Do.
+  // A new repository starts a board of its own. Its columns start on "No agent",
+  // and it starts with its AGENTS.md ticket in To Do.
   await expect(page.getByRole("button", { name: /Choose another project/ }).first())
     .toHaveAttribute("title", "acme/widgets");
   await expect(cardIds(page, "To Do")).resolves.toHaveLength(1);
