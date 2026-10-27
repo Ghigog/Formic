@@ -24,8 +24,6 @@ export interface ColumnAgentControls {
   onAssign: (presetId: string | null) => Promise<void>;
   /** Opens the editor: an existing preset, or null for a new one. */
   onEdit: (preset: AgentPreset | null) => void;
-  /** A card was refused for want of an agent here: outlined until one is set. */
-  alert?: boolean;
 }
 
 /**
@@ -38,7 +36,6 @@ export function AgentSelect({
   selected,
   onAssign,
   onEdit,
-  alert = false,
 }: ColumnAgentControls & { column: ColumnId }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,12 +81,12 @@ export function AgentSelect({
         aria-label={`Agent for ${COLUMN_LABELS[column]}: ${selected?.name ?? `built-in ${role}`}. Change`}
         className={cn(
           "bg-card flex h-11 w-full items-center gap-1.5 rounded-md border px-2 md:h-8 text-left text-[11px] transition-colors",
-          alert ? "border-crimson ring-crimson/25 ring-2" : "border-line hover:border-clay",
+          "border-line hover:border-clay",
         )}
       >
         <AgentIcon />
         <span className="text-ink min-w-0 flex-1 truncate font-medium">
-          {selected ? selected.name : "Choose an agent"}
+          {selected ? selected.name : "No agent"}
         </span>
         <span className="text-muted shrink-0 font-mono text-[10px]">
           {selected
@@ -160,6 +157,14 @@ export function AgentSelect({
             </div>
           ))}
 
+          {!presets.some((p) => p.hasKey) && (
+            <p className="text-muted px-2 py-1.5 text-[11px]">
+              Agents need an API key.{" "}
+              <a href="/settings" className="text-ink font-semibold underline">
+                Add a key in Settings
+              </a>
+            </p>
+          )}
           <div aria-hidden className="bg-hairline my-1 h-px" />
           <button
             type="button"

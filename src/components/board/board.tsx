@@ -124,9 +124,6 @@ export function Board({
   // first rendered, so nothing the server said about it afterwards showed.
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
   const [error, setError] = useState<string | null>(null);
-  /** The column that last refused a card for want of an agent, until it has one. */
-  const [needsAgent, setNeedsAgent] = useState<ColumnId | null>(null);
-  const agentMissing = needsAgent !== null && !!agents && !agents.columns[needsAgent];
   const [activeTab, setActiveTab] = useState<ColumnId>("backlog");
   const [collapsed, setCollapsed] = useState<Record<ColumnId, Set<string>>>(
     () => ({
@@ -326,7 +323,6 @@ export function Board({
         // because `live` falls through to server state.
         settle();
         setError(result.reason);
-        setNeedsAgent(result.needsAgent ?? null);
         // After the card has snapped back, so the flash lands on it. The
         // full reason is in the banner above and the card's "!"; the flash
         // itself just needs to say something went wrong.
@@ -428,7 +424,6 @@ export function Board({
           selected: agents.presets.find((p) => p.id === agents.columns[col]),
           onAssign: (presetId) => agents.onAssign(col, presetId),
           onEdit: (preset) => agents.onEdit(col, preset),
-          alert: agentMissing && needsAgent === col,
         }
       }
       composer={

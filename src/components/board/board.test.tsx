@@ -132,7 +132,7 @@ describe("Board seeded from the saved board view", () => {
 });
 
 describe("Board, on a wide screen", () => {
-  it("keeps a ticket in To Do and outlines In Progress's agent menu when that column has no agent", async () => {
+  it("keeps a ticket in To Do when In Progress has no agent", async () => {
     const ticket = makeCard({ kind: "ticket", status: "ready", key: "T-1" });
     const onTransition = vi.fn(
       async (): Promise<TransitionResult> => ({
@@ -151,8 +151,17 @@ describe("Board, on a wide screen", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Set an agent for In Progress first");
     expect(within(screen.getByRole("region", { name: "To Do" })).getByText(ticket.title)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Agent for In Progress/ })).toHaveClass("border-crimson");
-    expect(screen.getByRole("button", { name: /Agent for To Do/ })).not.toHaveClass("border-crimson");
+    expect(screen.getByRole("button", { name: /Agent for In Progress/ })).not.toHaveClass("border-crimson");
+  });
+
+  it("shows every column's agent drop-down set to No agent, with no red outline", () => {
+    renderBoard([], { agents: { presets: [], columns: {}, onAssign: vi.fn(), onEdit: vi.fn() } });
+    const selects = screen.getAllByRole("button", { name: /^Agent for / });
+    expect(selects.length).toBeGreaterThan(0);
+    for (const select of selects) {
+      expect(select).toHaveTextContent("No agent");
+      expect(select).not.toHaveClass("border-crimson");
+    }
   });
 
   it("points to the sandbox key in Settings when there is none", () => {
