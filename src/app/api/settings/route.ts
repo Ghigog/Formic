@@ -36,7 +36,6 @@ const bodySchema = z.object({
   autoEscalate: z.boolean().optional(),
   /** Whether members may run on the owner's keys when they have none of their own. */
   shareKeys: z.boolean().optional(),
-  /** Whether the board runs the agent pipeline; turning it on needs a linked repository. */
   /** An existing agent preset id, or null for the In Progress column's agent. */
   scoutPresetId: z.string().min(1).nullable().optional(),
 });
