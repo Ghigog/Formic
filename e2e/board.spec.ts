@@ -198,8 +198,8 @@ test("picking another repository switches the board to it", async ({ page }) => 
   await picker.getByLabel("Search repositories").fill("acme/widgets");
   await picker.getByRole("button", { name: /Use\s*acme\/widgets/ }).click();
 
-  // A new repository starts a board of its own. Its agents are off, so it
-  // starts empty: no AGENTS.md ticket until agents are turned on.
+  // A new repository starts a board of its own. Its columns start on "No agent", so it
+  // starts empty: no AGENTS.md ticket.
   await expect(page.getByRole("button", { name: /Choose another project/ }).first())
     .toHaveAttribute("title", "acme/widgets");
   await expect(cardIds(page, "To Do")).resolves.toHaveLength(0);
@@ -262,12 +262,6 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
   // then is overwritten when React takes over the input.
   await page.waitForLoadState("networkidle");
 
-  // With agents off the AI sections are hidden, so turn them on if they are
-  // not. The switch flips once the server has saved it, so wait for that
-  // rather than check().
-  const agents = page.getByRole("switch", { name: "Agents", exact: true });
-  if (!(await agents.isChecked())) await agents.click();
-  await expect(agents).toBeChecked();
   await expect(page.getByRole("heading", { name: "Sandbox (E2B)" })).toBeVisible();
 
   // The page has more than one Save button (GitHub access, limits, renewal), so

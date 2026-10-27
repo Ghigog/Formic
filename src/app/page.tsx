@@ -13,7 +13,6 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { withActor } from "@/lib/auth/actor";
 import { agentView } from "@/lib/agents/board-agents";
 import { vcs } from "@/lib/vcs";
-import { agentsEnabled } from "@/lib/domain/entities";
 import { seedReviewCi } from "@/lib/board/review-ci";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +83,6 @@ export default async function BoardPage() {
       initialExtras={demo ? FIXTURE_EXTRAS : reviewCi}
       projectName={project.name}
       repoFullName={project.repoFullName}
-      agentsOn={agentsEnabled(project)}
       noCi={!hasCi}
       noSandboxKey={noSandboxKey}
       autoMerge={project.autoMerge}

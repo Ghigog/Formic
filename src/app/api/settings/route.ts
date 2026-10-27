@@ -23,7 +23,6 @@ import {
 import { authMode } from "@/lib/auth/session";
 import { LIMIT_AXES, validateLimitSetting } from "@/lib/domain/limit-settings";
 import { resetEnvCache } from "@/lib/secrets/env";
-import { runnerSetup } from "@/lib/runner/setup";
 import { hintFor, seal } from "@/lib/secrets/vault";
 
 export const dynamic = "force-dynamic";
@@ -37,8 +36,6 @@ const bodySchema = z.object({
   autoEscalate: z.boolean().optional(),
   /** Whether members may run on the owner's keys when they have none of their own. */
   shareKeys: z.boolean().optional(),
-  /** Whether the board runs the agent pipeline; turning it on needs a linked repository. */
-  agents: z.boolean().optional(),
   /** An existing agent preset id, or null for the In Progress column's agent. */
   scoutPresetId: z.string().min(1).nullable().optional(),
 });
@@ -131,7 +128,6 @@ export async function GET(req?: Request) {
       autoMerge: found.project.autoMerge,
       autoEscalate: found.project.autoEscalate,
       shareKeys: found.project.shareKeys,
-      agents: found.project.agents,
       scoutPresetId: found.project.scoutPresetId,
     });
   }
@@ -245,14 +241,13 @@ export async function PUT(req: Request) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
   }
 
-  const { projectId, autoMerge, autoEscalate, shareKeys, agents, scoutPresetId } = body.data;
+  const { projectId, autoMerge, autoEscalate, shareKeys, scoutPresetId } = body.data;
   const forProject =
     autoMerge !== undefined || autoEscalate !== undefined || shareKeys !== undefined ||
-    agents !== undefined ||
     scoutPresetId !== undefined;
   if (forProject !== (projectId !== undefined)) {
     return Response.json(
-      { error: "autoMerge, autoEscalate, shareKeys, agents, scoutPresetId and projectId go together." },
+      { error: "autoMerge, autoEscalate, shareKeys, scoutPresetId and projectId go together." },
       { status: 400 },
     );
   }
@@ -262,23 +257,15 @@ export async function PUT(req: Request) {
     if (scoutPresetId && !(await repository().presetForRun(scoutPresetId))) {
       return Response.json({ error: "That agent does not exist." }, { status: 400 });
     }
-    if (agents && !found.project.repoFullName) {
-      return Response.json({ error: "Link a repository before turning agents on." }, { status: 400 });
-    }
     if (autoMerge !== undefined) await repository().setAutoMerge(found.project.id, autoMerge);
     if (autoEscalate !== undefined) await repository().setAutoEscalate(found.project.id, autoEscalate);
     if (shareKeys !== undefined) await repository().setShareKeys(found.project.id, shareKeys);
     if (scoutPresetId !== undefined) await repository().setScoutAgent(found.project.id, scoutPresetId);
-    if (agents !== undefined) await repository().setAgents(found.project.id, agents);
-    // Turning agents on opens the runner setup pull request, as a new board does.
-    const setup = agents ? await runnerSetup({ ...found.project, agents }) : undefined;
     return Response.json({
       ...(autoMerge !== undefined && { autoMerge }),
       ...(autoEscalate !== undefined && { autoEscalate }),
       ...(shareKeys !== undefined && { shareKeys }),
       ...(scoutPresetId !== undefined && { scoutPresetId }),
-      ...(agents !== undefined && { agents }),
-      ...(setup && { setup }),
     });
   }
 

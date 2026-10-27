@@ -56,10 +56,10 @@ beforeEach(async () => {
   board = (await repo.ensureProject({ ownerId: me.id, repoFullName: null, name: "mine", baseBranch: "main" })).id;
 });
 
-const setAgents = (on: boolean) => {
-  globalThis.__formicMemoryStore!.projects.get(board)!.agents = on;
+const COLUMNS = ["backlog", "todo", "in_progress", "in_review", "done"] as const;
+const agentsOff = async () => {
+  for (const column of COLUMNS) await repository().setColumnAgent(board, column, null);
 };
-const agentsOff = () => setAgents(false);
 
 describe("write tools", () => {
   it("creates a backlog card and starts the Product Agent", async () => {
@@ -102,7 +102,7 @@ describe("write tools", () => {
 
   it("moves a ticket through In Progress to Done on an agents-off board with no run and card.status events", async () => {
     const id = await ticketOnBoard();
-    agentsOff();
+    await agentsOff();
     expect(await moveCard(rw(), { board, card: id, to: "in_progress" })).toMatchObject({ ok: true, value: { status: "running", runId: null } });
     expect(await moveCard(rw(), { board, card: id, to: "done" })).toMatchObject({ ok: true });
     expect(launched).toEqual([]);
@@ -111,7 +111,6 @@ describe("write tools", () => {
 
   it("starts the same run as a UI move on an agents-on board", async () => {
     const id = await ticketOnBoard();
-    setAgents(true);
     const repo = repository();
     const preset = await repo.savePreset({ name: "Coder", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
     await repo.setColumnAgent(board, "in_progress", preset.id);
@@ -121,7 +120,6 @@ describe("write tools", () => {
 
   it("returns the board's reason when it refuses a move", async () => {
     const id = await ticketOnBoard();
-    setAgents(true);
     const repo = repository();
     const preset = await repo.savePreset({ name: "Coder", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
     await repo.setColumnAgent(board, "done", preset.id);

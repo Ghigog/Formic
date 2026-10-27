@@ -46,12 +46,14 @@ beforeEach(async () => {
   await staffColumns();
 });
 
-/** A board with agents off: cards only move. */
-function agentsOff() {
-  globalThis.__formicMemoryStore!.projects.get(PROJECT)!.agents = false;
+/** Every column on "No agent": cards only move. */
+async function agentsOff() {
+  for (const column of ["backlog", "todo", "in_progress", "in_review", "done"] as const) {
+    await repository().setColumnAgent(PROJECT, column, null);
+  }
 }
 
-describe("a board with agents off", () => {
+describe("a board with every column on No agent", () => {
   it.each([
     ["ticket", "todo", "in_progress", "running"],
     ["ticket", "todo", "in_review", "review"],
@@ -59,7 +61,7 @@ describe("a board with agents off", () => {
   ] as const)("moves a %s from %s to %s and starts nothing", async (kind, from, to, status) => {
     const card = makeCard({ kind, status: kind === "epic" ? "draft" : "ready" });
     seedMemory([card]);
-    agentsOff();
+    await agentsOff();
     const result = await applyTransition(PROJECT, { cardId: card.id, kind, from, to, position: 1, actor: "user" });
 
     expect(result).toMatchObject({ ok: true, status });
@@ -70,18 +72,14 @@ describe("a board with agents off", () => {
   it("starts no Queen step", async () => {
     const card = makeCard({ kind: "ticket", status: "ready" });
     seedMemory([card]);
-    agentsOff();
+    await agentsOff();
     await repository().placeQueen(PROJECT, card.id, "ticket");
     await advanceQueens(PROJECT);
     expect(launched).toEqual([]);
   });
 });
 
-describe("a board with agents switched off", () => {
-  const flag = (off: boolean) => {
-    globalThis.__formicMemoryStore!.projects.get(PROJECT)!.agents = !off;
-  };
-  const drop = (id: string, from: "todo" | "in_review", to: "in_progress" | "done") =>
+describe("a board with its columns on No agent", () => {  const drop = (id: string, from: "todo" | "in_review", to: "in_progress" | "done") =>
     applyTransition(PROJECT, { cardId: id, kind: "ticket", from, to, position: 1, actor: "user" });
 
   async function unstaff() {
@@ -92,7 +90,6 @@ describe("a board with agents switched off", () => {
     const card = makeCard({ kind: "ticket", status: "ready" });
     seedMemory([card]);
     await unstaff();
-    flag(true);
     const result = await drop(card.id, "todo", "in_progress");
     expect(result).toMatchObject({ ok: true, status: "running" });
     expect(launched).toEqual([]);
@@ -101,7 +98,7 @@ describe("a board with agents switched off", () => {
   it("moves a ticket with a pull request to Done without a merge", async () => {
     const card = makeCard({ kind: "ticket", status: "review", prNumber: 7 });
     seedMemory([card]);
-    flag(true);
+    await agentsOff();
     const result = await drop(card.id, "in_review", "done");
     expect(result).toMatchObject({ ok: true, status: "merged" });
     expect(MockVcsClient.runner().files.size).toBe(0);

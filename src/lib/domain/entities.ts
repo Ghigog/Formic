@@ -109,16 +109,10 @@ export const projectSchema = z.object({
     .regex(/^[\w.-]+\/[\w.-]+$/, "Expected owner/repo")
     .nullable()
     .default(null),
-  agents: z.boolean().default(false),
   baseBranch: z.string().min(1).default("main"),
   createdAt: z.coerce.date(),
 });
 export type Project = z.infer<typeof projectSchema>;
-
-/** Whether agents work on this board. Every agent feature gates through here. */
-export function agentsEnabled(project: { agents: boolean }): boolean {
-  return project.agents;
-}
 
 export const prdSchema = z.object({
   summary: z.string().min(1),

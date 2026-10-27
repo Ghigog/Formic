@@ -7,7 +7,7 @@ import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
 import { runCoderAgent, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
-import { boardRunsAgents, projectFor } from "@/lib/board/project";
+import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { env } from "@/lib/secrets/env";
 import type { TicketDetail } from "@/lib/db/repository";
@@ -124,7 +124,6 @@ export async function reviewPullRequest(
   headSha: string,
   options: { startReview?: boolean } = {},
 ): Promise<void> {
-  if (!(await boardRunsAgents(projectId))) return;
   const repo = repository();
   const ticket = await repo.ticketByPrNumber(projectId, prNumber);
 
