@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AutoTour, Tour, TourHost } from "./tour";
 import { endTour, hasSeen, replayTours, startTour } from "./store";
-import type { TourDef } from "./tours";
+import { TOURS, type TourDef } from "./tours";
+import { AgentSelect } from "@/components/board/agent-select";
 import { speaks, syllable } from "./voice";
 
 /**
@@ -224,5 +225,45 @@ describe("the ant's voice", () => {
   it("gives the same letter the same syllable", () => {
     expect(syllable("k")).toEqual(syllable("K"));
     expect(syllable("a").freq).toBeGreaterThan(0);
+  });
+});
+
+describe("the agent drop-down's tour", () => {
+  const menu = () => (
+    <>
+      <TourHost />
+      <AgentSelect column="todo" presets={[]} selected={undefined} onAssign={async () => {}} onEdit={() => {}} />
+    </>
+  );
+  const open = async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Agent for/ }));
+    await flush();
+  };
+
+  it("explains no agent, picking one and the key, the first time it opens", async () => {
+    for (const name of ["agent-menu-none", "agent-menu-agents", "agent-menu-key"]) target(name);
+    render(menu());
+    await open();
+    expect(screen.getByRole("dialog", { name: "Tour: No agent" }).textContent).toContain("by hand");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await flush();
+    expect(screen.getByRole("dialog", { name: "Tour: Pick an agent" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await flush();
+    expect(screen.getByRole("dialog", { name: "Tour: A key" }).textContent).toContain("Settings");
+  });
+
+  it("does not run again once seen", async () => {
+    window.localStorage.setItem("formic:tours:seen", JSON.stringify(["agent-menu"]));
+    render(menu());
+    await open();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("the board tour", () => {
+  it("says columns start with no agent", () => {
+    const step = TOURS.board.steps.find((s) => s.title === "Column agents");
+    expect(step?.text).toContain("start with no agent");
   });
 });

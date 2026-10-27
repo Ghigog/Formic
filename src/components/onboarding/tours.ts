@@ -52,6 +52,7 @@ export type TourId =
   | "switch"
   | "ticket"
   | "agent"
+  | "agent-menu"
   | "colony";
 
 export const TOURS: Record<TourId, TourDef> = {
@@ -96,7 +97,7 @@ export const TOURS: Record<TourId, TourDef> = {
         target: "column-head",
         side: "below",
         title: "Column agents",
-        text: "Each column has its own agent: Product, Architect, Coder, Reviewer and PM. The keys you set up are used to create the agents here. My advice? Keep the default prompt for now. It's a good one.",
+        text: "Columns start with no agent. Open this drop-down and choose one: Product, Architect, Coder, Reviewer or PM. Its key comes from the ones you set up. My advice? Keep the default prompt for now. It's a good one.",
       },
       {
         target: "account",
@@ -162,6 +163,30 @@ export const TOURS: Record<TourId, TourDef> = {
         text: "This is its job description. The default is a good one, so leave it be for now.",
       },
       { target: "agent-save", side: "above", title: "Save", text: "Save, and this column's cards go to this agent." },
+    ],
+  },
+
+  "agent-menu": {
+    id: "agent-menu",
+    steps: [
+      {
+        target: "agent-menu-none",
+        side: "below",
+        title: "No agent",
+        text: "No agent is the default, so cards in this column wait for you to move them by hand.",
+      },
+      {
+        target: "agent-menu-agents",
+        side: "below",
+        title: "Pick an agent",
+        text: "Pick an agent and it works this column's cards for you.",
+      },
+      {
+        target: "agent-menu-key",
+        side: "below",
+        title: "A key",
+        text: "Each agent needs a key. Add one in Settings, then make an agent from it.",
+      },
     ],
   },
 
