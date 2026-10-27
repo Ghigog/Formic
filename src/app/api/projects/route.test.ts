@@ -97,10 +97,9 @@ describe("POST /api/projects", () => {
     const { project } = (await res.json()) as { project: { id: string; repoFullName: string } };
     expect(project.repoFullName).toBe("acme/widgets");
     expect(res.headers.get("set-cookie")).toContain(encodeURIComponent(project.id));
-    // Columns start on "No agent": no setup pull request, no onboarding ticket.
+    // Nothing runs and nothing is added until the first agent is picked.
     expect(launch).not.toHaveBeenCalled();
-    const cards = await repository().boardCards(project.id);
-    expect(cards).toEqual([]);
+    expect(await repository().boardCards(project.id)).toHaveLength(0);
   });
 
   it("reuses the project on a second request without setting it up again", async () => {

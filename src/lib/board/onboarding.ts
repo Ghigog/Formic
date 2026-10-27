@@ -29,9 +29,10 @@ export const ONBOARDING_TICKET = {
   fileScope: ["AGENTS.md", "CLAUDE.md"],
 };
 
-/** Puts the onboarding ticket in a new board's To Do column, ready to run. */
+/** Puts the onboarding ticket in a board's To Do column, ready to run; once only. */
 export async function addOnboardingTicket(projectId: string): Promise<void> {
   const repo = repository();
+  if ((await repo.boardCards(projectId)).some((c) => c.title === ONBOARDING_TICKET.title)) return;
   const { title, description, acceptanceCriteria, fileScope } = ONBOARDING_TICKET;
 
   const epic = await repo.createEpic({ projectId, title, rawRequest: title, position: 0 });
