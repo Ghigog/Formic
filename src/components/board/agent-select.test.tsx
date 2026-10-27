@@ -73,4 +73,28 @@ describe("AgentSelect", () => {
       unmount();
     }
   });
+
+  it("links to Settings to add a key when no agent has one", async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentSelect column="todo" presets={[preset({ hasKey: false })]} selected={undefined} onAssign={vi.fn()} onEdit={vi.fn()} />,
+    );
+    await user.click(screen.getByRole("button", { name: /Agent for To Do/ }));
+    expect(screen.getByRole("link", { name: /Add a key in Settings/ })).toHaveAttribute("href", "/settings");
+  });
+
+  it("shows the picked agent and no Settings link when a key exists", async () => {
+    const user = userEvent.setup();
+    const bob = preset({ id: "bob-1", name: "Bob" });
+    const onAssign = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <AgentSelect column="todo" presets={[bob]} selected={undefined} onAssign={onAssign} onEdit={vi.fn()} />,
+    );
+    await user.click(screen.getByRole("button", { name: /Agent for To Do/ }));
+    expect(screen.queryByRole("link", { name: /Settings/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("menuitemradio", { name: /Bob/ }));
+    expect(onAssign).toHaveBeenCalledWith("bob-1");
+    rerender(<AgentSelect column="todo" presets={[bob]} selected={bob} onAssign={onAssign} onEdit={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /Agent for To Do: Bob/ })).toHaveTextContent("Bob");
+  });
 });
