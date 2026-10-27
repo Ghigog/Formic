@@ -832,7 +832,7 @@ export class MemoryRepository implements Repository {
         card.workingSince = null;
       }
       if (card.kind !== "epic") continue;
-      const children = cards.filter((c) => c.epicId === card.id);
+      const children = cards.filter((c) => c.epicId === card.id && !c.archived);
       card.childCount = children.length;
       card.doneCount = children.filter((c) => c.status === "merged").length;
     }
@@ -1450,7 +1450,7 @@ export class MemoryRepository implements Repository {
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {
     const s = store();
     return [...s.cards.values()]
-      .filter((c) => c.kind === "ticket" && c.epicId === epicId && !isScout(s, c))
+      .filter((c) => c.kind === "ticket" && c.epicId === epicId && !c.archived && !isScout(s, c))
       .sort(byPosition)
       .map((c) => toDetail(c, s.ticketExtras.get(c.id), projectOf(s, c)));
   }

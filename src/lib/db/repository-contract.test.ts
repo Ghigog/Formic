@@ -1167,6 +1167,30 @@ function contract(name: string, make: () => Repository) {
         expect(board).not.toContain(a!.id);
       });
 
+      it("treats an archived ticket as if it never existed in its epic, until restored", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [a, b, c] = await repo.createTickets([
+          ticket(epic.id, "G-1", { fileScope: ["src/a"] }),
+          ticket(epic.id, "G-2", { position: 2 }),
+          ticket(epic.id, "G-3", { position: 3 }),
+        ]);
+        await repo.updateTicket(b!.id, { status: "merged" });
+        await repo.updateTicket(c!.id, { status: "merged" });
+        await repo.updateTicket(a!.id, { archived: true });
+
+        // Siblings (so scope-clash and epic-close checks) no longer see it.
+        expect((await repo.ticketsForEpic(epic.id)).map((t) => t.id)).toEqual([b!.id, c!.id]);
+        const card = (await repo.boardCards(p.id)).find((x) => x.id === epic.id);
+        expect(card).toMatchObject({ childCount: 2, doneCount: 2 });
+
+        await repo.updateTicket(a!.id, { archived: false });
+
+        expect((await repo.ticketsForEpic(epic.id)).map((t) => t.id)).toContain(a!.id);
+        const back = (await repo.boardCards(p.id)).find((x) => x.id === epic.id);
+        expect(back).toMatchObject({ childCount: 3, doneCount: 2 });
+      });
+
       it("numbers standalone tickets per project, never twice", async () => {
         const p = await project();
         const other = await project();

@@ -81,4 +81,30 @@ describe("the archive on the in-memory store", () => {
     expect((await repo.archivedTickets(other.id)).map((c) => c.id)).toEqual([t!.id]);
     expect(await repo.archivedTickets(home.id)).toEqual([]);
   });
+
+  it("leaves an archived ticket out of its epic's counts, and back in when restored", async () => {
+    const repo = new MemoryRepository();
+    const project = await repo.defaultProject();
+    const epic = await repo.createEpic({
+      projectId: project.id,
+      title: "Epic",
+      rawRequest: "Epic",
+      position: 1,
+    });
+    const [a, b, c] = await repo.createTickets([
+      ticketInput(epic.id, "W-1", 2),
+      ticketInput(epic.id, "W-2", 3),
+      ticketInput(epic.id, "W-3", 4),
+    ]);
+    await repo.updateTicket(b!.id, { status: "merged" });
+    await repo.updateTicket(c!.id, { status: "merged" });
+    const card = async () => (await repo.boardCards(project.id)).find((x) => x.id === epic.id);
+
+    await repo.updateTicket(a!.id, { archived: true });
+    expect(await card()).toMatchObject({ childCount: 2, doneCount: 2 });
+    expect((await repo.ticketsForEpic(epic.id)).map((t) => t.id)).toEqual([b!.id, c!.id]);
+
+    await repo.updateTicket(a!.id, { archived: false });
+    expect(await card()).toMatchObject({ childCount: 3, doneCount: 2 });
+  });
 });
