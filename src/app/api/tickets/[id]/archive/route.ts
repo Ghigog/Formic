@@ -36,3 +36,27 @@ export async function PATCH(
   await repo.updateTicket(id, { archived: true });
   return Response.json({ archived: true });
 }
+
+/**
+ * Restores an archived ticket to its column: archived is the only thing that
+ * changes, so status, stalledIn and misplacedIn still say where it came from.
+ * Idempotent — an unarchived ticket stays on the board.
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const refused = limited(req, RUN, "ticket-archive");
+  if (refused) return refused;
+  const { id } = await params;
+  const repo = repository();
+  const project = await activeProject();
+  if (!project || (await repo.projectOfCard(id)) !== project.id) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  if (!(await repo.ticketDetail(id))) {
+    return Response.json({ error: "Not a ticket" }, { status: 404 });
+  }
+  await repo.updateTicket(id, { archived: false });
+  return Response.json({ archived: false });
+}

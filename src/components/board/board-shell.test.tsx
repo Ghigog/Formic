@@ -89,6 +89,21 @@ describe("BoardShell", () => {
     expect(screen.getByText("Add export")).toBeInTheDocument();
   });
 
+  it("shows archived cards in their original column only when Archived is toggled on", async () => {
+    const archived = makeCard({ status: "ready", title: "Old todo", archived: true });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ tickets: [archived] }) })),
+    );
+    renderShell([]);
+    expect(screen.queryByText("Old todo")).toBeNull();
+    const todo = screen.getByRole("region", { name: "To Do" });
+    fireEvent.click(within(todo).getByRole("button", { name: "Column options" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: /archived/i }));
+    expect(await within(todo).findByText("Old todo")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
   it("shows an agent menu on every working column, and none when agents are off", () => {
     renderShell([makeCard({ status: "ready" })]);
     expect(screen.getAllByRole("button", { name: /^Agent for / }).length).toBeGreaterThan(0);
