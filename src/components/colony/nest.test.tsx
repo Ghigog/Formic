@@ -30,7 +30,7 @@ function scoreAt(earned: number): Score {
   return { earned, points: earned, level, rank: rankOf(level), intoLevel: earned % XP_PER_LEVEL, bugs: 0, squashed: 0 };
 }
 
-function openPopoverAt(earned: number) {
+function openPopoverAt(earned: number, onOpenArchive?: () => void) {
   api = {
     score: scoreAt(earned),
     colonyOpen: true,
@@ -42,7 +42,7 @@ function openPopoverAt(earned: number) {
     fx: { reducedMotion: true },
     sfx: vi.fn(),
   } as unknown as ColonyApi;
-  render(<ColonyPopover />);
+  render(<ColonyPopover onOpenArchive={onOpenArchive} />);
   const bar = screen.getByText(/Everything unlocked|unlocks/).nextElementSibling!.firstElementChild as HTMLElement;
   return bar.style.width;
 }
@@ -57,6 +57,21 @@ describe("ColonyPopover progress bar", () => {
   it("shows progress into the level before the last unlock", () => {
     expect(openPopoverAt(2 * XP_PER_LEVEL + 10)).toBe("20%");
     expect(screen.getByText(/unlocks/)).toBeTruthy();
+  });
+});
+
+describe("ColonyPopover Archived", () => {
+  it("closes the popover and opens the Archived view", () => {
+    const onOpenArchive = vi.fn();
+    openPopoverAt(10, onOpenArchive);
+    fireEvent.click(screen.getByRole("button", { name: "Archived" }));
+    expect(api!.setColonyOpen).toHaveBeenCalledWith(false);
+    expect(onOpenArchive).toHaveBeenCalledTimes(1);
+  });
+
+  it("has no Archived button without onOpenArchive", () => {
+    openPopoverAt(10);
+    expect(screen.queryByRole("button", { name: "Archived" })).toBeNull();
   });
 });
 

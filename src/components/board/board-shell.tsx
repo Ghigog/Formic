@@ -4,6 +4,7 @@ import { AutoTour } from "@/components/onboarding/tour";
 import type { ComponentProps } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board";
+import { ArchiveView } from "./archive-view";
 import { NewItemDialog, type CaptureColumn } from "./new-item-dialog";
 import { EpicDrawer } from "./epic-drawer";
 import { TicketDrawer, type SubscribeToEvents } from "./ticket-drawer";
@@ -113,6 +114,7 @@ export function BoardShell({
     return [...live, ...restored.filter((c) => !have.has(c.id))];
   }, [boardCards, archivedIds, restored]);
   // The archive, fetched once the first time a filter asks for it.
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveWanted, setArchiveWanted] = useState(false);
   const [archive, setArchive] = useState<BoardCard[]>([]);
   const fetchedArchive = useRef(false);
@@ -197,7 +199,6 @@ export function BoardShell({
       <Board
         cards={boardShown}
         onArchivedWanted={setArchiveWanted}
-        onRestored={restore}
         extras={merged}
         projectName={projectName}
         repoFullName={repoFullName}
@@ -306,7 +307,8 @@ export function BoardShell({
       <AutoTour id="board" delay={900} />
       <ColonyTimeline repoName={repoName} />
       <SentinelsPage repoName={repoName} />
-      <ColonyPopover />
+      <ColonyPopover onOpenArchive={() => setArchiveOpen(true)} />
+      {archiveOpen && <ArchiveView onClose={() => setArchiveOpen(false)} onRestored={restore} />}
       <ColonyToast />
       <RerouteToast toast={rerouteToast} />
       <EpicWinDialog onShowcase={(epic) => setOpenEpicId(epic.id)} />

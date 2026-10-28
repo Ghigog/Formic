@@ -24,15 +24,12 @@ export function BoardHeader({
   repoFullName,
   account,
   assistant,
-  onOpenArchive,
 }: {
   projectName: string;
   repoFullName: string;
   account?: Account;
   /** The board's assistant. Omitted, the header has no ask box. */
   assistant?: AssistantControls;
-  /** Opens the Archived view. Omitted, the header has no Archived button. */
-  onOpenArchive?: () => void;
 }) {
   const [, repo] = repoFullName.split("/");
   const [picker, setPicker] = useState(false);
@@ -78,15 +75,6 @@ export function BoardHeader({
 
         <ColonyLevelStats />
         <div className="flex items-center justify-end gap-4">
-          {onOpenArchive && (
-            <button
-              type="button"
-              onClick={onOpenArchive}
-              className="border-line text-ink rounded-md border px-2.5 py-1 text-[13px]"
-            >
-              Archived
-            </button>
-          )}
           <ColonyHeaderStats showLevel={false} />
           {account && <AccountMenu account={account} />}
         </div>
@@ -113,11 +101,6 @@ export function BoardHeader({
           <AskButton a={assistant} repoName={repo ?? repoFullName} />
         )}
         <div className="flex-grow" />
-        {onOpenArchive && (
-          <button type="button" onClick={onOpenArchive} className="border-line text-ink min-h-11 rounded-md border px-2.5 text-[13px]">
-            Archived
-          </button>
-        )}
         <ColonyMobileStats />
         {account && <AccountMenu account={account} />}
       </header>
