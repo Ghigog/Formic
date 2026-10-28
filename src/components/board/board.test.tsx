@@ -345,6 +345,32 @@ describe("Board, as the server moves cards", () => {
   });
 });
 
+describe("Board remembering collapsed epics", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("keeps a collapsed epic collapsed after remounting, and expanded once expanded again", async () => {
+    const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [{ status: "ready" }]);
+    const cards = [epic!, ...kids];
+    const { unmount } = render(
+      <Board cards={cards} projectName="Formic" repoFullName="a/b" onOpenCard={vi.fn()} onNewItem={vi.fn()} onTransition={vi.fn()} />,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Collapse child tickets" }));
+    expect(screen.getByRole("button", { name: "Expand child tickets" })).toBeInTheDocument();
+    unmount();
+
+    const again = render(
+      <Board cards={cards} projectName="Formic" repoFullName="a/b" onOpenCard={vi.fn()} onNewItem={vi.fn()} onTransition={vi.fn()} />,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Expand child tickets" }));
+    again.unmount();
+
+    render(
+      <Board cards={cards} projectName="Formic" repoFullName="a/b" onOpenCard={vi.fn()} onNewItem={vi.fn()} onTransition={vi.fn()} />,
+    );
+    expect(await screen.findByRole("button", { name: "Collapse child tickets" })).toBeInTheDocument();
+  });
+});
+
 describe("Board, below 768px", () => {
   it("shows one column at a time, with an indicator carrying the counts", async () => {
     setViewportMatches(true);
