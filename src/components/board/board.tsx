@@ -347,6 +347,17 @@ export function Board({
   );
 
   /* A swipe on the mobile board: where the touch began, unless it is not ours. */
+  // Centre the active tab by scrolling the strip only: scrollIntoView would also scroll the page.
+  const tabStrip = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const strip = tabStrip.current;
+    const tab = strip?.querySelector<HTMLElement>("[aria-current]");
+    if (!strip || !tab) return;
+    const s = strip.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    strip.scrollLeft += t.left + t.width / 2 - (s.left + s.width / 2);
+  }, [activeTab]);
+
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const onSwipeStart = (e: React.TouchEvent<HTMLElement>) => {
     const t = e.touches[0];
@@ -595,6 +606,7 @@ export function Board({
 
       {/* Where the board is below 768px: one column shows, a swipe changes it. */}
       <ul
+        ref={tabStrip}
         aria-label="Columns"
         className="border-line bg-cream flex h-13 shrink-0 items-center gap-2 overflow-x-auto border-b px-4 md:hidden"
       >
@@ -604,7 +616,6 @@ export function Board({
             <li
               key={col}
               aria-current={active ? "true" : undefined}
-              ref={active ? (el) => el?.scrollIntoView?.({ behavior: "smooth", inline: "center", block: "nearest" }) : undefined}
               className={cn(
                 "inline-flex h-9 shrink-0 items-center rounded-full text-[13px] whitespace-nowrap transition-[color,background-color,padding] duration-200 ease-out",
                 active
