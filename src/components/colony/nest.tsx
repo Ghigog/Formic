@@ -215,6 +215,8 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
         // The smush is on the drop, not on the answer, so it feels immediate.
         c.sfx("squash");
         if (!c.fx.reducedMotion) c.fx.squash(q.x, q.y, () => {});
+        // The menu stays out of the way once she is placed, so the ants can be watched.
+        c.setColonyOpen(false);
         void place(id);
       }
     };
