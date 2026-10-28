@@ -700,6 +700,25 @@ export class GitHubClient implements VcsClient {
     return response.text();
   }
 
+  async runTimeout(runUrl: string): Promise<string | null> {
+    const runId = /\/actions\/runs\/(\d+)/.exec(runUrl)?.[1];
+    if (!runId) return null;
+    const { data } = await this.request<{
+      jobs: Array<{ id: number; conclusion: string | null }>;
+    }>("GET", `/actions/runs/${runId}/jobs?filter=latest`);
+    for (const job of data.jobs.filter((j) => j.conclusion === "cancelled")) {
+      const listed = await this.request<Array<{ message: string }>>(
+        "GET",
+        `/check-runs/${job.id}/annotations?per_page=50`,
+      ).catch(() => null);
+      for (const a of listed?.data ?? []) {
+        const limit = /exceeded the maximum execution time of (\S+)/.exec(a.message)?.[1];
+        if (limit) return limit;
+      }
+    }
+    return null;
+  }
+
   async compare(base: string, head: string): Promise<Comparison> {
     const { data } = await this.request<{
       files?: Array<{ filename: string; previous_filename?: string; patch?: string }>;

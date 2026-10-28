@@ -149,10 +149,10 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
     setReportId(null);
     root.current?.querySelector<HTMLElement>(`[data-card="${id}"]`)?.focus();
   };
-  // The centred index follows the scroll position, so swipes keep it right.
-  const onScroll = () => {
+  /** The card nearest the rail's middle, measured from the layout as it is now. */
+  const centredNow = () => {
     const el = rail.current;
-    if (!el) return;
+    if (!el) return idxRef.current;
     const mid = el.scrollLeft + el.clientWidth / 2;
     let best = 0;
     let gap = Infinity;
@@ -164,6 +164,11 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
         best = i;
       }
     });
+    return best;
+  };
+  // The centred index follows the scroll position, so swipes keep it right.
+  const onScroll = () => {
+    const best = centredNow();
     idxRef.current = best;
     setIdx(best);
   };
@@ -480,7 +485,11 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
                 now={now}
                 locked={!isUnlocked(x, s.level)}
                 onActivate={() => {
-                  if (i !== idxRef.current) goTo(i);
+                  // On a phone the rail snaps, and a side card comes to the
+                  // centre before it opens. Measure the centre now: the scroll
+                  // event that would update idx may not have arrived yet. From
+                  // md up the rail scrolls freely and any card opens.
+                  if (!window.matchMedia(DESKTOP).matches && i !== centredNow()) goTo(i);
                   else {
                     c.sfx("blip", 5);
                     reportRef.current = x.id;

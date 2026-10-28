@@ -358,6 +358,10 @@ export class MockVcsClient implements VcsClient {
     return repo().logs.get(runUrl) ?? null;
   }
 
+  async runTimeout(): Promise<string | null> {
+    return null;
+  }
+
   async ensureLabel(name: string): Promise<void> {
     repo().labels.add(name);
   }
