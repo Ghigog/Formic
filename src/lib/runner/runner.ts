@@ -328,7 +328,11 @@ export async function whyItFailed(
   presetId: string | null,
 ): Promise<string> {
   const log = result.url ? `Log: ${result.url}` : "";
-  if (result.conclusion === "cancelled") return failure("The run was cancelled", log);
+  if (result.conclusion === "cancelled") {
+    // GitHub concludes a job that hit its timeout-minutes as cancelled too.
+    const limit = result.url ? await client.runTimeout(result.url).catch(() => null) : null;
+    return failure(limit ? `The run timed out after ${duration(limit)}` : "The run was cancelled", log);
+  }
   if (result.conclusion === "timed_out") return failure("The run timed out", log);
   const plain = failure(`The run ended as ${result.conclusion}`, log);
   const text = result.url ? await client.runLog(result.url).catch(() => null) : null;
@@ -373,6 +377,14 @@ export async function whyItFailed(
  * A failure reason: the error type on the first line, then the detail (the
  * agent's own words, then the log link). classifyNotice splits it there.
  */
+/** GitHub's "15m0s" or "1h30m0s" as "15 minutes" or "90 minutes". */
+function duration(limit: string): string {
+  const m = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(limit);
+  if (!m || m[3] && m[3] !== "0") return limit;
+  const minutes = Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0);
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
+
 function failure(type: string, ...detail: string[]): string {
   return [type, ...detail.filter(Boolean)].join("\n");
 }
