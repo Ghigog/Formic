@@ -10,6 +10,12 @@ import {
 import { cn } from "@/components/ui/cn";
 import { Column, columnCount } from "./column";
 import { EMPTY_VIEW, type ColumnView } from "./view";
+import {
+  emptyCollapsedEpics,
+  loadCollapsedEpics,
+  saveCollapsedEpics,
+  type CollapsedEpics,
+} from "./collapsed-epics";
 import { loadBoardView, loadColumnViews, saveColumnViews } from "./view-setting";
 import { adjacentColumn, ownsGesture, slideTowards, swipeDirection, type SwipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
@@ -121,15 +127,19 @@ export function Board({
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ColumnId>("backlog");
-  const [collapsed, setCollapsed] = useState<Record<ColumnId, Set<string>>>(
-    () => ({
-      backlog: new Set(),
-      todo: new Set(),
-      in_progress: new Set(),
-      in_review: new Set(),
-      done: new Set(),
-    }),
-  );
+  // Saved collapsed epics are only readable after mount, like the views below;
+  // saving waits for `collapsedLoaded` so the empty initial state never overwrites them.
+  const [collapsed, setCollapsed] = useState<CollapsedEpics>(emptyCollapsedEpics);
+  const [collapsedLoaded, setCollapsedLoaded] = useState(false);
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- browser storage is only readable after mount */
+    setCollapsed(loadCollapsedEpics());
+    setCollapsedLoaded(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+  useEffect(() => {
+    if (collapsedLoaded) saveCollapsedEpics(collapsed);
+  }, [collapsed, collapsedLoaded]);
 
   const [views, setViews] = useState<Record<ColumnId, ColumnView>>(() => ({
     backlog: EMPTY_VIEW,
