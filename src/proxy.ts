@@ -32,6 +32,8 @@ const OPEN = [
   /^\/manifest\.webmanifest$/,
   /^\/sw\.js$/,
   /^\/icons\//,
+  // The guided tour's textures: the login page has a tour too.
+  /^\/tour\//,
 ];
 
 /**
