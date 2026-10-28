@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { TOURS } from "./src/components/onboarding/tours";
 
 const PORT = Number(process.env.E2E_PORT ?? 3210);
 const baseURL = `http://127.0.0.1:${PORT}`;
@@ -16,6 +17,25 @@ const launchOptions = executablePath ? { executablePath } : {};
  * E2E_SKIP_BUILD=1 to start the server on the `.next` already in place.
  */
 const buildFirst = process.env.E2E_SKIP_BUILD === "1" ? "" : "npm run build && ";
+
+/**
+ * Every browser starts with the guided tours already seen.
+ *
+ * A fresh browser plays the board's tour a moment after the page loads, at
+ * a time no test controls. Its overlay is costly to paint on CI's CPU
+ * rasteriser, and a test that drags or clicks while it walks in stalls for
+ * most of a second per move. The tours have their own unit tests; no spec
+ * here is about them.
+ */
+const storageState = {
+  cookies: [],
+  origins: [
+    {
+      origin: baseURL,
+      localStorage: [{ name: "formic:tours:seen", value: JSON.stringify(Object.keys(TOURS)) }],
+    },
+  ],
+};
 
 export default defineConfig({
   testDir: "./e2e",
@@ -47,6 +67,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     launchOptions,
+    storageState,
   },
 
   projects: [
