@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { PushPreferences } from "@/lib/db/repository";
 
 const KINDS: { key: keyof PushPreferences; label: string }[] = [
@@ -37,6 +37,8 @@ function saveSubscription(subscription: PushSubscription): Promise<Response> {
   });
 }
 
+const noSubscribe = () => () => {};
+
 function supported(): boolean {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
@@ -54,6 +56,10 @@ export function NotificationsSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tested, setTested] = useState<string | null>(null);
+  // False on the server and true in a browser that can push. Read during
+  // render instead, the server's disabled button would stay disabled: React
+  // keeps the server's attributes when it hydrates.
+  const canPush = useSyncExternalStore(noSubscribe, supported, () => false);
 
   // The browser remembering a subscription is not enough: the server may
   // have lost it (a new database) or changed its keys. So one made with old
@@ -152,7 +158,7 @@ export function NotificationsSection({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={busy || enabled || !supported()}
+          disabled={busy || enabled || !canPush}
           onClick={() => void enable()}
           className="border-line text-ink rounded-md border px-3 py-1.5 text-[12px] disabled:opacity-60"
         >

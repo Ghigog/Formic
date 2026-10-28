@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
+import { hydrateRoot } from "react-dom/client";
 import userEvent from "@testing-library/user-event";
 import { NotificationsSection } from "./notifications-section";
 
@@ -114,5 +116,21 @@ describe("NotificationsSection", () => {
       await userEvent.click(button);
       expect(await screen.findByRole("alert")).toHaveTextContent("VAPID keys are missing");
     });
+  });
+
+  it("can be tapped after a server render, where push is not available", async () => {
+    // The server has no PushManager, so its HTML has the button disabled.
+    vi.stubGlobal("PushManager", undefined);
+    const html = renderToString(<NotificationsSection vapidPublicKey="AAAA" />);
+    vi.stubGlobal("PushManager", class {});
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    expect(container.querySelector("button")).toBeDisabled();
+
+    const root = await act(async () => hydrateRoot(container, <NotificationsSection vapidPublicKey="AAAA" />));
+    expect(container.querySelector("button")).toBeEnabled();
+    act(() => root.unmount());
+    container.remove();
   });
 });
