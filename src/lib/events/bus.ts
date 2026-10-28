@@ -86,7 +86,7 @@ export async function publish(
 
   // The board's owner hears about moves, finished Epics and anything that
   // waits on them. Awaited like the above; never throws.
-  await notifyOwner(projectId, event);
+  await notifyOwner(projectId, event, seq);
 
   // A ticket moved out of In Progress before its scouts were back calls
   // them back (src/lib/coder/scouts.ts).

@@ -5,16 +5,18 @@ const sendPush = vi.fn();
 vi.mock("@/lib/push/send", () => ({ sendPush: (...a: unknown[]) => sendPush(...a) }));
 let prefs = { ticketMoved: true, epicCompleted: true, needsAttention: true };
 const card = { key: "T-5", title: "Add login" };
+let previous: unknown = null;
 vi.mock("@/lib/db", () => ({
   repository: () => ({
     projectById: async () => ({ ownerId: "u1", name: "Formic" }),
     cardById: async () => card,
     pushPreferences: async () => prefs,
+    cardStatusBefore: async () => previous,
   }),
 }));
 
 import type { FormicEvent } from "@/lib/domain/events";
-import { notifyOwner } from "./notify";
+import { notifyOwner, resetNotified } from "./notify";
 
 let cards = 0;
 const status = (s: string, kind = "ticket", cardId = `c${cards++}`) =>
@@ -23,6 +25,8 @@ const status = (s: string, kind = "ticket", cardId = `c${cards++}`) =>
 describe("notifyOwner", () => {
   beforeEach(() => {
     sendPush.mockReset();
+    resetNotified();
+    previous = null;
     prefs = { ticketMoved: true, epicCompleted: true, needsAttention: true };
   });
 
@@ -70,5 +74,31 @@ describe("notifyOwner", () => {
 
     await notifyOwner("p", { ...stuck, blockedReason: "Another reason." } as FormicEvent);
     expect(sendPush).toHaveBeenCalledTimes(2);
+  });
+
+  it("pushes a finished Epic once", async () => {
+    await notifyOwner("p", status("merged", "epic", "epic"));
+    await notifyOwner("p", status("merged", "epic", "epic"));
+    expect(sendPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("pushes one alert when an Epic's stop stops each of its runs", async () => {
+    const stop = (id: string) =>
+      ({ type: "budget.exhausted", scope: "epic", id, detail: "The Epic reached its budget." }) as FormicEvent;
+    await notifyOwner("p", stop("run1"));
+    await notifyOwner("p", stop("run2"));
+    await notifyOwner("p", stop("run3"));
+    expect(sendPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads where a card was from the event log after a restart", async () => {
+    previous = status("queued", "ticket", "restarted");
+    await notifyOwner("p", status("running", "ticket", "restarted"), 42);
+    expect(sendPush).not.toHaveBeenCalled();
+  });
+
+  it("pushes a card's first status when the log has nothing before it", async () => {
+    await notifyOwner("p", status("review", "ticket", "fresh"), 42);
+    expect(sendPush).toHaveBeenCalledTimes(1);
   });
 });

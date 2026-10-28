@@ -814,6 +814,8 @@ export interface Repository {
     types: string[],
     limit?: number,
   ): Promise<Array<{ seq: number; type: string; payload: unknown; at: Date }>>;
+  /** The payload of a card's last `card.status` event before `beforeSeq`, or null. */
+  cardStatusBefore(projectId: string, cardId: string, beforeSeq: number): Promise<unknown>;
   /** The same, but for events whose payload names an Epic. */
   epicEvents(
     projectId: string,

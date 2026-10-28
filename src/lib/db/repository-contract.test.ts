@@ -554,6 +554,18 @@ function contract(name: string, make: () => Repository) {
         ]);
         expect((await repo.epicEvents(p.id, epic.id, ["agent.said"])).map((e) => e.seq)).toEqual([second]);
       });
+
+      it("finds a card's status before a given event", async () => {
+        const p = await project();
+        const status = (cardId: string, s: string) => ({ type: "card.status", cardId, kind: "ticket", status: s });
+        await repo.appendEvent(p.id, "card.status", status("a", "queued"));
+        await repo.appendEvent(p.id, "card.status", status("b", "review"));
+        const running = await repo.appendEvent(p.id, "card.status", status("a", "running"));
+
+        expect(await repo.cardStatusBefore(p.id, "a", running)).toEqual(status("a", "queued"));
+        expect(await repo.cardStatusBefore(p.id, "a", running + 1)).toEqual(status("a", "running"));
+        expect(await repo.cardStatusBefore(p.id, "c", running)).toBeNull();
+      });
     });
 
     describe("runs", () => {
