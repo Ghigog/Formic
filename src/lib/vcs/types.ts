@@ -263,6 +263,12 @@ export interface VcsClient {
    * there is none to read.
    */
   runLog(runUrl: string): Promise<string | null>;
+  /**
+   * The time limit a finished run's job hit, as GitHub words it ("15m0s"),
+   * or null when none did. GitHub concludes a timed-out job as "cancelled";
+   * only its annotation tells the two apart.
+   */
+  runTimeout(runUrl: string): Promise<string | null>;
   compare(base: string, head: string): Promise<Comparison>;
   /**
    * Rewrites the commit at `sha` with its carried workflow changes (CARRY_DIR,
