@@ -781,6 +781,35 @@ describe("GitHubClient: reads and writes", () => {
     });
   });
 
+  describe("runTimeout", () => {
+    it("reads the limit from a cancelled job's annotations", async () => {
+      route({
+        "GET /actions/runs/4/jobs?filter=latest": {
+          jobs: [{ id: 1, conclusion: "success" }, { id: 2, conclusion: "cancelled" }],
+        },
+        "GET /check-runs/2/annotations?per_page=50": [
+          { message: "The job has exceeded the maximum execution time of 15m0s" },
+          { message: "The operation was canceled." },
+        ],
+      });
+      expect(await client().runTimeout("https://x/actions/runs/4")).toBe("15m0s");
+    });
+
+    it("is null for a run cancelled by hand or with unreadable annotations", async () => {
+      route({
+        "GET /actions/runs/4/jobs?filter=latest": { jobs: [{ id: 2, conclusion: "cancelled" }] },
+        "GET /check-runs/2/annotations?per_page=50": [{ message: "The operation was canceled." }],
+      });
+      expect(await client().runTimeout("https://x/actions/runs/4")).toBeNull();
+
+      route({
+        "GET /actions/runs/4/jobs?filter=latest": { jobs: [{ id: 2, conclusion: "cancelled" }] },
+        "GET /check-runs/2/annotations?per_page=50": fail(500),
+      });
+      expect(await client().runTimeout("https://x/actions/runs/4")).toBeNull();
+    });
+  });
+
   it("compare collects files (renames included), messages and head sha", async () => {
     route({
       "GET /compare/main...feat": {
