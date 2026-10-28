@@ -7,22 +7,33 @@ import { sendPush } from "@/lib/push/send";
 import { classifyEvent } from "./classify";
 
 declare global {
-  var __formicTicketColumns: Map<string, ColumnId> | undefined;
+  var __formicTicketSeen: Map<string, TicketSeen> | undefined;
+}
+
+/** What a ticket's owner last heard about it: its column, and why it stopped. */
+interface TicketSeen {
+  column: ColumnId;
+  /** The stop's status and reason; null while it is not blocked or failed. */
+  stall: string | null;
 }
 
 /**
- * Whether a ticket's status change leaves it in the column it was already
- * in, such as queued then running, both In Progress. Remembers the column
- * for next time. Kept in memory: after a restart, a ticket's first move
- * notifies whether it changed column or not.
+ * Remembers where a ticket now is and returns where it was, so a status
+ * that does not change what the person sees sends nothing: queued then
+ * running are both In Progress, and a sweep that parks a parked ticket again
+ * says nothing new. Kept in memory: after a restart, a ticket's first change
+ * notifies.
  */
-function sameColumn(cardId: string, status: string, stalledIn: string | null): boolean {
-  globalThis.__formicTicketColumns ??= new Map();
-  const columns = globalThis.__formicTicketColumns;
-  const column = columnFor(status as TicketStatus, stalledIn as ColumnId | null);
-  const same = columns.get(cardId) === column;
-  columns.set(cardId, column);
-  return same;
+function rememberTicket(event: FormicEvent & { type: "card.status" }): TicketSeen | undefined {
+  globalThis.__formicTicketSeen ??= new Map();
+  const seen = globalThis.__formicTicketSeen;
+  const before = seen.get(event.cardId);
+  const stopped = event.status === "blocked" || event.status === "failed";
+  seen.set(event.cardId, {
+    column: columnFor(event.status as TicketStatus, event.stalledIn as ColumnId | null),
+    stall: stopped ? `${event.status}|${event.blockedReason ?? ""}` : null,
+  });
+  return before;
 }
 
 /**
@@ -33,8 +44,9 @@ function sameColumn(cardId: string, status: string, stalledIn: string | null): b
 export async function notifyOwner(projectId: string, event: FormicEvent): Promise<void> {
   try {
     if (event.type !== "card.status" && event.type !== "budget.exhausted") return;
-    const unmoved =
-      event.type === "card.status" && event.kind === "ticket" && sameColumn(event.cardId, event.status, event.stalledIn);
+    const ticket = event.type === "card.status" && event.kind === "ticket";
+    const before = ticket ? rememberTicket(event) : undefined;
+    const now = ticket ? globalThis.__formicTicketSeen?.get(event.cardId) : undefined;
     const repo = repository();
     const project = await repo.projectById(projectId);
     if (!project?.ownerId) return;
@@ -49,7 +61,10 @@ export async function notifyOwner(projectId: string, event: FormicEvent): Promis
     }
     const notification = classifyEvent(event, { cardKey, cardTitle, boardName: project.name });
     if (!notification) return;
-    if (notification.kind === "ticketMoved" && unmoved) return;
+    if (before && now) {
+      if (notification.kind === "ticketMoved" && before.column === now.column) return;
+      if (notification.kind === "needsAttention" && before.stall === now.stall) return;
+    }
 
     const prefs = await repo.pushPreferences(project.ownerId);
     if (!prefs[notification.kind]) return;

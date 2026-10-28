@@ -61,4 +61,14 @@ describe("notifyOwner", () => {
     expect(sendPush).toHaveBeenCalledTimes(2);
     expect(sendPush).toHaveBeenLastCalledWith("u1", expect.objectContaining({ title: expect.stringContaining("needs your attention") }));
   });
+
+  it("pushes attention once for a ticket stopped again for the same reason", async () => {
+    const stuck = { ...status("blocked", "ticket", "parked"), stalledIn: "in_review", blockedReason: "Needs a human." };
+    await notifyOwner("p", stuck as FormicEvent);
+    await notifyOwner("p", stuck as FormicEvent);
+    expect(sendPush).toHaveBeenCalledTimes(1);
+
+    await notifyOwner("p", { ...stuck, blockedReason: "Another reason." } as FormicEvent);
+    expect(sendPush).toHaveBeenCalledTimes(2);
+  });
 });
