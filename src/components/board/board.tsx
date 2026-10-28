@@ -13,7 +13,6 @@ import { EMPTY_VIEW, type ColumnView } from "./view";
 import { loadBoardView, loadColumnViews, saveColumnViews } from "./view-setting";
 import { adjacentColumn, ownsGesture, slideTowards, swipeDirection, type SwipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
-import { ArchiveView } from "./archive-view";
 import { CardEnvContext, LEAVE_MS, type CardEnv, type ExtrasMap } from "./card";
 import { useColony } from "@/components/colony/colony";
 import { cardEl, colonyEl } from "@/components/colony/fx";
@@ -76,8 +75,6 @@ export interface BoardProps {
   onArchived?: (ticketId: string) => void;
   /** Whether any column's filter selects Archived, so the caller can supply those cards. */
   onArchivedWanted?: (wanted: boolean) => void;
-  /** A card was restored from the Archived view. */
-  onRestored?: (card: BoardCard) => void;
   /** Who is signed in, for the header's account menu. */
   account?: Account;
   /** The repository runs no CI. */
@@ -108,7 +105,6 @@ export function Board({
   onTransition,
   onArchived,
   onArchivedWanted,
-  onRestored,
   agents,
   account,
   assistant,
@@ -169,7 +165,6 @@ export function Board({
     if (viewsLoaded) saveColumnViews(ownViews.current);
   }, [views, viewsLoaded]);
 
-  const [archiveOpen, setArchiveOpen] = useState(false);
   const archivedWanted = COLUMNS.some((c) => views[c].types.includes("archived"));
   useEffect(() => {
     onArchivedWanted?.(archivedWanted);
@@ -596,14 +591,7 @@ export function Board({
         repoFullName={repoFullName}
         account={account}
         assistant={assistant}
-        onOpenArchive={() => setArchiveOpen(true)}
       />
-      {archiveOpen && (
-        <ArchiveView
-          onClose={() => setArchiveOpen(false)}
-          onRestored={(card) => onRestored?.(card)}
-        />
-      )}
 
       {/* Where the board is below 768px: one column shows, a swipe changes it. */}
       <ul

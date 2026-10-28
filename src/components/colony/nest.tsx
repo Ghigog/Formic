@@ -275,7 +275,7 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
 }
 
 /** Levels and bug styles: what the colony has earned and what it can wear. */
-export function ColonyPopover() {
+export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void }) {
   const c = useColony();
   const panel = useRef<HTMLDivElement>(null);
   const open = !!c?.colonyOpen;
@@ -345,6 +345,19 @@ export function ColonyPopover() {
         <QueenTray c={c} onDragging={setCarrying} />
 
         <ColonyPanel level={s.level} />
+
+        {onOpenArchive && (
+          <button
+            type="button"
+            onClick={() => {
+              c.setColonyOpen(false);
+              onOpenArchive();
+            }}
+            className="border-line text-ink self-start rounded-md border px-2.5 py-1 text-[13px]"
+          >
+            Archived
+          </button>
+        )}
 
         <div data-tour="colony-next" className="bg-panel flex flex-col gap-2 rounded-lg px-3 py-2.5">
           <span className="text-ink text-[12px] font-semibold">{nextText}</span>
