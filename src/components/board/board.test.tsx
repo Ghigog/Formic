@@ -455,6 +455,25 @@ describe("Board, below 768px", () => {
       expect(screen.getByRole("region", { name: "Done" })).toBeInTheDocument();
     });
 
+    it("centres the active tab by scrolling the strip only, never with scrollIntoView", async () => {
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      await setup();
+      const strip = screen.getByRole("list", { name: "Columns" });
+      const rect = (left: number, width: number) => ({ left, width, right: left + width, top: 0, bottom: 0, height: 0, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
+      vi.spyOn(strip, "getBoundingClientRect").mockReturnValue(rect(0, 300));
+      const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+        return this.getAttribute("aria-current") ? rect(400, 100) : rect(0, 300);
+      });
+      strip.scrollLeft = 0;
+      swipe(-100);
+      expect(strip.scrollLeft).toBe(300);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(document.documentElement.scrollLeft).toBe(0);
+      expect(document.body.scrollLeft).toBe(0);
+      spy.mockRestore();
+    });
+
     it("ignores a mostly vertical scroll with horizontal drift", async () => {
       await setup();
       swipe(-60, 150);
