@@ -26,6 +26,9 @@ const TYPE_MS = 26;
 /** How long a step waits for its target to appear before it is skipped. */
 const FIND_TRIES = 12;
 const FIND_MS = 150;
+/** The baked textures' tile sizes, in CSS pixels: see scripts/build-tour-textures.mjs. */
+const SOIL_TILE = 512;
+const ROUGH_TILE = 256;
 
 /**
  * The visible boxes carrying `data-tour="<target>"`, in viewport pixels, and
@@ -332,36 +335,26 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
 
   return (
     <div data-testid="tour" data-tour-overlay className="pointer-events-none fixed inset-0 z-[1000]">
+      {/* On a layer of its own, so a repaint beneath it (a dragged card) leaves it alone. */}
       <svg
         aria-hidden="true"
         width="100%"
         height="100%"
-        className="absolute inset-0 transition-opacity duration-700"
+        className="absolute inset-0 transition-opacity duration-700 will-change-transform"
         style={{ opacity: holes.length > 0 && !entering ? 1 : 0 }}
       >
         <defs>
-          <filter id="tour-soil" filterUnits="userSpaceOnUse" x="0" y="0" width="4000" height="3000">
-            <feFlood floodColor="#070504" result="base" />
-            <feTurbulence type="fractalNoise" baseFrequency="0.011" numOctaves={4} seed={9} result="clumpN" />
-            <feColorMatrix in="clumpN" type="matrix" values="0 0 0 0 0.045  0 0 0 0 0.036  0 0 0 0 0.03  0.6 0 0 0 -0.24" result="clumps" />
-            <feTurbulence type="turbulence" baseFrequency="0.035" numOctaves={2} seed={21} result="veinN" />
-            <feColorMatrix in="veinN" type="matrix" values="0 0 0 0 0.02  0 0 0 0 0.014  0 0 0 0 0.01  0 0 0 -2 0.3" result="veins" />
-            <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves={2} seed={3} result="grainN" />
-            <feColorMatrix in="grainN" type="matrix" values="0 0 0 0 0.015  0 0 0 0 0.01  0 0 0 0 0.008  1.4 0 0 0 -0.5" result="darkGrain" />
-            <feColorMatrix in="grainN" type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.066  0 0 0 0 0.055  0 1 0 0 -0.72" result="lightGrain" />
-            <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves={1} seed={40} result="pebN" />
-            <feColorMatrix in="pebN" type="matrix" values="0 0 0 0 0.06  0 0 0 0 0.048  0 0 0 0 0.038  0 0 3 0 -2.1" result="pebbles" />
-            <feMerge>
-              <feMergeNode in="base" />
-              <feMergeNode in="clumps" />
-              <feMergeNode in="veins" />
-              <feMergeNode in="pebbles" />
-              <feMergeNode in="darkGrain" />
-              <feMergeNode in="lightGrain" />
-            </feMerge>
-          </filter>
+          {/* The soil and its edge noise are tiles baked by
+              scripts/build-tour-textures.mjs. Live turbulence was worked out
+              again on every repaint beneath the overlay, which stalled the
+              page for most of a second each time a hole moved. */}
+          <pattern id="tour-soil" patternUnits="userSpaceOnUse" width={SOIL_TILE} height={SOIL_TILE}>
+            <rect width={SOIL_TILE} height={SOIL_TILE} fill="#070504" />
+            <image href="/tour/soil.webp" width={SOIL_TILE} height={SOIL_TILE} />
+          </pattern>
           <filter id="tour-rough" filterUnits="userSpaceOnUse" x="-200" y="-200" width="4400" height="3400">
-            <feTurbulence type="fractalNoise" baseFrequency="0.07" numOctaves={2} seed={5} result="t" />
+            <feImage href="/tour/rough.png" x="0" y="0" width={ROUGH_TILE} height={ROUGH_TILE} result="tile" />
+            <feTile in="tile" result="t" />
             <feDisplacementMap in="SourceGraphic" in2="t" scale={11} xChannelSelector="R" yChannelSelector="G" result="d" />
             <feGaussianBlur in="d" stdDeviation="0.8" />
           </filter>
@@ -374,16 +367,37 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
             </g>
           </mask>
         </defs>
-        <rect x="0" y="0" width="4000" height="3000" filter="url(#tour-soil)" mask="url(#tour-holes)" opacity="0.98" />
-        <g filter="url(#tour-rough)" fill="none" stroke="#050302" strokeWidth="5" opacity="0.45">
+        <rect x="0" y="0" width="4000" height="3000" fill="url(#tour-soil)" mask="url(#tour-holes)" opacity="0.98" />
+        {/* Both edges in one filter pass: each pass reworks the holes' whole area. */}
+        <g filter="url(#tour-rough)" fill="none">
           {holes.map((h, i) => (
-            <rect key={i} className="tour-hole" x={h.x} y={h.y} width={h.w} height={h.h} rx="14" />
+            <rect
+              key={i}
+              className="tour-hole"
+              x={h.x}
+              y={h.y}
+              width={h.w}
+              height={h.h}
+              rx="14"
+              stroke="#050302"
+              strokeWidth="5"
+              strokeOpacity="0.45"
+            />
           ))}
-        </g>
-        {/* A faint warm edge, so a hole over something dark (the nest) still reads as lit. */}
-        <g filter="url(#tour-rough)" fill="none" stroke="#E0A33C" strokeWidth="1.5" opacity="0.35">
+          {/* A faint warm edge, so a hole over something dark (the nest) still reads as lit. */}
           {holes.map((h, i) => (
-            <rect key={i} className="tour-hole" x={h.x - 2} y={h.y - 2} width={h.w + 4} height={h.h + 4} rx="15" />
+            <rect
+              key={`warm-${i}`}
+              className="tour-hole"
+              x={h.x - 2}
+              y={h.y - 2}
+              width={h.w + 4}
+              height={h.h + 4}
+              rx="15"
+              stroke="#E0A33C"
+              strokeWidth="1.5"
+              strokeOpacity="0.35"
+            />
           ))}
         </g>
       </svg>
