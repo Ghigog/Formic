@@ -240,30 +240,6 @@ export function RepoPicker({
             </button>
           )}
 
-          {!q && (
-            <div data-tour="examples">
-              <Section label="Example project">
-                <button
-                  type="button"
-                  className={row}
-                  disabled={busy !== null}
-                  onClick={() => void choose({ example: true }, "example")}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="text-ink block truncate font-medium">Try the example project</span>
-                    <span className="text-muted block truncate text-[11px]">
-                      A safe board to experiment on. Nothing touches your code.
-                    </span>
-                  </span>
-                  <span className="bg-jade-chip text-jade-chip-text rounded-full px-1.5 py-px font-mono text-[9px]">
-                    example
-                  </span>
-                  {busy === "example" && <span className="text-muted text-[11px]">…</span>}
-                </button>
-              </Section>
-            </div>
-          )}
-
           {onBoard.length > 0 && (
             <Section label="Your boards" tour="switch-boards">
               {onBoard.map((p) => {
@@ -346,6 +322,30 @@ export function RepoPicker({
               ))
             )}
           </Section>
+
+          {!q && (
+            <div data-tour="examples">
+              <Section label="Example project">
+                <button
+                  type="button"
+                  className={row}
+                  disabled={busy !== null}
+                  onClick={() => void choose({ example: true }, "example")}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="text-ink block truncate font-medium">Try the example project</span>
+                    <span className="text-muted block truncate text-[11px]">
+                      A safe board to experiment on. Nothing touches your code.
+                    </span>
+                  </span>
+                  <span className="bg-jade-chip text-jade-chip-text rounded-full px-1.5 py-px font-mono text-[9px]">
+                    example
+                  </span>
+                  {busy === "example" && <span className="text-muted text-[11px]">…</span>}
+                </button>
+              </Section>
+            </div>
+          )}
         </div>
 
         <button
