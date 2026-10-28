@@ -16,8 +16,9 @@ vi.mock("@/lib/db", () => ({
 import type { FormicEvent } from "@/lib/domain/events";
 import { notifyOwner } from "./notify";
 
-const status = (s: string, kind = "ticket") =>
-  ({ type: "card.status", cardId: "c", kind, status: s, stalledIn: null, stage: 3, blockedReason: null }) as FormicEvent;
+let cards = 0;
+const status = (s: string, kind = "ticket", cardId = `c${cards++}`) =>
+  ({ type: "card.status", cardId, kind, status: s, stalledIn: null, stage: 3, blockedReason: null }) as FormicEvent;
 
 describe("notifyOwner", () => {
   beforeEach(() => {
@@ -39,5 +40,25 @@ describe("notifyOwner", () => {
   it("does not throw when the push fails", async () => {
     sendPush.mockRejectedValue(new Error("boom"));
     await expect(notifyOwner("p", status("review"))).resolves.toBeUndefined();
+  });
+
+  it("pushes one move when a ticket goes queued then running, both In Progress", async () => {
+    await notifyOwner("p", status("queued", "ticket", "same"));
+    await notifyOwner("p", status("running", "ticket", "same"));
+    await notifyOwner("p", status("running", "ticket", "same"));
+    expect(sendPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("pushes again when the ticket reaches another column", async () => {
+    await notifyOwner("p", status("running", "ticket", "moves"));
+    await notifyOwner("p", status("review", "ticket", "moves"));
+    expect(sendPush).toHaveBeenCalledTimes(2);
+  });
+
+  it("still pushes attention for a ticket that stalls where it is", async () => {
+    await notifyOwner("p", status("running", "ticket", "stalls"));
+    await notifyOwner("p", { ...status("failed", "ticket", "stalls"), stalledIn: "in_progress" } as FormicEvent);
+    expect(sendPush).toHaveBeenCalledTimes(2);
+    expect(sendPush).toHaveBeenLastCalledWith("u1", expect.objectContaining({ title: expect.stringContaining("needs your attention") }));
   });
 });
