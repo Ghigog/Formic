@@ -262,7 +262,13 @@ async function syncTicket(
   });
 }
 
-async function syncEpic(ctx: Context, epicId: string, event?: FormicEvent & { type: "card.status" }) {
+async function syncEpic(
+  ctx: Context,
+  epicId: string,
+  event?: FormicEvent & { type: "card.status" },
+  /** The Epic took over an issue filed for something else, say its placeholder ticket. */
+  rewritten = false,
+) {
   const repo = repository();
   await inLane(`epic:${epicId}`, async () => {
     const card = await repo.cardById(epicId);
@@ -275,6 +281,7 @@ async function syncEpic(ctx: Context, epicId: string, event?: FormicEvent & { ty
         state: card.status === "merged" ? "closed" : "open",
         // The PRD lands in the description the moment it exists.
         ...(event?.status === "specified" ? { body: await epicBody(epicId) } : {}),
+        ...(rewritten ? { title: card.title, body: await epicBody(epicId) } : {}),
       });
     }
     const note = event ? epicNote(event) : null;
@@ -316,7 +323,7 @@ async function sync(projectId: string, event: FormicEvent): Promise<void> {
 
   // An Epic created, or its tickets just laid out under it.
   if (event.kind === "epic") {
-    await syncEpic(ctx, event.cardId);
+    await syncEpic(ctx, event.cardId, undefined, true);
     for (const ticket of await repository().ticketsForEpic(event.cardId)) {
       await syncTicket(ctx, ticket.id);
     }

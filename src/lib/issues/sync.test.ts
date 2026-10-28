@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyPrd, applyTickets } from "@/lib/agents/pipeline";
+import { applyDraftedTicket, applyPrd, applyReroute, applyTickets, settleLaunched } from "@/lib/agents/pipeline";
 import { resetAgents } from "@/lib/agents/registry";
 import { pullRequestBody } from "@/lib/coder/checkout";
 import { repository } from "@/lib/db";
@@ -106,7 +106,8 @@ beforeEach(() => {
   resetEnvCache();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleLaunched();
   vi.unstubAllEnvs();
   resetEnvCache();
   resetVcs();
@@ -194,6 +195,85 @@ describe("a ticket that came in from a GitHub issue", () => {
     expect(issue(42).labels).toEqual(["formic: in progress"]);
     expect((await repository().ticketDetail(ticket.id))!.issueNumber).toBe(42);
     expect(comments(42)).toEqual(["An agent started work on this."]);
+  });
+});
+
+describe("a To Do request while it is drafted", () => {
+  /**
+   * What createTodoItem leaves behind: a placeholder ticket under a standalone
+   * holder Epic, already filed as an issue while the Architect Agent drafts it.
+   */
+  async function placeholder() {
+    const epic = await repository().createEpic({
+      projectId: PROJECT,
+      title: "Export",
+      rawRequest: "Let me export my board as CSV",
+      position: 1,
+    });
+    await repository().setStandalone(epic.id, true);
+    const [ticket] = await repository().createTickets([
+      {
+        epicId: epic.id,
+        key: "T-5",
+        title: "Let me export my board as CSV",
+        description: "Let me export my board as CSV",
+        acceptanceCriteria: [],
+        fileScope: [],
+        size: "M",
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    MockVcsClient.seedIssue({
+      number: 7,
+      title: "T-5: Let me export my board as CSV",
+      labels: ["formic: to do", "formic: needs a human"],
+    });
+    await repository().updateTicket(ticket!.id, { issueNumber: 7 });
+    return { epic, ticket: ticket! };
+  }
+
+  it("keeps its issue once drafted, renamed to the drafted ticket", async () => {
+    const { epic, ticket } = await placeholder();
+
+    await applyDraftedTicket(PROJECT, epic.id, ticket.id, TICKETS[0]!);
+
+    // One issue: not the placeholder's left open beside a second one.
+    expect(issues()).toHaveLength(1);
+    expect(issue(7)).toMatchObject({
+      title: "T-5: Export endpoint",
+      state: "open",
+      labels: ["formic: to do"],
+    });
+    expect(issue(7).body).toContain("- [ ] It downloads");
+  });
+
+  it("hands its issue to the Epic when the request goes back to Backlog", async () => {
+    const { epic, ticket } = await placeholder();
+
+    await applyReroute(PROJECT, { from: "todo", epicId: epic.id, ticketId: ticket.id, reason: "Too big for one ticket." });
+
+    expect((await repository().epicDetail(epic.id))!.issueNumber).toBe(7);
+    expect(issue(7)).toMatchObject({ title: "Export", state: "open", labels: ["formic: backlog"] });
+    expect(issue(7).body).toContain("Let me export my board as CSV");
+  });
+});
+
+describe("a Backlog request small enough to be one ticket", () => {
+  it("hands the Epic's issue to the ticket, rather than leaving it in Backlog", async () => {
+    const epic = await newEpic();
+    const number = (await repository().epicDetail(epic.id))!.issueNumber;
+
+    await applyReroute(PROJECT, { from: "backlog", epicId: epic.id, reason: "One ticket's worth.", ticket: TICKETS[0]! });
+
+    const [t] = await repository().ticketsForEpic(epic.id);
+    expect(t!.issueNumber).toBe(number);
+    expect(issues()).toHaveLength(1);
+    expect(issue(number)).toMatchObject({
+      title: `${t!.key}: Export endpoint`,
+      state: "open",
+      labels: ["formic: to do"],
+    });
   });
 });
 

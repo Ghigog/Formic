@@ -304,6 +304,11 @@ export async function applyReroute(
       detached: true,
     });
     await repo.setReroute(created.id, "ticket", { from: "backlog", reason: input.reason });
+    // The Epic's issue is this same request: the ticket takes it over, renamed
+    // by the sync below. A holder Epic is never synced again, so leaving the
+    // issue with it would strand it open in Backlog forever.
+    const epicIssue = (await repo.epicDetail(input.epicId))?.issueNumber;
+    if (epicIssue) await repo.updateTicket(created.id, { issueNumber: epicIssue });
 
     await publish(projectId, { type: "card.deleted", cardId: input.epicId, kind: "epic", issueNumbers: [] });
     await publish(projectId, { type: "card.created", cardId: created.id, kind: "ticket", epicId: input.epicId });
@@ -320,6 +325,11 @@ export async function applyReroute(
 
   // The drafting placeholder was standing in for the request; the request is
   // the Epic now, back where a PRD and a real breakdown can be written for it.
+  // Its issue goes with it, renamed by the sync below, rather than being left
+  // open for a ticket that no longer exists.
+  const placeholder = await repo.ticketDetail(input.ticketId);
+  const placeholderIssue = placeholder?.issueNumber ?? placeholder?.sourceIssueNumber;
+  if (placeholderIssue) await repo.setEpicIssue(input.epicId, placeholderIssue);
   await repo.deleteTickets([input.ticketId]);
   await repo.setStandalone(input.epicId, false);
   const positions = await repo.columnPositions(projectId, "backlog");
