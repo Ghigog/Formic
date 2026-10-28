@@ -474,7 +474,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             role="list"
             aria-label="Sentinels"
             onScroll={onScroll}
-            className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-contain touch-pan-x px-[calc(50%-132px)] pb-2 md:snap-none md:px-1"
+            className="relative flex min-h-fit flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-contain touch-pan-x px-[calc(50%-132px)] pb-2 md:min-h-0 md:snap-none md:px-1"
           >
             {SENTINELS.map((x, i) => (
               <Card
@@ -608,7 +608,7 @@ function Card({
       )}
     >
       <div
-        className="relative h-[46%] min-h-[180px] shrink-0 overflow-hidden md:h-auto md:min-h-[120px] md:flex-1 md:shrink"
+        className="relative h-[180px] shrink-0 overflow-hidden md:h-auto md:min-h-[120px] md:flex-1 md:shrink"
         style={{ background: portraitGround(x.id) }}
       >
         <div
