@@ -110,6 +110,9 @@ test("the colony bar stays pinned to the bottom of the phone screen", async ({ p
 });
 
 test("the sentinel Re-audit label stays on one line at 390px", async ({ page }) => {
+  // Calibrating and auditing can each take up to 15s on a slow runner, which
+  // leaves too little of the default 30s for the check itself.
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 800 });
   await page.getByRole("button", { name: /Audit grade/ }).click();
   const card = page.getByRole("region", { name: "Sentinels" }).getByRole("listitem", { name: /Professor O'Chumley/ });

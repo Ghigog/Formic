@@ -319,6 +319,35 @@ describe("SentinelsPage carousel and report modal", () => {
     expect(centred()).toBe(2);
   });
 
+  it("judges the centred card by where the rail is, not by the last scroll event", async () => {
+    await open();
+    // A phone rail of 264px cards, 12px apart, scrolled to the second card
+    // before its scroll event has arrived.
+    const rail = list();
+    Object.defineProperty(rail, "clientWidth", { configurable: true, value: 358 });
+    Object.defineProperty(rail, "scrollLeft", { configurable: true, value: 276 });
+    screen.getAllByRole("listitem").forEach((el, i) => {
+      Object.defineProperty(el, "offsetLeft", { configurable: true, value: 47 + i * 276 });
+      Object.defineProperty(el, "offsetWidth", { configurable: true, value: 264 });
+    });
+    expect(centred()).toBe(0);
+    await userEvent.click(card(0));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await userEvent.click(card(1));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("opens any card from md up, where the rail scrolls freely", async () => {
+    setViewportMatches(true);
+    try {
+      await open();
+      await userEvent.click(card(2));
+      expect(within(screen.getByRole("dialog")).getByRole("complementary", { name: "Audit report" })).toBeTruthy();
+    } finally {
+      resetViewport();
+    }
+  });
+
   it("Escape closes the modal first, then the page", async () => {
     await open();
     await userEvent.click(card(0));

@@ -60,6 +60,21 @@ describe("RepoPicker", () => {
     expect(screen.queryByRole("button", { name: /Try the example project/ })).toBeNull();
   });
 
+  it("lists the example project after boards and GitHub repositories", async () => {
+    vi.stubGlobal("fetch", async (url: string) =>
+      Response.json(
+        url.includes("/api/projects")
+          ? { projects: [{ id: "p1", repoFullName: "acme/api", baseBranch: "main", notifications: {} }] }
+          : { ok: true, repos: [{ fullName: "acme/web", private: false }], installUrl: null },
+      ),
+    );
+    render(<RepoPicker current={null} inline onClose={() => {}} />);
+    await screen.findByText("acme/web");
+    const at = (t: string) => screen.getByText(t).compareDocumentPosition.bind(screen.getByText(t));
+    expect(at("Your boards")(screen.getByText("Your GitHub repositories"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(at("Your GitHub repositories")(screen.getByText("Example project"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
   it("marks a board with the kind waiting on it", async () => {
     vi.stubGlobal("fetch", async (url: string) =>
       Response.json(

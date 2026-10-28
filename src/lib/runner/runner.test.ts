@@ -130,12 +130,22 @@ afterEach(async () => {
 describe("whyItFailed", () => {
   const url = "https://github.com/acme/widgets/actions/runs/7";
   const why = (conclusion: string, link: string | null = url) =>
-    whyItFailed(PROJECT, {} as never, { conclusion, url: link } as never, null);
+    whyItFailed(PROJECT, { runTimeout: async () => null } as never, { conclusion, url: link } as never, null);
 
   it("puts the error type first and the log link in the detail", async () => {
     expect(await why("cancelled")).toBe(`The run was cancelled\nLog: ${url}`);
     expect(await why("timed_out")).toBe(`The run timed out\nLog: ${url}`);
     expect(await why("failure", null)).toBe("The run ended as failure");
+  });
+
+  it("calls a cancelled run that hit its time limit a timeout", async () => {
+    const client = (limit: string | null) => ({ runTimeout: async () => limit }) as never;
+    const run = { conclusion: "cancelled", url } as never;
+    expect(await whyItFailed(PROJECT, client("15m0s"), run, null)).toBe(
+      `The run timed out after 15 minutes\nLog: ${url}`,
+    );
+    expect(await whyItFailed(PROJECT, client("1h30m0s"), run, null)).toMatch(/^The run timed out after 90 minutes/);
+    expect(await whyItFailed(PROJECT, client(null), run, null)).toBe(`The run was cancelled\nLog: ${url}`);
   });
 });
 
