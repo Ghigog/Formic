@@ -213,7 +213,7 @@ describe("ColonyPopover Queen carry", () => {
     resetViewport();
   });
 
-  it("hides the dialog and backdrop on a phone while carrying, then restores them and still places", async () => {
+  it("hides the dialog and backdrop on a phone while carrying, then closes the menu on a drop and still places", async () => {
     const fetchMock = dragAndDrop(true);
     const card = document.createElement("div");
     card.dataset.tid = "t-9";
@@ -232,9 +232,42 @@ describe("ColonyPopover Queen carry", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/queens", expect.objectContaining({ body: JSON.stringify({ cardId: "t-9" }) })),
     );
-    expect(dialog.className).not.toContain("invisible");
+    expect(api!.setColonyOpen).toHaveBeenCalledWith(false);
     expect(carryEvents).toEqual([true, false]);
     card.remove();
+  });
+
+  it("closes the menu on desktop after a drop on a card and still places", async () => {
+    const fetchMock = dragAndDrop(false);
+    const card = document.createElement("div");
+    card.dataset.tid = "t-9";
+    document.body.append(card);
+    document.elementFromPoint = vi.fn(() => card);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2"));
+
+    fireEvent.pointerDown(screen.getByLabelText("Drag a Queen onto a card"), { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+
+    expect(api!.setColonyOpen).toHaveBeenCalledWith(false);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/queens", expect.objectContaining({ body: JSON.stringify({ cardId: "t-9" }) })),
+    );
+    card.remove();
+  });
+
+  it("keeps the menu open when the drop is over nothing or cancelled", async () => {
+    const fetchMock = dragAndDrop(false);
+    document.elementFromPoint = vi.fn(() => document.body);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2"));
+    const queen = screen.getByLabelText("Drag a Queen onto a card");
+
+    fireEvent.pointerDown(queen, { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerUp(window, { clientX: 50, clientY: 60 });
+    fireEvent.pointerDown(queen, { button: 0, clientX: 5, clientY: 5 });
+    fireEvent.pointerCancel(window);
+
+    expect(api!.setColonyOpen).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
   });
 
   it("keeps the drag image out of any hidden ancestor on a phone while carrying", async () => {
