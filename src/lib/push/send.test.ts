@@ -30,7 +30,7 @@ describe("sendPush", () => {
     expect(sendNotification).toHaveBeenCalledWith(
       { endpoint: a.endpoint, keys: { p256dh: "pa", auth: "aa" } },
       JSON.stringify({ title: "T", body: "B" }),
-      expect.objectContaining({ vapidDetails: { subject: "mailto:x@example.com", publicKey: "pub", privateKey: "priv" } }),
+      expect.objectContaining({ urgency: "high", vapidDetails: { subject: "mailto:x@example.com", publicKey: "pub", privateKey: "priv" } }),
     );
   });
 

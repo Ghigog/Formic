@@ -78,6 +78,12 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
 
   const repo = repository();
 
+  // An armed golden bell rings a minute after the limit that stopped cards
+  // resets; the timer set here covers a board nobody is looking at.
+  const { ringBellIfDue, scheduleBell } = await import("./bell");
+  await ringBellIfDue(projectId, now);
+  await scheduleBell(projectId, now);
+
   // The board's own log is the one table here that only grows, and it is
   // almost all run output that nothing reads back. The newest frames stay;
   // the rest goes, on the same slow clock as everything else in this sweep.
