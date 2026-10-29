@@ -690,3 +690,46 @@
     transition: none;
   }
 }
+
+/* Swapping boards: the new board slides in from the side it was dug towards,
+   and the last board bounces when there is nowhere further to go. */
+@keyframes boardSlideFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-48px);
+  }
+}
+
+@keyframes boardSlideFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(48px);
+  }
+}
+
+@keyframes boardBounce {
+  30% {
+    transform: translateY(24px);
+  }
+  60% {
+    transform: translateY(-8px);
+  }
+}
+
+.board-swap[data-slide="down"] {
+  animation: boardSlideFromBottom 250ms ease-out;
+}
+
+.board-swap[data-slide="up"] {
+  animation: boardSlideFromTop 250ms ease-out;
+}
+
+.board-swap[data-slide="bounce"] {
+  animation: boardBounce 350ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-swap[data-slide] {
+    animation: none;
+  }
+}

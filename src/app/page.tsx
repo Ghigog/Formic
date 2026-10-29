@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { BoardShell } from "@/components/board/board-shell";
+import { SwappableBoard } from "@/components/board/swappable-board";
 import { Welcome } from "@/components/board/welcome";
 import { boardPropsFor } from "@/lib/board/board-props";
 import { activeProject } from "@/lib/board/project";
@@ -24,5 +24,5 @@ export default async function BoardPage() {
   if (!project) return <Welcome account={account} />;
 
   const props = await boardPropsFor(project, user);
-  return <BoardShell account={account} {...props} />;
+  return <SwappableBoard account={account} projectId={project.id} board={props} />;
 }
