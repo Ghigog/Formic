@@ -1,0 +1,2 @@
+ALTER TABLE "project" ADD COLUMN "goldenBellsUsed" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "project" ADD COLUMN "goldenBellArmed" BOOLEAN NOT NULL DEFAULT false;
