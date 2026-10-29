@@ -151,6 +151,11 @@ interface Trail {
   ctx: CanvasRenderingContext2D;
   grid: Uint8Array;
   ver: number;
+  /** Every dug point as a share of the card (u,v), so it can be repainted at any size. */
+  pts: Array<[number, number]>;
+  /** The card size (CSS px) `cv` was sized for. */
+  w: number;
+  h: number;
 }
 type TrailCanvas = HTMLCanvasElement & { __v?: number; __id?: string | null };
 
@@ -1728,14 +1733,30 @@ export class ColonyFx {
     let tr = this.trails.get(id);
     if (!tr) {
       const cv = document.createElement("canvas");
-      cv.width = Math.max(40, Math.round(r.width * 2));
-      cv.height = Math.max(40, Math.round(r.height * 2));
       const ctx = cv.getContext("2d")!;
-      ctx.fillStyle = css("var(--text)");
-      tr = { cv, ctx, grid: new Uint8Array(32 * 16), ver: 0 };
+      tr = { cv, ctx, grid: new Uint8Array(32 * 16), ver: 0, pts: [], w: 0, h: 0 };
+      this.sizeTrail(tr, r.width, r.height);
       this.trails.set(id, tr);
     }
     return tr;
+  }
+
+  /** Size the trail canvas to the card and repaint the dug points, so dots stay round. */
+  private sizeTrail(tr: Trail, w: number, h: number) {
+    if (tr.w === w && tr.h === h) return;
+    tr.w = w;
+    tr.h = h;
+    tr.cv.width = Math.max(40, Math.round(w * 2));
+    tr.cv.height = Math.max(40, Math.round(h * 2));
+    tr.ctx.fillStyle = css("var(--text)");
+    for (const [u, v] of tr.pts) this.dot(tr, u, v);
+    tr.ver++;
+  }
+
+  private dot(tr: Trail, u: number, v: number) {
+    tr.ctx.beginPath();
+    tr.ctx.arc(u * tr.cv.width, v * tr.cv.height, 7, 0, TAU);
+    tr.ctx.fill();
   }
 
   private cell(u: number, v: number) {
@@ -1786,9 +1807,8 @@ export class ColonyFx {
     const u = ant.lx / W;
     const v = ant.ly / H;
     tr.grid[this.cell(u, v)] = 1;
-    tr.ctx.beginPath();
-    tr.ctx.arc(u * tr.cv.width, v * tr.cv.height, 7, 0, TAU);
-    tr.ctx.fill();
+    if (tr.pts.length < 5000) tr.pts.push([u, v]);
+    this.dot(tr, u, v);
     tr.ver++;
     ant.x = r.left + ant.lx;
     ant.y = r.top + ant.ly;
@@ -1845,6 +1865,7 @@ export class ColonyFx {
         }
         return;
       }
+      if (el.clientWidth > 0 && el.clientHeight > 0) this.sizeTrail(tr, el.clientWidth, el.clientHeight);
       const cw = Math.round(el.clientWidth * dpr);
       const ch = Math.round(el.clientHeight * dpr);
       if (cv.width !== cw || cv.height !== ch) {
