@@ -1929,6 +1929,18 @@ async function saveCheckpoint(
   }
 }
 
+const MAX_AUDIT_STEP = 120;
+
+/** The newest thing a batch says or does, as one short line; null when it has none. */
+function latestStep(lines: string[]): string | null {
+  for (const item of readStream(lines).reverse()) {
+    const text = item.kind === "thought" ? item.text : item.kind === "action" ? item.label : item.kind === "log" ? item.line : "";
+    const one = text.replace(/\s+/g, " ").trim();
+    if (one) return one.length > MAX_AUDIT_STEP ? `${one.slice(0, MAX_AUDIT_STEP - 1)}…` : one;
+  }
+  return null;
+}
+
 /**
  * A batch of a CLI agent's output, posted by the workflow while it works.
  * Publishes it as the ticket's thoughts, actions, plan and terminal lines,
@@ -1966,6 +1978,13 @@ export async function receiveReport(input: {
         if (item.kind !== "log") continue;
         await publish(message.projectId, { type: "run.log", runId: input.job, stream: item.stream, line: item.line });
       }
+      return { notes: [], stop: false };
+    }
+    // A sentinel's audit: the newest readable item is the step it shows.
+    const audit = cardId ? await repo.auditDetail(cardId) : null;
+    if (audit && audit.status === "running" && audit.runnerJob === input.job) {
+      const step = latestStep(input.lines);
+      if (step) await repo.logAudit(audit.id, step, true);
       return { notes: [], stop: false };
     }
     return { notes: [], stop: true };

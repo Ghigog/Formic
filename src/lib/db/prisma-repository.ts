@@ -2117,7 +2117,19 @@ export class PrismaRepository implements Repository {
     return toAuditRecord(row);
   }
 
-  async logAudit(id: string, step: string): Promise<void> {
+  async auditDetail(id: string): Promise<AuditRecord | null> {
+    const row = await prisma().audit.findUnique({ where: { id } });
+    return row ? toAuditRecord(row) : null;
+  }
+
+  async logAudit(id: string, step: string, replace = false): Promise<void> {
+    if (replace) {
+      const row = await prisma().audit.findUnique({ where: { id }, select: { log: true } });
+      if (row && row.log.length > 0) {
+        await prisma().audit.update({ where: { id }, data: { log: [...row.log.slice(0, -1), step] } });
+        return;
+      }
+    }
     await prisma().audit.update({ where: { id }, data: { log: { push: step } } });
   }
 
