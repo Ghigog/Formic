@@ -32,10 +32,6 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
   const busy = useRef(false);
   const shown = useRef(current.projectId);
   useEffect(() => {
-    shown.current = current.projectId;
-  }, [current.projectId]);
-
-  useEffect(() => {
     if (!error) return;
     const timer = setTimeout(() => setError(null), 4000);
     return () => clearTimeout(timer);
@@ -67,6 +63,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
       });
       if (!res.ok) throw new Error("swap");
       const next = (await res.json()) as { project: { id: string }; board: BoardProps };
+      shown.current = next.project.id;
       setCurrent({ projectId: next.project.id, board: next.board });
       setSlide(direction);
     } catch {
