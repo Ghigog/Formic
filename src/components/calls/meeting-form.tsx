@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { GuestId } from "@/lib/calls/guests";
-import { MEETING_REPEATS, type MeetingRepeat } from "@/lib/db/repository";
+import type { MeetingRepeat } from "@/lib/db/repository";
 import type { MeetingInput } from "@/lib/hooks/use-meetings";
 
 const REPEAT_LABELS: Record<MeetingRepeat, string> = {
@@ -76,7 +76,7 @@ export function MeetingForm({
       <label className="grid gap-1">
         Repeat
         <select value={repeat} onChange={(e) => setRepeat(e.target.value as MeetingRepeat)} className="border-line rounded border px-2 py-1">
-          {MEETING_REPEATS.map((r) => (
+          {(Object.keys(REPEAT_LABELS) as MeetingRepeat[]).map((r) => (
             <option key={r} value={r}>
               {REPEAT_LABELS[r]}
             </option>
