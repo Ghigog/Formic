@@ -29,6 +29,15 @@ afterEach(() => {
 const renderHeader = () =>
   render(<BoardHeader projectName="Formic" repoFullName="acme/formic" />);
 
+describe("BoardHeader calls link", () => {
+  it("links to the Calls page from both headers", () => {
+    renderHeader();
+    const links = screen.getAllByRole("link", { name: "Calls" });
+    expect(links).toHaveLength(2);
+    links.forEach((l) => expect(l).toHaveAttribute("href", "/calls"));
+  });
+});
+
 describe("BoardHeader project button", () => {
   it("shows the Formic logo and no count when no other project has news", () => {
     renderHeader();
