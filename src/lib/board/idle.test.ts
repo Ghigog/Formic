@@ -20,6 +20,7 @@ const { IDLE_AFTER_MS, resetIdleSweep, restartIdleCards, sweepIdleCards } = awai
 const { resetChatRecovery } = await import("@/lib/agents/recovery");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
+const { savePreset } = await import("@/lib/agents/presets");
 const { MockVcsClient, resetVcs, setVcs } = await import("@/lib/vcs");
 const { resetEnvCache } = await import("@/lib/secrets/env");
 
@@ -216,5 +217,53 @@ describe("sweepIdleCards", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("the golden bell", () => {
+  const reset = Date.parse("2026-09-27T02:30:00Z");
+
+  async function stoppedByLimit() {
+    const preset = await savePreset({ name: "claude", provider: "anthropic", model: "m", prompt: "p" });
+    await repository().setColumnAgent(PROJECT, "in_progress", preset.id);
+    await repository().setPresetLimit(preset.id, { until: new Date(reset), note: "limit" });
+    const card = makeCard({
+      status: "failed",
+      stalledIn: "in_progress",
+      blockedReason: "Usage limit reached\nResets at 2:30",
+      updatedAt: new Date(NOW).toISOString(),
+    });
+    seedMemory([card]);
+    return card;
+  }
+
+  it("rings once a minute after the reset, and is used up and disarmed", async () => {
+    const card = await stoppedByLimit();
+    await repository().setGoldenBellArmed(PROJECT, true);
+
+    await restartIdleCards(PROJECT, reset + 61_000);
+    resetIdleSweep();
+    await restartIdleCards(PROJECT, reset + 62_000);
+
+    expect(started()).toEqual([`coder agent for ${card.key}, bell rung`]);
+    expect(await repository().goldenBell(PROJECT)).toEqual({ used: 1, armed: false });
+  });
+
+  it("sends nothing before the minute is up", async () => {
+    await stoppedByLimit();
+    await repository().setGoldenBellArmed(PROJECT, true);
+
+    await restartIdleCards(PROJECT, reset + 30_000);
+
+    expect(started()).toEqual([]);
+    expect(await repository().goldenBell(PROJECT)).toEqual({ used: 0, armed: true });
+  });
+
+  it("sends nothing when the bell is not armed", async () => {
+    await stoppedByLimit();
+
+    await restartIdleCards(PROJECT, reset + 61_000);
+
+    expect(started()).toEqual([]);
   });
 });
