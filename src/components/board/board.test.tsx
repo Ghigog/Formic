@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
 import { saveBoardView, saveColumnViews, loadColumnViews, BOARD_VIEW_KEY, COLUMN_VIEWS_KEY } from "./view-setting";
@@ -372,6 +373,24 @@ describe("Board remembering collapsed epics", () => {
 });
 
 describe("Board, below 768px", () => {
+  it("hides the column area until the client has resolved the viewport", async () => {
+    setViewportMatches(true);
+    const board = (
+      <Board cards={[makeCard({ status: "draft" })]} projectName="Formic" repoFullName="a/b" onOpenCard={vi.fn()} onNewItem={vi.fn()} onTransition={vi.fn()} />
+    );
+    // The server render (and hydration) is what runs before the mount effect.
+    const html = renderToString(board);
+    expect(html).toMatch(/<main[^>]*data-colony="board"[^>]*class="[^"]*\binvisible\b/);
+
+    render(board);
+    const main = document.querySelector("main[data-colony='board']")!;
+    await waitFor(() => expect(main).not.toHaveClass("invisible"));
+    // The viewport mock answers every query true, so reduced motion is on: no fade.
+    expect(main).not.toHaveClass("transition-opacity");
+    expect(within(main as HTMLElement).getByRole("region", { name: "Backlog" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "To Do" })).toBeNull();
+  });
+
   it("shows one column at a time, with an indicator carrying the counts", async () => {
     setViewportMatches(true);
     const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [
