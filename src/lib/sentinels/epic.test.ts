@@ -27,12 +27,12 @@ describe("requestFromReport", () => {
     expect(r).not.toContain("Nice naming");
   });
 
-  it("opens with the short commit and date, and omits the line without a commit", () => {
+  it("opens with the short commit and date, and names the Sentinel without a commit", () => {
     const report = { likes: [], dislikes: [pt("Slow tests")], wrong: [], missing: [] };
     const stamped = requestFromReport(s, { stars: 3, summary: null, report, commitSha: "abc1234def", at: "2026-10-23T10:00:00.000Z" });
-    expect(stamped.split("\n")[0]).toBe("Based on the audit of abc1234 at 2026-10-23.");
+    expect(stamped.split("\n")[0]).toBe(`Based on ${s.who}'s audit of abc1234 at 2026-10-23.`);
     const bare = requestFromReport(s, { stars: 3, summary: null, report, commitSha: null, at: null });
-    expect(bare).not.toContain("Based on the audit");
+    expect(bare.split("\n")[0]).toBe(`Based on ${s.who}'s audit.`);
   });
 
   it("keeps the commit line within the cap", () => {
@@ -45,7 +45,7 @@ describe("requestFromReport", () => {
       at: "2026-10-23T10:00:00.000Z",
     });
     expect(r.length).toBeLessThanOrEqual(REQUEST_CAP);
-    expect(r.startsWith("Based on the audit of abc1234")).toBe(true);
+    expect(r.startsWith(`Based on ${s.who}'s audit of abc1234`)).toBe(true);
   });
 
   it("shortens the points to fit the cap", () => {
