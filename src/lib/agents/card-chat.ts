@@ -5,7 +5,7 @@ import { z } from "zod";
 import { MODELS } from "./anthropic";
 import { applyCardAction, cardActionSchema, CARD_ACTIONS_GUIDE, type CardAction } from "./card-actions";
 import { scopeAsked } from "@/lib/coder/scope-request";
-import { claudeSpeak, openAiSpeak, type Speak, type ToolDef } from "./chat-loop";
+import { claudeSpeak, openAiSpeak, runChatLoop, type Speak, type ToolDef } from "./chat-loop";
 import { truncate } from "./coding-loop";
 import { launch } from "./pipeline";
 import { columnChatAgentFor } from "./presets";
@@ -108,7 +108,8 @@ const listInput = z.object({ prefix: z.string().optional() });
 const readInput = z.object({ path: z.string().min(1) });
 const actInput = z.object({ action: z.unknown() });
 
-const TOOL_DEFS: ToolDef[] = [
+/** The tools that read the repository: every guest in a call has them too. */
+export const FILE_TOOL_DEFS: ToolDef[] = [
   {
     name: "list_files",
     description:
@@ -129,6 +130,10 @@ const TOOL_DEFS: ToolDef[] = [
       additionalProperties: false,
     },
   },
+];
+
+const TOOL_DEFS: ToolDef[] = [
+  ...FILE_TOOL_DEFS,
   {
     name: "act",
     description:
@@ -276,7 +281,7 @@ function history(messages: CardChatMessage[]): Array<{ role: "user" | "assistant
 /* A built-in agent answers here, with tools.                                */
 /* ------------------------------------------------------------------------ */
 
-async function runTool(
+export async function runTool(
   call: { name: string; input: unknown },
   client: VcsClient,
   ref: string,
@@ -502,67 +507,46 @@ async function reply(
     const creds = await credentialsForProject(project);
     const client = vcs(project.repoFullName, creds.githubToken);
     const done: string[] = [];
-    /** The files it read, so a turn that runs out of rounds can say which. */
-    const read = new Set<string>();
     const act = async (action: CardAction) => {
       const result = await applyCardAction(projectId, cardKind, cardId, action);
       done.push(result);
       return result;
     };
 
-    let results: Array<{ id: string; content: string; isError: boolean }> | null = null;
-    const startedAt = Date.now();
-    let ranOutOfTime = false;
-    for (let turn = 0; turn < MAX_TURNS; turn++) {
-      // Before the call, not after: the route's own maxDuration is the hard
-      // stop past this, and a killed function writes nothing at all — the
-      // message stays pending and the chat is locked against new questions.
-      if (Date.now() - startedAt >= CHAT_ANSWER_BUDGET_MS) {
-        ranOutOfTime = true;
-        break;
-      }
-      const { text, calls, usage } = await speak(results);
-      tokensIn += usage.tokensIn;
-      tokensOut += usage.tokensOut;
-      costCents += usage.costCents;
-      if (calls.length === 0) {
-        await finish(messageId, {
-          content: text || done.join("\n") || "I have nothing to add.",
-          status: "done",
-          ...spent(),
-        });
-        return "agent";
-      }
-      results = [];
-      for (const call of calls) {
-        if (call.name === "read_file") {
-          const path = (call.input as { path?: unknown } | null)?.path;
-          if (typeof path === "string" && path.trim()) read.add(path.trim());
-        }
-        results.push({ id: call.id, ...(await runTool(call, client, project.baseBranch, act)) });
-      }
+    const ran = await runChatLoop({
+      speak,
+      runTool: (call) => runTool(call, client, project.baseBranch, act),
+      maxTurns: MAX_TURNS,
+      budgetMs: CHAT_ANSWER_BUDGET_MS,
+    });
+    tokensIn += ran.usage.tokensIn;
+    tokensOut += ran.usage.tokensOut;
+    costCents += ran.usage.costCents;
+    if (ran.end === "answered") {
+      await finish(messageId, {
+        content: ran.text || done.join("\n") || "I have nothing to add.",
+        status: "done",
+        ...spent(),
+      });
+      return "agent";
     }
     // Out of clock, so there is no last round to spend: say what was reached
     // and what was read, and let the person ask again.
-    if (ranOutOfTime) {
+    if (ran.end === "out_of_time") {
       const said = done.join("\n");
       await finish(messageId, {
-        content: outOfTimeReply(CHAT_ANSWER_BUDGET_MS, [...read], said),
+        content: outOfTimeReply(CHAT_ANSWER_BUDGET_MS, ran.read, said),
         status: said.trim() ? "done" : "failed",
         ...spent(),
       });
       return "agent";
     }
-    // Every round went on reading, and the model never stopped to answer. It
-    // has what it read; give it one last turn with no tools, so the turn ends
-    // in an answer rather than in an apology for not giving one.
-    const closing = await speak(null, { answerOnly: true });
-    tokensIn += closing.usage.tokensIn;
-    tokensOut += closing.usage.tokensOut;
-    costCents += closing.usage.costCents;
-    const said = closing.text.trim() || done.join("\n");
+    // Every round went on reading, and the model never stopped to answer. The
+    // loop gave it one last turn with no tools, so the turn ends in an answer
+    // rather than in an apology for not giving one.
+    const said = ran.text.trim() || done.join("\n");
     await finish(messageId, {
-      content: outOfRoundsReply(MAX_TURNS, [...read], said),
+      content: outOfRoundsReply(MAX_TURNS, ran.read, said),
       status: said.trim() ? "done" : "failed",
       ...spent(),
     });

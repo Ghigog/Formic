@@ -744,6 +744,8 @@ model CallMessage {
   status     String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.
   runnerJob  String?
+  /// What the assistant proposed in this message, waiting on the person.
+  proposals  Json     @default("[]")
   createdAt  DateTime @default(now())
 
   @@index([projectId, createdAt])

@@ -172,6 +172,8 @@ export interface CallMessage {
   content: string;
   status: "done" | "pending" | "failed";
   runnerJob: string | null;
+  /** What the assistant proposed in this message, waiting on the person. */
+  proposals: AssistantProposal[];
   createdAt: Date;
 }
 
@@ -1030,7 +1032,11 @@ export interface Repository {
     content: string;
     status?: CallMessage["status"];
   }): Promise<CallMessage>;
-  updateCallMessage(id: string, update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob">>): Promise<void>;
+  callMessage(id: string): Promise<CallMessage | null>;
+  updateCallMessage(
+    id: string,
+    update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob" | "proposals">>,
+  ): Promise<void>;
   /** The assistant conversation, oldest first. */
   assistantMessages(projectId: string): Promise<AssistantMessage[]>;
   assistantMessage(id: string): Promise<AssistantMessage | null>;
