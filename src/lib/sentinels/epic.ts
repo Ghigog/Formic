@@ -24,7 +24,7 @@ export function requestFromReport(
   audit: { stars: number; summary: string | null; report: AuditReport; rubric?: Rubric | null; commitSha?: string | null; at?: string | null },
 ): string {
   const head = [
-    audit.commitSha ? `Based on the audit of ${audit.commitSha.slice(0, 7)}${audit.at ? ` at ${audit.at.slice(0, 10)}` : ""}.` : "",
+    `Based on ${sentinel.who}'s audit${audit.commitSha ? ` of ${audit.commitSha.slice(0, 7)}${audit.at ? ` at ${audit.at.slice(0, 10)}` : ""}` : ""}.`,
     `Fix what ${sentinel.who} (${sentinel.name}) found in their audit. They rated the project ${audit.stars} of 5 stars.`,
     audit.summary ? `Summary: ${audit.summary}` : "",
   ]
