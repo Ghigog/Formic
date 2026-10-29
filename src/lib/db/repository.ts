@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { GuestId } from "@/lib/calls/guests";
+
 import type {
   AgentPreset,
   AgentRole,
@@ -130,6 +132,46 @@ export interface AssistantMessage {
   runnerJob: string | null;
   /** The preset that job was dispatched with, so a failure is blamed on it. */
   runnerAgent: string | null;
+  createdAt: Date;
+}
+
+export const MEETING_REPEATS = ["none", "weekdays", "weekly", "biweekly"] as const;
+export type MeetingRepeat = (typeof MEETING_REPEATS)[number];
+
+/** A call the person scheduled with some guests. */
+export interface Meeting {
+  id: string;
+  projectId: string;
+  title: string;
+  startsAt: Date;
+  agenda: string;
+  guests: GuestId[];
+  repeat: MeetingRepeat;
+  /** The occurrence the person was last reminded of. */
+  lastRemindedFor: Date | null;
+  createdAt: Date;
+}
+
+export interface CreateMeetingInput {
+  projectId: string;
+  title: string;
+  startsAt: Date;
+  agenda?: string;
+  guests?: GuestId[];
+  repeat?: MeetingRepeat;
+}
+
+/** One message in a call; `meetingId` is null for an unscheduled call. */
+export interface CallMessage {
+  id: string;
+  projectId: string;
+  meetingId: string | null;
+  role: "user" | "assistant";
+  /** Which guest spoke, when role is "assistant". */
+  guestId: GuestId | null;
+  content: string;
+  status: "done" | "pending" | "failed";
+  runnerJob: string | null;
   createdAt: Date;
 }
 
@@ -968,6 +1010,25 @@ export interface Repository {
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
   /** Records that the ticket's story points were auto-escalated; keeps the first time if already marked. */
   markTicketAutoEscalated(ticketId: string): Promise<void>;
+  /** A board's meetings, soonest first. */
+  meetings(projectId: string): Promise<Meeting[]>;
+  createMeeting(input: CreateMeetingInput): Promise<Meeting>;
+  updateMeeting(
+    id: string,
+    update: Partial<Pick<Meeting, "title" | "startsAt" | "agenda" | "guests" | "repeat" | "lastRemindedFor">>,
+  ): Promise<void>;
+  deleteMeeting(id: string): Promise<void>;
+  /** A meeting's messages, or the unscheduled call's when `meetingId` is null, oldest first. */
+  callMessages(projectId: string, meetingId: string | null): Promise<CallMessage[]>;
+  addCallMessage(input: {
+    projectId: string;
+    meetingId?: string | null;
+    role: "user" | "assistant";
+    guestId?: GuestId | null;
+    content: string;
+    status?: CallMessage["status"];
+  }): Promise<CallMessage>;
+  updateCallMessage(id: string, update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob">>): Promise<void>;
   /** The assistant conversation, oldest first. */
   assistantMessages(projectId: string): Promise<AssistantMessage[]>;
   assistantMessage(id: string): Promise<AssistantMessage | null>;
