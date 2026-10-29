@@ -1469,6 +1469,19 @@ export class PrismaRepository implements Repository {
     }));
   }
 
+  async cardStatusBefore(projectId: string, cardId: string, beforeSeq: number) {
+    const row = await prisma().event.findFirst({
+      where: {
+        projectId,
+        type: "card.status",
+        seq: { lt: BigInt(beforeSeq) },
+        payload: { path: ["cardId"], equals: cardId },
+      },
+      orderBy: { seq: "desc" },
+    });
+    return row?.payload ?? null;
+  }
+
   async epicEvents(projectId: string, epicId: string, types: string[], limit = 200) {
     const rows = await prisma().event.findMany({
       where: { projectId, type: { in: types }, payload: { path: ["epicId"], equals: epicId } },
