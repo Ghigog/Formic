@@ -14,6 +14,8 @@ import {
   isSquashed,
   levelOf,
   nextUnlock,
+  goldenBellsEarned,
+  goldenBellsLeft,
   queensEarned,
   rankOf,
   styleUnlocked,
@@ -66,8 +68,17 @@ describe("levels", () => {
     expect(queensEarned(50)).toBe(49);
   });
 
-  it("unlocks exactly one thing at every level from 2 to 34", () => {
-    for (let lv = 2; lv <= MAX_UNLOCK_LEVEL; lv++) expect(unlocksAt(lv)).toHaveLength(1);
+  it("earns a golden bell at every fifth level, uncapped", () => {
+    expect(goldenBellsEarned(4)).toBe(0);
+    expect(goldenBellsEarned(5)).toBe(1);
+    expect(goldenBellsEarned(12)).toBe(2);
+    expect(goldenBellsLeft(12, 0)).toBe(2);
+    expect(goldenBellsLeft(12, 1)).toBe(1);
+    expect(goldenBellsLeft(12, 5)).toBe(0);
+  });
+
+  it("unlocks one thing at every level from 2 to 34, two at Lv 5 with the golden bell", () => {
+    for (let lv = 2; lv <= MAX_UNLOCK_LEVEL; lv++) expect(unlocksAt(lv)).toHaveLength(lv === 5 ? 2 : 1);
     expect(unlocksAt(MAX_UNLOCK_LEVEL + 1)).toEqual([]);
   });
 
@@ -91,6 +102,7 @@ describe("levels", () => {
 
   it("says what the next unlock is", () => {
     expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Tester"] });
+    expect(nextUnlock(4)).toEqual({ level: 5, labels: ["Crimson", "a golden bell every 5 levels"] });
     expect(nextUnlock(33)).toEqual({ level: 34, labels: ["Sales"] });
     expect(nextUnlock(34)).toBeNull();
   });
