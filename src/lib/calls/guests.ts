@@ -1,5 +1,5 @@
 import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type AgentRole } from "@/lib/domain/entities";
-import { SENTINELS } from "@/lib/sentinels/roster";
+import { isUnlocked, SENTINELS } from "@/lib/sentinels/roster";
 
 /** Who can join a call: the assistant, a column's agent, or a Sentinel. */
 export type GuestId = "assistant" | AgentRole | `sentinel:${string}`;
@@ -25,4 +25,14 @@ export function isGuestId(value: unknown): value is GuestId {
     return SENTINELS.some((s) => `${SENTINEL_PREFIX}${s.id}` === value);
   }
   return (COLUMN_AGENT_GUESTS as readonly string[]).includes(value);
+}
+
+/** The guests a call can invite at a colony level: Sentinels not yet unlocked are left out. */
+export function guestOptions(level: number): { id: GuestId; label: string }[] {
+  const ids: GuestId[] = [
+    "assistant",
+    ...COLUMN_AGENT_GUESTS,
+    ...SENTINELS.filter((s) => isUnlocked(s, level)).map((s): GuestId => `${SENTINEL_PREFIX}${s.id}`),
+  ];
+  return ids.map((id) => ({ id, label: guestLabel(id) }));
 }
