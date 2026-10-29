@@ -162,6 +162,45 @@ describe("ColonyFx frames", () => {
     },
   );
 
+  it("keeps tunnel trails in proportion when the card changes size", () => {
+    const draws: Array<{ src: HTMLCanvasElement; w: number; h: number }> = [];
+    const ctx = new Proxy(
+      {},
+      {
+        get: (_, k) =>
+          k === "drawImage"
+            ? (src: HTMLCanvasElement, _x: number, _y: number, w: number, h: number) =>
+                draws.push({ src, w, h })
+            : () => ({ addColorStop() {} }),
+        set: () => true,
+      },
+    );
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as never);
+    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(0);
+    const fx = new ColonyFx(new SoundEngine());
+    const inner = fx as unknown as Internals;
+    const el = card("t", 100, 100);
+    const size = (w: number, h: number) => {
+      Object.defineProperty(el, "clientWidth", { value: w, configurable: true });
+      Object.defineProperty(el, "clientHeight", { value: h, configurable: true });
+    };
+    size(240, 90);
+    const unmount = fx.mount(canvas(), canvas());
+    fx.setWorld({
+      ...world("buried", "ant", ["t"]),
+      crews: new Map([["t", { phase: "buried" as CrewPhase, sp: 3 }]]),
+    });
+    inner.frame(16);
+    size(120, 200);
+    draws.length = 0;
+    inner.frame(32);
+    const last = draws.at(-1)!;
+    expect(last.w).toBe(120);
+    expect(last.h).toBe(200);
+    expect(last.src.width / last.src.height).toBeCloseTo(120 / 200, 1);
+    unmount();
+  });
+
   it("draws nothing flashy and calls back at once when motion is reduced", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
       blankContext() as never,
