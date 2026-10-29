@@ -1012,6 +1012,8 @@ export interface Repository {
   markTicketAutoEscalated(ticketId: string): Promise<void>;
   /** A board's meetings, soonest first. */
   meetings(projectId: string): Promise<Meeting[]>;
+  /** Every board's meetings with the board's owner, for the reminder tick. */
+  allMeetingsWithOwner(): Promise<{ meeting: Meeting; ownerId: string | null }[]>;
   createMeeting(input: CreateMeetingInput): Promise<Meeting>;
   updateMeeting(
     id: string,

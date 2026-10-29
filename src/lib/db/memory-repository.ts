@@ -1956,6 +1956,14 @@ export class MemoryRepository implements Repository {
       .map((m) => ({ ...m, guests: [...m.guests] }));
   }
 
+  async allMeetingsWithOwner(): Promise<{ meeting: Meeting; ownerId: string | null }[]> {
+    const s = store();
+    return s.meetings.map((m) => ({
+      meeting: { ...m, guests: [...m.guests] },
+      ownerId: s.projects.get(m.projectId)?.ownerId ?? null,
+    }));
+  }
+
   async createMeeting(input: CreateMeetingInput): Promise<Meeting> {
     const meeting: Meeting = {
       id: `mtg_${Math.random().toString(36).slice(2, 10)}`,
