@@ -42,6 +42,7 @@ import type {
   AuditReport,
   AuditResult,
   Rubric,
+  GoldenBellState,
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
@@ -553,6 +554,27 @@ export class PrismaRepository implements Repository {
     if (gone.count === 0) return false;
     await db.project.update({ where: { id: row.projectId }, data: { queensSpent: { increment: 1 } } });
     return true;
+  }
+
+  async goldenBell(projectId: string): Promise<GoldenBellState> {
+    const project = await prisma().project.findUnique({
+      where: { id: projectId },
+      select: { goldenBellsUsed: true, goldenBellArmed: true },
+    });
+    return { used: project?.goldenBellsUsed ?? 0, armed: project?.goldenBellArmed ?? false };
+  }
+
+  async setGoldenBellArmed(projectId: string, armed: boolean): Promise<void> {
+    await prisma().project.updateMany({ where: { id: projectId }, data: { goldenBellArmed: armed } });
+  }
+
+  async useGoldenBell(projectId: string): Promise<boolean> {
+    // One conditional update: of two racing calls, only one still finds it armed.
+    const { count } = await prisma().project.updateMany({
+      where: { id: projectId, goldenBellArmed: true },
+      data: { goldenBellArmed: false, goldenBellsUsed: { increment: 1 } },
+    });
+    return count === 1;
   }
 
   async queensSpent(projectId: string): Promise<number> {

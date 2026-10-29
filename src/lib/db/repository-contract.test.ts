@@ -992,6 +992,30 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("golden bell", () => {
+      it("starts unused and disarmed", async () => {
+        const p = await project();
+        expect(await repo.goldenBell(p.id)).toEqual({ used: 0, armed: false });
+      });
+
+      it("spends an armed bell: counted used and disarmed", async () => {
+        const p = await project();
+        await repo.setGoldenBellArmed(p.id, true);
+        expect(await repo.goldenBell(p.id)).toEqual({ used: 0, armed: true });
+        expect(await repo.useGoldenBell(p.id)).toBe(true);
+        expect(await repo.goldenBell(p.id)).toEqual({ used: 1, armed: false });
+        expect(await repo.useGoldenBell(p.id)).toBe(false);
+      });
+
+      it("lets only one of two concurrent uses spend the bell", async () => {
+        const p = await project();
+        await repo.setGoldenBellArmed(p.id, true);
+        const results = await Promise.all([repo.useGoldenBell(p.id), repo.useGoldenBell(p.id)]);
+        expect(results.filter(Boolean)).toHaveLength(1);
+        expect((await repo.goldenBell(p.id)).used).toBe(1);
+      });
+    });
+
     describe("queens", () => {
       it("keeps one Queen per card, marks it, and counts a cleared one as spent", async () => {
         const p = await project();

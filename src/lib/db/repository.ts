@@ -170,6 +170,12 @@ export interface CardChatMessage {
   createdAt: Date;
 }
 
+/** A project's golden bell. */
+export interface GoldenBellState {
+  used: number;
+  armed: boolean;
+}
+
 /** One point in a sentinel's report, with the file it is about if any. */
 export interface AuditPoint {
   text: string;
@@ -730,6 +736,12 @@ export interface Repository {
   clearQueen(cardId: string): Promise<boolean>;
   /** How many Queens this project has taken off the board, never handed back. */
   queensSpent(projectId: string): Promise<number>;
+  /** A project's golden bell: how many it has used and whether one is armed. */
+  goldenBell(projectId: string): Promise<GoldenBellState>;
+  /** Arms or disarms the project's golden bell. */
+  setGoldenBellArmed(projectId: string, armed: boolean): Promise<void>;
+  /** Spends the armed golden bell: counts it used and disarms it. Atomic; returns false when none was armed. */
+  useGoldenBell(projectId: string): Promise<boolean>;
   /** The archive: a project's archived tickets, off the active board. */
   archivedTickets(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;

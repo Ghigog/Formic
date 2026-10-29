@@ -37,6 +37,7 @@ import type {
   AuditResult,
   Rubric,
   CardChatMessage,
+  GoldenBellState,
   QueenRecord,
   PlatformUsage,
   PlatformUsageTotals,
@@ -156,6 +157,10 @@ interface Store {
   queens: Map<string, QueenRecord>;
   /** Queens each project has taken off, by project id. */
   queensSpent: Map<string, number>;
+  /** Golden bells each project has used, by project id. */
+  goldenBellsUsed: Map<string, number>;
+  /** Projects with an armed golden bell. */
+  goldenBellsArmed: Set<string>;
   events: Array<{
     seq: number;
     projectId: string;
@@ -218,6 +223,8 @@ function store(): Store {
     existing.standaloneTicketNumbers ??= new Map();
     existing.queens ??= new Map();
     existing.queensSpent ??= new Map();
+    existing.goldenBellsUsed ??= new Map();
+    existing.goldenBellsArmed ??= new Set();
     existing.prdTimes ??= new Map();
     existing.epicJobTimes ??= new Map();
     existing.epicJobAgents ??= new Map();
@@ -265,6 +272,8 @@ function store(): Store {
     standaloneTicketNumbers: new Map(),
     queens: new Map(),
     queensSpent: new Map(),
+    goldenBellsUsed: new Map(),
+    goldenBellsArmed: new Set(),
     events: [],
     platformUsage: new Map(),
     leases: new Map(),
@@ -521,6 +530,8 @@ export class MemoryRepository implements Repository {
       s.epicNumbers.delete(projectId);
       s.standaloneTicketNumbers.delete(projectId);
       s.queensSpent.delete(projectId);
+      s.goldenBellsUsed.delete(projectId);
+      s.goldenBellsArmed.delete(projectId);
       s.projects.delete(projectId);
     }
     for (const preset of [...s.presets.values()]) {
@@ -760,6 +771,25 @@ export class MemoryRepository implements Repository {
     if (!queen) return false;
     s.queens.delete(cardId);
     s.queensSpent.set(queen.projectId, (s.queensSpent.get(queen.projectId) ?? 0) + 1);
+    return true;
+  }
+
+  async goldenBell(projectId: string): Promise<GoldenBellState> {
+    const s = store();
+    return { used: s.goldenBellsUsed.get(projectId) ?? 0, armed: s.goldenBellsArmed.has(projectId) };
+  }
+
+  async setGoldenBellArmed(projectId: string, armed: boolean): Promise<void> {
+    const s = store();
+    if (!s.projects.has(projectId)) return;
+    if (armed) s.goldenBellsArmed.add(projectId);
+    else s.goldenBellsArmed.delete(projectId);
+  }
+
+  async useGoldenBell(projectId: string): Promise<boolean> {
+    const s = store();
+    if (!s.goldenBellsArmed.delete(projectId)) return false;
+    s.goldenBellsUsed.set(projectId, (s.goldenBellsUsed.get(projectId) ?? 0) + 1);
     return true;
   }
 
