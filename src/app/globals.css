@@ -690,3 +690,164 @@
     transition: none;
   }
 }
+
+/* Swapping boards: the new board slides in from the side it was dug towards,
+   and the last board bounces when there is nowhere further to go. */
+@keyframes boardSlideFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-48px);
+  }
+}
+
+@keyframes boardSlideFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(48px);
+  }
+}
+
+@keyframes boardBounce {
+  30% {
+    transform: translateY(24px);
+  }
+  60% {
+    transform: translateY(-8px);
+  }
+}
+
+.board-swap[data-slide="down"] {
+  animation: boardSlideFromBottom 250ms ease-out;
+}
+
+.board-swap[data-slide="up"] {
+  animation: boardSlideFromTop 250ms ease-out;
+}
+
+.board-swap[data-slide="bounce"] {
+  animation: boardBounce 350ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-swap[data-slide] {
+    animation: none;
+  }
+}
+
+/* Board dig-through: the old board slides off, a band of dirt scrolls until the load is done,
+   the new board slides in; with no board in that direction it just bounces. Reduced motion
+   gets a crossfade only. */
+@keyframes digLeaveUp {
+  to {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes digLeaveDown {
+  to {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+@keyframes digEnterFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+@keyframes digEnterFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes digBounceDown {
+  30% {
+    transform: translateY(-16px);
+  }
+  60% {
+    transform: translateY(6px);
+  }
+}
+
+@keyframes digBounceUp {
+  30% {
+    transform: translateY(16px);
+  }
+  60% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes digBand {
+  to {
+    background-position: 0 -128px;
+  }
+}
+
+@keyframes digFadeOut {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes digFadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+.dig-board[data-phase="leaving"][data-direction="down"] {
+  animation: digLeaveUp 300ms ease-in forwards;
+}
+
+.dig-board[data-phase="leaving"][data-direction="up"] {
+  animation: digLeaveDown 300ms ease-in forwards;
+}
+
+.dig-board[data-phase="entering"][data-direction="down"] {
+  animation: digEnterFromBottom 300ms ease-out;
+}
+
+.dig-board[data-phase="entering"][data-direction="up"] {
+  animation: digEnterFromTop 300ms ease-out;
+}
+
+.dig-board[data-phase="bouncing"][data-direction="down"] {
+  animation: digBounceDown 400ms ease-out;
+}
+
+.dig-board[data-phase="bouncing"][data-direction="up"] {
+  animation: digBounceUp 400ms ease-out;
+}
+
+.dig-board[data-phase="digging"] {
+  visibility: hidden;
+}
+
+.dig-band {
+  background-color: #5a3d26;
+  background-image:
+    radial-gradient(circle at 20% 30%, #7a5636 0 6px, transparent 7px),
+    radial-gradient(circle at 70% 70%, #3f2917 0 8px, transparent 9px);
+  background-size: 128px 128px;
+  animation: digBand 600ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dig-board[data-phase="leaving"] {
+    animation: digFadeOut 200ms ease-in forwards;
+  }
+
+  .dig-board[data-phase="entering"] {
+    animation: digFadeIn 200ms ease-out;
+  }
+
+  .dig-board[data-phase="bouncing"] {
+    animation: none;
+  }
+}
