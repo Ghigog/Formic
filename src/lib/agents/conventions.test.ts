@@ -4,6 +4,7 @@ import {
   ALREADY_DONE_RULE,
   ENGINEERING_PRACTICES,
   FOLLOW_UP_RULE,
+  REVIEWER_AUDIT_RULE,
   REVIEWER_FOLLOW_UP_RULE,
   SPIKE_RULE,
   VERIFY_RULE,
@@ -209,5 +210,17 @@ describe("the Product Agent writing a PRD again", () => {
     const rewritten = withEpicNotes("Export as CSV.", ["Also JSON."]);
     expect(rewritten).toContain("Export as CSV.");
     expect(rewritten).toContain("- Also JSON.");
+  });
+});
+
+describe("an audit's check on a ticket", () => {
+  it("is run by the Reviewer, not taken from the Coder's summary", () => {
+    expect(withCodingRules("Custom reviewer.", "reviewer")).toContain(REVIEWER_AUDIT_RULE);
+    expect(REVIEWER_AUDIT_RULE).toContain("run that check yourself");
+    expect(REVIEWER_AUDIT_RULE).toContain("summary is not evidence");
+  });
+
+  it("is not in the Coder's prompt", () => {
+    expect(withCodingRules("Custom coder.", "coder")).not.toContain(REVIEWER_AUDIT_RULE);
   });
 });

@@ -81,7 +81,7 @@ describe("requestFromReport", () => {
         ],
       },
     });
-    expect(r).toContain("- (4 stars) Bar 4. Found: No floor in CI.\n- (5 stars) Bar 5.");
+    expect(r).toContain("- (4 stars) Bar 4. Found: No floor in CI.\n  Verify: h\n- (5 stars) Bar 5.\n  Verify: h");
     expect(r).not.toContain("Bar 3.");
     expect(r.indexOf("Bar 4.")).toBeLessThan(r.indexOf("Off by one"));
   });
@@ -97,5 +97,19 @@ describe("requestFromReport", () => {
     expect(r).toContain("What stands between 4 and 5 stars:\n- Slow\n- Off\n- Gap");
     const clean = requestFromReport(s, { stars: 4, summary: null, rubric, report: { ...base, dislikes: [], wrong: [], missing: [] } });
     expect(clean).not.toContain("What stands between");
+  });
+
+  it("follows an unmet check with its Verify line and asks for it in the acceptance criteria", () => {
+    const rubric = { context: "c", rungs: [{ stars: 2, checks: [{ id: "2a", text: "Tests pass.", how: "Run `npm test`: exits 0." }] }] };
+    const report = { likes: [], dislikes: [], wrong: [], missing: [], checks: [{ id: "2a", met: false, evidence: "Fails." }] };
+    const r = requestFromReport(s, { stars: 1, summary: null, rubric, report });
+    expect(r).toContain("- (2 stars) Tests pass. Found: Fails.\n  Verify: Run `npm test`: exits 0.");
+    expect(r).toContain("acceptance criteria");
+  });
+
+  it("has no Verify lines without rubric checks", () => {
+    const r = requestFromReport(s, { stars: 3, summary: null, report: { likes: [], dislikes: [pt("Slow")], wrong: [], missing: [] } });
+    expect(r).not.toContain("Verify");
+    expect(r).not.toContain("acceptance criteria");
   });
 });

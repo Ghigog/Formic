@@ -112,12 +112,12 @@ export function rubricText(rubric: Rubric): string {
 }
 
 /** The checks that stand between the stars an audit gave and five. */
-export function unmetChecks(rubric: Rubric, checks: AuditCheck[]): Array<{ stars: number; text: string; evidence: string }> {
+export function unmetChecks(rubric: Rubric, checks: AuditCheck[]): Array<{ stars: number; text: string; how: string; evidence: string }> {
   const byId = new Map(checks.map((c) => [c.id, c]));
   return rubric.rungs.flatMap((r) =>
     r.checks
       .filter((k) => !byId.get(k.id)?.met)
-      .map((k) => ({ stars: r.stars, text: k.text, evidence: byId.get(k.id)?.evidence ?? "" })),
+      .map((k) => ({ stars: r.stars, text: k.text, how: k.how, evidence: byId.get(k.id)?.evidence ?? "" })),
   );
 }
 
