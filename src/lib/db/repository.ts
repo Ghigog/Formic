@@ -1032,8 +1032,10 @@ export interface Repository {
     rubric?: Rubric | null,
     commitSha?: string | null,
   ): Promise<AuditRecord>;
-  /** Adds a step to a running audit's log. */
-  logAudit(id: string, step: string): Promise<void>;
+  /** One audit by id, or null. */
+  auditDetail(id: string): Promise<AuditRecord | null>;
+  /** Adds a step to a running audit's log; with `replace`, it takes the place of the latest one. */
+  logAudit(id: string, step: string, replace?: boolean): Promise<void>;
   /** Records the GitHub Actions job a CLI agent audits in; only its result is taken. */
   setAuditJob(id: string, job: string | null, agent: string | null): Promise<void>;
   /**
