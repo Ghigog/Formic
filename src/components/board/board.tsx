@@ -182,6 +182,13 @@ export function Board({
 
   const isMobile = useMediaQuery("(max-width: 767px)");
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  // useMediaQuery is false until mount, so the columns stay hidden until the
+  // real viewport is known; otherwise mobile flashes the desktop row first.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the viewport is only known after mount
+    setReady(true);
+  }, []);
   const colony = useColony();
 
   // A Queen picked up in the Colony panel: on a phone only one column shows,
@@ -686,6 +693,8 @@ export function Board({
           onTouchCancel={isMobile ? () => (swipeStart.current = null) : undefined}
           className={cn(
             "relative flex min-h-0 flex-1",
+            !ready && "invisible opacity-0",
+            ready && !reducedMotion && "transition-opacity duration-150",
             isMobile ? "touch-pan-y flex-col gap-3 p-4" : "gap-4 p-6 pb-16",
           )}
         >
