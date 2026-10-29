@@ -39,6 +39,7 @@ import {
   FOLLOW_UP_RULE,
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
+  REVIEWER_AUDIT_RULE,
   REVIEWER_FOLLOW_UP_RULE,
   REVIEWER_SCOPE_RULE,
   SHOWCASE_BRIEF,
@@ -147,7 +148,7 @@ const MAX_REPORT = 20_000;
 const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${PLAN_FIRST_RULE}
 - ${CHECKPOINT_RULE}
-- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- Title (N pt): what and why" per line, before the plan.
+- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- Title (N pt): what and why" per line, before the plan.${mode === "implement" ? "" : `\n- ${REVIEWER_AUDIT_RULE}`}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${CHECKS_RULE}
 - ${VERIFY_RULE}

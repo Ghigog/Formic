@@ -35,7 +35,7 @@ export function requestFromReport(
   const unmet =
     audit.rubric && audit.report.checks
       ? unmetChecks(audit.rubric, audit.report.checks).map(
-          (c) => `- (${c.stars} stars) ${c.text}${c.evidence ? ` Found: ${c.evidence}` : ""}`,
+          (c) => `- (${c.stars} stars) ${c.text}${c.evidence ? ` Found: ${c.evidence}` : ""}${c.how ? `\n  Verify: ${c.how}` : ""}`,
         )
       : [];
   const capped = !!audit.rubric && cappedByFindings(audit.rubric, audit.report);
@@ -43,7 +43,7 @@ export function requestFromReport(
     ...(capped
       ? [{ title: "What stands between 4 and 5 stars", lines: SECTIONS.flatMap((s) => audit.report[s.key].map(line)) }]
       : []),
-    { title: "Rubric checks not met, lowest star first", lines: unmet },
+    { title: `Rubric checks not met, lowest star first${unmet.length > 0 ? ". Carry each Verify line into the acceptance criteria of the ticket that fixes the check, so the reviewer can run it" : ""}`, lines: unmet },
     ...SECTIONS.map((s) => ({ title: s.title, lines: audit.report[s.key].map(line) })),
   ].filter((b) => b.lines.length > 0);
   const render = () => [head, ...blocks.map((b) => `${b.title}:\n${b.lines.join("\n")}`)].join("\n\n");

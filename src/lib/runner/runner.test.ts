@@ -20,7 +20,7 @@ import {
   whyItFailed,
 } from "./runner";
 import { addNote } from "@/lib/coder/notes";
-import { FOLLOW_UP_RULE, REVIEWER_FOLLOW_UP_RULE } from "@/lib/agents/prompts";
+import { FOLLOW_UP_RULE, REVIEWER_AUDIT_RULE, REVIEWER_FOLLOW_UP_RULE } from "@/lib/agents/prompts";
 import {
   ALREADY_DONE_TRAILER,
   ANSWER_PATH,
@@ -1221,6 +1221,7 @@ describe("a CLI agent fixing red CI", () => {
     expect(prompt).toContain("CI is green on this head.");
     expect(prompt).toContain(PLAN_FIRST_RULE);
     expect(prompt).toContain(REVIEWER_FOLLOW_UP_RULE);
+    expect(prompt).toContain(REVIEWER_AUDIT_RULE);
   });
 });
 
