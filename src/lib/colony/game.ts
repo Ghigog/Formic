@@ -94,12 +94,16 @@ export const FOUR_SCOUTS_LEVEL = 22;
 /** The level that lets idle reserve slots send scouts out on their own. */
 export const AUTO_SCOUT_LEVEL = 27;
 
+/** The level that earns the first golden bell; one more every this many levels. */
+export const GOLDEN_BELL_LEVEL = 5;
+
 export const COLONY_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: number }> = [
   { key: "reserve-1", label: "a reserve of 1", lv: RESERVE_ONE_LEVEL },
   { key: "scouts-3", label: "3 scouts a ticket", lv: THREE_SCOUTS_LEVEL },
   { key: "reserve-0", label: "no reserve", lv: NO_RESERVE_LEVEL },
   { key: "scouts-4", label: "4 scouts a ticket", lv: FOUR_SCOUTS_LEVEL },
   { key: "auto-scout", label: "Auto-scout", lv: AUTO_SCOUT_LEVEL },
+  { key: "golden-bell", label: "a golden bell every 5 levels", lv: GOLDEN_BELL_LEVEL },
 ];
 
 /** Whether a bug style is open at this level. Unknown keys read as locked. */
@@ -132,6 +136,16 @@ export function rankOf(level: number): string {
 /** Queens earned at a level: one for each level gained since Lv 1, with no cap. */
 export function queensEarned(level: number): number {
   return Math.max(0, level - 1);
+}
+
+/** Golden bells earned at a level: one for every fifth level, with no cap. */
+export function goldenBellsEarned(level: number): number {
+  return Math.floor(Math.max(0, level) / GOLDEN_BELL_LEVEL);
+}
+
+/** Golden bells still to arm, given how many have been used. */
+export function goldenBellsLeft(level: number, used: number): number {
+  return Math.max(0, goldenBellsEarned(level) - used);
 }
 
 /** What a level unlocks, by label. */
