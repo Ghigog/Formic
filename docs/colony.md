@@ -38,7 +38,7 @@ from Lv 28).
 | 2 | Tester (Sentinel) |
 | 3 | QA (Sentinel) |
 | 4 | Beetle |
-| 5 | Crimson |
+| 5 | Crimson, and the first golden bell |
 | 6 | Architect (Sentinel) |
 | 7 | Least reserve drops to 1 |
 | 8 | Ladybird |
@@ -69,6 +69,9 @@ from Lv 28).
 | 33 | Terracotta |
 | 34 | Sales (Sentinel) |
 
+A golden bell then comes every 5 levels after that (Lv 10, 15, and so on, with
+no cap); see Bells below.
+
 The schedule lives in `src/lib/colony/game.ts` (styles and colony rules) and
 `src/lib/sentinels/roster.ts` (Sentinels). Before Lv 7 the least reserve is 2,
 and a ticket may send 2 scouts before Lv 10.
@@ -79,6 +82,22 @@ colony size less one.
 The colony popover (the ant hill, bottom right) shows each of these beside
 the Queens: the scouts a ticket may send and the reserve held now, with the
 level that raises the next one. Each row's "i" opens a note on how it works.
+
+## Bells
+
+The colony has two bells.
+
+- **The silver bell** is the ordinary one. It is always there and costs
+  nothing to use.
+- **The golden bell** is earned: one at Lv 5 and one more every 5 levels
+  after, so Lv 12 holds two. The count is `floor(level / 5)`. Each use spends
+  one; the ones still unspent are the level's earned bells less those used
+  (`goldenBellsEarned` and `goldenBellsLeft` in `src/lib/colony/game.ts`).
+
+A golden bell is **armed** before it rings: arming picks it up and holds it
+ready, and nothing is spent until it takes effect. **It takes effect one
+minute after it is armed**, not at once, which leaves a minute to change your
+mind and disarm it. Only an armed bell that is left to ring is used up.
 
 ## Scouts
 
