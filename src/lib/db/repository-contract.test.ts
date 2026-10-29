@@ -1338,6 +1338,59 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.assistantMessages(other.id)).map((m) => m.id)).toEqual([kept.id]);
       });
 
+      it("keeps a board's meetings with their agenda, guests and repeat, and drops them with the board", async () => {
+        const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+        const p = await repo.ensureProject({ ownerId: user.id, repoFullName: `contract/${randomUUID()}`, baseBranch: "main" });
+        expect(await repo.meetings(p.id)).toEqual([]);
+
+        const later = await repo.createMeeting({ projectId: p.id, title: "Later", startsAt: new Date("2030-01-02T10:00:00Z") });
+        const m = await repo.createMeeting({
+          projectId: p.id,
+          title: "Standup",
+          startsAt: new Date("2030-01-01T09:00:00Z"),
+          agenda: "Blockers",
+          guests: ["assistant", "coder", "sentinel:tester"],
+          repeat: "weekdays",
+        });
+
+        expect(later).toMatchObject({ agenda: "", guests: [], repeat: "none", lastRemindedFor: null });
+        const listed = await repo.meetings(p.id);
+        expect(listed.map((x) => x.title)).toEqual(["Standup", "Later"]);
+        expect(listed[0]).toMatchObject({ agenda: "Blockers", guests: ["assistant", "coder", "sentinel:tester"], repeat: "weekdays" });
+
+        const reminded = new Date("2030-01-01T08:45:00Z");
+        await repo.updateMeeting(m.id, { title: "Daily", repeat: "weekly", lastRemindedFor: reminded });
+        expect((await repo.meetings(p.id)).find((x) => x.id === m.id)).toMatchObject({ title: "Daily", repeat: "weekly", lastRemindedFor: reminded });
+
+        const q = await repo.addCallMessage({ projectId: p.id, meetingId: m.id, role: "user", content: "Hi" });
+        await repo.addCallMessage({ projectId: p.id, meetingId: m.id, role: "assistant", guestId: "coder", content: "Hello", status: "pending" });
+        await repo.addCallMessage({ projectId: p.id, role: "user", content: "Unscheduled" });
+        expect(q).toMatchObject({ meetingId: m.id, guestId: null, status: "done", runnerJob: null });
+        const thread = await repo.callMessages(p.id, m.id);
+        expect(thread.map((x) => x.content)).toEqual(["Hi", "Hello"]);
+        expect(thread[1]).toMatchObject({ guestId: "coder", status: "pending" });
+        expect((await repo.callMessages(p.id, null)).map((x) => x.content)).toEqual(["Unscheduled"]);
+
+        await repo.updateCallMessage(thread[1]!.id, { status: "done", runnerJob: "job-1", content: "Hello!" });
+        expect((await repo.callMessages(p.id, m.id))[1]).toMatchObject({ status: "done", runnerJob: "job-1", content: "Hello!" });
+
+        await repo.deleteMeeting(later.id);
+        expect((await repo.meetings(p.id)).map((x) => x.id)).toEqual([m.id]);
+
+        await repo.deleteUser(user.id);
+        expect(await repo.meetings(p.id)).toEqual([]);
+        expect(await repo.callMessages(p.id, m.id)).toEqual([]);
+        expect(await repo.callMessages(p.id, null)).toEqual([]);
+      });
+
+      it("deletes a meeting's messages with it", async () => {
+        const p = await project();
+        const m = await repo.createMeeting({ projectId: p.id, title: "T", startsAt: new Date() });
+        await repo.addCallMessage({ projectId: p.id, meetingId: m.id, role: "user", content: "x" });
+        await repo.deleteMeeting(m.id);
+        expect(await repo.callMessages(p.id, m.id)).toEqual([]);
+      });
+
       it("records and clears the job an audit runs in", async () => {
         const p = await project();
         const audit = await repo.startAudit(p.id, "tester");
