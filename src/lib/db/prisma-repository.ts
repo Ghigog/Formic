@@ -2024,6 +2024,11 @@ export class PrismaRepository implements Repository {
     return rows.map(toMeeting);
   }
 
+  async allMeetingsWithOwner(): Promise<{ meeting: Meeting; ownerId: string | null }[]> {
+    const rows = await prisma().meeting.findMany({ include: { project: { select: { ownerId: true } } } });
+    return rows.map((row) => ({ meeting: toMeeting(row), ownerId: row.project.ownerId }));
+  }
+
   async createMeeting(input: CreateMeetingInput): Promise<Meeting> {
     const row = await prisma().meeting.create({ data: input });
     return toMeeting(row);

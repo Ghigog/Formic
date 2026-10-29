@@ -14,6 +14,9 @@ export async function register(): Promise<void> {
   const { startUsageClock } = await import("@/lib/usage/governor");
   startUsageClock();
 
+  const { startReminderClock } = await import("@/lib/calls/reminders");
+  startReminderClock();
+
   const { reconcileOrphanedRuns } = await import("@/lib/agents/recovery");
   try {
     const reclaimed = await reconcileOrphanedRuns();

@@ -2,16 +2,24 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import type { GuestId } from "@/lib/calls/guests";
+import { useMeetings } from "@/lib/hooks/use-meetings";
+import { Calendar, weekStart } from "./calendar";
+import { MeetingForm } from "./meeting-form";
 
-/** The Calls page: starts an unscheduled call, a meeting that begins now. */
-export function CallsView() {
+/** The Calls page: two weeks of slots, the form for the slot picked, and Start call for an unscheduled call. */
+export function CallsView({ guests }: { guests: { id: GuestId; label: string }[] }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const { meetings, error, create } = useMeetings();
+  const [from] = useState(() => weekStart(new Date()));
+  const [slot, setSlot] = useState<Date | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
+  // An unscheduled call is a meeting that begins now.
   const start = async () => {
     setStarting(true);
-    setError(null);
+    setStartError(null);
     try {
       const res = await fetch("/api/calls/meetings", {
         method: "POST",
@@ -22,26 +30,38 @@ export function CallsView() {
       if (!res.ok || !data?.meeting) throw new Error(data?.error ?? "Could not start the call. Try again.");
       router.push(`/calls/${data.meeting.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setStartError(e instanceof Error ? e.message : String(e));
       setStarting(false);
     }
   };
 
   return (
-    <div className="p-4">
-      <button
-        type="button"
-        onClick={() => void start()}
-        disabled={starting}
-        className="bg-amber text-on-amber rounded px-3 py-1.5 text-[13px] font-medium disabled:opacity-50"
-      >
-        Start call
-      </button>
-      {error && (
-        <p role="alert" className="text-crimson-text mt-2 text-[12px]">
-          {error}
-        </p>
+    <main className="mx-auto grid max-w-6xl gap-4 p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold">Calls</h1>
+        <button
+          type="button"
+          onClick={() => void start()}
+          disabled={starting}
+          className="bg-amber text-on-amber rounded px-3 py-1.5 text-[13px] font-medium disabled:opacity-50"
+        >
+          Start call
+        </button>
+      </div>
+      {(error || startError) && <p role="alert">{error ?? startError}</p>}
+      <Calendar meetings={meetings} from={from} onPick={setSlot} />
+      {slot && (
+        <MeetingForm
+          key={slot.getTime()}
+          at={slot}
+          guests={guests}
+          onCancel={() => setSlot(null)}
+          onSave={async (input) => {
+            await create(input);
+            setSlot(null);
+          }}
+        />
       )}
-    </div>
+    </main>
   );
 }
