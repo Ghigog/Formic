@@ -189,6 +189,10 @@ model Project {
   autoEscalate               Boolean  @default(false)
   /// Queens taken off the board, so clearing one never hands it back.
   queensSpent                Int      @default(0)
+  /// Golden bells rung on this board, so one is never spent twice.
+  goldenBellsUsed            Int      @default(0)
+  /// Whether a golden bell is armed and will ring on the next chance.
+  goldenBellArmed            Boolean  @default(false)
   /// The most Coder Agents this board runs at once, scouts included. Null
   /// (the default) is no cap: only file reservations hold work back.
   colonySize                 Int?
