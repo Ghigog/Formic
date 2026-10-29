@@ -1682,8 +1682,16 @@ export class MemoryRepository implements Repository {
     return { ...audit, log: [], files: [] };
   }
 
-  async logAudit(id: string, step: string): Promise<void> {
-    store().audits.find((a) => a.id === id)?.log.push(step);
+  async auditDetail(id: string): Promise<AuditRecord | null> {
+    const a = store().audits.find((x) => x.id === id);
+    return a ? { ...a, log: [...a.log], files: [...a.files] } : null;
+  }
+
+  async logAudit(id: string, step: string, replace = false): Promise<void> {
+    const audit = store().audits.find((a) => a.id === id);
+    if (!audit) return;
+    if (replace && audit.log.length > 0) audit.log[audit.log.length - 1] = step;
+    else audit.log.push(step);
   }
 
   async setAuditJob(id: string, job: string | null, agent: string | null): Promise<void> {

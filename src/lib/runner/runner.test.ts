@@ -1753,6 +1753,50 @@ describe("a CLI agent seen while it works", () => {
     await runCoderAgent(PROJECT, ticket.id);
     expect(MockVcsClient.runner().dispatches[0]!.inputs.prompt).toContain("- Keep the old API working.");
   });
+
+  describe("a sentinel audit", () => {
+    const reading = (text: string) =>
+      line({ type: "assistant", message: { content: [{ type: "tool_use", id: "a", name: "Read", input: { file_path: text } }] } });
+    async function running() {
+      const audit = await repository().startAudit(PROJECT, "Hawk");
+      const id = audit.id;
+      await repository().setAuditJob(id, `${id}--n1`, "claude");
+      return { id, job: `${id}--n1` };
+    }
+    const report = (job: string, lines: string[]) => receiveReport({ job, since: Date.now() - 1_000, after: 0, lines });
+    const log = async (id: string) => (await repository().auditDetail(id))!.log;
+
+    it("shows the newest readable item as its one-line step, replacing the last", async () => {
+      const { id, job } = await running();
+      await repository().logAudit(id, "Asking Claude Code");
+      const reply = await report(job, ["warming up", reading("core/src/main/java/Thing.java")]);
+      expect(reply.stop).toBe(false);
+      expect(await log(id)).toEqual(["Reading core/src/main/java/Thing.java"]);
+
+      await report(job, ["line one\n   line two " + "x".repeat(300)]);
+      const [step, ...rest] = await log(id);
+      expect(rest).toEqual([]);
+      expect(step).not.toMatch(/\n/);
+      expect(step!.length).toBeLessThanOrEqual(120);
+    });
+
+    it("leaves the step alone when a batch has nothing readable", async () => {
+      const { id, job } = await running();
+      await report(job, [reading("a.ts")]);
+      expect((await report(job, [])).stop).toBe(false);
+      expect(await log(id)).toEqual(["Reading a.ts"]);
+    });
+
+    it("tells a finished audit or an old job to stop, and changes nothing", async () => {
+      const { id, job } = await running();
+      await report(job, [reading("a.ts")]);
+      await repository().setAuditJob(id, `${id}--n2`, "claude");
+      expect((await report(job, [reading("b.ts")])).stop).toBe(true);
+      await repository().finishAudit(id, { stars: 3, quote: "q", summary: "s", report: null, model: null, files: [] } as never);
+      expect((await report(`${id}--n2`, [reading("c.ts")])).stop).toBe(true);
+      expect(await log(id)).toEqual(["Reading a.ts"]);
+    });
+  });
 });
 
 describe("an API-key coder running in a job", () => {
