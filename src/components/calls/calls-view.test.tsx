@@ -3,6 +3,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CallsView } from "./calls-view";
 
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+
 const guests = [
   { id: "assistant" as const, label: "Assistant" },
   { id: "sentinel:techops" as const, label: "TechOps" },
@@ -52,5 +55,11 @@ describe("CallsView", () => {
     render(<CallsView guests={guests} />);
     await userEvent.click((await screen.findAllByRole("button", { name: /09:00$/ }))[0]!);
     expect(screen.getByLabelText("TechOps")).toBeInTheDocument();
+  });
+
+  it("starts an unscheduled call and opens it", async () => {
+    render(<CallsView guests={guests} />);
+    await userEvent.click(screen.getByRole("button", { name: "Start call" }));
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/calls/m1"));
   });
 });
