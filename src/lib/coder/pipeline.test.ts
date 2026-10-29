@@ -753,6 +753,26 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.blockedReason).toContain("needs a human");
   });
 
+  it("announces a ticket parked at the ceiling once, however often it is reviewed again", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+    await repository().updateTicket(ticket.id, { attempts: ATTEMPT_DEFAULTS.review, reviewedSha: pull.headSha });
+
+    const stops = async () =>
+      (await repository().eventsAfter(PROJECT, 0)).filter((e) => {
+        const p = e.payload as { type: string; cardId?: string; status?: string };
+        return p.type === "card.status" && p.cardId === ticket.id && p.status === "blocked";
+      }).length;
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+    expect(await stops()).toBe(1);
+
+    // A sweep or another CI report looks at the parked ticket again.
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+    expect(await stops()).toBe(1);
+  });
+
   it("ignores a result about a commit that is no longer the head", async () => {
     useAgents(new StubCoder(writesInScope()), new StubReviewer());
     const ticket = await seedTicket();

@@ -1291,6 +1291,19 @@ export class MemoryRepository implements Repository {
       .map(({ seq, type, payload, at }) => ({ seq, type, payload, at }));
   }
 
+  async cardStatusBefore(projectId: string, cardId: string, beforeSeq: number) {
+    const found = store()
+      .events.filter(
+        (e) =>
+          e.projectId === projectId &&
+          e.type === "card.status" &&
+          e.seq < beforeSeq &&
+          (e.payload as { cardId?: unknown } | null)?.cardId === cardId,
+      )
+      .at(-1);
+    return found?.payload ?? null;
+  }
+
   async epicEvents(projectId: string, epicId: string, types: string[], limit = 200) {
     return store()
       .events.filter(

@@ -93,7 +93,18 @@ export async function stallTicket(
 
   // Closed while its agent was being stopped: the run that stopped does not
   // get to bring it back out of Done.
-  if ((await repository().ticketDetail(ticket.id))?.status === "merged") return;
+  const current = await repository().ticketDetail(ticket.id);
+  if (current?.status === "merged") return;
+  // Already stopped here for this reason, as when a sweep reviews a parked
+  // ticket again: nothing changes, so nothing is announced.
+  if (
+    current?.status === status &&
+    current.stalledIn === options.stalledIn &&
+    current.stage === stage &&
+    current.blockedReason === reason
+  ) {
+    return;
+  }
 
   await repository().updateTicket(ticket.id, {
     status,

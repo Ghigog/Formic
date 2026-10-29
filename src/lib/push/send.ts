@@ -41,6 +41,9 @@ export async function sendPush(userId: string, payload: PushPayload): Promise<Pu
   if (subscriptions.length === 0) return result;
 
   const options = {
+    // Delivered at once: at the default, normal, an idle Android phone holds
+    // pushes back and hands them over together when it is next woken.
+    urgency: "high" as const,
     vapidDetails: {
       subject: process.env.VAPID_SUBJECT!,
       publicKey: process.env.VAPID_PUBLIC_KEY!,
