@@ -2061,11 +2061,20 @@ export class PrismaRepository implements Repository {
     return toCallMessage(row);
   }
 
+  async callMessage(id: string): Promise<CallMessage | null> {
+    const row = await prisma().callMessage.findUnique({ where: { id } });
+    return row ? toCallMessage(row) : null;
+  }
+
   async updateCallMessage(
     id: string,
-    update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob">>,
+    update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob" | "proposals">>,
   ): Promise<void> {
-    await prisma().callMessage.update({ where: { id }, data: update });
+    const { proposals, ...rest } = update;
+    await prisma().callMessage.update({
+      where: { id },
+      data: { ...rest, ...(proposals !== undefined ? { proposals: proposals as never } : {}) },
+    });
   }
 
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
@@ -2370,10 +2379,12 @@ function toCallMessage(row: {
   content: string;
   status: string;
   runnerJob: string | null;
+  proposals: unknown;
   createdAt: Date;
 }): CallMessage {
   return {
     ...row,
+    proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
     role: row.role === "user" ? "user" : "assistant",
     guestId: isGuestId(row.guestId) ? row.guestId : null,
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",

@@ -163,3 +163,56 @@ export function openAiSpeak(
     };
   };
 }
+
+export interface ChatLoopResult {
+  /** How it ended: the model answered, the clock ran out, or every round went on tools. */
+  end: "answered" | "out_of_time" | "out_of_rounds";
+  /** What the model said last; for "out_of_rounds", its closing turn without tools. Empty when out of time. */
+  text: string;
+  /** The files it read, in order, without repeats. */
+  read: string[];
+  usage: Usage;
+}
+
+/**
+ * Runs a tool-calling conversation to its end: asks the model, runs the tools
+ * it calls, and goes again, until it answers, the clock runs out (checked
+ * before each call, since a killed function writes nothing) or the rounds do,
+ * and then it gets one last turn with no tools. Shared by a card's chat and a
+ * call; each brings its own tools.
+ */
+export async function runChatLoop(options: {
+  speak: Speak;
+  runTool: (call: ToolCall) => Promise<{ content: string; isError: boolean }>;
+  maxTurns: number;
+  budgetMs: number;
+}): Promise<ChatLoopResult> {
+  const { speak, runTool, maxTurns, budgetMs } = options;
+  const read = new Set<string>();
+  const usage: Usage = { model: "", tokensIn: 0, tokensOut: 0, costCents: 0 };
+  const spend = (u: Usage) => {
+    usage.model = u.model || usage.model;
+    usage.tokensIn += u.tokensIn;
+    usage.tokensOut += u.tokensOut;
+    usage.costCents += u.costCents;
+  };
+  let results: Array<{ id: string; content: string; isError: boolean }> | null = null;
+  const startedAt = Date.now();
+  for (let turn = 0; turn < maxTurns; turn++) {
+    if (Date.now() - startedAt >= budgetMs) return { end: "out_of_time", text: "", read: [...read], usage };
+    const { text, calls, usage: spent } = await speak(results);
+    spend(spent);
+    if (calls.length === 0) return { end: "answered", text, read: [...read], usage };
+    results = [];
+    for (const call of calls) {
+      if (call.name === "read_file") {
+        const path = (call.input as { path?: unknown } | null)?.path;
+        if (typeof path === "string" && path.trim()) read.add(path.trim());
+      }
+      results.push({ id: call.id, ...(await runTool(call)) });
+    }
+  }
+  const closing = await speak(null, { answerOnly: true });
+  spend(closing.usage);
+  return { end: "out_of_rounds", text: closing.text, read: [...read], usage };
+}

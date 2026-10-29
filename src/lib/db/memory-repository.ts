@@ -2001,6 +2001,7 @@ export class MemoryRepository implements Repository {
     const message: CallMessage = {
       id: `cm_${Math.random().toString(36).slice(2, 10)}`,
       runnerJob: null,
+      proposals: [],
       createdAt: new Date(),
       ...input,
       meetingId: input.meetingId ?? null,
@@ -2011,9 +2012,14 @@ export class MemoryRepository implements Repository {
     return { ...message };
   }
 
+  async callMessage(id: string): Promise<CallMessage | null> {
+    const found = store().callMessages.find((m) => m.id === id);
+    return found ? { ...found } : null;
+  }
+
   async updateCallMessage(
     id: string,
-    update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob">>,
+    update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob" | "proposals">>,
   ): Promise<void> {
     const found = store().callMessages.find((m) => m.id === id);
     if (found) Object.assign(found, update);

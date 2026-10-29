@@ -69,7 +69,7 @@ import { directoryTree } from "@/lib/vcs/repositories";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { repository } from "@/lib/db";
-import type { AuditRecord, TicketDetail } from "@/lib/db/repository";
+import type { AuditRecord, CallMessage, TicketDetail } from "@/lib/db/repository";
 import type { Goal } from "@/lib/sentinels/rubric";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
@@ -1318,6 +1318,33 @@ export async function startCliAsk(input: {
 }
 
 /**
+ * Starts a CLI agent answering a guest's turn in a call, in the "ask" mode
+ * the board's assistant uses. Returns why it could not start, or null.
+ */
+export async function startCliCallAnswer(input: {
+  projectId: string;
+  messageId: string;
+  agent: CliAgent;
+  prompt: string;
+}): Promise<string | null> {
+  const repo = repository();
+  const project = await projectFor(input.projectId);
+  const creds = await credentialsForProject(project);
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.githubToken),
+    baseBranch: project.baseBranch,
+    agent: input.agent,
+    job: jobId(input.messageId, randomUUID().slice(0, 8)),
+    mode: "ask",
+    cardKey: "call",
+    from: project.baseBranch,
+    prompt: input.prompt,
+    record: (job) => repo.updateCallMessage(input.messageId, { runnerJob: job }),
+  });
+  return started.ok ? null : started.reason;
+}
+
+/**
  * Starts a CLI agent auditing as a sentinel, in the "ask" mode the board's
  * assistant uses: a report, not a change. The audit finishes when the job's
  * answer comes back, in completeCliSentinel.
@@ -1520,6 +1547,11 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
     return;
   }
 
+  const call = !message && messageId ? await repo.callMessage(messageId) : null;
+  if (call) {
+    await completeCliCall(projectId, result, call, client);
+    return;
+  }
   if (!message) {
     await completeCliCardChat(projectId, result, messageId, client);
     return;
@@ -1558,6 +1590,30 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
     attempt: attemptOfJob(result.job),
     change,
   });
+}
+
+/** A call's answer from a CLI agent arrived, or its run failed. */
+async function completeCliCall(
+  projectId: string,
+  result: RunnerResult,
+  message: CallMessage,
+  client: VcsClient,
+): Promise<void> {
+  const staging = `${STAGING_PREFIX}${result.job}`;
+  const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
+  if (message.projectId !== projectId || message.runnerJob !== result.job) {
+    await cleanUp();
+    return;
+  }
+  const { finishCliCall } = await import("@/lib/calls/turn");
+  if (result.conclusion !== "success") {
+    await cleanUp();
+    await finishCliCall(message.id, null, await whyItFailed(projectId, client, result, null));
+    return;
+  }
+  const answer = await client.readFile(ANSWER_PATH, staging).catch(() => null);
+  await cleanUp();
+  await finishCliCall(message.id, answer);
 }
 
 /** A card chat's answer from a CLI agent arrived, or its run failed. */
@@ -1972,7 +2028,9 @@ export async function receiveReport(input: {
     }
     // An assistant or card-chat "ask": live while its message is pending.
     const message = cardId
-      ? ((await repo.assistantMessage(cardId)) ?? (await repo.cardChatMessage(cardId)))
+      ? ((await repo.assistantMessage(cardId)) ??
+        (await repo.cardChatMessage(cardId)) ??
+        (await repo.callMessage(cardId)))
       : null;
     if (message && message.runnerJob === input.job && message.status === "pending") {
       for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {

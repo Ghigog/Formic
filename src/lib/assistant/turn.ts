@@ -49,7 +49,7 @@ export function changeBranchFor(id: string): string {
 /** How many cards' live state a CLI agent is handed up front. */
 const MAX_CLI_REPORTS = 4;
 
-const TOOL_DEFS: ToolDef[] = [
+export const TOOL_DEFS: ToolDef[] = [
   {
     name: "list_files",
     description:
@@ -165,7 +165,7 @@ function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistan
     }));
 }
 
-interface TurnContext {
+export interface TurnContext {
   projectId: string;
   client: VcsClient;
   ref: string;
@@ -174,7 +174,7 @@ interface TurnContext {
   wrote: Set<string>;
 }
 
-async function runTool(
+export async function runTool(
   call: ToolCall,
   turn: TurnContext,
   proposals: AssistantProposal[],
