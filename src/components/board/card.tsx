@@ -352,8 +352,21 @@ export function ProblemBadge({ card }: { card: BoardCard }) {
   );
 }
 
-/** The mark for a notice: a red warning triangle or a yellow alert bell-dot. */
+/**
+ * The mark for a notice: a red warning dot, a yellow alert square, or, for a
+ * question an agent is waiting on, a terracotta speech bubble.
+ */
 export function NoticeIcon({ severity }: { severity: Notice["severity"] }) {
+  if (severity === "question") {
+    return (
+      <span role="img" aria-label="Question" className="text-terracotta-cta inline-flex size-4 shrink-0">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path d="M3 2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7l-3.5 2.6V12H3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" fill="currentColor" />
+          <text x="8" y="9.6" textAnchor="middle" fontSize="8" fontWeight="700" fill="var(--card)">?</text>
+        </svg>
+      </span>
+    );
+  }
   return (
     <span
       role="img"
@@ -369,6 +382,13 @@ export function NoticeIcon({ severity }: { severity: Notice["severity"] }) {
     </span>
   );
 }
+
+/** The text colour each kind of notice is written in. */
+export const NOTICE_INK: Record<Notice["severity"], string> = {
+  warning: "text-crimson",
+  alert: "text-clay",
+  question: "text-terracotta-cta",
+};
 
 /**
  * The same problem, spelled out at the top of an opened card: what is wrong
@@ -888,7 +908,7 @@ function PlainTicket({
           data-severity={notice.severity}
           className={cn(
             "inline-flex min-w-0 items-center gap-1.5 text-[11px] font-semibold",
-            notice.severity === "warning" ? "text-crimson" : "text-clay",
+            NOTICE_INK[notice.severity],
           )}
         >
           <NoticeIcon severity={notice.severity} />

@@ -6,6 +6,7 @@ import type { ProviderId } from "@/lib/llm/providers";
 import type { ScoutCandidate, ScoutVerdict } from "./judge";
 import type { FollowUp } from "./follow-ups";
 import type { Origin } from "./origin";
+import type { AgentQuestion } from "@/lib/domain/question";
 
 /**
  * The agent boundary. Every pipeline is reachable through one of these, and
@@ -107,7 +108,7 @@ export interface ProductAgent {
     input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
   ): Promise<
     AgentOutcome<
-      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "prd"; title: string; prd: Prd; questions?: AgentQuestion[] }
       | { kind: "reroute"; reason: string; ticket: DraftTicket }
     >
   >;

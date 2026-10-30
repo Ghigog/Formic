@@ -53,6 +53,7 @@ import {
 } from "@/lib/agents/prompts";
 import type { DraftTicket, ReviewTask, Usage } from "@/lib/agents/ports";
 import type { Origin } from "@/lib/agents/origin";
+import { MAX_QUESTIONS } from "@/lib/domain/question";
 import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { followUpsFromSummary } from "@/lib/agents/follow-ups";
@@ -1169,7 +1170,7 @@ async function completeCliAnswer(
             reason: value.reason,
             ticket: toDraftTicket(value.ticket),
           })
-        : applyPrd(projectId, epicId, value.prd);
+        : applyPrd(projectId, epicId, value.prd, false, value.questions.slice(0, MAX_QUESTIONS));
     }
     checked = product;
   } else if (result.mode === "architect") {

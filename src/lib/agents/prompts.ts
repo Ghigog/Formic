@@ -212,7 +212,9 @@ export const PRODUCT_CONVENTIONS = `Length: size the PRD to the request, never t
 Conventions:
 - Write userStories as "As a <role>, I'd like to <capability>, so that <benefit>."
 - Write successCriteria so they can become Gherkin scenarios: observable outcomes, not implementation details.
-- Use the product's own vocabulary (its ubiquitous language), the same words the code and the team use.`;
+- Use the product's own vocabulary (its ubiquitous language), the same words the code and the team use.
+
+Questions. A good product manager interviews before they build. When the request leaves open a choice that changes what gets built (who it is for, which of two behaviours, what matters most) and neither the request nor the codebase tells you what the person would want, ask. Put at most three short questions in questions, in plain words, each with why its answer matters. Still write your best PRD, with your assumptions stated, so the person sees your thinking: the Epic waits for their answer, and you write the PRD again with it. Do not ask what you can decide well yourself, and never ask just to be safe. Leave questions empty when nothing needs asking.`;
 
 /**
  * Where a feature's look comes from. Without it every agent designs from

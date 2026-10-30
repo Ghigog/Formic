@@ -18,6 +18,7 @@ import { repository } from "@/lib/db";
 import type { CardChatMessage } from "@/lib/db/repository";
 import { COLUMN_AGENT_ROLE, AGENT_ROLE_LABELS, type BoardCard } from "@/lib/domain/entities";
 import type { FormicEvent } from "@/lib/domain/events";
+import { answerNote, isQuestion } from "@/lib/domain/question";
 import { COLUMN_LABELS, columnFor, columnOf, isStalled } from "@/lib/domain/status";
 import { ACTIVITY_EVENTS, activityOf } from "@/lib/domain/ticket-view";
 import { extractJson } from "@/lib/llm/openai-compat";
@@ -671,6 +672,11 @@ export async function ask(
     throw new ChatBusyError();
   }
   await repo.addCardChatMessage({ projectId, cardKind, cardId, role: "user", content: text });
+  const card = await repo.cardById(cardId);
+  if (card && isQuestion(card.blockedReason)) {
+    await answerQuestion(projectId, cardKind, cardId, card.blockedReason!, text);
+    return;
+  }
   if (cardKind === "ticket") await addNote(projectId, cardId, text);
   if (cardKind === "epic") await addEpicNote(projectId, cardId, text);
   const pending = await repo.addCardChatMessage({
@@ -682,4 +688,33 @@ export async function ask(
     status: "pending",
   });
   launch(() => answer(cardKind, cardId, pending.id), `${cardKind} chat answer ${pending.id}`);
+}
+
+/**
+ * The person answered the question the card was waiting on: the answer goes
+ * in as a note beside the question, so the agent that asked reads both, and
+ * the column's work starts again with it. No chat turn is needed: the agent's
+ * real reply is the work.
+ */
+async function answerQuestion(
+  projectId: string,
+  cardKind: "epic" | "ticket",
+  cardId: string,
+  reason: string,
+  text: string,
+): Promise<void> {
+  const note = answerNote(reason, text);
+  if (cardKind === "ticket") await addNote(projectId, cardId, note);
+  else await addEpicNote(projectId, cardId, note);
+  const started = await applyCardAction(projectId, cardKind, cardId, {
+    type: "redo",
+    instruction: `${note}\n\nCarry on with this ticket's work, using their answer. Do not redo what is already done.`,
+  });
+  await repository().addCardChatMessage({
+    projectId,
+    cardKind,
+    cardId,
+    role: "assistant",
+    content: `Thank you, that is what I needed. ${started}`,
+  });
 }

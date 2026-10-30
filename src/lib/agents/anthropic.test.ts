@@ -286,6 +286,13 @@ describe("the Product Agent", () => {
     expect(await draft()).toMatchObject({ ok: false, blocked: true });
   });
 
+  it("returns the questions it asks beside its draft PRD, no more than three", async () => {
+    const q = (n: number) => ({ question: `Q${n}?`, why: "w" });
+    streamed(JSON.stringify({ ...JSON.parse(PRD_REPLY), questions: [q(1), q(2), q(3), q(4)] }), "end_turn");
+    const out = await draft();
+    expect(out.ok && out.value.kind === "prd" && out.value.questions).toEqual([q(1), q(2), q(3)]);
+  });
+
   it("fails when the PRD is cut off", async () => {
     streamed(PRD_REPLY, "max_tokens");
     expect(await draft()).toMatchObject({ ok: false, blocked: false, error: expect.stringContaining("cut off") });

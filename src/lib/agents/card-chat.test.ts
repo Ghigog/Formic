@@ -26,6 +26,7 @@ import type { ColumnId } from "@/lib/domain/status";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
 import { applyTransition } from "@/lib/board/service";
+import { questionReason } from "@/lib/domain/question";
 import { cardProblem } from "@/lib/domain/status";
 import { completeCliRun } from "@/lib/runner/runner";
 import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runnerWorkflow } from "@/lib/runner/workflow";
@@ -684,5 +685,31 @@ describe("an Epic's chat", () => {
     const toolResult = (sent[1]!.messages as Array<{ role: string; content: string }>).find((m) => m.role === "tool");
     expect(toolResult?.content).toContain("already breaking this Epic down");
     expect(launched).toEqual([]);
+  });
+});
+
+describe("a question the card is waiting on", () => {
+  it("takes the person's next message as the answer, beside the question, and picks the work back up", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Bells", rawRequest: "A bell", position: 1 });
+    const reason = questionReason("The Product Agent", [{ question: "Silver or gold first?", why: "It sets the unlock." }]);
+    await repo.stallEpic(epic.id, { status: "blocked", stalledIn: "backlog", stage: 2, reason });
+
+    await send(PROJECT, "epic", epic.id, "Silver first.");
+
+    expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([
+      "You asked the person:\nSilver or gold first?\n   Why: It sets the unlock.\n\nThey answered: Silver first.",
+    ]);
+    expect(launched).toEqual([`product agent for ${epic.key}, from its chat`]);
+    const said = await repo.cardChatMessages(epic.id);
+    expect(said.at(-1)).toMatchObject({ role: "assistant", status: "done" });
+    expect(said.at(-1)!.content).toContain("Writing the PRD again");
+  });
+
+  it("leaves an ordinary stalled card's chat to its agent", async () => {
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, { status: "failed", stalledIn: "in_progress", blockedReason: "Tests failed" });
+    await send(PROJECT, "ticket", ticket.id, "Why?");
+    expect(await noteTexts(PROJECT, ticket.id)).toEqual(["Why?"]);
   });
 });

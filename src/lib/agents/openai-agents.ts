@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { MAX_QUESTIONS, productQuestions, type AgentQuestion } from "@/lib/domain/question";
 import type {
   AgentAttachment,
   AgentConfig,
@@ -160,6 +161,7 @@ async function askForJson<T>(
 const productPrdAnswer = z.object({
   title: z.string().describe("A short imperative Epic title, under 80 characters."),
   prd: prdSchema,
+  questions: productQuestions.default([]),
 });
 
 const productRerouteAnswer = z.object({
@@ -182,7 +184,7 @@ export class OpenAiProductAgent implements ProductAgent {
     input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
   ): Promise<
     AgentOutcome<
-      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "prd"; title: string; prd: Prd; questions?: AgentQuestion[] }
       | { kind: "reroute"; reason: string; ticket: DraftTicket }
     >
   > {
@@ -219,7 +221,11 @@ export class OpenAiProductAgent implements ProductAgent {
         usage: result.usage,
       };
     }
-    return { ok: true, value: { kind: "prd", ...result.value }, usage: result.usage };
+    return {
+      ok: true,
+      value: { kind: "prd", ...result.value, questions: result.value.questions.slice(0, MAX_QUESTIONS) },
+      usage: result.usage,
+    };
   }
 }
 

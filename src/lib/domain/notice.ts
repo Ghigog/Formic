@@ -1,12 +1,15 @@
+import { isQuestion } from "./question";
 import { isStalled, type ColumnId, type TicketStatus } from "./status";
 
 /**
  * A stalled card told apart by what it asks of a person: a critical stop is a
  * warning, a pause that waits for the person to act (authorize more files,
- * add a key) is an alert. A dependency wait is neither, so it has no notice.
+ * add a key) is an alert, and an agent waiting on the person's answer is a
+ * question (see ./question.ts). A dependency wait is none of them, so it has
+ * no notice.
  */
 export type Notice = {
-  severity: "warning" | "alert";
+  severity: "warning" | "alert" | "question";
   title: string;
   shortDescription: string;
   longDescription: string;
@@ -29,6 +32,9 @@ export function classifyNotice(card: {
   const shortDescription = first.trim();
   const longDescription = rest.join("\n").trim();
 
+  if (isQuestion(card.blockedReason)) {
+    return { severity: "question", title: "Question for you", shortDescription: shortDescription.replace(/^Question: /, ""), longDescription };
+  }
   if (card.status === "failed") {
     return { severity: "warning", title: "Failed", shortDescription, longDescription };
   }

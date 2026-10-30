@@ -15,6 +15,7 @@ import type {
 } from "./ports";
 import { budgetTokens } from "./ports";
 import { repository } from "@/lib/db";
+import { questionReason, type AgentQuestion } from "@/lib/domain/question";
 import { mergePlan, planRole } from "@/lib/agents/plan";
 import type { AttachmentRef } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
@@ -223,8 +224,20 @@ export async function applyPrd(
   epicId: string,
   prd: Prd,
   byHuman = false,
+  questions: readonly AgentQuestion[] = [],
 ): Promise<void> {
   const repo = repository();
+  if (questions.length > 0) {
+    // A draft: the person sees the agent's thinking, and the Epic waits for
+    // the answer before anything is broken down from it.
+    await repo.setEpicPrd(epicId, prd, false);
+    await stallEpic(projectId, epicId, questionReason("The Product Agent", questions), {
+      blocked: true,
+      stalledIn: "backlog",
+      stage: 2,
+    });
+    return;
+  }
   const before = await repo.cardById(epicId);
   const queued =
     before?.kind === "epic" &&
@@ -618,7 +631,7 @@ async function draftPrd(
 
   if (outcome.ok) {
     if (outcome.value.kind === "prd") {
-      await applyPrd(projectId, epicId, outcome.value.prd);
+      await applyPrd(projectId, epicId, outcome.value.prd, false, outcome.value.questions);
     } else {
       await applyReroute(projectId, {
         from: "backlog",
