@@ -10,6 +10,7 @@ import { authMode, cookieHeader } from "@/lib/auth/session";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { getRepository } from "@/lib/vcs/repositories";
 import { openExampleProject } from "@/lib/board/example";
+import { addDesignTicket, addOnboardingTicket } from "@/lib/board/onboarding";
 import { limited, RUN } from "@/lib/rate-limit";
 import { classifyEvent, type NotificationKind } from "@/lib/notifications/classify";
 import type { FormicEvent } from "@/lib/domain/events";
@@ -168,6 +169,13 @@ export async function POST(req: NextRequest) {
       repoFullName,
       baseBranch: remote?.defaultBranch ?? "main",
     });
+    // A new board starts with its AGENTS.md and DESIGN.md tickets, as the
+    // tour promises. Cards cost nothing; the setup run waits for the first
+    // agent (see agents/columns/[column]/route.ts).
+    if (!existed) {
+      await addOnboardingTicket(project.id);
+      await addDesignTicket(project.id);
+    }
   }
 
   await repo.markOpened(user.id, project.id);

@@ -41,7 +41,8 @@ export async function PUT(
   const hadAgent = Object.keys(await repository().columnAgents(project.id)).length > 0;
   await assignAgent(project, user, col.data, body.data.presetId);
   // The first agent on a board is what makes it cost anything: only now does
-  // its repository get the setup pull request and the board its AGENTS.md and DESIGN.md tickets.
+  // its repository get the setup pull request. New boards already have their
+  // AGENTS.md and DESIGN.md tickets; adding them here covers older boards.
   if (!hadAgent && project.repoFullName && Object.keys(await repository().columnAgents(project.id)).length > 0) {
     await addOnboardingTicket(project.id);
     await addDesignTicket(project.id);
