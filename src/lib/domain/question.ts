@@ -42,6 +42,31 @@ export function questionReason(asker: string, questions: readonly AgentQuestion[
   ].join("\n");
 }
 
+const SUMMARY_HEADER = /^\s*#*\s*questions? for you\s*:?\s*$/i;
+const SUMMARY_ITEM = /^\s*(?:[-*]|\d+[.)])\s+(.+?)\s*$/;
+
+/**
+ * The questions a CLI agent's summary asks, from its "Question for you:"
+ * section: one "- question" per line, with "Why: ..." after it optional.
+ */
+export function questionsFromSummary(text: string): AgentQuestion[] {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => SUMMARY_HEADER.test(l));
+  if (start < 0) return [];
+  const found: AgentQuestion[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (!line.trim()) {
+      if (found.length) break;
+      continue;
+    }
+    const item = SUMMARY_ITEM.exec(line);
+    if (!item) break;
+    const [question, why = ""] = item[1]!.split(/\s+Why:\s+/i);
+    found.push({ question: question!.trim(), why: why.trim() });
+  }
+  return found.slice(0, MAX_QUESTIONS);
+}
+
 /** Whether a stalled card's reason is a question waiting for the person. */
 export function isQuestion(reason: string | null | undefined): boolean {
   return !!reason?.startsWith(QUESTION_LINE);

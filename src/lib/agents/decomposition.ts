@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_QUESTIONS, productQuestions, type AgentQuestion } from "@/lib/domain/question";
 import { BUG_SEVERITIES, STORY_POINTS, WORK_TYPES, fileScopeSchema, severityFor } from "@/lib/domain/entities";
 import { validateDag } from "@/lib/domain/dag";
 import { describeProblem, describeProblems } from "@/lib/domain/problems";
@@ -131,11 +132,16 @@ export const ticketOrRerouteSchema = z.union([ticketRerouteAnswer, ticketSpecSch
 
 export const decompositionSchema = z.object({
   tickets: z.array(ticketSpecSchema).min(1).max(12),
+  questions: productQuestions
+    .describe(
+      `Questions for the person, at most ${MAX_QUESTIONS}, when the PRD leaves open a choice that changes the design and neither it, their own words nor the code settles it. Empty otherwise. With any here, the tickets are your draft and the Epic waits for their answer.`,
+    )
+    .default([]),
 });
 
 export function checkDecomposition(
   raw: unknown,
-): { ok: true; tickets: DraftTicket[] } | { ok: false; correction: string } {
+): { ok: true; tickets: DraftTicket[]; questions: AgentQuestion[] } | { ok: false; correction: string } {
   const parsed = decompositionSchema.safeParse(raw);
   if (!parsed.success) {
     return {
@@ -151,7 +157,7 @@ export function checkDecomposition(
   const validation = validateDag(
     tickets.map((t) => ({ key: t.key, dependsOn: t.dependsOn, fileScope: t.fileScope })),
   );
-  if (validation.ok) return { ok: true, tickets };
+  if (validation.ok) return { ok: true, tickets, questions: parsed.data.questions.slice(0, MAX_QUESTIONS) };
 
   return {
     ok: false,

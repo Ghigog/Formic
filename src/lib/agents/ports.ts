@@ -163,7 +163,8 @@ export interface ArchitectAgent {
       /** Attempts the person allows before it stalls; unset is the default. */
       maxAttempts?: number;
     },
-  ): Promise<AgentOutcome<DraftTicket[]>>;
+    /** With questions, the tickets are a draft and the Epic waits on the person's answer. */
+  ): Promise<AgentOutcome<DraftTicket[]> & { questions?: AgentQuestion[] }>;
   /** A To Do request: no PRD, just the raw text and one ticket to draft. */
   draftTicket(
     ctx: AgentContext,

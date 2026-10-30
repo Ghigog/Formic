@@ -276,3 +276,13 @@ describe("craft", () => {
     expect(taskBrief(task)).not.toContain("own words");
   });
 });
+
+describe("the Architect's questions", () => {
+  it("come back beside a valid breakdown, capped, and default to none", () => {
+    const q = (n: number) => ({ question: `Q${n}?`, why: "w" });
+    const asked = checkDecomposition({ tickets: [spec], questions: [q(1), q(2), q(3), q(4)] });
+    expect(asked.ok && asked.questions).toEqual([q(1), q(2), q(3)]);
+    const none = checkDecomposition({ tickets: [spec] });
+    expect(none.ok && none.questions).toEqual([]);
+  });
+});

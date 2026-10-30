@@ -53,7 +53,7 @@ import {
 } from "@/lib/agents/prompts";
 import type { DraftTicket, ReviewTask, Usage } from "@/lib/agents/ports";
 import type { Origin } from "@/lib/agents/origin";
-import { MAX_QUESTIONS } from "@/lib/domain/question";
+import { MAX_QUESTIONS, questionReason, questionsFromSummary, type AgentQuestion } from "@/lib/domain/question";
 import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { followUpsFromSummary } from "@/lib/agents/follow-ups";
@@ -159,7 +159,8 @@ const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
 - When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters (no ticket key and no issue number), a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.
-- ${HANDOFF_RULE} Put them in the summary as a "For you:" section, one "- step" per line, before the plan.`;
+- ${HANDOFF_RULE} Put them in the summary as a "For you:" section, one "- step" per line, before the plan.
+- When the work cannot go on well without the person's answer (a choice between behaviours, what matters more, whether a follow-up is wanted), ask instead of guessing: change no files, write the summary file with a "Question for you:" section, one "- question Why: why it matters" per line in plain words, then run exactly this, the one commit you may make: git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY". The ticket waits for the answer and you are started again with it. Do not ask what you can decide well yourself.`;
 
 const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
@@ -1088,13 +1089,13 @@ function checkDraft(text: string): Checked<DraftTicket> {
   };
 }
 
-function checkTickets(text: string): Checked<DraftTicket[]> {
+function checkTickets(text: string): Checked<{ tickets: DraftTicket[]; questions: AgentQuestion[] }> {
   const raw = readJson(text);
   if (raw === null) {
     return { ok: false, correction: "That was not a JSON object. Answer with only the JSON object." };
   }
   const checked = checkDecomposition(raw);
-  return checked.ok ? { ok: true, value: checked.tickets } : checked;
+  return checked.ok ? { ok: true, value: checked } : checked;
 }
 
 /**
@@ -1175,7 +1176,14 @@ async function completeCliAnswer(
     checked = product;
   } else if (result.mode === "architect") {
     const tickets = checkTickets(answer);
-    if (tickets.ok) return applyTickets(projectId, epicId, tickets.value);
+    if (tickets.ok && tickets.value.questions.length > 0) {
+      return stallEpic(projectId, epicId, questionReason("The Architect Agent", tickets.value.questions), {
+        blocked: true,
+        stalledIn: "todo",
+        stage: 3,
+      });
+    }
+    if (tickets.ok) return applyTickets(projectId, epicId, tickets.value.tickets);
     checked = tickets;
   } else {
     return applyShowcase(projectId, epicId, answer.trim());
@@ -1727,6 +1735,11 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
     // What it proposed as tickets of their own stands whatever else it did,
     // a send-back included.
     await recordFollowUps(ticket.id, followUpsFromSummary(change.messages.at(-1) ?? ""));
+    const asked = change.files.length === 0 ? questionsFromSummary(change.messages.at(-1) ?? "") : [];
+    if (asked.length > 0) {
+      await stop(questionReason(isTicketImplementation(result.mode) ? "The Coder Agent" : "The Reviewer Agent", asked), true);
+      return;
+    }
     if (
       isTicketImplementation(result.mode) &&
       change.files.length === 0 &&

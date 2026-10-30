@@ -318,7 +318,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
       request?: string;
       maxAttempts?: number;
     },
-  ): Promise<AgentOutcome<DraftTicket[]>> {
+  ): Promise<AgentOutcome<DraftTicket[]> & { questions?: AgentQuestion[] }> {
     const maxAttempts = input.maxAttempts ?? ATTEMPT_DEFAULTS.decomposition;
     const model = this.config.model ?? MODELS.architect;
     const shape = requestShape(model, { effort: "medium" });
@@ -398,7 +398,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         raw = null;
       }
       const checked = checkDecomposition(raw);
-      if (checked.ok) return { ok: true, value: checked.tickets, usage: total };
+      if (checked.ok) return { ok: true, value: checked.tickets, questions: checked.questions, usage: total };
 
       messages.push(
         { role: "assistant", content: text },

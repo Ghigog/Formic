@@ -244,7 +244,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       request?: string;
       maxAttempts?: number;
     },
-  ): Promise<AgentOutcome<DraftTicket[]>> {
+  ): Promise<AgentOutcome<DraftTicket[]> & { questions?: AgentQuestion[] }> {
     const maxAttempts = input.maxAttempts ?? ATTEMPT_DEFAULTS.decomposition;
     const r = resolve(this.config);
     if (typeof r === "string") return failure(this.config.model ?? "", r, true);
@@ -274,7 +274,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       ],
       (raw) => {
         const checked = checkDecomposition(raw);
-        return checked.ok ? { ok: true, value: checked.tickets } : checked;
+        return checked.ok ? { ok: true, value: checked } : checked;
       },
       maxAttempts,
       (attempt) =>
@@ -296,7 +296,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
         result.usage,
       );
     }
-    return { ok: true, value: result.value, usage: result.usage };
+    return { ok: true, value: result.value.tickets, questions: result.value.questions, usage: result.usage };
   }
 
   async draftTicket(

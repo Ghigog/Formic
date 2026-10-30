@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyNotice } from "./notice";
-import { answerNote, isQuestion, MAX_QUESTIONS, questionReason } from "./question";
+import { answerNote, isQuestion, MAX_QUESTIONS, questionReason, questionsFromSummary } from "./question";
 
 describe("a question for the person", () => {
   const one = { question: "Should the bell hang from a string?", why: "It sets how it rings." };
@@ -34,5 +34,19 @@ describe("a question for the person", () => {
   it("does not mistake an ordinary stop for a question", () => {
     expect(isQuestion("Tests failed")).toBe(false);
     expect(isQuestion(null)).toBe(false);
+  });
+});
+
+describe("a CLI agent's questions", () => {
+  it("are read from the summary's \"Question for you:\" section", () => {
+    const summary = "Asked about the bell\n\nNothing changed yet.\n\nQuestion for you:\n- Should a tap ring it? Why: misclicks.\n- Gold first?\n\nPlan:\n- [ ] Build it";
+    expect(questionsFromSummary(summary)).toEqual([
+      { question: "Should a tap ring it?", why: "misclicks." },
+      { question: "Gold first?", why: "" },
+    ]);
+  });
+
+  it("are none when the summary asks nothing", () => {
+    expect(questionsFromSummary("Done\n\nPlan:\n- [x] it")).toEqual([]);
   });
 });

@@ -97,14 +97,15 @@ prompts, custom or not.
 
 ### 2. Questions as a first-class part of Formic
 
-- [ ] A `question` notice severity, with its own mark (not red, not yellow) on
+- [x] A `question` notice severity, with its own mark (not red, not yellow) on
       cards and in the drawer.
-- [ ] An `ask_question` action for every agent in every column: the question,
-      why it matters, whether the work waits on it, and the assumption it takes
-      if not.
-- [ ] A waiting question pauses the card; the person answers in the card's chat
+- [x] Every column's agent can ask: the Product Agent and the Architect
+      beside their draft, the Coder and the Reviewer in `finish` (or a
+      "Question for you:" summary section on a CLI agent). A question always
+      waits; an agent that can carry on decides for itself and says so.
+- [x] A waiting question pauses the card; the person answers in the card's chat
       and the answer resumes the work.
-- [ ] Product Agent interviews before a PRD: at most two or three sharp
+- [x] Product Agent interviews before a PRD: at most two or three sharp
       questions, only where the answer changes the product.
 - [ ] Agents can ask to propose follow-up work.
 - [ ] Open questions gather in one place (the PM chat), so they read as a

@@ -685,7 +685,13 @@ export async function runArchitectAgent(
     maxAttempts: await attemptsFor((await projectFor(projectId)).ownerId, "decomposition"),
   });
 
-  if (outcome.ok) {
+  if (outcome.ok && outcome.questions?.length) {
+    await stallEpic(projectId, epicId, questionReason("The Architect Agent", outcome.questions), {
+      blocked: true,
+      stalledIn: "todo",
+      stage: 3,
+    });
+  } else if (outcome.ok) {
     await applyTickets(projectId, epicId, outcome.value);
   } else {
     await stallEpic(projectId, epicId, outcome.error, {
