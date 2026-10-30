@@ -83,7 +83,21 @@ export async function cardIds(page: Page, name: ColumnName): Promise<string[]> {
     );
 }
 
+/**
+ * Puts aside the "Getting Formic ready" dialog whenever it opens. The run
+ * shares one board, and the first test to give a column an agent starts the
+ * runner setup, so every test after it would otherwise meet that dialog over
+ * whatever it clicks, sooner or later depending on how fast the page loads.
+ * The dialog has its own component tests.
+ */
+export async function dismissSetup(page: Page): Promise<void> {
+  await page.addLocatorHandler(page.getByRole("dialog", { name: "Getting Formic ready" }), async (dialog) => {
+    await dialog.getByRole("button", { name: "Not now" }).click();
+  });
+}
+
 export async function gotoBoard(page: Page): Promise<void> {
+  await dismissSetup(page);
   // Not `networkidle`: the board holds an SSE connection to /api/events open
   // for the life of the page, so the network is never idle.
   await page.goto("/", { waitUntil: "domcontentloaded" });
