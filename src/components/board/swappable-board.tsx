@@ -5,6 +5,7 @@ import { BoardShell } from "./board-shell";
 import type { Account } from "./account-menu";
 import { DigTransition, type DigTransitionHandle } from "./dig-transition";
 import { createSwapGestures } from "./swap-gesture";
+import { attachSwapSound, swapSfx } from "./swap-sound";
 import type { SwapDirection } from "./swap-order";
 import type { BoardProps } from "@/lib/board/board-props";
 
@@ -87,6 +88,8 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
     swapRef.current = swap;
   });
 
+  useEffect(() => attachSwapSound(), []);
+
   // Native listeners: a three-finger move must stop the page scrolling under
   // it, which a passive (React) touch listener cannot do.
   useEffect(() => {
@@ -143,7 +146,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
 
   return (
     <div ref={stage} onClickCapture={endStreak} onKeyDownCapture={endStreak} onInputCapture={endStreak} onDragStartCapture={endStreak}>
-      <DigTransition ref={dig}>
+      <DigTransition ref={dig} onSound={swapSfx}>
         <BoardShell key={current.projectId} account={account} {...current.board} />
       </DigTransition>
       {error && (

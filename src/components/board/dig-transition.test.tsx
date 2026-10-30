@@ -57,6 +57,26 @@ describe("DigTransition", () => {
     expect(screen.queryByTestId("dig-band")).toBeNull();
   });
 
+  it("sounds like digging: into the soil, grit while it loads, and out again", async () => {
+    const sounds: string[] = [];
+    const ref = createRef<DigTransitionHandle>();
+    render(
+      <DigTransition ref={ref} onSound={(s) => sounds.push(s)}>
+        <p>board</p>
+      </DigTransition>,
+    );
+    let resolve!: () => void;
+    act(() => void ref.current!.swap("down", new Promise<void>((r) => (resolve = r)), () => {}));
+    expect(sounds).toEqual(["dig"]);
+    await act(() => vi.advanceTimersByTimeAsync(LEAVE_MS + 600));
+    expect(sounds.filter((s) => s === "grit").length).toBeGreaterThan(1);
+    await act(async () => resolve());
+    expect(sounds.at(-1)).toBe("surface");
+    const gritted = sounds.length;
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(sounds).toHaveLength(gritted);
+  });
+
   it("stays in the earth a moment even when the board loads at once", async () => {
     const ref = setup();
     act(() => void ref.current!.swap("down", Promise.resolve(1), () => {}));

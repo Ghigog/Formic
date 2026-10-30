@@ -69,6 +69,11 @@ export const SOUND_KEY = "formic:sound";
 
 const soundListeners = new Set<() => void>();
 
+/** Whether the sound switch is on, for sounds made outside the colony's provider. */
+export function soundOn(): boolean {
+  return readSound();
+}
+
 function readSound(): boolean {
   try {
     return window.localStorage.getItem(SOUND_KEY) !== "off";

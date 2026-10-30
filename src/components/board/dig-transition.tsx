@@ -43,7 +43,16 @@ const prefersReducedMotion = () =>
  * board a little, with resistance, so the earth shows at its edge before it
  * lets go. Reduced motion is a crossfade, with no slide and no soil.
  */
-export const DigTransition = forwardRef<DigTransitionHandle, { children: ReactNode }>(function DigTransition({ children }, ref) {
+/** The sounds a swap makes, as it makes them. */
+export type DigSound = "dig" | "grit" | "surface" | "drop";
+
+/** How often grit trickles past while the board loads. */
+const GRIT_MS = 170;
+
+export const DigTransition = forwardRef<DigTransitionHandle, { children: ReactNode; onSound?: (s: DigSound) => void }>(function DigTransition(
+  { children, onSound },
+  ref,
+) {
   const [phase, setPhase] = useState<DigPhase>({ name: "idle" });
   const [pulled, setPulled] = useState<number | null>(null);
   const [toward, setToward] = useState<string | null>(null);
@@ -77,18 +86,22 @@ export const DigTransition = forwardRef<DigTransitionHandle, { children: ReactNo
           () => ({ ok: false as const }),
         );
         setPhase({ name: "leaving", direction });
+        onSound?.("dig");
         await wait(reduced ? FADE_MS : LEAVE_MS);
         setPhase({ name: "digging", direction });
-        const [result] = await Promise.all([loaded, reduced ? null : wait(MIN_DIG_MS)]);
+        const grit = setInterval(() => onSound?.("grit"), GRIT_MS);
+        const [result] = await Promise.all([loaded, reduced ? null : wait(MIN_DIG_MS)]).finally(() => clearInterval(grit));
         if (!result.ok) {
           // Back the way it came: the old board rises out of the soil again.
           setPhase({ name: "entering", direction: direction === "down" ? "up" : "down" });
+          onSound?.("surface");
           await wait(reduced ? FADE_MS : ENTER_MS);
           setPhase({ name: "idle" });
           return false;
         }
         arrive(result.value);
         setPhase({ name: "entering", direction });
+        onSound?.("surface");
         await wait(reduced ? FADE_MS : ENTER_MS);
         setPhase({ name: "idle" });
         return true;
@@ -97,7 +110,7 @@ export const DigTransition = forwardRef<DigTransitionHandle, { children: ReactNo
         lastPull.current = 0;
       }
     },
-    [wait],
+    [wait, onSound],
   );
 
   const bounce = useCallback(
@@ -106,12 +119,13 @@ export const DigTransition = forwardRef<DigTransitionHandle, { children: ReactNo
       busy.current = true;
       setPulled(null);
       setPhase({ name: "bouncing", direction });
+      onSound?.("drop");
       void wait(BOUNCE_MS).then(() => {
         setPhase({ name: "idle" });
         busy.current = false;
       });
     },
-    [wait],
+    [wait, onSound],
   );
 
   const pull = useCallback((px: number | null) => {
