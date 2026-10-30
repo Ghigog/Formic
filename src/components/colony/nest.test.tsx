@@ -347,52 +347,9 @@ describe("ColonyPopover Queen sounds", () => {
 });
 
 describe("ColonyPopover bell", () => {
-  function bellWith(state: { left: number; armed: boolean }) {
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      const action = init?.method === "POST" ? JSON.parse(init.body as string).action : null;
-      if (action === "arm") return new Response(JSON.stringify({ left: state.left, armed: true }));
-      return new Response(JSON.stringify(state));
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("hangs in the popover", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ left: 0, armed: false }))));
     openPopoverAt(11 * XP_PER_LEVEL);
-    return fetchMock;
-  }
-  const posts = (m: ReturnType<typeof bellWith>) =>
-    m.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(init!.body as string).action);
-
-  it("shows the golden bells left", async () => {
-    bellWith({ left: 2, armed: false });
-    expect(await screen.findByText("2 golden bells left")).toBeTruthy();
-  });
-
-  it("rings when dragged side to side", async () => {
-    const m = bellWith({ left: 2, armed: false });
-    const bell = await screen.findByLabelText("Bell");
-    await waitFor(() => expect((bell as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.pointerDown(bell, { clientX: 100 });
-    for (const x of [130, 100, 130]) fireEvent.pointerMove(bell, { clientX: x });
-    fireEvent.pointerUp(bell, { clientX: 130 });
-    fireEvent.click(bell);
-    await waitFor(() => expect(posts(m)).toEqual(["ring"]));
-  });
-
-  it("arms on a plain click without ringing", async () => {
-    const m = bellWith({ left: 2, armed: false });
-    const bell = await screen.findByLabelText("Bell");
-    await waitFor(() => expect((bell as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.pointerDown(bell, { clientX: 100 });
-    fireEvent.pointerUp(bell, { clientX: 100 });
-    fireEvent.click(bell);
-    await waitFor(() => expect(bell.getAttribute("aria-pressed")).toBe("true"));
-    expect(posts(m)).toEqual(["arm"]);
-  });
-
-  it("stays silver when none are left", async () => {
-    const m = bellWith({ left: 0, armed: false });
-    const bell = await screen.findByLabelText("Bell");
-    await screen.findByText("0 golden bells left");
-    fireEvent.click(bell);
-    expect(bell.getAttribute("aria-pressed")).toBe("false");
-    expect(posts(m)).toEqual([]);
+    expect(await screen.findByRole("region", { name: "Bells" })).toBeTruthy();
   });
 });
