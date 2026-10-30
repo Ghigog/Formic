@@ -138,3 +138,31 @@ test("the sentinel Re-audit label stays on one line at 390px", async ({ page }) 
   expect(lineHeight).toBeGreaterThan(0);
   expect(label).toBeLessThanOrEqual(lineHeight + 1);
 });
+
+test("a three-finger swipe digs through the earth to another board", async ({ page, context }) => {
+  for (const name of ["Swipe one", "Swipe two"]) {
+    expect((await page.request.post("/api/projects", { data: { noRepository: true, name } })).ok()).toBe(true);
+  }
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const shown = async () =>
+    ((await page.getByRole("button", { name: /^Project: / }).first().getAttribute("aria-label")) ?? "")
+      .replace(/^Project: /, "")
+      .replace(/\. Choose another project$/, "");
+  const order = ((await (await page.request.get("/api/projects")).json()) as { projects: Array<{ name: string }> }).projects.map((p) => p.name);
+  const i = order.indexOf(await shown());
+  const down = i + 1 < order.length;
+  const expected = order[down ? i + 1 : i - 1]!;
+
+  const cdp = await context.newCDPSession(page);
+  const fingers = (y: number) => [0, 40, 80].map((dx, id) => ({ x: 140 + dx, y, id }));
+  const [from, to] = down ? [600, 420] : [300, 480];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: fingers(from) });
+  for (let step = 1; step <= 10; step++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: fingers(from + ((to - from) * step) / 10) });
+  }
+  await expect(page.getByTestId("dig-band")).toBeVisible();
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+  await expect.poll(shown, { timeout: 10_000 }).toBe(expected);
+  await expect(page.getByTestId("dig-transition")).toHaveAttribute("data-phase", "idle");
+});
