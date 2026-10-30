@@ -141,12 +141,16 @@ prompts, custom or not.
 
 ### 5. Plumbing
 
-- [ ] A stacked ticket's branch takes in every prerequisite merged since it was
-      cut, before its agent starts.
-- [ ] A ticket whose work needs a sibling's code waits for that sibling, not
-      only for its declared dependency.
-- [ ] A real browser test runs for anything a person touches, and its result
-      counts in review.
+- [x] A stacked ticket's branch takes in every prerequisite merged since it was
+      cut, before its agent starts (the prerequisite's branch is brought up to
+      date; a conflict stops the ticket and says why).
+- [x] A ticket whose work needs a sibling's code depends on it by name (the
+      Architect's brief), and the Coder never builds a stand-in for it.
+- [x] A real browser test: CI already runs Playwright. The weak spot was the
+      test itself (the board-swap e2e checked nothing). The Architect now
+      asks for a feel criterion observable in a browser, and the Reviewer
+      sends back a test that tests nothing. Step 6 rewrites the three
+      features' e2e tests to check real behaviour.
 
 ### 6. Rebuild the three features to the new standard
 

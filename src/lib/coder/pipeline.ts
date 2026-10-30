@@ -217,6 +217,23 @@ async function codeTicket(
     // Stacked on a prerequisite whose pull request is still open: built on
     // its branch, so this ticket need not wait for that one to merge.
     const below = await stackBase(projectId, ticket);
+    // Built on one prerequisite's open branch, it must still see the others:
+    // any that merged after that branch was cut are only on the merge target.
+    // Without them the agent finds a sibling's work missing and builds a stand-in.
+    if (below && ((await repo.cardById(ticket.id))?.dependsOn.length ?? 0) > 1) {
+      const synced = await client.mergeBranch(below.branch, target.branch).catch(
+        (e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : String(e), conflict: false }),
+      );
+      if (!synced.ok) {
+        await stallTicket(
+          projectId,
+          ticket,
+          `${ticket.key} builds on ${below.key}, but ${below.key}'s branch could not take in the work merged since it was cut (${synced.reason}). Bring ${below.key} up to date with ${target.branch}, then start ${ticket.key} again.`,
+          { blocked: true, stalledIn: "in_progress", stage: STAGE_CODE_RUN },
+        );
+        return;
+      }
+    }
     startFrom = below?.branch ?? target.branch;
     ticket = { ...ticket, stackedOn: below?.branch ?? null };
     await repo.updateTicket(ticket.id, { stackedOn: ticket.stackedOn });

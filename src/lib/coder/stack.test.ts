@@ -16,7 +16,7 @@ import type {
   ReviewVerdict,
   ReviewerAgent,
 } from "@/lib/agents/ports";
-import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
+import { MockVcsClient, mergeTarget, resetVcs, setVcs } from "@/lib/vcs";
 import { MockArchitectAgent, MockProductAgent, MockShowcaseAgent } from "@/lib/agents/mock";
 import { projectFor } from "@/lib/board/project";
 
@@ -175,5 +175,48 @@ describe("stacked pull requests", () => {
     const two = (await repo.ticketDetail(second.id))!;
     expect(two.stackedOn).toBeNull();
     expect((await new MockVcsClient(REPO).pullRequest(two.prNumber!)).baseBranch).toBe(base);
+  });
+
+  it("brings the branch it builds on up to date first, when its other prerequisites merged after that branch was cut", async () => {
+    const repo = repository();
+    recordCheckouts();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Swap", rawRequest: "Swap boards", position: 1 });
+    const made = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "Server", description: "s", acceptanceCriteria: ["a"], fileScope: ["src/server"], size: "S", position: 1, dependsOnKeys: [] },
+      { epicId: epic.id, key: "T-2", title: "Gestures", description: "g", acceptanceCriteria: ["b"], fileScope: ["src/gestures"], size: "S", position: 2, dependsOnKeys: [] },
+      { epicId: epic.id, key: "T-3", title: "Wire it", description: "w", acceptanceCriteria: ["c"], fileScope: ["src/wire"], size: "S", position: 3, dependsOnKeys: ["T-1", "T-2"] },
+    ]);
+    const [one, two, three] = ["T-1", "T-2", "T-3"].map((k) => made.find((t) => t.key === k)!);
+    await runCoderAgent(PROJECT, one!.id);
+    await repo.updateTicket(two!.id, { status: "merged" });
+
+    await runCoderAgent(PROJECT, three!.id);
+
+    const below = (await repo.ticketDetail(one!.id))!.branchName!;
+    expect((await repo.ticketDetail(three!.id))!.stackedOn).toBe(below);
+    const merges = (globalThis as unknown as { __formicMockRepo: { merges: Array<{ base: string; head: string }> } }).__formicMockRepo.merges;
+    expect(merges).toContainEqual({ base: below, head: mergeTarget((await projectFor(PROJECT)).baseBranch) });
+  });
+
+  it("stops and says why when that branch cannot take in the merged work", async () => {
+    const repo = repository();
+    recordCheckouts();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Swap", rawRequest: "Swap boards", position: 1 });
+    const made = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "Server", description: "s", acceptanceCriteria: ["a"], fileScope: ["src/server"], size: "S", position: 1, dependsOnKeys: [] },
+      { epicId: epic.id, key: "T-2", title: "Gestures", description: "g", acceptanceCriteria: ["b"], fileScope: ["src/gestures"], size: "S", position: 2, dependsOnKeys: [] },
+      { epicId: epic.id, key: "T-3", title: "Wire it", description: "w", acceptanceCriteria: ["c"], fileScope: ["src/wire"], size: "S", position: 3, dependsOnKeys: ["T-1", "T-2"] },
+    ]);
+    const [one, two, three] = ["T-1", "T-2", "T-3"].map((k) => made.find((t) => t.key === k)!);
+    await runCoderAgent(PROJECT, one!.id);
+    await repo.updateTicket(two!.id, { status: "merged" });
+    const below = (await repo.ticketDetail(one!.id))!.branchName!;
+    MockVcsClient.conflictOn(below, mergeTarget((await projectFor(PROJECT)).baseBranch));
+
+    await runCoderAgent(PROJECT, three!.id);
+
+    const after = (await repo.ticketDetail(three!.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("could not take in the work merged since it was cut");
   });
 });
