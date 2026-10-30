@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { checkDecomposition, gherkin, toDraftTicket, type TicketSpec } from "./decomposition";
 import {
   ALREADY_DONE_RULE,
+  DESIGN_RULE,
+  PRODUCT_BRIEF,
+  REVIEWER_BRIEF,
   ENGINEERING_PRACTICES,
   FOLLOW_UP_RULE,
   REVIEWER_AUDIT_RULE,
@@ -222,5 +225,54 @@ describe("an audit's check on a ticket", () => {
 
   it("is not in the Coder's prompt", () => {
     expect(withCodingRules("Custom coder.", "coder")).not.toContain(REVIEWER_AUDIT_RULE);
+  });
+});
+
+describe("craft", () => {
+  const task = {
+    ticketId: "t1",
+    key: "T-2",
+    title: "Ring the bell",
+    description: "The bell in the colony popover.",
+    acceptanceCriteria: ["A swing rings it"],
+    fileScope: ["src/components/colony"],
+  };
+
+  it("tells every agent that designs or builds what a person sees to follow the design document", () => {
+    for (const prompt of [
+      withProductConventions("Custom product."),
+      withPlanningConventions("Custom architect."),
+      withCodingRules("Custom coder.", "coder"),
+      withCodingRules("Custom reviewer.", "reviewer"),
+    ]) {
+      expect(prompt).toContain(DESIGN_RULE);
+    }
+  });
+
+  it("lets the Product Agent build on the request, and never drop what the person chose", () => {
+    expect(PRODUCT_BRIEF).not.toContain("Do not invent product surface");
+    expect(PRODUCT_BRIEF).toContain("you may never replace or drop one");
+    expect(withProductConventions("x")).not.toContain("do not list open questions");
+  });
+
+  it("has the Reviewer judge the person's intent and the feel, not only the criteria", () => {
+    expect(REVIEWER_BRIEF).not.toContain("not to polish");
+    expect(REVIEWER_BRIEF).toContain("Intent.");
+    expect(REVIEWER_BRIEF).toContain("Feel, for anything a person sees or touches");
+  });
+
+  it("quotes the person's own words above the ticket, so they win over it", () => {
+    const brief = taskBrief({
+      ...task,
+      origin: { epic: "Bells", request: "Drag the bell side to side.\nNo misclicks.", summary: "A bell that rings." },
+    });
+    expect(brief).toContain("> Drag the bell side to side.\n> No misclicks.");
+    expect(brief).toContain("the person's words win");
+    expect(brief).toContain("The PRD's summary: A bell that rings.");
+    expect(brief.indexOf("> Drag the bell")).toBeLessThan(brief.indexOf("Ticket T-2"));
+  });
+
+  it("leaves the origin out when the ticket has none", () => {
+    expect(taskBrief(task)).not.toContain("own words");
   });
 });

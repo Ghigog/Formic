@@ -79,6 +79,8 @@ export const loopEntryPayloadSchema = z.object({
     sharedNotes: z.array(z.string()).optional(),
     /** What this run was asked to do from the ticket's chat, if anything. */
     instruction: z.string().optional(),
+    /** The request the ticket's Epic came from, in the person's own words. */
+    origin: z.object({ epic: z.string(), request: z.string(), summary: z.string().nullable().optional() }).optional(),
   }),
   repo: z.object({
     /** "owner/name". The clone URL is derived from it when none is given. */
@@ -291,6 +293,7 @@ export async function runLoopEntry(
       storyPoints: ticket.storyPoints ?? null,
       notes: ticket.notes ?? [],
       ...(ticket.sharedNotes?.length ? { sharedNotes: ticket.sharedNotes } : {}),
+      ...(ticket.origin ? { origin: ticket.origin } : {}),
     };
 
     // The loop reads the token budget for two things this entry would otherwise

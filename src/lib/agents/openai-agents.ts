@@ -235,6 +235,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       repoTree: string[];
       existing?: ExistingTicket[];
       instructions?: string[];
+      request?: string;
       maxAttempts?: number;
     },
   ): Promise<AgentOutcome<DraftTicket[]>> {
@@ -254,6 +255,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
           role: "user",
           content: [
             `Epic: ${input.title}`,
+            ...(input.request ? ["", "The person's request, in their own words. The PRD is your brief, but every explicit choice here is a requirement:", ...input.request.trim().split("\n").map((l) => `> ${l}`)] : []),
             "",
             "PRD:",
             JSON.stringify(input.prd, null, 2),

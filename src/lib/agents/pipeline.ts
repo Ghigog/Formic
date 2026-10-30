@@ -668,6 +668,7 @@ export async function runArchitectAgent(
     repoTree,
     existing: guidance?.existing,
     instructions: guidance?.instructions,
+    request: (await repository().epicDetail(epicId))?.rawRequest,
     maxAttempts: await attemptsFor((await projectFor(projectId)).ownerId, "decomposition"),
   });
 

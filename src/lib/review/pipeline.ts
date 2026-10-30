@@ -5,7 +5,7 @@ import { attemptsFor, inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
 import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
-import { runCoderAgent, stallTicket, taskFor } from "@/lib/coder/pipeline";
+import { runCoderAgent, stallTicket, taskFor, ticketOrigin } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -1277,7 +1277,7 @@ async function reviewTicket(
       mode: "fix",
       agent: cli,
       from: ticket.branchName,
-      prompt: cliPrompt(cli, "fix", ticket, review, await noteTexts(projectId, ticket.id)),
+      prompt: cliPrompt(cli, "fix", ticket, review, await noteTexts(projectId, ticket.id), undefined, [], await ticketOrigin(ticket).catch(() => undefined)),
       run,
       stalledIn: "in_review",
     });
@@ -1314,7 +1314,7 @@ async function reviewTicket(
 
   try {
     const outcome = await (await agentFor(projectId, "reviewer")).review(run.ctx, {
-      task: taskFor(ticket, await noteTexts(projectId, ticket.id)),
+      task: taskFor(ticket, await noteTexts(projectId, ticket.id), undefined, [], await ticketOrigin(ticket).catch(() => undefined)),
       workspace: checkout.workspace,
       ...review,
     });

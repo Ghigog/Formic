@@ -43,6 +43,7 @@ import {
   REVIEWER_FOLLOW_UP_RULE,
   REVIEWER_SCOPE_RULE,
   SHOWCASE_BRIEF,
+  DESIGN_RULE,
   ENGINEERING_PRACTICES,
   HANDOFF_RULE,
   CHECKS_RULE,
@@ -51,6 +52,7 @@ import {
   withProductConventions,
 } from "@/lib/agents/prompts";
 import type { DraftTicket, ReviewTask, Usage } from "@/lib/agents/ports";
+import type { Origin } from "@/lib/agents/origin";
 import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { followUpsFromSummary } from "@/lib/agents/follow-ups";
@@ -436,6 +438,8 @@ export function loopPayload(input: {
   sharedNotes?: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
   instruction?: string;
+  /** The request the ticket's Epic came from, in the person's own words. */
+  origin?: Origin;
   /** What budgetFor gave this run on the loop path, fixed when the run starts. */
   budget: Budget;
 }): Omit<LoopEntryPayload, "apiKey"> {
@@ -455,6 +459,7 @@ export function loopPayload(input: {
       ...(input.notes.length ? { notes: input.notes } : {}),
       ...(input.sharedNotes?.length ? { sharedNotes: input.sharedNotes } : {}),
       ...(input.instruction ? { instruction: input.instruction } : {}),
+      ...(input.origin ? { origin: input.origin } : {}),
     },
     repo: { fullName: input.repoFullName, baseBranch: input.baseBranch },
     provider: input.provider,
@@ -550,9 +555,11 @@ export function cliPrompt(
   instruction?: string,
   /** What agents on the repository's other tickets shared, one line each. */
   sharedNotes: string[] = [],
+  /** The request the ticket's Epic came from, in the person's own words. */
+  origin?: Origin,
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskFor(ticket, notes, instruction, sharedNotes);
+  const task = taskFor(ticket, notes, instruction, sharedNotes, origin);
   const work = review
     ? [reviewBrief({ ...review, task }), "", review.conflicts ? CLI_RESOLVE : CLI_REVIEW]
     : [
@@ -564,7 +571,7 @@ export function cliPrompt(
         "",
         CLI_ALREADY_DONE,
       ];
-  return cap([brief.trim(), "", cliRules(mode), "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
+  return cap([brief.trim(), "", cliRules(mode), "", DESIGN_RULE, "", ENGINEERING_PRACTICES, "", ...work].join("\n"));
 }
 
 /** A checkpoint's commit message: the agent's progress notes, then the trailer. */
@@ -857,6 +864,9 @@ async function answerPrompt(
       jsonShape(decompositionSchema),
       "",
       `Epic: ${epic.title}`,
+      "",
+      "The person's request, in their own words. The PRD is your brief, but every explicit choice here is a requirement:",
+      ...epic.rawRequest.trim().split("\n").map((l) => `> ${l}`),
       "",
       "PRD:",
       JSON.stringify(prd.data, null, 2),

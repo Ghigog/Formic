@@ -77,21 +77,23 @@ Designer Sentinel unlocks at level 25. Features come out generic.
 
 ### 1. Craft in the prompts
 
-- [ ] Rewrite the Product brief: read the intent behind the words, find the
+- [x] Rewrite the Product brief: read the intent behind the words, find the
       version the person did not know they wanted (the string on the bell), say
-      what was added and why. Interview before a PRD when the request leaves a
-      real choice open.
-- [ ] PRDs carry the person's original words verbatim, and every ticket links
-      back to them, so nothing fades in handoff.
-- [ ] Architect: tickets that touch the UI cite the design doc and describe how
+      what was added and why. (Interviewing before a PRD comes with step 2.)
+- [x] The person's original words reach the Architect, the Coder and the
+      Reviewer (`src/lib/agents/origin.ts`), so nothing fades in handoff.
+- [x] Architect: tickets that touch the UI cite the design doc and describe how
       the thing looks and feels (motion, sound, feedback), not only behaviour.
-- [ ] Coder: "smallest change" becomes "the right change, finished": craft,
+- [x] Coder: "smallest change" becomes "the right change, finished": craft,
       polish and feel are part of done for anything a person touches.
-- [ ] Reviewer: judge against the original request, the PRD and the design doc
+- [x] Reviewer: judge against the original request, the PRD and the design doc
       as well as the ticket. A feature that passes its tests but would
       disappoint the person is sent back.
-- [ ] Keep the cost rules that do not cost quality (checkpointing, verify
+- [x] Keep the cost rules that do not cost quality (checkpointing, verify
       once, scope locks).
+
+A shared `DESIGN_RULE` now reaches the Product, Architect, Coder and Reviewer
+prompts, custom or not.
 
 ### 2. Questions as a first-class part of Formic
 

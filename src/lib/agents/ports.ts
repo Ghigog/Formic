@@ -5,6 +5,7 @@ import type { Budget } from "@/lib/budget/budget-for";
 import type { ProviderId } from "@/lib/llm/providers";
 import type { ScoutCandidate, ScoutVerdict } from "./judge";
 import type { FollowUp } from "./follow-ups";
+import type { Origin } from "./origin";
 
 /**
  * The agent boundary. Every pipeline is reachable through one of these, and
@@ -156,6 +157,8 @@ export interface ArchitectAgent {
       existing?: ExistingTicket[];
       /** What the person asked of this breakdown, oldest first. */
       instructions?: string[];
+      /** The request the Epic came from, in the person's own words. */
+      request?: string;
       /** Attempts the person allows before it stalls; unset is the default. */
       maxAttempts?: number;
     },
@@ -212,6 +215,8 @@ export interface CoderTask {
    * ticket is then background: the run does this, not the ticket over.
    */
   instruction?: string;
+  /** The request the ticket's Epic came from, in the person's own words. */
+  origin?: Origin;
 }
 
 export interface CodeChange {

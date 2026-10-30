@@ -16,6 +16,7 @@ import { runCodingLoop } from "./coding-loop";
 import type { ScoutCandidate, ScoutVerdict } from "./judge";
 import { provider as providerInfo } from "@/lib/llm/providers";
 import type { Workspace } from "@/lib/sandbox/workspace";
+import { originLines } from "./origin";
 import { ALREADY_DONE_RULE, CODER_BRIEF, REVIEWER_BRIEF, SHARED_NOTES_INTRO, withCodingRules } from "./prompts";
 
 /**
@@ -35,6 +36,7 @@ export function taskBrief(task: CoderTask): string {
           "",
         ]
       : []),
+    ...(task.origin ? [...originLines(task.origin), "", "---", ""] : []),
     `Ticket ${task.key}: ${task.title}`,
     "",
     task.description,

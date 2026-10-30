@@ -7,6 +7,8 @@ import { repository } from "@/lib/db";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
+import { prdSchema } from "@/lib/domain/entities";
+import type { Origin } from "@/lib/agents/origin";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { recordFollowUps } from "@/lib/board/follow-ups";
@@ -56,9 +58,12 @@ export function taskFor(
   instruction?: string,
   /** What agents on the repository's other tickets shared, one line each. */
   sharedNotes: string[] = [],
+  /** The request the ticket's Epic came from: see ticketOrigin. */
+  origin?: Origin,
 ): CoderTask {
   return {
     ...(instruction ? { instruction } : {}),
+    ...(origin ? { origin } : {}),
     ...(sharedNotes.length ? { sharedNotes } : {}),
     ticketId: ticket.id,
     key: ticket.key,
@@ -70,6 +75,14 @@ export function taskFor(
     storyPoints: ticket.storyPoints,
     notes,
   };
+}
+
+/** The request the ticket's Epic came from, in the person's own words, with the PRD's summary. */
+export async function ticketOrigin(ticket: Pick<TicketDetail, "epicId">): Promise<Origin | undefined> {
+  const epic = await repository().epicDetail(ticket.epicId);
+  if (!epic?.rawRequest.trim()) return undefined;
+  const prd = prdSchema.safeParse(epic.prd);
+  return { epic: epic.title, request: epic.rawRequest, summary: prd.success ? prd.data.summary : null };
 }
 
 export async function stallTicket(
@@ -237,6 +250,7 @@ async function codeTicket(
   // What the agents on the repository's other tickets have shared lately:
   // the start of this run's view of them, whichever path it runs on.
   const shared = (await sharedNotesFor(projectId, ticket.id).catch(() => [])).map(sharedNoteLine);
+  const origin = await ticketOrigin(ticket).catch(() => undefined);
 
   // A CLI agent on the person's own plan works in GitHub Actions instead of
   // a sandbox here, and reports back on the workflow_run webhook.
@@ -262,6 +276,7 @@ async function codeTicket(
         await ticketNoteTexts(projectId, ticket),
         options.instruction,
         shared,
+        origin,
       ),
       run,
       stalledIn: "in_progress",
@@ -319,6 +334,7 @@ async function codeTicket(
             notes: resumed ? [...notes, resumeBrief(resumed, ticket.plan)] : notes,
             sharedNotes: shared,
             ...(options.instruction ? { instruction: options.instruction } : {}),
+            ...(origin ? { origin } : {}),
           }),
         ),
       run,
@@ -359,7 +375,7 @@ async function codeTicket(
 
   try {
     const outcome = await (await agentFor(projectId, "coder")).implement(run.ctx, {
-      task: taskFor(ticket, await ticketNoteTexts(projectId, ticket), options.instruction, shared),
+      task: taskFor(ticket, await ticketNoteTexts(projectId, ticket), options.instruction, shared, origin),
       // The scope guides the agent rather than fencing it in: the right
       // change may need a file outside it, and the diff check below asks
       // the person before any of that goes further.
