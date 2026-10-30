@@ -114,7 +114,7 @@ export function AgentEditor({
 }) {
   const forAssistant = column === "assistant";
   const role = forAssistant
-    ? "Assistant"
+    ? "PM"
     : `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
   // The assistant has no built-in brief: it answers whatever it is asked.
   const defaultPrompt = forAssistant ? "" : DEFAULT_BRIEF[column];

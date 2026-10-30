@@ -1262,6 +1262,24 @@ async function reviewTicket(
     maxAttempts: maxReviews,
   };
 
+  // The PM looks first, once per piece of work: what the person asked for,
+  // against what was built. Its correction is a note the Reviewer reads; a
+  // question for the person holds the review until they answer.
+  const origin = await ticketOrigin(ticket).catch(() => undefined);
+  if (attempt === 1) {
+    const { overseeChange } = await import("@/lib/pm/oversight");
+    const asked = await overseeChange(projectId, ticket, origin, {
+      client,
+      base: pull.baseBranch,
+      head: ticket.branchName,
+      ref: project.baseBranch,
+    }).catch(() => null);
+    if (asked) {
+      await stallTicket(projectId, ticket, asked, { blocked: true, stalledIn: "in_review" });
+      return;
+    }
+  }
+
   const run = startRun(projectId, "reviewer", {
     ...(await runTargetFor(projectId, "reviewer")),
     epicId: ticket.epicId,
@@ -1277,7 +1295,7 @@ async function reviewTicket(
       mode: "fix",
       agent: cli,
       from: ticket.branchName,
-      prompt: cliPrompt(cli, "fix", ticket, review, await noteTexts(projectId, ticket.id), undefined, [], await ticketOrigin(ticket).catch(() => undefined)),
+      prompt: cliPrompt(cli, "fix", ticket, review, await noteTexts(projectId, ticket.id), undefined, [], origin),
       run,
       stalledIn: "in_review",
     });
@@ -1314,7 +1332,7 @@ async function reviewTicket(
 
   try {
     const outcome = await (await agentFor(projectId, "reviewer")).review(run.ctx, {
-      task: taskFor(ticket, await noteTexts(projectId, ticket.id), undefined, [], await ticketOrigin(ticket).catch(() => undefined)),
+      task: taskFor(ticket, await noteTexts(projectId, ticket.id), undefined, [], origin),
       workspace: checkout.workspace,
       ...review,
     });

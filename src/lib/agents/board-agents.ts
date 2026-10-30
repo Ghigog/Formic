@@ -47,7 +47,7 @@ export async function agentView(project: ProjectSummary | null, user: UserRecord
   return { presets: [...own, ...ownerPresets], columns: lentColumns, assistant: lentAssistant };
 }
 
-/** The assistant's agent as this person sees the board. */
+/** The PM's agent as this person sees the board. */
 export async function assistantPick(project: ProjectSummary, user: UserRecord): Promise<string | null> {
   const repo = repository();
   if (!memberOf(project, user)) return repo.assistantAgent(project.id);

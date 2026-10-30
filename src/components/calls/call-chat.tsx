@@ -16,7 +16,7 @@ function Message({ m }: { m: CallMessageView }) {
       </div>
     );
   }
-  const who = m.guestId ? guestLabel(m.guestId) : "Assistant";
+  const who = m.guestId ? guestLabel(m.guestId) : "PM";
   return (
     <div className="max-w-[92%] text-[13px] leading-[1.55]">
       <p className="text-fg-subtle mb-0.5 text-[11px] font-medium">{who}</p>
@@ -67,7 +67,7 @@ export function CallChat({ meetingId }: { meetingId: string }) {
         <h1 className="text-fg text-[15px] font-semibold">{c.meeting?.title ?? "Call"}</h1>
         {c.meeting && (
           <p className="text-fg-subtle text-[12px]">
-            With {c.meeting.guests.length ? c.meeting.guests.map(guestLabel).join(", ") : "the Assistant"}
+            With {c.meeting.guests.length ? c.meeting.guests.map(guestLabel).join(", ") : "the PM"}
           </p>
         )}
         {c.meeting?.agenda && (

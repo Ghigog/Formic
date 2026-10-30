@@ -113,16 +113,19 @@ prompts, custom or not.
 
 ### 3. The PM as director
 
-- [ ] The top-bar chat becomes the PM's chat, with the assistant's tools and
+- [x] The top-bar chat becomes the PM's chat, with the assistant's tools and
       proposals.
-- [ ] On every column move, the PM checks the card against the original
-      request, the PRD and the design doc, and steps into the card's chat when
-      it drifts.
-- [ ] The PM relays agents' questions to the person in plain words and carries
+- [x] The PM checks the work against the original request, the PRD and the
+      design doc at the two moments drift is cheapest to catch: a plan before
+      it is applied (one correction, then the Architect plans again) and a
+      change at its first review (a note the Reviewer reads). It steps into
+      the card's chat when it drifts (`src/lib/pm/oversight.ts`). It runs on
+      the PM's API agent only; a CLI PM skips oversight.
+- [x] The PM relays agents' questions to the person in plain words and carries
       answers back into the card.
-- [ ] The PM asks the person about priorities when work goes off track.
-- [ ] Every PM intervention shows in the card's chat, signed by the PM.
-- [ ] The showcase stays, written by the PM when an Epic ships.
+- [x] The PM asks the person about priorities when work goes off track.
+- [x] Every PM intervention shows in the card's chat, signed by the PM.
+- [x] The showcase stays, written by the PM when an Epic ships.
 
 ### 4. Design as a first-class part of the board
 

@@ -692,7 +692,21 @@ export async function runArchitectAgent(
       stage: 3,
     });
   } else if (outcome.ok) {
-    await applyTickets(projectId, epicId, outcome.value);
+    const { overseeBreakdown, PM_NOTE_PREFIX } = await import("@/lib/pm/oversight");
+    const { ticketOrigin } = await import("@/lib/coder/pipeline");
+    const notes = await epicNoteTexts(projectId, epicId);
+    const pm = await overseeBreakdown(projectId, epicId, await ticketOrigin({ epicId }).catch(() => undefined), outcome.value, {
+      correctedBefore: notes.at(-1)?.startsWith(PM_NOTE_PREFIX) ?? false,
+    }).catch(() => ({ kind: "apply" as const }));
+    if (pm.kind === "ask") {
+      await stallEpic(projectId, epicId, pm.reason, { blocked: true, stalledIn: "todo", stage: 3 });
+    } else if (pm.kind === "replan") {
+      await run.finish(outcome);
+      launch(() => decomposeEpic(projectId, epicId), `architect agent for ${epicId}, with the PM's correction`);
+      return;
+    } else {
+      await applyTickets(projectId, epicId, outcome.value);
+    }
   } else {
     await stallEpic(projectId, epicId, outcome.error, {
       blocked: outcome.blocked,

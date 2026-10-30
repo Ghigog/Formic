@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { MODELS } from "@/lib/agents/anthropic";
 import { claudeSpeak, openAiSpeak, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
-import { CHAT_ANSWER_BUDGET_MS, outOfTimeReply } from "@/lib/agents/card-chat";
+import { ask as askCardChat, CHAT_ANSWER_BUDGET_MS, outOfTimeReply } from "@/lib/agents/card-chat";
 import { assistantAgentFor } from "@/lib/agents/presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
@@ -17,7 +17,9 @@ import { vcs, type VcsClient } from "@/lib/vcs";
 import { ASSISTANT_BRANCH_PREFIX, assistantActionSchema, checkAction } from "./actions";
 import { boardSnapshot, cardReport, mentionedKeys } from "./context";
 import { outOfRoundsMessage, readWindow } from "./reads";
-import { ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
+import { DESIGN_RULE, ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
+import { askedIn, isQuestion } from "@/lib/domain/question";
+import type { BoardCard } from "@/lib/domain/entities";
 
 /**
  * One turn of the board's assistant: the person asked something, the agent
@@ -40,6 +42,7 @@ const readInput = z.object({ path: z.string().min(1), offset: z.number().int().m
 const proposeInput = z.object({ summary: z.string().min(1), action: z.unknown() });
 const cardInput = z.object({ key: z.string().min(1) });
 const writeInput = z.object({ path: z.string().min(1), content: z.string(), message: z.string().optional() });
+const answerInput = z.object({ key: z.string().min(1), answer: z.string().trim().min(1) });
 
 /** The branch one answer's code change goes on: by its message, or its job's nonce for a CLI agent. */
 export function changeBranchFor(id: string): string {
@@ -104,6 +107,20 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "answer_question",
+    description:
+      "Pass the person's answer to a question a card is waiting on, by the card's key. Use their own words, adding only what the agent needs to understand them. The card's agent starts again with it at once.",
+    schema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "The card's key, e.g. \"EPIC-12\"." },
+        answer: { type: "string", description: "The person's answer." },
+      },
+      required: ["key", "answer"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "propose",
     description:
       "Propose a change to the board. The person sees it with Approve and Dismiss buttons; it only happens if they approve.",
@@ -119,11 +136,54 @@ export const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
+/** The most Epics whose original words the PM is briefed with. */
+const MAX_VISIONS = 12;
+/** How much of each Epic's original request the PM is briefed with. */
+const VISION_CHARS = 600;
+
+/** The questions cards are waiting on, for the PM to relay. */
+function openQuestions(cards: BoardCard[]): string[] {
+  return cards
+    .filter((c) => isQuestion(c.blockedReason))
+    .map((c) => `- ${c.key} (${c.title}), asked by ${c.blockedReason!.split("\n")[1]?.split(" is waiting")[0] ?? "an agent"}:\n  ${askedIn(c.blockedReason!).replace(/\n/g, "\n  ")}`);
+}
+
+/** What the person asked for, Epic by Epic, for the Epics still being worked on. */
+async function visions(cards: BoardCard[]): Promise<string[]> {
+  const repo = repository();
+  const live = cards.filter((c) => c.kind === "epic" && c.status !== "merged").slice(0, MAX_VISIONS);
+  const lines: string[] = [];
+  for (const epic of live) {
+    const detail = await repo.epicDetail(epic.id);
+    const words = detail?.rawRequest.trim().replace(/\s+/g, " ");
+    if (words) lines.push(`- ${epic.key} ${epic.title}: "${words.length > VISION_CHARS ? `${words.slice(0, VISION_CHARS)}…` : words}"`);
+  }
+  return lines;
+}
+
 export async function systemPrompt(projectId: string, brief: string | null): Promise<string> {
   const project = await projectFor(projectId);
+  const cards = await repository().boardCards(projectId);
+  const questions = openQuestions(cards);
+  const asked = await visions(cards);
   return [
-    `You are the assistant on a Formic board for the GitHub repository ${project.repoFullName} (base branch ${project.baseBranch}). The person can ask you anything about the repository and the work on the board.`,
+    `You are the PM: the project manager who directs the agents on a Formic board for the GitHub repository ${project.repoFullName} (base branch ${project.baseBranch}). You work for the person you are talking to, the stakeholder who owns this board. The Product Agent, the Architect, the Coder and the Reviewer each do one column's work; you hold the person's vision across all of it.`,
     "",
+    "Your job:",
+    "- Keep the work true to what the person asked for, in their own words, and to the product's standards: its design, its tests, its PRDs. You already check every plan and every change at review, and step into a card's chat when it drifts.",
+    "- Be the person's single point of contact. The agents' questions come to you; put each to the person in plain, warm, non-technical words, one at a time, and pass their answer back with answer_question.",
+    "- Ask about priorities when work goes off track or two wishes pull against each other, the way a good project manager would: are we building the right thing, in the right order?",
+    "- Answer anything about the repository and the work, and do the work yourself when it is quicker.",
+    "Speak like a trusted colleague: brief, clear, kind, never technical unless they are.",
+    "",
+    ...(questions.length
+      ? [
+          "Questions the board is waiting on the person for. Raise them first, starting with the one holding up the most work, unless the person is asking about something else:",
+          ...questions,
+          "",
+        ]
+      : ["No card is waiting on a question right now.", ""]),
+    ...(asked.length ? ["What the person asked for, in their own words, for each Epic still in progress:", ...asked, ""] : []),
     "Read the repository before you answer a question about its code. Do not guess at what a file contains.",
     "",
     "You see the board below, and each card's live state on GitHub (its checks, the log of a red one, its agent runs). When asked about a card, look before you answer; never answer that you cannot see it.",
@@ -140,6 +200,8 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "",
     TICKET_TEMPLATE,
     "",
+    DESIGN_RULE,
+    "",
     ENGINEERING_PRACTICES,
     "",
     `You have ${MAX_TURNS} rounds, one per model call, and an answer that runs out of them is lost. Call propose as soon as you know the ticket list; do not read further to polish it. A thin fileScope is better than no proposal.`,
@@ -147,7 +209,7 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "Answer in short, plain Markdown. After proposing, say in one line what you proposed.",
     "",
     "The board right now:",
-    boardSnapshot(await repository().boardCards(projectId)),
+    boardSnapshot(cards),
     ...(brief ? ["", "The person's instructions for you:", brief] : []),
   ].join("\n");
 }
@@ -220,6 +282,14 @@ export async function runTool(
         content: `Committed ${clean} to ${turn.branch}. When the change is complete, propose open_pull_request with branch "${turn.branch}".`,
         isError: false,
       };
+    }
+    if (call.name === "answer_question") {
+      const { key, answer } = answerInput.parse(call.input);
+      const card = (await repository().boardCards(turn.projectId)).find((c) => c.key.toLowerCase() === key.trim().toLowerCase());
+      if (!card) return { content: `There is no card ${key}.`, isError: true };
+      if (!isQuestion(card.blockedReason)) return { content: `${card.key} is not waiting on a question.`, isError: true };
+      await askCardChat(turn.projectId, card.kind, card.id, answer);
+      return { content: `Passed on. ${card.key}'s agent has started again with the answer.`, isError: false };
     }
     if (call.name === "propose") {
       const { summary, action } = proposeInput.parse(call.input);

@@ -140,7 +140,7 @@ function Composer({
         onFocus={() => a.messages.length > 0 && a.setOpen(true)}
         onKeyDown={onKeyDown}
         placeholder={a.pending ? "Answering…" : `Ask about ${repoName}…`}
-        aria-label="Ask the assistant"
+        aria-label="Ask the PM"
         className={cn(
           "border-line bg-cream text-ink placeholder:text-muted h-9 w-full resize-none rounded-lg border py-[7px] pl-9 text-[13px] leading-5 outline-none focus:border-terracotta",
           toggle ? "pr-[4.5rem]" : "pr-10",
@@ -192,7 +192,7 @@ function Composer({
           type="button"
           onClick={() => a.setOpen(!a.open)}
           aria-label={
-            a.open ? "Roll the assistant up" : "Pull the assistant down"
+            a.open ? "Roll the PM up" : "Pull the PM down"
           }
           aria-expanded={a.open}
           className="text-muted hover:text-ink absolute right-1 inline-flex size-8 items-center justify-center rounded-md"
@@ -240,7 +240,7 @@ export function AskButton({
       <button
         type="button"
         onClick={() => a.setOpen(!a.open)}
-        aria-label={a.open ? "Roll the assistant up" : "Ask the assistant"}
+        aria-label={a.open ? "Roll the PM up" : "Ask the PM"}
         aria-expanded={a.open}
         data-tour="chat"
         className="border-line text-ink inline-flex size-11 items-center justify-center rounded-[10px] border"
@@ -447,7 +447,7 @@ function Shade({
 
   return (
     <section
-      aria-label="Assistant"
+      aria-label="PM"
       data-tour="chat-shade"
       aria-hidden={!a.open}
       inert={!a.open}
@@ -472,7 +472,7 @@ function Shade({
         <select
           value={a.presetId ?? ""}
           onChange={(e) => void a.setAgent(e.target.value || null)}
-          aria-label="The assistant's agent"
+          aria-label="The PM's agent"
           className="border-line bg-cream text-ink h-8 max-w-[220px] rounded-md border px-2 text-[12px]"
         >
           <option value="">Choose an agent</option>
@@ -561,7 +561,7 @@ function Shade({
         <button
           type="button"
           onClick={() => a.setOpen(false)}
-          aria-label="Roll the assistant up"
+          aria-label="Roll the PM up"
           title="Roll up"
           className="border-line bg-cream text-ink hover:bg-column inline-flex size-9 items-center justify-center rounded-full border"
         >

@@ -11,7 +11,7 @@ export const COLUMN_AGENT_GUESTS: readonly AgentRole[] = [...new Set(Object.valu
 
 /** The name a guest goes by. */
 export function guestLabel(id: GuestId): string {
-  if (id === "assistant") return "Assistant";
+  if (id === "assistant") return "PM";
   if (id.startsWith(SENTINEL_PREFIX)) {
     return SENTINELS.find((s) => `${SENTINEL_PREFIX}${s.id}` === id)?.name ?? id;
   }
