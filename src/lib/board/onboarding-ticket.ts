@@ -4,3 +4,6 @@
  * creates it (./onboarding.ts).
  */
 export const ONBOARDING_TICKET_TITLE = "Write an AGENTS.md so agents can find their way around this repo";
+
+/** The design ticket's title: see DESIGN_TICKET in ./onboarding.ts. */
+export const DESIGN_TICKET_TITLE = "Write DESIGN.md: how this product looks and feels";

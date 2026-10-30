@@ -7,7 +7,7 @@ const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 const guests = [
-  { id: "assistant" as const, label: "Assistant" },
+  { id: "assistant" as const, label: "PM" },
   { id: "sentinel:techops" as const, label: "TechOps" },
 ];
 
@@ -41,7 +41,7 @@ describe("CallsView", () => {
     const form = screen.getByRole("form", { name: "New meeting" });
     expect(form.querySelector("time")).toHaveAttribute("dateTime", expect.stringMatching(/T/));
     await userEvent.type(screen.getByLabelText("Title"), "Review");
-    await userEvent.click(screen.getByLabelText("Assistant"));
+    await userEvent.click(screen.getByLabelText("PM"));
     await userEvent.selectOptions(screen.getByLabelText("Repeat"), "weekly");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 

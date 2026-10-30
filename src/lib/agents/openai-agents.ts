@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { MAX_QUESTIONS, productQuestions, type AgentQuestion } from "@/lib/domain/question";
 import type {
   AgentAttachment,
   AgentConfig,
@@ -160,6 +161,7 @@ async function askForJson<T>(
 const productPrdAnswer = z.object({
   title: z.string().describe("A short imperative Epic title, under 80 characters."),
   prd: prdSchema,
+  questions: productQuestions.default([]),
 });
 
 const productRerouteAnswer = z.object({
@@ -182,7 +184,7 @@ export class OpenAiProductAgent implements ProductAgent {
     input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
   ): Promise<
     AgentOutcome<
-      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "prd"; title: string; prd: Prd; questions?: AgentQuestion[] }
       | { kind: "reroute"; reason: string; ticket: DraftTicket }
     >
   > {
@@ -219,7 +221,11 @@ export class OpenAiProductAgent implements ProductAgent {
         usage: result.usage,
       };
     }
-    return { ok: true, value: { kind: "prd", ...result.value }, usage: result.usage };
+    return {
+      ok: true,
+      value: { kind: "prd", ...result.value, questions: result.value.questions.slice(0, MAX_QUESTIONS) },
+      usage: result.usage,
+    };
   }
 }
 
@@ -235,9 +241,10 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       repoTree: string[];
       existing?: ExistingTicket[];
       instructions?: string[];
+      request?: string;
       maxAttempts?: number;
     },
-  ): Promise<AgentOutcome<DraftTicket[]>> {
+  ): Promise<AgentOutcome<DraftTicket[]> & { questions?: AgentQuestion[] }> {
     const maxAttempts = input.maxAttempts ?? ATTEMPT_DEFAULTS.decomposition;
     const r = resolve(this.config);
     if (typeof r === "string") return failure(this.config.model ?? "", r, true);
@@ -254,6 +261,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
           role: "user",
           content: [
             `Epic: ${input.title}`,
+            ...(input.request ? ["", "The person's request, in their own words. The PRD is your brief, but every explicit choice here is a requirement:", ...input.request.trim().split("\n").map((l) => `> ${l}`)] : []),
             "",
             "PRD:",
             JSON.stringify(input.prd, null, 2),
@@ -266,7 +274,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
       ],
       (raw) => {
         const checked = checkDecomposition(raw);
-        return checked.ok ? { ok: true, value: checked.tickets } : checked;
+        return checked.ok ? { ok: true, value: checked } : checked;
       },
       maxAttempts,
       (attempt) =>
@@ -288,7 +296,7 @@ export class OpenAiArchitectAgent implements ArchitectAgent {
         result.usage,
       );
     }
-    return { ok: true, value: result.value, usage: result.usage };
+    return { ok: true, value: result.value.tickets, questions: result.value.questions, usage: result.usage };
   }
 
   async draftTicket(

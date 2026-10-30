@@ -6,12 +6,15 @@ export type GuestId = "assistant" | AgentRole | `sentinel:${string}`;
 
 const SENTINEL_PREFIX = "sentinel:";
 
-/** The column agents a call can invite, in column order. */
-export const COLUMN_AGENT_GUESTS: readonly AgentRole[] = [...new Set(Object.values(COLUMN_AGENT_ROLE))];
+/**
+ * The column agents a call can invite, in column order. The Done column's PM
+ * is the board's PM, who joins as "assistant", so it is not a second guest.
+ */
+export const COLUMN_AGENT_GUESTS: readonly AgentRole[] = [...new Set(Object.values(COLUMN_AGENT_ROLE))].filter((r) => r !== "pm");
 
 /** The name a guest goes by. */
 export function guestLabel(id: GuestId): string {
-  if (id === "assistant") return "Assistant";
+  if (id === "assistant") return "PM";
   if (id.startsWith(SENTINEL_PREFIX)) {
     return SENTINELS.find((s) => `${SENTINEL_PREFIX}${s.id}` === id)?.name ?? id;
   }
@@ -24,7 +27,8 @@ export function isGuestId(value: unknown): value is GuestId {
   if (value.startsWith(SENTINEL_PREFIX)) {
     return SENTINELS.some((s) => `${SENTINEL_PREFIX}${s.id}` === value);
   }
-  return (COLUMN_AGENT_GUESTS as readonly string[]).includes(value);
+  // "pm" stays readable: meetings saved before the PM led the board name it.
+  return value === "pm" || (COLUMN_AGENT_GUESTS as readonly string[]).includes(value);
 }
 
 /** The guests a call can invite at a colony level: Sentinels not yet unlocked are left out. */

@@ -18,6 +18,7 @@ import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
 import { useAgents, type AgentUsage, type TokenWindowView } from "@/lib/hooks/use-agents";
 import { useAssistant } from "@/lib/hooks/use-assistant";
+import { isQuestion } from "@/lib/domain/question";
 import { AgentEditor } from "./agent-editor";
 import { SetupDialog, type KeylessAgent } from "./setup-dialog";
 import { useRunnerSetup } from "@/lib/hooks/use-runner-setup";
@@ -218,6 +219,7 @@ export function BoardShell({
         autoMerge={autoMerge}
         assistant={{
           ...assistant,
+          questions: cards.filter((c) => isQuestion(c.blockedReason)).length,
           open: assistantOpen,
           setOpen: openAssistant,
           presets: agentState.presets,

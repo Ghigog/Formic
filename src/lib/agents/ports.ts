@@ -5,6 +5,8 @@ import type { Budget } from "@/lib/budget/budget-for";
 import type { ProviderId } from "@/lib/llm/providers";
 import type { ScoutCandidate, ScoutVerdict } from "./judge";
 import type { FollowUp } from "./follow-ups";
+import type { Origin } from "./origin";
+import type { AgentQuestion } from "@/lib/domain/question";
 
 /**
  * The agent boundary. Every pipeline is reachable through one of these, and
@@ -106,7 +108,7 @@ export interface ProductAgent {
     input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
   ): Promise<
     AgentOutcome<
-      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "prd"; title: string; prd: Prd; questions?: AgentQuestion[] }
       | { kind: "reroute"; reason: string; ticket: DraftTicket }
     >
   >;
@@ -156,10 +158,13 @@ export interface ArchitectAgent {
       existing?: ExistingTicket[];
       /** What the person asked of this breakdown, oldest first. */
       instructions?: string[];
+      /** The request the Epic came from, in the person's own words. */
+      request?: string;
       /** Attempts the person allows before it stalls; unset is the default. */
       maxAttempts?: number;
     },
-  ): Promise<AgentOutcome<DraftTicket[]>>;
+    /** With questions, the tickets are a draft and the Epic waits on the person's answer. */
+  ): Promise<AgentOutcome<DraftTicket[]> & { questions?: AgentQuestion[] }>;
   /** A To Do request: no PRD, just the raw text and one ticket to draft. */
   draftTicket(
     ctx: AgentContext,
@@ -212,6 +217,8 @@ export interface CoderTask {
    * ticket is then background: the run does this, not the ticket over.
    */
   instruction?: string;
+  /** The request the ticket's Epic came from, in the person's own words. */
+  origin?: Origin;
 }
 
 export interface CodeChange {

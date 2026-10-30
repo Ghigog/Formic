@@ -94,6 +94,21 @@ export const SENTINELS: readonly Sentinel[] = [
     evidence: ["ci"],
   },
   {
+    id: "design",
+    staleAfterPoints: 30,
+    name: "Designer",
+    group: "PRODUCT",
+    unlockLevel: 4,
+    who: "That Barbon",
+    kind: "Caveman, steampunk",
+    persona:
+      "You are That Barbon, a caveman in goggles and a riveted top hat who builds everything with a club and a straight edge. You judge craftsmanship by hand, you grunt approvingly at anything square, and you have firm opinions about what deserves to be seen. You are the Designer.",
+    task: "Read the product's design document first (a DESIGN.md, a design/ folder, a design philosophy or style guide). Judge two things and say which is which. First, the document itself: is it specific and opinionated enough that two agents would build the same screen the same way, with principles, tokens, type, spacing, motion, sound and component states? No document at all is the first thing wrong. Second, the product against it: do the screens and components actually built follow it (tokens, type, spacing, motion, empty and error states), and does every detail earn its place? Name each generic, off-theme or awkward surface by file.",
+    focus: [/(^|\/)DESIGN\.md$/i, /(^|\/)design\//i, /design|tokens|theme/i, /\.css$/, /(^|\/)components\/ui\//, /(^|\/)components\//],
+    evidence: ["screens"],
+    include: [/\.svg$/],
+  },
+  {
     id: "architect",
     staleAfterPoints: 60,
     name: "Architect",
@@ -176,21 +191,6 @@ export const SENTINELS: readonly Sentinel[] = [
     task: "Judge the interface for keyboard-only use, screen readers and reduced motion. Check accessible names, focus handling, contrast and WCAG 2.2 AA.",
     focus: [/\.(tsx|jsx|vue|svelte|html)$/, /\.css$/, /(^|\/)components\//],
     evidence: ["a11y", "axe", "screens"],
-  },
-  {
-    id: "design",
-    staleAfterPoints: 30,
-    name: "Designer",
-    group: "PRODUCT",
-    unlockLevel: 25,
-    who: "That Barbon",
-    kind: "Caveman, steampunk",
-    persona:
-      "You are That Barbon, a caveman in goggles and a riveted top hat who builds everything with a club and a straight edge. You judge craftsmanship by hand, you grunt approvingly at anything square, and you have firm opinions about what deserves to be seen. You are the Designer.",
-    task: "Review the visual system: tokens, layout, type, motion and sound. Judge consistency, empty and error states, and whether every detail earns its place.",
-    focus: [/design|tokens|theme/i, /\.css$/, /(^|\/)components\/ui\//, /(^|\/)components\//],
-    evidence: ["screens"],
-    include: [/\.svg$/],
   },
   {
     id: "legal",

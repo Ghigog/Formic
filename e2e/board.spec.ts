@@ -284,27 +284,27 @@ test("settings keeps a key without ever showing it back", async ({ page }) => {
 });
 
 test("the assistant pulls down from the top bar and rolls back up", async ({ page }) => {
-  const shade = page.locator("section[aria-label=Assistant]");
+  const shade = page.locator("section[aria-label=PM]");
   await expect(shade).toHaveAttribute("data-open", "false");
 
-  await page.getByRole("button", { name: "Pull the assistant down" }).click();
+  await page.getByRole("button", { name: "Pull the PM down" }).click();
   await expect(shade).toHaveAttribute("data-open", "true");
   await expect(shade.getByText(/Ask anything about/)).toBeVisible();
-  await expect(shade.getByLabel("The assistant's agent")).toBeVisible();
+  await expect(shade.getByLabel("The PM's agent")).toBeVisible();
 
-  await shade.getByRole("button", { name: "Roll the assistant up" }).click();
+  await shade.getByRole("button", { name: "Roll the PM up" }).click();
   await expect(shade).toHaveAttribute("data-open", "false");
   await expect(shade).toBeHidden();
 });
 
 test("the assistant shade stays inside the window", async ({ page }) => {
-  const shade = page.locator("section[aria-label=Assistant]");
+  const shade = page.locator("section[aria-label=PM]");
   for (const size of [
     { width: 1024, height: 600 },
     { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(size);
-    await page.getByRole("button", { name: "Pull the assistant down" }).click();
+    await page.getByRole("button", { name: "Pull the PM down" }).click();
     await expect(shade).toHaveAttribute("data-open", "true");
     // clip-path animates the reveal but never moves the box.
     const box = (await shade.boundingBox())!;
@@ -312,7 +312,7 @@ test("the assistant shade stays inside the window", async ({ page }) => {
     expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(size.width);
     expect(box.y + box.height).toBeLessThanOrEqual(size.height);
-    await shade.getByRole("button", { name: "Roll the assistant up" }).click();
+    await shade.getByRole("button", { name: "Roll the PM up" }).click();
     await expect(shade).toHaveAttribute("data-open", "false");
   }
 });

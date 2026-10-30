@@ -1,3 +1,4 @@
+import { classifyNotice } from "@/lib/domain/notice";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 import type {
@@ -159,6 +160,21 @@ describe("applyPrd", () => {
 
     expect((await repository().cardById(epic.id))?.status).toBe("ready");
     expect(deferred).toHaveLength(1);
+  });
+});
+
+describe("applyPrd with the Product Agent's questions", () => {
+  it("keeps the PRD as a draft and waits in Backlog on the question, starting nothing", async () => {
+    const epic = makeCard({ kind: "epic", status: "waiting", size: null });
+    seedMemory([epic]);
+
+    await applyPrd(PROJECT, epic.id, PRD, false, [{ question: "Who rings it?", why: "It decides the gesture." }]);
+
+    const after = await repository().cardById(epic.id);
+    expect(after).toMatchObject({ status: "blocked", stalledIn: "backlog" });
+    expect(classifyNotice(after!)).toMatchObject({ severity: "question", shortDescription: "Who rings it?" });
+    expect((await repository().epicDetail(epic.id))?.prd).toEqual(PRD);
+    expect(deferred).toHaveLength(0);
   });
 });
 

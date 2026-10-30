@@ -100,7 +100,7 @@ describe("BoardHeader project button", () => {
     const logo = screen.getAllByRole("button", {
       name: /Choose another project/,
     })[1]!;
-    const ask = screen.getByRole("button", { name: "Ask the assistant" });
+    const ask = screen.getByRole("button", { name: "Ask the PM" });
     const account = screen.getAllByLabelText(/^Account:/)[1]!;
     const follows = (a: Element, b: Element) =>
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);

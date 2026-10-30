@@ -20,7 +20,7 @@ import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
 import { TypeTag } from "./type-tag";
-import { NoticeIcon, ProblemNotice, WorkTimer } from "./card";
+import { NOTICE_INK, NoticeIcon, ProblemNotice, WorkTimer } from "./card";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
 import { TicketKpis } from "./ticket-kpis";
@@ -408,7 +408,13 @@ export function TicketDrawer({
 }
 
 /** The ticket as it was written. */
-/** A warning (red) or alert (yellow) in full: title, the short line, then the long text. */
+const BANNER: Record<Notice["severity"], { ground: string; label: string }> = {
+  warning: { ground: "bg-crimson/10", label: "Warning" },
+  alert: { ground: "bg-clay/10", label: "Alert" },
+  question: { ground: "bg-terracotta/10", label: "Question" },
+};
+
+/** A warning (red), alert (yellow) or question (terracotta) in full: title, the short line, then the long text. */
 function NoticeBanner({
   notice,
   className,
@@ -416,27 +422,16 @@ function NoticeBanner({
   notice: Notice;
   className?: string;
 }) {
-  const warning = notice.severity === "warning";
+  const { ground, label } = BANNER[notice.severity];
   return (
     <div
       role="alert"
       data-severity={notice.severity}
-      className={cn(
-        "text-ink rounded-md px-2.5 py-2 text-[12px] leading-5",
-        warning ? "bg-crimson/10" : "bg-clay/10",
-        className,
-      )}
+      className={cn("text-ink rounded-md px-2.5 py-2 text-[12px] leading-5", ground, className)}
     >
       <div className="flex items-center gap-2">
         <NoticeIcon severity={notice.severity} />
-        <span
-          className={cn(
-            "text-[10px] font-bold uppercase",
-            warning ? "text-crimson" : "text-clay",
-          )}
-        >
-          {warning ? "Warning" : "Alert"}
-        </span>
+        <span className={cn("text-[10px] font-bold uppercase", NOTICE_INK[notice.severity])}>{label}</span>
         <span className="font-semibold">{notice.title}</span>
       </div>
       {notice.shortDescription && (

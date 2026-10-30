@@ -178,7 +178,7 @@ describe("a call's turn", () => {
     expect((await repository().ticketDetail(ticket.id))!.status).not.toBe("review");
   });
 
-  it("says it will get back when a guest is slower than the budget, then posts the answer in the same call", async () => {
+  it("says it will get back when a guest is slower than the budget, then comes back with the answer as a message of its own", async () => {
     await agent("todo");
     let open!: () => void;
     fakeProvider([say("Worth the wait.")], new Promise<void>((r) => (open = r)));
@@ -189,8 +189,10 @@ describe("a call's turn", () => {
     open();
     await running;
 
-    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "Worth the wait." });
-    expect(await repository().callMessages(PROJECT, meeting.id)).toHaveLength(2);
+    expect(await reload(pending.id)).toMatchObject({ status: "done", content: GET_BACK });
+    const said = await repository().callMessages(PROJECT, meeting.id);
+    expect(said).toHaveLength(3);
+    expect(said.at(-1)).toMatchObject({ role: "assistant", guestId: "architect", status: "done", content: "About that: Worth the wait." });
   });
 
   it("answers a Sentinel from its latest audit, and starts none when there is none", async () => {
@@ -217,9 +219,29 @@ describe("a call's turn", () => {
       JSON.stringify({ reply: "Skipping it.", actions: [{ key: "T-1", action: { type: "close", summary: "Skipped." } }] }),
     );
 
-    const done = await reload(pending.id);
-    expect(done).toMatchObject({ status: "done", guestId: "coder" });
-    expect(done.content).toContain("Skipping it.");
+    const said = await repository().callMessages(PROJECT, pending.meetingId);
+    expect(await reload(pending.id)).toMatchObject({ status: "done", content: GET_BACK });
+    expect(said.at(-1)).toMatchObject({ status: "done", guestId: "coder" });
+    expect(said.at(-1)!.content).toContain("Skipping it.");
     expect((await repository().ticketDetail(ticket.id))!.status).toBe("merged");
+  });
+
+  it("answers a hello at once through an API agent when the guest's own agent is a CLI one, in its own voice", async () => {
+    const cli = await savePreset({ name: "plan", provider: "claude-code", model: "", prompt: "You are the Architect of a big house.", apiKey: "sk-ant-oat01-plan" });
+    await repository().setColumnAgent(PROJECT, "todo", cli.id);
+    await agent("assistant");
+    let sent: Array<{ content: string }> = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body)).messages;
+      return Response.json({ choices: [{ message: say("Hello! Good to hear from you."), finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    });
+    const { pending } = await callAndAsk(["architect"], "Hello architect");
+
+    await answer(pending.id);
+
+    expect(await reload(pending.id)).toMatchObject({ guestId: "architect", status: "done", content: "Hello! Good to hear from you." });
+    expect(String(sent[0]!.content)).toContain("You are the Architect of a big house.");
+    expect(String(sent[0]!.content)).toContain("Greet back when greeted");
+    expect(launched.filter((l) => l.includes("runner"))).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { Bell } from "./bell";
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -272,102 +273,6 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
           </div>,
           document.body,
         )}
-    </div>
-  );
-}
-
-/** Horizontal travel that counts as one swing of the bell. */
-const BELL_SWING_PX = 12;
-/** Direction reversals, each after a full swing, that make a ring. */
-const BELL_REVERSALS = 2;
-
-type BellState = { left: number; armed: boolean };
-
-async function postBell(action: "ring" | "arm" | "disarm"): Promise<BellState | null> {
-  try {
-    const res = await fetch("/api/bell", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as BellState;
-    return { left: body.left, armed: body.armed };
-  } catch {
-    return null;
-  }
-}
-
-/** Drag the bell side to side to ring it; click it to arm or disarm the golden bell. */
-function Bell() {
-  const [bell, setBell] = useState<BellState | null>(null);
-  const drag = useRef<{ x: number; dir: number; turns: number; rang: boolean } | null>(null);
-  const rangByDrag = useRef(false);
-  useEffect(() => {
-    let live = true;
-    fetch("/api/bell")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((b: BellState | null) => live && b && setBell({ left: b.left, armed: b.armed }))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const onMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d || d.rang) return;
-    const dx = e.clientX - d.x;
-    if (Math.abs(dx) < BELL_SWING_PX) return;
-    const dir = Math.sign(dx);
-    if (d.dir !== 0 && dir !== d.dir) d.turns++;
-    d.dir = dir;
-    d.x = e.clientX;
-    if (d.turns >= BELL_REVERSALS) {
-      d.rang = true;
-      rangByDrag.current = true;
-      void postBell("ring").then((b) => b && setBell(b));
-    }
-  };
-  const endDrag = () => {
-    drag.current = null;
-  };
-  const toggle = async () => {
-    if (rangByDrag.current) {
-      rangByDrag.current = false;
-      return;
-    }
-    if (!bell || (!bell.armed && bell.left === 0)) return;
-    const next = await postBell(bell.armed ? "disarm" : "arm");
-    if (next) setBell(next);
-  };
-
-  const armed = !!bell?.armed;
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        aria-label="Bell"
-        aria-pressed={armed}
-        disabled={!bell || (!armed && bell.left === 0)}
-        onClick={toggle}
-        onPointerDown={(e) => {
-          rangByDrag.current = false;
-          drag.current = { x: e.clientX, dir: 0, turns: 0, rang: false };
-        }}
-        onPointerMove={onMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        style={{ touchAction: "none", color: armed ? "#d4a017" : "var(--text-muted)" }}
-        className="border-line bg-cream inline-flex size-9 items-center justify-center rounded-lg border"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M12 2a1.5 1.5 0 0 1 1.5 1.5v.6A6 6 0 0 1 18 10v4l2 3H4l2-3v-4a6 6 0 0 1 4.5-5.9v-.6A1.5 1.5 0 0 1 12 2Zm-2 17h4a2 2 0 0 1-4 0Z" />
-        </svg>
-      </button>
-      <span className="text-muted font-mono text-[10px]">
-        {bell ? `${bell.left} golden ${bell.left === 1 ? "bell" : "bells"} left` : ""}
-      </span>
     </div>
   );
 }

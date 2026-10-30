@@ -5,6 +5,7 @@ import { APIConnectionError, APIError } from "@anthropic-ai/sdk/error";
 import { describeProviderError } from "./limits";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import { MAX_QUESTIONS, productQuestions, type AgentQuestion } from "@/lib/domain/question";
 
 import type {
   AgentAttachment,
@@ -218,7 +219,7 @@ export class AnthropicProductAgent implements ProductAgent {
     input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
   ): Promise<
     AgentOutcome<
-      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "prd"; title: string; prd: Prd; questions?: AgentQuestion[] }
       | { kind: "reroute"; reason: string; ticket: DraftTicket }
     >
   > {
@@ -228,6 +229,7 @@ export class AnthropicProductAgent implements ProductAgent {
     const outputSchema = z.object({
       title: z.string().describe("A short imperative Epic title, under 80 characters."),
       prd: prdSchema,
+      questions: productQuestions.default([]),
     });
 
     try {
@@ -294,7 +296,7 @@ export class AnthropicProductAgent implements ProductAgent {
         );
       }
 
-      return { ok: true, value: { kind: "prd", ...parsed.data }, usage };
+      return { ok: true, value: { kind: "prd", ...parsed.data, questions: parsed.data.questions.slice(0, MAX_QUESTIONS) }, usage };
     } catch (e) {
       return failure(model, describeError(e));
     }
@@ -313,9 +315,10 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
       repoTree: string[];
       existing?: ExistingTicket[];
       instructions?: string[];
+      request?: string;
       maxAttempts?: number;
     },
-  ): Promise<AgentOutcome<DraftTicket[]>> {
+  ): Promise<AgentOutcome<DraftTicket[]> & { questions?: AgentQuestion[] }> {
     const maxAttempts = input.maxAttempts ?? ATTEMPT_DEFAULTS.decomposition;
     const model = this.config.model ?? MODELS.architect;
     const shape = requestShape(model, { effort: "medium" });
@@ -324,6 +327,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         role: "user",
         content: [
           `Epic: ${input.title}`,
+          ...(input.request ? ["", "The person's request, in their own words. The PRD is your brief, but every explicit choice here is a requirement:", ...input.request.trim().split("\n").map((l) => `> ${l}`)] : []),
           "",
           "PRD:",
           JSON.stringify(input.prd, null, 2),
@@ -394,7 +398,7 @@ export class AnthropicArchitectAgent implements ArchitectAgent {
         raw = null;
       }
       const checked = checkDecomposition(raw);
-      if (checked.ok) return { ok: true, value: checked.tickets, usage: total };
+      if (checked.ok) return { ok: true, value: checked.tickets, questions: checked.questions, usage: total };
 
       messages.push(
         { role: "assistant", content: text },

@@ -28,7 +28,7 @@ import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 import type { AssistantProposal, CallMessage, Meeting } from "@/lib/db/repository";
 import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type AgentRole } from "@/lib/domain/entities";
-import { COLUMN_LABELS, columnOf, type ColumnId } from "@/lib/domain/status";
+import { COLUMN_LABELS, COLUMNS, columnOf, type ColumnId } from "@/lib/domain/status";
 import { extractJson } from "@/lib/llm/openai-compat";
 import { sentinel as findSentinel } from "@/lib/sentinels/roster";
 import { sentinelsFor } from "@/lib/sentinels/service";
@@ -43,14 +43,22 @@ import { callContext, detectAddGuest, resolveAddressee } from "./routing";
  * on the cards in its own column with its card-chat actions; a Sentinel talks
  * from its latest audit and starts none.
  *
- * A guest that takes longer than CALL_REPLY_BUDGET_MS (or a CLI agent, which
- * answers from GitHub Actions) says it will get back; its real answer
- * replaces that line in the same message when it is ready.
+ * A call is a conversation, so a guest answers like a person on one: at once
+ * for a greeting or what it knows, and "let me get back to you on that" only
+ * when a look-up runs past CALL_REPLY_BUDGET_MS. Its answer then arrives as a
+ * message of its own, the way a colleague comes back to you. A guest whose
+ * own agent is a CLI one (it answers from GitHub Actions, in minutes) speaks
+ * through any API agent on the board instead, so a "hello" never waits on a
+ * job; only with no API agent at all does it go to Actions.
  */
 
 /** How long a guest may take before it says it will get back to the person. */
-export const CALL_REPLY_BUDGET_MS = 30_000;
-export const GET_BACK = "I'll get back to you.";
+export const CALL_REPLY_BUDGET_MS = 6_000;
+export const GET_BACK = "Let me get back to you on that.";
+
+/** How every guest talks on a call, whoever it is. */
+export const CALL_MANNER =
+  "This is a live conversation, not a report. Talk like a capable colleague on a call: spoken, warm and brief (one to three sentences unless the person asks for detail), in the first person. Greet back when greeted and answer small talk without looking anything up. No headings, and a list only when asked for one.";
 
 const MAX_TURNS = 12;
 
@@ -80,7 +88,9 @@ export async function ask(projectId: string, meetingId: string | null, text: str
   const repo = repository();
   const meeting = meetingId ? ((await repo.meetings(projectId)).find((m) => m.id === meetingId) ?? null) : null;
   if (meetingId && !meeting) throw new Error("This meeting no longer exists.");
-  const guests = guestsOf(meeting, await repo.callMessages(projectId, meetingId));
+  const said = await repo.callMessages(projectId, meetingId);
+  const guests = guestsOf(meeting, said);
+  const lastSpeaker = said.filter((m) => m.role === "assistant").at(-1)?.guestId ?? null;
 
   const added = detectAddGuest(text);
   const joining = added && !guests.includes(added) ? added : null;
@@ -88,7 +98,7 @@ export async function ask(projectId: string, meetingId: string | null, text: str
     guests.push(joining);
     if (meeting) await repo.updateMeeting(meeting.id, { guests: [...meeting.guests, joining] });
   }
-  const named = resolveAddressee(text, guests);
+  const named = resolveAddressee(text, guests, lastSpeaker);
   const addressee = named === "assistant" && joining ? joining : named;
 
   await repo.addCallMessage({ projectId, meetingId, role: "user", content: text });
@@ -125,7 +135,40 @@ export async function answer(messageId: string, budgetMs = CALL_REPLY_BUDGET_MS)
       await repo.updateCallMessage(messageId, { content: GET_BACK });
     }
     await work;
+    await comeBack(messageId);
   }
+}
+
+/**
+ * A guest that said it would get back to the person has its answer: the
+ * "get back to you" stays where it was said, and the answer arrives as a new
+ * message after whatever was said since, the way a colleague comes back.
+ */
+async function comeBack(messageId: string): Promise<void> {
+  const repo = repository();
+  const done = await repo.callMessage(messageId);
+  if (!done || done.status === "pending" || done.content === GET_BACK) return;
+  await repo.updateCallMessage(messageId, { content: GET_BACK, status: "done", proposals: [] });
+  const back = await repo.addCallMessage({
+    projectId: done.projectId,
+    meetingId: done.meetingId,
+    role: "assistant",
+    guestId: done.guestId,
+    content: done.status === "failed" ? done.content : `About that: ${done.content}`,
+    status: done.status,
+  });
+  if (done.proposals.length) await repo.updateCallMessage(back.id, { proposals: done.proposals });
+}
+
+/** An API agent on the board to speak through when a guest's own agent cannot answer quickly. */
+async function quickVoice(projectId: string) {
+  const pm = await assistantAgentFor(projectId);
+  if (pm.kind === "api" && (pm.apiKey || pm.info.kind === "anthropic")) return pm;
+  for (const column of COLUMNS) {
+    const agent = await columnChatAgentFor(projectId, column).catch(() => null);
+    if (agent?.kind === "api" && (agent.apiKey || agent.info.kind === "anthropic")) return agent;
+  }
+  return null;
 }
 
 async function settle(
@@ -256,6 +299,12 @@ async function reply(messageId: string): Promise<void> {
   } else {
     agent = await assistantAgentFor(projectId);
   }
+  // Its own instructions stay its own; only the voice it speaks through changes.
+  const ownBrief = agent.kind === "cli" ? agent.agent.brief : agent.kind === "api" ? agent.brief : null;
+  if (agent.kind !== "api") {
+    const voice = await quickVoice(projectId);
+    if (voice) agent = { ...voice, brief: ownBrief };
+  }
   if (agent.kind === "none" || agent.kind === "limited") {
     await settle(messageId, {
       content: "reason" in agent ? agent.reason : "No agent is set for the assistant. Pick or create one above.",
@@ -281,7 +330,7 @@ async function reply(messageId: string): Promise<void> {
     system = await assistantSystemPrompt(projectId, brief);
     tools = ASSISTANT_TOOL_DEFS;
   }
-  system = [system, "", context, "", `You are ${guestLabel(guest)}. Answer the person's last message.`].join("\n");
+  system = [system, "", context, "", CALL_MANNER, "", `You are ${guestLabel(guest)}. Answer the person's last message.`].join("\n");
 
   if (agent.kind === "cli") {
     const { startCliCallAnswer } = await import("@/lib/runner/runner");
@@ -291,7 +340,7 @@ async function reply(messageId: string): Promise<void> {
       agent: agent.agent,
       prompt: cliCallPrompt(system, asked, guest),
     });
-    // The answer lands from GitHub Actions, in a minute or two.
+    // The answer lands from GitHub Actions, in a minute or two, as a message of its own.
     if (failure) await settle(messageId, { content: failure, status: "failed" });
     else await repo.updateCallMessage(messageId, { content: GET_BACK });
     return;
@@ -417,6 +466,7 @@ export async function finishCliCall(messageId: string, answerText: string | null
   const parsed = cliAnswerSchema.safeParse(raw);
   if (!parsed.success) {
     await settle(messageId, { content: answerText.trim(), status: "done" });
+    await comeBack(messageId);
     return;
   }
   const guest = message.guestId ?? "assistant";
@@ -440,4 +490,5 @@ export async function finishCliCall(messageId: string, answerText: string | null
     status: "done",
     proposals,
   });
+  await comeBack(messageId);
 }

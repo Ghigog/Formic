@@ -1,3 +1,4 @@
+import { isQuestion } from "@/lib/domain/question";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readWindow, runCodingLoop } from "./coding-loop";
 import { budgetFor } from "@/lib/budget/budget-for";
@@ -515,5 +516,17 @@ describe("explore", () => {
     await runIn(workspace, []);
 
     expect(await workspace.readFile("a.ts")).toBe("a");
+  });
+});
+
+describe("a question in finish", () => {
+  it("stops the run as a question for the person, waiting on their answer", async () => {
+    scriptedTurns([[{ name: "finish", args: { ...finish.args, question: "Should a tap ring the bell, or only a swing? A tap risks misclicks." } }]]);
+    const out = await runIn(new MemoryWorkspace({}), []);
+    expect(out).toMatchObject({ ok: false, blocked: true });
+    const reason = !out.ok ? out.error : "";
+    expect(isQuestion(reason)).toBe(true);
+    expect(reason).toContain("The Coder Agent is waiting for your answer");
+    expect(reason).toContain("Should a tap ring the bell, or only a swing?");
   });
 });

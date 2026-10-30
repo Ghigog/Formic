@@ -8,6 +8,19 @@ describe("resolveAddressee", () => {
   it("picks an @mentioned guest", () => {
     expect(resolveAddressee("what do you think @coder?", ["assistant", "coder"])).toBe("coder");
   });
+  it("picks a guest greeted by name, or named last, the way people talk on a call", () => {
+    const on = ["assistant", "architect", "coder", "sentinel:tester"] as const;
+    expect(resolveAddressee("Hello architect. What's on the docket today?", on)).toBe("architect");
+    expect(resolveAddressee("Good morning, Coder!", on)).toBe("coder");
+    expect(resolveAddressee("How's the latest audit looking, professor O'Chumley?", on)).toBe("sentinel:tester");
+    expect(resolveAddressee("What's the status, worker?", on)).toBe("coder");
+    expect(resolveAddressee("I have a new feature request. Are you listening architect?", on)).toBe("architect");
+    expect(resolveAddressee("Skip it", on)).toBe("assistant");
+  });
+  it("goes on with whoever spoke last when the message names nobody", () => {
+    expect(resolveAddressee("Yes. What's the status?", ["assistant", "coder"], "coder")).toBe("coder");
+    expect(resolveAddressee("Yes. What's the status?", ["assistant", "coder"], null)).toBe("assistant");
+  });
   it("defaults to the assistant", () => {
     expect(resolveAddressee("how is the board?", ["assistant", "architect"])).toBe("assistant");
     expect(resolveAddressee("Coder, hi", ["assistant", "architect"])).toBe("assistant");
@@ -18,6 +31,8 @@ describe("detectAddGuest", () => {
   it("detects asking for a guest", () => {
     expect(detectAddGuest("get the Coder in")).toBe("coder");
     expect(detectAddGuest("please bring in the Reviewer")).toBe("reviewer");
+    expect(detectAddGuest("Get the worker on the phone")).toBe("coder");
+    expect(detectAddGuest("Bring old professor chumly on the phone")).toBe("sentinel:tester");
   });
   it("returns null otherwise", () => {
     expect(detectAddGuest("the Coder is slow")).toBeNull();

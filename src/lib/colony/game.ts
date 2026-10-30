@@ -61,7 +61,7 @@ export type BugColor =
 
 export const SHAPE_UNLOCKS: ReadonlyArray<{ key: BugShape; label: string; lv: number }> = [
   { key: "ant", label: "Ant", lv: 1 },
-  { key: "beetle", label: "Beetle", lv: 4 },
+  { key: "beetle", label: "Beetle", lv: 25 },
   { key: "ladybird", label: "Ladybird", lv: 8 },
   { key: "caterpillar", label: "Caterpillar", lv: 11 },
   { key: "spider", label: "Spider", lv: 14 },

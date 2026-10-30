@@ -24,6 +24,7 @@ import { MAX_SHARED_NOTE } from "@/lib/domain/events";
 import { MAX_PLAN_STEPS, checkPlan, currentStep, planFraction } from "./plan";
 import { checkFollowUps } from "./follow-ups";
 import { checkHandoff } from "./handoff";
+import { questionReason } from "@/lib/domain/question";
 import { type ProviderId, type ProviderInfo, provider } from "@/lib/llm/providers";
 import { type ChatMessage, type ModelInfo, type ToolSpec, advertisedModel, chat } from "@/lib/llm/openai-compat";
 import { reasoningFor } from "@/lib/agents/reasoning";
@@ -269,6 +270,7 @@ const finishInput = z.object({
   for_you: z.array(z.string()).optional(),
   follow_ups: z.array(z.unknown()).optional(),
   blocked_reason: z.string().nullable().optional(),
+  question: z.string().nullable().optional(),
 });
 
 const WORK_TOOLS: Anthropic.Beta.BetaTool[] = [
@@ -453,7 +455,13 @@ const FOLLOW_UPS = {
 const BLOCKED = {
   type: ["string", "null"],
   description:
-    "Only when you cannot finish without something only the person can give, such as a credential or a decision: what it is and why. Null otherwise.",
+    "Only when you cannot finish without something only the person can give that is not an answer, such as a credential or access: what it is and why. Null otherwise.",
+};
+
+const QUESTION = {
+  type: ["string", "null"],
+  description:
+    "A question for the person, when the work cannot go on well without their answer: a choice between behaviours, what matters more, whether a follow-up is wanted. In plain words, one or two sentences, with why it matters. The ticket waits for the answer and you are started again with it. Null when you can decide well yourself.",
 };
 
 /** How each role ends its run. */
@@ -480,8 +488,9 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
         for_you: FOR_YOU,
         follow_ups: FOLLOW_UPS,
         blocked_reason: BLOCKED,
+        question: QUESTION,
       },
-      required: ["summary", "detail", "verified_with", "already_done", "for_you", "follow_ups", "blocked_reason"],
+      required: ["summary", "detail", "verified_with", "already_done", "for_you", "follow_ups", "blocked_reason", "question"],
       additionalProperties: false,
     },
     strict: true,
@@ -511,8 +520,9 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
         for_you: FOR_YOU,
         follow_ups: FOLLOW_UPS,
         blocked_reason: BLOCKED,
+        question: QUESTION,
       },
-      required: ["summary", "detail", "verified_with", "send_back", "for_you", "follow_ups", "blocked_reason"],
+      required: ["summary", "detail", "verified_with", "send_back", "for_you", "follow_ups", "blocked_reason", "question"],
       additionalProperties: false,
     },
     strict: true,
@@ -970,6 +980,10 @@ export async function runCodingLoop(
         if (parsed.success) {
           const blocked = parsed.data.blocked_reason?.trim();
           if (blocked) return fail(blocked, true);
+          const question = parsed.data.question?.trim();
+          if (question && role !== "explorer") {
+            return fail(questionReason(role === "reviewer" ? "The Reviewer Agent" : "The Coder Agent", [{ question, why: "" }]), true);
+          }
           progress(role === "reviewer" ? "Review complete" : "Change complete", maxTurns);
           return {
             ok: true,

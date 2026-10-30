@@ -52,18 +52,19 @@ describe("PUT /api/agents/columns/[column]", () => {
     expect((await res.json()).columns).toEqual({ in_progress: presetId });
   });
 
-  it("starts runner setup and adds the AGENTS.md ticket on the board's first agent only", async () => {
+  it("starts runner setup and adds the AGENTS.md and DESIGN.md tickets on the board's first agent only", async () => {
     const projectId = jar.get(PROJECT_COOKIE)!;
     expect(await repository().boardCards(projectId)).toHaveLength(0);
     await PUT(put({ presetId }), ctx("in_progress"));
     expect(launch).toHaveBeenCalledTimes(1);
     const cards = await repository().boardCards(projectId);
     expect(cards.filter((c) => c.title.includes("AGENTS.md"))).toHaveLength(1);
-    expect(cards[0]!.status).toBe("ready");
+    expect(cards.find((c) => c.title.includes("AGENTS.md"))!.status).toBe("ready");
+    expect(cards.find((c) => c.title.includes("DESIGN.md"))).toMatchObject({ status: "blocked", stalledIn: "todo" });
 
     await PUT(put({ presetId }), ctx("review"));
     expect(launch).toHaveBeenCalledTimes(1);
-    expect(await repository().boardCards(projectId)).toHaveLength(1);
+    expect(await repository().boardCards(projectId)).toHaveLength(2);
   });
 
   it("unassigns with a null presetId", async () => {

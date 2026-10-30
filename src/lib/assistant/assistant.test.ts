@@ -6,6 +6,8 @@ import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
+import { questionReason } from "@/lib/domain/question";
+import { epicNoteTexts } from "@/lib/agents/epic-notes";
 import { collectCliRuns, completeCliRun } from "@/lib/runner/runner";
 import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle, runnerWorkflow } from "@/lib/runner/workflow";
 import { resetEnvCache } from "@/lib/secrets/env";
@@ -224,6 +226,36 @@ describe("the assistant", () => {
     await answer(PROJECT, pending.id);
     expect(await reload(pending.id)).toMatchObject({ status: "failed" });
     expect((await reload(pending.id)).content).toContain("No agent is set for the assistant");
+  });
+});
+
+describe("the PM, relaying questions", () => {
+  it("is briefed with the questions cards wait on and the person's own words, and passes their answer back", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Bells", rawRequest: "Ring the bell by swinging it.", position: 1 });
+    await repo.stallEpic(epic.id, {
+      status: "blocked",
+      stalledIn: "backlog",
+      stage: 2,
+      reason: questionReason("The Product Agent", [{ question: "Should a tap ever ring it?", why: "Misclicks." }]),
+    });
+    await useAgent("groq");
+    const sent = fakeProvider([
+      { role: "assistant", content: null, tool_calls: [call("c1", "answer_question", { key: epic.key, answer: "Never, only a swing." })] },
+      { role: "assistant", content: "Passed on: only a swing rings it." },
+    ]);
+    const pending = await ask("Never, only a swing.");
+
+    await answer(PROJECT, pending.id);
+
+    const system = String((sent[0]!.messages as Array<{ content: string }>)[0]!.content);
+    expect(system).toContain("You are the PM");
+    expect(system).toContain("Should a tap ever ring it?");
+    expect(system).toContain('"Ring the bell by swinging it."');
+    expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([
+      "You asked the person:\nShould a tap ever ring it?\n   Why: Misclicks.\n\nThey answered: Never, only a swing.",
+    ]);
+    expect((await reload(pending.id)).content).toBe("Passed on: only a swing rings it.");
   });
 });
 

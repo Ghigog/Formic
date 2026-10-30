@@ -25,7 +25,7 @@ describe("AskBox", () => {
 
   it("anchors the shade to the viewport, not the composer", () => {
     const { container } = render(<AskBox a={controls} repoName="demo" />);
-    const shade = container.querySelector("section[aria-label=Assistant]")!;
+    const shade = container.querySelector("section[aria-label=PM]")!;
     expect(shade).toHaveClass(
       "fixed",
       "top-16",
@@ -38,7 +38,7 @@ describe("AskBox", () => {
   it("sends on Enter and clears the field", async () => {
     const ask = vi.fn();
     render(<AskBox a={{ ...controls, ask }} repoName="demo" />);
-    const box = screen.getByLabelText("Ask the assistant");
+    const box = screen.getByLabelText("Ask the PM");
     await userEvent.setup().type(box, "hello{Enter}");
     expect(ask).toHaveBeenCalledWith("hello");
     expect(box).toHaveValue("");
@@ -47,7 +47,7 @@ describe("AskBox", () => {
   it("adds a line on Shift+Enter without sending", async () => {
     const ask = vi.fn();
     render(<AskBox a={{ ...controls, ask }} repoName="demo" />);
-    const box = screen.getByLabelText("Ask the assistant");
+    const box = screen.getByLabelText("Ask the PM");
     await userEvent.setup().type(box, "one{Shift>}{Enter}{/Shift}two");
     expect(ask).not.toHaveBeenCalled();
     expect(box).toHaveValue("one\ntwo");
@@ -56,7 +56,7 @@ describe("AskBox", () => {
   it("still sends on Cmd+Enter and Ctrl+Enter", async () => {
     const ask = vi.fn();
     render(<AskBox a={{ ...controls, ask }} repoName="demo" />);
-    const box = screen.getByLabelText("Ask the assistant");
+    const box = screen.getByLabelText("Ask the PM");
     const user = userEvent.setup();
     await user.type(box, "a{Control>}{Enter}{/Control}");
     expect(ask).toHaveBeenLastCalledWith("a");
@@ -70,12 +70,12 @@ describe("AskBox", () => {
       <AskBox a={{ ...controls, ask }} repoName="demo" />,
     );
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Ask the assistant"), "{Enter}");
+    await user.type(screen.getByLabelText("Ask the PM"), "{Enter}");
     expect(ask).not.toHaveBeenCalled();
     rerender(
       <AskBox a={{ ...controls, ask, pending: true }} repoName="demo" />,
     );
-    await user.type(screen.getByLabelText("Ask the assistant"), "hi{Enter}");
+    await user.type(screen.getByLabelText("Ask the PM"), "hi{Enter}");
     expect(ask).not.toHaveBeenCalled();
   });
 
@@ -83,7 +83,7 @@ describe("AskBox", () => {
     const stop = vi.fn();
     render(<AskBox a={{ ...controls, pending: true, stop }} repoName="demo" />);
     expect(screen.queryByLabelText("Send")).toBeNull();
-    const box = screen.getByLabelText("Ask the assistant");
+    const box = screen.getByLabelText("Ask the PM");
     expect(box).not.toBeDisabled();
     await userEvent.setup().click(screen.getByLabelText("Stop"));
     expect(stop).toHaveBeenCalled();
@@ -101,7 +101,7 @@ describe("AskButton on a phone", () => {
     vi.stubGlobal("visualViewport", vv);
     const { container } = render(<AskButton a={controls} repoName="demo" />);
     const shade = container.querySelector<HTMLElement>(
-      "section[aria-label=Assistant]",
+      "section[aria-label=PM]",
     )!;
     const normal = shade.style.height;
     expect(normal).not.toContain("480px");
@@ -115,6 +115,21 @@ describe("AskButton on a phone", () => {
       vv.dispatchEvent(new Event("resize"));
     });
     expect(shade.style.height).toBe(normal);
+  });
+
+  it("shows how many questions the PM has for the person, and none when there are none", () => {
+    const { rerender } = render(<AskButton a={{ ...controls, questions: 2 }} repoName="demo" />);
+    expect(screen.getByTestId("pm-questions")).toHaveTextContent("2");
+    expect(screen.getByLabelText("2 questions for you")).toBeInTheDocument();
+    rerender(<AskButton a={{ ...controls, questions: 0 }} repoName="demo" />);
+    expect(screen.queryByTestId("pm-questions")).toBeNull();
+  });
+});
+
+describe("AskBox's prompt", () => {
+  it("says the PM has a question waiting", () => {
+    render(<AskBox a={{ ...controls, open: false, questions: 1 }} repoName="demo" />);
+    expect(screen.getByLabelText("Ask the PM")).toHaveAttribute("placeholder", "The PM has a question for you…");
   });
 });
 

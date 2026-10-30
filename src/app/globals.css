@@ -693,99 +693,326 @@
 
 /* Swapping boards: the new board slides in from the side it was dug towards,
    and the last board bounces when there is nowhere further to go. */
-@keyframes boardSlideFromTop {
+/* Board swap: moving between boards is moving through the colony's earth. The board slides
+   away in the direction of travel and the soil follows it in, scrolling past (pebbles, roots,
+   the odd ant) while the next board loads; the loaded board then rises out of it and settles.
+   A gesture in progress pulls the board with resistance, so the soil shows at its edge first.
+   Reduced motion gets a crossfade only. See dig-transition.tsx. */
+.dig-stage {
+  position: relative;
+}
+
+.dig-stage[data-pulling] .dig-board {
+  transform: translateY(var(--dig-pull));
+}
+
+.dig-stage[data-phase="idle"]:not([data-pulling]) .dig-board {
+  transition: transform 280ms cubic-bezier(0.2, 0.9, 0.3, 1.25);
+}
+
+.dig-earth {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  overflow: hidden;
+  pointer-events: none;
+  will-change: transform;
+  background-color: #4a2f22;
+  background-image:
+    repeating-linear-gradient(180deg, transparent 0 58px, rgb(0 0 0 / 0.07) 58px 61px, transparent 61px 118px, rgb(255 228 196 / 0.035) 118px 120px),
+    linear-gradient(180deg, #4f3325 0%, #3e281c 50%, #4f3325 100%);
+  /* The soil's leading edges: crumbly, darker, so it reads as earth pressed against the board. */
+  box-shadow:
+    inset 0 18px 22px -14px rgb(18 10 6 / 0.85),
+    inset 0 -18px 22px -14px rgb(18 10 6 / 0.85);
+}
+
+.dig-earth-far,
+.dig-earth-near,
+.dig-earth-tunnel {
+  position: absolute;
+  inset: 0;
+}
+
+.dig-earth-far {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><g fill='%237a5639'><circle cx='14' cy='22' r='1.6'/><circle cx='88' cy='40' r='1.2'/><circle cx='150' cy='18' r='1.8'/><circle cx='186' cy='96' r='1.3'/><circle cx='40' cy='120' r='1.5'/><circle cx='118' cy='150' r='1.1'/><circle cx='66' cy='184' r='1.7'/><circle cx='170' cy='170' r='1.2'/></g><g fill='%232a190f'><circle cx='30' cy='70' r='1.4'/><circle cx='104' cy='96' r='1.8'/><circle cx='160' cy='60' r='1.1'/><circle cx='12' cy='160' r='1.3'/><circle cx='138' cy='120' r='1.5'/><circle cx='92' cy='190' r='1.2'/></g></svg>");
+  background-size: 200px 200px;
+  opacity: 0.9;
+}
+
+.dig-earth-near {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><g fill='none' stroke-linecap='round'><path d='M-10 212 C40 198 62 232 112 222 S176 188 222 206 S290 236 330 214' stroke='%23261710' stroke-width='3'/><path d='M112 222 C120 240 112 256 124 272' stroke='%23261710' stroke-width='1.6'/><path d='M222 206 C230 186 252 182 258 164' stroke='%23261710' stroke-width='1.4'/><path d='M40 205 C34 190 40 178 30 166' stroke='%235e4231' stroke-width='1'/></g><g><ellipse cx='60' cy='70' rx='10' ry='6.5' fill='%23866650'/><ellipse cx='57' cy='67.5' rx='4' ry='2' fill='%23a5856c'/><ellipse cx='250' cy='40' rx='7' ry='5' fill='%235e4433'/><ellipse cx='248' cy='38.5' rx='2.6' ry='1.4' fill='%237b5c47'/><ellipse cx='176' cy='118' rx='13' ry='8' fill='%236f5240'/><ellipse cx='172' cy='114.5' rx='5' ry='2.4' fill='%238f705a'/><ellipse cx='28' cy='284' rx='8' ry='5.5' fill='%23866650'/><ellipse cx='26' cy='282' rx='3' ry='1.5' fill='%23a5856c'/><ellipse cx='286' cy='290' rx='11' ry='7' fill='%234f3727'/><ellipse cx='283' cy='287' rx='4' ry='2' fill='%23695040'/><ellipse cx='120' cy='16' rx='5' ry='3.5' fill='%23866650'/></g><g fill='%231c120c' transform='translate(196 268) rotate(-14)'><ellipse cx='0' cy='0' rx='3.2' ry='2.4'/><ellipse cx='6' cy='0' rx='2.2' ry='1.8'/><ellipse cx='11' cy='0' rx='4' ry='2.8'/><path d='M5 1 L2 6 M6 1 L6 6.5 M7 1 L10 6 M5 -1 L2 -6 M6 -1 L6 -6.5 M7 -1 L10 -6 M-2 -1 L-6 -4 M-2 1 L-6 4' stroke='%231c120c' stroke-width='0.8'/></g></svg>");
+  background-size: 320px 320px;
+}
+
+/* Lit from the middle, dark at the walls: a tunnel, not a wallpaper. */
+.dig-earth-tunnel {
+  background:
+    radial-gradient(ellipse 55% 45% at 50% 50%, rgb(251 249 245 / 0.07), transparent 70%),
+    radial-gradient(ellipse 120% 90% at 50% 50%, transparent 45%, rgb(12 7 4 / 0.6) 100%);
+}
+
+.dig-toward {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 24px;
+  text-align: center;
+  color: rgb(251 249 245 / 0.78);
+  text-shadow: 0 1px 12px rgb(12 7 4 / 0.7);
+  animation: digTowardIn 360ms ease-out both;
+}
+
+.dig-toward-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.dig-toward-name {
+  font-family: var(--font-serif);
+  font-size: clamp(22px, 5vw, 34px);
+  font-style: italic;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+/* Going down: the board leaves upward, the soil rises in from below, and keeps rising. */
+.dig-stage[data-pulling][data-direction="down"] .dig-earth {
+  transform: translateY(calc(100dvh + var(--dig-pull)));
+}
+
+.dig-stage[data-pulling][data-direction="up"] .dig-earth {
+  transform: translateY(calc(-100dvh + var(--dig-pull)));
+}
+
+.dig-stage[data-phase="leaving"][data-direction="down"] .dig-board {
+  animation: digBoardOutUp 320ms cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+.dig-stage[data-phase="leaving"][data-direction="down"] .dig-earth {
+  animation: digEarthInFromBelow 320ms cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+.dig-stage[data-phase="leaving"][data-direction="up"] .dig-board {
+  animation: digBoardOutDown 320ms cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+.dig-stage[data-phase="leaving"][data-direction="up"] .dig-earth {
+  animation: digEarthInFromAbove 320ms cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+.dig-stage[data-phase="digging"] .dig-board {
+  visibility: hidden;
+}
+
+.dig-stage[data-direction="down"] .dig-earth-near {
+  animation: digScrollNearUp 640ms linear infinite;
+}
+
+.dig-stage[data-direction="down"] .dig-earth-far {
+  animation: digScrollFarUp 1300ms linear infinite;
+}
+
+.dig-stage[data-direction="up"] .dig-earth-near {
+  animation: digScrollNearDown 640ms linear infinite;
+}
+
+.dig-stage[data-direction="up"] .dig-earth-far {
+  animation: digScrollFarDown 1300ms linear infinite;
+}
+
+.dig-stage[data-pulling] .dig-earth-near,
+.dig-stage[data-pulling] .dig-earth-far,
+.dig-stage[data-phase="bouncing"] .dig-earth-near,
+.dig-stage[data-phase="bouncing"] .dig-earth-far {
+  animation: none;
+}
+
+/* The new board rises out of the soil and settles, pushing the soil on ahead of it. */
+.dig-stage[data-phase="entering"][data-direction="down"] .dig-board {
+  animation: digBoardInFromBelow 460ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dig-stage[data-phase="entering"][data-direction="down"] .dig-earth {
+  animation: digEarthOutUp 460ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.dig-stage[data-phase="entering"][data-direction="up"] .dig-board {
+  animation: digBoardInFromAbove 460ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dig-stage[data-phase="entering"][data-direction="up"] .dig-earth {
+  animation: digEarthOutDown 460ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* No board that way: the board pushes into packed soil and springs back. */
+.dig-stage[data-phase="bouncing"][data-direction="down"] .dig-board {
+  animation: digBounceUp 420ms ease-out;
+}
+
+.dig-stage[data-phase="bouncing"][data-direction="down"] .dig-earth {
+  animation: digPeekBelow 420ms ease-out forwards;
+}
+
+.dig-stage[data-phase="bouncing"][data-direction="up"] .dig-board {
+  animation: digBounceDown 420ms ease-out;
+}
+
+.dig-stage[data-phase="bouncing"][data-direction="up"] .dig-earth {
+  animation: digPeekAbove 420ms ease-out forwards;
+}
+
+@keyframes digBoardOutUp {
   from {
-    opacity: 0;
-    transform: translateY(-48px);
+    transform: translateY(var(--dig-pull, 0px));
   }
-}
-
-@keyframes boardSlideFromBottom {
-  from {
-    opacity: 0;
-    transform: translateY(48px);
-  }
-}
-
-@keyframes boardBounce {
-  30% {
-    transform: translateY(24px);
-  }
-  60% {
-    transform: translateY(-8px);
-  }
-}
-
-.board-swap[data-slide="down"] {
-  animation: boardSlideFromBottom 250ms ease-out;
-}
-
-.board-swap[data-slide="up"] {
-  animation: boardSlideFromTop 250ms ease-out;
-}
-
-.board-swap[data-slide="bounce"] {
-  animation: boardBounce 350ms ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .board-swap[data-slide] {
-    animation: none;
-  }
-}
-
-/* Board dig-through: the old board slides off, a band of dirt scrolls until the load is done,
-   the new board slides in; with no board in that direction it just bounces. Reduced motion
-   gets a crossfade only. */
-@keyframes digLeaveUp {
   to {
-    opacity: 0;
-    transform: translateY(-100%);
+    transform: translateY(-100dvh);
   }
 }
 
-@keyframes digLeaveDown {
+@keyframes digBoardOutDown {
+  from {
+    transform: translateY(var(--dig-pull, 0px));
+  }
   to {
-    opacity: 0;
-    transform: translateY(100%);
+    transform: translateY(100dvh);
   }
 }
 
-@keyframes digEnterFromBottom {
+@keyframes digEarthInFromBelow {
   from {
-    opacity: 0;
-    transform: translateY(100%);
+    transform: translateY(calc(100dvh + var(--dig-pull, 0px)));
+  }
+  to {
+    transform: translateY(0);
   }
 }
 
-@keyframes digEnterFromTop {
+@keyframes digEarthInFromAbove {
   from {
-    opacity: 0;
-    transform: translateY(-100%);
+    transform: translateY(calc(-100dvh + var(--dig-pull, 0px)));
+  }
+  to {
+    transform: translateY(0);
   }
 }
 
-@keyframes digBounceDown {
-  30% {
-    transform: translateY(-16px);
+@keyframes digBoardInFromBelow {
+  from {
+    transform: translateY(100dvh);
   }
-  60% {
+  82% {
+    transform: translateY(-6px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes digBoardInFromAbove {
+  from {
+    transform: translateY(-100dvh);
+  }
+  82% {
     transform: translateY(6px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes digEarthOutUp {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-100dvh);
+  }
+}
+
+@keyframes digEarthOutDown {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100dvh);
+  }
+}
+
+@keyframes digScrollNearUp {
+  to {
+    background-position: 0 -320px;
+  }
+}
+
+@keyframes digScrollFarUp {
+  to {
+    background-position: 0 -200px;
+  }
+}
+
+@keyframes digScrollNearDown {
+  to {
+    background-position: 0 320px;
+  }
+}
+
+@keyframes digScrollFarDown {
+  to {
+    background-position: 0 200px;
   }
 }
 
 @keyframes digBounceUp {
-  30% {
-    transform: translateY(16px);
+  35% {
+    transform: translateY(-28px);
   }
-  60% {
-    transform: translateY(-6px);
+  70% {
+    transform: translateY(5px);
   }
 }
 
-@keyframes digBand {
+@keyframes digBounceDown {
+  35% {
+    transform: translateY(28px);
+  }
+  70% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes digPeekBelow {
+  from,
   to {
-    background-position: 0 -128px;
+    transform: translateY(100dvh);
+  }
+  35% {
+    transform: translateY(calc(100dvh - 28px));
+  }
+}
+
+@keyframes digPeekAbove {
+  from,
+  to {
+    transform: translateY(-100dvh);
+  }
+  35% {
+    transform: translateY(calc(-100dvh + 28px));
+  }
+}
+
+@keyframes digTowardIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 
@@ -801,53 +1028,74 @@
   }
 }
 
-.dig-board[data-phase="leaving"][data-direction="down"] {
-  animation: digLeaveUp 300ms ease-in forwards;
-}
-
-.dig-board[data-phase="leaving"][data-direction="up"] {
-  animation: digLeaveDown 300ms ease-in forwards;
-}
-
-.dig-board[data-phase="entering"][data-direction="down"] {
-  animation: digEnterFromBottom 300ms ease-out;
-}
-
-.dig-board[data-phase="entering"][data-direction="up"] {
-  animation: digEnterFromTop 300ms ease-out;
-}
-
-.dig-board[data-phase="bouncing"][data-direction="down"] {
-  animation: digBounceDown 400ms ease-out;
-}
-
-.dig-board[data-phase="bouncing"][data-direction="up"] {
-  animation: digBounceUp 400ms ease-out;
-}
-
-.dig-board[data-phase="digging"] {
-  visibility: hidden;
-}
-
-.dig-band {
-  background-color: #5a3d26;
-  background-image:
-    radial-gradient(circle at 20% 30%, #7a5636 0 6px, transparent 7px),
-    radial-gradient(circle at 70% 70%, #3f2917 0 8px, transparent 9px);
-  background-size: 128px 128px;
-  animation: digBand 600ms linear infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .dig-board[data-phase="leaving"] {
+  .dig-stage .dig-board,
+  .dig-stage[data-pulling] .dig-board {
+    transform: none;
+    transition: none;
+  }
+
+  .dig-stage[data-phase="leaving"] .dig-board {
     animation: digFadeOut 200ms ease-in forwards;
   }
 
-  .dig-board[data-phase="entering"] {
+  .dig-stage[data-phase="entering"] .dig-board {
     animation: digFadeIn 200ms ease-out;
   }
 
-  .dig-board[data-phase="bouncing"] {
+  .dig-stage[data-phase="bouncing"] .dig-board {
+    animation: none;
+  }
+}
+
+/* The colony's bell (components/colony/bell.tsx): sound opening out from the lip on a ring,
+   and the glint of an armed golden bell. */
+.bell-waves path {
+  opacity: 0;
+  animation: bellWave 900ms ease-out;
+}
+
+.bell-waves path:nth-child(n + 3) {
+  animation-delay: 120ms;
+}
+
+@keyframes bellWave {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
+
+.bell-waves {
+  transform-box: fill-box;
+}
+
+.bell-waves path {
+  transform-origin: 48px 56px;
+}
+
+.bell-glint {
+  animation: bellGlint 2.6s ease-in-out infinite;
+}
+
+@keyframes bellGlint {
+  0%,
+  70%,
+  100% {
+    opacity: 0;
+  }
+  80% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bell-waves path,
+  .bell-glint {
     animation: none;
   }
 }
