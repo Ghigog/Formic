@@ -2,9 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const struck = vi.hoisted(() => [] as number[]);
-vi.mock("./bell-sound", () => ({
-  primeBell: () => {},
-  strikeBell: (strength = 1) => struck.push(strength),
+vi.mock("./colony", () => ({
+  useColony: () => ({ sfx: (name: string, strength = 0) => name === "bell" && struck.push(strength) }),
 }));
 
 import { Bell } from "./bell";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { primeBell, strikeBell } from "./bell-sound";
+import { useColony } from "./colony";
 import { atRest, cordFor, createSwingDetector, stepSpring, tiltFor, type Spring } from "./bell-swing";
 
 type BellState = { left: number; armed: boolean };
@@ -41,6 +41,9 @@ function rangLine(r: RingResult | null): string {
  * levels, which rings itself a minute after a limit resets.
  */
 export function Bell() {
+  // The colony's own sound engine: it honours the sound switch and keeps the
+  // audio alive where WebKit parks it (the desktop app, iPhone).
+  const sfx = useColony()?.sfx;
   const [bell, setBell] = useState<BellState | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const [cord, setCord] = useState({ x: 0, y: 0 });
@@ -99,7 +102,7 @@ export function Bell() {
   };
 
   const ring = () => {
-    strikeBell(1);
+    sfx?.("bell", 1);
     setRinging((n) => n + 1);
     void postBell("ring").then((r) => {
       if (r) setBell({ left: r.left, armed: r.armed });
@@ -109,11 +112,10 @@ export function Bell() {
 
   const onSwing = (event: ReturnType<ReturnType<typeof createSwingDetector>["move"]>) => {
     if (event === "ring") ring();
-    else if (event === "swing" && swing.current.swings > 2) strikeBell(0.45);
+    else if (event === "swing" && swing.current.swings > 2) sfx?.("bell", 0.45);
   };
 
   const press = (e: React.PointerEvent) => {
-    primeBell();
     grab.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
     swing.current.start(e.clientX);
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -142,7 +144,6 @@ export function Bell() {
   const swingByKey = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
-    primeBell();
     if (keyIdle.current === null) swing.current.start(0);
     else clearTimeout(keyIdle.current);
     const x = (e.key === "ArrowLeft" ? -1 : 1) * 30;

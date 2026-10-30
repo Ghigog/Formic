@@ -51,7 +51,11 @@ export type Sfx =
   | "crumble"
   | "sentinelLand"
   | "sentinelVoice"
-  | "kpi";
+  | "kpi"
+  | "bell"
+  | "dig"
+  | "grit"
+  | "surface";
 
 /** One sentinel's voice: a pitch, a wave and a glide to another pitch. */
 export interface SentinelVoice {
@@ -509,6 +513,43 @@ export class SoundEngine {
       case "sentinelLand":
         this.noise(0.03, { freq: 2200, to: 600, gain: 0.05 });
         this.tone(900 + v * 40, 0.04, { type: "triangle", gain: 0.02 });
+        break;
+      case "bell": {
+        // A small struck hand bell: inharmonic partials, each fading at its
+        // own rate, the high ones first. v: 0 to 1, how hard it was swung.
+        const loud = 0.35 + Math.min(1, Math.max(0, v || 1)) * 0.65;
+        this.noise(0.015, { freq: 7000, hp: true, gain: 0.04 * loud });
+        for (const [ratio, gain, dur] of [
+          [0.5, 0.05, 2.2],
+          [1, 0.09, 1.7],
+          [1.183, 0.045, 1.3],
+          [1.506, 0.035, 1.0],
+          [2, 0.028, 0.8],
+          [2.514, 0.018, 0.55],
+          [3.011, 0.012, 0.35],
+        ] as const) {
+          this.tone(1318.5 * ratio, dur, { gain: gain * loud, attack: 0.003 });
+        }
+        break;
+      }
+      case "dig":
+        // Into the earth: soil giving way, sliding past, a low shove.
+        this.noise(0.45, { freq: 1600, to: 220, gain: 0.11, q: 1.1 });
+        for (let i = 0; i < 5; i++) {
+          this.noise(0.04, { freq: 2600 + (i % 3) * 700, hp: true, gain: 0.03, q: 1.4, delay: 0.05 + i * 0.07 });
+        }
+        this.tone(120, 0.3, { to: 60, gain: 0.09, type: "triangle" });
+        break;
+      case "grit":
+        // Grit trickling past while the next board loads.
+        this.noise(0.05, { freq: 2200 + Math.random() * 1600, hp: true, gain: 0.018, q: 1.6 });
+        this.noise(0.12, { freq: 500, to: 220, gain: 0.025 });
+        break;
+      case "surface":
+        // Out of the soil: a soft thump as the board settles, and a lift.
+        this.noise(0.2, { freq: 900, to: 160, gain: 0.07 });
+        this.tone(150, 0.16, { to: 80, gain: 0.1, type: "triangle", delay: 0.28 });
+        this.tone(880, 0.12, { to: 1320, gain: 0.02, type: "triangle", delay: 0.3 });
         break;
       case "kpi":
         // A soft rising chime: the numbers have arrived.
