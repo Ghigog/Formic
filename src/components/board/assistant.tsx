@@ -42,6 +42,8 @@ export interface AssistantControls {
   ) => Promise<void>;
   setAgent: (presetId: string | null) => Promise<void>;
   presets: AgentPreset[];
+  /** How many cards are waiting on a question for the person, which the PM relays. */
+  questions?: number;
   onNewAgent: () => void;
   onEditAgent: (preset: AgentPreset) => void;
 }
@@ -139,7 +141,13 @@ function Composer({
         onChange={(e) => setText(e.target.value)}
         onFocus={() => a.messages.length > 0 && a.setOpen(true)}
         onKeyDown={onKeyDown}
-        placeholder={a.pending ? "Answering…" : `Ask about ${repoName}…`}
+        placeholder={
+          a.pending
+            ? "Answering…"
+            : a.questions
+              ? `The PM has ${a.questions === 1 ? "a question" : `${a.questions} questions`} for you…`
+              : `Ask the PM about ${repoName}…`
+        }
         aria-label="Ask the PM"
         className={cn(
           "border-line bg-cream text-ink placeholder:text-muted h-9 w-full resize-none rounded-lg border py-[7px] pl-9 text-[13px] leading-5 outline-none focus:border-terracotta",
@@ -224,6 +232,19 @@ export function AskBox({
   );
 }
 
+/** The questions waiting on the person, on the PM's button. */
+function QuestionCount({ n }: { n: number }) {
+  return (
+    <span
+      data-testid="pm-questions"
+      aria-label={`${n} ${n === 1 ? "question" : "questions"} for you`}
+      className="bg-terracotta-cta text-on-accent absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[9px] leading-none font-bold"
+    >
+      {n}
+    </span>
+  );
+}
+
 /** The mobile shade's top offset in px (Tailwind top-14). */
 const MOBILE_SHADE_TOP = 56;
 
@@ -243,9 +264,10 @@ export function AskButton({
         aria-label={a.open ? "Roll the PM up" : "Ask the PM"}
         aria-expanded={a.open}
         data-tour="chat"
-        className="border-line text-ink inline-flex size-11 items-center justify-center rounded-[10px] border"
+        className="border-line text-ink relative inline-flex size-11 items-center justify-center rounded-[10px] border"
       >
         <SparkIcon />
+        {!!a.questions && <QuestionCount n={a.questions} />}
       </button>
       <Shade
         a={a}

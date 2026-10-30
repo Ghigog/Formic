@@ -107,8 +107,8 @@ prompts, custom or not.
       and the answer resumes the work.
 - [x] Product Agent interviews before a PRD: at most two or three sharp
       questions, only where the answer changes the product.
-- [ ] Agents can ask to propose follow-up work.
-- [ ] Open questions gather in one place (the PM chat), so they read as a
+- [x] Agents can ask about follow-up work (the question field's guidance names it).
+- [x] Open questions gather in one place (the PM chat), so they read as a
       conversation, not a pile of alerts. Push notification on a new question.
 
 ### 3. The PM as director

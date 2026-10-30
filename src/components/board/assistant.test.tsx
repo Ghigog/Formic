@@ -116,6 +116,21 @@ describe("AskButton on a phone", () => {
     });
     expect(shade.style.height).toBe(normal);
   });
+
+  it("shows how many questions the PM has for the person, and none when there are none", () => {
+    const { rerender } = render(<AskButton a={{ ...controls, questions: 2 }} repoName="demo" />);
+    expect(screen.getByTestId("pm-questions")).toHaveTextContent("2");
+    expect(screen.getByLabelText("2 questions for you")).toBeInTheDocument();
+    rerender(<AskButton a={{ ...controls, questions: 0 }} repoName="demo" />);
+    expect(screen.queryByTestId("pm-questions")).toBeNull();
+  });
+});
+
+describe("AskBox's prompt", () => {
+  it("says the PM has a question waiting", () => {
+    render(<AskBox a={{ ...controls, open: false, questions: 1 }} repoName="demo" />);
+    expect(screen.getByLabelText("Ask the PM")).toHaveAttribute("placeholder", "The PM has a question for you…");
+  });
 });
 
 describe("proposal cards", () => {

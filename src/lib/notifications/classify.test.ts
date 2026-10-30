@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FormicEvent } from "@/lib/domain/events";
 import { classifyEvent } from "./classify";
+import { questionReason } from "@/lib/domain/question";
 
 const ctx = { cardKey: "T-5", cardTitle: "Add login", boardName: "Formic" };
 const status = (s: string, kind: "ticket" | "epic" = "ticket", blockedReason: string | null = null) =>
@@ -17,6 +18,12 @@ describe("classifyEvent", () => {
     const n = classifyEvent(status("merged", "epic"), { ...ctx, cardKey: "E-1", cardTitle: "Login" });
     expect(n?.kind).toBe("epicCompleted");
     expect(n?.body).toContain("Login");
+  });
+
+  it("tells the person an agent has a question, on an Epic too, with the question itself", () => {
+    const reason = questionReason("The Product Agent", [{ question: "Silver bell first?", why: "" }]);
+    const n = classifyEvent(status("blocked", "epic", reason), { ...ctx, cardKey: "EPIC-3" });
+    expect(n).toMatchObject({ kind: "needsAttention", title: "EPIC-3 on Formic has a question for you", body: "Silver bell first?" });
   });
 
   it("does not notify for an Epic still moving", () => {
