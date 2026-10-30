@@ -97,9 +97,13 @@ describe("POST /api/projects", () => {
     const { project } = (await res.json()) as { project: { id: string; repoFullName: string } };
     expect(project.repoFullName).toBe("acme/widgets");
     expect(res.headers.get("set-cookie")).toContain(encodeURIComponent(project.id));
-    // Nothing runs and nothing is added until the first agent is picked.
+    // The board starts with its AGENTS.md and DESIGN.md tickets, but nothing
+    // runs until the first agent is picked.
     expect(launch).not.toHaveBeenCalled();
-    expect(await repository().boardCards(project.id)).toHaveLength(0);
+    const cards = await repository().boardCards(project.id);
+    expect(cards).toHaveLength(2);
+    expect(cards.find((c) => c.title.includes("AGENTS.md"))!.status).toBe("ready");
+    expect(cards.find((c) => c.title.includes("DESIGN.md"))).toMatchObject({ status: "blocked", stalledIn: "todo" });
   });
 
   it("reuses the project on a second request without setting it up again", async () => {
@@ -107,6 +111,15 @@ describe("POST /api/projects", () => {
     const second = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
     expect(second.project.id).toBe(first.project.id);
     expect(launch).not.toHaveBeenCalled();
+    expect(await repository().boardCards(first.project.id)).toHaveLength(2);
+  });
+
+  it("does not add the tickets again to a board that already exists", async () => {
+    const { project } = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
+    const repo = repository();
+    await repo.deleteTickets((await repo.boardCards(project.id)).map((c) => c.id));
+    await post({ repoFullName: "acme/widgets" });
+    expect(await repo.boardCards(project.id)).toHaveLength(0);
   });
 
   it("opens an example board with no repository, seeded once and reused after", async () => {
