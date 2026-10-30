@@ -29,7 +29,7 @@ The rules are in `src/lib/colony/reserve.ts`; the queue applies them in
 ## What levels unlock
 
 Levels run to 34, with one unlock at each level after the first. Lv 1 starts
-with the Ant and Umber; the first Sentinel, the Tester, comes at Lv 2. Every
+with the Ant and Umber; the first Sentinel, the Tester, comes at Lv 2, and the Designer, who holds the product to its design document, at Lv 4. Every
 level also earns a Queen, and the rank steps up every three levels (Queen
 from Lv 28).
 
@@ -37,7 +37,7 @@ from Lv 28).
 | :-- | :-- |
 | 2 | Tester (Sentinel) |
 | 3 | QA (Sentinel) |
-| 4 | Beetle |
+| 4 | Designer (Sentinel) |
 | 5 | Crimson, and the first golden bell |
 | 6 | Architect (Sentinel) |
 | 7 | Least reserve drops to 1 |
@@ -58,7 +58,7 @@ from Lv 28).
 | 22 | 4 scouts per ticket |
 | 23 | Slate |
 | 24 | Bumblebee |
-| 25 | Designer (Sentinel) |
+| 25 | Beetle |
 | 26 | Anthracite |
 | 27 | Auto-scouting |
 | 28 | Legal (Sentinel) |

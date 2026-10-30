@@ -5,7 +5,7 @@ import { ownsPreset } from "../../presets/validate";
 import { COLUMNS } from "@/lib/domain/status";
 import { agentView, assignAgent } from "@/lib/agents/board-agents";
 import { launch } from "@/lib/agents/pipeline";
-import { addOnboardingTicket } from "@/lib/board/onboarding";
+import { addDesignTicket, addOnboardingTicket } from "@/lib/board/onboarding";
 import { repository } from "@/lib/db";
 import { runnerSetup } from "@/lib/runner/setup";
 
@@ -41,9 +41,10 @@ export async function PUT(
   const hadAgent = Object.keys(await repository().columnAgents(project.id)).length > 0;
   await assignAgent(project, user, col.data, body.data.presetId);
   // The first agent on a board is what makes it cost anything: only now does
-  // its repository get the setup pull request and the board its AGENTS.md ticket.
+  // its repository get the setup pull request and the board its AGENTS.md and DESIGN.md tickets.
   if (!hadAgent && project.repoFullName && Object.keys(await repository().columnAgents(project.id)).length > 0) {
     await addOnboardingTicket(project.id);
+    await addDesignTicket(project.id);
     launch(async () => void (await runnerSetup(project)), `setting up ${project.repoFullName}`);
   }
   return Response.json({ columns: (await agentView(project, user)).columns });

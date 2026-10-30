@@ -129,12 +129,14 @@ prompts, custom or not.
 
 ### 4. Design as a first-class part of the board
 
-- [ ] A second onboarding ticket beside AGENTS.md: the person describes the
+- [x] A second onboarding ticket beside AGENTS.md: the person describes the
       look and feel in its chat; agents refine it into `DESIGN.md` (a design
-      philosophy doc) in the repository.
-- [ ] The Designer Sentinel unlocks early (level 2 or 3) and grades two things:
+      philosophy doc) in the repository. It starts as a question from the
+      Designer; the person's answer starts the Coder on it. Existing boards
+      do not get it (Formic itself already has `design/DESIGN.md`).
+- [x] The Designer Sentinel unlocks early (level 4, swapping with the Beetle) and grades two things:
       how closely shipped features match the doc, and how good the doc is.
-- [ ] Frontend tickets cite the doc; the reviewer checks against it.
+- [x] Frontend tickets cite the doc; the reviewer checks against it.
 - [ ] Later, not now: Figma and atomic components from designs.
 
 ### 5. Plumbing

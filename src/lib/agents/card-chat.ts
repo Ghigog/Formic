@@ -706,7 +706,14 @@ async function answerQuestion(
   const note = answerNote(reason, text);
   if (cardKind === "ticket") await addNote(projectId, cardId, note);
   else await addEpicNote(projectId, cardId, note);
-  const started = await applyCardAction(projectId, cardKind, cardId, {
+  // A ticket asked from To Do (a new board's design ticket) has nothing to
+  // redo yet: the answer is what it waited for to start.
+  const card = await repository().cardById(cardId);
+  const fromTodo = cardKind === "ticket" && card?.stalledIn === "todo";
+  if (fromTodo) await repository().updateTicket(cardId, { status: "ready", stalledIn: null, blockedReason: null });
+  const started = fromTodo
+    ? await applyCardAction(projectId, cardKind, cardId, { type: "move", to: "in_progress" })
+    : await applyCardAction(projectId, cardKind, cardId, {
     type: "redo",
     instruction: `${note}\n\nCarry on with this ticket's work, using their answer. Do not redo what is already done.`,
   });
