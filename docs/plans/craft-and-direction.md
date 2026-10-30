@@ -1,6 +1,6 @@
 # Craft and direction: making the colony care about the result
 
-**Status:** in progress. Started 2026-10-30. Tick boxes as work lands; this file is
+**Status:** all six steps landed on 2026-10-30. Started 2026-10-30. Tick boxes as work lands; this file is
 the memory of the plan, so keep it current.
 
 **Original requests:** #980 (bells), #981 (calls), #982 (board swap). Their
@@ -152,7 +152,7 @@ prompts, custom or not.
       sends back a test that tests nothing. Step 6 rewrites the three
       features' e2e tests to check real behaviour.
 
-### 6. Rebuild the three features to the new standard
+### 6. Rebuild the three features to the new standard (done)
 
 **Bell.** A bell hanging from a string in the colony popover. Pull the string
 down and swing it side to side: the bell swings with real weight, rings with a
@@ -167,6 +167,18 @@ motion throughout.
 top tab and Alt+arrow. The dirt band fills the view, textured in the colony's
 earth, with small stones and roots passing as it scrolls. The next board's name
 shows faintly in the soil while it loads. Verified in a real mobile browser.
+
+Built as described, with two changes found on the way: the bell's silver
+ring was disabled below Lv 5 (fixed), and "Hello architect" went to the PM
+because routing wanted the name first (fixed: greetings, names at the end,
+nicknames like "worker", and replies go on with whoever spoke last). The
+calls pages were restyled in Formic's language (column wells, octagon guest
+coins, serif titles, a way back to the board). The bell's sound is
+synthesised; the dig shows the next board's name in the soil.
+
+Still open: Figma and atomic components (step 4, later); an Architect agent
+that is a CLI one skips the PM's oversight (API only, to avoid an Actions
+job per check).
 
 **Calls.** Answer like a person on a call: fast for greetings and obvious
 things; "let me get back to you on that" only when a lookup runs past about five

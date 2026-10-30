@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { GuestId } from "@/lib/calls/guests";
 import { useMeetings } from "@/lib/hooks/use-meetings";
 import { Calendar, weekStart } from "./calendar";
+import { CallsHeader } from "./calls-chrome";
 import { MeetingForm } from "./meeting-form";
 
 /** The Calls page: two weeks of slots, the form for the slot picked, and Start call for an unscheduled call. */
@@ -36,20 +37,40 @@ export function CallsView({ guests }: { guests: { id: GuestId; label: string }[]
   };
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Calls</h1>
-        <button
-          type="button"
-          onClick={() => void start()}
-          disabled={starting}
-          className="bg-amber text-on-amber rounded px-3 py-1.5 text-[13px] font-medium disabled:opacity-50"
-        >
-          Start call
-        </button>
-      </div>
-      {(error || startError) && <p role="alert">{error ?? startError}</p>}
-      <Calendar meetings={meetings} from={from} onPick={setSlot} />
+    <div className="bg-cream min-h-dvh">
+      <CallsHeader
+        back={{ href: "/", label: "Back to the board" }}
+        kicker="The colony"
+        title="Calls"
+        action={
+          <button
+            type="button"
+            onClick={() => void start()}
+            disabled={starting}
+            className="bg-terracotta-cta inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-[13px] font-semibold text-white disabled:opacity-60"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M3.6 2.2h2.3l1.2 3-1.6 1.1a8 8 0 0 0 4.2 4.2l1.1-1.6 3 1.2v2.3c0 .7-.6 1.3-1.3 1.3A11.7 11.7 0 0 1 2.3 3.5c0-.7.6-1.3 1.3-1.3Z"
+                fill="currentColor"
+              />
+            </svg>
+            {starting ? "Calling…" : "Start call"}
+          </button>
+        }
+      />
+      <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 md:px-6">
+        <p className="text-muted max-w-2xl text-[14px] leading-6">
+          Meet your colony. Pick a slot to schedule a stand-up, a planning session or a retro; the guests you invite come
+          knowing the agenda, and you get a nudge when it starts.
+        </p>
+        {(error || startError) && (
+          <p role="alert" className="bg-crimson/10 text-ink rounded-md px-3 py-2 text-[13px]">
+            {error ?? startError}
+          </p>
+        )}
+        <Calendar meetings={meetings} from={from} onPick={setSlot} onOpen={(id) => router.push(`/calls/${id}`)} />
+      </main>
       {slot && (
         <MeetingForm
           key={slot.getTime()}
@@ -62,6 +83,6 @@ export function CallsView({ guests }: { guests: { id: GuestId; label: string }[]
           }}
         />
       )}
-    </main>
+    </div>
   );
 }
