@@ -244,7 +244,7 @@ export function AgentEditor({
     setBusy(true);
     setError(null);
     try {
-      await onSave({
+      const fields = {
         name,
         provider,
         model: model.trim(),
@@ -256,7 +256,9 @@ export function AgentEditor({
           : typedKey
             ? { apiKey: typedKey }
             : {}),
-      }, unscoped ? { claimColumn } : undefined);
+      };
+      if (unscoped) await onSave(fields, { claimColumn });
+      else await onSave(fields);
       if (!forAssistant && onSaveOverride) await onSaveOverride(next);
       onClose();
     } catch (e) {
