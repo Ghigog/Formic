@@ -615,7 +615,11 @@ export interface PresetRecord {
   id?: string;
   /** Set on create; an update keeps the owner it had. */
   ownerId?: string | null;
-  /** Set on create; an update keeps the column it had. */
+  /**
+   * Set on create. An update keeps the column it had, unless it had none:
+   * a preset made before columns were scoped may be given one column once,
+   * to stop it showing for every column's picker from then on.
+   */
   column?: ColumnId | null;
   provider: ProviderId;
   name: string;

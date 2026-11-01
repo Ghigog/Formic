@@ -1818,7 +1818,10 @@ export class MemoryRepository implements Repository {
     const row = {
       id: existing?.id ?? id("preset"),
       ownerId: existing ? existing.ownerId : (record.ownerId ?? null),
-      column: existing ? existing.column : (record.column ?? null),
+      // A preset made before columns were scoped has none (null) and shows
+      // for every column; an update may give it one, once, but never move a
+      // preset that already has one.
+      column: existing ? (existing.column == null && record.column ? record.column : existing.column) : (record.column ?? null),
       name: record.name,
       provider: record.provider,
       model: record.model,

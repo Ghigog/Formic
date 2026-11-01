@@ -327,7 +327,10 @@ export interface AgentPreset {
 export const agentPresetInputSchema = z
   .object({
     name: z.string().trim().min(1, "Give the agent a name.").max(60),
-    /** The column it's scoped to. Only honoured when creating a preset. */
+    /**
+     * The column it's scoped to. Honoured on create, and on an update only
+     * for a preset that still has none (made before columns were scoped).
+     */
     column: z.enum(COLUMNS).nullable().default(null),
     provider: z.enum(PROVIDER_IDS).default("anthropic"),
     /** Empty for a CLI agent means its own default model. */

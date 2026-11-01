@@ -109,7 +109,10 @@ export function AgentEditor({
   /** Stores the column's override; offered for a column agent only, called after the agent saves. */
   onSaveOverride?: (override: ColumnOverride) => Promise<void>;
   onClose: () => void;
-  onSave: (input: Omit<AgentPresetInput, "column">) => Promise<void>;
+  onSave: (
+    input: Omit<AgentPresetInput, "column">,
+    options?: { claimColumn?: boolean },
+  ) => Promise<void>;
   onDelete: (presetId: string) => Promise<void>;
 }) {
   const forAssistant = column === "assistant";
@@ -118,6 +121,10 @@ export function AgentEditor({
     : `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
   // The assistant has no built-in brief: it answers whatever it is asked.
   const defaultPrompt = forAssistant ? "" : DEFAULT_BRIEF[column];
+  // Made before agents were scoped to one column, so it still shows up
+  // everywhere; offer to give it this one.
+  const unscoped = !forAssistant && !!preset && preset.column === null;
+  const [claimColumn, setClaimColumn] = useState(false);
   const [name, setName] = useState(preset?.name ?? "");
   const [provider, setProvider] = useState<ProviderId>(
     preset?.provider ?? "anthropic",
@@ -249,7 +256,7 @@ export function AgentEditor({
           : typedKey
             ? { apiKey: typedKey }
             : {}),
-      });
+      }, unscoped ? { claimColumn } : undefined);
       if (!forAssistant && onSaveOverride) await onSaveOverride(next);
       onClose();
     } catch (e) {
@@ -332,6 +339,26 @@ export function AgentEditor({
               className={`${field} h-9`}
             />
           </label>
+
+          {unscoped && (
+            <label className="border-line bg-cream flex items-start gap-2 rounded-md border px-2.5 py-2">
+              <input
+                type="checkbox"
+                checked={claimColumn}
+                onChange={(e) => setClaimColumn(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="text-[12px]">
+                <span className="text-ink block font-semibold">
+                  Only offer this agent for {COLUMN_LABELS[column]}
+                </span>
+                <span className="text-muted block">
+                  Made before agents were scoped to a column, so it currently shows up when
+                  picking an agent for any column. This can only be set once.
+                </span>
+              </span>
+            </label>
+          )}
 
           <label data-tour="agent-provider" className="flex flex-col gap-1">
             <span className={label}>Provider</span>

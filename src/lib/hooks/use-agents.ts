@@ -80,13 +80,20 @@ export function useAgents(
 
   /**
    * Creates or updates a preset. A new one is scoped to `column` and put on
-   * it straight away; `column` is never sent on an update, which keeps
-   * whatever column the preset already had.
+   * it straight away. `column` is sent on an update only when `claimColumn`
+   * asks for it — for a preset made before columns were scoped (still shows
+   * for every column) that is now being given one.
    */
   const save = useCallback(
-    async (input: Omit<AgentPresetInput, "column">, options: { id?: string; column?: ColumnId }) => {
+    async (
+      input: Omit<AgentPresetInput, "column">,
+      options: { id?: string; column?: ColumnId; claimColumn?: boolean },
+    ) => {
       const { preset } = options.id
-        ? await send<{ preset: AgentPreset }>(`/api/agents/presets/${options.id}`, "PATCH", input)
+        ? await send<{ preset: AgentPreset }>(`/api/agents/presets/${options.id}`, "PATCH", {
+            ...input,
+            ...(options.claimColumn && options.column ? { column: options.column } : {}),
+          })
         : await send<{ preset: AgentPreset }>("/api/agents/presets", "POST", {
             ...input,
             column: options.column ?? null,
