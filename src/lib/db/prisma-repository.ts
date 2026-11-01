@@ -1879,11 +1879,19 @@ export class PrismaRepository implements Repository {
 
   async savePreset(record: PresetRecord): Promise<AgentPreset> {
     const db = prisma();
+    // A preset made before columns were scoped has none (null) and shows for
+    // every column; an update may give it one, once, but never move a
+    // preset that already has one.
+    const claimingColumn =
+      !!record.id &&
+      !!record.column &&
+      (await db.agentPreset.findUnique({ where: { id: record.id }, select: { column: true } }))?.column == null;
     const data = {
       name: record.name,
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
+      ...(claimingColumn ? { column: record.column } : {}),
       ...(providerInfo(record.provider)?.kind !== "cli"
         ? { secretName: null }
         : record.secretName !== undefined

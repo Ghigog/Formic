@@ -121,8 +121,9 @@ describe("write tools", () => {
   it("returns the board's reason when it refuses a move", async () => {
     const id = await ticketOnBoard();
     const repo = repository();
-    const preset = await repo.savePreset({ name: "Coder", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
-    await repo.setColumnAgent(board, "done", preset.id);
+    const preset = await repo.savePreset({ name: "PM", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
+    // Done runs on the assistant now, not an agent of its own.
+    await repo.setAssistantAgent(board, preset.id);
     // A pull request that will not merge: the move is refused with the reason.
     globalThis.__formicMemoryStore!.cards.get(id)!.prNumber = 7;
     const result = await moveCard(rw(), { board, card: id, to: "done" });

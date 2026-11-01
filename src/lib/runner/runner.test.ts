@@ -152,9 +152,11 @@ describe("whyItFailed", () => {
 describe("CLI agent templates", () => {
   it("run in any column", async () => {
     const preset = await assignClaudeCode();
-    for (const column of ["backlog", "todo", "in_review", "done"] as const) {
+    for (const column of ["backlog", "todo", "in_review"] as const) {
       await repository().setColumnAgent(PROJECT, column, preset.id);
     }
+    // Done runs on the assistant, not an agent of its own.
+    await repository().setAssistantAgent(PROJECT, preset.id);
 
     for (const column of ["backlog", "todo", "in_progress", "in_review", "done"] as const) {
       expect(await cliAgentFor(PROJECT, column)).toMatchObject({

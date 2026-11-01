@@ -498,7 +498,9 @@ function Shade({
           className="border-line bg-cream text-ink h-8 max-w-[220px] rounded-md border px-2 text-[12px]"
         >
           <option value="">Choose an agent</option>
-          {a.presets.map((p) => (
+          {a.presets
+            .filter((p) => p.column === null)
+            .map((p) => (
             <option key={p.id} value={p.id}>
               {p.name} ·{" "}
               {(providerInfo(p.provider)?.label ?? p.provider).split(" (")[0]}

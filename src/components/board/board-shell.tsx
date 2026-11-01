@@ -252,11 +252,12 @@ export function BoardShell({
           override={editing.column === "assistant" ? null : (agentState.overrides[editing.column] ?? null)}
           onSaveOverride={(override) => agentState.setOverride(editing.column as ColumnId, override)}
           onClose={() => setEditing(null)}
-          onSave={async (input) => {
+          onSave={async (input, saveOptions) => {
             const { column } = editing;
             const preset = await agentState.save(input, {
               id: editing.preset?.id,
               column: column === "assistant" ? undefined : column,
+              claimColumn: saveOptions?.claimColumn,
             });
             if (column === "assistant" && !editing.preset) await assistant.setAgent(preset.id);
           }}

@@ -6,6 +6,7 @@ import type { AgentPreset, AgentPresetInput } from "@/lib/domain/entities";
 import { formatReset } from "./limits";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
+import { SHOWCASE_BRIEF } from "./prompts";
 import { hintFor, open, seal } from "@/lib/secrets/vault";
 import {
   AnthropicArchitectAgent,
@@ -175,22 +176,31 @@ async function slotPreset(projectId: string, slot: ColumnId | "assistant", chose
 
 async function resolveColumn(projectId: string, column: ColumnId): Promise<Resolution> {
   const local = authMode() === "local";
+  // Done has no agent of its own: it's the PM's column, so its work (the
+  // showcase, a card's chat there) runs on the board's assistant agent.
+  const slot = column === "done" ? "assistant" : column;
 
   const override = columnPreset.getStore();
-  const found = await slotPreset(projectId, column, override?.column === column ? override.presetId : undefined);
+  const found = await slotPreset(projectId, slot, override?.column === column ? override.presetId : undefined);
   if (found) {
     found.preset = await gateAllowance(found.preset);
     const limited = limitReason(found.preset, COLUMN_LABELS[column]);
     if (limited) return { kind: "limited", reason: limited };
     const provider = found.preset.provider;
+    const ownBrief = found.preset.prompt.trim();
     return {
       kind: "configured",
       presetId: found.preset.id,
       config: {
         provider,
         model: found.preset.model,
-        // An empty prompt keeps the column's built-in brief.
-        brief: found.preset.prompt.trim() || undefined,
+        // An empty prompt keeps the column's built-in brief. Done always
+        // writes the showcase on the showcase brief, a skill the PM runs:
+        // its own chat instructions add to that rather than replace it.
+        brief:
+          column === "done"
+            ? `${SHOWCASE_BRIEF}${ownBrief ? `\n\nThe person's instructions for you:\n${ownBrief}` : ""}`
+            : ownBrief || undefined,
         secretName: found.preset.secretName ?? null,
         // A key sealed under a secret that has since changed cannot be
         // opened; the agent then reports it has no key, which is the fix.
@@ -311,11 +321,16 @@ function refusing(error: string): AgentRegistry[keyof AgentRegistry] {
   } as unknown as AgentRegistry[keyof AgentRegistry];
 }
 
+/** Why a column has no agent to work with: Done points at the PM's chat, every other column at its own menu. */
+function noAgentReason(column: ColumnId): string {
+  return column === "done"
+    ? "No PM agent is set. Pick or create one in the chat."
+    : `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`;
+}
+
 /** An agent for a plain column. Every call says so. */
 function plainColumn(column: ColumnId): AgentRegistry[keyof AgentRegistry] {
-  return refusing(
-    `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
-  );
+  return refusing(noAgentReason(column));
 }
 
 /** The agent for a role on this board. */
@@ -506,10 +521,7 @@ export type ColumnChatAgent =
  * a minute or two later, the same way it does the column's work.
  */
 export async function columnChatAgentFor(projectId: string, column: ColumnId): Promise<ColumnChatAgent> {
-  const unavailable: ColumnChatAgent = {
-    kind: "none",
-    reason: `No agent is set for ${COLUMN_LABELS[column]}. Pick or create one from the column's agent menu.`,
-  };
+  const unavailable: ColumnChatAgent = { kind: "none", reason: noAgentReason(column) };
   const resolved = await resolveColumn(projectId, column);
   if (resolved.kind === "plain" || resolved.kind === "mock") return unavailable;
   if (resolved.kind === "limited") return { kind: "limited", reason: resolved.reason };

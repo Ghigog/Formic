@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agentConfigFor, agentFor, columnIsPlain, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
+import { SHOWCASE_BRIEF } from "./prompts";
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
 import { AnthropicProductAgent } from "./anthropic";
@@ -61,6 +62,31 @@ describe("agent templates", () => {
       secretName: null,
     });
     expect(await agentFor(PROJECT, "coder")).toBeInstanceOf(LoopCoderAgent);
+  });
+
+  it("has no agent of its own in Done: it runs on the assistant, the showcase brief as a fixed skill", async () => {
+    vi.stubEnv("AGENT_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    // No agent chosen for Done itself: it has none.
+    expect(await columnIsPlain(PROJECT, "done")).toBe(true);
+
+    const preset = await savePreset({
+      ...worker,
+      prompt: "Call the person boss.",
+      apiKey: "sk-ant-pm-1234",
+    });
+    await repository().setAssistantAgent(PROJECT, preset.id);
+
+    expect(await columnIsPlain(PROJECT, "done")).toBe(false);
+    expect(await agentConfigFor(PROJECT, "done")).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      // The showcase brief always leads; the PM's own chat instructions add
+      // to it rather than replace it, the way a column's own prompt would.
+      brief: `${SHOWCASE_BRIEF}\n\nThe person's instructions for you:\nCall the person boss.`,
+      apiKey: "sk-ant-pm-1234",
+      secretName: null,
+    });
   });
 
   it("mixes providers across one board", async () => {

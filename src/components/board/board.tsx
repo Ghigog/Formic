@@ -441,13 +441,17 @@ export function Board({
         );
       }}
       onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
+      // Done has no agent of its own: it's the PM's column, managed from the
+      // chat in the top bar, not a per-column picker.
       agent={
-        agents && {
-          presets: agents.presets,
-          selected: agents.presets.find((p) => p.id === agents.columns[col]),
-          onAssign: (presetId) => agents.onAssign(col, presetId),
-          onEdit: (preset) => agents.onEdit(col, preset),
-        }
+        agents && col !== "done"
+          ? {
+              presets: agents.presets,
+              selected: agents.presets.find((p) => p.id === agents.columns[col]),
+              onAssign: (presetId) => agents.onAssign(col, presetId),
+              onEdit: (preset) => agents.onEdit(col, preset),
+            }
+          : undefined
       }
       composer={
         col === "backlog" || col === "todo" ? (
