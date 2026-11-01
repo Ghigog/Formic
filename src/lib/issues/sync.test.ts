@@ -95,6 +95,10 @@ async function moveTicket(
 }
 
 beforeEach(() => {
+  // The first repository() call in a process loads the demo board into the
+  // store. Make it here, before the store is cleared, so every test starts on
+  // an empty board whichever runs first (CI shuffles them).
+  repository();
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
   (globalThis as { __formicIssueLabels?: Set<string> }).__formicIssueLabels = undefined;
   MockVcsClient.reset();
