@@ -25,6 +25,7 @@ import {
   type Snapshot,
   type ArtifactFiles,
   type SecurityFacts,
+  type ActionsMachines,
   type SecurityList,
 } from "./types";
 import { Readable } from "node:stream";
@@ -588,6 +589,30 @@ export class GitHubClient implements VcsClient {
       return { runUrl: run.url, files };
     }
     return null;
+  }
+
+  async actionsMachines(): Promise<ActionsMachines> {
+    const [repoInfo, runners] = await Promise.all([
+      this.request<{ private: boolean }>("GET", "").then(
+        ({ data }) => data.private,
+        () => null,
+      ),
+      // Needs the Administration permission, which the GitHub App has.
+      this.request<{ runners: Array<{ name: string; status: string; busy: boolean; labels: Array<{ name: string }> }> }>(
+        "GET",
+        "/actions/runners?per_page=100",
+      ).then(
+        ({ data }) =>
+          data.runners.map((r) => ({
+            name: r.name,
+            online: r.status === "online",
+            busy: r.busy,
+            labels: r.labels.map((l) => l.name),
+          })),
+        () => null,
+      ),
+    ]);
+    return { private: repoInfo, runners };
   }
 
   async security(branch: string): Promise<SecurityFacts> {

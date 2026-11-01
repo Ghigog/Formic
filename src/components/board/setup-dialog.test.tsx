@@ -11,6 +11,16 @@ const waiting = {
 } as const;
 
 describe("the setup dialog", () => {
+  it("says a private repository's agent runs are billed, and links to the runner settings", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ repoFullName: "acme/widgets", private: true, runners: [] })));
+    render(
+      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} />,
+    );
+    expect(await screen.findByText(/widgets is private/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "setting up a self-hosted runner" })).toHaveAttribute("href", "/settings#runner");
+    vi.unstubAllGlobals();
+  });
+
   it("waits for the guided tour to finish", () => {
     act(() => startTour("board"));
     render(

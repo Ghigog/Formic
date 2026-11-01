@@ -3,6 +3,7 @@
 import { useActiveTour } from "@/components/onboarding/store";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
+import { BillingNote, useActionsMachines } from "@/components/settings/runner-section";
 
 /** A secret that column CLI agents sign in with, which they cannot run without in the repository's Actions secrets. */
 export interface KeylessAgent {
@@ -80,6 +81,9 @@ export function SetupDialog({
   const secretsOnly = setup?.state === "ready";
   const needed = !!setup && (secretsOnly ? pending.length > 0 : true);
   const open = needed && !hidden && !touring;
+  // Asked once, while the repository is first being set up: running agents
+  // in a private one costs Actions minutes, and this is the moment to say so.
+  const machines = useActionsMachines(open && setup?.state === "waiting" && !setup.update);
 
   const markAdded = () => {
     const next = [...new Set([...(acked ?? []), ...pending.map((k) => k.secretName)])];
@@ -186,6 +190,9 @@ export function SetupDialog({
                 </a>
                 , then paste the name and the value. Formic keeps only the name, never the value. Agents can share a secret or each use their own: choose in the agent&apos;s settings.
               </p>
+            )}
+            {!merging?.update && !secretsOnly && machines?.repoFullName && (
+              <BillingNote repoFullName={machines.repoFullName} isPrivate={machines.private} settingsLink />
             )}
             {!merging?.update && !secretsOnly && (
               <p className="text-muted m-0 text-[12px] leading-[1.6]">

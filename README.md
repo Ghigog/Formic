@@ -81,7 +81,7 @@ Rollback and restore: [`docs/runbook.md`](docs/runbook.md).
 | :-- | :-- |
 | Agents, CLI agents, the assistant, GitHub issues, webhooks | [`docs/how-it-works.md`](docs/how-it-works.md) |
 | Many agents and people on one repo | [`docs/concurrency.md`](docs/concurrency.md) |
-| Where agent work runs | [`docs/agent-execution.md`](docs/agent-execution.md) |
+| Where agent work runs, and running it on your own machine | [`docs/agent-execution.md`](docs/agent-execution.md) |
 | Engines and packages per project (Node, Python, Godot) | [`docs/toolchains.md`](docs/toolchains.md) |
 | Database, migrations, backups | [`docs/database.md`](docs/database.md) |
 | Security | [`docs/security.md`](docs/security.md) |

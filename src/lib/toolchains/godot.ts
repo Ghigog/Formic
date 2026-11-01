@@ -59,6 +59,11 @@ if [ -z "$tag" ]; then
   echo "No stable Godot release matches $want."
   exit 1
 fi
+if [ "$(uname -s)" != Linux ]; then
+  formic_note "Formic installs Godot on Linux only, and this machine runs $(uname -s). Install Godot here yourself and put it on the PATH as \`godot\`."
+  echo "Formic installs Godot on Linux only; this machine runs $(uname -s)."
+  exit 1
+fi
 case "$(uname -m)" in
   x86_64) arch=x86_64 ;;
   aarch64 | arm64) arch=arm64 ;;

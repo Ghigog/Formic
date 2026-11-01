@@ -17,6 +17,7 @@ import { AccessTokensSection, type Token as AccessToken } from "@/components/set
 import { McpSetupSection } from "@/components/settings/mcp-setup-section";
 import { EffortSection } from "@/components/settings/effort-section";
 import { ScoutAgentSection } from "@/components/settings/scout-agent-section";
+import { RunnerSection } from "@/components/settings/runner-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
 import type { PushPreferences } from "@/lib/db/repository";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
@@ -182,6 +183,8 @@ export function SettingsForm({
             <ShareKeysToggle project={own} />
           </Section>
         )}
+
+        {own && <RunnerSection />}
 
         {own && (
           <ScoutAgentSection

@@ -20,7 +20,7 @@
 import { createHash } from "node:crypto";
 
 import { REPO_SETUP_HOOK, checkoutCachePaths, setupScript } from "../toolchains";
-import { CHECKOUT_ACTION, cacheStep } from "../toolchains/actions";
+import { CHECKOUT_ACTION, RUNS_ON, cacheStep } from "../toolchains/actions";
 
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
@@ -429,7 +429,7 @@ concurrency:
 
 jobs:
   agent:
-    runs-on: ubuntu-latest
+    runs-on: ${RUNS_ON}
     timeout-minutes: \${{ fromJSON(inputs.timeout) }}
     steps:
       # First, so a missing secret fails at once and says where to add it,

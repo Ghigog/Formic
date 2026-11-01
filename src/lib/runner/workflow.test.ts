@@ -247,6 +247,10 @@ describe("the installed workflow", () => {
     }
   });
 
+  it("runs on the repository's own machine when its variable names one", () => {
+    expect(runnerWorkflow()).toContain("runs-on: ${{ vars.FORMIC_RUNNER || 'ubuntu-latest' }}");
+  });
+
   it("keeps what the toolchains carry between runs when it cleans the checkout", () => {
     expect(runnerWorkflow()).toContain("git clean -qfdx -e .godot");
   });

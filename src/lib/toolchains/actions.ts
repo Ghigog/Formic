@@ -9,6 +9,18 @@ import { TOOLCHAINS, cacheFor, setupScript, type Toolchain } from "./index";
 export const CHECKOUT_ACTION = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1";
 export const CACHE_ACTION = "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0";
 
+/**
+ * The repository variable that moves Formic's jobs onto the repository's own
+ * machine: set it to a runner label (`self-hosted`) and the runner workflow
+ * and the checks workflow run there, free of Actions minutes. Unset, they run
+ * on GitHub's machines. A variable, not a Formic setting, so CI follows it too
+ * and switching back is deleting it on GitHub.
+ */
+export const RUNNER_LABEL_VAR = "FORMIC_RUNNER";
+
+/** A job's `runs-on`: the repository's own machine when it names one. */
+export const RUNS_ON = `\${{ vars.${RUNNER_LABEL_VAR} || 'ubuntu-latest' }}`;
+
 /** Formic's proposed CI, for a repository that has none. */
 export const CHECKS_WORKFLOW_PATH = ".github/workflows/formic-checks.yml";
 
@@ -80,7 +92,7 @@ permissions:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ${RUNS_ON}
     timeout-minutes: 60
     steps:
       - uses: ${CHECKOUT_ACTION}
