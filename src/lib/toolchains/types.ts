@@ -50,6 +50,13 @@ export interface Toolchain {
    */
   readonly cache?: { readonly paths: readonly string[]; readonly keyFiles: readonly string[] };
   /**
+   * Paths in the checkout to carry from one run to the next: what the job
+   * makes from the project itself, such as an engine's import of its assets.
+   * That changes with nearly every run, so it is saved fresh by each one and
+   * restored from the newest, and a run redoes only what changed since.
+   */
+  readonly checkoutCache?: readonly string[];
+  /**
    * The CI workflow's steps for this toolchain, as GitHub Actions YAML at a
    * step list's indentation (six spaces), run after setup. Null when Formic
    * has nothing to propose: such a repository brings its own CI.

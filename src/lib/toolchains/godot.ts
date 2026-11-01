@@ -14,7 +14,8 @@ import type { Toolchain } from "./types";
  *
  * A fresh checkout has nothing imported (`.godot/` is never committed), and a
  * script that loads an unimported resource fails, so the job imports once
- * after setup. In a sandbox that is left to the agent, whose note says so: a
+ * after setup. The job carries `.godot/` from run to run, so that import
+ * redoes only what changed since the last one. In a sandbox that is left to the agent, whose note says so: a
  * large project's first import can take longer than an in-process run has.
  *
  * Not yet: C# projects, which need the .NET build and an SDK. Their setup
@@ -56,6 +57,11 @@ case "$want" in
 esac
 if [ -z "$tag" ]; then
   echo "No stable Godot release matches $want."
+  exit 1
+fi
+if [ "$(uname -s)" != Linux ]; then
+  formic_note "Formic installs Godot on Linux only, and this machine runs $(uname -s). Install Godot here yourself and put it on the PATH as \`godot\`."
+  echo "Formic installs Godot on Linux only; this machine runs $(uname -s)."
   exit 1
 fi
 case "$(uname -m)" in
@@ -127,6 +133,8 @@ fi
 tail -n 20 "$log"`
       : null,
   cache: { paths: ["~/.cache/formic/godot"], keyFiles: ["project.godot", GODOT_VERSION_FILE] },
+  // The import. With last run's restored, Godot reimports only what changed.
+  checkoutCache: [".godot"],
   ci: ciTests(),
 };
 

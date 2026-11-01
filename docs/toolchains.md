@@ -18,7 +18,8 @@ The code is `src/lib/toolchains/`. One file per toolchain, listed in
 ## Where it runs
 
 - **The runner's job** (`formic-agent.yml`, step "Install the project's
-  dependencies"). The engine download is cached between runs.
+  dependencies"). The engine download is cached between runs, and so is
+  Godot's import (`.godot/`).
 - **An in-process run's sandbox** (`openCheckout`), capped at three minutes
   and never fatal. Only what an agent could not work out for itself runs
   here: Node and Python stay with the agent, Godot's engine does not.
@@ -63,7 +64,10 @@ Everything lives under `.github/formic/`:
   `godotengine/godot-builds`. The version is resolved with `git ls-remote`, so
   there is no API rate limit on a shared runner.
 - The job imports once after setup (`.godot/` is never committed, and a script
-  that loads an unimported resource fails). A sandbox leaves the import to the
+  that loads an unimported resource fails). `.godot/` is cached between runs,
+  so the import redoes only what changed since the last run. Each run saves
+  its own copy (keyed by the run, since a file key would never save again) and
+  the next restores the newest; GitHub drops old ones past 10 GB. A sandbox leaves the import to the
   agent: a large project's first import can take longer than an in-process run
   has. On a 370 MB project it took about two minutes.
 - Test frameworks are a list in `godot.ts` (`GODOT_TEST_RUNNERS`). GUT is the

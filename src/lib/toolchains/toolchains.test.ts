@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 import { runsOnPullRequests } from "@/lib/vcs/workflow-triggers";
-import { checksWorkflow } from "./actions";
+import { cacheStep, checksWorkflow } from "./actions";
 import { GODOT_TEST_RUNNERS } from "./godot";
 import { REPO_SETUP_HOOK, TOOLCHAINS, cacheFor, detectToolchains, setupScript, type Toolchain } from "./index";
 
@@ -147,6 +147,18 @@ describe("the Godot toolchain", () => {
   it("imports the project in the job only: a sandbox's minutes are the agent's", () => {
     expect(setupScript("job", [godot])).toContain("godot --headless --import");
     expect(setupScript("sandbox", [godot])).not.toContain("timeout 1200 godot");
+  });
+
+  // A file key would hit on the second run and never save again, so every
+  // later run would restore the first run's import and redo the rest.
+  it("carries the import from run to run, saved fresh by each one", () => {
+    const steps = parse(`steps:\n${cacheStep([godot])}`) as {
+      steps: Array<{ if?: string; with: { path: string; key: string; "restore-keys": string } }>;
+    };
+    const work = steps.steps.find((s) => s.with.path.trim() === ".godot")!;
+    expect(work.if).toBe("hashFiles('project.godot') != ''");
+    expect(work.with.key).toContain("github.run_id");
+    expect(work.with.key.startsWith(work.with["restore-keys"])).toBe(true);
   });
 });
 

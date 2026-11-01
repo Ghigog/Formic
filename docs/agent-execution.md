@@ -101,3 +101,24 @@ first, with the text only as a fallback. Guessing at the words is how
 `insufficient_quota` — a spent usage window — was reported as "out of credit",
 sending someone to top up an account that was already paid for. An allowance and
 a balance are different things and must not share a sentence.
+
+## Your own machine (self-hosted runner)
+
+A private repository's Actions minutes count against its owner's GitHub plan,
+and every agent run and checks run uses them. A public repository's are free.
+To run a private one's jobs for free, register a machine of your own:
+
+1. On GitHub, **Settings → Actions → Runners → New self-hosted runner** in the
+   repository. Choose Linux (Formic installs Godot on Linux only), paste the
+   commands on the machine, then run `./svc.sh install` so it starts with it.
+2. Add a repository variable `FORMIC_RUNNER` with the value `self-hosted`
+   (**Settings → Secrets and variables → Actions → Variables**).
+
+The runner workflow and the proposed checks workflow both run on
+`vars.FORMIC_RUNNER`, falling back to `ubuntu-latest`. Deleting the variable
+moves them back. While the machine is off, runs wait in GitHub's queue.
+
+Formic's **Settings → Runner** links to both pages, shows whether the
+repository is private, and lists its runners and whether they are online
+(read with the GitHub App's Administration permission). The setup dialog
+shows the same billing note while a private repository is first set up.

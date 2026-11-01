@@ -134,6 +134,16 @@ export interface SecurityFacts {
   settings: { ok: true; visibility: string; features: Record<string, string> } | { ok: false; reason: string };
 }
 
+/**
+ * Where a repository's Actions jobs can run: whether they are billed (a
+ * private repository's minutes count against the owner's plan), and the
+ * machines of its own it has registered. Null where the token may not see.
+ */
+export interface ActionsMachines {
+  private: boolean | null;
+  runners: Array<{ name: string; online: boolean; busy: boolean; labels: string[] }> | null;
+}
+
 export interface IssueRef {
   number: number;
   /** GitHub's internal id, which linking a sub-issue needs. */
@@ -302,6 +312,8 @@ export interface VcsClient {
   artifacts(branch: string, name: RegExp, keep: (path: string, size: number) => boolean, budget: number): Promise<ArtifactFiles | null>;
   /** What GitHub's security features know about the repository. */
   security(branch: string): Promise<SecurityFacts>;
+  /** Whether its Actions minutes are billed, and its self-hosted runners. */
+  actionsMachines(): Promise<ActionsMachines>;
 
   /*
    * Checkpoints: an agent's work in progress, saved while it works, so a run

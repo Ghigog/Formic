@@ -18,6 +18,7 @@ import {
   type Snapshot,
   type ArtifactFiles,
   type SecurityFacts,
+  type ActionsMachines,
   STAGING_PREFIX,
   type Checkpoint,
   type CheckpointInput,
@@ -493,6 +494,10 @@ export class MockVcsClient implements VcsClient {
   async security(): Promise<SecurityFacts> {
     const none = { ok: false as const, reason: "not available in the mock" };
     return { dependabot: none, secrets: none, codeScanning: none, protection: none, settings: none };
+  }
+
+  async actionsMachines(): Promise<ActionsMachines> {
+    return { private: false, runners: [] };
   }
 
   async saveCheckpoint(card: string, input: CheckpointInput): Promise<string> {

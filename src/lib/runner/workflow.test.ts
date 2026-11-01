@@ -247,6 +247,14 @@ describe("the installed workflow", () => {
     }
   });
 
+  it("runs on the repository's own machine when its variable names one", () => {
+    expect(runnerWorkflow()).toContain("runs-on: ${{ vars.FORMIC_RUNNER || 'ubuntu-latest' }}");
+  });
+
+  it("keeps what the toolchains carry between runs when it cleans the checkout", () => {
+    expect(runnerWorkflow()).toContain("git clean -qfdx -e .godot");
+  });
+
   it("is what this repository has checked in, refreshed by the generator alone", () => {
     const root = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
     const checkedIn = readFileSync(path.join(root, RUNNER_WORKFLOW_PATH), "utf8");
