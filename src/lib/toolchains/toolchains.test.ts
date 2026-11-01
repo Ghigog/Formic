@@ -146,7 +146,55 @@ describe("the Godot toolchain", () => {
 
   it("imports the project in the job only: a sandbox's minutes are the agent's", () => {
     expect(setupScript("job", [godot])).toContain("godot --headless --import");
-    expect(setupScript("sandbox", [godot])).not.toContain("timeout 1200 godot");
+    expect(setupScript("sandbox", [godot])).not.toContain("Importing the project");
+  });
+
+  /**
+   * Stands in for the network and the machine: `git ls-remote` answers with
+   * these tags, `uname` says this system, and `curl` records what it was asked
+   * for and fails, so the script stops right after choosing a download.
+   */
+  function fakeMachine(system: string, tags: string[]) {
+    const bin = path.join(home, "fake-bin");
+    mkdirSync(bin, { recursive: true });
+    const script = (name: string, body: string) => {
+      writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    };
+    script("git", tags.map((t) => `echo "abc\trefs/tags/${t}"`).join("\n"));
+    script("uname", `if [ "$1" = -m ]; then echo x86_64; else echo ${system}; fi`);
+    script("curl", `echo "$@" > "${path.join(home, "curl-args")}"; exit 22`);
+    writeFileSync(path.join(repo, "project.godot"), 'config/features=PackedStringArray("4.7", "Forward Plus")\n');
+    return `export PATH="${bin}:$PATH"\n`;
+  }
+  const curlArgs = () => readFileSync(path.join(home, "curl-args"), "utf8");
+
+  it("picks the newest stable patch by number, so 4.7.10 beats 4.7.9", () => {
+    const prelude = fakeMachine("Linux", ["4.7-stable", "4.7.9-stable", "4.7.10-stable", "4.7.11-rc1", "4.8-stable"]);
+    const result = run(prelude + setupScript("sandbox", [godot]));
+    expect(result.out).toContain("Downloading Godot 4.7.10-stable");
+    expect(curlArgs()).toContain("/4.7.10-stable/Godot_v4.7.10-stable_linux.x86_64.zip");
+  });
+
+  it("downloads the universal build on macOS", () => {
+    const result = run(fakeMachine("Darwin", ["4.7.1-stable"]) + setupScript("sandbox", [godot]));
+    expect(result.out).toContain("Downloading Godot 4.7.1-stable");
+    expect(curlArgs()).toContain("/4.7.1-stable/Godot_v4.7.1-stable_macos.universal.zip");
+  });
+
+  it("runs the macOS app through a script, so it still finds its own files", () => {
+    const prelude = fakeMachine("Darwin", ["4.7.1-stable"]);
+    const app = path.join(home, ".cache/formic/godot/4.7.1-stable/Godot.app/Contents/MacOS");
+    mkdirSync(app, { recursive: true });
+    writeFileSync(path.join(app, "Godot"), '#!/bin/sh\necho "ran from $0 with $*"\n');
+    const result = run(prelude + setupScript("sandbox", [godot]));
+    expect(result.out).toContain(`ran from ${path.join(app, "Godot")} with --headless --version`);
+    expect(result.note).toContain("Godot 4.7.1-stable, headless, is installed");
+  });
+
+  it("says what to do on a system it has no build for", () => {
+    const result = run(fakeMachine("MINGW64_NT-10.0", ["4.7.1-stable"]) + setupScript("sandbox", [godot]));
+    expect(result.note).toContain("Install Godot here yourself");
+    expect(result.out).not.toContain("Downloading");
   });
 
   // A file key would hit on the second run and never save again, so every

@@ -109,8 +109,11 @@ and every agent run and checks run uses them. A public repository's are free.
 To run a private one's jobs for free, register a machine of your own:
 
 1. On GitHub, **Settings → Actions → Runners → New self-hosted runner** in the
-   repository. Choose Linux (Formic installs Godot on Linux only), paste the
-   commands on the machine, then run `./svc.sh install` so it starts with it.
+   repository. Choose Linux or macOS, paste the commands on the machine, then
+   run `./svc.sh install` so it starts with it. On Windows, add it inside WSL
+   (Ubuntu): the workflow's steps are bash, and a Windows runner runs them in
+   PowerShell. On macOS the job needs `jq` (built in from macOS 15, otherwise
+   `brew install jq`) and `python3` (Xcode's command line tools).
 2. Add a repository variable `FORMIC_RUNNER` with the value `self-hosted`
    (**Settings → Secrets and variables → Actions → Variables**).
 

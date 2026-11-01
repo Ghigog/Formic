@@ -60,8 +60,10 @@ Everything lives under `.github/formic/`:
 
 ## Godot specifics
 
-- The engine is the official headless-capable Linux build from
-  `godotengine/godot-builds`. The version is resolved with `git ls-remote`, so
+- The engine is the official build from `godotengine/godot-builds`: Linux
+  (x86_64 or arm64) or macOS (universal), whichever the machine is. On macOS
+  it runs through a small script rather than a link, so the app still finds
+  its own files. Anything else gets a note to install Godot itself. The version is resolved with `git ls-remote`, so
   there is no API rate limit on a shared runner.
 - The job imports once after setup (`.godot/` is never committed, and a script
   that loads an unimported resource fails). `.godot/` is cached between runs,
