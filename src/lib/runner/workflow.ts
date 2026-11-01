@@ -19,7 +19,7 @@
 
 import { createHash } from "node:crypto";
 
-import { REPO_SETUP_HOOK, setupScript } from "../toolchains";
+import { REPO_SETUP_HOOK, checkoutCachePaths, setupScript } from "../toolchains";
 import { CHECKOUT_ACTION, cacheStep } from "../toolchains/actions";
 
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
@@ -699,7 +699,9 @@ ${indent(REPORTER_SCRIPT, 10)}
               fi
               # The answer, on its own: only it leaves on this branch.
               git reset -q --hard "$FORMIC_START"
-              git clean -qfdx
+              git clean -qfdx${checkoutCachePaths()
+                .map((p) => ` -e ${p}`)
+                .join("")}
               answer="$FORMIC_OUTPUT"
               if [ ! -s "$answer" ]; then answer="$FORMIC_STDOUT"; fi
               if [ ! -s "$answer" ]; then echo "The agent finished without an answer."; exit 1; fi

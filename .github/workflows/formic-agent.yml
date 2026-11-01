@@ -1,4 +1,4 @@
-# formic-runner: 52129d55bd65
+# formic-runner: a5a8e6eb5d63
 # Installed by Formic. Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -130,6 +130,15 @@ jobs:
             ~/.cache/formic/godot
           key: formic-${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/requirements*.txt', 'project.godot', '.github/formic/godot-version') }}
           restore-keys: formic-${{ runner.os }}-
+
+      # Godot's work on this checkout, from the newest run before this one.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: hashFiles('project.godot') != ''
+        with:
+          path: |
+            .godot
+          key: formic-godot-work-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: formic-godot-work-${{ runner.os }}-
 
       - name: Install the agent
         if: inputs.mode != 'loop'
@@ -564,7 +573,7 @@ jobs:
               fi
               # The answer, on its own: only it leaves on this branch.
               git reset -q --hard "$FORMIC_START"
-              git clean -qfdx
+              git clean -qfdx -e .godot
               answer="$FORMIC_OUTPUT"
               if [ ! -s "$answer" ]; then answer="$FORMIC_STDOUT"; fi
               if [ ! -s "$answer" ]; then echo "The agent finished without an answer."; exit 1; fi

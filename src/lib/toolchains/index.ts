@@ -107,3 +107,11 @@ export function cacheFor(toolchains: readonly Toolchain[] = TOOLCHAINS): { paths
   const keyFiles = toolchains.flatMap((t) => t.cache?.keyFiles ?? []);
   return { paths: [...new Set(paths)], keyFiles: [...new Set(keyFiles)] };
 }
+
+/**
+ * Every path in the checkout some toolchain carries between runs. A job that
+ * cleans its checkout keeps these, or the cache would have nothing to save.
+ */
+export function checkoutCachePaths(toolchains: readonly Toolchain[] = TOOLCHAINS): string[] {
+  return [...new Set(toolchains.flatMap((t) => t.checkoutCache ?? []))];
+}
