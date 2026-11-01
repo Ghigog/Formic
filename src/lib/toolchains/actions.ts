@@ -18,7 +18,23 @@ export const CACHE_ACTION = "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c5
  */
 export const RUNNER_LABEL_VAR = "FORMIC_RUNNER";
 
-/** A job's `runs-on`: the repository's own machine when it names one. */
+/**
+ * A job's `runs-on`: the repository's own machine when it names one.
+ *
+ * TODO(windows): a Windows self-hosted runner is not supported; people are
+ * pointed at WSL instead (Settings → Runner, docs/agent-execution.md). To
+ * support it:
+ * - Every `run:` step here and in ../runner/workflow.ts is bash, and Windows
+ *   runs steps in PowerShell. `defaults.run.shell: bash` fixes that but also
+ *   turns on pipefail on Linux and macOS, which changes how pipelines such as
+ *   `git log | grep -q` and `claude | tee` fail; a custom `bash -e {0}` can
+ *   resolve to WSL's bash.exe on Windows.
+ * - The job needs `jq` and `python3`, which Windows usually lacks or calls
+ *   `python`.
+ * - Godot setup (./godot.ts) has no Windows build: it would need the
+ *   win64.exe.zip, and its _console.exe run through a wrapper on the PATH.
+ * - Then drop the WSL advice from Settings → Runner and the docs.
+ */
 export const RUNS_ON = `\${{ vars.${RUNNER_LABEL_VAR} || 'ubuntu-latest' }}`;
 
 /** Formic's proposed CI, for a repository that has none. */

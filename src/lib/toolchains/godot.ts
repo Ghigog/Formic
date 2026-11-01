@@ -18,6 +18,8 @@ import type { Toolchain } from "./types";
  * redoes only what changed since the last one. In a sandbox that is left to the agent, whose note says so: a
  * large project's first import can take longer than an in-process run has.
  *
+ * Linux and macOS only. TODO(windows): see RUNS_ON in ./actions.ts.
+ *
  * Not yet: C# projects, which need the .NET build and an SDK. Their setup
  * stops and says so rather than installing an engine that cannot build them.
  */
