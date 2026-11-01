@@ -25,13 +25,18 @@ const { MockVcsClient, resetVcs, setVcs } = await import("@/lib/vcs");
 
 const PROJECT = "project_default";
 
-/** An agent on every column, so cards moved into one start rather than only being moved. */
+/**
+ * An agent on every column, so cards moved into one start rather than only
+ * being moved. Done has no agent of its own: it runs on the assistant, so
+ * that is staffed too.
+ */
 async function staffColumns() {
   const repo = repository();
   const preset = await repo.savePreset({ name: "Coder", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
-  for (const column of ["backlog", "todo", "in_progress", "in_review", "done"] as const) {
+  for (const column of ["backlog", "todo", "in_progress", "in_review"] as const) {
     await repo.setColumnAgent(PROJECT, column, preset.id);
   }
+  await repo.setAssistantAgent(PROJECT, preset.id);
 }
 
 beforeEach(async () => {
@@ -48,9 +53,10 @@ beforeEach(async () => {
 
 /** Every column on "No agent": cards only move. */
 async function agentsOff() {
-  for (const column of ["backlog", "todo", "in_progress", "in_review", "done"] as const) {
+  for (const column of ["backlog", "todo", "in_progress", "in_review"] as const) {
     await repository().setColumnAgent(PROJECT, column, null);
   }
+  await repository().setAssistantAgent(PROJECT, null);
 }
 
 describe("a board with every column on No agent", () => {
@@ -304,7 +310,8 @@ describe("applyTransition into In Progress with no agent", () => {
   it("scores a ticket dropped in Done with no agent as merged", async () => {
     const card = makeCard({ kind: "ticket", status: "review", storyPoints: 3 });
     seedMemory([card]);
-    await repository().setColumnAgent(PROJECT, "done", null);
+    // Done runs on the assistant now; clearing it is what makes Done plain.
+    await repository().setAssistantAgent(PROJECT, null);
     const result = await applyTransition(PROJECT, {
       cardId: card.id,
       kind: "ticket",
