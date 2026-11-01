@@ -18,6 +18,8 @@ import type { Toolchain } from "./types";
  * redoes only what changed since the last one. In a sandbox that is left to the agent, whose note says so: a
  * large project's first import can take longer than an in-process run has.
  *
+ * Linux and macOS only. TODO(windows): see RUNS_ON in ./actions.ts.
+ *
  * Not yet: C# projects, which need the .NET build and an SDK. Their setup
  * stops and says so rather than installing an engine that cannot build them.
  */
@@ -48,37 +50,61 @@ if grep -q '^config/features=.*"C#"' project.godot; then
   exit 1
 fi
 
+case "$(uname -s)" in
+  Linux) os=linux ;;
+  Darwin) os=macos ;;
+  *)
+    formic_note "Formic installs Godot on Linux and macOS, and this machine runs $(uname -s). Install Godot here yourself and put it on the PATH as \`godot\`."
+    echo "Formic installs Godot on Linux and macOS; this machine runs $(uname -s)."
+    exit 1
+    ;;
+esac
+
+# The newest matching tag. Sorted by number rather than with sort -V, which
+# macOS's sort does not have everywhere.
 case "$want" in
   *-*) tag="$want" ;;
   *)
     pattern="^$(printf '%s' "$want" | sed 's/\./\\./g')(\.[0-9]+)*-stable$"
-    tag="$(git ls-remote --tags --refs https://github.com/godotengine/godot-builds | sed -n 's#.*refs/tags/##p' | grep -E "$pattern" | sort -V | tail -n 1)"
+    tag="$(git ls-remote --tags --refs https://github.com/godotengine/godot-builds | sed -n 's#.*refs/tags/##p' | grep -E "$pattern" \
+      | sed 's/-stable$//' | awk -F. '{ printf "%d %d %d %d %s\n", $1, $2, $3, $4, $0 }' \
+      | sort -n -k1,1 -k2,2 -k3,3 -k4,4 | tail -n 1 | awk '{ print $5 }')"
+    if [ -n "$tag" ]; then tag="$tag-stable"; fi
     ;;
 esac
 if [ -z "$tag" ]; then
   echo "No stable Godot release matches $want."
   exit 1
 fi
-if [ "$(uname -s)" != Linux ]; then
-  formic_note "Formic installs Godot on Linux only, and this machine runs $(uname -s). Install Godot here yourself and put it on the PATH as \`godot\`."
-  echo "Formic installs Godot on Linux only; this machine runs $(uname -s)."
-  exit 1
-fi
-case "$(uname -m)" in
-  x86_64) arch=x86_64 ;;
-  aarch64 | arm64) arch=arm64 ;;
-  *) echo "No Linux Godot build for $(uname -m)."; exit 1 ;;
-esac
 
 dir="$HOME/.cache/formic/godot/$tag"
-bin="$dir/Godot_v$tag""_linux.$arch"
+if [ "$os" = macos ]; then
+  # One universal build, for Intel and Apple silicon alike.
+  zip="Godot_v$tag""_macos.universal.zip"
+  bin="$dir/Godot.app/Contents/MacOS/Godot"
+else
+  case "$(uname -m)" in
+    x86_64) arch=x86_64 ;;
+    aarch64 | arm64) arch=arm64 ;;
+    *) echo "No Linux Godot build for $(uname -m)."; exit 1 ;;
+  esac
+  zip="Godot_v$tag""_linux.$arch.zip"
+  bin="$dir/Godot_v$tag""_linux.$arch"
+fi
 if [ ! -f "$bin" ]; then
   echo "Downloading Godot $tag..."
   mkdir -p "$dir"
   curl -fsSL --retry 3 --max-time 600 -o "$dir/godot.zip" \
-    "https://github.com/godotengine/godot-builds/releases/download/$tag/Godot_v$tag""_linux.$arch.zip"
+    "https://github.com/godotengine/godot-builds/releases/download/$tag/$zip"
   unzip -q -o "$dir/godot.zip" -d "$dir" 2>/dev/null || python3 -m zipfile -e "$dir/godot.zip" "$dir"
   rm -f "$dir/godot.zip"
+fi
+if [ "$os" = macos ]; then
+  # Run through a script, not a link: the app finds its own files from the
+  # path it was started by, and a link elsewhere would point it away from them.
+  chmod +x "$bin"
+  printf '#!/bin/sh\nexec "%s" "$@"\n' "$bin" > "$dir/godot"
+  bin="$dir/godot"
 fi
 formic_bin "$bin" godot
 godot --headless --version
@@ -127,7 +153,10 @@ export const godot: Toolchain = {
     host === "job"
       ? `echo "Importing the project..."
 log="$HOME/.formic/godot-import.log"
-if ! timeout 1200 godot --headless --import > "$log" 2>&1; then
+# macOS has no timeout of its own; Homebrew's coreutils calls it gtimeout.
+limit=""
+if command -v timeout > /dev/null; then limit="timeout 1200"; elif command -v gtimeout > /dev/null; then limit="gtimeout 1200"; fi
+if ! $limit godot --headless --import > "$log" 2>&1; then
   echo "The import did not finish cleanly; the agent will see the same when it runs it."
 fi
 tail -n 20 "$log"`

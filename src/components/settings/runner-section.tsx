@@ -52,8 +52,9 @@ export function RunnerSection() {
           <ol className="m-0 flex list-none flex-col gap-2.5 p-0 text-[12px]">
             <Step n={1} label="Add a runner on GitHub">
               <p className="text-muted m-0 leading-[1.5]">
-                Choose Linux, then paste the commands GitHub shows on the machine. Run{" "}
-                <code className="font-mono">./svc.sh install</code> afterwards so it starts with the machine.
+                Choose Linux or macOS (on Windows, add it inside WSL, which is Linux), then paste the commands
+                GitHub shows on the machine. Run <code className="font-mono">./svc.sh install</code> afterwards so
+                it starts with the machine.
               </p>
               <ExternalLink href={`https://github.com/${repo}/settings/actions/runners/new`}>
                 New self-hosted runner ↗
