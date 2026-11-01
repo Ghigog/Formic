@@ -45,7 +45,7 @@ export async function addOnboardingTicket(projectId: string): Promise<void> {
     await repo.createTickets([
       {
         epicId: epic.id,
-        key: "T-1",
+        key: `T-${await repo.nextStandaloneTicketNumber(projectId)}`,
         title,
         description,
         acceptanceCriteria,
@@ -111,7 +111,17 @@ export async function addDesignTicket(projectId: string): Promise<void> {
   const position = positionForIndex(positions, positions.length);
   const ticket = (
     await repo.createTickets([
-      { epicId: epic.id, key: "T-1", title, description, acceptanceCriteria, fileScope, storyPoints: 3, position, dependsOnKeys: [] },
+      {
+        epicId: epic.id,
+        key: `T-${await repo.nextStandaloneTicketNumber(projectId)}`,
+        title,
+        description,
+        acceptanceCriteria,
+        fileScope,
+        storyPoints: 3,
+        position,
+        dependsOnKeys: [],
+      },
     ])
   )[0]!;
   const reason = questionReason("The Designer", [question]);

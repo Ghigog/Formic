@@ -44,3 +44,16 @@ describe("the design ticket", () => {
     expect((await repo.ticketDetail(card.id))!.fileScope).toEqual(["DESIGN.md"]);
   });
 });
+
+describe("the onboarding and design tickets together", () => {
+  it("get different keys instead of both claiming T-1", async () => {
+    const repo = repository();
+    const project = await repo.ensureProject({ ownerId: null, repoFullName: "acme/fresh", baseBranch: "main" });
+
+    await addOnboardingTicket(project.id);
+    await addDesignTicket(project.id);
+
+    const cards = await repo.boardCards(project.id);
+    expect(cards.map((c) => c.key).sort()).toEqual(["T-1", "T-2"]);
+  });
+});
