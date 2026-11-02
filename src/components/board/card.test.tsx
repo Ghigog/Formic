@@ -13,7 +13,7 @@ import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Column } from "./column";
 import { EMPTY_VIEW } from "./view";
-import { CardEnvContext, EpicGroup, type CardExtras } from "./card";
+import { CardEnvContext, EpicGroup, ProblemNotice, type CardExtras } from "./card";
 import { renderInDnd } from "@/test/render";
 import { makeCard } from "@/test/cards";
 import type { BoardCard } from "@/lib/domain/entities";
@@ -577,5 +577,28 @@ describe("a child ticket row in an epic's To Do group", () => {
     fireEvent.click(screen.getByLabelText(/^Move EPIC-138-T3 to/));
     expect(onAdvance).toHaveBeenCalledTimes(1);
     expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe("a problem notice", () => {
+  const long = makeCard({
+    status: "failed",
+    stalledIn: "todo",
+    blockedReason: `Something broke. ${"A long detail. ".repeat(30)}`,
+  });
+
+  it("clamps a long text to three lines and toggles the rest", () => {
+    render(<ProblemNotice card={long} />);
+    const text = screen.getByText(/Something broke/).closest("p")!;
+    expect(text.className).toContain("line-clamp-3");
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    expect(text.className).not.toContain("line-clamp-3");
+    fireEvent.click(screen.getByRole("button", { name: "Show less" }));
+    expect(text.className).toContain("line-clamp-3");
+  });
+
+  it("has no toggle on a short text", () => {
+    render(<ProblemNotice card={{ ...long, blockedReason: "Short." }} />);
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
   });
 });

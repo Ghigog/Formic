@@ -1,7 +1,7 @@
 "use client";
 
 import { ONBOARDING_TICKET_TITLE } from "@/lib/board/onboarding-ticket";
-import { createContext, useContext, useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
@@ -22,6 +22,7 @@ import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
+import { isQuestion } from "@/lib/domain/question";
 import { formatDuration } from "./format-duration";
 import { LinkifiedText } from "./linkified-text";
 import { TypeTag } from "./type-tag";
@@ -395,9 +396,21 @@ export const NOTICE_INK: Record<Notice["severity"], string> = {
  * and what to do about it. Some of these reasons name a pull request to merge,
  * so the address in them is a link a person can follow.
  */
-export function ProblemNotice({ card, className }: { card: BoardCard; className?: string }) {
+export function ProblemNotice({
+  card,
+  className,
+  onOpenChat,
+}: {
+  card: BoardCard;
+  className?: string;
+  /** Switches to the card's chat where it is not on screen; shown for a question. */
+  onOpenChat?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
   const problem = cardProblem(card);
   if (!problem) return null;
+  const long = problem.length > CLAMP_AFTER || problem.includes("\n");
+  const asking = !!onOpenChat && isQuestion(card.blockedReason);
   return (
     <div
       role="alert"
@@ -409,15 +422,41 @@ export function ProblemNotice({ card, className }: { card: BoardCard; className?
       >
         !
       </span>
-      <p className="min-w-0">
-        <span className="font-semibold">
-          {card.misplacedReason ? "It can't work here. " : "This needs you. "}
-        </span>
-        <LinkifiedText text={problem} />
-      </p>
+      <div className="min-w-0">
+        <p className={cn("whitespace-pre-line", long && !expanded && "line-clamp-3")}>
+          <span className="font-semibold">
+            {card.misplacedReason ? "It can't work here. " : "This needs you. "}
+          </span>
+          <LinkifiedText text={problem} />
+        </p>
+        <div className="mt-1 flex gap-3">
+          {long && (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((v) => !v)}
+              className="text-fg-muted hover:text-fg text-[12px] underline"
+            >
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          )}
+          {asking && (
+            <button
+              type="button"
+              onClick={onOpenChat}
+              className="text-fg text-[12px] font-medium underline lg:hidden"
+            >
+              Answer in the chat
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+/** A notice longer than this is clamped to about three lines. */
+const CLAMP_AFTER = 160;
 
 /** Which epic a ticket belongs to, or what an orphan is. */
 function EpicLine({ card }: { card: BoardCard }) {
