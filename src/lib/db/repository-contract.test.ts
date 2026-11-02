@@ -397,6 +397,18 @@ function contract(name: string, make: () => Repository) {
         expect(detail!.prdUpdatedAt).toBeInstanceOf(Date);
       });
 
+      it("renames an Epic with its PRD only when given a title", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "raw", rawRequest: "raw", position: 1 });
+
+        await repo.setEpicPrd(epic.id, { goals: [] }, false);
+        expect((await repo.cardById(epic.id))!.title).toBe("raw");
+        await repo.setEpicPrd(epic.id, { goals: [] }, false, " Proper title ");
+        expect((await repo.cardById(epic.id))!.title).toBe("Proper title");
+        await repo.setEpicPrd(epic.id, { goals: [] }, false, "  ");
+        expect((await repo.cardById(epic.id))!.title).toBe("Proper title");
+      });
+
       it("deletes tickets, and an Epic with everything under it", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
