@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useDraft } from "@/components/board/use-draft";
+import { useEffect, useRef, type FormEvent, type KeyboardEvent } from "react";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { cn } from "@/components/ui/cn";
 import { guestLabel, type GuestId } from "@/lib/calls/guests";
@@ -72,7 +73,7 @@ function Message({ m }: { m: CallMessageView }) {
 /** A call: its agenda, who is on it, the messages so far, and a box to talk to the guests. */
 export function CallChat({ meetingId }: { meetingId: string }) {
   const c = useCall(meetingId);
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(`call:${meetingId}`);
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
