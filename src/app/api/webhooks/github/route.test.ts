@@ -92,7 +92,7 @@ describe("POST /api/webhooks/github", () => {
     expect(mocks.launched).toEqual([]);
   });
 
-  it("ignores an issue it has no opinion about,without handling anything", async () => {
+  it("ignores an issue it has no opinion about, without handling anything", async () => {
     const res = await POST(
       delivery("issues", {
         action: "opened",
