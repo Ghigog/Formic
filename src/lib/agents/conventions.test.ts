@@ -150,6 +150,12 @@ describe("work for a person", () => {
     expect(withPlanningConventions("Custom brief.")).toContain("needsHuman");
     expect(withPlanningConventions("Custom brief.")).toContain("its own ticket without needsHuman");
   });
+
+  it("covers a host or vendor the repository does not name: the person picks it, the planner does not", () => {
+    const prompt = withPlanningConventions("Custom brief.");
+    expect(prompt).toContain("Never choose a host, cloud, database or paid service that nothing in the repository names");
+    expect(prompt).toContain("its own needsHuman ticket that asks it");
+  });
 });
 
 describe("work bigger than the ticket", () => {

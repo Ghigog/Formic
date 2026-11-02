@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
-import { applyTickets } from "@/lib/agents/pipeline";
+import { applyTickets, archivedKeysFor } from "@/lib/agents/pipeline";
 import { ticketSpecSchema, toDraftTicket, typeOf } from "@/lib/agents/decomposition";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
@@ -32,7 +32,8 @@ import { vcs } from "@/lib/vcs";
  * the person could not do by hand.
  *
  * Work that belongs to an Epic already on the board joins it, rather than
- * becoming an Epic of one ticket. And the assistant can act on the
+ * becoming an Epic of one ticket, even when that Epic has finished: it
+ * reopens. And the assistant can act on the
  * repository the way a person on GitHub would: re-run a red check that
  * failed on its own, or open a pull request for a change it made itself.
  */
@@ -251,7 +252,6 @@ async function addTicketsToEpic(
   const repo = repository();
   const epic = await cardByKey(projectId, epicKey);
   if (epic.kind !== "epic") throw new Error(`${epicKey} is a ticket, not an Epic.`);
-  if (epic.status === "merged") throw new Error(`${epicKey} is finished. Make a new Epic for this work.`);
 
   const tickets = specs.map(toDraftTicket);
   const cards = await repo.boardCards(projectId);
@@ -268,7 +268,7 @@ async function addTicketsToEpic(
   const existing = await repo.ticketsForEpic(epic.id);
   const open = existing.filter((t) => t.status !== "merged");
   const keyFor = new Map<string, string>();
-  const taken = new Set(existing.map((t) => t.key));
+  const taken = new Set([...existing.map((t) => t.key), ...(await archivedKeysFor(projectId, epic.id))]);
   let n = existing.length;
   for (const t of tickets) {
     let key = `${epicKey}-T${++n}`;
@@ -323,9 +323,36 @@ async function addTicketsToEpic(
       .map((d) => ({ ticketId: ticketId!, dependsOnTicketId: onBoard.get(d)!.id }));
   });
   if (edges.length) await repo.addDependencies(edges);
+  // Finished, perhaps only because its last open tickets were just closed to
+  // make way for these: new work reopens it. After the tickets exist, so the
+  // sweep that completes Epics cannot see it open with nothing left to do.
+  const reopened = epic.status === "merged";
+  if (reopened) await reopenEpic(projectId, epic.id);
   await publish(projectId, { type: "card.created", cardId: epic.id, kind: "epic", epicId: epic.id });
   const keys = tickets.map((t) => keyFor.get(t.key)).join(", ");
-  return `Added ${keys} to ${epicKey}.`;
+  return `Added ${keys} to ${epicKey}${reopened ? `, and reopened it in ${COLUMN_LABELS.todo}` : ""}.`;
+}
+
+/** A finished Epic back in To Do, with its issue reopened by the sync. */
+async function reopenEpic(projectId: string, epicId: string): Promise<void> {
+  const repo = repository();
+  const positions = await repo.columnPositions(projectId, "todo");
+  await repo.move({
+    cardId: epicId,
+    kind: "epic",
+    status: "ready",
+    stalledIn: null,
+    position: positionForIndex(positions, positions.length),
+  });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: epicId,
+    kind: "epic",
+    status: "ready",
+    stalledIn: null,
+    stage: 3,
+    blockedReason: null,
+  });
 }
 
 /** A ticket's red checks, run again: for a failure that is not the code's. */

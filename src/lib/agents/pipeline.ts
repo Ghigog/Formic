@@ -439,6 +439,14 @@ export async function existingTicketsFor(epicId: string): Promise<ExistingTicket
   }));
 }
 
+/**
+ * Keys of an Epic's archived tickets. Archiving takes a ticket off the board
+ * but keeps its row, and its key with it, so a new ticket cannot reuse one.
+ */
+export async function archivedKeysFor(projectId: string, epicId: string): Promise<string[]> {
+  return (await repository().archivedTickets(projectId)).filter((t) => t.epicId === epicId).map((t) => t.key);
+}
+
 /** Stage 3 done: the ticket graph goes on the board under its Epic. */
 export async function applyTickets(
   projectId: string,
@@ -467,7 +475,7 @@ export async function applyTickets(
   // The agent's key is only a handle for dependsOn; the ticket is stored as
   // EPIC-n-Tm so codes stay unique across the project.
   const epicKey = (await repo.cardById(epicId))?.key;
-  const taken = new Set(kept.map((t) => t.key));
+  const taken = new Set([...kept.map((t) => t.key), ...(await archivedKeysFor(projectId, epicId))]);
   const keyFor = new Map<string, string>();
   tickets.forEach((t, i) => {
     const base = `${epicKey}-T${i + 1}`;
