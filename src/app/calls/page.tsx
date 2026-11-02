@@ -15,5 +15,5 @@ export default async function CallsPage() {
   if (!project) redirect("/");
   // Only Sentinels the colony has unlocked can be invited.
   const { level } = scoreOf(await repository().boardCards(project.id));
-  return <CallsView guests={guestOptions(level)} />;
+  return <CallsView guests={guestOptions(level, project.unlockAllSentinels)} />;
 }

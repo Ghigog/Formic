@@ -77,6 +77,7 @@ beforeEach(() => {
   audits = [];
   doneEntries = {};
   job = null;
+  projectFor.mockResolvedValue({ repoFullName: null, baseBranch: "main", unlockAllSentinels: false });
 });
 
 async function runJob() {
@@ -125,6 +126,24 @@ describe("summonSentinel", () => {
     expect(startAudit).not.toHaveBeenCalled();
   });
 
+  it("refuses with the level message when the project has not unlocked them all", async () => {
+    cards = []; // Lv 1
+    expect(await summonSentinel("p", locked.id)).toEqual({
+      ok: false,
+      error: `${locked.name} unlocks at Lv ${locked.unlockLevel}.`,
+      status: 403,
+    });
+  });
+
+  it("starts the audit at Lv 1 for the last Sentinel when the project unlocked them all", async () => {
+    cards = []; // Lv 1
+    const last = SENTINELS[SENTINELS.length - 1]!;
+    projectFor.mockResolvedValue({ repoFullName: null, baseBranch: "main", unlockAllSentinels: true });
+    audits = [{ ...calibrated, sentinel: last.id, rubric: cannedRubric(last) }];
+    expect(await summonSentinel("p", last.id)).toEqual({ ok: true });
+    expect(startAudit).toHaveBeenCalled();
+  });
+
   it("runs it once the colony reaches its level, calibrating before it audits", async () => {
     expect(await summonSentinel("p", locked.id)).toMatchObject({ ok: false, status: 409 });
     expect(startAudit).not.toHaveBeenCalled();
@@ -140,7 +159,7 @@ describe("summonSentinel", () => {
 
   it("stamps the audit with the base branch head, or null when it cannot be resolved", async () => {
     audits = [calibrated];
-    projectFor.mockResolvedValue({ repoFullName: "o/r", baseBranch: "main" });
+    projectFor.mockResolvedValue({ repoFullName: "o/r", baseBranch: "main", unlockAllSentinels: false });
     credentialsForProject.mockResolvedValue({ githubToken: "tok" });
     branchHead.mockResolvedValueOnce("abc1234");
     await summonSentinel("p", locked.id);
@@ -221,7 +240,7 @@ describe("the detached run", () => {
 
   describe("with a configured agent", () => {
     const config = { provider: "x" };
-    const project = { repoFullName: "o/r", baseBranch: "main" };
+    const project = { repoFullName: "o/r", baseBranch: "main", unlockAllSentinels: false };
     beforeEach(() => {
       sentinelAgent.mockResolvedValue({ kind: "configured", config });
       projectFor.mockResolvedValue(project);

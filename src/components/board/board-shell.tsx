@@ -54,6 +54,7 @@ export function BoardShell({
   initialAgentUsage = {},
   initialTokenWindow,
   initialSentinels = {},
+  unlockAllSentinels = false,
   initialOverrides = {},
   account,
   noCi,
@@ -75,6 +76,7 @@ export function BoardShell({
   initialTokenWindow?: TokenWindowView;
   /** Each sentinel's last report on this project. */
   initialSentinels?: SentinelStates;
+  unlockAllSentinels?: boolean;
   /** Each column agent's own limits. */
   initialOverrides?: ColumnOverrides;
   account?: Account;
@@ -199,7 +201,7 @@ export function BoardShell({
 
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
-    <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level}>
+    <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level} unlockAll={unlockAllSentinels}>
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}

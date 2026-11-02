@@ -477,6 +477,8 @@ export interface ProjectSummary {
   autoMerge: boolean;
   /** Formic raises a ticket's story points on its own when it outgrows its estimate. Off until the owner opts in. */
   autoEscalate: boolean;
+  /** Every Sentinel is unlocked whatever the colony level. Off until the owner opts in. */
+  unlockAllSentinels: boolean;
   /** The most Coder Agents the board runs at once, scouts included. Null: no cap. */
   colonySize: number | null;
   /** Slots of colonySize kept for urgent work. */
@@ -1014,6 +1016,7 @@ export interface Repository {
   setColony(projectId: string, colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean }): Promise<void>;
   setScoutAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
+  setUnlockAllSentinels(projectId: string, unlockAllSentinels: boolean): Promise<void>;
   /** Records that the ticket's story points were auto-escalated; keeps the first time if already marked. */
   markTicketAutoEscalated(ticketId: string): Promise<void>;
   /** A board's meetings, soonest first. */

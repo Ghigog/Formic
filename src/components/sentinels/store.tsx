@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { gradeOf, type GradeSummary } from "@/lib/sentinels/grade";
-import { SENTINELS } from "@/lib/sentinels/roster";
+import { SENTINELS, isUnlocked } from "@/lib/sentinels/roster";
 import { starsOf, type SentinelStates } from "@/lib/sentinels/view";
 import type { AuditKind } from "@/lib/db/repository";
 
@@ -18,6 +18,8 @@ export interface SentinelsApi {
   grade: GradeSummary;
   /** The colony level that decides which Sentinels are unlocked. */
   level: number;
+  /** Whether the project unlocked every Sentinel whatever the level. */
+  unlockAll: boolean;
   /**
    * Summons one sentinel: to calibrate, writing its rubric, or to audit
    * against that rubric. A second summon while it runs does nothing.
@@ -40,15 +42,17 @@ const POLL_MS = 5_000;
 export function SentinelsProvider({
   initial,
   level,
+  unlockAll = false,
   children,
 }: {
   initial: SentinelStates;
   level: number;
+  unlockAll?: boolean;
   children: React.ReactNode;
 }) {
   const [states, setStates] = useState(initial);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const grade = useMemo(() => gradeOf(starsOf(states), level), [states, level]);
+  const grade = useMemo(() => gradeOf(starsOf(states), level, unlockAll), [states, level, unlockAll]);
   const anyRunning = Object.values(states).some((s) => s.running);
 
   const refresh = useCallback(async () => {
@@ -94,16 +98,16 @@ export function SentinelsProvider({
     latest.current = states;
   }, [states]);
   const summonAll = useCallback(() => {
-    SENTINELS.filter((s) => s.unlockLevel <= level).forEach((s, i) => {
+    SENTINELS.filter((s) => isUnlocked(s, level, unlockAll)).forEach((s, i) => {
       const st = latest.current[s.id];
       if (st?.running) return;
       setTimeout(() => void summon(s.id, st?.rubric ? "audit" : "calibrate"), i * 240);
     });
-  }, [summon, level]);
+  }, [summon, level, unlockAll]);
 
   const api = useMemo<SentinelsApi>(
-    () => ({ states, grade, level, summon, summonAll, refusal }),
-    [states, grade, level, summon, summonAll, refusal],
+    () => ({ states, grade, level, unlockAll, summon, summonAll, refusal }),
+    [states, grade, level, unlockAll, summon, summonAll, refusal],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }
