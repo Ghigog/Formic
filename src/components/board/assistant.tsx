@@ -8,6 +8,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { useDraft } from "./use-draft";
 import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import type { AgentPreset } from "@/lib/domain/entities";
@@ -109,7 +110,7 @@ function Composer({
   /** The pull-down arrow. Off inside the shade, which has its own. */
   toggle?: boolean;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft("assistant");
   const field = useRef<HTMLTextAreaElement>(null);
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();

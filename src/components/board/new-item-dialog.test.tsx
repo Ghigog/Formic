@@ -76,6 +76,7 @@ function serveUploads() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.localStorage.clear();
 });
 
 describe("NewItemDialog", () => {
@@ -288,6 +289,45 @@ describe("NewItemDialog", () => {
       // jsdom does not implement default paste insertion; the un-intercepted
       // event is the browser's contract that it will. No attachment either way.
       expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("draft", () => {
+    it("keeps the text when closed and reopened", async () => {
+      const props = { column: "backlog" as const, onClose: vi.fn(), onSubmit: vi.fn() };
+      const { rerender } = render(<NewItemDialog open {...props} />);
+      await userEvent.setup().type(screen.getByLabelText("New feature request"), "Half written");
+      rerender(<NewItemDialog open={false} {...props} />);
+      rerender(<NewItemDialog open {...props} />);
+      expect(screen.getByLabelText("New feature request")).toHaveValue("Half written");
+    });
+
+    it("restores the text after a reload, per column", async () => {
+      const props = { onClose: vi.fn(), onSubmit: vi.fn() };
+      const first = render(<NewItemDialog open column="backlog" {...props} />);
+      await userEvent.setup().type(screen.getByLabelText("New feature request"), "Saved");
+      first.unmount();
+      render(<NewItemDialog open column="backlog" {...props} />);
+      await waitFor(() => expect(screen.getByLabelText("New feature request")).toHaveValue("Saved"));
+      render(<NewItemDialog open column="todo" {...props} />);
+      expect(screen.getByLabelText("New ticket request")).toHaveValue("");
+    });
+
+    it("is empty after a successful submit, and kept after a failed one", async () => {
+      const onSubmit = vi.fn().mockRejectedValueOnce(new Error("nope")).mockResolvedValue(undefined);
+      const props = { column: "backlog" as const, onClose: vi.fn(), onSubmit };
+      const { rerender } = render(<NewItemDialog open {...props} />);
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText("New feature request"), "Add dark mode");
+      await user.click(screen.getByRole("button", { name: "Draft PRD" }));
+      await screen.findByRole("alert");
+      expect(screen.getByLabelText("New feature request")).toHaveValue("Add dark mode");
+      await user.click(screen.getByRole("button", { name: "Draft PRD" }));
+      await waitFor(() => expect(props.onClose).toHaveBeenCalled());
+      rerender(<NewItemDialog open={false} {...props} />);
+      rerender(<NewItemDialog open {...props} />);
+      expect(screen.getByLabelText("New feature request")).toHaveValue("");
+      expect(window.localStorage.length).toBe(0);
     });
   });
 });
