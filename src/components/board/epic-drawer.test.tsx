@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { EpicDrawer } from "./epic-drawer";
 import { makeCard } from "@/test/cards";
+import { resetViewport, setViewportMatches } from "@/test/viewport";
 import type { AttachmentSummary, BoardCard, Prd } from "@/lib/domain/entities";
 
 const PRD: Prd = {
@@ -48,7 +49,14 @@ function detail(
   };
 }
 
-afterEach(() => vi.unstubAllGlobals());
+vi.mock("./card-chat", () => ({
+  CardChat: () => <div data-testid="chat">chat</div>,
+}));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetViewport();
+});
 
 function open(
   body: ReturnType<typeof detail> = detail(),
@@ -276,5 +284,53 @@ describe("EpicDrawer on-screen keyboard", () => {
     });
     expect(screen.queryByLabelText("Epic lifecycle")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
+  describe("the Chat tab", () => {
+    it("is offered below lg, and shows only the chat", async () => {
+      open();
+      await screen.findByText("Board export");
+      expect(screen.getByRole("button", { name: "PRD" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Tickets/ }),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId("chat")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+      expect(screen.getByTestId("chat")).toBeInTheDocument();
+    });
+
+    it("keeps the chat off the Tickets tab", async () => {
+      open();
+      await screen.findByText("Board export");
+      fireEvent.click(screen.getByRole("button", { name: /Tickets/ }));
+      expect(screen.queryByTestId("chat")).not.toBeInTheDocument();
+    });
+
+    it("is not a tab on a wide screen, where the chat sits under the tickets", async () => {
+      setViewportMatches(true);
+      open();
+      await screen.findByText("Board export");
+      expect(screen.getByTestId("chat")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Chat" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("opens from a question's notice", async () => {
+      open(
+        detail({
+          epic: {
+            ...epic,
+            status: "blocked",
+            stalledIn: "backlog",
+            blockedReason: "Question: Which format?\nThe agent is waiting.",
+          },
+        }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Answer in the chat" }),
+      );
+      expect(screen.getByTestId("chat")).toBeInTheDocument();
+    });
   });
 });
