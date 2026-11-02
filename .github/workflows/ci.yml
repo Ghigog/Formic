@@ -41,6 +41,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
 
+  # The rollback test for deploy/server/deploy.sh: plain bash, no Node.
+  deploy-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash deploy/server/deploy.test.sh
+
   test:
     runs-on: ubuntu-latest
     services:
