@@ -75,6 +75,23 @@ describe("POST /api/webhooks/github", () => {
     expect(mocks.launched).toEqual([]);
   });
 
+  it("answers 400 to a correctly signed delivery whose body is not JSON", async () => {
+    const raw = "this is not json";
+    const hmac = createHmac("sha256", SECRET).update(raw, "utf8").digest("hex");
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/webhooks/github", {
+        method: "POST",
+        body: raw,
+        headers: { "x-github-event": "issues", "x-hub-signature-256": `sha256=${hmac}` },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, reason: "Malformed body." });
+    expect(mocks.launched).toEqual([]);
+  });
+
   it("ignores an issue it has no opinion about, without handling anything", async () => {
     const res = await POST(
       delivery("issues", {
