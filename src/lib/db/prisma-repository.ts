@@ -2004,6 +2004,10 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: { scoutPresetId: presetId } });
   }
 
+  async setUnlockAllSentinels(projectId: string, unlockAllSentinels: boolean): Promise<void> {
+    await prisma().project.update({ where: { id: projectId }, data: { unlockAllSentinels } });
+  }
+
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
     await prisma().project.update({ where: { id: projectId }, data: { autoEscalate } });
   }

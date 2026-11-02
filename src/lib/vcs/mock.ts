@@ -51,6 +51,8 @@ function pulls(): Map<number, MockPull> {
 interface MockRepo {
   /** Branch name to head sha. */
   branches: Map<string, string>;
+  /** Branch name to how many commits it holds, as a test says. */
+  commitCounts: Map<string, number>;
   /** `${ref}:${path}` to file text. */
   files: Map<string, string>;
   dispatches: Array<{ file: string; ref: string; inputs: Record<string, string> }>;
@@ -114,6 +116,7 @@ function repo(): MockRepo {
   const g = globalThis as { __formicMockRepo?: MockRepo };
   g.__formicMockRepo ??= {
     branches: new Map(),
+    commitCounts: new Map(),
     files: new Map(),
     dispatches: [],
     commits: new Map(),
@@ -453,6 +456,10 @@ export class MockVcsClient implements VcsClient {
 
   async branchHead(branch: string): Promise<string | null> {
     return repo().branches.get(branch) ?? null;
+  }
+
+  async countCommits(branch: string): Promise<number> {
+    return repo().commitCounts.get(branch) ?? (repo().branches.has(branch) ? 1 : 0);
   }
 
   async branchRuns(branch: string): Promise<BranchRun[]> {

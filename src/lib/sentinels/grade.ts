@@ -37,8 +37,8 @@ export interface GradeSummary {
   progress: number;
 }
 
-export function gradeOf(stars: Record<string, number | null | undefined>, level: number): GradeSummary {
-  const unlocked = SENTINELS.filter((s) => isUnlocked(s, level));
+export function gradeOf(stars: Record<string, number | null | undefined>, level: number, unlockAll: boolean): GradeSummary {
+  const unlocked = SENTINELS.filter((s) => isUnlocked(s, level, unlockAll));
   const total = unlocked.length;
   const sum = unlocked.reduce((n, s) => n + (stars[s.id] ?? 0), 0);
   const done = unlocked.filter((s) => stars[s.id] != null).length;

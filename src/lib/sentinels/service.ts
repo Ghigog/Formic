@@ -73,7 +73,8 @@ export async function summonSentinel(
   if (!s) return { ok: false, error: "No such sentinel.", status: 404 };
   // The level the colony shows, from the same stamped merge scores.
   const { level } = scoreOf(await repository().boardCards(projectId));
-  if (!isUnlocked(s, level)) {
+  const project = await projectFor(projectId);
+  if (!isUnlocked(s, level, project.unlockAllSentinels)) {
     return { ok: false, error: `${s.name} unlocks at Lv ${s.unlockLevel}.`, status: 403 };
   }
   const current = (await sentinelsFor(projectId))[s.id];

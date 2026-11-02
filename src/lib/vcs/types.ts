@@ -298,6 +298,8 @@ export interface VcsClient {
   deleteStagingBranch(branch: string): Promise<void>;
   /** The commit a branch points at, or null when there is no such branch. */
   branchHead(branch: string): Promise<string | null>;
+  /** How many commits a branch holds; 0 when there is no such branch. */
+  countCommits(branch: string): Promise<number>;
   /** The latest Actions runs on a branch, from any workflow, newest first. */
   branchRuns(branch: string): Promise<BranchRun[]>;
   /**

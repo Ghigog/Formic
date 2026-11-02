@@ -909,3 +909,28 @@ describe("GitHubClient: reads and writes", () => {
     });
   });
 });
+
+describe("GitHubClient.countCommits", () => {
+  it("reads the last page of a one-commit-a-page listing", async () => {
+    const calls = stubFetch(
+      () =>
+        new Response("[{}]", {
+          headers: {
+            link: '<https://api.github.com/repositories/1/commits?sha=main&per_page=1&page=2>; rel="next", <https://api.github.com/repositories/1/commits?sha=main&per_page=1&page=150>; rel="last"',
+          },
+        }),
+    );
+    expect(await client().countCommits("main")).toBe(150);
+    expect(calls[0]!.url).toContain("/commits?sha=main&per_page=1");
+  });
+
+  it("counts the single page when there is no Link header", async () => {
+    stubFetch(() => Response.json([{}]));
+    expect(await client().countCommits("main")).toBe(1);
+  });
+
+  it("is 0 for a branch that does not exist", async () => {
+    stubFetch(() => Response.json({ message: "No commit found" }, { status: 404 }));
+    expect(await client().countCommits("gone")).toBe(0);
+  });
+});

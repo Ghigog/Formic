@@ -20,11 +20,16 @@ describe("isGuestId", () => {
 describe("guestOptions", () => {
   it("offers only the Sentinels the colony has unlocked", () => {
     const first = SENTINELS.reduce((a, b) => (b.unlockLevel < a.unlockLevel ? b : a));
-    const ids = (level: number) => guestOptions(level).map((g) => g.id);
+    const ids = (level: number) => guestOptions(level, false).map((g) => g.id);
     expect(ids(0).some((id) => id.startsWith("sentinel:"))).toBe(false);
     expect(ids(first.unlockLevel)).toContain(`sentinel:${first.id}`);
     expect(ids(first.unlockLevel)).toContain("assistant");
     const locked = SENTINELS.find((s) => s.unlockLevel > first.unlockLevel)!;
     expect(ids(first.unlockLevel)).not.toContain(`sentinel:${locked.id}`);
+  });
+
+  it("offers every Sentinel once the project unlocked them all", () => {
+    const sentinels = guestOptions(0, true).filter((g) => g.id.startsWith("sentinel:"));
+    expect(sentinels).toHaveLength(SENTINELS.length);
   });
 });
