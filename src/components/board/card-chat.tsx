@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useDraft } from "./use-draft";
+import { useEffect, useRef, type FormEvent, type KeyboardEvent } from "react";
 import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { compact } from "@/components/ui/compact-number";
@@ -77,7 +78,7 @@ export function CardChat({
   inputOnly?: boolean;
 }) {
   const c = useCardChat(kind, cardId);
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(`chat:${kind}:${cardId}`);
   const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

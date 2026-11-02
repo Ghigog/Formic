@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useDraft } from "./use-draft";
 import { AttachmentPicker, pastedFileName } from "./attachment-picker";
 
 /** Which column's capture dialog this is: swaps its copy and submit target. */
@@ -53,7 +54,7 @@ export function NewItemDialog({
   /** `requestId` is the id its attachments were uploaded against. */
   onSubmit: (rawRequest: string, requestId: string) => Promise<void>;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useDraft(`new-item:${column}`);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
@@ -69,7 +70,6 @@ export function NewItemDialog({
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setValue("");
       setError(null);
       setRequestId(crypto.randomUUID());
     }
@@ -128,6 +128,7 @@ export function NewItemDialog({
     setError(null);
     try {
       await onSubmit(value.trim(), requestId);
+      setValue("");
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
