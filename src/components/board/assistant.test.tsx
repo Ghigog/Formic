@@ -126,6 +126,30 @@ describe("AskButton on a phone", () => {
   });
 });
 
+describe("the PM's waiting questions", () => {
+  it("lists each question and opens its card to answer it", async () => {
+    const onOpenQuestion = vi.fn();
+    const setOpen = vi.fn();
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          open: true,
+          setOpen,
+          questions: 1,
+          waiting: [{ id: "c-2", key: "T-2", title: "Write DESIGN.md", question: "How should this product look and feel?" }],
+          onOpenQuestion,
+        }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.getByTestId("pm-waiting")).toHaveTextContent("How should this product look and feel?");
+    await userEvent.setup().click(screen.getByRole("button", { name: /How should this product look/ }));
+    expect(onOpenQuestion).toHaveBeenCalledWith("c-2");
+    expect(setOpen).toHaveBeenCalledWith(false);
+  });
+});
+
 describe("AskBox's prompt", () => {
   it("says the PM has a question waiting", () => {
     render(<AskBox a={{ ...controls, open: false, questions: 1 }} repoName="demo" />);

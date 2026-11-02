@@ -18,9 +18,9 @@ import type { BoardCard } from "@/lib/domain/entities";
 import { useBoard } from "@/lib/hooks/use-board";
 import { useAgents, type AgentUsage, type TokenWindowView } from "@/lib/hooks/use-agents";
 import { useAssistant } from "@/lib/hooks/use-assistant";
-import { isQuestion } from "@/lib/domain/question";
+import { firstQuestion, isQuestion } from "@/lib/domain/question";
 import { AgentEditor } from "./agent-editor";
-import { SetupDialog, type KeylessAgent } from "./setup-dialog";
+import { SetupCard, SetupDialog, type KeylessAgent } from "./setup-dialog";
 import { useRunnerSetup } from "@/lib/hooks/use-runner-setup";
 import { provider, secretNameFor } from "@/lib/llm/providers";
 import type { AgentPreset, ColumnAgents, ColumnOverrides } from "@/lib/domain/entities";
@@ -180,7 +180,11 @@ export function BoardShell({
   // The secrets the CLI agents on columns sign in with: the other half of setup. Agents
   // sharing a secret share a row.
   const keyless: KeylessAgent[] = [];
-  for (const [, presetId] of Object.entries(agentState.columns) as Array<[ColumnId, string]>) {
+  // The PM runs in Actions too, on its own secret when it is a CLI agent.
+  const running = [...Object.values(agentState.columns), assistant.presetId].filter(
+    (id): id is string => !!id,
+  );
+  for (const presetId of running) {
     const preset = agentState.presets.find((p) => p.id === presetId);
     const info = preset && provider(preset.provider);
     if (!preset || info?.kind !== "cli") continue;
@@ -199,6 +203,7 @@ export function BoardShell({
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}
+        setupCard={<SetupCard setup={runner.setup} repoName={repoName} onRetry={() => void runner.check()} />}
         onArchivedWanted={setArchiveWanted}
         extras={merged}
         projectName={projectName}
@@ -220,9 +225,23 @@ export function BoardShell({
         assistant={{
           ...assistant,
           questions: cards.filter((c) => isQuestion(c.blockedReason)).length,
+          waiting: cards
+            .filter((c) => isQuestion(c.blockedReason))
+            .map((c) => ({ id: c.id, key: c.key, title: c.title, question: firstQuestion(c.blockedReason!) })),
+          onOpenQuestion: (id) => {
+            const card = cards.find((c) => c.id === id);
+            if (card?.kind === "epic") setOpenEpicId(id);
+            else setOpenTicketId(id);
+          },
           open: assistantOpen,
           setOpen: openAssistant,
           presets: agentState.presets,
+          // The PM's first agent sets the repository up, as a column's does:
+          // ask again so the setup pull request shows straight away.
+          setAgent: async (presetId) => {
+            await assistant.setAgent(presetId);
+            if (presetId) void runner.check();
+          },
           onNewAgent: () => setEditing({ column: "assistant", preset: null }),
           onEditAgent: (preset) => {
             setEditing({ column: "assistant", preset });
@@ -232,7 +251,11 @@ export function BoardShell({
         agents={{
           presets: agentState.presets,
           columns: agentState.columns,
-          onAssign: agentState.assign,
+          onAssign: async (column, presetId) => {
+            await agentState.assign(column, presetId);
+            // The board's first agent opens the setup pull request: show it now, not on the next load.
+            if (presetId) void runner.check();
+          },
           onEdit: (column, preset) => {
             setEditing({ column, preset });
             // Opening an agent asks what it has used since this page loaded.
@@ -260,6 +283,7 @@ export function BoardShell({
               claimColumn: saveOptions?.claimColumn,
             });
             if (column === "assistant" && !editing.preset) await assistant.setAgent(preset.id);
+            if (!editing.preset) void runner.check();
           }}
           onDelete={agentState.remove}
         />

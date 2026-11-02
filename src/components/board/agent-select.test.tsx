@@ -3,7 +3,6 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentSelect } from "./agent-select";
 import type { AgentPreset } from "@/lib/domain/entities";
-import type { ColumnId } from "@/lib/domain/status";
 
 function preset(over: Partial<AgentPreset> = {}): AgentPreset {
   return {
@@ -53,25 +52,17 @@ describe("AgentSelect", () => {
     expect(screen.getByText("QA Reviewer")).toBeInTheDocument();
   });
 
-  it("shows an unscoped preset in every column's picker", async () => {
-    const unscoped = preset({ id: "bob-1", name: "Bob", column: null });
+  it("keeps a PM agent (no column) out of the column pickers, unless it is the one picked", async () => {
+    const pm = preset({ id: "bob-1", name: "Bob", column: null });
     const user = userEvent.setup();
+    const { rerender } = render(
+      <AgentSelect column="todo" presets={[pm]} selected={undefined} onAssign={vi.fn()} onEdit={vi.fn()} />,
+    );
+    await user.click(screen.getByRole("button", { name: /Agent for/ }));
+    expect(screen.queryByText("Bob")).not.toBeInTheDocument();
 
-    const columns: ColumnId[] = ["todo", "in_progress"];
-    for (const column of columns) {
-      const { unmount } = render(
-        <AgentSelect
-          column={column}
-          presets={[unscoped]}
-          selected={undefined}
-          onAssign={vi.fn()}
-          onEdit={vi.fn()}
-        />,
-      );
-      await user.click(screen.getByRole("button", { name: /Agent for/ }));
-      expect(screen.getByText("Bob")).toBeInTheDocument();
-      unmount();
-    }
+    rerender(<AgentSelect column="todo" presets={[pm]} selected={pm} onAssign={vi.fn()} onEdit={vi.fn()} />);
+    expect(screen.getByRole("menuitemradio", { name: /Bob/ })).toBeInTheDocument();
   });
 
   it("links to Settings to add a key when no agent has one", async () => {
@@ -85,7 +76,7 @@ describe("AgentSelect", () => {
 
   it("shows the picked agent and no Settings link when a key exists", async () => {
     const user = userEvent.setup();
-    const bob = preset({ id: "bob-1", name: "Bob" });
+    const bob = preset({ id: "bob-1", name: "Bob", column: "todo" });
     const onAssign = vi.fn().mockResolvedValue(undefined);
     const { rerender } = render(
       <AgentSelect column="todo" presets={[bob]} selected={undefined} onAssign={onAssign} onEdit={vi.fn()} />,

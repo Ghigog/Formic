@@ -72,6 +72,11 @@ export function isQuestion(reason: string | null | undefined): boolean {
   return !!reason?.startsWith(QUESTION_LINE);
 }
 
+/** A question reason's first question, as the board shows it. */
+export function firstQuestion(reason: string): string {
+  return reason.split("\n")[0]!.slice(QUESTION_LINE.length).trim();
+}
+
 /** The questions a reason asks, as written, for briefing the agent with the answer. */
 export function askedIn(reason: string): string {
   const lines = reason.split("\n");

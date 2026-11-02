@@ -4,10 +4,7 @@ import { currentUser } from "@/lib/auth/user";
 import { ownsPreset } from "../../presets/validate";
 import { COLUMNS } from "@/lib/domain/status";
 import { agentView, assignAgent } from "@/lib/agents/board-agents";
-import { launch } from "@/lib/agents/pipeline";
-import { addDesignTicket, addOnboardingTicket } from "@/lib/board/onboarding";
-import { repository } from "@/lib/db";
-import { runnerSetup } from "@/lib/runner/setup";
+import { afterAgentPicked, boardHasAgent } from "@/lib/board/first-agent";
 
 export const dynamic = "force-dynamic";
 
@@ -38,15 +35,8 @@ export async function PUT(
 
   const project = await activeProject();
   if (!project) return noProject();
-  const hadAgent = Object.keys(await repository().columnAgents(project.id)).length > 0;
+  const hadAgent = await boardHasAgent(project.id);
   await assignAgent(project, user, col.data, body.data.presetId);
-  // The first agent on a board is what makes it cost anything: only now does
-  // its repository get the setup pull request. New boards already have their
-  // AGENTS.md and DESIGN.md tickets; adding them here covers older boards.
-  if (!hadAgent && project.repoFullName && Object.keys(await repository().columnAgents(project.id)).length > 0) {
-    await addOnboardingTicket(project.id);
-    await addDesignTicket(project.id);
-    launch(async () => void (await runnerSetup(project)), `setting up ${project.repoFullName}`);
-  }
+  await afterAgentPicked(project, hadAgent);
   return Response.json({ columns: (await agentView(project, user)).columns });
 }

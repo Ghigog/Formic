@@ -44,6 +44,9 @@ export interface AssistantControls {
   presets: AgentPreset[];
   /** How many cards are waiting on a question for the person, which the PM relays. */
   questions?: number;
+  /** The questions themselves, shown at the top of the PM's chat; each opens its card, where it is answered. */
+  waiting?: Array<{ id: string; key: string; title: string; question: string }>;
+  onOpenQuestion?: (cardId: string) => void;
   onNewAgent: () => void;
   onEditAgent: (preset: AgentPreset) => void;
 }
@@ -424,6 +427,42 @@ function Message({
   );
 }
 
+/**
+ * The questions agents are waiting on, which the PM relays. Each is answered
+ * in its own card's chat, so it opens the card rather than asking the PM.
+ */
+function WaitingQuestions({ a }: { a: AssistantControls }) {
+  const waiting = a.waiting ?? [];
+  return (
+    <div data-testid="pm-waiting" className="border-line bg-cream rounded-lg border p-3">
+      <p className="text-ink m-0 text-[13px] font-semibold">
+        {waiting.length === 1 ? "A question for you" : `${waiting.length} questions for you`}
+      </p>
+      <p className="text-muted mt-0.5 mb-2 text-[12px]">Answer in the card&apos;s chat and its agent carries on.</p>
+      <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+        {waiting.map((q) => (
+          <li key={q.id}>
+            <button
+              type="button"
+              onClick={() => {
+                a.setOpen(false);
+                a.onOpenQuestion?.(q.id);
+              }}
+              className="border-line bg-card hover:border-terracotta flex w-full flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left"
+            >
+              <span className="text-muted font-mono text-[10px]">
+                {q.key} · {q.title}
+              </span>
+              <span className="text-ink text-[13px] leading-[1.45]">{q.question}</span>
+              <span className="text-terracotta text-[12px] font-semibold">Answer →</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function Shade({
   a,
   repoName,
@@ -537,6 +576,7 @@ function Shade({
       </header>
 
       <div ref={list} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        {!!a.waiting?.length && <WaitingQuestions a={a} />}
         {a.messages.length === 0 ? (
           <div className="text-muted mx-auto max-w-[460px] pt-6 text-center text-[13px] leading-[1.6]">
             <p className="text-ink font-serif text-[17px]">

@@ -120,13 +120,15 @@ export function AgentSelect({
           >
             <span className="min-w-0 flex-1">
               <span className="text-ink block truncate font-medium">No agent</span>
-              <span className="text-muted block text-[10px]">Cards here wait until you pick one</span>
+              <span className="text-muted block text-[10px]">Nothing runs here: you move cards by hand</span>
             </span>
             {!selected && <Check />}
           </button>
 
+          {/* Each agent belongs to one column, or to the PM (no column). The
+              one already picked always shows, so it can be edited or changed. */}
           {presets
-            .filter((p) => p.column === null || p.column === column)
+            .filter((p) => p.column === column || p.id === selected?.id)
             .map((p) => (
             <div key={p.id} className="group flex flex-col">
               <div className="flex items-center">

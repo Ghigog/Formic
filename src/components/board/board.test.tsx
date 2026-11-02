@@ -155,6 +155,31 @@ describe("Board, on a wide screen", () => {
     expect(screen.getByRole("button", { name: /Agent for In Progress/ })).not.toHaveClass("border-crimson");
   });
 
+  it("says nothing started when a ticket is moved into In Progress with no agent, once", async () => {
+    const t1 = makeCard({ kind: "ticket", status: "ready", key: "T-1" });
+    const t2 = makeCard({ kind: "ticket", status: "ready", key: "T-2" });
+    const onTransition = vi.fn(async (): Promise<TransitionResult> => ({ ok: true, status: "running", runId: null }));
+    renderBoard([t1, t2], {
+      onTransition,
+      agents: { presets: [], columns: {}, onAssign: vi.fn(), onEdit: vi.fn() },
+    });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Move T-1 to In Progress" }));
+    expect(await screen.findByTestId("board-notice")).toHaveTextContent(
+      "In Progress has no agent, so nothing started on T-1",
+    );
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await user.click(screen.getByRole("button", { name: "Move T-2 to In Progress" }));
+    await waitFor(() => expect(onTransition).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("board-notice")).toBeNull();
+  });
+
+  it("pins the setup card at the top of To Do", () => {
+    renderBoard([], { setupCard: <div>Merge the setup pull request</div> });
+    expect(within(screen.getByRole("region", { name: "To Do" })).getByText("Merge the setup pull request")).toBeInTheDocument();
+  });
+
   it("shows every column's agent drop-down set to No agent, with no red outline", () => {
     renderBoard([], { agents: { presets: [], columns: {}, onAssign: vi.fn(), onEdit: vi.fn() } });
     const selects = screen.getAllByRole("button", { name: /^Agent for / });

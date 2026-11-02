@@ -7,9 +7,6 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-const launch = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/agents/pipeline", () => ({ launch }));
-
 const { repository } = await import("@/lib/db");
 const { SESSION_COOKIE, signSession } = await import("@/lib/auth/session");
 const { PROJECT_COOKIE } = await import("@/lib/board/project");
@@ -27,7 +24,6 @@ let otherPresetId: string;
 
 beforeEach(async () => {
   globalThis.__formicMemoryStore = undefined;
-  launch.mockClear();
   jar.clear();
   vi.stubEnv("GITHUB_APP_CLIENT_ID", "Iv1.test");
   vi.stubEnv("GITHUB_APP_CLIENT_SECRET", "shh");
@@ -52,19 +48,24 @@ describe("PUT /api/agents/columns/[column]", () => {
     expect((await res.json()).columns).toEqual({ in_progress: presetId });
   });
 
-  it("starts runner setup and adds the AGENTS.md and DESIGN.md tickets on the board's first agent only", async () => {
+  it("adds the AGENTS.md and DESIGN.md tickets on the board's first agent only", async () => {
     const projectId = jar.get(PROJECT_COOKIE)!;
     expect(await repository().boardCards(projectId)).toHaveLength(0);
     await PUT(put({ presetId }), ctx("in_progress"));
-    expect(launch).toHaveBeenCalledTimes(1);
     const cards = await repository().boardCards(projectId);
     expect(cards.filter((c) => c.title.includes("AGENTS.md"))).toHaveLength(1);
     expect(cards.find((c) => c.title.includes("AGENTS.md"))!.status).toBe("ready");
     expect(cards.find((c) => c.title.includes("DESIGN.md"))).toMatchObject({ status: "blocked", stalledIn: "todo" });
 
     await PUT(put({ presetId }), ctx("review"));
-    expect(launch).toHaveBeenCalledTimes(1);
     expect(await repository().boardCards(projectId)).toHaveLength(2);
+  });
+
+  it("adds no tickets when the PM already had an agent", async () => {
+    const projectId = jar.get(PROJECT_COOKIE)!;
+    await repository().setAssistantAgent(projectId, presetId);
+    await PUT(put({ presetId }), ctx("in_progress"));
+    expect(await repository().boardCards(projectId)).toHaveLength(0);
   });
 
   it("unassigns with a null presetId", async () => {
