@@ -687,6 +687,15 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.projectById(p.id))?.autoEscalate).toBe(false);
       });
 
+      it("keeps every Sentinel locked to colony level until unlocked, per project", async () => {
+        const p = await project();
+        expect((await repo.projectById(p.id))?.unlockAllSentinels).toBe(false);
+        await repo.setUnlockAllSentinels(p.id, true);
+        expect((await repo.projectById(p.id))?.unlockAllSentinels).toBe(true);
+        await repo.setUnlockAllSentinels(p.id, false);
+        expect((await repo.projectById(p.id))?.unlockAllSentinels).toBe(false);
+      });
+
       it("runs scouts on the column's agent until a scout agent is set, per project", async () => {
         const p = await project();
         const preset = await repo.savePreset({

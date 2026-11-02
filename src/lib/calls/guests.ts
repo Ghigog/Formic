@@ -32,11 +32,11 @@ export function isGuestId(value: unknown): value is GuestId {
 }
 
 /** The guests a call can invite at a colony level: Sentinels not yet unlocked are left out. */
-export function guestOptions(level: number): { id: GuestId; label: string }[] {
+export function guestOptions(level: number, unlockAll: boolean): { id: GuestId; label: string }[] {
   const ids: GuestId[] = [
     "assistant",
     ...COLUMN_AGENT_GUESTS,
-    ...SENTINELS.filter((s) => isUnlocked(s, level)).map((s): GuestId => `${SENTINEL_PREFIX}${s.id}`),
+    ...SENTINELS.filter((s) => isUnlocked(s, level, unlockAll)).map((s): GuestId => `${SENTINEL_PREFIX}${s.id}`),
   ];
   return ids.map((id) => ({ id, label: guestLabel(id) }));
 }

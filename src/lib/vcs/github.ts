@@ -122,6 +122,15 @@ export class GitHubClient implements VcsClient {
     path: string,
     body?: unknown,
   ): Promise<{ status: number; data: T }> {
+    const { status, data } = await this.requestWithHeaders<T>(method, path, body);
+    return { status, data };
+  }
+
+  private async requestWithHeaders<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; data: T; headers: Headers }> {
     const token = this.token;
 
     let response: Response;
@@ -154,7 +163,7 @@ export class GitHubClient implements VcsClient {
       );
     }
 
-    return { status: response.status, data };
+    return { status: response.status, data, headers: response.headers };
   }
 
   async ensureBranch(branch: string, fromRef: string): Promise<void> {
@@ -872,6 +881,21 @@ export class GitHubClient implements VcsClient {
       return data.object.sha;
     } catch (e) {
       if (e instanceof VcsError && e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  async countCommits(branch: string): Promise<number> {
+    // One commit a page, so the last page's number is the count.
+    try {
+      const { headers, data } = await this.requestWithHeaders<unknown[]>(
+        "GET",
+        `/commits?sha=${encodeURIComponent(branch)}&per_page=1`,
+      );
+      const last = /[?&]page=(\d+)[^>]*>;\s*rel="last"/.exec(headers.get("link") ?? "");
+      return last ? Number(last[1]) : data.length;
+    } catch (e) {
+      if (e instanceof VcsError && (e.status === 404 || e.status === 409)) return 0;
       throw e;
     }
   }

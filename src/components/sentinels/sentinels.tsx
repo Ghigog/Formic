@@ -386,7 +386,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
       );
   };
 
-  const unlocked = SENTINELS.filter((x) => isUnlocked(x, s.level)).length;
+  const unlocked = SENTINELS.filter((x) => isUnlocked(x, s.level, s.unlockAll)).length;
   const nBusy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
   const summon = (id: string, kind?: AuditKind) => {
     c.sfx("emerge");
@@ -483,7 +483,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
                 st={s.states[x.id]!}
                 on={i === idx}
                 now={now}
-                locked={!isUnlocked(x, s.level)}
+                locked={!isUnlocked(x, s.level, s.unlockAll)}
                 onActivate={() => {
                   // On a phone the rail snaps, and a side card comes to the
                   // centre before it opens. Measure the centre now: the scroll
@@ -548,7 +548,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
               x={reporting}
               st={s.states[reporting.id]!}
               now={now}
-              locked={!isUnlocked(reporting, s.level)}
+              locked={!isUnlocked(reporting, s.level, s.unlockAll)}
               onSummon={(kind) => summon(reporting.id, kind)}
             />
           </div>

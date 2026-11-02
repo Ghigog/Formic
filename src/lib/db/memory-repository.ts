@@ -252,6 +252,7 @@ function store(): Store {
     baseBranch: process.env.GITHUB_BASE_BRANCH ?? "main",
     autoMerge: false,
     autoEscalate: false,
+    unlockAllSentinels: false,
     colonySize: null,
     colonyReserve: 0,
     autoScout: false,
@@ -752,6 +753,7 @@ export class MemoryRepository implements Repository {
       baseBranch: input.baseBranch,
       autoMerge: false,
       autoEscalate: false,
+      unlockAllSentinels: false,
       colonySize: null,
       colonyReserve: 0,
       autoScout: false,
@@ -1929,6 +1931,11 @@ export class MemoryRepository implements Repository {
   async setScoutAgent(projectId: string, presetId: string | null): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) project.scoutPresetId = presetId;
+  }
+
+  async setUnlockAllSentinels(projectId: string, unlockAllSentinels: boolean): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project) project.unlockAllSentinels = unlockAllSentinels;
   }
 
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {

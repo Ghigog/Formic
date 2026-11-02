@@ -235,9 +235,20 @@ export const SENTINELS: readonly Sentinel[] = [
   },
 ];
 
-/** Whether a colony at this level can summon the sentinel. */
-export function isUnlocked(s: Sentinel, level: number): boolean {
-  return s.unlockLevel <= level;
+/** Commits on the base branch from which a project counts as established. */
+export const ESTABLISHED_COMMITS = 100;
+
+/** Whether a base branch holds enough history to be an established codebase. */
+export function isEstablished(commits: number): boolean {
+  return commits >= ESTABLISHED_COMMITS;
+}
+
+/**
+ * Whether the sentinel can be summoned: the colony has reached its level, or
+ * the project unlocked them all (a board brought in with an established app).
+ */
+export function isUnlocked(s: Sentinel, level: number, unlockAll: boolean): boolean {
+  return unlockAll || s.unlockLevel <= level;
 }
 
 export function sentinel(id: string): Sentinel | undefined {

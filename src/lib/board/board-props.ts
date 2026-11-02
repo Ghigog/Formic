@@ -71,6 +71,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
     noCi: !hasCi,
     noSandboxKey,
     autoMerge: project.autoMerge,
+    unlockAllSentinels: project.unlockAllSentinels,
     baseBranch: project.baseBranch,
     initialPresets: presets,
     initialColumnAgents: columnAgents,

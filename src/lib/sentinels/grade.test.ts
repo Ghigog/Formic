@@ -6,7 +6,7 @@ const all = (n: number) => Object.fromEntries(SENTINELS.map((s) => [s.id, n]));
 
 describe("gradeOf", () => {
   it("is F with nobody reporting", () => {
-    const g = gradeOf({}, 12);
+    const g = gradeOf({}, 12, false);
     expect(g.grade).toBe("F");
     expect(g.done).toBe(0);
     expect(g.next?.grade).toBe("E");
@@ -16,32 +16,32 @@ describe("gradeOf", () => {
     const stars = all(5);
     delete stars[SENTINELS[0]!.id];
     // 55 / 12 = 4.58
-    expect(gradeOf(stars, 34).grade).toBe("S");
+    expect(gradeOf(stars, 34, false).grade).toBe("S");
     delete stars[SENTINELS[1]!.id];
     // 50 / 12 = 4.17
-    expect(gradeOf(stars, 34).grade).toBe("A");
+    expect(gradeOf(stars, 34, false).grade).toBe("A");
   });
 
   it("leaves a locked sentinel out of the average and the total", () => {
     const at = SENTINELS[0]!.unlockLevel;
     const locked = SENTINELS.filter((s) => s.unlockLevel > at);
     expect(locked.length).toBeGreaterThan(0);
-    const g = gradeOf({ [SENTINELS[0]!.id]: 5 }, at);
+    const g = gradeOf({ [SENTINELS[0]!.id]: 5 }, at, false);
     expect(g.total).toBe(SENTINELS.length - locked.length);
     expect(g.avg).toBe(5 / g.total);
     // Stars on a locked sentinel do not count either.
-    expect(gradeOf({ ...all(5) }, at).sum).toBe(5 * g.total);
+    expect(gradeOf({ ...all(5) }, at, false).sum).toBe(5 * g.total);
   });
 
   it("lands exactly on a threshold", () => {
-    expect(gradeOf(all(4), 34).grade).toBe("A");
-    expect(gradeOf(all(3), 34).grade).toBe("C");
-    expect(gradeOf(all(5), 34).next).toBeNull();
+    expect(gradeOf(all(4), 34, false).grade).toBe("A");
+    expect(gradeOf(all(3), 34, false).grade).toBe("C");
+    expect(gradeOf(all(5), 34, false).next).toBeNull();
   });
 
   it("says how many stars reach the next grade", () => {
     // 36 stars is C; B needs 3.5 × 12 = 42.
-    const g = gradeOf(all(3), 34);
+    const g = gradeOf(all(3), 34, false);
     expect(g.next).toEqual({ grade: "B", min: 3.5, need: 6 });
   });
 

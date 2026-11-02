@@ -187,6 +187,9 @@ model Project {
   /// Whether Formic raises a ticket's story points itself when it outgrows
   /// its estimate. Off (the default) until the owner opts in.
   autoEscalate               Boolean  @default(false)
+  /// Whether every Sentinel is unlocked regardless of colony level, for a
+  /// board brought in with an established codebase. Off until the owner opts in.
+  unlockAllSentinels         Boolean  @default(false)
   /// Queens taken off the board, so clearing one never hands it back.
   queensSpent                Int      @default(0)
   /// Golden bells rung on this board, so one is never spent twice.
