@@ -849,7 +849,8 @@ export interface Repository {
   setEpicIssue(epicId: string, issueNumber: number): Promise<void>;
   /** The Actions run a CLI agent is doing for this epic, or null, and the preset dispatched with it. */
   setEpicRunnerJob(epicId: string, job: string | null, agentId?: string | null): Promise<void>;
-  setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void>;
+  /** `title`, when not blank, renames the Epic in the same update. */
+  setEpicPrd(epicId: string, prd: unknown, byHuman: boolean, title?: string): Promise<void>;
   setEpicShowcase(epicId: string, markdown: string): Promise<void>;
   /** Removes tickets, with their runs and dependencies both ways. */
   deleteTickets(ticketIds: string[]): Promise<void>;

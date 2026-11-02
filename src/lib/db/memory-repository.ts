@@ -1183,12 +1183,13 @@ export class MemoryRepository implements Repository {
     }
   }
 
-  async setEpicPrd(epicId: string, prd: unknown): Promise<void> {
+  async setEpicPrd(epicId: string, prd: unknown, _byHuman?: boolean, title?: string): Promise<void> {
     const s = store();
     s.prds.set(epicId, prd);
     s.prdTimes.set(epicId, new Date());
     const card = s.cards.get(epicId);
     if (card) {
+      if (title?.trim()) card.title = title.trim();
       card.status = "specified";
       card.stage = 2;
       card.stalledIn = null;

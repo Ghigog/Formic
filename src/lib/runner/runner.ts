@@ -1171,7 +1171,7 @@ async function completeCliAnswer(
             reason: value.reason,
             ticket: toDraftTicket(value.ticket),
           })
-        : applyPrd(projectId, epicId, value.prd, false, value.questions.slice(0, MAX_QUESTIONS));
+        : applyPrd(projectId, epicId, value.prd, false, value.questions.slice(0, MAX_QUESTIONS), value.title);
     }
     checked = product;
   } else if (result.mode === "architect") {

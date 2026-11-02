@@ -252,6 +252,7 @@ describe("a CLI agent planning an Epic", () => {
     expect(after.prd).toMatchObject(PRD);
     expect(after.runnerJob).toBeNull();
     expect((await repository().cardById(epic.id))!.status).toBe("specified");
+    expect((await repository().cardById(epic.id))!.title).toBe("Export");
     expect(MockVcsClient.runner().branches.has(`${STAGING_PREFIX}${inputs.job}`)).toBe(false);
   });
 
