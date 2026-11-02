@@ -23,7 +23,14 @@ async function postHandler(req: NextRequest) {
 
   if (!parsed.success) {
     const cardId = (body as { cardId?: unknown } | null)?.cardId;
-    const card = typeof cardId === "string" && cardId ? await repository().cardById(cardId) : null;
+    // Only reveal the column of a card on the caller's active board.
+    const project =
+      typeof cardId === "string" && cardId ? await activeProject() : null;
+    const repo = repository();
+    const card =
+      project && (await repo.projectOfCard(cardId as string)) === project.id
+        ? await repo.cardById(cardId as string)
+        : null;
     return Response.json(
       {
         ok: false,
