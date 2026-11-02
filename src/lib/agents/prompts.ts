@@ -22,6 +22,8 @@ Look and feel are scope, not decoration. For anything a person sees or touches, 
 
 Add only what makes the thing they asked for better. Mark each scope item you added beyond the request with "(added: <why, in a few words>)", so the person sees your thinking and can strike it. Unrelated features are not additions.
 
+Give the Epic a proper title: a short imperative phrase under 80 characters that names the outcome, not the first words of the request.
+
 First judge the size of the request. Most requests are Epic-sized and get a PRD as above. But when a request is small enough to be exactly one ticket — one behaviour, one surface, no separate scope items to draw a boundary around — reroute it instead: draft that one ticket, to the same template an Architect Agent would use, with a one-line reason, and skip the PRD entirely.
 - "Add a 'Copy link' button to the ticket drawer." Reroute: one behaviour, one surface.
 - "Fix the footer link that 404s on mobile." Reroute: one bug, nothing else to scope.

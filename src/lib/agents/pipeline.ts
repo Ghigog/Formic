@@ -225,12 +225,15 @@ export async function applyPrd(
   prd: Prd,
   byHuman = false,
   questions: readonly AgentQuestion[] = [],
+  title?: string,
 ): Promise<void> {
   const repo = repository();
+  // Only the agent names the Epic; a person's edit leaves the title alone.
+  const agentTitle = byHuman ? undefined : title;
   if (questions.length > 0) {
     // A draft: the person sees the agent's thinking, and the Epic waits for
     // the answer before anything is broken down from it.
-    await repo.setEpicPrd(epicId, prd, false);
+    await repo.setEpicPrd(epicId, prd, false, agentTitle);
     await stallEpic(projectId, epicId, questionReason("The Product Agent", questions), {
       blocked: true,
       stalledIn: "backlog",
@@ -244,7 +247,7 @@ export async function applyPrd(
     !before.misplacedIn &&
     (before.status === "waiting" || before.status === "ready");
 
-  await repo.setEpicPrd(epicId, prd, byHuman);
+  await repo.setEpicPrd(epicId, prd, byHuman, agentTitle);
 
   if (queued) {
     await repo.move({
@@ -639,7 +642,7 @@ async function draftPrd(
 
   if (outcome.ok) {
     if (outcome.value.kind === "prd") {
-      await applyPrd(projectId, epicId, outcome.value.prd, false, outcome.value.questions);
+      await applyPrd(projectId, epicId, outcome.value.prd, false, outcome.value.questions, outcome.value.title);
     } else {
       await applyReroute(projectId, {
         from: "backlog",

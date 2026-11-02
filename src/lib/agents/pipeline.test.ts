@@ -163,6 +163,36 @@ describe("applyPrd", () => {
   });
 });
 
+describe("applyPrd titling the Epic", () => {
+  it("renames the Epic from the agent's title, trimmed", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null, title: "raw first words" });
+    seedMemory([epic]);
+
+    await applyPrd(PROJECT, epic.id, PRD, false, [], "  Export boards as CSV ");
+
+    expect((await repository().cardById(epic.id))?.title).toBe("Export boards as CSV");
+  });
+
+  it("keeps the title when it is blank, or when a person saved the PRD", async () => {
+    const epic = makeCard({ kind: "epic", status: "draft", size: null, title: "Keep me" });
+    seedMemory([epic]);
+
+    await applyPrd(PROJECT, epic.id, PRD, false, [], "   ");
+    expect((await repository().cardById(epic.id))?.title).toBe("Keep me");
+    await applyPrd(PROJECT, epic.id, PRD, true, [], "Agent title");
+    expect((await repository().cardById(epic.id))?.title).toBe("Keep me");
+  });
+
+  it("renames the Epic when the draft comes with questions", async () => {
+    const epic = makeCard({ kind: "epic", status: "waiting", size: null, title: "raw" });
+    seedMemory([epic]);
+
+    await applyPrd(PROJECT, epic.id, PRD, false, [{ question: "Who?", why: "Because." }], "Ring the bell");
+
+    expect((await repository().cardById(epic.id))?.title).toBe("Ring the bell");
+  });
+});
+
 describe("applyPrd with the Product Agent's questions", () => {
   it("keeps the PRD as a draft and waits in Backlog on the question, starting nothing", async () => {
     const epic = makeCard({ kind: "epic", status: "waiting", size: null });
@@ -461,6 +491,7 @@ describe("runArchitectDraftTicket", () => {
     const after = await repository().cardById(epic.id);
     expect(after).toMatchObject({ status: "specified", stalledIn: null, blockedReason: null });
     expect((await repository().epicDetail(epic.id))?.prd).toMatchObject({ summary: "s" });
+    expect(after?.title).toBe("An Epic");
   });
 });
 

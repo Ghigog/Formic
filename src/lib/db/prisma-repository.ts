@@ -1286,11 +1286,13 @@ export class PrismaRepository implements Repository {
     await prisma().epic.update({ where: { id: epicId }, data: { issueNumber } });
   }
 
-  async setEpicPrd(epicId: string, prd: unknown, byHuman: boolean): Promise<void> {
+  async setEpicPrd(epicId: string, prd: unknown, byHuman: boolean, title?: string): Promise<void> {
     const db = prisma();
+    const name = title?.trim();
     await db.epic.update({
       where: { id: epicId },
       data: {
+        ...(name ? { title: name } : {}),
         prd: prd as never,
         prdEditedByHuman: byHuman,
         prdUpdatedAt: new Date(),
