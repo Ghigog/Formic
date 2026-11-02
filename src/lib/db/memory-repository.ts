@@ -306,6 +306,11 @@ function store(): Store {
   return s;
 }
 
+/** Test-only: drop the store so the next repository call starts on an empty board. */
+export function resetMemoryStore(): void {
+  globalThis.__formicMemoryStore = undefined;
+}
+
 /** The project a card belongs to. Seeded cards belong to the default one. */
 /**
  * A ticket's column history. A ticket that has none (the demo board's, made
