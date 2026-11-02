@@ -9,6 +9,7 @@ import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 import type { BoardCard } from "@/lib/domain/entities";
 import { completeCliRun } from "@/lib/runner/runner";
+import { completeEpic } from "@/lib/review/pipeline";
 import { ANSWER_PATH, RUNNER_WORKFLOW_PATH, runTitle, runnerWorkflow } from "@/lib/runner/workflow";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, STAGING_PREFIX, resetVcs, setVcs } from "@/lib/vcs";
@@ -324,6 +325,43 @@ describe("acting on the board for the person", () => {
     expect(added.status).toBe("waiting");
     expect(added.dependsOn).toEqual([ticket.id]);
     expect(cards.some((c) => c.id === ticket.id)).toBe(true);
+  });
+
+  it("replaces an Epic's open tickets: new keys, and the Epic the sweep closed reopens", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Deploy", rawRequest: "r", position: 1 });
+    const t = (n: number) => ({
+      epicId: epic.id,
+      key: `${epic.key}-T${n}`,
+      title: `T${n}`,
+      description: "d",
+      acceptanceCriteria: ["c"],
+      fileScope: [`src/t${n}`],
+      position: n,
+      dependsOnKeys: [],
+    });
+    const [done, flyDeploy] = await repo.createTickets([t(1), t(2)]);
+    await repo.move({ cardId: done!.id, kind: "ticket", status: "merged", stalledIn: null, position: 1 });
+
+    // The person approves closing the old ticket, and the sweep then sees
+    // every ticket left merged and finishes the Epic.
+    await applyAction(PROJECT, { type: "close_card", key: flyDeploy!.key, reason: "Replaced" });
+    await completeEpic(PROJECT, epic.id);
+    expect((await repo.cardById(epic.id))?.status).toBe("merged");
+
+    const said = await applyAction(PROJECT, {
+      type: "add_tickets_to_epic",
+      epic: epic.key,
+      tickets: [spec("L-1", "deploy/server", [done!.key]) as never, spec("L-2", "docs/deploy", ["L-1"]) as never],
+    });
+
+    // T2 is archived, not gone: its key stays taken.
+    expect(said).toBe(`Added ${epic.key}-T3, ${epic.key}-T4 to ${epic.key}, and reopened it in To Do.`);
+    const cards = await repo.boardCards(PROJECT);
+    const [l1, l2] = [3, 4].map((n) => cards.find((c) => c.key === `${epic.key}-T${n}`)!);
+    expect(l1).toMatchObject({ epicId: epic.id, dependsOn: [] });
+    expect(l2!.dependsOn).toEqual([l1!.id]);
+    expect(await repo.cardById(epic.id)).toMatchObject({ status: "ready" });
   });
 
   it("refuses a follow-up that would clash with an open ticket's files", async () => {
