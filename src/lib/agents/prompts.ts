@@ -235,9 +235,16 @@ export function withProductConventions(brief: string): string {
  */
 export const NEEDS_HUMAN_RULE = `A ticket no coding agent can do in the repository (setting up an account or a service, a manual test on real infrastructure, a decision only the person can make) still belongs in the plan when other work depends on it. Set its needsHuman to one line saying what the person has to do. Keep that ticket to the one step only the person can take, as small as it can be: running a command an agent wrote, pasting back its output, answering a question. Any work an agent can do around that step is its own ticket without needsHuman: writing the script or query the person runs goes before it, and analysing what they paste back, writing up findings or acting on them goes after it, ordered with dependsOn so it waits. Leave needsHuman out of every ticket an agent can do, including ones that only write documentation.`;
 
+/**
+ * A plan that guesses a host or a vendor sends an agent off to build for the
+ * wrong one: a planner once wrote Fly.io into a deploy Epic for a repo whose
+ * owner already ran a server elsewhere. What to run on is the person's call.
+ */
+export const INFRASTRUCTURE_RULE = `Hosting, vendors and services. Before planning work that deploys, stores data or calls an outside service, find what the project already uses: AGENTS.md, the README, deploy scripts and docs, CI workflows and config files. Plan for that. Never choose a host, cloud, database or paid service that nothing in the repository names, not even as a suggestion. When the work needs one and nothing says which, that choice is a decision only the person can make: its own needsHuman ticket that asks it, listing what the repository already uses, with the work that depends on it after it.`;
+
 /** The Architect's brief with the ticket template and the engineering practices. */
 export function withPlanningConventions(brief: string): string {
-  return `${brief.trim()}\n\n${TICKET_TEMPLATE}\n\n${NEEDS_HUMAN_RULE}\n\n${DESIGN_RULE}\n\n${ENGINEERING_PRACTICES}`;
+  return `${brief.trim()}\n\n${TICKET_TEMPLATE}\n\n${NEEDS_HUMAN_RULE}\n\n${INFRASTRUCTURE_RULE}\n\n${DESIGN_RULE}\n\n${ENGINEERING_PRACTICES}`;
 }
 
 /** The brief a column's agent runs with when no preset replaces it. */
