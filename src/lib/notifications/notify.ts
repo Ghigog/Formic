@@ -4,7 +4,7 @@ import { repository } from "@/lib/db";
 import type { FormicEvent } from "@/lib/domain/events";
 import { columnFor, type ColumnId, type TicketStatus } from "@/lib/domain/status";
 import { sendPush } from "@/lib/push/send";
-import { classifyEvent, type Notification } from "./classify";
+import { classifyEvent, classifyPmAnswer, type Notification } from "./classify";
 
 type CardStatus = FormicEvent & { type: "card.status" };
 
@@ -129,5 +129,25 @@ export async function notifyOwner(projectId: string, event: FormicEvent, seq?: n
     await sendPush(project.ownerId, notification);
   } catch {
     // Best-effort, like every other subscriber of the bus.
+  }
+}
+
+/**
+ * Pushes the PM's answer in the board's chat to the board's owner, so asking
+ * and walking away works. It goes with "needs attention": a reply waits on
+ * the person like a question does. Never throws.
+ */
+export async function notifyPmAnswer(projectId: string, answer: { content: string; failed: boolean }): Promise<void> {
+  try {
+    const repo = repository();
+    const project = await repo.projectById(projectId);
+    if (!project?.ownerId) return;
+    const notification = classifyPmAnswer(answer, project.name);
+    const prefs = await repo.pushPreferences(project.ownerId);
+    if (!prefs[notification.kind]) return;
+    if (sentRecently(project.ownerId, notification)) return;
+    await sendPush(project.ownerId, notification);
+  } catch {
+    // Best-effort: a push failure must not fail the answer.
   }
 }

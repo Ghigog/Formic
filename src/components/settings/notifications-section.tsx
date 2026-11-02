@@ -6,7 +6,7 @@ import type { PushPreferences } from "@/lib/db/repository";
 const KINDS: { key: keyof PushPreferences; label: string }[] = [
   { key: "ticketMoved", label: "Ticket moved" },
   { key: "epicCompleted", label: "Epic completed" },
-  { key: "needsAttention", label: "Ticket needs attention" },
+  { key: "needsAttention", label: "Needs you: questions and PM replies" },
 ];
 
 const ALL_ON: PushPreferences = { ticketMoved: true, epicCompleted: true, needsAttention: true };

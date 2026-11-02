@@ -72,6 +72,11 @@ export function isQuestion(reason: string | null | undefined): boolean {
   return !!reason?.startsWith(QUESTION_LINE);
 }
 
+/** Who is waiting on a question reason's answer, such as "The PM"; null when it does not say. */
+export function askerOf(reason: string): string | null {
+  return /^(.+?) is waiting for your answer/.exec(reason.split("\n")[1] ?? "")?.[1]?.trim() || null;
+}
+
 /** A question reason's first question, as the board shows it. */
 export function firstQuestion(reason: string): string {
   return reason.split("\n")[0]!.slice(QUESTION_LINE.length).trim();

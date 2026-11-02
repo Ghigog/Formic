@@ -16,7 +16,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import type { FormicEvent } from "@/lib/domain/events";
-import { notifyOwner, resetNotified } from "./notify";
+import { notifyOwner, notifyPmAnswer, resetNotified } from "./notify";
 
 let cards = 0;
 const status = (s: string, kind = "ticket", cardId = `c${cards++}`) =>
@@ -100,5 +100,34 @@ describe("notifyOwner", () => {
   it("pushes a card's first status when the log has nothing before it", async () => {
     await notifyOwner("p", status("review", "ticket", "fresh"), 42);
     expect(sendPush).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("notifyPmAnswer", () => {
+  beforeEach(() => {
+    sendPush.mockReset();
+    resetNotified();
+    prefs = { ticketMoved: true, epicCompleted: true, needsAttention: true };
+  });
+
+  it("pushes the PM's answer to the board owner, as plain text", async () => {
+    await notifyPmAnswer("p", { content: "**T-5** is in review. See [the PR](https://x).", failed: false });
+    expect(sendPush).toHaveBeenCalledWith("u1", {
+      kind: "needsAttention",
+      title: "The PM answered on Formic",
+      body: "T-5 is in review. See the PR.",
+      url: "/",
+    });
+  });
+
+  it("says when the PM could not answer", async () => {
+    await notifyPmAnswer("p", { content: "No agent is set.", failed: true });
+    expect(sendPush).toHaveBeenCalledWith("u1", expect.objectContaining({ title: "The PM could not answer on Formic" }));
+  });
+
+  it("sends nothing when needs-attention pushes are off", async () => {
+    prefs.needsAttention = false;
+    await notifyPmAnswer("p", { content: "Done.", failed: false });
+    expect(sendPush).not.toHaveBeenCalled();
   });
 });
