@@ -1,5 +1,5 @@
 import { activeProject, noProject } from "@/lib/board/project";
-import { repository } from "@/lib/db";
+import { boardHasAgent } from "@/lib/board/first-agent";
 import { runnerSetup } from "@/lib/runner/setup";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +12,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const project = await activeProject();
   if (!project) return noProject();
-  // A board with no agent has nothing to set up; the first agent picked starts it.
-  if (Object.keys(await repository().columnAgents(project.id)).length === 0) {
+  // A board with no agent, on a column or the PM, has nothing to set up; the
+  // first one picked starts it.
+  if (!(await boardHasAgent(project.id))) {
     return Response.json({ state: "ready" });
   }
   try {

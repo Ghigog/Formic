@@ -282,3 +282,67 @@ function SecretName({ value }: { value: string }) {
     </div>
   );
 }
+
+/**
+ * The setup pull request as the first card in To Do, while it waits: the
+ * starter tickets below it cannot run until it is merged, so it stays in
+ * view after the dialog is put away. Gone once the workflow is in.
+ */
+export function SetupCard({
+  setup,
+  repoName,
+  onRetry,
+}: {
+  setup: RunnerSetup | null;
+  repoName: string;
+  onRetry: () => void;
+}) {
+  if (!setup || setup.state === "ready") return null;
+  const blocked = setup.state === "blocked";
+  return (
+    <div
+      data-testid="setup-card"
+      className="border-terracotta/50 bg-card mt-2 flex flex-col gap-1.5 rounded-lg border border-dashed px-3 py-2.5"
+    >
+      <span className="text-muted font-mono text-[10px] tracking-[0.06em] uppercase">Start here</span>
+      <span className="text-ink text-[13px] leading-[1.4] font-semibold">
+        {blocked
+          ? `Formic can't set up ${repoName} yet`
+          : setup.update
+            ? "Merge the agent workflow update"
+            : "Merge the setup pull request"}
+      </span>
+      <span className="text-muted text-[12px] leading-[1.5]">
+        {blocked
+          ? setup.reason
+          : `Agents run in ${repoName}'s own GitHub Actions. The tickets below wait for this one workflow.`}
+      </span>
+      <div className="mt-0.5 flex items-center gap-2">
+        {blocked ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="bg-terracotta-cta inline-flex h-[28px] items-center rounded-md px-2.5 text-[12px] font-semibold text-white hover:opacity-90"
+          >
+            Try again
+          </button>
+        ) : (
+          <>
+            <a
+              href={setup.setupUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="bg-terracotta-cta inline-flex h-[28px] items-center rounded-md px-2.5 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
+            >
+              Open pull request ↗
+            </a>
+            <span className="text-muted flex items-center gap-1.5 text-[11px]">
+              <span aria-hidden className="bg-clay pulse-dot size-1.5 rounded-full" />
+              Watching for the merge
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

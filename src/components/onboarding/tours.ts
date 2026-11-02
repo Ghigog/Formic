@@ -97,7 +97,7 @@ export const TOURS: Record<TourId, TourDef> = {
         target: "column-head",
         side: "below",
         title: "Column agents",
-        text: "Columns start with no agent. Open this drop-down and choose one: Product, Architect, Coder, Reviewer or PM. Its key comes from the ones you set up. My advice? Keep the default prompt for now. It's a good one.",
+        text: "Columns start with no agent. Open this drop-down and choose one: Product, Architect, Coder or Reviewer. The PM lives in the chat up top. Its key comes from the ones you set up. My advice? Keep the default prompt for now. It's a good one.",
       },
       {
         target: "account",

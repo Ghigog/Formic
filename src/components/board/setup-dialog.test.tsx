@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SetupDialog } from "./setup-dialog";
+import { SetupCard, SetupDialog } from "./setup-dialog";
 import { endTour, startTour } from "@/components/onboarding/store";
 
 const waiting = {
@@ -216,5 +216,22 @@ describe("the setup dialog", () => {
       await userEvent.click(await screen.findByRole("button", { name: "Not now" }));
       expect(screen.getByRole("button", { name: /Agent secrets not added/ })).toBeTruthy();
     });
+  });
+});
+
+describe("the setup card", () => {
+  it("links the waiting pull request, and goes once the workflow is in", () => {
+    const { rerender } = render(<SetupCard setup={waiting} repoName="widgets" onRetry={() => {}} />);
+    expect(screen.getByRole("link", { name: /Open pull request/ })).toHaveAttribute("href", waiting.setupUrl);
+    rerender(<SetupCard setup={{ state: "ready" }} repoName="widgets" onRetry={() => {}} />);
+    expect(screen.queryByTestId("setup-card")).toBeNull();
+  });
+
+  it("says why and offers a retry when Formic is blocked", async () => {
+    const onRetry = vi.fn();
+    render(<SetupCard setup={{ state: "blocked", reason: "Install the app." }} repoName="widgets" onRetry={onRetry} />);
+    expect(screen.getByText("Install the app.")).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetry).toHaveBeenCalled();
   });
 });

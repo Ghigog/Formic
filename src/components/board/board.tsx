@@ -65,6 +65,8 @@ const PREVIOUS_COLUMN: Partial<Record<ColumnId, ColumnId>> = {
 
 export interface BoardProps {
   cards: BoardCard[];
+  /** Pinned at the top of To Do, above its cards: the setup pull request while it waits. */
+  setupCard?: React.ReactNode;
   extras?: ExtrasMap;
   projectName: string;
   repoFullName: string;
@@ -102,6 +104,7 @@ export interface BoardProps {
 
 export function Board({
   cards,
+  setupCard,
   extras = {},
   projectName,
   repoFullName,
@@ -126,6 +129,10 @@ export function Board({
   // first rendered, so nothing the server said about it afterwards showed.
   const [optimistic, setOptimistic] = useState<BoardCard[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** A move that went through but started nothing: its column has no agent. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** Columns already explained this visit: a board run by hand is not told twice. */
+  const explained = useRef(new Set<ColumnId>());
   const [activeTab, setActiveTab] = useState<ColumnId>("backlog");
   // Saved collapsed epics are only readable after mount, like the views below;
   // saving waits for `collapsedLoaded` so the empty initial state never overwrites them.
@@ -282,9 +289,10 @@ export function Board({
       });
 
       setError(null);
-      // Into a column with no agent it goes nowhere: the server refuses it,
-      // and showing it start meanwhile would play a dispatch that never was.
-      const unstaffed = card.kind === "ticket" && to === "in_progress" && !!agents && !agents.columns[to];
+      setNotice(null);
+      // Into a column with no agent it is only moved: nothing starts. Done
+      // runs on the PM, so it has no agent of its own to be missing.
+      const unstaffed = to !== from && to !== "done" && !!agents && !agents.columns[to];
       // The status the server will give it, so the card renders in the
       // column it was dropped in: the column is derived from status, and the
       // old one sent it straight back until the server answered.
@@ -310,7 +318,7 @@ export function Board({
               misplacedReason: to === from ? card.misplacedReason : null,
             }
           : { ...card, position, detached, misplacedIn: to };
-      if (!unstaffed) setOptimistic((prev) => [...prev.filter((c) => c.id !== card.id), moved]);
+      setOptimistic((prev) => [...prev.filter((c) => c.id !== card.id), moved]);
       // Only this drop's own entry: a second drop of the same card, made while
       // this one was in flight, has replaced it and must not be undone by it.
       const settle = () => setOptimistic((prev) => prev.filter((c) => c !== moved));
@@ -343,6 +351,12 @@ export function Board({
       }
 
       settle();
+      if (unstaffed && !explained.current.has(to)) {
+        explained.current.add(to);
+        setNotice(
+          `${COLUMN_LABELS[to]} has no agent, so nothing started on ${card.key}. Pick one from the column's agent menu, or keep moving cards by hand.`,
+        );
+      }
       if (result.problem) {
         // It stays where it was put; the "!" on it keeps saying why.
         setError(result.problem);
@@ -454,8 +468,13 @@ export function Board({
           : undefined
       }
       composer={
-        col === "backlog" || col === "todo" ? (
+        col === "backlog" ? (
           <NewRequestButton onClick={() => onNewItem(col)} />
+        ) : col === "todo" ? (
+          <>
+            <NewRequestButton onClick={() => onNewItem(col)} />
+            {setupCard}
+          </>
         ) : undefined
       }
       onOpen={onOpenCard}
@@ -676,6 +695,24 @@ export function Board({
           <a href="/settings#sandbox" className="text-ink font-semibold whitespace-nowrap underline">
             Add it in Settings
           </a>
+        </div>
+      )}
+
+      {notice && !error && (
+        <div
+          role="status"
+          data-testid="board-notice"
+          className="bg-clay/15 text-ink mx-4 mt-2 flex shrink-0 items-start gap-2 rounded-md px-2 py-1.5 text-[12px] md:mx-6"
+        >
+          <span className="flex-1">{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="Dismiss"
+            className="text-muted hover:text-ink -my-1 px-1 text-[14px] leading-none"
+          >
+            ×
+          </button>
         </div>
       )}
 

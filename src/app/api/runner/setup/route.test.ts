@@ -29,6 +29,15 @@ describe("GET /api/runner/setup with no agent on the board", () => {
     expect(await (await GET()).json()).toEqual({ state: "ready" });
     expect(runnerSetup).not.toHaveBeenCalled();
   });
+
+  it("sets up a board whose only agent is the PM's", async () => {
+    const repo = repository();
+    const pm = await repo.savePreset({ provider: "anthropic", name: "PM", model: "m", prompt: "", ownerId: null });
+    await repo.setColumnAgent(project.id, "in_progress", null);
+    await repo.setAssistantAgent(project.id, pm.id);
+    runnerSetup.mockResolvedValue({ state: "waiting", setupUrl: "https://x/pull/4", update: false });
+    expect(await (await GET()).json()).toEqual({ state: "waiting", setupUrl: "https://x/pull/4", update: false });
+  });
 });
 
 describe("GET /api/runner/setup", () => {
