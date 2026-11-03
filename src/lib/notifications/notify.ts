@@ -5,6 +5,7 @@ import type { FormicEvent } from "@/lib/domain/events";
 import { columnFor, type ColumnId, type TicketStatus } from "@/lib/domain/status";
 import { sendPush } from "@/lib/push/send";
 import { classifyEvent, classifyPmAnswer, type Notification } from "./classify";
+import { boardRecipient } from "./recipient";
 
 type CardStatus = FormicEvent & { type: "card.status" };
 
@@ -110,7 +111,8 @@ export async function notifyOwner(projectId: string, event: FormicEvent, seq?: n
 
     const repo = repository();
     const project = await repo.projectById(projectId);
-    if (!project?.ownerId) return;
+    const to = project && (await boardRecipient(project.ownerId));
+    if (!to) return;
 
     let cardKey = "";
     let cardTitle = "";
@@ -123,10 +125,10 @@ export async function notifyOwner(projectId: string, event: FormicEvent, seq?: n
     const notification = classifyEvent(event, { cardKey, cardTitle, boardName: project.name });
     if (!notification || repeats(notification, was, now)) return;
 
-    const prefs = await repo.pushPreferences(project.ownerId);
+    const prefs = await repo.pushPreferences(to);
     if (!prefs[notification.kind]) return;
-    if (sentRecently(project.ownerId, notification)) return;
-    await sendPush(project.ownerId, notification);
+    if (sentRecently(to, notification)) return;
+    await sendPush(to, notification);
   } catch {
     // Best-effort, like every other subscriber of the bus.
   }
@@ -141,12 +143,13 @@ export async function notifyPmAnswer(projectId: string, answer: { content: strin
   try {
     const repo = repository();
     const project = await repo.projectById(projectId);
-    if (!project?.ownerId) return;
+    const to = project && (await boardRecipient(project.ownerId));
+    if (!to) return;
     const notification = classifyPmAnswer(answer, project.name);
-    const prefs = await repo.pushPreferences(project.ownerId);
+    const prefs = await repo.pushPreferences(to);
     if (!prefs[notification.kind]) return;
-    if (sentRecently(project.ownerId, notification)) return;
-    await sendPush(project.ownerId, notification);
+    if (sentRecently(to, notification)) return;
+    await sendPush(to, notification);
   } catch {
     // Best-effort: a push failure must not fail the answer.
   }

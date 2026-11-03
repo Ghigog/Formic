@@ -2,6 +2,7 @@ import "server-only";
 
 import { repository } from "@/lib/db";
 import type { Meeting, Repository } from "@/lib/db/repository";
+import { boardRecipient } from "@/lib/notifications/recipient";
 import { sendPush, type PushPayload } from "@/lib/push/send";
 
 const MINUTE_MS = 60_000;
@@ -13,6 +14,8 @@ const TICK_MS = 30_000;
 export interface ReminderDeps {
   repo: Pick<Repository, "allMeetingsWithOwner" | "updateMeeting">;
   send: (userId: string, payload: PushPayload) => Promise<unknown>;
+  /** Who hears about a board with this owner; see notifications/recipient.ts. */
+  recipient?: (ownerId: string | null) => Promise<string | null>;
 }
 
 /**
@@ -40,7 +43,7 @@ export function latestOccurrence(meeting: Pick<Meeting, "startsAt" | "repeat">, 
  */
 export async function remindDueMeetings(
   now: Date = new Date(),
-  deps: ReminderDeps = { repo: repository(), send: sendPush },
+  deps: ReminderDeps = { repo: repository(), send: sendPush, recipient: boardRecipient },
 ): Promise<number> {
   let reminded = 0;
   for (const { meeting, ownerId } of await deps.repo.allMeetingsWithOwner()) {
@@ -49,8 +52,9 @@ export async function remindDueMeetings(
     if (meeting.lastRemindedFor && meeting.lastRemindedFor.getTime() >= occurrence.getTime()) continue;
     // Recorded first: a missed reminder is better than one every tick.
     await deps.repo.updateMeeting(meeting.id, { lastRemindedFor: occurrence });
-    if (!ownerId) continue;
-    await deps.send(ownerId, {
+    const to = deps.recipient ? await deps.recipient(ownerId) : ownerId;
+    if (!to) continue;
+    await deps.send(to, {
       title: meeting.title,
       body: "Your meeting is starting.",
       url: `/calls/${meeting.id}`,
