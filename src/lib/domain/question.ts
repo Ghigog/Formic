@@ -93,3 +93,15 @@ export function askedIn(reason: string): string {
 export function answerNote(reason: string, answer: string): string {
   return `You asked the person:\n${askedIn(reason)}\n\nThey answered: ${answer.trim()}`;
 }
+
+/** What an asking agent says in the card's chat: the questions in full, so they are read there and not in the warning. */
+export function questionMessage(reason: string): string {
+  const asker = askerOf(reason);
+  return `${asker ? `**${asker}** has a question for you:` : "A question for you:"}\n\n${askedIn(reason)}`;
+}
+
+/** What the warning says of a question: that one is waiting and who asks, never the question itself (that is in the chat). */
+export function questionNotice(reason: string): string {
+  const asker = askerOf(reason);
+  return asker ? `Question for you from ${asker}.` : "Question for you.";
+}

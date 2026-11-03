@@ -5,10 +5,8 @@ import {
   keyboardStyles,
   useKeyboardInset,
 } from "@/lib/hooks/use-keyboard-inset";
-import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { cn } from "@/components/ui/cn";
 import { StepIndicator } from "@/components/ui/step-indicator";
-import { SideBySide, WithChat } from "@/components/ui/split";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { StatusPill } from "@/components/ui/status-pill";
 import { CardChat } from "./card-chat";
@@ -189,7 +187,6 @@ export function EpicDrawer({
   );
 
   const kb = keyboardStyles(useKeyboardInset());
-  const wide = useMediaQuery("(min-width: 1024px)");
 
   if (!epicId) return null;
 
@@ -360,77 +357,66 @@ export function EpicDrawer({
           )}
         </header>
 
-        {/* Tabs below the dual-pane breakpoint, where two columns do not fit. */}
-        {!wide && (
-          <div className="border-line flex shrink-0 gap-0.5 border-b px-2 py-1">
-            {(["prd", "dag", "chat"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={cn(
-                  "rounded px-2 py-1 text-[12px] font-medium",
-                  tab === t ? "bg-amber text-on-amber" : "text-fg-muted",
-                )}
+        {/* PRD, Tickets and Chat are tabs at every width. */}
+        <div className="border-line flex shrink-0 gap-0.5 border-b px-2 py-1">
+          {(["prd", "dag", "chat"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={cn(
+                "rounded px-2 py-1 text-[12px] font-medium",
+                tab === t ? "bg-amber text-on-amber" : "text-fg-muted",
+              )}
+            >
+              {t === "prd"
+                ? "PRD"
+                : t === "dag"
+                  ? `Tickets (${detail?.children.length ?? 0})`
+                  : "Chat"}
+            </button>
+          ))}
+        </div>
+
+        {tab === "prd" ? (
+          <div className="min-h-0 overflow-y-auto">
+            {detail?.showcase && (
+              <section
+                aria-label="Showcase"
+                className="border-line bg-jade-wash border-b p-4"
               >
-                {t === "prd"
-                  ? "PRD"
-                  : t === "dag"
-                    ? `Tickets (${detail?.children.length ?? 0})`
-                    : "Chat"}
-              </button>
-            ))}
+                <span className="text-jade-chip-text font-mono text-[10px] tracking-[0.12em]">
+                  SHOWCASE · PM AGENT
+                </span>
+                <MarkdownLite
+                  text={detail.showcase}
+                  className="text-fg mt-2 text-[13px] leading-[1.6]"
+                />
+              </section>
+            )}
+            <PrdPane
+              prd={detail?.prd ?? null}
+              rawRequest={detail?.rawRequest ?? ""}
+              streaming={streamingPrd}
+              writing={epic?.agentRole === "product"}
+              onSave={save}
+            />
+            {epic && (
+              <div className="px-4 pb-4">
+                <AttachmentGallery epicId={epic.id} />
+              </div>
+            )}
+          </div>
+        ) : tab === "chat" ? (
+          <div className="bg-sunken flex min-h-0 flex-1 flex-col">{chat}</div>
+        ) : (
+          <div className="bg-sunken flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <DagPane
+              tickets={detail?.children ?? []}
+              onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))}
+            />
           </div>
         )}
-
-        <SideBySide
-          active={tab === "prd" ? "first" : "second"}
-          storageKey="epic"
-          first={
-            <div className="min-h-0 overflow-y-auto">
-              {detail?.showcase && (
-                <section
-                  aria-label="Showcase"
-                  className="border-line bg-jade-wash border-b p-4"
-                >
-                  <span className="text-jade-chip-text font-mono text-[10px] tracking-[0.12em]">
-                    SHOWCASE · PM AGENT
-                  </span>
-                  <MarkdownLite
-                    text={detail.showcase}
-                    className="text-fg mt-2 text-[13px] leading-[1.6]"
-                  />
-                </section>
-              )}
-              <PrdPane
-                prd={detail?.prd ?? null}
-                rawRequest={detail?.rawRequest ?? ""}
-                streaming={streamingPrd}
-                writing={epic?.agentRole === "product"}
-                onSave={save}
-              />
-              {epic && (
-                <div className="px-4 pb-4">
-                  <AttachmentGallery epicId={epic.id} />
-                </div>
-              )}
-            </div>
-          }
-          second={
-            !wide && tab === "chat" ? (
-              <div className="bg-sunken flex min-h-0 flex-col">{chat}</div>
-            ) : (
-              <div className="bg-sunken flex min-h-0 flex-col">
-                <WithChat storageKey="epic" chat={wide ? chat : null}>
-                  <DagPane
-                    tickets={detail?.children ?? []}
-                    onOpen={onOpenTicket && ((t) => onOpenTicket(t.id))}
-                  />
-                </WithChat>
-              </div>
-            )
-          }
-        />
       </div>
     </div>
   );

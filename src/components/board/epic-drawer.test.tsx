@@ -1,3 +1,4 @@
+import { questionReason } from "@/lib/domain/question";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -306,14 +307,24 @@ describe("EpicDrawer on-screen keyboard", () => {
       expect(screen.queryByTestId("chat")).not.toBeInTheDocument();
     });
 
-    it("is not a tab on a wide screen, where the chat sits under the tickets", async () => {
+    it("is a tab on a wide screen too, with no chat beside the tickets", async () => {
       setViewportMatches(true);
       open();
       await screen.findByText("Board export");
-      expect(screen.getByTestId("chat")).toBeInTheDocument();
-      expect(
-        screen.queryByRole("button", { name: "Chat" }),
-      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Tickets/ }));
+      expect(screen.queryByTestId("chat")).not.toBeInTheDocument();
+    });
+
+    it("shows a question's notice without the question, and no notice without one", async () => {
+      open(
+        detail({
+          epic: { ...epic, status: "blocked", stalledIn: "backlog", blockedReason: questionReason("The Product Agent", [{ question: "Which format?", why: "It sets the export." }]) },
+        }),
+      );
+      await screen.findByRole("button", { name: "Answer in the chat" });
+      expect(screen.getByRole("alert")).toHaveTextContent("Question for you from The Product Agent");
+      expect(screen.queryByText(/Which format/)).not.toBeInTheDocument();
     });
 
     it("opens from a question's notice", async () => {
