@@ -251,6 +251,9 @@ describe("the PM, relaying questions", () => {
     const system = String((sent[0]!.messages as Array<{ content: string }>)[0]!.content);
     expect(system).toContain("You are the PM");
     expect(system).toContain("Should a tap ever ring it?");
+    expect(system).toContain("ask a short follow-up instead and call answer_question once the answers are complete");
+    const tool = (sent[0]!.tools as Array<{ function: { name: string; description: string } }>).find((t) => t.function.name === "answer_question");
+    expect(tool?.function.description).toContain("ask the person a short follow-up instead");
     expect(system).toContain('"Ring the bell by swinging it."');
     expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([
       "You asked the person:\nShould a tap ever ring it?\n   Why: Misclicks.\n\nThey answered: Never, only a swing.",

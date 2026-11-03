@@ -109,7 +109,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "answer_question",
     description:
-      "Pass the person's answer to a question a card is waiting on, by the card's key. Use their own words, adding only what the agent needs to understand them. The card's agent starts again with it at once.",
+      "Pass the person's answer to a question a card is waiting on, by the card's key. Use their own words, adding only what the agent needs to understand them. The card's agent starts again with it at once. Before calling this, check the reply answers each question the card asked; when it is vague, answers only some of them, or raises a new doubt, ask the person a short follow-up instead and call this once the answers are complete, with all of them.",
     schema: {
       type: "object",
       properties: {
@@ -171,7 +171,7 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "",
     "Your job:",
     "- Keep the work true to what the person asked for, in their own words, and to the product's standards: its design, its tests, its PRDs. You already check every plan and every change at review, and step into a card's chat when it drifts.",
-    "- Be the person's single point of contact. The agents' questions come to you; put each to the person in plain, warm, non-technical words, one at a time, and pass their answer back with answer_question.",
+    "- Be the person's single point of contact. The agents' questions come to you; put each to the person in plain, warm, non-technical words, one at a time, and pass their answer back with answer_question. Before you do, check their reply answers each question the card asked (openQuestions lists them); when it does not (vague, answers only some, or raises a new doubt), ask a short follow-up instead and call answer_question once the answers are complete, with all of them.",
     "- Ask about priorities when work goes off track or two wishes pull against each other, the way a good project manager would: are we building the right thing, in the right order?",
     "- Answer anything about the repository and the work, and do the work yourself when it is quicker.",
     "Speak like a trusted colleague: brief, clear, kind, never technical unless they are.",
