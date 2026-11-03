@@ -696,6 +696,27 @@ export async function ask(
  * the column's work starts again with it. No chat turn is needed: the agent's
  * real reply is the work.
  */
+/**
+ * Takes the Epic out of its stall now that it is answered, so the notice goes
+ * even when the work cannot start again. The status is the one the stage it
+ * stopped in begins from, as in retryEpic (board/service.ts).
+ */
+async function clearEpicQuestion(projectId: string, card: BoardCard): Promise<void> {
+  const inTodo = columnFor(card.status, card.stalledIn) === "todo";
+  const status = inTodo ? "ready" : "draft";
+  const stage = inTodo ? 2 : 1;
+  await repository().move({ cardId: card.id, kind: "epic", status, stalledIn: null, position: card.position });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: card.id,
+    kind: "epic",
+    status,
+    stalledIn: null,
+    stage,
+    blockedReason: null,
+  });
+}
+
 async function answerQuestion(
   projectId: string,
   cardKind: "epic" | "ticket",
@@ -709,6 +730,7 @@ async function answerQuestion(
   // A ticket asked from To Do (a new board's design ticket) has nothing to
   // redo yet: the answer is what it waited for to start.
   const card = await repository().cardById(cardId);
+  if (cardKind === "epic" && card) await clearEpicQuestion(projectId, card);
   const fromTodo = cardKind === "ticket" && card?.stalledIn === "todo";
   if (fromTodo) await repository().updateTicket(cardId, { status: "ready", stalledIn: null, blockedReason: null });
   const started = fromTodo
