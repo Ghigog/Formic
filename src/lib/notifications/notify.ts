@@ -129,8 +129,9 @@ export async function notifyOwner(projectId: string, event: FormicEvent, seq?: n
     if (!prefs[notification.kind]) return;
     if (sentRecently(to, notification)) return;
     await sendPush(to, notification);
-  } catch {
-    // Best-effort, like every other subscriber of the bus.
+  } catch (e) {
+    // Best-effort, like every other subscriber of the bus, but never silent.
+    console.error("[formic] push for a board event failed:", e);
   }
 }
 
@@ -150,7 +151,8 @@ export async function notifyPmAnswer(projectId: string, answer: { content: strin
     if (!prefs[notification.kind]) return;
     if (sentRecently(to, notification)) return;
     await sendPush(to, notification);
-  } catch {
+  } catch (e) {
     // Best-effort: a push failure must not fail the answer.
+    console.error("[formic] push for a PM answer failed:", e);
   }
 }
