@@ -232,7 +232,7 @@ describe("the agent drop-down's tour", () => {
   const menu = () => (
     <>
       <TourHost />
-      <AgentSelect column="todo" presets={[]} selected={undefined} onAssign={async () => {}} onEdit={() => {}} />
+      <AgentSelect slot="todo" presets={[]} selected={undefined} onAssign={async () => {}} onEdit={() => {}} />
     </>
   );
   const open = async () => {

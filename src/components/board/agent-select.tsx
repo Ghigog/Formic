@@ -32,16 +32,20 @@ export interface ColumnAgentControls {
  * presets, the built-in agent, and a way to make a new one.
  */
 export function AgentSelect({
-  column,
+  slot,
   presets,
   selected,
   onAssign,
   onEdit,
-}: ColumnAgentControls & { column: ColumnId }) {
+}: ColumnAgentControls & { slot: ColumnId | "assistant" }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
-  const role = `${AGENT_ROLE_LABELS[COLUMN_AGENT_ROLE[column]]} Agent`;
+  const isAssistant = slot === "assistant";
+  const role = `${AGENT_ROLE_LABELS[isAssistant ? "pm" : COLUMN_AGENT_ROLE[slot]]} Agent`;
+  // The PM's agents have no column; a column lists only its own.
+  const owner = isAssistant ? null : slot;
+  const name = isAssistant ? "The PM's agent" : `Agent for ${COLUMN_LABELS[slot]}`;
 
   useEffect(() => {
     if (!open) return;
@@ -76,13 +80,13 @@ export function AgentSelect({
     "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-cream outline-none focus-visible:bg-cream";
 
   return (
-    <div ref={root} data-tour="column-head" className="relative">
+    <div ref={root} data-tour={isAssistant ? undefined : "column-head"} className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Agent for ${COLUMN_LABELS[column]}: ${selected?.name ?? `built-in ${role}`}. Change`}
+        aria-label={`${name}: ${selected?.name ?? `built-in ${role}`}. Change`}
         className={cn(
           "bg-card flex h-11 w-full items-center gap-1.5 rounded-md border px-2 md:h-8 text-left text-[11px] transition-colors",
           "border-line hover:border-clay",
@@ -105,11 +109,11 @@ export function AgentSelect({
       {open && (
         <div
           role="menu"
-          aria-label={`Agents for ${COLUMN_LABELS[column]}`}
+          aria-label={isAssistant ? "Agents for the PM" : `Agents for ${COLUMN_LABELS[slot]}`}
           data-tour="agent-menu-agents"
           className="bg-card border-line shadow-lift absolute top-full right-0 left-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-lg border p-1"
         >
-          <AutoTour id="agent-menu" />
+          {!isAssistant && <AutoTour id="agent-menu" />}
           <button
             type="button"
             role="menuitemradio"
@@ -128,7 +132,7 @@ export function AgentSelect({
           {/* Each agent belongs to one column, or to the PM (no column). The
               one already picked always shows, so it can be edited or changed. */}
           {presets
-            .filter((p) => p.column === column || p.id === selected?.id)
+            .filter((p) => p.column === owner || p.id === selected?.id)
             .map((p) => (
             <div key={p.id} className="group flex flex-col">
               <div className="flex items-center">

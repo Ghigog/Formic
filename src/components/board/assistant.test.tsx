@@ -16,8 +16,7 @@ const controls: AssistantControls = {
   decide: vi.fn(),
   setAgent: vi.fn(),
   presets: [],
-  onNewAgent: vi.fn(),
-  onEditAgent: vi.fn(),
+  onEdit: vi.fn(),
 };
 
 describe("AskBox", () => {
@@ -224,6 +223,38 @@ describe("proposal cards", () => {
     );
     rerender(<AskBox a={withProposal("applied")} repoName="demo" />);
     expect(body()).toHaveClass("opacity-60");
+  });
+});
+
+describe("agent selector", () => {
+  Element.prototype.scrollTo = vi.fn();
+  const planner = {
+    id: "p1", ownerId: null, column: null, name: "Planner", provider: "anthropic",
+    model: "claude-opus-5", prompt: "", hasKey: true, keyHint: null, limitedUntil: null, limitNote: null,
+  } as AssistantControls["presets"][number];
+
+  it("uses the column selector, without Runs on, Edit or New agent buttons", () => {
+    render(<AskBox a={{ ...controls, presets: [planner], presetId: "p1" }} repoName="demo" />);
+    expect(screen.queryByText("Runs on")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New agent" })).toBeNull();
+    expect(screen.getByRole("button", { name: /The PM's agent: Planner/ })).toBeInTheDocument();
+  });
+
+  it("picks, edits and creates through the selector", async () => {
+    const setAgent = vi.fn().mockResolvedValue(undefined);
+    const onEdit = vi.fn();
+    const user = userEvent.setup();
+    render(<AskBox a={{ ...controls, presets: [planner], setAgent, onEdit }} repoName="demo" />);
+    await user.click(screen.getByRole("button", { name: /The PM's agent/ }));
+    await user.click(screen.getByRole("menuitemradio", { name: /Planner/ }));
+    expect(setAgent).toHaveBeenCalledWith("p1");
+    await user.click(screen.getByRole("button", { name: /The PM's agent/ }));
+    await user.click(screen.getByRole("button", { name: "Edit Planner" }));
+    expect(onEdit).toHaveBeenCalledWith(planner);
+    await user.click(screen.getByRole("button", { name: /The PM's agent/ }));
+    await user.click(screen.getByRole("menuitem", { name: /New agent/ }));
+    expect(onEdit).toHaveBeenCalledWith(null);
   });
 });
 
