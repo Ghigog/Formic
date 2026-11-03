@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyNotice } from "./notice";
-import { answerNote, isQuestion, MAX_QUESTIONS, questionReason, questionsFromSummary } from "./question";
+import { questionMessage, questionNotice, answerNote, isQuestion, MAX_QUESTIONS, questionReason, questionsFromSummary } from "./question";
 
 describe("a question for the person", () => {
   const one = { question: "Should the bell hang from a string?", why: "It sets how it rings." };
@@ -48,5 +48,20 @@ describe("a CLI agent's questions", () => {
 
   it("are none when the summary asks nothing", () => {
     expect(questionsFromSummary("Done\n\nPlan:\n- [x] it")).toEqual([]);
+  });
+});
+
+describe("a question's notice and chat message", () => {
+  const reason = questionReason("The Product Agent", [{ question: "Silver or gold?", why: "It sets the unlock." }]);
+
+  it("names who asks, not what", () => {
+    expect(questionNotice(reason)).toBe("Question for you from The Product Agent.");
+    expect(questionNotice(reason)).not.toContain("Silver");
+  });
+
+  it("puts the full question in the chat", () => {
+    expect(questionMessage(reason)).toContain("The Product Agent");
+    expect(questionMessage(reason)).toContain("Silver or gold?");
+    expect(questionMessage(reason)).toContain("Why: It sets the unlock.");
   });
 });
