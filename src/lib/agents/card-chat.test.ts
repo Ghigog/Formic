@@ -1,6 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const launched = vi.hoisted(() => [] as string[]);
+const redoInstructions = vi.hoisted(() => [] as string[]);
+
+// Records what a redo is told, since the agent that gets it never runs here.
+vi.mock("./card-actions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./card-actions")>();
+  return {
+    ...actual,
+    applyCardAction: (...args: Parameters<typeof actual.applyCardAction>) => {
+      const action = args[3];
+      if (action.type === "redo" && action.instruction) redoInstructions.push(action.instruction);
+      return actual.applyCardAction(...args);
+    },
+  };
+});
 
 // `launch` never runs the work it is given here: every assertion about what
 // a message triggers reads the label instead, the same way board/service's
@@ -161,6 +175,7 @@ async function reload(id: string) {
 
 beforeEach(() => {
   launched.length = 0;
+  redoInstructions.length = 0;
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
   MockVcsClient.reset();
   resetAgents();
@@ -704,6 +719,39 @@ describe("a question the card is waiting on", () => {
     const said = await repo.cardChatMessages(epic.id);
     expect(said.at(-1)).toMatchObject({ role: "assistant", status: "done" });
     expect(said.at(-1)!.content).toContain("Writing the PRD again");
+    const after = await repo.cardById(epic.id);
+    expect(after?.blockedReason ?? null).toBeNull();
+    expect(after?.stalledIn ?? null).toBeNull();
+    expect(after?.status).toBe("draft");
+  });
+
+  it("clears an Architect Agent question in To Do and breaks the Epic down again", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Bells", rawRequest: "A bell", position: 1 });
+    await repo.stallEpic(epic.id, {
+      status: "blocked",
+      stalledIn: "todo",
+      stage: 3,
+      reason: questionReason("The Architect Agent", [{ question: "How many?", why: "" }]),
+    });
+    await send(PROJECT, "epic", epic.id, "Three.");
+    const after = await repo.cardById(epic.id);
+    expect(after?.blockedReason ?? null).toBeNull();
+    expect(after?.stalledIn ?? null).toBeNull();
+    expect(after?.status).toBe("ready");
+  });
+
+  it("tells the restarted agent to ask a narrower follow-up when the answer does not settle it", async () => {
+    const ticket = await seedTicket();
+    await repository().updateTicket(ticket.id, {
+      status: "blocked",
+      stalledIn: "in_progress",
+      blockedReason: questionReason("The Coder Agent", [{ question: "Which helper?", why: "" }]),
+    });
+    await send(PROJECT, "ticket", ticket.id, "Whatever.");
+    expect(redoInstructions.join("\n")).toContain(
+      "If their answer does not settle what you asked, ask a narrower follow-up question instead of guessing.",
+    );
   });
 
   it("clears the Epic's stall once answered, even when the work cannot start", async () => {
