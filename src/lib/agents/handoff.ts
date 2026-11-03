@@ -5,6 +5,10 @@
  * hands them to the person once everything has merged.
  */
 
+import { HANDOFF_INTRO } from "@/lib/domain/handoff-intro";
+
+export { HANDOFF_INTRO };
+
 export const MAX_HANDOFF_STEPS = 10;
 const MAX_STEP = 500;
 
@@ -52,8 +56,6 @@ function section(lines: string[]): { start: number; end: number; steps: string[]
   }
   return { start, end, steps };
 }
-
-export const HANDOFF_INTRO = "Steps no agent could take. They happen outside the repository, so they are yours:";
 
 /** The Markdown section that hands the steps to the person. */
 export function handoffSection(steps: Array<{ key: string; steps: string[] }>): string {

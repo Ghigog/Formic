@@ -4,11 +4,29 @@
  * tokens (see budgetFor), so a cents field is rejected.
  */
 
-import {
-  DEFAULT_TOKENS_PER_STORY_POINT,
-  LIMIT_MODES,
-  type LimitSetting,
-} from "@/lib/budget/budget-for";
+export const LIMIT_MODES = ["OFF", "FLAT", "PER_POINT", "PER_POINT_BY_HAND"] as const;
+export type LimitMode = (typeof LIMIT_MODES)[number];
+
+export type LimitSetting = {
+  mode: LimitMode;
+  /** FLAT: the same value for every ticket. */
+  flat?: number | null;
+  /** PER_POINT: value per story point; the default rate when absent. */
+  perPoint?: number | null;
+  /** PER_POINT_BY_HAND: values by story points, e.g. { 1: 5, 2: 15 }. */
+  byHand?: Record<number, number> | null;
+};
+
+/**
+ * Actual tokens a story point buys. A real token count, not a money figure in
+ * disguise: it is set to what a one-point coding loop actually consumes. A loop
+ * re-sends its system prompt, tool schemas and the whole conversation on every
+ * turn (the provider bills those input tokens for real), so a ticket whose
+ * deliverable is only a few thousand tokens of new text costs a few hundred
+ * thousand tokens of cumulative input plus output across its turns. 250,000 is
+ * a conservative floor a small ticket clears and a runaway loop still trips.
+ */
+export const DEFAULT_TOKENS_PER_STORY_POINT = 250_000;
 
 export const LIMIT_AXES = ["tokens", "attempts"] as const;
 export type LimitAxis = (typeof LIMIT_AXES)[number];
