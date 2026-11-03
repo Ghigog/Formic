@@ -5,6 +5,7 @@ import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
 import { redactDeep } from "@/lib/secrets/redact";
 import { syncIssues } from "@/lib/issues/sync";
 import { notifyOwner } from "@/lib/notifications/notify";
+import { boardPorts } from "@/lib/board/ports";
 import { pingBoards } from "./realtime";
 
 /**
@@ -115,7 +116,7 @@ export async function publish(
 
   // A Queen pushes its card's prerequisites along (see movesQueens).
   if (movesQueens(event)) {
-    const { advanceQueens } = await import("@/lib/board/service");
+    const { advanceQueens } = boardPorts().service;
     await advanceQueens(projectId);
   }
   return seq;

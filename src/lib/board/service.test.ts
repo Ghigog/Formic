@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 const launched = vi.hoisted(() => [] as string[]);
+const works = vi.hoisted(() => [] as Array<() => Promise<unknown>>);
 
 vi.mock("@/lib/agents/pipeline", () => ({
-  launch: (_work: unknown, label: string) => launched.push(label),
+  launch: (work: () => Promise<unknown>, label: string) => {
+    works.push(work);
+    return launched.push(label);
+  },
   decomposeEpic: vi.fn(),
   runProductAgent: vi.fn(),
   runArchitectDraftTicket: vi.fn(),
@@ -41,6 +45,7 @@ async function staffColumns() {
 
 beforeEach(async () => {
   launched.length = 0;
+  works.length = 0;
   globalThis.__formicMemoryStore = undefined;
   MockVcsClient.reset();
   resetVcs();
@@ -822,5 +827,53 @@ describe("dropping a ticket with a pull request on Done", () => {
     expect((await new MockVcsClient("acme/widgets").pullRequest(prNumber)).merged).toBe(false);
     expect((await repository().ticketDetail(ticket.id))!.status).not.toBe("merged");
   });
+
+  it("calls the review port to merge, with the ticket and its pull request", async () => {
+    const { boardPorts, registerBoardPorts } = await import("./ports");
+    const real = boardPorts();
+    const mergeByPerson = vi.fn(async () => "Merged.");
+    registerBoardPorts({ ...real, review: { ...real.review, mergeByPerson } });
+    try {
+      const { ticket, prNumber } = await seedReview();
+      await applyTransition(PROJECT, { cardId: ticket.id, kind: "ticket", from: "in_review", to: "done", position: 1, actor: "user" });
+      expect(mergeByPerson).toHaveBeenCalledWith(PROJECT, expect.objectContaining({ id: ticket.id }), prNumber);
+    } finally {
+      registerBoardPorts(real);
+    }
+  });
 });
 
+
+describe("the board ports", () => {
+  it("calls the coder port with the project and ticket when a card moves to in progress", async () => {
+    const { boardPorts, registerBoardPorts } = await import("./ports");
+    const real = boardPorts();
+    const runCoderAgent = vi.fn(async () => {});
+    registerBoardPorts({ ...real, coder: { runCoderAgent } });
+    try {
+      const card = makeCard({ kind: "ticket", status: "ready" });
+      seedMemory([card]);
+      const result = await applyTransition(PROJECT, { cardId: card.id, kind: "ticket", from: "todo", to: "in_progress", position: 1, actor: "user" });
+      expect(result).toMatchObject({ ok: true });
+      for (const work of works) await work();
+      expect(runCoderAgent).toHaveBeenCalledWith(PROJECT, card.id);
+    } finally {
+      registerBoardPorts(real);
+    }
+  });
+
+  it("calls the review port to complete an epic whose tickets have all merged when it moves to done", async () => {
+    const { boardPorts, registerBoardPorts } = await import("./ports");
+    const real = boardPorts();
+    const completeEpic = vi.fn(async () => {});
+    registerBoardPorts({ ...real, review: { ...real.review, completeEpic } });
+    try {
+      const [epic, ...kids] = makeEpicWithChildren({ status: "ready" }, [{ status: "merged" }]);
+      seedMemory([epic!, ...kids]);
+      await applyTransition(PROJECT, { cardId: epic!.id, kind: "epic", from: "todo", to: "done", position: 1, actor: "user" });
+      expect(completeEpic).toHaveBeenCalledWith(PROJECT, epic!.id, expect.any(Number));
+    } finally {
+      registerBoardPorts(real);
+    }
+  });
+});

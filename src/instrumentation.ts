@@ -10,6 +10,8 @@ import type { Instrumentation } from "next";
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  await import("@/lib/board/wiring");
+
   // Host usage is counted in every process, not only where the proxy runs.
   const { startUsageClock } = await import("@/lib/usage/governor");
   startUsageClock();
