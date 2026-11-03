@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 const launched = vi.hoisted(() => [] as string[]);
+const works = vi.hoisted(() => [] as Array<() => Promise<unknown>>);
 
 vi.mock("@/lib/agents/pipeline", () => ({
-  launch: (_work: unknown, label: string) => launched.push(label),
+  launch: (work: () => Promise<unknown>, label: string) => {
+    works.push(work);
+    return launched.push(label);
+  },
   decomposeEpic: vi.fn(),
   runProductAgent: vi.fn(),
   runArchitectDraftTicket: vi.fn(),
@@ -41,6 +45,7 @@ async function staffColumns() {
 
 beforeEach(async () => {
   launched.length = 0;
+  works.length = 0;
   globalThis.__formicMemoryStore = undefined;
   MockVcsClient.reset();
   resetVcs();
@@ -824,3 +829,22 @@ describe("dropping a ticket with a pull request on Done", () => {
   });
 });
 
+
+describe("the board ports", () => {
+  it("calls the coder port with the project and ticket when a card moves to in progress", async () => {
+    const { boardPorts, registerBoardPorts } = await import("./ports");
+    const real = boardPorts();
+    const runCoderAgent = vi.fn(async () => {});
+    registerBoardPorts({ ...real, coder: { runCoderAgent } });
+    try {
+      const card = makeCard({ kind: "ticket", status: "ready" });
+      seedMemory([card]);
+      const result = await applyTransition(PROJECT, { cardId: card.id, kind: "ticket", from: "todo", to: "in_progress", position: 1, actor: "user" });
+      expect(result).toMatchObject({ ok: true });
+      for (const work of works) await work();
+      expect(runCoderAgent).toHaveBeenCalledWith(PROJECT, card.id);
+    } finally {
+      registerBoardPorts(real);
+    }
+  });
+});
