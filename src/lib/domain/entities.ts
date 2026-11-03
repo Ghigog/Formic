@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { COLUMNS, TICKET_STATUSES } from "./status";
 import { LIFECYCLE_STAGES } from "./stages";
-import { PROVIDER_IDS, provider as providerInfo, type ProviderId } from "@/lib/llm/providers";
+import { PROVIDER_IDS, provider as providerInfo, type ProviderId } from "@/lib/domain/providers";
 
 /**
  * The shapes every layer agrees on: API routes, agents, the database mapper
