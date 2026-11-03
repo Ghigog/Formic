@@ -1,4 +1,4 @@
-import { HANDOFF_INTRO } from "@/lib/agents/handoff";
+import { HANDOFF_INTRO } from "@/lib/domain/handoff-intro";
 
 /**
  * The showcase's opening sentence: what is now possible. The rest of it is
