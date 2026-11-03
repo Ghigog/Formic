@@ -737,7 +737,7 @@ async function answerQuestion(
     ? await applyCardAction(projectId, cardKind, cardId, { type: "move", to: "in_progress" })
     : await applyCardAction(projectId, cardKind, cardId, {
     type: "redo",
-    instruction: `${note}\n\nCarry on with this ticket's work, using their answer. Do not redo what is already done.`,
+    instruction: `${note}\n\nCarry on with this ticket's work, using their answer. Do not redo what is already done. If their answer does not settle what you asked, ask a narrower follow-up question instead of guessing.`,
   });
   await repository().addCardChatMessage({
     projectId,
