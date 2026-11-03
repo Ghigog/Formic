@@ -183,6 +183,77 @@ scrolls and marches).
   It is checked in `board/board.tsx`, `board/dig-transition.tsx`, `colony/fx.ts`,
   `colony/bell.tsx`, `onboarding/tour.tsx` and `sentinels/kpi.tsx`. New JS animation must too.
 
+## Sound
+
+Sound is characterful feedback, never required to read the screen: every cue pairs with a visible
+change. All of it lives in `src/components/colony/sound.ts` (`SoundEngine`, type `Sfx`). Cues are
+synthesised with WebAudio (oscillators and filtered noise through one compressor); there are no
+audio files. Screens play a cue with `useColony().sfx(name, v?)`, where the optional `v` is a
+number the cue reads (a pitch step, a 0-1 intensity, a roster index). Outside the colony provider
+the board swap uses `board/swap-sound.ts`.
+
+**Gesture gating.** Browsers refuse audio before the page is touched, so the engine is silent
+until the first `pointerdown` or `keydown` (or `navigator.userActivation.hasBeenActive`). The audio
+context is opened inside that gesture. `whenAudible(f)` holds a celebration (epic win, guide-ant
+speech) until then, and `muted` says a celebration would currently be silent. The context is
+resumed on `visibilitychange` and `focus`, and rebuilt if the system took the audio away.
+
+**Mute control.** One switch for the whole browser: Settings > Sound (`role="switch"`, label
+"Sound"), stored under `formic:sound` in localStorage, read through `useSound()` and applied with
+`SoundEngine.setEnabled`. Off means `play` returns at once. The guide ant has its own speaker
+button in the tour bubble ("Mute the ant" / "Let the ant talk", `formic:tours:voice`); it is
+shown as off, with the tooltip "Sound is off in Settings" when the main switch is off.
+Sound never replaces visible state, and none of it is gated by reduced motion (it is not motion).
+
+```
+cue            trigger
+Card and board
+pickup         a card is lifted for dragging (board.tsx)
+drop           a card is dropped in a column; a card lands after a move; the board swap lands
+hover          pointer enters a card or the showcase CTA; colony overlay buttons
+click          the showcase CTA; colony overlay buttons
+deny           a sentinel run fails (sentinels.tsx)
+reject         a move or Queen placement is refused; a card fails or is blocked; a locked bug style is tried
+fold, unfold   an epic accordion collapses, expands (board.tsx)
+crumble        a card is dropped on the archive zone
+Agent and score events (colony.tsx)
+mint           an agent is dispatched to a card
+unlock         a blocked ticket becomes ready
+reveal         an agent finishes a ticket; the epic win panel appears
+green          CI passes
+bad            a bug is reported (score penalty)
+squash         a bug report is squashed; the style test squash; the nest ant is squashed
+ding           a ticket merges
+mult           the merge multiplier, pitch rises with the stack
+blip           score points fly to the counter; timeline ticks; sentinel star count-up (v = pitch step)
+decay          a heat stack expires
+level          the colony levels up
+ready          reserved; no screen plays it
+Queens and ants
+hiss, pop      a Queen is placed on a card (hiss, then pop as she grows in)
+rumble, pop, shimmer, whoosh, slam, boing
+               the Queen carry gestures: shake, lift, hover, launch, land, wiggle
+skitter        ants leaving the nest (v = tick)
+emerge         an ant comes out; a sentinel is summoned
+attach, grab, detach, enter, burrow
+               ants picking up, carrying and entering cards (fx.ts)
+Epic win and timeline
+coin, tally, tick, fill, epic, close
+               the epic win overlay sequence (tick climbs with v)
+stamp, scrub   timeline stamp on a merge; dragging the timeline scrubber (v = direction)
+bell           the golden bell is rung (v = swing strength)
+Sentinels
+sentinelLand   a sentinel card slides in
+sentinelVoice  hover or tap on an avatar; one voice per roster id in SENTINEL_VOICES; throttled
+kpi            the KPI charts finish loading (only when sound is on)
+Board swap
+dig, grit, surface   the dig transition: going under, soil passing while it loads, coming up
+```
+
+New cues go in `Sfx` with a trigger from the list above's families. Keep them short (under about
+0.8s except celebrations), quiet (gain under 0.1 except stamps and slams), and never louder than
+`ding`.
+
 ## Screen notes
 
 **Board.** Header 64px: project selector, branch sync tag, epic progress bar, primary CTA.
@@ -205,6 +276,82 @@ preview-iframe placeholder, merged PR links, and Approve & deploy / Request chan
 **Mobile (<768px).** Board collapses to a sticky pill tab bar with per-column counts; drag is
 replaced by a 52px "Advance card" floating button; drawers become full-screen bottom sheets. All
 touch targets ≥44px. No fake status bar — the real one renders over this.
+
+**Colony.** Not a page: a layer over the board. The nest button in the header opens a 400px
+popover (a bottom-aligned dialog "Colony" above the ambient drawer) with rank octagon (LV, rank in
+Newsreader, XP bar), bug shapes and colours as locked/unlocked swatches ("unlocks at level N"), the
+Queen tray (a Queen to drag onto a card), scouts and reserve steppers, and an Archive link. A
+timeline panel (region "Timeline") charts merges per day, epic rows, streak and yield; it expands
+and collapses and pages Earlier / Later. Merges, unlocks and bugs show floating `+N` pops, rings
+and bursts (see Motion and Sound); the golden bell hangs in the header and is swung to notify.
+All effects are skipped under reduced motion and the cues need the gesture gate.
+
+**Sentinels.** Full-page region "Sentinels" between the header and the ambient drawer, cream
+ground. A grade strip leads: an 84px octagon grade (68px on phones) with the 28/32/42px hero
+figure, stars in clay, and a "Summon all N" anthracite button (44px high). Below it, a
+horizontally snapping row of 264px sentinel cards (portrait, who, name, stars, "Not audited" or
+"out of date"). A locked sentinel shows "Unlocks at Lv N" and is not clickable. Choosing one opens
+an Audit report dialog: stars, rubric checks marked Met / Not met / Not scored, findings ("Nothing
+flagged" when none), and Audit / Calibrate actions. A KPI section with range tabs and four charts
+sits below. Refusals show as a crimson chip banner above the row. Runs show "Auditing N…".
+
+**Onboarding tour.** The guide ant (`ant-crimson`) walks to each target and a bubble
+(`role="dialog"`, label "Tour: <title>") explains it; the target is lit and the rest dimmed. Controls:
+Next (or Done on the last step), Skip tour, Escape to end, and the speaker toggle. Steps whose target
+is not on screen are skipped. Steps with `waitFor` have no Next: the person acts on the lit element.
+Tours run once each, in order (login, pick, board), and the rest on first visit to their screen
+(settings, timeline, sentinels, sentinel-report, colony). "Guided tours" in Settings replays them.
+Text is short, in the ant's voice, and mutters through the `syllable` cue. Under reduced motion the
+ant jumps rather than walks.
+
+**Settings.** Page at `/settings`, a single column of cards (`bg-card`, 1px border, 12px radius,
+16px padding), each with an 11px upper-case label title: GitHub, Auto-merge, Auto-escalation,
+Sharing, Runner, Scout agent, Sound, Guided tours, Board view, run-time budget, Colony, Sentinels,
+Effort, Renewal day, Notifications, Desktop app, Access tokens, MCP setup, and a Danger zone last.
+Controls are real inputs with labels (checkbox `role="switch"`, steppers with "Fewer / More" aria
+labels). Each section saves on change and shows its own error inline (see States). Deep links such
+as `/settings#sandbox` land on a section.
+
+**Ticket drawer.** Modal `role="dialog"` "Ticket detail" over a 40% black scrim; click outside or
+Escape closes. Full-screen bottom sheet on phones (92dvh); on `sm` and up a centred panel, max 1024px
+wide, 85dvh. Header: any problem notice banner (crimson, clay or neutral by severity), key, title
+(Newsreader 18/600), the agent's plan steps, size/model/status chips, then card actions (Archive,
+epic link, close). Body is two panes, `Ticket` (user story, why, what, how, acceptance criteria,
+attachments) and `Agent` (live thinking and actions, usage, KPIs, scouts, Queen, follow-ups, chat);
+side by side on desktop, tabbed on phones. The drawer follows the keyboard inset so inputs stay
+visible. Epics use the Epic drawer instead.
+
+## States
+
+One set of rules for what a screen shows while it has nothing, is waiting, or has failed. Use these
+instead of inventing a new treatment.
+
+**Empty.** One quiet sentence in `text-muted`, 12-13px, no illustration, no button unless a single
+action fixes it. Say what will fill the space and what makes it appear. Seen today: "No child
+tickets yet. Move this Epic to To Do and the Architect Agent…" (DAG pane), "No epics with tickets
+yet. Once the Architect Agent breaks one…" and "No merges yet" (timeline), "Nothing yet. The
+commands agents run, and what they print, show here as they work." (terminal), "Nothing flagged"
+(sentinel findings), "Came back empty" (scout), "No showcase yet. Generate it from the Epic when you
+want one." Charts with no data say so in place of the chart, under their title.
+
+**Loading.** Show the real container with a text placeholder, never a spinner or skeleton blocks.
+Titles read "Loading…" (ticket and epic drawers) until the card arrives. Inline waits use three
+1.5-unit clay dots with `animate-pulse` (chat) or pulsing muted text ("The PM Agent is writing the showcase…", "Tallying…").
+A board swap uses the dig transition with a polite live region ("Loading <board>"). Sentinel runs
+show "Auditing N…" on the button. Every pulse is gated for reduced motion; the words stay.
+
+**Error.** Inline, next to the thing that failed, with `role="alert"`, in plain words that say what
+did not happen and what is still true. Never a toast for form errors, never a modal.
+- Field or section save: 11px crimson text under the control (`text-crimson-text` on light cards,
+  `text-log-error` on anthracite surfaces).
+- Panel-level: a 12-13px message on a `bg-crimson/10` or `bg-crimson-chip` strip with `rounded-md`.
+- Notices about a card (blocked, failed, stalled): the banner at the top of the card and ticket
+  drawer, severity-coloured, with an icon, a bold title and one line of detail.
+- A whole load that failed: one muted sentence ("KPIs could not be loaded."; "Couldn't load that
+  board. You're back on the previous one.") and the previous state stays usable.
+- A missing setup step (no sandbox key) uses a `bg-clay/15` strip with a link to fix it.
+- Route failures use `app/error.tsx`, `app/global-error.tsx` and `app/not-found.tsx`.
+Status colour still lives in the dot or icon; the message text stays `#1C1917` or `text-crimson-text`.
 
 ## Accessibility
 
