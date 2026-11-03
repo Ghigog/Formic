@@ -8,8 +8,6 @@ import { cn } from "@/components/ui/cn";
  * The legs swing the same way drawBug swings them, the outer pair on one
  * side against the middle leg on the other (globals.css, "Guide ant").
  */
-export const GUIDE_ANT_HEX = "#B3261E";
-
 export function GuideAnt({
   walking = false,
   talking = false,
@@ -31,12 +29,12 @@ export function GuideAnt({
       className={cn("guide-ant", walking && "guide-ant-walk", talking && "guide-ant-talk", className)}
     >
       <g className="guide-ant-bob">
-        <g fill="none" stroke={GUIDE_ANT_HEX} strokeWidth="0.8" strokeLinecap="round">
+        <g fill="none" strokeWidth="0.8" strokeLinecap="round" style={{ stroke: "var(--ant-crimson)" }}>
           <path className="guide-ant-legs-a" d="M0 -1.2L-3.3 -2.6M0 1.2L-3.3 2.6M0 0L3.3 0" />
           <path className="guide-ant-legs-b" d="M0 -1.2L3.3 -2.6M0 1.2L3.3 2.6M0 0L-3.3 0" />
           <path className="guide-ant-antennae" d="M-0.5 -3L-2 -5.2M0.5 -3L2 -5.2" />
         </g>
-        <g fill={GUIDE_ANT_HEX}>
+        <g style={{ fill: "var(--ant-crimson)" }}>
           <ellipse cx="0" cy="3.3" rx="1.6" ry="2.3" />
           <ellipse cx="0" cy="0.2" rx="0.95" ry="1.3" />
           <ellipse cx="0" cy="-2.3" rx="1.15" ry="1.25" />

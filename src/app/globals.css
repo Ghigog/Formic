@@ -47,6 +47,7 @@
   --jade: #2e7d32; /* merged, tests passing, done */
   --rust: #e65100; /* rebasing, conflict resolving, retry */
   --crimson: #c62828; /* CI failure, agent blocked */
+  --ant-crimson: #b3261e; /* the colony's crimson ant; COLOR_UNLOCKS in lib/colony/game.ts must match */
 
   /* Epic chips: a tinted fill inside a 1px status-coloured octagon. */
   --epic-chip: #fdf1e8;
@@ -144,6 +145,7 @@
   --color-jade: var(--jade);
   --color-rust: var(--rust);
   --color-crimson: var(--crimson);
+  --color-ant-crimson: var(--ant-crimson);
 
   --color-epic-chip: var(--epic-chip);
   --color-epic-chip-text: var(--epic-chip-text);
