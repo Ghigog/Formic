@@ -8,6 +8,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { AgentSelect } from "./agent-select";
 import { useDraft } from "./use-draft";
 import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
@@ -48,8 +49,8 @@ export interface AssistantControls {
   /** The questions themselves, shown at the top of the PM's chat; each opens its card, where it is answered. */
   waiting?: Array<{ id: string; key: string; title: string; question: string }>;
   onOpenQuestion?: (cardId: string) => void;
-  onNewAgent: () => void;
-  onEditAgent: (preset: AgentPreset) => void;
+  /** Opens the agent editor: an existing preset, or null for a new one. */
+  onEdit: (preset: AgentPreset | null) => void;
 }
 
 function Chevron({ up = false, size = 12 }: { up?: boolean; size?: number }) {
@@ -528,41 +529,15 @@ function Shade({
     >
       {a.open && <AutoTour id="chat" delay={500} />}
       <header className="border-hairline flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
-        <span className="text-muted text-[11px] font-semibold tracking-[0.06em] uppercase">
-          Runs on
-        </span>
-        <select
-          value={a.presetId ?? ""}
-          onChange={(e) => void a.setAgent(e.target.value || null)}
-          aria-label="The PM's agent"
-          className="border-line bg-cream text-ink h-8 max-w-[220px] rounded-md border px-2 text-[12px]"
-        >
-          <option value="">Choose an agent</option>
-          {a.presets
-            .filter((p) => p.column === null)
-            .map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} ·{" "}
-              {(providerInfo(p.provider)?.label ?? p.provider).split(" (")[0]}
-            </option>
-          ))}
-        </select>
-        {selected ? (
-          <button
-            type="button"
-            onClick={() => a.onEditAgent(selected)}
-            className="text-muted hover:text-ink text-[12px] underline-offset-2 hover:underline"
-          >
-            Edit
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={a.onNewAgent}
-          className="text-muted hover:text-ink text-[12px] underline-offset-2 hover:underline"
-        >
-          New agent
-        </button>
+        <div className="w-[240px] max-w-[70%]">
+          <AgentSelect
+            slot="assistant"
+            presets={a.presets}
+            selected={selected ?? undefined}
+            onAssign={a.setAgent}
+            onEdit={a.onEdit}
+          />
+        </div>
         <span className="flex-grow" />
         {a.messages.length > 0 && (
           <button
