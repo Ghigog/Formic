@@ -10,6 +10,7 @@ import { useSound } from "@/components/colony/store";
 import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
+import { SentinelsSection } from "@/components/settings/sentinels-section";
 import { ColonySection } from "@/components/settings/colony-section";
 import { DesktopAppSection } from "@/components/settings/desktop-app-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
@@ -38,6 +39,8 @@ interface ProjectSetting {
   autoEscalate: boolean;
   /** Whether people this board is shared with may run on the owner's keys. */
   shareKeys?: boolean;
+  /** Whether every Sentinel is unlocked whatever the colony's level. */
+  unlockAllSentinels?: boolean;
   /** The saved agent that runs scouts; null follows the column. */
   scoutPresetId?: string | null;
   /** Whether this person owns the board; only owners change its settings. On when omitted. */
@@ -240,6 +243,8 @@ export function SettingsForm({
         <RunTimeBudgetSection initial={runTimeBudget} tokens={limits?.tokens} attempts={limits?.attempts} />
 
         <ColonySection />
+
+        {own && <SentinelsSection projectId={own.id} initial={!!own.unlockAllSentinels} />}
 
         <EffortSection initial={effortByPoints} />
 
