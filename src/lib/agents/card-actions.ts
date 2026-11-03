@@ -6,7 +6,7 @@ import { z } from "zod";
 import { decomposeEpic, launch, runProductAgent } from "./pipeline";
 import { checkSplit, ticketSpecSchema, toDraftTicket, typeOf, type TicketSpec } from "./decomposition";
 import { projectFor } from "@/lib/board/project";
-import { applyTransition, redraftTicket, retryEpic } from "@/lib/board/service";
+import { boardPorts } from "@/lib/board/ports";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { stopEpic } from "@/lib/budget/controller";
 import { runCoderAgent } from "@/lib/coder/pipeline";
@@ -210,7 +210,7 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
   const shown = columnOf(now);
   if (to === shown) return `${card.key} is in ${COLUMN_LABELS[to]}.`;
 
-  const result = await applyTransition(projectId, {
+  const result = await boardPorts().service.applyTransition(projectId, {
     cardId: card.id,
     kind: card.kind,
     from: shown,
@@ -222,7 +222,7 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
   if (result.problem) {
     // Somewhere it cannot work: a drag leaves it there to show why, but
     // asked in words, it stays where it was and the reason is the answer.
-    await applyTransition(projectId, {
+    await boardPorts().service.applyTransition(projectId, {
       cardId: card.id,
       kind: card.kind,
       from: to,
@@ -246,7 +246,7 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
 /** Starts a stalled card's column agent again, where it stopped. */
 async function resume(projectId: string, card: BoardCard): Promise<string> {
   if (card.kind === "epic") {
-    const result = await retryEpic(projectId, card.id);
+    const result = await boardPorts().service.retryEpic(projectId, card.id);
     return result.ok ? `Starting ${card.key} again where it stopped.` : `Could not restart ${card.key}: ${result.reason}`;
   }
   const home = columnFor(card.status, card.stalledIn);
@@ -349,7 +349,7 @@ async function redoTicket(projectId: string, card: BoardCard, instruction: strin
     return `The Reviewer Agent is looking at ${card.key} again${instruction ? ", with what you asked" : ""}. It starts once CI has a result.`;
   }
 
-  if (home === "todo" && (await redraftTicket(projectId, card.id))) {
+  if (home === "todo" && (await boardPorts().service.redraftTicket(projectId, card.id))) {
     return `The Architect Agent is drafting ${card.key} again.`;
   }
 

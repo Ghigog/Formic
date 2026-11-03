@@ -34,3 +34,7 @@ for (const name of REAL) delete process.env[name];
 for (const name of Object.keys(process.env)) {
   if (name.startsWith("FORMIC_")) delete process.env[name];
 }
+
+// The board's ports resolve to the real pipelines, loaded on first call, so tests
+// that mock a pipeline module get the mock. See src/lib/board/wiring.ts.
+import "@/lib/board/wiring";
