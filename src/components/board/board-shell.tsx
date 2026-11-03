@@ -248,8 +248,7 @@ export function BoardShell({
             await assistant.setAgent(presetId);
             if (presetId) void runner.check();
           },
-          onNewAgent: () => setEditing({ column: "assistant", preset: null }),
-          onEditAgent: (preset) => {
+          onEdit: (preset) => {
             setEditing({ column: "assistant", preset });
             void agentState.refreshUsage();
           },

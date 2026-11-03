@@ -182,12 +182,12 @@ export function Column({
         inlineMenu ? (
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
-              <AgentSelect column={id} {...agent} />
+              <AgentSelect slot={id} {...agent} />
             </div>
             {menu}
           </div>
         ) : (
-          <AgentSelect column={id} {...agent} />
+          <AgentSelect slot={id} {...agent} />
         )
       )}
 

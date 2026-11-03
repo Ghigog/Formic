@@ -29,6 +29,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Fails on an import cycle through board/service.ts, db/ or domain/.
+      - run: node scripts/check-cycles.mjs
 
   typecheck:
     runs-on: ubuntu-latest
