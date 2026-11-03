@@ -161,7 +161,7 @@ function LogoButton({
           />
         </svg>
         {count > 0 && (
-          <span className="bg-terracotta absolute -top-1.5 -right-2 inline-flex size-4 items-center justify-center rounded-full text-[10px] font-semibold text-white">
+          <span className="bg-terracotta-cta absolute -top-1.5 -right-2 inline-flex size-4 items-center justify-center rounded-full text-[10px] font-semibold text-white">
             {count}
           </span>
         )}
