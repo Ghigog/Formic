@@ -28,7 +28,13 @@ the design.
 --jade            #2E7D32   merged, tests passing, done
 --rust            #E65100   rebasing, conflict resolving, retry
 --crimson         #C62828   CI failure, agent blocked
+--ant-crimson     #B3261E   the guide ant and the colony's crimson ant only; never a status colour
 ```
+
+`--ant-crimson` is deliberately not `--crimson`: it is an illustration colour. Components read it
+through the `ant-crimson` Tailwind colour or `var(--ant-crimson)`; `COLOR_UNLOCKS` in
+`lib/colony/game.ts` must match its value. No component `.tsx` writes a raw 6-digit hex outside
+SVG `fill`, `stroke` and `stopColor`; add a token to `globals.css` instead.
 
 Status colour appears in the dot, never the label. Chips are a 12% tint of the status colour
 with `#1C1917` text and a 5px dot — that keeps every state legible without darkening per colour.
@@ -38,20 +44,73 @@ Dark-mode note: the spec calls for anthracite card surfaces in dark mode. Not mo
 ## Type
 
 ```
-Plus Jakarta Sans   400/500/600/700   UI: card titles 13/500, column headers 11/600 upper
-                                      +0.1em, body 12-15
+Plus Jakarta Sans   400/500/600/700   UI: card titles 13/500, column headers 11/600 upper +0.1em
 Newsreader          400/500/600       editorial: epic titles, PRD body 15/1.65, showcase prose
-JetBrains Mono      400/500           ticket ids, commit hashes, file scopes, logs, badges 9-11
+JetBrains Mono      400/500           ticket ids, commit hashes, file scopes, logs, badges
 ```
 
 All three from Google Fonts, one `css2` link. Fallbacks: Georgia for Newsreader, system-ui for
 Jakarta, `monospace` for JetBrains.
+
+**Scale.** Pick a size from this list; do not choose between values.
+
+```
+name        px   use
+micro        9   octagon badge counts, size letters (mono)
+caption     10   metadata, timestamps, chip text
+label       11   column headers, chips, status text
+body-sm     12   secondary body, card meta, dense lists
+body        13   card titles, default UI text
+body-lg     14   drawer and form body
+prose       15   PRD and showcase prose (Newsreader)
+subhead     16   section titles, mobile body
+heading     18   drawer and modal titles
+title       20   screen and panel titles
+display     22   epic titles, big numbers
+display-lg  28   sentinel and colony headline figures
+hero        32   sentinel hero figure on mobile
+```
+
+**Exceptions** (sizes in use outside the scale):
+
+```
+42  keep    sentinel hero figure at sm and up (sentinels.tsx); the one size above 32
+8   keep    compact colony strip labels (header-stats.tsx); the smallest legible mono
+7   remove  used once; use micro (9)
+17  remove  use subhead (16)
+19  remove  use heading (18)
+21  remove  use title (20)
+26  remove  use display-lg (28)
+30  remove  use display-lg (28)
+```
+
+"Remove" values still exist in code. New work must not add them; they move to the named size
+when the screen they sit on is next touched.
 
 ## Grid
 
 8px everywhere: 8 / 16 / 24 / 32 / 48. The one exception the spec grants is **12px card
 padding**, for vertical density. Board padding 24, column gap 16, card gap 8, column padding 12.
 Radii: cards 8, columns 12, chips 999, modals 12.
+
+**Named off-grid values.** Anything not on the grid or in this list is a bug.
+
+```
+2   keep    hairline gaps inside dense mono chips
+3   keep    vertical padding and gaps of octagon badges and chips; optical balance with 9-11px text
+4   keep    half-step gap inside icon + label pairs
+5   keep    chip dot (5px) and the gap beside it
+7   keep    octagon chamfer, and the horizontal padding that clears it on small badges
+34  keep    timeline row height and the header logo box; fits a 20px node plus its border
+42  keep    colony nest ant badge; a 40px badge plus its 1px border pair
+9   remove  use 8
+10  remove  gaps and the trail gutter offset; use 8, or 12 where column padding applies
+14  remove  timeline indent; use 16
+18  remove  use 16
+```
+
+Remove means: do not add new uses, and snap existing ones to the value given when you next touch
+the file.
 
 ## Custom components
 
@@ -86,9 +145,43 @@ Terminal toggle. Collapsed to icon + count on mobile.
 
 ## Motion
 
-Two loops only, both 1.6-2.4s ease-in-out: `clayPulse` (border + box-shadow on running cards and
-the active step node) and `dotPulse` (opacity on live-agent dots). Everything else is static.
-Respect `prefers-reduced-motion` — not in the mockups, add it.
+Motion is functional or characterful, never filler. All of it is `@keyframes` in
+`src/app/globals.css` (44 blocks), grouped here by what it animates.
+
+```
+Agent liveness   clayPulse 2.4s (running card border + box-shadow, active step), dotPulse 1.6s
+                 (live-agent dots), trailPulse 2.4s (dependency trail), readyGlow 2.4s (ready
+                 tickets), ant-march 0.9s (trail ants)
+Board            columnSlideFromRight / columnSlideFromLeft 250ms (column change)
+Dig transition   digBoardOutUp/Down, digEarthInFromBelow/Above, digBoardInFromBelow/Above,
+                 digEarthOutUp/Down, digBounceUp/Down, digPeekBelow/Above, digTowardIn: 320-460ms
+                 phase animations; digScrollNearUp/FarUp/NearDown/FarDown: infinite soil loops
+                 (900ms / 2600ms); digFadeOut / digFadeIn 200ms: the reduced-motion stand-ins
+Guide ant, tour  guideAntIdle 2.6s, guideAntLegsA/B and guideAntBob 0.19s, guideAntTalk 0.32s,
+                 tourBubbleIn 0.22s
+Colony           bellWave 900ms, bellGlint 2.6s
+Timeline         tlStripe, tlPing 1.8s
+Requests         reqFade, reqPop, reqSlideDown
+Sentinels        sentinelScan, sentinelBob, sentinelLine, sentinelFade, auditSweep
+```
+
+One-shot transitions run 150-460ms, `ease-out`; loops run 0.9-2.6s, `ease-in-out` (`linear` for
+scrolls and marches).
+
+**Reduced motion.** Every keyframe is switched off or flattened under
+`@media (prefers-reduced-motion: reduce)`.
+
+- CSS: a rule that sets `animation: <name>` needs a matching selector in a reduced-motion block
+  that sets `animation: none` (or a fade). Keyframes applied by Tailwind `animate-[...]` in a
+  component are gated with `motion-safe:` / `motion-reduce:` or the `.sentinel-motion` class.
+  State that motion carried survives another way: a live card keeps its clay border.
+  `src/app/reduced-motion.test.ts` enforces this for every `@keyframes`.
+- Dig transition: the board fades (digFadeOut / digFadeIn, 200ms) and `.dig-earth` is hidden.
+  No earth or scroll loop plays.
+- JS: motion driven from script asks `prefersReducedMotion()`, i.e.
+  `window.matchMedia("(prefers-reduced-motion: reduce)").matches`, and skips to the end state.
+  It is checked in `board/board.tsx`, `board/dig-transition.tsx`, `colony/fx.ts`,
+  `colony/bell.tsx`, `onboarding/tour.tsx` and `sentinels/kpi.tsx`. New JS animation must too.
 
 ## Screen notes
 
