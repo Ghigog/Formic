@@ -7,6 +7,8 @@
  * the board derives the column.
  */
 
+import { isQuestion, questionNotice } from "./question";
+
 export const COLUMNS = [
   "backlog",
   "todo",
@@ -116,7 +118,9 @@ export function cardProblem(card: {
   workingSince?: string | null;
 }): string | null {
   if (card.misplacedReason) return card.misplacedReason;
-  if (isStalled(card.status) && card.blockedReason && !card.workingSince) return card.blockedReason;
+  if (isStalled(card.status) && card.blockedReason && !card.workingSince) {
+    return isQuestion(card.blockedReason) ? questionNotice(card.blockedReason) : card.blockedReason;
+  }
   if (card.needsHuman && card.status !== "merged") {
     return `${card.needsHuman.replace(/\.?\s*$/, ".")} No agent does this one. When you have, tell its chat what you did or found, and it closes.`;
   }

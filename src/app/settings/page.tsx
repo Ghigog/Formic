@@ -33,6 +33,7 @@ export default async function SettingsPage() {
           autoMerge: current.autoMerge,
           autoEscalate: current.autoEscalate,
           shareKeys: current.shareKeys,
+          unlockAllSentinels: current.unlockAllSentinels,
           scoutPresetId: current.scoutPresetId,
         }
     : null;

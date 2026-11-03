@@ -706,6 +706,20 @@ describe("a question the card is waiting on", () => {
     expect(said.at(-1)!.content).toContain("Writing the PRD again");
   });
 
+  it("clears the Epic's stall once answered, even when the work cannot start", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Bells", rawRequest: "A bell", position: 1 });
+    const reason = questionReason("The Architect Agent", [{ question: "How many?", why: "" }]);
+    await repo.stallEpic(epic.id, { status: "blocked", stalledIn: "todo", stage: 3, reason });
+
+    await send(PROJECT, "epic", epic.id, "Three.");
+
+    const after = await repo.cardById(epic.id);
+    expect(after?.blockedReason ?? null).toBeNull();
+    expect(after?.stalledIn ?? null).toBeNull();
+    expect(after?.status).not.toBe("blocked");
+  });
+
   it("starts a ticket that waited in To Do for the answer, rather than redrafting it", async () => {
     const ticket = await seedTicket();
     const reason = questionReason("The Designer", [{ question: "How should it feel?", why: "" }]);

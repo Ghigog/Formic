@@ -23,8 +23,7 @@ import {
   runArchitectDraftTicket,
   runProductAgent,
 } from "@/lib/agents/pipeline";
-import { runCoderAgent } from "@/lib/coder/pipeline";
-import { completeEpic, reviewPullRequest, startShowcase } from "@/lib/review/pipeline";
+import { boardPorts, type EpicActionResult } from "@/lib/board/ports";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
@@ -223,8 +222,7 @@ export async function applyTransition(
     }
     const ticket = await repo.ticketDetail(card.id);
     if (!ticket) return { ok: false, reason: "That card no longer exists.", revertTo: shown };
-    const { mergeByPerson } = await import("@/lib/review/pipeline");
-    const said = await mergeByPerson(projectId, ticket, card.prNumber);
+    const said = await boardPorts().review.mergeByPerson(projectId, ticket, card.prNumber);
     // Merging is what git does; the card is Done only once the merge is seen
     // to have happened. Anything short of that leaves it where it was, with
     // the merge's own reason (red CI, a conflict, a refusal) in the banner.
@@ -241,7 +239,7 @@ export async function applyTransition(
   // Every ticket merged: the Epic is simply done, exactly as if its last
   // merge had just happened.
   if (!problem && card.kind === "epic" && t.to === "done") {
-    await completeEpic(projectId, card.id, await placeAmong(projectId, "done", card, t.position));
+    await boardPorts().review.completeEpic(projectId, card.id, await placeAmong(projectId, "done", card, t.position));
     return { ok: true, status: "merged", runId: null };
   }
 
@@ -370,7 +368,7 @@ export async function applyTransition(
   }
   if (card.kind === "ticket" && status === "running") {
     launch(
-      () => runCoderAgent(projectId, card.id),
+      () => boardPorts().coder.runCoderAgent(projectId, card.id),
       `coder agent for ${card.key}`,
     );
   }
@@ -384,7 +382,7 @@ export async function applyTransition(
       const project = await projectFor(projectId);
       const creds = await credentialsForProject(project);
       const pull = await vcs(project.repoFullName, creds.githubToken).pullRequest(prNumber);
-      await reviewPullRequest(projectId, prNumber, pull.headSha);
+      await boardPorts().review.reviewPullRequest(projectId, prNumber, pull.headSha);
     }, `review for ${card.key}`);
   }
 
@@ -702,7 +700,7 @@ export function canRetryEpic(
   return quiet > (detail.runnerJob ? RUNNER_QUIET_MS : QUIET_MS);
 }
 
-export type EpicActionResult = { ok: true } | { ok: false; reason: string; status: number };
+export type { EpicActionResult };
 
 /**
  * Starts a stalled Epic's planning again from where it stopped: the Product
@@ -774,7 +772,7 @@ export async function generateShowcase(projectId: string, epicId: string): Promi
   if (!canGenerateShowcase(card, detail)) {
     return { ok: false, reason: `The PM Agent is already writing the showcase for ${card.key}.`, status: 409 };
   }
-  await startShowcase(projectId, epicId);
+  await boardPorts().review.startShowcase(projectId, epicId);
   return { ok: true };
 }
 

@@ -27,12 +27,23 @@ describe("requestFromReport", () => {
     expect(r).not.toContain("Nice naming");
   });
 
-  it("opens with the short commit and date, and names the Sentinel without a commit", () => {
+  it("opens with a readable title and puts the short commit and date on the next line", () => {
     const report = { likes: [], dislikes: [pt("Slow tests")], wrong: [], missing: [] };
     const stamped = requestFromReport(s, { stars: 3, summary: null, report, commitSha: "abc1234def", at: "2026-10-23T10:00:00.000Z" });
-    expect(stamped.split("\n")[0]).toBe(`Based on ${s.who}'s audit of abc1234 at 2026-10-23.`);
+    expect(stamped.split("\n")[0]).toBe(`Fix ${s.who}'s audit findings (3 of 5 stars)`);
+    expect(stamped.split("\n")[1]).toBe("Audited commit abc1234 on 2026-10-23.");
     const bare = requestFromReport(s, { stars: 3, summary: null, report, commitSha: null, at: null });
-    expect(bare.split("\n")[0]).toBe(`Based on ${s.who}'s audit.`);
+    expect(bare.split("\n")[0]).toBe(`Fix ${s.who}'s audit findings (3 of 5 stars)`);
+    expect(bare).not.toContain("Audited commit");
+  });
+
+  it("gives a card title, derived as createBacklogItem does, with no hash", () => {
+    const report = { likes: [], dislikes: [pt("Slow tests")], wrong: [], missing: [] };
+    const r = requestFromReport(s, { stars: 3, summary: null, report, commitSha: "6247f8b0aa", at: "2026-11-02T10:00:00.000Z" });
+    const title = r.trim().split(/[.\n]/)[0]?.slice(0, 80) || "New ticket";
+    expect(title).not.toBe("New ticket");
+    expect(title).not.toMatch(/\b[0-9a-f]{7}\b/);
+    expect(title).not.toContain("2026");
   });
 
   it("keeps the commit line within the cap", () => {
@@ -45,7 +56,7 @@ describe("requestFromReport", () => {
       at: "2026-10-23T10:00:00.000Z",
     });
     expect(r.length).toBeLessThanOrEqual(REQUEST_CAP);
-    expect(r.startsWith(`Based on ${s.who}'s audit of abc1234`)).toBe(true);
+    expect(r).toContain("Audited commit abc1234 on 2026-10-23.");
   });
 
   it("shortens the points to fit the cap", () => {

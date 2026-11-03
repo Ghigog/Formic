@@ -669,15 +669,26 @@ export interface Reservation {
   fileScope: string[];
 }
 
-export interface Repository {
+/** Projects: finding them and creating one for a repository. */
+export interface ProjectRepository {
   /** The demo board: the first unowned project, created on demand. */
   defaultProject(): Promise<ProjectSummary>;
   listProjects(scope: OwnerScope): Promise<ProjectSummary[]>;
   /** Every project on a repository, whoever owns it. For webhooks. */
   projectsForRepo(repoFullName: string): Promise<ProjectSummary[]>;
   projectById(projectId: string): Promise<ProjectSummary | null>;
-  /* Sharing a board. */
+  /** Someone's project for a repository, created the first time they pick it. */
+  ensureProject(input: {
+    ownerId: string | null;
+    /** Null for a board with no repository: always a new one, named by `name`. */
+    repoFullName: string | null;
+    name?: string;
+    baseBranch: string;
+  }): Promise<ProjectSummary>;
+}
 
+/** Sharing a board, and who opened it. */
+export interface SharingRepository {
   /** Shares a project with someone. Doing it twice is harmless. */
   addMember(projectId: string, userId: string): Promise<void>;
   isMember(projectId: string, userId: string): Promise<boolean>;
@@ -687,21 +698,6 @@ export interface Repository {
   markOpened(userId: string, projectId: string): Promise<void>;
   /** When this person last opened each project, by project id. Never-opened ones are absent. */
   openedAtByProject(userId: string): Promise<Map<string, Date>>;
-  createAccessToken(token: NewAccessToken): Promise<AccessTokenRecord>;
-  accessTokenByHash(tokenHash: string): Promise<AccessTokenRecord | null>;
-  /** A person's tokens, newest first. */
-  accessTokensForUser(userId: string): Promise<AccessTokenRecord[]>;
-  /** Revokes a token only when it belongs to `userId`; false when nothing changed. */
-  revokeAccessToken(userId: string, id: string): Promise<boolean>;
-  touchAccessToken(id: string, at: Date): Promise<void>;
-  /** Saves a device's push subscription; a known endpoint moves to this person with fresh keys. */
-  savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void>;
-  /** Forgets a device, whoever it is saved for when `userId` is omitted. */
-  deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
-  pushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]>;
-  pushPreferences(userId: string): Promise<PushPreferences>;
-  /** Stores the kinds given, leaves the rest; returns all three. */
-  setPushPreferences(userId: string, prefs: Partial<PushPreferences>): Promise<PushPreferences>;
   /** A member's own agents on a shared board, by column or "assistant". */
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
@@ -713,18 +709,33 @@ export interface Repository {
    */
   cardActor(cardId: string): Promise<string | null>;
   setCardActor(cardId: string, userId: string | null): Promise<void>;
+}
 
-  /** Someone's project for a repository, created the first time they pick it. */
-  ensureProject(input: {
-    ownerId: string | null;
-    /** Null for a board with no repository: always a new one, named by `name`. */
-    repoFullName: string | null;
-    name?: string;
-    baseBranch: string;
-  }): Promise<ProjectSummary>;
+/** Access tokens. */
+export interface TokenRepository {
+  createAccessToken(token: NewAccessToken): Promise<AccessTokenRecord>;
+  accessTokenByHash(tokenHash: string): Promise<AccessTokenRecord | null>;
+  /** A person's tokens, newest first. */
+  accessTokensForUser(userId: string): Promise<AccessTokenRecord[]>;
+  /** Revokes a token only when it belongs to `userId`; false when nothing changed. */
+  revokeAccessToken(userId: string, id: string): Promise<boolean>;
+  touchAccessToken(id: string, at: Date): Promise<void>;
+}
 
-  /* Coordination across boards and server instances. */
+/** Push subscriptions and preferences. */
+export interface PushRepository {
+  /** Saves a device's push subscription; a known endpoint moves to this person with fresh keys. */
+  savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void>;
+  /** Forgets a device, whoever it is saved for when `userId` is omitted. */
+  deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
+  pushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]>;
+  pushPreferences(userId: string): Promise<PushPreferences>;
+  /** Stores the kinds given, leaves the rest; returns all three. */
+  setPushPreferences(userId: string, prefs: Partial<PushPreferences>): Promise<PushPreferences>;
+}
 
+/** Coordination across boards and server instances. */
+export interface CoordinationRepository {
   /**
    * Every running ticket on every board of a repository, and the files it
    * holds. A scout counts only while its parent runs: one left marked running
@@ -742,9 +753,10 @@ export interface Repository {
   releaseLease(key: string, holder: string): Promise<void>;
   /** Who holds `key` now, or null when nobody does or the holder let it lapse. */
   leaseHolder(key: string): Promise<string | null>;
+}
 
-  /* People. */
-
+/** People. */
+export interface UserRepository {
   userById(userId: string): Promise<UserRecord | null>;
   /** Creates or refreshes someone from their GitHub profile. */
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
@@ -769,29 +781,13 @@ export interface Repository {
   adoptUnowned(userId: string): Promise<void>;
   /** Removes a person and everything they own: projects, presets, and all that cascades from those. */
   deleteUser(userId: string): Promise<void>;
+}
+
+/** The board: cards, epics and their columns. */
+export interface BoardRepository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
-  /** Every column a ticket has been in, oldest first. */
-  ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]>;
-  /** Every change recorded on a ticket after it was specified, oldest first. */
-  ticketChanges(ticketId: string): Promise<TicketChange[]>;
-  /** Records a change on a ticket. A split is recorded on the ticket that replaces the original. */
-  recordTicketChange(ticketId: string, change: Pick<TicketChange, "kind" | "detail">): Promise<void>;
-  /** Places a Queen on a card, or returns null when it already has one. */
-  placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null>;
-  /** The Queens placed in a project. */
-  listQueens(projectId: string): Promise<QueenRecord[]>;
-  /** Takes a card's Queen off. It stays spent: see queensSpent. Returns whether there was one. */
-  clearQueen(cardId: string): Promise<boolean>;
-  /** How many Queens this project has taken off the board, never handed back. */
-  queensSpent(projectId: string): Promise<number>;
-  /** A project's golden bell: how many it has used and whether one is armed. */
-  goldenBell(projectId: string): Promise<GoldenBellState>;
-  /** Arms or disarms the project's golden bell. */
-  setGoldenBellArmed(projectId: string, armed: boolean): Promise<void>;
-  /** Spends the armed golden bell: counts it used and disarms it. Atomic; returns false when none was armed. */
-  useGoldenBell(projectId: string): Promise<boolean>;
   /** The archive: a project's archived tickets, off the active board. */
   archivedTickets(projectId: string): Promise<BoardCard[]>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
@@ -808,25 +804,6 @@ export interface Repository {
   setStandalone(epicId: string, standalone: boolean): Promise<void>;
   /** Where a card was rerouted from, and why. Null clears both fields. */
   setReroute(cardId: string, kind: "epic" | "ticket", reroute: Reroute | null): Promise<void>;
-  createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary>;
-  attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]>;
-  /**
-   * Which project an attachment belongs to, and the request id it is still
-   * waiting under (null once a card has claimed it). The whole of what a read
-   * has to check, in one query: a route that read the board to work this out
-   * paid for the board every time an image loaded.
-   */
-  attachmentScope(id: string): Promise<{ projectId: string; requestId: string | null } | null>;
-  /** The stored bytes and mime type, or null when no such attachment exists. */
-  attachmentContent(id: string): Promise<AttachmentContent | null>;
-  /** Moves every attachment under requestId to a real card, once it exists. */
-  claimAttachments(
-    requestId: string,
-    ref: { epicId: string } | { ticketId: string },
-  ): Promise<void>;
-  deleteAttachments(ids: string[]): Promise<void>;
-  /** Moves a ticket's attachments to another, such as the ticket drafted from a placeholder. */
-  moveTicketAttachments(fromTicketId: string, toTicketId: string): Promise<void>;
   /** Positions in a column, ascending, for fractional index placement. */
   columnPositions(projectId: string, column: ColumnId): Promise<number[]>;
   cardById(id: string): Promise<BoardCard | null>;
@@ -861,6 +838,52 @@ export interface Repository {
     epicId: string,
     stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
   ): Promise<void>;
+  rebalanceColumn(projectId: string, column: ColumnId): Promise<void>;
+}
+
+/** Queens and the golden bell. */
+export interface QueenRepository {
+  /** Places a Queen on a card, or returns null when it already has one. */
+  placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null>;
+  /** The Queens placed in a project. */
+  listQueens(projectId: string): Promise<QueenRecord[]>;
+  /** Takes a card's Queen off. It stays spent: see queensSpent. Returns whether there was one. */
+  clearQueen(cardId: string): Promise<boolean>;
+  /** How many Queens this project has taken off the board, never handed back. */
+  queensSpent(projectId: string): Promise<number>;
+  /** A project's golden bell: how many it has used and whether one is armed. */
+  goldenBell(projectId: string): Promise<GoldenBellState>;
+  /** Arms or disarms the project's golden bell. */
+  setGoldenBellArmed(projectId: string, armed: boolean): Promise<void>;
+  /** Spends the armed golden bell: counts it used and disarms it. Atomic; returns false when none was armed. */
+  useGoldenBell(projectId: string): Promise<boolean>;
+}
+
+/** Attachments. */
+export interface AttachmentRepository {
+  createAttachment(input: CreateAttachmentInput): Promise<AttachmentSummary>;
+  attachmentsFor(ref: AttachmentRef): Promise<AttachmentSummary[]>;
+  /**
+   * Which project an attachment belongs to, and the request id it is still
+   * waiting under (null once a card has claimed it). The whole of what a read
+   * has to check, in one query: a route that read the board to work this out
+   * paid for the board every time an image loaded.
+   */
+  attachmentScope(id: string): Promise<{ projectId: string; requestId: string | null } | null>;
+  /** The stored bytes and mime type, or null when no such attachment exists. */
+  attachmentContent(id: string): Promise<AttachmentContent | null>;
+  /** Moves every attachment under requestId to a real card, once it exists. */
+  claimAttachments(
+    requestId: string,
+    ref: { epicId: string } | { ticketId: string },
+  ): Promise<void>;
+  deleteAttachments(ids: string[]): Promise<void>;
+  /** Moves a ticket's attachments to another, such as the ticket drafted from a placeholder. */
+  moveTicketAttachments(fromTicketId: string, toTicketId: string): Promise<void>;
+}
+
+/** The board's event log. */
+export interface EventRepository {
   appendEvent(projectId: string, type: string, payload: unknown): Promise<number>;
   eventsAfter(
     projectId: string,
@@ -906,10 +929,16 @@ export interface Repository {
    * only, which `isDroppable` already says it may.
    */
   pruneEvents(projectId: string, keep: number): Promise<number>;
-  rebalanceColumn(projectId: string, column: ColumnId): Promise<void>;
+}
 
-  /* PROT-06 / PROT-07: the ticket run lifecycle. */
-
+/** Tickets: their history, details and scouts. */
+export interface TicketRepository {
+  /** Every column a ticket has been in, oldest first. */
+  ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]>;
+  /** Every change recorded on a ticket after it was specified, oldest first. */
+  ticketChanges(ticketId: string): Promise<TicketChange[]>;
+  /** Records a change on a ticket. A split is recorded on the ticket that replaces the original. */
+  recordTicketChange(ticketId: string, change: Pick<TicketChange, "kind" | "detail">): Promise<void>;
   ticketDetail(ticketId: string): Promise<TicketDetail | null>;
   /** The ticket a webhook is about. Pull request numbers are unique per repo. */
   ticketByPrNumber(
@@ -934,7 +963,12 @@ export interface Repository {
    * those rows is wanted.
    */
   mirroredIssueNumbers(projectId: string): Promise<number[]>;
+  /** Records that the ticket's story points were auto-escalated; keeps the first time if already marked. */
+  markTicketAutoEscalated(ticketId: string): Promise<void>;
+}
 
+/** PROT-06 / PROT-07: the ticket run lifecycle. */
+export interface RunRepository {
   startRun(run: RunRecord): Promise<void>;
   /** Milliseconds a ticket's agent runs have taken, a live one counted up to now. */
   ticketRunMs(ticketId: string): Promise<number>;
@@ -989,9 +1023,10 @@ export interface Repository {
   ): Promise<Array<{ id: string; sandboxId: string | null }>>;
   /** Why a run was cancelled, from this instance or another; null if it has not been. */
   runCancelReason(runId: string): Promise<string | null>;
+}
 
-  /* Agent presets, and which one each column runs. */
-
+/** Agent presets, and which one each column runs. */
+export interface AgentRepository {
   listPresets(scope: OwnerScope): Promise<AgentPreset[]>;
   /** A preset and its sealed key, for starting a run. */
   presetForRun(
@@ -1018,8 +1053,15 @@ export interface Repository {
   setScoutAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
   setUnlockAllSentinels(projectId: string, unlockAllSentinels: boolean): Promise<void>;
-  /** Records that the ticket's story points were auto-escalated; keeps the first time if already marked. */
-  markTicketAutoEscalated(ticketId: string): Promise<void>;
+  setColumnAgent(
+    projectId: string,
+    column: ColumnId,
+    presetId: string | null,
+  ): Promise<void>;
+}
+
+/** Meetings. */
+export interface MeetingRepository {
   /** A board's meetings, soonest first. */
   meetings(projectId: string): Promise<Meeting[]>;
   /** Every board's meetings with the board's owner, for the reminder tick. */
@@ -1030,6 +1072,10 @@ export interface Repository {
     update: Partial<Pick<Meeting, "title" | "startsAt" | "agenda" | "guests" | "repeat" | "lastRemindedFor">>,
   ): Promise<void>;
   deleteMeeting(id: string): Promise<void>;
+}
+
+/** Conversations: calls, the assistant and card chat. */
+export interface ConversationRepository {
   /** A meeting's messages, or the unscheduled call's when `meetingId` is null, oldest first. */
   callMessages(projectId: string, meetingId: string | null): Promise<CallMessage[]>;
   addCallMessage(input: {
@@ -1093,14 +1139,10 @@ export interface Repository {
    * job, older than the cut-off. See recoverStaleAssistantAnswers.
    */
   orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]>;
-  setColumnAgent(
-    projectId: string,
-    column: ColumnId,
-    presetId: string | null,
-  ): Promise<void>;
+}
 
-  /* Sentinels. */
-
+/** Sentinels: audits. */
+export interface AuditRepository {
   /** Every audit a project keeps, oldest first. */
   auditsFor(projectId: string): Promise<AuditRecord[]>;
   /** An audit is started with the rubric it will be scored against. */
@@ -1125,14 +1167,20 @@ export interface Repository {
   finishAudit(id: string, result: AuditResult): Promise<void>;
   /** Records the Epic made from an audit's report. */
   markAuditEpic(auditId: string, epicId: string): Promise<void>;
+}
 
+/** Webhook deliveries. */
+export interface DeliveryRepository {
   /**
    * Records a webhook delivery, returning false when it has been seen before.
    * GitHub delivers at least once and out of order; this is what makes a
    * redelivery a no-op rather than a second fix commit.
    */
   claimDelivery(key: string): Promise<boolean>;
+}
 
+/** Host usage. */
+export interface UsageRepository {
   /**
    * Adds to the host usage counted for one UTC day ("YYYY-MM-DD"), and
    * returns that day's total with the total of every day from `sinceDay` on.
@@ -1145,3 +1193,24 @@ export interface Repository {
   hostUsageCheck(): Promise<HostUsageCheck | null>;
   saveHostUsageCheck(check: HostUsageCheck): Promise<void>;
 }
+
+/** The whole persistence port: every aggregate's repository in one. */
+export interface Repository
+  extends ProjectRepository,
+    SharingRepository,
+    TokenRepository,
+    PushRepository,
+    CoordinationRepository,
+    UserRepository,
+    BoardRepository,
+    QueenRepository,
+    AttachmentRepository,
+    EventRepository,
+    TicketRepository,
+    RunRepository,
+    AgentRepository,
+    MeetingRepository,
+    ConversationRepository,
+    AuditRepository,
+    DeliveryRepository,
+    UsageRepository {}

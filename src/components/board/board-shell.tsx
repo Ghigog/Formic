@@ -29,6 +29,7 @@ import type { Account } from "./account-menu";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyTimeline } from "@/components/colony/timeline";
 import { SentinelsPage } from "@/components/sentinels/sentinels";
+import { UnlockAllDialog } from "@/components/sentinels/unlock-all-dialog";
 import { scoreOf } from "@/lib/colony/game";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import type { SentinelStates } from "@/lib/sentinels/view";
@@ -46,6 +47,7 @@ import { ColonyToast, EpicWinDialog, RerouteToast, type RerouteNotice } from "@/
 export function BoardShell({
   initialCards,
   initialExtras = {},
+  projectId,
   projectName,
   repoFullName,
   initialStats,
@@ -64,6 +66,8 @@ export function BoardShell({
   initialCards: BoardCard[];
   /** Demo detail for the mock board: elapsed times, CI counts, commits. */
   initialExtras?: ExtrasMap;
+  /** The project's id, for asking whether it qualifies to unlock every Sentinel. */
+  projectId?: string;
   projectName: string;
   repoFullName: string;
   /** No longer shown; callers may still pass it. */
@@ -336,6 +340,7 @@ export function BoardShell({
       <AutoTour id="board" delay={900} />
       <ColonyTimeline repoName={repoName} />
       <SentinelsPage repoName={repoName} />
+      {projectId && <UnlockAllDialog projectId={projectId} unlockAll={unlockAllSentinels} />}
       <ColonyPopover onOpenArchive={() => setArchiveOpen(true)} />
       {archiveOpen && <ArchiveView onClose={() => setArchiveOpen(false)} onRestored={restore} />}
       <ColonyToast />
