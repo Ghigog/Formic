@@ -1050,6 +1050,33 @@
   .dig-stage[data-phase="bouncing"] .dig-board {
     animation: none;
   }
+
+  /* The soil is decoration: the board fades, and no earth or scroll loop plays. The
+     earth fills the screen at rest, so it is hidden rather than left sitting on top. */
+  .dig-stage .dig-earth,
+  .dig-stage .dig-earth-near,
+  .dig-stage .dig-earth-far {
+    animation: none !important;
+  }
+
+  .dig-stage .dig-earth {
+    display: none;
+  }
+
+  /* Board slides (digBoardOutUp/Down, digBoardInFromBelow/Above, digBounceUp/Down) and the
+     toward label (digTowardIn): the direction-specific rules above outrank the fades. */
+  .dig-stage[data-phase="leaving"] .dig-board {
+    animation: digFadeOut 200ms ease-in forwards !important;
+  }
+
+  .dig-stage[data-phase="entering"] .dig-board {
+    animation: digFadeIn 200ms ease-out !important;
+  }
+
+  .dig-stage[data-phase="bouncing"] .dig-board,
+  .dig-toward {
+    animation: none !important;
+  }
 }
 
 /* The colony's bell (components/colony/bell.tsx): sound opening out from the lip on a ring,
