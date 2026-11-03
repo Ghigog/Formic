@@ -203,6 +203,11 @@ describe("applyPrd with the Product Agent's questions", () => {
     const after = await repository().cardById(epic.id);
     expect(after).toMatchObject({ status: "blocked", stalledIn: "backlog" });
     expect(classifyNotice(after!)).toMatchObject({ severity: "question", shortDescription: "Who rings it?" });
+    const said = await repository().cardChatMessages(epic.id);
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatchObject({ role: "assistant" });
+    expect(said[0]!.content).toContain("Who rings it?");
+    expect(said[0]!.content).toContain("Why: It decides the gesture.");
     expect((await repository().epicDetail(epic.id))?.prd).toEqual(PRD);
     expect(deferred).toHaveLength(0);
   });
