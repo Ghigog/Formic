@@ -22,6 +22,27 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // The domain layer is framework-free: a value import may only come from
+    // zod or from the domain itself. `import type` stays legal.
+    files: ["src/lib/domain/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^(?!zod$|\\.{1,2}(/|$)|@/lib/domain(/|$))",
+              allowTypeImports: true,
+              message:
+                "src/lib/domain may only value-import from zod or other domain files. Use `import type` or move the shared value into src/lib/domain.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "src/generated/**",
