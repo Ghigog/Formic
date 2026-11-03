@@ -66,6 +66,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
   return {
     initialCards: cards,
     initialExtras: demo ? FIXTURE_EXTRAS : reviewCi,
+    projectId: project.id,
     projectName: project.name,
     repoFullName: project.repoFullName,
     noCi: !hasCi,
