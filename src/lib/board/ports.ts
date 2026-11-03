@@ -52,13 +52,20 @@ export interface BoardPorts {
   service: BoardServicePort;
 }
 
-let registered: BoardPorts | undefined;
+/**
+ * Held on globalThis: Next.js bundles the instrumentation hook and each route
+ * separately, so a module-level variable would be a different copy in each and
+ * the registration made at startup would be invisible to the routes.
+ */
+const KEY = Symbol.for("formic.boardPorts");
+type Holder = { [KEY]?: BoardPorts };
 
 export function registerBoardPorts(ports: BoardPorts): void {
-  registered = ports;
+  (globalThis as Holder)[KEY] = ports;
 }
 
 export function boardPorts(): BoardPorts {
+  const registered = (globalThis as Holder)[KEY];
   if (!registered) {
     throw new Error(
       "Board ports are not registered. Import '@/lib/board/wiring' (the server entry does) or call registerBoardPorts() first.",
@@ -69,5 +76,5 @@ export function boardPorts(): BoardPorts {
 
 /** For tests: forget the registered ports. */
 export function clearBoardPorts(): void {
-  registered = undefined;
+  delete (globalThis as Holder)[KEY];
 }
