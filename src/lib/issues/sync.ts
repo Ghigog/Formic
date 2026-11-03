@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withActor } from "@/lib/auth/actor";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
@@ -338,10 +339,15 @@ const reported = new Set<string>();
 /**
  * Mirrors a card event onto GitHub issues. Never throws: the board is the
  * source of truth, and a repository without Issues access still runs.
+ *
+ * Always as the board's owner. The issues are the board's own record, and
+ * the event may be published from inside anyone's work: a member's card
+ * moving can start or advance someone else's, and that must not post on
+ * GitHub under the member's name.
  */
 export async function syncIssues(projectId: string, event: FormicEvent): Promise<void> {
   try {
-    await sync(projectId, event);
+    await withActor(null, () => sync(projectId, event));
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (!reported.has(message)) {
