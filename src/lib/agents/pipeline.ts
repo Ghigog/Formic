@@ -15,7 +15,7 @@ import type {
 } from "./ports";
 import { budgetTokens } from "./ports";
 import { repository } from "@/lib/db";
-import { questionReason, type AgentQuestion } from "@/lib/domain/question";
+import { isQuestion, questionMessage, questionReason, type AgentQuestion } from "@/lib/domain/question";
 import { mergePlan, planRole } from "@/lib/agents/plan";
 import type { AttachmentRef } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
@@ -583,6 +583,16 @@ export async function stallEpic(
     stage: options.stage,
     blockedReason: error,
   });
+  if (isQuestion(error)) await sayQuestionInChat(projectId, epicId, error);
+}
+
+/** The question, in the Epic's chat, once per stall: a stall that repeats the last message adds nothing. */
+async function sayQuestionInChat(projectId: string, epicId: string, reason: string): Promise<void> {
+  const repo = repository();
+  const content = questionMessage(reason);
+  const last = (await repo.cardChatMessages(epicId)).at(-1);
+  if (last?.role === "assistant" && last.content === content) return;
+  await repo.addCardChatMessage({ projectId, cardKind: "epic", cardId: epicId, role: "assistant", content });
 }
 
 /**

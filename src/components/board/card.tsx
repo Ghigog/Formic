@@ -425,7 +425,7 @@ export function ProblemNotice({
       <div className="min-w-0">
         <p className={cn("whitespace-pre-line", long && !expanded && "line-clamp-3")}>
           <span className="font-semibold">
-            {card.misplacedReason ? "It can't work here. " : "This needs you. "}
+            {card.misplacedReason ? "It can't work here. " : isQuestion(card.blockedReason) ? "" : "This needs you. "}
           </span>
           <LinkifiedText text={problem} />
         </p>
@@ -444,7 +444,7 @@ export function ProblemNotice({
             <button
               type="button"
               onClick={onOpenChat}
-              className="text-fg text-[12px] font-medium underline lg:hidden"
+              className="text-fg text-[12px] font-medium underline"
             >
               Answer in the chat
             </button>
