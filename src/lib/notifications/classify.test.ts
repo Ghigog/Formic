@@ -20,10 +20,19 @@ describe("classifyEvent", () => {
     expect(n?.body).toContain("Login");
   });
 
+  it("names the PM when it escalates a question", () => {
+    const reason = questionReason("The PM", [{ question: "Keep the swipe?", why: "" }]);
+    const n = classifyEvent(
+      { type: "card.status", cardId: "t", kind: "ticket", status: "blocked", stalledIn: "in_review", stage: 4, blockedReason: reason },
+      { cardKey: "T-5", cardTitle: "Swipe", boardName: "Formic" },
+    );
+    expect(n?.title).toBe("The PM has a question about T-5 on Formic");
+  });
+
   it("tells the person an agent has a question, on an Epic too, with the question itself", () => {
     const reason = questionReason("The Product Agent", [{ question: "Silver bell first?", why: "" }]);
     const n = classifyEvent(status("blocked", "epic", reason), { ...ctx, cardKey: "EPIC-3" });
-    expect(n).toMatchObject({ kind: "needsAttention", title: "EPIC-3 on Formic has a question for you", body: "Silver bell first?" });
+    expect(n).toMatchObject({ kind: "needsAttention", title: "The Product Agent has a question about EPIC-3 on Formic", body: "Silver bell first?" });
   });
 
   it("does not notify for an Epic still moving", () => {

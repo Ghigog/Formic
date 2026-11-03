@@ -16,6 +16,8 @@ export function pushConfigured(): boolean {
 }
 
 let warnedUnconfigured = false;
+/** People already told they have no device, so the log says it once each. */
+const warnedNoDevice = new Set<string>();
 
 /** How a push went: devices it reached, and devices it did not. */
 export interface PushResult {
@@ -38,7 +40,14 @@ export async function sendPush(userId: string, payload: PushPayload): Promise<Pu
   }
   const repo = repository();
   const subscriptions = await repo.pushSubscriptions(userId);
-  if (subscriptions.length === 0) return result;
+  if (subscriptions.length === 0) {
+    if (!warnedNoDevice.has(userId)) {
+      warnedNoDevice.add(userId);
+      console.warn(`[formic] push skipped: user ${userId} has no enabled device. Tap Enable in Settings.`);
+    }
+    return result;
+  }
+  warnedNoDevice.delete(userId);
 
   const options = {
     // Delivered at once: at the default, normal, an idle Android phone holds
@@ -59,7 +68,10 @@ export async function sendPush(userId: string, payload: PushPayload): Promise<Pu
       } catch (e) {
         result.failed++;
         const status = (e as { statusCode?: number }).statusCode;
-        if (status === 404 || status === 410) await repo.deletePushSubscription(s.endpoint, userId);
+        if (status === 404 || status === 410) {
+          console.warn(`[formic] push to ${new URL(s.endpoint).host} expired (${status}); that device must tap Enable again.`);
+          await repo.deletePushSubscription(s.endpoint, userId);
+        }
         else console.error(`[formic] push to ${new URL(s.endpoint).host} failed:`, status ?? "", e);
       }
     }),

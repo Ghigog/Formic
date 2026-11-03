@@ -321,6 +321,9 @@ async function finish(
     runnerJob: null,
     runnerAgent: null,
   });
+  // The person may have asked and walked away: tell them it is in.
+  const { notifyPmAnswer } = await import("@/lib/notifications/notify");
+  await notifyPmAnswer(current.projectId, { content: update.content, failed: update.status === "failed" });
 }
 
 /** The person stopped waiting: pending answers become failed, so a new question is accepted. */

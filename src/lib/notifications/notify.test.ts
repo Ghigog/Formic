@@ -6,9 +6,13 @@ vi.mock("@/lib/push/send", () => ({ sendPush: (...a: unknown[]) => sendPush(...a
 let prefs = { ticketMoved: true, epicCompleted: true, needsAttention: true };
 const card = { key: "T-5", title: "Add login" };
 let previous: unknown = null;
+let ownerId: string | null = "u1";
+let mode = "github";
+vi.mock("@/lib/auth/session", () => ({ authMode: () => mode }));
+vi.mock("@/lib/auth/user", () => ({ localUser: async () => ({ id: "local" }) }));
 vi.mock("@/lib/db", () => ({
   repository: () => ({
-    projectById: async () => ({ ownerId: "u1", name: "Formic" }),
+    projectById: async () => ({ ownerId, name: "Formic" }),
     cardById: async () => card,
     pushPreferences: async () => prefs,
     cardStatusBefore: async () => previous,
@@ -16,7 +20,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import type { FormicEvent } from "@/lib/domain/events";
-import { notifyOwner, resetNotified } from "./notify";
+import { notifyOwner, notifyPmAnswer, resetNotified } from "./notify";
 
 let cards = 0;
 const status = (s: string, kind = "ticket", cardId = `c${cards++}`) =>
@@ -27,12 +31,27 @@ describe("notifyOwner", () => {
     sendPush.mockReset();
     resetNotified();
     previous = null;
+    ownerId = "u1";
+    mode = "github";
     prefs = { ticketMoved: true, epicCompleted: true, needsAttention: true };
   });
 
   it("pushes a move to the board owner when the kind is on", async () => {
     await notifyOwner("p", status("review"));
     expect(sendPush).toHaveBeenCalledWith("u1", expect.objectContaining({ body: "T-5 on Formic moved to In Review" }));
+  });
+
+  it("pushes a board with no owner to the local person, in local mode", async () => {
+    ownerId = null;
+    mode = "local";
+    await notifyOwner("p", status("failed"));
+    expect(sendPush).toHaveBeenCalledWith("local", expect.objectContaining({ kind: "needsAttention" }));
+  });
+
+  it("pushes a board with no owner to nobody, signed in with GitHub", async () => {
+    ownerId = null;
+    await notifyOwner("p", status("failed"));
+    expect(sendPush).not.toHaveBeenCalled();
   });
 
   it("sends nothing when the kind is switched off", async () => {
@@ -100,5 +119,34 @@ describe("notifyOwner", () => {
   it("pushes a card's first status when the log has nothing before it", async () => {
     await notifyOwner("p", status("review", "ticket", "fresh"), 42);
     expect(sendPush).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("notifyPmAnswer", () => {
+  beforeEach(() => {
+    sendPush.mockReset();
+    resetNotified();
+    prefs = { ticketMoved: true, epicCompleted: true, needsAttention: true };
+  });
+
+  it("pushes the PM's answer to the board owner, as plain text", async () => {
+    await notifyPmAnswer("p", { content: "**T-5** is in review. See [the PR](https://x).", failed: false });
+    expect(sendPush).toHaveBeenCalledWith("u1", {
+      kind: "needsAttention",
+      title: "The PM answered on Formic",
+      body: "T-5 is in review. See the PR.",
+      url: "/",
+    });
+  });
+
+  it("says when the PM could not answer", async () => {
+    await notifyPmAnswer("p", { content: "No agent is set.", failed: true });
+    expect(sendPush).toHaveBeenCalledWith("u1", expect.objectContaining({ title: "The PM could not answer on Formic" }));
+  });
+
+  it("sends nothing when needs-attention pushes are off", async () => {
+    prefs.needsAttention = false;
+    await notifyPmAnswer("p", { content: "Done.", failed: false });
+    expect(sendPush).not.toHaveBeenCalled();
   });
 });

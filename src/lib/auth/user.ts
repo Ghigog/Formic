@@ -31,16 +31,19 @@ export async function userForSession(cookie: string | undefined): Promise<UserRe
   return user && user.sessionVersion === session?.version ? user : null;
 }
 
+/** The one person in local mode, who every board there belongs to. */
+export async function localUser(): Promise<UserRecord> {
+  const repo = repository();
+  const known = localUserId ? await repo.userById(localUserId) : null;
+  if (known) return known;
+  const user = await repo.upsertUser(LOCAL_PROFILE);
+  localUserId = user.id;
+  return user;
+}
+
 /** Who is making this request, or null when nobody is signed in. */
 export async function currentUser(): Promise<UserRecord | null> {
-  const repo = repository();
-  if (authMode() === "local") {
-    const known = localUserId ? await repo.userById(localUserId) : null;
-    if (known) return known;
-    const user = await repo.upsertUser(LOCAL_PROFILE);
-    localUserId = user.id;
-    return user;
-  }
+  if (authMode() === "local") return localUser();
   const user = await userForSession((await cookies()).get(SESSION_COOKIE)?.value);
   // Taking someone off FORMIC_ALLOWED_USERS takes effect now, not when their
   // session cookie runs out.
