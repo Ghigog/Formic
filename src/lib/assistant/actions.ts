@@ -6,7 +6,7 @@ import { applyTickets, archivedKeysFor } from "@/lib/agents/pipeline";
 import { ticketSpecSchema, toDraftTicket, typeOf } from "@/lib/agents/decomposition";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
-import { applyTransition, createBacklogItem, deleteEpic } from "@/lib/board/service";
+import { boardPorts } from "@/lib/board/ports";
 import { repository } from "@/lib/db";
 import { validateDag } from "@/lib/domain/dag";
 import { describeProblems } from "@/lib/domain/problems";
@@ -140,7 +140,7 @@ export function checkAction(
 /** Makes an approved change. Returns what now exists, for the conversation. */
 export async function applyAction(projectId: string, action: AssistantAction): Promise<string> {
   if (action.type === "create_backlog_item") {
-    const card = await createBacklogItem(projectId, action.request);
+    const card = await boardPorts().service.createBacklogItem(projectId, action.request);
     return `Added ${card.key} to Backlog. The Product Agent is writing its PRD.`;
   }
   if (action.type === "move_card") return moveCard(projectId, action.key, action.to);
@@ -204,7 +204,7 @@ async function moveCard(projectId: string, key: string, to: (typeof COLUMNS)[num
   const from = columnOf(card);
   const drop = async (column: (typeof COLUMNS)[number], at: (typeof COLUMNS)[number]) => {
     const positions = await repository().columnPositions(projectId, column);
-    return applyTransition(projectId, {
+    return boardPorts().service.applyTransition(projectId, {
       cardId: card.id,
       kind: card.kind,
       from: at,
@@ -228,7 +228,7 @@ async function closeCard(projectId: string, key: string): Promise<string> {
   const repo = repository();
   const card = await cardByKey(projectId, key);
   if (card.kind === "epic") {
-    const result = await deleteEpic(projectId, card.id);
+    const result = await boardPorts().service.deleteEpic(projectId, card.id);
     if (!result.ok) throw new Error(result.reason);
     return `Closed ${key} and its tickets.`;
   }
