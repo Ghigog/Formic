@@ -229,6 +229,7 @@ export const TOURS: Record<TourId, TourDef> = {
         text: "Each row is an epic, laid out over the days it was worked on. Hover a day to see what happened.",
       },
       { target: "timeline-legend", side: "below", title: "Colours", text: "Grey is merged, terracotta is in review, ochre is in progress. Dashed is still planned." },
+      { target: "timeline-kpis", side: "above", title: "KPIs", text: "Your board's numbers live down here: how fast work ships and how much comes back. Switch between 30 days and all time." },
       { target: "timeline-nav", side: "below", title: "Earlier, later", text: "Step back through time with these." },
       { target: "timeline", side: "below", title: "Back to board", text: "Press this again to head back to the board." },
     ],
