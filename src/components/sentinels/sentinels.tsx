@@ -432,10 +432,10 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             <span
               ref={gradeRef}
               title={GRADE_RULE}
-              className="text-cream inline-flex size-[68px] sm:size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400"
+              className={`${g.grade === "S" ? "text-anthracite" : "text-cream"} inline-flex size-[68px] sm:size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400`}
               style={{ background: g.ink, clipPath: BIG_OCT }}
             >
-              <span className="font-mono text-[9px] tracking-[0.14em] opacity-80">
+              <span className="font-mono text-[9px] tracking-[0.14em]">
                 GRADE
               </span>
               <span className="font-serif text-[32px] sm:text-[42px] leading-none font-semibold">
