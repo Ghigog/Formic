@@ -1500,6 +1500,18 @@ function contract(name: string, make: () => Repository) {
         await repo.setPresetLimit(preset.id, null);
         expect(await read()).toMatchObject({ limitedUntil: null, limitNote: null });
       });
+
+      it("clears a CLI agent's usage mark when it is saved, since its key changes outside Formic", async () => {
+        const name = `contract-${randomUUID()}`;
+        const base = { ownerId: null, provider: "claude-code" as const, name, model: "m", prompt: "", secretName: "CLAUDE_CODE_OAUTH_TOKEN" };
+        const preset = await repo.savePreset(base);
+        const scope = { ownerId: randomUUID(), includeUnowned: true };
+        const read = async () => (await repo.listPresets(scope)).find((x) => x.id === preset.id)!;
+
+        await repo.setPresetLimit(preset.id, { until: new Date("2099-01-01T00:00:00Z"), note: "Out of tokens" });
+        await repo.savePreset({ ...base, id: preset.id });
+        expect(await read()).toMatchObject({ limitedUntil: null, limitNote: null });
+      });
     });
 
     describe("coordination across boards", () => {
