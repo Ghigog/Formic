@@ -3,12 +3,21 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useColony } from "./colony";
 import { Tile } from "./tile";
-import { atRest, cordFor, createSwingDetector, stepSpring, tiltFor, type Spring } from "./bell-swing";
+import {
+  atRest,
+  cordFor,
+  createSwingDetector,
+  stepSpring,
+  tiltFor,
+  type Spring,
+} from "./bell-swing";
 
 type BellState = { left: number; armed: boolean };
 type RingResult = BellState & { sent?: number; skipped?: number };
 
-async function postBell(action: "ring" | "arm" | "disarm"): Promise<RingResult | null> {
+async function postBell(
+  action: "ring" | "arm" | "disarm",
+): Promise<RingResult | null> {
   try {
     const res = await fetch("/api/bell", {
       method: "POST",
@@ -23,18 +32,23 @@ async function postBell(action: "ring" | "arm" | "disarm"): Promise<RingResult |
 }
 
 const reducedMotion = () =>
-  typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** What the bell says after a ring, in a sentence. */
 function rangLine(r: RingResult | null): string {
   if (!r) return "The bell would not ring. Try again in a moment.";
   const sent = r.sent ?? 0;
-  if (sent === 0) return (r.skipped ?? 0) > 0 ? "Rang. Their agents are still out of usage, so nothing was sent." : "Rang. No card was waiting on a usage limit.";
+  if (sent === 0)
+    return (r.skipped ?? 0) > 0
+      ? "Rang. Their agents are still out of usage, so nothing was sent."
+      : "Rang. No card was waiting on a usage limit.";
   return `Rang. Told ${sent} ${sent === 1 ? "card" : "cards"} to carry on.`;
 }
 
 /**
- * The bell in the colony popover. It hangs from a hook with a cord beneath it:
+ * The bell in the colony popover. It sits in the heart of its tile, flat like the other marks, with a cord hanging out of the bottom:
  * grab the cord and swing it side to side and the bell swings with it, and a
  * full swing across and back rings it, so a stray tap never does. The silver
  * bell is free at every level: it tells every card stopped by a usage limit
@@ -63,7 +77,10 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
     let live = true;
     fetch("/api/bell")
       .then((r) => (r.ok ? r.json() : null))
-      .then((b: BellState | null) => live && b && setBell({ left: b.left, armed: b.armed }))
+      .then(
+        (b: BellState | null) =>
+          live && b && setBell({ left: b.left, armed: b.armed }),
+      )
       .catch(() => {});
     return () => {
       live = false;
@@ -93,7 +110,11 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
       lag.current = stepSpring(lag.current, spring.current.angle, dt, 220, 9);
       setAngle(spring.current.angle);
       setClapper(lag.current.angle - spring.current.angle);
-      if (grab.current === null && atRest(spring.current, target.current) && atRest(lag.current, spring.current.angle)) {
+      if (
+        grab.current === null &&
+        atRest(spring.current, target.current) &&
+        atRest(lag.current, spring.current.angle)
+      ) {
         frame.current = null;
         setAngle(target.current);
         setClapper(0);
@@ -113,7 +134,9 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
     });
   };
 
-  const onSwing = (event: ReturnType<ReturnType<typeof createSwingDetector>["move"]>) => {
+  const onSwing = (
+    event: ReturnType<ReturnType<typeof createSwingDetector>["move"]>,
+  ) => {
     if (event === "ring") ring();
     else if (event === "swing" && swing.current.swings > 2) sfx?.("bell", 0.45);
   };
@@ -137,7 +160,8 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
     if (!g || g.id !== e.pointerId) return;
     grab.current = null;
     // A tap that never swung: the bell only sways, so a misclick never rings it.
-    if (swing.current.swings === 0 && Math.abs(e.clientX - g.x) < 4) spring.current.velocity += 60;
+    if (swing.current.swings === 0 && Math.abs(e.clientX - g.x) < 4)
+      spring.current.velocity += 60;
     setCord({ x: 0, y: 0 });
     target.current = 0;
     animate();
@@ -171,16 +195,22 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
     const next = await postBell(bell.armed ? "disarm" : "arm");
     if (next) {
       setBell({ left: next.left, armed: next.armed });
-      setSaid(next.armed ? "Golden bell armed. It rings itself a minute after a usage limit resets." : "Back to silver.");
+      setSaid(
+        next.armed
+          ? "Golden bell armed. It rings itself a minute after a usage limit resets."
+          : "Back to silver.",
+      );
     }
   };
 
   const armed = !!bell?.armed;
-  const cordEnd = { x: 48 + cord.x, y: 122 + cord.y };
-  // The cord hangs from the clapper's foot, which swings with the bell about the hook.
+  const cordEnd = { x: 48 + cord.x, y: 108 + cord.y };
+  // The cord hangs from the clapper's foot, which swings with the bell about its top.
   const tilt = ((angle + clapper) * Math.PI) / 180;
   const cordTop = { x: 48 - Math.sin(tilt) * 58, y: 18 + Math.cos(tilt) * 58 };
-  const golden = bell ? `${bell.left} golden ${bell.left === 1 ? "bell" : "bells"} left` : "";
+  const golden = bell
+    ? `${bell.left} golden ${bell.left === 1 ? "bell" : "bells"} left`
+    : "";
 
   return (
     <Tile
@@ -194,65 +224,101 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
           {armed
             ? "Armed. It rings itself a minute after a usage limit resets, then it's used up."
             : "Swing the cord to tell every card stopped by a usage limit to carry on."}{" "}
-          The silver bell is free at every level; a golden one comes every five levels. Tap the bell to arm a golden
-          one, and tap it again to go back to silver. To swing the cord, drag it side to side and back (or press the
-          left and right arrows in turn); a full swing rings the bell.{" "}
+          The silver bell is free at every level; a golden one comes every five
+          levels. Tap the bell to arm a golden one, and tap it again to go back
+          to silver. To swing the cord, drag it side to side and back (or press
+          the left and right arrows in turn); a full swing rings the bell.{" "}
           {golden}
-          {bell && !armed ? (bell.left > 0 ? " · tap the bell to arm one" : " · one every five levels") : ""}
+          {bell && !armed
+            ? bell.left > 0
+              ? " · tap the bell to arm one"
+              : " · one every five levels"
+            : ""}
         </>
       }
     >
-      <div className="relative col-start-1 row-start-1 select-none" data-testid="bell-rig" data-armed={armed || undefined}>
-        <svg viewBox="0 0 96 140" aria-hidden="true" className="h-full w-full overflow-visible">
-          <defs>
-            <linearGradient id={`${gradient}-metal`} x1="0" x2="1">
-              {armed ? (
-                <>
-                  <stop offset="0" stopColor="#f7df8f" />
-                  <stop offset="0.45" stopColor="#c99a2e" />
-                  <stop offset="0.7" stopColor="#f3d374" />
-                  <stop offset="1" stopColor="#a87b1c" />
-                </>
-              ) : (
-                <>
-                  <stop offset="0" stopColor="#f4f2ed" />
-                  <stop offset="0.45" stopColor="#b9b4ab" />
-                  <stop offset="0.7" stopColor="#e9e5dd" />
-                  <stop offset="1" stopColor="#9c968c" />
-                </>
-              )}
-            </linearGradient>
-          </defs>
-          {/* The hook it hangs from. */}
-          <path d="M34 6h28" stroke="var(--text)" strokeWidth="3" strokeLinecap="round" />
-          <path d="M48 6v8a4 4 0 1 0 4 4" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" />
-          <g style={{ transform: `rotate(${angle}deg)`, transformOrigin: "48px 18px" }}>
+      <div
+        className="text-clay relative col-start-1 row-start-1 select-none"
+        data-testid="bell-rig"
+        data-armed={armed || undefined}
+      >
+        <svg
+          viewBox="0 0 96 96"
+          aria-hidden="true"
+          className="h-full w-full overflow-visible"
+        >
+          {armed && (
+            <defs>
+              <linearGradient id={`${gradient}-gold`} x1="0" x2="1">
+                <stop offset="0" stopColor="#f7df8f" />
+                <stop offset="0.45" stopColor="#c99a2e" />
+                <stop offset="0.7" stopColor="#f3d374" />
+                <stop offset="1" stopColor="#a87b1c" />
+              </linearGradient>
+            </defs>
+          )}
+          <g
+            style={{
+              transform: `rotate(${angle}deg)`,
+              transformOrigin: "48px 18px",
+            }}
+          >
             {/* Sound, on a ring: arcs that open out from the lip and fade. */}
             {ringing > 0 && (
-              <g key={ringing} className="bell-waves" fill="none" stroke="var(--clay)" strokeWidth="1.5" strokeLinecap="round">
+              <g
+                key={ringing}
+                className="bell-waves"
+                fill="none"
+                stroke="var(--clay)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
                 <path d="M20 46q-6 10 0 20" />
                 <path d="M76 46q6 10 0 20" />
                 <path d="M13 42q-9 14 0 28" />
                 <path d="M83 42q9 14 0 28" />
               </g>
             )}
-            <rect x="44" y="20" width="8" height="7" rx="2" fill="var(--text)" />
-            <path
-              d="M48 26c-10 0-17 12-17 28v6l-6 8h46l-6-8v-6c0-16-7-28-17-28Z"
-              fill={`url(#${gradient}-metal)`}
-              stroke="var(--text)"
-              strokeWidth="1.4"
-              strokeLinejoin="round"
-            />
-            <path d="M38 36c-2 5-3 11-3 18" fill="none" stroke="#fff" strokeOpacity="0.7" strokeWidth="2.2" strokeLinecap="round" />
-            <ellipse cx="48" cy="68" rx="23" ry="3" fill="var(--text)" fillOpacity="0.18" />
-            {armed && <circle className="bell-glint" cx="41" cy="40" r="2.2" fill="#fff" />}
-            <g style={{ transform: `rotate(${clapper}deg)`, transformOrigin: "48px 30px" }}>
-              <path d="M48 30v40" stroke="var(--text)" strokeWidth="1.4" />
-              <circle cx="48" cy="72" r="4" fill="var(--text)" />
+            {/* Flat, like the other tiles' marks: faint clay when silver, gold when armed. */}
+            <g
+              data-testid="bell-body"
+              opacity={armed ? 1 : 0.15}
+              fill={armed ? `url(#${gradient}-gold)` : "currentColor"}
+            >
+              <rect x="44" y="20" width="8" height="7" rx="2" />
+              <path d="M48 26c-10 0-17 12-17 28v6l-6 8h46l-6-8v-6c0-16-7-28-17-28Z" />
+            </g>
+            {armed && (
+              <circle
+                className="bell-glint"
+                cx="41"
+                cy="40"
+                r="2.2"
+                fill="#fff"
+              />
+            )}
+            <g
+              style={{
+                transform: `rotate(${clapper}deg)`,
+                transformOrigin: "48px 30px",
+              }}
+            >
+              <path
+                d="M48 30v40"
+                stroke="currentColor"
+                strokeOpacity={armed ? 1 : 0.15}
+                strokeWidth="1.4"
+              />
+              <circle
+                cx="48"
+                cy="72"
+                r="4"
+                fill={armed ? "#a87b1c" : "currentColor"}
+                fillOpacity={armed ? 1 : 0.15}
+              />
             </g>
           </g>
-          {/* The cord, braided in the colony's clay, and its wooden toggle. */}
+          {/* The cord, braided in the colony's clay, hangs out of the tile's bottom, with its wooden toggle. */}
           <path
             d={`M${cordTop.x} ${cordTop.y} Q ${(cordTop.x + cordEnd.x) / 2 + cord.x * 0.15} ${(cordTop.y + cordEnd.y) / 2 + 6} ${cordEnd.x} ${cordEnd.y}`}
             fill="none"
@@ -268,17 +334,22 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
             height="14"
             rx="4"
             fill="var(--terracotta-deep)"
-            stroke="var(--text)"
-            strokeWidth="1"
-            style={{ transform: `rotate(${-cord.x * 0.6}deg)`, transformOrigin: `${cordEnd.x}px ${cordEnd.y}px` }}
+            style={{
+              transform: `rotate(${-cord.x * 0.6}deg)`,
+              transformOrigin: `${cordEnd.x}px ${cordEnd.y}px`,
+            }}
           />
         </svg>
         <button
           type="button"
-          aria-label={armed ? "Golden bell, armed: tap to put it back to silver" : `Bell: tap to arm a golden bell, ${golden}`}
+          aria-label={
+            armed
+              ? "Golden bell, armed: tap to put it back to silver"
+              : `Bell: tap to arm a golden bell, ${golden}`
+          }
           aria-pressed={armed}
           onClick={() => void toggleArmed()}
-          className="absolute top-[12.9%] left-[22.9%] h-[38.6%] w-[54.2%] cursor-pointer rounded-full"
+          className="absolute top-[20%] left-[22.9%] h-[46%] w-[54.2%] cursor-pointer rounded-full"
         />
         <button
           type="button"
@@ -289,7 +360,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
           onPointerCancel={letGo}
           onKeyDown={swingByKey}
           style={{ touchAction: "none" }}
-          className="absolute bottom-0 left-[8.3%] h-[45.7%] w-[83.3%] cursor-grab rounded-md active:cursor-grabbing"
+          className="absolute top-[76%] left-[8.3%] h-[52%] w-[83.3%] cursor-grab rounded-md active:cursor-grabbing"
         />
       </div>
     </Tile>
