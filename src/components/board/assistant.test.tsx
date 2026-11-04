@@ -147,6 +147,26 @@ describe("the PM's waiting questions", () => {
     expect(onOpenQuestion).toHaveBeenCalledWith("c-2");
     expect(setOpen).toHaveBeenCalledWith(false);
   });
+
+  it("sits after the newest message, just above the composer", () => {
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            { id: "m1", role: "user", content: "first message", status: "done", proposals: [] },
+            { id: "m2", role: "assistant", content: "newest message", status: "done", proposals: [] },
+          ],
+          questions: 1,
+          waiting: [{ id: "c-2", key: "T-2", title: "Write DESIGN.md", question: "How should this look?" }],
+        }}
+        repoName="demo"
+      />,
+    );
+    const newest = screen.getByText("newest message");
+    const waiting = screen.getByTestId("pm-waiting");
+    expect(newest.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 describe("AskBox's prompt", () => {
