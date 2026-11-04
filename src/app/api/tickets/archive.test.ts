@@ -145,7 +145,8 @@ describe("GET /api/tickets/archived", () => {
     const archivedTickets = vi
       .fn()
       .mockResolvedValue([{ id: "ticket-1", kind: "ticket", archived: true }]);
-    repository.mockReturnValue({ archivedTickets });
+    const archivedEpics = vi.fn().mockResolvedValue([]);
+    repository.mockReturnValue({ archivedTickets, archivedEpics });
     activeProject.mockResolvedValue(project);
 
     const res = await GET();
@@ -153,6 +154,7 @@ describe("GET /api/tickets/archived", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       tickets: [{ id: "ticket-1", kind: "ticket", archived: true }],
+      epics: [],
     });
     expect(archivedTickets).toHaveBeenCalledWith(project.id);
   });
@@ -165,7 +167,7 @@ describe("GET /api/tickets/archived", () => {
     const res = await GET();
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ tickets: [] });
+    expect(await res.json()).toEqual({ tickets: [], epics: [] });
     expect(archivedTickets).not.toHaveBeenCalled();
   });
 });

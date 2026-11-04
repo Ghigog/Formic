@@ -15,6 +15,8 @@ const fakes = (): BoardPorts => ({
     redraftTicket: vi.fn(),
     retryEpic: vi.fn(),
     deleteEpic: vi.fn(),
+    archiveEpic: vi.fn(),
+    restoreEpic: vi.fn(),
     createBacklogItem: vi.fn(),
     advanceQueens: vi.fn(),
   },
