@@ -9,6 +9,7 @@ import {
   canUserMove,
   columnFor,
   columnOf,
+  hasActiveRun,
   isStalled,
   statusForUserDrop,
   unstarted,
@@ -805,5 +806,48 @@ export async function deleteEpic(projectId: string, epicId: string): Promise<Epi
   );
   await repo.deleteEpic(epicId);
   await publish(projectId, { type: "card.deleted", cardId: epicId, kind: "epic", issueNumbers });
+  return { ok: true };
+}
+
+/**
+ * Archives an Epic with its tickets: off the board, nothing deleted, no
+ * GitHub issue changed. Refused while any ticket has an active run, as a
+ * ticket's own archive is. Idempotent.
+ */
+export async function archiveEpic(projectId: string, epicId: string): Promise<EpicActionResult> {
+  const repo = repository();
+  const card = await repo.cardById(epicId);
+  if (!card || card.kind !== "epic") {
+    return { ok: false, reason: "That Epic no longer exists.", status: 404 };
+  }
+
+  const running: string[] = [];
+  for (const t of await repo.ticketsForEpic(epicId)) {
+    const detail = await repo.ticketDetail(t.id);
+    if (detail && hasActiveRun(detail, await repo.cardById(t.id))) running.push(t.key);
+  }
+  if (running.length > 0) {
+    return {
+      ok: false,
+      reason: `${running.join(", ")} ${running.length === 1 ? "has" : "have"} an agent working. Stop ${running.length === 1 ? "it" : "them"} before archiving ${card.key}.`,
+      status: 409,
+    };
+  }
+
+  await repo.archiveEpic(epicId);
+  // Open boards refetch; no GitHub issue changes.
+  await publish(projectId, { type: "card.deleted", cardId: epicId, kind: "epic", issueNumbers: [] });
+  return { ok: true };
+}
+
+/** Brings an archived Epic back with the tickets its archive took. Idempotent. */
+export async function restoreEpic(projectId: string, epicId: string): Promise<EpicActionResult> {
+  const repo = repository();
+  const card = await repo.cardById(epicId);
+  if (!card || card.kind !== "epic") {
+    return { ok: false, reason: "That Epic no longer exists.", status: 404 };
+  }
+  await repo.restoreEpic(epicId);
+  await publish(projectId, { type: "card.deleted", cardId: epicId, kind: "epic", issueNumbers: [] });
   return { ok: true };
 }
