@@ -715,14 +715,40 @@ describe("a question the card is waiting on", () => {
     expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([
       "You asked the person:\nSilver or gold first?\n   Why: It sets the unlock.\n\nThey answered: Silver first.",
     ]);
-    expect(launched).toEqual([`product agent for ${epic.key}, from its chat`]);
     const said = await repo.cardChatMessages(epic.id);
-    expect(said.at(-1)).toMatchObject({ role: "assistant", status: "done" });
-    expect(said.at(-1)!.content).toContain("Writing the PRD again");
+    expect(said.at(-1)).toMatchObject({ role: "assistant", status: "pending" });
+    expect(launched).toEqual([`product agent for ${epic.key}, from its chat`, `epic chat answer ${said.at(-1)!.id}`]);
     const after = await repo.cardById(epic.id);
     expect(after?.blockedReason ?? null).toBeNull();
     expect(after?.stalledIn ?? null).toBeNull();
     expect(after?.status).toBe("draft");
+  });
+
+  it("lets the agent reply to what the person said, knowing the work has started again", async () => {
+    const ticket = await seedTicket();
+    await assignAgent("todo");
+    const sent = fakeProvider([{ role: "assistant", content: "Good question: the key is only guessable by people who can see the database address." }]);
+    const pending = await ask("ticket", ticket.id, "I'm not sure I understand. Can you explain more simply?");
+
+    await answer("ticket", ticket.id, pending.id, { started: "Writing the PRD again, with what you said." });
+
+    expect(await reload(pending.id)).toMatchObject({
+      status: "done",
+      content: "Good question: the key is only guessable by people who can see the database address.",
+    });
+    const system = String((sent[0]!.messages as Array<{ content: string }>)[0]!.content);
+    expect(system).toContain("answers the question this card was waiting on");
+    expect(system).toContain("Writing the PRD again, with what you said.");
+    expect(system).toContain("If they asked something back, answer it plainly.");
+  });
+
+  it("keeps a plain acknowledgement when no agent can reply after an answer", async () => {
+    const ticket = await seedTicket();
+    const pending = await ask("ticket", ticket.id, "Silver first.");
+
+    await answer("ticket", ticket.id, pending.id, { started: "Starting it again." });
+
+    expect(await reload(pending.id)).toMatchObject({ status: "done", content: "Got it, thank you. Starting it again." });
   });
 
   it("clears an Architect Agent question in To Do and breaks the Epic down again", async () => {

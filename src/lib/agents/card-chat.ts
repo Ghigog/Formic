@@ -364,6 +364,7 @@ export async function answer(
   cardKind: "epic" | "ticket",
   cardId: string,
   messageId: string,
+  answered?: AnsweredQuestion,
 ): Promise<void> {
   // Who answers is the column's agent when the message came in, even when
   // what it does moves the card on to another column's.
@@ -379,7 +380,7 @@ export async function answer(
   // the card until the answer lands, which is what finishCliCardChat says.
   let answeredLater = false;
   try {
-    const outcome = await reply(cardKind, cardId, messageId);
+    const outcome = await reply(cardKind, cardId, messageId, answered);
     answeredLater = outcome === "later";
     if (cardKind === "ticket" && !answeredLater) {
       await logReply(cardId, messageId, outcome === "agent" ? label : null);
@@ -421,6 +422,27 @@ function agentLabelFor(card: BoardCard): string {
 }
 
 /**
+ * The person's message answered the question the card waited on, and the work
+ * has already started again with it. The agent replies to what they said, and
+ * takes no action of its own: the restart is the action.
+ */
+type AnsweredQuestion = { started: string };
+
+function answeredGuide({ started }: AnsweredQuestion): string {
+  return [
+    "",
+    "The person's last message answers the question this card was waiting on. Their answer is saved as a note, and the work has already started again with it:",
+    started,
+    "Reply to what they actually said, in a sentence or two. If they asked something back, answer it plainly. If their answer leaves your question open, say what is still unclear. Do not use the act tool: the work is already under way.",
+  ].join("\n");
+}
+
+/** What the chat says after an answer when no agent can write the reply. */
+function answeredFallback({ started }: AnsweredQuestion): string {
+  return `Got it, thank you. ${started}`;
+}
+
+/**
  * Answers the message: "agent" when the column's agent did, "notice" for a
  * reason it could not, "later" when a CLI agent answers from GitHub Actions.
  */
@@ -428,6 +450,7 @@ async function reply(
   cardKind: "epic" | "ticket",
   cardId: string,
   messageId: string,
+  answered?: AnsweredQuestion,
 ): Promise<"agent" | "notice" | "later"> {
   const repo = repository();
   // What this answer spent, counted turn by turn. An answer is not a run — it
@@ -449,7 +472,7 @@ async function reply(
     }
     const all = await repo.cardChatMessages(cardId);
     const asked = all.filter((m) => m.role === "user").at(-1);
-    if (isStalled(card.status) && !card.misplacedIn && asked && isGoAgain(asked.content)) {
+    if (!answered && isStalled(card.status) && !card.misplacedIn && asked && isGoAgain(asked.content)) {
       const done = await applyCardAction(projectId, cardKind, cardId, { type: "move", to: columnOf(card) });
       await finish(messageId, { content: done, status: "done" });
       return "notice";
@@ -459,6 +482,10 @@ async function reply(
     const agent = await columnChatAgentFor(projectId, column);
 
     if (agent.kind === "none" || agent.kind === "limited") {
+      if (answered) {
+        await finish(messageId, { content: answeredFallback(answered), status: "done" });
+        return "notice";
+      }
       await finish(
         messageId,
         cardKind === "ticket"
@@ -471,7 +498,7 @@ async function reply(
     const project = await projectFor(projectId);
     const past = history(all.filter((m) => m.id !== messageId));
     const brief = agent.kind === "cli" ? agent.agent.brief : agent.brief;
-    const system = await systemPrompt(card, project.repoFullName, brief);
+    const system = (await systemPrompt(card, project.repoFullName, brief)) + (answered ? answeredGuide(answered) : "");
 
     if (agent.kind === "cli") {
       const { startCliCardChat } = await import("@/lib/runner/runner");
@@ -509,6 +536,7 @@ async function reply(
     const client = vcs(project.repoFullName, creds.githubToken);
     const done: string[] = [];
     const act = async (action: CardAction) => {
+      if (answered) return "Not done: the work already started again with their answer.";
       const result = await applyCardAction(projectId, cardKind, cardId, action);
       done.push(result);
       return result;
@@ -553,9 +581,11 @@ async function reply(
     });
     return "agent";
   } catch (e) {
+    // After an answer the work is already going again, so a reply that failed
+    // to write is no failure the person needs to see.
     await finish(messageId, {
-      content: e instanceof Error ? e.message : String(e),
-      status: "failed",
+      content: answered ? answeredFallback(answered) : e instanceof Error ? e.message : String(e),
+      status: answered ? "done" : "failed",
       ...spent(),
     });
     return "notice";
@@ -693,8 +723,8 @@ export async function ask(
 /**
  * The person answered the question the card was waiting on: the answer goes
  * in as a note beside the question, so the agent that asked reads both, and
- * the column's work starts again with it. No chat turn is needed: the agent's
- * real reply is the work.
+ * the column's work starts again with it. The column's agent then replies to
+ * what they said in the chat.
  */
 /**
  * Takes the Epic out of its stall now that it is answered, so the notice goes
@@ -739,11 +769,15 @@ async function answerQuestion(
     type: "redo",
     instruction: `${note}\n\nCarry on with this ticket's work, using their answer. Do not redo what is already done. If their answer does not settle what you asked, ask a narrower follow-up question instead of guessing.`,
   });
-  await repository().addCardChatMessage({
+  // The agent writes the reply, so it fits what they said: an answer, a
+  // question back, or something that leaves the question open.
+  const pending = await repository().addCardChatMessage({
     projectId,
     cardKind,
     cardId,
     role: "assistant",
-    content: `Thank you, that is what I needed. ${started}`,
+    content: "",
+    status: "pending",
   });
+  launch(() => answer(cardKind, cardId, pending.id, { started }), `${cardKind} chat answer ${pending.id}`);
 }
