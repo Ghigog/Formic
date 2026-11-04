@@ -63,8 +63,10 @@ describe("ColonyTimeline", () => {
   it("shows the KPIs below the chart and switches their window", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false });
     vi.stubGlobal("fetch", fetchMock);
+    // A merged ticket worth 950 points puts the board at Lv 20, where KPIs unlock.
     const cards = makeEpicWithChildren({ key: "E-1" }, [
       { key: "T-1", status: "running", storyPoints: 2, startedAt: new Date().toISOString() },
+      { key: "T-2", status: "merged", mergePoints: 950, updatedAt: new Date().toISOString() },
     ]);
     render(
       <ColonyProvider storageKey="colony-test-timeline-kpi" cards={cards} extras={{}}>
