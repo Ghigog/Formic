@@ -81,6 +81,7 @@ describe("POST /api/assistant", () => {
       role: "assistant",
       content: "",
       status: "pending",
+      speaker: "assistant",
     });
     expect(launch).toHaveBeenCalledOnce();
     launch.mock.calls[0]?.[0]();
@@ -103,9 +104,25 @@ describe("POST /api/assistant", () => {
     expect(launch).not.toHaveBeenCalled();
   });
 
-  it("rejects a question while the last is still pending", async () => {
+  it("accepts a message while a reply is pending, and queues its reply without starting it", async () => {
     repo.assistantMessages.mockResolvedValue([{ id: "m-1", status: "pending" }]);
-    expect((await ask({ text: "hi" })).status).toBe(409);
+    const res = await ask({ text: "and this" });
+    expect(res.status).toBe(200);
+    expect(repo.addAssistantMessage).toHaveBeenCalledTimes(2);
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it("saves one pending reply per speaker, in order, and starts the first", async () => {
+    repo.addAssistantMessage.mockImplementation(async (m: { speaker?: string }) => ({ id: `m-${m.speaker ?? "user"}` }));
+    expect((await ask({ text: "hi", speakers: ["reviewer", "sentinel:qa"] })).status).toBe(200);
+    expect(repo.addAssistantMessage.mock.calls.map((c) => c[0].speaker)).toEqual([undefined, "reviewer", "sentinel:qa"]);
+    expect(launch).toHaveBeenCalledOnce();
+    launch.mock.calls[0]?.[0]();
+    expect(answer).toHaveBeenCalledWith("p-1", "m-reviewer");
+  });
+
+  it.each([[["nobody"]], [[]], [["pm"]]])("rejects the speakers %j", async (speakers) => {
+    expect((await ask({ text: "hi", speakers })).status).toBe(400);
     expect(repo.addAssistantMessage).not.toHaveBeenCalled();
   });
 });

@@ -132,6 +132,8 @@ export interface AssistantMessage {
   runnerJob: string | null;
   /** The preset that job was dispatched with, so a failure is blamed on it. */
   runnerAgent: string | null;
+  /** Who a reply comes from: "assistant", a column role or "sentinel:<id>" (a GuestId). */
+  speaker: string;
   createdAt: Date;
 }
 
@@ -1121,6 +1123,7 @@ export interface ConversationRepository {
     role: "user" | "assistant";
     content: string;
     status?: AssistantMessage["status"];
+    speaker?: string;
   }): Promise<AssistantMessage>;
   updateAssistantMessage(
     id: string,

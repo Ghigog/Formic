@@ -12,6 +12,8 @@ import { AgentSelect } from "./agent-select";
 import { useDraft } from "./use-draft";
 import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
+import { GuestCoin } from "@/components/meetings/guest-coin";
+import { guestLabel, type GuestId } from "@/lib/meetings/guests";
 import type { AgentPreset } from "@/lib/domain/entities";
 import type { AssistantMessageView } from "@/lib/hooks/use-assistant";
 import { useKeyboardInset } from "@/lib/hooks/use-keyboard-inset";
@@ -34,7 +36,8 @@ export interface AssistantControls {
   messages: AssistantMessageView[];
   pending: boolean;
   error: string | null;
-  ask: (text: string) => Promise<void>;
+  /** Sends a message; `speakers` are who answers it, in order (the PM by default). */
+  ask: (text: string, speakers?: string[]) => Promise<void>;
   stop: () => void;
   clear: () => Promise<void>;
   decide: (
@@ -116,7 +119,7 @@ function Composer({
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     const value = text.trim();
-    if (!value || a.pending) return;
+    if (!value) return;
     a.setOpen(true);
     setText("");
     await a.ask(value);
@@ -148,7 +151,7 @@ function Composer({
         onKeyDown={onKeyDown}
         placeholder={
           a.pending
-            ? "Answering…"
+            ? "Answering… you can keep typing"
             : a.questions
               ? `The PM has ${a.questions === 1 ? "a question" : `${a.questions} questions`} for you…`
               : `Ask the PM about ${repoName}…`
@@ -159,7 +162,7 @@ function Composer({
           toggle ? "pr-[4.5rem]" : "pr-10",
         )}
       />
-      {a.pending ? (
+      {a.pending && !text.trim() ? (
         <button
           type="button"
           onClick={() => {
@@ -204,9 +207,7 @@ function Composer({
         <button
           type="button"
           onClick={() => a.setOpen(!a.open)}
-          aria-label={
-            a.open ? "Roll the PM up" : "Pull the PM down"
-          }
+          aria-label={a.open ? "Roll the PM up" : "Pull the PM down"}
           aria-expanded={a.open}
           className="text-muted hover:text-ink absolute right-1 inline-flex size-8 items-center justify-center rounded-md"
         >
@@ -396,8 +397,24 @@ function Message({
       </div>
     );
   }
+  const speaker =
+    m.speaker && m.speaker !== "assistant" ? (m.speaker as GuestId) : null;
+  const tagged = (body: React.ReactNode) =>
+    speaker ? (
+      <div className="flex items-start gap-2.5">
+        <GuestCoin id={speaker} />
+        <div className="min-w-0">
+          <p className="text-muted mb-1 font-mono text-[10px] tracking-[0.08em] uppercase">
+            {guestLabel(speaker)}
+          </p>
+          {body}
+        </div>
+      </div>
+    ) : (
+      body
+    );
   if (m.status === "pending") {
-    return (
+    return tagged(
       <div
         className="text-muted flex items-center gap-2 text-[13px]"
         role="status"
@@ -409,23 +426,29 @@ function Message({
         {cli
           ? "Working in GitHub Actions. This takes a minute or two."
           : "Thinking…"}
-      </div>
+      </div>,
     );
   }
-  return (
+  return tagged(
     <div className="max-w-[92%]">
       <div
         className={cn(
           "text-[13px] leading-[1.55]",
-          m.status === "failed" ? "text-crimson whitespace-pre-wrap" : "text-ink",
+          m.status === "failed"
+            ? "text-crimson whitespace-pre-wrap"
+            : "text-ink",
         )}
       >
-        {m.status === "failed" ? m.content : <MarkdownLite text={m.content} keepLineBreaks />}
+        {m.status === "failed" ? (
+          m.content
+        ) : (
+          <MarkdownLite text={m.content} keepLineBreaks />
+        )}
       </div>
       {m.proposals.map((p, i) => (
         <ProposalCard key={i} p={p} onDecide={(d) => onDecide(i, d)} />
       ))}
-    </div>
+    </div>,
   );
 }
 
@@ -436,11 +459,18 @@ function Message({
 function WaitingQuestions({ a }: { a: AssistantControls }) {
   const waiting = a.waiting ?? [];
   return (
-    <div data-testid="pm-waiting" className="border-line bg-cream rounded-lg border p-3">
+    <div
+      data-testid="pm-waiting"
+      className="border-line bg-cream rounded-lg border p-3"
+    >
       <p className="text-ink m-0 text-[13px] font-semibold">
-        {waiting.length === 1 ? "A question for you" : `${waiting.length} questions for you`}
+        {waiting.length === 1
+          ? "A question for you"
+          : `${waiting.length} questions for you`}
       </p>
-      <p className="text-muted mt-0.5 mb-2 text-[12px]">Answer in the card&apos;s chat and its agent carries on.</p>
+      <p className="text-muted mt-0.5 mb-2 text-[12px]">
+        Answer in the card&apos;s chat and its agent carries on.
+      </p>
       <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
         {waiting.map((q) => (
           <li key={q.id}>
@@ -455,8 +485,12 @@ function WaitingQuestions({ a }: { a: AssistantControls }) {
               <span className="text-muted font-mono text-[10px]">
                 {q.key} · {q.title}
               </span>
-              <span className="text-ink text-[13px] leading-[1.45]">{q.question}</span>
-              <span className="text-terracotta text-[12px] font-semibold">Answer →</span>
+              <span className="text-ink text-[13px] leading-[1.45]">
+                {q.question}
+              </span>
+              <span className="text-terracotta text-[12px] font-semibold">
+                Answer →
+              </span>
             </button>
           </li>
         ))}
