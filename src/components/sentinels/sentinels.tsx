@@ -21,6 +21,19 @@ import { KpiSection } from "./kpi";
 import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
 
+/**
+ * Label colour on a grade badge, 4.5:1 or better in both themes. S is amber,
+ * so it takes dark ink. C and F are filled with tokens that turn light in the
+ * dark theme, so their text uses the cream token, which turns dark with them.
+ * The rest sit on fills that never change and take the light text that does
+ * not flip.
+ */
+function gradeText(grade: string): string {
+  if (grade === "S") return "text-anthracite";
+  if (grade === "C" || grade === "F") return "text-cream";
+  return "text-on-anthracite";
+}
+
 /** The level badge's octagon, chamfered for an 84px grade. */
 const BIG_OCT =
   "polygon(22px 0,calc(100% - 22px) 0,100% 22px,100% calc(100% - 22px),calc(100% - 22px) 100%,22px 100%,0 calc(100% - 22px),0 22px)";
@@ -432,7 +445,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             <span
               ref={gradeRef}
               title={GRADE_RULE}
-              className={`${g.grade === "S" ? "text-anthracite" : "text-cream"} inline-flex size-[68px] sm:size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400`}
+              className={`${gradeText(g.grade)} inline-flex size-[68px] sm:size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400`}
               style={{ background: g.ink, clipPath: BIG_OCT }}
             >
               <span className="font-mono text-[9px] tracking-[0.14em]">
