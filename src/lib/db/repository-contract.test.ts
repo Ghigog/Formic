@@ -708,6 +708,16 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.projectById(p.id))?.unlockAllSentinels).toBe(false);
       });
 
+      it("remembers that the unlock-all offer was dismissed, keeping the first time", async () => {
+        const p = await project();
+        expect((await repo.projectById(p.id))?.unlockAllOfferDismissedAt).toBeNull();
+        await repo.setUnlockAllOfferDismissed(p.id);
+        const first = (await repo.projectById(p.id))?.unlockAllOfferDismissedAt;
+        expect(first).toBeInstanceOf(Date);
+        await repo.setUnlockAllOfferDismissed(p.id);
+        expect((await repo.projectById(p.id))?.unlockAllOfferDismissedAt?.getTime()).toBe(first!.getTime());
+      });
+
       it("runs scouts on the column's agent until a scout agent is set, per project", async () => {
         const p = await project();
         const preset = await repo.savePreset({
