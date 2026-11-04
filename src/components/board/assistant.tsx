@@ -9,6 +9,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { AgentSelect } from "./agent-select";
+import { CallBar } from "@/components/call/call-bar";
+import { UNSUPPORTED_TITLE, useCall } from "@/components/call/call-provider";
 import { useDraft } from "./use-draft";
 import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
@@ -77,6 +79,51 @@ function Chevron({ up = false, size = 12 }: { up?: boolean; size?: number }) {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M6.6 3.5h3l1.4 4-2 1.3a11 11 0 0 0 5.2 5.2l1.3-2 4 1.4v3a2 2 0 0 1-2.2 2A15.5 15.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Starts a call with the PM; the tap itself starts the microphone. */
+function CallButton() {
+  const call = useCall();
+  if (!call) return null;
+  const disabled = call.live || !call.supported;
+  return (
+    <button
+      type="button"
+      data-tour="agent-call"
+      onClick={call.start}
+      disabled={disabled}
+      aria-label="Call the PM"
+      title={
+        call.supported
+          ? call.live
+            ? "You are on a call"
+            : "Call the PM"
+          : UNSUPPORTED_TITLE
+      }
+      className="bg-card border-line text-ink hover:border-clay inline-flex size-11 shrink-0 items-center justify-center rounded-md border transition-colors disabled:opacity-50 disabled:hover:border-line md:size-8"
+    >
+      <PhoneIcon />
+    </button>
   );
 }
 
@@ -572,6 +619,7 @@ function Shade({
             onEdit={a.onEdit}
           />
         </div>
+        <CallButton />
         <span className="flex-grow" />
         {a.messages.length > 0 && (
           <button
@@ -584,6 +632,8 @@ function Shade({
           </button>
         )}
       </header>
+
+      <CallBar />
 
       <div ref={list} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
         {a.messages.length === 0 ? (

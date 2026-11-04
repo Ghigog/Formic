@@ -12,6 +12,12 @@ import { SoundEngine } from "@/components/colony/sound";
  */
 
 let engine: SoundEngine | null = null;
+let silenced = false;
+
+/** Silences the mutter, as a live call does: the PM's voice is the only one then. */
+export function silenceMutter(on: boolean) {
+  silenced = on;
+}
 
 /** Starts listening for the gesture that lets the page make sound. Returns the undo. */
 export function attachVoice(): () => void {
@@ -48,6 +54,7 @@ export function syllable(ch: string): { freq: number; bend: number } {
 }
 
 export function mutter(ch: string) {
+  if (silenced) return;
   const { freq, bend } = syllable(ch);
   engine?.syllable(freq, bend);
 }
