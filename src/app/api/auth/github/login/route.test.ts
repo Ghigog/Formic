@@ -12,7 +12,7 @@ beforeEach(() => {
   clearBuckets();
   vi.stubEnv("GITHUB_APP_CLIENT_ID", "Iv1.test");
   vi.stubEnv("GITHUB_APP_CLIENT_SECRET", "shh");
-  vi.stubEnv("FORMIC_SECRET", "test-secret");
+  vi.stubEnv("FORMIC_SECRET", "s".repeat(32));
   vi.stubEnv("FORMIC_URL", "");
   resetEnvCache();
 });
@@ -28,6 +28,19 @@ describe("GET /api/auth/github/login", () => {
     expect(location.searchParams.get("state")).toMatch(/^[0-9a-f]{32}$/);
     expect(res.headers.get("Set-Cookie")).toContain(`${OAUTH_COOKIE}=`);
   });
+
+  it.each([["unset", ""], ["31 bytes", "s".repeat(31)]])(
+    "refuses sign-in and sets no cookie when FORMIC_SECRET is %s",
+    async (_name, secret) => {
+      vi.stubEnv("FORMIC_SECRET", secret);
+      const res = await login();
+      expect(res.status).toBe(303);
+      const to = new URL(res.headers.get("Location") ?? "");
+      expect(to.pathname).toBe("/login");
+      expect(to.searchParams.get("error")).toMatch(/FORMIC_SECRET/);
+      expect(res.headers.get("Set-Cookie")).toBeNull();
+    },
+  );
 
   it("sends people home when no GitHub App is configured", async () => {
     vi.stubEnv("GITHUB_APP_CLIENT_ID", "");
