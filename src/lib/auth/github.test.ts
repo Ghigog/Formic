@@ -56,7 +56,7 @@ beforeEach(() => {
   globalThis.__formicMemoryStore = undefined;
   vi.stubEnv("GITHUB_APP_CLIENT_ID", "Iv1.test");
   vi.stubEnv("GITHUB_APP_CLIENT_SECRET", "shh");
-  vi.stubEnv("FORMIC_SECRET", "test-secret");
+  vi.stubEnv("FORMIC_SECRET", "s".repeat(32));
   vi.stubEnv("FORMIC_ALLOWED_USERS", "");
   resetEnvCache();
 });
