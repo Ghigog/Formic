@@ -3,6 +3,7 @@ import type { BoardCard } from "@/lib/domain/entities";
 
 let cards: BoardCard[] = [];
 let audits: unknown[] = [];
+let epics: Record<string, unknown> = {};
 let doneEntries: Record<string, string> = {};
 let job: (() => Promise<void>) | null = null;
 
@@ -23,6 +24,7 @@ const branchHead = vi.fn(async (..._args: unknown[]): Promise<string | null> => 
 vi.mock("@/lib/db", () => ({
   repository: () => ({
     boardCards: async () => cards,
+    cardById: async (id: string) => epics[id] ?? null,
     auditsFor: async () => audits,
     ticketColumnEntries: async (id: string) =>
       doneEntries[id] ? [{ column: "done", enteredAt: doneEntries[id], exitedAt: null, synthetic: false }] : [],
@@ -75,6 +77,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   cards = merged(5); // 250 XP: Lv 6
   audits = [];
+  epics = {};
   doneEntries = {};
   job = null;
   projectFor.mockResolvedValue({ repoFullName: null, baseBranch: "main", unlockAllSentinels: false });
@@ -111,6 +114,39 @@ describe("sentinelsFor staleness", () => {
     cards.push({ id: "c", kind: "ticket", status: "merged", storyPoints: 1 } as BoardCard);
     doneEntries.c = new Date(4000).toISOString();
     expect((await sentinelsFor("p"))[locked.id]).toMatchObject({ doneSince: threshold + 1, auditStale: true });
+  });
+});
+
+describe("a Sentinel's hold", () => {
+  const reported = { id: "r", sentinel: locked.id, kind: "audit", status: "done", stars: 3, epicId: "e7", startedAt: new Date(3000).toISOString(), finishedAt: new Date(4000), log: [] };
+  const epic = (patch: object) => ({ id: "e7", kind: "epic", key: "EPIC-7", status: "queued", ...patch });
+
+  beforeEach(() => {
+    audits = [calibrated, reported];
+  });
+
+  it("carries the open Epic's id and key, and refuses an audit but not a calibration", async () => {
+    epics = { e7: epic({}) };
+    expect((await sentinelsFor("p"))[locked.id]!.hold).toEqual({ epicId: "e7", key: "EPIC-7" });
+    expect(await summonSentinel("p", locked.id)).toEqual({
+      ok: false,
+      error: "EPIC-7 is still open. Finish or archive it before auditing again.",
+      status: 409,
+    });
+    expect(startAudit).not.toHaveBeenCalled();
+    expect(await summonSentinel("p", locked.id, "calibrate")).toEqual({ ok: true });
+    expect(startAudit).toHaveBeenCalledWith("p", locked.id, "calibrate", null, null);
+  });
+
+  it.each([
+    ["Done", { e7: epic({ status: "merged" }) }],
+    ["archived", { e7: epic({ archived: true }) }],
+    ["deleted", {}],
+  ])("lets an audit start once the Epic is %s", async (_, e) => {
+    epics = e;
+    expect((await sentinelsFor("p"))[locked.id]!.hold).toBeNull();
+    expect(await summonSentinel("p", locked.id)).toEqual({ ok: true });
+    expect(startAudit).toHaveBeenCalled();
   });
 });
 

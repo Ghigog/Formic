@@ -799,8 +799,17 @@ export interface BoardRepository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
-  /** The archive: a project's archived tickets, off the active board. */
+  /** The archive: a project's archived tickets, off the active board. Those archived with their Epic show under it. */
   archivedTickets(projectId: string): Promise<BoardCard[]>;
+  /** The archive: a project's archived Epics. */
+  archivedEpics(projectId: string): Promise<BoardCard[]>;
+  /**
+   * Archives an Epic and each of its non-archived tickets, marking those as
+   * taken by the Epic, in one transaction. Idempotent.
+   */
+  archiveEpic(epicId: string): Promise<void>;
+  /** Restores an Epic and only the tickets its archive took. Idempotent. */
+  restoreEpic(epicId: string): Promise<void>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
   /**
    * The next standalone ticket's number, T-<number>. Claimed atomically and

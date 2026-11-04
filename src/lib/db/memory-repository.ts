@@ -141,6 +141,8 @@ interface Store {
   epicProject: Map<string, string>;
   cards: Map<string, BoardCard>;
   ticketExtras: Map<string, TicketExtras>;
+  /** Ticket ids archived by their Epic's archive, so restoring it brings back only those. */
+  archivedWithEpic: Set<string>;
   /** Ticket id to its column history, oldest first. */
   columnEntries: Map<string, TicketColumnEntry[]>;
   /** Ticket id to its recorded changes, oldest first. */
@@ -265,6 +267,7 @@ function store(): Store {
     epicProject: new Map(),
     cards: new Map(),
     ticketExtras: new Map(),
+    archivedWithEpic: new Set(),
     columnEntries: new Map(),
     ticketChanges: new Map(),
     prds: new Map(),
@@ -892,15 +895,49 @@ export class MemoryRepository implements Repository {
     // the archive, off the board.
     return cards
       .filter((c) => !(c.kind === "epic" && c.standalone))
-      .filter((c) => !(c.kind === "ticket" && c.archived))
+      .filter((c) => !c.archived)
       .sort(byPosition);
   }
 
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
     const s = store();
     return [...s.cards.values()]
-      .filter((c) => c.kind === "ticket" && c.archived && projectOf(s, c) === projectId && !isScout(s, c))
+      .filter(
+        (c) =>
+          c.kind === "ticket" && c.archived && !s.archivedWithEpic.has(c.id) && projectOf(s, c) === projectId && !isScout(s, c),
+      )
       .sort(byPosition);
+  }
+
+  async archivedEpics(projectId: string): Promise<BoardCard[]> {
+    const s = store();
+    return [...s.cards.values()]
+      .filter((c) => c.kind === "epic" && c.archived && projectOf(s, c) === projectId)
+      .sort(byPosition);
+  }
+
+  async archiveEpic(epicId: string): Promise<void> {
+    const s = store();
+    const epic = s.cards.get(epicId);
+    if (!epic || epic.kind !== "epic") return;
+    for (const c of s.cards.values()) {
+      if (c.kind !== "ticket" || c.epicId !== epicId || c.archived) continue;
+      c.archived = true;
+      s.archivedWithEpic.add(c.id);
+    }
+    epic.archived = true;
+  }
+
+  async restoreEpic(epicId: string): Promise<void> {
+    const s = store();
+    const epic = s.cards.get(epicId);
+    if (!epic || epic.kind !== "epic") return;
+    for (const c of s.cards.values()) {
+      if (c.kind !== "ticket" || c.epicId !== epicId || !s.archivedWithEpic.has(c.id)) continue;
+      c.archived = false;
+      s.archivedWithEpic.delete(c.id);
+    }
+    epic.archived = false;
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
@@ -1248,6 +1285,7 @@ export class MemoryRepository implements Repository {
       s.cards.delete(card.id);
       s.queens.delete(card.id);
       s.ticketExtras.delete(card.id);
+      s.archivedWithEpic.delete(card.id);
     }
     for (const card of s.cards.values()) {
       card.dependsOn = card.dependsOn.filter((id) => s.cards.has(id));
@@ -1478,7 +1516,11 @@ export class MemoryRepository implements Repository {
     if (update.fileScope !== undefined) card.fileScope = normalizeScope(update.fileScope);
     if (update.storyPoints !== undefined) card.storyPoints = update.storyPoints;
     if (update.needsHuman !== undefined) card.needsHuman = update.needsHuman;
-    if (update.archived !== undefined) card.archived = update.archived;
+    if (update.archived !== undefined) {
+      card.archived = update.archived;
+      // On its own now: a restore of its Epic no longer concerns it.
+      s.archivedWithEpic.delete(card.id);
+    }
     if (update.prNumber !== undefined) card.prNumber = update.prNumber;
     if (update.prUrl !== undefined) card.prUrl = update.prUrl;
     if (update.blockedReason !== undefined) {

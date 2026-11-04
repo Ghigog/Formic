@@ -30,17 +30,26 @@ describe("ArchiveDropZone", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
     const onArchived = vi.fn();
-    renderInDnd(<ArchiveDropZone dropped={{ ticketId: "t1" }} onArchived={onArchived} />);
+    renderInDnd(<ArchiveDropZone dropped={{ id: "t1", kind: "ticket" }} onArchived={onArchived} />);
     await waitFor(() => expect(onArchived).toHaveBeenCalledWith("t1"));
     expect(fetchMock).toHaveBeenCalledWith("/api/tickets/t1/archive", {
       method: "PATCH",
     });
   });
 
+  it("archives a dropped Epic through the Epic route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    const onArchived = vi.fn();
+    renderInDnd(<ArchiveDropZone dropped={{ id: "e1", kind: "epic" }} onArchived={onArchived} />);
+    await waitFor(() => expect(onArchived).toHaveBeenCalledWith("e1"));
+    expect(fetchMock).toHaveBeenCalledWith("/api/epics/e1/archive", { method: "PATCH" });
+  });
+
   it("shows an error and keeps the ticket when the request fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     const onArchived = vi.fn();
-    renderInDnd(<ArchiveDropZone dropped={{ ticketId: "t1" }} onArchived={onArchived} />);
+    renderInDnd(<ArchiveDropZone dropped={{ id: "t1", kind: "ticket" }} onArchived={onArchived} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Archive failed");
     expect(onArchived).not.toHaveBeenCalled();
   });
@@ -56,7 +65,7 @@ describe("ArchiveDropZone", () => {
       }),
     );
     const onArchived = vi.fn();
-    renderInDnd(<ArchiveDropZone dropped={{ ticketId: "t1" }} onArchived={onArchived} />);
+    renderInDnd(<ArchiveDropZone dropped={{ id: "t1", kind: "ticket" }} onArchived={onArchived} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(reason);
     expect(onArchived).not.toHaveBeenCalled();
   });

@@ -30,12 +30,12 @@ vi.mock("@hello-pangea/dnd", async (orig) => {
 vi.mock("./archive-drop-zone", () => ({
   ARCHIVE_DROPPABLE_ID: "archive",
   ArchiveDropZone: (p: {
-    dropped?: { ticketId: string } | null;
+    dropped?: { id: string; kind: string } | null;
     onArchived: (id: string) => void;
   }) => (
     <button
       disabled={!p.dropped}
-      onClick={() => p.onArchived(p.dropped!.ticketId)}
+      onClick={() => p.onArchived(p.dropped!.id)}
     >
       archive succeeded
     </button>
@@ -61,10 +61,12 @@ vi.mock("@/components/colony/header-stats", () => ({
 
 const card = makeCard({ status: "ready", title: "Fix login" });
 
-function renderBoard(onArchived = vi.fn()) {
+const epic = makeCard({ kind: "epic", key: "EPIC-1", status: "ready", title: "Export" });
+
+function renderBoard(onArchived = vi.fn(), cards = [card]) {
   render(
     <Board
-      cards={[card]}
+      cards={cards}
       projectName="Formic"
       repoFullName="formic-labs/formic-web"
       onOpenCard={vi.fn()}
@@ -76,11 +78,11 @@ function renderBoard(onArchived = vi.fn()) {
   return onArchived;
 }
 
-function dropOnArchive() {
+function dropOnArchive(draggableId = card.id) {
   act(() =>
     dnd.onDragEnd!(
       {
-        draggableId: card.id,
+        draggableId,
         type: "DEFAULT",
         reason: "DROP",
         mode: "FLUID",
@@ -129,5 +131,14 @@ describe("Board archive flight", () => {
     );
     expect(flyToNest).not.toHaveBeenCalled();
     expect(onArchived).toHaveBeenCalledWith(card.id);
+  });
+
+  it("archives a dropped Epic like a ticket", () => {
+    const onArchived = renderBoard(vi.fn(), [epic]);
+    dropOnArchive(epic.id);
+    act(() =>
+      screen.getByRole("button", { name: "archive succeeded" }).click(),
+    );
+    expect(onArchived).toHaveBeenCalledWith(epic.id);
   });
 });

@@ -82,6 +82,7 @@ import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 type EpicRow = {
   id: string;
+  archived: boolean;
   queen?: { id: string } | null;
   number: number | null;
   title: string;
@@ -615,10 +616,12 @@ export class PrismaRepository implements Repository {
     // long text (a PRD, a request, a ticket's description and criteria) is
     // most of each row: reading it here was most of the database's egress.
     const epics = ticketId ? [] : await db.epic.findMany({
-      where: { projectId, ...(epicId ? { id: epicId } : {}) },
+      // An archived Epic is off the board, but still found by its id.
+      where: { projectId, ...(epicId ? { id: epicId } : { archived: false }) },
       orderBy: { position: "asc" },
       select: {
         id: true,
+        archived: true,
         number: true,
         title: true,
         status: true,
@@ -728,6 +731,7 @@ export class PrismaRepository implements Repository {
         position: epic.position,
         epicId: null,
         standalone: epic.standalone,
+        archived: epic.archived,
         workType: epic.workType,
         bugSeverity: epic.bugSeverity,
         rerouteFrom: epic.rerouteFrom,
@@ -846,7 +850,7 @@ export class PrismaRepository implements Repository {
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
     const db = prisma();
     const tickets = await db.ticket.findMany({
-      where: { epic: { projectId }, archived: true, scoutOf: null },
+      where: { epic: { projectId }, archived: true, archivedWithEpic: false, scoutOf: null },
       orderBy: { position: "asc" },
       select: {
         id: true,
@@ -891,6 +895,32 @@ export class PrismaRepository implements Repository {
       childCount: 0,
       doneCount: 0,
     }));
+  }
+
+  async archivedEpics(projectId: string): Promise<BoardCard[]> {
+    const epics = await prisma().epic.findMany({
+      where: { projectId, archived: true, standalone: false },
+      orderBy: { position: "asc" },
+      select: { id: true },
+    });
+    const cards = await Promise.all(epics.map((e) => this.cardById(e.id)));
+    return cards.filter((c): c is BoardCard => c !== null);
+  }
+
+  async archiveEpic(epicId: string): Promise<void> {
+    const db = prisma();
+    await db.$transaction([
+      db.ticket.updateMany({ where: { epicId, archived: false }, data: { archived: true, archivedWithEpic: true } }),
+      db.epic.updateMany({ where: { id: epicId }, data: { archived: true } }),
+    ]);
+  }
+
+  async restoreEpic(epicId: string): Promise<void> {
+    const db = prisma();
+    await db.$transaction([
+      db.ticket.updateMany({ where: { epicId, archivedWithEpic: true }, data: { archived: false, archivedWithEpic: false } }),
+      db.epic.updateMany({ where: { id: epicId }, data: { archived: false } }),
+    ]);
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
@@ -1611,7 +1641,7 @@ export class PrismaRepository implements Repository {
         ...(rest.fileScope !== undefined ? { fileScope: normalizeScope(rest.fileScope) } : {}),
         ...(plan !== undefined ? { plan: plan as never } : {}),
         ...(followUps !== undefined ? { followUps: followUps as never } : {}),
-        ...(archived !== undefined ? { archived } : {}),
+        ...(archived !== undefined ? { archived, archivedWithEpic: false } : {}),
         ...(rest.runnerJob !== undefined
           ? { runnerJobAt: rest.runnerJob ? new Date() : null }
           : {}),
