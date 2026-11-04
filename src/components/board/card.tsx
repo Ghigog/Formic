@@ -423,7 +423,16 @@ export function ProblemNotice({
         !
       </span>
       <div className="min-w-0">
-        <p className={cn("whitespace-pre-line", long && !expanded && "line-clamp-3")}>
+        {/* Opened, a long notice scrolls inside itself: it sits in the drawer's
+            fixed header, and growing past the screen would leave nothing below
+            it reachable. */}
+        <p
+          className={cn(
+            "whitespace-pre-line",
+            long && !expanded && "line-clamp-3",
+            long && expanded && "max-h-[30dvh] overflow-y-auto overscroll-contain",
+          )}
+        >
           <span className="font-semibold">
             {card.misplacedReason ? "It can't work here. " : isQuestion(card.blockedReason) ? "" : "This needs you. "}
           </span>

@@ -593,6 +593,8 @@ describe("a problem notice", () => {
     expect(text.className).toContain("line-clamp-3");
     fireEvent.click(screen.getByRole("button", { name: "Show more" }));
     expect(text.className).not.toContain("line-clamp-3");
+    // Opened, it scrolls inside itself, so the drawer below it stays reachable.
+    expect(text.className).toContain("overflow-y-auto");
     fireEvent.click(screen.getByRole("button", { name: "Show less" }));
     expect(text.className).toContain("line-clamp-3");
   });
