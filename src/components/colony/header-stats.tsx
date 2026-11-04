@@ -126,6 +126,7 @@ function TimelineButton({
   iconOnly?: boolean;
 }) {
   const open = c.timelineOpen;
+  if (!c.featureUnlocked("timeline")) return null;
   return (
     <button
       data-colony="timeline"
@@ -308,7 +309,7 @@ export function LevelBadge({
       <span className={num}>{level}</span>
     </span>
   );
-  if (!c || !s) {
+  if (!c || !s || !c.featureUnlocked("sentinels")) {
     return (
       <span data-colony="level" className={box} title={`Level ${level}`}>
         {lv}
@@ -361,7 +362,7 @@ export function ColonyLevelStats() {
   if (!c) return null;
   const s = c.score;
   return (
-    <div data-tour="sentinels" className="flex shrink-0 items-center gap-2.5">
+    <div data-tour={c.featureUnlocked("sentinels") ? "sentinels" : undefined} className="flex shrink-0 items-center gap-2.5">
       <LevelBadge level={s.level} size={36} />
       <div className="flex flex-col gap-1.5 max-xl:hidden">
         <div className="flex items-baseline gap-2">
@@ -437,7 +438,7 @@ export function ColonyMobileStats() {
       <div
         role="group"
         aria-label={`Level ${s.level} ${s.rank}, ${c.shownPoints} points`}
-        data-tour="points sentinels"
+        data-tour={c.featureUnlocked("sentinels") ? "points sentinels" : "points"}
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-[10px] px-1"
       >
         <LevelBadge level={s.level} size={32} />
