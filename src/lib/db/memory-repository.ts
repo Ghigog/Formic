@@ -810,6 +810,10 @@ export class MemoryRepository implements Repository {
     return true;
   }
 
+  async armedGoldenBells(): Promise<string[]> {
+    return [...store().goldenBellsArmed];
+  }
+
   async queensSpent(projectId: string): Promise<number> {
     return store().queensSpent.get(projectId) ?? 0;
   }
