@@ -107,3 +107,15 @@ describe("BoardHeader project button", () => {
     expect(follows(ask, account)).toBe(true);
   });
 });
+
+describe("BoardHeader locked features", () => {
+  it("renders no Sentinels or Timeline entry of its own, on desktop or phone", () => {
+    for (const phone of [false, true]) {
+      setViewportMatches(phone);
+      const { unmount } = renderHeader();
+      expect(screen.queryByRole("button", { name: /sentinels/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: /timeline/i })).toBeNull();
+      unmount();
+    }
+  });
+});

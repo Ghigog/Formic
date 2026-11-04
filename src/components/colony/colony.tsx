@@ -28,7 +28,9 @@ import {
   rankOf,
   epicBonus,
   epicTally,
+  featureUnlocked as featureUnlockedAt,
   type BugColor,
+  type FeatureKey,
   type BugShape,
   type EpicTally,
   type Score,
@@ -67,6 +69,8 @@ export interface ColonyApi {
   bugHex: string;
   /** Equips a style, or refuses one the level has not reached. */
   tryStyle: (patch: { shape?: BugShape; color?: BugColor }, from: HTMLElement) => void;
+  /** Whether this board's own level has reached the feature. Hidden features are not rendered. */
+  featureUnlocked: (feature: FeatureKey) => boolean;
   timelineOpen: boolean;
   setTimelineOpen: (open: boolean) => void;
   /** The Sentinels page. Opening it closes the timeline, and the other way round. */
@@ -153,12 +157,15 @@ export function ColonyProvider({
   storageKey,
   cards,
   extras,
+  unlockAll = false,
   children,
 }: {
   /** One colony per board. */
   storageKey: string;
   cards: BoardCard[];
   extras: ExtrasMap;
+  /** Unlock all Sentinels: shows Sentinels whatever the level. */
+  unlockAll?: boolean;
   children: React.ReactNode;
 }) {
   const [stored, setSaved] = useSaved(storageKey);
@@ -711,6 +718,7 @@ export function ColonyProvider({
     color: saved.color,
     bugHex,
     tryStyle,
+    featureUnlocked: (feature) => (unlockAll && feature === "sentinels") || featureUnlockedAt(feature, score.level),
     timelineOpen,
     setTimelineOpen: (open) => {
       sfx(open ? "pickup" : "drop");
