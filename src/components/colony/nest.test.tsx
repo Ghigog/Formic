@@ -90,9 +90,8 @@ describe("ColonyPopover Queens", () => {
     stubQueens(2);
     openPopoverAt(3 * XP_PER_LEVEL);
     await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("2"));
-    expect(document.querySelector("[data-queen-icon] svg")).toBeTruthy();
-    expect(screen.getByText("Unlock a queen with each level")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "How Queens work" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/Unlock a queen with each level/);
     expect(screen.getByRole("tooltip").textContent).toMatch(/Drop a Queen on a ticket and the ants work through every ticket it needs/);
     expect(screen.getByLabelText("Drag a Queen onto a card")).toBeTruthy();
   });
@@ -350,6 +349,31 @@ describe("ColonyPopover bell", () => {
   it("hangs in the popover", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ left: 0, armed: false }))));
     openPopoverAt(11 * XP_PER_LEVEL);
-    expect(await screen.findByRole("region", { name: "Bells" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /Bell cord/ })).toBeTruthy();
+  });
+
+  it("puts Queens, Scouts, Reserve and the bell on one row, in that order, with their numbers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url === "/api/queens"
+          ? new Response(JSON.stringify({ unspent: 60 }))
+          : url === "/api/colony"
+            ? new Response(
+                JSON.stringify({ colonySize: 8, colonyReserve: 1, autoScout: false, level: 80, floor: 0, nextFloorLevel: null, maxScouts: 4, nextScoutLevel: null, autoScoutLevel: 8, maxColony: 12, inUse: 0 }),
+              )
+            : new Response(JSON.stringify({ left: 16, armed: false })),
+      ),
+    );
+    openPopoverAt(79 * XP_PER_LEVEL);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("60"));
+    await waitFor(() => expect(document.querySelector("[data-reserve-cap]")!.textContent).toBe("1"));
+    const row = document.querySelector("[data-colony-tiles]")!;
+    const tiles = [...row.querySelectorAll("[data-colony-tile]")];
+    expect(tiles.map((t) => t.getAttribute("data-colony-tile"))).toEqual(["queens", "scouts", "reserve", "bell"]);
+    expect(tiles.map((t) => t.textContent!.replace(/\D/g, ""))).toEqual(["60", "4", "1", "16"]);
+    await screen.findByRole("button", { name: /16 golden bells left/ });
+    fireEvent.click(screen.getByRole("button", { name: "How the bell works" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/16 golden bells left/);
   });
 });

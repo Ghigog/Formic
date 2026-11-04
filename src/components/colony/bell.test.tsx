@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const struck = vi.hoisted(() => [] as number[]);
@@ -31,6 +32,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+/** The popover's line under the tiles, which shows what the bell says. */
+function Harness() {
+  const [said, setSaid] = useState<string | null>(null);
+  return (
+    <>
+      <Bell onSay={setSaid} />
+      <p role="status">{said}</p>
+    </>
+  );
+}
+
 const cord = () => screen.getByRole("button", { name: /bell cord/i });
 
 /** Grabs the cord and swings it: each x is where the hand goes next. */
@@ -42,17 +54,32 @@ function swingCord(xs: number[]) {
 
 describe("the bell", () => {
   it("rings with a full swing of the cord at any level, sounds, and says what it did", async () => {
-    render(<Bell />);
-    await screen.findByText(/0 golden bells left/);
+    render(<Harness />);
+    await screen.findByRole("button", { name: /0 golden bells left/ });
     swingCord([130, 70, 130]);
     await waitFor(() => expect(posts).toEqual(["ring"]));
     expect(struck[0]).toBe(1);
     expect(await screen.findByText("Rang. Told 3 cards to carry on.")).toBeTruthy();
   });
 
+  it("shows its number and explains itself behind the i", async () => {
+    state = { left: 2, armed: false };
+    render(<Harness />);
+    await screen.findByRole("button", { name: /2 golden bells left/ });
+    expect(screen.getByText("2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "How the bell works" }));
+    const note = screen.getByRole("tooltip").textContent;
+    expect(note).toMatch(/Silver bell/);
+    expect(note).toMatch(/2 golden bells left/);
+    expect(note).toMatch(/tap the bell to arm one/);
+    expect(note).toMatch(/swing the cord/);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("does nothing but sway on a tap of the cord, so a misclick never rings it", async () => {
-    render(<Bell />);
-    await screen.findByText(/0 golden bells left/);
+    render(<Harness />);
+    await screen.findByRole("button", { name: /0 golden bells left/ });
     swingCord([]);
     fireEvent.click(cord());
     swingCord([108, 95, 104]);
@@ -61,28 +88,28 @@ describe("the bell", () => {
   });
 
   it("rings from the keyboard by swinging with the arrow keys", async () => {
-    render(<Bell />);
-    await screen.findByText(/0 golden bells left/);
+    render(<Harness />);
+    await screen.findByRole("button", { name: /0 golden bells left/ });
     for (const key of ["ArrowRight", "ArrowLeft", "ArrowRight"]) fireEvent.keyDown(cord(), { key });
     await waitFor(() => expect(posts).toEqual(["ring"]));
   });
 
   it("arms a golden bell when the bell itself is tapped, and turns gold", async () => {
     state = { left: 2, armed: false };
-    render(<Bell />);
-    await screen.findByText(/2 golden bells left/);
+    render(<Harness />);
+    await screen.findByRole("button", { name: /2 golden bells left/ });
     fireEvent.click(screen.getByRole("button", { name: /tap to arm a golden bell/i }));
     await waitFor(() => expect(posts).toEqual(["arm"]));
-    expect(await screen.findByText("Golden bell")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Golden bell armed/));
     expect(screen.getByTestId("bell-rig")).toHaveAttribute("data-armed");
     expect(screen.getByRole("button", { name: /armed/i })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("explains there is no golden bell yet, without arming, when none are left", async () => {
-    render(<Bell />);
-    await screen.findByText(/0 golden bells left/);
+    render(<Harness />);
+    await screen.findByRole("button", { name: /0 golden bells left/ });
     fireEvent.click(screen.getByRole("button", { name: /tap to arm a golden bell/i }));
-    expect(await screen.findByText(/one comes every five levels/)).toBeTruthy();
+    expect(await screen.findByRole("status")).toHaveTextContent(/one comes every five levels/);
     expect(posts).toEqual([]);
   });
 });
