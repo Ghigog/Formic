@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const jar = vi.hoisted(() => new Map<string, string>());
 vi.mock("next/headers", () => ({
@@ -10,6 +10,7 @@ vi.mock("next/headers", () => ({
 const { repository } = await import("@/lib/db");
 const { SESSION_COOKIE, signSession } = await import("@/lib/auth/session");
 const { resetEnvCache } = await import("@/lib/secrets/env");
+const { localUser } = await import("@/lib/auth/user");
 const { GET, PUT } = await import("./route");
 
 function put(body: unknown): Request {
@@ -25,6 +26,8 @@ function get(query = ""): Request {
 }
 
 let userId: string;
+
+afterEach(() => vi.unstubAllEnvs());
 
 beforeEach(async () => {
   globalThis.__formicMemoryStore = undefined;
@@ -284,5 +287,22 @@ describe("/api/settings notifications", () => {
 
   it("rejects anything but on or off", async () => {
     expect((await PUT(put({ notifications: { epicCompleted: "yes" } }))).status).toBe(400);
+  });
+});
+
+describe("/api/settings E2B key without FORMIC_SECRET", () => {
+  it("refuses with a database configured, and stores nothing", async () => {
+    // Local sign-in, so the request is authenticated without a secret.
+    vi.stubEnv("GITHUB_APP_CLIENT_ID", "");
+    vi.stubEnv("GITHUB_APP_CLIENT_SECRET", "");
+    resetEnvCache();
+    vi.stubEnv("FORMIC_SECRET", "");
+    vi.stubEnv("DATABASE_URL", "postgres://u:p@h/db");
+    const res = await PUT(put({ e2bKey: "e2b_secret" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("FORMIC_SECRET");
+    const user = await localUser();
+    expect(user?.e2bKeyCipher ?? null).toBeNull();
+    expect(user?.e2bKeyHint ?? null).toBeNull();
   });
 });
