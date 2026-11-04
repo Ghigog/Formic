@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeEpicWithChildren } from "@/test/cards";
@@ -9,6 +9,11 @@ function Open() {
   const c = useColony();
   return <button onClick={() => c?.setTimelineOpen(true)}>open timeline</button>;
 }
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("ColonyTimeline", () => {
   // jsdom has no Web Animations API.
@@ -53,6 +58,28 @@ describe("ColonyTimeline", () => {
     await userEvent.click(doneToggle);
     expect(screen.getByRole("button", { name: "Collapse DONE-EPIC" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("DONE-1")).toBeInTheDocument();
+  });
+
+  it("shows the KPIs below the chart and switches their window", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false });
+    vi.stubGlobal("fetch", fetchMock);
+    const cards = makeEpicWithChildren({ key: "E-1" }, [
+      { key: "T-1", status: "running", storyPoints: 2, startedAt: new Date().toISOString() },
+    ]);
+    render(
+      <ColonyProvider storageKey="colony-test-timeline-kpi" cards={cards} extras={{}}>
+        <Open />
+        <ColonyTimeline repoName="repo" />
+      </ColonyProvider>,
+    );
+    await userEvent.click(screen.getByText("open timeline"));
+    const chart = document.querySelector('[data-tour="timeline-chart"]')!;
+    const kpis = document.querySelector('[data-tour="timeline-kpis"]')!;
+    expect(kpis.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Board KPIs" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls[0]![0]).toContain("window=30d");
+    await userEvent.click(screen.getByRole("button", { name: "All time" }));
+    expect(fetchMock.mock.calls[1]![0]).toContain("window=all");
   });
 
   describe("compact left column", () => {

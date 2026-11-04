@@ -5,6 +5,7 @@ import { repository } from "@/lib/db";
 import type { AgentPreset, AgentPresetInput } from "@/lib/domain/entities";
 import { formatReset } from "./limits";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
+import { OUT_OF_USAGE_PHRASE } from "@/lib/domain/notice";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { SHOWCASE_BRIEF } from "./prompts";
 import { hintFor, open, seal } from "@/lib/secrets/vault";
@@ -84,7 +85,7 @@ export function limitReason(preset: AgentPreset, where: string, now = Date.now()
   if (!preset.limitedUntil) return null;
   const until = new Date(preset.limitedUntil);
   if (until.getTime() <= now) return null;
-  return `${preset.name} is out of usage until ${formatReset(until)}. Wait for it, or pick an agent on another account for ${where}.`;
+  return `${preset.name}${OUT_OF_USAGE_PHRASE}${formatReset(until)}. Wait for it, or pick an agent on another account for ${where}.`;
 }
 
 /** How long an agent whose allowance is spent stays out before the window is read again. */

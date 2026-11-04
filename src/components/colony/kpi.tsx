@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { useColony } from "@/components/colony/colony";
-import { useSound } from "@/components/colony/store";
+import { useColony } from "./colony";
+import { useSound } from "./store";
 import { cn } from "@/components/ui/cn";
 import { COLUMNS, COLUMN_LABELS } from "@/lib/domain/status";
 import type { ProjectKpis, KpiWindow } from "@/lib/kpi/compute";
@@ -27,7 +27,8 @@ function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function KpiSection() {
+/** `startAfterMs` holds the reveal back, so it begins after the host's entrance. */
+export function KpiSection({ startAfterMs = 0 }: { startAfterMs?: number } = {}) {
   const c = useColony();
   const [soundOn] = useSound();
   const ref = useRef<HTMLElement>(null);
@@ -59,15 +60,23 @@ export function KpiSection() {
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver((entries) => {
-      if (!entries.some((e) => e.isIntersecting)) return;
-      io.disconnect();
-      setRevealed(true);
-      if (prefersReducedMotion()) setProgress(1);
-      if (soundOn) c?.sfx("kpi");
-    });
-    io.observe(el);
-    return () => io.disconnect();
+    let io: IntersectionObserver | undefined;
+    const watch = () => {
+      io = new IntersectionObserver((entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        io?.disconnect();
+        setRevealed(true);
+        if (prefersReducedMotion()) setProgress(1);
+        if (soundOn) c?.sfx("kpi");
+      });
+      io.observe(el);
+    };
+    const timer = startAfterMs > 0 ? setTimeout(watch, startAfterMs) : undefined;
+    if (!timer) watch();
+    return () => {
+      clearTimeout(timer);
+      io?.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -12,6 +12,10 @@ import {
 } from "@/lib/colony/timeline";
 import { useColony, type ColonyApi } from "./colony";
 import { centerOf } from "./fx";
+import { KpiSection } from "./kpi";
+
+/** The KPI reveal waits for the entrance (260ms fade plus staggered bars and stamps). */
+const KPI_REVEAL_DELAY_MS = 1500;
 
 const pct = (d: number) => `${(Math.max(0, Math.min(N, d)) / N) * 100}%`;
 
@@ -1057,6 +1061,10 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
               </>
             )}
           </div>
+        </div>
+
+        <div data-tour="timeline-kpis">
+          <KpiSection startAfterMs={KPI_REVEAL_DELAY_MS} />
         </div>
       </div>
     </div>
