@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/components/ui/cn";
-import { occurrencesBetween } from "@/lib/calls/occurrences";
+import { occurrencesBetween } from "@/lib/meetings/occurrences";
 import type { Meeting } from "@/lib/db/repository";
 
 /** The hours a day offers to start a meeting in. */
