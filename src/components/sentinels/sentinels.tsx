@@ -1,5 +1,6 @@
 "use client";
 
+import { AgentCallButton } from "@/components/call/agent-call-button";
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
@@ -706,6 +707,11 @@ function Card({
               <span className="text-muted text-[11px]">Counts as 0★</span>
             )}
             <span className="grow" />
+            {!locked && (
+              <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                <AgentCallButton guest={`sentinel:${x.id}`} />
+              </span>
+            )}
             {!locked && (
               <button
                 type="button"
