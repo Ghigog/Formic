@@ -83,6 +83,10 @@ for (const shot of SHOTS) {
       }, theme);
       // Let fonts and the first paint settle before the photograph.
       await page.evaluate(() => document.fonts.ready);
+      // Switching theme starts colour transitions (the sentinels grade badge
+      // fades its background over 400ms). A scan taken mid-fade reads blended
+      // colours no one sees at rest, so wait for them to land.
+      await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished.catch(() => undefined))));
 
       const file = `${shot.name}-${theme}`;
       await page.screenshot({ path: join(OUT, "screens", `${file}.png`) });
