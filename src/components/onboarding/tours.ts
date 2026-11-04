@@ -53,7 +53,8 @@ export type TourId =
   | "ticket"
   | "agent"
   | "agent-menu"
-  | "colony";
+  | "colony"
+  | "meetings";
 
 export const TOURS: Record<TourId, TourDef> = {
   login: {
@@ -304,6 +305,20 @@ export const TOURS: Record<TourId, TourDef> = {
       { target: "colony-next", side: "left", title: "Levels", text: "Points fill this bar. Every level unlocks something new." },
       { target: "colony-shapes", side: "left", title: "Bug shapes", text: "New levels unlock new shapes for your bugs." },
       { target: "colony-colours", side: "left", title: "Bug colours", text: "And new colours. Pick one to try it out." },
+    ],
+  },
+
+  meetings: {
+    id: "meetings",
+    allThere: true,
+    steps: [
+      { target: "meetings-next", side: "below", title: "Up next", text: "Your next meeting, who is coming and the top of the agenda. Join now takes you into the call." },
+      // The same step when nothing is planned: whichever target is on screen is shown.
+      { target: "meetings-empty", side: "below", title: "Up next", text: "No meetings yet. Let's plan one." },
+      { target: "meetings-calendar", side: "inside", title: "The calendar", text: "Two weeks, hour by hour. Tap an empty slot to plan a meeting there, or a meeting to open it." },
+      { target: "meetings-new", side: "below", title: "New meeting", text: "Pick a time, an agenda and who comes: agents, the PM, even Sentinels. It can repeat." },
+      { target: "meetings-join", side: "above", title: "Join now", text: "When it is time, I'll nudge you. Join and the call starts, hands free." },
+      { target: "meetings", side: "below", title: "Back to board", text: "Press this again to head back to the board." },
     ],
   },
 };

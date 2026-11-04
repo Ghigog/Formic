@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useColony } from "@/components/colony/colony";
 import type { Meeting } from "@/lib/db/repository";
 import { GuestCoin } from "./guest-coin";
 import { whenLabel } from "./up-next";
@@ -30,6 +33,7 @@ export function MeetingCard({
   onDelete: () => void;
   onClose: () => void;
 }) {
+  const c = useColony();
   return (
     <section aria-label={meeting.title} className="border-line bg-card grid gap-3 rounded-xl border p-4">
       <div className="flex items-start gap-3">
@@ -58,7 +62,7 @@ export function MeetingCard({
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Link href={`/calls/${meeting.id}`} className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white">
+        <Link href={`/calls/${meeting.id}`} onClick={() => c?.sfx("chord")} className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white">
           Join now
         </Link>
         <button type="button" onClick={onEdit} disabled={busy} className={action}>

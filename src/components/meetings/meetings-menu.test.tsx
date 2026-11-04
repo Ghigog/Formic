@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
+import { SoundEngine } from "@/components/colony/sound";
 import { MeetingsMenu } from "./meetings-menu";
 
 function Chip() {
@@ -22,6 +23,9 @@ let stored: Record<string, unknown>[];
 let saved: Record<string, unknown> | null;
 
 beforeEach(() => {
+  // jsdom has no Web Animations.
+  Element.prototype.animate = vi.fn() as never;
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   stored = [];
   saved = null;
   vi.stubGlobal(
@@ -92,5 +96,53 @@ describe("MeetingsMenu", () => {
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(await screen.findByText("No meetings yet. Let's plan one.")).toBeInTheDocument();
+  });
+
+  describe("entrance", () => {
+    const at = (h: number) => {
+      const d = tomorrow();
+      d.setHours(h);
+      return d;
+    };
+    const meeting = (id: string, title: string, d: Date, repeat = "none") => ({
+      id, projectId: "p", title, startsAt: d.toISOString(), agenda: "", guests: [], repeat, lastRemindedFor: null, createdAt: d.toISOString(),
+    });
+    const played = (play: { mock: { calls: unknown[][] } }) => play.mock.calls.map((c) => c[0]).filter((n) => n !== "pickup");
+
+    it("drops the page, plops each meeting in time order with its pitch, then rings Up next", async () => {
+      stored = [meeting("a", "Sprint planning", at(16)), meeting("b", "Standup", at(9), "weekly")];
+      const play = vi.spyOn(SoundEngine.prototype, "play");
+      mount();
+      await userEvent.click(screen.getByText("meetings chip"));
+      await waitFor(() => expect(played(play)).toContain("ring"), { timeout: 4000 });
+      const names = played(play);
+      expect(names[0]).toBe("drop");
+      expect(names.filter((n) => n === "plop")).toHaveLength(3);
+      const pitches = play.mock.calls.filter((c) => c[0] === "plop").map((c) => c[1] as number);
+      expect(pitches[0]).toBeGreaterThan(pitches[1]!); // Standup at 09:00 before Sprint planning at 16:00
+      expect(names.lastIndexOf("plop")).toBeLessThan(names.indexOf("ring"));
+      play.mockRestore();
+    });
+
+    it("lands one plop on today when there are no meetings", async () => {
+      const play = vi.spyOn(SoundEngine.prototype, "play");
+      mount();
+      await userEvent.click(screen.getByText("meetings chip"));
+      await waitFor(() => expect(played(play)).toContain("plop"), { timeout: 4000 });
+      expect(played(play).filter((n) => n === "plop")).toHaveLength(1);
+      expect(played(play)).not.toContain("ring");
+      play.mockRestore();
+    });
+
+    it("with reduced motion shows everything at once and only rings Up next", async () => {
+      vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+      stored = [meeting("a", "Standup", at(9))];
+      const play = vi.spyOn(SoundEngine.prototype, "play");
+      mount();
+      await userEvent.click(screen.getByText("meetings chip"));
+      await waitFor(() => expect(played(play)).toEqual(["ring"]));
+      expect(Element.prototype.animate).not.toHaveBeenCalled();
+      play.mockRestore();
+    });
   });
 });

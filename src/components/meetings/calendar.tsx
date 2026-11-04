@@ -2,11 +2,17 @@
 
 import { cn } from "@/components/ui/cn";
 import { occurrencesBetween } from "@/lib/meetings/occurrences";
+import { occurrenceKey } from "./entrance";
 import type { Meeting } from "@/lib/db/repository";
 
 /** The hours a day offers to start a meeting in. */
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 7);
 const DAYS = 14;
+
+/** Every occurrence the calendar shows, from `from`. */
+export function visibleOccurrences(meetings: Meeting[], from: Date) {
+  return occurrencesBetween(meetings, from, new Date(from.getFullYear(), from.getMonth(), from.getDate() + DAYS));
+}
 
 /** The Monday of the week `date` falls in, at midnight. */
 export function weekStart(date: Date): Date {
@@ -35,8 +41,7 @@ export function Calendar({
   onOpen?: (meetingId: string, at: Date) => void;
 }) {
   const days = Array.from({ length: DAYS }, (_, i) => new Date(from.getFullYear(), from.getMonth(), from.getDate() + i));
-  const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + DAYS);
-  const occurrences = occurrencesBetween(meetings, from, to);
+  const occurrences = visibleOccurrences(meetings, from);
   const today = new Date();
 
   return (
@@ -51,11 +56,12 @@ export function Calendar({
                 const isToday = sameDay(d, today);
                 const weekend = d.getDay() === 0 || d.getDay() === 6;
                 return (
-                  <div key={d.toISOString()} className="flex flex-col items-center gap-0.5 pb-1">
+                  <div key={d.toISOString()} data-mday className="flex flex-col items-center gap-0.5 pb-1">
                     <span className={cn("font-mono text-[10px] tracking-[0.08em] uppercase", isToday ? "text-terracotta-cta" : "text-muted")}>
                       {d.toLocaleDateString("en-GB", { weekday: "short" })}
                     </span>
                     <span
+                      data-mtoday={isToday ? "" : undefined}
                       className={cn(
                         "inline-flex size-7 items-center justify-center rounded-full font-serif text-[15px] font-semibold",
                         isToday ? "bg-terracotta-cta text-white" : weekend ? "text-muted" : "text-ink",
@@ -92,7 +98,8 @@ export function Calendar({
                         ) : (
                           here.map((o) => (
                             <button
-                              key={`${o.meeting.id}-${o.at.getTime()}`}
+                              key={occurrenceKey(o)}
+                              data-mocc={occurrenceKey(o)}
                               type="button"
                               onClick={() => onOpen?.(o.meeting.id, o.at)}
                               title={o.meeting.title}

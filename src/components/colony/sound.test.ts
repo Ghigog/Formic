@@ -26,3 +26,23 @@ describe("SoundEngine skitter and hiss", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("SoundEngine plop, ring and chord", () => {
+  it("play without throwing, and stay silent when disabled", () => {
+    const engine = new SoundEngine();
+    expect(() => {
+      engine.play("plop", 0);
+      engine.play("plop", 1);
+      engine.play("ring");
+      engine.play("chord");
+    }).not.toThrow();
+    engine.setEnabled(false);
+    const ac = vi.fn();
+    vi.stubGlobal("AudioContext", ac);
+    engine.play("plop", 1);
+    engine.play("ring");
+    engine.play("chord");
+    expect(ac).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
