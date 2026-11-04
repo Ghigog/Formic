@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { RepoPicker } from "./repo-picker";
 import { useAssistantActivity } from "@/lib/hooks/use-assistant-activity";
@@ -11,6 +10,7 @@ import {
   ColonyHeaderStats,
   ColonyLevelStats,
   ColonyMobileStats,
+  MeetingsButton,
 } from "@/components/colony/header-stats";
 
 /**
@@ -77,9 +77,7 @@ export function BoardHeader({
         <ColonyLevelStats />
         <div className="flex items-center justify-end gap-4">
           <ColonyHeaderStats showLevel={false} />
-          <Link href="/calls" className="text-sm font-medium">
-            Calls
-          </Link>
+          <MeetingsButton />
           {account && <AccountMenu account={account} />}
         </div>
       </header>
@@ -106,9 +104,7 @@ export function BoardHeader({
         )}
         <div className="min-w-0 flex-grow" />
         <ColonyMobileStats />
-        <Link href="/calls" className="flex min-h-11 shrink-0 items-center px-1 text-[13px] font-medium">
-          Calls
-        </Link>
+        <MeetingsButton iconOnly />
         {account && <AccountMenu account={account} />}
       </header>
     </>

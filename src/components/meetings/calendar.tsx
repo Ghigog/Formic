@@ -5,7 +5,7 @@ import { occurrencesBetween } from "@/lib/meetings/occurrences";
 import type { Meeting } from "@/lib/db/repository";
 
 /** The hours a day offers to start a meeting in. */
-const HOURS = Array.from({ length: 10 }, (_, i) => i + 8);
+const HOURS = Array.from({ length: 15 }, (_, i) => i + 7);
 const DAYS = 14;
 
 /** The Monday of the week `date` falls in, at midnight. */
@@ -21,7 +21,7 @@ const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.g
 
 /**
  * Two weeks of hourly slots, each week in one of the board's column wells.
- * An empty slot opens the form for its time; a meeting opens its call.
+ * An empty slot opens the form for its time; a meeting, each time it repeats, opens its card.
  */
 export function Calendar({
   meetings,
@@ -32,7 +32,7 @@ export function Calendar({
   meetings: Meeting[];
   from: Date;
   onPick: (at: Date) => void;
-  onOpen?: (meetingId: string) => void;
+  onOpen?: (meetingId: string, at: Date) => void;
 }) {
   const days = Array.from({ length: DAYS }, (_, i) => new Date(from.getFullYear(), from.getMonth(), from.getDate() + i));
   const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + DAYS);
@@ -40,7 +40,7 @@ export function Calendar({
   const today = new Date();
 
   return (
-    <div className="grid gap-5">
+    <div data-tour="meetings-calendar" className="grid gap-5">
       {[days.slice(0, 7), days.slice(7)].map((week, w) => (
         <section key={week[0]!.toISOString()} aria-label={w === 0 ? "This week" : "Next week"} className="bg-column rounded-xl p-3">
           <h2 className="text-muted mb-2 px-1 text-[11px] font-semibold tracking-[0.1em] uppercase">{w === 0 ? "This week" : "Next week"}</h2>
@@ -92,9 +92,9 @@ export function Calendar({
                         ) : (
                           here.map((o) => (
                             <button
-                              key={o.meeting.id}
+                              key={`${o.meeting.id}-${o.at.getTime()}`}
                               type="button"
-                              onClick={() => onOpen?.(o.meeting.id)}
+                              onClick={() => onOpen?.(o.meeting.id, o.at)}
                               title={o.meeting.title}
                               className="bg-epic-chip text-epic-chip-text border-terracotta flex min-h-9 w-full flex-col justify-center rounded-md border-l-[3px] px-1.5 text-left"
                             >

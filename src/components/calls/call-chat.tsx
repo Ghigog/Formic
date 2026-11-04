@@ -101,7 +101,7 @@ export function CallChat({ meetingId }: { meetingId: string }) {
 
   return (
     <div className="bg-cream flex h-dvh flex-col">
-      <CallsHeader back={{ href: "/calls", label: "Back to calls" }} kicker="On a call" title={c.meeting?.title ?? "Call"} />
+      <CallsHeader back={{ href: "/", label: "Back to the board" }} kicker="On a call" title={c.meeting?.title ?? "Call"} />
       <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col">
         <div className="flex flex-col gap-3 px-4 pt-4">
           <div className="flex items-center gap-2" aria-label="On the call">

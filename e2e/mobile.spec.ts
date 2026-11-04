@@ -246,8 +246,10 @@ for (const width of [360, 390]) {
       bar.locator('[data-colony="level"]'),
       bar.locator('[data-colony="score"]'),
       bar.getByRole("button", { name: "Open timeline" }),
+      bar.getByRole("button", { name: /meetings/i }),
       bar.getByRole("button", { name: /account|menu/i }),
     ];
+    await expect(bar.getByRole("link", { name: "Calls" })).toHaveCount(0);
     const boxes = [];
     for (const it of items) {
       const b = await it.first().boundingBox();
