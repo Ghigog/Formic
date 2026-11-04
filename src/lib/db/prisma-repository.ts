@@ -2149,6 +2149,7 @@ export class PrismaRepository implements Repository {
     role: "user" | "assistant";
     content: string;
     status?: AssistantMessage["status"];
+    speaker?: string;
   }): Promise<AssistantMessage> {
     const row = await prisma().assistantMessage.create({
       data: { ...input, status: input.status ?? "done" },
@@ -2396,6 +2397,7 @@ function toAssistantMessage(row: {
   status: string;
   runnerJob: string | null;
   runnerAgent: string | null;
+  speaker: string;
   createdAt: Date;
 }): AssistantMessage {
   return {

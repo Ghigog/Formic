@@ -7,13 +7,18 @@ import { asSignedIn, currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
+import { isGuestId } from "@/lib/meetings/guests";
 import { assistantPick } from "@/lib/agents/board-agents";
 import { limited, RUN } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const askSchema = z.object({ text: z.string().trim().min(1).max(20_000) });
+const askSchema = z.object({
+  text: z.string().trim().min(1).max(20_000),
+  /** Who answers, in order: the PM by default. */
+  speakers: z.array(z.string().refine((v) => v !== "pm" && isGuestId(v), "Not someone who can answer here.")).min(1).max(8).default(["assistant"]),
+});
 
 async function board() {
   const user = await currentUser();
@@ -57,19 +62,16 @@ async function postHandler(req: Request) {
 
   const repo = repository();
   const projectId = found.project.id;
-  const pending = (await repo.assistantMessages(projectId)).some((m) => m.status === "pending");
-  if (pending) {
-    return Response.json({ error: "The assistant is still answering the last question." }, { status: 409 });
-  }
-
+  // Messages queue: a reply starts only when no earlier one is pending, and
+  // each finished one starts the next.
+  const busy = (await repo.assistantMessages(projectId)).some((m) => m.status === "pending");
   await repo.addAssistantMessage({ projectId, role: "user", content: body.data.text });
-  const reply = await repo.addAssistantMessage({
-    projectId,
-    role: "assistant",
-    content: "",
-    status: "pending",
-  });
-  launch(() => answer(projectId, reply.id), `assistant answer ${reply.id}`);
+  const replies = [];
+  for (const speaker of body.data.speakers) {
+    replies.push(await repo.addAssistantMessage({ projectId, role: "assistant", content: "", status: "pending", speaker }));
+  }
+  const first = replies[0];
+  if (!busy && first) launch(() => answer(projectId, first.id), `assistant answer ${first.id}`);
   return Response.json(await state(found.project, found.user));
 }
 

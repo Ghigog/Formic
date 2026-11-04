@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { answer, finishCliAnswer, MAX_ANSWER_MS } from "./turn";
+const launched = vi.hoisted(() => [] as Array<{ work: () => Promise<void>; label: string }>);
+
+// `launch` only records the work, so a test starts the next queued reply itself.
+vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/agents/pipeline")>()),
+  launch: (work: () => Promise<void>, label: string) => {
+    launched.push({ work, label });
+  },
+}));
+
+import { answer, cancelPending, finishCliAnswer, MAX_ANSWER_MS } from "./turn";
 import { applyAction, checkAction } from "./actions";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
@@ -88,6 +98,7 @@ async function reload(id: string) {
 }
 
 beforeEach(() => {
+  launched.length = 0;
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
   MockVcsClient.reset();
   resetAgents();
@@ -226,6 +237,107 @@ describe("the assistant", () => {
     await answer(PROJECT, pending.id);
     expect(await reload(pending.id)).toMatchObject({ status: "failed" });
     expect((await reload(pending.id)).content).toContain("No agent is set for the assistant");
+  });
+});
+
+async function askSpeakers(text: string, speakers: string[]) {
+  const repo = repository();
+  await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: text });
+  const replies = [];
+  for (const speaker of speakers) {
+    replies.push(await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "", status: "pending", speaker }));
+  }
+  return replies;
+}
+
+async function columnAgent(column: "in_review" | "todo") {
+  const preset = await savePreset({ name: "col", provider: "groq", model: "llama-3.3-70b", prompt: "", apiKey: "gsk_test" });
+  await repository().setColumnAgent(PROJECT, column, preset.id);
+}
+
+async function seedReviewTicket() {
+  const repo = repository();
+  const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "x", position: 1 });
+  const [made] = await repo.createTickets([
+    { epicId: epic.id, key: "T-1", title: "In review", description: "d", acceptanceCriteria: ["ok"], fileScope: ["src/a"], size: "S", storyPoints: 1, position: 1, dependsOnKeys: [] },
+  ]);
+  await repo.updateTicket(made!.id, { status: "review" });
+  return made!;
+}
+
+describe("the chat's queue", () => {
+  it("starts the next pending reply when one finishes, fails or is stopped, in order", async () => {
+    await useAgent("groq");
+    fakeProvider([{ role: "assistant", content: "First." }]);
+    const [first, second, third] = await askSpeakers("hi", ["assistant", "assistant", "assistant"]);
+
+    await answer(PROJECT, first!.id);
+    expect(launched.map((l) => l.label)).toEqual([`assistant answer ${second!.id}`]);
+
+    await cancelPending(PROJECT);
+    expect(await reload(second!.id)).toMatchObject({ status: "failed", content: "Stopped." });
+    expect(launched.map((l) => l.label)).toEqual([`assistant answer ${second!.id}`, `assistant answer ${third!.id}`]);
+  });
+
+  it("shows each reply only the conversation up to its own message", async () => {
+    await useAgent("groq");
+    const sent = fakeProvider([{ role: "assistant", content: "Answer." }]);
+    const [first] = await askSpeakers("first question", ["assistant"]);
+    await askSpeakers("second question", ["assistant"]);
+
+    await answer(PROJECT, first!.id);
+
+    const said = JSON.stringify(sent[0]!.messages);
+    expect(said).toContain("first question");
+    expect(said).not.toContain("second question");
+  });
+});
+
+describe("a column agent in the chat", () => {
+  it("replies as itself with its card actions, and a move to Done is a proposal, not a merge", async () => {
+    const ticket = await seedReviewTicket();
+    await columnAgent("in_review");
+    fakeProvider([
+      { role: "assistant", content: null, tool_calls: [call("c1", "act_on_card", { key: "T-1", action: { type: "move", to: "done" } })] },
+      { role: "assistant", content: "I proposed moving it." },
+    ]);
+    const [reply] = await askSpeakers("Reviewer, ship T-1", ["reviewer"]);
+
+    await answer(PROJECT, reply!.id);
+
+    const done = await reload(reply!.id);
+    expect(done).toMatchObject({ speaker: "reviewer", status: "done", content: "I proposed moving it." });
+    expect(done.proposals).toEqual([
+      expect.objectContaining({ state: "proposed", action: { type: "move_card", key: "T-1", to: "done" } }),
+    ]);
+    expect((await repository().ticketDetail(ticket.id))!.status).not.toBe("merged");
+  });
+
+  it("acts at once on a card in its column, and refuses one in another", async () => {
+    await seedReviewTicket();
+    await columnAgent("todo");
+    fakeProvider([
+      { role: "assistant", content: null, tool_calls: [call("c1", "act_on_card", { key: "T-1", action: { type: "stop" } })] },
+      { role: "assistant", content: "Not mine." },
+    ]);
+    const [reply] = await askSpeakers("Architect, stop T-1", ["architect"]);
+
+    await answer(PROJECT, reply!.id);
+
+    expect(await reload(reply!.id)).toMatchObject({ speaker: "architect", status: "done", content: "Not mine." });
+  });
+});
+
+describe("a Sentinel in the chat", () => {
+  it("says so when it has no audit yet, and starts none", async () => {
+    await useAgent("groq");
+    const [reply] = await askSpeakers("Tester, how are the tests?", ["sentinel:tester"]);
+
+    await answer(PROJECT, reply!.id);
+
+    expect(await reload(reply!.id)).toMatchObject({ speaker: "sentinel:tester", status: "done" });
+    expect((await reload(reply!.id)).content).toContain("not audited");
+    expect(await repository().auditsFor(PROJECT)).toEqual([]);
   });
 });
 
