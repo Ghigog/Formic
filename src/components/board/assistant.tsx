@@ -48,7 +48,7 @@ export interface AssistantControls {
     decision: "apply" | "dismiss",
   ) => Promise<void>;
   /** Has the PM open a call: the questions waiting on the person, or a greeting. */
-  openCall?: () => Promise<void>;
+  openCall?: (meetingId?: string) => Promise<void>;
   setAgent: (presetId: string | null) => Promise<void>;
   presets: AgentPreset[];
   /** How many cards are waiting on a question for the person, which the PM relays. */

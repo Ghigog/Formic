@@ -18,7 +18,7 @@ describe("remindDueMeetings", () => {
     const startsAt = new Date("2026-11-02T09:00:00Z");
     const { meeting, send, tick } = await setup({ startsAt });
     await tick(new Date(startsAt.getTime() + 5_000));
-    expect(send).toHaveBeenCalledWith("owner-1", expect.objectContaining({ url: `/calls/${meeting.id}` }));
+    expect(send).toHaveBeenCalledWith("owner-1", expect.objectContaining({ url: `/?meeting=${meeting.id}` }));
   });
 
   it("does not remind before the start or long after it", async () => {
