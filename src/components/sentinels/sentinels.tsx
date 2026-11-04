@@ -119,14 +119,14 @@ function ago(iso: string | null, now: number): string {
  * own brief, report, and rate it. Their average is the project's grade.
  * Covers the board between the header and the ambient bar, like the timeline.
  */
-export function SentinelsPage(_: { repoName: string }) {
+export function SentinelsPage({ onOpenEpic }: { repoName: string; onOpenEpic: (epicId: string) => void }) {
   const c = useColony();
   const s = useSentinels();
   if (!c?.sentinelsOpen || !s) return null;
-  return <SentinelsView c={c} s={s} />;
+  return <SentinelsView c={c} s={s} onOpenEpic={onOpenEpic} />;
 }
 
-function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
+function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; onOpenEpic: (epicId: string) => void }) {
   const root = useRef<HTMLDivElement>(null);
   const gradeRef = useRef<HTMLSpanElement>(null);
   const rail = useRef<HTMLDivElement>(null);
@@ -399,8 +399,9 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
       );
   };
 
-  const unlocked = SENTINELS.filter((x) => isUnlocked(x, s.level, s.unlockAll)).length;
-  const nBusy = SENTINELS.filter((x) => s.states[x.id]?.running).length;
+  const summonable = SENTINELS.filter((x) => isUnlocked(x, s.level, s.unlockAll) && !s.states[x.id]?.hold);
+  const unlocked = summonable.length;
+  const nBusy = summonable.filter((x) => s.states[x.id]?.running).length;
   const summon = (id: string, kind?: AuditKind) => {
     c.sfx("emerge");
     void s.summon(id, kind ?? (s.states[id]?.rubric ? "audit" : "calibrate"));
@@ -563,6 +564,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
               now={now}
               locked={!isUnlocked(reporting, s.level, s.unlockAll)}
               onSummon={(kind) => summon(reporting.id, kind)}
+              onOpenEpic={onOpenEpic}
             />
           </div>
         </div>
@@ -748,14 +750,17 @@ function Report({
   now,
   locked,
   onSummon,
+  onOpenEpic,
 }: {
   x: Sentinel;
   st: SentinelState;
   now: number;
   locked: boolean;
   onSummon: (kind: AuditKind) => void;
+  onOpenEpic: (epicId: string) => void;
 }) {
   const running = !!st.running;
+  const held = !!st.hold;
   const done = st.stars !== null && !!st.report;
   const first = x.who.split(" ").at(-1);
   const meta = running
@@ -812,12 +817,25 @@ function Report({
         <button
           type="button"
           onClick={() => onSummon(st.rubric ? "audit" : "calibrate")}
-          disabled={running || locked}
+          disabled={running || locked || held}
           className="border-line bg-cream text-ink hover:border-terracotta h-8 shrink-0 rounded-lg border px-3 text-[12px] font-semibold whitespace-nowrap active:scale-[0.96] disabled:opacity-60"
         >
           {running ? "Running…" : locked ? `Lv ${x.unlockLevel}` : summonLabel(st)}
         </button>
       </div>
+
+      {st.hold && (
+        <p className="text-muted m-0 -mt-2 text-[13px] leading-[1.45]">
+          {st.hold.key} is still open. Finish or archive it to audit again.{" "}
+          <button
+            type="button"
+            onClick={() => onOpenEpic(st.hold!.epicId)}
+            className="text-ink hover:text-terracotta cursor-pointer font-semibold underline underline-offset-2"
+          >
+            Open {st.hold.key}
+          </button>
+        </p>
+      )}
 
       {st.error && !running && (
         <p
@@ -863,7 +881,7 @@ function Report({
                 <button
                   type="button"
                   onClick={() => onSummon("audit")}
-                  disabled={running || locked}
+                  disabled={running || locked || held}
                   className="border-line bg-cream text-ink hover:border-terracotta h-8 rounded-lg border px-3 text-[12px] font-semibold whitespace-nowrap active:scale-[0.96] disabled:opacity-60"
                 >
                   Re-audit

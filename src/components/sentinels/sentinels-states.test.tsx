@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { SENTINELS } from "@/lib/sentinels/roster";
@@ -75,7 +75,7 @@ describe("SentinelsPage card states", () => {
       <ColonyProvider storageKey="colony-test-sentinel-states" cards={[]} extras={{}}>
         <SentinelsProvider initial={states} level={34}>
           <Open />
-          <SentinelsPage repoName="repo" />
+          <SentinelsPage repoName="repo" onOpenEpic={() => {}} />
         </SentinelsProvider>
       </ColonyProvider>,
     );
@@ -88,7 +88,7 @@ describe("SentinelsPage card states", () => {
     expect(screen.getAllByText(/Scoring|Waking up/).length).toBeGreaterThan(0);
   });
 
-  async function openReport(state: (id: string) => SentinelState) {
+  async function openReport(state: (id: string) => SentinelState, onOpenEpic = vi.fn()) {
     const id = SENTINELS[0]!.id;
     const states: SentinelStates = Object.fromEntries(SENTINELS.map((x) => [x.id, blank(x.id)]));
     states[id] = state(id);
@@ -98,7 +98,7 @@ describe("SentinelsPage card states", () => {
       <ColonyProvider storageKey="colony-test-sentinel-stale" cards={[]} extras={{}}>
         <SentinelsProvider initial={states} level={34}>
           <Open />
-          <SentinelsPage repoName="repo" />
+          <SentinelsPage repoName="repo" onOpenEpic={onOpenEpic} />
         </SentinelsProvider>
       </ColonyProvider>,
     );
@@ -120,6 +120,68 @@ describe("SentinelsPage card states", () => {
     expect(screen.getByText("Much has changed. Shall we re-audit?")).toBeTruthy();
     await userEvent.click(screen.getByText("Much has changed. Shall we re-audit?").parentElement!.querySelector("button")!);
     expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${id}`, expect.objectContaining({ method: "POST" }));
+    vi.unstubAllGlobals();
+  });
+
+  describe("held by an open Epic", () => {
+    const held = (i: string) =>
+      reported(i, ago(MIN), {
+        auditStale: true,
+        summary: "Fine.",
+        report: full(),
+        hold: { epicId: "e7", key: "EPIC-7" },
+      });
+
+    it("disables both Re-audit buttons, says why, and keeps Recalibrate enabled", async () => {
+      await openReport(held);
+      const panel = screen.getByRole("complementary", { name: "Audit report" });
+      expect(within(panel).getByText("EPIC-7 is still open. Finish or archive it to audit again.")).toBeTruthy();
+      const reaudit = within(panel).getAllByRole("button", { name: "Re-audit" });
+      expect(reaudit.length).toBe(2);
+      for (const b of reaudit) expect((b as HTMLButtonElement).disabled).toBe(true);
+      expect((within(panel).getByRole("button", { name: "Recalibrate" }) as HTMLButtonElement).disabled).toBe(false);
+      vi.unstubAllGlobals();
+    });
+
+    it("opens the Epic from the panel", async () => {
+      const onOpenEpic = vi.fn();
+      await openReport(held, onOpenEpic);
+      await userEvent.click(screen.getByRole("button", { name: "Open EPIC-7" }));
+      expect(onOpenEpic).toHaveBeenCalledWith("e7");
+      vi.unstubAllGlobals();
+    });
+
+    it("shows no hold line when nothing holds the Sentinel", async () => {
+      await openReport((i) => reported(i, ago(MIN), { summary: "Fine.", report: full() }));
+      expect(screen.queryByText(/is still open/)).toBeNull();
+      vi.unstubAllGlobals();
+    });
+  });
+
+  it("Summon all leaves out held Sentinels and summons the rest", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const ids = SENTINELS.slice(0, 3).map((x) => x.id);
+    const states: SentinelStates = Object.fromEntries(SENTINELS.map((x) => [x.id, blank(x.id)]));
+    states[ids[1]!] = { ...blank(ids[1]!), hold: { epicId: "e7", key: "EPIC-7" } };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <ColonyProvider storageKey="colony-test-sentinel-summon-all" cards={[]} extras={{}}>
+        <SentinelsProvider initial={states} level={4}>
+          <Open />
+          <SentinelsPage repoName="repo" onOpenEpic={() => {}} />
+        </SentinelsProvider>
+      </ColonyProvider>,
+    );
+    await userEvent.click(screen.getByText("open sentinels"));
+    await userEvent.click(screen.getByRole("button", { name: "Summon all 2" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    const called = fetchMock.mock.calls.map((c) => c[0]).filter((u) => String(u).startsWith("/api/sentinels/"));
+    expect(called).toContain(`/api/sentinels/${ids[0]}`);
+    expect(called).not.toContain(`/api/sentinels/${ids[1]}`);
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
