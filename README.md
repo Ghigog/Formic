@@ -25,11 +25,12 @@ layer, and nothing breaks without it:
 | Variable | Switches on |
 | :-- | :-- |
 | `DATABASE_URL` (or Vercel's `POSTGRES_*`) | Durable state |
-| `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG` | GitHub sign-in; each person works on their own repos with their own keys |
+| `FORMIC_EMAIL_FROM` + `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (or `RESEND_API_KEY`) | Email sign-in: accounts with no GitHub needed. People connect GitHub later, in Settings, for repositories. Gmail with an app password works |
+| `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG` | GitHub sign-in and Connect GitHub; each person works on their own repos with their own keys |
 | `FORMIC_SECRET` | Encryption for saved keys and sessions. Set it before anyone signs in. Required to save keys on a server with a database. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop |
 | `SANDBOX_PROVIDER=e2b` + `E2B_API_KEY` | Isolated sandboxes. Required on Vercel. |
-| `FORMIC_ALLOWED_USERS` | An allow-list of GitHub usernames |
+| `FORMIC_ALLOWED_USERS` | An allow-list of GitHub usernames and email addresses. Empty lets anyone in |
 | `ANTHROPIC_API_KEY`, `GITHUB_TOKEN` | Local mode only: one user, no sign-in |
 
 With a database:
@@ -46,21 +47,30 @@ config warnings.
 
 ## Deploy
 
+Production runs on an **AWS Lightsail** instance at
+https://52-200-209-60.sslip.io, not on Vercel. See [`AGENTS.md`](AGENTS.md)
+for what that means in practice and [`docs/aws.md`](docs/aws.md) for the
+server.
+
 Deploys are manual. Merging to `main` runs the checks and ships nothing.
 
 1. On GitHub, open **Actions → CI → Run workflow**, pick `main`, and run it.
-2. The `deploy` job runs once lint, typecheck, test and build pass. Vercel
-   then builds production and applies migrations.
+2. The `deploy` job runs once lint, typecheck, test and build pass. It builds
+   on the CI runner, ships the build to the server over SSH (the
+   `DEPLOY_HOST` variable), and the server applies migrations and switches
+   to it.
 3. Watch it under **Actions → CI**. The newest run sits at the top.
 4. The `Production smoke test` workflow then checks `/api/health` and `/`.
 
 Rollback and restore: [`docs/runbook.md`](docs/runbook.md).
 
+Other places it can run:
+
 | Where | Guide | Good for |
 | :-- | :-- | :-- |
-| Vercel | [`docs/vercel.md`](docs/vercel.md) | Always on, multi-user. Includes GitHub App setup. |
-| Google Cloud | [`docs/google-cloud.md`](docs/google-cloud.md) | No function time limit. Set `DEPLOY_HOST` to deploy over SSH. |
-| AWS Lightsail | [`docs/aws.md`](docs/aws.md) | The same server setup on AWS, at a fixed monthly price. |
+| AWS Lightsail | [`docs/aws.md`](docs/aws.md) | **Production.** A server at a fixed monthly price, no function time limit. |
+| Google Cloud | [`docs/google-cloud.md`](docs/google-cloud.md) | The same server setup on Google Cloud. Set `DEPLOY_HOST` to deploy over SSH. |
+| Vercel | [`docs/vercel.md`](docs/vercel.md) | Serverless, with a function time limit. Not where production runs. |
 | Your machine | [`docs/local.md`](docs/local.md) | Free, single user. `deploy/mac/` builds a Mac app. |
 
 ## Scripts

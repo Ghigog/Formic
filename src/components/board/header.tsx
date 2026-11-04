@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { RepoPicker } from "./repo-picker";
 import { useAssistantActivity } from "@/lib/hooks/use-assistant-activity";
@@ -11,6 +10,7 @@ import {
   ColonyHeaderStats,
   ColonyLevelStats,
   ColonyMobileStats,
+  MeetingsButton,
 } from "@/components/colony/header-stats";
 
 /**
@@ -77,15 +77,13 @@ export function BoardHeader({
         <ColonyLevelStats />
         <div className="flex items-center justify-end gap-4">
           <ColonyHeaderStats showLevel={false} />
-          <Link href="/calls" className="text-sm font-medium">
-            Calls
-          </Link>
+          <MeetingsButton />
           {account && <AccountMenu account={account} />}
         </div>
       </header>
 
       {/* Mobile app bar */}
-      <header className="border-line bg-card flex h-14 shrink-0 items-center gap-[10px] border-b px-4 md:hidden">
+      <header className="border-line bg-card flex h-14 shrink-0 items-center gap-1.5 border-b px-3 md:hidden">
         <LogoButton
           count={activity.count}
           onClick={toggle}
@@ -104,11 +102,9 @@ export function BoardHeader({
         {assistant && isMobile && (
           <AskButton a={assistant} repoName={repo ?? repoFullName} />
         )}
-        <div className="flex-grow" />
+        <div className="min-w-0 flex-grow" />
         <ColonyMobileStats />
-        <Link href="/calls" className="flex min-h-11 items-center text-sm font-medium">
-          Calls
-        </Link>
+        <MeetingsButton iconOnly />
         {account && <AccountMenu account={account} />}
       </header>
     </>

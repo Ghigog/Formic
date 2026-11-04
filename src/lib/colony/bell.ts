@@ -4,16 +4,14 @@ import { addEpicNote } from "@/lib/agents/epic-notes";
 import { addNote } from "@/lib/coder/notes";
 import { repository } from "@/lib/db";
 import type { BoardCard } from "@/lib/domain/entities";
-import { classifyNotice } from "@/lib/domain/notice";
+import { isUsageLimitStop } from "@/lib/domain/notice";
 
-/** The failure type runner.ts gives a card whose agent ran out of usage. */
-const USAGE_LIMIT = "Usage limit reached";
 export const RESUME_MESSAGE = "Your token limit has been restored. Please resume your work.";
 
 /** The cards a usage limit stopped, and nothing has picked up since. */
 export async function limitStoppedCards(projectId: string): Promise<BoardCard[]> {
   return (await repository().boardCards(projectId)).filter(
-    (card) => classifyNotice(card)?.shortDescription === USAGE_LIMIT && !!card.stalledIn,
+    (card) => isUsageLimitStop(card) && !!card.stalledIn,
   );
 }
 

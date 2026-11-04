@@ -50,7 +50,10 @@ describe("proxy", () => {
     githubMode();
     for (const path of [
       "/login",
+      "/login/verify",
       "/api/auth/github/login",
+      "/api/auth/email/start",
+      "/api/auth/email/verify",
       "/api/health",
       "/api/webhooks/github",
       "/api/runner/report",

@@ -15,6 +15,7 @@ import type {
   TicketChange,
   TicketColumnEntry,
   GithubProfile,
+  NewLoginToken,
   OwnerScope,
   PresetRecord,
   ProjectSummary,
@@ -193,6 +194,8 @@ interface Store {
   /** endpoint to the subscription and the person it belongs to. */
   pushSubscriptions: Map<string, PushSubscriptionRecord & { userId: string }>;
   accessTokens: Map<string, AccessTokenRecord>;
+  /** Sign-in links by token hash. */
+  loginTokens: Map<string, NewLoginToken & { usedAt: Date | null; createdAt: Date }>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
   /** `${projectId}:${column}` to that column agent's override. */
@@ -228,6 +231,7 @@ function store(): Store {
     existing.users ??= new Map();
     existing.pushSubscriptions ??= new Map();
     existing.accessTokens ??= new Map();
+    existing.loginTokens ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
     existing.queens ??= new Map();
@@ -257,6 +261,7 @@ function store(): Store {
     autoMerge: false,
     autoEscalate: false,
     unlockAllSentinels: false,
+    unlockAllOfferDismissedAt: null,
     colonySize: null,
     colonyReserve: 0,
     autoScout: false,
@@ -295,6 +300,7 @@ function store(): Store {
     users: new Map(),
     pushSubscriptions: new Map(),
     accessTokens: new Map(),
+    loginTokens: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
     members: new Set(),
@@ -419,9 +425,96 @@ export class MemoryRepository implements Repository {
       Object.assign(found, profile);
       return found;
     }
+    return this.newUser({ ...profile, email: null, emailVerifiedAt: null });
+  }
+
+  async userByEmail(email: string): Promise<UserRecord | null> {
+    return [...store().users.values()].find((u) => u.email === email.toLowerCase()) ?? null;
+  }
+
+  async userByGithubId(githubId: number): Promise<UserRecord | null> {
+    return [...store().users.values()].find((u) => u.githubId === githubId) ?? null;
+  }
+
+  async createEmailUser(user: { email: string; login: string }): Promise<UserRecord> {
+    const email = user.email.toLowerCase();
+    if (await this.userByEmail(email)) throw new Error(`A user with email ${email} already exists.`);
+    return this.newUser({
+      githubId: null,
+      email,
+      emailVerifiedAt: new Date(),
+      login: user.login,
+      name: null,
+      avatarUrl: null,
+    });
+  }
+
+  async linkGithub(userId: string, profile: GithubProfile): Promise<UserRecord> {
+    const s = store();
+    const user = s.users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    const taken = [...s.users.values()].find((u) => u.githubId === profile.githubId && u.id !== userId);
+    if (taken) throw new Error(`GitHub account ${profile.githubId} is already linked to another user.`);
+    Object.assign(user, profile, { name: user.name ?? profile.name });
+    return user;
+  }
+
+  async unlinkGithub(userId: string): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    Object.assign(user, {
+      githubId: null,
+      githubTokenCipher: null,
+      githubTokenExpiresAt: null,
+      githubRefreshCipher: null,
+      githubRefreshExpiresAt: null,
+    });
+    return user;
+  }
+
+  async mergeUserInto(fromId: string, intoId: string): Promise<UserRecord> {
+    const s = store();
+    const from = s.users.get(fromId);
+    const into = s.users.get(intoId);
+    if (!from || !into || fromId === intoId) throw new Error("Both accounts must exist and differ.");
+    for (const p of s.projects.values()) if (p.ownerId === fromId) p.ownerId = intoId;
+    for (const p of s.presets.values()) if (p.ownerId === fromId) p.ownerId = intoId;
+    for (const t of s.accessTokens.values()) if (t.userId === fromId) t.userId = intoId;
+    for (const sub of s.pushSubscriptions.values()) if (sub.userId === fromId) sub.userId = intoId;
+    for (const key of [...s.members]) if (key.endsWith(`:${fromId}`)) s.members.delete(key);
+    for (const key of [...s.opens.keys()]) if (key.startsWith(`${fromId}:`)) s.opens.delete(key);
+    s.users.delete(fromId);
+    Object.assign(into, { email: from.email, emailVerifiedAt: from.emailVerifiedAt });
+    return into;
+  }
+
+  async createLoginToken(token: NewLoginToken): Promise<void> {
+    const s = store();
+    s.loginTokens.set(token.tokenHash, { ...token, email: token.email.toLowerCase(), usedAt: null, createdAt: new Date() });
+  }
+
+  async spendLoginToken(tokenHash: string, now: Date): Promise<{ email: string; next: string } | null> {
+    const found = store().loginTokens.get(tokenHash);
+    if (!found || found.usedAt || found.expiresAt.getTime() <= now.getTime()) return null;
+    found.usedAt = now;
+    return { email: found.email, next: found.next };
+  }
+
+  async countLoginTokens(by: { email: string } | { ip: string }, since: Date): Promise<number> {
+    return [...store().loginTokens.values()].filter(
+      (t) =>
+        t.createdAt.getTime() >= since.getTime() &&
+        ("email" in by ? t.email === by.email.toLowerCase() : t.ip === by.ip),
+    ).length;
+  }
+
+  private newUser(
+    identity: Pick<UserRecord, "githubId" | "email" | "emailVerifiedAt" | "login" | "name" | "avatarUrl">,
+  ): UserRecord {
+    const s = store();
     const user: UserRecord = {
       id: id("user"),
-      ...profile,
+      ...identity,
       githubTokenCipher: null,
       githubTokenExpiresAt: null,
       githubRefreshCipher: null,
@@ -528,6 +621,8 @@ export class MemoryRepository implements Repository {
 
   async deleteUser(userId: string): Promise<void> {
     const s = store();
+    const email = s.users.get(userId)?.email;
+    if (email) for (const [hash, t] of s.loginTokens) if (t.email === email) s.loginTokens.delete(hash);
     const projectIds = [...s.projects.values()]
       .filter((p) => p.ownerId === userId)
       .map((p) => p.id);
@@ -770,6 +865,7 @@ export class MemoryRepository implements Repository {
       autoMerge: false,
       autoEscalate: false,
       unlockAllSentinels: false,
+      unlockAllOfferDismissedAt: null,
       colonySize: null,
       colonyReserve: 0,
       autoScout: false,
@@ -1998,6 +2094,11 @@ export class MemoryRepository implements Repository {
     if (project) project.unlockAllSentinels = unlockAllSentinels;
   }
 
+  async setUnlockAllOfferDismissed(projectId: string): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project && !project.unlockAllOfferDismissedAt) project.unlockAllOfferDismissedAt = new Date();
+  }
+
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) project.autoEscalate = autoEscalate;
@@ -2122,12 +2223,14 @@ export class MemoryRepository implements Repository {
     role: "user" | "assistant";
     content: string;
     status?: AssistantMessage["status"];
+    speaker?: string;
   }): Promise<AssistantMessage> {
     const message: AssistantMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 10)}`,
       proposals: [],
       runnerJob: null,
       runnerAgent: null,
+      speaker: "assistant",
       createdAt: new Date(),
       ...input,
       status: input.status ?? "done",
@@ -2138,7 +2241,7 @@ export class MemoryRepository implements Repository {
 
   async updateAssistantMessage(
     id: string,
-    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void> {
     const found = store().assistant.find((m) => m.id === id);
     if (found) Object.assign(found, update);

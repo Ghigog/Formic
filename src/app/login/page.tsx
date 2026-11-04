@@ -1,41 +1,97 @@
-import { authMode, safeNext, secretProblem } from "@/lib/auth/session";
+import { authMode, emailSignIn, githubSignIn, safeNext, secretProblem } from "@/lib/auth/session";
 import { AutoTour } from "@/components/onboarding/tour";
+import { SubmitOnce } from "@/components/ui/submit-once";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; sent?: string }>;
 }) {
-  const { next: rawNext, error } = await searchParams;
+  const { next: rawNext, error, sent } = await searchParams;
   const next = safeNext(rawNext);
-  const github = authMode() === "github";
-  const problem = github ? secretProblem() : null;
+  const accounts = authMode() === "accounts";
+  const email = accounts && emailSignIn();
+  const github = accounts && githubSignIn();
+  const problem = accounts ? secretProblem() : null;
 
   return (
     <main className="bg-cream flex min-h-dvh items-center justify-center p-4">
       <div data-tour="login" className="bg-card border-line flex w-full max-w-sm flex-col gap-3 rounded-xl border p-5">
         <h1 className="font-serif text-[22px] font-semibold">Formic</h1>
 
-        {github ? (
+        {accounts ? (
           problem ? (
             <p role="alert" className="text-crimson-text text-[13px]">
               Sign-in is refused: {problem}
             </p>
           ) : (
             <>
-              <p className="text-muted text-[13px]">
-                Sign in with GitHub. Your agents work on the repositories you give
-                the Formic app access to, as you.
-              </p>
-              <a
-                href={`/api/auth/github/login?next=${encodeURIComponent(next)}`}
-                className="bg-anthracite text-on-anthracite inline-flex h-10 items-center justify-center gap-2 rounded-lg text-[14px] font-semibold"
-              >
-                <GitHubMark />
-                Sign in with GitHub
-              </a>
+              {email &&
+                (sent ? (
+                  <div role="status" className="flex flex-col gap-1">
+                    <p className="text-ink text-[14px] font-semibold">Check your inbox</p>
+                    <p className="text-muted text-[13px]">
+                      If that address can sign in here, a link is on its way. It works once, for 15
+                      minutes.
+                    </p>
+                    <a
+                      href={`/login?next=${encodeURIComponent(next)}`}
+                      className="text-clay text-[13px] font-semibold"
+                    >
+                      Use a different address
+                    </a>
+                  </div>
+                ) : (
+                  <form method="post" action="/api/auth/email/start" className="flex flex-col gap-3">
+                    <p className="text-muted text-[13px]">
+                      Sign in with your email. No GitHub needed: you can connect it later if you
+                      want agents to work on a repository.
+                    </p>
+                    <input type="hidden" name="next" value={next} />
+                    <input
+                      type="email"
+                      name="email"
+                      aria-label="Email"
+                      placeholder="you@example.com"
+                      required
+                      autoFocus
+                      autoComplete="email"
+                      className="border-line bg-cream text-ink focus:border-clay h-10 rounded-md border px-3 text-[14px] outline-none"
+                    />
+                    <SubmitOnce
+                      pending="Sending your link…"
+                      className="bg-terracotta-cta h-10 rounded-lg text-[14px] font-semibold text-white"
+                    >
+                      Email me a sign-in link
+                    </SubmitOnce>
+                  </form>
+                ))}
+
+              {github && (
+                <>
+                  {email ? (
+                    <p className="text-muted text-center text-[12px]">or</p>
+                  ) : (
+                    <p className="text-muted text-[13px]">
+                      Sign in with GitHub. Your agents work on the repositories you give the Formic
+                      app access to, as you.
+                    </p>
+                  )}
+                  <a
+                    href={`/api/auth/github/login?next=${encodeURIComponent(next)}`}
+                    className={
+                      email
+                        ? "border-line text-ink inline-flex h-10 items-center justify-center gap-2 rounded-lg border text-[14px] font-semibold"
+                        : "bg-anthracite text-on-anthracite inline-flex h-10 items-center justify-center gap-2 rounded-lg text-[14px] font-semibold"
+                    }
+                  >
+                    <GitHubMark />
+                    Sign in with GitHub
+                  </a>
+                </>
+              )}
             </>
           )
         ) : (
@@ -61,11 +117,11 @@ export default async function LoginPage({
 
         {error && (
           <p role="alert" className="text-crimson-text text-[12px]">
-            {github ? error : "That password is not right."}
+            {accounts ? error : "That password is not right."}
           </p>
         )}
       </div>
-      {github && !problem && <AutoTour id="login" delay={500} />}
+      {accounts && !problem && !sent && <AutoTour id="login" delay={500} />}
     </main>
   );
 }

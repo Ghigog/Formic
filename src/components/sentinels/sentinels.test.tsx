@@ -72,6 +72,14 @@ afterEach(() => {
   delete (SVGElement.prototype as { animate?: unknown }).animate;
 });
 
+describe("SentinelsPage", () => {
+  it("shows no KPIs; they live in the Timeline", async () => {
+    await open();
+    expect(screen.queryByRole("region", { name: "KPIs" })).toBeNull();
+    expect(screen.queryByText("Board KPIs")).toBeNull();
+  });
+});
+
 describe("SentinelsPage motion and sound", () => {
   let play: ReturnType<typeof vi.spyOn>;
   let reduced: ReturnType<typeof vi.spyOn>;

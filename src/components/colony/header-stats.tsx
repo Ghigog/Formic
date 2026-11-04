@@ -10,6 +10,8 @@ import {
 } from "@/lib/colony/game";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import { useSentinels } from "@/components/sentinels/store";
+import { useMeetings } from "@/lib/hooks/use-meetings";
+import { dueOccurrence } from "@/lib/meetings/due";
 import { useColony, type ColonyApi } from "./colony";
 
 /** Counts toward the value it is given rather than jumping to it. */
@@ -58,66 +60,39 @@ function PointsCounter({
   );
 }
 
-const HEAT_LOOK = (n: number) =>
-  n === 0
-    ? { edge: "var(--border)", bg: "var(--cream)", ink: "var(--text-muted)" }
-    : n <= 2
-      ? {
-          edge: "var(--terracotta)",
-          bg: "var(--epic-chip)",
-          ink: "var(--terracotta-deep)",
-        }
-      : n <= 4
-        ? {
-            edge: "var(--clay)",
-            bg: "var(--clay-chip)",
-            ink: "var(--clay-chip-text)",
-          }
-        : {
-            edge: "var(--crimson)",
-            bg: "var(--crimson-chip)",
-            ink: "var(--crimson-chip-text)",
-          };
+/** Heat's colour climbs from terracotta to clay to crimson with the stacks. */
+const HEAT_INK = (n: number) =>
+  n <= 2
+    ? "var(--terracotta-deep)"
+    : n <= 4
+      ? "var(--clay-chip-text)"
+      : "var(--crimson-chip-text)";
 
+/**
+ * The multiplier as a raised label at the points' top right, hidden at ×1.0.
+ * The element stays as the merge effect's target; its tooltip has the stacks.
+ */
 function Heat({ c }: { c: ColonyApi }) {
-  const look = HEAT_LOOK(c.stacks.length);
+  const n = c.stacks.length;
   const now = c.now;
+  const tip = `Heat ×${c.multiplier.toFixed(1)}: each merge adds a +0.5× stack that lasts ${HEAT_WINDOW_MS / 60_000}m (max ${HEAT_MAX}). Stacks expire one at a time.\n${Array.from(
+    { length: HEAT_MAX },
+    (_, i) => {
+      const exp = c.stacks[i];
+      if (!exp) return `Stack ${i + 1}: empty`;
+      const left = Math.max(0, Math.ceil((exp - now) / 1000));
+      return `Stack ${i + 1}: ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`;
+    },
+  ).join("\n")}`;
   return (
-    <span
+    <sup
       data-colony="heat"
-      title={`Heat: each merge adds a +0.5× stack that lasts ${HEAT_WINDOW_MS / 60_000}m (max ${HEAT_MAX}). Stacks expire one at a time.`}
-      className="oct inline-flex p-px transition-colors"
-      style={{ background: look.edge }}
+      title={n > 0 ? tip : undefined}
+      className="absolute -top-2 -right-3 h-2.5 min-w-3 font-mono text-[10px] leading-none font-medium transition-colors"
+      style={{ color: HEAT_INK(n) }}
     >
-      <span
-        className="oct inline-flex min-w-11 flex-col items-center gap-1 px-2 pt-1.5 pb-[5px] transition-colors"
-        style={{ background: look.bg }}
-      >
-        <span
-          className="font-mono text-[13px] leading-none font-medium"
-          style={{ color: look.ink }}
-        >
-          ×{c.multiplier.toFixed(1)}
-        </span>
-        <span aria-hidden className="flex gap-0.5">
-          {Array.from({ length: HEAT_MAX }, (_, i) => {
-            const exp = c.stacks[i];
-            const k = exp ? Math.max(0, (exp - now) / HEAT_WINDOW_MS) : 0;
-            return (
-              <span
-                key={i}
-                className="block h-[3px] w-1 overflow-hidden bg-[color-mix(in_srgb,var(--anthracite)_12%,transparent)]"
-              >
-                <span
-                  className="bg-terracotta block h-[3px] transition-[width] duration-1000 ease-linear"
-                  style={{ width: `${(k * 100).toFixed(1)}%` }}
-                />
-              </span>
-            );
-          })}
-        </span>
-      </span>
-    </span>
+      {n > 0 && `×${c.multiplier.toFixed(1)}`}
+    </sup>
   );
 }
 
@@ -435,13 +410,13 @@ export function ColonyHeaderStats({
       <span aria-hidden className="bg-line h-6 w-px shrink-0 max-xl:hidden" />
 
       <div data-tour="points" className="flex shrink-0 items-center gap-2.5">
-        <div className="flex flex-col items-end gap-[3px]">
+        <div className="relative flex flex-col items-end gap-[3px]">
           <span className="text-muted font-mono text-[9px] tracking-[0.12em]">
             POINTS
           </span>
           <PointsCounter value={c.shownPoints} />
+          <Heat c={c} />
         </div>
-        <Heat c={c} />
       </div>
 
       <TimelineButton c={c} />
@@ -466,13 +441,80 @@ export function ColonyMobileStats() {
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-[10px] px-1"
       >
         <LevelBadge level={s.level} size={32} />
-        <PointsCounter
-          value={c.shownPoints}
-          className="origin-left text-[14px] max-[359px]:hidden"
-        />
+        <span className="relative inline-flex">
+          <PointsCounter
+            value={c.shownPoints}
+            className="origin-left text-[14px] max-[359px]:hidden"
+          />
+          <Heat c={c} />
+        </span>
       </div>
-      <Heat c={c} />
       <TimelineButton c={c} iconOnly />
     </>
+  );
+}
+
+/** A calendar page: a header band over a grid of days. */
+function CalendarIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="11" height="10" rx="2" stroke="var(--text)" strokeWidth="1.4" />
+      <path d="M1.5 5.8h11" stroke="var(--text)" strokeWidth="1.4" />
+      <path d="M4.5 1.2v2.4M9.5 1.2v2.4" stroke="var(--text)" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="5" cy="8.6" r="0.9" fill="var(--terracotta)" />
+      <circle cx="8.8" cy="8.6" r="0.9" fill="var(--terracotta)" />
+    </svg>
+  );
+}
+
+/**
+ * The way into the Meetings menu, in the timeline button's style. When a
+ * meeting is within 15 minutes or running, a dot pulses on it and, on desktop,
+ * the label becomes the meeting's title and Join.
+ */
+export function MeetingsButton({ iconOnly = false }: { iconOnly?: boolean }) {
+  const c = useColony();
+  if (!c) return null;
+  return <MeetingsButtonView c={c} iconOnly={iconOnly} />;
+}
+
+function MeetingsButtonView({ c, iconOnly }: { c: ColonyApi; iconOnly: boolean }) {
+  const { meetings } = useMeetings();
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const due = dueOccurrence(meetings, now)?.meeting ?? null;
+  const open = c.meetingsOpen;
+  return (
+    <button
+      data-colony="meetings"
+      data-tour="meetings"
+      type="button"
+      onClick={() => c.setMeetingsOpen(!open)}
+      aria-label={open ? "Back to board" : due ? `Meetings, ${due.title} is starting` : "Open meetings"}
+      aria-expanded={open}
+      className={cn(
+        "border-line bg-card text-ink hover:border-terracotta relative inline-flex shrink-0 items-center rounded-lg border text-[13px] font-semibold transition-[border-color,box-shadow] hover:shadow-[0_6px_14px_-10px_color-mix(in_srgb,var(--anthracite)_40%,transparent)] active:scale-[0.97]",
+        iconOnly ? "size-11 justify-center" : "h-9 max-w-64 gap-2.5 pr-3 pl-2.5",
+      )}
+    >
+      <CalendarIcon />
+      {!iconOnly && (due ? (
+        <>
+          <span className="truncate">{due.title}</span>
+          <span className="text-terracotta-deep">Join</span>
+        </>
+      ) : (
+        "Meetings"
+      ))}
+      {due && (
+        <span data-testid="meetings-due" className="absolute -top-1 -right-1 flex size-2.5">
+          <span className="bg-terracotta absolute inset-0 animate-ping rounded-full opacity-70 motion-reduce:hidden" />
+          <span className="bg-terracotta-cta relative size-2.5 rounded-full border-2 border-white" />
+        </span>
+      )}
+    </button>
   );
 }

@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
-import { card, column, columnOf, gotoBoard, idForKey, moveViaApi } from "./board";
+import {
+  card,
+  column,
+  columnOf,
+  gotoBoard,
+  idForKey,
+  moveViaApi,
+} from "./board";
 
 /**
  * The board below 768px, where drag is replaced by an explicit action.
@@ -40,13 +47,16 @@ async function swipe(page: Page, dx: number) {
       touchPoints: type === "touchEnd" ? [] : [{ x, y }],
     });
   await touch("touchStart", x0);
-  for (const step of [0.25, 0.5, 0.75, 1]) await touch("touchMove", x0 + dx * step);
+  for (const step of [0.25, 0.5, 0.75, 1])
+    await touch("touchMove", x0 + dx * step);
   await touch("touchEnd", x0 + dx);
 }
 
 test("a swipe moves from Backlog to To Do", async ({ page }) => {
   await expect(column(page, "Backlog")).toBeVisible();
-  await expect(page.getByRole("list", { name: "Columns" }).getByRole("button")).toHaveCount(5);
+  await expect(
+    page.getByRole("list", { name: "Columns" }).getByRole("button"),
+  ).toHaveCount(5);
 
   await swipe(page, -150);
 
@@ -63,7 +73,9 @@ test("there is no floating Advance button", async ({ page }) => {
  * the top of the column: the test holds the button to what it says.
  */
 test("a card's arrow moves the card it names", async ({ page }) => {
-  const arrow = page.getByRole("button", { name: /^Move \S+ to To Do$/ }).first();
+  const arrow = page
+    .getByRole("button", { name: /^Move \S+ to To Do$/ })
+    .first();
   const label = await arrow.getAttribute("aria-label");
 
   const named = label?.match(/^Move (\S+) to To Do$/);
@@ -86,20 +98,31 @@ test("a card's arrow moves the card it names", async ({ page }) => {
   expect(await columnOf(page, cardId)).toBe("Backlog");
 });
 
-test("the app bar at 375px has heat and a timeline button, and no + button", async ({ page }) => {
+test("the app bar at 375px has heat and a timeline button, and no + button", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 375, height: 800 });
 
-  await expect(page.getByRole("button", { name: "New backlog item" })).toHaveCount(0);
-  await expect(page.locator('header:visible [data-colony="heat"]')).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "New backlog item" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('header:visible [data-colony="heat"]'),
+  ).toBeAttached();
 
   await page.getByRole("button", { name: "Open timeline" }).click();
-  await expect(page.getByRole("button", { name: "Back to board" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Back to board" }),
+  ).toBeVisible();
 });
 
-test("the colony bar stays pinned to the bottom of the phone screen", async ({ page }) => {
+test("the colony bar stays pinned to the bottom of the phone screen", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 700 });
   const footer = page.locator("footer[data-colony-mask]");
-  const bottom = async () => (await footer.boundingBox())!.y + (await footer.boundingBox())!.height;
+  const bottom = async () =>
+    (await footer.boundingBox())!.y + (await footer.boundingBox())!.height;
 
   expect(await bottom()).toBeCloseTo(700, 0);
 
@@ -109,27 +132,40 @@ test("the colony bar stays pinned to the bottom of the phone screen", async ({ p
   expect(await bottom()).toBeCloseTo(700, 0);
 });
 
-test("the sentinel Re-audit label stays on one line at 390px", async ({ page }) => {
+test("the sentinel Re-audit label stays on one line at 390px", async ({
+  page,
+}) => {
   // Calibrating and auditing can each take up to 15s on a slow runner, which
   // leaves too little of the default 30s for the check itself.
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 800 });
   await page.getByRole("button", { name: /Audit grade/ }).click();
-  const card = page.getByRole("region", { name: "Sentinels" }).getByRole("listitem", { name: /Professor O'Chumley/ });
+  const card = page
+    .getByRole("region", { name: "Sentinels" })
+    .getByRole("listitem", { name: /Professor O'Chumley/ });
   // The store is shared across the run, so an earlier test may already have
   // calibrated or audited this sentinel; take it only as far as it needs.
   if (await card.getByRole("button", { name: "Calibrate" }).isVisible()) {
     await card.getByRole("button", { name: "Calibrate" }).click();
-    await expect(card.getByRole("button", { name: "Audit", exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(
+      card.getByRole("button", { name: "Audit", exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
   }
-  if (await card.getByRole("button", { name: "Audit", exact: true }).isVisible()) {
+  if (
+    await card.getByRole("button", { name: "Audit", exact: true }).isVisible()
+  ) {
     await card.getByRole("button", { name: "Audit", exact: true }).click();
   }
   await expect(card).toHaveAccessibleName(/4 of 5 stars/, { timeout: 15_000 });
   await card.click();
 
-  const button = page.getByRole("dialog").getByRole("button", { name: "Re-audit" }).first();
-  const lineHeight = await button.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || 0);
+  const button = page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Re-audit" })
+    .first();
+  const lineHeight = await button.evaluate(
+    (el) => parseFloat(getComputedStyle(el).lineHeight) || 0,
+  );
   const label = await button.evaluate((el) => {
     const r = document.createRange();
     r.selectNodeContents(el);
@@ -139,30 +175,95 @@ test("the sentinel Re-audit label stays on one line at 390px", async ({ page }) 
   expect(label).toBeLessThanOrEqual(lineHeight + 1);
 });
 
-test("a three-finger swipe digs through the earth to another board", async ({ page, context }) => {
+test("a three-finger swipe digs through the earth to another board", async ({
+  page,
+  context,
+}) => {
   for (const name of ["Swipe one", "Swipe two"]) {
-    expect((await page.request.post("/api/projects", { data: { noRepository: true, name } })).ok()).toBe(true);
+    expect(
+      (
+        await page.request.post("/api/projects", {
+          data: { noRepository: true, name },
+        })
+      ).ok(),
+    ).toBe(true);
   }
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const shown = async () =>
-    ((await page.getByRole("button", { name: /^Project: / }).first().getAttribute("aria-label")) ?? "")
+    (
+      (await page
+        .getByRole("button", { name: /^Project: / })
+        .first()
+        .getAttribute("aria-label")) ?? ""
+    )
       .replace(/^Project: /, "")
       .replace(/\. Choose another project$/, "");
-  const order = ((await (await page.request.get("/api/projects")).json()) as { projects: Array<{ name: string }> }).projects.map((p) => p.name);
+  const order = (
+    (await (await page.request.get("/api/projects")).json()) as {
+      projects: Array<{ name: string }>;
+    }
+  ).projects.map((p) => p.name);
   const i = order.indexOf(await shown());
   const down = i + 1 < order.length;
   const expected = order[down ? i + 1 : i - 1]!;
 
   const cdp = await context.newCDPSession(page);
-  const fingers = (y: number) => [0, 40, 80].map((dx, id) => ({ x: 140 + dx, y, id }));
+  const fingers = (y: number) =>
+    [0, 40, 80].map((dx, id) => ({ x: 140 + dx, y, id }));
   const [from, to] = down ? [600, 420] : [300, 480];
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: fingers(from) });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: fingers(from),
+  });
   for (let step = 1; step <= 10; step++) {
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: fingers(from + ((to - from) * step) / 10) });
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: fingers(from + ((to - from) * step) / 10),
+    });
   }
   await expect(page.getByTestId("dig-band")).toBeVisible();
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
 
   await expect.poll(shown, { timeout: 10_000 }).toBe(expected);
-  await expect(page.getByTestId("dig-transition")).toHaveAttribute("data-phase", "idle");
+  await expect(page.getByTestId("dig-transition")).toHaveAttribute(
+    "data-phase",
+    "idle",
+  );
 });
+
+for (const width of [360, 390]) {
+  test(`the app bar at ${width}px neither clips nor overlaps, and the tour ant stays off it`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    const bar = page.locator("header:visible").first();
+    const items = [
+      bar.getByTestId("formic-logo"),
+      bar.getByRole("button", { name: /PM/ }),
+      bar.locator('[data-colony="level"]'),
+      bar.locator('[data-colony="score"]'),
+      bar.getByRole("button", { name: "Open timeline" }),
+      bar.getByRole("button", { name: /meetings/i }),
+      bar.getByRole("button", { name: /account|menu/i }),
+    ];
+    await expect(bar.getByRole("link", { name: "Calls" })).toHaveCount(0);
+    const boxes = [];
+    for (const it of items) {
+      const b = await it.first().boundingBox();
+      if (!b) continue; // points hide below 360px
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width).toBeLessThanOrEqual(width);
+      boxes.push(b);
+    }
+    expect(boxes.length).toBeGreaterThanOrEqual(5);
+    boxes.sort((a, b) => a.x - b.x);
+    for (let i = 1; i < boxes.length; i++) {
+      expect(boxes[i]!.x).toBeGreaterThanOrEqual(
+        boxes[i - 1]!.x + boxes[i - 1]!.width - 0.5,
+      );
+    }
+  });
+}

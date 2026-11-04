@@ -29,6 +29,7 @@ import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyTimeline } from "@/components/colony/timeline";
+import { MeetingsMenu } from "@/components/meetings/meetings-menu";
 import { SentinelsPage } from "@/components/sentinels/sentinels";
 import { UnlockAllDialog } from "@/components/sentinels/unlock-all-dialog";
 import { scoreOf } from "@/lib/colony/game";
@@ -343,6 +344,7 @@ export function BoardShell({
       <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
       <BoardTour projectId={projectId} tourSeen={tourSeen} />
       <ColonyTimeline repoName={repoName} />
+      <MeetingsMenu repoName={repoName} unlockAllSentinels={unlockAllSentinels} />
       <SentinelsPage repoName={repoName} onOpenEpic={setOpenEpicId} />
       {projectId && <UnlockAllDialog projectId={projectId} unlockAll={unlockAllSentinels} />}
       <ColonyPopover onOpenArchive={() => setArchiveOpen(true)} />

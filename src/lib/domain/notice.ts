@@ -41,3 +41,19 @@ export function classifyNotice(card: {
   const title = SCOPE_REQUEST_REASON.test(shortDescription) ? "Needs authorization" : "Waiting for you";
   return { severity: "alert", title, shortDescription, longDescription };
 }
+
+/** The failure type runner.ts gives a card whose agent ran out of usage mid-run. */
+export const USAGE_LIMIT = "Usage limit reached";
+
+/** The wording limitReason (agents/presets.ts) puts between the agent's name and the reset time. */
+export const OUT_OF_USAGE_PHRASE = " is out of usage until ";
+
+/**
+ * Whether a stalled card waits for an agent's usage to come back: its run hit
+ * the limit, or the start gate refused it because the column's agent was
+ * already out of usage.
+ */
+export function isUsageLimitStop(card: Parameters<typeof classifyNotice>[0]): boolean {
+  const short = classifyNotice(card)?.shortDescription;
+  return short === USAGE_LIMIT || (!!short && short.includes(OUT_OF_USAGE_PHRASE) && short.endsWith("."));
+}

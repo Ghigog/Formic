@@ -135,12 +135,12 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    // Signed in with GitHub, a repository must be one this person's token
+    // With accounts, a repository must be one this person's token
     // can reach: that is what their agents will push with. In local mode a
     // typed name is taken on trust, as before.
     const { githubToken } = await credentialsFor(user);
     const remote = githubToken ? await getRepository(fullName, githubToken) : null;
-    if (!remote && authMode() === "github") {
+    if (!remote && authMode() === "accounts") {
       return Response.json(
         {
           error: `Formic can't reach ${fullName}. Install the Formic GitHub App on it first.`,
@@ -149,9 +149,9 @@ export async function POST(req: NextRequest) {
       );
     }
     const repoFullName = remote?.fullName ?? fullName;
-    // Signed in with GitHub, a repository has one board, shared by everyone
+    // With accounts, a repository has one board, shared by everyone
     // whose access reaches it: the token check above is that access.
-    const shared = authMode() === "github" ? await sharedBoard(repoFullName) : null;
+    const shared = authMode() === "accounts" ? await sharedBoard(repoFullName) : null;
     if (shared && shared.ownerId !== user.id) {
       await repo.addMember(shared.id, user.id);
       await repo.markOpened(user.id, shared.id);

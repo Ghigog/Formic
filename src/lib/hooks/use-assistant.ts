@@ -8,6 +8,8 @@ export interface AssistantMessageView {
   role: "user" | "assistant";
   content: string;
   status: "done" | "pending" | "failed";
+  /** Who a reply is from: "assistant", a column role or "sentinel:<id>". */
+  speaker?: string;
   proposals: Array<{
     summary: string;
     action: {
@@ -110,13 +112,18 @@ export function useAssistant(enabled: boolean) {
   }, [answering]);
 
   const ask = useCallback(
-    async (text: string) => {
+    async (text: string, speakers?: string[]) => {
       const controller = new AbortController();
       asked.current = controller;
       setAsking(true);
       try {
         await run(() =>
-          send("/api/assistant", "POST", { text }, controller.signal),
+          send(
+            "/api/assistant",
+            "POST",
+            { text, ...(speakers ? { speakers } : {}) },
+            controller.signal,
+          ),
         );
       } finally {
         if (asked.current === controller) asked.current = null;

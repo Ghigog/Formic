@@ -32,6 +32,7 @@ describe("GET /api/projects/[id]", () => {
     expect(await res.json()).toEqual({
       id: p.id,
       unlockAllSentinels: false,
+      unlockAllOfferDismissedAt: null,
       baseBranchCommits: 150,
       established: true,
       establishedThreshold: 100,
@@ -68,5 +69,23 @@ describe("PATCH /api/projects/[id]", () => {
   it("refuses a project that is not yours", async () => {
     const other = await repository().ensureProject({ ownerId: "someone-else", repoFullName: "x/y", baseBranch: "main" });
     expect((await patch(other.id, { unlockAllSentinels: true })).status).toBe(403);
+  });
+
+  it("records that the offer was dismissed, and GET returns it", async () => {
+    const p = await board();
+    setVcs({ countCommits: async () => 150 } as unknown as VcsClient);
+    const res = await patch(p.id, { unlockAllOfferDismissed: true });
+    expect(res.status).toBe(200);
+    expect((await repository().projectById(p.id))?.unlockAllOfferDismissedAt).toBeInstanceOf(Date);
+    const body = (await (await GET(new Request("http://localhost"), ctx(p.id))).json()) as {
+      unlockAllOfferDismissedAt: string | null;
+    };
+    expect(body.unlockAllOfferDismissedAt).not.toBeNull();
+  });
+
+  it("does not let someone who cannot see the board dismiss its offer", async () => {
+    const other = await repository().ensureProject({ ownerId: "someone-else", repoFullName: "x/y", baseBranch: "main" });
+    expect((await patch(other.id, { unlockAllOfferDismissed: true })).status).toBe(404);
+    expect((await repository().projectById(other.id))?.unlockAllOfferDismissedAt).toBeNull();
   });
 });

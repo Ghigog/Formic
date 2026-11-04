@@ -150,3 +150,98 @@ describe("GET /api/auth/github/callback", () => {
     expect(adopt).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("GET /api/auth/github/callback, connecting GitHub to a signed-in account", () => {
+
+  async function connectCallback(state: string, opts: { as?: string; nonce?: string } = {}) {
+    const session = await import("@/lib/auth/session");
+    const cookies = [`${OAUTH_COOKIE}=${encodeURIComponent(await signValue(state))}`];
+    if (opts.as) cookies.push(`${SESSION_COOKIE}=${await session.signSession(opts.as)}`);
+    return GET(
+      new Request(`http://localhost/api/auth/github/callback?code=c&state=${opts.nonce ?? "n1"}`, {
+        headers: { cookie: cookies.join("; ") },
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    globalThis.__formicMemoryStore = undefined;
+    vi.stubEnv("FORMIC_MAILER", "console");
+  });
+
+  it("attaches GitHub to the account that asked, and sets no new session", async () => {
+    const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
+    const res = await connectCallback(`n1|/settings|connect:${ana.id}`, { as: ana.id });
+
+    expect(res.headers.get("location")).toBe("/settings");
+    expect(res.headers.get("set-cookie")).not.toContain(`${SESSION_COOKIE}=`);
+    expect(await repository().userById(ana.id)).toMatchObject({ githubId: 7, login: "octo", email: "ana@example.com" });
+    expect(mocks.storeTokens).toHaveBeenCalledWith(ana.id, TOKENS);
+    expect(await repository().countUsers()).toBe(1);
+  });
+
+  it("refuses when the signed-in person is not who started it", async () => {
+    const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
+    const bo = await repository().createEmailUser({ email: "bo@example.com", login: "bo" });
+    const res = await connectCallback(`n1|/settings|connect:${ana.id}`, { as: bo.id });
+
+    expect(new URL(res.headers.get("location")!).searchParams.get("github_error")).toContain("another session");
+    expect(mocks.exchangeCode).not.toHaveBeenCalled();
+    expect((await repository().userById(ana.id))?.githubId).toBeNull();
+    expect((await repository().userById(bo.id))?.githubId).toBeNull();
+  });
+
+  it("refuses when nobody is signed in", async () => {
+    const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
+    const res = await connectCallback(`n1|/settings|connect:${ana.id}`);
+    expect(new URL(res.headers.get("location")!).searchParams.get("github_error")).toBeTruthy();
+    expect(mocks.exchangeCode).not.toHaveBeenCalled();
+  });
+
+  it("refuses a GitHub account already connected to someone else's email account, and revokes the new token", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+    const octo = await repository().createEmailUser({ email: "octo@example.com", login: "octo" });
+    await repository().linkGithub(octo.id, PROFILE);
+    const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
+    const res = await connectCallback(`n1|/settings|connect:${ana.id}`, { as: ana.id });
+
+    expect(new URL(res.headers.get("location")!).searchParams.get("github_error")).toContain("already connected");
+    expect((await repository().userById(ana.id))?.githubId).toBeNull();
+    expect((await repository().userById(octo.id))?.githubId).toBe(7);
+    expect(mocks.storeTokens).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/applications/id/token"), expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("folds a new email account into the person's GitHub-only account, keeping its boards", async () => {
+    const octo = await repository().upsertUser(PROFILE);
+    const hers = await repository().ensureProject({ ownerId: octo.id, repoFullName: "octo/app", baseBranch: "main" });
+    const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
+    const fresh = await repository().ensureProject({ ownerId: ana.id, repoFullName: null, name: "Notes", baseBranch: "main" });
+
+    const res = await connectCallback(`n1|/settings|connect:${ana.id}`, { as: ana.id });
+
+    expect(res.headers.get("location")).toBe("/settings?merged=1");
+    expect((await readSession(cookieValue(res, SESSION_COOKIE)))?.userId).toBe(octo.id);
+    expect(await repository().userById(ana.id)).toBeNull();
+    expect(await repository().userById(octo.id)).toMatchObject({ githubId: 7, email: "ana@example.com" });
+    expect((await repository().projectById(hers.id))?.ownerId).toBe(octo.id);
+    expect((await repository().projectById(fresh.id))?.ownerId).toBe(octo.id);
+    expect(mocks.storeTokens).toHaveBeenCalledWith(octo.id, TOKENS);
+  });
+
+  it("still signs in by GitHub to the email account it was connected to", async () => {
+    const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
+    await repository().linkGithub(ana.id, PROFILE);
+    const res = await callback("code=c&state=n1", await signValue("n1|/"));
+    expect((await readSession(cookieValue(res, SESSION_COOKIE)))?.userId).toBe(ana.id);
+  });
+});
+
+function cookieValue(res: Response, name: string): string | undefined {
+  for (const line of res.headers.getSetCookie()) {
+    const [pair] = line.split(";");
+    const [k, ...v] = pair!.split("=");
+    if (k === name) return v.join("=");
+  }
+  return undefined;
+}

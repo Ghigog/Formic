@@ -1,6 +1,8 @@
 import {
   SESSION_COOKIE,
   authMode,
+  emailSignIn,
+  githubSignIn,
   gatePassword,
   passwordToken,
   safeEqual,
@@ -91,7 +93,7 @@ async function trusted(req: Request): Promise<boolean> {
 
   const cookie = cookieValue(req, SESSION_COOKIE);
   // Signature only: the report has to stay readable when the database is down.
-  if (authMode() === "github") return (await verifySession(cookie)) !== null;
+  if (authMode() === "accounts") return (await verifySession(cookie)) !== null;
   const password = gatePassword();
   if (!password) return false;
   return !!cookie && safeEqual(cookie, await passwordToken(password));
@@ -152,11 +154,11 @@ async function fullReport(): Promise<FullReport> {
     buildId,
     database,
     ...(databaseError ? { databaseError } : {}),
-    // Signed in with GitHub, agents run on each person's own Anthropic key,
+    // With accounts, agents run on each person's own Anthropic key,
     // so the server having none does not make them mocks. Otherwise: mocks
     // only when asked for, the server's own key, or nothing configured.
     agents:
-      authMode() === "github"
+      authMode() === "accounts"
         ? "per-user"
         : usingMockAgents()
           ? "mock"
@@ -164,10 +166,15 @@ async function fullReport(): Promise<FullReport> {
             ? "anthropic"
             : "none",
     sandbox: config.SANDBOX_PROVIDER,
-    // Signed in with GitHub, each board uses its owner's token.
-    github: authMode() === "github" ? "per-user" : usingMockVcs() ? "mock" : "live",
+    // With accounts, each board uses its owner's token.
+    github: authMode() === "accounts" ? "per-user" : usingMockVcs() ? "mock" : "live",
     webhook: config.GITHUB_WEBHOOK_SECRET ? "configured" : "unconfigured",
-    access: authMode() === "github" ? "github" : gatePassword() ? "password" : "open",
+    access:
+      authMode() === "accounts"
+        ? [emailSignIn() && "email", githubSignIn() && "github"].filter(Boolean).join("+")
+        : gatePassword()
+          ? "password"
+          : "open",
     mergeTarget: mergeTarget(config.GITHUB_BASE_BRANCH),
     activeRuns: activeRunCount(),
     activeSandboxes: activeSandboxCount(),
