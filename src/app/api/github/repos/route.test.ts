@@ -14,7 +14,7 @@ vi.mock("@/lib/auth/github", () => ({
   installUrl: () => "https://github.com/apps/formic",
   isGithubLinked: (u: { githubId: number | null }) => !!u.githubId,
 }));
-vi.mock("@/lib/auth/session", () => ({ authMode }));
+vi.mock("@/lib/auth/session", () => ({ authMode, githubSignIn: () => true }));
 vi.mock("@/lib/vcs/repositories", async (orig) => ({
   ...(await orig<typeof import("@/lib/vcs/repositories")>()),
   listRepositories,
@@ -75,6 +75,15 @@ describe("GET /api/github/repos", () => {
     const reason = (await (await GET()).json()).reason;
     expect(reason).toContain("Connect GitHub");
     expect(reason).not.toContain("GITHUB_TOKEN");
+    expect(credentialsFor).not.toHaveBeenCalled();
+  });
+
+  it("points an account with no GitHub at connecting it", async () => {
+    authMode.mockReturnValue("accounts");
+    currentUser.mockResolvedValue({ id: "u1", githubId: null });
+    const body = await (await GET()).json();
+    expect(body.connectUrl).toBe("/api/auth/github/login?intent=connect&next=/");
+    expect(body.installUrl).toBeNull();
   });
 });
 

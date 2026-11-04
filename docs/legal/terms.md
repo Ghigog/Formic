@@ -1,6 +1,6 @@
 # Terms of Service / Beta Agreement
 
-**Version:** 2026-09-24
+**Version:** 2026-11-04
 **Status:** draft, pending review by qualified counsel before this closed
 beta is offered commercially. Until reviewed, treat every clause below as a
 statement of intent, not a binding contract.

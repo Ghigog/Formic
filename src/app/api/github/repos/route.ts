@@ -1,7 +1,7 @@
 import { currentUser } from "@/lib/auth/user";
 import { credentialsFor } from "@/lib/auth/credentials";
 import { installUrl, isGithubLinked } from "@/lib/auth/github";
-import { authMode } from "@/lib/auth/session";
+import { authMode, githubSignIn } from "@/lib/auth/session";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createRepository, listRepositories, REPO_NAME } from "@/lib/vcs/repositories";
@@ -15,6 +15,18 @@ export async function GET() {
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
 
   const install = installUrl();
+  // With accounts and no GitHub connected, the way forward is connecting it,
+  // not installing the app: there is no token to list installations with.
+  if (authMode() === "accounts" && !isGithubLinked(user)) {
+    return Response.json({
+      ok: false,
+      reason: githubSignIn()
+        ? "Connect GitHub to list your repositories."
+        : "GitHub isn't set up on this Formic. Start without a repository.",
+      installUrl: null,
+      connectUrl: githubSignIn() ? "/api/auth/github/login?intent=connect&next=/" : null,
+    });
+  }
   const { githubToken, githubTokenKind } = await credentialsFor(user);
   if (!githubToken || !githubTokenKind) {
     return Response.json({

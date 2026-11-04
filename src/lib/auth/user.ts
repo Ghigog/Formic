@@ -14,7 +14,7 @@ const LOCAL_PROFILE = { githubId: 0, login: "local", name: "Local", avatarUrl: n
  * Bumped whenever the terms of service or privacy policy change materially
  * (see docs/legal). Everyone who accepted an older version is asked again.
  */
-export const CURRENT_TERMS_VERSION = "2026-09-28";
+export const CURRENT_TERMS_VERSION = "2026-11-04";
 
 /** Whether this person has not yet agreed to the terms now in force. */
 export function needsTermsAcceptance(user: UserRecord): boolean {
@@ -38,6 +38,19 @@ export async function localUser(): Promise<UserRecord> {
   if (known) return known;
   const user = await repo.upsertUser(LOCAL_PROFILE);
   localUserId = user.id;
+  return user;
+}
+
+/**
+ * Creates a person, and if they are the first anyone has made, gives them
+ * the boards and agents from before accounts existed: the first to sign in,
+ * by email or GitHub, is whoever set this deployment up.
+ */
+export async function firstSignIn(create: () => Promise<UserRecord>): Promise<UserRecord> {
+  const repo = repository();
+  const first = (await repo.countUsers()) === 0;
+  const user = await create();
+  if (first) await repo.adoptUnowned(user.id);
   return user;
 }
 

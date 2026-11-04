@@ -48,6 +48,142 @@ interface ProjectSetting {
 }
 
 /**
+ * Who is signed in and, with accounts, their GitHub connection: connect it to
+ * work on repositories, or disconnect it, which revokes Formic's token at
+ * GitHub straight away. Nothing here is needed for a board with no repository.
+ */
+function AccountSection({
+  account,
+  installUrl,
+  githubError,
+}: {
+  account: Account;
+  installUrl: string | null;
+  githubError: string | null;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(githubError);
+  const github = account.github;
+  const connected = !!github?.connected;
+
+  async function disconnect() {
+    if (
+      !window.confirm(
+        "Disconnect GitHub? Formic's access is revoked at GitHub now. Your boards and cards stay; agents on boards with a repository stop until you connect again.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/account/github", { method: "DELETE" }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as { error?: string } | null;
+      setError(body?.error ?? "That did not work. Try again.");
+      return;
+    }
+    router.refresh();
+  }
+
+  const who = !account.signedIn
+    ? "Local mode: the server's GITHUB_TOKEN is used for every board."
+    : account.email
+      ? `Signed in as ${account.email}.`
+      : `Signed in with GitHub as @${account.login}.`;
+
+  return (
+    <>
+      <Section title="Account">
+        <div className="flex items-center gap-3">
+          {account.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={account.avatarUrl} alt="" className="size-10 rounded-full" />
+          ) : null}
+          <div className="min-w-0 flex-1">
+            <p className="text-ink text-[14px] font-semibold">{account.name ?? account.login}</p>
+            <p className="text-muted text-[12px]">{who}</p>
+          </div>
+          {account.signedIn && (
+            <form method="post" action="/api/auth/logout">
+              <button
+                type="submit"
+                className="text-muted hover:text-ink h-9 px-2 text-[12px] font-medium"
+              >
+                Sign out
+              </button>
+            </form>
+          )}
+        </div>
+      </Section>
+
+      {github && (
+        <Section title="GitHub">
+          {connected ? (
+            <>
+              <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+                Connected as <span className="text-ink font-mono">@{account.login}</span>. Agents
+                push and open pull requests as you, only on repositories you install the Formic
+                app on.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                {installUrl && (
+                  <a href={installUrl} className="text-terracotta text-[13px] font-semibold">
+                    Choose which repositories Formic can access →
+                  </a>
+                )}
+                {github.canDisconnect && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void disconnect()}
+                    className="text-muted hover:text-ink h-9 px-2 text-[12px] font-medium disabled:opacity-50"
+                  >
+                    Disconnect GitHub
+                  </button>
+                )}
+              </div>
+            </>
+          ) : github.canConnect ? (
+            <>
+              <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+                Not connected. Boards without a repository work fully without it. Connect GitHub
+                when you want agents to work on a repository: GitHub will ask you to let Formic act
+                on your behalf, which means only on the repositories you choose to install the
+                Formic app on. You can disconnect at any time, and Formic&apos;s access is revoked
+                at GitHub straight away.
+              </p>
+              <a
+                href="/api/auth/github/login?intent=connect&next=/settings"
+                className="bg-anthracite text-on-anthracite inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold"
+              >
+                Connect GitHub
+              </a>
+            </>
+          ) : (
+            <p className="text-muted text-[12px] leading-[1.5]">
+              GitHub isn&apos;t set up on this Formic, so boards run without a repository.
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="text-crimson-text mt-2 text-[12px]">
+              {error}
+            </p>
+          )}
+        </Section>
+      )}
+
+      {!github && installUrl && (
+        <a href={installUrl} className="text-terracotta text-[13px] font-semibold">
+          Choose which repositories Formic can access →
+        </a>
+      )}
+    </>
+  );
+}
+
+/**
  * Everything that is this person's own: who they are on GitHub, which
  * repositories Formic may touch, and the keys their runs are paid with.
  */
@@ -66,8 +202,11 @@ export function SettingsForm({
   mcpEndpoint,
   vapidPublicKey = null,
   presets = [],
+  githubError = null,
 }: {
   account: Account;
+  /** Why connecting GitHub just failed, from the callback. */
+  githubError?: string | null;
   installUrl: string | null;
   /** The board this browser is on; auto-merge is switched on for it alone. */
   project?: ProjectSetting | null;
@@ -103,40 +242,7 @@ export function SettingsForm({
       <AutoTour id="settings" delay={600} />
 
       <main className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-6">
-        <Section title="GitHub">
-          <div className="flex items-center gap-3">
-            {account.avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={account.avatarUrl} alt="" className="size-10 rounded-full" />
-            ) : null}
-            <div className="min-w-0 flex-1">
-              <p className="text-ink text-[14px] font-semibold">{account.name ?? account.login}</p>
-              <p className="text-muted text-[12px]">
-                {account.signedIn
-                  ? `Signed in as @${account.login}. Agents push and open pull requests as you.`
-                  : "Local mode: the server's GITHUB_TOKEN is used for every board."}
-              </p>
-            </div>
-            {account.signedIn && (
-              <form method="post" action="/api/auth/logout">
-                <button
-                  type="submit"
-                  className="text-muted hover:text-ink h-9 px-2 text-[12px] font-medium"
-                >
-                  Sign out
-                </button>
-              </form>
-            )}
-          </div>
-          {installUrl && (
-            <a
-              href={installUrl}
-              className="text-terracotta mt-3 inline-block text-[13px] font-semibold"
-            >
-              Choose which repositories Formic can access →
-            </a>
-          )}
-        </Section>
+        <AccountSection account={account} installUrl={installUrl} githubError={githubError} />
 
         {github && (
           <KeyField

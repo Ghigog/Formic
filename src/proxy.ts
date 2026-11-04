@@ -22,7 +22,7 @@ import { publicUrl } from "@/lib/origin";
  */
 
 const OPEN = [
-  /^\/login$/,
+  /^\/login(\/verify)?$/,
   /^\/api\/login$/,
   /^\/api\/auth\//,
   /^\/api\/health$/,

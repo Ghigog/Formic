@@ -601,6 +601,8 @@ export class MemoryRepository implements Repository {
 
   async deleteUser(userId: string): Promise<void> {
     const s = store();
+    const email = s.users.get(userId)?.email;
+    if (email) for (const [hash, t] of s.loginTokens) if (t.email === email) s.loginTokens.delete(hash);
     const projectIds = [...s.projects.values()]
       .filter((p) => p.ownerId === userId)
       .map((p) => p.id);

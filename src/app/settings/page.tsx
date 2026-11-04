@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { canSee, currentUser, ownerScope } from "@/lib/auth/user";
 import { authMode } from "@/lib/auth/session";
 import { installUrl } from "@/lib/auth/github";
+import { accountFor } from "@/lib/auth/account";
 import { activeProject } from "@/lib/board/project";
 import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
 import { getEffortByPoints, getLimitSettings, getNotificationSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
@@ -15,7 +16,12 @@ import { SettingsForm } from "@/components/settings/settings-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ github_error?: string }>;
+}) {
+  const githubError = (await searchParams)?.github_error ?? null;
   const user = await currentUser();
   if (!user) redirect("/login?next=/settings");
   const config = env();
@@ -40,12 +46,8 @@ export default async function SettingsPage() {
 
   return (
     <SettingsForm
-      account={{
-        login: user.login,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-        signedIn: authMode() === "accounts",
-      }}
+      account={accountFor(user)}
+      githubError={githubError}
       installUrl={installUrl()}
       project={project}
       presets={(await repository().listPresets(ownerScope(user))).map(({ id, name }) => ({ id, name }))}

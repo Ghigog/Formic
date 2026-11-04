@@ -575,7 +575,10 @@ export class PrismaRepository implements Repository {
     // Their projects and presets cascade to everything under them: epics,
     // tickets, runs, dependencies, events, column agents, and both kinds of
     // chat message. See onDelete: Cascade in schema.prisma.
-    await prisma().user.delete({ where: { id: userId } });
+    const db = prisma();
+    const user = await db.user.delete({ where: { id: userId } });
+    // Sign-in links aren't tied to the row: they are sent before an account exists.
+    if (user.email) await db.loginToken.deleteMany({ where: { email: user.email } });
   }
 
   async projectOfCard(cardId: string): Promise<string | null> {

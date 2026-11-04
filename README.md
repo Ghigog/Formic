@@ -25,11 +25,12 @@ layer, and nothing breaks without it:
 | Variable | Switches on |
 | :-- | :-- |
 | `DATABASE_URL` (or Vercel's `POSTGRES_*`) | Durable state |
-| `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG` | GitHub sign-in; each person works on their own repos with their own keys |
+| `RESEND_API_KEY`, `FORMIC_EMAIL_FROM` | Email sign-in: accounts with no GitHub needed. People connect GitHub later, in Settings, for repositories |
+| `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG` | GitHub sign-in and Connect GitHub; each person works on their own repos with their own keys |
 | `FORMIC_SECRET` | Encryption for saved keys and sessions. Set it before anyone signs in. Required to save keys on a server with a database. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop |
 | `SANDBOX_PROVIDER=e2b` + `E2B_API_KEY` | Isolated sandboxes. Required on Vercel. |
-| `FORMIC_ALLOWED_USERS` | An allow-list of GitHub usernames |
+| `FORMIC_ALLOWED_USERS` | An allow-list of GitHub usernames and email addresses. Empty lets anyone in |
 | `ANTHROPIC_API_KEY`, `GITHUB_TOKEN` | Local mode only: one user, no sign-in |
 
 With a database:
