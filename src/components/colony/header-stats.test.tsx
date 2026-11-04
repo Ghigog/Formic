@@ -151,7 +151,7 @@ describe("LevelBadge", () => {
   });
 });
 
-describe("Heat superscript", () => {
+describe("Points panel and heat indicator", () => {
   const justMerged = (n: number) =>
     Array.from({ length: n }, (_, i) =>
       makeCard({
@@ -160,29 +160,50 @@ describe("Heat superscript", () => {
         mergedAt: new Date().toISOString(),
       }),
     );
+  const panel = () => document.querySelector('[data-colony="points-panel"]')!;
+  const filled = () =>
+    document.querySelectorAll('[data-colony="heat"] [data-pip="on"]').length;
 
-  it("raises ×2.5 at the points' top right in the heat colour, with the stacks in its tooltip", () => {
-    renderHeader(<ColonyHeaderStats />, justMerged(3));
-    const heat = document.querySelector('[data-colony="heat"]')!;
-    expect(heat.tagName).toBe("SUP");
-    expect(heat).toHaveTextContent("×2.5");
-    expect(heat).toHaveStyle({ color: "var(--clay-chip-text)" });
-    expect(heat.getAttribute("title")).toMatch(/Stack 3: \d+:\d\d left/);
-    expect(heat.closest('[data-tour="points"]')).not.toBeNull();
-    expect(document.querySelector(".oct")).toBeNull();
+  it("has no POINTS label, just the number in a panel", () => {
+    renderHeader();
+    expect(screen.queryByText("POINTS")).toBeNull();
+    expect(panel().querySelector('[data-colony="score"]')).not.toBeNull();
+    expect(panel().closest('[data-tour="points"]')).not.toBeNull();
   });
 
-  it("keeps an empty anchor and no label at ×1.0", () => {
-    renderHeader(<ColonyHeaderStats />);
+  it("is neutral with empty pips and no multiplier at ×1.0", () => {
+    renderHeader();
     const heat = document.querySelector('[data-colony="heat"]')!;
     expect(heat).toBeInTheDocument();
-    expect(heat).toBeEmptyDOMElement();
+    expect(heat.getAttribute("title")).toBeNull();
+    expect(heat.querySelectorAll("[data-pip]")).toHaveLength(6);
+    expect(filled()).toBe(0);
+    expect(panel().getAttribute("style")).toBeNull();
     expect(screen.queryByText(/^×/)).toBeNull();
   });
 
-  it("sits on the points in the mobile bar too", () => {
+  it("turns clay at 3 stacks with ×2.5 and the stacks in its tooltip", () => {
+    renderHeader(<ColonyHeaderStats />, justMerged(3));
+    const heat = document.querySelector('[data-colony="heat"]')!;
+    expect(heat).toHaveTextContent("×2.5");
+    expect(panel()).toHaveStyle({
+      backgroundColor: "var(--clay-chip)",
+      color: "var(--clay-chip-text)",
+    });
+    expect(filled()).toBe(3);
+    expect(heat.getAttribute("title")).toMatch(/Stack 3: \d+:\d\d left/);
+  });
+
+  it("turns crimson at 5 stacks", () => {
+    renderHeader(<ColonyHeaderStats />, justMerged(5));
+    expect(panel()).toHaveStyle({ color: "var(--crimson-chip-text)" });
+    expect(filled()).toBe(5);
+  });
+
+  it("is in the mobile bar too", () => {
     renderHeader(<ColonyMobileStats />, justMerged(1));
-    expect(document.querySelector('[data-colony="heat"]')).toHaveTextContent(
+    expect(panel()).toHaveStyle({ color: "var(--terracotta-deep)" });
+    expect(panel().querySelector('[data-colony="heat"]')).toHaveTextContent(
       "×1.5",
     );
   });
