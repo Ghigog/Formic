@@ -121,8 +121,8 @@ export function Board({
   noSandboxKey = false,
   autoMerge = false,
 }: BoardProps) {
-  /** The ticket last dropped on the archive zone, which does the archiving. */
-  const [dropped, setDropped] = useState<{ ticketId: string } | null>(null);
+  /** The ticket or Epic last dropped on the archive zone, which does the archiving. */
+  const [dropped, setDropped] = useState<{ id: string; kind: "ticket" | "epic" } | null>(null);
   /** The dropped ticket as it last looked, for the crumble once it is archived. */
   const archiveGhost = useRef<Ghost | null>(null);
   // Empty until a drop. Seeded with the cards, it pinned every card to how it
@@ -537,11 +537,9 @@ export function Board({
       const card = live.find((c) => c.id === draggableId);
       if (!card) return;
       if (destination.droppableId === ARCHIVE_DROPPABLE_ID) {
-        if (card.kind === "ticket") {
-          const el = cardEl(card.id);
-          archiveGhost.current = colony && el ? ghostOf(el) : null;
-          setDropped({ ticketId: card.id });
-        }
+        const el = cardEl(card.id);
+        archiveGhost.current = colony && el ? ghostOf(el) : null;
+        setDropped({ id: card.id, kind: card.kind });
         return;
       }
       const edge = edgeDestination(destination.droppableId, source.droppableId as ColumnId);

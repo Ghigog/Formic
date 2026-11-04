@@ -83,11 +83,15 @@ enum AttachmentKind {
   file
 }
 
-/// A person, signed in with GitHub. Their tokens and keys are sealed with
-/// FORMIC_SECRET; see src/lib/secrets/vault.ts.
+/// A person, signed in by email or with GitHub. Their tokens and keys are
+/// sealed with FORMIC_SECRET; see src/lib/secrets/vault.ts.
 model User {
   id        String  @id @default(cuid())
-  githubId  Int     @unique
+  /// Null until the person connects GitHub. The local user's is 0.
+  githubId  Int?    @unique
+  /// Lowercased. Null for someone who has only ever signed in with GitHub.
+  email           String?   @unique
+  emailVerifiedAt DateTime?
   login     String
   name      String?
   avatarUrl String?
@@ -190,6 +194,9 @@ model Project {
   /// Whether every Sentinel is unlocked regardless of colony level, for a
   /// board brought in with an established codebase. Off until the owner opts in.
   unlockAllSentinels         Boolean  @default(false)
+  /// When the offer to unlock every Sentinel was dismissed or taken up, so a new
+  /// device does not ask again. Null until then.
+  unlockAllOfferDismissedAt  DateTime?
   /// Queens taken off the board, so clearing one never hands it back.
   queensSpent                Int      @default(0)
   /// Golden bells rung on this board, so one is never spent twice.
@@ -251,6 +258,8 @@ model Epic {
   /// older PRD, so the Epic is broken down again.
   prdUpdatedAt     DateTime?
   showcase         String?
+  /// The Epic is in the archive, off the board, with its tickets.
+  archived         Boolean      @default(false)
   /// The GitHub Actions run a CLI agent is doing for this epic, if any.
   /// Only that run's answer is taken; any other is stale.
   runnerJob        String?
@@ -317,27 +326,30 @@ model Ticket {
   scopeRequest       String[]   @default([])
   size               TicketSize @default(M)
 
-  status          TicketStatus @default(waiting)
-  stalledIn       ColumnId?
-  stage           Int          @default(3)
-  position        Float
+  status           TicketStatus @default(waiting)
+  stalledIn        ColumnId?
+  stage            Int          @default(3)
+  position         Float
   /// Pulled out of its epic's group by a human. Only To Do reads it.
-  detached        Boolean      @default(false)
+  detached         Boolean      @default(false)
   /// The ticket is in the archive, off the board. The sort/filter epic
   /// reads it.
-  archived        Boolean      @default(false)
+  archived         Boolean      @default(false)
+  /// Archived by its Epic's archive rather than on its own, so restoring the
+  /// Epic brings back only these.
+  archivedWithEpic Boolean      @default(false)
   /// The kind of work, as the owner chose. Null for untyped.
-  workType        WorkType?
+  workType         WorkType?
   /// Only for a bug. Null otherwise.
-  bugSeverity     BugSeverity?
+  bugSeverity      BugSeverity?
   /// Where a person dropped it when it cannot work there. It shows there,
   /// with misplacedReason saying what is wrong and how to fix it; its status
   /// stays what is true. Cleared by its next move or status change.
-  misplacedIn     ColumnId?
-  misplacedReason String?
+  misplacedIn      ColumnId?
+  misplacedReason  String?
   /// The column a request was rerouted from, and why. See Epic.rerouteFrom.
-  rerouteFrom     ColumnId?
-  rerouteReason   String?
+  rerouteFrom      ColumnId?
+  rerouteReason    String?
 
   branchName        String?
   /// A stacked ticket's start: the branch of the prerequisite whose open pull
@@ -702,6 +714,8 @@ model AssistantMessage {
   /// The preset that run was dispatched with, so a failure is blamed on the
   /// agent that actually ran it, not whichever one the assistant runs now.
   runnerAgent String?
+  /// Who a reply comes from: "assistant", a column role or "sentinel:<id>".
+  speaker     String   @default("assistant")
   createdAt   DateTime @default(now())
 
   @@index([projectId, createdAt])
@@ -733,23 +747,23 @@ model Meeting {
 /// One message in a call: a scheduled meeting's, or an unscheduled call's
 /// when there is no meeting.
 model CallMessage {
-  id         String   @id @default(cuid())
-  projectId  String
-  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  meetingId  String?
-  meeting    Meeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  meetingId String?
+  meeting   Meeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   /// "user" or "assistant".
-  role       String
+  role      String
   /// Which guest spoke, when role is "assistant".
-  guestId    String?
-  content    String
+  guestId   String?
+  content   String
   /// "done", "pending" while the guest answers, or "failed".
-  status     String   @default("done")
+  status    String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.
-  runnerJob  String?
+  runnerJob String?
   /// What the assistant proposed in this message, waiting on the person.
-  proposals  Json     @default("[]")
-  createdAt  DateTime @default(now())
+  proposals Json     @default("[]")
+  createdAt DateTime @default(now())
 
   @@index([projectId, createdAt])
   @@index([meetingId, createdAt])
@@ -906,4 +920,22 @@ model AccessToken {
 
   @@index([userId])
   @@map("access_token")
+}
+
+/// A one-time sign-in link sent by email. Only the SHA-256 of the token is
+/// kept; the link itself exists only in the email. See src/lib/auth/email.ts.
+model LoginToken {
+  id        String    @id @default(cuid())
+  email     String
+  tokenHash String    @unique
+  /// Where the person goes once signed in.
+  next      String    @default("/")
+  ip        String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_token")
 }

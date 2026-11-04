@@ -63,7 +63,7 @@ describe("AskBox", () => {
     expect(ask).toHaveBeenLastCalledWith("b");
   });
 
-  it("does not send on Enter when empty or while an answer is pending", async () => {
+  it("does not send on Enter when empty, but keeps the input open for more while an answer is pending", async () => {
     const ask = vi.fn();
     const { rerender } = render(
       <AskBox a={{ ...controls, ask }} repoName="demo" />,
@@ -74,8 +74,28 @@ describe("AskBox", () => {
     rerender(
       <AskBox a={{ ...controls, ask, pending: true }} repoName="demo" />,
     );
+    expect(screen.getByLabelText("Ask the PM")).not.toBeDisabled();
     await user.type(screen.getByLabelText("Ask the PM"), "hi{Enter}");
-    expect(ask).not.toHaveBeenCalled();
+    expect(ask).toHaveBeenCalledWith("hi");
+  });
+
+  it("shows a column agent's reply with its coin and name, and the PM's without", () => {
+    const base = { role: "assistant" as const, status: "done" as const, proposals: [] };
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            { ...base, id: "m-1", content: "From the PM", speaker: "assistant" },
+            { ...base, id: "m-2", content: "From the reviewer", speaker: "reviewer" },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
+    expect(screen.getByText("From the reviewer").closest("div.flex")?.textContent).toContain("R");
+    expect(screen.queryByText("PM", { selector: "p" })).toBeNull();
   });
 
   it("swaps Send for Stop while pending, and stops on click", async () => {

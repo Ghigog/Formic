@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/user";
 import { activeProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
-import { guestOptions } from "@/lib/calls/guests";
+import { guestOptions } from "@/lib/meetings/guests";
 import { scoreOf } from "@/lib/colony/game";
 import { CallsView } from "@/components/calls/calls-view";
 

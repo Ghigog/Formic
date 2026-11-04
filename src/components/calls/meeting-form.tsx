@@ -2,10 +2,10 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
-import type { GuestId } from "@/lib/calls/guests";
+import type { GuestId } from "@/lib/meetings/guests";
 import type { MeetingRepeat } from "@/lib/db/repository";
 import type { MeetingInput } from "@/lib/hooks/use-meetings";
-import { GuestCoin } from "./calls-chrome";
+import { GuestCoin } from "@/components/meetings/guest-coin";
 
 const REPEAT_LABELS: Record<MeetingRepeat, string> = {
   none: "Does not repeat",

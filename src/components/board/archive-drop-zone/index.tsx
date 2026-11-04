@@ -9,7 +9,7 @@ export const ARCHIVE_DROPPABLE_ID = "archive";
 
 /**
  * A drop target along the bottom of the board. The board's `onDragEnd` sees a
- * drop on `ARCHIVE_DROPPABLE_ID` and hands the ticket id down as `dropped`;
+ * drop on `ARCHIVE_DROPPABLE_ID` and hands the card's id and kind down as `dropped`;
  * this archives it, then tells the board through `onArchived`. On failure the
  * board is left alone, so the ticket stays where it was.
  *
@@ -23,8 +23,8 @@ export function ArchiveDropZone({
 }: {
   /** True while a ticket is being dragged: the bar slides up to be dropped on. */
   dragging?: boolean;
-  dropped?: { ticketId: string } | null;
-  onArchived: (ticketId: string) => void;
+  dropped?: { id: string; kind: "ticket" | "epic" } | null;
+  onArchived: (id: string) => void;
 }) {
   // The settled outcome of one drop. A drop with no outcome yet is in flight,
   // so loading is derived rather than set from inside the effect.
@@ -40,9 +40,9 @@ export function ArchiveDropZone({
 
   useEffect(() => {
     if (!dropped) return;
-    const { ticketId } = dropped;
+    const { id, kind } = dropped;
     let live = true;
-    fetch(`/api/tickets/${ticketId}/archive`, { method: "PATCH" })
+    fetch(`/api/${kind === "epic" ? "epics" : "tickets"}/${id}/archive`, { method: "PATCH" })
       .then(async (res) => {
         if (!res.ok) {
           // The server says why, e.g. the 409 for a ticket with an active run.
@@ -53,7 +53,7 @@ export function ArchiveDropZone({
         }
         if (!live) return;
         setOutcome({ drop: dropped, error: null });
-        onArchived(ticketId);
+        onArchived(id);
       })
       .catch((err: unknown) => {
         if (!live) return;

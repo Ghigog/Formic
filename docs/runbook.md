@@ -1,5 +1,10 @@
 # Runbook: deploy, roll back, restore
 
+> **Production is on AWS Lightsail** (https://52-200-209-60.sslip.io), deployed
+> over SSH by `deploy/server/deploy.sh`, with Postgres on the same server. The
+> Vercel steps below apply only to a Vercel deployment. For the server see
+> [`aws.md`](aws.md) and [`../AGENTS.md`](../AGENTS.md).
+
 Formic has one production database and, once set up (see below), one staging
 database. Vercel builds run `scripts/db-push.sh`, which applies committed
 migrations with `prisma migrate deploy` — see `prisma.config.ts` for how the

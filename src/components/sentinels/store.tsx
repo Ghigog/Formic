@@ -25,7 +25,7 @@ export interface SentinelsApi {
    * against that rubric. A second summon while it runs does nothing.
    */
   summon: (id: string, kind?: AuditKind) => Promise<void>;
-  /** Audits every unlocked sentinel, calibrating the ones that have no rubric yet. */
+  /** Audits every unlocked sentinel that no open Epic holds, calibrating the ones that have no rubric yet. */
   summonAll: () => void;
   /** Why the last summon was refused, if it was. */
   refusal: string | null;
@@ -100,7 +100,7 @@ export function SentinelsProvider({
   const summonAll = useCallback(() => {
     SENTINELS.filter((s) => isUnlocked(s, level, unlockAll)).forEach((s, i) => {
       const st = latest.current[s.id];
-      if (st?.running) return;
+      if (st?.running || st?.hold) return;
       setTimeout(() => void summon(s.id, st?.rubric ? "audit" : "calibrate"), i * 240);
     });
   }, [summon, level, unlockAll]);

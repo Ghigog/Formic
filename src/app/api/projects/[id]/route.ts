@@ -36,7 +36,12 @@ async function countBaseCommits(project: ProjectSummary): Promise<number | null>
 }
 
 async function view(project: ProjectSummary) {
-  return { id: project.id, unlockAllSentinels: project.unlockAllSentinels, ...(await history(project)) };
+  return {
+    id: project.id,
+    unlockAllSentinels: project.unlockAllSentinels,
+    unlockAllOfferDismissedAt: project.unlockAllOfferDismissedAt?.toISOString() ?? null,
+    ...(await history(project)),
+  };
 }
 
 /** A project's Sentinel unlocking and the base-branch history that suggests it. */
@@ -50,19 +55,37 @@ export async function GET(_req: Request, { params }: Params) {
   return Response.json(await view(project));
 }
 
-const patchSchema = z.object({ unlockAllSentinels: z.boolean() });
+const patchSchema = z.union([
+  z.object({ unlockAllSentinels: z.boolean() }),
+  z.object({ unlockAllOfferDismissed: z.literal(true) }),
+]);
 
-/** Turns the unlocking of every Sentinel on or off. Owner only. */
+/**
+ * Turns the unlocking of every Sentinel on or off (owner only), or records
+ * that the offer to do so was dismissed (anyone who can see the board).
+ */
 export async function PATCH(req: Request, { params }: Params) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
   const project = await repository().projectById((await params).id);
-  if (!project || !canSee(user, project.ownerId)) {
-    return Response.json({ error: "Not your project." }, { status: 403 });
-  }
+  if (!project) return Response.json({ error: "That project no longer exists." }, { status: 404 });
   const body = patchSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
-    return Response.json({ error: "Expected unlockAllSentinels as true or false." }, { status: 400 });
+    return Response.json(
+      { error: "Expected unlockAllSentinels as true or false, or unlockAllOfferDismissed as true." },
+      { status: 400 },
+    );
+  }
+  if ("unlockAllOfferDismissed" in body.data) {
+    if (!(await canSeeBoard(user, project))) {
+      return Response.json({ error: "That project no longer exists." }, { status: 404 });
+    }
+    await repository().setUnlockAllOfferDismissed(project.id);
+    const updated = (await repository().projectById(project.id)) ?? project;
+    return Response.json(await view(updated));
+  }
+  if (!canSee(user, project.ownerId)) {
+    return Response.json({ error: "Not your project." }, { status: 403 });
   }
   await repository().setUnlockAllSentinels(project.id, body.data.unlockAllSentinels);
   return Response.json(await view({ ...project, unlockAllSentinels: body.data.unlockAllSentinels }));

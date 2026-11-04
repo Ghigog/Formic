@@ -4,7 +4,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const struck = vi.hoisted(() => [] as number[]);
 vi.mock("./colony", () => ({
-  useColony: () => ({ sfx: (name: string, strength = 0) => name === "bell" && struck.push(strength) }),
+  useColony: () => ({
+    sfx: (name: string, strength = 0) =>
+      name === "bell" && struck.push(strength),
+  }),
 }));
 
 import { Bell } from "./bell";
@@ -17,14 +20,18 @@ beforeEach(() => {
   struck.length = 0;
   posts = [];
   state = { left: 0, armed: false };
-  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce"), media: query }));
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query.includes("reduce"),
+    media: query,
+  }));
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method !== "POST") return Response.json(state);
       const action = JSON.parse(init.body as string).action as string;
       posts.push(action);
-      if (action === "ring") return Response.json({ ...state, sent: 3, skipped: 0 });
+      if (action === "ring")
+        return Response.json({ ...state, sent: 3, skipped: 0 });
       state = { ...state, armed: action === "arm" };
       return Response.json(state);
     }),
@@ -48,8 +55,13 @@ const cord = () => screen.getByRole("button", { name: /bell cord/i });
 /** Grabs the cord and swings it: each x is where the hand goes next. */
 function swingCord(xs: number[]) {
   fireEvent.pointerDown(cord(), { pointerId: 1, clientX: 100, clientY: 100 });
-  for (const x of xs) fireEvent.pointerMove(cord(), { pointerId: 1, clientX: x, clientY: 104 });
-  fireEvent.pointerUp(cord(), { pointerId: 1, clientX: xs.at(-1) ?? 100, clientY: 104 });
+  for (const x of xs)
+    fireEvent.pointerMove(cord(), { pointerId: 1, clientX: x, clientY: 104 });
+  fireEvent.pointerUp(cord(), {
+    pointerId: 1,
+    clientX: xs.at(-1) ?? 100,
+    clientY: 104,
+  });
 }
 
 describe("the bell", () => {
@@ -59,7 +71,9 @@ describe("the bell", () => {
     swingCord([130, 70, 130]);
     await waitFor(() => expect(posts).toEqual(["ring"]));
     expect(struck[0]).toBe(1);
-    expect(await screen.findByText("Rang. Told 3 cards to carry on.")).toBeTruthy();
+    expect(
+      await screen.findByText("Rang. Told 3 cards to carry on."),
+    ).toBeTruthy();
   });
 
   it("shows its number and explains itself behind the i", async () => {
@@ -90,7 +104,8 @@ describe("the bell", () => {
   it("rings from the keyboard by swinging with the arrow keys", async () => {
     render(<Harness />);
     await screen.findByRole("button", { name: /0 golden bells left/ });
-    for (const key of ["ArrowRight", "ArrowLeft", "ArrowRight"]) fireEvent.keyDown(cord(), { key });
+    for (const key of ["ArrowRight", "ArrowLeft", "ArrowRight"])
+      fireEvent.keyDown(cord(), { key });
     await waitFor(() => expect(posts).toEqual(["ring"]));
   });
 
@@ -98,18 +113,47 @@ describe("the bell", () => {
     state = { left: 2, armed: false };
     render(<Harness />);
     await screen.findByRole("button", { name: /2 golden bells left/ });
-    fireEvent.click(screen.getByRole("button", { name: /tap to arm a golden bell/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /tap to arm a golden bell/i }),
+    );
     await waitFor(() => expect(posts).toEqual(["arm"]));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Golden bell armed/));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Golden bell armed/),
+    );
     expect(screen.getByTestId("bell-rig")).toHaveAttribute("data-armed");
-    expect(screen.getByRole("button", { name: /armed/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /armed/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("explains there is no golden bell yet, without arming, when none are left", async () => {
     render(<Harness />);
     await screen.findByRole("button", { name: /0 golden bells left/ });
-    fireEvent.click(screen.getByRole("button", { name: /tap to arm a golden bell/i }));
-    expect(await screen.findByRole("status")).toHaveTextContent(/one comes every five levels/);
+    fireEvent.click(
+      screen.getByRole("button", { name: /tap to arm a golden bell/i }),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /one comes every five levels/,
+    );
     expect(posts).toEqual([]);
+  });
+
+  it("draws a flat bell in currentColor when silver and gold when armed, with no hook", async () => {
+    state = { left: 2, armed: false };
+    render(<Harness />);
+    const rig = screen.getByTestId("bell-rig");
+    expect(rig.querySelector('path[d="M34 6h28"]')).toBeNull();
+    expect(rig.querySelector("linearGradient")).toBeNull();
+    expect(screen.getByTestId("bell-body").getAttribute("fill")).toBe(
+      "currentColor",
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /bell: tap to arm/i }),
+    );
+    await waitFor(() => expect(rig.dataset.armed).toBe("true"));
+    expect(screen.getByTestId("bell-body").getAttribute("fill")).toMatch(
+      /^url\(#.*gold\)$/,
+    );
   });
 });

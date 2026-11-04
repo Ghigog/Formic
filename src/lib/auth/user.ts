@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { repository } from "@/lib/db";
 import type { OwnerScope, UserRecord } from "@/lib/db/repository";
 import { SESSION_COOKIE, authMode, readSession } from "./session";
-import { isAllowed } from "./github";
+import { isUserAllowed } from "./github";
 
 /** The one person in local mode. GitHub ids start at 1, so 0 is free. */
 const LOCAL_PROFILE = { githubId: 0, login: "local", name: "Local", avatarUrl: null };
@@ -14,7 +14,7 @@ const LOCAL_PROFILE = { githubId: 0, login: "local", name: "Local", avatarUrl: n
  * Bumped whenever the terms of service or privacy policy change materially
  * (see docs/legal). Everyone who accepted an older version is asked again.
  */
-export const CURRENT_TERMS_VERSION = "2026-09-28";
+export const CURRENT_TERMS_VERSION = "2026-11-04";
 
 /** Whether this person has not yet agreed to the terms now in force. */
 export function needsTermsAcceptance(user: UserRecord): boolean {
@@ -41,19 +41,31 @@ export async function localUser(): Promise<UserRecord> {
   return user;
 }
 
+/**
+ * Creates a person, and if they are the first anyone has made, gives them
+ * the boards and agents from before accounts existed: the first to sign in,
+ * by email or GitHub, is whoever set this deployment up.
+ */
+export async function firstSignIn(create: () => Promise<UserRecord>): Promise<UserRecord> {
+  const repo = repository();
+  const first = (await repo.countUsers()) === 0;
+  const user = await create();
+  if (first) await repo.adoptUnowned(user.id);
+  return user;
+}
+
 /** Who is making this request, or null when nobody is signed in. */
 export async function currentUser(): Promise<UserRecord | null> {
   if (authMode() === "local") return localUser();
   const user = await userForSession((await cookies()).get(SESSION_COOKIE)?.value);
   // Taking someone off FORMIC_ALLOWED_USERS takes effect now, not when their
   // session cookie runs out.
-  return user && isAllowed(user.login) ? user : null;
+  return user && isUserAllowed(user) ? user : null;
 }
 
 /**
  * What a person can see. In local mode that includes the unowned demo board
- * and anything saved before accounts existed; signed in with GitHub, only
- * their own.
+ * and anything saved before accounts existed; with accounts, only their own.
  */
 export function ownerScope(user: UserRecord): OwnerScope {
   return { ownerId: user.id, includeUnowned: authMode() === "local" };
@@ -70,7 +82,7 @@ export function canSee(user: UserRecord, ownerId: string | null): boolean {
 export function asSignedIn<A extends unknown[], R>(handler: (...args: A) => Promise<R>) {
   return async (...args: A): Promise<R> => {
     // Local mode has one person, and boards are only shared signed in.
-    if (authMode() !== "github") return handler(...args);
+    if (authMode() !== "accounts") return handler(...args);
     const user = await currentUser();
     return withActor(user?.id ?? null, () => handler(...args));
   };

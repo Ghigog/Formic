@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { GuestId } from "@/lib/calls/guests";
+import type { GuestId } from "@/lib/meetings/guests";
 
 import type {
   AgentPreset,
@@ -132,6 +132,8 @@ export interface AssistantMessage {
   runnerJob: string | null;
   /** The preset that job was dispatched with, so a failure is blamed on it. */
   runnerAgent: string | null;
+  /** Who a reply comes from: "assistant", a column role or "sentinel:<id>" (a GuestId). */
+  speaker: string;
   createdAt: Date;
 }
 
@@ -490,6 +492,8 @@ export interface ProjectSummary {
   autoEscalate: boolean;
   /** Every Sentinel is unlocked whatever the colony level. Off until the owner opts in. */
   unlockAllSentinels: boolean;
+  /** When the offer to unlock every Sentinel was dismissed or taken up. Null: still on offer. */
+  unlockAllOfferDismissedAt: Date | null;
   /** The most Coder Agents the board runs at once, scouts included. Null: no cap. */
   colonySize: number | null;
   /** Slots of colonySize kept for urgent work. */
@@ -542,7 +546,11 @@ export interface PushPreferences {
 /** A person, with their credentials still sealed. */
 export interface UserRecord {
   id: string;
-  githubId: number;
+  /** Null until the person connects GitHub. The local user's is 0. */
+  githubId: number | null;
+  /** Lowercased. Null for someone who has only signed in with GitHub. */
+  email: string | null;
+  emailVerifiedAt: Date | null;
   login: string;
   name: string | null;
   avatarUrl: string | null;
@@ -621,6 +629,15 @@ export interface GithubProfile {
   login: string;
   name: string | null;
   avatarUrl: string | null;
+}
+
+/** A one-time emailed sign-in link, as stored: only its hash. */
+export interface NewLoginToken {
+  email: string;
+  tokenHash: string;
+  next: string;
+  ip: string | null;
+  expiresAt: Date;
 }
 
 /** A preset as stored. The key arrives here already sealed. */
@@ -771,6 +788,26 @@ export interface UserRepository {
   userById(userId: string): Promise<UserRecord | null>;
   /** Creates or refreshes someone from their GitHub profile. */
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
+  /** Someone by their (lowercased) email address. */
+  userByEmail(email: string): Promise<UserRecord | null>;
+  /** Someone by their GitHub account id. */
+  userByGithubId(githubId: number): Promise<UserRecord | null>;
+  /** Creates someone who signed in by email, verified now. */
+  createEmailUser(user: { email: string; login: string }): Promise<UserRecord>;
+  /** Attaches a GitHub account to an existing person, refreshing login, name and avatar from it. */
+  linkGithub(userId: string, profile: GithubProfile): Promise<UserRecord>;
+  /** Detaches GitHub: clears the GitHub id and every GitHub token. */
+  unlinkGithub(userId: string): Promise<UserRecord>;
+  /** Stores a sign-in link's hash. */
+  createLoginToken(token: NewLoginToken): Promise<void>;
+  /**
+   * Spends a sign-in link: marks it used and returns its email and next path,
+   * or null when it is unknown, expired or already used. Atomic, so two
+   * concurrent spends of one link sign in at most once.
+   */
+  spendLoginToken(tokenHash: string, now: Date): Promise<{ email: string; next: string } | null>;
+  /** How many sign-in links were sent to this address, or from this IP, since `since`. */
+  countLoginTokens(by: { email: string } | { ip: string }, since: Date): Promise<number>;
   updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
   updateRunTimeBudget(userId: string, columns: RunTimeBudgetColumns): Promise<UserRecord>;
   updateLimits(userId: string, columns: LimitColumns): Promise<UserRecord>;
@@ -799,8 +836,17 @@ export interface BoardRepository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
-  /** The archive: a project's archived tickets, off the active board. */
+  /** The archive: a project's archived tickets, off the active board. Those archived with their Epic show under it. */
   archivedTickets(projectId: string): Promise<BoardCard[]>;
+  /** The archive: a project's archived Epics. */
+  archivedEpics(projectId: string): Promise<BoardCard[]>;
+  /**
+   * Archives an Epic and each of its non-archived tickets, marking those as
+   * taken by the Epic, in one transaction. Idempotent.
+   */
+  archiveEpic(epicId: string): Promise<void>;
+  /** Restores an Epic and only the tickets its archive took. Idempotent. */
+  restoreEpic(epicId: string): Promise<void>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
   /**
    * The next standalone ticket's number, T-<number>. Claimed atomically and
@@ -1066,6 +1112,8 @@ export interface AgentRepository {
   setScoutAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
   setUnlockAllSentinels(projectId: string, unlockAllSentinels: boolean): Promise<void>;
+  /** Records that the offer to unlock every Sentinel was dismissed. Keeps the first time. */
+  setUnlockAllOfferDismissed(projectId: string): Promise<void>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,
@@ -1112,6 +1160,7 @@ export interface ConversationRepository {
     role: "user" | "assistant";
     content: string;
     status?: AssistantMessage["status"];
+    speaker?: string;
   }): Promise<AssistantMessage>;
   updateAssistantMessage(
     id: string,

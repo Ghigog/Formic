@@ -3,7 +3,7 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isProviderId } from "@/lib/llm/providers";
 import { PRUNABLE_EVENT_TYPES } from "@/lib/domain/events";
-import { isGuestId, type GuestId } from "@/lib/calls/guests";
+import { isGuestId, type GuestId } from "@/lib/meetings/guests";
 
 import { Prisma } from "@/generated/prisma/client";
 
@@ -18,6 +18,7 @@ import type {
   TicketChange,
   TicketColumnEntry,
   GithubProfile,
+  NewLoginToken,
   OwnerScope,
   PresetRecord,
   ProjectSummary,
@@ -82,6 +83,7 @@ import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 
 type EpicRow = {
   id: string;
+  archived: boolean;
   queen?: { id: string } | null;
   number: number | null;
   title: string;
@@ -369,6 +371,67 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async userByEmail(email: string): Promise<UserRecord | null> {
+    return prisma().user.findUnique({ where: { email: email.toLowerCase() } });
+  }
+
+  async userByGithubId(githubId: number): Promise<UserRecord | null> {
+    return prisma().user.findUnique({ where: { githubId } });
+  }
+
+  async createEmailUser(user: { email: string; login: string }): Promise<UserRecord> {
+    return prisma().user.create({
+      data: { email: user.email.toLowerCase(), emailVerifiedAt: new Date(), login: user.login },
+    });
+  }
+
+  async linkGithub(userId: string, profile: GithubProfile): Promise<UserRecord> {
+    const db = prisma();
+    const current = await db.user.findUniqueOrThrow({ where: { id: userId } });
+    return db.user.update({
+      where: { id: userId },
+      data: { ...profile, name: current.name ?? profile.name },
+    });
+  }
+
+  async unlinkGithub(userId: string): Promise<UserRecord> {
+    return prisma().user.update({
+      where: { id: userId },
+      data: {
+        githubId: null,
+        githubTokenCipher: null,
+        githubTokenExpiresAt: null,
+        githubRefreshCipher: null,
+        githubRefreshExpiresAt: null,
+      },
+    });
+  }
+
+  async createLoginToken(token: NewLoginToken): Promise<void> {
+    await prisma().loginToken.create({ data: { ...token, email: token.email.toLowerCase() } });
+  }
+
+  async spendLoginToken(tokenHash: string, now: Date): Promise<{ email: string; next: string } | null> {
+    const db = prisma();
+    // One conditional update: of two concurrent spends, only one matches a row.
+    const spent = await db.loginToken.updateMany({
+      where: { tokenHash, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    if (spent.count !== 1) return null;
+    const token = await db.loginToken.findUnique({ where: { tokenHash }, select: { email: true, next: true } });
+    return token;
+  }
+
+  async countLoginTokens(by: { email: string } | { ip: string }, since: Date): Promise<number> {
+    return prisma().loginToken.count({
+      where: {
+        createdAt: { gte: since },
+        ...("email" in by ? { email: by.email.toLowerCase() } : { ip: by.ip }),
+      },
+    });
+  }
+
   async updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord> {
     return prisma().user.update({ where: { id: userId }, data: secrets });
   }
@@ -512,7 +575,10 @@ export class PrismaRepository implements Repository {
     // Their projects and presets cascade to everything under them: epics,
     // tickets, runs, dependencies, events, column agents, and both kinds of
     // chat message. See onDelete: Cascade in schema.prisma.
-    await prisma().user.delete({ where: { id: userId } });
+    const db = prisma();
+    const user = await db.user.delete({ where: { id: userId } });
+    // Sign-in links aren't tied to the row: they are sent before an account exists.
+    if (user.email) await db.loginToken.deleteMany({ where: { email: user.email } });
   }
 
   async projectOfCard(cardId: string): Promise<string | null> {
@@ -615,10 +681,12 @@ export class PrismaRepository implements Repository {
     // long text (a PRD, a request, a ticket's description and criteria) is
     // most of each row: reading it here was most of the database's egress.
     const epics = ticketId ? [] : await db.epic.findMany({
-      where: { projectId, ...(epicId ? { id: epicId } : {}) },
+      // An archived Epic is off the board, but still found by its id.
+      where: { projectId, ...(epicId ? { id: epicId } : { archived: false }) },
       orderBy: { position: "asc" },
       select: {
         id: true,
+        archived: true,
         number: true,
         title: true,
         status: true,
@@ -728,6 +796,7 @@ export class PrismaRepository implements Repository {
         position: epic.position,
         epicId: null,
         standalone: epic.standalone,
+        archived: epic.archived,
         workType: epic.workType,
         bugSeverity: epic.bugSeverity,
         rerouteFrom: epic.rerouteFrom,
@@ -846,7 +915,7 @@ export class PrismaRepository implements Repository {
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
     const db = prisma();
     const tickets = await db.ticket.findMany({
-      where: { epic: { projectId }, archived: true, scoutOf: null },
+      where: { epic: { projectId }, archived: true, archivedWithEpic: false, scoutOf: null },
       orderBy: { position: "asc" },
       select: {
         id: true,
@@ -891,6 +960,32 @@ export class PrismaRepository implements Repository {
       childCount: 0,
       doneCount: 0,
     }));
+  }
+
+  async archivedEpics(projectId: string): Promise<BoardCard[]> {
+    const epics = await prisma().epic.findMany({
+      where: { projectId, archived: true, standalone: false },
+      orderBy: { position: "asc" },
+      select: { id: true },
+    });
+    const cards = await Promise.all(epics.map((e) => this.cardById(e.id)));
+    return cards.filter((c): c is BoardCard => c !== null);
+  }
+
+  async archiveEpic(epicId: string): Promise<void> {
+    const db = prisma();
+    await db.$transaction([
+      db.ticket.updateMany({ where: { epicId, archived: false }, data: { archived: true, archivedWithEpic: true } }),
+      db.epic.updateMany({ where: { id: epicId }, data: { archived: true } }),
+    ]);
+  }
+
+  async restoreEpic(epicId: string): Promise<void> {
+    const db = prisma();
+    await db.$transaction([
+      db.ticket.updateMany({ where: { epicId, archivedWithEpic: true }, data: { archived: false, archivedWithEpic: false } }),
+      db.epic.updateMany({ where: { id: epicId }, data: { archived: false } }),
+    ]);
   }
 
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
@@ -1611,7 +1706,7 @@ export class PrismaRepository implements Repository {
         ...(rest.fileScope !== undefined ? { fileScope: normalizeScope(rest.fileScope) } : {}),
         ...(plan !== undefined ? { plan: plan as never } : {}),
         ...(followUps !== undefined ? { followUps: followUps as never } : {}),
-        ...(archived !== undefined ? { archived } : {}),
+        ...(archived !== undefined ? { archived, archivedWithEpic: false } : {}),
         ...(rest.runnerJob !== undefined
           ? { runnerJobAt: rest.runnerJob ? new Date() : null }
           : {}),
@@ -2015,6 +2110,13 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: { unlockAllSentinels } });
   }
 
+  async setUnlockAllOfferDismissed(projectId: string): Promise<void> {
+    await prisma().project.updateMany({
+      where: { id: projectId, unlockAllOfferDismissedAt: null },
+      data: { unlockAllOfferDismissedAt: new Date() },
+    });
+  }
+
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
     await prisma().project.update({ where: { id: projectId }, data: { autoEscalate } });
   }
@@ -2119,6 +2221,7 @@ export class PrismaRepository implements Repository {
     role: "user" | "assistant";
     content: string;
     status?: AssistantMessage["status"];
+    speaker?: string;
   }): Promise<AssistantMessage> {
     const row = await prisma().assistantMessage.create({
       data: { ...input, status: input.status ?? "done" },
@@ -2366,6 +2469,7 @@ function toAssistantMessage(row: {
   status: string;
   runnerJob: string | null;
   runnerAgent: string | null;
+  speaker: string;
   createdAt: Date;
 }): AssistantMessage {
   return {

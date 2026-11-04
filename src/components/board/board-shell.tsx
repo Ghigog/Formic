@@ -313,6 +313,7 @@ export function BoardShell({
           setOpenTicketId(ticketId);
         }}
         streamingPrd={openEpicId ? prdStreams[openEpicId] : undefined}
+        onChanged={() => void refetch().catch(() => {})}
       />
 
       <TicketDrawer
@@ -338,7 +339,7 @@ export function BoardShell({
       <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
       <AutoTour id="board" delay={900} />
       <ColonyTimeline repoName={repoName} />
-      <SentinelsPage repoName={repoName} />
+      <SentinelsPage repoName={repoName} onOpenEpic={setOpenEpicId} />
       {projectId && <UnlockAllDialog projectId={projectId} unlockAll={unlockAllSentinels} />}
       <ColonyPopover onOpenArchive={() => setArchiveOpen(true)} />
       {archiveOpen && <ArchiveView onClose={() => setArchiveOpen(false)} onRestored={restore} />}

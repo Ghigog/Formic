@@ -2,9 +2,11 @@ import "server-only";
 
 import { GitHubClient } from "./github";
 import { MockVcsClient } from "./mock";
+import { disconnectedVcs } from "./disconnected";
 import type { VcsClient } from "./types";
 import { mockAgentsEnabled } from "@/lib/agents/mock-mode";
 import { env } from "@/lib/secrets/env";
+import { authMode } from "@/lib/auth/session";
 
 /**
  * Provider selection, and the one policy decision in PROT-07 worth arguing
@@ -23,7 +25,7 @@ let override: VcsClient | null = null;
 
 /**
  * Whether the server has its own GitHub credential. Only meaningful in local
- * mode; signed in with GitHub, each project uses its owner's token instead.
+ * mode; with accounts, each project uses its owner's token instead.
  *
  * With mock agents on, GitHub is mocked too (see `vcs`), so this is true.
  */
@@ -39,13 +41,16 @@ export function usingMockVcs(): boolean {
  * Mock agents are self-contained by construction: with `AGENT_PROVIDER=mock`
  * the mock GitHub is returned whatever token this process holds, so a mock run
  * can never open a real pull request, get approved, or merge into a real
- * repository. Otherwise no token means no GitHub and the mock is used, so the
- * board still runs end to end.
+ * repository. In local mode no token means no GitHub and the mock is used, so
+ * the board still runs end to end. With accounts, no token means the person
+ * hasn't connected GitHub (or their connection lapsed): every call then fails
+ * saying so, rather than pretending against a mock.
  */
 export function vcs(repoFullName: string, token: string | null): VcsClient {
   if (override) return override;
   if (mockAgentsEnabled()) return new MockVcsClient(repoFullName);
-  return token ? new GitHubClient(repoFullName, token) : new MockVcsClient(repoFullName);
+  if (token) return new GitHubClient(repoFullName, token);
+  return authMode() === "accounts" ? disconnectedVcs() : new MockVcsClient(repoFullName);
 }
 
 /** Test seam: every repository gets this client. */
@@ -69,3 +74,4 @@ export function mergeNeedsPromotion(baseBranch: string): boolean {
 
 export * from "./types";
 export { MockVcsClient } from "./mock";
+export { GITHUB_NOT_CONNECTED, GitHubNotConnectedError } from "./disconnected";

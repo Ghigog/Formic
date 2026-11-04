@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isGuestId, type GuestId } from "@/lib/calls/guests";
+import { isGuestId, type GuestId } from "@/lib/meetings/guests";
 import { MEETING_REPEATS } from "@/lib/db/repository";
 
 const guest = z.string().refine(isGuestId, "Unknown guest.").transform((g) => g as GuestId);

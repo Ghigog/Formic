@@ -10,8 +10,11 @@ const { currentUser, credentialsFor, listRepositories, createRepository, authMod
 
 vi.mock("@/lib/auth/user", () => ({ currentUser }));
 vi.mock("@/lib/auth/credentials", () => ({ credentialsFor }));
-vi.mock("@/lib/auth/github", () => ({ installUrl: () => "https://github.com/apps/formic" }));
-vi.mock("@/lib/auth/session", () => ({ authMode }));
+vi.mock("@/lib/auth/github", () => ({
+  installUrl: () => "https://github.com/apps/formic",
+  isGithubLinked: (u: { githubId: number | null }) => !!u.githubId,
+}));
+vi.mock("@/lib/auth/session", () => ({ authMode, githubSignIn: () => true }));
 vi.mock("@/lib/vcs/repositories", async (orig) => ({
   ...(await orig<typeof import("@/lib/vcs/repositories")>()),
   listRepositories,
@@ -58,10 +61,29 @@ describe("GET /api/github/repos", () => {
     expect(listRepositories).not.toHaveBeenCalled();
   });
 
-  it("says the sign-in lapsed in github mode", async () => {
-    authMode.mockReturnValue("github");
+  it("says the GitHub connection lapsed for a connected account", async () => {
+    authMode.mockReturnValue("accounts");
+    currentUser.mockResolvedValue({ id: "u1", githubId: 7 });
     credentialsFor.mockResolvedValue({});
     expect((await (await GET()).json()).reason).toContain("lapsed");
+  });
+
+  it("asks an account with no GitHub to connect it, never for a server token", async () => {
+    authMode.mockReturnValue("accounts");
+    currentUser.mockResolvedValue({ id: "u1", githubId: null });
+    credentialsFor.mockResolvedValue({});
+    const reason = (await (await GET()).json()).reason;
+    expect(reason).toContain("Connect GitHub");
+    expect(reason).not.toContain("GITHUB_TOKEN");
+    expect(credentialsFor).not.toHaveBeenCalled();
+  });
+
+  it("points an account with no GitHub at connecting it", async () => {
+    authMode.mockReturnValue("accounts");
+    currentUser.mockResolvedValue({ id: "u1", githubId: null });
+    const body = await (await GET()).json();
+    expect(body.connectUrl).toBe("/api/auth/github/login?intent=connect&next=/");
+    expect(body.installUrl).toBeNull();
   });
 });
 
