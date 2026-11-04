@@ -43,6 +43,7 @@ function loginError(res: Response): string | null {
 beforeEach(() => {
   vi.stubEnv("GITHUB_APP_CLIENT_ID", "id");
   vi.stubEnv("GITHUB_APP_CLIENT_SECRET", "secret");
+  vi.stubEnv("FORMIC_SECRET", "s".repeat(32));
   mocks.exchangeCode.mockReset().mockResolvedValue(TOKENS);
   mocks.fetchProfile.mockReset().mockResolvedValue(PROFILE);
   mocks.storeTokens.mockClear();
@@ -63,6 +64,21 @@ describe("GET /api/auth/github/callback", () => {
     expect(res.headers.get("location")).toBe("http://localhost/");
     expect(mocks.exchangeCode).not.toHaveBeenCalled();
   });
+
+  it.each([["unset", ""], ["31 bytes", "s".repeat(31)]])(
+    "refuses sign-in without a session or GitHub call when FORMIC_SECRET is %s",
+    async (_name, secret) => {
+      const cookie = await signValue("n1|/");
+      vi.stubEnv("FORMIC_SECRET", secret);
+
+      const res = await callback("code=c&state=n1", cookie);
+
+      expect(res.status).toBe(303);
+      expect(loginError(res)).toMatch(/FORMIC_SECRET/);
+      expect(res.headers.get("set-cookie")).not.toContain(`${SESSION_COOKIE}=`);
+      expect(mocks.exchangeCode).not.toHaveBeenCalled();
+    },
+  );
 
   it("refuses a state it did not sign, or one that does not match", async () => {
     const forged = await callback("code=c&state=n1", "n1|/.forged");
