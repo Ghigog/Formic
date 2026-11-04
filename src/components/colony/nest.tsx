@@ -17,7 +17,7 @@ import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { QUEEN_CARRY_EVENT, edgeScrollSpeed, queenPoint, nextSway, legWiggle, MAX_SWAY_DEG, type QueenCarryDetail } from "./queen-carry";
 import { QueenIcon } from "./queen-icon";
 import { ColonyPanel } from "./colony-panel";
-import { InfoTip } from "./info-tip";
+import { Tile } from "./tile";
 
 /** The ant hill at the end of the ambient bar. Opens the colony. */
 export function NestButton() {
@@ -69,20 +69,6 @@ function BugPreview({ shape, locked, on, c }: { shape: BugShape; locked: boolean
   return <canvas ref={ref} width={80} height={80} className="size-10" aria-hidden />;
 }
 
-/** The Queen, drawn with the chosen shape and colour at 10x. Also the drag image. */
-function QueenBug({ c, className }: { c: ColonyApi; className: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const cv = ref.current;
-    const ctx = cv?.getContext("2d");
-    if (!cv || !ctx) return;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    drawBug(ctx, cv.width / 2, cv.height / 2 + 2, 10, 0.26, c.shape, c.bugHex);
-  }, [c.shape, c.bugHex]);
-  return <canvas ref={ref} width={200} height={200} className={className} aria-hidden />;
-}
-
 /**
  * The Queen under the finger. Each frame her legs sway against the pointer's
  * horizontal travel, on top of a constant wiggle, and her body leans the same way.
@@ -127,10 +113,10 @@ const SKITTER_EVERY = 28;
  * pointer events on its own cards, and a drop here is found with
  * `elementFromPoint` on the card's `data-tid`.
  */
-function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) => void }) {
+function QueenTray({ c, onDragging, onError }: { c: ColonyApi; onDragging: (on: boolean) => void; onError: (message: string | null) => void }) {
   const [unspent, setUnspent] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const setError = onError;
   const pointerX = useRef(0);
 
   useEffect(() => {
@@ -227,39 +213,35 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
   };
 
   const count = unspent ?? 0;
+  const canDrag = count > 0;
   return (
-    <div className="bg-panel relative flex items-center gap-3 rounded-lg px-3 py-2.5">
-      <span className="text-clay inline-flex shrink-0" data-queen-icon>
-        <QueenIcon size={22} />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-ink flex items-center gap-1.5 text-[12px] font-semibold">
-          <span>
-            Queens <span data-queen-count>{count}</span>
-          </span>
-          <InfoTip label="How Queens work">
-            Drop a Queen on a ticket and the ants work through every ticket it needs, until that ticket is done. Each
-            level earns one more; a placed Queen is spent.
-          </InfoTip>
-        </span>
-        <span className="text-muted text-[11px]">Unlock a queen with each level</span>
-        {error && (
-          <span role="alert" className="text-log-error text-[11px]">
-            {error}
-          </span>
-        )}
-      </div>
-      {count > 0 && (
-        <button
-          type="button"
-          data-queen-drag
-          aria-label="Drag a Queen onto a card"
-          onPointerDown={start}
-          className="border-line bg-card inline-flex size-12 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg border active:cursor-grabbing"
-        >
-          <QueenBug c={c} className="size-10" />
-        </button>
-      )}
+    <>
+      <Tile
+        data="queens"
+        icon={<QueenIcon size={48} />}
+        value={count}
+        valueData={{ "data-queen-count": "" }}
+        tipLabel="How Queens work"
+        tip={
+          <>
+            Unlock a queen with each level. Drop a Queen on a ticket and the ants work through every ticket it needs,
+            until that ticket is done. Each level earns one more; a placed Queen is spent.
+          </>
+        }
+        {...(canDrag
+          ? {
+              role: "group",
+              "aria-label": "Drag a Queen onto a card",
+              "data-queen-drag": "",
+              onPointerDown: (e: React.PointerEvent) => {
+                // The i is a button of its own: pressing it opens its note, it does not pick the Queen up.
+                if ((e.target as HTMLElement).closest("button")) return;
+                start(e);
+              },
+              className: "cursor-grab touch-none active:cursor-grabbing",
+            }
+          : {})}
+      />
       {drag &&
         // Portalled out of the panel, which is hidden on a phone while she is carried.
         createPortal(
@@ -273,7 +255,7 @@ function QueenTray({ c, onDragging }: { c: ColonyApi; onDragging: (on: boolean) 
           </div>,
           document.body,
         )}
-    </div>
+    </>
   );
 }
 
@@ -299,6 +281,9 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   const [carrying, setCarrying] = useState(false);
+  const [queenError, setQueenError] = useState<string | null>(null);
+  const [scoutError, setScoutError] = useState<string | null>(null);
+  const [bellSaid, setBellSaid] = useState<string | null>(null);
   const isMobile = useMediaQuery("(max-width: 767px)");
   if (!c || !open) return null;
 
@@ -345,11 +330,17 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
           </button>
         </div>
 
-        <QueenTray c={c} onDragging={setCarrying} />
-
-        <ColonyPanel level={s.level} />
-
-        <Bell />
+        <div data-colony-tiles className="relative grid grid-cols-4 gap-2">
+          <QueenTray c={c} onDragging={setCarrying} onError={setQueenError} />
+          <ColonyPanel level={s.level} onError={setScoutError} />
+          <Bell onSay={setBellSaid} />
+        </div>
+        {/* One line for what the tiles say, so a message never grows a tile. */}
+        <div className="flex flex-col gap-0.5 empty:hidden">
+          {queenError && <p role="alert" className="text-log-error text-[11px]">{queenError}</p>}
+          {scoutError && <p role="alert" className="text-log-error text-[11px]">{scoutError}</p>}
+          <p role="status" className="text-ink text-[12px] font-semibold empty:hidden">{bellSaid ?? ""}</p>
+        </div>
 
         {onOpenArchive && (
           <button
