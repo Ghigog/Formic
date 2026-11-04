@@ -492,6 +492,8 @@ export interface ProjectSummary {
   autoEscalate: boolean;
   /** Every Sentinel is unlocked whatever the colony level. Off until the owner opts in. */
   unlockAllSentinels: boolean;
+  /** When the offer to unlock every Sentinel was dismissed or taken up. Null: still on offer. */
+  unlockAllOfferDismissedAt: Date | null;
   /** The most Coder Agents the board runs at once, scouts included. Null: no cap. */
   colonySize: number | null;
   /** Slots of colonySize kept for urgent work. */
@@ -1077,6 +1079,8 @@ export interface AgentRepository {
   setScoutAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
   setUnlockAllSentinels(projectId: string, unlockAllSentinels: boolean): Promise<void>;
+  /** Records that the offer to unlock every Sentinel was dismissed. Keeps the first time. */
+  setUnlockAllOfferDismissed(projectId: string): Promise<void>;
   setColumnAgent(
     projectId: string,
     column: ColumnId,
