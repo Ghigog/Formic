@@ -7,6 +7,7 @@ import {
   ColonyHeaderStats,
   ColonyMobileStats,
   LevelBadge,
+  MeetingsButton,
 } from "./header-stats";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import { makeCard } from "@/test/cards";
@@ -184,5 +185,41 @@ describe("Heat superscript", () => {
     expect(document.querySelector('[data-colony="heat"]')).toHaveTextContent(
       "×1.5",
     );
+  });
+});
+
+describe("MeetingsButton", () => {
+  const stubMeetings = (startsAt: Date | null) =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          meetings: startsAt
+            ? [{ id: "m1", projectId: "p", title: "Standup", startsAt, agenda: "", guests: [], repeat: "none", lastRemindedFor: null, createdAt: startsAt }]
+            : [],
+        }),
+      ),
+    );
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("pulses a dot and shows the title and Join when a meeting is 10 minutes away", async () => {
+    stubMeetings(new Date(Date.now() + 10 * 60_000));
+    renderHeader(<MeetingsButton />);
+    expect(await screen.findByTestId("meetings-due")).toBeInTheDocument();
+    expect(screen.getByText("Standup")).toBeInTheDocument();
+    expect(screen.getByText("Join")).toBeInTheDocument();
+  });
+
+  it("is a plain Meetings chip with no dot when nothing is due", async () => {
+    stubMeetings(null);
+    renderHeader(<MeetingsButton />);
+    expect(await screen.findByText("Meetings")).toBeInTheDocument();
+    expect(screen.queryByTestId("meetings-due")).toBeNull();
+  });
+
+  it("is icon only on mobile", async () => {
+    stubMeetings(null);
+    renderHeader(<MeetingsButton iconOnly />);
+    expect(screen.getByRole("button", { name: "Open meetings" })).toHaveTextContent("");
   });
 });

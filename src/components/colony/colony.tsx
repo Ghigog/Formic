@@ -72,6 +72,9 @@ export interface ColonyApi {
   /** The Sentinels page. Opening it closes the timeline, and the other way round. */
   sentinelsOpen: boolean;
   setSentinelsOpen: (open: boolean) => void;
+  /** The Meetings menu. Opening it closes the timeline, the Sentinels page and the colony menu. */
+  meetingsOpen: boolean;
+  setMeetingsOpen: (open: boolean) => void;
   colonyOpen: boolean;
   setColonyOpen: (open: boolean) => void;
   toast: { text: string; key: number } | null;
@@ -174,6 +177,7 @@ export function ColonyProvider({
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [sentinelsOpen, setSentinelsOpen] = useState(false);
   const [colonyOpen, setColonyOpen] = useState(false);
+  const [meetingsOpen, setMeetingsOpen] = useState(false);
   const [toast, setToast] = useState<ColonyApi["toast"]>(null);
   const [win, setWin] = useState<EpicWin | null>(null);
 
@@ -228,9 +232,9 @@ export function ColonyProvider({
       full: true,
       bugShape: saved.shape,
       bugHex,
-      covered: timelineOpen || sentinelsOpen,
+      covered: timelineOpen || sentinelsOpen || meetingsOpen,
     });
-  }, [fx, cards, extras, now, score.level, saved.shape, bugHex, timelineOpen, sentinelsOpen]);
+  }, [fx, cards, extras, now, score.level, saved.shape, bugHex, timelineOpen, sentinelsOpen, meetingsOpen]);
   useEffect(() => sound.setEnabled(soundOn), [sound, soundOn]);
   useEffect(() => sound.attach(), [sound]);
   useEffect(() => {
@@ -714,6 +718,7 @@ export function ColonyProvider({
       if (open) {
         setColonyOpen(false);
         setSentinelsOpen(false);
+        setMeetingsOpen(false);
       }
     },
     sentinelsOpen,
@@ -723,6 +728,17 @@ export function ColonyProvider({
       if (open) {
         setColonyOpen(false);
         setTimelineOpen(false);
+        setMeetingsOpen(false);
+      }
+    },
+    meetingsOpen,
+    setMeetingsOpen: (open) => {
+      sfx(open ? "pickup" : "drop");
+      setMeetingsOpen(open);
+      if (open) {
+        setColonyOpen(false);
+        setTimelineOpen(false);
+        setSentinelsOpen(false);
       }
     },
     colonyOpen,
