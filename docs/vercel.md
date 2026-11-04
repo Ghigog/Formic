@@ -1,5 +1,9 @@
 # Deploying on Vercel
 
+> **Not where Formic's production runs.** Production is on AWS Lightsail
+> ([`aws.md`](aws.md)). This guide is for anyone deploying their own copy to
+> Vercel.
+
 Vercel hosts Formic as a Next.js app. The app itself is small; the pieces that
 need care are the database, the GitHub App URLs, and the fact that a serverless
 function is a poor place to run a long agent.

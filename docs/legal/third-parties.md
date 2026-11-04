@@ -60,8 +60,8 @@ own plan, at your own risk" in Settings.
   Settings, uninstalling the app or revoking access stops it.
 - **Resend** — only if you sign in by email: your email address and the
   sign-in link sent to it. United States.
-- **Vercel** — hosts the Formic application and its database traffic passes
-  through its network. United States.
+- **Amazon Web Services (Lightsail)** — hosts the Formic application and its
+  database, on one server. United States.
 
 ## What is never sent anywhere
 
