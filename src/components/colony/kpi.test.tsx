@@ -31,7 +31,7 @@ afterEach(() => {
 
 describe("KpiSection", () => {
   it("shows the tiles and four charts", async () => {
-    render(<KpiSection />);
+    render(<KpiSection unlocked />);
     const done = await screen.findByRole("group", { name: "Done" });
     expect(within(done).getByText("3")).toBeTruthy();
     expect(within(screen.getByRole("group", { name: "Pass rate" })).getByText("75%")).toBeTruthy();
@@ -46,7 +46,7 @@ describe("KpiSection", () => {
   });
 
   it("draws the highest-average column as the largest bar", async () => {
-    render(<KpiSection />);
+    render(<KpiSection unlocked />);
     const chart = await screen.findByRole("img", { name: "Average time in column" });
     const heights = [...chart.querySelectorAll("rect[data-column]")].map((r) => [
       r.getAttribute("data-column"),
@@ -57,11 +57,19 @@ describe("KpiSection", () => {
   });
 
   it("refetches and redraws for all time", async () => {
-    render(<KpiSection />);
+    render(<KpiSection unlocked />);
     await screen.findByText("3");
     await userEvent.click(screen.getByRole("button", { name: "All time" }));
     expect(await screen.findByText("12")).toBeTruthy();
     expect(fetchMock.mock.calls[1]![0]).toContain("window=all");
+  });
+});
+
+describe("KpiSection locked", () => {
+  it("renders nothing and loads nothing below the KPIs level", () => {
+    render(<KpiSection unlocked={false} />);
+    expect(screen.queryByRole("region", { name: "KPIs" })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -96,7 +104,7 @@ describe("KpiSection reveal", () => {
 
   it("plays the cue once and animates the count-up when sound is on", async () => {
     setup(false);
-    render(<KpiSection />);
+    render(<KpiSection unlocked />);
     const done = await screen.findByRole("group", { name: "Done" });
     expect(within(done).getByText("0")).toBeTruthy();
     act(() => reveal());
@@ -113,7 +121,7 @@ describe("KpiSection reveal", () => {
   it("stays silent when sound is muted", async () => {
     setup(false);
     window.localStorage.setItem(SOUND_KEY, "off");
-    render(<KpiSection />);
+    render(<KpiSection unlocked />);
     await screen.findByRole("group", { name: "Done" });
     act(() => reveal());
     expect(sfx).not.toHaveBeenCalled();
@@ -121,7 +129,7 @@ describe("KpiSection reveal", () => {
 
   it("shows the values at once under reduced motion", async () => {
     setup(true);
-    render(<KpiSection />);
+    render(<KpiSection unlocked />);
     const done = await screen.findByRole("group", { name: "Done" });
     act(() => reveal());
     expect(within(done).getByText("3")).toBeTruthy();
