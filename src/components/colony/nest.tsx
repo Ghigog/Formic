@@ -308,7 +308,7 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
       >
         <AutoTour id="colony" delay={800} />
         <div data-tour="colony-rank" className="flex items-center gap-3">
-          <span className="bg-anthracite text-cream inline-flex size-[42px] shrink-0 flex-col items-center justify-center gap-px [clip-path:polygon(10px_0,calc(100%-10px)_0,100%_10px,100%_calc(100%-10px),calc(100%-10px)_100%,10px_100%,0_calc(100%-10px),0_10px)]">
+          <span className="bg-anthracite text-on-anthracite inline-flex size-[42px] shrink-0 flex-col items-center justify-center gap-px [clip-path:polygon(10px_0,calc(100%-10px)_0,100%_10px,100%_calc(100%-10px),calc(100%-10px)_100%,10px_100%,0_calc(100%-10px),0_10px)]">
             <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">LV</span>
             <span className="font-serif text-[18px] leading-none font-semibold">{s.level}</span>
           </span>

@@ -74,6 +74,7 @@ export function BoardViewSection() {
             <label key={value} className="text-ink flex items-center gap-2 text-[13px]">
               <input
                 type="checkbox"
+                className="size-6"
                 checked={view.types.includes(value)}
                 onChange={(e) =>
                   change({

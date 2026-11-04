@@ -28,7 +28,7 @@ function Message({ m }: { m: CallMessageView }) {
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="bg-anthracite text-cream max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2 text-[14px] leading-6 whitespace-pre-wrap">
+        <div className="bg-anthracite text-on-anthracite max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2 text-[14px] leading-6 whitespace-pre-wrap">
           {m.content}
         </div>
       </div>

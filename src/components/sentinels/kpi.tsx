@@ -99,7 +99,7 @@ export function KpiSection() {
               onClick={() => setWin(w.id)}
               className={cn(
                 "rounded-lg px-3 py-1 text-[12px] font-medium",
-                win === w.id ? "bg-anthracite text-cream" : "text-muted",
+                win === w.id ? "bg-anthracite text-on-anthracite" : "text-muted",
               )}
             >
               {w.label}

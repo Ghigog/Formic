@@ -451,7 +451,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             }}
             disabled={nBusy === unlocked}
             data-tour="sentinels-summon"
-            className="bg-anthracite text-cream inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
+            className="bg-anthracite text-on-anthracite inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
           >
             <PlayIcon />
             {nBusy ? `Auditing ${nBusy}…` : `Summon all ${unlocked}`}
@@ -704,7 +704,7 @@ function Card({
                   "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96]",
                   done
                     ? "border-line bg-cream text-ink hover:border-terracotta h-7 border px-2.5"
-                    : "bg-anthracite text-cream h-[30px] px-3",
+                    : "bg-anthracite text-on-anthracite h-[30px] px-3",
                 )}
               >
                 {!done && <PlayIcon size={10} />}
@@ -905,7 +905,7 @@ function Report({
                     ? "An audit is running."
                     : undefined
               }
-              className="bg-anthracite text-cream h-9 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97] disabled:opacity-50"
+              className="bg-anthracite text-on-anthracite h-9 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97] disabled:opacity-50"
             >
               {sent ? "Epic created" : "Create epic from this report"}
             </button>
@@ -945,7 +945,7 @@ function Report({
             type="button"
             onClick={() => onSummon(st.rubric ? "audit" : "calibrate")}
             disabled={locked}
-            className="bg-anthracite text-cream inline-flex h-9 disabled:opacity-50 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
+            className="bg-anthracite text-on-anthracite inline-flex h-9 disabled:opacity-50 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
           >
             <PlayIcon size={12} />
             {st.rubric ? "Audit" : "Calibrate"} {first}

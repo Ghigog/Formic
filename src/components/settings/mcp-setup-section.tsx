@@ -21,7 +21,7 @@ function Snippet({ label, text }: { label: string; text: string }) {
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="border-line bg-cream text-ink overflow-x-auto rounded-md border p-2.5 font-mono text-[12px] leading-[1.6]">
+      <pre tabIndex={0} role="region" aria-label="Snippet" className="border-line bg-cream text-ink overflow-x-auto rounded-md border p-2.5 font-mono text-[12px] leading-[1.6]">
         {text}
       </pre>
     </div>

@@ -317,7 +317,7 @@ export function LevelBadge({
     big ? "text-[16px]" : "text-[14px]",
   );
   const box = cn(
-    "oct-lg bg-anthracite text-cream relative inline-flex shrink-0",
+    "oct-lg bg-anthracite text-on-anthracite relative inline-flex shrink-0",
     big ? "size-9" : "size-8",
   );
   const lv = (
@@ -346,8 +346,7 @@ export function LevelBadge({
     <span
       data-audit-face={sweep ? "flash" : "hover"}
       aria-hidden
-      className={cn(face, "bg-anthracite", extra)}
-      style={{ color: g.ink }}
+      className={cn(face, "bg-anthracite text-on-anthracite", extra)}
     >
       <span className={label}>AUDIT</span>
       <span className={num}>{g.grade}</span>
