@@ -24,6 +24,7 @@
 
   /* --- Ground ----------------------------------------------------------- */
   --anthracite: #1c1917; /* primary text, terminal, ambient drawer */
+  --on-anthracite: #fbf9f5; /* text on anthracite surfaces; does not flip in the dark theme */
   --cream: #fbf9f5; /* page ground */
   --column: #f4f1eb; /* column wells */
   --column-line: #eae6de; /* the column well's own 1px edge */
@@ -127,6 +128,7 @@
   --color-clay-lit: var(--clay-lit);
 
   --color-anthracite: var(--anthracite);
+  --color-on-anthracite: var(--on-anthracite);
   --color-cream: var(--cream);
   --color-column: var(--column);
   --color-column-line: var(--column-line);
@@ -251,6 +253,15 @@
 
   a:hover {
     color: var(--terracotta-deep);
+  }
+
+  /* The light links are 2.9:1 and less on the dark ground. */
+  :root[data-theme="dark"] a {
+    color: var(--epic-chip-text);
+  }
+
+  :root[data-theme="dark"] a:hover {
+    color: var(--text);
   }
 
   /* 12px card padding: the one exception the 8px grid grants, for density. */

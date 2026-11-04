@@ -21,6 +21,19 @@ import { KpiSection } from "./kpi";
 import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
 
+/**
+ * Label colour on a grade badge, 4.5:1 or better in both themes. S is amber,
+ * so it takes dark ink. C and F are filled with tokens that turn light in the
+ * dark theme, so their text uses the cream token, which turns dark with them.
+ * The rest sit on fills that never change and take the light text that does
+ * not flip.
+ */
+function gradeText(grade: string): string {
+  if (grade === "S") return "text-anthracite";
+  if (grade === "C" || grade === "F") return "text-cream";
+  return "text-on-anthracite";
+}
+
 /** The level badge's octagon, chamfered for an 84px grade. */
 const BIG_OCT =
   "polygon(22px 0,calc(100% - 22px) 0,100% 22px,100% calc(100% - 22px),calc(100% - 22px) 100%,22px 100%,0 calc(100% - 22px),0 22px)";
@@ -432,10 +445,10 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             <span
               ref={gradeRef}
               title={GRADE_RULE}
-              className="text-cream inline-flex size-[68px] sm:size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400"
+              className={`${gradeText(g.grade)} inline-flex size-[68px] sm:size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400`}
               style={{ background: g.ink, clipPath: BIG_OCT }}
             >
-              <span className="font-mono text-[9px] tracking-[0.14em] opacity-80">
+              <span className="font-mono text-[9px] tracking-[0.14em]">
                 GRADE
               </span>
               <span className="font-serif text-[32px] sm:text-[42px] leading-none font-semibold">
@@ -451,7 +464,7 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             }}
             disabled={nBusy === unlocked}
             data-tour="sentinels-summon"
-            className="bg-anthracite text-cream inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
+            className="bg-anthracite text-on-anthracite inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
           >
             <PlayIcon />
             {nBusy ? `Auditing ${nBusy}…` : `Summon all ${unlocked}`}
@@ -704,7 +717,7 @@ function Card({
                   "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96]",
                   done
                     ? "border-line bg-cream text-ink hover:border-terracotta h-7 border px-2.5"
-                    : "bg-anthracite text-cream h-[30px] px-3",
+                    : "bg-anthracite text-on-anthracite h-[30px] px-3",
                 )}
               >
                 {!done && <PlayIcon size={10} />}
@@ -905,7 +918,7 @@ function Report({
                     ? "An audit is running."
                     : undefined
               }
-              className="bg-anthracite text-cream h-9 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97] disabled:opacity-50"
+              className="bg-anthracite text-on-anthracite h-9 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97] disabled:opacity-50"
             >
               {sent ? "Epic created" : "Create epic from this report"}
             </button>
@@ -945,7 +958,7 @@ function Report({
             type="button"
             onClick={() => onSummon(st.rubric ? "audit" : "calibrate")}
             disabled={locked}
-            className="bg-anthracite text-cream inline-flex h-9 disabled:opacity-50 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
+            className="bg-anthracite text-on-anthracite inline-flex h-9 disabled:opacity-50 items-center gap-2 self-start rounded-lg px-3.5 text-[13px] font-semibold active:scale-[0.97]"
           >
             <PlayIcon size={12} />
             {st.rubric ? "Audit" : "Calibrate"} {first}

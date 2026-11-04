@@ -26,12 +26,12 @@ describe("CoinBadge", () => {
     const epic = screen.getByText("EPIC");
     const epicFill = epic.style.backgroundColor;
     expect(epicFill).toBe("rgb(237, 204, 186)");
-    expect(epic).toHaveClass("text-ink");
+    expect(epic).toHaveClass("text-anthracite");
 
     rerender(<CoinBadge tone="merged">EPIC</CoinBadge>);
     const merged = screen.getByText("EPIC");
     expect(merged.style.backgroundColor).not.toBe(epicFill);
-    expect(merged).toHaveClass("text-ink");
+    expect(merged).toHaveClass("text-anthracite");
   });
 
   it("changes a neutral badge's fill to sit on a cream ground", () => {

@@ -252,7 +252,7 @@ function AdvanceButton({
       }}
       className={cn(
         "hover:bg-column inline-flex shrink-0 items-center justify-center rounded-md",
-        footer ? "-mb-1 -mr-1 size-7" : "-my-0.5 -mr-1 size-[22px]",
+        footer ? "-mb-1 -mr-1 size-7" : "-my-0.5 -mr-1 size-6",
       )}
     >
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -1057,6 +1057,9 @@ export function KanbanCard({
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
+          // The handle's role="button" would make the item a button holding
+          // buttons, and a non-item in the column's list.
+          role="listitem"
           onClick={() => onOpen(card)}
           data-tour={card.title === ONBOARDING_TICKET_TITLE ? "first-ticket" : undefined}
           className={cn(
@@ -1255,6 +1258,8 @@ export function EpicGroup({
             ref={provided.innerRef}
             {...provided.draggableProps}
             {...provided.dragHandleProps}
+            // Not a button: it holds the collapse, title and showcase buttons.
+            role="group"
             data-tid={epic.id}
             className={cn(
               "border-hairline flex flex-col gap-2 border-b p-3",
@@ -1284,7 +1289,7 @@ export function EpicGroup({
                 aria-label={
                   collapsed ? "Expand child tickets" : "Collapse child tickets"
                 }
-                className="inline-flex size-5 items-center justify-center"
+                className="inline-flex size-6 items-center justify-center"
               >
                 <ChevronUp collapsed={collapsed} />
               </button>
@@ -1363,6 +1368,7 @@ export function EpicGroup({
                     ref={provided.innerRef}
                     {...provided.draggableProps}
                     {...provided.dragHandleProps}
+                    role="group"
                     onClick={() => onOpen(child)}
                     className={cn(
                       "rounded-md outline-none",

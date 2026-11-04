@@ -659,7 +659,7 @@ export function Board({
               className={cn(
                 "inline-flex h-9 shrink-0 items-center rounded-full text-[13px] whitespace-nowrap transition-[color,background-color,padding] duration-200 ease-out",
                 active
-                  ? "bg-anthracite text-cream font-semibold"
+                  ? "bg-anthracite text-on-anthracite font-semibold"
                   : "border-line bg-card text-muted border font-medium",
               )}
             >

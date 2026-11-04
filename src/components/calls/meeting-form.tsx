@@ -106,7 +106,7 @@ export function MeetingForm({
                   key={g.id}
                   className={cn(
                     "inline-flex cursor-pointer items-center gap-2 rounded-full border py-1 pr-3 pl-1 text-[13px] transition-colors has-[:focus-visible]:outline-2",
-                    on ? "border-anthracite bg-anthracite text-cream" : "border-line bg-cream text-ink hover:border-terracotta",
+                    on ? "border-anthracite bg-anthracite text-on-anthracite" : "border-line bg-cream text-ink hover:border-terracotta",
                   )}
                 >
                   <input

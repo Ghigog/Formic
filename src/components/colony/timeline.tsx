@@ -998,7 +998,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                 />
                 <span
                   title={`Reached Lv ${lv.level} · ${rankOf(lv.level)}`}
-                  className="bg-anthracite text-cream absolute top-[250px] -translate-x-1/2 px-[7px] py-[3px] font-mono text-[9px] tracking-[0.08em] whitespace-nowrap [clip-path:polygon(5px_0,calc(100%-5px)_0,100%_5px,100%_calc(100%-5px),calc(100%-5px)_100%,5px_100%,0_calc(100%-5px),0_5px)]"
+                  className="bg-anthracite text-on-anthracite absolute top-[250px] -translate-x-1/2 px-[7px] py-[3px] font-mono text-[9px] tracking-[0.08em] whitespace-nowrap [clip-path:polygon(5px_0,calc(100%-5px)_0,100%_5px,100%_calc(100%-5px),calc(100%-5px)_100%,5px_100%,0_calc(100%-5px),0_5px)]"
                   style={{ left: pct(lv.day) }}
                 >
                   LV {lv.level}
@@ -1031,7 +1031,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   style={{ left: pct(hover + 0.5) }}
                 />
                 <div
-                  className="bg-anthracite text-cream pointer-events-none absolute top-[72px] flex flex-col gap-0.5 rounded-lg px-2.5 py-2 whitespace-nowrap shadow-[0_10px_20px_-12px_color-mix(in_srgb,var(--anthracite)_60%,transparent)]"
+                  className="bg-anthracite text-on-anthracite pointer-events-none absolute top-[72px] flex flex-col gap-0.5 rounded-lg px-2.5 py-2 whitespace-nowrap shadow-[0_10px_20px_-12px_color-mix(in_srgb,var(--anthracite)_60%,transparent)]"
                   style={{
                     left: pct(hover + 0.5),
                     transform:

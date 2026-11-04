@@ -151,7 +151,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
       </DigTransition>
       {error && (
         <div role="alert" className="pointer-events-none fixed top-[76px] right-0 left-0 z-[80] flex justify-center px-4">
-          <div className="bg-anthracite text-cream rounded-full px-4 py-2.5 text-[12px] font-semibold shadow-lg">{error}</div>
+          <div className="bg-anthracite text-on-anthracite rounded-full px-4 py-2.5 text-[12px] font-semibold shadow-lg">{error}</div>
         </div>
       )}
     </div>

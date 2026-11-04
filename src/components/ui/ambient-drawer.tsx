@@ -137,7 +137,7 @@ export function AmbientDrawer({
           ) : (
             <span aria-hidden className="bg-drawer-line size-[5px] rounded-full" />
           )}
-          <span className={cn("text-[12px] font-semibold", !lost && "text-cream")}>
+          <span className={cn("text-[12px] font-semibold", !lost && "text-on-anthracite")}>
             {lost
               ? "Connection to the colony lost"
               : busy
@@ -190,7 +190,7 @@ export function AmbientDrawer({
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="border-drawer-line text-cream hover:bg-drawer-line/50 inline-flex h-8 items-center gap-2 rounded-lg border px-3 font-mono text-[11px] transition-colors"
+          className="border-drawer-line text-on-anthracite hover:bg-drawer-line/50 inline-flex h-8 items-center gap-2 rounded-lg border px-3 font-mono text-[11px] transition-colors"
         >
           Terminal
           <Chevron open={open} />
@@ -205,7 +205,7 @@ export function AmbientDrawer({
         ) : (
           <span aria-hidden className="bg-drawer-line size-[5px] rounded-full" />
         )}
-        <span className={cn("text-[12px] font-semibold", !lost && "text-cream")}>
+        <span className={cn("text-[12px] font-semibold", !lost && "text-on-anthracite")}>
           {lost
             ? "Connection to the colony lost"
             : busy
@@ -221,7 +221,7 @@ export function AmbientDrawer({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-label={open ? "Collapse agent drawer" : "Expand agent drawer"}
-          className="text-cream inline-flex size-11 items-center justify-center"
+          className="text-on-anthracite inline-flex size-11 items-center justify-center"
         >
           <Chevron open={open} />
         </button>

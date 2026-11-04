@@ -14,7 +14,7 @@ export function Welcome({ account }: { account: Account }) {
       <header className="border-line bg-card flex h-16 shrink-0 items-center gap-3 border-b px-4 md:px-6">
         <span
           aria-hidden
-          className="oct-lg bg-anthracite text-cream inline-flex size-7 items-center justify-center font-serif text-[16px] font-semibold"
+          className="oct-lg bg-anthracite text-on-anthracite inline-flex size-7 items-center justify-center font-serif text-[16px] font-semibold"
         >
           F
         </span>

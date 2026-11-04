@@ -33,7 +33,7 @@ export default async function LegalPage({
           </p>
         </div>
 
-        <section className="border-line max-h-[45vh] overflow-y-auto rounded-lg border p-3 text-[13px]">
+        <section tabIndex={0} aria-label="Terms text" className="border-line max-h-[45vh] overflow-y-auto rounded-lg border p-3 text-[13px]">
           <h2 className="text-fg-subtle font-mono text-[10px] tracking-wide uppercase">
             Terms of service / beta agreement
           </h2>

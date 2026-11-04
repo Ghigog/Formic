@@ -38,7 +38,7 @@ export function DesktopAppSection() {
             board lives on your machine, and agents run while it is awake. In
             Terminal:
           </p>
-          <pre className="border-line bg-cream text-ink overflow-x-auto rounded-md border p-2.5 font-mono text-[12px] leading-[1.6]">
+          <pre tabIndex={0} role="region" aria-label="Snippet" className="border-line bg-cream text-ink overflow-x-auto rounded-md border p-2.5 font-mono text-[12px] leading-[1.6]">
             {STEPS}
           </pre>
           <p className="text-muted mt-2.5 text-[12px] leading-[1.5]">

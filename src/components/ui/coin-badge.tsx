@@ -20,13 +20,13 @@ const TONES: Record<CoinTone, { ring: string; fill: string; text: string; tint?:
   epic: {
     ring: "bg-terracotta",
     fill: "",
-    text: "text-ink",
+    text: "text-anthracite",
     tint: insectTint("terracotta"),
   },
   merged: {
     ring: "bg-jade",
     fill: "",
-    text: "text-ink",
+    text: "text-anthracite",
     tint: insectTint("jade"),
   },
 };

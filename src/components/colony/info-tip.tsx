@@ -40,7 +40,7 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
         aria-controls={id}
         onClick={() => setOpen(!open)}
         className={`border-line inline-flex size-[18px] shrink-0 items-center justify-center rounded-full border font-serif text-[11px] leading-none font-semibold italic ${
-          open ? "bg-anthracite text-cream" : "bg-card text-muted"
+          open ? "bg-anthracite text-on-anthracite" : "bg-card text-muted"
         }`}
       >
         i

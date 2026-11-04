@@ -11,9 +11,9 @@ import { gotoBoard } from "./board";
  * results land in e2e/.evidence, which CI uploads as `sentinel-evidence`
  * for the Designer, Accessibility and Marketer to read. See docs/sentinels.md.
  *
- * A record, not a gate: an axe violation is written down, never failed on.
- * Only a page that does not render fails, because then there is nothing to
- * record.
+ * Record first, then gate: every axe violation is written down, and then a
+ * serious or critical one fails the test. Minor and moderate stay recorded
+ * only. A page that does not render fails too, as there is nothing to record.
  */
 
 const OUT = fileURLToPath(new URL(".evidence", import.meta.url));
@@ -83,6 +83,10 @@ for (const shot of SHOTS) {
       }, theme);
       // Let fonts and the first paint settle before the photograph.
       await page.evaluate(() => document.fonts.ready);
+      // Switching theme starts colour transitions (the sentinels grade badge
+      // fades its background over 400ms). A scan taken mid-fade reads blended
+      // colours no one sees at rest, so wait for them to land.
+      await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished.catch(() => undefined))));
 
       const file = `${shot.name}-${theme}`;
       await page.screenshot({ path: join(OUT, "screens", `${file}.png`) });
@@ -101,6 +105,13 @@ for (const shot of SHOTS) {
           passes: scan.passes.map((p) => p.id),
         }),
       );
+
+      // The evidence is on disk; now hold the page to it.
+      const blocking = scan.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+      expect(
+        blocking.map((v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.map((n) => n.target.join(" ")).join("; ")}`),
+        `serious or critical axe violations on ${shot.name} in the ${theme} theme`,
+      ).toEqual([]);
     });
   }
 }

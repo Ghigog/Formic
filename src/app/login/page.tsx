@@ -31,7 +31,7 @@ export default async function LoginPage({
               </p>
               <a
                 href={`/api/auth/github/login?next=${encodeURIComponent(next)}`}
-                className="bg-anthracite text-cream inline-flex h-10 items-center justify-center gap-2 rounded-lg text-[14px] font-semibold"
+                className="bg-anthracite text-on-anthracite inline-flex h-10 items-center justify-center gap-2 rounded-lg text-[14px] font-semibold"
               >
                 <GitHubMark />
                 Sign in with GitHub

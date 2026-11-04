@@ -39,7 +39,7 @@ export function RerouteToast({ toast }: { toast: RerouteNotice | null }) {
       <div
         ref={ref}
         role="status"
-        className="bg-anthracite text-cream flex max-w-[min(90vw,420px)] items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
+        className="bg-anthracite text-on-anthracite flex max-w-[min(90vw,420px)] items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
       >
         <span className="oct bg-clay text-anthracite inline-flex shrink-0 items-center justify-center px-2 py-1 font-mono text-[9px] tracking-[0.08em]">
           MOVED
@@ -74,7 +74,7 @@ export function ColonyToast() {
       <div
         ref={ref}
         role="status"
-        className="bg-anthracite text-cream flex items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
+        className="bg-anthracite text-on-anthracite flex items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
       >
         <span className="oct bg-clay text-anthracite inline-flex size-[22px] items-center justify-center font-mono text-[10px]">
           {c.score.level}
@@ -324,7 +324,7 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
         </div>
 
         <div className="flex w-full items-center gap-3 text-left">
-          <span className="oct-lg bg-anthracite text-cream inline-flex size-10 shrink-0 flex-col items-center justify-center gap-px">
+          <span className="oct-lg bg-anthracite text-on-anthracite inline-flex size-10 shrink-0 flex-col items-center justify-center gap-px">
             <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">LV</span>
             <span className="font-serif text-[17px] leading-none font-semibold">{s.level}</span>
           </span>
