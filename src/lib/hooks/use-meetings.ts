@@ -32,6 +32,7 @@ const announce = () => window.dispatchEvent(new Event(CHANGED));
 export function useMeetings() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -42,7 +43,8 @@ export function useMeetings() {
         return (await res.json()) as { meetings: MeetingJson[] };
       })
       .then((data) => live && setMeetings(data.meetings.map(parse)))
-      .catch((e: Error) => live && setError(e.message));
+      .catch((e: Error) => live && setError(e.message))
+      .finally(() => live && setLoaded(true));
     load();
     // Every user of the hook reloads when one of them changes a meeting.
     window.addEventListener(CHANGED, load);
@@ -69,7 +71,7 @@ export function useMeetings() {
     announce();
   }, []);
 
-  return { meetings, error, create, update, remove };
+  return { meetings, loaded, error, create, update, remove };
 }
 
 async function send(url: string, method: string, input: MeetingInput) {

@@ -45,6 +45,9 @@ const SFX: Sfx[] = [
   "crumble",
   "sentinelLand",
   "sentinelVoice",
+  "plop",
+  "ring",
+  "chord",
 ];
 
 function fakeContext(state: string) {
@@ -185,5 +188,41 @@ describe("SoundEngine", () => {
     const detachC = gesture(c);
     expect(() => c.play("click")).not.toThrow();
     detachC();
+  });
+});
+
+describe("SoundEngine plop", () => {
+  it("pitches a plop by its value: high for morning, low for evening", () => {
+    vi.useFakeTimers();
+    const freqs: number[] = [];
+    const param = () => ({ value: 0, setValueAtTime: (v: number) => freqs.push(v), exponentialRampToValueAtTime: vi.fn() });
+    const node = () => ({ connect: vi.fn(), start: vi.fn(), stop: vi.fn(), frequency: param(), gain: param(), Q: param() });
+    class AC {
+      state = "running";
+      currentTime = 0;
+      sampleRate = 100;
+      destination = {};
+      resume = vi.fn(() => Promise.resolve());
+      close = vi.fn(() => Promise.resolve());
+      createDynamicsCompressor = () => ({ ...node(), threshold: param(), ratio: param() });
+      createGain = node;
+      createOscillator = node;
+      createBiquadFilter = node;
+      createBufferSource = node;
+      createBuffer = () => ({ getChannelData: () => new Float32Array(50) });
+    }
+    vi.stubGlobal("AudioContext", AC);
+    const engine = new SoundEngine();
+    const detach = engine.attach();
+    window.dispatchEvent(new Event("pointerdown"));
+    const first = (v: number) => {
+      freqs.length = 0;
+      engine.play("plop", v);
+      return freqs.find((f) => f >= 300 && f <= 1000)!;
+    };
+    expect(first(1)).toBeGreaterThan(first(0));
+    detach();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 });

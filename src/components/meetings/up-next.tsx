@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useColony } from "@/components/colony/colony";
 import type { Occurrence } from "@/lib/meetings/occurrences";
 import { GuestCoin } from "./guest-coin";
 
@@ -9,11 +12,13 @@ export const whenLabel = (d: Date) =>
 
 /** The next meeting: title, time, who is coming, the top of the agenda and the way in. */
 export function UpNext({ next }: { next: Occurrence }) {
+  const c = useColony();
   const { meeting, at } = next;
   const lines = meeting.agenda.split("\n").map((l) => l.trim()).filter(Boolean);
   return (
     <section
       data-tour="meetings-next"
+      data-mnext
       aria-label="Up next"
       className="border-line bg-card flex flex-wrap items-start gap-x-6 gap-y-3 rounded-xl border p-4"
     >
@@ -37,11 +42,15 @@ export function UpNext({ next }: { next: Occurrence }) {
         {meeting.guests.length > 0 && (
           <div className="flex -space-x-1.5">
             {meeting.guests.map((g) => (
-              <GuestCoin key={g} id={g} size={28} />
+              <span key={g} data-mcoin className="inline-flex">
+                <GuestCoin id={g} size={28} />
+              </span>
             ))}
           </div>
         )}
         <Link
+          data-tour="meetings-join"
+          onClick={() => c?.sfx("chord")}
           href={`/calls/${meeting.id}`}
           className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white"
         >
