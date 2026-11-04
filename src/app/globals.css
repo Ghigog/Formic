@@ -1130,3 +1130,274 @@
     animation: none;
   }
 }
+
+/*
+ * Reduced motion: every keyframe is redefined as a no-op, so an animation applied
+ * from a component (animate-[...]) holds still too. Keep one entry per @keyframes.
+ */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes clayPulse {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes auditSweep {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes dotPulse {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes trailPulse {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes ant-march {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes readyGlow {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes tlStripe {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes tlPing {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes reqFade {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes reqPop {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes reqSlideDown {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes columnSlideFromRight {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes columnSlideFromLeft {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes sentinelScan {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes sentinelBob {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes sentinelLine {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes sentinelFade {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes guideAntLegsA {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes guideAntLegsB {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes guideAntBob {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes guideAntIdle {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes guideAntTalk {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes tourBubbleIn {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digBoardOutUp {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digBoardOutDown {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digEarthInFromBelow {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digEarthInFromAbove {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digBoardInFromBelow {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digBoardInFromAbove {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digEarthOutUp {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digEarthOutDown {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digScrollNearUp {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digScrollFarUp {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digScrollNearDown {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digScrollFarDown {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digBounceUp {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digBounceDown {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digPeekBelow {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digPeekAbove {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digTowardIn {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digFadeOut {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes digFadeIn {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes bellWave {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes bellGlint {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+}
