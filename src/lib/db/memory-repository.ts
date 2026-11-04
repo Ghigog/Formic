@@ -201,6 +201,7 @@ interface Store {
   members: Set<string>;
   /** `${userId}:${projectId}` to when that person last opened it. */
   opens: Map<string, Date>;
+  tourSeen: Set<string>;
   /** `${projectId}:${userId}:${slot}` to a member's own preset id. */
   memberAgents: Map<string, string>;
   /** Card id to whose keys its work runs on. */
@@ -242,6 +243,7 @@ function store(): Store {
     existing.leases ??= new Map();
     existing.members ??= new Set();
     existing.opens ??= new Map();
+    existing.tourSeen ??= new Set();
     existing.memberAgents ??= new Map();
     existing.actors ??= new Map();
     return existing;
@@ -297,6 +299,7 @@ function store(): Store {
     columnOverrides: new Map(),
     members: new Set(),
     opens: new Map(),
+    tourSeen: new Set(),
     memberAgents: new Map(),
     actors: new Map(),
     assistant: [],
@@ -577,6 +580,16 @@ export class MemoryRepository implements Repository {
     const s = store();
     if (!s.projects.has(projectId)) return;
     s.opens.set(`${userId}:${projectId}`, new Date());
+  }
+
+  async markBoardTourSeen(userId: string, projectId: string): Promise<void> {
+    const s = store();
+    if (!s.projects.has(projectId)) return;
+    s.tourSeen.add(`${userId}:${projectId}`);
+  }
+
+  async boardTourSeen(userId: string, projectId: string): Promise<boolean> {
+    return store().tourSeen.has(`${userId}:${projectId}`);
   }
 
   async openedAtByProject(userId: string): Promise<Map<string, Date>> {

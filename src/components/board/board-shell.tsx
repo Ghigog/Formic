@@ -1,6 +1,7 @@
 "use client";
 
 import { AutoTour } from "@/components/onboarding/tour";
+import { markSeen, useActiveTour } from "@/components/onboarding/store";
 import type { ComponentProps } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "./board";
@@ -57,6 +58,7 @@ export function BoardShell({
   initialTokenWindow,
   initialSentinels = {},
   unlockAllSentinels = false,
+  tourSeen = false,
   initialOverrides = {},
   account,
   noCi,
@@ -81,6 +83,8 @@ export function BoardShell({
   /** Each sentinel's last report on this project. */
   initialSentinels?: SentinelStates;
   unlockAllSentinels?: boolean;
+  /** This person took this board's tour on some device: do not offer it again. */
+  tourSeen?: boolean;
   /** Each column agent's own limits. */
   initialOverrides?: ColumnOverrides;
   account?: Account;
@@ -337,7 +341,7 @@ export function BoardShell({
       />
 
       <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
-      <AutoTour id="board" delay={900} />
+      <BoardTour projectId={projectId} tourSeen={tourSeen} />
       <ColonyTimeline repoName={repoName} />
       <SentinelsPage repoName={repoName} onOpenEpic={setOpenEpicId} />
       {projectId && <UnlockAllDialog projectId={projectId} unlockAll={unlockAllSentinels} />}
@@ -375,4 +379,27 @@ function ColonyAmbient(props: {
       nest={<NestButton />}
     />
   );
+}
+
+/**
+ * The board's automatic tour offer. The server remembers it per person and
+ * board, so a new device with empty localStorage does not replay it; the
+ * local record is the fast path and is brought into line. Replays from the
+ * account menu start the tour directly and are not gated by this.
+ */
+function BoardTour({ projectId, tourSeen }: { projectId?: string; tourSeen: boolean }) {
+  const active = useActiveTour();
+  useEffect(() => {
+    if (tourSeen) markSeen("board");
+  }, [tourSeen]);
+  useEffect(() => {
+    if (tourSeen || !projectId || active !== "board") return;
+    // Fire and forget: a failure or no network must not interrupt the tour.
+    void fetch("/api/projects/tour-seen", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    }).catch(() => {});
+  }, [active, projectId, tourSeen]);
+  return tourSeen ? null : <AutoTour id="board" delay={900} />;
 }

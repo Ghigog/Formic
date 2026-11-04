@@ -30,7 +30,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
   const provider = process.env.SANDBOX_PROVIDER ?? "local";
   // The viewer's own keys: on a shared board, theirs are what their runs use.
   const credentials = withActor(user.id, () => credentialsForProject(project)).catch(() => null);
-  const [cards, { presets, columns: columnAgents }, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey] = await Promise.all([
+  const [cards, { presets, columns: columnAgents }, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey, tourSeen] = await Promise.all([
     repo.boardCards(project.id),
     agentView(project, user),
     repo.columnOverrides(project.id),
@@ -46,6 +46,8 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
     // No agent can run without a sandbox, so the board says so before
     // anyone starts a ticket rather than when the first one fails.
     credentials.then((creds) => provider === "e2b" && !!creds && !creds.e2bKey),
+    // Whether this person took this board's tour on another device.
+    repo.boardTourSeen(user.id, project.id).catch(() => false),
   ]);
 
   // With no database the default project runs on the demo fixtures, so the
@@ -71,6 +73,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
     repoFullName: project.repoFullName,
     noCi: !hasCi,
     noSandboxKey,
+    tourSeen,
     autoMerge: project.autoMerge,
     unlockAllSentinels: project.unlockAllSentinels,
     baseBranch: project.baseBranch,

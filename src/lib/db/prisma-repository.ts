@@ -215,6 +215,23 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async markBoardTourSeen(userId: string, projectId: string): Promise<void> {
+    if ((await prisma().project.count({ where: { id: projectId } })) === 0) return;
+    await prisma().projectOpen.upsert({
+      where: { projectId_userId: { projectId, userId } },
+      create: { projectId, userId, tourSeenAt: new Date() },
+      update: { tourSeenAt: new Date() },
+    });
+  }
+
+  async boardTourSeen(userId: string, projectId: string): Promise<boolean> {
+    const row = await prisma().projectOpen.findUnique({
+      where: { projectId_userId: { projectId, userId } },
+      select: { tourSeenAt: true },
+    });
+    return row?.tourSeenAt != null;
+  }
+
   async openedAtByProject(userId: string): Promise<Map<string, Date>> {
     const rows = await prisma().projectOpen.findMany({ where: { userId } });
     return new Map(rows.map((r) => [r.projectId, r.openedAt]));

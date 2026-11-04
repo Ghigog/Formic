@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { BoardShell } from "./board-shell";
+import { activeTour, endTour, forgetTours, hasSeen } from "@/components/onboarding/store";
 import { makeCard } from "@/test/cards";
 import type { BoardCard } from "@/lib/domain/entities";
 import type { AmbientStats } from "@/components/ui/ambient-drawer";
@@ -113,6 +114,45 @@ describe("BoardShell", () => {
     renderShell([]);
     const todo = screen.getByRole("region", { name: "To Do" });
     expect(within(todo).getByText("Nothing here.")).toBeInTheDocument();
+  });
+
+  describe("board tour", () => {
+    afterEach(() => {
+      endTour();
+      forgetTours();
+      vi.unstubAllGlobals();
+    });
+
+    it("offers the tour and tells the server when this person has not seen it", async () => {
+      const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      vi.stubGlobal("fetch", fetchMock);
+      renderShell([], { projectId: "p1", tourSeen: false });
+      await waitFor(() => expect(activeTour()).toBe("board"), { timeout: 3000 });
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/projects/tour-seen",
+          expect.objectContaining({ method: "POST", body: JSON.stringify({ projectId: "p1" }) }),
+        ),
+      );
+    });
+
+    it("keeps the tour going when the server cannot be told", async () => {
+      vi.stubGlobal("fetch", vi.fn(async (url: string) => { if (url === "/api/projects/tour-seen") throw new Error("offline"); return { ok: true, json: async () => ({}) }; }));
+      renderShell([], { projectId: "p1", tourSeen: false });
+      await waitFor(() => expect(activeTour()).toBe("board"), { timeout: 3000 });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(activeTour()).toBe("board");
+    });
+
+    it("does not offer the tour, and agrees locally, when the server says it was seen", async () => {
+      const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+      vi.stubGlobal("fetch", fetchMock);
+      renderShell([], { projectId: "p1", tourSeen: true });
+      await new Promise((r) => setTimeout(r, 1200));
+      expect(activeTour()).toBeNull();
+      expect(hasSeen("board")).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalledWith("/api/projects/tour-seen", expect.anything());
+    });
   });
 
   describe("colony bar", () => {

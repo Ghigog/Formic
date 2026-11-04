@@ -709,6 +709,10 @@ export interface SharingRepository {
   markOpened(userId: string, projectId: string): Promise<void>;
   /** When this person last opened each project, by project id. Never-opened ones are absent. */
   openedAtByProject(userId: string): Promise<Map<string, Date>>;
+  /** Records that this person has taken the board's tour. Works before the first markOpened; an unknown project is ignored. */
+  markBoardTourSeen(userId: string, projectId: string): Promise<void>;
+  /** Whether this person has taken the board's tour on any device. */
+  boardTourSeen(userId: string, projectId: string): Promise<boolean>;
   /** A member's own agents on a shared board, by column or "assistant". */
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
