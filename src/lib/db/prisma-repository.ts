@@ -407,6 +407,25 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async mergeUserInto(fromId: string, intoId: string): Promise<UserRecord> {
+    if (fromId === intoId) throw new Error("Both accounts must differ.");
+    return prisma().$transaction(async (db) => {
+      const from = await db.user.findUniqueOrThrow({ where: { id: fromId } });
+      await db.user.findUniqueOrThrow({ where: { id: intoId } });
+      await db.project.updateMany({ where: { ownerId: fromId }, data: { ownerId: intoId } });
+      await db.agentPreset.updateMany({ where: { ownerId: fromId }, data: { ownerId: intoId } });
+      await db.accessToken.updateMany({ where: { userId: fromId }, data: { userId: intoId } });
+      await db.pushSubscription.updateMany({ where: { userId: fromId }, data: { userId: intoId } });
+      // What is left (memberships, opens, member agents) goes with the row,
+      // which also frees its email for `into`.
+      await db.user.delete({ where: { id: fromId } });
+      return db.user.update({
+        where: { id: intoId },
+        data: { email: from.email, emailVerifiedAt: from.emailVerifiedAt },
+      });
+    });
+  }
+
   async createLoginToken(token: NewLoginToken): Promise<void> {
     await prisma().loginToken.create({ data: { ...token, email: token.email.toLowerCase() } });
   }

@@ -1,3 +1,5 @@
+import { SubmitOnce } from "@/components/ui/submit-once";
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -20,13 +22,13 @@ export default async function VerifyPage({
           <form method="post" action="/api/auth/email/verify" className="flex flex-col gap-3">
             <p className="text-muted text-[13px]">You&apos;re one click from your board.</p>
             <input type="hidden" name="token" value={token} />
-            <button
-              type="submit"
+            <SubmitOnce
+              pending="Signing you in…"
               autoFocus
               className="bg-terracotta-cta h-10 rounded-lg text-[14px] font-semibold text-white"
             >
               Sign in to Formic
-            </button>
+            </SubmitOnce>
           </form>
         ) : (
           <p role="alert" className="text-crimson-text text-[13px]">

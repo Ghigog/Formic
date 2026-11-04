@@ -198,9 +198,10 @@ describe("GET /api/auth/github/callback, connecting GitHub to a signed-in accoun
     expect(mocks.exchangeCode).not.toHaveBeenCalled();
   });
 
-  it("refuses a GitHub account already connected to someone else, and revokes the new token", async () => {
+  it("refuses a GitHub account already connected to someone else's email account, and revokes the new token", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
-    const octo = await repository().upsertUser(PROFILE);
+    const octo = await repository().createEmailUser({ email: "octo@example.com", login: "octo" });
+    await repository().linkGithub(octo.id, PROFILE);
     const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
     const res = await connectCallback(`n1|/settings|connect:${ana.id}`, { as: ana.id });
 
@@ -209,6 +210,23 @@ describe("GET /api/auth/github/callback, connecting GitHub to a signed-in accoun
     expect((await repository().userById(octo.id))?.githubId).toBe(7);
     expect(mocks.storeTokens).not.toHaveBeenCalled();
     expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/applications/id/token"), expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("folds a new email account into the person's GitHub-only account, keeping its boards", async () => {
+    const octo = await repository().upsertUser(PROFILE);
+    const hers = await repository().ensureProject({ ownerId: octo.id, repoFullName: "octo/app", baseBranch: "main" });
+    const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
+    const fresh = await repository().ensureProject({ ownerId: ana.id, repoFullName: null, name: "Notes", baseBranch: "main" });
+
+    const res = await connectCallback(`n1|/settings|connect:${ana.id}`, { as: ana.id });
+
+    expect(res.headers.get("location")).toBe("/settings?merged=1");
+    expect((await readSession(cookieValue(res, SESSION_COOKIE)))?.userId).toBe(octo.id);
+    expect(await repository().userById(ana.id)).toBeNull();
+    expect(await repository().userById(octo.id)).toMatchObject({ githubId: 7, email: "ana@example.com" });
+    expect((await repository().projectById(hers.id))?.ownerId).toBe(octo.id);
+    expect((await repository().projectById(fresh.id))?.ownerId).toBe(octo.id);
+    expect(mocks.storeTokens).toHaveBeenCalledWith(octo.id, TOKENS);
   });
 
   it("still signs in by GitHub to the email account it was connected to", async () => {

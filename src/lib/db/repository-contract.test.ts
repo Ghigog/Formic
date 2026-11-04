@@ -1590,6 +1590,26 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.userByGithubId(id)).toBeNull();
       });
 
+      it("folds an email account into a GitHub one: boards, agents and tokens move, the email goes with them", async () => {
+        const id = githubId();
+        const gh = await repo.upsertUser({ githubId: id, login: `gh-${id}`, name: null, avatarUrl: null });
+        const address = email();
+        const em = await repo.createEmailUser({ email: address, login: "em" });
+        const board = await repo.ensureProject({ ownerId: em.id, repoFullName: null, name: "Notes", baseBranch: "main" });
+        const token = await repo.createAccessToken({
+          userId: em.id, name: "mcp", tokenHash: randomUUID(), lastFour: "abcd", readOnly: true, expiresAt: null,
+        });
+
+        const merged = await repo.mergeUserInto(em.id, gh.id);
+
+        expect(merged).toMatchObject({ id: gh.id, githubId: id, email: address });
+        expect(merged.emailVerifiedAt).toBeInstanceOf(Date);
+        expect(await repo.userById(em.id)).toBeNull();
+        expect((await repo.userByEmail(address))?.id).toBe(gh.id);
+        expect((await repo.projectById(board.id))?.ownerId).toBe(gh.id);
+        expect((await repo.accessTokenByHash(token.tokenHash))?.userId).toBe(gh.id);
+      });
+
       it("spends a sign-in link once, even when two spends race", async () => {
         const tokenHash = randomUUID();
         const address = email();

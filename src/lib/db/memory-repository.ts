@@ -469,6 +469,22 @@ export class MemoryRepository implements Repository {
     return user;
   }
 
+  async mergeUserInto(fromId: string, intoId: string): Promise<UserRecord> {
+    const s = store();
+    const from = s.users.get(fromId);
+    const into = s.users.get(intoId);
+    if (!from || !into || fromId === intoId) throw new Error("Both accounts must exist and differ.");
+    for (const p of s.projects.values()) if (p.ownerId === fromId) p.ownerId = intoId;
+    for (const p of s.presets.values()) if (p.ownerId === fromId) p.ownerId = intoId;
+    for (const t of s.accessTokens.values()) if (t.userId === fromId) t.userId = intoId;
+    for (const sub of s.pushSubscriptions.values()) if (sub.userId === fromId) sub.userId = intoId;
+    for (const key of [...s.members]) if (key.endsWith(`:${fromId}`)) s.members.delete(key);
+    for (const key of [...s.opens.keys()]) if (key.startsWith(`${fromId}:`)) s.opens.delete(key);
+    s.users.delete(fromId);
+    Object.assign(into, { email: from.email, emailVerifiedAt: from.emailVerifiedAt });
+    return into;
+  }
+
   async createLoginToken(token: NewLoginToken): Promise<void> {
     const s = store();
     s.loginTokens.set(token.tokenHash, { ...token, email: token.email.toLowerCase(), usedAt: null, createdAt: new Date() });
