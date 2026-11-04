@@ -98,7 +98,7 @@ test("a card's arrow moves the card it names", async ({ page }) => {
   expect(await columnOf(page, cardId)).toBe("Backlog");
 });
 
-test("the app bar at 375px has heat and a timeline button, and no + button", async ({
+test("the app bar at 375px has heat, no + button, and no timeline button before Lv 10", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 800 });
@@ -110,10 +110,10 @@ test("the app bar at 375px has heat and a timeline button, and no + button", asy
     page.locator('header:visible [data-colony="heat"]'),
   ).toBeAttached();
 
-  await page.getByRole("button", { name: "Open timeline" }).click();
+  // A fresh board is Lv 1: the Timeline button stays hidden until Lv 10.
   await expect(
-    page.getByRole("button", { name: "Back to board" }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Open timeline" }),
+  ).toHaveCount(0);
 });
 
 test("the colony bar stays pinned to the bottom of the phone screen", async ({
@@ -245,11 +245,14 @@ for (const width of [360, 390]) {
       bar.getByRole("button", { name: /PM/ }),
       bar.locator('[data-colony="level"]'),
       bar.locator('[data-colony="score"]'),
-      bar.getByRole("button", { name: "Open timeline" }),
       bar.getByRole("button", { name: /meetings/i }),
       bar.getByRole("button", { name: /account|menu/i }),
     ];
     await expect(bar.getByRole("link", { name: "Calls" })).toHaveCount(0);
+    // Hidden on a Lv 1 board, so it takes no room in the bar.
+    await expect(
+      bar.getByRole("button", { name: "Open timeline" }),
+    ).toHaveCount(0);
     const boxes = [];
     for (const it of items) {
       const b = await it.first().boundingBox();
