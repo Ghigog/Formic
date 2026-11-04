@@ -94,10 +94,23 @@ The colony has two bells.
   one; the ones still unspent are the level's earned bells less those used
   (`goldenBellsEarned` and `goldenBellsLeft` in `src/lib/colony/game.ts`).
 
-A golden bell is **armed** before it rings: arming picks it up and holds it
-ready, and nothing is spent until it takes effect. **It takes effect one
-minute after it is armed**, not at once, which leaves a minute to change your
-mind and disarm it. Only an armed bell that is left to ring is used up.
+Both bells do the same thing when they ring: every card a usage limit
+stopped starts again in the column it stopped in (the drawer's redo), with
+"Your token limit has been restored. Please resume your work." left on it as
+a note. A card whose agent is still out of usage is skipped.
+
+- **Ringing the silver bell** does that now. The bell says how many cards it
+  told to carry on, and how many it skipped.
+- **A golden bell is armed** before it rings: arming picks it up and holds it
+  ready, and nothing is spent until it rings. It rings by itself **one minute
+  after the limit that stopped the cards resets**, so work carries on while
+  you are away. Disarm it before then to keep it. The server checks armed
+  bells every minute (`startBellClock` in `src/lib/board/bell.ts`), so the
+  board does not need to be open, and a restart loses nothing.
+
+A golden bell needs the limit's reset time. When an agent's limit message
+gives none, the agent is not marked out of usage, and the golden bell has
+nothing to wait for: ring the silver bell instead.
 
 ## Scouts
 
