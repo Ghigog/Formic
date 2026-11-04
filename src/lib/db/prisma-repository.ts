@@ -2037,8 +2037,10 @@ export class PrismaRepository implements Repository {
           : {}),
       // A CLI agent's credential lives in the repository's Actions secrets,
       // never here. A new key is likely a new account, with its own usage.
+      // Formic cannot see a secret change, so saving a CLI agent is the
+      // person saying it has one: its usage mark goes too.
       ...(providerInfo(record.provider)?.kind === "cli"
-        ? { apiKeyCipher: null, apiKeyHint: null }
+        ? { apiKeyCipher: null, apiKeyHint: null, limitedUntil: null, limitNote: null }
         : record.apiKeyCipher !== undefined
         ? {
             apiKeyCipher: record.apiKeyCipher,
