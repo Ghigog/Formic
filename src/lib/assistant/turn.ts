@@ -18,7 +18,7 @@ import { ASSISTANT_BRANCH_PREFIX, assistantActionSchema, checkAction } from "./a
 import { boardSnapshot, cardReport, mentionedKeys } from "./context";
 import { outOfRoundsMessage, readWindow } from "./reads";
 import { DESIGN_RULE, ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
-import { askedIn, isQuestion } from "@/lib/domain/question";
+import { askedIn, isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
 import type { BoardCard } from "@/lib/domain/entities";
 
 /**
@@ -42,7 +42,7 @@ const readInput = z.object({ path: z.string().min(1), offset: z.number().int().m
 const proposeInput = z.object({ summary: z.string().min(1), action: z.unknown() });
 const cardInput = z.object({ key: z.string().min(1) });
 const writeInput = z.object({ path: z.string().min(1), content: z.string(), message: z.string().optional() });
-const answerInput = z.object({ key: z.string().min(1), answer: z.string().trim().min(1) });
+const answerInput = z.object({ key: z.string().min(1), answer: z.string().trim().min(1), own: z.boolean().default(false) });
 
 /** The branch one answer's code change goes on: by its message, or its job's nonce for a CLI agent. */
 export function changeBranchFor(id: string): string {
@@ -109,12 +109,13 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "answer_question",
     description:
-      "Pass the person's answer to a question a card is waiting on, by the card's key. Use their own words, adding only what the agent needs to understand them. The card's agent starts again with it at once. Before calling this, check the reply answers each question the card asked; when it is vague, answers only some of them, or raises a new doubt, ask the person a short follow-up instead and call this once the answers are complete, with all of them.",
+      "Answer a question a card is waiting on, by the card's key. The card's agent starts again with it at once. Passing the person's answer: use their own words, adding only what the agent needs to understand them, and check first that the reply answers each question the card asked; when it is vague, answers only some of them, or raises a new doubt, ask the person a short follow-up instead and call this once the answers are complete, with all of them. Answering yourself, because the person's own words, the PRD, the audit or the design document already settle it: set own to true and say which of them settles it.",
     schema: {
       type: "object",
       properties: {
         key: { type: "string", description: "The card's key, e.g. \"EPIC-12\"." },
-        answer: { type: "string", description: "The person's answer." },
+        answer: { type: "string", description: "The answer." },
+        own: { type: "boolean", description: "True when the answer is your own, settled by what the person already asked for; false when it passes on the person's words." },
       },
       required: ["key", "answer"],
       additionalProperties: false,
@@ -170,8 +171,9 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     `You are the PM: the project manager who directs the agents on a Formic board for the GitHub repository ${project.repoFullName} (base branch ${project.baseBranch}). You work for the person you are talking to, the stakeholder who owns this board. The Product Agent, the Architect, the Coder and the Reviewer each do one column's work; you hold the person's vision across all of it.`,
     "",
     "Your job:",
-    "- Keep the work true to what the person asked for, in their own words, and to the product's standards: its design, its tests, its PRDs. You already check every plan and every change at review, and step into a card's chat when it drifts.",
-    "- Be the person's single point of contact. The agents' questions come to you; put each to the person in plain, warm, non-technical words, one at a time, and pass their answer back with answer_question. Before you do, check their reply answers each question the card asked (openQuestions lists them); when it does not (vague, answers only some, or raises a new doubt), ask a short follow-up instead and call answer_question once the answers are complete, with all of them.",
+    "- Keep the work true to what the person asked for, in their own words, and to the product's standards: its design, its tests, its PRDs. You do not check every plan and change yourself: the agents ask when they are unsure, and every question an agent asks comes to you first.",
+    "- When an agent asks, settle it if what the person already asked for settles it (their words, the PRD, an audit's checks, the design document): answer with answer_question, own set to true, and tell the person in a line what you answered and why. When only the person can settle it, do not answer: put it to them in plain words with your suggested answer and why, and say they can reply here or in the card's chat.",
+    "- Be the person's single point of contact. Put each question that needs them in plain, warm, non-technical words, one at a time, and pass their answer back with answer_question. Before you do, check their reply answers each question the card asked (openQuestions lists them); when it does not (vague, answers only some, or raises a new doubt), ask a short follow-up instead and call answer_question once the answers are complete, with all of them.",
     "- Ask about priorities when work goes off track or two wishes pull against each other, the way a good project manager would: are we building the right thing, in the right order?",
     "- Answer anything about the repository and the work, and do the work yourself when it is quicker.",
     "Speak like a trusted colleague: brief, clear, kind, never technical unless they are.",
@@ -225,6 +227,20 @@ function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistan
         ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
       ].join("\n"),
     }));
+}
+
+/**
+ * The conversation with a message from Formic itself at its end, such as an
+ * agent's question the PM is woken for. It is not kept: the PM's answer is.
+ */
+function withPrompt(
+  past: Array<{ role: "user" | "assistant"; content: string }>,
+  prompt: string | undefined,
+): Array<{ role: "user" | "assistant"; content: string }> {
+  if (!prompt) return past;
+  const last = past.at(-1);
+  if (last?.role === "user") return [...past.slice(0, -1), { role: "user", content: `${last.content}\n\n${prompt}` }];
+  return [...past, { role: "user", content: prompt }];
 }
 
 export interface TurnContext {
@@ -284,11 +300,11 @@ export async function runTool(
       };
     }
     if (call.name === "answer_question") {
-      const { key, answer } = answerInput.parse(call.input);
+      const { key, answer, own } = answerInput.parse(call.input);
       const card = (await repository().boardCards(turn.projectId)).find((c) => c.key.toLowerCase() === key.trim().toLowerCase());
       if (!card) return { content: `There is no card ${key}.`, isError: true };
       if (!isQuestion(card.blockedReason)) return { content: `${card.key} is not waiting on a question.`, isError: true };
-      await askCardChat(turn.projectId, card.kind, card.id, answer);
+      await askCardChat(turn.projectId, card.kind, card.id, own ? `${PM_ANSWER_PREFIX}${answer}` : answer);
       return { content: `Passed on. ${card.key}'s agent has started again with the answer.`, isError: false };
     }
     if (call.name === "propose") {
@@ -345,7 +361,7 @@ export async function cancelPending(projectId: string): Promise<void> {
  * Answers the pending assistant message `messageId`. Never throws: a
  * failure becomes the message, so the person sees what went wrong.
  */
-export async function answer(projectId: string, messageId: string): Promise<void> {
+export async function answer(projectId: string, messageId: string, prompt?: string): Promise<void> {
   const repo = repository();
   try {
     const agent = await assistantAgentFor(projectId);
@@ -362,7 +378,7 @@ export async function answer(projectId: string, messageId: string): Promise<void
     }
 
     const all = await repo.assistantMessages(projectId);
-    const past = history(all.filter((m) => m.id !== messageId));
+    const past = withPrompt(history(all.filter((m) => m.id !== messageId)), prompt);
     const brief = agent.kind === "cli" ? agent.agent.brief : agent.brief;
     const system = await systemPrompt(projectId, brief);
 
@@ -454,6 +470,7 @@ const cliAnswerSchema = z.object({
   reply: z.string(),
   proposals: z.array(z.object({ summary: z.string(), action: z.unknown() })).default([]),
   change: z.object({ title: z.string().trim().min(1).max(120), body: z.string() }).nullish(),
+  answers: z.array(z.object({ key: z.string().min(1), answer: z.string().trim().min(1) })).default([]),
 });
 
 /**
@@ -492,6 +509,7 @@ function cliPrompt(
     "- Your final message is your answer, and it must be one JSON object and nothing else (you may write the same object to the file named by the FORMIC_OUTPUT environment variable instead). An answer that is not that JSON is thrown away:",
     '  {"reply": "<your answer, in Markdown>", "proposals": [{"summary": "<one line>", "action": <an action>}], "change": {"title": "<pull request title>", "body": "<what changed, why, and how you checked it>"}}',
     "- Your own change becomes its pull request through \"change\", not through an open_pull_request proposal.",
+    "- To answer a question a card is waiting on yourself, because what the person already asked for settles it, add {\"key\": \"<card key>\", \"answer\": \"<your answer>\"} to \"answers\" in the JSON and say in your reply what you answered and why. The card's agent starts again with it. Leave answers out otherwise; a question only the person can settle goes in your reply, with your suggestion.",
     "- Leave proposals empty unless the person asked for a change to the board. When they agree to a ticket or ask for one (\"yes\", \"make it\", \"create the ticket\"), put it in proposals now: do not ask again, and do not re-explain. Each action matches this JSON Schema:",
     JSON.stringify(z.toJSONSchema(assistantActionSchema)),
   ].join("\n");
@@ -593,10 +611,22 @@ export async function finishCliAnswer(
     );
     if (again) return;
   }
+  if (from) await passAnswers(from.projectId, parsed.data.answers);
   const note = dropped.length
     ? `\n\n_Formic set aside ${dropped.length === 1 ? "a proposal" : `${dropped.length} proposals`} it could not use: ${dropped.join("; ")}_`
     : "";
   await finish(messageId, { content: parsed.data.reply.trim() + note, proposals, status: "done" });
+}
+
+/** A CLI PM's own answers to the questions cards wait on. One the person answered first is left alone. */
+async function passAnswers(projectId: string, answers: Array<{ key: string; answer: string }>): Promise<void> {
+  if (answers.length === 0) return;
+  const cards = await repository().boardCards(projectId);
+  for (const a of answers) {
+    const card = cards.find((c) => c.key.toLowerCase() === a.key.trim().toLowerCase());
+    if (!card || !isQuestion(card.blockedReason)) continue;
+    await askCardChat(projectId, card.kind, card.id, `${PM_ANSWER_PREFIX}${a.answer}`).catch(() => undefined);
+  }
 }
 
 /** A CLI agent's code change, offered as the pull request it becomes on approval. */

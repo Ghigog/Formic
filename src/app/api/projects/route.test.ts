@@ -13,6 +13,7 @@ const { repository } = await import("@/lib/db");
 const { currentUser } = await import("@/lib/auth/user");
 const { GET, POST } = await import("./route");
 const { dailyBudget, utcDay } = await import("@/lib/usage/governor");
+const { SENTINELS } = await import("@/lib/sentinels/roster");
 const { NextRequest } = await import("next/server");
 
 const post = (body: unknown) =>
@@ -36,6 +37,37 @@ describe("GET /api/projects", () => {
       projects: Array<{ id: string; lastAssistantMessage: { id: string } | null }>;
     };
     expect(body.projects.find((p) => p.id === project.id)!.lastAssistantMessage?.id).toBe(done.id);
+  });
+});
+
+describe("GET /api/projects standing", () => {
+  type Standing = { grade: string; ink: string; level: number; audited: boolean };
+  const standingOf = async (id: string) =>
+    ((await (await GET()).json()) as { projects: Array<{ id: string; standing: Standing }> }).projects.find(
+      (p) => p.id === id,
+    )!.standing;
+
+  it("grades a board whose unlocked sentinels have reported", async () => {
+    const repo = repository();
+    const user = (await currentUser())!;
+    const project = await repo.ensureProject({ ownerId: user.id, repoFullName: "acme/rated", baseBranch: "main" });
+    await repo.setUnlockAllSentinels(project.id, true);
+    const report = { likes: [], dislikes: [], wrong: [], missing: [] };
+    for (const { id } of SENTINELS) {
+      const a = await repo.startAudit(project.id, id);
+      await repo.finishAudit(a.id, { status: "done", stars: 5, quote: "q", summary: "s", report, files: [], model: "m" });
+    }
+    const standing = await standingOf(project.id);
+    expect(standing).toMatchObject({ audited: true, level: 1 });
+    // Every sentinel counts, though the board is at level 1: all twelve gave 5 stars.
+    expect(standing.grade).toBe("S");
+  });
+
+  it("marks a board nobody has audited", async () => {
+    const repo = repository();
+    const user = (await currentUser())!;
+    const project = await repo.ensureProject({ ownerId: user.id, repoFullName: "acme/fresh", baseBranch: "main" });
+    expect(await standingOf(project.id)).toMatchObject({ audited: false, level: 1 });
   });
 });
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { AuditCheck, AuditKind, AuditReport, Rubric } from "@/lib/db/repository";
+import type { AuditCheck, AuditKind, AuditReport, CommandPass, Rubric, RubricCheck } from "@/lib/db/repository";
 import type { Sentinel } from "./roster";
 
 /**
@@ -27,10 +27,10 @@ export const RUNG_STARS = [2, 3, 4, 5] as const;
 export const MAX_CHECKS = 4;
 
 /** What every calibration is asked, after the sentinel's persona and brief. */
-export const CALIBRATE_RULES = `You are calibrating, not auditing: do not rate the project. Learn what it is (its purpose, stack, size and stage) and write the star ladder you will audit it against for your role, from 2 to 5 stars; 1 star is the floor. A rung is earned only when all its checks pass and every rung below it is earned. 2 stars is the basics any project of this kind needs, 3 is safe to ship, 4 is solid, 5 is what you would sign off without changes. Give each rung 2 to ${MAX_CHECKS} checks. Each check is one pass/fail statement about this project that a later audit can verify the same way every time, from the code or by running a command: name the files, commands and thresholds, and avoid words like "good", "clean" or "enough". Fit the checks to this project and leave out what does not apply to it. Write the ladder as the bar to meet, whether or not the project meets it today. Only name files you were actually shown.`;
+export const CALIBRATE_RULES = `You are calibrating, not auditing: do not rate the project. Learn what it is (its purpose, stack, size and stage) and write the star ladder you will audit it against for your role, from 2 to 5 stars; 1 star is the floor. A rung is earned only when all its checks pass and every rung below it is earned. 2 stars is the basics any project of this kind needs, 3 is safe to ship, 4 is solid, 5 is what you would sign off without changes. Give each rung 2 to ${MAX_CHECKS} checks. Each check is one pass/fail statement about this project that a later audit can verify the same way every time, from the code or by running a command: name the files, commands and thresholds, and avoid words like "good", "clean" or "enough". When one shell command run from the repository root settles a check (a grep that must print nothing, a test or build that must exit 0), give it as the check's command, with pass "empty" or "exit0": its result then decides the check, so two audits cannot read it differently. Write the check's text to state the whole rule the command enforces. Fit the checks to this project and leave out what does not apply to it. Write the ladder as the bar to meet, whether or not the project meets it today. Only name files you were actually shown.`;
 
 /** What every audit is asked about its rubric. */
-export const SCORE_RULES = `Your stars are not yours to choose: they come from the rubric below, which you wrote when you calibrated on this project. For every check, say whether it is met and give the evidence: the file and line you read, or the command you ran and what it showed. A check you could not verify is not met; say why. Judge each check exactly as written: do not raise or lower its bar, and do not add checks. Everything else you find goes in the report, where it informs the next calibration. 5 stars means you have no findings: every finding you report (what does not work, what is wrong, what is missing) holds the project below 5, so an audit that meets every check but lists a finding is scored 4.`;
+export const SCORE_RULES = `Your stars are not yours to choose: they come from the rubric below, which you wrote when you calibrated on this project. For every check, say whether it is met and give the evidence: the file and line you read, or the command you ran and what it showed. For a check with a Command, run exactly that command from the repository root and put its exit code and full output in ran: that result decides the check, not your reading of it. When you cannot run commands, leave ran null and judge it from the code as you would any other check. A check you could not verify is not met; say why. Judge each check exactly as written: do not raise or lower its bar, and do not add checks. Everything else you find goes in the report, where it informs the next calibration. 5 stars means you have no findings: every finding you report (what does not work, what is wrong, what is missing) holds the project below 5, so an audit that meets every check but lists a finding is scored 4.`;
 
 export const calibrationSchema = z.object({
   context: z.string().describe("Two plain sentences: what this project is, and what matters most in it for your role."),
@@ -42,6 +42,16 @@ export const calibrationSchema = z.object({
             z.object({
               text: z.string().describe("One pass/fail statement about this project."),
               how: z.string().describe("How to verify it: the file to read or the command to run, and what passing looks like."),
+              command: z
+                .string()
+                .nullable()
+                .default(null)
+                .describe("The one shell command, run from the repository root, that decides this check. Null when it needs reading or judgement."),
+              pass: z
+                .enum(["empty", "exit0"])
+                .nullable()
+                .default(null)
+                .describe('With a command: "empty" when it passes by printing nothing, "exit0" when it passes by exiting 0. Null without one.'),
             }),
           )
           .describe(`2 to ${MAX_CHECKS} checks.`),
@@ -66,11 +76,15 @@ export function finishedRubric(c: Calibration): { ok: true; rubric: Rubric } | {
         const stars = RUNG_STARS[i]!;
         return {
           stars,
-          checks: r.checks.slice(0, MAX_CHECKS).map((k, j) => ({
-            id: `${stars}${String.fromCharCode(97 + j)}`,
-            text: k.text.trim(),
-            how: k.how.trim(),
-          })),
+          checks: r.checks.slice(0, MAX_CHECKS).map((k, j) => {
+            const command = k.command?.trim() || null;
+            return {
+              id: `${stars}${String.fromCharCode(97 + j)}`,
+              text: k.text.trim(),
+              how: k.how.trim(),
+              ...(command ? { command, pass: k.pass ?? "exit0" } : {}),
+            };
+          }),
         };
       }),
     },
@@ -88,17 +102,38 @@ export function starsFrom(rubric: Rubric, checks: AuditCheck[]): number {
   return stars;
 }
 
-/** Every check of the rubric scored once, in its order: one left out is not met. */
+/** Whether a command's result passes, by the check's rule. */
+export function commandPasses(pass: CommandPass, ran: { exitCode: number; output: string }): boolean {
+  return pass === "empty" ? ran.output.trim() === "" : ran.exitCode === 0;
+}
+
+const PASS_WORDS: Record<CommandPass, string> = { empty: "it prints nothing", exit0: "it exits 0" };
+
+/**
+ * Every check of the rubric scored once, in its order: one left out is not
+ * met. A check with a command the auditor ran is met by the command's result,
+ * whatever the auditor concluded from it.
+ */
 export function scoredChecks(rubric: Rubric, answered: AuditCheck[]): AuditCheck[] {
   const byId = new Map(answered.map((c) => [c.id.trim(), c]));
   return rubric.rungs.flatMap((r) =>
     r.checks.map((k) => {
       const a = byId.get(k.id);
-      return a
-        ? { id: k.id, met: a.met, evidence: a.evidence.trim() }
-        : { id: k.id, met: false, evidence: "Not scored in the audit." };
+      if (!a) return { id: k.id, met: false, evidence: "Not scored in the audit." };
+      const evidence = a.evidence.trim();
+      if (k.command && a.ran) {
+        const met = commandPasses(k.pass ?? "exit0", a.ran);
+        const decided = met === a.met ? "" : ` The command's result decided this check, not the reading of it: it passes when ${PASS_WORDS[k.pass ?? "exit0"]}.`;
+        return { id: k.id, met, evidence: `${evidence}${decided}`, ran: a.ran };
+      }
+      return { id: k.id, met: a.met, evidence };
     }),
   );
+}
+
+/** A check's Verify line: how to verify it, and its command when it has one. */
+export function verifyLine(k: Pick<RubricCheck, "how" | "command" | "pass">): string {
+  return k.command ? `${k.how} Command: \`${k.command}\`, which passes when ${PASS_WORDS[k.pass ?? "exit0"]}.` : k.how;
 }
 
 /** The rubric as the audit reads it. */
@@ -106,7 +141,7 @@ export function rubricText(rubric: Rubric): string {
   return [
     `Rubric. ${rubric.context}`,
     ...rubric.rungs.map((r) =>
-      [`${r.stars} stars:`, ...r.checks.map((k) => `- [${k.id}] ${k.text} (Verify: ${k.how})`)].join("\n"),
+      [`${r.stars} stars:`, ...r.checks.map((k) => `- [${k.id}] ${k.text} (Verify: ${verifyLine(k)})`)].join("\n"),
     ),
   ].join("\n\n");
 }
@@ -117,7 +152,7 @@ export function unmetChecks(rubric: Rubric, checks: AuditCheck[]): Array<{ stars
   return rubric.rungs.flatMap((r) =>
     r.checks
       .filter((k) => !byId.get(k.id)?.met)
-      .map((k) => ({ stars: r.stars, text: k.text, how: k.how, evidence: byId.get(k.id)?.evidence ?? "" })),
+      .map((k) => ({ stars: r.stars, text: k.text, how: verifyLine(k), evidence: byId.get(k.id)?.evidence ?? "" })),
   );
 }
 

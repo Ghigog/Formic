@@ -115,12 +115,19 @@ prompts, custom or not.
 
 - [x] The top-bar chat becomes the PM's chat, with the assistant's tools and
       proposals.
-- [x] The PM checks the work against the original request, the PRD and the
-      design doc at the two moments drift is cheapest to catch: a plan before
-      it is applied (one correction, then the Architect plans again) and a
-      change at its first review (a note the Reviewer reads). It steps into
-      the card's chat when it drifts (`src/lib/pm/oversight.ts`). It runs on
-      the PM's API agent only; a CLI PM skips oversight.
+- [x] ~~The PM checks every plan and every change at review~~. Replaced on
+      2026-11-04: checking everything spent a run on work that was mostly on
+      track, and it only ran on an API agent. The PM is now **on call**
+      (`src/lib/pm/on-call.ts`): agents are told to ask when they doubt the
+      work still does what was asked, and every question an agent asks wakes
+      the PM first, on whichever agent its chat uses (API or CLI). It answers
+      when the person's words, the PRD, an audit's checks or the design doc
+      settle it (the agent reads it as the PM's answer, not the person's), and
+      otherwise puts it to the person in its chat with a suggestion. The
+      person can answer in the card at any time; whoever answers first wins.
+      Getting it right first time is the Architect's job (an audit check is
+      planned as a rule over the whole project, with its Verify line) and the
+      Reviewer's (a test narrower than its criterion does not prove it).
 - [x] The PM relays agents' questions to the person in plain words and carries
       answers back into the card.
 - [x] The PM asks the person about priorities when work goes off track.

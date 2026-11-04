@@ -131,4 +131,36 @@ describe("RepoPicker", () => {
       JSON.stringify({ repoFullName: "ada/fresh-idea" }),
     );
   });
+
+  describe("standing", () => {
+    function serveBoards(projects: unknown[]) {
+      vi.stubGlobal("fetch", async (url: string) =>
+        Response.json(url.includes("/api/projects") ? { projects } : { ok: true, repos: [] }),
+      );
+    }
+    const board = { id: "p1", repoFullName: "acme/widgets", baseBranch: "main" };
+
+    it("shows the grade letter and level left of the name", async () => {
+      serveBoards([{ ...board, standing: { grade: "B", ink: "var(--anthracite)", level: 43, audited: true } }]);
+      render(<RepoPicker current={null} inline onClose={() => {}} />);
+      const badge = await screen.findByRole("img", { name: "Audit grade B, Level 43" });
+      expect(badge).toHaveTextContent("B");
+      expect(badge).toHaveTextContent("Lv 43");
+    });
+
+    it("shows a dash, not an F, for a board nobody has audited", async () => {
+      serveBoards([{ ...board, standing: { grade: "F", ink: "var(--crimson)", level: 3, audited: false } }]);
+      render(<RepoPicker current={null} inline onClose={() => {}} />);
+      const badge = await screen.findByRole("img", { name: "Not audited, Level 3" });
+      expect(badge).toHaveTextContent("–");
+      expect(badge).not.toHaveTextContent("F");
+    });
+
+    it("renders the row without a badge while standing is missing", async () => {
+      serveBoards([board]);
+      render(<RepoPicker current={null} inline onClose={() => {}} />);
+      expect(await screen.findByText("acme/widgets")).toBeInTheDocument();
+      expect(screen.queryByText(/^Lv /)).toBeNull();
+    });
+  });
 });
