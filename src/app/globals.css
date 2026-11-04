@@ -1144,6 +1144,129 @@
   }
 }
 
+/* A feature's button arriving (components/colony/feature-reveal.tsx): the header clears a
+   space, then the button rises inside a clay ring, a burst and a short glow. Under reduced
+   motion it only fades in. */
+.feature-reveal {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.feature-reveal[data-phase="space"] {
+  animation: featureRevealSpace 220ms ease-out both;
+}
+
+.feature-reveal-stage {
+  position: relative;
+  min-width: 0;
+}
+
+.feature-reveal-item {
+  transition: opacity 150ms ease-out;
+}
+
+.feature-reveal[data-phase="space"] .feature-reveal-item {
+  opacity: 0;
+}
+
+.feature-reveal[data-phase="rise"] .feature-reveal-item {
+  animation: featureRevealRise 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.feature-reveal-fx {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.feature-reveal-ring {
+  border: 2px solid var(--clay);
+}
+
+.feature-reveal-burst {
+  background: radial-gradient(circle, var(--clay-lit) 0%, transparent 65%);
+}
+
+.feature-reveal-glow {
+  box-shadow: 0 0 18px 4px var(--clay-lit);
+}
+
+.feature-reveal[data-phase="rise"] .feature-reveal-ring {
+  animation: featureRevealRing 460ms ease-out both;
+}
+
+.feature-reveal[data-phase="rise"] .feature-reveal-burst {
+  animation: featureRevealBurst 320ms ease-out 80ms both;
+}
+
+.feature-reveal[data-phase="rise"] .feature-reveal-glow {
+  animation: featureRevealGlow 460ms ease-out both;
+}
+
+@keyframes featureRevealSpace {
+  from {
+    grid-template-columns: 0fr;
+  }
+  to {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes featureRevealRise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes featureRevealRing {
+  from {
+    opacity: 0.9;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+
+@keyframes featureRevealBurst {
+  from {
+    opacity: 0.8;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+
+@keyframes featureRevealGlow {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-reveal[data-phase="space"],
+  .feature-reveal[data-phase="rise"] .feature-reveal-item,
+  .feature-reveal[data-phase="rise"] .feature-reveal-ring,
+  .feature-reveal[data-phase="rise"] .feature-reveal-burst,
+  .feature-reveal[data-phase="rise"] .feature-reveal-glow {
+    animation: none;
+  }
+}
+
 /*
  * Reduced motion: every keyframe is redefined as a no-op, so an animation applied
  * from a component (animate-[...]) holds still too. Keep one entry per @keyframes.
@@ -1408,6 +1531,36 @@
     }
   }
   @keyframes bellGlint {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes featureRevealSpace {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes featureRevealRise {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes featureRevealRing {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes featureRevealBurst {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes featureRevealGlow {
     from,
     to {
       animation-timing-function: linear;
