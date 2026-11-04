@@ -25,7 +25,8 @@ function snapshotWanted(path: string, size: number): boolean {
 }
 import { scoreOf } from "@/lib/colony/game";
 import { isUnlocked, sentinel as findSentinel, stepsFor } from "./roster";
-import { sentinelStates, type SentinelStates, type Shipped } from "./view";
+import { columnOf } from "@/lib/domain/status";
+import { sentinelStates, type OpenEpics, type SentinelStates, type Shipped } from "./view";
 
 /**
  * Summoning a sentinel: calibrating writes its rubric for the project, and
@@ -38,7 +39,15 @@ import { sentinelStates, type SentinelStates, type Shipped } from "./view";
 export async function sentinelsFor(projectId: string): Promise<SentinelStates> {
   const repo = repository();
   const [audits, shipped] = await Promise.all([repo.auditsFor(projectId), shippedTickets(projectId)]);
-  return sentinelStates(audits, Date.now(), shipped);
+  const epicIds = [...new Set(audits.map((a) => a.epicId).filter((id): id is string => !!id))];
+  const openEpics: OpenEpics = {};
+  await Promise.all(
+    epicIds.map(async (id) => {
+      const card = await repo.cardById(id);
+      if (card && card.kind === "epic" && !card.archived && columnOf(card) !== "done") openEpics[id] = card.key;
+    }),
+  );
+  return sentinelStates(audits, Date.now(), shipped, openEpics);
 }
 
 /** When each ticket in or past Done first got there, with its points; unestimated tickets are worth 0. */
@@ -79,6 +88,9 @@ export async function summonSentinel(
   }
   const current = (await sentinelsFor(projectId))[s.id];
   if (current?.running) return { ok: true };
+  if (kind === "audit" && current?.hold) {
+    return { ok: false, error: `${current.hold.key} is still open. Finish or archive it before auditing again.`, status: 409 };
+  }
   const rubric = current?.rubric?.rubric ?? null;
   if (kind === "audit" && !rubric) {
     return { ok: false, error: `Calibrate ${s.who} first: an audit is scored against the rubric calibrating writes.`, status: 409 };
