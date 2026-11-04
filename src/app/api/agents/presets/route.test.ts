@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const jar = vi.hoisted(() => new Map<string, string>());
 vi.mock("next/headers", () => ({
@@ -11,6 +11,7 @@ const { repository } = await import("@/lib/db");
 const { SESSION_COOKIE, signSession } = await import("@/lib/auth/session");
 const { resetEnvCache } = await import("@/lib/secrets/env");
 
+const { localUser } = await import("@/lib/auth/user");
 const { POST } = await import("./route");
 
 const valid = { provider: "anthropic", name: "Coder", model: "claude-opus-5", prompt: "p" };
@@ -18,6 +19,8 @@ const valid = { provider: "anthropic", name: "Coder", model: "claude-opus-5", pr
 function post(body: unknown): Request {
   return new Request("http://localhost/api/agents/presets", { method: "POST", body: JSON.stringify(body) });
 }
+
+afterEach(() => vi.unstubAllEnvs());
 
 beforeEach(async () => {
   globalThis.__formicMemoryStore = undefined;
@@ -40,6 +43,19 @@ describe("POST /api/agents/presets", () => {
 
   it.each([[null], [{}], [{ ...valid, name: "" }]])("rejects a malformed body %j", async (body) => {
     expect((await POST(post(body))).status).toBe(400);
+  });
+
+  it("refuses an API key with a database configured and no FORMIC_SECRET, storing nothing", async () => {
+    // Local sign-in, so the request is authenticated without a secret.
+    vi.stubEnv("GITHUB_APP_CLIENT_ID", "");
+    vi.stubEnv("GITHUB_APP_CLIENT_SECRET", "");
+    resetEnvCache();
+    vi.stubEnv("FORMIC_SECRET", "");
+    vi.stubEnv("DATABASE_URL", "postgres://u:p@h/db");
+    const res = await POST(post({ ...valid, apiKey: "sk-ant-secret" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("FORMIC_SECRET");
+    expect(await repository().listPresets({ ownerId: (await localUser()).id, includeUnowned: true })).toEqual([]);
   });
 
   it("asks to sign in when there is no session", async () => {

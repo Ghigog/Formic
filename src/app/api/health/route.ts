@@ -16,6 +16,7 @@ import { activeRunCount } from "@/lib/budget/controller";
 import { activeSandboxCount, LOCAL_SANDBOX_ON_VERCEL } from "@/lib/sandbox";
 import { mergeTarget, usingMockVcs } from "@/lib/vcs";
 import { configWarnings, env } from "@/lib/secrets/env";
+import { vaultProblem } from "@/lib/secrets/vault";
 import { redact } from "@/lib/secrets/redact";
 import { reportAllowed } from "@/lib/runner/runner";
 import { boostLapsed, usageReport } from "@/lib/usage/governor";
@@ -124,6 +125,8 @@ async function fullReport(): Promise<FullReport> {
   }
   const secretIssue = secretProblem();
   if (secretIssue) warnings.push(secretIssue);
+  const vaultIssue = vaultProblem();
+  if (vaultIssue) warnings.push(vaultIssue);
   if (boostLapsed()) {
     warnings.push(
       "FORMIC_USAGE_BOOST has lapsed (FORMIC_USAGE_BOOST_UNTIL is past). Remove both from the deployment's environment.",
