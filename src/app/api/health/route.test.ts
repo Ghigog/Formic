@@ -124,4 +124,30 @@ describe("/api/health", () => {
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
   });
+
+  it("names FORMIC_SECRET as required for saving keys when a database is configured without one", async () => {
+    vi.stubEnv("FORMIC_PASSWORD", "right-password");
+    vi.stubEnv("FORMIC_SECRET", "");
+    vi.stubEnv("DATABASE_URL", "postgresql://u:p@127.0.0.1:1/none");
+    const res = await GET(
+      await withPasswordCookie(new Request("http://localhost/api/health")),
+    );
+    const body = await res.json();
+    expect(body.warnings).toContainEqual(expect.stringMatching(/Set FORMIC_SECRET before saving API keys/));
+  });
+
+  it("reports no vault problem with no database, or with FORMIC_SECRET set", async () => {
+    vi.stubEnv("FORMIC_PASSWORD", "right-password");
+    vi.stubEnv("FORMIC_SECRET", "");
+    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv("POSTGRES_PRISMA_URL", "");
+    vi.stubEnv("POSTGRES_URL", "");
+    let res = await GET(await withPasswordCookie(new Request("http://localhost/api/health")));
+    expect((await res.json()).warnings).not.toContainEqual(expect.stringMatching(/saving API keys/));
+
+    vi.stubEnv("DATABASE_URL", "postgresql://u:p@127.0.0.1:1/none");
+    vi.stubEnv("FORMIC_SECRET", "a".repeat(32));
+    res = await GET(await withPasswordCookie(new Request("http://localhost/api/health")));
+    expect((await res.json()).warnings).not.toContainEqual(expect.stringMatching(/saving API keys/));
+  });
 });
