@@ -246,7 +246,7 @@ export const INFRASTRUCTURE_RULE = `Hosting, vendors and services. Before planni
 
 /** The Architect's brief with the ticket template and the engineering practices. */
 export function withPlanningConventions(brief: string): string {
-  return `${brief.trim()}\n\n${TICKET_TEMPLATE}\n\n${NEEDS_HUMAN_RULE}\n\n${INFRASTRUCTURE_RULE}\n\n${DESIGN_RULE}\n\n${ENGINEERING_PRACTICES}`;
+  return `${brief.trim()}\n\n${TICKET_TEMPLATE}\n\n${ARCHITECT_AUDIT_RULE}\n\n${NEEDS_HUMAN_RULE}\n\n${INFRASTRUCTURE_RULE}\n\n${DESIGN_RULE}\n\n${ENGINEERING_PRACTICES}`;
 }
 
 /** The brief a column's agent runs with when no preset replaces it. */
@@ -269,6 +269,10 @@ export const HANDOFF_RULE = `Some tickets need steps outside the repository that
 /** A spike ticket is research: the write-up is the deliverable, not a code change. */
 export const SPIKE_RULE = `This ticket is a spike: an investigation, not a change. Change no product code. Investigate the question, then write your findings to docs/spikes/<slug>.md, with a short slug from the ticket's title. The file has four sections: the question, what was examined, the findings, and a recommendation. That file is the only change you make.`;
 
+export const ARCHITECT_AUDIT_RULE = `When the request is a sentinel's audit, each check it lists as not met is a rule over the whole project, and the places the audit found are examples of where it breaks, not the list of them. Give each check a ticket whose acceptance criteria state the check as written and carry its Verify line, so the reviewer runs it. Scope that ticket to everywhere the rule applies: search the code for every place the rule covers before you set the scope, not only the files the audit named.`;
+
+export const REVIEWER_PROOF_RULE = `Passing tests are not the same as met criteria. For each acceptance criterion, find the test or check that proves it and ask whether it covers everything the criterion says. A test narrower than its criterion (it reads only some of the files the rule covers, or lists cases by hand where the code could find them) does not prove it: widen the test, or send the change back saying what it misses.`;
+
 export const REVIEWER_AUDIT_RULE = `When the ticket cites a check from a sentinel's audit with a verification (a "Verify:" line: the file to read or the command to run, and what passing looks like), run that check yourself on the branch and judge from its result. The Coder Agent's summary is not evidence that the check passes. A ticket without such a check is judged as before.`;
 
 /** Coder and Reviewer briefs get the enforced rules and the practices appended. */
@@ -280,7 +284,7 @@ export function withCodingRules(
   const rules = codingRules(
     role === "coder"
       ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE} Put each in finish's follow_ups.`
-      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${REVIEWER_AUDIT_RULE}`,
+      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`,
   );
   return `${brief.trim()}\n\n${rules}\n\n${HANDOFF_RULE}${options.spike ? `\n\n${SPIKE_RULE}` : ""}\n\n${DESIGN_RULE}\n\n${ENGINEERING_PRACTICES}`;
 }

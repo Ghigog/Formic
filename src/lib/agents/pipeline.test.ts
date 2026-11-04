@@ -194,7 +194,7 @@ describe("applyPrd titling the Epic", () => {
 });
 
 describe("applyPrd with the Product Agent's questions", () => {
-  it("keeps the PRD as a draft and waits in Backlog on the question, starting nothing", async () => {
+  it("keeps the PRD as a draft and waits in Backlog on the question, starting nothing but the PM", async () => {
     const epic = makeCard({ kind: "epic", status: "waiting", size: null });
     seedMemory([epic]);
 
@@ -209,7 +209,11 @@ describe("applyPrd with the Product Agent's questions", () => {
     expect(said[0]!.content).toContain("Who rings it?");
     expect(said[0]!.content).toContain("Why: It decides the gesture.");
     expect((await repository().epicDetail(epic.id))?.prd).toEqual(PRD);
-    expect(deferred).toHaveLength(0);
+    // The one thing it starts is the PM, woken for the question; with no PM
+    // agent on the board, the question waits for the person.
+    expect(deferred).toHaveLength(1);
+    await (deferred[0] as () => Promise<void>)();
+    expect(await repository().assistantMessages(PROJECT)).toEqual([]);
   });
 });
 

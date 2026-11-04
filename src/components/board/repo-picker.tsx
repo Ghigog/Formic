@@ -16,6 +16,8 @@ interface Project extends ProjectActivity {
   id: string;
   repoFullName: string;
   baseBranch: string;
+  /** The board's audit grade and colony level; missing from an older response. */
+  standing?: { grade: string; ink: string; level: number; audited: boolean };
 }
 
 interface RepoOption {
@@ -255,6 +257,7 @@ export function RepoPicker({
                       selected ? onClose() : void choose({ projectId: p.id }, p.id)
                     }
                   >
+                    {p.standing && <Standing {...p.standing} />}
                     <span className="text-ink min-w-0 flex-1 truncate font-medium">
                       {p.repoFullName || "No repository"}
                     </span>
@@ -385,6 +388,21 @@ function Section({ label, tour, children }: { label: string; tour?: string; chil
       </h3>
       {children}
     </div>
+  );
+}
+
+/** The board's audit grade in an octagon, like the header's level badge, and its level. */
+function Standing({ grade, ink, level, audited }: NonNullable<Project["standing"]>) {
+  const label = `${audited ? `Audit grade ${grade}` : "Not audited"}, Level ${level}`;
+  return (
+    <span role="img" aria-label={label} title={label} className="flex shrink-0 items-center gap-1.5">
+      <span className="oct-lg bg-anthracite inline-flex size-6 items-center justify-center">
+        <span className="font-serif text-[13px] leading-none font-semibold" style={{ color: ink }}>
+          {audited ? grade : "–"}
+        </span>
+      </span>
+      <span className="text-muted font-mono text-[10px]">Lv {level}</span>
+    </span>
   );
 }
 

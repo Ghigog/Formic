@@ -15,6 +15,9 @@ import { limited, RUN } from "@/lib/rate-limit";
 import { classifyEvent, type NotificationKind } from "@/lib/notifications/classify";
 import type { FormicEvent } from "@/lib/domain/events";
 import { verdict } from "@/lib/usage/governor";
+import { scoreOf } from "@/lib/colony/game";
+import { gradeOf } from "@/lib/sentinels/grade";
+import { sentinelStates, starsOf } from "@/lib/sentinels/view";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +42,11 @@ export async function GET() {
         (m) => m.role === "assistant" && m.status !== "pending",
       );
       const last = answered[answered.length - 1];
-      return { ...p, lastAssistantMessage: last ? { id: last.id, createdAt: last.createdAt } : null,
+      // The same grade SentinelsProvider works out for the open board.
+      const { level } = scoreOf(await repo.boardCards(p.id));
+      const grade = gradeOf(starsOf(sentinelStates(await repo.auditsFor(p.id))), level, p.unlockAllSentinels);
+      const standing = { grade: grade.grade, ink: grade.ink, level, audited: grade.done > 0 };
+      return { ...p, standing, lastAssistantMessage: last ? { id: last.id, createdAt: last.createdAt } : null,
         notifications: latest.get(p.id) ?? {},
       };
     }),

@@ -7,7 +7,9 @@ import {
   REVIEWER_BRIEF,
   ENGINEERING_PRACTICES,
   FOLLOW_UP_RULE,
+  ARCHITECT_AUDIT_RULE,
   REVIEWER_AUDIT_RULE,
+  REVIEWER_PROOF_RULE,
   REVIEWER_FOLLOW_UP_RULE,
   SPIKE_RULE,
   VERIFY_RULE,
@@ -231,6 +233,20 @@ describe("an audit's check on a ticket", () => {
 
   it("is not in the Coder's prompt", () => {
     expect(withCodingRules("Custom coder.", "coder")).not.toContain(REVIEWER_AUDIT_RULE);
+  });
+
+  it("is planned as a rule over the whole project, whatever the Architect's own brief", () => {
+    expect(withPlanningConventions("Custom architect.")).toContain(ARCHITECT_AUDIT_RULE);
+    expect(ARCHITECT_AUDIT_RULE).toContain("examples of where it breaks, not the list of them");
+    expect(ARCHITECT_AUDIT_RULE).toContain("carry its Verify line");
+  });
+});
+
+describe("tests that prove a criterion", () => {
+  it("are judged by the Reviewer, whatever its own brief: a test narrower than its criterion does not prove it", () => {
+    expect(withCodingRules("Custom reviewer.", "reviewer")).toContain(REVIEWER_PROOF_RULE);
+    expect(withCodingRules("Custom coder.", "coder")).not.toContain(REVIEWER_PROOF_RULE);
+    expect(REVIEWER_PROOF_RULE).toContain("A test narrower than its criterion");
   });
 });
 
