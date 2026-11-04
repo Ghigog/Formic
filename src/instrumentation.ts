@@ -19,6 +19,10 @@ export async function register(): Promise<void> {
   const { startReminderClock } = await import("@/lib/calls/reminders");
   startReminderClock();
 
+  // An armed golden bell must ring while nobody has the board open.
+  const { startBellClock } = await import("@/lib/board/bell");
+  startBellClock();
+
   const { reconcileOrphanedRuns } = await import("@/lib/agents/recovery");
   try {
     const reclaimed = await reconcileOrphanedRuns();

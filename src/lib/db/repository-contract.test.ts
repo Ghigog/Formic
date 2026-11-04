@@ -1040,6 +1040,14 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.useGoldenBell(p.id)).toBe(false);
       });
 
+      it("lists the projects whose bell is armed", async () => {
+        const p = await project();
+        await repo.setGoldenBellArmed(p.id, true);
+        expect(await repo.armedGoldenBells()).toContain(p.id);
+        await repo.useGoldenBell(p.id);
+        expect(await repo.armedGoldenBells()).not.toContain(p.id);
+      });
+
       it("lets only one of two concurrent uses spend the bell", async () => {
         const p = await project();
         await repo.setGoldenBellArmed(p.id, true);

@@ -46,7 +46,7 @@ export interface AssistantControls {
   presets: AgentPreset[];
   /** How many cards are waiting on a question for the person, which the PM relays. */
   questions?: number;
-  /** The questions themselves, shown at the top of the PM's chat; each opens its card, where it is answered. */
+  /** The questions themselves, shown at the bottom of the PM's chat, after the newest message; each opens its card, where it is answered. */
   waiting?: Array<{ id: string; key: string; title: string; question: string }>;
   onOpenQuestion?: (cardId: string) => void;
   /** Opens the agent editor: an existing preset, or null for a new one. */
@@ -552,7 +552,6 @@ function Shade({
       </header>
 
       <div ref={list} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-        {!!a.waiting?.length && <WaitingQuestions a={a} />}
         {a.messages.length === 0 ? (
           <div className="text-muted mx-auto max-w-[460px] pt-6 text-center text-[13px] leading-[1.6]">
             <p className="text-ink font-serif text-[17px]">
@@ -580,6 +579,7 @@ function Shade({
             />
           ))
         )}
+        {!!a.waiting?.length && <WaitingQuestions a={a} />}
         {a.error && (
           <p role="alert" className="text-crimson text-[12px]">
             {a.error}

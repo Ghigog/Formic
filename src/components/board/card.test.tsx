@@ -604,3 +604,17 @@ describe("a problem notice", () => {
     expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
   });
 });
+
+describe("an epic in the backlog", () => {
+  it("shows its stage caption but no stage count tag", () => {
+    const card = makeCard({ kind: "epic", size: null, stage: 2 });
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
+    renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="backlog" cards={[card]} extras={{ [card.id]: { stageLabel: "PRD draft" } }} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+    expect(screen.getByText("PRD draft")).toBeTruthy();
+    expect(screen.queryByText(/\d\/8/)).toBeNull();
+  });
+});
