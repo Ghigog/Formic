@@ -651,11 +651,13 @@ model ProjectMember {
 /// When one person last opened a board. Per person, since a shared board is
 /// opened by several; the repo picker orders their boards by it.
 model ProjectOpen {
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  openedAt  DateTime @default(now())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  openedAt   DateTime  @default(now())
+  /// When this person first took (or started) the board's tour. Null until then.
+  tourSeenAt DateTime?
 
   @@id([projectId, userId])
   @@index([userId])

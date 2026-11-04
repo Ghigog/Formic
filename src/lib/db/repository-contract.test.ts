@@ -41,6 +41,23 @@ function contract(name: string, make: () => Repository) {
       expect((await repo.openedAtByProject(other.id)).size).toBe(0);
     });
 
+    it("remembers a board's tour per person and board, even before the first open", async () => {
+      const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+      const other = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+      const a = await repo.ensureProject({ ownerId: user.id, repoFullName: `acme/${randomUUID()}`, baseBranch: "main" });
+      const b = await repo.ensureProject({ ownerId: user.id, repoFullName: `acme/${randomUUID()}`, baseBranch: "main" });
+      expect(await repo.boardTourSeen(user.id, a.id)).toBe(false);
+      await repo.markBoardTourSeen(user.id, a.id);
+      await repo.markBoardTourSeen(user.id, a.id);
+      expect(await repo.boardTourSeen(user.id, a.id)).toBe(true);
+      expect(await repo.boardTourSeen(user.id, b.id)).toBe(false);
+      expect(await repo.boardTourSeen(other.id, a.id)).toBe(false);
+      await repo.markOpened(user.id, a.id);
+      expect(await repo.boardTourSeen(user.id, a.id)).toBe(true);
+      await repo.markBoardTourSeen(user.id, "no-such-project");
+      expect(await repo.boardTourSeen(user.id, "no-such-project")).toBe(false);
+    });
+
     it("adds host usage per day and totals it from a given day on", async () => {
       // A random year far in the past, so this case meets neither a real
       // deployment's days nor an earlier run's on a database that is kept.
