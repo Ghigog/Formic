@@ -155,5 +155,12 @@ export const OAUTH_COOKIE = "formic_oauth";
 
 /** Only same-site paths, so sign-in cannot bounce someone elsewhere. */
 export function safeNext(raw: string | null | undefined): string {
-  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+  if (!raw || !/^\/(?![/\\])/.test(raw)) return "/";
+  // Backslashes and control characters are read as "/" or dropped by URL parsers.
+  if (/[\\\u0000-\u001f\u007f]/.test(raw)) return "/";
+  try {
+    return new URL(raw, "http://formic.invalid").origin === "http://formic.invalid" ? raw : "/";
+  } catch {
+    return "/";
+  }
 }
