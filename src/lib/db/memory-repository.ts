@@ -255,6 +255,7 @@ function store(): Store {
     autoMerge: false,
     autoEscalate: false,
     unlockAllSentinels: false,
+    unlockAllOfferDismissedAt: null,
     colonySize: null,
     colonyReserve: 0,
     autoScout: false,
@@ -757,6 +758,7 @@ export class MemoryRepository implements Repository {
       autoMerge: false,
       autoEscalate: false,
       unlockAllSentinels: false,
+      unlockAllOfferDismissedAt: null,
       colonySize: null,
       colonyReserve: 0,
       autoScout: false,
@@ -1983,6 +1985,11 @@ export class MemoryRepository implements Repository {
   async setUnlockAllSentinels(projectId: string, unlockAllSentinels: boolean): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) project.unlockAllSentinels = unlockAllSentinels;
+  }
+
+  async setUnlockAllOfferDismissed(projectId: string): Promise<void> {
+    const project = store().projects.get(projectId);
+    if (project && !project.unlockAllOfferDismissedAt) project.unlockAllOfferDismissedAt = new Date();
   }
 
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {

@@ -190,6 +190,9 @@ model Project {
   /// Whether every Sentinel is unlocked regardless of colony level, for a
   /// board brought in with an established codebase. Off until the owner opts in.
   unlockAllSentinels         Boolean  @default(false)
+  /// When the offer to unlock every Sentinel was dismissed or taken up, so a new
+  /// device does not ask again. Null until then.
+  unlockAllOfferDismissedAt  DateTime?
   /// Queens taken off the board, so clearing one never hands it back.
   queensSpent                Int      @default(0)
   /// Golden bells rung on this board, so one is never spent twice.

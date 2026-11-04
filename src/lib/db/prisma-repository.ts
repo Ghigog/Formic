@@ -2045,6 +2045,13 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: { unlockAllSentinels } });
   }
 
+  async setUnlockAllOfferDismissed(projectId: string): Promise<void> {
+    await prisma().project.updateMany({
+      where: { id: projectId, unlockAllOfferDismissedAt: null },
+      data: { unlockAllOfferDismissedAt: new Date() },
+    });
+  }
+
   async setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void> {
     await prisma().project.update({ where: { id: projectId }, data: { autoEscalate } });
   }
