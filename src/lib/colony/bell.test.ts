@@ -51,6 +51,11 @@ const project = "project_default";
 seedMemory([
   card("a", {}),
   card("b", {}),
+  card("gate", {
+    blockedReason:
+      "claude-reviewer-1 is out of usage until Nov 4, 5:20 PM UTC. Wait for it, or pick an agent on another account for Building.",
+    stalledIn: "in_review" as ColumnId,
+  }),
   card("credit", { blockedReason: "Out of credit\nTop up" }),
 ]);
 
@@ -63,10 +68,11 @@ beforeEach(() => {
 
 describe("ringBell", () => {
   it("starts the work again on every card stopped by a usage limit", async () => {
-    expect(await ringBell(project)).toEqual({ sent: 2, skipped: 0 });
+    expect(await ringBell(project)).toEqual({ sent: 3, skipped: 0 });
     expect(applyCardAction.mock.calls.map((c) => [c[2], c[3]]).sort()).toEqual([
       ["a", { type: "redo", instruction: MESSAGE }],
       ["b", { type: "redo", instruction: MESSAGE }],
+      ["gate", { type: "redo", instruction: MESSAGE }],
     ]);
   });
 
@@ -75,13 +81,19 @@ describe("ringBell", () => {
     expect(addNote.mock.calls.map((c) => [c[1], c[2]]).sort()).toEqual([
       ["a", MESSAGE],
       ["b", MESSAGE],
+      ["gate", MESSAGE],
     ]);
   });
 
   it("skips a card whose agent is still limited and starts the rest", async () => {
     columnChatAgentFor.mockResolvedValueOnce({ kind: "limited", reason: "out" });
-    expect(await ringBell(project)).toEqual({ sent: 1, skipped: 1 });
-    expect(applyCardAction).toHaveBeenCalledTimes(1);
+    expect(await ringBell(project)).toEqual({ sent: 2, skipped: 1 });
+    expect(applyCardAction).toHaveBeenCalledTimes(2);
+  });
+
+  it("restarts a start-gate limit stop in the column it stopped in", async () => {
+    await ringBell(project);
+    expect(columnChatAgentFor).toHaveBeenCalledWith(project, "in_review");
   });
 
   it("leaves cards stopped for other reasons alone", async () => {
