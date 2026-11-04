@@ -1,7 +1,7 @@
 import { safeNext, secretProblem } from "@/lib/auth/session";
 import { startEmailSignIn } from "@/lib/auth/email";
 import { clientAddress, limit, limited } from "@/lib/rate-limit";
-import { fromOwnPage, publicUrl } from "@/lib/origin";
+import { fromOwnPage, trustedLinkOrigin } from "@/lib/origin";
 
 export const dynamic = "force-dynamic";
 
@@ -15,23 +15,30 @@ export async function POST(req: Request) {
 
   const form = await req.formData().catch(() => null);
   const next = safeNext(String(form?.get("next") ?? "/"));
-  const back = publicUrl("/login", req);
-  back.searchParams.set("next", next);
+  // A relative Location: behind a proxy the request's own address can differ
+  // from the page's, and CSP form-action 'self' would block a redirect there.
+  const back = new URLSearchParams({ next });
+  const toLogin = () => new Response(null, { status: 303, headers: { Location: `/login?${back}` } });
   const fail = (error: string) => {
-    back.searchParams.set("error", error);
-    return Response.redirect(back, 303);
+    back.set("error", error);
+    return toLogin();
   };
 
   if (!fromOwnPage(req)) return fail("Sign in from Formic's own login page.");
   const problem = secretProblem();
   if (problem) return fail(problem);
+  const origin = trustedLinkOrigin(req);
+  if (!origin) {
+    console.error("[formic] email sign-in needs FORMIC_URL: without it a link could point at whatever Host a request named.");
+    return fail("Email sign-in needs FORMIC_URL set to this board's public address.");
+  }
 
   const result = await startEmailSignIn({
     email: form?.get("email"),
     next,
     ip: clientAddress(req),
     linkFor: (token) => {
-      const link = publicUrl("/login/verify", req);
+      const link = new URL("/login/verify", origin);
       link.searchParams.set("token", token);
       return link.toString();
     },
@@ -42,8 +49,8 @@ export async function POST(req: Request) {
 
   switch (result) {
     case "sent":
-      back.searchParams.set("sent", "1");
-      return Response.redirect(back, 303);
+      back.set("sent", "1");
+      return toLogin();
     case "invalid":
       return fail("That doesn't look like an email address.");
     case "limited":

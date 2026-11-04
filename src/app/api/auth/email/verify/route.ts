@@ -8,7 +8,7 @@ import {
 } from "@/lib/auth/session";
 import { verifyEmailSignIn } from "@/lib/auth/email";
 import { limit, limited } from "@/lib/rate-limit";
-import { fromOwnPage, publicUrl } from "@/lib/origin";
+import { fromOwnPage } from "@/lib/origin";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +22,9 @@ export async function POST(req: Request) {
   const refused = limited(req, VERIFY, "email-verify");
   if (refused) return refused;
 
-  const fail = (error: string) => {
-    const back = publicUrl("/login", req);
-    back.searchParams.set("error", error);
-    return Response.redirect(back, 303);
-  };
+  // Relative, as in ../start/route.ts: CSP form-action 'self' follows redirects.
+  const fail = (error: string) =>
+    new Response(null, { status: 303, headers: { Location: `/login?${new URLSearchParams({ error })}` } });
 
   // Signing someone in to an account of the sender's choosing is an attack too.
   if (!fromOwnPage(req)) return fail("Sign in from Formic's own page.");

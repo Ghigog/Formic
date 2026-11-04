@@ -141,6 +141,7 @@ export default defineConfig({
       GITHUB_APP_CLIENT_SECRET: "",
       FORMIC_MAILER: "console",
       FORMIC_MAILER_OUTBOX: ACCOUNTS_OUTBOX,
+      FORMIC_URL: accountsURL,
       FORMIC_SECRET: "e2e-accounts-secret-at-least-32-bytes",
       FORMIC_ALLOWED_USERS: "",
     } as Record<string, string>,

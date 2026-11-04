@@ -35,3 +35,20 @@ export function fromOwnPage(req: Request): boolean {
     (!!host && new URL(origin).host === host)
   );
 }
+
+/**
+ * The origin a link sent outside the browser (an email) may point at, or
+ * null when there is none to trust.
+ *
+ * Never the request's own address on a self-hosted server: Next builds it
+ * from the Host header, which whoever sends the request chooses. A sign-in
+ * link built from it could carry a real token to someone else's domain. So:
+ * FORMIC_URL when set; on Vercel, which only routes the project's own
+ * domains, the request's address; in development, the request's address.
+ */
+export function trustedLinkOrigin(req: Request): string | null {
+  const explicit = configuredOrigin();
+  if (explicit) return new URL(explicit).origin;
+  if (process.env.VERCEL || process.env.NODE_ENV !== "production") return new URL(req.url).origin;
+  return null;
+}

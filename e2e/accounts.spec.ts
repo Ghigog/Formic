@@ -33,7 +33,13 @@ async function signIn(page: Page, email: string) {
   await page.getByRole("button", { name: "Accept and continue" }).click();
 }
 
-test("a new person signs in with only an email and gets to a board", async ({ page }) => {
+// Serial, one server: the first person to sign in is whoever set it up.
+test("the first person to sign in by email gets the boards from before accounts", async ({ page }) => {
+  await signIn(page, `owner-${Date.now()}@example.com`);
+  await expect(page.getByRole("region", { name: "Backlog" })).toBeVisible();
+});
+
+test("a new person signs in with only an email and starts a board of their own", async ({ page }) => {
   const email = `ana-${Date.now()}@example.com`;
   await signIn(page, email);
 
@@ -41,7 +47,7 @@ test("a new person signs in with only an email and gets to a board", async ({ pa
   await expect(page.getByRole("heading", { name: "Start a board" })).toBeVisible();
   await expect(page.getByText("GitHub isn't set up on this Formic")).toBeVisible();
   await page.getByRole("button", { name: "Start without a repository" }).click();
-  await expect(page.getByText("Backlog").first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Backlog" })).toBeVisible();
 
   await page.goto("/settings");
   await expect(page.getByText(`Signed in as ${email}.`)).toBeVisible();
@@ -59,7 +65,7 @@ test("a sign-in link works once", async ({ page }) => {
   await page.goto(link);
   await page.getByRole("button", { name: "Sign in to Formic" }).click();
   await expect(page).toHaveURL(/\/login\?error=/);
-  await expect(page.getByRole("alert")).toContainText("expired or was already used");
+  await expect(page.getByText("That sign-in link has expired or was already used")).toBeVisible();
 });
 
 test("opening a link without clicking spends nothing", async ({ page, request }) => {

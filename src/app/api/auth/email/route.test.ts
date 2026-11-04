@@ -240,3 +240,29 @@ describe("handles", () => {
     expect(handleFor("___@example.com")).toBe("member");
   });
 });
+
+describe("where the link points", () => {
+  it("uses FORMIC_URL, whatever Host the request named", async () => {
+    vi.stubEnv("FORMIC_URL", "https://board.example.com");
+    await start.POST(post("/api/auth/email/start", { email: "ana@example.com" }, { host: "evil.example" }));
+    expect(inbox.sent[0]!.link).toMatch(/^https:\/\/board\.example\.com\/login\/verify\?token=/);
+  });
+
+  it("refuses to send in production off Vercel without FORMIC_URL", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("FORMIC_URL", "");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await start.POST(post("/api/auth/email/start", { email: "ana@example.com" }));
+    expect(location(res).searchParams.get("error")).toContain("FORMIC_URL");
+    expect(inbox.sent).toHaveLength(0);
+  });
+
+  it("uses the request's own address on Vercel, which only routes its own domains", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("FORMIC_URL", "");
+    await start.POST(post("/api/auth/email/start", { email: "ana@example.com" }));
+    expect(inbox.sent[0]!.link).toMatch(/^http:\/\/localhost:3000\/login\/verify/);
+  });
+});
