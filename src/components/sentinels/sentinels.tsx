@@ -660,7 +660,7 @@ function Card({
         {running ? (
           <div className="border-hairline flex flex-col gap-1.5 border-t pt-2.5">
             <span className="text-terracotta-deep flex items-center gap-1.5 font-mono text-[10px]">
-              <span className="bg-terracotta size-1.5 animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
+              <span className="bg-terracotta size-1.5 motion-safe:animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
               {st.running?.log.at(-1) ?? "Waking up"}
             </span>
             <span className="bg-column block h-1 overflow-hidden rounded-sm">
