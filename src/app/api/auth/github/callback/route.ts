@@ -94,6 +94,24 @@ export async function GET(req: Request) {
     const repo = repository();
     const holder = await repo.userByGithubId(profile.githubId);
     if (holder && holder.id !== user.id) {
+      // The same person, twice: a GitHub account from before email sign-in,
+      // and the email account they just made. This round trip proved they
+      // hold both (the session came from the email link, the code from
+      // GitHub), so fold the email account into the GitHub one, which keeps
+      // its boards, and sign them in as it. A GitHub account that already
+      // has an email is someone's other account: refuse.
+      if (!holder.email && user.email) {
+        const merged = await repo.mergeUserInto(user.id, holder.id);
+        await repo.upsertUser(profile);
+        await storeTokens(merged.id, tokens);
+        const res = new Response(null, { status: 303, headers: { Location: "/settings?merged=1" } });
+        res.headers.append("Set-Cookie", cookieHeader(OAUTH_COOKIE, "", 0));
+        res.headers.append(
+          "Set-Cookie",
+          cookieHeader(SESSION_COOKIE, await signSession(merged.id, Date.now(), merged.sessionVersion), SESSION_MAX_AGE_S),
+        );
+        return res;
+      }
       await revokeToken(tokens.accessToken);
       return connectFailed(
         req,

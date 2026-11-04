@@ -1,5 +1,6 @@
 import { authMode, emailSignIn, githubSignIn, safeNext, secretProblem } from "@/lib/auth/session";
 import { AutoTour } from "@/components/onboarding/tour";
+import { SubmitOnce } from "@/components/ui/submit-once";
 
 export const dynamic = "force-dynamic";
 
@@ -59,12 +60,12 @@ export default async function LoginPage({
                       autoComplete="email"
                       className="border-line bg-cream text-ink focus:border-clay h-10 rounded-md border px-3 text-[14px] outline-none"
                     />
-                    <button
-                      type="submit"
+                    <SubmitOnce
+                      pending="Sending your link…"
                       className="bg-terracotta-cta h-10 rounded-lg text-[14px] font-semibold text-white"
                     >
                       Email me a sign-in link
-                    </button>
+                    </SubmitOnce>
                   </form>
                 ))}
 

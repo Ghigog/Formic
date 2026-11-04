@@ -798,6 +798,14 @@ export interface UserRepository {
   linkGithub(userId: string, profile: GithubProfile): Promise<UserRecord>;
   /** Detaches GitHub: clears the GitHub id and every GitHub token. */
   unlinkGithub(userId: string): Promise<UserRecord>;
+  /**
+   * Folds an email account into a GitHub one when one person turns out to
+   * have both: `from`'s boards, saved agents, access tokens and push
+   * subscriptions move to `into`, `from` is removed, and `into` takes its
+   * email. All or nothing. Memberships and "last opened" marks are dropped:
+   * an account with no GitHub can't have joined a shared board.
+   */
+  mergeUserInto(fromId: string, intoId: string): Promise<UserRecord>;
   /** Stores a sign-in link's hash. */
   createLoginToken(token: NewLoginToken): Promise<void>;
   /**

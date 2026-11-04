@@ -56,10 +56,12 @@ function AccountSection({
   account,
   installUrl,
   githubError,
+  merged,
 }: {
   account: Account;
   installUrl: string | null;
   githubError: string | null;
+  merged?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -104,6 +106,12 @@ function AccountSection({
           <div className="min-w-0 flex-1">
             <p className="text-ink text-[14px] font-semibold">{account.name ?? account.login}</p>
             <p className="text-muted text-[12px]">{who}</p>
+            {merged && (
+              <p role="status" className="text-ink mt-1 text-[12px]">
+                Your email and GitHub accounts are now one, with your existing boards. Sign in
+                either way.
+              </p>
+            )}
           </div>
           {account.signedIn && (
             <form method="post" action="/api/auth/logout">
@@ -203,7 +211,10 @@ export function SettingsForm({
   vapidPublicKey = null,
   presets = [],
   githubError = null,
+  merged = false,
 }: {
+  /** The email account was just folded into this GitHub one. */
+  merged?: boolean;
   account: Account;
   /** Why connecting GitHub just failed, from the callback. */
   githubError?: string | null;
@@ -242,7 +253,7 @@ export function SettingsForm({
       <AutoTour id="settings" delay={600} />
 
       <main className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-6">
-        <AccountSection account={account} installUrl={installUrl} githubError={githubError} />
+        <AccountSection account={account} installUrl={installUrl} githubError={githubError} merged={merged} />
 
         {github && (
           <KeyField
