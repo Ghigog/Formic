@@ -34,6 +34,7 @@ const states = (reported: string[]): SentinelStates =>
         commitSha: null,
         rubric: reported.includes(x.id) ? { rubric: RUBRIC, at: null, model: null } : null,
         rubricChanged: false,
+        hold: null,
         doneSince: 0,
         auditStale: false,
         running: null,
