@@ -23,7 +23,7 @@ import {
 import { authMode } from "@/lib/auth/session";
 import { LIMIT_AXES, validateLimitSetting } from "@/lib/domain/limit-settings";
 import { resetEnvCache } from "@/lib/secrets/env";
-import { hintFor, seal } from "@/lib/secrets/vault";
+import { VaultKeyMissingError, hintFor, seal } from "@/lib/secrets/vault";
 
 export const dynamic = "force-dynamic";
 
@@ -269,8 +269,13 @@ export async function PUT(req: Request) {
     });
   }
 
-  const updated = await repository().updateUser(user.id, {
-    ...sealed(body.data.e2bKey, "e2bKeyCipher", "e2bKeyHint"),
-  });
+  let fields;
+  try {
+    fields = sealed(body.data.e2bKey, "e2bKeyCipher", "e2bKeyHint");
+  } catch (error) {
+    if (error instanceof VaultKeyMissingError) return Response.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
+  const updated = await repository().updateUser(user.id, fields);
   return Response.json({ e2bKeyHint: updated.e2bKeyHint });
 }
