@@ -1317,7 +1317,7 @@ export function EpicGroup({
                   colony?.sfx("click");
                   onShowcase(epic);
                 }}
-                className="bg-terracotta-cta inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+                className="bg-terracotta-cta inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
               >
                 View showcase
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">

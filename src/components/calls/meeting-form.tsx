@@ -145,7 +145,7 @@ export function MeetingForm({
           <button
             type="submit"
             disabled={saving || !title.trim()}
-            className="bg-terracotta-cta h-9 rounded-lg px-4 text-[13px] font-semibold text-white disabled:opacity-50"
+            className="bg-terracotta-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white disabled:opacity-50"
           >
             Save
           </button>
