@@ -17,7 +17,6 @@ import {
 } from "@/lib/sentinels/roster";
 import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditKind, AuditPoint } from "@/lib/db/repository";
-import { KpiSection } from "./kpi";
 import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
 
@@ -533,7 +532,6 @@ function SentinelsView({ c, s }: { c: ColonyApi; s: SentinelsApi }) {
             ›
           </button>
         </div>
-        <KpiSection />
       </div>
 
       {reporting && (
