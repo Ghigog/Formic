@@ -64,11 +64,53 @@ function signedAttachment(req: NextRequest, path: string): boolean {
   return req.method === "GET" && ATTACHMENT.test(path) && q.has("expires") && q.has("token");
 }
 
+/**
+ * The Content-Security-Policy, with a per-request nonce for scripts. Next
+ * reads the nonce from the CSP on the forwarded request and applies it to its
+ * own scripts. With Supabase Realtime set up, the board also connects to the
+ * Supabase project (src/lib/events/realtime.ts). `next dev` needs eval.
+ */
+function realtimeOrigins(): string[] {
+  const raw = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  try {
+    const { protocol, host } = new URL(raw);
+    return protocol === "https:" ? [`https://${host}`, `wss://${host}`] : [];
+  } catch {
+    return [];
+  }
+}
+
+export function contentSecurityPolicy(nonce: string): string {
+  const dev = process.env.NODE_ENV !== "production";
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https://avatars.githubusercontent.com",
+    ["connect-src 'self'", ...realtimeOrigins()].join(" "),
+    "object-src 'none'",
+  ].join("; ");
+}
+
 export async function proxy(req: NextRequest) {
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const csp = contentSecurityPolicy(nonce);
+  const headers = new Headers(req.headers);
+  headers.set("Content-Security-Policy", csp);
+  const res = await gate(req, () => NextResponse.next({ request: { headers } }));
+  res.headers.set("Content-Security-Policy", csp);
+  return res;
+}
+
+async function gate(req: NextRequest, next: () => NextResponse): Promise<NextResponse> {
   const path = req.nextUrl.pathname;
   const refused = await overAllowance(req, path);
   if (refused) return refused;
-  if (OPEN.some((re) => re.test(path)) || signedAttachment(req, path)) return NextResponse.next();
+  if (OPEN.some((re) => re.test(path)) || signedAttachment(req, path)) return next();
 
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
   let user: UserRecord | null = null;
@@ -102,7 +144,7 @@ export async function proxy(req: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  return next();
 }
 
 /**

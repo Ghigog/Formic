@@ -26,7 +26,7 @@ layer, and nothing breaks without it:
 | :-- | :-- |
 | `DATABASE_URL` (or Vercel's `POSTGRES_*`) | Durable state |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG` | GitHub sign-in; each person works on their own repos with their own keys |
-| `FORMIC_SECRET` | Encryption for saved keys and sessions. Set it before anyone signs in. |
+| `FORMIC_SECRET` | Encryption for saved keys and sessions. Set it before anyone signs in. Required to save keys on a server with a database. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop |
 | `SANDBOX_PROVIDER=e2b` + `E2B_API_KEY` | Isolated sandboxes. Required on Vercel. |
 | `FORMIC_ALLOWED_USERS` | An allow-list of GitHub usernames |
