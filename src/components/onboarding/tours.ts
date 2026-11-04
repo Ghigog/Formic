@@ -58,7 +58,8 @@ export type TourId =
   | "agent"
   | "agent-menu"
   | "colony"
-  | "meetings";
+  | "meetings"
+  | "call";
 
 export const TOURS: Record<TourId, TourDef> = {
   login: {
@@ -374,6 +375,14 @@ export const TOURS: Record<TourId, TourDef> = {
       { target: "meetings-new", side: "below", title: "New meeting", text: "Pick a time, an agenda and who comes: agents, the PM, even Sentinels. It can repeat." },
       { target: "meetings-join", side: "above", title: "Join now", text: "When it is time, I'll nudge you. Join and the call starts, hands free." },
       { target: "meetings", side: "below", title: "Back to board", text: "Press this again to head back to the board." },
+    ],
+  },
+
+  call: {
+    id: "call",
+    steps: [
+      { target: "agent-call", side: "below", title: "Call an agent", text: "Tap the phone to talk with this agent by voice. Same powers as typing, hands free." },
+      { target: "call-bar", side: "below", title: "On the call", text: "Everyone on the call shows here, and the one answering lights up. Say \"get the Reviewer in\" or tap + to bring someone in, and \"hello everyone\" to hear from all." },
     ],
   },
 };
