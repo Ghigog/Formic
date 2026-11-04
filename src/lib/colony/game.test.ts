@@ -14,6 +14,9 @@ import {
   isSquashed,
   levelOf,
   nextUnlock,
+  FEATURE_UNLOCKS,
+  featureUnlocked,
+  featuresAt,
   goldenBellsEarned,
   goldenBellsLeft,
   queensEarned,
@@ -77,8 +80,8 @@ describe("levels", () => {
     expect(goldenBellsLeft(12, 5)).toBe(0);
   });
 
-  it("unlocks one thing at every level from 2 to 34, two at Lv 5 with the golden bell", () => {
-    for (let lv = 2; lv <= MAX_UNLOCK_LEVEL; lv++) expect(unlocksAt(lv)).toHaveLength(lv === 5 ? 2 : 1);
+  it("unlocks something at every level from 2 to 34", () => {
+    for (let lv = 2; lv <= MAX_UNLOCK_LEVEL; lv++) expect(unlocksAt(lv).length).toBeGreaterThan(0);
     expect(unlocksAt(MAX_UNLOCK_LEVEL + 1)).toEqual([]);
   });
 
@@ -87,11 +90,32 @@ describe("levels", () => {
     expect(at6).toHaveLength(1);
     expect(unlocksAt(6)).toEqual(at6);
     expect(unlocksAt(1)).toEqual(["Ant", "Umber"]);
-    expect(unlocksAt(2)).toEqual(["Tester"]);
+    expect(unlocksAt(2)).toEqual(["Tester", "Sentinels"]);
     expect(unlocksAt(11)).toEqual(["Caterpillar"]);
     expect(unlocksAt(24)).toEqual(["Bumblebee"]);
     expect(unlocksAt(27)).toEqual(["Auto-scout"]);
     expect(unlocksAt(31)).toEqual(["Mosquito"]);
+  });
+
+  it("keeps features locked below their level and names them where they unlock", () => {
+    for (const f of FEATURE_UNLOCKS) expect(featureUnlocked(f.key, 1)).toBe(false);
+    expect(featureUnlocked("sentinels", 2)).toBe(true);
+    expect(featureUnlocked("timeline", 9)).toBe(false);
+    expect(featureUnlocked("timeline", 10)).toBe(true);
+    expect(featureUnlocked("kpis", 19)).toBe(false);
+    expect(featureUnlocked("kpis", 20)).toBe(true);
+    expect(unlocksAt(2)).toContain("Sentinels");
+    expect(unlocksAt(10)).toContain("Timeline");
+    expect(unlocksAt(15)).toContain("Calls");
+    expect(unlocksAt(20)).toContain("KPIs");
+    expect(nextUnlock(9)?.level).toBe(10);
+    expect(nextUnlock(9)?.labels).toContain("Timeline");
+  });
+
+  it("lists features in level order for reveal and replay", () => {
+    expect(FEATURE_UNLOCKS.map((f) => f.key)).toEqual(["sentinels", "timeline", "calls", "kpis"]);
+    expect(featuresAt(15)).toEqual(["calls"]);
+    expect(featuresAt(3)).toEqual([]);
   });
 
   it("checks a saved style against the level", () => {
@@ -101,7 +125,7 @@ describe("levels", () => {
   });
 
   it("says what the next unlock is", () => {
-    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Tester"] });
+    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Tester", "Sentinels"] });
     expect(nextUnlock(4)).toEqual({ level: 5, labels: ["Crimson", "a golden bell every 5 levels"] });
     expect(nextUnlock(33)).toEqual({ level: 34, labels: ["Sales"] });
     expect(nextUnlock(34)).toBeNull();

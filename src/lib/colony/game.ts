@@ -119,7 +119,32 @@ export const SENTINEL_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: n
   lv: s.unlockLevel,
 }));
 
-const ALL_UNLOCKS = [...SHAPE_UNLOCKS, ...COLOR_UNLOCKS, ...SENTINEL_UNLOCKS, ...COLONY_UNLOCKS];
+/**
+ * The board features that stay hidden until the colony reaches their level, in
+ * level order. General chat and the points, with heat, are always on, so they
+ * are not here.
+ */
+export const FEATURE_UNLOCKS = [
+  { key: "sentinels", label: "Sentinels", lv: 2 },
+  { key: "timeline", label: "Timeline", lv: 10 },
+  { key: "calls", label: "Calls", lv: 15 },
+  { key: "kpis", label: "KPIs", lv: 20 },
+] as const;
+
+export type FeatureKey = (typeof FEATURE_UNLOCKS)[number]["key"];
+
+/** Whether a board at this level has the feature. */
+export function featureUnlocked(feature: FeatureKey, level: number): boolean {
+  const f = FEATURE_UNLOCKS.find((u) => u.key === feature);
+  return Boolean(f && f.lv <= level);
+}
+
+/** The features that arrive at exactly this level. */
+export function featuresAt(level: number): FeatureKey[] {
+  return FEATURE_UNLOCKS.filter((u) => u.lv === level).map((u) => u.key);
+}
+
+const ALL_UNLOCKS = [...SHAPE_UNLOCKS, ...COLOR_UNLOCKS, ...SENTINEL_UNLOCKS, ...COLONY_UNLOCKS, ...FEATURE_UNLOCKS];
 
 export function levelOf(xp: number): number {
   return Math.floor(Math.max(0, xp) / XP_PER_LEVEL) + 1;
