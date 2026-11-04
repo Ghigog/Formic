@@ -59,7 +59,7 @@ export const onRequestError: Instrumentation.onRequestError = async (error, _req
  * once, the first time a real database comes up with zero epics in it. Never
  * touches a database that already has content, so real work created later is
  * never at risk from this running again on the next restart. Skipped in
- * production and GitHub mode unless FORMIC_SEED_DEMO=1 (see demoSeedAllowed).
+ * production and accounts mode unless FORMIC_SEED_DEMO=1 (see demoSeedAllowed).
  */
 async function seedIfEmpty(): Promise<void> {
   const { hasDatabase, prisma } = await import("@/lib/db/client");

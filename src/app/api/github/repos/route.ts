@@ -1,6 +1,6 @@
 import { currentUser } from "@/lib/auth/user";
 import { credentialsFor } from "@/lib/auth/credentials";
-import { installUrl } from "@/lib/auth/github";
+import { installUrl, isGithubLinked } from "@/lib/auth/github";
 import { authMode } from "@/lib/auth/session";
 import { NextRequest } from "next/server";
 import { z } from "zod";
@@ -20,8 +20,10 @@ export async function GET() {
     return Response.json({
       ok: false,
       reason:
-        authMode() === "github"
-          ? "Your GitHub sign-in has lapsed. Sign out and back in."
+        authMode() === "accounts"
+          ? isGithubLinked(user)
+            ? "Your GitHub connection has lapsed. Reconnect GitHub in Settings."
+            : "Connect GitHub to list your repositories."
           : "Set GITHUB_TOKEN to list your repositories. You can still type owner/repo.",
       installUrl: install,
     });

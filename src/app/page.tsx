@@ -17,7 +17,7 @@ export default async function BoardPage() {
     login: user.login,
     name: user.name,
     avatarUrl: user.avatarUrl,
-    signedIn: authMode() === "github",
+    signedIn: authMode() === "accounts",
   };
 
   const project = await activeProject();

@@ -1539,6 +1539,68 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("email accounts and sign-in links", () => {
+      const email = () => `p-${randomUUID()}@example.com`;
+      const githubId = () => Math.floor(Math.random() * 2 ** 31);
+
+      it("creates an email account with no GitHub, and finds it by address in any case", async () => {
+        const address = email();
+        const user = await repo.createEmailUser({ email: address.toUpperCase(), login: "p" });
+        expect(user).toMatchObject({ email: address, githubId: null, login: "p" });
+        expect(user.emailVerifiedAt).toBeInstanceOf(Date);
+        expect((await repo.userByEmail(address.toUpperCase()))?.id).toBe(user.id);
+      });
+
+      it("refuses a second account on the same address", async () => {
+        const address = email();
+        await repo.createEmailUser({ email: address, login: "p" });
+        await expect(repo.createEmailUser({ email: address, login: "q" })).rejects.toThrow();
+      });
+
+      it("links GitHub to an email account, refuses it for a second, and unlinks it", async () => {
+        const ana = await repo.createEmailUser({ email: email(), login: "ana" });
+        const bo = await repo.createEmailUser({ email: email(), login: "bo" });
+        const id = githubId();
+        const linked = await repo.linkGithub(ana.id, { githubId: id, login: `gh-${id}`, name: "Ana", avatarUrl: "https://a" });
+        expect(linked).toMatchObject({ githubId: id, login: `gh-${id}`, name: "Ana", avatarUrl: "https://a" });
+        expect((await repo.userByGithubId(id))?.id).toBe(ana.id);
+        await expect(repo.linkGithub(bo.id, { githubId: id, login: "x", name: null, avatarUrl: null })).rejects.toThrow();
+
+        await repo.updateUser(ana.id, { githubTokenCipher: "c", githubRefreshCipher: "r" });
+        const unlinked = await repo.unlinkGithub(ana.id);
+        expect(unlinked).toMatchObject({ githubId: null, githubTokenCipher: null, githubRefreshCipher: null, email: ana.email });
+        expect(await repo.userByGithubId(id)).toBeNull();
+      });
+
+      it("spends a sign-in link once, even when two spends race", async () => {
+        const tokenHash = randomUUID();
+        const address = email();
+        await repo.createLoginToken({ email: address, tokenHash, next: "/board", ip: null, expiresAt: new Date(Date.now() + 60_000) });
+        const [a, b] = await Promise.all([repo.spendLoginToken(tokenHash, new Date()), repo.spendLoginToken(tokenHash, new Date())]);
+        expect([a, b].filter(Boolean)).toEqual([{ email: address, next: "/board" }]);
+        expect(await repo.spendLoginToken(tokenHash, new Date())).toBeNull();
+      });
+
+      it("will not spend an expired or unknown link", async () => {
+        const tokenHash = randomUUID();
+        await repo.createLoginToken({ email: email(), tokenHash, next: "/", ip: null, expiresAt: new Date(Date.now() - 1) });
+        expect(await repo.spendLoginToken(tokenHash, new Date())).toBeNull();
+        expect(await repo.spendLoginToken(randomUUID(), new Date())).toBeNull();
+      });
+
+      it("counts recent links by address and by IP", async () => {
+        const address = email();
+        const ip = `10.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.1`;
+        const since = new Date(Date.now() - 1000);
+        const expiresAt = new Date(Date.now() + 60_000);
+        await repo.createLoginToken({ email: address, tokenHash: randomUUID(), next: "/", ip, expiresAt });
+        await repo.createLoginToken({ email: email(), tokenHash: randomUUID(), next: "/", ip, expiresAt });
+        expect(await repo.countLoginTokens({ email: address.toUpperCase() }, since)).toBe(1);
+        expect(await repo.countLoginTokens({ ip }, since)).toBe(2);
+        expect(await repo.countLoginTokens({ ip }, new Date(Date.now() + 60_000))).toBe(0);
+      });
+    });
+
     describe("webhook deliveries", () => {
       it("claims a delivery once", async () => {
         const key = `delivery-${randomUUID()}`;

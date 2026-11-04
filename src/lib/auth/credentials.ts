@@ -4,15 +4,15 @@ import { repository } from "@/lib/db";
 import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
 import { env } from "@/lib/secrets/env";
 import { open } from "@/lib/secrets/vault";
-import { githubTokenFor } from "./github";
+import { githubTokenFor, isGithubLinked } from "./github";
 import { authMode } from "./session";
 import { actingUserId } from "./actor";
 
 /**
  * Whose keys a piece of work runs on.
  *
- * Signed in with GitHub, GitHub access is always the person's own token and
- * never the server's: falling back to a server token would let anyone who
+ * With accounts, GitHub access is always the person's own token and never
+ * the server's, and someone who has not connected GitHub has none: falling back to a server token would let anyone who
  * can sign in act with the operator's access. E2B falls back to the server's
  * key when set, which is the operator choosing to pay for sandboxes.
  *
@@ -40,8 +40,10 @@ export async function credentialsFor(user: UserRecord | null): Promise<Credentia
     };
   };
 
-  if (authMode() === "github" && user && user.githubId !== 0) {
-    const githubToken = await githubTokenFor(user);
+  // With accounts, GitHub is only ever the person's own. Someone who signed in
+  // by email and never connected GitHub has none: never the server's token.
+  if (authMode() === "accounts") {
+    const githubToken = user && isGithubLinked(user) ? await githubTokenFor(user) : null;
     return {
       githubToken,
       githubTokenKind: githubToken ? "app" : null,
@@ -65,7 +67,7 @@ export async function credentialsForProject(project: ProjectSummary): Promise<Cr
   const repo = repository();
   const owner = project.ownerId ? await repo.userById(project.ownerId) : null;
   const actorId = actingUserId();
-  if (!actorId || actorId === project.ownerId || authMode() !== "github") return credentialsFor(owner);
+  if (!actorId || actorId === project.ownerId || authMode() !== "accounts") return credentialsFor(owner);
   const member = await repo.userById(actorId);
   if (!member) return credentialsFor(owner);
   const own = await credentialsFor(member);

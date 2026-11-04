@@ -17,7 +17,7 @@ import { ownerScope } from "@/lib/auth/user";
 
 /** Whether this person is a member of the board, not its owner. */
 function memberOf(project: ProjectSummary, user: UserRecord): boolean {
-  return authMode() === "github" && project.ownerId !== null && project.ownerId !== user.id;
+  return authMode() === "accounts" && project.ownerId !== null && project.ownerId !== user.id;
 }
 
 export interface AgentView {

@@ -44,12 +44,12 @@ export default async function SettingsPage() {
         login: user.login,
         name: user.name,
         avatarUrl: user.avatarUrl,
-        signedIn: authMode() === "github",
+        signedIn: authMode() === "accounts",
       }}
       installUrl={installUrl()}
       project={project}
       presets={(await repository().listPresets(ownerScope(user))).map(({ id, name }) => ({ id, name }))}
-      // Local mode only: GitHub mode's credential is the sign-in itself.
+      // Local mode only: with accounts, GitHub is each person's own connection.
       github={
         authMode() === "local"
           ? { hint: config.GITHUB_TOKEN ? hintFor(config.GITHUB_TOKEN) : null }

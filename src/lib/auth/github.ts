@@ -17,6 +17,14 @@ const API = "https://api.github.com";
 /** Refresh this long before expiry, so a token never dies mid-request. */
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
+/**
+ * Whether this person has a GitHub account connected. The local user's
+ * githubId is 0 and someone who signed in by email has none.
+ */
+export function isGithubLinked(user: Pick<UserRecord, "githubId">): boolean {
+  return user.githubId !== null && user.githubId !== 0;
+}
+
 export function appConfig() {
   const clientId = process.env.GITHUB_APP_CLIENT_ID;
   const clientSecret = process.env.GITHUB_APP_CLIENT_SECRET;
@@ -111,16 +119,32 @@ export async function fetchProfile(token: string): Promise<GithubProfile> {
 }
 
 /**
- * FORMIC_ALLOWED_USERS, when set, is the only people who may sign in. Quotes
- * are dropped: `""` pasted from .env.example into a host's settings means
- * empty, not a list with one user called `""`.
+ * FORMIC_ALLOWED_USERS, when set, is the only people who may sign in: GitHub
+ * logins and email addresses, comma separated. Unset or empty lets anyone
+ * in. Quotes are dropped: `""` pasted from .env.example into a host's
+ * settings means empty, not a list with one user called `""`.
  */
-export function isAllowed(login: string): boolean {
-  const list = (process.env.FORMIC_ALLOWED_USERS ?? "")
+function allowList(): string[] {
+  return (process.env.FORMIC_ALLOWED_USERS ?? "")
     .split(",")
     .map((s) => s.replace(/["']/g, "").trim().toLowerCase())
     .filter(Boolean);
-  return list.length === 0 || list.includes(login.toLowerCase());
+}
+
+/** Whether a GitHub login, or an email address, may sign in. */
+export function isAllowed(loginOrEmail: string): boolean {
+  const list = allowList();
+  return list.length === 0 || list.includes(loginOrEmail.toLowerCase());
+}
+
+/**
+ * Whether this person may be signed in. A login only counts when it is a
+ * real GitHub one: an email account's handle is made up from its address,
+ * and must not match someone's GitHub login on the list.
+ */
+export function isUserAllowed(user: Pick<UserRecord, "githubId" | "login" | "email">): boolean {
+  if (allowList().length === 0) return true;
+  return (isGithubLinked(user) && isAllowed(user.login)) || (!!user.email && isAllowed(user.email));
 }
 
 export async function storeTokens(userId: string, tokens: TokenSet): Promise<UserRecord> {

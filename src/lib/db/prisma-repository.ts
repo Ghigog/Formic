@@ -18,6 +18,7 @@ import type {
   TicketChange,
   TicketColumnEntry,
   GithubProfile,
+  NewLoginToken,
   OwnerScope,
   PresetRecord,
   ProjectSummary,
@@ -367,6 +368,67 @@ export class PrismaRepository implements Repository {
       where: { githubId },
       create: profile,
       update: rest,
+    });
+  }
+
+  async userByEmail(email: string): Promise<UserRecord | null> {
+    return prisma().user.findUnique({ where: { email: email.toLowerCase() } });
+  }
+
+  async userByGithubId(githubId: number): Promise<UserRecord | null> {
+    return prisma().user.findUnique({ where: { githubId } });
+  }
+
+  async createEmailUser(user: { email: string; login: string }): Promise<UserRecord> {
+    return prisma().user.create({
+      data: { email: user.email.toLowerCase(), emailVerifiedAt: new Date(), login: user.login },
+    });
+  }
+
+  async linkGithub(userId: string, profile: GithubProfile): Promise<UserRecord> {
+    const db = prisma();
+    const current = await db.user.findUniqueOrThrow({ where: { id: userId } });
+    return db.user.update({
+      where: { id: userId },
+      data: { ...profile, name: current.name ?? profile.name },
+    });
+  }
+
+  async unlinkGithub(userId: string): Promise<UserRecord> {
+    return prisma().user.update({
+      where: { id: userId },
+      data: {
+        githubId: null,
+        githubTokenCipher: null,
+        githubTokenExpiresAt: null,
+        githubRefreshCipher: null,
+        githubRefreshExpiresAt: null,
+      },
+    });
+  }
+
+  async createLoginToken(token: NewLoginToken): Promise<void> {
+    await prisma().loginToken.create({ data: { ...token, email: token.email.toLowerCase() } });
+  }
+
+  async spendLoginToken(tokenHash: string, now: Date): Promise<{ email: string; next: string } | null> {
+    const db = prisma();
+    // One conditional update: of two concurrent spends, only one matches a row.
+    const spent = await db.loginToken.updateMany({
+      where: { tokenHash, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    if (spent.count !== 1) return null;
+    const token = await db.loginToken.findUnique({ where: { tokenHash }, select: { email: true, next: true } });
+    return token;
+  }
+
+  async countLoginTokens(by: { email: string } | { ip: string }, since: Date): Promise<number> {
+    return prisma().loginToken.count({
+      where: {
+        createdAt: { gte: since },
+        ...("email" in by ? { email: by.email.toLowerCase() } : { ip: by.ip }),
+      },
     });
   }
 

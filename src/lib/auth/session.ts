@@ -3,12 +3,14 @@
  *
  * Two modes, chosen by configuration:
  *
- *  - github: GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET are set.
- *    Everyone signs in with GitHub, and the session cookie names their user,
- *    signed with FORMIC_SECRET.
- *  - local: no GitHub App. One implicit user, no sign-in, which is how the
- *    app runs on a laptop and in tests. FORMIC_PASSWORD, if set, still puts
- *    a shared password in front of it.
+ *  - accounts: email sign-in (src/lib/auth/mailer.ts) or a GitHub App is
+ *    configured. Everyone signs in as themselves, by an emailed link or with
+ *    GitHub, and the session cookie names their user, signed with
+ *    FORMIC_SECRET. Signing in never needs GitHub when email is set up:
+ *    GitHub is then something a person connects later, for repositories.
+ *  - local: neither. One implicit user, no sign-in, which is how the app
+ *    runs on a laptop and in tests. FORMIC_PASSWORD, if set, still puts a
+ *    shared password in front of it.
  *
  * Web Crypto only, so the proxy and route handlers share this file.
  */
@@ -17,12 +19,25 @@ export const SESSION_COOKIE = "formic_session";
 /** Thirty days. A GitHub token behind it refreshes on its own. */
 export const SESSION_MAX_AGE_S = 30 * 24 * 60 * 60;
 
-export type AuthMode = "github" | "local";
+export type AuthMode = "accounts" | "local";
 
+/** Whether people can sign in with the GitHub App. */
+export function githubSignIn(): boolean {
+  return !!(process.env.GITHUB_APP_CLIENT_ID && process.env.GITHUB_APP_CLIENT_SECRET);
+}
+
+/**
+ * Whether people can sign in with an emailed link: Resend is configured, or
+ * FORMIC_MAILER=console prints links to the server log (development, e2e).
+ */
+export function emailSignIn(): boolean {
+  if (process.env.FORMIC_MAILER === "console") return true;
+  return !!(process.env.RESEND_API_KEY && process.env.FORMIC_EMAIL_FROM);
+}
+
+/** Per-person accounts when any way of signing in as a person is configured. */
 export function authMode(): AuthMode {
-  return process.env.GITHUB_APP_CLIENT_ID && process.env.GITHUB_APP_CLIENT_SECRET
-    ? "github"
-    : "local";
+  return githubSignIn() || emailSignIn() ? "accounts" : "local";
 }
 
 export function gatePassword(): string | null {
@@ -40,26 +55,26 @@ export function signingSecret(): string {
   );
 }
 
-/** GitHub mode signs sessions people can't get any other way, so the secret has to be a real one. */
-const MIN_GITHUB_SECRET_BYTES = 32;
+/** Accounts mode signs sessions people can't get any other way, so the secret has to be a real one. */
+const MIN_SECRET_BYTES = 32;
 
 /**
- * Why GitHub sign-in can't run right now, or null when it can.
+ * Why sign-in can't run right now, or null when it can.
  *
  * Local mode always returns null: nobody it would protect exists, since
- * there's one implicit user and no forgeable session. In GitHub mode, a
+ * there's one implicit user and no forgeable session. In accounts mode, a
  * missing or short FORMIC_SECRET would leave `signingSecret()` falling back
  * to the database URL (or a fixed string), which anyone who can read the
  * database connection string, or the source, could sign sessions with.
  */
 export function secretProblem(): string | null {
-  if (authMode() !== "github") return null;
+  if (authMode() !== "accounts") return null;
   const secret = process.env.FORMIC_SECRET;
   if (!secret) {
-    return "FORMIC_SECRET is not set. GitHub sign-in is disabled until it is: without it, sessions would be signed with the database URL, which anyone who can read it could forge.";
+    return "FORMIC_SECRET is not set. Sign-in is disabled until it is: without it, sessions would be signed with the database URL, which anyone who can read it could forge.";
   }
-  if (new TextEncoder().encode(secret).length < MIN_GITHUB_SECRET_BYTES) {
-    return `FORMIC_SECRET is shorter than ${MIN_GITHUB_SECRET_BYTES} bytes. GitHub sign-in is disabled until it is at least that long.`;
+  if (new TextEncoder().encode(secret).length < MIN_SECRET_BYTES) {
+    return `FORMIC_SECRET is shorter than ${MIN_SECRET_BYTES} bytes. Sign-in is disabled until it is at least that long.`;
   }
   return null;
 }
@@ -92,7 +107,7 @@ export async function passwordToken(password: string): Promise<string> {
 }
 
 /**
- * GitHub mode's per-user session: `<userId>.<version>.<expiry>.<signature>`.
+ * Accounts mode's per-user session: `<userId>.<version>.<expiry>.<signature>`.
  * The version is the user's sessionVersion when this was issued; the caller
  * compares it with the current one, so signing out can end a copied cookie.
  */

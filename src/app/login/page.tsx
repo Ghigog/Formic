@@ -10,7 +10,7 @@ export default async function LoginPage({
 }) {
   const { next: rawNext, error } = await searchParams;
   const next = safeNext(rawNext);
-  const github = authMode() === "github";
+  const github = authMode() === "accounts";
   const problem = github ? secretProblem() : null;
 
   return (

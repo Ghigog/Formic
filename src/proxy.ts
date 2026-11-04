@@ -115,7 +115,7 @@ async function gate(req: NextRequest, next: () => NextResponse): Promise<NextRes
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
   let user: UserRecord | null = null;
   let allowed: boolean;
-  if (authMode() === "github") {
+  if (authMode() === "accounts") {
     user = await userForSession(cookie);
     allowed = user !== null;
   } else {

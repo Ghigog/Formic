@@ -15,6 +15,7 @@ import type {
   TicketChange,
   TicketColumnEntry,
   GithubProfile,
+  NewLoginToken,
   OwnerScope,
   PresetRecord,
   ProjectSummary,
@@ -193,6 +194,8 @@ interface Store {
   /** endpoint to the subscription and the person it belongs to. */
   pushSubscriptions: Map<string, PushSubscriptionRecord & { userId: string }>;
   accessTokens: Map<string, AccessTokenRecord>;
+  /** Sign-in links by token hash. */
+  loginTokens: Map<string, NewLoginToken & { usedAt: Date | null; createdAt: Date }>;
   /** `${projectId}:${column}` to preset id. */
   columnAgents: Map<string, string>;
   /** `${projectId}:${column}` to that column agent's override. */
@@ -227,6 +230,7 @@ function store(): Store {
     existing.users ??= new Map();
     existing.pushSubscriptions ??= new Map();
     existing.accessTokens ??= new Map();
+    existing.loginTokens ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
     existing.queens ??= new Map();
@@ -293,6 +297,7 @@ function store(): Store {
     users: new Map(),
     pushSubscriptions: new Map(),
     accessTokens: new Map(),
+    loginTokens: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
     members: new Set(),
@@ -416,9 +421,80 @@ export class MemoryRepository implements Repository {
       Object.assign(found, profile);
       return found;
     }
+    return this.newUser({ ...profile, email: null, emailVerifiedAt: null });
+  }
+
+  async userByEmail(email: string): Promise<UserRecord | null> {
+    return [...store().users.values()].find((u) => u.email === email.toLowerCase()) ?? null;
+  }
+
+  async userByGithubId(githubId: number): Promise<UserRecord | null> {
+    return [...store().users.values()].find((u) => u.githubId === githubId) ?? null;
+  }
+
+  async createEmailUser(user: { email: string; login: string }): Promise<UserRecord> {
+    const email = user.email.toLowerCase();
+    if (await this.userByEmail(email)) throw new Error(`A user with email ${email} already exists.`);
+    return this.newUser({
+      githubId: null,
+      email,
+      emailVerifiedAt: new Date(),
+      login: user.login,
+      name: null,
+      avatarUrl: null,
+    });
+  }
+
+  async linkGithub(userId: string, profile: GithubProfile): Promise<UserRecord> {
+    const s = store();
+    const user = s.users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    const taken = [...s.users.values()].find((u) => u.githubId === profile.githubId && u.id !== userId);
+    if (taken) throw new Error(`GitHub account ${profile.githubId} is already linked to another user.`);
+    Object.assign(user, profile, { name: user.name ?? profile.name });
+    return user;
+  }
+
+  async unlinkGithub(userId: string): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    Object.assign(user, {
+      githubId: null,
+      githubTokenCipher: null,
+      githubTokenExpiresAt: null,
+      githubRefreshCipher: null,
+      githubRefreshExpiresAt: null,
+    });
+    return user;
+  }
+
+  async createLoginToken(token: NewLoginToken): Promise<void> {
+    const s = store();
+    s.loginTokens.set(token.tokenHash, { ...token, email: token.email.toLowerCase(), usedAt: null, createdAt: new Date() });
+  }
+
+  async spendLoginToken(tokenHash: string, now: Date): Promise<{ email: string; next: string } | null> {
+    const found = store().loginTokens.get(tokenHash);
+    if (!found || found.usedAt || found.expiresAt.getTime() <= now.getTime()) return null;
+    found.usedAt = now;
+    return { email: found.email, next: found.next };
+  }
+
+  async countLoginTokens(by: { email: string } | { ip: string }, since: Date): Promise<number> {
+    return [...store().loginTokens.values()].filter(
+      (t) =>
+        t.createdAt.getTime() >= since.getTime() &&
+        ("email" in by ? t.email === by.email.toLowerCase() : t.ip === by.ip),
+    ).length;
+  }
+
+  private newUser(
+    identity: Pick<UserRecord, "githubId" | "email" | "emailVerifiedAt" | "login" | "name" | "avatarUrl">,
+  ): UserRecord {
+    const s = store();
     const user: UserRecord = {
       id: id("user"),
-      ...profile,
+      ...identity,
       githubTokenCipher: null,
       githubTokenExpiresAt: null,
       githubRefreshCipher: null,

@@ -542,7 +542,11 @@ export interface PushPreferences {
 /** A person, with their credentials still sealed. */
 export interface UserRecord {
   id: string;
-  githubId: number;
+  /** Null until the person connects GitHub. The local user's is 0. */
+  githubId: number | null;
+  /** Lowercased. Null for someone who has only signed in with GitHub. */
+  email: string | null;
+  emailVerifiedAt: Date | null;
   login: string;
   name: string | null;
   avatarUrl: string | null;
@@ -621,6 +625,15 @@ export interface GithubProfile {
   login: string;
   name: string | null;
   avatarUrl: string | null;
+}
+
+/** A one-time emailed sign-in link, as stored: only its hash. */
+export interface NewLoginToken {
+  email: string;
+  tokenHash: string;
+  next: string;
+  ip: string | null;
+  expiresAt: Date;
 }
 
 /** A preset as stored. The key arrives here already sealed. */
@@ -771,6 +784,26 @@ export interface UserRepository {
   userById(userId: string): Promise<UserRecord | null>;
   /** Creates or refreshes someone from their GitHub profile. */
   upsertUser(profile: GithubProfile): Promise<UserRecord>;
+  /** Someone by their (lowercased) email address. */
+  userByEmail(email: string): Promise<UserRecord | null>;
+  /** Someone by their GitHub account id. */
+  userByGithubId(githubId: number): Promise<UserRecord | null>;
+  /** Creates someone who signed in by email, verified now. */
+  createEmailUser(user: { email: string; login: string }): Promise<UserRecord>;
+  /** Attaches a GitHub account to an existing person, refreshing login, name and avatar from it. */
+  linkGithub(userId: string, profile: GithubProfile): Promise<UserRecord>;
+  /** Detaches GitHub: clears the GitHub id and every GitHub token. */
+  unlinkGithub(userId: string): Promise<UserRecord>;
+  /** Stores a sign-in link's hash. */
+  createLoginToken(token: NewLoginToken): Promise<void>;
+  /**
+   * Spends a sign-in link: marks it used and returns its email and next path,
+   * or null when it is unknown, expired or already used. Atomic, so two
+   * concurrent spends of one link sign in at most once.
+   */
+  spendLoginToken(tokenHash: string, now: Date): Promise<{ email: string; next: string } | null>;
+  /** How many sign-in links were sent to this address, or from this IP, since `since`. */
+  countLoginTokens(by: { email: string } | { ip: string }, since: Date): Promise<number>;
   updateUser(userId: string, secrets: UserSecrets): Promise<UserRecord>;
   updateRunTimeBudget(userId: string, columns: RunTimeBudgetColumns): Promise<UserRecord>;
   updateLimits(userId: string, columns: LimitColumns): Promise<UserRecord>;

@@ -6,6 +6,8 @@ function user(termsAcceptedVersion: string | null): UserRecord {
   return {
     id: "u1",
     githubId: 1,
+    email: null,
+    emailVerifiedAt: null,
     login: "octo",
     name: null,
     avatarUrl: null,
