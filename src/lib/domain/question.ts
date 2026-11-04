@@ -89,9 +89,16 @@ export function askedIn(reason: string): string {
   return list || lines[0]!.slice(QUESTION_LINE.length).trim();
 }
 
+/** How the PM's own answer to an agent's question starts, so it is never taken for the person's words. */
+export const PM_ANSWER_PREFIX = "From the PM: ";
+
 /** The note an answer becomes, so the agent that asked reads both together. */
 export function answerNote(reason: string, answer: string): string {
-  return `You asked the person:\n${askedIn(reason)}\n\nThey answered: ${answer.trim()}`;
+  const text = answer.trim();
+  if (text.startsWith(PM_ANSWER_PREFIX)) {
+    return `You asked the person:\n${askedIn(reason)}\n\nThe PM answered for them, from what they already asked for: ${text.slice(PM_ANSWER_PREFIX.length).trim()}`;
+  }
+  return `You asked the person:\n${askedIn(reason)}\n\nThey answered: ${text}`;
 }
 
 /** What an asking agent says in the card's chat: the questions in full, so they are read there and not in the warning. */
