@@ -164,4 +164,34 @@ describe("proxy, at the host allowance", () => {
     expect((await proxy(post("/api/webhooks/github"))).status).toBe(503);
     expect((await proxy(request("/api/health"))).headers.get("x-middleware-next")).toBe("1");
   });
+
+  describe("Content-Security-Policy", () => {
+    const scriptSrc = (res: Response) =>
+      res.headers.get("content-security-policy")!.split("; ").find((d) => d.startsWith("script-src"))!;
+
+    it("allows scripts only from self and a nonce in production", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      const src = scriptSrc(await proxy(request("/login")));
+      expect(src).toMatch(/^script-src 'self' 'nonce-[^']+' 'strict-dynamic'$/);
+      expect(src).not.toContain("unsafe-inline");
+      expect(src).not.toContain("unsafe-eval");
+    });
+
+    it("uses a different nonce on every request", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      expect(scriptSrc(await proxy(request("/login")))).not.toBe(scriptSrc(await proxy(request("/login"))));
+    });
+
+    it("lets next dev evaluate code", async () => {
+      vi.stubEnv("NODE_ENV", "development");
+      expect(scriptSrc(await proxy(request("/login")))).toContain("'unsafe-eval'");
+    });
+
+    it("is on redirects, 401s and open routes", async () => {
+      githubMode();
+      for (const path of ["/settings", "/api/board", "/login"]) {
+        expect((await proxy(request(path))).headers.get("content-security-policy")).toContain("script-src");
+      }
+    });
+  });
 });
