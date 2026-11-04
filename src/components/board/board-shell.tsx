@@ -27,6 +27,9 @@ import { provider, secretNameFor } from "@/lib/llm/providers";
 import type { AgentPreset, ColumnAgents, ColumnOverrides } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
+import type { AssistantControls } from "./assistant";
+import { CallProvider } from "@/components/call/call-provider";
+import { CallPill } from "@/components/call/call-pill";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyTimeline } from "@/components/colony/timeline";
 import { MeetingsMenu } from "@/components/meetings/meetings-menu";
@@ -208,8 +211,35 @@ export function BoardShell({
     keyless.push({ names: [preset.name], keyName: info.keyName, secretName });
   }
 
+  const assistantControls: AssistantControls = {
+      ...assistant,
+      questions: cards.filter((c) => isQuestion(c.blockedReason)).length,
+      waiting: cards
+        .filter((c) => isQuestion(c.blockedReason))
+        .map((c) => ({ id: c.id, key: c.key, title: c.title, question: firstQuestion(c.blockedReason!) })),
+      onOpenQuestion: (id) => {
+        const card = cards.find((c) => c.id === id);
+        if (card?.kind === "epic") setOpenEpicId(id);
+        else setOpenTicketId(id);
+      },
+      open: assistantOpen,
+      setOpen: openAssistant,
+      presets: agentState.presets,
+      // The PM's first agent sets the repository up, as a column's does:
+      // ask again so the setup pull request shows straight away.
+      setAgent: async (presetId) => {
+        await assistant.setAgent(presetId);
+        if (presetId) void runner.check();
+      },
+      onEdit: (preset) => {
+        setEditing({ column: "assistant", preset });
+        void agentState.refreshUsage();
+      },
+  };
+
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
+    <CallProvider assistant={assistantControls}>
     <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level} unlockAll={unlockAllSentinels}>
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
@@ -233,31 +263,7 @@ export function BoardShell({
         noCi={noCi}
         noSandboxKey={noSandboxKey}
         autoMerge={autoMerge}
-        assistant={{
-          ...assistant,
-          questions: cards.filter((c) => isQuestion(c.blockedReason)).length,
-          waiting: cards
-            .filter((c) => isQuestion(c.blockedReason))
-            .map((c) => ({ id: c.id, key: c.key, title: c.title, question: firstQuestion(c.blockedReason!) })),
-          onOpenQuestion: (id) => {
-            const card = cards.find((c) => c.id === id);
-            if (card?.kind === "epic") setOpenEpicId(id);
-            else setOpenTicketId(id);
-          },
-          open: assistantOpen,
-          setOpen: openAssistant,
-          presets: agentState.presets,
-          // The PM's first agent sets the repository up, as a column's does:
-          // ask again so the setup pull request shows straight away.
-          setAgent: async (presetId) => {
-            await assistant.setAgent(presetId);
-            if (presetId) void runner.check();
-          },
-          onEdit: (preset) => {
-            setEditing({ column: "assistant", preset });
-            void agentState.refreshUsage();
-          },
-        }}
+        assistant={assistantControls}
         agents={{
           presets: agentState.presets,
           columns: agentState.columns,
@@ -349,6 +355,7 @@ export function BoardShell({
       {projectId && <UnlockAllDialog projectId={projectId} unlockAll={unlockAllSentinels} />}
       <ColonyPopover onOpenArchive={() => setArchiveOpen(true)} />
       {archiveOpen && <ArchiveView onClose={() => setArchiveOpen(false)} onRestored={restore} />}
+      <CallPill assistant={assistantControls} />
       <ColonyToast />
       <RerouteToast toast={rerouteToast} />
       <EpicWinDialog onShowcase={(epic) => setOpenEpicId(epic.id)} />
@@ -363,6 +370,7 @@ export function BoardShell({
       )}
     </div>
     </SentinelsProvider>
+    </CallProvider>
     </ColonyProvider>
   );
 }
