@@ -2,7 +2,7 @@
 
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GRADES, levelOf, rankOf } from "@/lib/colony/game";
+import { GRADES, featureUnlocked, levelOf, rankOf } from "@/lib/colony/game";
 import {
   WINDOW_DAYS as N,
   TODAY,
@@ -1064,7 +1064,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
         </div>
 
         <div data-tour="timeline-kpis">
-          <KpiSection startAfterMs={KPI_REVEAL_DELAY_MS} />
+          <KpiSection unlocked={featureUnlocked("kpis", c.score.level)} startAfterMs={KPI_REVEAL_DELAY_MS} />
         </div>
       </div>
     </div>
