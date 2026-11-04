@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AutoTour, Tour, TourHost } from "./tour";
-import { endTour, hasSeen, replayTours, startTour } from "./store";
+import { endTour, hasSeen, offerTour, replayTours, startTour } from "./store";
 import { TOURS, type TourDef } from "./tours";
 import { AgentSelect } from "@/components/board/agent-select";
 import { speaks, syllable } from "./voice";
@@ -266,5 +266,49 @@ describe("the board tour", () => {
   it("says columns start with no agent", () => {
     const step = TOURS.board.steps.find((s) => s.title === "Column agents");
     expect(step?.text).toContain("start with no agent");
+  });
+});
+
+describe("the board tour and the feature intros", () => {
+  it("has no step about a feature that unlocks later", () => {
+    const later = /sentinel|timeline|calls?\b|meeting|kpi/i;
+    for (const s of TOURS.board.steps) {
+      expect(s.target).not.toMatch(later);
+      expect(`${s.title} ${s.text}`).not.toMatch(later);
+    }
+  });
+
+  it("leaves out a step whose button is not on the board yet", async () => {
+    target("column");
+    target("points");
+    render(<Tour def={TOURS.board} onEnd={() => {}} />);
+    await flush();
+    expect(screen.queryByRole("dialog", { name: "Tour: Timeline" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Tour: Sentinels" })).toBeNull();
+  });
+
+  it("starts the Timeline intro on its button and ends in the nest", async () => {
+    const intro = TOURS["timeline-intro"];
+    expect(intro.steps[0]?.target).toBe("timeline");
+    expect(intro.endInNest).toBe(true);
+    target("timeline");
+    target("colony");
+    const onEnd = vi.fn();
+    render(<Tour def={intro} onEnd={onEnd} />);
+    await flush();
+    expect(screen.getByRole("dialog", { name: "Tour: Timeline" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Got it" }));
+    await flush();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives each intro once per person, whichever board reaches the level", () => {
+    for (const id of ["sentinels-intro", "timeline-intro", "calls-intro", "kpis-intro"] as const) {
+      expect(offerTour(id)).toBe(true);
+      expect(hasSeen(id)).toBe(true);
+      act(() => endTour());
+      // A second board reaching the same level offers it again: not played.
+      expect(offerTour(id)).toBe(false);
+    }
   });
 });

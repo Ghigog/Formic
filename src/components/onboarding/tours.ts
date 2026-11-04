@@ -47,6 +47,10 @@ export type TourId =
   | "settings"
   | "timeline"
   | "sentinels"
+  | "sentinels-intro"
+  | "timeline-intro"
+  | "calls-intro"
+  | "kpis-intro"
   | "sentinel-report"
   | "chat"
   | "switch"
@@ -107,22 +111,10 @@ export const TOURS: Record<TourId, TourDef> = {
         text: "That's you. Your settings live in here.",
       },
       {
-        target: "timeline",
-        side: "below",
-        title: "Timeline",
-        text: "The timeline. Your epics laid out day by day, so you can see what shipped when.",
-      },
-      {
         target: "points",
         side: "below",
         title: "Points",
         text: "Points! Each merged ticket earns some, and quick merges in a row heat up for a bonus.",
-      },
-      {
-        target: "sentinels",
-        side: "below",
-        title: "Sentinels",
-        text: "The Sentinels. They audit your code and grade it. Your colony's level lives here too.",
       },
       {
         target: "chat",
@@ -148,6 +140,69 @@ export const TOURS: Record<TourId, TourDef> = {
         title: "One more thing…",
         next: "See you inside",
         text: "Oh! One more thing. Down here is the colony, where your ants live. It grows every time you ship. Each screen has its own little tour, and I'll be waiting there. Bye for now!",
+      },
+    ],
+  },
+
+  // Intros: given once per person, when a feature's button first appears. Each
+  // starts on the new button, says how it works and ends in the nest. The
+  // screens' own tours (below) still play the first time the screen opens.
+  "sentinels-intro": {
+    id: "sentinels-intro",
+    endInNest: true,
+    allThere: true,
+    steps: [
+      {
+        target: "sentinels",
+        side: "below",
+        title: "The Sentinels",
+        next: "Got it",
+        text: "Look what you unlocked! The level badge opens the Sentinels. They audit your code and grade it, and more of them join as your colony levels up. Tap it to meet them.",
+      },
+    ],
+  },
+
+  "timeline-intro": {
+    id: "timeline-intro",
+    endInNest: true,
+    allThere: true,
+    steps: [
+      {
+        target: "timeline",
+        side: "below",
+        title: "Timeline",
+        next: "Got it",
+        text: "A new button! The timeline lays your epics out day by day, so you can see what shipped when. Tap it to open, and tap it again to come back to the board.",
+      },
+    ],
+  },
+
+  "calls-intro": {
+    id: "calls-intro",
+    endInNest: true,
+    allThere: true,
+    steps: [
+      {
+        target: "meetings",
+        side: "below",
+        title: "Calls",
+        next: "Got it",
+        text: "Calls are open! Plan a meeting here with your agents, the PM, even Sentinels, then join when it is time and the call starts, hands free.",
+      },
+    ],
+  },
+
+  "kpis-intro": {
+    id: "kpis-intro",
+    endInNest: true,
+    allThere: true,
+    steps: [
+      {
+        target: "kpis",
+        side: "below",
+        title: "KPIs",
+        next: "Got it",
+        text: "KPIs are here! Your board's numbers: how fast work ships and how much comes back. Open them any time to see how the colony is doing.",
       },
     ],
   },
