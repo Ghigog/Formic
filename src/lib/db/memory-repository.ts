@@ -2067,12 +2067,14 @@ export class MemoryRepository implements Repository {
     role: "user" | "assistant";
     content: string;
     status?: AssistantMessage["status"];
+    speaker?: string;
   }): Promise<AssistantMessage> {
     const message: AssistantMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 10)}`,
       proposals: [],
       runnerJob: null,
       runnerAgent: null,
+      speaker: "assistant",
       createdAt: new Date(),
       ...input,
       status: input.status ?? "done",
@@ -2083,7 +2085,7 @@ export class MemoryRepository implements Repository {
 
   async updateAssistantMessage(
     id: string,
-    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob">>,
+    update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void> {
     const found = store().assistant.find((m) => m.id === id);
     if (found) Object.assign(found, update);

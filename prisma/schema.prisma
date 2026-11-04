@@ -702,6 +702,8 @@ model AssistantMessage {
   /// The preset that run was dispatched with, so a failure is blamed on the
   /// agent that actually ran it, not whichever one the assistant runs now.
   runnerAgent String?
+  /// Who a reply comes from: "assistant", a column role or "sentinel:<id>".
+  speaker     String   @default("assistant")
   createdAt   DateTime @default(now())
 
   @@index([projectId, createdAt])

@@ -1357,7 +1357,7 @@ function contract(name: string, make: () => Repository) {
         const kept = await repo.addAssistantMessage({ projectId: other.id, role: "user", content: "Other" });
 
         expect((await repo.assistantMessages(p.id)).map((m) => m.content)).toEqual(["Q", "A"]);
-        expect(await repo.assistantMessage(a.id)).toMatchObject({ id: a.id, role: "assistant", content: "A" });
+        expect(await repo.assistantMessage(a.id)).toMatchObject({ id: a.id, role: "assistant", content: "A", speaker: "assistant" });
         expect(await repo.assistantMessage(randomUUID())).toBeNull();
 
         await repo.clearAssistant(p.id);
@@ -1365,6 +1365,14 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.assistantMessages(p.id)).toEqual([]);
         expect(await repo.assistantMessage(q.id)).toBeNull();
         expect((await repo.assistantMessages(other.id)).map((m) => m.id)).toEqual([kept.id]);
+      });
+
+      it("keeps who each assistant reply is from, the assistant by default", async () => {
+        const p = await project();
+        const plain = await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "A" });
+        const spoken = await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "", status: "pending", speaker: "reviewer" });
+        expect(plain.speaker).toBe("assistant");
+        expect((await repo.assistantMessage(spoken.id))?.speaker).toBe("reviewer");
       });
 
       it("keeps a board's meetings with their agenda, guests and repeat, and drops them with the board", async () => {
