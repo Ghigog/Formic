@@ -53,7 +53,7 @@ async function open(level = 34) {
     <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
       <SentinelsProvider initial={states([SENTINELS[0]!.id, SENTINELS[3]!.id])} level={level}>
         <Open />
-        <SentinelsPage repoName="repo" />
+        <SentinelsPage repoName="repo" onOpenEpic={() => {}} />
       </SentinelsProvider>
     </ColonyProvider>,
   );
@@ -184,7 +184,7 @@ describe("Report: create epic", () => {
       <ColonyProvider storageKey="colony-test-sentinels-epic" cards={[]} extras={{}}>
         <SentinelsProvider initial={base} level={13}>
           <Open />
-          <SentinelsPage repoName="repo" />
+          <SentinelsPage repoName="repo" onOpenEpic={() => {}} />
         </SentinelsProvider>
       </ColonyProvider>,
     );
