@@ -868,6 +868,8 @@ export interface QueenRepository {
   setGoldenBellArmed(projectId: string, armed: boolean): Promise<void>;
   /** Spends the armed golden bell: counts it used and disarms it. Atomic; returns false when none was armed. */
   useGoldenBell(projectId: string): Promise<boolean>;
+  /** The projects whose golden bell is armed, for the bell's clock. */
+  armedGoldenBells(): Promise<string[]>;
 }
 
 /** Attachments. */

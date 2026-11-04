@@ -17,6 +17,7 @@ vi.stubEnv("POSTGRES_PRISMA_URL", "");
 vi.stubEnv("POSTGRES_URL", "");
 
 const { IDLE_AFTER_MS, resetIdleSweep, restartIdleCards, sweepIdleCards } = await import("./idle");
+const { ringDueBells } = await import("./bell");
 const { resetChatRecovery } = await import("@/lib/agents/recovery");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
@@ -245,7 +246,7 @@ describe("the golden bell", () => {
     resetIdleSweep();
     await restartIdleCards(PROJECT, reset + 62_000);
 
-    expect(started()).toEqual([`coder agent for ${card.key}, bell rung`]);
+    expect(started()).toEqual([`coder agent for ${card.key}, from its chat`]);
     expect(await repository().goldenBell(PROJECT)).toEqual({ used: 1, armed: false });
   });
 
@@ -257,6 +258,18 @@ describe("the golden bell", () => {
 
     expect(started()).toEqual([]);
     expect(await repository().goldenBell(PROJECT)).toEqual({ used: 0, armed: true });
+  });
+
+  it("rings from the server's own clock, with no board open", async () => {
+    const card = await stoppedByLimit();
+    await repository().setGoldenBellArmed(PROJECT, true);
+
+    expect(await ringDueBells(reset + 30_000)).toBe(0);
+    expect(await ringDueBells(reset + 61_000)).toBe(1);
+    expect(await ringDueBells(reset + 120_000)).toBe(0);
+
+    expect(started()).toEqual([`coder agent for ${card.key}, from its chat`]);
+    expect(await repository().goldenBell(PROJECT)).toEqual({ used: 1, armed: false });
   });
 
   it("sends nothing when the bell is not armed", async () => {

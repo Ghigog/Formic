@@ -583,6 +583,11 @@ export class PrismaRepository implements Repository {
     return count === 1;
   }
 
+  async armedGoldenBells(): Promise<string[]> {
+    const rows = await prisma().project.findMany({ where: { goldenBellArmed: true }, select: { id: true } });
+    return rows.map((r) => r.id);
+  }
+
   async queensSpent(projectId: string): Promise<number> {
     const project = await prisma().project.findUnique({ where: { id: projectId }, select: { queensSpent: true } });
     return project?.queensSpent ?? 0;

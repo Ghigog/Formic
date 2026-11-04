@@ -2,10 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BoardCard } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
 
-const { ask, columnChatAgentFor } = vi.hoisted(() => ({ ask: vi.fn(), columnChatAgentFor: vi.fn() }));
+const { applyCardAction, addNote, addEpicNote, columnChatAgentFor } = vi.hoisted(() => ({
+  applyCardAction: vi.fn(),
+  addNote: vi.fn(),
+  addEpicNote: vi.fn(),
+  columnChatAgentFor: vi.fn(),
+}));
 
-class ChatBusyError extends Error {}
-vi.mock("@/lib/agents/card-chat", () => ({ ask, ChatBusyError }));
+vi.mock("@/lib/agents/card-actions", () => ({ applyCardAction }));
+vi.mock("@/lib/coder/notes", () => ({ addNote }));
+vi.mock("@/lib/agents/epic-notes", () => ({ addEpicNote }));
 vi.mock("@/lib/agents/presets", () => ({ columnChatAgentFor }));
 
 const { MemoryRepository, seedMemory } = await import("@/lib/db/memory-repository");
@@ -49,33 +55,37 @@ seedMemory([
 ]);
 
 beforeEach(() => {
-  ask.mockReset().mockResolvedValue(undefined);
+  applyCardAction.mockReset().mockResolvedValue("Starting again.");
+  addNote.mockReset().mockResolvedValue(undefined);
+  addEpicNote.mockReset().mockResolvedValue(undefined);
   columnChatAgentFor.mockReset().mockResolvedValue({ kind: "api" });
 });
 
 describe("ringBell", () => {
-  it("sends the resume message to every card stopped by a usage limit", async () => {
+  it("starts the work again on every card stopped by a usage limit", async () => {
     expect(await ringBell(project)).toEqual({ sent: 2, skipped: 0 });
-    expect(ask.mock.calls.map((c) => [c[2], c[3]]).sort()).toEqual([
+    expect(applyCardAction.mock.calls.map((c) => [c[2], c[3]]).sort()).toEqual([
+      ["a", { type: "redo", instruction: MESSAGE }],
+      ["b", { type: "redo", instruction: MESSAGE }],
+    ]);
+  });
+
+  it("leaves the resume message on each card it starts", async () => {
+    await ringBell(project);
+    expect(addNote.mock.calls.map((c) => [c[1], c[2]]).sort()).toEqual([
       ["a", MESSAGE],
       ["b", MESSAGE],
     ]);
   });
 
-  it("skips a card whose agent is still limited and sends the rest", async () => {
+  it("skips a card whose agent is still limited and starts the rest", async () => {
     columnChatAgentFor.mockResolvedValueOnce({ kind: "limited", reason: "out" });
     expect(await ringBell(project)).toEqual({ sent: 1, skipped: 1 });
-    expect(ask).toHaveBeenCalledTimes(1);
-  });
-
-  it("skips a card whose chat is busy and carries on", async () => {
-    ask.mockRejectedValueOnce(new ChatBusyError());
-    expect(await ringBell(project)).toEqual({ sent: 1, skipped: 1 });
-    expect(ask).toHaveBeenCalledTimes(2);
+    expect(applyCardAction).toHaveBeenCalledTimes(1);
   });
 
   it("leaves cards stopped for other reasons alone", async () => {
     await ringBell(project);
-    expect(ask.mock.calls.map((c) => c[2])).not.toContain("credit");
+    expect(applyCardAction.mock.calls.map((c) => c[2])).not.toContain("credit");
   });
 });
