@@ -43,7 +43,7 @@ export function Tile({
       {children}
       <span
         {...valueData}
-        className="text-ink pointer-events-none col-start-1 row-start-1 flex items-center justify-center font-serif text-[26px] leading-none font-semibold"
+        className="text-ink pointer-events-none relative z-10 col-start-1 row-start-1 flex items-center justify-center font-serif text-[26px] leading-none font-semibold"
       >
         {value}
       </span>
