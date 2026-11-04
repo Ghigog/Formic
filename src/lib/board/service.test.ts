@@ -20,7 +20,7 @@ vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn(), stallTicket: vi
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
-const { advanceQueens, applyTransition, canRetryEpic, createBacklogItem, createTodoItem, deleteEpic, generateShowcase, retryEpic } = await import(
+const { advanceQueens, applyTransition, canRetryEpic, createBacklogItem, archiveEpic, createTodoItem, deleteEpic, restoreEpic, generateShowcase, retryEpic } = await import(
   "./service"
 );
 const { repository } = await import("@/lib/db");
@@ -553,6 +553,36 @@ describe("deleting an Epic", () => {
     expect(result).toMatchObject({ ok: false, status: 409 });
     expect(result.ok ? "" : result.reason).toContain(a!.key);
     expect(await repository().cardById(epic!.id)).not.toBeNull();
+  });
+});
+
+describe("archiving an Epic", () => {
+  it("takes its tickets off the board and restores only those, in their columns", async () => {
+    const [epic, a, b, own] = makeEpicWithChildren({ status: "ready" }, [{ status: "ready" }, { status: "waiting" }, {}]);
+    seedMemory([epic!, a!, b!, own!]);
+    const repo = repository();
+    await repo.updateTicket(own!.id, { archived: true });
+
+    expect(await archiveEpic(PROJECT, epic!.id)).toEqual({ ok: true });
+    expect(await repo.boardCards(PROJECT)).toEqual([]);
+    expect((await repo.archivedEpics(PROJECT)).map((c) => c.id)).toEqual([epic!.id]);
+
+    expect(await restoreEpic(PROJECT, epic!.id)).toEqual({ ok: true });
+    const board = await repo.boardCards(PROJECT);
+    expect(board.map((c) => c.id).sort()).toEqual([epic!.id, a!.id, b!.id].sort());
+    expect(board.find((c) => c.id === a!.id)).toMatchObject({ status: "ready" });
+    expect((await repo.archivedTickets(PROJECT)).map((c) => c.id)).toEqual([own!.id]);
+  });
+
+  it("refuses naming the running ticket, and archives nothing", async () => {
+    const [epic, a] = makeEpicWithChildren({ status: "ready" }, [{ status: "running" }]);
+    seedMemory([epic!, a!]);
+
+    const result = await archiveEpic(PROJECT, epic!.id);
+
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(result.ok ? "" : result.reason).toContain(a!.key);
+    expect((await repository().boardCards(PROJECT)).map((c) => c.id)).toContain(epic!.id);
   });
 });
 

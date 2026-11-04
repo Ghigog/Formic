@@ -228,9 +228,9 @@ async function closeCard(projectId: string, key: string): Promise<string> {
   const repo = repository();
   const card = await cardByKey(projectId, key);
   if (card.kind === "epic") {
-    const result = await boardPorts().service.deleteEpic(projectId, card.id);
+    const result = await boardPorts().service.archiveEpic(projectId, card.id);
     if (!result.ok) throw new Error(result.reason);
-    return `Closed ${key} and its tickets.`;
+    return `Archived ${key} and its tickets.`;
   }
   const ticket = await repo.ticketDetail(card.id);
   if (!ticket) throw new Error(`${key} is not on the board.`);

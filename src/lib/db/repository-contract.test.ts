@@ -1232,6 +1232,30 @@ function contract(name: string, make: () => Repository) {
         expect(board).not.toContain(a!.id);
       });
 
+      it("archives an Epic with its tickets and restores only those", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [a, b, own] = await repo.createTickets([
+          ticket(epic.id, "A-1"),
+          ticket(epic.id, "A-2", { position: 2 }),
+          ticket(epic.id, "A-3", { position: 3 }),
+        ]);
+        await repo.updateTicket(own!.id, { archived: true });
+
+        await repo.archiveEpic(epic.id);
+
+        expect((await repo.boardCards(p.id)).map((c) => c.id)).toEqual([]);
+        expect((await repo.archivedEpics(p.id)).map((c) => c.id)).toEqual([epic.id]);
+        expect((await repo.archivedTickets(p.id)).map((c) => c.id)).toEqual([own!.id]);
+        expect(await repo.cardById(epic.id)).toMatchObject({ archived: true });
+
+        await repo.restoreEpic(epic.id);
+
+        expect((await repo.boardCards(p.id)).map((c) => c.id).sort()).toEqual([epic.id, a!.id, b!.id].sort());
+        expect(await repo.archivedEpics(p.id)).toEqual([]);
+        expect((await repo.archivedTickets(p.id)).map((c) => c.id)).toEqual([own!.id]);
+      });
+
       it("treats an archived ticket as if it never existed in its epic, until restored", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });

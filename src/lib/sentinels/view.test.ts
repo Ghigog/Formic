@@ -57,6 +57,13 @@ describe("sentinelStates", () => {
     expect(sentinelStates([marked, failed], T0 + 6000).secops!.epicId).toBe("e1");
   });
 
+  it("holds a sentinel while the Epic made from its report is open", () => {
+    const marked = audit({ id: "a1", epicId: "e1" });
+    expect(sentinelStates([marked], T0, [], { e1: "EPIC-7" }).secops!.hold).toEqual({ epicId: "e1", key: "EPIC-7" });
+    expect(sentinelStates([marked], T0, [], {}).secops!.hold).toBeNull();
+    expect(sentinelStates([audit({})], T0, [], { e1: "EPIC-7" }).secops!.hold).toBeNull();
+  });
+
   it("keeps the last report while a new run is going", () => {
     const s = sentinelStates(
       [audit({ stars: 4 }), audit({ status: "running", stars: null, log: ["Listing files"], startedAt: new Date(T0 + 5000) })],

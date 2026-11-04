@@ -512,7 +512,7 @@ describe("applying an approved proposal", () => {
     await expect(applyAction(PROJECT, { type: "move_card", key: "NOPE-1", to: "todo" })).rejects.toThrow(/not on the board/);
   });
 
-  it("closes a ticket by archiving it, and an Epic by deleting it", async () => {
+  it("closes a ticket and an Epic by archiving them", async () => {
     const cards = await plannedTickets();
     const epic = cards.find((c) => c.kind === "epic")!;
     const ticket = cards.find((c) => c.kind === "ticket")!;
@@ -520,8 +520,11 @@ describe("applying an approved proposal", () => {
     expect(await applyAction(PROJECT, { type: "close_card", key: ticket.key, reason: "A duplicate." })).toContain("Archived");
     expect((await repository().boardCards(PROJECT)).some((c) => c.id === ticket.id)).toBe(false);
 
-    await applyAction(PROJECT, { type: "close_card", key: epic.key, reason: "Built already." });
+    expect(await applyAction(PROJECT, { type: "close_card", key: epic.key, reason: "Built already." })).toBe(
+      `Archived ${epic.key} and its tickets.`,
+    );
     expect((await repository().boardCards(PROJECT)).some((c) => c.id === epic.id)).toBe(false);
+    expect((await repository().archivedEpics(PROJECT)).map((c) => c.id)).toEqual([epic.id]);
   });
 });
 

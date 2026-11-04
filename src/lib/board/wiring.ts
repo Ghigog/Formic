@@ -24,6 +24,8 @@ registerBoardPorts({
     redraftTicket: async (...args) => (await import("@/lib/board/service")).redraftTicket(...args),
     retryEpic: async (...args) => (await import("@/lib/board/service")).retryEpic(...args),
     deleteEpic: async (...args) => (await import("@/lib/board/service")).deleteEpic(...args),
+    archiveEpic: async (...args) => (await import("@/lib/board/service")).archiveEpic(...args),
+    restoreEpic: async (...args) => (await import("@/lib/board/service")).restoreEpic(...args),
     createBacklogItem: async (...args) => (await import("@/lib/board/service")).createBacklogItem(...args),
     advanceQueens: async (...args) => (await import("@/lib/board/service")).advanceQueens(...args),
   },

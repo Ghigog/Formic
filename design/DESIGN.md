@@ -345,7 +345,7 @@ one row of four equal square tiles (Queens, Scouts, Reserve, Bell; `bg-panel`, a
 tall), each with its mark large and faint behind, its number in Newsreader semibold in front, and
 an i in the top-right corner whose note opens full-width under the row and holds the explanation.
 The Queens tile is dragged onto a card, the Scouts tile toggles Auto-scout, Reserve only shows (it
-is set in Settings), and the Bell tile keeps its tap-to-arm bell and swing-to-ring cord. Errors and
+is set in Settings), and the Bell tile is a plain flat bell in the same faint clay, hanging from the tile's top edge with no hook, its golden-bell count over it, and its cord and toggle hanging out of the tile's bottom; tapping the bell arms a golden one and turns it gold, and swinging the cord rings it. Errors and
 what the bell says show in one line under the row. Then an Archive link. A
 timeline panel (region "Timeline") charts merges per day, epic rows, streak and yield; it expands
 and collapses and pages Earlier / Later. Merges, unlocks and bugs show floating `+N` pops, rings

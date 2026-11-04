@@ -43,6 +43,8 @@ export interface BoardServicePort {
   retryEpic(projectId: string, epicId: string): Promise<EpicActionResult>;
   advanceQueens(projectId: string): Promise<void>;
   deleteEpic(projectId: string, epicId: string): Promise<EpicActionResult>;
+  archiveEpic(projectId: string, epicId: string): Promise<EpicActionResult>;
+  restoreEpic(projectId: string, epicId: string): Promise<EpicActionResult>;
   createBacklogItem(projectId: string, rawRequest: string, requestId?: string): Promise<BoardCard>;
 }
 
