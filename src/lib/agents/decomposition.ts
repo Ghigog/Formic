@@ -134,7 +134,7 @@ export const decompositionSchema = z.object({
   tickets: z.array(ticketSpecSchema).min(1).max(12),
   questions: productQuestions
     .describe(
-      `Questions for the person, at most ${MAX_QUESTIONS}, when the PRD leaves open a choice that changes the design and neither it, their own words nor the code settles it. Empty otherwise. With any here, the tickets are your draft and the Epic waits for their answer.`,
+      `Questions for the person, at most ${MAX_QUESTIONS}, when the PRD leaves open a choice that changes the design and neither it, their own words nor the code settles it, or when you doubt the plan covers what they asked. The PM reads them first and answers at once when the answer is clear. Empty otherwise. With any here, the tickets are your draft and the Epic waits for their answer.`,
     )
     .default([]),
 });

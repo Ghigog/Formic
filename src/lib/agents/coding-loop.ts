@@ -461,7 +461,7 @@ const BLOCKED = {
 const QUESTION = {
   type: ["string", "null"],
   description:
-    "A question for the person, when the work cannot go on well without their answer: a choice between behaviours, what matters more, whether a follow-up is wanted. In plain words, one or two sentences, with why it matters. The ticket waits for the answer and you are started again with it. Null when you can decide well yourself.",
+    "A question for the person, when the work cannot go on well without their answer: a choice between behaviours, what matters more, whether a follow-up is wanted, or a real doubt that the work still does what was asked. The PM reads it first and answers at once when the answer is clear, so a real doubt is cheap to ask and a wrong guess is not. In plain words, one or two sentences, with why it matters. The ticket waits for the answer and you are started again with it. Null when you can decide well yourself.",
 };
 
 /** How each role ends its run. */

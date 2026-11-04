@@ -1,7 +1,8 @@
 import "server-only";
 
 import { withCardActor } from "@/lib/auth/actor";
-import { startRun, launch } from "@/lib/agents/pipeline";
+import { startRun, launch, wakePm } from "@/lib/agents/pipeline";
+import { isQuestion } from "@/lib/domain/question";
 import type { CoderTask } from "@/lib/agents/ports";
 import { repository } from "@/lib/db";
 import { projectFor } from "@/lib/board/project";
@@ -134,6 +135,7 @@ export async function stallTicket(
     stage,
     blockedReason: reason,
   });
+  if (isQuestion(reason)) wakePm(projectId, ticket.id, reason);
 }
 
 /** The Coder Agent's run on a ticket, on the keys of whoever set it going. */

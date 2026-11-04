@@ -37,6 +37,14 @@ in code.
   couldn't verify counts as not met. The stars are one plus every rung whose
   checks all pass, stopping at the first rung that doesn't. Whatever else it
   finds goes in the report but doesn't move the stars.
+- **Command checks.** When one shell command settles a check (a grep that
+  must print nothing, a test run that must exit 0), calibration saves it on
+  the check with its pass rule. An auditor that can run commands (a CLI
+  agent) runs exactly that command and reports its exit code and output, and
+  the result decides the check, not the auditor's reading of it. An API
+  auditor can't run commands, so it judges those checks from the code as
+  before. Rubrics written before this have no commands: recalibrate to get
+  them.
 
 Each audit keeps a copy of the rubric it was scored against. After you
 recalibrate, the profile says the stars came from an earlier rubric until

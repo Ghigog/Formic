@@ -107,6 +107,14 @@ export const reportSchema = z.object({
         id: z.string().describe("The check's id from the rubric, such as \"3b\"."),
         evidence: z.string().describe("What you read or ran for it, and what that showed."),
         met: z.boolean().describe("Whether the evidence shows the check passes. Not verified means false."),
+        ran: z
+          .object({
+            exitCode: z.number().int().describe("The command's exit code."),
+            output: z.string().describe("Everything the command printed, stdout and stderr, as it printed it."),
+          })
+          .nullable()
+          .default(null)
+          .describe("For a check with a Command: what running exactly that command showed. Null for any other check, or when you could not run it."),
       }),
     )
     .describe("Every check in the rubric, in its order."),

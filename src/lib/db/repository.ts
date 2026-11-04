@@ -242,7 +242,16 @@ export interface RubricCheck {
   text: string;
   /** How an audit verifies it: a file to read or a command to run. */
   how: string;
+  /**
+   * The one shell command that decides the check, when there is one. Its
+   * result, not the auditor's reading of it, sets whether the check is met.
+   */
+  command?: string | null;
+  /** What passing looks like for the command: it prints nothing, or it exits 0. */
+  pass?: CommandPass | null;
 }
+
+export type CommandPass = "empty" | "exit0";
 
 /**
  * A sentinel's star ladder for one project, written by calibrating: rung 2
@@ -259,6 +268,8 @@ export interface AuditCheck {
   met: boolean;
   /** The file and line read, or the command run and what it showed. */
   evidence: string;
+  /** The check's command as the auditor ran it, when the check has one. */
+  ran?: { exitCode: number; output: string } | null;
 }
 
 /**

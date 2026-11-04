@@ -40,6 +40,7 @@ import {
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
   REVIEWER_AUDIT_RULE,
+  REVIEWER_PROOF_RULE,
   REVIEWER_FOLLOW_UP_RULE,
   REVIEWER_SCOPE_RULE,
   SHOWCASE_BRIEF,
@@ -151,7 +152,7 @@ const MAX_REPORT = 20_000;
 const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${PLAN_FIRST_RULE}
 - ${CHECKPOINT_RULE}
-- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- Title (N pt): what and why" per line, before the plan.${mode === "implement" ? "" : `\n- ${REVIEWER_AUDIT_RULE}`}
+- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- Title (N pt): what and why" per line, before the plan.${mode === "implement" ? "" : `\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${CHECKS_RULE}
 - ${VERIFY_RULE}
@@ -160,7 +161,7 @@ const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - Do not skip, delete or weaken a test to make a command pass.
 - When you are done, write a summary to the file named by the FORMIC_SUMMARY environment variable: a one-line summary under 70 characters (no ticket key and no issue number), a blank line, then what changed and why. End it with a "Plan:" section listing the steps you took, one per line, as "- [x] step", or "- [ ] step" for any you left undone.
 - ${HANDOFF_RULE} Put them in the summary as a "For you:" section, one "- step" per line, before the plan.
-- When the work cannot go on well without the person's answer (a choice between behaviours, what matters more, whether a follow-up is wanted), ask instead of guessing: change no files, write the summary file with a "Question for you:" section, one "- question Why: why it matters" per line in plain words, then run exactly this, the one commit you may make: git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY". The ticket waits for the answer and you are started again with it. Do not ask what you can decide well yourself.`;
+- When the work cannot go on well without the person's answer (a choice between behaviours, what matters more, whether a follow-up is wanted, or a real doubt that the work still does what was asked), ask instead of guessing; the PM reads it first and answers at once when the answer is clear: change no files, write the summary file with a "Question for you:" section, one "- question Why: why it matters" per line in plain words, then run exactly this, the one commit you may make: git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY". The ticket waits for the answer and you are started again with it. Do not ask what you can decide well yourself.`;
 
 const CLI_ALREADY_DONE = `To report it as already done: change no files, write the summary file as usual with the evidence as its body and \`${ALREADY_DONE_TRAILER}\` as its last line, then run exactly this, the one commit you may make:
 git -c user.name="Formic Agent" -c user.email=formic-agent@users.noreply.github.com commit --allow-empty -q -F "$FORMIC_SUMMARY"`;
