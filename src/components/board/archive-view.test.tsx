@@ -7,10 +7,10 @@ import type { BoardCard } from "@/lib/domain/entities";
 
 const fetchMock = vi.fn();
 
-function serve(tickets: BoardCard[], restoreOk = true) {
+function serve(tickets: BoardCard[], restoreOk = true, epics: BoardCard[] = []) {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     if (init?.method === "DELETE") return { ok: restoreOk, json: async () => ({}) };
-    return { ok: true, json: async () => ({ tickets }) };
+    return { ok: true, json: async () => ({ tickets, epics }) };
   });
 }
 
@@ -31,6 +31,17 @@ describe("ArchiveView", () => {
     open();
     expect(await screen.findByText("One")).toBeInTheDocument();
     expect(screen.getByText("Two")).toBeInTheDocument();
+  });
+
+  it("lists an archived Epic and restores it through the Epic route", async () => {
+    const epic = makeCard({ kind: "epic", key: "EPIC-9", title: "Old Epic", archived: true });
+    serve([makeCard({ title: "A ticket", archived: true })], true, [epic]);
+    const { onRestored } = open();
+    await userEvent.click(await screen.findByRole("button", { name: /Restore EPIC-9/ }));
+    expect(fetchMock).toHaveBeenCalledWith(`/api/epics/${epic.id}/archive`, { method: "DELETE" });
+    await waitFor(() => expect(screen.queryByText("Old Epic")).toBeNull());
+    expect(screen.getByText("A ticket")).toBeInTheDocument();
+    expect(onRestored).toHaveBeenCalledWith({ ...epic, archived: false });
   });
 
   it("shows an empty message with no archived cards", async () => {
