@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { callPm, onCallPrompt } from "./on-call";
+import { wakePm, questionPrompt } from "./questions";
 import { finishCliAnswer } from "@/lib/assistant/turn";
 import { epicNoteTexts } from "@/lib/agents/epic-notes";
 import { savePreset } from "@/lib/agents/presets";
@@ -11,7 +11,7 @@ import { resetEnvCache } from "@/lib/secrets/env";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
 
 /**
- * The PM on call: an agent's question wakes it, and it either answers from
+ * The PM and the agents' questions: an agent's question wakes it, and it either answers from
  * what the person already asked for or leaves it for them with a suggestion.
  */
 
@@ -80,9 +80,9 @@ afterEach(() => {
   resetVcs();
 });
 
-describe("onCallPrompt", () => {
+describe("questionPrompt", () => {
   it("names the card, who asked and what, and says it is from Formic", () => {
-    const text = onCallPrompt({ key: "EPIC-9", title: "Motion" }, REASON);
+    const text = questionPrompt({ key: "EPIC-9", title: "Motion" }, REASON);
     expect(text).toContain("[From Formic, not the person] The Architect Agent on EPIC-9 (Motion)");
     expect(text).toContain("Should the reduced-motion fix cover components too");
     expect(text).toContain("answer_question (own: true)");
@@ -102,7 +102,7 @@ describe("the PM on call", () => {
       { role: "assistant", content: "I answered the Architect: every animation, components included." },
     ]);
 
-    await callPm(PROJECT, epic.id, REASON);
+    await wakePm(PROJECT, epic.id, REASON);
 
     const messages = sent[0]!.messages as Array<{ role: string; content: string }>;
     expect(messages.at(-1)).toMatchObject({ role: "user" });
@@ -120,7 +120,7 @@ describe("the PM on call", () => {
     await useAgent("groq");
     fakeProvider([{ role: "assistant", content: "The Architect asks how wide the fix goes. I suggest components too. Reply here or in the card." }]);
 
-    await callPm(PROJECT, epic.id, REASON);
+    await wakePm(PROJECT, epic.id, REASON);
 
     expect(isQuestion((await repository().cardById(epic.id))?.blockedReason)).toBe(true);
     expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([]);
@@ -129,12 +129,12 @@ describe("the PM on call", () => {
 
   it("stays out of it with no PM agent, and for questions meant for the person alone", async () => {
     const epic = await waitingEpic();
-    await callPm(PROJECT, epic.id, REASON);
+    await wakePm(PROJECT, epic.id, REASON);
     expect(await repository().assistantMessages(PROJECT)).toEqual([]);
 
     await useAgent("groq");
     const sent = fakeProvider([]);
-    await callPm(PROJECT, epic.id, questionReason("The Designer", [{ question: "Warm or cool?", why: "Taste." }]));
+    await wakePm(PROJECT, epic.id, questionReason("The Designer", [{ question: "Warm or cool?", why: "Taste." }]));
     expect(sent).toEqual([]);
     expect(await repository().assistantMessages(PROJECT)).toEqual([]);
   });

@@ -118,7 +118,7 @@ prompts, custom or not.
 - [x] ~~The PM checks every plan and every change at review~~. Replaced on
       2026-11-04: checking everything spent a run on work that was mostly on
       track, and it only ran on an API agent. The PM is now **on call**
-      (`src/lib/pm/on-call.ts`): agents are told to ask when they doubt the
+      (`src/lib/pm/questions.ts`): agents are told to ask when they doubt the
       work still does what was asked, and every question an agent asks wakes
       the PM first, on whichever agent its chat uses (API or CLI). It answers
       when the person's words, the PRD, an audit's checks or the design doc

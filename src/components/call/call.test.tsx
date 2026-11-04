@@ -30,6 +30,7 @@ const msg = (
 let controls: {
   push: (m: AssistantMessageView[]) => void;
   ask: ReturnType<typeof vi.fn>;
+  decide: ReturnType<typeof vi.fn>;
 };
 
 function Harness({
@@ -46,9 +47,10 @@ function Harness({
       setMessages((m) => [...m, msg(`u${m.length}`, "user", text)]);
     }),
   );
+  const [decide] = useState(() => vi.fn(async () => {}));
   useEffect(() => {
-    controls = { push: setMessages, ask };
-  }, [ask]);
+    controls = { push: setMessages, ask, decide };
+  }, [ask, decide]);
   const a: AssistantControls = {
     open: isOpen,
     setOpen,
@@ -60,7 +62,7 @@ function Harness({
     ask,
     stop: vi.fn(),
     clear: vi.fn(),
-    decide: vi.fn(),
+    decide,
     setAgent: vi.fn(),
     presets: [],
     onEdit: vi.fn(),
@@ -142,6 +144,31 @@ describe("a call on the PM chat", () => {
     );
     expect(controls.ask).toHaveBeenCalledTimes(2);
     expect(controls.ask).toHaveBeenLastCalledWith("Second");
+  });
+
+  it("reads a proposal, takes a spoken yes as Approve, and asks for 'yes, merge it' to merge", async () => {
+    const engine = new FakeEngine();
+    render(<Harness engine={engine} />);
+    await userEvent.click(screen.getByRole("button", { name: "Call the PM" }));
+    await act(async () => engine.say("Add a ticket"));
+    const proposal = (action: { type: "move_card" }, summary: string) => ({
+      ...msg("a1", "assistant", "Here you go."),
+      proposals: [{ summary, action, state: "proposed" as const }],
+    });
+    act(() =>
+      controls.push([
+        msg("u0", "user", "Add a ticket"),
+        proposal({ type: "move_card", key: "T-1", to: "done" } as { type: "move_card" }, "Move T-1 to Done"),
+      ]),
+    );
+    expect(engine.spoken.at(-1)).toBe("Move T-1 to Done. Shall I?");
+    await act(async () => engine.say("yes"));
+    expect(controls.decide).not.toHaveBeenCalled();
+    expect(controls.ask).toHaveBeenCalledTimes(1);
+    expect(engine.spoken.at(-1)).toBe("Say 'yes, merge it' to merge.");
+    await act(async () => engine.say("yes, merge it"));
+    expect(controls.decide).toHaveBeenCalledWith("a1", 0, "apply");
+    expect(controls.ask).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the call in a pill while the chat is closed, and ends it on hang up", async () => {

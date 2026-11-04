@@ -596,11 +596,11 @@ async function sayQuestionInChat(projectId: string, epicId: string, reason: stri
   return true;
 }
 
-/** A card started waiting on a question: the PM hears it first (src/lib/pm/on-call.ts). */
+/** A card started waiting on a question: the PM hears it first (src/lib/pm/questions.ts). */
 export function wakePm(projectId: string, cardId: string, reason: string): void {
   launch(async () => {
-    const { callPm } = await import("@/lib/pm/on-call");
-    await callPm(projectId, cardId, reason);
+    const { wakePm } = await import("@/lib/pm/questions");
+    await wakePm(projectId, cardId, reason);
   }, `PM on call for ${cardId}`);
 }
 
