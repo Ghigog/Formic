@@ -23,7 +23,10 @@ export function ArchiveView({
     let live = true;
     fetch("/api/tickets/archived")
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("load"))))
-      .then((body: { tickets: BoardCard[] }) => live && setCards(body.tickets))
+      .then(
+        (body: { tickets: BoardCard[]; epics?: BoardCard[] }) =>
+          live && setCards([...body.tickets, ...(body.epics ?? [])]),
+      )
       .catch(() => {
         if (live) {
           setCards([]);
@@ -44,7 +47,7 @@ export function ArchiveView({
   const restore = async (card: BoardCard) => {
     setError(null);
     try {
-      const res = await fetch(`/api/tickets/${card.id}/archive`, { method: "DELETE" });
+      const res = await fetch(`/api/${card.kind === "epic" ? "epics" : "tickets"}/${card.id}/archive`, { method: "DELETE" });
       if (!res.ok) throw new Error("restore");
       setCards((prev) => prev?.filter((c) => c.id !== card.id) ?? prev);
       onRestored({ ...card, archived: false });

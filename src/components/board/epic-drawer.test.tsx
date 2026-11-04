@@ -76,6 +76,49 @@ function open(
 }
 
 describe("EpicDrawer", () => {
+  describe("archiving", () => {
+    function openWith(archive: () => Response | Promise<Response>) {
+      const onClose = vi.fn();
+      const onChanged = vi.fn();
+      const archives = vi.fn(archive);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const url = typeof input === "string" ? input : input.toString();
+          if (url.includes("/api/attachments"))
+            return Response.json({ attachments: [] });
+          if (url === "/api/epics/e-1/archive" && init?.method === "PATCH")
+            return archives();
+          return Response.json(detail());
+        }),
+      );
+      render(<EpicDrawer epicId="e-1" onClose={onClose} onChanged={onChanged} />);
+      return { onClose, onChanged, archives };
+    }
+
+    it("offers Archive and no Delete", async () => {
+      openWith(() => Response.json({}));
+      expect(await screen.findByRole("button", { name: "Archive" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    });
+
+    it("archives the Epic and closes the drawer", async () => {
+      const { onClose, onChanged, archives } = openWith(() => Response.json({}));
+      fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+      expect(archives).toHaveBeenCalledTimes(1);
+      expect(onChanged).toHaveBeenCalled();
+    });
+
+    it("shows the server's reason and stays open on a 409", async () => {
+      const reason = "EPIC-1-T2 is running. Stop it before archiving.";
+      const { onClose } = openWith(() => Response.json({ error: reason }, { status: 409 }));
+      fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(reason);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
   it("shows the PRD as it was written", async () => {
     open();
     await screen.findByText("Board export");

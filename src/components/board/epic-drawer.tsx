@@ -51,6 +51,7 @@ export function EpicDrawer({
   onClose,
   onOpenTicket,
   streamingPrd,
+  onChanged,
 }: {
   epicId: string | null;
   onClose: () => void;
@@ -58,12 +59,13 @@ export function EpicDrawer({
   onOpenTicket?: (ticketId: string) => void;
   /** Live PRD text while the Product Agent writes. */
   streamingPrd?: string;
+  /** The Epic was archived: the board should look again. */
+  onChanged?: () => void;
 }) {
   const [detail, setDetail] = useState<EpicDetail | null>(null);
   const [failed, setFailed] = useState(false);
   const [tab, setTab] = useState<"prd" | "dag" | "chat">("prd");
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Another Epic: nothing of the last one's stays on screen.
@@ -72,7 +74,6 @@ export function EpicDrawer({
     setShownFor(epicId);
     setDetail(null);
     setFailed(false);
-    setConfirming(false);
     setActionError(null);
   }
   const loading = !!epicId && !detail && !failed;
@@ -159,12 +160,12 @@ export function EpicDrawer({
   }, [epicId, load]);
 
   const act = useCallback(
-    async (method: "POST" | "DELETE") => {
+    async () => {
       if (!epicId) return;
       setBusy(true);
       setActionError(null);
       try {
-        const res = await fetch(`/api/epics/${epicId}`, { method });
+        const res = await fetch(`/api/epics/${epicId}`, { method: "POST" });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as {
             error?: string;
@@ -174,17 +175,39 @@ export function EpicDrawer({
           );
           return;
         }
-        if (method === "DELETE") onClose();
-        else await load();
+        await load();
       } catch {
         setActionError("That did not work. Try again in a moment.");
       } finally {
         setBusy(false);
-        setConfirming(false);
-      }
+          }
     },
-    [epicId, load, onClose],
+    [epicId, load],
   );
+
+  const archive = useCallback(async () => {
+    if (!epicId) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/archive`, {
+        method: "PATCH",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setActionError(body?.error ?? "Could not archive this Epic.");
+        return;
+      }
+      onChanged?.();
+      onClose();
+    } catch {
+      setActionError("Could not archive this Epic.");
+    } finally {
+      setBusy(false);
+    }
+  }, [epicId, onChanged, onClose]);
 
   const kb = keyboardStyles(useKeyboardInset());
 
@@ -259,17 +282,17 @@ export function EpicDrawer({
               )}
             </div>
             <div className="flex flex-wrap items-center justify-start gap-1.5 sm:justify-end">
-              {detail?.canRetry && !confirming && (
+              {detail?.canRetry && (
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void act("POST")}
+                  onClick={() => void act()}
                   className={cn(ACTION, "text-fg hover:border-line-strong")}
                 >
                   Retry
                 </button>
               )}
-              {detail?.canGenerateShowcase && !confirming && (
+              {detail?.canGenerateShowcase && (
                 <button
                   type="button"
                   disabled={busy || epic?.agentRole === "pm"}
@@ -279,46 +302,15 @@ export function EpicDrawer({
                   Generate showcase
                 </button>
               )}
-              {epic && !confirming && (
+              {epic && (
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setConfirming(true)}
-                  className={cn(
-                    ACTION,
-                    "text-fg-muted hover:text-crimson-text",
-                  )}
+                  onClick={() => void archive()}
+                  className="border-line bg-card rounded border px-2.5 py-1 text-[12px] font-medium whitespace-nowrap disabled:opacity-50"
                 >
-                  Delete
+                  Archive
                 </button>
-              )}
-              {confirming && (
-                <>
-                  <span className="text-fg-muted text-[12px]">
-                    {epic && epic.childCount > 0
-                      ? `Delete it and its ${epic.childCount} ticket${epic.childCount === 1 ? "" : "s"}?`
-                      : "Delete it?"}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void act("DELETE")}
-                    className={cn(
-                      ACTION,
-                      "bg-crimson text-on-crimson border-transparent",
-                    )}
-                  >
-                    Delete
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setConfirming(false)}
-                    className={cn(ACTION, "text-fg-muted hover:text-fg")}
-                  >
-                    Keep
-                  </button>
-                </>
               )}
               <button
                 type="button"

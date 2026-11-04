@@ -313,6 +313,7 @@ export function BoardShell({
           setOpenTicketId(ticketId);
         }}
         streamingPrd={openEpicId ? prdStreams[openEpicId] : undefined}
+        onChanged={() => void refetch().catch(() => {})}
       />
 
       <TicketDrawer
