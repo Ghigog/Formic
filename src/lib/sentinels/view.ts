@@ -32,6 +32,8 @@ export interface SentinelState {
   commitSha: string | null;
   /** The rubric the next audit is scored against, from the last calibration. */
   rubric: { rubric: Rubric; at: string | null; model: string | null } | null;
+  /** The Epic made from the report while it is still open: a new audit waits for it to be Done or archived. */
+  hold: { epicId: string; key: string } | null;
   /** Whether the report was scored against a rubric since replaced by calibrating again. */
   rubricChanged: boolean;
   /** Story points of tickets that reached Done since the report was written. */
@@ -51,7 +53,15 @@ export interface Shipped {
   points: number;
 }
 
-export function sentinelStates(audits: AuditRecord[], now = Date.now(), shipped: Shipped[] = []): SentinelStates {
+/** An Epic still on the board and not Done, by id: its key. */
+export type OpenEpics = Record<string, string>;
+
+export function sentinelStates(
+  audits: AuditRecord[],
+  now = Date.now(),
+  shipped: Shipped[] = [],
+  openEpics: OpenEpics = {},
+): SentinelStates {
   const out: SentinelStates = {};
   for (const s of SENTINELS) {
     const mine = audits
@@ -87,6 +97,7 @@ export function sentinelStates(audits: AuditRecord[], now = Date.now(), shipped:
             model: calibrated.model,
           }
         : null,
+      hold: done?.epicId && openEpics[done.epicId] ? { epicId: done.epicId, key: openEpics[done.epicId]! } : null,
       rubricChanged: !!done?.rubric && !!calibrated && !sameRubric(done.rubric, calibrated.rubric),
       doneSince,
       auditStale: finishedAt !== null && doneSince > s.staleAfterPoints,
