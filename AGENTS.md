@@ -29,3 +29,6 @@ So, when reasoning about production:
 - Functions have no time limit here: agent runs keep going after a response.
 - Anything needing a domain you control (DNS records, email sending domains)
   isn't available: `sslip.io` and `vercel.app` names can't take DNS records.
+  Sign-in emails go out over SMTP through a Gmail account with an app
+  password (`SMTP_*` and `FORMIC_EMAIL_FROM` in the server's `.env`), not
+  Resend.

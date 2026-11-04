@@ -3,7 +3,13 @@ import "server-only";
 /**
  * Sending the one email Formic sends: a sign-in link.
  *
- * Resend over its HTTP API when RESEND_API_KEY and FORMIC_EMAIL_FROM are set.
+ * Two ways to send, each turned on by its settings, with FORMIC_EMAIL_FROM:
+ *
+ *  - SMTP (SMTP_HOST, SMTP_USER, SMTP_PASSWORD, optional SMTP_PORT): any
+ *    mail server, such as Gmail with an app password. Needs no domain of
+ *    your own, which is how production sends (see AGENTS.md).
+ *  - Resend (RESEND_API_KEY), over its HTTP API, from a domain verified there.
+ *
  * FORMIC_MAILER=console prints the link to the server log instead, for local
  * development and the e2e suite, which sign in without a real inbox.
  */
@@ -16,7 +22,7 @@ export interface SignInEmail {
 }
 
 export interface Mailer {
-  readonly name: "resend" | "console";
+  readonly name: "resend" | "smtp" | "console";
   sendSignIn(mail: SignInEmail): Promise<void>;
 }
 
@@ -49,6 +55,51 @@ class ResendMailer implements Mailer {
   }
 }
 
+/** SMTP settings, or null when they are incomplete. */
+export function smtpConfig(): { host: string; port: number; user: string; password: string } | null {
+  const host = process.env.SMTP_HOST?.trim();
+  const user = process.env.SMTP_USER?.trim();
+  // Gmail shows app passwords in groups of four: the spaces are not part of it.
+  const password = process.env.SMTP_PASSWORD?.replace(/\s+/g, "");
+  if (!host || !user || !password) return null;
+  const port = Number(process.env.SMTP_PORT || 465);
+  return { host, port: Number.isInteger(port) && port > 0 ? port : 465, user, password };
+}
+
+class SmtpMailer implements Mailer {
+  readonly name = "smtp" as const;
+  constructor(
+    private readonly config: NonNullable<ReturnType<typeof smtpConfig>>,
+    private readonly from: string,
+  ) {}
+
+  async sendSignIn({ to, link, minutes }: SignInEmail): Promise<void> {
+    const { createTransport } = await import("nodemailer");
+    const transport = createTransport({
+      host: this.config.host,
+      port: this.config.port,
+      // 465 is TLS from the first byte; 587 and 25 upgrade with STARTTLS,
+      // which is required, never optional, so the password never goes in the clear.
+      secure: this.config.port === 465,
+      requireTLS: this.config.port !== 465,
+      auth: { user: this.config.user, pass: this.config.password },
+      connectionTimeout: 15_000,
+      socketTimeout: 20_000,
+    });
+    try {
+      await transport.sendMail({
+        from: this.from,
+        to,
+        subject: "Your Formic sign-in link",
+        text: signInText(link, minutes),
+        html: signInHtml(link, minutes),
+      });
+    } finally {
+      transport.close();
+    }
+  }
+}
+
 /**
  * Prints the link where whoever runs the server can see it. Every link
  * printed is only good once. FORMIC_MAILER_OUTBOX names a file each email is
@@ -74,9 +125,12 @@ let consoleMailer: ConsoleMailer | null = null;
 export function mailer(): Mailer | null {
   if (override) return override;
   if (process.env.FORMIC_MAILER === "console") return (consoleMailer ??= new ConsoleMailer());
+  const from = process.env.FORMIC_EMAIL_FROM?.trim();
+  if (!from) return null;
+  const smtp = smtpConfig();
+  if (smtp) return new SmtpMailer(smtp, from);
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.FORMIC_EMAIL_FROM;
-  return apiKey && from ? new ResendMailer(apiKey, from) : null;
+  return apiKey ? new ResendMailer(apiKey, from) : null;
 }
 
 /** Test seam: every email goes here. */

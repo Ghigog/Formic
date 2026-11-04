@@ -25,7 +25,7 @@ layer, and nothing breaks without it:
 | Variable | Switches on |
 | :-- | :-- |
 | `DATABASE_URL` (or Vercel's `POSTGRES_*`) | Durable state |
-| `RESEND_API_KEY`, `FORMIC_EMAIL_FROM` | Email sign-in: accounts with no GitHub needed. People connect GitHub later, in Settings, for repositories |
+| `FORMIC_EMAIL_FROM` + `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (or `RESEND_API_KEY`) | Email sign-in: accounts with no GitHub needed. People connect GitHub later, in Settings, for repositories. Gmail with an app password works |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG` | GitHub sign-in and Connect GitHub; each person works on their own repos with their own keys |
 | `FORMIC_SECRET` | Encryption for saved keys and sessions. Set it before anyone signs in. Required to save keys on a server with a database. |
 | `GITHUB_WEBHOOK_SECRET` | CI results driving the fix-or-merge loop |

@@ -58,8 +58,10 @@ own plan, at your own risk" in Settings.
   secrets, through the Formic GitHub App and your own installation token.
   United States. You control this already: disconnecting GitHub in
   Settings, uninstalling the app or revoking access stops it.
-- **Resend** — only if you sign in by email: your email address and the
-  sign-in link sent to it. United States.
+- **The mail service that sends sign-in links** — only if you sign in by
+  email: your email address and the link sent to it. On this deployment
+  that is Google (Gmail); a deployment can use Resend or another mail
+  server instead. United States.
 - **Amazon Web Services (Lightsail)** — hosts the Formic application and its
   database, on one server. United States.
 

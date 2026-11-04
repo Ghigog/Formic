@@ -27,12 +27,16 @@ export function githubSignIn(): boolean {
 }
 
 /**
- * Whether people can sign in with an emailed link: Resend is configured, or
- * FORMIC_MAILER=console prints links to the server log (development, e2e).
+ * Whether people can sign in with an emailed link: a mail server (SMTP) or
+ * Resend is configured with FORMIC_EMAIL_FROM, or FORMIC_MAILER=console
+ * prints links to the server log (development, e2e). Kept in step with
+ * mailer() in ./mailer.ts, which this file can't import: the proxy uses it.
  */
 export function emailSignIn(): boolean {
   if (process.env.FORMIC_MAILER === "console") return true;
-  return !!(process.env.RESEND_API_KEY && process.env.FORMIC_EMAIL_FROM);
+  if (!process.env.FORMIC_EMAIL_FROM?.trim()) return false;
+  const smtp = !!(process.env.SMTP_HOST?.trim() && process.env.SMTP_USER?.trim() && process.env.SMTP_PASSWORD?.trim());
+  return smtp || !!process.env.RESEND_API_KEY;
 }
 
 /** Per-person accounts when any way of signing in as a person is configured. */
