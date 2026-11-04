@@ -673,10 +673,9 @@ function BacklogEpic({
       <EpicWorking card={card} />
       <div className="flex items-center gap-1">
         <Pips stage={card.stage} />
-        <span className="text-muted ml-1 font-mono text-[10px]">
-          {card.stage}/{STAGE_COUNT}
-          {extras.stageLabel ? ` · ${extras.stageLabel}` : ""}
-        </span>
+        {extras.stageLabel && (
+          <span className="text-muted ml-1 font-mono text-[10px]">{extras.stageLabel}</span>
+        )}
       </div>
     </CardShell>
   );
