@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { GuestId } from "@/lib/calls/guests";
+import type { GuestId } from "@/lib/meetings/guests";
 
 import type {
   AgentPreset,

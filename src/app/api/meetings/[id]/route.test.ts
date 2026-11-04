@@ -24,7 +24,7 @@ beforeEach(() => {
   repo.meetings.mockResolvedValue([{ id: "m-1", projectId: "p-1", title: "Standup" }]);
 });
 
-describe("PATCH /api/calls/meetings/[id]", () => {
+describe("PATCH /api/meetings/[id]", () => {
   it("edits the meeting", async () => {
     const res = await PATCH("m-1", { title: "Retro", guests: ["sentinel-not-real"] });
     expect(res.status).toBe(400);
@@ -39,7 +39,7 @@ describe("PATCH /api/calls/meetings/[id]", () => {
   });
 });
 
-describe("DELETE /api/calls/meetings/[id]", () => {
+describe("DELETE /api/meetings/[id]", () => {
   it("deletes the meeting", async () => {
     expect((await DELETE("m-1")).status).toBe(204);
     expect(repo.deleteMeeting).toHaveBeenCalledWith("m-1");

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { GuestId } from "@/lib/calls/guests";
+import type { GuestId } from "@/lib/meetings/guests";
 import { useMeetings } from "@/lib/hooks/use-meetings";
 import { Calendar, weekStart } from "./calendar";
 import { CallsHeader } from "./calls-chrome";
@@ -22,7 +22,7 @@ export function CallsView({ guests }: { guests: { id: GuestId; label: string }[]
     setStarting(true);
     setStartError(null);
     try {
-      const res = await fetch("/api/calls/meetings", {
+      const res = await fetch("/api/meetings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: "Call", startsAt: new Date().toISOString(), guests: ["assistant"] }),

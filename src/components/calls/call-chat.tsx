@@ -4,9 +4,10 @@ import { useDraft } from "@/components/board/use-draft";
 import { useEffect, useRef, type FormEvent, type KeyboardEvent } from "react";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { cn } from "@/components/ui/cn";
-import { guestLabel, type GuestId } from "@/lib/calls/guests";
+import { guestLabel, type GuestId } from "@/lib/meetings/guests";
 import { useCall, type CallMessageView } from "@/lib/hooks/use-call";
-import { CallsHeader, GuestCoin } from "./calls-chrome";
+import { GuestCoin } from "@/components/meetings/guest-coin";
+import { CallsHeader } from "./calls-chrome";
 
 /** What the person might say first, to show how a call works. */
 const OPENERS = ["Hello everyone", "What's on the docket today?", "Get the Coder in"];

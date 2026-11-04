@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isPrunableEventType } from "@/lib/domain/events";
-import type { GuestId } from "@/lib/calls/guests";
+import type { GuestId } from "@/lib/meetings/guests";
 
 import type {
   AttachmentContent,
