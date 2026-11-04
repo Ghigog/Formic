@@ -1584,8 +1584,8 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const { finishCliAnswer } = await import("@/lib/assistant/turn");
   // Without a token the client is the mock, which has no answer to read: say
   // so, rather than blame an agent whose answer is waiting on GitHub.
-  if (!creds.githubToken && authMode() === "github") {
-    await finishCliAnswer(message.id, null, "Formic lost its GitHub sign-in for this board. Sign in again, then ask again.");
+  if (!creds.githubToken && authMode() === "accounts") {
+    await finishCliAnswer(message.id, null, "GitHub isn't connected for this board. Connect GitHub in Settings, then ask again.");
     return;
   }
   if (result.conclusion !== "success") {

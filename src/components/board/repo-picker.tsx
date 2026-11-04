@@ -65,6 +65,8 @@ export function RepoPicker({
   const [repos, setRepos] = useState<RepoOption[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [install, setInstall] = useState<string | null>(null);
+  /** Set when GitHub isn't connected: where connecting it starts. */
+  const [connect, setConnect] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [waiting, setWaiting] = useState<Record<string, Waiting[]>>({});
@@ -94,9 +96,11 @@ export function RepoPicker({
         repos?: RepoOption[];
         reason?: string;
         installUrl?: string | null;
+        connectUrl?: string | null;
       }) => {
         setRepos(d.repos ?? []);
         setInstall(d.installUrl ?? null);
+        setConnect(d.connectUrl ?? null);
         if (!d.ok) setNotice(d.reason ?? "Could not list repositories.");
       })
       .catch(() => {
@@ -295,6 +299,11 @@ export function RepoPicker({
                       : q
                         ? "No match."
                         : "Nothing else to add.")}
+                {connect && (
+                  <a href={connect} className="text-terracotta mt-1.5 block font-semibold">
+                    Connect GitHub →
+                  </a>
+                )}
               </p>
             ) : (
               fromGitHub.map((r) => (

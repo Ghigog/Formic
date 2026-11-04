@@ -10,6 +10,14 @@ export interface Account {
   avatarUrl: string | null;
   /** False in local mode, where there is no sign-in and so no sign-out. */
   signedIn: boolean;
+  /** The address they sign in with, when they signed up by email. */
+  email?: string | null;
+  /**
+   * GitHub, with accounts: whether it is connected, whether this deployment
+   * can connect it at all, and whether disconnecting would leave a way back
+   * in (an email). Absent in local mode.
+   */
+  github?: { connected: boolean; canConnect: boolean; canDisconnect: boolean } | null;
 }
 
 export const SUPPORT_EMAIL = "support@formic.dev";
@@ -69,7 +77,9 @@ export function AccountMenu({ account }: { account: Account }) {
           <div className="border-hairline mb-1 border-b px-2.5 pt-1.5 pb-2">
             <p className="text-ink truncate text-[13px] font-semibold">{label}</p>
             {account.signedIn && (
-              <p className="text-muted truncate font-mono text-[11px]">@{account.login}</p>
+              <p className="text-muted truncate font-mono text-[11px]">
+                {account.github?.connected === false && account.email ? account.email : `@${account.login}`}
+              </p>
             )}
           </div>
           <a role="menuitem" href="/settings" className={item}>

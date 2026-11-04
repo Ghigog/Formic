@@ -96,7 +96,7 @@ const clients = new Map<string, Anthropic>();
 
 /** A preset's own key, or the server's. */
 export function anthropicClient(apiKey?: string | null): Anthropic {
-  // The server's key is for local development only. Signed in with GitHub,
+  // The server's key is for local development only. With accounts,
   // an agent runs on the key its template carries or not at all.
   const key = apiKey || (authMode() === "local" ? env().ANTHROPIC_API_KEY : undefined);
   if (!key) {

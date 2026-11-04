@@ -56,3 +56,27 @@ describe("GET /api/auth/github/login", () => {
     expect((await login("", "2.2.2.2")).status).toBe(303);
   });
 });
+
+describe("GET /api/auth/github/login?intent=connect", () => {
+  it("sends someone who isn't signed in to sign in first", async () => {
+    const res = await login("?intent=connect");
+    const to = new URL(res.headers.get("Location") ?? "");
+    expect(to.pathname).toBe("/login");
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  it("names the signed-in account in the signed state", async () => {
+    globalThis.__formicMemoryStore = undefined;
+    const { repository } = await import("@/lib/db");
+    const { SESSION_COOKIE, signSession, verifyValue } = await import("@/lib/auth/session");
+    const ana = await repository().createEmailUser({ email: "ana@example.com", login: "ana" });
+    const res = await GET(
+      new Request("http://localhost/api/auth/github/login?intent=connect", {
+        headers: { "x-forwarded-for": "2.2.2.2", cookie: `${SESSION_COOKIE}=${await signSession(ana.id)}` },
+      }),
+    );
+    expect(new URL(res.headers.get("Location") ?? "").origin).toBe("https://github.com");
+    const raw = decodeURIComponent(res.headers.get("Set-Cookie")!.split(";")[0]!.split("=").slice(1).join("="));
+    expect(await verifyValue(raw)).toMatch(new RegExp(`^[0-9a-f]{32}\\|/settings\\|connect:${ana.id}$`));
+  });
+});

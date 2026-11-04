@@ -27,7 +27,7 @@ beforeEach(() => {
   list.mockReset().mockImplementation(async function* () {
     yield { id: "claude-x" };
   });
-  authMode.mockReset().mockReturnValue("github");
+  authMode.mockReset().mockReturnValue("accounts");
 });
 
 describe("POST /api/providers/models", () => {

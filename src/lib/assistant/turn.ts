@@ -3,9 +3,17 @@ import "server-only";
 import { z } from "zod";
 
 import { MODELS } from "@/lib/agents/anthropic";
-import { claudeSpeak, openAiSpeak, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
-import { ask as askCardChat, CHAT_ANSWER_BUDGET_MS, outOfTimeReply } from "@/lib/agents/card-chat";
-import { assistantAgentFor } from "@/lib/agents/presets";
+import { claudeSpeak, openAiSpeak, runChatLoop, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
+import {
+  ask as askCardChat,
+  CHAT_ANSWER_BUDGET_MS,
+  FILE_TOOL_DEFS,
+  outOfRoundsReply,
+  outOfTimeReply,
+  runTool as runFileTool,
+} from "@/lib/agents/card-chat";
+import { launch } from "@/lib/agents/pipeline";
+import { assistantAgentFor, columnChatAgentFor } from "@/lib/agents/presets";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { attemptsFor } from "@/lib/budget/in-process";
@@ -17,6 +25,18 @@ import { vcs, type VcsClient } from "@/lib/vcs";
 import { ASSISTANT_BRANCH_PREFIX, assistantActionSchema, checkAction } from "./actions";
 import { boardSnapshot, cardReport, mentionedKeys } from "./context";
 import { outOfRoundsMessage, readWindow } from "./reads";
+import {
+  ACT_ON_CARD_DEF,
+  actOnCardInput,
+  actOnColumnCard,
+  columnOfSpeaker,
+  columnSystemPrompt,
+  quickVoice,
+  sentinelOfSpeaker,
+  sentinelSystemPrompt,
+} from "./guests";
+import { guestLabel, type GuestId } from "@/lib/meetings/guests";
+import type { AgentRole } from "@/lib/domain/entities";
 import { DESIGN_RULE, ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
 import { askedIn, isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
 import type { BoardCard } from "@/lib/domain/entities";
@@ -216,6 +236,15 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
   ].join("\n");
 }
 
+/** What the reply `messageId` sees: the conversation up to its own message. */
+async function historyBefore(projectId: string, messageId: string) {
+  const all = await repository().assistantMessages(projectId);
+  const at = all.findIndex((m) => m.id === messageId);
+  const past = history(at < 0 ? all : all.slice(0, at));
+  // Another speaker's reply may be the last: the person's question still stands.
+  return past.at(-1)?.role === "assistant" ? [...past, { role: "user" as const, content: "Now it is your turn to answer the person's last message." }] : past;
+}
+
 /** Earlier messages as plain text, the way every provider accepts them. */
 function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistant"; content: string }> {
   return messages
@@ -223,7 +252,7 @@ function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistan
     .map((m) => ({
       role: m.role,
       content: [
-        m.content,
+        m.role === "assistant" && m.speaker !== "assistant" ? `${guestLabel(m.speaker as GuestId)}: ${m.content}` : m.content,
         ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
       ].join("\n"),
     }));
@@ -340,21 +369,32 @@ async function finish(
   // The person may have asked and walked away: tell them it is in.
   const { notifyPmAnswer } = await import("@/lib/notifications/notify");
   await notifyPmAnswer(current.projectId, { content: update.content, failed: update.status === "failed" });
+  await startNext(current.projectId);
 }
 
-/** The person stopped waiting: pending answers become failed, so a new question is accepted. */
+/**
+ * Starts the earliest reply still pending. Called when an answer finishes,
+ * fails or is stopped, so the replies queued behind it go one at a time and
+ * in order: the one answering is never pending-and-unfinished when this runs.
+ */
+export async function startNext(projectId: string): Promise<void> {
+  const next = (await repository().assistantMessages(projectId)).find((m) => m.role === "assistant" && m.status === "pending");
+  if (next) launch(() => answer(projectId, next.id), `assistant answer ${next.id}`);
+}
+
+/** The person stopped waiting: the answer being written is failed, and the next one queued starts. */
 export async function cancelPending(projectId: string): Promise<void> {
   const repo = repository();
-  for (const m of await repo.assistantMessages(projectId)) {
-    if (m.status !== "pending") continue;
-    await repo.updateAssistantMessage(m.id, {
-      content: "Stopped.",
-      proposals: [],
-      status: "failed",
-      runnerJob: null,
-      runnerAgent: null,
-    });
-  }
+  const current = (await repo.assistantMessages(projectId)).find((m) => m.status === "pending");
+  if (!current) return;
+  await repo.updateAssistantMessage(current.id, {
+    content: "Stopped.",
+    proposals: [],
+    status: "failed",
+    runnerJob: null,
+    runnerAgent: null,
+  });
+  await startNext(projectId);
 }
 
 /**
@@ -364,6 +404,12 @@ export async function cancelPending(projectId: string): Promise<void> {
 export async function answer(projectId: string, messageId: string, prompt?: string): Promise<void> {
   const repo = repository();
   try {
+    const own = await repo.assistantMessage(messageId);
+    const speaker = own?.speaker ?? "assistant";
+    if (speaker !== "assistant") {
+      await answerAsGuest(projectId, messageId, speaker);
+      return;
+    }
     const agent = await assistantAgentFor(projectId);
     if (agent.kind === "none") {
       await finish(messageId, {
@@ -377,8 +423,7 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
       return;
     }
 
-    const all = await repo.assistantMessages(projectId);
-    const past = withPrompt(history(all.filter((m) => m.id !== messageId)), prompt);
+    const past = withPrompt(await historyBefore(projectId, messageId), prompt);
     const brief = agent.kind === "cli" ? agent.agent.brief : agent.brief;
     const system = await systemPrompt(projectId, brief);
 
@@ -458,6 +503,112 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
     await finish(messageId, {
       content: e instanceof Error ? e.message : String(e),
       status: "failed",
+    });
+  }
+}
+
+/**
+ * A column agent or a Sentinel answers: the column agent with the card actions
+ * on its column's cards (a move to Done waits for approval), the Sentinel from
+ * its latest audit, acting on nothing. An agent that is a CLI one speaks
+ * through any API agent on the board instead, so a reply never waits on a job.
+ */
+async function answerAsGuest(projectId: string, messageId: string, speaker: string): Promise<void> {
+  const column = columnOfSpeaker(speaker);
+  const sentinelId = sentinelOfSpeaker(speaker);
+  if (!column && !sentinelId) {
+    await finish(messageId, { content: `${speaker} does not answer here.`, status: "failed" });
+    return;
+  }
+  let agent = column ? await columnChatAgentFor(projectId, column) : await assistantAgentFor(projectId);
+  // Its own instructions stay its own; only the voice it speaks through changes.
+  const ownBrief = agent.kind === "cli" ? agent.agent.brief : agent.kind === "api" ? agent.brief : null;
+  if (agent.kind !== "api" && agent.kind !== "limited") {
+    const voice = await quickVoice(projectId);
+    if (voice) agent = { ...voice, brief: ownBrief };
+  }
+  if (agent.kind === "none" || agent.kind === "limited") {
+    await finish(messageId, {
+      content: "reason" in agent ? agent.reason : "No agent is set for this. Pick or create one above.",
+      status: "failed",
+    });
+    return;
+  }
+  if (agent.kind === "cli") {
+    await finish(messageId, { content: "This agent runs in GitHub Actions, and no API agent is set to speak for it here.", status: "failed" });
+    return;
+  }
+
+  const project = await projectFor(projectId);
+  let system: string;
+  let tools: ToolDef[] = [];
+  if (column) {
+    system = await columnSystemPrompt(projectId, column, speaker as AgentRole, project.repoFullName, agent.brief);
+    tools = [...FILE_TOOL_DEFS, ACT_ON_CARD_DEF];
+  } else {
+    const prompt = await sentinelSystemPrompt(projectId, sentinelId!);
+    if (!prompt) {
+      await finish(messageId, {
+        content: "I have not audited this board yet, so I have nothing to say about it. Summon me from Sentinels and ask again.",
+        status: "done",
+      });
+      return;
+    }
+    system = prompt;
+  }
+  system = [
+    system,
+    "",
+    "The board right now:",
+    boardSnapshot(await repository().boardCards(projectId)),
+    "",
+    `You are ${guestLabel(speaker as GuestId)}. Answer the person's last message, briefly and plainly.`,
+  ].join("\n");
+
+  const past = await historyBefore(projectId, messageId);
+  const { info } = agent;
+  let speak: Speak;
+  if (info.kind === "anthropic") {
+    speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, past, tools);
+  } else {
+    if (!agent.apiKey) throw new Error(`This agent has no ${info.label} API key. Edit it and add one.`);
+    if (!agent.model) throw new Error(`This agent has no ${info.label} model. Edit it and pick one.`);
+    speak = openAiSpeak(info, agent.apiKey, agent.model, system, past, tools);
+  }
+
+  const client = vcs(project.repoFullName, (await credentialsForProject(project)).githubToken);
+  const proposals: AssistantProposal[] = [];
+  const done: string[] = [];
+  const runTool = async (call: ToolCall) => {
+    if (call.name === "act_on_card" && column) {
+      try {
+        const { key, action } = actOnCardInput.parse(call.input);
+        const result = await actOnColumnCard(projectId, column, key, action, proposals);
+        done.push(result);
+        return { content: result, isError: false };
+      } catch (e) {
+        return { content: e instanceof Error ? e.message : String(e), isError: true };
+      }
+    }
+    return runFileTool(call, client, project.baseBranch, async () => "There is no card chat here: use act_on_card.");
+  };
+
+  const ran = await runChatLoop({ speak, runTool, maxTurns: MAX_TURNS, budgetMs: MAX_ANSWER_MS });
+  const actions = done.join("\n");
+  if (ran.end === "answered") {
+    await finish(messageId, { content: ran.text || actions || "I have nothing to add.", proposals, status: "done" });
+  } else if (ran.end === "out_of_time") {
+    await finish(messageId, {
+      content: outOfTimeReply(MAX_ANSWER_MS, ran.read, actions),
+      proposals,
+      status: actions.trim() || proposals.length ? "done" : "failed",
+    });
+  } else {
+    const closing = ran.text.trim() || actions;
+    await finish(messageId, {
+      content: outOfRoundsReply(MAX_TURNS, ran.read, closing),
+      proposals,
+      status: closing.trim() || proposals.length ? "done" : "failed",
     });
   }
 }

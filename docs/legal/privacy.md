@@ -1,13 +1,18 @@
 # Privacy Policy
 
-**Version:** 2026-09-24
+**Version:** 2026-11-04
 **Status:** draft, pending review by qualified counsel before this closed
 beta is offered commercially.
 
 ## What Formic collects
 
+- **Your email address**, if you sign in by email, to send you sign-in links
+  and recognise you. Each link is stored only as a one-way hash and stops
+  working after one use or fifteen minutes.
 - **Your GitHub profile** (id, login, name, avatar) and a GitHub App token,
-  to sign you in and act as you on repositories you install the app on.
+  only if you sign in with GitHub or connect it, to act as you on
+  repositories you install the app on. Disconnecting GitHub in Settings
+  revokes the token at GitHub straight away and removes it from Formic.
 - **Repository content**: whatever a run reads or writes — code, issues,
   pull requests, CI logs — to do the work you asked for.
 - **Your prompts and requests**: what you type into a card, the assistant, or

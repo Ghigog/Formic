@@ -27,7 +27,7 @@ export async function sharedBoard(repoFullName: string): Promise<ProjectSummary 
 export async function canSeeBoard(user: UserRecord, project: ProjectSummary): Promise<boolean> {
   if (project.ownerId === user.id) return true;
   if (project.ownerId === null) return authMode() === "local";
-  return authMode() === "github" && repository().isMember(project.id, user.id);
+  return authMode() === "accounts" && repository().isMember(project.id, user.id);
 }
 
 /** Whether this person's own GitHub access reaches a repository. */
@@ -42,7 +42,7 @@ export async function canReach(user: UserRecord, repoFullName: string): Promise<
  * GitHub access is seen to reach it. Otherwise the board itself.
  */
 export async function boardFor(user: UserRecord, project: ProjectSummary): Promise<ProjectSummary> {
-  if (authMode() !== "github" || project.ownerId !== user.id) return project;
+  if (authMode() !== "accounts" || project.ownerId !== user.id) return project;
   const shared = await sharedBoard(project.repoFullName);
   if (!shared || shared.id === project.id) return project;
   const repo = repository();
@@ -58,7 +58,7 @@ export async function boardFor(user: UserRecord, project: ProjectSummary): Promi
  * is left out, so each repository shows once.
  */
 export async function boardsFor(user: UserRecord, own: ProjectSummary[]): Promise<ProjectSummary[]> {
-  if (authMode() !== "github") return own;
+  if (authMode() !== "accounts") return own;
   const shared = await repository().memberProjects(user.id);
   const joined = new Set(shared.map((p) => p.repoFullName.toLowerCase()));
   return [...own.filter((p) => !joined.has(p.repoFullName.toLowerCase())), ...shared];

@@ -5,6 +5,16 @@ const PORT = Number(process.env.E2E_PORT ?? 3210);
 const baseURL = `http://127.0.0.1:${PORT}`;
 
 /**
+ * A second server on the same build, in accounts mode: email sign-in with
+ * the console mailer, which appends each email to ACCOUNTS_OUTBOX for
+ * e2e/accounts.spec.ts to read. No GitHub App, so nobody here can sign in
+ * any way but email.
+ */
+export const ACCOUNTS_PORT = PORT + 1;
+const accountsURL = `http://127.0.0.1:${ACCOUNTS_PORT}`;
+export const ACCOUNTS_OUTBOX = `${process.cwd()}/e2e/.results/outbox.jsonl`;
+
+/**
  * Chromium is pre-installed in some environments (CI images, the agent
  * sandbox) rather than downloaded by Playwright. Point at it with
  * PLAYWRIGHT_CHROMIUM_EXECUTABLE instead of running `playwright install`.
@@ -73,13 +83,23 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testIgnore: /mobile\.spec\.ts/,
+      testIgnore: /(mobile|accounts)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 980 } },
     },
     {
       name: "mobile",
       testMatch: /mobile\.spec\.ts/,
       use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } },
+    },
+    {
+      name: "accounts",
+      testMatch: /accounts\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 980 },
+        baseURL: accountsURL,
+        storageState: { cookies: [], origins: [{ ...storageState.origins[0]!, origin: accountsURL }] },
+      },
     },
   ],
 
@@ -88,7 +108,7 @@ export default defineConfig({
    * request, which turns the first assertion of every run into a timeout
    * race, and it is not the artefact that ships.
    */
-  webServer: {
+  webServer: [{
     command: `${buildFirst}npx next start -p ${PORT}`,
     /*
      * The board's agents run as mocks here, and this is the only reason they
@@ -111,5 +131,24 @@ export default defineConfig({
     timeout: 240_000,
     stdout: "pipe",
     stderr: "pipe",
-  },
+  }, {
+    // Waits for the first server, so it starts on the build that one made.
+    command: `until curl -sf ${baseURL}/api/health >/dev/null; do sleep 1; done; rm -f ${ACCOUNTS_OUTBOX}; npx next start -p ${ACCOUNTS_PORT}`,
+    env: {
+      ...process.env,
+      AGENT_PROVIDER: "mock",
+      GITHUB_APP_CLIENT_ID: "",
+      GITHUB_APP_CLIENT_SECRET: "",
+      FORMIC_MAILER: "console",
+      FORMIC_MAILER_OUTBOX: ACCOUNTS_OUTBOX,
+      FORMIC_URL: accountsURL,
+      FORMIC_SECRET: "e2e-accounts-secret-at-least-32-bytes",
+      FORMIC_ALLOWED_USERS: "",
+    } as Record<string, string>,
+    url: `${accountsURL}/api/health`,
+    reuseExistingServer: process.env.E2E_REUSE_SERVER === "1",
+    timeout: 300_000,
+    stdout: "pipe",
+    stderr: "pipe",
+  }],
 });

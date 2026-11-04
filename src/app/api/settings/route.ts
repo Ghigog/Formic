@@ -186,7 +186,7 @@ async function putRunTimeBudget(userId: string, json: unknown) {
 async function putGithubToken(json: { githubToken: unknown }) {
   if (authMode() !== "local") {
     return Response.json(
-      { error: "Signed in with GitHub, your sign-in is the GitHub credential. Nothing to set here." },
+      { error: "With accounts, GitHub is connected per person in Settings. Nothing to set here." },
       { status: 400 },
     );
   }

@@ -2,44 +2,66 @@
 
 import { useEffect, useId, useState } from "react";
 import Link from "next/link";
+import { SENTINELS, isUnlocked } from "@/lib/sentinels/roster";
+import { useSentinels } from "./store";
 
-const dismissedKey = (projectId: string) => `formic:unlock-all-sentinels:${projectId}`;
-
-function wasDismissed(projectId: string): boolean {
-  try {
-    return localStorage.getItem(dismissedKey(projectId)) !== null;
-  } catch {
-    return false;
-  }
+/** Whether the offer still applies: some Sentinel is locked and nothing has settled it yet. */
+export function shouldOfferUnlockAll(opts: {
+  established: boolean;
+  level: number;
+  unlockAll: boolean;
+  dismissedAt: string | null;
+}): boolean {
+  if (!opts.established || opts.unlockAll || opts.dismissedAt) return false;
+  return !SENTINELS.every((s) => isUnlocked(s, opts.level, false));
 }
 
 /**
  * Offered once per project when its history is long enough to count as
- * established and every Sentinel is still not unlocked. It only points at the
- * Settings toggle; the owner switches it on there.
+ * established and some Sentinel is still locked. The dismissal is kept on the
+ * project, so no other device asks again. It only points at the Settings
+ * toggle; the owner switches it on there.
  */
 export function UnlockAllDialog({ projectId, unlockAll }: { projectId: string; unlockAll: boolean }) {
+  const level = useSentinels()?.level ?? 0;
   const [open, setOpen] = useState(false);
   const titleId = useId();
 
   useEffect(() => {
-    if (unlockAll || wasDismissed(projectId)) return;
+    if (unlockAll) return;
     let live = true;
     void fetch(`/api/projects/${projectId}`, { cache: "no-store" })
-      .then((res) => (res.ok ? (res.json() as Promise<{ established?: boolean; unlockAllSentinels?: boolean }>) : null))
+      .then((res) => (res.ok ? (res.json() as Promise<{
+            established?: boolean;
+            unlockAllSentinels?: boolean;
+            unlockAllOfferDismissedAt?: string | null;
+          }>) : null))
       .then((body) => {
-        if (live && body?.established && !body.unlockAllSentinels) setOpen(true);
+        if (
+          live &&
+          body &&
+          shouldOfferUnlockAll({
+            established: !!body.established,
+            level,
+            unlockAll: !!body.unlockAllSentinels,
+            dismissedAt: body.unlockAllOfferDismissedAt ?? null,
+          })
+        ) {
+          setOpen(true);
+        }
       })
       .catch(() => {});
     return () => {
       live = false;
     };
-  }, [projectId, unlockAll]);
+  }, [projectId, unlockAll, level]);
 
   const dismiss = () => {
-    try {
-      localStorage.setItem(dismissedKey(projectId), "1");
-    } catch {}
+    void fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ unlockAllOfferDismissed: true }),
+    }).catch(() => {});
     setOpen(false);
   };
 
