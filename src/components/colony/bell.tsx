@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useColony } from "./colony";
+import { Tile } from "./tile";
 import { atRest, cordFor, createSwingDetector, stepSpring, tiltFor, type Spring } from "./bell-swing";
 
 type BellState = { left: number; armed: boolean };
@@ -40,7 +41,7 @@ function rangLine(r: RingResult | null): string {
  * to carry on. Tapping the bell itself arms a golden one, earned every five
  * levels, which rings itself a minute after a limit resets.
  */
-export function Bell() {
+export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
   // The colony's own sound engine: it honours the sound switch and keeps the
   // audio alive where WebKit parks it (the desktop app, iPhone).
   const sfx = useColony()?.sfx;
@@ -69,6 +70,8 @@ export function Bell() {
       if (frame.current !== null) cancelAnimationFrame(frame.current);
     };
   }, []);
+
+  useEffect(() => onSay?.(said), [said, onSay]);
 
   useEffect(() => {
     if (!said) return;
@@ -180,9 +183,27 @@ export function Bell() {
   const golden = bell ? `${bell.left} golden ${bell.left === 1 ? "bell" : "bells"} left` : "";
 
   return (
-    <section aria-label="Bells" className="bg-panel flex items-center gap-4 rounded-lg px-3 py-3">
-      <div className="relative h-[140px] w-[96px] shrink-0 select-none" data-testid="bell-rig" data-armed={armed || undefined}>
-        <svg viewBox="0 0 96 140" width="96" height="140" aria-hidden="true" className="overflow-visible">
+    <Tile
+      data="bell"
+      icon={null}
+      value={bell ? bell.left : "–"}
+      tipLabel="How the bell works"
+      tip={
+        <>
+          <b>{armed ? "Golden bell" : "Silver bell"}.</b>{" "}
+          {armed
+            ? "Armed. It rings itself a minute after a usage limit resets, then it's used up."
+            : "Swing the cord to tell every card stopped by a usage limit to carry on."}{" "}
+          The silver bell is free at every level; a golden one comes every five levels. Tap the bell to arm a golden
+          one, and tap it again to go back to silver. To swing the cord, drag it side to side and back (or press the
+          left and right arrows in turn); a full swing rings the bell.{" "}
+          {golden}
+          {bell && !armed ? (bell.left > 0 ? " · tap the bell to arm one" : " · one every five levels") : ""}
+        </>
+      }
+    >
+      <div className="relative col-start-1 row-start-1 select-none" data-testid="bell-rig" data-armed={armed || undefined}>
+        <svg viewBox="0 0 96 140" aria-hidden="true" className="h-full w-full overflow-visible">
           <defs>
             <linearGradient id={`${gradient}-metal`} x1="0" x2="1">
               {armed ? (
@@ -257,36 +278,20 @@ export function Bell() {
           aria-label={armed ? "Golden bell, armed: tap to put it back to silver" : `Bell: tap to arm a golden bell, ${golden}`}
           aria-pressed={armed}
           onClick={() => void toggleArmed()}
-          className="absolute top-[18px] left-[22px] h-[54px] w-[52px] cursor-pointer rounded-full"
+          className="absolute top-[12.9%] left-[22.9%] h-[38.6%] w-[54.2%] cursor-pointer rounded-full"
         />
         <button
           type="button"
           aria-label="Bell cord: swing it side to side to ring the bell"
-          aria-describedby={`${gradient}-how`}
           onPointerDown={press}
           onPointerMove={drag}
           onPointerUp={letGo}
           onPointerCancel={letGo}
           onKeyDown={swingByKey}
           style={{ touchAction: "none" }}
-          className="absolute bottom-0 left-[8px] h-[64px] w-[80px] cursor-grab rounded-md active:cursor-grabbing"
+          className="absolute bottom-0 left-[8.3%] h-[45.7%] w-[83.3%] cursor-grab rounded-md active:cursor-grabbing"
         />
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="text-ink font-serif text-[16px] leading-tight font-semibold">{armed ? "Golden bell" : "Silver bell"}</span>
-        <p id={`${gradient}-how`} className="text-muted text-[12px] leading-[1.45]">
-          {armed
-            ? "Armed. It rings itself a minute after a usage limit resets, then it's used up."
-            : "Swing the cord to tell every card stopped by a usage limit to carry on."}
-        </p>
-        <span className="text-muted font-mono text-[10px]">
-          {golden}
-          {bell && !armed ? (bell.left > 0 ? " · tap the bell to arm one" : " · one every five levels") : ""}
-        </span>
-        <p role="status" className="text-ink min-h-[18px] text-[12px] font-semibold">
-          {said ?? ""}
-        </p>
-      </div>
-    </section>
+    </Tile>
   );
 }

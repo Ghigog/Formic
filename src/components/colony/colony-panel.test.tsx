@@ -46,7 +46,7 @@ describe("the colony panel", () => {
     serve(view({ level: 3 }));
     render(<ColonyPanel level={3} />);
     const button = (await screen.findByRole("button", { name: /Auto-scout/ })) as HTMLButtonElement;
-    expect(button.textContent).toMatch(/unlocks at Lv 8/);
+    expect(button.getAttribute("aria-label")).toMatch(/unlocks at Lv 8/);
     expect(button.disabled).toBe(true);
     expect(screen.queryByLabelText("More agents")).toBeNull();
     expect(screen.queryByText(/Cap how many agents run/)).toBeNull();
@@ -56,7 +56,7 @@ describe("the colony panel", () => {
     serve(view({ level: 8, colonySize: null }));
     render(<ColonyPanel level={8} />);
     const button = (await screen.findByRole("button", { name: /Auto-scout/ })) as HTMLButtonElement;
-    expect(button.textContent).toMatch(/Settings/);
+    expect(button.getAttribute("aria-label")).toMatch(/Settings/);
     expect(button.disabled).toBe(true);
   });
 
@@ -71,18 +71,24 @@ describe("the colony panel", () => {
   it("shows the scout and reserve caps the level allows", async () => {
     serve(view({ level: 3, floor: 1, nextFloorLevel: 6, colonyReserve: 1 }));
     render(<ColonyPanel level={3} />);
-    await screen.findByText("Up to 2 per ticket · Lv 4 allows 3");
+    await screen.findByRole("button", { name: "How scouts work" });
     expect(document.querySelector("[data-scout-cap]")!.textContent).toBe("2");
     expect(document.querySelector("[data-reserve-cap]")!.textContent).toBe("1");
-    expect(screen.getByText("1 of 4 slots kept for urgent work")).toBeTruthy();
-    expect(screen.getByText("At least 1 at Lv 3 · Lv 6 lowers it")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "How scouts work" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/Up to 2 per ticket · Lv 4 allows 3/);
+    fireEvent.pointerDown(document.body);
+    fireEvent.click(screen.getByRole("button", { name: "How the colony reserve works" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/1 of 4 slots kept for urgent work/);
+    expect(screen.getByRole("tooltip").textContent).toMatch(/At least 1 at Lv 3 · Lv 6 lowers it/);
   });
 
   it("says the reserve is off with no colony cap", async () => {
     serve(view({ colonySize: null, colonyReserve: 0 }));
     render(<ColonyPanel level={1} />);
-    await screen.findByText("No colony cap · set one in Settings");
+    await screen.findByRole("button", { name: "How the colony reserve works" });
     expect(document.querySelector("[data-reserve-cap]")!.textContent).toBe("off");
+    fireEvent.click(screen.getByRole("button", { name: "How the colony reserve works" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/No colony cap · set one in Settings/);
   });
 
   it("opens each tip when pressed and closes it on a second press", async () => {
