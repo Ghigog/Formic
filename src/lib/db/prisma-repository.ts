@@ -3,7 +3,7 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isProviderId } from "@/lib/llm/providers";
 import { PRUNABLE_EVENT_TYPES } from "@/lib/domain/events";
-import { isGuestId, type GuestId } from "@/lib/calls/guests";
+import { isGuestId, type GuestId } from "@/lib/meetings/guests";
 
 import { Prisma } from "@/generated/prisma/client";
 

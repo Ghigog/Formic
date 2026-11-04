@@ -13,7 +13,7 @@ vi.mock("@/lib/board/project", () => ({ activeProject, noProject: () => Response
 const route = await import("./route");
 
 const POST = async (body: unknown) =>
-  (await route.POST(new Request("http://localhost/api/calls/meetings", { method: "POST", body: JSON.stringify(body) }))) as Response;
+  (await route.POST(new Request("http://localhost/api/meetings", { method: "POST", body: JSON.stringify(body) }))) as Response;
 const GET = async () => (await route.GET()) as Response;
 
 const valid = { title: "Standup", startsAt: "2026-11-10T09:00:00.000Z", guests: ["assistant"] };
@@ -26,7 +26,7 @@ beforeEach(() => {
   repo.meetings.mockResolvedValue([]);
 });
 
-describe("POST /api/calls/meetings", () => {
+describe("POST /api/meetings", () => {
   it("stores a valid meeting and answers 201", async () => {
     const res = await POST(valid);
     expect(res.status).toBe(201);
@@ -55,7 +55,7 @@ describe("POST /api/calls/meetings", () => {
   });
 });
 
-describe("GET /api/calls/meetings", () => {
+describe("GET /api/meetings", () => {
   it("lists the active board's meetings", async () => {
     repo.meetings.mockResolvedValue([{ id: "m-1" }]);
     const res = await GET();

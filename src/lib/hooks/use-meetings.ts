@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Meeting, MeetingRepeat } from "@/lib/db/repository";
-import type { GuestId } from "@/lib/calls/guests";
+import type { GuestId } from "@/lib/meetings/guests";
 
 export interface MeetingInput {
   title: string;
@@ -32,7 +32,7 @@ export function useMeetings() {
 
   useEffect(() => {
     let live = true;
-    fetch("/api/calls/meetings")
+    fetch("/api/meetings")
       .then(async (res) => {
         if (!res.ok) throw new Error("Could not load the meetings.");
         return (await res.json()) as { meetings: MeetingJson[] };
@@ -46,7 +46,7 @@ export function useMeetings() {
 
   /** Saves a meeting; throws with the server's message when it refuses. */
   const create = useCallback(async (input: MeetingInput) => {
-    const res = await fetch("/api/calls/meetings", {
+    const res = await fetch("/api/meetings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...input, startsAt: input.startsAt.toISOString() }),

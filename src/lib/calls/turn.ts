@@ -33,7 +33,7 @@ import { extractJson } from "@/lib/llm/openai-compat";
 import { sentinel as findSentinel } from "@/lib/sentinels/roster";
 import { sentinelsFor } from "@/lib/sentinels/service";
 import { vcs } from "@/lib/vcs";
-import { COLUMN_AGENT_GUESTS, guestLabel, type GuestId } from "./guests";
+import { COLUMN_AGENT_GUESTS, guestLabel, type GuestId } from "@/lib/meetings/guests";
 import { callContext, detectAddGuest, resolveAddressee } from "./routing";
 
 /**

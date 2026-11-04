@@ -1,5 +1,5 @@
 import type { CallMessage, Meeting } from "@/lib/db/repository";
-import { COLUMN_AGENT_GUESTS, guestLabel, type GuestId } from "./guests";
+import { COLUMN_AGENT_GUESTS, guestLabel, type GuestId } from "@/lib/meetings/guests";
 import { SENTINELS } from "@/lib/sentinels/roster";
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
