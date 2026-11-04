@@ -54,6 +54,20 @@ describe("sessions", () => {
     expect(safeNext("//evil.com")).toBe("/");
     expect(safeNext("https://evil.com")).toBe("/");
     expect(safeNext(null)).toBe("/");
+    expect(safeNext("/boards/1?x=1")).toBe("/boards/1?x=1");
+  });
+
+  it("refuses backslash and scheme-relative payloads", () => {
+    expect(safeNext("/\\evil.example")).toBe("/");
+    expect(safeNext("\\\\evil.example")).toBe("/");
+    expect(safeNext("/\t/evil.example")).toBe("/");
+    expect(safeNext("/\n/evil.example")).toBe("/");
+    expect(safeNext("/\r/evil.example")).toBe("/");
+    expect(safeNext("")).toBe("/");
+  });
+
+  it("keeps a percent-encoded tab as a harmless same-site path", () => {
+    expect(safeNext("/%09/evil.example")).toBe("/%09/evil.example");
   });
 });
 

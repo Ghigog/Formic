@@ -341,7 +341,12 @@ touch targets ≥44px. No fake status bar — the real one renders over this.
 **Colony.** Not a page: a layer over the board. The nest button in the header opens a 400px
 popover (a bottom-aligned dialog "Colony" above the ambient drawer) with rank octagon (LV, rank in
 Newsreader, XP bar), bug shapes and colours as locked/unlocked swatches ("unlocks at level N"), the
-Queen tray (a Queen to drag onto a card), scouts and reserve steppers, and an Archive link. A
+one row of four equal square tiles (Queens, Scouts, Reserve, Bell; `bg-panel`, at least 44px
+tall), each with its mark large and faint behind, its number in Newsreader semibold in front, and
+an i in the top-right corner whose note opens full-width under the row and holds the explanation.
+The Queens tile is dragged onto a card, the Scouts tile toggles Auto-scout, Reserve only shows (it
+is set in Settings), and the Bell tile keeps its tap-to-arm bell and swing-to-ring cord. Errors and
+what the bell says show in one line under the row. Then an Archive link. A
 timeline panel (region "Timeline") charts merges per day, epic rows, streak and yield; it expands
 and collapses and pages Earlier / Later. Merges, unlocks and bugs show floating `+N` pops, rings
 and bursts (see Motion and Sound); the golden bell hangs in the header and is swung to notify.
