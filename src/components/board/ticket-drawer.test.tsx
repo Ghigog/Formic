@@ -64,6 +64,7 @@ function open(
   view: TicketView = VIEW,
   attachments: AttachmentSummary[] = [],
   kpis: unknown = NO_KPIS,
+  kpisUnlocked = true,
 ) {
   vi.stubGlobal(
     "fetch",
@@ -89,6 +90,7 @@ function open(
       onOpenEpic={onOpenEpic}
       onOpenTicket={onOpenTicket}
       subscribe={subscribe}
+      kpisUnlocked={kpisUnlocked}
     />,
   );
   const send = (e: FormicEvent, seq: number) =>
@@ -170,6 +172,7 @@ function openTodo(view: TicketView) {
       onOpenEpic={() => {}}
       onOpenTicket={() => {}}
       subscribe={() => () => {}}
+      kpisUnlocked
     />,
   );
   return { fetched };
@@ -504,6 +507,7 @@ describe("TicketDrawer on-screen keyboard", () => {
           onOpenEpic={() => {}}
           onOpenTicket={() => {}}
           subscribe={() => () => {}}
+          kpisUnlocked
         />,
       );
       const dialog = screen.getByRole("dialog");
@@ -583,6 +587,7 @@ describe("TicketDrawer archive", () => {
         onOpenEpic={() => {}}
         onOpenTicket={() => {}}
         subscribe={() => () => {}}
+        kpisUnlocked
       />,
     );
     return { calls, onClose, onChanged };
@@ -669,6 +674,13 @@ describe("TicketDrawer KPIs", () => {
   it("shows the pass rate of a ticket sent back once then passed", async () => {
     open(VIEW, [], { ...NO_KPIS, passRate: 0.5 });
     expect(await screen.findByText("50%")).toBeInTheDocument();
+  });
+
+  it("shows no KPIs block below the KPIs level", async () => {
+    open(VIEW, [], { ...NO_KPIS, passRate: 0.5 }, false);
+    await screen.findByText("File scope");
+    expect(screen.queryByText("Pass rate")).toBeNull();
+    expect(screen.queryByText("Timeline")).toBeNull();
   });
 
   it("shows the precision count", async () => {

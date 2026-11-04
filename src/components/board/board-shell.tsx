@@ -35,7 +35,7 @@ import { ColonyTimeline } from "@/components/colony/timeline";
 import { MeetingsMenu } from "@/components/meetings/meetings-menu";
 import { SentinelsPage } from "@/components/sentinels/sentinels";
 import { UnlockAllDialog } from "@/components/sentinels/unlock-all-dialog";
-import { scoreOf } from "@/lib/colony/game";
+import { featureUnlocked, scoreOf } from "@/lib/colony/game";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import type { SentinelStates } from "@/lib/sentinels/view";
 import { ColonyPopover, NestButton } from "@/components/colony/nest";
@@ -238,7 +238,7 @@ export function BoardShell({
   };
 
   return (
-    <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged}>
+    <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged} unlockAll={unlockAllSentinels}>
     <CallProvider assistant={assistantControls} unlockAllSentinels={unlockAllSentinels}>
     <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level} unlockAll={unlockAllSentinels}>
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
@@ -335,6 +335,7 @@ export function BoardShell({
           setOpenEpicId(epicId);
         }}
         onOpenTicket={setOpenTicketId}
+        kpisUnlocked={featureUnlocked("kpis", scoreOf(cards).level)}
         subscribe={subscribe}
         onChanged={() => void refetch().catch(() => {})}
       />

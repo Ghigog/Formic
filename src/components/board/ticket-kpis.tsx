@@ -14,7 +14,11 @@ interface TicketKpiView {
 const formatTime = (iso: string) => new Date(iso).toLocaleString();
 
 /** How a ticket moved between columns, how often review passed it and how well it was specified. */
-export function TicketKpis({ ticketId }: { ticketId: string }) {
+export function TicketKpis({ ticketId, unlocked }: { ticketId: string; unlocked: boolean }) {
+  return unlocked ? <TicketKpiBlock ticketId={ticketId} /> : null;
+}
+
+function TicketKpiBlock({ ticketId }: { ticketId: string }) {
   const [kpis, setKpis] = useState<TicketKpiView | null>(null);
 
   useEffect(() => {
