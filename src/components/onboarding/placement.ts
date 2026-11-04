@@ -60,6 +60,10 @@ export function antSpot(boxes: Box[], side: Side, vw: number, vh: number): Spot 
   else if (side === "above") p = { x: cx, y: u.y - ANT_GAP, face: 180 };
   else if (side === "inside") p = { x: cx, y: u.y + u.h - 90, face: 0 };
   else p = { x: cx, y: u.y + u.h + ANT_GAP, face: 0 };
+  // On a phone the ant would stand over the app bar or a column's filter
+  // button, so it waits just above the docked bubble instead; the lit hole
+  // still shows what it is talking about.
+  if (vw < DOCK_BELOW) p = { ...p, y: vh - BUBBLE_H - ANT_MARGIN };
   return {
     ...p,
     x: clamp(p.x, ANT_MARGIN, vw - ANT_MARGIN),

@@ -85,7 +85,7 @@ export function BoardHeader({
       </header>
 
       {/* Mobile app bar */}
-      <header className="border-line bg-card flex h-14 shrink-0 items-center gap-[10px] border-b px-4 md:hidden">
+      <header className="border-line bg-card flex h-14 shrink-0 items-center gap-1.5 border-b px-3 md:hidden">
         <LogoButton
           count={activity.count}
           onClick={toggle}
@@ -104,9 +104,9 @@ export function BoardHeader({
         {assistant && isMobile && (
           <AskButton a={assistant} repoName={repo ?? repoFullName} />
         )}
-        <div className="flex-grow" />
+        <div className="min-w-0 flex-grow" />
         <ColonyMobileStats />
-        <Link href="/calls" className="flex min-h-11 items-center text-sm font-medium">
+        <Link href="/calls" className="flex min-h-11 shrink-0 items-center px-1 text-[13px] font-medium">
           Calls
         </Link>
         {account && <AccountMenu account={account} />}

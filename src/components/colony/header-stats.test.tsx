@@ -3,15 +3,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ColonyProvider } from "./colony";
-import { ColonyHeaderStats, ColonyMobileStats, LevelBadge } from "./header-stats";
+import {
+  ColonyHeaderStats,
+  ColonyMobileStats,
+  LevelBadge,
+} from "./header-stats";
 import { SentinelsProvider } from "@/components/sentinels/store";
+import { makeCard } from "@/test/cards";
+import type { BoardCard } from "@/lib/domain/entities";
 
 /** The header's corner with a colony and the sentinels around it. */
-function renderHeader(ui: ReactNode = <ColonyHeaderStats />) {
+function renderHeader(
+  ui: ReactNode = <ColonyHeaderStats />,
+  cards: BoardCard[] = [],
+) {
   return render(
     <ColonyProvider
       storageKey="colony-test-header-stats"
-      cards={[]}
+      cards={cards}
       extras={{}}
     >
       <SentinelsProvider initial={{}} level={1}>
@@ -138,5 +147,42 @@ describe("LevelBadge", () => {
     );
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByText("4")).toBeInTheDocument();
+  });
+});
+
+describe("Heat superscript", () => {
+  const justMerged = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      makeCard({
+        key: `H-${i}`,
+        status: "merged",
+        mergedAt: new Date().toISOString(),
+      }),
+    );
+
+  it("raises ×2.5 at the points' top right in the heat colour, with the stacks in its tooltip", () => {
+    renderHeader(<ColonyHeaderStats />, justMerged(3));
+    const heat = document.querySelector('[data-colony="heat"]')!;
+    expect(heat.tagName).toBe("SUP");
+    expect(heat).toHaveTextContent("×2.5");
+    expect(heat).toHaveStyle({ color: "var(--clay-chip-text)" });
+    expect(heat.getAttribute("title")).toMatch(/Stack 3: \d+:\d\d left/);
+    expect(heat.closest('[data-tour="points"]')).not.toBeNull();
+    expect(document.querySelector(".oct")).toBeNull();
+  });
+
+  it("keeps an empty anchor and no label at ×1.0", () => {
+    renderHeader(<ColonyHeaderStats />);
+    const heat = document.querySelector('[data-colony="heat"]')!;
+    expect(heat).toBeInTheDocument();
+    expect(heat).toBeEmptyDOMElement();
+    expect(screen.queryByText(/^×/)).toBeNull();
+  });
+
+  it("sits on the points in the mobile bar too", () => {
+    renderHeader(<ColonyMobileStats />, justMerged(1));
+    expect(document.querySelector('[data-colony="heat"]')).toHaveTextContent(
+      "×1.5",
+    );
   });
 });
