@@ -153,6 +153,26 @@ the file.
 
 ## Custom components
 
+**Buttons.** There is no shared Button component; each file writes its classes, so these are the
+sizes to write. Radius is 8 (`rounded-lg`) on every variant; `rounded-md` (6) is for inputs and
+menu rows, never a button. Label is 13px semibold (12px on Small, 14px on full-page error screens).
+
+```
+variant            height        padding-x   fill / border
+Primary            40 (h-10)     14 (px-3.5) terracotta-cta, white label; no border
+Primary compact    36 (h-9)      14 (px-3.5) same, in dialogs, the tour and the calls form
+Secondary          40 / 36       14 (px-3.5) border-line, card or cream fill, ink label
+Dark               36 (h-9)      14 (px-3.5) anthracite fill, cream label (sentinels)
+Small              32 (h-8)      12 (px-3)   either fill, 12px label; card actions, drawer rows
+Text               36-40         4-8         no fill or border, muted label, ink on hover
+```
+
+Touch targets on mobile rise to 44px (`max-md:size-11` / `h-11`).
+
+**Focus ring.** One global rule in `globals.css`: `:focus-visible` draws a 2px solid outline in
+`var(--focus)` (terracotta-cta) with a 2px offset. Do not remove it with `outline-none` on a
+button; inputs swap it for a clay border on focus.
+
 **Octagonal coin badge.** Two nested elements, both clipped to the same chamfered octagon: outer
 is the 1px border colour with `padding: 1px`, inner is the fill. Chamfer 7px on small badges,
 9-10px on 26px+ nodes.
@@ -191,12 +211,14 @@ Motion is functional or characterful, never filler. All of it is `@keyframes` in
 Agent liveness   clayPulse 2.4s (running card border + box-shadow, active step), dotPulse 1.6s
                  (live-agent dots), trailPulse 2.4s (dependency trail), readyGlow 2.4s (ready
                  tickets), ant-march 0.9s (trail ants)
-Board            columnSlideFromRight / columnSlideFromLeft 250ms (column change)
-Dig transition   digBoardOutUp/Down, digEarthInFromBelow/Above, digBoardInFromBelow/Above,
-                 digEarthOutUp/Down, digBounceUp/Down, digPeekBelow/Above, digTowardIn: 320-460ms
-                 phase animations; digScrollNearUp/FarUp/NearDown/FarDown: infinite soil loops
-                 (900ms / 2600ms); digFadeOut / digFadeIn 200ms: the reduced-motion stand-ins
-Guide ant, tour  guideAntIdle 2.6s, guideAntLegsA/B and guideAntBob 0.19s, guideAntTalk 0.32s,
+Board            columnSlideFromRight, columnSlideFromLeft 250ms (column change)
+Dig transition   digBoardOutUp, digBoardOutDown, digEarthInFromBelow, digEarthInFromAbove,
+                 digBoardInFromBelow, digBoardInFromAbove, digEarthOutUp, digEarthOutDown,
+                 digBounceUp, digBounceDown, digPeekBelow, digPeekAbove, digTowardIn: 320-460ms
+                 phase animations. digScrollNearUp, digScrollFarUp, digScrollNearDown,
+                 digScrollFarDown: infinite soil loops (900ms near, 2600ms far). digFadeOut,
+                 digFadeIn 200ms: the reduced-motion stand-ins
+Guide ant, tour  guideAntIdle 2.6s, guideAntLegsA, guideAntLegsB and guideAntBob 0.19s, guideAntTalk 0.32s,
                  tourBubbleIn 0.22s
 Colony           bellWave 900ms, bellGlint 2.6s
 Timeline         tlStripe, tlPing 1.8s
@@ -215,7 +237,7 @@ scrolls and marches).
   component are gated with `motion-safe:` / `motion-reduce:` or the `.sentinel-motion` class.
   State that motion carried survives another way: a live card keeps its clay border.
   `src/app/reduced-motion.test.ts` enforces this for every `@keyframes`.
-- Dig transition: the board fades (digFadeOut / digFadeIn, 200ms) and `.dig-earth` is hidden.
+- Dig transition: the board fades (digFadeOut, digFadeIn, 200ms) and `.dig-earth` is hidden.
   No earth or scroll loop plays.
 - JS: motion driven from script asks `prefersReducedMotion()`, i.e.
   `window.matchMedia("(prefers-reduced-motion: reduce)").matches`, and skips to the end state.
