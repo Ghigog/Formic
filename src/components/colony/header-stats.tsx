@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/components/ui/cn";
 import {
   HEAT_MAX,
@@ -51,7 +51,7 @@ function PointsCounter({
       data-colony="score"
       aria-live="polite"
       className={cn(
-        "text-ink inline-block font-mono leading-none font-medium tabular-nums",
+        "inline-block font-mono leading-none font-medium tabular-nums",
         className ?? "min-w-[72px] origin-right text-right text-[18px]",
       )}
     >
@@ -60,17 +60,20 @@ function PointsCounter({
   );
 }
 
-/** Heat's colour climbs from terracotta to clay to crimson with the stacks. */
-const HEAT_INK = (n: number) =>
-  n <= 2
-    ? "var(--terracotta-deep)"
-    : n <= 4
-      ? "var(--clay-chip-text)"
-      : "var(--crimson-chip-text)";
+/** The panel's tint and text climb from terracotta to clay to crimson with the stacks. */
+const HEAT_TIER = (n: number) =>
+  n <= 0
+    ? null
+    : n <= 2
+      ? { bg: "var(--epic-chip)", ink: "var(--terracotta-deep)" }
+      : n <= 4
+        ? { bg: "var(--clay-chip)", ink: "var(--clay-chip-text)" }
+        : { bg: "var(--crimson-chip)", ink: "var(--crimson-chip-text)" };
 
 /**
- * The multiplier as a raised label at the points' top right, hidden at ×1.0.
- * The element stays as the merge effect's target; its tooltip has the stacks.
+ * The stacks as HEAT_MAX pips, filled for each active one, and the multiplier
+ * from ×1.5 up. The element stays as the merge effect's target; its tooltip
+ * has the time left on each stack.
  */
 function Heat({ c }: { c: ColonyApi }) {
   const n = c.stacks.length;
@@ -85,14 +88,57 @@ function Heat({ c }: { c: ColonyApi }) {
     },
   ).join("\n")}`;
   return (
-    <sup
+    <span
       data-colony="heat"
       title={n > 0 ? tip : undefined}
-      className="absolute -top-2 -right-3 h-2.5 min-w-3 font-mono text-[10px] leading-none font-medium transition-colors"
-      style={{ color: HEAT_INK(n) }}
+      className="inline-flex items-center gap-1.5"
     >
-      {n > 0 && `×${c.multiplier.toFixed(1)}`}
-    </sup>
+      {n > 0 && (
+        <span className="font-mono text-[10px] leading-none font-medium">
+          ×{c.multiplier.toFixed(1)}
+        </span>
+      )}
+      <span aria-hidden className="flex gap-[2px]">
+        {Array.from({ length: HEAT_MAX }, (_, i) => (
+          <span
+            key={i}
+            data-pip={i < n ? "on" : "off"}
+            className="block h-2.5 w-[3px] rounded-sm bg-current transition-opacity"
+            style={{ opacity: i < n ? 1 : 0.2 }}
+          />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/** The points in a panel whose colour follows the heat, neutral with none. */
+function PointsPanel({
+  c,
+  className,
+  children,
+}: {
+  c: ColonyApi;
+  className?: string;
+  children: ReactNode;
+}) {
+  const tier = HEAT_TIER(c.stacks.length);
+  return (
+    <div
+      data-colony="points-panel"
+      className={cn(
+        "border-line bg-card text-ink inline-flex shrink-0 items-center rounded-lg border transition-colors",
+        className,
+      )}
+      style={
+        tier
+          ? { backgroundColor: tier.bg, color: tier.ink, borderColor: tier.ink }
+          : undefined
+      }
+    >
+      {children}
+      <Heat c={c} />
+    </div>
   );
 }
 
@@ -410,13 +456,9 @@ export function ColonyHeaderStats({
       <span aria-hidden className="bg-line h-6 w-px shrink-0 max-xl:hidden" />
 
       <div data-tour="points" className="flex shrink-0 items-center gap-2.5">
-        <div className="relative flex flex-col items-end gap-[3px]">
-          <span className="text-muted font-mono text-[9px] tracking-[0.12em]">
-            POINTS
-          </span>
+        <PointsPanel c={c} className="h-9 gap-2.5 px-3">
           <PointsCounter value={c.shownPoints} />
-          <Heat c={c} />
-        </div>
+        </PointsPanel>
       </div>
 
       <TimelineButton c={c} />
@@ -441,13 +483,12 @@ export function ColonyMobileStats() {
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-[10px] px-1"
       >
         <LevelBadge level={s.level} size={32} />
-        <span className="relative inline-flex">
+        <PointsPanel c={c} className="h-8 gap-1.5 px-2">
           <PointsCounter
             value={c.shownPoints}
             className="origin-left text-[14px] max-[359px]:hidden"
           />
-          <Heat c={c} />
-        </span>
+        </PointsPanel>
       </div>
       <TimelineButton c={c} iconOnly />
     </>
