@@ -11,20 +11,32 @@ import {
 } from "./header-stats";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import { makeCard } from "@/test/cards";
+import { scoreOf } from "@/lib/colony/game";
 import type { BoardCard } from "@/lib/domain/entities";
+
+/** Merged tickets, one at a time, until the board reaches the level. */
+function boardAtLevel(level: number): BoardCard[] {
+  const cards: BoardCard[] = [];
+  while (scoreOf(cards).level < level) {
+    cards.push(makeCard({ status: "merged", mergedAt: "2020-01-01T00:00:00.000Z" }));
+  }
+  return cards;
+}
 
 /** The header's corner with a colony and the sentinels around it. */
 function renderHeader(
   ui: ReactNode = <ColonyHeaderStats />,
-  cards: BoardCard[] = [],
+  cards: BoardCard[] = boardAtLevel(10),
+  unlockAll = false,
 ) {
   return render(
     <ColonyProvider
       storageKey="colony-test-header-stats"
       cards={cards}
       extras={{}}
+      unlockAll={unlockAll}
     >
-      <SentinelsProvider initial={{}} level={1}>
+      <SentinelsProvider initial={{}} level={scoreOf(cards).level} unlockAll={unlockAll}>
         {ui}
       </SentinelsProvider>
     </ColonyProvider>,
@@ -42,7 +54,7 @@ describe("ColonyHeaderStats", () => {
       screen.queryByRole("button", { name: "Open sentinels" }),
     ).not.toBeInTheDocument();
 
-    const badge = screen.getByRole("button", { name: /Audit grade .*Level 1/ });
+    const badge = screen.getByRole("button", { name: /Audit grade .*Level \d+/ });
     expect(badge).toHaveAttribute("data-colony", "level");
     // The hover face is always in the DOM, with the grade letter.
     const face = badge.querySelector('[data-audit-face="hover"]')!;
@@ -84,6 +96,49 @@ describe("ColonyHeaderStats", () => {
   });
 });
 
+describe("Hidden features", () => {
+  const lv1 = () => boardAtLevel(1);
+
+  it("shows only chat and points with heat on a Lv 1 board, on desktop", () => {
+    renderHeader(<ColonyHeaderStats />, lv1());
+    expect(document.querySelector('[data-colony="score"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-colony="heat"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: /timeline|sentinels/i })).toBeNull();
+    expect(document.querySelector('[data-tour="sentinels"]')).toBeNull();
+    expect(screen.getByText("LV")).toBeInTheDocument();
+  });
+
+  it("shows only points on a Lv 1 board at phone width", () => {
+    renderHeader(<ColonyMobileStats />, lv1());
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(document.querySelector('[data-tour="points"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-tour~="sentinels"]')).toBeNull();
+    expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
+  });
+
+  it("does not open Sentinels from the level badge on a Lv 1 board", async () => {
+    renderHeader(<ColonyHeaderStats />, lv1());
+    await userEvent.click(screen.getByText("LV"));
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("gates by this board's level: Sentinels at Lv 2, Timeline at Lv 10", () => {
+    const { unmount } = renderHeader(<ColonyHeaderStats />, boardAtLevel(2));
+    expect(screen.getByRole("button", { name: /Audit grade/ })).toBeInTheDocument();
+    expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
+    unmount();
+    renderHeader(<ColonyHeaderStats />, boardAtLevel(10));
+    expect(document.querySelector('[data-colony="timeline"]')).toBeInTheDocument();
+  });
+
+  it("shows Sentinels at once on a Lv 1 board with Unlock all on", () => {
+    renderHeader(<ColonyHeaderStats />, lv1(), true);
+    expect(screen.getByRole("button", { name: /Audit grade/ })).toBeInTheDocument();
+    expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
+  });
+});
+
 describe("ColonyMobileStats", () => {
   it("shows heat and an icon-only timeline button that toggles the timeline", async () => {
     renderHeader(<ColonyMobileStats />);
@@ -111,8 +166,8 @@ describe("LevelBadge", () => {
 
   function badge(level: number) {
     return (
-      <ColonyProvider storageKey="colony-test-badge" cards={[]} extras={{}}>
-        <SentinelsProvider initial={{}} level={1}>
+      <ColonyProvider storageKey="colony-test-badge" cards={[]} extras={{}} unlockAll>
+        <SentinelsProvider initial={{}} level={1} unlockAll>
           <LevelBadge level={level} size={36} />
         </SentinelsProvider>
       </ColonyProvider>

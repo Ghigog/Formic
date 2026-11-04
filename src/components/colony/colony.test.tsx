@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { ColonyProvider, crewPhase, scoutCrews, levelUpText } from "./colony";
-import { SENTINEL_UNLOCKS, pointsOf } from "@/lib/colony/game";
+import { ColonyProvider, crewPhase, scoutCrews, levelUpText, useColony } from "./colony";
+import { SENTINEL_UNLOCKS, pointsOf, scoreOf } from "@/lib/colony/game";
 import { SoundEngine } from "./sound";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
@@ -218,5 +218,49 @@ describe("scoutCrews", () => {
     expect(scoutCrews(makeCard({ status: "review", scouts: 2 } as never)).size).toBe(0);
     expect(scoutCrews(running({ scouts: 2, scoutPick: "x" })).size).toBe(0);
     expect(scoutCrews(running({ scouts: 0 })).size).toBe(0);
+  });
+});
+
+describe("ColonyProvider featureUnlocked", () => {
+  const boardAt = (level: number) => {
+    const cards = [];
+    while (scoreOf(cards).level < level) {
+      cards.push(makeCard({ status: "merged", mergedAt: "2020-01-01T00:00:00.000Z" }));
+    }
+    return cards;
+  };
+
+  function Probe() {
+    const c = useColony();
+    return (
+      <div data-testid="probe">
+        {(["sentinels", "timeline"] as const).map((f) => `${f}:${c?.featureUnlocked(f)}`).join(" ")}
+      </div>
+    );
+  }
+
+  const probe = (level: number, unlockAll = false) => {
+    const { getByTestId } = render(
+      <ColonyProvider storageKey={`colony-test-features-${level}-${unlockAll}`} cards={boardAt(level)} extras={{}} unlockAll={unlockAll}>
+        <Probe />
+      </ColonyProvider>,
+    );
+    return getByTestId("probe").textContent;
+  };
+
+  it("hides Sentinels and Timeline at Lv 1", () => {
+    expect(probe(1)).toBe("sentinels:false timeline:false");
+  });
+
+  it("shows Sentinels but not Timeline at Lv 2", () => {
+    expect(probe(2)).toBe("sentinels:true timeline:false");
+  });
+
+  it("shows both at Lv 10", () => {
+    expect(probe(10)).toBe("sentinels:true timeline:true");
+  });
+
+  it("shows Sentinels at once on a Lv 1 board with Unlock all on, but not Timeline", () => {
+    expect(probe(1, true)).toBe("sentinels:true timeline:false");
   });
 });
