@@ -344,7 +344,7 @@ function ProposalCard({
               type="button"
               disabled={busy}
               onClick={() => void decide("apply")}
-              className="bg-terracotta-cta inline-flex h-8 items-center rounded-md px-3 text-[12px] font-semibold text-white disabled:opacity-60"
+              className="bg-terracotta-cta inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold text-white disabled:opacity-60"
             >
               Approve
             </button>
@@ -352,7 +352,7 @@ function ProposalCard({
               type="button"
               disabled={busy}
               onClick={() => void decide("dismiss")}
-              className="text-muted hover:text-ink inline-flex h-8 items-center rounded-md px-2 text-[12px]"
+              className="text-muted hover:text-ink inline-flex h-8 items-center rounded-lg px-2 text-[12px]"
             >
               Dismiss
             </button>
