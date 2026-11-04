@@ -79,42 +79,44 @@
 /*
  * Dark theme.
  *
- * Opt-in only, via data-theme="dark". The spec names Deep Anthracite as the
- * dark card surface but no full dark palette, and none of the artboards mock
- * one, so the board must not silently render dark for anyone whose OS happens
- * to prefer it. Values below are derived, not designed, and are here so the
- * work is not lost when the dark artboards land.
+ * Opt-in only, via data-theme="dark"; the board must not silently render dark
+ * for anyone whose OS happens to prefer it. Surfaces, borders and chips are
+ * drawn from the soil in public/tour/soil.webp, which sits at hue 10-20 and
+ * 3-10% lightness (#110603 to #1b130d): a warm red-brown, not a neutral grey.
+ * Each step up in lightness keeps that hue. Every value and its contrast is
+ * listed in design/DESIGN.md, "Dark theme"; src/app/dark-theme.test.ts keeps
+ * the two in step.
  */
 :root[data-theme="dark"] {
-  --cream: #131110;
-  --column: #1a1716;
-  --column-line: #2a2523;
-  --panel: #1a1716;
-  --card: #1c1917;
-  --nested: #221e1c;
-  --nested-muted: #1a1716;
+  --cream: #140b08;
+  --column: #1b110d;
+  --column-line: #2e1e17;
+  --panel: #1b110d;
+  --card: #20150f;
+  --nested: #281a13;
+  --nested-muted: #1b110d;
 
-  --border: #37322e;
-  --border-dashed: #4a433d;
-  --hairline: #2a2523;
-  --track: #2a2523;
+  --border: #3d2a20;
+  --border-dashed: #55402f;
+  --hairline: #2e1e17;
+  --track: #2e1e17;
 
-  --text: #f5f1ea;
-  --text-muted: #b5aca2;
-  --dot-idle: #6b635c;
+  --text: #f5ede4;
+  --text-muted: #c4b3a3;
+  --dot-idle: #7d695a;
 
-  --epic-chip: #34211a;
-  --epic-chip-text: #e8834a;
-  --jade-chip: #1b2a1c;
-  --jade-chip-text: #66bb6a;
-  --jade-wash: #17201a;
-  --jade-line: #2f5a33;
-  --crimson-chip: #2e1a1a;
-  --crimson-chip-text: #f28b82;
-  --clay-chip: #2e2412;
-  --clay-chip-text: #e0a33c;
-  --done-card: #24201d;
-  --done-card-line: #37322e;
+  --epic-chip: #3a1f12;
+  --epic-chip-text: #f0925a;
+  --jade-chip: #1a2a1a;
+  --jade-chip-text: #7cc680;
+  --jade-wash: #161f15;
+  --jade-line: #34603a;
+  --crimson-chip: #3a1713;
+  --crimson-chip-text: #f59a90;
+  --clay-chip: #36230e;
+  --clay-chip-text: #e8b04a;
+  --done-card: #2a1c15;
+  --done-card-line: #3d2a20;
 }
 
 @theme inline {
