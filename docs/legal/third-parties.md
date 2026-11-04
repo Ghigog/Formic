@@ -1,6 +1,6 @@
 # Third parties
 
-**Version:** 2026-09-28 (matches `CURRENT_TERMS_VERSION` in
+**Version:** 2026-11-04 (matches `CURRENT_TERMS_VERSION` in
 `src/lib/auth/user.ts`)
 
 Formic is a coordination layer. To do its job it sends your repository's
@@ -53,12 +53,17 @@ own plan, at your own risk" in Settings.
   checkout, and whatever the agent writes or executes there, including
   package installs. On your own E2B key, or the operator's fallback key
   where offered. United States.
-- **GitHub** — your repository contents, issues, pull requests, Actions runs
-  and workflow secrets, through the Formic GitHub App and your own
-  installation token. United States. You control this already: uninstalling
-  the app or revoking access stops it.
-- **Vercel** — hosts the Formic application and its database traffic passes
-  through its network. United States.
+- **GitHub** — only if you sign in with GitHub or connect it: your
+  repository contents, issues, pull requests, Actions runs and workflow
+  secrets, through the Formic GitHub App and your own installation token.
+  United States. You control this already: disconnecting GitHub in
+  Settings, uninstalling the app or revoking access stops it.
+- **The mail service that sends sign-in links** — only if you sign in by
+  email: your email address and the link sent to it. On this deployment
+  that is Google (Gmail); a deployment can use Resend or another mail
+  server instead. United States.
+- **Amazon Web Services (Lightsail)** — hosts the Formic application and its
+  database, on one server. United States.
 
 ## What is never sent anywhere
 

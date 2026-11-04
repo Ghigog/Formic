@@ -142,7 +142,7 @@ export function withColumnPreset<T>(column: ColumnId, presetId: string | null, w
  */
 async function boardAgents(projectId: string): Promise<{ member: string | null; ownerId: string | null; shared: boolean }> {
   const actorId = actingUserId();
-  const project = actorId && authMode() === "github" ? await repository().projectById(projectId) : null;
+  const project = actorId && authMode() === "accounts" ? await repository().projectById(projectId) : null;
   if (!project || !actorId || project.ownerId === actorId) return { member: null, ownerId: null, shared: false };
   return { member: actorId, ownerId: project.ownerId, shared: project.shareKeys };
 }
@@ -263,7 +263,7 @@ export async function sentinelAgent(
   if (agent.kind === "cli") return { kind: "cli", agent: agent.agent };
   if (agent.kind === "none") {
     // A canned report is a mock, and mocks are only for local development and
-    // tests: signed in with GitHub, an assistant with no agent says so.
+    // tests: with accounts, an assistant with no agent says so.
     if (authMode() === "local" && mockAgentsEnabled()) return { kind: "mock" };
     return { kind: "none", reason: "No agent is set for the assistant. Pick or create one above." };
   }

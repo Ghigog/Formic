@@ -64,7 +64,7 @@ export const TOURS: Record<TourId, TourDef> = {
         side: "left",
         title: "Welcome",
         waitFor: "Sign in to carry on",
-        text: "Hello hello! I'm your guide ant. First things first: please sign in with GitHub, so your agents can work on your repos as you.",
+        text: "Hello hello! I'm your guide ant. First things first: please sign in. You don't need GitHub for that: connect it later only if you want agents working on a repository.",
       },
     ],
   },

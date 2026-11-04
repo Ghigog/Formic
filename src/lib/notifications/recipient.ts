@@ -6,7 +6,7 @@ import { localUser } from "@/lib/auth/user";
 /**
  * Who hears about a board: its owner. A board with no owner (the local demo
  * board, or one saved before accounts existed) is the local person's in
- * local mode, the same rule as `canSee`; signed in with GitHub, nobody's.
+ * local mode, the same rule as `canSee`; with accounts, nobody's.
  */
 export async function boardRecipient(ownerId: string | null): Promise<string | null> {
   if (ownerId) return ownerId;

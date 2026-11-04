@@ -83,11 +83,15 @@ enum AttachmentKind {
   file
 }
 
-/// A person, signed in with GitHub. Their tokens and keys are sealed with
-/// FORMIC_SECRET; see src/lib/secrets/vault.ts.
+/// A person, signed in by email or with GitHub. Their tokens and keys are
+/// sealed with FORMIC_SECRET; see src/lib/secrets/vault.ts.
 model User {
   id        String  @id @default(cuid())
-  githubId  Int     @unique
+  /// Null until the person connects GitHub. The local user's is 0.
+  githubId  Int?    @unique
+  /// Lowercased. Null for someone who has only ever signed in with GitHub.
+  email           String?   @unique
+  emailVerifiedAt DateTime?
   login     String
   name      String?
   avatarUrl String?
@@ -916,4 +920,22 @@ model AccessToken {
 
   @@index([userId])
   @@map("access_token")
+}
+
+/// A one-time sign-in link sent by email. Only the SHA-256 of the token is
+/// kept; the link itself exists only in the email. See src/lib/auth/email.ts.
+model LoginToken {
+  id        String    @id @default(cuid())
+  email     String
+  tokenHash String    @unique
+  /// Where the person goes once signed in.
+  next      String    @default("/")
+  ip        String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_token")
 }
