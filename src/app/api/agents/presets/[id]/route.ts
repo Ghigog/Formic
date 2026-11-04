@@ -1,6 +1,7 @@
 import { repository } from "@/lib/db";
 import { savePreset } from "@/lib/agents/presets";
 import { currentUser } from "@/lib/auth/user";
+import { VaultKeyMissingError } from "@/lib/secrets/vault";
 import { ownsPreset, parsePreset } from "../validate";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +19,13 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!body.ok) return Response.json({ error: body.error }, { status: 400 });
   // A preset with a column already keeps it: savePreset only honours
   // `column` here for one made before columns were scoped (still null).
-  const preset = await savePreset({ ...body.data, id });
-  return Response.json({ preset });
+  try {
+    const preset = await savePreset({ ...body.data, id });
+    return Response.json({ preset });
+  } catch (error) {
+    if (error instanceof VaultKeyMissingError) return Response.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
 }
 
 export async function DELETE(_req: Request, { params }: Params) {

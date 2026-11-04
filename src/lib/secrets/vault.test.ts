@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { open, seal } from "./vault";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { VaultKeyMissingError, open, seal, vaultProblem } from "./vault";
 
+const DB_VARS = ["DATABASE_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL"];
+beforeEach(() => {
+  for (const name of ["FORMIC_SECRET", ...DB_VARS]) vi.stubEnv(name, "");
+});
 afterEach(() => vi.unstubAllEnvs());
 
 describe("vault", () => {
@@ -20,5 +24,26 @@ describe("vault", () => {
 
   it("rejects anything that is not a sealed value", () => {
     expect(open("sk-ant-plain")).toBeNull();
+  });
+
+  it("keeps a fixed local key with no database and no secret", () => {
+    expect(vaultProblem()).toBeNull();
+    expect(open(seal("sk-local"))).toBe("sk-local");
+  });
+
+  it.each(DB_VARS)("refuses to seal with %s set and no secret", (name) => {
+    vi.stubEnv(name, "postgres://u:p@h/db");
+    expect(vaultProblem()).toContain("FORMIC_SECRET");
+    expect(() => seal("sk")).toThrow(VaultKeyMissingError);
+    expect(() => seal("sk")).toThrow(/FORMIC_SECRET/);
+    expect(open("v1.a.b.c")).toBeNull();
+  });
+
+  it("does not use the database URL as key material", () => {
+    vi.stubEnv("FORMIC_SECRET", "one");
+    vi.stubEnv("DATABASE_URL", "postgres://a/db");
+    const sealed = seal("sk");
+    vi.stubEnv("DATABASE_URL", "postgres://b/db");
+    expect(open(sealed)).toBe("sk");
   });
 });

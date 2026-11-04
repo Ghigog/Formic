@@ -373,9 +373,9 @@ export function LevelBadge({
       {flashing &&
         (reduced
           ? audit("", true)
-          : audit("animate-[auditSweep_500ms_ease-in-out_both]", true))}
+          : audit("motion-safe:animate-[auditSweep_500ms_ease-in-out_both]", true))}
       {busy && (
-        <span className="bg-clay-lit absolute top-0.5 right-0.5 size-1.5 animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
+        <span className="bg-clay-lit absolute top-0.5 right-0.5 size-1.5 motion-safe:animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
       )}
     </button>
   );

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import "./globals.css";
 import { TourHost } from "@/components/onboarding/tour";
 
@@ -28,9 +29,11 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Render per request: the CSP nonce (src/proxy.ts) only reaches HTML made then.
+  await connection();
   return (
     <html lang="en">
       <head>

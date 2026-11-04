@@ -39,7 +39,46 @@ SVG `fill`, `stroke` and `stopColor`; add a token to `globals.css` instead.
 Status colour appears in the dot, never the label. Chips are a 12% tint of the status colour
 with `#1C1917` text and a 5px dot — that keeps every state legible without darkening per colour.
 
-Dark-mode note: the spec calls for anthracite card surfaces in dark mode. Not mocked yet.
+## Dark theme
+
+Opt-in only: set `data-theme="dark"` on the page. There is no toggle and no `prefers-color-scheme`
+switch. The ground is drawn from the soil in `public/tour/soil.webp` (hue 10-20, lightness 3-10%,
+#110603 to #1b130d), so dark Formic is warm red-brown rather than grey. Every token below overrides the
+light value of the same name; tokens not listed (accent, status and ant colours) keep their light values.
+Contrast is WCAG 2.x. `text-muted` and every `*-chip-text` must stay at 4.5:1 or more on their surface;
+`src/app/dark-theme.test.ts` checks that and that this table matches `globals.css`.
+
+```
+--cream              #140B08
+--column             #1B110D
+--column-line        #2E1E17
+--panel              #1B110D
+--card               #20150F
+--nested             #281A13
+--nested-muted       #1B110D
+--border             #3D2A20
+--border-dashed      #55402F
+--hairline           #2E1E17
+--track              #2E1E17
+--text               #F5EDE4  on card 15.4:1
+--text-muted         #C4B3A3  on cream 9.5, column 9.1, card 8.8, nested 8.3
+--dot-idle           #7D695A
+--epic-chip          #3A1F12
+--epic-chip-text     #F0925A  on --epic-chip 6.5:1
+--jade-chip          #1A2A1A
+--jade-chip-text     #7CC680  on --jade-chip 7.4:1
+--jade-wash          #161F15
+--jade-line          #34603A
+--crimson-chip       #3A1713
+--crimson-chip-text  #F59A90  on --crimson-chip 7.6:1
+--clay-chip          #36230E
+--clay-chip-text     #E8B04A  on --clay-chip 7.7:1
+--done-card          #2A1C15
+--done-card-line     #3D2A20
+```
+
+The colony canvas reads these through `var(--token)` and clears its colour cache when `data-theme`
+changes (`colony/fx.ts`), so it recolours with the page.
 
 ## Type
 
@@ -280,7 +319,12 @@ touch targets ≥44px. No fake status bar — the real one renders over this.
 **Colony.** Not a page: a layer over the board. The nest button in the header opens a 400px
 popover (a bottom-aligned dialog "Colony" above the ambient drawer) with rank octagon (LV, rank in
 Newsreader, XP bar), bug shapes and colours as locked/unlocked swatches ("unlocks at level N"), the
-Queen tray (a Queen to drag onto a card), scouts and reserve steppers, and an Archive link. A
+one row of four equal square tiles (Queens, Scouts, Reserve, Bell; `bg-panel`, at least 44px
+tall), each with its mark large and faint behind, its number in Newsreader semibold in front, and
+an i in the top-right corner whose note opens full-width under the row and holds the explanation.
+The Queens tile is dragged onto a card, the Scouts tile toggles Auto-scout, Reserve only shows (it
+is set in Settings), and the Bell tile keeps its tap-to-arm bell and swing-to-ring cord. Errors and
+what the bell says show in one line under the row. Then an Archive link. A
 timeline panel (region "Timeline") charts merges per day, epic rows, streak and yield; it expands
 and collapses and pages Earlier / Later. Merges, unlocks and bugs show floating `+N` pops, rings
 and bursts (see Motion and Sound); the golden bell hangs in the header and is swung to notify.
