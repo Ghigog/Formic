@@ -72,9 +72,10 @@ password in front of the board (useful if the machine is shared or reachable
 on a LAN). Setting `GITHUB_APP_CLIENT_ID` and `GITHUB_APP_CLIENT_SECRET`
 switches the app to GitHub sign-in, where local mode stops applying.
 
-`FORMIC_SECRET` is not required locally: session signing falls back to the
-database URL, then to a fixed local string. Set it anyway if the board is
-reachable by anyone but you.
+`FORMIC_SECRET` is not required locally while there is no database: sessions
+use a fixed local string and saved keys do not outlive the process. Once you
+point `DATABASE_URL` at a database, saving keys needs `FORMIC_SECRET`, and
+`/api/health` says so. Set it anyway if the board is reachable by anyone but you.
 
 ## A real database, so the board survives a restart
 

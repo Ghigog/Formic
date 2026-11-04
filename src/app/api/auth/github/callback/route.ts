@@ -12,6 +12,7 @@ import {
   SESSION_MAX_AGE_S,
   cookieHeader,
   safeNext,
+  secretProblem,
   signSession,
   verifyValue,
 } from "@/lib/auth/session";
@@ -39,6 +40,8 @@ function fail(req: Request, message: string): Response {
 /** GitHub sends people back here with a code. Trade it, and sign them in. */
 export async function GET(req: Request) {
   if (!appConfig()) return Response.redirect(publicUrl("/", req), 303);
+  const problem = secretProblem();
+  if (problem) return fail(req, problem);
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");

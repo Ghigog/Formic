@@ -59,7 +59,7 @@ Fill these in the Vercel project (Production, and Preview where noted):
 | Variable | Notes |
 | :-- | :-- |
 | `DATABASE_URL` *or* `POSTGRES_*` | From the integration. |
-| `FORMIC_SECRET` | `openssl rand -base64 32`. **Required** for GitHub sign-in; at least 32 bytes. Changing it signs everyone out and makes saved keys unreadable. |
+| `FORMIC_SECRET` | `openssl rand -base64 32`. **Required** for GitHub sign-in (at least 32 bytes) and for saving keys with a database. Changing it signs everyone out and makes saved keys unreadable. |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG` | Turns on GitHub sign-in and per-user tokens. |
 | `GITHUB_WEBHOOK_SECRET` | The App's webhook secret. Without it `/api/webhooks/github` answers 503 and handles nothing. |
 | `FORMIC_ALLOWED_USERS` | Optional comma-separated allow-list. |

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { authorizeUrl, appConfig } from "@/lib/auth/github";
-import { OAUTH_COOKIE, cookieHeader, safeNext, signValue } from "@/lib/auth/session";
+import { OAUTH_COOKIE, cookieHeader, safeNext, secretProblem, signValue } from "@/lib/auth/session";
 import { limit, limited } from "@/lib/rate-limit";
 import { publicUrl } from "@/lib/origin";
 
@@ -16,6 +16,15 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   if (!appConfig()) return Response.redirect(publicUrl("/", req), 303);
+
+  // Without a real FORMIC_SECRET, the state cookie (and the session it leads
+  // to) would be signed with a guessable fallback key.
+  const problem = secretProblem();
+  if (problem) {
+    const back = publicUrl("/login", req);
+    back.searchParams.set("error", problem);
+    return Response.redirect(back, 303);
+  }
 
   const nonce = randomBytes(16).toString("hex");
   const next = safeNext(url.searchParams.get("next"));
