@@ -744,6 +744,6 @@ async function answerQuestion(
     cardKind,
     cardId,
     role: "assistant",
-    content: `Thank you, that is what I needed. ${started}`,
+    content: `Got it, thank you. ${started}`,
   });
 }
