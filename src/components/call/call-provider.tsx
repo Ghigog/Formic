@@ -15,6 +15,7 @@ import { useColony } from "@/components/colony/colony";
 import { silenceMutter } from "@/components/onboarding/voice";
 import type { AssistantControls } from "@/components/board/assistant";
 import type { GuestId } from "@/lib/meetings/guests";
+import { mergeHint, spokenDecision } from "@/components/call/approvals";
 import { createBrowserEngine, type CallEngine } from "@/lib/voice/engine";
 
 /** What the PM says while a look-up runs, once per wait. */
@@ -77,6 +78,19 @@ function plain(text: string): string {
     .replace(/[*_#>~]+/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** The first proposal in the newest reply that still waits on the person, with the ones after it. */
+function undecided(messages: AssistantControls["messages"]) {
+  const m = messages.at(-1);
+  if (!m || m.role !== "assistant" || m.status !== "done") return null;
+  const open = m.proposals.map((p, index) => ({ p, index })).filter(({ p }) => p.state === "proposed");
+  return open.length > 0 ? { id: m.id, open } : null;
+}
+
+/** A proposal read aloud: its summary in one sentence. */
+function sentence(summary: string): string {
+  return summary.trim().replace(/[.!?]*$/, ".");
 }
 
 /**
@@ -153,13 +167,38 @@ export function CallProvider({
   useEffect(() => {
     if (!live || sending || pending || queue.length === 0) return;
     const [next, ...rest] = queue;
+    // Proposals read aloud wait on a spoken yes or no before it is a message.
+    const waiting = undecided(a.current.messages);
+    const first = waiting?.open[0];
+    const decision = first ? spokenDecision(next!, first.p) : "none";
     /* eslint-disable react-hooks/set-state-in-effect -- one turn leaves the queue as the PM frees up */
     setQueue(rest);
     setSending(true);
     /* eslint-enable react-hooks/set-state-in-effect */
     asked.current = true;
+    // A spoken yes or no is answered at once, not with "Looking now".
+    const local = decision !== "none" || (first && mergeHint(next!, first.p));
+    if (local) lookingSaid.current = true;
+    if (waiting && first && decision !== "none") {
+      void a.current
+        .decide(waiting.id, first.index, decision === "approve" ? "apply" : "dismiss")
+        .finally(() => setSending(false));
+      const more = waiting.open[1];
+      say(
+        [decision === "approve" ? "Approved." : "Dismissed.", more ? `${sentence(more.p.summary)} Shall I?` : ""]
+          .filter(Boolean)
+          .join(" "),
+      );
+      return;
+    }
+    const hint = first ? mergeHint(next!, first.p) : null;
+    if (hint) {
+      say(hint);
+      setSending(false);
+      return;
+    }
     void a.current.ask(next!).finally(() => setSending(false));
-  }, [live, sending, pending, queue]);
+  }, [live, sending, pending, queue, say]);
 
   // "Looking now", once per wait.
   useEffect(() => {
@@ -187,7 +226,12 @@ export function CallProvider({
     spoken.current.add(last.id);
     // Until the person has spoken, what arrives is the chat's history loading.
     if (!asked.current || last.status !== "done") return;
-    say(plain(last.content));
+    const waiting = undecided([last]);
+    say(
+      waiting
+        ? `${waiting.open.map(({ p }) => sentence(p.summary)).join(" ")} Shall I?`
+        : plain(last.content),
+    );
   }, [live, last, say]);
 
   const start = useCallback(() => {
@@ -195,13 +239,15 @@ export function CallProvider({
     engine.start(); // inside the tap: iOS speaks only after a gesture
     silenceMutter(true);
     spoken.current = new Set(last ? [last.id] : []);
-    asked.current = false;
+    // The opener is the PM's own reply, read aloud like any other.
+    asked.current = !!a.current.openCall;
     lookingSaid.current = false;
     setQueue([]);
     setMutedState(false);
     setStartedAt(Date.now());
     setLive(true);
     a.current.setOpen(true);
+    void a.current.openCall?.();
   }, [engine, live, last]);
 
   const hangUp = useCallback(() => {
