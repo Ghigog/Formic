@@ -55,7 +55,7 @@ Designer Sentinel unlocks at level 25. Features come out generic.
 | --- | --- | --- |
 | Board swap | Three-finger swipe, dig through the earth | A tab at the top that covers the header and fights the phone's own bar; a 96px pulsing strip for dirt |
 | Bell | Ring by swinging it, to avoid misclicks | An icon button, disabled below level 5 so the free silver bell cannot ring at all; no swing, no sound |
-| Calls | Quick answers, "let me get back to you" only when a lookup runs long (~5 s) | Claude Code guests answer "I'll get back to you." to everything, before thinking (`src/lib/calls/turn.ts:283`); API guests wait 30 s; only the last message is seen; no personas |
+| Calls | Quick answers, "let me get back to you" only when a lookup runs long (~5 s) | Claude Code guests answer "I'll get back to you." to everything, before thinking (`the old call loop`); API guests wait 30 s; only the last message is seen; no personas |
 
 ## Decisions (from the person, 2026-10-30)
 
