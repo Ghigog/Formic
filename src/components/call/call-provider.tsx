@@ -14,7 +14,8 @@ import {
 import { useColony } from "@/components/colony/colony";
 import { silenceMutter } from "@/components/onboarding/voice";
 import type { AssistantControls } from "@/components/board/assistant";
-import type { GuestId } from "@/lib/meetings/guests";
+import { guestOptions, type GuestId } from "@/lib/meetings/guests";
+import { detectAddGuest, HELLO_ASK, isHelloEveryone, resolveAddressee } from "@/components/call/routing";
 import { mergeHint, spokenDecision } from "@/components/call/approvals";
 import { createBrowserEngine, type CallEngine } from "@/lib/voice/engine";
 
@@ -31,11 +32,17 @@ export interface CallApi {
   /** False where the browser cannot recognise speech. */
   supported: boolean;
   guests: GuestId[];
+  /** Who can be brought in, at the colony's level. */
+  options: { id: GuestId; label: string }[];
+  /** The guest whose reply is pending or being read aloud. */
+  active: GuestId | null;
   muted: boolean;
   /** Epoch ms the call started, or null when there is none. */
   startedAt: number | null;
   mic: MicState;
-  start: () => void;
+  /** Starts the call; `guest` is who is on it first, besides the PM. */
+  start: (guest?: GuestId) => void;
+  addGuest: (id: GuestId) => void;
   hangUp: () => void;
   setMuted: (muted: boolean) => void;
 }
@@ -101,11 +108,13 @@ function sentence(summary: string): string {
 export function CallProvider({
   assistant,
   engine: given,
+  unlockAllSentinels = false,
   children,
 }: {
   assistant: AssistantControls;
   /** Tests pass a FakeEngine; the board gets the browser's. */
   engine?: CallEngine;
+  unlockAllSentinels?: boolean;
   children: ReactNode;
 }) {
   const colony = useColony();
@@ -133,11 +142,18 @@ export function CallProvider({
   const [speaking, setSpeaking] = useState(false);
   const [queue, setQueue] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
-  const guests = useMemo<GuestId[]>(() => ["assistant"], []);
+  const [guests, setGuests] = useState<GuestId[]>(["assistant"]);
+  const guestsRef = useRef(guests);
+  const lastSpeaker = useRef<GuestId | null>(null);
+  const [speakingGuest, setSpeakingGuest] = useState<GuestId | null>(null);
+  const [reading, setReading] = useState(false);
+  const level = colony?.score.level ?? 1;
+  const options = useMemo(() => guestOptions(level, unlockAllSentinels), [level, unlockAllSentinels]);
 
   const a = useRef(assistant);
   useEffect(() => {
     a.current = assistant;
+    guestsRef.current = guests;
   });
   const spoken = useRef(new Set<string>());
   const asked = useRef(false);
@@ -145,17 +161,27 @@ export function CallProvider({
   const utterance = useRef(0);
 
   const say = useCallback(
-    (text: string) => {
+    (text: string, who: GuestId | null = null) => {
       if (!engine || !text) return;
       const mine = ++utterance.current;
+      setSpeakingGuest(who);
       setSpeaking(true);
+      setReading(who !== null);
       void engine.speak(text).then(() => {
+        if (who !== null) setReading(false);
         // A later utterance replaces this one: only the last clears the state.
         if (utterance.current === mine) setSpeaking(false);
       });
     },
     [engine],
   );
+
+  const addGuest = useCallback((id: GuestId) => {
+    if (guestsRef.current.includes(id)) return;
+    guestsRef.current = [...guestsRef.current, id];
+    setGuests(guestsRef.current);
+    sfxRef.current?.("ring");
+  }, []);
 
   // Turns queue; the effect below sends one when the PM is free.
   useEffect(() => {
@@ -197,8 +223,23 @@ export function CallProvider({
       setSending(false);
       return;
     }
-    void a.current.ask(next!).finally(() => setSending(false));
-  }, [live, sending, pending, queue, say]);
+    const added = detectAddGuest(next!);
+    if (added && !guestsRef.current.includes(added)) {
+      addGuest(added);
+      setSending(false);
+      return;
+    }
+    if (isHelloEveryone(next!)) {
+      void a.current
+        .ask(`${next!.trim()} ${HELLO_ASK}`, guestsRef.current)
+        .finally(() => setSending(false));
+      return;
+    }
+    const speaker = resolveAddressee(next!, guestsRef.current, lastSpeaker.current);
+    lastSpeaker.current = speaker;
+    const turn = speaker === "assistant" ? a.current.ask(next!) : a.current.ask(next!, [speaker]);
+    void turn.finally(() => setSending(false));
+  }, [live, sending, pending, queue, say, addGuest]);
 
   // "Looking now", once per wait.
   useEffect(() => {
@@ -212,43 +253,44 @@ export function CallProvider({
     say(LOOKING_NOW);
   }, [live, pending, queue.length, say]);
 
-  // Read each new finished reply aloud, once.
-  const last = assistant.messages.at(-1);
+  // Read each new finished reply aloud, once, in order: each waits for the one before.
   useEffect(() => {
-    if (
-      !live ||
-      !last ||
-      last.status === "pending" ||
-      spoken.current.has(last.id)
-    )
-      return;
-    if (last.role !== "assistant") return;
-    spoken.current.add(last.id);
+    if (!live || reading) return;
+    const next = assistant.messages.find((m) => m.role === "assistant" && !spoken.current.has(m.id));
+    if (!next || next.status === "pending") return;
+    spoken.current.add(next.id);
     // Until the person has spoken, what arrives is the chat's history loading.
-    if (!asked.current || last.status !== "done") return;
-    const waiting = undecided([last]);
+    if (!asked.current || next.status !== "done") return;
+    const who = (next.speaker as GuestId | undefined) ?? "assistant";
+    const waiting = undecided([next]);
     say(
       waiting
         ? `${waiting.open.map(({ p }) => sentence(p.summary)).join(" ")} Shall I?`
-        : plain(last.content),
+        : plain(next.content),
+      who,
     );
-  }, [live, last, say]);
+  }, [live, reading, assistant.messages, say]);
 
-  const start = useCallback(() => {
+  const start = useCallback((guest?: GuestId) => {
     if (!engine?.supported || live) return;
     engine.start(); // inside the tap: iOS speaks only after a gesture
     silenceMutter(true);
-    spoken.current = new Set(last ? [last.id] : []);
+    spoken.current = new Set(a.current.messages.map((m) => m.id));
+    const first = guest && guest !== "assistant" ? guest : null;
+    guestsRef.current = first ? ["assistant", first] : ["assistant"];
+    setGuests(guestsRef.current);
+    lastSpeaker.current = first;
     // The opener is the PM's own reply, read aloud like any other.
-    asked.current = !!a.current.openCall;
+    asked.current = !!first || !!a.current.openCall;
     lookingSaid.current = false;
     setQueue([]);
     setMutedState(false);
     setStartedAt(Date.now());
     setLive(true);
     a.current.setOpen(true);
-    void a.current.openCall?.();
-  }, [engine, live, last]);
+    if (first) void a.current.ask("Hello!", [first]);
+    else void a.current.openCall?.();
+  }, [engine, live]);
 
   const hangUp = useCallback(() => {
     if (!live) return;
@@ -277,6 +319,16 @@ export function CallProvider({
     [engine],
   );
 
+  // The guest whose reply is being read, else the one a reply is pending from.
+  const waitingOn = assistant.messages.find((m) => m.role === "assistant" && m.status === "pending");
+  const active: GuestId | null = !live
+    ? null
+    : speaking && speakingGuest
+      ? speakingGuest
+      : waitingOn
+        ? ((waitingOn.speaker as GuestId | undefined) ?? "assistant")
+        : null;
+
   const mic: MicState = muted
     ? "muted"
     : speaking
@@ -290,14 +342,17 @@ export function CallProvider({
       live,
       supported: engine?.supported ?? false,
       guests,
+      options,
+      active,
       muted,
       startedAt,
       mic,
       start,
+      addGuest,
       hangUp,
       setMuted,
     }),
-    [live, engine, guests, muted, startedAt, mic, start, hangUp, setMuted],
+    [live, engine, guests, options, active, muted, startedAt, mic, start, addGuest, hangUp, setMuted],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

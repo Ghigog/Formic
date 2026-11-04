@@ -11,6 +11,7 @@ import {
 import { FakeEngine } from "@/lib/voice/engine";
 import type { AssistantMessageView } from "@/lib/hooks/use-assistant";
 import { CallPill } from "./call-pill";
+import { AgentCallButton } from "./agent-call-button";
 import { CallProvider, LOOKING_NOW } from "./call-provider";
 
 const msg = (
@@ -43,7 +44,7 @@ function Harness({
   const [messages, setMessages] = useState<AssistantMessageView[]>([]);
   const [isOpen, setOpen] = useState(open);
   const [ask] = useState(() =>
-    vi.fn(async (text: string) => {
+    vi.fn(async (text: string, _speakers?: string[]) => {
       setMessages((m) => [...m, msg(`u${m.length}`, "user", text)]);
     }),
   );
@@ -71,6 +72,7 @@ function Harness({
     <CallProvider assistant={a} engine={engine}>
       <AskBox a={a} repoName="demo" />
       <CallPill assistant={a} />
+      <AgentCallButton guest="reviewer" />
     </CallProvider>
   );
 }
@@ -208,5 +210,50 @@ describe("a call on the PM chat", () => {
     expect(spy.mock.calls.length).toBe(before + 1);
     detach();
     spy.mockRestore();
+  });
+
+  it("brings a guest in by voice, then sends questions to the last speaker, lit while it answers", async () => {
+    const engine = new FakeEngine();
+    render(<Harness engine={engine} />);
+    await userEvent.click(screen.getByRole("button", { name: "Call the PM" }));
+    await act(async () => engine.say("get the Reviewer in"));
+    expect(screen.getByTestId("call-guest-reviewer")).toBeInTheDocument();
+    expect(controls.ask).not.toHaveBeenCalled();
+    await act(async () => engine.say("Reviewer, how are the tests?"));
+    expect(controls.ask).toHaveBeenLastCalledWith("Reviewer, how are the tests?", ["reviewer"]);
+    act(() =>
+      controls.push([
+        msg("u0", "user", "Reviewer, how are the tests?"),
+        { ...msg("a1", "assistant", "", "pending"), speaker: "reviewer" },
+      ]),
+    );
+    expect(screen.getByTestId("call-guest-reviewer")).toHaveAttribute("data-active", "true");
+    act(() =>
+      controls.push([
+        msg("u0", "user", "Reviewer, how are the tests?"),
+        { ...msg("a1", "assistant", "Green."), speaker: "reviewer" },
+      ]),
+    );
+    await act(async () => engine.say("and the lint?"));
+    expect(controls.ask).toHaveBeenLastCalledWith("and the lint?", ["reviewer"]);
+  });
+
+  it("greets everyone: every guest in order, each asked for a one-line hello", async () => {
+    const engine = new FakeEngine();
+    render(<Harness engine={engine} />);
+    await userEvent.click(screen.getByRole("button", { name: "Call the PM" }));
+    await act(async () => engine.say("get the Reviewer in"));
+    await act(async () => engine.say("hello everyone"));
+    const [text, speakers] = controls.ask.mock.calls.at(-1)!;
+    expect(text).toMatch(/^hello everyone.*one-line hello/);
+    expect(speakers).toEqual(["assistant", "reviewer"]);
+  });
+
+  it("opens the call with an agent as the first guest from its phone", async () => {
+    const engine = new FakeEngine();
+    render(<Harness engine={engine} />);
+    await userEvent.click(screen.getByRole("button", { name: "Call the Reviewer" }));
+    expect(engine.live).toBe(true);
+    expect(screen.getByTestId("call-guest-reviewer")).toBeInTheDocument();
   });
 });
