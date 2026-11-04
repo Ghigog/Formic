@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ANT_GAP,
+  BUBBLE_H,
   BUBBLE_W,
   antSpot,
   bubblePlace,
@@ -88,5 +89,13 @@ describe("bubblePlace", () => {
   it("docks to the bottom of a phone", () => {
     const p = bubblePlace({ x: 100, y: 100, face: 0 }, "below", 390, 844);
     expect(p).toMatchObject({ docked: true, tail: "none", x: 16, w: 358 });
+  });
+});
+
+describe("antSpot on a phone", () => {
+  it("waits above the docked bubble, off the app bar and the column heads", () => {
+    const spot = antSpot([box(300, 8, 44, 44)], "below", 390, 844);
+    expect(spot.y).toBeGreaterThan(300);
+    expect(spot.y).toBeLessThan(844 - BUBBLE_H);
   });
 });
