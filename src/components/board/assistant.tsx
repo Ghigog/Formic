@@ -112,7 +112,7 @@ function CallButton() {
     <button
       type="button"
       data-tour="agent-call"
-      onClick={call.start}
+      onClick={() => call.start()}
       disabled={disabled}
       aria-label="Call the PM"
       title={
