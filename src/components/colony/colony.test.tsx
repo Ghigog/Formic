@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { ColonyProvider, crewPhase, scoutCrews, levelUpText, useColony } from "./colony";
+import { ColonyProvider, crewPhase, scoutCrews, levelUpText, featuresCrossed, useColony } from "./colony";
+import { endTour, activeTour, forgetTours } from "@/components/onboarding/store";
 import { SENTINEL_UNLOCKS, pointsOf, scoreOf } from "@/lib/colony/game";
 import { SoundEngine } from "./sound";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
@@ -262,5 +263,98 @@ describe("ColonyProvider featureUnlocked", () => {
 
   it("shows Sentinels at once on a Lv 1 board with Unlock all on, but not Timeline", () => {
     expect(probe(1, true)).toBe("sentinels:true timeline:false");
+  });
+});
+
+describe("feature reveal queue", () => {
+  it("lists the features a rise crosses in level order", () => {
+    expect(featuresCrossed(9, 15)).toEqual(["timeline", "calls"]);
+    expect(featuresCrossed(1, 25)).toEqual(["sentinels", "timeline", "calls", "kpis"]);
+    expect(featuresCrossed(10, 14)).toEqual([]);
+  });
+
+  it("names the feature in the level-up pill", () => {
+    expect(levelUpText(10)).toMatch(/unlocked .*Timeline/);
+    expect(levelUpText(15)).toContain("Calls");
+  });
+
+  const boardAt = (level: number) => {
+    const cards = [];
+    while (scoreOf(cards).level < level) {
+      cards.push(makeCard({ status: "merged", mergedAt: "2020-01-01T00:00:00.000Z" }));
+    }
+    return cards;
+  };
+
+  it("hides crossed features until the pill is gone, then reveals and tours them one at a time", async () => {
+    window.localStorage.clear();
+    forgetTours();
+    endTour();
+    fakeTimers();
+    let api!: NonNullable<ReturnType<typeof useColony>>;
+    function Probe() {
+      api = useColony()!;
+      return null;
+    }
+    const tree = (level: number) => (
+      <ColonyProvider storageKey="colony-test-reveal-queue" cards={boardAt(level)} extras={{}}>
+        <Probe />
+      </ColonyProvider>
+    );
+    const { rerender } = render(tree(9));
+    expect(api.featureUnlocked("timeline")).toBe(false);
+    rerender(tree(15));
+    // Reached, but held back behind the pill.
+    expect(api.featureUnlocked("timeline")).toBe(false);
+    expect(api.featureUnlocked("calls")).toBe(false);
+    expect(api.revealing).toBeNull();
+
+    // The pill is left alone and times out.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(380 + 3200 + 10);
+    });
+    expect(api.revealing).toBe("timeline");
+    expect(api.featureUnlocked("timeline")).toBe(true);
+    expect(api.featureUnlocked("calls")).toBe(false);
+
+    act(() => api.settleReveal());
+    expect(activeTour()).toBe("timeline-intro");
+    expect(api.revealing).toBe("timeline");
+
+    act(() => endTour());
+    expect(api.revealing).toBe("calls");
+    expect(api.featureUnlocked("calls")).toBe(true);
+    act(() => api.settleReveal());
+    expect(activeTour()).toBe("calls-intro");
+    act(() => endTour());
+    expect(api.revealing).toBeNull();
+  });
+
+  it("opens the Sentinels panel for KPIs", async () => {
+    window.localStorage.clear();
+    forgetTours();
+    endTour();
+    fakeTimers();
+    let api!: NonNullable<ReturnType<typeof useColony>>;
+    function Probe() {
+      api = useColony()!;
+      return null;
+    }
+    render(
+      <ColonyProvider storageKey="colony-test-reveal-kpis" cards={boardAt(20)} extras={{}}>
+        <Probe />
+      </ColonyProvider>,
+    );
+    act(() => api.enqueueReveals(["kpis"]));
+    expect(api.revealing).toBe("kpis");
+    expect(api.sentinelsOpen).toBe(true);
+    act(() => api.settleReveal());
+    expect(activeTour()).toBe("kpis-intro");
+    act(() => endTour());
+    // Once per person: a second reveal does not tour again.
+    act(() => api.enqueueReveals(["kpis"]));
+    act(() => api.settleReveal());
+    expect(activeTour()).toBeNull();
+    expect(api.revealing).toBeNull();
   });
 });

@@ -29,6 +29,7 @@ import {
   epicBonus,
   epicTally,
   featureUnlocked as featureUnlockedAt,
+  FEATURE_UNLOCKS,
   type BugColor,
   type FeatureKey,
   type BugShape,
@@ -40,6 +41,9 @@ import { ColonyFx, cardEl, centerOf, colonyEl, heldByDrag, type CrewPhase } from
 import { flyHome, ghostOf, ghostRect, groupOf, type Ghost } from "./epic-flight";
 import { SoundEngine, type Sfx } from "./sound";
 import { DEFAULTS, useHydrated, useSaved, useSound } from "./store";
+import { REVEAL_RISE_MS, REVEAL_SPACE_MS } from "./feature-reveal";
+import { activeTour, offerTour, useActiveTour } from "@/components/onboarding/store";
+import type { TourId } from "@/components/onboarding/tours";
 
 /**
  * The colony layer over the board: score, level, heat, sound and the canvas
@@ -71,6 +75,19 @@ export interface ColonyApi {
   tryStyle: (patch: { shape?: BugShape; color?: BugColor }, from: HTMLElement) => void;
   /** Whether this board's own level has reached the feature. Hidden features are not rendered. */
   featureUnlocked: (feature: FeatureKey) => boolean;
+  /** The feature being revealed now (its button rising, then the ant's tour), if any. */
+  revealing: FeatureKey | null;
+  /** The reveal animation is over: the ant may tour the feature. Called by the revealed button. */
+  settleReveal: () => void;
+  /**
+   * Queues features to be revealed and toured in level order, each one
+   * finishing before the next. They stay hidden until their turn. A level-up
+   * queues its own behind the pill.
+   */
+  enqueueReveals: (features: FeatureKey[]) => void;
+  /** Takes the level-up pill away, which lets any waiting reveal begin. */
+  dismissToast: () => void;
+  sound: SoundEngine;
   timelineOpen: boolean;
   setTimelineOpen: (open: boolean) => void;
   /** The Sentinels page. Opening it closes the timeline, and the other way round. */
@@ -149,6 +166,24 @@ export function levelUpText(lv: number): string {
   const got = [...unlocksAt(lv), "a Queen"];
   return `Lv ${lv} ${rankOf(lv)} · unlocked ${got.join(" and ")}. Tap the nest to equip`;
 }
+
+/** The features a rise from one level to another crosses, in level order. */
+export function featuresCrossed(from: number, to: number): FeatureKey[] {
+  return FEATURE_UNLOCKS.filter((f) => f.lv > from && f.lv <= to)
+    .sort((a, b) => a.lv - b.lv)
+    .map((f) => f.key);
+}
+
+/** Where a feature's reveal happens. Only KPIs live in a panel: the Sentinels one. */
+function revealRoom(feature: FeatureKey): "sentinels" | "board" {
+  return feature === "kpis" ? "sentinels" : "board";
+}
+
+/** How long the reveal may take before the tour starts regardless: the button's own animation, with room to spare. */
+const REVEAL_FALLBACK_MS = REVEAL_SPACE_MS + REVEAL_RISE_MS + 600;
+
+/** The longest a reveal waits for the level-up pill to come and go. */
+const PILL_GIVE_UP_MS = 8000;
 
 /** How long a queue crew keeps the card after it starts running with no run behind it. */
 export const HANDOVER_MS = 15_000;
@@ -261,11 +296,94 @@ export function ColonyProvider({
   }, [stacks.length, sfx]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showToast = useCallback((text: string) => {
+  // Features a rise crossed wait in `queue`, hidden, until the level-up pill
+  // is gone; then each is revealed and toured in turn, one at a time.
+  const [queue, setQueue] = useState<FeatureKey[]>([]);
+  const [pillUp, setPillUp] = useState(false);
+  const [revealing, setRevealing] = useState<FeatureKey | null>(null);
+  const [revealPhase, setRevealPhase] = useState<"reveal" | "tour">("reveal");
+  const tourStarted = useRef(false);
+  const tourActive = useActiveTour();
+
+  const dismissToast = useCallback(() => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ text, key: Date.now() });
-    toastTimer.current = setTimeout(() => setToast(null), 3200);
+    setToast(null);
+    // The pill is gone, tapped away or timed out: reveals may begin.
+    setPillUp(false);
   }, []);
+  const showToast = useCallback(
+    (text: string) => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      setToast({ text, key: Date.now() });
+      toastTimer.current = setTimeout(dismissToast, 3200);
+    },
+    [dismissToast],
+  );
+
+  /* ------------------------------------------------- feature reveals */
+
+  // A rise is seen while rendering, so the features it crosses are never drawn.
+  const [seenLevel, setSeenLevel] = useState(score.level);
+  if (score.level !== seenLevel) {
+    setSeenLevel(score.level);
+    const crossed = featuresCrossed(seenLevel, score.level);
+    if (crossed.length) {
+      setQueue((q) => [...q, ...crossed.filter((f) => !q.includes(f))]);
+      setPillUp(true);
+    }
+  }
+
+  const enqueueReveals = useCallback((features: FeatureKey[]) => {
+    const ordered = FEATURE_UNLOCKS.filter((f) => features.includes(f.key)).map((f) => f.key);
+    setQueue((q) => [...q, ...ordered.filter((f) => !q.includes(f))]);
+  }, []);
+
+  const settleReveal = useCallback(() => setRevealPhase("tour"), []);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- the queue is stepped by effects: each step waits on the one before */
+  useEffect(() => {
+    if (pillUp || revealing || !queue.length) return;
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    setRevealing(next!);
+    setRevealPhase("reveal");
+    tourStarted.current = false;
+    // Open the room the feature lives in; the other panels close.
+    setTimelineOpen(false);
+    setColonyOpen(false);
+    setMeetingsOpen(false);
+    setSentinelsOpen(revealRoom(next!) === "sentinels");
+  }, [pillUp, revealing, queue]);
+
+  // Should the pill never come up, the reveals still begin.
+  useEffect(() => {
+    if (!pillUp) return;
+    const t = setTimeout(() => setPillUp(false), PILL_GIVE_UP_MS);
+    return () => clearTimeout(t);
+  }, [pillUp]);
+
+  // A button that is not wrapped in a reveal would never settle: do not wait for it.
+  useEffect(() => {
+    if (!revealing || revealPhase !== "reveal") return;
+    const t = setTimeout(settleReveal, REVEAL_FALLBACK_MS);
+    return () => clearTimeout(t);
+  }, [revealing, revealPhase, settleReveal]);
+
+  // The ant tours the feature once, and the next reveal waits for it to end.
+  useEffect(() => {
+    if (!revealing || revealPhase !== "tour") return;
+    if (!tourStarted.current) {
+      if (activeTour() !== null) return; // another tour is on: wait for it
+      tourStarted.current = offerTour(`${revealing}-intro` as TourId);
+      if (tourStarted.current) return;
+    } else if (activeTour() !== null) {
+      return;
+    }
+    // Seen before (once per person), or the tour is over.
+    tourStarted.current = false;
+    setRevealing(null);
+  }, [revealing, revealPhase, tourActive]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   /* ------------------------------------------------------------ levels */
 
@@ -718,7 +836,13 @@ export function ColonyProvider({
     color: saved.color,
     bugHex,
     tryStyle,
-    featureUnlocked: (feature) => (unlockAll && feature === "sentinels") || featureUnlockedAt(feature, score.level),
+    featureUnlocked: (feature) =>
+      (unlockAll && feature === "sentinels") || (featureUnlockedAt(feature, score.level) && !queue.includes(feature)),
+    revealing,
+    settleReveal,
+    enqueueReveals,
+    dismissToast,
+    sound,
     timelineOpen,
     setTimelineOpen: (open) => {
       sfx(open ? "pickup" : "drop");

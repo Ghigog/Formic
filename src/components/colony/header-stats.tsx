@@ -14,6 +14,8 @@ import { useSentinels } from "@/components/sentinels/store";
 import { useMeetings } from "@/lib/hooks/use-meetings";
 import { dueOccurrence } from "@/lib/meetings/due";
 import { useColony, type ColonyApi } from "./colony";
+import { FeatureReveal } from "./feature-reveal";
+import type { SoundEngine } from "./sound";
 
 /** Counts toward the value it is given rather than jumping to it. */
 function PointsCounter({
@@ -165,6 +167,19 @@ function epicPips(c: ColonyApi) {
     .slice(0, 6);
 }
 
+/**
+ * The header holds a full and an icon-only Timeline button, one hidden by the
+ * breakpoint. Both rise on a reveal, but only the one in view gets the cue.
+ */
+function cueOnlyWhen(sound: SoundEngine, iconOnly: boolean): SoundEngine {
+  const mine = () =>
+    typeof window.matchMedia !== "function" || window.matchMedia("(min-width: 768px)").matches !== iconOnly;
+  return {
+    whenAudible: (cb: () => void) => (mine() ? sound.whenAudible(cb) : undefined),
+    play: (...a: Parameters<SoundEngine["play"]>) => (mine() ? sound.play(...a) : undefined),
+  } as unknown as SoundEngine;
+}
+
 function TimelineButton({
   c,
   iconOnly = false,
@@ -175,6 +190,7 @@ function TimelineButton({
   const open = c.timelineOpen;
   if (!c.featureUnlocked("timeline")) return null;
   return (
+    <FeatureReveal reveal={c.revealing === "timeline"} sound={cueOnlyWhen(c.sound, iconOnly)} onSettled={c.settleReveal}>
     <button
       data-colony="timeline"
       data-tour="timeline"
@@ -293,6 +309,7 @@ function TimelineButton({
         </>
       )}
     </button>
+    </FeatureReveal>
   );
 }
 
@@ -410,7 +427,9 @@ export function ColonyLevelStats() {
   const s = c.score;
   return (
     <div data-tour={c.featureUnlocked("sentinels") ? "sentinels" : undefined} className="flex shrink-0 items-center gap-2.5">
-      <LevelBadge level={s.level} size={36} />
+      <FeatureReveal reveal={c.revealing === "sentinels"} sound={c.sound} onSettled={c.settleReveal}>
+        <LevelBadge level={s.level} size={36} />
+      </FeatureReveal>
       <div className="flex flex-col gap-1.5 max-xl:hidden">
         <div className="flex items-baseline gap-2">
           <span className="text-ink text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap uppercase">
