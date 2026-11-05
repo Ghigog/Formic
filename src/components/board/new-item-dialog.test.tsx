@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { NewItemDialog } from "./new-item-dialog";
 import { setViewportMatches } from "@/test/viewport";
 
@@ -329,5 +330,45 @@ describe("NewItemDialog", () => {
       expect(screen.getByLabelText("New feature request")).toHaveValue("");
       expect(window.localStorage.length).toBe(0);
     });
+  });
+});
+
+describe("NewItemDialog keyboard and focus", () => {
+  function Harness({ onClose = () => {} }: { onClose?: () => void }) {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open</button>
+        <NewItemDialog
+          open={open}
+          column="backlog"
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+          onSubmit={async () => {}}
+        />
+      </>
+    );
+  }
+
+  it("moves focus to the textarea when it opens", async () => {
+    render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("New feature request")));
+  });
+
+  it("closes on Escape and returns focus to the opener", async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness onClose={onClose} />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    opener.focus();
+    await user.keyboard("{Enter}");
+    const input = await screen.findByLabelText("New feature request");
+    await waitFor(() => expect(input).toHaveFocus());
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("New feature request")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
   });
 });

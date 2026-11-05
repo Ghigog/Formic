@@ -38,13 +38,10 @@ export async function GET() {
   );
   const withActivity = await Promise.all(
     byLastOpened(projects, openedAt).map(async (p) => {
-      const answered = (await repo.assistantMessages(p.id)).filter(
-        (m) => m.role === "assistant" && m.status !== "pending",
-      );
-      const last = answered[answered.length - 1];
+      const last = await repo.lastAssistantAnswer(p.id);
       // The same grade SentinelsProvider works out for the open board.
       const { level } = scoreOf(await repo.boardCards(p.id));
-      const grade = gradeOf(starsOf(sentinelStates(await repo.auditsFor(p.id))), level, p.unlockAllSentinels);
+      const grade = gradeOf(starsOf(sentinelStates(await repo.latestAudits(p.id))), level, p.unlockAllSentinels);
       const standing = { grade: grade.grade, ink: grade.ink, level, audited: grade.done > 0 };
       return { ...p, standing, lastAssistantMessage: last ? { id: last.id, createdAt: last.createdAt } : null,
         notifications: latest.get(p.id) ?? {},

@@ -25,7 +25,7 @@ vi.mock("@/lib/db", () => ({
   repository: () => ({
     boardCards: async () => cards,
     cardById: async (id: string) => epics[id] ?? null,
-    auditsFor: async () => audits,
+    latestAudits: async () => audits,
     ticketColumnEntries: async (id: string) =>
       doneEntries[id] ? [{ column: "done", enteredAt: doneEntries[id], exitedAt: null, synthetic: false }] : [],
     startAudit,

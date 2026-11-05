@@ -3,8 +3,9 @@ import type { Instrumentation } from "next";
 /**
  * Startup hook. Runs once per server process, before the first request.
  *
- * The only thing here is orphan recovery: a run that was live when the last
- * process died is, by definition, not live now. See
+ * Starts the per-process clocks (usage, golden bell, orphan recovery) and
+ * seeds an empty database. Orphan recovery runs in the background: a run that
+ * was live when the last process died is, by definition, not live now. See
  * src/lib/agents/recovery.ts.
  */
 export async function register(): Promise<void> {
@@ -20,16 +21,9 @@ export async function register(): Promise<void> {
   const { startBellClock } = await import("@/lib/board/bell");
   startBellClock();
 
-  const { reconcileOrphanedRuns } = await import("@/lib/agents/recovery");
-  try {
-    const reclaimed = await reconcileOrphanedRuns();
-    if (reclaimed > 0) {
-      console.info(`[formic] failed ${reclaimed} run(s) orphaned by a restart`);
-    }
-  } catch (e) {
-    // A database that is not up yet must not stop the server from booting.
-    console.warn("[formic] orphan recovery skipped:", e);
-  }
+  // A run whose worker died is failed on a clock, never on the boot path.
+  const { startRecoveryClock } = await import("@/lib/agents/recovery");
+  startRecoveryClock();
 
   await seedIfEmpty();
 }
