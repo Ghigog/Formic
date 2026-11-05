@@ -27,7 +27,7 @@ afterEach(() => {
 
 function scoreAt(earned: number): Score {
   const level = levelOf(earned);
-  return { earned, points: earned, level, rank: rankOf(level), intoLevel: earned % XP_PER_LEVEL, bugs: 0, squashed: 0 };
+  return { earned, xp: earned, points: earned, level, rank: rankOf(level), intoLevel: earned % XP_PER_LEVEL, bugs: 0, squashed: 0 };
 }
 
 function openPopoverAt(earned: number, onOpenArchive?: () => void) {
@@ -86,6 +86,15 @@ function stubQueens(unspent: number) {
 }
 
 describe("ColonyPopover Queens", () => {
+  it("shows ∞ and stays draggable when unlimited", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ unspent: 0, unlimited: true }))));
+    openPopoverAt(3 * XP_PER_LEVEL);
+    await waitFor(() => expect(document.querySelector("[data-queen-count]")!.textContent).toBe("∞"));
+    expect(screen.getByLabelText("Drag a Queen onto a card")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "How Queens work" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/Queens are unlimited/);
+  });
+
   it("shows the icon, the count, the note and the tip", async () => {
     stubQueens(2);
     openPopoverAt(3 * XP_PER_LEVEL);

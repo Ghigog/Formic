@@ -33,6 +33,13 @@ with the Ant and Umber; the first Sentinel, the Tester, comes at Lv 2, and the D
 level also earns a Queen, and the rank steps up every three levels (Queen
 from Lv 28).
 
+Levels run on to Lv 99, the top (`MAX_LEVEL` in `src/lib/colony/game.ts`).
+XP stops at 4,900, so the level and the XP bar stay put (the bar reads "Max
+level"), but merges and epic bonuses keep adding points. At Lv 99 the colony
+is free: Queens and golden bells are unlimited, shown as ∞. The Queens and
+bell routes then return `unlimited: true`; using a golden bell still records
+the use.
+
 | Level | Unlock |
 | :-- | :-- |
 | 2 | Tester (Sentinel) |

@@ -107,6 +107,14 @@ describe("EpicWinDialog", () => {
     expect(screen.getByText(/No showcase yet/)).toBeTruthy();
   });
 
+  it("shows a full bar and Max level at Lv 99", async () => {
+    await open({ score: { level: 99, rank: "Queen", intoLevel: 50 } as never });
+    const bar = screen.getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuenow")).toBe(bar.getAttribute("aria-valuemax"));
+    expect(screen.getByText("Max level")).toBeTruthy();
+    expect(screen.queryByText(/XP to Lv/)).toBeNull();
+  });
+
   it("offers the showcase and closes on Keep building", async () => {
     const onShowcase = vi.fn();
     const closeWin = vi.fn();

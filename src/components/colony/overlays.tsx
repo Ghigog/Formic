@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { BoardCard } from "@/lib/domain/entities";
-import { XP_PER_LEVEL } from "@/lib/colony/game";
+import { XP_PER_LEVEL, isMaxLevel } from "@/lib/colony/game";
 import { showcaseHeadline } from "@/lib/domain/showcase";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { useColony } from "./colony";
@@ -255,7 +255,8 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
   const yours = showcase ? (showcase.match(/^- \[ \] /gm) ?? []).length : 0;
   const s = c.score;
   const before = Math.max(0, s.intoLevel - tally.total);
-  const xp = shown.filled ? s.intoLevel : before;
+  const maxed = isMaxLevel(s.level);
+  const xp = maxed || shown.filled ? s.intoLevel : before;
   const close = () => {
     c.sfx("close");
     c.closeWin();
@@ -332,7 +333,7 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-ink text-[11px] font-semibold tracking-[0.06em] uppercase">Colony · {s.rank}</span>
               <span className="text-muted font-mono text-[10px] tabular-nums">
-                {XP_PER_LEVEL - s.intoLevel} XP to Lv {s.level + 1}
+                {maxed ? "Max level" : `${XP_PER_LEVEL - s.intoLevel} XP to Lv ${s.level + 1}`}
               </span>
             </div>
             <span
