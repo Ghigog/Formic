@@ -16,6 +16,12 @@ export default defineConfig([
     rules: {
       // A leading underscore marks a parameter or binding kept on purpose:
       // an interface's argument a mock ignores, a key dropped by a rest.
+      // Keyboard-interaction rules: a clickable element must be a control,
+      // or be reachable and operable from the keyboard.
+      "jsx-a11y/click-events-have-key-events": "error",
+      "jsx-a11y/no-static-element-interactions": "error",
+      "jsx-a11y/interactive-supports-focus": "error",
+      "jsx-a11y/no-noninteractive-element-interactions": "error",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true },

@@ -522,8 +522,8 @@ describe("TicketDrawer on-screen keyboard", () => {
         />,
       );
       const dialog = screen.getByRole("dialog");
-      expect(dialog).toHaveStyle({ paddingBottom: "300px" });
-      expect(dialog.firstElementChild).toHaveStyle({ maxHeight: "500px" });
+      expect(dialog.parentElement).toHaveStyle({ paddingBottom: "300px" });
+      expect(dialog).toHaveStyle({ maxHeight: "500px" });
     } finally {
       vi.unstubAllGlobals();
     }

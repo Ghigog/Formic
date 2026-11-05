@@ -1041,6 +1041,8 @@ export const KanbanCard = memo(function KanbanCard({
   return (
     <Draggable draggableId={card.id} index={index} isDragDisabled={pending}>
       {(provided, snapshot) => (
+        // The drag handle: focusable, opens on Enter; Space lifts it for the keyboard drag.
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
         <li
           ref={provided.innerRef}
           {...provided.draggableProps}
@@ -1049,6 +1051,9 @@ export const KanbanCard = memo(function KanbanCard({
           // buttons, and a non-item in the column's list.
           role="listitem"
           onClick={() => onOpen(card)}
+          onKeyDown={(e) => {
+            if (e.target === e.currentTarget && e.key === "Enter") onOpen(card);
+          }}
           data-tour={card.title === ONBOARDING_TICKET_TITLE ? "first-ticket" : undefined}
           className={cn(
             "rounded-lg outline-none",
@@ -1364,12 +1369,17 @@ export const EpicGroup = memo(function EpicGroup({
                 isDragDisabled={!!pending?.has(child.id)}
               >
                 {(provided, snapshot) => (
+                  // The drag handle: focusable, opens on Enter; Space lifts it for the keyboard drag.
+                  // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
                   <div
                     ref={provided.innerRef}
                     {...provided.draggableProps}
                     {...provided.dragHandleProps}
                     role="group"
                     onClick={() => onOpen(child)}
+                    onKeyDown={(e) => {
+                      if (e.target === e.currentTarget && e.key === "Enter") onOpen(child);
+                    }}
                     className={cn(
                       "rounded-md outline-none",
                       !pending?.has(child.id) && "cursor-grab active:cursor-grabbing",
