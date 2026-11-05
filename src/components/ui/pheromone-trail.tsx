@@ -109,7 +109,7 @@ export function ColumnTrail({
       viewBox={`0 0 22 ${height}`}
       fill="none"
       aria-hidden
-      className="pointer-events-none absolute top-3 left-[10px]"
+      className="pointer-events-none absolute top-3 left-[8px]"
     >
       <path
         d={`M6 0 V${spine}`}

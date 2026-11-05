@@ -349,7 +349,7 @@ export function LevelBadge({
 
   const big = size === 36;
   const face = "absolute inset-0 flex flex-col items-center justify-center gap-px";
-  const label = cn("font-mono tracking-[0.1em]", big ? "text-[8px]" : "text-[7px]");
+  const label = cn("font-mono tracking-[0.1em]", big ? "text-[8px]" : "text-[9px]");
   const num = cn(
     "font-serif leading-none font-semibold",
     big ? "text-[16px]" : "text-[14px]",

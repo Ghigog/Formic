@@ -199,7 +199,7 @@ export function AmbientDrawer({
       </div>
 
       {/* Mobile: icon and count only. */}
-      <div className="flex h-14 items-center gap-[10px] px-4 md:hidden">
+      <div className="flex h-14 items-center gap-[8px] px-4 md:hidden">
         {busy ? (
           <LiveDots />
         ) : (

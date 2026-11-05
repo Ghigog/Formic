@@ -451,7 +451,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
             }}
             disabled={nBusy === unlocked}
             data-tour="sentinels-summon"
-            className="bg-anthracite text-on-anthracite inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[18px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
+            className="bg-anthracite text-on-anthracite inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[16px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
           >
             <PlayIcon />
             {nBusy ? `Auditing ${nBusy}…` : `Summon all ${unlocked}`}
@@ -638,7 +638,7 @@ function Card({
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-4 md:flex-none">
         <div className="flex flex-col gap-[3px]">
-          <span className="text-ink font-serif text-[21px] leading-[1.1] font-semibold">
+          <span className="text-ink font-serif text-[20px] leading-[1.1] font-semibold">
             {x.who}
           </span>
           <span className="text-muted text-[12px]">{x.kind}</span>
@@ -784,7 +784,7 @@ function Report({
     <aside
       aria-label="Audit report"
       data-tour="sentinel-report"
-      className="border-line bg-card box-border flex flex-col gap-[18px] rounded-[14px] border p-5 pt-12"
+      className="border-line bg-card box-border flex flex-col gap-[16px] rounded-[14px] border p-5 pt-12"
     >
       <div className="flex items-center gap-3">
         <span
@@ -794,7 +794,7 @@ function Report({
           <Portrait id={x.id} />
         </span>
         <div className="flex min-w-0 grow flex-col gap-[3px]">
-          <span className="font-serif text-[21px] leading-[1.1] font-semibold">
+          <span className="font-serif text-[20px] leading-[1.1] font-semibold">
             {x.who}
           </span>
           <span className="text-muted font-mono text-[10px] uppercase">
@@ -857,7 +857,7 @@ function Report({
       )}
 
       {done && (
-        <div className="flex flex-col gap-[18px]">
+        <div className="flex flex-col gap-[16px]">
           <div className="bg-panel flex flex-col gap-2 rounded-[10px] px-4 py-3.5">
             <Stars n={st.stars ?? 0} size={20} dull={st.auditStale} />
             {st.auditStale && (
@@ -880,7 +880,7 @@ function Report({
                 These stars are capped by the findings listed below, not by a rubric failure.
               </p>
             )}
-            <p className="text-ink m-0 font-serif text-[17px] leading-[1.4] text-pretty">
+            <p className="text-ink m-0 font-serif text-[16px] leading-[1.4] text-pretty">
               {st.summary}
             </p>
           </div>

@@ -158,7 +158,7 @@ function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div role="group" aria-label={label} className="border-line bg-card rounded-[14px] border px-4 py-3">
       <div className="text-muted text-[12px]">{label}</div>
-      <div className="text-ink font-mono text-[26px] leading-tight font-medium">{counted(value, p)}</div>
+      <div className="text-ink font-mono text-[28px] leading-tight font-medium">{counted(value, p)}</div>
     </div>
   );
 }
