@@ -23,6 +23,10 @@ import {
   rankOf,
   styleUnlocked,
   MAX_UNLOCK_LEVEL,
+  MAX_LEVEL,
+  MAX_XP,
+  XP_PER_LEVEL,
+  isMaxLevel,
   scoreOf,
   unlocksAt,
 } from "./game";
@@ -388,5 +392,34 @@ describe("isEpicComplete", () => {
   });
   it("is false for an epic without tickets", () => {
     expect(isEpicComplete({ ...epicWith("merged"), tickets: [] })).toBe(false);
+  });
+});
+
+describe("the level cap", () => {
+  const merged = (pts: number) => card({ id: `m${pts}`, status: "merged", mergePoints: pts });
+
+  it("stops levelOf at Lv 99, reached at 4900 XP", () => {
+    expect(MAX_XP).toBe(4900);
+    expect(levelOf(4850)).toBe(98);
+    expect(levelOf(4900)).toBe(MAX_LEVEL);
+    expect(levelOf(100_000)).toBe(MAX_LEVEL);
+    expect(isMaxLevel(98)).toBe(false);
+    expect(isMaxLevel(99)).toBe(true);
+  });
+
+  it("keeps earning points past the cap while XP stops", () => {
+    const s = scoreOf([merged(4900), merged(8)]);
+    expect(s.level).toBe(99);
+    expect(s.earned).toBe(4908);
+    expect(s.xp).toBe(4900);
+    expect(s.points).toBe(4908);
+    expect(s.intoLevel).toBe(XP_PER_LEVEL);
+  });
+
+  it("makes Queens and golden bells unlimited only at Lv 99", () => {
+    expect(queensEarned(99)).toBe(Infinity);
+    expect(goldenBellsLeft(99, 500)).toBe(Infinity);
+    expect(queensEarned(98)).toBe(97);
+    expect(goldenBellsLeft(98, 3)).toBe(16);
   });
 });

@@ -5,7 +5,7 @@ import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
 import { ownerScope } from "@/lib/auth/user";
 import { startedBy, withActor } from "@/lib/auth/actor";
 import { boardsFor, canSeeBoard } from "@/lib/board/sharing";
-import { XP_PER_LEVEL, levelOf, scoreOf } from "@/lib/colony/game";
+import { XP_PER_LEVEL, scoreOf } from "@/lib/colony/game";
 import { COLUMNS, columnOf, type ColumnId } from "@/lib/domain/status";
 import { applyTransition, createBacklogItem } from "@/lib/board/service";
 import { applyPrd } from "@/lib/agents/pipeline";
@@ -95,10 +95,10 @@ async function ownedBy(project: ProjectSummary, epicId: string): Promise<boolean
 export async function getColony(user: UserRecord, input: { board: string }) {
   const project = await visibleBoard(user, input.board);
   if (!project) return notFound("Board");
-  const { earned } = scoreOf(await repository().boardCards(project.id));
+  const { xp, level, intoLevel } = scoreOf(await repository().boardCards(project.id));
   return {
     ok: true as const,
-    value: { level: levelOf(earned), xp: earned, xpIntoLevel: earned % XP_PER_LEVEL, xpPerLevel: XP_PER_LEVEL },
+    value: { level, xp, xpIntoLevel: intoLevel, xpPerLevel: XP_PER_LEVEL },
   };
 }
 

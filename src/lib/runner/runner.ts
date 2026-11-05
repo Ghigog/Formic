@@ -743,6 +743,12 @@ export async function startJobRun(input: {
   const mode = input.mode === "loop" ? "implement" : input.mode;
   const resumed = input.merge ? null : await carryOnFrom(client, ticket, mode, input.from).catch(() => null);
 
+  // A CLI agent's links are signed now, at dispatch, so they are good while
+  // the job runs: a link copied into the ticket's text when it was planned
+  // has long expired by then. A loop run's prompt is JSON, not prose.
+  const files = input.mode === "loop" ? null : attachmentsPrompt(await jobAttachments(ticket));
+  const withFiles = (prompt: string) => (files ? `${prompt}\n\n${files}` : prompt);
+
   const job = jobId(ticket.id, randomUUID().slice(0, 8));
   const started = await dispatch({
     client,
@@ -752,12 +758,13 @@ export async function startJobRun(input: {
     mode: input.mode,
     cardKey: ticket.key,
     from: resumed?.sha ?? input.from,
-    prompt:
+    prompt: withFiles(
       typeof input.prompt === "string"
         ? resumed
           ? `${input.prompt}\n\n${resumeBrief(resumed, ticket.plan)}`
           : input.prompt
         : input.prompt(resumed),
+    ),
     merge: input.merge,
     budgetMinutes: input.budget?.minutes.value ?? null,
     record: (job) => repository().updateTicket(ticket.id, { runnerJob: job, runnerAgent: agent.presetId }),
@@ -1858,7 +1865,22 @@ export function reportAllowed(job: string, since: string, token: string): boolea
   return expected.length === given.length && timingSafeEqual(expected, given);
 }
 
-/** How long a signed attachment URL stays good: past the workflow's own 180-minute timeout, so a job that is slow to start never finds it expired. */
+/**
+ * The files a coding job on a ticket can read: the ticket's own, then its
+ * Epic's, since a design document attached to the request stays on the Epic
+ * when the Architect Agent breaks it into tickets.
+ */
+async function jobAttachments(ticket: TicketDetail): Promise<AttachmentSummary[]> {
+  const repo = repository();
+  const [own, epic] = await Promise.all([
+    repo.attachmentsFor({ ticketId: ticket.id }),
+    repo.attachmentsFor({ epicId: ticket.epicId }),
+  ]);
+  const seen = new Set(own.map((a) => a.id));
+  return [...own, ...epic.filter((a) => !seen.has(a.id))];
+}
+
+/** How long a signed attachment URL stays good: past the workflow's 60-minute cap on a job, so a job that is slow to start never finds it expired. */
 const ATTACHMENT_URL_TTL_MS = 90 * 60 * 1000;
 
 function attachmentToken(id: string, expires: number): string {
@@ -1908,7 +1930,7 @@ export function attachmentsPrompt(attachments: AttachmentSummary[]): string | nu
     ].join("\n");
   }
   return [
-    `Attachments. Download each with curl into the directory named by the ${ATTACHMENTS_DIR_VAR} environment variable, and read them from there. Do not commit that directory.`,
+    `Attachments. Download each with curl into the directory named by the ${ATTACHMENTS_DIR_VAR} environment variable, and read them from there. Do not commit that directory. These links are signed for this run: an attachment link anywhere else in this prompt, such as one copied into the ticket, may have expired, so use these instead.`,
     ...(lines as string[]),
   ].join("\n");
 }
