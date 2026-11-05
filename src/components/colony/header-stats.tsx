@@ -405,7 +405,7 @@ export function LevelBadge({
     >
       {lv}
       {audit(
-        "opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
+        "invisible opacity-0 transition-[opacity,visibility] duration-150 group-hover:visible group-hover:opacity-100 group-focus-visible:visible group-focus-visible:opacity-100",
       )}
       {flashing &&
         (reduced

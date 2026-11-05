@@ -1129,46 +1129,43 @@ export class PrismaRepository implements Repository {
     const db = prisma();
 
     return db.$transaction(async (tx) => {
-      const created = [];
-      for (const input of inputs) {
-        const row = await tx.ticket.create({
-          data: {
-            epicId: input.epicId,
-            key: input.key,
-            title: input.title,
-            description: input.description,
-            acceptanceCriteria: input.acceptanceCriteria,
-            fileScope: normalizeScope(input.fileScope),
-            size: input.size ?? "M",
-            storyPoints: input.storyPoints ?? null,
-            needsHuman: input.needsHuman ?? null,
-            workType: input.workType ?? null,
-            bugSeverity: severityFor(input.workType, input.bugSeverity),
-            position: input.position,
-            status: input.dependsOnKeys.length === 0 ? "ready" : "waiting",
-            stage: 3,
-            columnEntries: {
-              create: { column: columnOf({ status: input.dependsOnKeys.length === 0 ? "ready" : "waiting" }) },
+      const created = await Promise.all(
+        inputs.map((input) => {
+          const status = input.dependsOnKeys.length === 0 ? "ready" : "waiting";
+          return tx.ticket.create({
+            data: {
+              epicId: input.epicId,
+              key: input.key,
+              title: input.title,
+              description: input.description,
+              acceptanceCriteria: input.acceptanceCriteria,
+              fileScope: normalizeScope(input.fileScope),
+              size: input.size ?? "M",
+              storyPoints: input.storyPoints ?? null,
+              needsHuman: input.needsHuman ?? null,
+              workType: input.workType ?? null,
+              bugSeverity: severityFor(input.workType, input.bugSeverity),
+              position: input.position,
+              status,
+              stage: 3,
+              columnEntries: { create: { column: columnOf({ status }) } },
             },
-          },
-        });
-        created.push(row);
-      }
+          });
+        }),
+      );
 
       // Dependencies are declared by key and resolved to ids once every
       // sibling exists, so ordering within the batch does not matter.
       const byKey = new Map(created.map((t) => [t.key, t.id]));
-      for (const input of inputs) {
+      const edges = inputs.flatMap((input) => {
         const ticketId = byKey.get(input.key);
-        if (!ticketId) continue;
-        for (const depKey of input.dependsOnKeys) {
+        if (!ticketId) return [];
+        return input.dependsOnKeys.flatMap((depKey) => {
           const dependsOnTicketId = byKey.get(depKey);
-          if (!dependsOnTicketId) continue;
-          await tx.ticketDependency.create({
-            data: { ticketId, dependsOnTicketId },
-          });
-        }
-      }
+          return dependsOnTicketId ? [{ ticketId, dependsOnTicketId }] : [];
+        });
+      });
+      if (edges.length > 0) await tx.ticketDependency.createMany({ data: edges });
 
       return created.map((t) => ({
         id: t.id,
@@ -1750,7 +1747,15 @@ export class PrismaRepository implements Repository {
         ...(tokensOut !== undefined ? { tokensOut: { increment: tokensOut } } : {}),
       },
     });
-    for (const change of changes) await this.recordTicketChange(ticketId, change);
+    if (changes.length > 0) {
+      await prisma().ticketChange.createMany({
+        data: changes.map((change) => ({
+          ticketId,
+          kind: change.kind,
+          detail: (change.detail ?? undefined) as never,
+        })),
+      });
+    }
   }
 
   async ticketsForEpic(epicId: string): Promise<TicketDetail[]> {

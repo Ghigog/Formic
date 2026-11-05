@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Droppable } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
@@ -35,22 +35,7 @@ export function columnCount(cards: BoardCard[], id: ColumnId): number {
   );
 }
 
-export function Column({
-  id,
-  cards,
-  extras,
-  composer,
-  bare = false,
-  collapsed: controlledCollapsed,
-  onToggleCollapse,
-  accepts,
-  agent,
-  view = EMPTY_VIEW,
-  onViewChange,
-  onOpen,
-  onShowcase,
-  className,
-}: {
+interface ColumnProps {
   id: ColumnId;
   cards: BoardCard[];
   extras: ExtrasMap;
@@ -79,8 +64,34 @@ export function Column({
   onViewChange?: (view: ColumnView) => void;
   onOpen: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
+  /**
+   * Cards whose move the server has not answered, and the one sliding out
+   * after its arrow. Given by the board, so a card's own state redraws only
+   * the columns it concerns; left out, each card reads them from its env.
+   */
+  pending?: ReadonlySet<string>;
+  leaving?: { id: string; direction: "forward" | "back" } | null;
   className?: string;
-}) {
+}
+
+export const Column = memo(function Column({
+  id,
+  cards,
+  extras,
+  composer,
+  bare = false,
+  collapsed: controlledCollapsed,
+  onToggleCollapse,
+  accepts,
+  agent,
+  view = EMPTY_VIEW,
+  onViewChange,
+  onOpen,
+  onShowcase,
+  pending,
+  leaving,
+  className,
+}: ColumnProps) {
   const dot = COLUMN_DOT[id];
   // The column's agent is out of usage on its plan: nothing can land here
   // until it resets. Picking another agent lifts it at once.
@@ -216,6 +227,8 @@ export function Column({
                   index={index}
                   extras={extras}
                   onOpen={onOpen}
+                  pending={pending ? pending.has(item.card.id) : undefined}
+                  exit={leaving === undefined ? undefined : leaving?.id === item.card.id ? leaving.direction : null}
                 />
               ) : (
                 <EpicGroup
@@ -229,6 +242,7 @@ export function Column({
                   onToggle={() => toggle(item.epic.id)}
                   onOpen={onOpen}
                   onShowcase={onShowcase}
+                  pending={pending}
                 />
               ),
             )}
@@ -244,6 +258,37 @@ export function Column({
       )}
     </section>
   );
+}, sameColumn);
+
+/**
+ * Props equal, except that `cards` is compared card by card (the board filters
+ * into a new array each render) and that the maps keyed by card id only count
+ * for this column's own cards. So an event on a card in another column leaves
+ * this one alone.
+ */
+function sameColumn(a: ColumnProps, b: ColumnProps): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof ColumnProps>;
+  for (const key of keys) {
+    if (key === "cards" || key === "extras" || key === "pending" || key === "leaving") continue;
+    if (a[key] !== b[key]) return false;
+  }
+  if (a.cards.length !== b.cards.length) return false;
+  for (let i = 0; i < b.cards.length; i++) {
+    const card = b.cards[i]!;
+    if (a.cards[i] !== card) return false;
+    if (a.extras[card.id] !== b.extras[card.id]) return false;
+    if (!!a.pending?.has(card.id) !== !!b.pending?.has(card.id)) return false;
+  }
+  if (!!a.pending !== !!b.pending) return false;
+  const owns = (id: string | undefined) => !!id && b.cards.some((c) => c.id === id);
+  // A card of this column starting or ending its slide out redraws it.
+  if (
+    (owns(a.leaving?.id) || owns(b.leaving?.id)) &&
+    (a.leaving?.id !== b.leaving?.id || a.leaving?.direction !== b.leaving?.direction)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
