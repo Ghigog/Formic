@@ -146,6 +146,16 @@ describe("RepoPicker", () => {
       const badge = await screen.findByRole("img", { name: "Audit grade B, Level 43" });
       expect(badge).toHaveTextContent("B");
       expect(badge).toHaveTextContent("Lv 43");
+      const fill = badge.querySelector(".oct-lg") as HTMLElement;
+      expect(fill.style.background).toBe("var(--anthracite)");
+      expect(screen.getByText("B")).toHaveClass("text-on-anthracite");
+    });
+
+    it("uses the dark-theme-safe letter colour on a C", async () => {
+      serveBoards([{ ...board, standing: { grade: "C", ink: "var(--text-muted)", level: 5, audited: true } }]);
+      render(<RepoPicker current={null} inline onClose={() => {}} />);
+      await screen.findByRole("img", { name: "Audit grade C, Level 5" });
+      expect(screen.getByText("C")).toHaveClass("text-cream");
     });
 
     it("shows a dash, not an F, for a board nobody has audited", async () => {
@@ -154,6 +164,8 @@ describe("RepoPicker", () => {
       const badge = await screen.findByRole("img", { name: "Not audited, Level 3" });
       expect(badge).toHaveTextContent("–");
       expect(badge).not.toHaveTextContent("F");
+      expect(badge.querySelector(".oct-lg")).toHaveClass("bg-anthracite");
+      expect(screen.getByText("–")).toHaveClass("text-on-anthracite");
     });
 
     it("renders the row without a badge while standing is missing", async () => {

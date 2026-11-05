@@ -12,6 +12,15 @@ import { SENTINELS } from "@/lib/sentinels/roster";
 
 /** XP per level. */
 export const XP_PER_LEVEL = 50;
+/** The top level. XP stops here; points keep coming, and Queens and golden bells are unlimited. */
+export const MAX_LEVEL = 99;
+/** The most XP there is: (MAX_LEVEL - 1) levels of XP_PER_LEVEL. */
+export const MAX_XP = (MAX_LEVEL - 1) * XP_PER_LEVEL;
+
+/** Whether a level is the top one. */
+export function isMaxLevel(level: number): boolean {
+  return level >= MAX_LEVEL;
+}
 /** What reporting a bug costs, in points. Never XP: levels only go up. */
 export const BUG_COST = 5;
 /** How long one heat stack lasts. */
@@ -147,7 +156,7 @@ export function featuresAt(level: number): FeatureKey[] {
 const ALL_UNLOCKS = [...SHAPE_UNLOCKS, ...COLOR_UNLOCKS, ...SENTINEL_UNLOCKS, ...COLONY_UNLOCKS, ...FEATURE_UNLOCKS];
 
 export function levelOf(xp: number): number {
-  return Math.floor(Math.max(0, xp) / XP_PER_LEVEL) + 1;
+  return Math.min(MAX_LEVEL, Math.floor(Math.max(0, xp) / XP_PER_LEVEL) + 1);
 }
 
 /** Levels spent at each rank: a new rank every three levels, Queen from Lv 28. */
@@ -158,8 +167,9 @@ export function rankOf(level: number): string {
   return RANKS[Math.min(i, RANKS.length - 1)]!;
 }
 
-/** Queens earned at a level: one for each level gained since Lv 1, with no cap. */
+/** Queens earned at a level: one for each level gained since Lv 1. Unlimited (Infinity) at the top level. */
 export function queensEarned(level: number): number {
+  if (isMaxLevel(level)) return Infinity;
   return Math.max(0, level - 1);
 }
 
@@ -170,6 +180,7 @@ export function goldenBellsEarned(level: number): number {
 
 /** Golden bells still to arm, given how many have been used. */
 export function goldenBellsLeft(level: number, used: number): number {
+  if (isMaxLevel(level)) return Infinity;
   return Math.max(0, goldenBellsEarned(level) - used);
 }
 
@@ -269,8 +280,10 @@ export function epicTally(epic: BoardCard, cards: BoardCard[]): EpicTally {
 }
 
 export interface Score {
-  /** XP: every point ever earned. Drives the level. */
+  /** Every point ever earned, uncapped. */
   earned: number;
+  /** XP: earned, stopping at MAX_XP. Drives the level. */
+  xp: number;
   /** Earned less bug penalties. What the header counts. */
   points: number;
   level: number;
@@ -296,10 +309,11 @@ export function scoreOf(cards: BoardCard[]): Score {
   const level = levelOf(earned);
   return {
     earned,
+    xp: Math.min(earned, MAX_XP),
     points: Math.max(0, earned - bugs * BUG_COST),
     level,
     rank: rankOf(level),
-    intoLevel: earned % XP_PER_LEVEL,
+    intoLevel: isMaxLevel(level) ? XP_PER_LEVEL : earned % XP_PER_LEVEL,
     bugs,
     squashed,
   };

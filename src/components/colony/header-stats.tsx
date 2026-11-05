@@ -6,6 +6,7 @@ import {
   HEAT_MAX,
   HEAT_WINDOW_MS,
   XP_PER_LEVEL,
+  isMaxLevel,
   pointsOf,
 } from "@/lib/colony/game";
 import { SENTINELS } from "@/lib/sentinels/roster";
@@ -416,7 +417,7 @@ export function ColonyLevelStats() {
             Colony · {s.rank}
           </span>
           <span className="text-muted font-mono text-[10px] tabular-nums">
-            {s.intoLevel}/{XP_PER_LEVEL}
+            {isMaxLevel(s.level) ? "Max level" : `${s.intoLevel}/${XP_PER_LEVEL}`}
           </span>
         </div>
         <span

@@ -40,7 +40,16 @@ describe("/api/bell", () => {
   it("GET answers the golden bells left and whether one is armed", async () => {
     const res = await GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ left: 2, armed: false });
+    expect(await res.json()).toEqual({ left: 2, armed: false, unlimited: false });
+  });
+
+  it("GET answers unlimited at Lv 99, and arming never refuses", async () => {
+    level.value = 99;
+    goldenBell.mockResolvedValue({ used: 50, armed: false });
+    expect(await (await GET()).json()).toEqual({ left: 0, armed: false, unlimited: true });
+    const res = await post({ action: "arm" });
+    expect(res.status).toBe(200);
+    expect(setGoldenBellArmed).toHaveBeenCalledWith("p1", true);
   });
 
   it("GET answers 409 without a project", async () => {
