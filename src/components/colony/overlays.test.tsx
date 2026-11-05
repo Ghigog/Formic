@@ -71,17 +71,10 @@ describe("EpicWinDialog", () => {
     },
   };
 
-  async function open(patch: Partial<ColonyApi> = {}, onShowcase?: (e: unknown) => void) {
+  async function open(patch: Partial<ColonyApi> = {}, onOpenEpic?: (e: unknown) => void) {
     vi.useFakeTimers();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({ showcase: null, canGenerateShowcase: true }),
-      })),
-    );
     colony.current = api({ win: win as never, ...patch });
-    const view = render(<EpicWinDialog onShowcase={onShowcase as never} />);
+    const view = render(<EpicWinDialog onOpenEpic={onOpenEpic as never} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
     });
@@ -94,7 +87,7 @@ describe("EpicWinDialog", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("shows the epic, its tally, the colony standing and the summary state", async () => {
+  it("shows the epic, its tally, and the colony standing, with no summary panel", async () => {
     await open();
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.getByText("Ship the thing")).toBeTruthy();
@@ -104,16 +97,17 @@ describe("EpicWinDialog", () => {
     expect(screen.getByText("+20")).toBeTruthy();
     expect(screen.getByText("+70")).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("40");
-    expect(screen.getByText(/No showcase yet/)).toBeTruthy();
+    expect(screen.queryByText("SUMMARY")).toBeNull();
+    expect(screen.queryByText(/No showcase yet/)).toBeNull();
   });
 
-  it("offers the showcase and closes on Keep building", async () => {
-    const onShowcase = vi.fn();
+  it("opens the Epic, and closes on Keep building", async () => {
+    const onOpenEpic = vi.fn();
     const closeWin = vi.fn();
-    await open({ closeWin }, onShowcase);
+    await open({ closeWin }, onOpenEpic);
     fireEvent.click(screen.getByRole("button", { name: "Open Epic" }));
     expect(closeWin).toHaveBeenCalledTimes(1);
-    expect(onShowcase).toHaveBeenCalledWith(epic);
+    expect(onOpenEpic).toHaveBeenCalledWith(epic);
     fireEvent.click(screen.getByRole("button", { name: "Keep building" }));
     expect(closeWin).toHaveBeenCalledTimes(2);
   });
