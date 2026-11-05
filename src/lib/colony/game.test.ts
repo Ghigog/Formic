@@ -110,15 +110,15 @@ describe("levels", () => {
     expect(featureUnlocked("kpis", 20)).toBe(true);
     expect(unlocksAt(2)).toContain("Sentinels");
     expect(unlocksAt(10)).toContain("Timeline");
-    expect(unlocksAt(15)).toContain("Calls");
+    expect(unlocksAt(15)).not.toContain("Calls");
     expect(unlocksAt(20)).toContain("KPIs");
     expect(nextUnlock(9)?.level).toBe(10);
     expect(nextUnlock(9)?.labels).toContain("Timeline");
   });
 
   it("lists features in level order for reveal and replay", () => {
-    expect(FEATURE_UNLOCKS.map((f) => f.key)).toEqual(["sentinels", "timeline", "calls", "kpis"]);
-    expect(featuresAt(15)).toEqual(["calls"]);
+    expect(FEATURE_UNLOCKS.map((f) => f.key)).toEqual(["sentinels", "timeline", "kpis"]);
+    expect(featuresAt(15)).toEqual([]);
     expect(featuresAt(3)).toEqual([]);
   });
 

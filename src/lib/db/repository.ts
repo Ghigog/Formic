@@ -1,7 +1,5 @@
 import "server-only";
 
-import type { GuestId } from "@/lib/meetings/guests";
-
 import type {
   AgentPreset,
   AgentRole,
@@ -135,32 +133,6 @@ export interface AssistantMessage {
   /** Who a reply comes from: "assistant", a column role or "sentinel:<id>" (a GuestId). */
   speaker: string;
   createdAt: Date;
-}
-
-export const MEETING_REPEATS = ["none", "weekdays", "weekly", "biweekly"] as const;
-export type MeetingRepeat = (typeof MEETING_REPEATS)[number];
-
-/** A call the person scheduled with some guests. */
-export interface Meeting {
-  id: string;
-  projectId: string;
-  title: string;
-  startsAt: Date;
-  agenda: string;
-  guests: GuestId[];
-  repeat: MeetingRepeat;
-  /** The occurrence the person was last reminded of. */
-  lastRemindedFor: Date | null;
-  createdAt: Date;
-}
-
-export interface CreateMeetingInput {
-  projectId: string;
-  title: string;
-  startsAt: Date;
-  agenda?: string;
-  guests?: GuestId[];
-  repeat?: MeetingRepeat;
 }
 
 export interface AssistantProposal {
@@ -1117,20 +1089,6 @@ export interface AgentRepository {
   ): Promise<void>;
 }
 
-/** Meetings. */
-export interface MeetingRepository {
-  /** A board's meetings, soonest first. */
-  meetings(projectId: string): Promise<Meeting[]>;
-  /** Every board's meetings with the board's owner, for the reminder tick. */
-  allMeetingsWithOwner(): Promise<{ meeting: Meeting; ownerId: string | null }[]>;
-  createMeeting(input: CreateMeetingInput): Promise<Meeting>;
-  updateMeeting(
-    id: string,
-    update: Partial<Pick<Meeting, "title" | "startsAt" | "agenda" | "guests" | "repeat" | "lastRemindedFor">>,
-  ): Promise<void>;
-  deleteMeeting(id: string): Promise<void>;
-}
-
 /** Conversations: the assistant and card chat. */
 export interface ConversationRepository {
   /** The assistant conversation, oldest first. */
@@ -1252,7 +1210,6 @@ export interface Repository
     TicketRepository,
     RunRepository,
     AgentRepository,
-    MeetingRepository,
     ConversationRepository,
     AuditRepository,
     DeliveryRepository,

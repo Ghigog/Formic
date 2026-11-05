@@ -9,7 +9,7 @@ import { repository } from "@/lib/db";
 import type { AssistantProposal } from "@/lib/db/repository";
 import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type AgentRole } from "@/lib/domain/entities";
 import { COLUMN_LABELS, COLUMNS, columnOf, type ColumnId } from "@/lib/domain/status";
-import { COLUMN_AGENT_GUESTS } from "@/lib/meetings/guests";
+import { COLUMN_AGENT_GUESTS } from "@/lib/assistant/guest-ids";
 import { sentinel as findSentinel } from "@/lib/sentinels/roster";
 import { sentinelsFor } from "@/lib/sentinels/service";
 

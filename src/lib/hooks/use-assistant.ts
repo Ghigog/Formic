@@ -172,15 +172,6 @@ export function useAssistant(enabled: boolean) {
       ),
     [run],
   );
-  /** A PM call started: the PM opens it (the questions waiting, or a greeting). */
-  const openCall = useCallback(
-    (meetingId?: string) =>
-      run(async () => {
-        await send("/api/assistant/call", "POST", meetingId ? { meetingId } : undefined);
-        return send("/api/assistant", "GET");
-      }),
-    [run],
-  );
   const setAgent = useCallback(async (presetId: string | null) => {
     setError(null);
     const res = await fetch("/api/assistant/agent", {
@@ -198,5 +189,5 @@ export function useAssistant(enabled: boolean) {
     setState((s) => ({ ...s, presetId }));
   }, []);
 
-  return { ...state, pending, error, ask, stop, clear, decide, openCall, load, setAgent };
+  return { ...state, pending, error, ask, stop, clear, decide, load, setAgent };
 }

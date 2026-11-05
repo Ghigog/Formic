@@ -1426,37 +1426,6 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.assistantMessage(spoken.id))?.speaker).toBe("reviewer");
       });
 
-      it("keeps a board's meetings with their agenda, guests and repeat, and drops them with the board", async () => {
-        const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
-        const p = await repo.ensureProject({ ownerId: user.id, repoFullName: `contract/${randomUUID()}`, baseBranch: "main" });
-        expect(await repo.meetings(p.id)).toEqual([]);
-
-        const later = await repo.createMeeting({ projectId: p.id, title: "Later", startsAt: new Date("2030-01-02T10:00:00Z") });
-        const m = await repo.createMeeting({
-          projectId: p.id,
-          title: "Standup",
-          startsAt: new Date("2030-01-01T09:00:00Z"),
-          agenda: "Blockers",
-          guests: ["assistant", "coder", "sentinel:tester"],
-          repeat: "weekdays",
-        });
-
-        expect(later).toMatchObject({ agenda: "", guests: [], repeat: "none", lastRemindedFor: null });
-        const listed = await repo.meetings(p.id);
-        expect(listed.map((x) => x.title)).toEqual(["Standup", "Later"]);
-        expect(listed[0]).toMatchObject({ agenda: "Blockers", guests: ["assistant", "coder", "sentinel:tester"], repeat: "weekdays" });
-
-        const reminded = new Date("2030-01-01T08:45:00Z");
-        await repo.updateMeeting(m.id, { title: "Daily", repeat: "weekly", lastRemindedFor: reminded });
-        expect((await repo.meetings(p.id)).find((x) => x.id === m.id)).toMatchObject({ title: "Daily", repeat: "weekly", lastRemindedFor: reminded });
-
-        await repo.deleteMeeting(later.id);
-        expect((await repo.meetings(p.id)).map((x) => x.id)).toEqual([m.id]);
-
-        await repo.deleteUser(user.id);
-        expect(await repo.meetings(p.id)).toEqual([]);
-      });
-
       it("records and clears the job an audit runs in", async () => {
         const p = await project();
         const audit = await repo.startAudit(p.id, "tester");

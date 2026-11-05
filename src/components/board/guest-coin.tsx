@@ -1,4 +1,4 @@
-import { guestLabel, type GuestId } from "@/lib/meetings/guests";
+import { guestLabel, type GuestId } from "@/lib/assistant/guest-ids";
 
 /** The octagon every Formic badge is cut to (design/DESIGN.md: octagonal coin badge). */
 export const OCTAGON =

@@ -57,7 +57,6 @@ vi.mock("@/components/colony/header-stats", () => ({
   ColonyHeaderStats: () => null,
   ColonyLevelStats: () => null,
   ColonyMobileStats: () => null,
-  MeetingsButton: () => null,
 }));
 
 const card = makeCard({ status: "ready", title: "Fix login" });

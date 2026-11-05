@@ -245,7 +245,6 @@ for (const width of [360, 390]) {
       bar.getByRole("button", { name: /PM/ }),
       bar.locator('[data-colony="level"]'),
       bar.locator('[data-colony="score"]'),
-      bar.getByRole("button", { name: /meetings/i }),
       bar.getByRole("button", { name: /account|menu/i }),
     ];
     await expect(bar.getByRole("link", { name: "Calls" })).toHaveCount(0);

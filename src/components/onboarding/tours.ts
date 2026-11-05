@@ -56,12 +56,8 @@ export type TourId =
   | "agent"
   | "agent-menu"
   | "colony"
-  | "meetings"
-  | "call"
-  | "call-bar"
   | "sentinels-intro"
   | "timeline-intro"
-  | "calls-intro"
   | "kpis-intro"
   | "swap-intro";
 
@@ -171,19 +167,6 @@ export const TOURS: Record<TourId, TourDef> = {
         side: "below",
         title: "Timeline",
         text: "The timeline. Your epics laid out day by day, so you can see what shipped when. Tap it to open, and again to come back.",
-      },
-    ],
-  },
-
-  "calls-intro": {
-    id: "calls-intro",
-    endInNest: true,
-    steps: [
-      {
-        target: "calls",
-        side: "below",
-        title: "Calls",
-        text: "Calls! Talk to your agents out loud, and they talk back. Tap here to start one.",
       },
     ],
   },
@@ -369,34 +352,6 @@ export const TOURS: Record<TourId, TourDef> = {
       { target: "colony-next", side: "left", title: "Levels", text: "Points fill this bar. Every level unlocks something new." },
       { target: "colony-shapes", side: "left", title: "Bug shapes", text: "New levels unlock new shapes for your bugs." },
       { target: "colony-colours", side: "left", title: "Bug colours", text: "And new colours. Pick one to try it out." },
-    ],
-  },
-
-  meetings: {
-    id: "meetings",
-    allThere: true,
-    steps: [
-      { target: "meetings-next", side: "below", title: "Up next", text: "Your next meeting, who is coming and the top of the agenda. Join now takes you into the call." },
-      // The same step when nothing is planned: whichever target is on screen is shown.
-      { target: "meetings-empty", side: "below", title: "Up next", text: "No meetings yet. Let's plan one." },
-      { target: "meetings-calendar", side: "inside", title: "The calendar", text: "Two weeks, hour by hour. Tap an empty slot to plan a meeting there, or a meeting to open it." },
-      { target: "meetings-new", side: "below", title: "New meeting", text: "Pick a time, an agenda and who comes: agents, the PM, even Sentinels. It can repeat." },
-      { target: "meetings-join", side: "above", title: "Join now", text: "When it is time, I'll nudge you. Join and the call starts, hands free." },
-      { target: "meetings", side: "below", title: "Back to board", text: "Press this again to head back to the board." },
-    ],
-  },
-
-  call: {
-    id: "call",
-    steps: [
-      { target: "agent-call", side: "below", title: "Call an agent", text: "Tap the phone to talk with this agent by voice. Same powers as typing, hands free." },
-    ],
-  },
-
-  "call-bar": {
-    id: "call-bar",
-    steps: [
-      { target: "call-bar", side: "below", title: "On the call", text: "Everyone on the call shows here, and the one answering lights up. Say \"get the Reviewer in\" or tap + to bring someone in, and \"hello everyone\" to hear from all." },
     ],
   },
 };

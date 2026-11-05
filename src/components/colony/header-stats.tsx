@@ -11,8 +11,6 @@ import {
 } from "@/lib/colony/game";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import { useSentinels } from "@/components/sentinels/store";
-import { useMeetings } from "@/lib/hooks/use-meetings";
-import { dueOccurrence } from "@/lib/meetings/due";
 import { useColony, type ColonyApi } from "./colony";
 import { FeatureReveal } from "./feature-reveal";
 import type { SoundEngine } from "./sound";
@@ -513,70 +511,5 @@ export function ColonyMobileStats() {
       </div>
       <TimelineButton c={c} iconOnly />
     </>
-  );
-}
-
-/** A calendar page: a header band over a grid of days. */
-function CalendarIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <rect x="1.5" y="2.5" width="11" height="10" rx="2" stroke="var(--text)" strokeWidth="1.4" />
-      <path d="M1.5 5.8h11" stroke="var(--text)" strokeWidth="1.4" />
-      <path d="M4.5 1.2v2.4M9.5 1.2v2.4" stroke="var(--text)" strokeWidth="1.4" strokeLinecap="round" />
-      <circle cx="5" cy="8.6" r="0.9" fill="var(--terracotta)" />
-      <circle cx="8.8" cy="8.6" r="0.9" fill="var(--terracotta)" />
-    </svg>
-  );
-}
-
-/**
- * The way into the Meetings menu, in the timeline button's style. When a
- * meeting is within 15 minutes or running, a dot pulses on it and, on desktop,
- * the label becomes the meeting's title and Join.
- */
-export function MeetingsButton({ iconOnly = false }: { iconOnly?: boolean }) {
-  const c = useColony();
-  if (!c) return null;
-  return <MeetingsButtonView c={c} iconOnly={iconOnly} />;
-}
-
-function MeetingsButtonView({ c, iconOnly }: { c: ColonyApi; iconOnly: boolean }) {
-  const { meetings } = useMeetings();
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-  const due = dueOccurrence(meetings, now)?.meeting ?? null;
-  const open = c.meetingsOpen;
-  return (
-    <button
-      data-colony="meetings"
-      data-tour="meetings"
-      type="button"
-      onClick={() => c.setMeetingsOpen(!open)}
-      aria-label={open ? "Back to board" : due ? `Meetings, ${due.title} is starting` : "Open meetings"}
-      aria-expanded={open}
-      className={cn(
-        "border-line bg-card text-ink hover:border-terracotta relative inline-flex shrink-0 items-center rounded-lg border text-[13px] font-semibold transition-[border-color,box-shadow] hover:shadow-[0_6px_14px_-10px_color-mix(in_srgb,var(--anthracite)_40%,transparent)] active:scale-[0.97]",
-        iconOnly ? "size-11 justify-center" : "h-9 max-w-64 gap-2.5 pr-3 pl-2.5",
-      )}
-    >
-      <CalendarIcon />
-      {!iconOnly && (due ? (
-        <>
-          <span className="truncate">{due.title}</span>
-          <span className="text-terracotta-deep">Join</span>
-        </>
-      ) : (
-        "Meetings"
-      ))}
-      {due && (
-        <span data-testid="meetings-due" className="absolute -top-1 -right-1 flex size-2.5">
-          <span className="bg-terracotta absolute inset-0 animate-ping rounded-full opacity-70 motion-reduce:hidden" />
-          <span className="bg-terracotta-cta relative size-2.5 rounded-full border-2 border-white" />
-        </span>
-      )}
-    </button>
   );
 }

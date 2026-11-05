@@ -3,7 +3,6 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isProviderId } from "@/lib/llm/providers";
 import { PRUNABLE_EVENT_TYPES } from "@/lib/domain/events";
-import { isGuestId } from "@/lib/meetings/guests";
 
 import { Prisma } from "@/generated/prisma/client";
 
@@ -37,9 +36,6 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
-  CreateMeetingInput,
-  Meeting,
-  MeetingRepeat,
   AssistantProposal,
   CardChatMessage,
   AuditKind,
@@ -54,7 +50,6 @@ import type {
   HostUsageCheck,
   Reservation,
 } from "./repository";
-import { MEETING_REPEATS } from "./repository";
 import { precisionChanges } from "./ticket-changes";
 import type {
   AgentRole,
@@ -2177,32 +2172,6 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: colony });
   }
 
-  async meetings(projectId: string): Promise<Meeting[]> {
-    const rows = await prisma().meeting.findMany({ where: { projectId }, orderBy: { startsAt: "asc" } });
-    return rows.map(toMeeting);
-  }
-
-  async allMeetingsWithOwner(): Promise<{ meeting: Meeting; ownerId: string | null }[]> {
-    const rows = await prisma().meeting.findMany({ include: { project: { select: { ownerId: true } } } });
-    return rows.map((row) => ({ meeting: toMeeting(row), ownerId: row.project.ownerId }));
-  }
-
-  async createMeeting(input: CreateMeetingInput): Promise<Meeting> {
-    const row = await prisma().meeting.create({ data: input });
-    return toMeeting(row);
-  }
-
-  async updateMeeting(
-    id: string,
-    update: Partial<Pick<Meeting, "title" | "startsAt" | "agenda" | "guests" | "repeat" | "lastRemindedFor">>,
-  ): Promise<void> {
-    await prisma().meeting.update({ where: { id }, data: update });
-  }
-
-  async deleteMeeting(id: string): Promise<void> {
-    await prisma().meeting.deleteMany({ where: { id } });
-  }
-
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
     const rows = await prisma().assistantMessage.findMany({
       where: { projectId },
@@ -2477,24 +2446,6 @@ function toAssistantMessage(row: {
     role: row.role === "user" ? "user" : "assistant",
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
-  };
-}
-
-function toMeeting(row: {
-  id: string;
-  projectId: string;
-  title: string;
-  startsAt: Date;
-  agenda: string;
-  guests: unknown;
-  repeat: string;
-  lastRemindedFor: Date | null;
-  createdAt: Date;
-}): Meeting {
-  return {
-    ...row,
-    guests: Array.isArray(row.guests) ? row.guests.filter(isGuestId) : [],
-    repeat: (MEETING_REPEATS as readonly string[]).includes(row.repeat) ? (row.repeat as MeetingRepeat) : "none",
   };
 }
 

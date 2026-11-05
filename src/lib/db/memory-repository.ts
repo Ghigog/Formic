@@ -33,8 +33,6 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
-  CreateMeetingInput,
-  Meeting,
   AuditKind,
   AuditRecord,
   AuditResult,
@@ -208,7 +206,6 @@ interface Store {
   /** Card id to whose keys its work runs on. */
   actors: Map<string, string>;
   assistant: AssistantMessage[];
-  meetings: Meeting[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
   audits: AuditRecord[];
@@ -306,7 +303,6 @@ function store(): Store {
     memberAgents: new Map(),
     actors: new Map(),
     assistant: [],
-    meetings: [],
     cardChat: [],
     attachments: new Map(),
     audits: [],
@@ -636,7 +632,6 @@ export class MemoryRepository implements Repository {
       }
       s.events = s.events.filter((e) => e.projectId !== projectId);
       s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
-      s.meetings = s.meetings.filter((m) => m.projectId !== projectId);
       s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
       s.audits = s.audits.filter((a) => a.projectId !== projectId);
       s.epicNumbers.delete(projectId);
@@ -2118,48 +2113,6 @@ export class MemoryRepository implements Repository {
   async setAutoMerge(projectId: string, autoMerge: boolean): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) project.autoMerge = autoMerge;
-  }
-
-  async meetings(projectId: string): Promise<Meeting[]> {
-    return store()
-      .meetings.filter((m) => m.projectId === projectId)
-      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
-      .map((m) => ({ ...m, guests: [...m.guests] }));
-  }
-
-  async allMeetingsWithOwner(): Promise<{ meeting: Meeting; ownerId: string | null }[]> {
-    const s = store();
-    return s.meetings.map((m) => ({
-      meeting: { ...m, guests: [...m.guests] },
-      ownerId: s.projects.get(m.projectId)?.ownerId ?? null,
-    }));
-  }
-
-  async createMeeting(input: CreateMeetingInput): Promise<Meeting> {
-    const meeting: Meeting = {
-      id: `mtg_${Math.random().toString(36).slice(2, 10)}`,
-      agenda: "",
-      guests: [],
-      repeat: "none",
-      lastRemindedFor: null,
-      createdAt: new Date(),
-      ...input,
-    };
-    store().meetings.push(meeting);
-    return { ...meeting, guests: [...meeting.guests] };
-  }
-
-  async updateMeeting(
-    id: string,
-    update: Partial<Pick<Meeting, "title" | "startsAt" | "agenda" | "guests" | "repeat" | "lastRemindedFor">>,
-  ): Promise<void> {
-    const found = store().meetings.find((m) => m.id === id);
-    if (found) Object.assign(found, update);
-  }
-
-  async deleteMeeting(id: string): Promise<void> {
-    const s = store();
-    s.meetings = s.meetings.filter((m) => m.id !== id);
   }
 
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {

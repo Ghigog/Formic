@@ -10,7 +10,6 @@ import {
   ColonyHeaderStats,
   ColonyLevelStats,
   ColonyMobileStats,
-  MeetingsButton,
 } from "@/components/colony/header-stats";
 
 /**
@@ -77,7 +76,6 @@ export function BoardHeader({
         <ColonyLevelStats />
         <div className="flex items-center justify-end gap-4">
           <ColonyHeaderStats showLevel={false} />
-          <MeetingsButton />
           {account && <AccountMenu account={account} />}
         </div>
       </header>
@@ -104,7 +102,6 @@ export function BoardHeader({
         )}
         <div className="min-w-0 flex-grow" />
         <ColonyMobileStats />
-        <MeetingsButton iconOnly />
         {account && <AccountMenu account={account} />}
       </header>
     </>

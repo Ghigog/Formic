@@ -7,7 +7,7 @@ import { asSignedIn, currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
 import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
-import { isGuestId } from "@/lib/meetings/guests";
+import { isGuestId } from "@/lib/assistant/guest-ids";
 import { assistantPick } from "@/lib/agents/board-agents";
 import { limited, RUN } from "@/lib/rate-limit";
 
