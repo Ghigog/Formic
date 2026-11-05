@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import { SENTINEL_VOICES, SoundEngine } from "./sound";
@@ -24,5 +25,17 @@ describe("SoundEngine skitter and hiss", () => {
     engine.play("hiss");
     expect(ac).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("DESIGN.md Sound section", () => {
+  it("names every Sfx cue", () => {
+    const brief = readFileSync("design/DESIGN.md", "utf8");
+    const section = brief.split(/^## Sound$/m)[1]!.split(/^## /m)[0]!;
+    const src = readFileSync("src/components/colony/sound.ts", "utf8");
+    const union = src.slice(src.indexOf("export type Sfx"), src.indexOf(";", src.indexOf("export type Sfx")));
+    const cues = [...union.matchAll(/"(\w+)"/g)].map((m) => m[1]!);
+    expect(cues.length).toBeGreaterThan(50);
+    for (const cue of cues) expect(section, cue).toMatch(new RegExp(`\\b${cue}\\b`));
   });
 });
