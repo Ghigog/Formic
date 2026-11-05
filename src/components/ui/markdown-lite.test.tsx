@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { MarkdownLite } from "./markdown-lite";
+import { questionMessage, questionReason } from "@/lib/domain/question";
 
 describe("MarkdownLite", () => {
   it("renders numbered steps as a numbered list, apart from bullets", () => {
@@ -64,5 +65,35 @@ describe("MarkdownLite", () => {
   it("keeps single line breaks when asked to", () => {
     const { container } = render(<MarkdownLite text={"one\ntwo"} keepLineBreaks />);
     expect(container.querySelectorAll("p br")).toHaveLength(1);
+  });
+
+  it("keeps each question's Why inside its numbered item", () => {
+    const reason = questionReason("Ada", [
+      { question: "Which plan?", why: "It sets the price." },
+      { question: "Which colour?", why: "Brand." },
+    ]);
+    const { container } = render(<MarkdownLite text={questionMessage(reason)} keepLineBreaks />);
+    expect(container.querySelectorAll("ol")).toHaveLength(1);
+    const items = [...container.querySelectorAll("ol > li")];
+    expect(items).toHaveLength(2);
+    expect(items[0]!.textContent).toContain("Why: It sets the price.");
+    expect(items[1]!.textContent).toContain("Why: Brand.");
+    expect(items[0]!.querySelectorAll("br")).toHaveLength(1);
+  });
+
+  it("joins an indented continuation with a space without line breaks", () => {
+    const { container } = render(<MarkdownLite text={"- one\n  more"} />);
+    expect(container.querySelector("li")?.textContent).toBe("one more");
+  });
+
+  it("starts a numbered list at the number it was written with", () => {
+    const { container } = render(<MarkdownLite text={"Intro\n\n3. third\n4. fourth"} />);
+    expect(container.querySelector("ol")?.getAttribute("start")).toBe("3");
+  });
+
+  it("ends a list at unindented text", () => {
+    const { container } = render(<MarkdownLite text={"1. one\nafter"} />);
+    expect(container.querySelector("ol")?.textContent).toBe("one");
+    expect(container.querySelector("p")?.textContent).toBe("after");
   });
 });
