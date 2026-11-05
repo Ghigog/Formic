@@ -6,6 +6,7 @@ import {
   useKeyboardInset,
 } from "@/lib/hooks/use-keyboard-inset";
 import { cn } from "@/components/ui/cn";
+import { useRestoreFocus } from "@/lib/hooks/use-restore-focus";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -67,6 +68,8 @@ export function EpicDrawer({
   const [tab, setTab] = useState<"prd" | "dag" | "chat">("prd");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  useRestoreFocus(!!epicId);
 
   // Another Epic: nothing of the last one's stays on screen.
   const [shownFor, setShownFor] = useState(epicId);

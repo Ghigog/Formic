@@ -969,6 +969,34 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.lastAssistantAnswer(p.id))?.id).toBe(two.id);
       });
 
+      it("finds the one pending card chat message and the one pending assistant message", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const chat = { projectId: p.id, cardKind: "epic" as const, cardId: epic.id };
+        expect(await repo.pendingCardChatMessage(epic.id)).toBeNull();
+        await repo.addCardChatMessage({ ...chat, role: "user", content: "why?" });
+        const pending = await repo.addCardChatMessage({ ...chat, role: "assistant", content: "", status: "pending" });
+        expect((await repo.pendingCardChatMessage(epic.id))?.id).toBe(pending.id);
+
+        const ask = { projectId: p.id, role: "assistant" as const, content: "", status: "pending" as const };
+        expect(await repo.pendingAssistantMessage(p.id)).toBeNull();
+        const first = await repo.addAssistantMessage(ask);
+        await repo.addAssistantMessage(ask);
+        expect((await repo.pendingAssistantMessage(p.id))?.id).toBe(first.id);
+        expect((await repo.pendingAssistantMessage(p.id, "assistant"))?.id).toBe(first.id);
+        expect(await repo.pendingAssistantMessage(p.id, "user")).toBeNull();
+      });
+
+      it("finds the newest assistant answer that is not pending", async () => {
+        const p = await project();
+        expect(await repo.lastAssistantAnswer(p.id)).toBeNull();
+        await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "one" });
+        const two = await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "two" });
+        await repo.addAssistantMessage({ projectId: p.id, role: "user", content: "q" });
+        await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "", status: "pending" });
+        expect((await repo.lastAssistantAnswer(p.id))?.id).toBe(two.id);
+      });
+
       it("keeps what an answer spent on the message it landed on", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });

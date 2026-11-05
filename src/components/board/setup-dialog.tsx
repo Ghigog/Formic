@@ -1,7 +1,7 @@
 "use client";
 
 import { useActiveTour } from "@/components/onboarding/store";
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
 import { BillingNote, useActionsMachines } from "@/components/settings/runner-section";
 
@@ -85,6 +85,16 @@ export function SetupDialog({
   // in a private one costs Actions minutes, and this is the moment to say so.
   const machines = useActionsMachines(open && setup?.state === "waiting" && !setup.update);
 
+  // Set when a person puts the dialog away, so the reopen pill takes focus. The
+  // dialog opens by itself, so there is no opener for useRestoreFocus to return
+  // to, and the pill that reopens it is gone by the time it closes again.
+  const focusPill = useRef(false);
+  const dismiss = useCallback(() => {
+    focusPill.current = true;
+    setHidden(true);
+  }, []);
+  const reopen = () => setHidden(false);
+
   const markAdded = () => {
     const next = [...new Set([...(acked ?? []), ...pending.map((k) => k.secretName)])];
     try {
@@ -97,11 +107,11 @@ export function SetupDialog({
     if (!open) return;
     requestAnimationFrame(() => primary.current?.focus());
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setHidden(true);
+      if (e.key === "Escape") dismiss();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, dismiss]);
 
   if (!setup || !needed || touring) return null;
 
@@ -109,7 +119,13 @@ export function SetupDialog({
     return (
       <button
         type="button"
-        onClick={() => setHidden(false)}
+        ref={(el) => {
+          if (el && focusPill.current) {
+            focusPill.current = false;
+            el.focus();
+          }
+        }}
+        onClick={reopen}
         className="bg-card border-line text-ink fixed bottom-16 left-4 z-50 flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium shadow-sm"
       >
         <span aria-hidden className="bg-clay pulse-dot size-1.5 rounded-full" />
@@ -233,7 +249,7 @@ export function SetupDialog({
           )}
           <button
             type="button"
-            onClick={() => setHidden(true)}
+            onClick={dismiss}
             className="border-line bg-card text-ink h-[34px] rounded-lg border px-3 text-[13px] font-medium active:scale-[0.96]"
           >
             Not now
