@@ -488,7 +488,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
                 ref={nextButton}
                 type="button"
                 onClick={next}
-                className="bg-terracotta-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white"
+                className="bg-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white"
               >
                 {step.next ?? (last ? "Done" : "Next")}
               </button>

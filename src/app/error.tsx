@@ -22,7 +22,7 @@ export default function ErrorPage({
         <button
           type="button"
           onClick={reset}
-          className="bg-terracotta-cta h-10 rounded-lg text-[14px] font-semibold text-white"
+          className="bg-cta h-10 rounded-lg text-[14px] font-semibold text-white"
         >
           Try again
         </button>
