@@ -3,6 +3,7 @@
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
+import { gradeText } from "@/lib/sentinels/grade";
 import {
   markSeen,
   readSeen,
@@ -405,8 +406,16 @@ function Standing({ grade, ink, level, audited }: NonNullable<Project["standing"
   const label = `${audited ? `Audit grade ${grade}` : "Not audited"}, Level ${level}`;
   return (
     <span role="img" aria-label={label} title={label} className="flex shrink-0 items-center gap-1.5">
-      <span className="oct-lg bg-anthracite inline-flex size-6 items-center justify-center">
-        <span className="font-serif text-[13px] leading-none font-semibold" style={{ color: ink }}>
+      <span
+        className={cn("oct-lg inline-flex size-6 items-center justify-center", !audited && "bg-anthracite")}
+        style={audited ? { background: ink } : undefined}
+      >
+        <span
+          className={cn(
+            "font-serif text-[13px] leading-none font-semibold",
+            audited ? gradeText(grade) : "text-on-anthracite",
+          )}
+        >
           {audited ? grade : "–"}
         </span>
       </span>
