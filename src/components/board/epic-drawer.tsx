@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   keyboardStyles,
   useKeyboardInset,
 } from "@/lib/hooks/use-keyboard-inset";
 import { cn } from "@/components/ui/cn";
 import { useRestoreFocus } from "@/lib/hooks/use-restore-focus";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -70,6 +71,14 @@ export function EpicDrawer({
   const [actionError, setActionError] = useState<string | null>(null);
 
   useRestoreFocus(!!epicId);
+  const trapKeys = useFocusTrap({ onEscape: onClose });
+  // Move focus into the dialog so Tab and Escape act on it, not on the board behind.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const opened = !!epicId;
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (opened && el && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
+  }, [opened]);
 
   // Another Epic: nothing of the last one's stays on screen.
   const [shownFor, setShownFor] = useState(epicId);
@@ -108,15 +117,6 @@ export function EpicDrawer({
     }, 15_000);
     return () => clearInterval(timer);
   }, [working, load]);
-
-  useEffect(() => {
-    if (!epicId) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [epicId, onClose]);
 
   const save = useCallback(
     async (prd: Prd) => {
@@ -243,12 +243,16 @@ export function EpicDrawer({
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         role="dialog"
         aria-modal
+        ref={dialogRef}
+        tabIndex={-1}
+        onKeyDown={trapKeys}
         aria-label="Epic detail"
         style={kb.panel}
-        className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
+        className="bg-bg border-line flex h-[92dvh] outline-none w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
           {epic && !kb.open && (

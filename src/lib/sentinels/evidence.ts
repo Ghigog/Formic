@@ -369,6 +369,7 @@ interface AxeResult {
   url?: string;
   violations: Array<{ id: string; impact: string | null; help: string; nodes: Array<{ target: unknown[] }> }>;
   passes?: unknown[];
+  passed?: number;
 }
 
 function isAxe(r: unknown): r is AxeResult {
@@ -376,10 +377,15 @@ function isAxe(r: unknown): r is AxeResult {
 }
 
 /** axe-core results, the format every axe integration writes. */
+function passedCount(r: AxeResult): number | null {
+  if (typeof r.passed === "number") return r.passed;
+  return Array.isArray(r.passes) ? r.passes.length : null;
+}
+
 function axeText(results: AxeResult[]): string {
   const out = [`axe-core scans of ${results.length} page${results.length === 1 ? "" : "s"} in a real browser:`];
   for (const r of results) {
-    out.push(`- ${r.url ?? "a page"}: ${r.violations.length} rules violated${r.passes ? `, ${r.passes.length} passed` : ""}`);
+    out.push(`- ${r.url ?? "a page"}: ${r.violations.length} rules violated${passedCount(r) === null ? "" : `, ${passedCount(r)} passed`}`);
     for (const v of r.violations.slice(0, 15)) {
       const where = v.nodes.slice(0, 3).map((n) => String(n.target?.[0] ?? "?")).join(", ");
       out.push(`  - ${v.impact ?? "unknown"}: ${v.id}: ${v.help} (${v.nodes.length} elements, e.g. ${where})`);
