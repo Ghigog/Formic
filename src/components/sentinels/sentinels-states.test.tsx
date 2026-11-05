@@ -201,3 +201,55 @@ describe("SentinelsPage card states", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("refreshing held states", () => {
+  const id = SENTINELS[0]!.id;
+  const epic = (status: string) => ({ id: "e7", key: "EPIC-7", kind: "epic", status, archived: false }) as never;
+  const unrelated = { id: "t1", key: "T-1", kind: "ticket", status: "todo", archived: false } as never;
+  const withHold = (hold: SentinelState["hold"]): SentinelStates => ({
+    ...Object.fromEntries(SENTINELS.map((x) => [x.id, blank(x.id)])),
+    [id]: reported(id, ago(MIN), { hold }),
+  });
+  const setup = (cards: unknown[]) => {
+    const fresh = withHold(null);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sentinels: fresh }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const tree = (cs: unknown[], open = false) => (
+      <ColonyProvider storageKey="colony-test-sentinel-refresh" cards={[]} extras={{}}>
+        <SentinelsProvider initial={withHold({ epicId: "e7", key: "EPIC-7" })} level={34} cards={cs as never}>
+          <Open />
+          {open && <SentinelsPage repoName="repo" onOpenEpic={() => {}} />}
+        </SentinelsProvider>
+      </ColonyProvider>
+    );
+    return { fetchMock, tree, view: render(tree(cards)) };
+  };
+  const calls = (m: ReturnType<typeof vi.fn>) => m.mock.calls.filter((c) => c[0] === "/api/sentinels").length;
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("refetches when the held Epic merges, and not for unrelated card changes", async () => {
+    const { fetchMock, tree, view } = setup([epic("in_progress"), unrelated]);
+    expect(calls(fetchMock)).toBe(0);
+    view.rerender(tree([epic("in_progress"), { ...(unrelated as object), status: "done" }]));
+    expect(calls(fetchMock)).toBe(0);
+    view.rerender(tree([epic("merged"), unrelated]));
+    await act(async () => {});
+    expect(calls(fetchMock)).toBe(1);
+  });
+
+  it("refetches when the held Epic is no longer on the board", async () => {
+    const { fetchMock, tree, view } = setup([epic("in_progress")]);
+    view.rerender(tree([]));
+    await act(async () => {});
+    expect(calls(fetchMock)).toBe(1);
+  });
+
+  it("fetches current states when the Sentinels page opens", async () => {
+    const { fetchMock, tree, view } = setup([epic("in_progress")]);
+    view.rerender(tree([epic("in_progress")], true));
+    await userEvent.click(screen.getByText("open sentinels"));
+    await act(async () => {});
+    expect(calls(fetchMock)).toBeGreaterThan(0);
+  });
+});

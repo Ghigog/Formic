@@ -5,6 +5,8 @@ import { gradeOf, type GradeSummary } from "@/lib/sentinels/grade";
 import { SENTINELS, isUnlocked } from "@/lib/sentinels/roster";
 import { starsOf, type SentinelStates } from "@/lib/sentinels/view";
 import type { AuditKind } from "@/lib/db/repository";
+import type { BoardCard } from "@/lib/domain/entities";
+import { columnOf } from "@/lib/domain/status";
 
 /**
  * The Sentinels' state on the client: each one's last report and any run in
@@ -27,6 +29,8 @@ export interface SentinelsApi {
   summon: (id: string, kind?: AuditKind) => Promise<void>;
   /** Audits every unlocked sentinel that no open Epic holds, calibrating the ones that have no rubric yet. */
   summonAll: () => void;
+  /** Fetches the Sentinels' current states, so holds and counts are not those of page load. */
+  refresh: () => Promise<void>;
   /** Why the last summon was refused, if it was. */
   refusal: string | null;
 }
@@ -43,11 +47,14 @@ export function SentinelsProvider({
   initial,
   level,
   unlockAll = false,
+  cards,
   children,
 }: {
   initial: SentinelStates;
   level: number;
   unlockAll?: boolean;
+  /** The board's cards: when an Epic holding a Sentinel stops being open, the states are fetched again. */
+  cards?: BoardCard[];
   children: React.ReactNode;
 }) {
   const [states, setStates] = useState(initial);
@@ -59,7 +66,7 @@ export function SentinelsProvider({
     const res = await fetch("/api/sentinels", { cache: "no-store" }).catch(() => null);
     if (!res?.ok) return;
     const body = (await res.json()) as { sentinels: SentinelStates };
-    setStates(body.sentinels);
+    if (body.sentinels) setStates(body.sentinels);
   }, []);
 
   useEffect(() => {
@@ -69,6 +76,25 @@ export function SentinelsProvider({
     }, POLL_MS);
     return () => clearInterval(id);
   }, [anyRunning, refresh]);
+
+  // Holds come from the server; an Epic completing or being archived on the
+  // board clears one there. Keyed on the held Epic ids that are no longer
+  // open, so other board changes do not refetch.
+  const closedHeld = useMemo(() => {
+    if (!cards) return "";
+    const open = new Set(
+      cards.filter((c) => c.kind === "epic" && !c.archived && columnOf(c) !== "done").map((c) => c.id),
+    );
+    return Object.values(states)
+      .flatMap((s) => (s.hold && !open.has(s.hold.epicId) ? [s.hold.epicId] : []))
+      .sort()
+      .join(",");
+  }, [cards, states]);
+  useEffect(() => {
+    // Fetching the server's states into state is the point of this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (closedHeld) void refresh();
+  }, [closedHeld, refresh]);
 
   const summon = useCallback(async (id: string, kind: AuditKind = "audit") => {
     setRefusal(null);
@@ -106,8 +132,8 @@ export function SentinelsProvider({
   }, [summon, level, unlockAll]);
 
   const api = useMemo<SentinelsApi>(
-    () => ({ states, grade, level, unlockAll, summon, summonAll, refusal }),
-    [states, grade, level, unlockAll, summon, summonAll, refusal],
+    () => ({ states, grade, level, unlockAll, summon, summonAll, refresh, refusal }),
+    [states, grade, level, unlockAll, summon, summonAll, refresh, refusal],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }

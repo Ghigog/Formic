@@ -240,7 +240,7 @@ export function BoardShell({
 
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged} unlockAll={unlockAllSentinels}>
-    <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level} unlockAll={unlockAllSentinels}>
+    <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level} unlockAll={unlockAllSentinels} cards={cards}>
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}
