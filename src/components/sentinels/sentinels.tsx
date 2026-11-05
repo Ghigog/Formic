@@ -7,7 +7,7 @@ import { cn } from "@/components/ui/cn";
 import { useColony, type ColonyApi } from "@/components/colony/colony";
 import { centerOf } from "@/components/colony/fx";
 import { cappedByFindings } from "@/lib/sentinels/rubric";
-import { GRADE_RULE, gradeRose } from "@/lib/sentinels/grade";
+import { GRADE_RULE, gradeRose, gradeText } from "@/lib/sentinels/grade";
 import {
   GROUP_INK,
   SENTINELS,
@@ -20,19 +20,6 @@ import type { SentinelState } from "@/lib/sentinels/view";
 import type { AuditKind, AuditPoint } from "@/lib/db/repository";
 import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
-
-/**
- * Label colour on a grade badge, 4.5:1 or better in both themes. S is amber,
- * so it takes dark ink. C and F are filled with tokens that turn light in the
- * dark theme, so their text uses the cream token, which turns dark with them.
- * The rest sit on fills that never change and take the light text that does
- * not flip.
- */
-function gradeText(grade: string): string {
-  if (grade === "S") return "text-anthracite";
-  if (grade === "C" || grade === "F") return "text-cream";
-  return "text-on-anthracite";
-}
 
 /** The level badge's octagon, chamfered for an 84px grade. */
 const BIG_OCT =
