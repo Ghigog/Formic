@@ -45,6 +45,7 @@ import type {
   HostUsageCheck,
   Reservation,
 } from "./repository";
+import { EPIC_AUDITS_LIMIT } from "./repository";
 import { precisionChanges } from "./ticket-changes";
 import type {
   AgentPreset,
@@ -998,6 +999,13 @@ export class MemoryRepository implements Repository {
       .sort(byPosition);
   }
 
+  async archivedTicketKeys(epicId: string): Promise<string[]> {
+    const s = store();
+    return [...s.cards.values()]
+      .filter((c) => c.kind === "ticket" && c.epicId === epicId && c.archived && !s.archivedWithEpic.has(c.id) && !isScout(s, c))
+      .map((c) => c.key);
+  }
+
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
     const s = store();
     return [...s.cards.values()]
@@ -1861,6 +1869,27 @@ export class MemoryRepository implements Repository {
       .map((a) => ({ ...a, log: [...a.log], files: [...a.files] }));
   }
 
+  async runningAuditJobs(projectId: string): Promise<AuditRecord[]> {
+    return (await this.auditsFor(projectId)).filter((a) => a.status === "running" && a.runnerJob);
+  }
+
+  async latestAudits(projectId: string): Promise<AuditRecord[]> {
+    const all = await this.auditsFor(projectId);
+    const keep = new Set<AuditRecord>();
+    for (const sentinel of new Set(all.map((a) => a.sentinel))) {
+      const mine = all.filter((a) => a.sentinel === sentinel);
+      for (const pick of [
+        mine.at(-1),
+        mine.filter((a) => a.kind === "audit" && a.status === "done").at(-1),
+        mine.filter((a) => a.kind === "calibrate" && a.status === "done" && a.rubric).at(-1),
+      ]) {
+        if (pick) keep.add(pick);
+      }
+    }
+    for (const a of all.filter((x) => x.epicId).slice(-EPIC_AUDITS_LIMIT)) keep.add(a);
+    return all.filter((a) => keep.has(a));
+  }
+
   async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null, commitSha: string | null = null): Promise<AuditRecord> {
     const audit: AuditRecord = {
       id: `audit_${Math.random().toString(36).slice(2, 10)}`,
@@ -2119,6 +2148,20 @@ export class MemoryRepository implements Repository {
     return store().assistant.filter((m) => m.projectId === projectId).map((m) => ({ ...m }));
   }
 
+  async pendingAssistantMessage(projectId: string, role?: "user" | "assistant"): Promise<AssistantMessage | null> {
+    const found = store().assistant.find(
+      (m) => m.projectId === projectId && m.status === "pending" && (!role || m.role === role),
+    );
+    return found ? { ...found } : null;
+  }
+
+  async lastAssistantAnswer(projectId: string): Promise<AssistantMessage | null> {
+    const found = store()
+      .assistant.filter((m) => m.projectId === projectId && m.role === "assistant" && m.status !== "pending")
+      .at(-1);
+    return found ? { ...found } : null;
+  }
+
   async assistantMessage(id: string): Promise<AssistantMessage | null> {
     const found = store().assistant.find((m) => m.id === id);
     return found ? { ...found } : null;
@@ -2162,6 +2205,11 @@ export class MemoryRepository implements Repository {
     return store()
       .cardChat.filter((m) => m.cardId === cardId)
       .map((m) => ({ ...m }));
+  }
+
+  async pendingCardChatMessage(cardId: string): Promise<CardChatMessage | null> {
+    const found = store().cardChat.find((m) => m.cardId === cardId && m.status === "pending");
+    return found ? { ...found } : null;
   }
 
   async cardChatMessage(id: string): Promise<CardChatMessage | null> {
