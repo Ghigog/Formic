@@ -69,9 +69,9 @@ export function EpicDrawer({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Another Epic: nothing of the last one's stays on screen.
   useRestoreFocus(!!epicId);
 
+  // Another Epic: nothing of the last one's stays on screen.
   const [shownFor, setShownFor] = useState(epicId);
   if (epicId !== shownFor) {
     setShownFor(epicId);
