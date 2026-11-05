@@ -299,17 +299,19 @@ export function AgentEditor({
 
   return (
     <div
-      role="dialog"
-      aria-modal
-      aria-label={preset ? `Edit ${preset.name}` : "New agent"}
+      role="presentation"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       style={kb.backdrop}
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <AutoTour id="agent" />
       <form
+        role="dialog"
+        aria-modal
+        aria-label={preset ? `Edit ${preset.name}` : "New agent"}
         style={kb.panel}
-        onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -609,7 +611,7 @@ export function AgentEditor({
             type="submit"
             disabled={busy}
             data-tour="agent-save"
-            className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="bg-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy ? "Saving…" : preset ? "Save" : "Create agent"}
           </button>

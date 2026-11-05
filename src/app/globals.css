@@ -122,7 +122,7 @@
 
 @theme inline {
   --color-terracotta: var(--terracotta);
-  --color-terracotta-cta: var(--terracotta-cta);
+  --color-cta: var(--terracotta-cta);
   --color-terracotta-deep: var(--terracotta-deep);
   --color-clay: var(--clay);
   --color-clay-lit: var(--clay-lit);

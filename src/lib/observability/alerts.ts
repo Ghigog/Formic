@@ -3,6 +3,9 @@ import "server-only";
 import { redact } from "@/lib/secrets/redact";
 import { env } from "@/lib/secrets/env";
 
+/** How long to wait for the webhook before giving up and logging the alert. */
+export const ALERT_TIMEOUT_MS = 5_000;
+
 /**
  * The one place that turns "something is wrong" into a message a human sees.
  * Used for error spikes (see error-tracking.ts) and, from the smoke-test
@@ -26,11 +29,18 @@ export async function sendAlert(message: string): Promise<void> {
       headers: { "content-type": "application/json" },
       // Slack- and Discord-compatible incoming webhooks both accept `text`.
       body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(ALERT_TIMEOUT_MS),
     });
     if (!res.ok) {
       console.error(`[formic] alert webhook responded ${res.status}: ${text}`);
     }
   } catch (e) {
+    if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      console.error(
+        `[formic] alert webhook timed out after ${ALERT_TIMEOUT_MS / 1000}s -- alert was: ${text}`,
+      );
+      return;
+    }
     console.error("[formic] failed to send alert:", redact(String(e)), "-- alert was:", text);
   }
 }

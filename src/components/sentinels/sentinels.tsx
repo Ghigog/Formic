@@ -524,14 +524,16 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
 
       {reporting && (
         <div
+          role="presentation"
           className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgb(28_25_23/0.45)] p-4"
-          onClick={closeReport}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeReport();
+          }}
         >
           <div
             role="dialog"
             aria-modal
             aria-label={`${reporting.who} audit report`}
-            onClick={(e) => e.stopPropagation()}
             className="relative max-h-full w-full max-w-[460px] overflow-auto rounded-[14px]"
           >
             <AutoTour id="sentinel-report" delay={450} />
@@ -582,6 +584,9 @@ function Card({
   const steps = stepsFor(x, st.running?.kind);
   const step = st.running?.log.length ? st.running.log.length - 1 : 0;
   return (
+    // Focusable, with Enter and Space handled below; the pointer events only
+    // preview the ant's reaction.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       role="listitem"
       data-card={x.id}

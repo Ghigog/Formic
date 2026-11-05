@@ -54,7 +54,7 @@ export function RerouteToast({ toast }: { toast: RerouteNotice | null }) {
 /** Level-ups and firsts: a pill under the header for a few seconds. */
 export function ColonyToast() {
   const c = useColony();
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLButtonElement>(null);
   const key = c?.toast?.key;
   useEffect(() => {
     if (!key || c?.fx.reducedMotion) return;
@@ -69,10 +69,13 @@ export function ColonyToast() {
   }, [key]);
   if (!c?.toast) return null;
   return (
-    <div className="pointer-events-none fixed top-[76px] right-0 left-0 z-[70] flex justify-center">
-      <div
+    <div
+      role="status"
+      className="pointer-events-none fixed top-[76px] right-0 left-0 z-[70] flex justify-center"
+    >
+      <button
         ref={ref}
-        role="status"
+        type="button"
         onClick={c.dismissToast}
         className="bg-anthracite text-on-anthracite pointer-events-auto flex cursor-pointer items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
       >
@@ -80,7 +83,7 @@ export function ColonyToast() {
           {c.score.level}
         </span>
         {c.toast.text}
-      </div>
+      </button>
     </div>
   );
 }
@@ -208,7 +211,10 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
   return (
     <div
       ref={backdrop}
-      onClick={close}
+      role="presentation"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close();
+      }}
       className="fixed inset-0 z-[80] flex items-center justify-center bg-[color-mix(in_srgb,var(--anthracite)_38%,transparent)] p-4 backdrop-blur-md"
     >
       <div
@@ -216,7 +222,6 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
         role="dialog"
         aria-modal
         aria-labelledby="win-title"
-        onClick={(e) => e.stopPropagation()}
         className="bg-card box-border flex max-h-[calc(100dvh-32px)] w-[480px] max-w-full flex-col items-center gap-3.5 overflow-y-auto rounded-xl px-6 pt-9 pb-6 text-center shadow-[0_40px_80px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)] sm:px-8"
       >
         <span
@@ -243,7 +248,7 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
             <span className="text-muted font-mono text-[10px] tracking-[0.12em]">EPIC SCORE</span>
             <span
               ref={score}
-              className="text-terracotta-cta inline-block font-mono text-[26px] leading-none font-medium tabular-nums"
+              className="text-cta inline-block font-mono text-[26px] leading-none font-medium tabular-nums"
             >
               +{shown.total}
             </span>
@@ -261,7 +266,7 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
             ))}
             <li className="border-line mt-1 flex items-baseline gap-2 border-t pt-2 text-[12px]">
               <span className="text-ink flex-1 font-semibold">Epic bonus</span>
-              <span className="text-terracotta-cta shrink-0 font-mono tabular-nums">+{tally.bonus}</span>
+              <span className="text-cta shrink-0 font-mono tabular-nums">+{tally.bonus}</span>
             </li>
           </ul>
         </div>
@@ -304,7 +309,7 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
                 c.closeWin();
                 onOpenEpic(win.epic);
               }}
-              className="bg-terracotta-cta inline-flex h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-transform hover:-translate-y-px active:translate-y-px"
+              className="bg-cta inline-flex h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-transform hover:-translate-y-px active:translate-y-px"
             >
               Open Epic
             </button>

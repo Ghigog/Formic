@@ -6,6 +6,7 @@ import {
   useKeyboardInset,
 } from "@/lib/hooks/use-keyboard-inset";
 import { cn } from "@/components/ui/cn";
+import { useRestoreFocus } from "@/lib/hooks/use-restore-focus";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -67,6 +68,8 @@ export function EpicDrawer({
   const [tab, setTab] = useState<"prd" | "dag" | "chat">("prd");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  useRestoreFocus(!!epicId);
 
   // Another Epic: nothing of the last one's stays on screen.
   const [shownFor, setShownFor] = useState(epicId);
@@ -233,15 +236,17 @@ export function EpicDrawer({
 
   return (
     <div
-      role="dialog"
-      aria-modal
-      aria-label="Epic detail"
+      role="presentation"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       style={kb.backdrop}
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal
+        aria-label="Epic detail"
         style={kb.panel}
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
