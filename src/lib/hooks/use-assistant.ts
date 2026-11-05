@@ -98,6 +98,22 @@ export function useAssistant(enabled: boolean) {
     void run(() => send("/api/assistant", "GET"));
   }, [enabled, run]);
 
+  /** Fetches the conversation now and returns it, for a caller that needs it before going on. */
+  const load = useCallback(async (): Promise<AssistantMessageView[]> => {
+    loaded.current = true;
+    try {
+      const next = await send("/api/assistant", "GET");
+      if (alive.current) {
+        setError(null);
+        setState(next);
+      }
+      return next.messages;
+    } catch (e) {
+      if (alive.current) setError(e instanceof Error ? e.message : String(e));
+      return [];
+    }
+  }, []);
+
   const answering = state.messages.some((m) => m.status === "pending");
   const pending = asking || answering;
   useEffect(() => {
@@ -182,5 +198,5 @@ export function useAssistant(enabled: boolean) {
     setState((s) => ({ ...s, presetId }));
   }, []);
 
-  return { ...state, pending, error, ask, stop, clear, decide, openCall, setAgent };
+  return { ...state, pending, error, ask, stop, clear, decide, openCall, load, setAgent };
 }

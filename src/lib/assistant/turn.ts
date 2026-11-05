@@ -510,6 +510,20 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
   }
 }
 
+/** A column agent's prompt on a call: its column's instructions, the board, and who it is. */
+async function guestPrompt(projectId: string, column: NonNullable<ReturnType<typeof columnOfSpeaker>>, speaker: string, brief: string | null): Promise<string> {
+  const project = await projectFor(projectId);
+  const system = await columnSystemPrompt(projectId, column, speaker as AgentRole, project.repoFullName, brief);
+  return [
+    system,
+    "",
+    "The board right now:",
+    boardSnapshot(await repository().boardCards(projectId)),
+    "",
+    `You are ${guestLabel(speaker as GuestId)}. Answer the person's last message, briefly and plainly.`,
+  ].join("\n");
+}
+
 /**
  * A column agent or a Sentinel answers: the column agent with the card actions
  * on its column's cards (a move to Done waits for approval), the Sentinel from
@@ -538,7 +552,19 @@ async function answerAsGuest(projectId: string, messageId: string, speaker: stri
     return;
   }
   if (agent.kind === "cli") {
-    await finish(messageId, { content: "This agent runs in GitHub Actions, and no API agent is set to speak for it here.", status: "failed" });
+    if (!column) {
+      await finish(messageId, { content: "This agent runs in GitHub Actions, and no API agent is set to speak for it here.", status: "failed" });
+      return;
+    }
+    // No API agent to speak for it: it answers itself, in GitHub Actions, like the PM.
+    const system = await guestPrompt(projectId, column, speaker, agent.agent.brief);
+    const past = await historyBefore(projectId, messageId);
+    await startCliAsk({
+      projectId,
+      messageId,
+      agent: agent.agent,
+      prompt: cliPrompt(system, past, await cliReports(projectId, past)),
+    });
     return;
   }
 
@@ -697,11 +723,17 @@ async function askAgain(
   problems: string[],
   attempt: number,
 ): Promise<boolean> {
-  const agent = await assistantAgentFor(projectId);
+  const own = await repository().assistantMessage(messageId);
+  const speaker = own?.speaker ?? "assistant";
+  const column = speaker === "assistant" ? null : columnOfSpeaker(speaker);
+  if (speaker !== "assistant" && !column) return false;
+  const agent = column ? await columnChatAgentFor(projectId, column) : await assistantAgentFor(projectId);
   if (agent.kind !== "cli") return false;
   const all = await repository().assistantMessages(projectId);
   const past = history(all.filter((m) => m.id !== messageId));
-  const system = await systemPrompt(projectId, agent.agent.brief);
+  const system = column
+    ? await guestPrompt(projectId, column, speaker, agent.agent.brief)
+    : await systemPrompt(projectId, agent.agent.brief);
   const prompt = [
     cliPrompt(system, past, await cliReports(projectId, past)),
     "",
