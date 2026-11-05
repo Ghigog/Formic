@@ -306,3 +306,39 @@ describe("feature intro tours", () => {
     }
   });
 });
+
+describe("the call tours", () => {
+  it("splits the call into the phone button and the call bar", () => {
+    expect(TOURS.call.steps.map((s) => s.target)).toEqual(["agent-call"]);
+    expect(TOURS["call-bar"].steps.map((s) => s.target)).toEqual(["call-bar"]);
+  });
+
+  it("ends the phone button's tour with Done, not a counter", async () => {
+    target("agent-call");
+    render(<Tour def={TOURS.call} onEnd={() => {}} />);
+    await flush();
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+    expect(screen.queryByText("1 / 2")).toBeNull();
+  });
+
+  it("tours the call bar once", async () => {
+    target("call-bar");
+    const { unmount } = render(
+      <>
+        <TourHost />
+        <AutoTour id="call-bar" delay={0} />
+      </>,
+    );
+    await flush();
+    expect(screen.getByRole("dialog", { name: "Tour: On the call" })).toBeTruthy();
+    unmount();
+    render(
+      <>
+        <TourHost />
+        <AutoTour id="call-bar" delay={0} />
+      </>,
+    );
+    await flush();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});

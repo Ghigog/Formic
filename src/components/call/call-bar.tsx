@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { GuestCoin } from "@/components/meetings/guest-coin";
+import { AutoTour } from "@/components/onboarding/tour";
 import { cn } from "@/components/ui/cn";
 import { guestLabel } from "@/lib/meetings/guests";
 import { useCall, useElapsed, type MicState } from "./call-provider";
@@ -105,6 +106,7 @@ export function CallBar() {
       data-tour="call-bar"
       className="border-hairline bg-cream flex shrink-0 items-center gap-3 border-b px-4 py-2.5"
     >
+      <AutoTour id="call-bar" />
       <span
         data-testid="call-mic"
         data-state={call.mic}

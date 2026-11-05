@@ -100,10 +100,33 @@ describe("SwappableBoard", () => {
     fireEvent.pointerDown(stage(), { button: 2, clientX: 100, clientY: 400 });
     const menu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
     stage().dispatchEvent(menu);
-    fireEvent.pointerMove(window, { clientX: 100, clientY: 320 });
+    fireEvent.pointerMove(window, { buttons: 2, clientX: 100, clientY: 320 });
     fireEvent.pointerUp(window, { button: 2, clientX: 100, clientY: 250 });
     expect(menu.defaultPrevented).toBe(true);
     expect(await screen.findByText("B", undefined, toLoad)).toBeTruthy();
+  });
+
+  it("shows where to drag on a right-button press, and takes it away on release and on leaving the window", () => {
+    renderBoard();
+    fireEvent.pointerDown(stage(), { button: 2, clientX: 100, clientY: 300 });
+    const hint = screen.getByTestId("swap-hint");
+    expect(hint.style.left).toBe("100px");
+    expect(hint.style.top).toBe("240px");
+    expect(hint.textContent).toContain("Drag here to switch boards");
+    fireEvent.pointerUp(window, { button: 2, clientX: 100, clientY: 290 });
+    expect(screen.queryByTestId("swap-hint")).toBeNull();
+
+    fireEvent.pointerDown(stage(), { button: 2, clientX: 100, clientY: 300 });
+    expect(screen.getByTestId("swap-hint")).toBeTruthy();
+    fireEvent.mouseOut(document.body, { relatedTarget: null });
+    expect(screen.queryByTestId("swap-hint")).toBeNull();
+    expect(calls.filter((c) => c.url === "/api/projects")).toHaveLength(0);
+  });
+
+  it("does not show the hint when its point would be above the window", () => {
+    renderBoard();
+    fireEvent.pointerDown(stage(), { button: 2, clientX: 100, clientY: 30 });
+    expect(screen.queryByTestId("swap-hint")).toBeNull();
   });
 
   it("records the board in view as opened once, when something else is clicked or typed", async () => {

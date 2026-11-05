@@ -116,7 +116,7 @@ describe("following the hand", () => {
     const onPull = vi.fn();
     const g = createSwapGestures(vi.fn(), onPull);
     g.pointerDown({ ...at(100, 300), button: 2, target }, boundary);
-    g.pointerMove(at(100, 250));
+    g.pointerMove({ ...at(100, 250), buttons: 2 });
     expect(onPull.mock.calls.at(-1)![0]).toBeLessThan(0);
   });
 });
@@ -141,5 +141,73 @@ describe("the context menu on macOS, which opens on the press", () => {
     input.remove();
     expect(preventDefault).not.toHaveBeenCalled();
     expect(onSwap).not.toHaveBeenCalled();
+  });
+});
+
+describe("giving up a right-button drag", () => {
+  const start = () => {
+    const onSwap = vi.fn();
+    const onPull = vi.fn();
+    const onAim = vi.fn();
+    const g = createSwapGestures(onSwap, onPull, onAim);
+    g.pointerDown({ ...at(100, 300), button: 2, target }, boundary);
+    g.pointerMove({ ...at(100, 220), buttons: 2 });
+    onPull.mockClear();
+    onAim.mockClear();
+    return { g, onSwap, onPull, onAim };
+  };
+  const gaveUp = ({ g, onSwap, onPull, onAim }: ReturnType<typeof start>) => {
+    expect(onPull).toHaveBeenLastCalledWith(null);
+    expect(onAim).toHaveBeenLastCalledWith(null);
+    expect(onSwap).not.toHaveBeenCalled();
+    // A later release or move does nothing: the drag is over.
+    onPull.mockClear();
+    g.pointerMove({ ...at(100, 100), buttons: 2 });
+    g.pointerUp({ ...at(100, 100), button: 2 });
+    expect(onPull).not.toHaveBeenCalled();
+    expect(onSwap).not.toHaveBeenCalled();
+  };
+
+  it("cancels when the pointer leaves the window, the window blurs or the browser cancels", () => {
+    const s = start();
+    s.g.cancel();
+    gaveUp(s);
+  });
+
+  it("cancels on a move that no longer holds the right button", () => {
+    const s = start();
+    s.g.pointerMove({ ...at(100, 200), buttons: 0 });
+    gaveUp(s);
+  });
+
+  it("cancels when another button is released", () => {
+    const s = start();
+    s.g.pointerUp({ ...at(100, 200), button: 0 });
+    gaveUp(s);
+  });
+});
+
+describe("aiming", () => {
+  it("aims one threshold above the press, armed once the drag travels up past it", () => {
+    const onAim = vi.fn();
+    const g = createSwapGestures(vi.fn(), vi.fn(), onAim);
+    g.pointerDown({ ...at(100, 300), button: 2, target }, boundary);
+    expect(onAim).toHaveBeenLastCalledWith({ x: 100, y: 240, armed: false });
+    g.pointerMove({ ...at(100, 270), buttons: 2 });
+    expect(onAim).toHaveBeenLastCalledWith({ x: 100, y: 240, armed: false });
+    g.pointerMove({ ...at(100, 235), buttons: 2 });
+    expect(onAim).toHaveBeenLastCalledWith({ x: 100, y: 240, armed: true });
+    g.pointerUp({ ...at(100, 235), button: 2 });
+    expect(onAim).toHaveBeenLastCalledWith(null);
+  });
+
+  it("does not aim for the left button or a three-finger swipe", () => {
+    const onAim = vi.fn();
+    const g = createSwapGestures(vi.fn(), vi.fn(), onAim);
+    g.pointerDown({ ...at(100, 300), button: 0, target }, boundary);
+    g.touchStart({ touches: [at(100, 300), at(120, 300), at(140, 300)], target }, boundary);
+    g.touchMove({ touches: [at(100, 200), at(120, 200), at(140, 200)] });
+    g.touchEnd({ changedTouches: [at(100, 200)] });
+    expect(onAim).not.toHaveBeenCalled();
   });
 });

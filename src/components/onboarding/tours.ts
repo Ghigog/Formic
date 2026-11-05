@@ -58,6 +58,7 @@ export type TourId =
   | "colony"
   | "meetings"
   | "call"
+  | "call-bar"
   | "sentinels-intro"
   | "timeline-intro"
   | "calls-intro"
@@ -389,6 +390,12 @@ export const TOURS: Record<TourId, TourDef> = {
     id: "call",
     steps: [
       { target: "agent-call", side: "below", title: "Call an agent", text: "Tap the phone to talk with this agent by voice. Same powers as typing, hands free." },
+    ],
+  },
+
+  "call-bar": {
+    id: "call-bar",
+    steps: [
       { target: "call-bar", side: "below", title: "On the call", text: "Everyone on the call shows here, and the one answering lights up. Say \"get the Reviewer in\" or tap + to bring someone in, and \"hello everyone\" to hear from all." },
     ],
   },
