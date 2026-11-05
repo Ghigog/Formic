@@ -20,6 +20,13 @@ export default defineConfig([
       "jsx-a11y/no-static-element-interactions": "error",
       "jsx-a11y/interactive-supports-focus": "error",
       "jsx-a11y/no-noninteractive-element-interactions": "error",
+      // Base rules: text alternatives and valid ARIA. Next's preset only warns.
+      "jsx-a11y/alt-text": "error",
+      "jsx-a11y/aria-props": "error",
+      "jsx-a11y/aria-proptypes": "error",
+      "jsx-a11y/aria-unsupported-elements": "error",
+      "jsx-a11y/role-has-required-aria-props": "error",
+      "jsx-a11y/role-supports-aria-props": "error",
       // A leading underscore marks a parameter or binding kept on purpose:
       // an interface's argument a mock ignores, a key dropped by a rest.
       "@typescript-eslint/no-unused-vars": [
