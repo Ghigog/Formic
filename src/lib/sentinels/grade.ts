@@ -20,6 +20,19 @@ export const GRADES: ReadonlyArray<{ grade: Grade; min: number; ink: string }> =
   { grade: "F", min: 0, ink: "var(--crimson-chip-text)" },
 ];
 
+/**
+ * Label colour on a grade badge, 4.5:1 or better in both themes. S is amber,
+ * so it takes dark ink. C and F are filled with tokens that turn light in the
+ * dark theme, so their text uses the cream token, which turns dark with them.
+ * The rest sit on fills that never change and take the light text that does
+ * not flip.
+ */
+export function gradeText(grade: string): string {
+  if (grade === "S") return "text-anthracite";
+  if (grade === "C" || grade === "F") return "text-cream";
+  return "text-on-anthracite";
+}
+
 export const GRADE_RULE =
   "Grade = average stars across the unlocked sentinels, unaudited ones counting 0 and locked ones not counted. S ≥ 4.5, A ≥ 4.0, B ≥ 3.5, C ≥ 3.0, D ≥ 2.5, E ≥ 2.0, F below.";
 
