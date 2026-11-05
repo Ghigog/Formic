@@ -11,9 +11,8 @@ import { gotoBoard } from "./board";
  * results land in e2e/.evidence, which CI uploads as `sentinel-evidence`
  * for the Designer, Accessibility and Marketer to read. See docs/sentinels.md.
  *
- * Record first, then gate: every axe violation is written down, and then a
- * serious or critical one fails the test. Minor and moderate stay recorded
- * only. A page that does not render fails too, as there is nothing to record.
+ * Record first, then gate: every axe violation is written down, and then any
+ * violation, of any impact, fails the test. A page that does not render fails too, as there is nothing to record.
  */
 
 const OUT = fileURLToPath(new URL(".evidence", import.meta.url));
@@ -68,6 +67,7 @@ const THEMES = ["light", "dark"] as const;
 test.beforeAll(() => {
   mkdirSync(join(OUT, "screens"), { recursive: true });
   mkdirSync(join(OUT, "axe"), { recursive: true });
+  mkdirSync(join(OUT, "axe-passes"), { recursive: true });
 });
 
 for (const shot of SHOTS) {
@@ -102,22 +102,22 @@ for (const shot of SHOTS) {
             help: v.help,
             nodes: v.nodes.map((n) => ({ target: n.target })),
           })),
-          passes: scan.passes.map((p) => p.id),
+          passed: scan.passes.length,
         }),
+      );
+      // The rule ids live outside the axe/ folder: they are not a scan (no
+      // `violations` key), and a grep for a rule id there reads only failures.
+      writeFileSync(
+        join(OUT, "axe-passes", `${file}.json`),
+        JSON.stringify({ url: `${new URL(page.url()).pathname} (${shot.name}, ${theme})`, passes: scan.passes.map((p) => p.id) }),
       );
 
       // The evidence is on disk; now hold the page to it.
-      const blocking = scan.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+      // Any violation fails, whatever its impact. color-contrast is one of the
+      // scanned rules, so text stays held to 4.5:1 (design/DESIGN.md).
       expect(
-        blocking.map((v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.map((n) => n.target.join(" ")).join("; ")}`),
-        `serious or critical axe violations on ${shot.name} in the ${theme} theme`,
-      ).toEqual([]);
-
-      // Contrast is held to 4.5:1 whatever axe rates its impact.
-      const contrast = scan.violations.filter((v) => v.id === "color-contrast");
-      expect(
-        contrast.flatMap((v) => v.nodes.map((n) => `${shot.name}, ${theme} theme: ${n.target.join(" ")}`)),
-        `color-contrast violations on ${shot.name} in the ${theme} theme`,
+        scan.violations.map((v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.map((n) => n.target.join(" ")).join("; ")}`),
+        `axe violations on ${shot.name} in the ${theme} theme`,
       ).toEqual([]);
     });
   }
