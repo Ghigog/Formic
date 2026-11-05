@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { BoardShell } from "./board-shell";
 import type { Account } from "./account-menu";
 import { DigTransition, type DigTransitionHandle } from "./dig-transition";
-import { createSwapGestures } from "./swap-gesture";
+import { createSwapGestures, type SwapAim } from "./swap-gesture";
+import { SwapHint } from "./swap-hint";
 import { attachSwapSound, swapSfx } from "./swap-sound";
 import type { SwapDirection } from "./swap-order";
 import type { BoardProps } from "@/lib/board/board-props";
@@ -29,6 +30,7 @@ export interface SwappableBoardProps {
 export function SwappableBoard({ account, projectId, board }: SwappableBoardProps) {
   const [current, setCurrent] = useState({ projectId, board });
   const [error, setError] = useState<string | null>(null);
+  const [aim, setAim] = useState<SwapAim | null>(null);
   const streak = useRef<string[] | null>(null);
   const names = useRef(new Map<string, string>());
   const busy = useRef(false);
@@ -98,6 +100,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
     const g = createSwapGestures(
       (direction) => void swapRef.current(direction),
       (px) => dig.current?.pull(px),
+      setAim,
     );
     const touchStart = (e: TouchEvent) => g.touchStart(e, el);
     const touchMove = (e: TouchEvent) => {
@@ -107,6 +110,11 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
     const touchCancel = () => g.touchCancel();
     const pointerDown = (e: PointerEvent) => g.pointerDown(e, el);
     const pointerMove = (e: PointerEvent) => g.pointerMove(e);
+    const cancel = () => g.cancel();
+    // Leaving the document: the pointer goes to the browser's own chrome or off screen.
+    const leave = (e: MouseEvent) => {
+      if (!e.relatedTarget) g.cancel();
+    };
     const pointerUp = (e: PointerEvent) => g.pointerUp(e);
     const contextMenu = (e: MouseEvent) => g.contextMenu(e);
     el.addEventListener("touchstart", touchStart, { passive: true });
@@ -116,6 +124,11 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
     el.addEventListener("pointerdown", pointerDown);
     window.addEventListener("pointermove", pointerMove);
     window.addEventListener("pointerup", pointerUp);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("pointerout", leave);
+    window.addEventListener("mouseout", leave);
+    document.addEventListener("pointerleave", cancel);
     el.addEventListener("contextmenu", contextMenu);
     return () => {
       el.removeEventListener("touchstart", touchStart);
@@ -125,6 +138,11 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
       el.removeEventListener("pointerdown", pointerDown);
       window.removeEventListener("pointermove", pointerMove);
       window.removeEventListener("pointerup", pointerUp);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("pointerout", leave);
+      window.removeEventListener("mouseout", leave);
+      document.removeEventListener("pointerleave", cancel);
       el.removeEventListener("contextmenu", contextMenu);
     };
   }, []);
@@ -149,6 +167,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
       <DigTransition ref={dig} onSound={swapSfx}>
         <BoardShell key={current.projectId} account={account} {...current.board} />
       </DigTransition>
+      <SwapHint aim={aim} />
       {error && (
         <div role="alert" className="pointer-events-none fixed top-[76px] right-0 left-0 z-[80] flex justify-center px-4">
           <div className="bg-anthracite text-on-anthracite rounded-full px-4 py-2.5 text-[12px] font-semibold shadow-lg">{error}</div>

@@ -38,8 +38,15 @@ export interface SwapGestureEvents {
   touchEnd(e: { changedTouches: ArrayLike<Point> }): void;
   touchCancel(): void;
   pointerDown(e: Point & { button: number; target: EventTarget | null }, boundary: Element): void;
-  pointerMove(e: Point): void;
+  /** `buttons` is the bitmask of buttons now held: a move without the right one means its release was missed. */
+  pointerMove(e: Point & { buttons: number }): void;
   pointerUp(e: Point & { button: number }): void;
+  /**
+   * Gives up a right-button drag whose release can no longer be trusted: the
+   * pointer left the window, the window lost focus, or the browser cancelled
+   * the pointer. The board lets go and nothing swaps.
+   */
+  cancel(): void;
   /**
    * Cancels the context menu while a right-button drag is under way (macOS and
    * Linux open it on the press) and once one has swapped (Windows opens it on
@@ -53,6 +60,13 @@ function interactive(target: EventTarget | null): boolean {
   return target instanceof Element && !!target.closest("input, textarea, select, a[href], [contenteditable='true']");
 }
 
+/** Where a right-button press asks to be dragged to, and whether the drag has got there. */
+export interface SwapAim {
+  x: number;
+  y: number;
+  armed: boolean;
+}
+
 /**
  * Turns three-finger vertical swipes and right-button drags into `onSwap`
  * requests, and reports the gesture's travel as it goes to `onPull` (null once
@@ -61,11 +75,18 @@ function interactive(target: EventTarget | null): boolean {
 export function createSwapGestures(
   onSwap: (direction: SwapDirection) => void,
   onPull: (pull: number | null) => void = () => {},
+  onAim: (aim: SwapAim | null) => void = () => {},
 ): SwapGestureEvents {
   let touch: Point | null = null;
   let drag: Point | null = null;
   let suppressMenu = false;
   const release = () => onPull(null);
+  const cancel = () => {
+    if (!drag) return;
+    drag = null;
+    release();
+    onAim(null);
+  };
   return {
     touchStart(e, boundary) {
       const first = e.touches[0];
@@ -103,21 +124,30 @@ export function createSwapGestures(
         e.button === 2 && !ownsGesture(e.target, boundary) && !interactive(e.target)
           ? { clientX: e.clientX, clientY: e.clientY }
           : null;
+      // Where releasing would swap down: one threshold of travel straight up.
+      if (drag) onAim({ x: drag.clientX, y: drag.clientY - SWAP_THRESHOLD, armed: false });
     },
     pointerMove(e) {
       if (!drag) return;
+      if ((e.buttons & 2) === 0) return cancel();
+      const dx = e.clientX - drag.clientX;
+      const dy = e.clientY - drag.clientY;
+      onAim({ x: drag.clientX, y: drag.clientY - SWAP_THRESHOLD, armed: swapDirection(dx, dy) === "down" });
       onPull(pullFor(e.clientX - drag.clientX, e.clientY - drag.clientY));
     },
     pointerUp(e) {
       const start = drag;
+      if (!start) return;
+      if (e.button !== 2) return cancel();
       drag = null;
-      if (!start || e.button !== 2) return;
       release();
+      onAim(null);
       const direction = swapDirection(e.clientX - start.clientX, e.clientY - start.clientY);
       if (!direction) return;
       suppressMenu = true;
       onSwap(direction);
     },
+    cancel,
     contextMenu(e) {
       if (drag) {
         e.preventDefault();
