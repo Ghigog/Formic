@@ -96,6 +96,17 @@ describe("POST /api/queens", () => {
   });
 });
 
+describe("at Lv 99", () => {
+  it("places a Queen past the earned count and answers unlimited", async () => {
+    repo.boardCards.mockResolvedValue([makeCard({ id: "m", status: "merged", mergePoints: 4900 }), makeCard({ id: "t-1" })]);
+    repo.queensSpent.mockResolvedValue(500);
+    const res = await post("t-1");
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ unlimited: true });
+    expect(repo.placeQueen).toHaveBeenCalled();
+  });
+});
+
 describe("DELETE /api/queens", () => {
   const del = (cardId: string) =>
     DELETE(new NextRequest("http://localhost/api/queens", { method: "DELETE", body: JSON.stringify({ cardId }) }));

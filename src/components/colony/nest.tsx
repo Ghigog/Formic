@@ -8,6 +8,7 @@ import {
   COLOR_UNLOCKS,
   SHAPE_UNLOCKS,
   XP_PER_LEVEL,
+  isMaxLevel,
   nextUnlock,
   type BugShape,
 } from "@/lib/colony/game";
@@ -115,6 +116,7 @@ const SKITTER_EVERY = 28;
  */
 function QueenTray({ c, onDragging, onError }: { c: ColonyApi; onDragging: (on: boolean) => void; onError: (message: string | null) => void }) {
   const [unspent, setUnspent] = useState<number | null>(null);
+  const [unlimited, setUnlimited] = useState(false);
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
   const setError = onError;
   const pointerX = useRef(0);
@@ -123,7 +125,11 @@ function QueenTray({ c, onDragging, onError }: { c: ColonyApi; onDragging: (on: 
     let live = true;
     fetch("/api/queens")
       .then((res) => (res.ok ? res.json() : null))
-      .then((body: { unspent: number } | null) => live && body && setUnspent(body.unspent))
+      .then((body: { unspent: number; unlimited?: boolean } | null) => {
+        if (!live || !body) return;
+        setUnspent(body.unspent);
+        setUnlimited(body.unlimited === true);
+      })
       .catch(() => {});
     return () => {
       live = false;
@@ -137,13 +143,14 @@ function QueenTray({ c, onDragging, onError }: { c: ColonyApi; onDragging: (on: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cardId }),
       });
-      const body = (await res.json().catch(() => ({}))) as { unspent?: number; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { unspent?: number; unlimited?: boolean; error?: string };
       if (!res.ok) {
         c.sfx("reject");
         return setError(body.error ?? "Could not place the Queen.");
       }
       setError(null);
       if (typeof body.unspent === "number") setUnspent(body.unspent);
+      if (typeof body.unlimited === "boolean") setUnlimited(body.unlimited);
     } catch {
       c.sfx("reject");
       setError("Could not place the Queen.");
@@ -213,19 +220,19 @@ function QueenTray({ c, onDragging, onError }: { c: ColonyApi; onDragging: (on: 
   };
 
   const count = unspent ?? 0;
-  const canDrag = count > 0;
+  const canDrag = unlimited || count > 0;
   return (
     <>
       <Tile
         data="queens"
         icon={<QueenIcon size={48} />}
-        value={count}
+        value={unlimited ? "∞" : count}
         valueData={{ "data-queen-count": "" }}
         tipLabel="How Queens work"
         tip={
           <>
             Unlock a queen with each level. Drop a Queen on a ticket and the ants work through every ticket it needs,
-            until that ticket is done. Each level earns one more; a placed Queen is spent.
+            until that ticket is done. Each level earns one more; a placed Queen is spent. At Lv 99 Queens are unlimited.
           </>
         }
         {...(canDrag
@@ -290,7 +297,7 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
   const s = c.score;
   const next = nextUnlock(s.level);
   const nextText = next
-    ? `Lv ${next.level} unlocks ${next.labels.join(" + ")} · ${(next.level - 1) * XP_PER_LEVEL - s.earned} XP to go`
+    ? `Lv ${next.level} unlocks ${next.labels.join(" + ")} · ${(next.level - 1) * XP_PER_LEVEL - s.xp} XP to go`
     : "Everything unlocked";
 
   return (
@@ -315,7 +322,7 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
           <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
             <span className="text-ink font-serif text-[20px] leading-[1.1] font-semibold">{s.rank}</span>
             <span className="text-muted font-mono text-[10px]">
-              {s.earned.toLocaleString("en-US")} XP earned · {s.intoLevel}/{XP_PER_LEVEL} this level
+              {s.xp.toLocaleString("en-US")} XP earned · {isMaxLevel(s.level) ? "Max level" : `${s.intoLevel}/${XP_PER_LEVEL} this level`}
             </span>
           </div>
           <button
@@ -386,10 +393,10 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
                   }}
                 >
                   <BugPreview shape={u.key} locked={locked} on={on && !locked} c={c} />
-                  <span className={`text-center text-[10px] leading-tight font-semibold ${locked ? "text-muted" : "text-ink"}`}>
+                  <span className={`min-w-0 text-center text-[10px] leading-tight font-semibold break-words ${locked ? "text-muted" : "text-ink"}`}>
                     {u.label}
                   </span>
-                  <span className="text-muted min-h-3 font-mono text-[9px]">
+                  <span className="text-muted min-h-3 min-w-0 text-center font-mono text-[9px] leading-tight break-words">
                     {locked ? `Lv ${u.lv}` : on ? "Equipped" : ""}
                   </span>
                 </button>
@@ -426,7 +433,7 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
                       </svg>
                     )}
                   </span>
-                  <span className="text-muted font-mono text-[9px] whitespace-nowrap">
+                  <span className="text-muted min-w-0 text-center font-mono text-[9px] leading-tight break-words">
                     {locked ? `Lv ${u.lv}` : u.label}
                   </span>
                 </button>

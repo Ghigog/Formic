@@ -12,7 +12,7 @@ import {
   type Spring,
 } from "./bell-swing";
 
-type BellState = { left: number; armed: boolean };
+type BellState = { left: number; armed: boolean; unlimited?: boolean };
 type RingResult = BellState & { sent?: number; skipped?: number };
 
 async function postBell(
@@ -79,7 +79,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
       .then((r) => (r.ok ? r.json() : null))
       .then(
         (b: BellState | null) =>
-          live && b && setBell({ left: b.left, armed: b.armed }),
+          live && b && setBell({ left: b.left, armed: b.armed, unlimited: b.unlimited }),
       )
       .catch(() => {});
     return () => {
@@ -186,7 +186,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
 
   const toggleArmed = async () => {
     if (!bell) return;
-    if (!bell.armed && bell.left === 0) {
+    if (!bell.armed && !bell.unlimited && bell.left === 0) {
       setSaid("No golden bell yet: one comes every five levels.");
       return;
     }
@@ -194,7 +194,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
     animate();
     const next = await postBell(bell.armed ? "disarm" : "arm");
     if (next) {
-      setBell({ left: next.left, armed: next.armed });
+      setBell({ left: next.left, armed: next.armed, unlimited: next.unlimited });
       setSaid(
         next.armed
           ? "Golden bell armed. It rings itself a minute after a usage limit resets."
@@ -208,7 +208,10 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
   // The cord hangs from the clapper's foot, which swings with the bell about its top.
   const tilt = ((angle + clapper) * Math.PI) / 180;
   const cordTop = { x: 48 - Math.sin(tilt) * 58, y: 18 + Math.cos(tilt) * 58 };
-  const golden = bell
+  const unlimited = !!bell?.unlimited;
+  const golden = unlimited
+    ? "Golden bells are unlimited at Lv 99"
+    : bell
     ? `${bell.left} golden ${bell.left === 1 ? "bell" : "bells"} left`
     : "";
 
@@ -216,7 +219,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
     <Tile
       data="bell"
       icon={null}
-      value={bell ? bell.left : "–"}
+      value={bell ? (unlimited ? "∞" : bell.left) : "–"}
       tipLabel="How the bell works"
       tip={
         <>
@@ -230,7 +233,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
           the left and right arrows in turn); a full swing rings the bell.{" "}
           {golden}
           {bell && !armed
-            ? bell.left > 0
+            ? unlimited || bell.left > 0
               ? " · tap the bell to arm one"
               : " · one every five levels"
             : ""}

@@ -84,6 +84,13 @@ describe("ColonyHeaderStats", () => {
     ).toHaveTextContent("Timeline");
   });
 
+  it("shows a full bar reading Max level at Lv 99", () => {
+    renderHeader(<ColonyHeaderStats />, [makeCard({ status: "merged", mergePoints: 4908 })]);
+    const bar = screen.getByRole("progressbar", { name: "Experience to next level" });
+    expect(bar).toHaveAttribute("aria-valuenow", bar.getAttribute("aria-valuemax")!);
+    expect(screen.getByText("Max level")).toBeInTheDocument();
+  });
+
   it("omits the LV badge and XP bar with showLevel false, keeping points, heat and timeline", () => {
     renderHeader(<ColonyHeaderStats showLevel={false} />);
     expect(screen.queryByText("LV")).not.toBeInTheDocument();

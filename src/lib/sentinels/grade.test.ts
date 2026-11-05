@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gradeOf, gradeRose } from "./grade";
+import { gradeOf, gradeRose, gradeText } from "./grade";
 import { SENTINELS } from "./roster";
 
 const all = (n: number) => Object.fromEntries(SENTINELS.map((s) => [s.id, n]));
@@ -49,5 +49,14 @@ describe("gradeOf", () => {
     expect(gradeRose("B", "A")).toBe(true);
     expect(gradeRose("A", "B")).toBe(false);
     expect(gradeRose("F", "S")).toBe(true);
+  });
+});
+
+describe("gradeText", () => {
+  it("picks a readable label colour for each grade fill", () => {
+    expect(gradeText("S")).toBe("text-anthracite");
+    expect(gradeText("C")).toBe("text-cream");
+    expect(gradeText("F")).toBe("text-cream");
+    expect(gradeText("B")).toBe("text-on-anthracite");
   });
 });
