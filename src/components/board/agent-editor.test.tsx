@@ -444,4 +444,26 @@ describe("AgentEditor CLI agent secret", () => {
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByText(/Start the secret's name with FORMIC_CLAUDE_CODE_TOKEN/)).toBeInTheDocument();
   });
+
+  it("wraps Tab and Shift+Tab inside the dialog", async () => {
+    const user = userEvent.setup();
+    stubModelsFetch();
+    render(
+      <AgentEditor repoFullName="acme/widgets" column="in_progress" preset={null} onClose={vi.fn()} onSave={vi.fn()} onDelete={vi.fn()} />,
+    );
+    await settled();
+    const dialog = screen.getByRole("dialog");
+    const tabbable = Array.from(dialog.querySelectorAll<HTMLElement>("button, input, textarea, select, a[href]")).filter(
+      (el) => !(el as HTMLButtonElement).disabled,
+    );
+    const first = tabbable[0]!;
+    const last = tabbable[tabbable.length - 1]!;
+    last.focus();
+    await user.tab();
+    expect(first).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
 });

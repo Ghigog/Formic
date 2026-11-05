@@ -141,6 +141,7 @@ describe("the setup dialog", () => {
     const pill = () => screen.getByRole("button", { name: /Setup pull request waiting/ });
 
     const first = show();
+    await waitFor(() => expect(screen.getByRole("link", { name: /Open pull request/ })).toHaveFocus());
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(pill()).toHaveFocus();
@@ -244,6 +245,27 @@ describe("the setup dialog", () => {
       await userEvent.click(await screen.findByRole("button", { name: "Not now" }));
       expect(screen.getByRole("button", { name: /Agent secrets not added/ })).toBeTruthy();
     });
+  });
+
+  it("wraps Tab and Shift+Tab inside the dialog", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ repoFullName: "acme/widgets", private: false, runners: [] })));
+    const user = userEvent.setup();
+    render(
+      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} />,
+    );
+    const dialog = screen.getByRole("dialog");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: /Open pull request/ })));
+    const tabbable = Array.from(dialog.querySelectorAll<HTMLElement>("button, input, textarea, select, a[href]")).filter(
+      (el) => !(el as HTMLButtonElement).disabled,
+    );
+    const first = tabbable[0]!;
+    const last = tabbable[tabbable.length - 1]!;
+    last.focus();
+    await user.tab();
+    expect(first).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
   });
 });
 

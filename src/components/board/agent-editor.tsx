@@ -1,5 +1,6 @@
 "use client";
 
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -156,12 +157,8 @@ export function AgentEditor({
 
   useEffect(() => {
     requestAnimationFrame(() => nameRef.current?.focus());
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
+  const trapKeys = useFocusTrap({ onEscape: onClose });
 
   // A saved key belongs to the provider it was saved for.
   const hasSavedKey = !!preset?.hasKey && preset.provider === provider;
@@ -307,9 +304,11 @@ export function AgentEditor({
       }}
     >
       <AutoTour id="agent" />
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <form
         role="dialog"
         aria-modal
+        onKeyDown={trapKeys}
         aria-label={preset ? `Edit ${preset.name}` : "New agent"}
         style={kb.panel}
         onSubmit={(e) => {
