@@ -6,6 +6,9 @@ import { repository } from "@/lib/db";
 import { subscribe } from "@/lib/events/bus";
 import type { FormicEvent } from "@/lib/domain/events";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
+import { setCheckoutFactory } from "@/lib/coder/checkout";
+import { MemoryWorkspace, scopedWorkspace, type Workspace } from "@/lib/sandbox/workspace";
+import { resetAgents, setAgents } from "@/lib/agents/registry";
 
 /**
  * The merge gate: what happens to an approved pull request with auto-merge
@@ -493,5 +496,78 @@ describe("closeAlreadyDone", () => {
     run.attempt = 2;
     await closeAlreadyDone(PROJECT, (await repository().ticketDetail(ticketId))!, { summary: "s", detail: "d" });
     expect(MockVcsClient.runner().reruns).toEqual([77]);
+  });
+});
+
+describe("a conflict in review", () => {
+  const NO_USAGE = { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 };
+
+  /** T-2 stacked on T-1; T-1 merged, T-2's pull request conflicts. */
+  async function seedConflict() {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const base = { epicId: epic.id, description: "d", acceptanceCriteria: ["c"], fileScope: ["src"], storyPoints: 3 };
+    const [first, second] = await repo.createTickets([
+      { ...base, key: "T-1", title: "First", position: 1, dependsOnKeys: [] },
+      { ...base, key: "T-2", title: "Second", position: 2, dependsOnKeys: ["T-1"] },
+    ]);
+    const below = await vcs.openPullRequest({ headBranch: "t-1", baseBranch: "main", title: "T-1", body: "" });
+    await repo.updateTicket(first!.id, { status: "merged", prNumber: below.number, branchName: "t-1" });
+    const pull = await vcs.openPullRequest({ headBranch: "t-2", baseBranch: "main", title: "T-2", body: "" });
+    await repo.updateTicket(second!.id, { status: "review", stage: 6, prNumber: pull.number, branchName: "t-2", attempts: 1 });
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+    return { ticketId: second!.id, prNumber: pull.number, belowHead: below.headSha };
+  }
+
+  /** A sandbox whose git says whether the dependency's commits are in the branch. */
+  function sandbox(carriesMerged: boolean) {
+    const commands: string[] = [];
+    setCheckoutFactory(async (request) => {
+      const memory = new MemoryWorkspace();
+      const raw: Workspace = Object.create(memory, {
+        exec: {
+          value: async (cmd: string) => {
+            commands.push(cmd);
+            if (cmd.includes("merge-base --is-ancestor")) return { exitCode: carriesMerged ? 0 : 1, stdout: "", stderr: "" };
+            if (cmd.includes("git diff --name-only --diff-filter=U")) return { exitCode: 0, stdout: "a.ts\n", stderr: "" };
+            if (cmd.includes("grep -qE")) return { exitCode: 1, stdout: "", stderr: "" };
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+        },
+      });
+      return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: "sbx", async dispose() {} };
+    });
+    return commands;
+  }
+
+  afterEach(() => {
+    setCheckoutFactory(null);
+    resetAgents();
+  });
+
+  it("rebuilds the branch on main, without spending an attempt, when it only carries merged work", async () => {
+    const { ticketId, prNumber, belowHead } = await seedConflict();
+    const commands = sandbox(true);
+    const asked = vi.fn();
+    setAgents({ reviewer: { review: async () => (asked(), { ok: true, value: { summary: "", detail: "", verifiedWith: null, sendBack: null }, usage: NO_USAGE }) } } as never);
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    expect(commands.some((c) => c.includes("rebase --onto") && c.includes(belowHead))).toBe(true);
+    expect(asked).not.toHaveBeenCalled();
+    expect((await repository().ticketDetail(ticketId))!.attempts).toBe(1);
+  });
+
+  it("has the agent resolve a conflict on the ticket's own change, and counts the attempt", async () => {
+    const { ticketId, prNumber } = await seedConflict();
+    const commands = sandbox(false);
+    const asked = vi.fn();
+    setAgents({ reviewer: { review: async () => (asked(), { ok: true, value: { summary: "ok", detail: "", verifiedWith: null, sendBack: null, handoff: [] }, usage: NO_USAGE }) } } as never);
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    expect(commands.some((c) => c.includes("rebase --onto"))).toBe(false);
+    expect(asked).toHaveBeenCalledOnce();
+    expect((await repository().ticketDetail(ticketId))!.attempts).toBe(2);
   });
 });

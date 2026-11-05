@@ -4,7 +4,7 @@ import { withCardActor } from "@/lib/auth/actor";
 import { attemptsFor, inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
 import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
-import { commitAndPush, openCheckout } from "@/lib/coder/checkout";
+import { type Checkout, commitAndPush, openCheckout, rebaseOntoTarget } from "@/lib/coder/checkout";
 import { runCoderAgent, stallTicket, taskFor, ticketOrigin } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
 import { projectFor } from "@/lib/board/project";
@@ -1420,6 +1420,33 @@ async function resolveIfStillConflicted(
   await resolveConflicts(projectId, ticket, pull);
 }
 
+/**
+ * Whether the branch carries the final commits of a dependency that has
+ * merged and was rebuilt without them (T-1's `rebaseOntoTarget`). False when
+ * there is no such dependency, or the ticket's own commits conflict too.
+ */
+async function rebuildWithoutMerged(
+  checkout: Checkout,
+  ticket: TicketDetail,
+  client: ReturnType<typeof vcs>,
+  branch: string,
+  target: string,
+): Promise<boolean> {
+  const repo = repository();
+  const card = await repo.cardById(ticket.id);
+  for (const id of card?.dependsOn ?? []) {
+    const dep = await repo.ticketDetail(id);
+    if (!dep || dep.status !== "merged" || !dep.prNumber) continue;
+    const cut = await client.pullRequest(dep.prNumber).then((p) => p.headSha, () => null);
+    if (!cut) continue;
+    const carried = await checkout.raw.exec(`git merge-base --is-ancestor '${cut}' HEAD`);
+    if (carried.exitCode !== 0) continue;
+    const rebuilt = await rebaseOntoTarget(checkout, { branch, target, cut });
+    return rebuilt.ok;
+  }
+  return false;
+}
+
 const NO_USAGE = { model: "none", tokensIn: 0, tokensOut: 0, costCents: 0 };
 
 /**
@@ -1455,7 +1482,11 @@ async function resolveConflicts(
 
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
-  await repo.updateTicket(ticket.id, { attempts: attempt, reviewedHead: pull.headSha });
+  // A pass counts as an attempt only once the agent has had something to
+  // resolve (or, in a runner job, started on it): GitHub being unable to build
+  // the pull request is not the code's fault.
+  await repo.updateTicket(ticket.id, { reviewedHead: pull.headSha });
+  const countAttempt = () => repo.updateTicket(ticket.id, { attempts: attempt });
 
   const changedFiles = await client
     .compare(pull.baseBranch, branch)
@@ -1481,6 +1512,7 @@ async function resolveConflicts(
   // starts, and the run's result is recorded as the merge when it lands.
   const cli = await cliAgentFor(projectId, "in_review");
   if (cli) {
+    await countAttempt();
     await startJobRun({
       projectId,
       ticket,
@@ -1536,6 +1568,21 @@ async function resolveConflicts(
     let conflicts = changedFiles.length ? changedFiles : ticket.fileScope;
     let conflictHistory: { base: string[]; branch: string[] } | undefined;
     if (real) {
+      // The conflict may be only the old commits of a dependency that has
+      // since merged: rebuild the branch on the base without them instead of
+      // asking the agent to resolve work that is already there.
+      if (await rebuildWithoutMerged(checkout, ticket, client, branch, pull.baseBranch)) {
+        const after = await client.pullRequest(pull.number);
+        await run.finish({ ok: true, value: null, usage: NO_USAGE });
+        // CI runs on the new head; a mock GitHub reports nothing, so drive it.
+        if (client.name === "mock") {
+          launch(
+            () => reviewPullRequest(projectId, pull.number, after.headSha),
+            `reaction to the rebuilt branch of ${ticket.key}`,
+          );
+        }
+        return;
+      }
       const merged = await mergeInBase(checkout.raw, pull.baseBranch);
       if (!merged.ok) {
         // The base never arrived, so nothing here has seen a conflict to
@@ -1589,6 +1636,7 @@ async function resolveConflicts(
       }
       resolved = outcome.value;
       usage = outcome.usage;
+      await countAttempt();
     }
     const said = resolved ? resolved.detail.trim() || resolved.summary : "";
 
