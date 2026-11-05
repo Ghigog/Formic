@@ -73,7 +73,8 @@ export function ColonyToast() {
       <div
         ref={ref}
         role="status"
-        className="bg-anthracite text-on-anthracite flex items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
+        onClick={c.dismissToast}
+        className="bg-anthracite text-on-anthracite pointer-events-auto flex cursor-pointer items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
       >
         <span className="oct bg-clay text-anthracite inline-flex size-[22px] items-center justify-center font-mono text-[10px]">
           {c.score.level}
