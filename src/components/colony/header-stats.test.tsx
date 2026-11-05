@@ -181,6 +181,21 @@ describe("LevelBadge", () => {
   }
   const flash = () => document.querySelector('[data-audit-face="flash"]');
 
+  it("hides the AUDIT face at rest and reveals it on hover or keyboard focus", () => {
+    render(badge(5));
+    const face = document.querySelector('[data-audit-face="hover"]')!;
+    const classes = face.className.split(" ");
+
+    expect(classes).toContain("invisible");
+    expect(classes).toContain("opacity-0");
+    expect(classes).toContain("group-hover:visible");
+    expect(classes).toContain("group-hover:opacity-100");
+    expect(classes).toContain("group-focus-visible:visible");
+    expect(classes).toContain("group-focus-visible:opacity-100");
+    expect(classes).toContain("transition-[opacity,visibility]");
+    expect(classes).toContain("duration-150");
+  });
+
   it("flashes the grade 1.5s after a level-up, for 500ms", () => {
     vi.useFakeTimers();
     const { rerender } = render(badge(1));
