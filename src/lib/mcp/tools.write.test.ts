@@ -142,7 +142,7 @@ describe("write tools", () => {
   it("stores a person's message in the chat and no agent answers", async () => {
     const id = await ticketOnBoard();
     expect(await commentCard(rw(), { board, card: id, text: "hello" })).toMatchObject({ ok: true });
-    const messages = await repository().cardChatMessages(id);
+    const messages = (await repository().cardChatMessages(id)).messages;
     expect(messages).toMatchObject([{ role: "user", content: "hello", status: "done" }]);
     expect(launched).toEqual([]);
   });
@@ -162,7 +162,7 @@ describe("a read-only token", () => {
     ];
     for (const r of results) expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/read-only/) });
     expect(JSON.stringify(await repo.boardCards(board))).toBe(before);
-    expect(await repo.cardChatMessages(id)).toEqual([]);
+    expect((await repo.cardChatMessages(id)).messages).toEqual([]);
     expect(launched).toEqual([]);
     expect(published).toEqual([]);
   });

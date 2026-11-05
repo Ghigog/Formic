@@ -110,7 +110,7 @@ describe("the PM on call", () => {
     expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([
       expect.stringContaining("The PM answered for them, from what they already asked for: Components too"),
     ]);
-    const chat = await repository().assistantMessages(PROJECT);
+    const chat = (await repository().assistantMessages(PROJECT)).messages;
     expect(chat).toHaveLength(1);
     expect(chat[0]).toMatchObject({ role: "assistant", status: "done", content: "I answered the Architect: every animation, components included." });
   });
@@ -124,19 +124,19 @@ describe("the PM on call", () => {
 
     expect(isQuestion((await repository().cardById(epic.id))?.blockedReason)).toBe(true);
     expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([]);
-    expect((await repository().assistantMessages(PROJECT))[0]!.content).toContain("I suggest components too");
+    expect(((await repository().assistantMessages(PROJECT)).messages)[0]!.content).toContain("I suggest components too");
   });
 
   it("stays out of it with no PM agent, and for questions meant for the person alone", async () => {
     const epic = await waitingEpic();
     await wakePm(PROJECT, epic.id, REASON);
-    expect(await repository().assistantMessages(PROJECT)).toEqual([]);
+    expect((await repository().assistantMessages(PROJECT)).messages).toEqual([]);
 
     await useAgent("groq");
     const sent = fakeProvider([]);
     await wakePm(PROJECT, epic.id, questionReason("The Designer", [{ question: "Warm or cool?", why: "Taste." }]));
     expect(sent).toEqual([]);
-    expect(await repository().assistantMessages(PROJECT)).toEqual([]);
+    expect((await repository().assistantMessages(PROJECT)).messages).toEqual([]);
   });
 });
 

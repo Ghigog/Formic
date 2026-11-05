@@ -146,7 +146,7 @@ describe("stacked pull requests", () => {
     expect(two.stackedOn).toBe(one.branchName);
     const client = new MockVcsClient(REPO);
     expect((await client.pullRequest(two.prNumber!)).baseBranch).toBe(one.branchName);
-    expect((await repo.cardChatMessages(second.id)).at(-1)?.content).toMatch(/builds on it/);
+    expect(((await repo.cardChatMessages(second.id)).messages).at(-1)?.content).toMatch(/builds on it/);
 
     // Approved and green, it still does not merge ahead of the one under it.
     await until(async () => (await repo.ticketDetail(second.id))!.reviewedSha !== null, "the second to be approved");

@@ -524,7 +524,7 @@ describe("applying an approved proposal", () => {
       `Archived ${epic.key} and its tickets.`,
     );
     expect((await repository().boardCards(PROJECT)).some((c) => c.id === epic.id)).toBe(false);
-    expect((await repository().archivedEpics(PROJECT)).map((c) => c.id)).toEqual([epic.id]);
+    expect(((await repository().archivedEpics(PROJECT)).cards).map((c) => c.id)).toEqual([epic.id]);
   });
 });
 

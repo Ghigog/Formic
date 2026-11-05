@@ -50,7 +50,16 @@ import type {
   HostUsageCheck,
   Reservation,
 } from "./repository";
-import { RUNNING_AUDITS_LIMIT, EPIC_AUDITS_LIMIT } from "./repository";
+import {
+  RUNNING_AUDITS_LIMIT,
+  EPIC_AUDITS_LIMIT,
+  AUDITS_LIMIT,
+  ARCHIVE_PAGE_LIMIT,
+  MESSAGES_PAGE_LIMIT,
+  PENDING_MESSAGES_LIMIT,
+  type CardPage,
+  type MessagePage,
+} from "./repository";
 import { precisionChanges } from "./ticket-changes";
 import type {
   AgentRole,
@@ -951,11 +960,16 @@ export class PrismaRepository implements Repository {
     return rows.map((r) => r.key);
   }
 
-  async archivedTickets(projectId: string): Promise<BoardCard[]> {
+  async archivedTickets(
+    projectId: string,
+    { cursor, limit = ARCHIVE_PAGE_LIMIT }: { cursor?: string; limit?: number } = {},
+  ): Promise<CardPage> {
     const db = prisma();
-    const tickets = await db.ticket.findMany({
+    const rows = await db.ticket.findMany({
       where: { epic: { projectId }, archived: true, archivedWithEpic: false, scoutOf: null },
-      orderBy: { position: "asc" },
+      orderBy: [{ position: "asc" }, { id: "asc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: {
         id: true,
         key: true,
@@ -972,8 +986,9 @@ export class PrismaRepository implements Repository {
         size: true,
       },
     });
+    const tickets = rows.slice(0, limit);
     // The archive list is not the board: what names the ticket, and the column it came from.
-    return tickets.map((t) => ({
+    const cards = tickets.map((t) => ({
       id: t.id,
       kind: "ticket" as const,
       key: t.key,
@@ -999,16 +1014,26 @@ export class PrismaRepository implements Repository {
       childCount: 0,
       doneCount: 0,
     }));
+    return { cards, nextCursor: rows.length > limit ? tickets[tickets.length - 1]!.id : null };
   }
 
-  async archivedEpics(projectId: string): Promise<BoardCard[]> {
-    const epics = await prisma().epic.findMany({
+  async archivedEpics(
+    projectId: string,
+    { cursor, limit = ARCHIVE_PAGE_LIMIT }: { cursor?: string; limit?: number } = {},
+  ): Promise<CardPage> {
+    const rows = await prisma().epic.findMany({
       where: { projectId, archived: true, standalone: false },
-      orderBy: { position: "asc" },
+      orderBy: [{ position: "asc" }, { id: "asc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: { id: true },
     });
-    const cards = await Promise.all(epics.map((e) => this.cardById(e.id)));
-    return cards.filter((c): c is BoardCard => c !== null);
+    const epics = rows.slice(0, limit);
+    const found = await Promise.all(epics.map((e) => this.cardById(e.id)));
+    return {
+      cards: found.filter((c): c is BoardCard => c !== null),
+      nextCursor: rows.length > limit ? epics[epics.length - 1]!.id : null,
+    };
   }
 
   async archiveEpic(epicId: string): Promise<void> {
@@ -2186,12 +2211,21 @@ export class PrismaRepository implements Repository {
     await prisma().project.update({ where: { id: projectId }, data: colony });
   }
 
-  async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
+  async assistantMessages(
+    projectId: string,
+    { before, limit = MESSAGES_PAGE_LIMIT }: { before?: string; limit?: number } = {},
+  ): Promise<MessagePage<AssistantMessage>> {
     const rows = await prisma().assistantMessage.findMany({
       where: { projectId },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(before ? { cursor: { id: before }, skip: 1 } : {}),
     });
-    return rows.map(toAssistantMessage);
+    const page = rows.slice(0, limit);
+    return {
+      messages: page.reverse().map(toAssistantMessage),
+      earlierCursor: rows.length > limit ? page[0]!.id : null,
+    };
   }
 
   async pendingAssistantMessage(projectId: string, role?: "user" | "assistant"): Promise<AssistantMessage | null> {
@@ -2243,12 +2277,21 @@ export class PrismaRepository implements Repository {
     await prisma().assistantMessage.deleteMany({ where: { projectId } });
   }
 
-  async cardChatMessages(cardId: string): Promise<CardChatMessage[]> {
+  async cardChatMessages(
+    cardId: string,
+    { before, limit = MESSAGES_PAGE_LIMIT }: { before?: string; limit?: number } = {},
+  ): Promise<MessagePage<CardChatMessage>> {
     const rows = await prisma().cardChatMessage.findMany({
       where: { cardId },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(before ? { cursor: { id: before }, skip: 1 } : {}),
     });
-    return rows.map(toCardChatMessage);
+    const page = rows.slice(0, limit);
+    return {
+      messages: page.reverse().map(toCardChatMessage),
+      earlierCursor: rows.length > limit ? page[0]!.id : null,
+    };
   }
 
   async pendingCardChatMessage(cardId: string): Promise<CardChatMessage | null> {
@@ -2297,6 +2340,7 @@ export class PrismaRepository implements Repository {
   async pendingCardChatJobs(projectId: string): Promise<CardChatMessage[]> {
     const rows = await prisma().cardChatMessage.findMany({
       where: { projectId, status: "pending", runnerJob: { not: null } },
+      take: PENDING_MESSAGES_LIMIT,
     });
     return rows.map(toCardChatMessage);
   }
@@ -2304,6 +2348,7 @@ export class PrismaRepository implements Repository {
   async orphanedCardChats(projectId: string, olderThan: Date): Promise<CardChatMessage[]> {
     const rows = await prisma().cardChatMessage.findMany({
       where: { projectId, status: "pending", runnerJob: null, createdAt: { lt: olderThan } },
+      take: PENDING_MESSAGES_LIMIT,
     });
     return rows.map(toCardChatMessage);
   }
@@ -2311,6 +2356,7 @@ export class PrismaRepository implements Repository {
   async orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]> {
     const rows = await prisma().assistantMessage.findMany({
       where: { projectId, role: "assistant", status: "pending", runnerJob: null, createdAt: { lt: olderThan } },
+      take: PENDING_MESSAGES_LIMIT,
     });
     return rows.map(toAssistantMessage);
   }
@@ -2318,9 +2364,10 @@ export class PrismaRepository implements Repository {
   async auditsFor(projectId: string): Promise<AuditRecord[]> {
     const rows = await prisma().audit.findMany({
       where: { projectId },
-      orderBy: { startedAt: "asc" },
+      orderBy: { startedAt: "desc" },
+      take: AUDITS_LIMIT,
     });
-    return rows.map(toAuditRecord);
+    return rows.reverse().map(toAuditRecord);
   }
 
   async runningAuditJobs(projectId: string): Promise<AuditRecord[]> {
@@ -2335,7 +2382,7 @@ export class PrismaRepository implements Repository {
   async latestAudits(projectId: string): Promise<AuditRecord[]> {
     const db = prisma();
     const newest = (where: object) =>
-      db.audit.findMany({ where: { projectId, ...where }, orderBy: { startedAt: "desc" }, distinct: ["sentinel"] });
+      db.audit.findMany({ where: { projectId, ...where }, orderBy: { startedAt: "desc" }, distinct: ["sentinel"], take: AUDITS_LIMIT });
     const [any, done, calibrated, withEpic] = await Promise.all([
       newest({}),
       newest({ kind: "audit", status: "done" }),

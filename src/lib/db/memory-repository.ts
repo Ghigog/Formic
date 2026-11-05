@@ -45,7 +45,14 @@ import type {
   HostUsageCheck,
   Reservation,
 } from "./repository";
-import { EPIC_AUDITS_LIMIT } from "./repository";
+import {
+  EPIC_AUDITS_LIMIT,
+  AUDITS_LIMIT,
+  ARCHIVE_PAGE_LIMIT,
+  MESSAGES_PAGE_LIMIT,
+  type CardPage,
+  type MessagePage,
+} from "./repository";
 import { precisionChanges } from "./ticket-changes";
 import type {
   AgentPreset,
@@ -1006,21 +1013,27 @@ export class MemoryRepository implements Repository {
       .map((c) => c.key);
   }
 
-  async archivedTickets(projectId: string): Promise<BoardCard[]> {
+  async archivedTickets(projectId: string, page: { cursor?: string; limit?: number } = {}): Promise<CardPage> {
     const s = store();
-    return [...s.cards.values()]
+    return pageCards(
+      [...s.cards.values()]
       .filter(
         (c) =>
           c.kind === "ticket" && c.archived && !s.archivedWithEpic.has(c.id) && projectOf(s, c) === projectId && !isScout(s, c),
       )
-      .sort(byPosition);
+      .sort(byPosition),
+      page,
+    );
   }
 
-  async archivedEpics(projectId: string): Promise<BoardCard[]> {
+  async archivedEpics(projectId: string, page: { cursor?: string; limit?: number } = {}): Promise<CardPage> {
     const s = store();
-    return [...s.cards.values()]
-      .filter((c) => c.kind === "epic" && c.archived && projectOf(s, c) === projectId)
-      .sort(byPosition);
+    return pageCards(
+      [...s.cards.values()]
+        .filter((c) => c.kind === "epic" && c.archived && projectOf(s, c) === projectId)
+        .sort(byPosition),
+      page,
+    );
   }
 
   async archiveEpic(epicId: string): Promise<void> {
@@ -1866,6 +1879,7 @@ export class MemoryRepository implements Repository {
   async auditsFor(projectId: string): Promise<AuditRecord[]> {
     return store()
       .audits.filter((a) => a.projectId === projectId)
+      .slice(-AUDITS_LIMIT)
       .map((a) => ({ ...a, log: [...a.log], files: [...a.files] }));
   }
 
@@ -2144,8 +2158,11 @@ export class MemoryRepository implements Repository {
     if (project) project.autoMerge = autoMerge;
   }
 
-  async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
-    return store().assistant.filter((m) => m.projectId === projectId).map((m) => ({ ...m }));
+  async assistantMessages(
+    projectId: string,
+    page: { before?: string; limit?: number } = {},
+  ): Promise<MessagePage<AssistantMessage>> {
+    return pageMessages(store().assistant.filter((m) => m.projectId === projectId), page);
   }
 
   async pendingAssistantMessage(projectId: string, role?: "user" | "assistant"): Promise<AssistantMessage | null> {
@@ -2201,10 +2218,8 @@ export class MemoryRepository implements Repository {
     s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
   }
 
-  async cardChatMessages(cardId: string): Promise<CardChatMessage[]> {
-    return store()
-      .cardChat.filter((m) => m.cardId === cardId)
-      .map((m) => ({ ...m }));
+  async cardChatMessages(cardId: string, page: { before?: string; limit?: number } = {}): Promise<MessagePage<CardChatMessage>> {
+    return pageMessages(store().cardChat.filter((m) => m.cardId === cardId), page);
   }
 
   async pendingCardChatMessage(cardId: string): Promise<CardChatMessage | null> {
@@ -2374,4 +2389,22 @@ function publicPreset(row: AgentPreset & { apiKeyCipher: string | null }): Agent
 
 function inScope(ownerId: string | null, scope: OwnerScope): boolean {
   return ownerId === scope.ownerId || (scope.includeUnowned && ownerId === null);
+}
+
+/** The page of `cards` (already in order) after the cursor id; nextCursor is the last id on the page when more follow. */
+function pageCards(cards: BoardCard[], { cursor, limit = ARCHIVE_PAGE_LIMIT }: { cursor?: string; limit?: number }): CardPage {
+  const start = cursor ? cards.findIndex((c) => c.id === cursor) + 1 : 0;
+  const page = cards.slice(start, start + limit);
+  return { cards: page, nextCursor: start + limit < cards.length ? page[page.length - 1]!.id : null };
+}
+
+/** The newest `limit` of `all` (oldest first) ending before the message id `before`, copied. */
+function pageMessages<T extends { id: string }>(
+  all: T[],
+  { before, limit = MESSAGES_PAGE_LIMIT }: { before?: string; limit?: number },
+): MessagePage<T> {
+  const end = before ? Math.max(all.findIndex((m) => m.id === before), 0) : all.length;
+  const start = Math.max(end - limit, 0);
+  const page = all.slice(start, end);
+  return { messages: page.map((m) => ({ ...m })), earlierCursor: start > 0 ? page[0]!.id : null };
 }

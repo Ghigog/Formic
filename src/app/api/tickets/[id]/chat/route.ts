@@ -25,19 +25,19 @@ async function projectOwning(ticketId: string) {
 
 const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
 
-async function state(ticketId: string) {
-  return { messages: await repository().cardChatMessages(ticketId) };
+async function state(ticketId: string, before?: string) {
+  return await repository().cardChatMessages(ticketId, { before });
 }
 
 /** A ticket's chat with the Architect Agent, or whichever agent its column runs now. */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   const project = await projectOwning(id);
   if (!project) return notFound();
-  return Response.json(await state(id));
+  return Response.json(await state(id, req.nextUrl.searchParams.get("before") ?? undefined));
 }
 
 /** Asks the ticket's column agent something. The answer arrives on a later GET. */

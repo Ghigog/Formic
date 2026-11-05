@@ -480,7 +480,7 @@ async function reply(
       await finish(messageId, { content: "This card no longer exists.", status: "failed" });
       return "notice";
     }
-    const all = await repo.cardChatMessages(cardId);
+    const { messages: all } = await repo.cardChatMessages(cardId);
     const asked = all.filter((m) => m.role === "user").at(-1);
     if (!answered && isStalled(card.status) && !card.misplacedIn && asked && isGoAgain(asked.content)) {
       const done = await applyCardAction(projectId, cardKind, cardId, { type: "move", to: columnOf(card) });

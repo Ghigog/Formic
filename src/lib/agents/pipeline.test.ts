@@ -203,7 +203,7 @@ describe("applyPrd with the Product Agent's questions", () => {
     const after = await repository().cardById(epic.id);
     expect(after).toMatchObject({ status: "blocked", stalledIn: "backlog" });
     expect(classifyNotice(after!)).toMatchObject({ severity: "question", shortDescription: "Who rings it?" });
-    const said = await repository().cardChatMessages(epic.id);
+    const said = (await repository().cardChatMessages(epic.id)).messages;
     expect(said).toHaveLength(1);
     expect(said[0]).toMatchObject({ role: "assistant" });
     expect(said[0]!.content).toContain("Who rings it?");
@@ -213,7 +213,7 @@ describe("applyPrd with the Product Agent's questions", () => {
     // agent on the board, the question waits for the person.
     expect(deferred).toHaveLength(1);
     await (deferred[0] as () => Promise<void>)();
-    expect(await repository().assistantMessages(PROJECT)).toEqual([]);
+    expect((await repository().assistantMessages(PROJECT)).messages).toEqual([]);
   });
 });
 
@@ -287,7 +287,7 @@ describe("applyTickets on an Epic broken down again", () => {
 
     await applyTickets(PROJECT, epic!.id, [draft("T-1"), draft("T-2", ["T-1"])]);
 
-    const messages = await repository().cardChatMessages(epic!.id);
+    const messages = (await repository().cardChatMessages(epic!.id)).messages;
     const record = messages.find((m) => m.role === "assistant");
     expect(record?.status).toBe("done");
     expect(record?.content).toContain("Replaced EPIC-3-T1 (");
@@ -300,7 +300,7 @@ describe("applyTickets on an Epic broken down again", () => {
 
     await applyTickets(PROJECT, epic!.id, [draft("T-1")]);
 
-    expect(await repository().cardChatMessages(epic!.id)).toEqual([]);
+    expect((await repository().cardChatMessages(epic!.id)).messages).toEqual([]);
   });
 });
 

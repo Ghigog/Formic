@@ -62,6 +62,6 @@ async function postHandler(req: Request) {
 
   return Response.json({
     presetId: await assistantPick(project, user),
-    messages: await repo.assistantMessages(project.id),
+    ...(await repo.assistantMessages(project.id)),
   });
 }
