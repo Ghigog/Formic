@@ -567,6 +567,50 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.status).toBe("review");
   });
 
+  describe("with GitHub's reports switched on", () => {
+    beforeEach(() => {
+      vi.stubEnv("GITHUB_WEBHOOK_SECRET", "secret");
+      resetEnvCache();
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      resetEnvCache();
+    });
+
+    it("reviews a green head whose report never came, once however often it sweeps", async () => {
+      const reviewer = new StubReviewer();
+      useAgents(new StubCoder(writesInScope()), reviewer);
+      const ticket = await seedTicket();
+      const pull = await openPullRequestFor(ticket, true);
+      // CI finished while the Coder Agent still had the card, so its report
+      // was dropped: nothing else will start this review.
+      MockVcsClient.setChecks(pull.number, "success");
+
+      await sweepOpenPullRequests(PROJECT);
+      await until(
+        async () => (await repository().ticketDetail(ticket.id))!.status === "merged",
+        "the sweep to review and merge the unreviewed head",
+      );
+      resetPullRequestSweep();
+      await sweepOpenPullRequests(PROJECT);
+
+      expect(reviewer.reviews).toHaveLength(1);
+    });
+
+    it("starts no second review of a head a review was already handed", async () => {
+      const reviewer = new StubReviewer();
+      useAgents(new StubCoder(writesInScope()), reviewer);
+      const ticket = await seedTicket();
+      const pull = await openPullRequestFor(ticket, true);
+      await repository().updateTicket(ticket.id, { reviewedHead: pull.headSha });
+
+      await reviewPullRequest(PROJECT, pull.number, pull.headSha, { startReview: false, startUnreviewed: true });
+
+      expect(reviewer.reviews).toHaveLength(0);
+      expect((await repository().ticketDetail(ticket.id))!.attempts).toBe(0);
+    });
+  });
+
   it("resolves a conflict noticed when CI reports, too", async () => {
     const reviewer = new StubReviewer();
     useAgents(new StubCoder(writesInScope()), reviewer);

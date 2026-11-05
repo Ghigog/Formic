@@ -122,7 +122,7 @@ export async function reviewPullRequest(
   projectId: string,
   prNumber: number,
   headSha: string,
-  options: { startReview?: boolean } = {},
+  options: ReactOptions = {},
 ): Promise<void> {
   const repo = repository();
   const ticket = await repo.ticketByPrNumber(projectId, prNumber);
@@ -135,6 +135,29 @@ export async function reviewPullRequest(
 
   await inTicketLane(ticket.id, () =>
     withCardActor(ticket.id, () => react(projectId, ticket.id, prNumber, headSha, options)),
+  );
+}
+
+/**
+ * `startReview` is a report's ask. `startUnreviewed` is the sweep's: start a
+ * review only of a head that was never handed to one, for the card whose
+ * report went missing (it finished while the Coder Agent still had the card,
+ * say). Asked again every half-minute, it still starts at most one review per
+ * head, since a review records its head before it begins.
+ */
+type ReactOptions = { startReview?: boolean; startUnreviewed?: boolean };
+
+/**
+ * Whether no review has begun on, approved or pushed this head, and nothing
+ * parks the card for a person. Read under the ticket's lane, so a review a
+ * report started a moment ago counts.
+ */
+export function neverReviewed(ticket: TicketDetail, headSha: string): boolean {
+  return (
+    !ticket.runnerJob &&
+    ticket.blockedReason === null &&
+    ticket.reviewedHead !== headSha &&
+    ticket.reviewedSha !== headSha
   );
 }
 
@@ -166,17 +189,18 @@ async function react(
   ticketId: string,
   prNumber: number,
   headSha: string,
-  options: { startReview?: boolean } = {},
+  options: ReactOptions = {},
 ): Promise<void> {
-  // Only a report starts a review or announces a status change. The sweep
-  // runs over every card in In Review every half-minute, and a tick that
-  // found nothing new should invent neither a review nor a board event.
-  const startReview = options.startReview ?? true;
+  // Only a report announces a status change. The sweep runs over every card
+  // in In Review every half-minute, and a tick that found nothing new should
+  // invent no board event, nor a second review of a head already handed to one.
+  const announce = options.startReview ?? true;
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket || ticket.status === "merged") return;
   // Sent back: the Coder Agent has it, and its push is what gets reviewed.
   if (ticket.status === "running") return;
+  const startReview = announce || (options.startUnreviewed === true && neverReviewed(ticket, headSha));
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
@@ -218,7 +242,7 @@ async function react(
   const red = failing(checks);
 
   if (await ciPending(client, checks, pull.baseBranch)) {
-    if (startReview) {
+    if (announce) {
       await publish(projectId, {
         type: "ci.status",
         ticketId: ticket.id,
@@ -238,7 +262,7 @@ async function react(
     return;
   }
 
-  if (startReview) {
+  if (announce) {
     await publish(projectId, {
       type: "ci.status",
       ticketId: ticket.id,
@@ -467,9 +491,16 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
     // nothing either. Without this, a change the reviewer vouched for, with
     // green CI, waits on a report that is never coming. Finishing that is the
     // sweep's job. Starting a review is the report's — except when there is no
-    // webhook to deliver one, in which case the sweep starts it too.
+    // webhook to deliver one, in which case the sweep starts it too, and
+    // except for a head no review was ever handed: its report was dropped
+    // (it finished while the Coder Agent still had the card), and none other
+    // is coming, so the card would wait in review for good.
     launch(
-      () => reviewPullRequest(projectId, pull.number, pull.headSha, { startReview: !webhookConfigured }),
+      () =>
+        reviewPullRequest(projectId, pull.number, pull.headSha, {
+          startReview: !webhookConfigured,
+          startUnreviewed: true,
+        }),
       `the sweep of ${ticket.key}'s pull request`,
     );
   }
