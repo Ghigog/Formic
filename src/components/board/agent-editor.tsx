@@ -299,17 +299,19 @@ export function AgentEditor({
 
   return (
     <div
-      role="dialog"
-      aria-modal
-      aria-label={preset ? `Edit ${preset.name}` : "New agent"}
+      role="presentation"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       style={kb.backdrop}
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <AutoTour id="agent" />
       <form
+        role="dialog"
+        aria-modal
+        aria-label={preset ? `Edit ${preset.name}` : "New agent"}
         style={kb.panel}
-        onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
