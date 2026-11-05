@@ -29,14 +29,18 @@ import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
 import type { AssistantControls } from "./assistant";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
-import { ColonyTimeline } from "@/components/colony/timeline";
-import { SentinelsPage } from "@/components/sentinels/sentinels";
-import { UnlockAllDialog } from "@/components/sentinels/unlock-all-dialog";
+import {
+  LazyColonyTimeline,
+  LazyColonyToast,
+  LazyEpicWinDialog,
+  LazyRerouteToast,
+} from "@/components/colony/lazy";
+import { LazySentinelsPage, UnlockAllDialog } from "@/components/sentinels/lazy";
 import { featureUnlocked, scoreOf } from "@/lib/colony/game";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import type { SentinelStates } from "@/lib/sentinels/view";
 import { ColonyPopover, NestButton } from "@/components/colony/nest";
-import { ColonyToast, EpicWinDialog, RerouteToast, type RerouteNotice } from "@/components/colony/overlays";
+import type { RerouteNotice } from "@/components/colony/overlays";
 
 /**
  * Client shell: owns the live board state, the capture dialog and the ambient
@@ -346,14 +350,14 @@ export function BoardShell({
 
       <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
       <BoardTour projectId={projectId} tourSeen={tourSeen} />
-      <ColonyTimeline repoName={repoName} />
-      <SentinelsPage repoName={repoName} onOpenEpic={setOpenEpicId} />
+      <LazyColonyTimeline repoName={repoName} />
+      <LazySentinelsPage repoName={repoName} onOpenEpic={setOpenEpicId} />
       {projectId && <UnlockAllDialog projectId={projectId} unlockAll={unlockAllSentinels} />}
       <ColonyPopover onOpenArchive={() => setArchiveOpen(true)} />
       {archiveOpen && <ArchiveView onClose={() => setArchiveOpen(false)} onRestored={restore} />}
-      <ColonyToast />
-      <RerouteToast toast={rerouteToast} />
-      <EpicWinDialog onOpenEpic={(epic) => setOpenEpicId(epic.id)} />
+      <LazyColonyToast />
+      <LazyRerouteToast toast={rerouteToast} />
+      <LazyEpicWinDialog onOpenEpic={(epic) => setOpenEpicId(epic.id)} />
 
       {connection === "reconnecting" && (
         <div
