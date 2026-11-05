@@ -10,6 +10,7 @@ import {
   dropzone,
   gotoBoard,
   idForKey,
+  keyboardMoveCard,
   withCardReturned,
 } from "./board";
 
@@ -48,6 +49,32 @@ test("a drag moves the card and fires exactly one transition", async ({ page }) 
 
     // The transition is the app's only user-facing trigger. One move, one
     // event: every later ticket subscribes to this and nothing else.
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({
+      cardId: first,
+      from: "backlog",
+      to: "todo",
+      actor: "user",
+    });
+  });
+});
+
+test("a keyboard move fires exactly one transition", async ({ page }) => {
+  const [first] = await cardIds(page, "Backlog");
+  expect(first, "the demo board should start with a card in Backlog").toBeTruthy();
+
+  await withCardReturned(page, first!, async () => {
+    const posts: Array<Record<string, unknown>> = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url().includes("/api/transitions")) {
+        posts.push(JSON.parse(r.postData() ?? "{}"));
+      }
+    });
+
+    // Focus the card (it is its own drag handle), Space, ArrowRight, Space.
+    await keyboardMoveCard(page, first!, "To Do");
+
+    expect(await columnOf(page, first!)).toBe("To Do");
     expect(posts).toHaveLength(1);
     expect(posts[0]).toMatchObject({
       cardId: first,
