@@ -16,7 +16,7 @@ the design.
 
 ```
 --terracotta      #D96B27   accent: borders, epic chips, logo mark, drag handles
---terracotta-cta  #B5511A   filled buttons only (white label needs 4.5:1; #D96B27 gives 3.4:1)
+--terracotta-cta  #B5511A   filled buttons only (bg-cta, the only filled-button background) (white label needs 4.5:1; #D96B27 gives 3.4:1)
 --clay            #C27803   agent live: pulsing borders, progress fills, dependency trails
 --anthracite      #1C1917   primary text, terminal surface, ambient drawer, active tab
 --cream           #FBF9F5   page ground
@@ -159,7 +159,7 @@ menu rows, never a button. Label is 13px semibold (12px on Small, 14px on full-p
 
 ```
 variant            height        padding-x   fill / border
-Primary            40 (h-10)     14 (px-3.5) terracotta-cta, white label; no border
+Primary            40 (h-10)     14 (px-3.5) bg-cta, white label; no border
 Primary compact    36 (h-9)      14 (px-3.5) same, in dialogs, the tour and the calls form
 Secondary          40 / 36       14 (px-3.5) border-line, card or cream fill, ink label
 Dark               36 (h-9)      14 (px-3.5) anthracite fill, cream label (sentinels)
@@ -170,7 +170,7 @@ Text               36-40         4-8         no fill or border, muted label, ink
 Touch targets on mobile rise to 44px (`max-md:size-11` / `h-11`).
 
 **Focus ring.** One global rule in `globals.css`: `:focus-visible` draws a 2px solid outline in
-`var(--focus)` (terracotta-cta) with a 2px offset. Do not remove it with `outline-none` on a
+`var(--focus)` (bg-cta) with a 2px offset. Do not remove it with `outline-none` on a
 button; inputs swap it for a clay border on focus.
 
 **Octagonal coin badge.** Two nested elements, both clipped to the same chamfered octagon: outer

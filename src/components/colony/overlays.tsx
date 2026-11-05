@@ -243,7 +243,7 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
             <span className="text-muted font-mono text-[10px] tracking-[0.12em]">EPIC SCORE</span>
             <span
               ref={score}
-              className="text-terracotta-cta inline-block font-mono text-[26px] leading-none font-medium tabular-nums"
+              className="text-cta inline-block font-mono text-[26px] leading-none font-medium tabular-nums"
             >
               +{shown.total}
             </span>
@@ -261,7 +261,7 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
             ))}
             <li className="border-line mt-1 flex items-baseline gap-2 border-t pt-2 text-[12px]">
               <span className="text-ink flex-1 font-semibold">Epic bonus</span>
-              <span className="text-terracotta-cta shrink-0 font-mono tabular-nums">+{tally.bonus}</span>
+              <span className="text-cta shrink-0 font-mono tabular-nums">+{tally.bonus}</span>
             </li>
           </ul>
         </div>
@@ -304,7 +304,7 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
                 c.closeWin();
                 onOpenEpic(win.epic);
               }}
-              className="bg-terracotta-cta inline-flex h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-transform hover:-translate-y-px active:translate-y-px"
+              className="bg-cta inline-flex h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-transform hover:-translate-y-px active:translate-y-px"
             >
               Open Epic
             </button>

@@ -346,7 +346,7 @@ export function ProblemBadge({ card }: { card: BoardCard }) {
 export function NoticeIcon({ severity }: { severity: Notice["severity"] }) {
   if (severity === "question") {
     return (
-      <span role="img" aria-label="Question" className="text-terracotta-cta inline-flex size-4 shrink-0">
+      <span role="img" aria-label="Question" className="text-cta inline-flex size-4 shrink-0">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
           <path d="M3 2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7l-3.5 2.6V12H3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" fill="currentColor" />
           <text x="8" y="9.6" textAnchor="middle" fontSize="8" fontWeight="700" fill="var(--card)">?</text>
@@ -374,7 +374,7 @@ export function NoticeIcon({ severity }: { severity: Notice["severity"] }) {
 export const NOTICE_INK: Record<Notice["severity"], string> = {
   warning: "text-crimson",
   alert: "text-clay",
-  question: "text-terracotta-cta",
+  question: "text-cta",
 };
 
 /**
@@ -1321,7 +1321,7 @@ export const EpicGroup = memo(function EpicGroup({
                   colony?.sfx("click");
                   onShowcase(epic);
                 }}
-                className="bg-terracotta-cta inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+                className="bg-cta inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
               >
                 View showcase
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">

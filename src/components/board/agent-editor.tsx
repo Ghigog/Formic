@@ -609,7 +609,7 @@ export function AgentEditor({
             type="submit"
             disabled={busy}
             data-tour="agent-save"
-            className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="bg-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy ? "Saving…" : preset ? "Save" : "Create agent"}
           </button>
