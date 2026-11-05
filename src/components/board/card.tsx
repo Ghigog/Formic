@@ -1042,7 +1042,7 @@ export const KanbanCard = memo(function KanbanCard({
     <Draggable draggableId={card.id} index={index} isDragDisabled={pending}>
       {(provided, snapshot) => (
         // The drag handle: focusable, opens on Enter; Space lifts it for the keyboard drag.
-          // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
         <li
           ref={provided.innerRef}
           {...provided.draggableProps}
