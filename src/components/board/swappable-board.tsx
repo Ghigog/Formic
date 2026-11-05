@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AutoTour } from "@/components/onboarding/tour";
+import { takeNewBoard } from "@/components/onboarding/store";
 import { BoardShell } from "./board-shell";
 import type { Account } from "./account-menu";
 import { DigTransition, type DigTransitionHandle } from "./dig-transition";
@@ -29,6 +31,10 @@ export interface SwappableBoardProps {
 export function SwappableBoard({ account, projectId, board }: SwappableBoardProps) {
   const [current, setCurrent] = useState({ projectId, board });
   const [error, setError] = useState<string | null>(null);
+  const [newBoard, setNewBoard] = useState(false);
+  // Read after mount, not while rendering: the server has no localStorage to read.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => setNewBoard(takeNewBoard()), []);
   const streak = useRef<string[] | null>(null);
   const names = useRef(new Map<string, string>());
   const busy = useRef(false);
@@ -149,6 +155,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
       <DigTransition ref={dig} onSound={swapSfx}>
         <BoardShell key={current.projectId} account={account} {...current.board} />
       </DigTransition>
+      {newBoard && <AutoTour id="swap-intro" />}
       {error && (
         <div role="alert" className="pointer-events-none fixed top-[76px] right-0 left-0 z-[80] flex justify-center px-4">
           <div className="bg-anthracite text-on-anthracite rounded-full px-4 py-2.5 text-[12px] font-semibold shadow-lg">{error}</div>

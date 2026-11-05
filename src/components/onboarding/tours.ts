@@ -18,6 +18,8 @@ export interface TourStep {
   side: Side;
   title: string;
   text: string;
+  /** Said instead of `text` when the main pointer is coarse (a finger, not a mouse). */
+  touchText?: string;
   /** The Next button's label. Defaults to "Next", or "Done" on the last step. */
   next?: string;
   /**
@@ -59,7 +61,8 @@ export type TourId =
   | "sentinels-intro"
   | "timeline-intro"
   | "calls-intro"
-  | "kpis-intro";
+  | "kpis-intro"
+  | "swap-intro";
 
 export const TOURS: Record<TourId, TourDef> = {
   login: {
@@ -180,6 +183,21 @@ export const TOURS: Record<TourId, TourDef> = {
         side: "below",
         title: "Calls",
         text: "Calls! Talk to your agents out loud, and they talk back. Tap here to start one.",
+      },
+    ],
+  },
+
+  "swap-intro": {
+    id: "swap-intro",
+    endInNest: true,
+    steps: [
+      {
+        target: "column",
+        side: "inside",
+        title: "Switch boards",
+        next: "Got it",
+        text: "Hold the right mouse button and drag up to dig down to your next board. Drag down to come back up.",
+        touchText: "Swipe up with three fingers to dig down to your next board. Swipe down to come back up.",
       },
     ],
   },
@@ -375,3 +393,9 @@ export const TOURS: Record<TourId, TourDef> = {
     ],
   },
 };
+
+/** The line a step says: its touch line when the main pointer is coarse and it has one. */
+export function stepText(step: TourStep): string {
+  const coarse = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  return (coarse && step.touchText) || step.text;
+}

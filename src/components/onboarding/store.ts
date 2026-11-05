@@ -12,6 +12,7 @@ import type { TourId } from "./tours";
 const SEEN_KEY = "formic:tours:seen";
 const VOICE_KEY = "formic:tours:voice";
 const REPLAY_KEY = "formic:tours:replay";
+const NEW_BOARD_KEY = "formic:tours:new-board";
 
 const listeners = new Set<() => void>();
 let active: TourId | null = null;
@@ -97,6 +98,26 @@ export function replayTours(): boolean {
   if (!document.querySelector('[data-tour~="column"]')) return false;
   startTour("board");
   return true;
+}
+
+/** A board was just created: the next board page offers the board-switching tip. */
+export function noteNewBoard() {
+  try {
+    window.localStorage.setItem(NEW_BOARD_KEY, "1");
+  } catch {
+    // Without storage the tip is just not offered.
+  }
+}
+
+/** The board page takes the note once, on mount. */
+export function takeNewBoard(): boolean {
+  try {
+    if (window.localStorage.getItem(NEW_BOARD_KEY) !== "1") return false;
+    window.localStorage.removeItem(NEW_BOARD_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function activeTour(): TourId | null {

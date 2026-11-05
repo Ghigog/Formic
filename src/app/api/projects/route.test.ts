@@ -138,6 +138,11 @@ describe("POST /api/projects", () => {
     expect(cards.find((c) => c.title.includes("DESIGN.md"))).toMatchObject({ status: "blocked", stalledIn: "todo" });
   });
 
+  it("says created for a new board, and not for one that already exists", async () => {
+    expect(((await (await post({ repoFullName: "acme/gizmo" })).json()) as { created: boolean }).created).toBe(true);
+    expect(((await (await post({ repoFullName: "acme/gizmo" })).json()) as { created: boolean }).created).toBe(false);
+  });
+
   it("reuses the project on a second request without setting it up again", async () => {
     const first = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };
     const second = (await (await post({ repoFullName: "acme/widgets" })).json()) as { project: { id: string } };

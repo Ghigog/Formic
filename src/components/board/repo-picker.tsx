@@ -2,6 +2,7 @@
 
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { noteNewBoard } from "@/components/onboarding/store";
 import { cn } from "@/components/ui/cn";
 import { gradeText } from "@/lib/sentinels/grade";
 import {
@@ -189,6 +190,8 @@ export function RepoPicker({
       return;
     }
     if (project) markSeen(project);
+    const data = (await res.json().catch(() => null)) as { created?: boolean } | null;
+    if (data?.created) noteNewBoard();
     window.location.reload();
   }
 

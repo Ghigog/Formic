@@ -109,6 +109,8 @@ export async function POST(req: NextRequest) {
 
   const repo = repository();
   let project;
+  // Whether this call made a new board, so the page can teach the board switch.
+  let created = false;
   if ("projectId" in parsed.data) {
     project = await repo.projectById(parsed.data.projectId);
     if (!project || !(await canSeeBoard(user, project))) {
@@ -121,6 +123,7 @@ export async function POST(req: NextRequest) {
   } else if ("noRepository" in parsed.data) {
     // A board of cards and levels: no repository to reach, no setup run, and
     // no AGENTS.md ticket, since no agent will read it.
+    created = true;
     project = await repo.ensureProject({
       ownerId: user.id,
       repoFullName: null,
@@ -180,13 +183,14 @@ export async function POST(req: NextRequest) {
     // tour promises. Cards cost nothing; the setup run waits for the first
     // agent (see agents/columns/[column]/route.ts).
     if (!existed) {
+      created = true;
       await addOnboardingTicket(project.id);
       await addDesignTicket(project.id);
     }
   }
 
   await repo.markOpened(user.id, project.id);
-  const res = Response.json({ project });
+  const res = Response.json({ project, created });
   res.headers.append(
     "Set-Cookie",
     cookieHeader(PROJECT_COOKIE, encodeURIComponent(project.id), 31536000),
