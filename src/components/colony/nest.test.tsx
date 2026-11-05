@@ -60,6 +60,27 @@ describe("ColonyPopover progress bar", () => {
   });
 });
 
+describe("ColonyPopover nest tile labels", () => {
+  it("wrap inside their tiles: no nowrap or truncate, words break", () => {
+    openPopoverAt(33 * XP_PER_LEVEL);
+    const labels = [
+      screen.getByRole("button", { name: "Use Bumblebee bugs" }).querySelectorAll("span"),
+      screen.getAllByRole("button", { name: /^Use .* bugs$/ }).flatMap((b) => [...b.querySelectorAll("span")]),
+    ]
+      .flatMap((l) => [...l])
+      .filter((el) => el.textContent && el.children.length === 0);
+    expect(labels.length).toBeGreaterThan(10);
+    for (const el of labels) {
+      expect(el.className).toContain("break-words");
+      expect(el.className).toContain("min-w-0");
+      expect(el.className).not.toMatch(/whitespace-nowrap|truncate|overflow-hidden/);
+    }
+    const bumblebee = screen.getByText("Bumblebee");
+    expect(bumblebee.className).toContain("text-center");
+    expect(bumblebee.className).toContain("leading-tight");
+  });
+});
+
 describe("ColonyPopover Archived", () => {
   it("closes the popover and opens the Archived view", () => {
     const onOpenArchive = vi.fn();
