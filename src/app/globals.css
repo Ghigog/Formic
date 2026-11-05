@@ -1414,3 +1414,159 @@
     }
   }
 }
+
+/*
+ * FeatureReveal (src/components/colony/feature-reveal.tsx): a header button
+ * arriving. The header clears a space (220ms), then the button rises (460ms)
+ * with a clay ring, a burst and a short glow. Reduced motion only fades (150ms).
+ */
+@keyframes featureSpace {
+  from {
+    max-width: 0;
+    margin-inline: 0;
+  }
+  to {
+    max-width: 14rem;
+  }
+}
+@keyframes featureRise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes featureRing {
+  from {
+    opacity: 0.9;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+@keyframes featureBurst {
+  from {
+    opacity: 1;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+@keyframes featureGlow {
+  from,
+  to {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  40% {
+    box-shadow: 0 0 14px 3px var(--clay-lit);
+  }
+}
+@keyframes featureFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.feature-reveal {
+  position: relative;
+  display: inline-flex;
+  overflow: visible;
+}
+.feature-reveal[data-phase="space"] {
+  overflow: hidden;
+  animation: featureSpace 220ms ease-out both;
+}
+.feature-reveal[data-phase="space"] > .feature-reveal-body {
+  opacity: 0;
+}
+.feature-reveal[data-phase="rise"] > .feature-reveal-body {
+  animation:
+    featureRise 460ms ease-out both,
+    featureGlow 460ms ease-out both;
+  border-radius: inherit;
+}
+.feature-reveal[data-phase="fade"] > .feature-reveal-body {
+  animation: featureFade 150ms ease-out both;
+}
+.feature-reveal-ring,
+.feature-reveal-burst {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  opacity: 0;
+}
+.feature-reveal-ring {
+  border: 2px solid var(--clay);
+}
+.feature-reveal-burst {
+  background: radial-gradient(circle, var(--clay-lit) 0%, transparent 65%);
+}
+.feature-reveal[data-phase="rise"] > .feature-reveal-ring {
+  animation: featureRing 460ms ease-out both;
+}
+.feature-reveal[data-phase="rise"] > .feature-reveal-burst {
+  animation: featureBurst 360ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-reveal[data-phase="space"],
+  .feature-reveal[data-phase="rise"] > .feature-reveal-body,
+  .feature-reveal[data-phase="rise"] > .feature-reveal-ring,
+  .feature-reveal[data-phase="rise"] > .feature-reveal-burst {
+    animation: none;
+  }
+  .feature-reveal-ring,
+  .feature-reveal-burst {
+    display: none;
+  }
+  @keyframes featureSpace {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes featureRise {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes featureRing {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  @keyframes featureBurst {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+  /* The one that stays: a reduced-motion reveal still fades in. */
+  @keyframes featureFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes featureGlow {
+    from,
+    to {
+      animation-timing-function: linear;
+    }
+  }
+}
