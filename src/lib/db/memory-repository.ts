@@ -828,8 +828,8 @@ export class MemoryRepository implements Repository {
 
   async recordErrorOccurrence(windowStart: Date): Promise<number> {
     const s = store();
-    s.errorTimes = s.errorTimes.filter((t) => t >= windowStart.getTime());
     s.errorTimes.push(Date.now());
+    s.errorTimes = s.errorTimes.filter((t) => t >= windowStart.getTime());
     return s.errorTimes.length;
   }
 

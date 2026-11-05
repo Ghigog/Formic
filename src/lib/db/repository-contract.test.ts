@@ -1591,7 +1591,9 @@ function contract(name: string, make: () => Repository) {
         const before = new Date(Date.now() - 1000);
         expect(await repo.recordErrorOccurrence(before)).toBe(1);
         expect(await repo.recordErrorOccurrence(before)).toBe(2);
-        expect(await repo.recordErrorOccurrence(new Date(Date.now() + 60_000))).toBe(1);
+        // A window that starts after every row forgets them all, the new one included.
+        expect(await repo.recordErrorOccurrence(new Date(Date.now() + 60_000))).toBe(0);
+        expect(await repo.recordErrorOccurrence(before)).toBe(1);
       });
 
       it("gives a lease to one holder at a time, and to the next once it lapses or is let go", async () => {
