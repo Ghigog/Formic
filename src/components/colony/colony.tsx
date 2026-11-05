@@ -42,7 +42,7 @@ import { flyHome, ghostOf, ghostRect, groupOf, type Ghost } from "./epic-flight"
 import { SoundEngine, type Sfx } from "./sound";
 import { DEFAULTS, useHydrated, useSaved, useSound } from "./store";
 import { REVEAL_RISE_MS, REVEAL_SPACE_MS } from "./feature-reveal";
-import { activeTour, offerTour, useActiveTour } from "@/components/onboarding/store";
+import { activeTour, hasSeen, offerTour, replayPending, takeReplay, useActiveTour } from "@/components/onboarding/store";
 import type { TourId } from "@/components/onboarding/tours";
 
 /**
@@ -341,6 +341,14 @@ export function ColonyProvider({
   const settleReveal = useCallback(() => setRevealPhase("tour"), []);
 
   /* eslint-disable react-hooks/set-state-in-effect -- the queue is stepped by effects: each step waits on the one before */
+  // "Show tours again": once the board tour is over, every feature this board
+  // has unlocked is hidden, revealed and toured again, in level order.
+  useEffect(() => {
+    if (!loaded || tourActive !== null || !replayPending() || !hasSeen("board")) return;
+    takeReplay();
+    enqueueReveals(FEATURE_UNLOCKS.filter((f) => featureUnlockedAt(f.key, score.level)).map((f) => f.key));
+  }, [loaded, tourActive, score.level, enqueueReveals]);
+
   useEffect(() => {
     if (pillUp || revealing || !queue.length) return;
     const [next, ...rest] = queue;

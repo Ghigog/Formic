@@ -95,7 +95,7 @@ export function AccountMenu({ account }: { account: Account }) {
               if (replayTours()) e.preventDefault();
             }}
           >
-            Replay the tour
+            Show tours again
           </Link>
           <a role="menuitem" href={`mailto:${SUPPORT_EMAIL}`} className={item}>
             Contact support
