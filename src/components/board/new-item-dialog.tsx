@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useDraft } from "./use-draft";
+import { useRestoreFocus } from "@/lib/hooks/use-restore-focus";
 import { AttachmentPicker, pastedFileName } from "./attachment-picker";
 
 /** Which column's capture dialog this is: swaps its copy and submit target. */
@@ -74,6 +75,8 @@ export function NewItemDialog({
       setRequestId(crypto.randomUUID());
     }
   }
+
+  useRestoreFocus(open);
 
   useEffect(() => {
     // Focus after the dialog paints, or the caret lands nowhere.
