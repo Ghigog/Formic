@@ -35,6 +35,9 @@ let controls: {
   openCall: ReturnType<typeof vi.fn>;
 };
 
+/** What the chat holds once it loads, which happens after the call has started. */
+let history: AssistantMessageView[] = [];
+
 function MeetingButton() {
   const call = useCall();
   return (
@@ -63,7 +66,12 @@ function Harness({
   useEffect(() => {
     controls = { push: setMessages, ask, decide, openCall };
   }, [ask, decide, openCall]);
+  const load = async () => {
+    setMessages(history);
+    return history;
+  };
   const a: AssistantControls = {
+    load,
     open: isOpen,
     setOpen,
     presetId: null,
@@ -91,6 +99,7 @@ function Harness({
 }
 
 beforeEach(() => {
+  history = [];
   Element.prototype.scrollTo = vi.fn();
 });
 afterEach(() => silenceMutter(false));
@@ -277,5 +286,44 @@ describe("a call on the PM chat", () => {
     await userEvent.click(screen.getByRole("button", { name: "Call the Reviewer" }));
     expect(engine.live).toBe(true);
     expect(screen.getByTestId("call-guest-reviewer")).toBeInTheDocument();
+  });
+
+  it("does not read old replies that load after the call starts; the first thing spoken is the answer to the greeting", async () => {
+    history = [
+      msg("u0", "user", "Earlier question"),
+      msg("a0", "assistant", "An old PM reply."),
+      { ...msg("a1", "assistant", "An old architect reply."), speaker: "architect" },
+    ];
+    const engine = new FakeEngine();
+    render(<Harness engine={engine} />);
+    await userEvent.click(screen.getByRole("button", { name: "Call the Reviewer" }));
+    expect(controls.ask).toHaveBeenCalledWith("Hello!", ["reviewer"]);
+    act(() =>
+      controls.push([
+        ...history,
+        msg("u1", "user", "Hello!"),
+        { ...msg("a2", "assistant", "Hi, I am the reviewer."), speaker: "reviewer" },
+      ]),
+    );
+    expect(engine.spoken.some((t) => t.includes("old"))).toBe(false);
+    expect(engine.spoken.at(-1)).toBe("Hi, I am the reviewer.");
+  });
+
+  it("reads a failed reply to a turn of this call as the guest's couldn't answer", async () => {
+    const engine = new FakeEngine();
+    render(<Harness engine={engine} />);
+    await userEvent.click(screen.getByRole("button", { name: "Call the Reviewer" }));
+    await act(async () => engine.say("Is it ready?"));
+    act(() =>
+      controls.push([
+        msg("u0", "user", "Is it ready?"),
+        {
+          ...msg("a1", "assistant", "This agent runs out of time.", "done"),
+          status: "failed",
+          speaker: "reviewer",
+        },
+      ]),
+    );
+    expect(engine.spoken.at(-1)).toBe("Reviewer couldn't answer: This agent runs out of time.");
   });
 });

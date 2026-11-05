@@ -14,7 +14,7 @@ import {
 import { useColony } from "@/components/colony/colony";
 import { silenceMutter } from "@/components/onboarding/voice";
 import type { AssistantControls } from "@/components/board/assistant";
-import { guestOptions, type GuestId } from "@/lib/meetings/guests";
+import { guestLabel, guestOptions, type GuestId } from "@/lib/meetings/guests";
 import { detectAddGuest, HELLO_ASK, isHelloEveryone, resolveAddressee } from "@/components/call/routing";
 import { mergeHint, spokenDecision } from "@/components/call/approvals";
 import { createBrowserEngine, type CallEngine } from "@/lib/voice/engine";
@@ -161,6 +161,8 @@ export function CallProvider({
   const asked = useRef(false);
   const lookingSaid = useRef(false);
   const utterance = useRef(0);
+  /** Counts calls started and ended, so a late history load never opens a call that is over. */
+  const callId = useRef(0);
 
   const say = useCallback(
     (text: string, who: GuestId | null = null) => {
@@ -262,8 +264,13 @@ export function CallProvider({
     if (!next || next.status === "pending") return;
     spoken.current.add(next.id);
     // Until the person has spoken, what arrives is the chat's history loading.
-    if (!asked.current || next.status !== "done") return;
+    if (!asked.current) return;
     const who = (next.speaker as GuestId | undefined) ?? "assistant";
+    // A reply that failed is told, so the person knows they were heard.
+    if (next.status === "failed") {
+      say(`${guestLabel(who)} couldn't answer: ${plain(next.content)}`, who);
+      return;
+    }
     const waiting = undecided([next]);
     say(
       waiting
@@ -283,17 +290,25 @@ export function CallProvider({
     guestsRef.current = ["assistant", ...others];
     setGuests(guestsRef.current);
     lastSpeaker.current = first;
-    // The opener is the PM's own reply, read aloud like any other.
-    asked.current = !!first || !!meeting || !!a.current.openCall;
+    // The chat's history may not be loaded yet: nothing is read aloud until it is.
+    asked.current = false;
+    const mine = ++callId.current;
     lookingSaid.current = false;
     setQueue([]);
     setMutedState(false);
     setStartedAt(Date.now());
     setLive(true);
     a.current.setOpen(true);
-    if (meeting) void a.current.openCall?.(meeting.id);
-    else if (first) void a.current.ask("Hello!", [first]);
-    else void a.current.openCall?.();
+    void (async () => {
+      const history = a.current.load ? await a.current.load() : a.current.messages;
+      if (callId.current !== mine) return;
+      for (const m of history) spoken.current.add(m.id);
+      // The opener is the PM's own reply, read aloud like any other.
+      asked.current = !!first || !!meeting || !!a.current.openCall;
+      if (meeting) await a.current.openCall?.(meeting.id);
+      else if (first) await a.current.ask("Hello!", [first]);
+      else await a.current.openCall?.();
+    })();
   }, [engine, live]);
   const start = useCallback((guest?: GuestId) => begin(guest), [begin]);
   const startMeeting = useCallback((meeting: { id: string; guests: GuestId[] }) => begin(undefined, meeting), [begin]);
@@ -302,6 +317,7 @@ export function CallProvider({
     if (!live) return;
     engine?.stop();
     silenceMutter(false);
+    callId.current++;
     setLive(false);
     setSpeaking(false);
     setQueue([]);
