@@ -38,7 +38,7 @@ import { sentinelStates, type OpenEpics, type SentinelStates, type Shipped } fro
 
 export async function sentinelsFor(projectId: string): Promise<SentinelStates> {
   const repo = repository();
-  const [audits, shipped] = await Promise.all([repo.auditsFor(projectId), shippedTickets(projectId)]);
+  const [audits, shipped] = await Promise.all([repo.latestAudits(projectId), shippedTickets(projectId)]);
   const epicIds = [...new Set(audits.map((a) => a.epicId).filter((id): id is string => !!id))];
   const openEpics: OpenEpics = {};
   await Promise.all(

@@ -1,7 +1,7 @@
 "use client";
 
 import { ONBOARDING_TICKET_TITLE } from "@/lib/board/onboarding-ticket";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, memo, useContext, useEffect, useRef, useState } from "react";
 import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
@@ -1016,23 +1016,28 @@ export function CardBody({
  * A top-level board card. Everything that is not an epic accordion — see
  * EpicGroup below — renders through here.
  */
-export function KanbanCard({
+export const KanbanCard = memo(function KanbanCard({
   card,
   column,
   index,
   extras,
   onOpen,
+  pending: pendingProp,
+  exit: exitProp,
 }: {
   card: BoardCard;
   column: ColumnId;
   index: number;
   extras: ExtrasMap;
   onOpen: (card: BoardCard) => void;
+  /** Passed by the column so a change to another card's state skips this one; else read from the env. */
+  pending?: boolean;
+  exit?: "forward" | "back" | null;
 }) {
   const env = useContext(CardEnvContext);
   const leaving = env?.leaving;
-  const exit = leaving?.id === card.id ? leaving.direction : null;
-  const pending = !!env?.pending?.has(card.id);
+  const exit = exitProp !== undefined ? exitProp : leaving?.id === card.id ? leaving.direction : null;
+  const pending = pendingProp ?? !!env?.pending?.has(card.id);
   return (
     <Draggable draggableId={card.id} index={index} isDragDisabled={pending}>
       {(provided, snapshot) => (
@@ -1075,7 +1080,15 @@ export function KanbanCard({
       )}
     </Draggable>
   );
-}
+}, (a, b) =>
+  a.card === b.card &&
+  a.column === b.column &&
+  a.index === b.index &&
+  a.onOpen === b.onOpen &&
+  a.pending === b.pending &&
+  a.exit === b.exit &&
+  // Only this card's own extras: the map is a new object whenever any card's changes.
+  a.extras[a.card.id] === b.extras[b.card.id]);
 
 /* -------------------------------------------------------------------------
  * Epic groups: the To Do DAG accordion and the Done merged group
@@ -1197,7 +1210,7 @@ function ChevronUp({ collapsed }: { collapsed: boolean }) {
  * they run contiguously through the group — so a ticket can still be pulled
  * out of its epic and dropped in the next column.
  */
-export function EpicGroup({
+export const EpicGroup = memo(function EpicGroup({
   epic,
   tickets,
   column,
@@ -1207,6 +1220,7 @@ export function EpicGroup({
   onToggle,
   onOpen,
   onShowcase,
+  pending: pendingProp,
 }: {
   epic: BoardCard;
   /** The epic's own tickets in this column, in render order. */
@@ -1219,11 +1233,14 @@ export function EpicGroup({
   onToggle: () => void;
   onOpen: (card: BoardCard) => void;
   onShowcase?: (epic: BoardCard) => void;
+  /** Passed by the column; the group redraws only when one of its own cards enters or leaves it. Else read from the env. */
+  pending?: ReadonlySet<string>;
 }) {
   const own = extras[epic.id] ?? {};
   const done = column === "done";
   const colony = useColony();
-  const pending = useContext(CardEnvContext)?.pending;
+  const envPending = useContext(CardEnvContext)?.pending;
+  const pending = pendingProp ?? envPending;
 
   return (
     // Never shrunk to fit: a full column scrolls instead. Without this an
@@ -1373,4 +1390,23 @@ export function EpicGroup({
       )}
     </li>
   );
-}
+}, (a, b) => {
+  if (
+    a.epic !== b.epic ||
+    a.column !== b.column ||
+    a.index !== b.index ||
+    a.collapsed !== b.collapsed ||
+    a.onOpen !== b.onOpen ||
+    a.onShowcase !== b.onShowcase ||
+    a.tickets.length !== b.tickets.length
+    // onToggle is left out: the column builds it fresh each render, and it only
+    // ever toggles this epic's id.
+  ) {
+    return false;
+  }
+  const same = (x: BoardCard, y: BoardCard) =>
+    x === y &&
+    a.extras[x.id] === b.extras[y.id] &&
+    !!a.pending?.has(x.id) === !!b.pending?.has(y.id);
+  return same(a.epic, b.epic) && a.tickets.every((t, i) => same(t, b.tickets[i]!));
+});

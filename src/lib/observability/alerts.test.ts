@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sendAlert } from "./alerts";
+import { ALERT_TIMEOUT_MS, sendAlert } from "./alerts";
 import { resetEnvCache } from "@/lib/secrets/env";
 
 afterEach(() => {
@@ -51,5 +51,33 @@ describe("sendAlert", () => {
 
     await expect(sendAlert("oops")).resolves.toBeUndefined();
     expect(error).toHaveBeenCalled();
+  });
+
+  it("gives up on a webhook that never responds and logs the alert", async () => {
+    vi.stubEnv("ALERT_WEBHOOK_URL", "https://hooks.example.com/incoming");
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    // Only rejects when its signal aborts, like a real hung connection.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_, reject) => {
+            init.signal!.addEventListener("abort", () => reject(init.signal!.reason));
+          }),
+      ),
+    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Real 5s timer is shortened so the test stays fast.
+    timeout.mockImplementation((ms) => {
+      expect(ms).toBe(ALERT_TIMEOUT_MS);
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), 0);
+      return controller.signal;
+    });
+
+    await expect(sendAlert("db is down")).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledWith(
+      "[formic] alert webhook timed out after 5s -- alert was: db is down",
+    );
   });
 });

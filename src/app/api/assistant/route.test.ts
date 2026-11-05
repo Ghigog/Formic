@@ -4,6 +4,7 @@ const { repo, currentUser, activeProject, launch, answer, cancelPending, collect
   repo: {
     assistantAgent: vi.fn(),
     assistantMessages: vi.fn(),
+    pendingAssistantMessage: vi.fn(),
     addAssistantMessage: vi.fn(),
     clearAssistant: vi.fn(),
   },
@@ -43,6 +44,7 @@ beforeEach(() => {
   collectCliRuns.mockResolvedValue(undefined);
   repo.assistantAgent.mockResolvedValue("preset-1");
   repo.assistantMessages.mockResolvedValue([]);
+  repo.pendingAssistantMessage.mockResolvedValue(null);
   repo.addAssistantMessage.mockResolvedValue({ id: "m-2" });
 });
 
@@ -105,7 +107,7 @@ describe("POST /api/assistant", () => {
   });
 
   it("accepts a message while a reply is pending, and queues its reply without starting it", async () => {
-    repo.assistantMessages.mockResolvedValue([{ id: "m-1", status: "pending" }]);
+    repo.pendingAssistantMessage.mockResolvedValue({ id: "m-1", status: "pending" });
     const res = await ask({ text: "and this" });
     expect(res.status).toBe(200);
     expect(repo.addAssistantMessage).toHaveBeenCalledTimes(2);

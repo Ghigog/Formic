@@ -286,6 +286,22 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.epicDetail(epic.id))?.rawRequest).toBe("Do E");
       });
 
+      it("stores every dependency edge of a batch whose dependent is listed first", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "Do E", position: 1 });
+        const [c, a, b] = await repo.createTickets([
+          ticket(epic.id, "T-3", { position: 3, dependsOnKeys: ["T-1", "T-2"] }),
+          ticket(epic.id, "T-1", { position: 1 }),
+          ticket(epic.id, "T-2", { position: 2 }),
+        ]);
+
+        expect([c!.key, a!.key, b!.key]).toEqual(["T-3", "T-1", "T-2"]);
+        expect([c!.status, a!.status, b!.status]).toEqual(["waiting", "ready", "ready"]);
+        expect([...c!.dependsOn].sort()).toEqual([a!.id, b!.id].sort());
+        const stored = (await repo.boardCards(p.id)).find((card) => card.id === c!.id);
+        expect([...(stored?.dependsOn ?? [])].sort()).toEqual([a!.id, b!.id].sort());
+      });
+
       it("updates a ticket's story points", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
@@ -925,6 +941,34 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.cardChatMessages(epic.id)).toEqual([]);
       });
 
+      it("finds the one pending card chat message and the one pending assistant message", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const chat = { projectId: p.id, cardKind: "epic" as const, cardId: epic.id };
+        expect(await repo.pendingCardChatMessage(epic.id)).toBeNull();
+        await repo.addCardChatMessage({ ...chat, role: "user", content: "why?" });
+        const pending = await repo.addCardChatMessage({ ...chat, role: "assistant", content: "", status: "pending" });
+        expect((await repo.pendingCardChatMessage(epic.id))?.id).toBe(pending.id);
+
+        const ask = { projectId: p.id, role: "assistant" as const, content: "", status: "pending" as const };
+        expect(await repo.pendingAssistantMessage(p.id)).toBeNull();
+        const first = await repo.addAssistantMessage(ask);
+        await repo.addAssistantMessage(ask);
+        expect((await repo.pendingAssistantMessage(p.id))?.id).toBe(first.id);
+        expect((await repo.pendingAssistantMessage(p.id, "assistant"))?.id).toBe(first.id);
+        expect(await repo.pendingAssistantMessage(p.id, "user")).toBeNull();
+      });
+
+      it("finds the newest assistant answer that is not pending", async () => {
+        const p = await project();
+        expect(await repo.lastAssistantAnswer(p.id)).toBeNull();
+        await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "one" });
+        const two = await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "two" });
+        await repo.addAssistantMessage({ projectId: p.id, role: "user", content: "q" });
+        await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "", status: "pending" });
+        expect((await repo.lastAssistantAnswer(p.id))?.id).toBe(two.id);
+      });
+
       it("keeps what an answer spent on the message it landed on", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
@@ -976,6 +1020,36 @@ function contract(name: string, make: () => Repository) {
 
     describe("audits", () => {
       const report = { likes: [{ text: "Good", ref: "a.ts" }], dislikes: [], wrong: [], missing: [] };
+
+      it("lists only the running audits that wait on a job", async () => {
+        const p = await project();
+        const withJob = await repo.startAudit(p.id, "secops");
+        await repo.setAuditJob(withJob.id, "job-1", "claude");
+        await repo.startAudit(p.id, "qa");
+        const finished = await repo.startAudit(p.id, "perf");
+        await repo.setAuditJob(finished.id, "job-2", "claude");
+        await repo.finishAudit(finished.id, { status: "failed", error: "x" });
+        expect((await repo.runningAuditJobs(p.id)).map((a) => a.id)).toEqual([withJob.id]);
+      });
+
+      it("reads the audits the sentinels need: newest, newest done, newest calibration, Epic reports", async () => {
+        const p = await project();
+        const rubric = { checks: [] } as never;
+        const done = await repo.startAudit(p.id, "secops");
+        await repo.finishAudit(done.id, { status: "done", stars: 4, quote: "q", summary: "s", report, files: [] });
+        await repo.markAuditEpic(done.id, "epic-1");
+        const cal = await repo.startAudit(p.id, "secops", "calibrate", rubric);
+        await repo.finishAudit(cal.id, { status: "done", quote: "q", summary: "s", files: [] });
+        const failed = await repo.startAudit(p.id, "secops");
+        await repo.finishAudit(failed.id, { status: "failed", error: "boom" });
+        const other = await repo.startAudit(p.id, "qa");
+        const ids = (await repo.latestAudits(p.id)).map((a) => a.id);
+        expect(ids).toEqual(expect.arrayContaining([done.id, failed.id, other.id]));
+        expect(ids.filter((id) => id === failed.id)).toHaveLength(1);
+        expect((await repo.latestAudits(p.id))[0]!.startedAt.getTime()).toBeLessThanOrEqual(
+          (await repo.latestAudits(p.id)).at(-1)!.startedAt.getTime(),
+        );
+      });
 
       it("journals a run, then keeps only the newest report per sentinel", async () => {
         const p = await project();
@@ -1257,6 +1331,20 @@ function contract(name: string, make: () => Repository) {
         const board = (await repo.boardCards(p.id)).map((c) => c.id);
         expect(board).toContain(b!.id);
         expect(board).not.toContain(a!.id);
+      });
+
+      it("lists the keys of one Epic's archived tickets", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const other = await repo.createEpic({ projectId: p.id, title: "F", rawRequest: "F", position: 2 });
+        const [a, , c] = await repo.createTickets([
+          ticket(epic.id, "A-1"),
+          ticket(epic.id, "A-2", { position: 2 }),
+          ticket(other.id, "B-1", { position: 3 }),
+        ]);
+        await repo.updateTicket(a!.id, { archived: true });
+        await repo.updateTicket(c!.id, { archived: true });
+        expect(await repo.archivedTicketKeys(epic.id)).toEqual([a!.key]);
       });
 
       it("archives an Epic with its tickets and restores only those", async () => {

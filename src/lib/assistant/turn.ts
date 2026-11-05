@@ -381,14 +381,14 @@ async function finish(
  * in order: the one answering is never pending-and-unfinished when this runs.
  */
 export async function startNext(projectId: string): Promise<void> {
-  const next = (await repository().assistantMessages(projectId)).find((m) => m.role === "assistant" && m.status === "pending");
+  const next = await repository().pendingAssistantMessage(projectId, "assistant");
   if (next) launch(() => answer(projectId, next.id), `assistant answer ${next.id}`);
 }
 
 /** The person stopped waiting: the answer being written is failed, and the next one queued starts. */
 export async function cancelPending(projectId: string): Promise<void> {
   const repo = repository();
-  const current = (await repo.assistantMessages(projectId)).find((m) => m.status === "pending");
+  const current = await repo.pendingAssistantMessage(projectId);
   if (!current) return;
   await repo.updateAssistantMessage(current.id, {
     content: "Stopped.",

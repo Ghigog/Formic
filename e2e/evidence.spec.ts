@@ -112,6 +112,13 @@ for (const shot of SHOTS) {
         blocking.map((v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.map((n) => n.target.join(" ")).join("; ")}`),
         `serious or critical axe violations on ${shot.name} in the ${theme} theme`,
       ).toEqual([]);
+
+      // Contrast is held to 4.5:1 whatever axe rates its impact.
+      const contrast = scan.violations.filter((v) => v.id === "color-contrast");
+      expect(
+        contrast.flatMap((v) => v.nodes.map((n) => `${shot.name}, ${theme} theme: ${n.target.join(" ")}`)),
+        `color-contrast violations on ${shot.name} in the ${theme} theme`,
+      ).toEqual([]);
     });
   }
 }

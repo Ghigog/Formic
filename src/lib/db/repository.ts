@@ -25,6 +25,11 @@ import type { ProviderId } from "@/lib/llm/providers";
  * infrastructure. Everything above this interface is storage-agnostic.
  */
 
+/** How many running audits runningAuditJobs reads. */
+export const RUNNING_AUDITS_LIMIT = 50;
+/** How many of the newest Epic-carrying audits latestAudits reads; a report replaces its sentinel's earlier ones, so few exist. */
+export const EPIC_AUDITS_LIMIT = 50;
+
 export interface CreateEpicInput {
   projectId: string;
   title: string;
@@ -806,6 +811,8 @@ export interface BoardRepository {
   boardCards(projectId: string): Promise<BoardCard[]>;
   /** The archive: a project's archived tickets, off the active board. Those archived with their Epic show under it. */
   archivedTickets(projectId: string): Promise<BoardCard[]>;
+  /** The keys of an Epic's archived tickets, as archivedTickets lists them. */
+  archivedTicketKeys(epicId: string): Promise<string[]>;
   /** The archive: a project's archived Epics. */
   archivedEpics(projectId: string): Promise<BoardCard[]>;
   /**
@@ -1094,6 +1101,10 @@ export interface ConversationRepository {
   /** The assistant conversation, oldest first. */
   assistantMessages(projectId: string): Promise<AssistantMessage[]>;
   assistantMessage(id: string): Promise<AssistantMessage | null>;
+  /** The oldest pending assistant message (of one role, if given), or null. */
+  pendingAssistantMessage(projectId: string, role?: "user" | "assistant"): Promise<AssistantMessage | null>;
+  /** The newest assistant answer that is not pending, or null. */
+  lastAssistantAnswer(projectId: string): Promise<AssistantMessage | null>;
   addAssistantMessage(input: {
     projectId: string;
     role: "user" | "assistant";
@@ -1109,6 +1120,8 @@ export interface ConversationRepository {
   /** One card's chat, oldest first. */
   cardChatMessages(cardId: string): Promise<CardChatMessage[]>;
   cardChatMessage(id: string): Promise<CardChatMessage | null>;
+  /** A card's pending chat message, or null. */
+  pendingCardChatMessage(cardId: string): Promise<CardChatMessage | null>;
   addCardChatMessage(input: {
     projectId: string;
     cardKind: "epic" | "ticket";
@@ -1154,6 +1167,14 @@ export interface AuditRepository {
     rubric?: Rubric | null,
     commitSha?: string | null,
   ): Promise<AuditRecord>;
+  /** A project's running audits that wait on a CLI agent's job. */
+  runningAuditJobs(projectId: string): Promise<AuditRecord[]>;
+  /**
+   * The audits sentinelStates needs, without the whole history: per sentinel
+   * the newest audit, the newest done audit, the newest done calibration
+   * with a rubric, and the newest audits that carry an Epic. Oldest first.
+   */
+  latestAudits(projectId: string): Promise<AuditRecord[]>;
   /** One audit by id, or null. */
   auditDetail(id: string): Promise<AuditRecord | null>;
   /** Adds a step to a running audit's log; with `replace`, it takes the place of the latest one. */
