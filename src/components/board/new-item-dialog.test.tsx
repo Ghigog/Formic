@@ -375,7 +375,8 @@ describe("NewItemDialog keyboard and focus", () => {
   it("wraps Tab and Shift+Tab inside the dialog", async () => {
     const user = userEvent.setup();
     render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
-    await screen.findByLabelText("New feature request");
+    const textarea = await screen.findByLabelText("New feature request");
+    await waitFor(() => expect(textarea).toHaveFocus());
     const dialog = screen.getByRole("dialog");
     const tabbable = Array.from(dialog.querySelectorAll<HTMLElement>("button, input, textarea, select, a[href]")).filter(
       (el) => !(el as HTMLButtonElement).disabled,
