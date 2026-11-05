@@ -56,7 +56,10 @@ export type Sfx =
   | "dig"
   | "grit"
   | "surface"
-  | "celebrate";
+  | "celebrate"
+  | "plop"
+  | "ring"
+  | "chord";
 
 /** One sentinel's voice: a pitch, a wave and a glide to another pitch. */
 export interface SentinelVoice {
@@ -568,6 +571,26 @@ export class SoundEngine {
         );
         this.noise(0.25, { freq: 3000, hp: true, gain: 0.04, delay: 0.3 });
         this.tone(2093, 0.4, { gain: 0.015, delay: 0.34 });
+        break;
+      case "plop": {
+        // A short wooden drop; v: 0 to 1, the card's place along the roster,
+        // so a swipe from the first card to the last rises in pitch.
+        const f = 330 * Math.pow(2, Math.min(1, Math.max(0, v)) * 1.5);
+        this.tone(f, 0.09, { to: f * 1.5, gain: 0.04, type: "triangle" });
+        this.noise(0.02, { freq: 1800, to: 500, gain: 0.02 });
+        break;
+      }
+      case "ring":
+        // A report landing: a small bright bell, quieter than `ding`.
+        this.tone(1175, 0.4, { gain: 0.04 });
+        this.tone(1760, 0.3, { gain: 0.02, delay: 0.01, type: "triangle" });
+        break;
+      case "chord":
+        // Full marks: a rising major arpeggio that settles on a held chord.
+        [523, 659, 784].forEach((f, i) =>
+          this.tone(f, 0.5, { type: "triangle", gain: 0.04, delay: i * 0.07 }),
+        );
+        this.tone(1047, 0.6, { type: "triangle", gain: 0.035, delay: 0.21 });
         break;
       case "sentinelVoice": {
         // v: the sentinel's place in the roster.

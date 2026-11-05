@@ -290,7 +290,12 @@ bell           the golden bell is rung (v = swing strength)
 Sentinels
 sentinelLand   a sentinel card slides in
 sentinelVoice  hover or tap on an avatar; one voice per roster id in SENTINEL_VOICES; throttled
+plop           the centred card on the phone rail changes, once per new card (v = place along the roster, 0-1, so a swipe rises in pitch)
+ring           a sentinel's report lands, as the card hops and before the star blips
+chord          a landed report has 5 stars; a rising major chord after the last star blip
 kpi            the KPI charts finish loading (only when sound is on)
+Features
+celebrate      a feature unlocks (feature-reveal.tsx); held until audible
 Board swap
 dig, grit, surface   the dig transition: going under, soil passing while it loads, coming up
 ```

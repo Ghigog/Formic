@@ -137,6 +137,74 @@ describe("SentinelsPage motion and sound", () => {
   });
 });
 
+describe("SentinelsPage report and rail cues", () => {
+  let play: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    play = vi.spyOn(SoundEngine.prototype, "play").mockImplementation(() => {});
+    vi.spyOn(ColonyFx.prototype, "reducedMotion", "get").mockReturnValue(false);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
+  });
+  const count = (n: string) => play.mock.calls.filter(([x]: unknown[]) => x === n);
+
+  it("plops once per new centred card, rising along the roster", async () => {
+    HTMLElement.prototype.scrollTo = vi.fn() as unknown as HTMLElement["scrollTo"];
+    await open();
+    play.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: "Next sentinel" }));
+    expect(count("plop")).toEqual([["plop", 1 / (SENTINELS.length - 1)]]);
+  });
+
+  /** A run in progress that the next poll reports as landed with `stars`. */
+  async function land(stars: number) {
+    const x = SENTINELS[0]!;
+    const running = states([]);
+    running[x.id] = { ...running[x.id]!, running: { kind: "audit", log: [], startedAt: new Date().toISOString() } };
+    const landed = states([]);
+    landed[x.id] = { ...landed[x.id]!, stars, at: new Date().toISOString() };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sentinels: landed }) }));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(
+        <ColonyProvider storageKey="colony-test-sentinels-land" cards={[]} extras={{}}>
+          <SentinelsProvider initial={running} level={34}>
+            <Open />
+            <SentinelsPage repoName="repo" onOpenEpic={() => {}} />
+          </SentinelsProvider>
+        </ColonyProvider>,
+      );
+      await userEvent.click(screen.getByText("open sentinels"));
+      play.mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      const early = { ring: count("ring").length, chord: count("chord").length };
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      return { early, chord: count("chord").length, ring: count("ring").length };
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it("rings once when a report lands, and plays the chord after five stars", async () => {
+    const r = await land(5);
+    expect(r.ring).toBe(1);
+    expect(r.chord).toBe(1);
+    expect(count("blip")).toHaveLength(5);
+  });
+
+  it("rings with no chord for fewer than five stars", async () => {
+    const r = await land(4);
+    expect(r.ring).toBe(1);
+    expect(r.chord).toBe(0);
+  });
+});
+
 describe("SentinelsPage scroll lock", () => {
   it("locks background scroll while open and releases it on close", async () => {
     await open();
