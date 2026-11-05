@@ -13,7 +13,7 @@ export function SwapHint({ aim }: { aim: SwapAim | null }) {
       data-testid="swap-hint"
       data-armed={aim.armed}
       aria-hidden
-      className="pointer-events-none fixed z-[70] flex -translate-x-1/2 -translate-y-1/2 animate-[swapHintIn_150ms_ease-out]"
+      className="swap-hint pointer-events-none fixed z-[70] flex -translate-x-1/2 -translate-y-1/2"
       style={{ left: aim.x, top: aim.y }}
     >
       <span
