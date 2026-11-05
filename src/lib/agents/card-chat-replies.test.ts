@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isGoAgain, outOfRoundsReply, outOfTimeReply } from "./card-chat";
+import { answeredFallback, isGoAgain, outOfRoundsReply, outOfTimeReply } from "./card-chat";
 
 describe("what a chat says when it ran out", () => {
   const files = ["a.ts", "b.ts", "c.ts", "d.ts", "e.ts", "f.ts", "g.ts", "h.ts"];
@@ -31,5 +31,17 @@ describe("isGoAgain", () => {
 
   it.each(["continue with the tests instead", "why did it stop", ""])("leaves %j to an agent", (text) => {
     expect(isGoAgain(text)).toBe(false);
+  });
+});
+
+describe("answeredFallback", () => {
+  it("says the work started again when it did", () => {
+    expect(answeredFallback({ started: "Starting it again." })).toBe("Got it, thank you. Starting it again.");
+  });
+
+  it("says the answer is saved and the ticket waits in To Do when nothing started", () => {
+    expect(answeredFallback({ started: null })).toBe(
+      "Got it, saved to this ticket's notes. It stays in To Do; move it to In Progress when you're ready.",
+    );
   });
 });

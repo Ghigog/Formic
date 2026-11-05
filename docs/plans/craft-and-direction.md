@@ -139,7 +139,8 @@ prompts, custom or not.
 - [x] A second onboarding ticket beside AGENTS.md: the person describes the
       look and feel in its chat; agents refine it into `DESIGN.md` (a design
       philosophy doc) in the repository. It starts as a question from the
-      Designer; the person's answer starts the Coder on it. Existing boards
+      Designer; the person's answer is saved as a note and the ticket stays in
+      To Do until they move it, then the Coder reads it. Existing boards
       do not get it (Formic itself already has `design/DESIGN.md`).
 - [x] The Designer Sentinel unlocks early (level 4, swapping with the Beetle) and grades two things:
       how closely shipped features match the doc, and how good the doc is.

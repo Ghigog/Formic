@@ -794,7 +794,7 @@ describe("a question the card is waiting on", () => {
     expect(after?.status).not.toBe("blocked");
   });
 
-  it("starts a ticket that waited in To Do for the answer, rather than redrafting it", async () => {
+  it("keeps a ticket that waited in To Do there when answered, saving the answer for later", async () => {
     const ticket = await seedTicket();
     const reason = questionReason("The Designer", [{ question: "How should it feel?", why: "" }]);
     await repository().updateTicket(ticket.id, { status: "blocked", stalledIn: "todo", blockedReason: reason });
@@ -804,8 +804,9 @@ describe("a question the card is waiting on", () => {
     expect(await noteTexts(PROJECT, ticket.id)).toEqual(["You asked the person:\nHow should it feel?\n\nThey answered: Warm, earthy, playful."]);
     const after = await repository().cardById(ticket.id);
     expect(after?.blockedReason ?? null).toBeNull();
-    expect(after?.stalledIn ?? null).not.toBe("todo");
-    expect(launched.join("\n")).toContain(ticket.key);
+    expect(after?.stalledIn ?? null).toBeNull();
+    expect(after?.status).toBe("ready");
+    expect(launched.join("\n")).not.toContain("coder agent");
   });
 
   it("leaves an ordinary stalled card's chat to its agent", async () => {

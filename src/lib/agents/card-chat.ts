@@ -426,9 +426,16 @@ function agentLabelFor(card: BoardCard): string {
  * has already started again with it. The agent replies to what they said, and
  * takes no action of its own: the restart is the action.
  */
-type AnsweredQuestion = { started: string };
+type AnsweredQuestion = { started: string | null };
 
 function answeredGuide({ started }: AnsweredQuestion): string {
+  if (started === null) {
+    return [
+      "",
+      "The person's last message answers the question this card was waiting on. Their answer is saved as a note on this ticket. The ticket stays in To Do and nothing has started: it starts when they move it to In Progress, and then the Coder reads the note.",
+      "Reply to what they actually said, in a sentence or two, and tell them the answer is saved and the ticket waits in To Do until they move it. If they asked something back, answer it plainly. Do not use the act tool to start the work.",
+    ].join("\n");
+  }
   return [
     "",
     "The person's last message answers the question this card was waiting on. Their answer is saved as a note, and the work has already started again with it:",
@@ -438,7 +445,10 @@ function answeredGuide({ started }: AnsweredQuestion): string {
 }
 
 /** What the chat says after an answer when no agent can write the reply. */
-function answeredFallback({ started }: AnsweredQuestion): string {
+export function answeredFallback({ started }: AnsweredQuestion): string {
+  if (started === null) {
+    return "Got it, saved to this ticket's notes. It stays in To Do; move it to In Progress when you're ready.";
+  }
   return `Got it, thank you. ${started}`;
 }
 
@@ -747,6 +757,11 @@ async function clearEpicQuestion(projectId: string, card: BoardCard): Promise<vo
   });
 }
 
+/**
+ * Saves the person's answer to the card's question as a note. A ticket that
+ * asked from To Do stays there, ready; the answer does not start it. A ticket
+ * stalled elsewhere, or an Epic, carries on with the answer.
+ */
 async function answerQuestion(
   projectId: string,
   cardKind: "epic" | "ticket",
@@ -758,13 +773,26 @@ async function answerQuestion(
   if (cardKind === "ticket") await addNote(projectId, cardId, note);
   else await addEpicNote(projectId, cardId, note);
   // A ticket asked from To Do (a new board's design ticket) has nothing to
-  // redo yet: the answer is what it waited for to start.
+  // redo yet. The answer is saved for later and the card stays in To Do as a
+  // plain ready card: the person starts it by moving it, and the Coder reads
+  // the note then.
   const card = await repository().cardById(cardId);
   if (cardKind === "epic" && card) await clearEpicQuestion(projectId, card);
   const fromTodo = cardKind === "ticket" && card?.stalledIn === "todo";
-  if (fromTodo) await repository().updateTicket(cardId, { status: "ready", stalledIn: null, blockedReason: null });
+  if (fromTodo) {
+    await repository().updateTicket(cardId, { status: "ready", stalledIn: null, blockedReason: null });
+    await publish(projectId, {
+      type: "card.status",
+      cardId,
+      kind: "ticket",
+      status: "ready",
+      stalledIn: null,
+      stage: card.stage,
+      blockedReason: null,
+    });
+  }
   const started = fromTodo
-    ? await applyCardAction(projectId, cardKind, cardId, { type: "move", to: "in_progress" })
+    ? null
     : await applyCardAction(projectId, cardKind, cardId, {
     type: "redo",
     instruction: `${note}\n\nCarry on with this ticket's work, using their answer. Do not redo what is already done. If their answer does not settle what you asked, ask a narrower follow-up question instead of guessing.`,
