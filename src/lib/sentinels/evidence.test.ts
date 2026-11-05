@@ -130,6 +130,18 @@ describe("readArtifacts", () => {
   });
 });
 
+describe("readArtifacts axe counts", () => {
+  it("reads the passed count from `passed`, and ignores the passes folder", () => {
+    const json = (v: unknown) => Buffer.from(JSON.stringify(v));
+    const a = readArtifacts("https://run", new Map([
+      ["sentinel-evidence/axe/board-light.json", json({ url: "/ (light)", violations: [], passed: 42 })],
+      ["sentinel-evidence/axe-passes/board-light.json", json({ url: "/ (light)", passes: ["color-contrast"] })],
+    ]));
+    expect(a.axe).toContain("axe-core scans of 1 page");
+    expect(a.axe).toContain("- / (light): 0 rules violated, 42 passed");
+  });
+});
+
 describe("securityEvidence", () => {
   it("lists open alerts and says which features it could not see", () => {
     const text = securityEvidence(
