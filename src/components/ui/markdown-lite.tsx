@@ -17,16 +17,24 @@ export function MarkdownLite({
   keepLineBreaks?: boolean;
 }) {
   const blocks: ReactNode[] = [];
-  let list: string[] = [];
+  // Each item is its line plus any indented lines that continue it.
+  let list: string[][] = [];
   let ordered = false;
+  let start = 1;
   let paragraph: string[] = [];
 
   const flushList = () => {
     if (list.length === 0) return;
-    const items = list.map((item, i) => <li key={i}>{inline(item)}</li>);
+    const items = list.map((item, i) => (
+      <li key={i}>{lines(item, keepLineBreaks)}</li>
+    ));
     blocks.push(
       ordered ? (
-        <ol key={blocks.length} className="ml-5 list-decimal space-y-1">
+        <ol
+          key={blocks.length}
+          start={start !== 1 ? start : undefined}
+          className="ml-5 list-decimal space-y-1"
+        >
           {items}
         </ol>
       ) : (
@@ -41,14 +49,7 @@ export function MarkdownLite({
     if (paragraph.length === 0) return;
     blocks.push(
       <p key={blocks.length}>
-        {keepLineBreaks
-          ? paragraph.map((l, i) => (
-              <Fragment key={i}>
-                {i > 0 && <br />}
-                {inline(l)}
-              </Fragment>
-            ))
-          : inline(paragraph.join(" "))}
+        {lines(paragraph, keepLineBreaks)}
       </p>,
     );
     paragraph = [];
@@ -98,8 +99,11 @@ export function MarkdownLite({
     } else if (bullet || numbered) {
       flushParagraph();
       if (list.length && ordered !== !!numbered) flushList();
+      if (list.length === 0 && numbered) start = Number(/\d+/.exec(line)![0]);
       ordered = !!numbered;
-      list.push((bullet ?? numbered)![1]!);
+      list.push([(bullet ?? numbered)![1]!]);
+    } else if (list.length > 0 && /^\s/.test(line) && line.trim() !== "") {
+      list[list.length - 1]!.push(line.trim());
     } else if (line.trim() === "") {
       flushList();
       flushParagraph();
@@ -113,6 +117,17 @@ export function MarkdownLite({
   flushParagraph();
 
   return <div className={cn("space-y-2", className)}>{blocks}</div>;
+}
+
+/** Lines joined as chat shows them (a break each) or as a paragraph reads (a space). */
+function lines(parts: string[], keepLineBreaks: boolean): ReactNode {
+  if (!keepLineBreaks) return inline(parts.join(" "));
+  return parts.map((l, i) => (
+    <Fragment key={i}>
+      {i > 0 && <br />}
+      {inline(l)}
+    </Fragment>
+  ));
 }
 
 // Marks must hug their text. Underscores and single stars never start or end
