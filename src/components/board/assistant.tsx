@@ -49,6 +49,8 @@ export interface AssistantControls {
   ) => Promise<void>;
   /** Has the PM open a call: the questions waiting on the person, or a greeting. */
   openCall?: (meetingId?: string) => Promise<void>;
+  /** Fetches the conversation now and returns it. */
+  load?: () => Promise<AssistantMessageView[]>;
   setAgent: (presetId: string | null) => Promise<void>;
   presets: AgentPreset[];
   /** How many cards are waiting on a question for the person, which the PM relays. */

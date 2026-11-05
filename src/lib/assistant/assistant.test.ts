@@ -529,6 +529,58 @@ describe("applying an approved proposal", () => {
 });
 
 describe("the assistant on a CLI plan", () => {
+  async function cliArchitect() {
+    const preset = await savePreset({ name: "arch", provider: "claude-code", model: "", prompt: "", apiKey: "sk-ant-oat01-plan" });
+    await repository().setColumnAgent(PROJECT, "todo", preset.id);
+    const base = (await projectFor(PROJECT)).baseBranch;
+    const client = new MockVcsClient("acme/widgets");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    return client;
+  }
+
+  it("answers as a CLI Architect in GitHub Actions when no API agent is set, and re-asks it, not the PM", async () => {
+    const client = await cliArchitect();
+    const [reply] = await askSpeakers("I want to plan an epic for online traffic", ["architect"]);
+
+    await answer(PROJECT, reply!.id);
+
+    const dispatch = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    expect(dispatch).toMatchObject({ mode: "ask", cli: "claude" });
+    expect(dispatch.prompt).toContain("You are");
+    expect(dispatch.prompt).toContain("online traffic");
+    expect((await reload(reply!.id)).status).toBe("pending");
+
+    const wrong = JSON.stringify({
+      reply: "Here is the epic.",
+      proposals: [
+        { summary: "Add the export tickets", action: { type: "create_epic_with_tickets", title: "Export", summary: "s", tickets: TICKETS } },
+        { summary: "Something broken", action: { type: "delete_everything" } },
+      ],
+    });
+    await client.commitFile(`${STAGING_PREFIX}${dispatch.job}`, ANSWER_PATH, wrong, "answer");
+    await completeCliRun(PROJECT, { job: dispatch.job!, mode: "ask", conclusion: "success", url: null });
+
+    // The wrong proposal goes back to the Architect's agent with the Architect's prompt.
+    const retry = MockVcsClient.runner().dispatches.at(-1)!.inputs;
+    expect(retry.job).not.toBe(dispatch.job);
+    expect(retry.prompt).toContain("Formic could not use your proposals");
+    expect(retry.prompt).toContain("You are");
+
+    await client.commitFile(
+      `${STAGING_PREFIX}${retry.job}`,
+      ANSWER_PATH,
+      JSON.stringify({
+        reply: "Here is the epic.",
+        proposals: [{ summary: "Add the export tickets", action: { type: "create_epic_with_tickets", title: "Export", summary: "s", tickets: TICKETS } }],
+      }),
+      "answer",
+    );
+    await completeCliRun(PROJECT, { job: retry.job!, mode: "ask", conclusion: "success", url: null });
+
+    expect(await reload(reply!.id)).toMatchObject({ speaker: "architect", status: "done", content: "Here is the epic." });
+    expect((await reload(reply!.id)).proposals.map((p) => p.summary)).toEqual(["Add the export tickets"]);
+  });
+
   it("answers from GitHub Actions and keeps only valid proposals", async () => {
     await useAgent("claude-code");
     const base = (await projectFor(PROJECT)).baseBranch;
