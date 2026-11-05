@@ -3,7 +3,7 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isProviderId } from "@/lib/llm/providers";
 import { PRUNABLE_EVENT_TYPES } from "@/lib/domain/events";
-import { isGuestId, type GuestId } from "@/lib/meetings/guests";
+import { isGuestId } from "@/lib/meetings/guests";
 
 import { Prisma } from "@/generated/prisma/client";
 
@@ -37,7 +37,6 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
-  CallMessage,
   CreateMeetingInput,
   Meeting,
   MeetingRepeat,
@@ -2201,44 +2200,7 @@ export class PrismaRepository implements Repository {
   }
 
   async deleteMeeting(id: string): Promise<void> {
-    // Its call messages cascade.
     await prisma().meeting.deleteMany({ where: { id } });
-  }
-
-  async callMessages(projectId: string, meetingId: string | null): Promise<CallMessage[]> {
-    const rows = await prisma().callMessage.findMany({
-      where: { projectId, meetingId },
-      orderBy: { createdAt: "asc" },
-    });
-    return rows.map(toCallMessage);
-  }
-
-  async addCallMessage(input: {
-    projectId: string;
-    meetingId?: string | null;
-    role: "user" | "assistant";
-    guestId?: GuestId | null;
-    content: string;
-    status?: CallMessage["status"];
-  }): Promise<CallMessage> {
-    const row = await prisma().callMessage.create({ data: { ...input, status: input.status ?? "done" } });
-    return toCallMessage(row);
-  }
-
-  async callMessage(id: string): Promise<CallMessage | null> {
-    const row = await prisma().callMessage.findUnique({ where: { id } });
-    return row ? toCallMessage(row) : null;
-  }
-
-  async updateCallMessage(
-    id: string,
-    update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob" | "proposals">>,
-  ): Promise<void> {
-    const { proposals, ...rest } = update;
-    await prisma().callMessage.update({
-      where: { id },
-      data: { ...rest, ...(proposals !== undefined ? { proposals: proposals as never } : {}) },
-    });
   }
 
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
@@ -2533,27 +2495,6 @@ function toMeeting(row: {
     ...row,
     guests: Array.isArray(row.guests) ? row.guests.filter(isGuestId) : [],
     repeat: (MEETING_REPEATS as readonly string[]).includes(row.repeat) ? (row.repeat as MeetingRepeat) : "none",
-  };
-}
-
-function toCallMessage(row: {
-  id: string;
-  projectId: string;
-  meetingId: string | null;
-  role: string;
-  guestId: string | null;
-  content: string;
-  status: string;
-  runnerJob: string | null;
-  proposals: unknown;
-  createdAt: Date;
-}): CallMessage {
-  return {
-    ...row,
-    proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
-    role: row.role === "user" ? "user" : "assistant",
-    guestId: isGuestId(row.guestId) ? row.guestId : null,
-    status: row.status === "pending" || row.status === "failed" ? row.status : "done",
   };
 }
 

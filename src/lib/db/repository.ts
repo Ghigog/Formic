@@ -163,22 +163,6 @@ export interface CreateMeetingInput {
   repeat?: MeetingRepeat;
 }
 
-/** One message in a call; `meetingId` is null for an unscheduled call. */
-export interface CallMessage {
-  id: string;
-  projectId: string;
-  meetingId: string | null;
-  role: "user" | "assistant";
-  /** Which guest spoke, when role is "assistant". */
-  guestId: GuestId | null;
-  content: string;
-  status: "done" | "pending" | "failed";
-  runnerJob: string | null;
-  /** What the assistant proposed in this message, waiting on the person. */
-  proposals: AssistantProposal[];
-  createdAt: Date;
-}
-
 export interface AssistantProposal {
   /** One line for the person to approve or not. */
   summary: string;
@@ -1147,23 +1131,8 @@ export interface MeetingRepository {
   deleteMeeting(id: string): Promise<void>;
 }
 
-/** Conversations: calls, the assistant and card chat. */
+/** Conversations: the assistant and card chat. */
 export interface ConversationRepository {
-  /** A meeting's messages, or the unscheduled call's when `meetingId` is null, oldest first. */
-  callMessages(projectId: string, meetingId: string | null): Promise<CallMessage[]>;
-  addCallMessage(input: {
-    projectId: string;
-    meetingId?: string | null;
-    role: "user" | "assistant";
-    guestId?: GuestId | null;
-    content: string;
-    status?: CallMessage["status"];
-  }): Promise<CallMessage>;
-  callMessage(id: string): Promise<CallMessage | null>;
-  updateCallMessage(
-    id: string,
-    update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob" | "proposals">>,
-  ): Promise<void>;
   /** The assistant conversation, oldest first. */
   assistantMessages(projectId: string): Promise<AssistantMessage[]>;
   assistantMessage(id: string): Promise<AssistantMessage | null>;

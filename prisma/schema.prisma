@@ -86,15 +86,15 @@ enum AttachmentKind {
 /// A person, signed in by email or with GitHub. Their tokens and keys are
 /// sealed with FORMIC_SECRET; see src/lib/secrets/vault.ts.
 model User {
-  id        String  @id @default(cuid())
+  id              String    @id @default(cuid())
   /// Null until the person connects GitHub. The local user's is 0.
-  githubId  Int?    @unique
+  githubId        Int?      @unique
   /// Lowercased. Null for someone who has only ever signed in with GitHub.
   email           String?   @unique
   emailVerifiedAt DateTime?
-  login     String
-  name      String?
-  avatarUrl String?
+  login           String
+  name            String?
+  avatarUrl       String?
 
   /// GitHub App user-to-server token, and the refresh token behind it.
   githubTokenCipher      String?
@@ -167,58 +167,58 @@ model User {
 }
 
 model Project {
-  id                         String   @id @default(cuid())
+  id                         String    @id @default(cuid())
   /// Null for the demo board, which belongs to no one.
   ownerId                    String?
-  owner                      User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner                      User?     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name                       String
   /// Null for a board with no repository (a game-like board without agents).
   repoFullName               String?
-  baseBranch                 String   @default("main")
-  createdAt                  DateTime @default(now())
+  baseBranch                 String    @default("main")
+  createdAt                  DateTime  @default(now())
   /// The saved agent the board's assistant runs on. Not a relation: a
   /// deleted template simply leaves the assistant without one.
   assistantPresetId          String?
   /// The highest Epic number this project has given out, deleted Epics
   /// included, so a number is never handed out twice.
-  lastEpicNumber             Int      @default(0)
+  lastEpicNumber             Int       @default(0)
   /// The highest standalone ticket number this project has given out, deleted
   /// tickets included, so a number is never handed out twice.
-  lastStandaloneTicketNumber Int      @default(0)
+  lastStandaloneTicketNumber Int       @default(0)
   /// Whether Formic merges an approved pull request itself. Off (the default),
   /// it waits in Merging for a person to merge it.
-  autoMerge                  Boolean  @default(false)
+  autoMerge                  Boolean   @default(false)
   /// Whether Formic raises a ticket's story points itself when it outgrows
   /// its estimate. Off (the default) until the owner opts in.
-  autoEscalate               Boolean  @default(false)
+  autoEscalate               Boolean   @default(false)
   /// Whether every Sentinel is unlocked regardless of colony level, for a
   /// board brought in with an established codebase. Off until the owner opts in.
-  unlockAllSentinels         Boolean  @default(false)
+  unlockAllSentinels         Boolean   @default(false)
   /// When the offer to unlock every Sentinel was dismissed or taken up, so a new
   /// device does not ask again. Null until then.
   unlockAllOfferDismissedAt  DateTime?
   /// Queens taken off the board, so clearing one never hands it back.
-  queensSpent                Int      @default(0)
+  queensSpent                Int       @default(0)
   /// Golden bells rung on this board, so one is never spent twice.
-  goldenBellsUsed            Int      @default(0)
+  goldenBellsUsed            Int       @default(0)
   /// Whether a golden bell is armed and will ring on the next chance.
-  goldenBellArmed            Boolean  @default(false)
+  goldenBellArmed            Boolean   @default(false)
   /// The most Coder Agents this board runs at once, scouts included. Null
   /// (the default) is no cap: only file reservations hold work back.
   colonySize                 Int?
   /// Slots of colonySize kept for urgent work (bugs, tickets back from
   /// review). The board's level sets the least it may be (docs/colony.md).
-  colonyReserve              Int      @default(0)
+  colonyReserve              Int       @default(0)
   /// Whether idle reserve slots send scouts out on their own. Unlocked by
   /// level; off until the owner turns it on.
-  autoScout                  Boolean  @default(false)
+  autoScout                  Boolean   @default(false)
   /// The saved agent scouts run on. Null (the default) is the In Progress
   /// column's agent. Not a relation: a deleted template falls back to it.
   scoutPresetId              String?
   /// Whether people the owner shares the board with may run on the owner's
   /// keys and agents when they have none of their own. Off by default: each
   /// person brings their own.
-  shareKeys                  Boolean  @default(false)
+  shareKeys                  Boolean   @default(false)
 
   members           ProjectMember[]
   memberAgents      MemberAgent[]
@@ -230,7 +230,6 @@ model Project {
   assistantMessages AssistantMessage[]
   cardChatMessages  CardChatMessage[]
   meetings          Meeting[]
-  callMessages      CallMessage[]
   audits            Audit[]
 
   @@index([ownerId])
@@ -727,49 +726,22 @@ model AssistantMessage {
 /// A call the person scheduled with the assistant, a column agent or
 /// Sentinels.
 model Meeting {
-  id              String        @id @default(cuid())
+  id              String    @id @default(cuid())
   projectId       String
-  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   title           String
   startsAt        DateTime
-  agenda          String        @default("")
+  agenda          String    @default("")
   /// Guest ids: "assistant", a column agent role or "sentinel:<id>".
-  guests          Json          @default("[]")
+  guests          Json      @default("[]")
   /// "none", "weekdays", "weekly" or "biweekly".
-  repeat          String        @default("none")
+  repeat          String    @default("none")
   /// The occurrence the person was last reminded of.
   lastRemindedFor DateTime?
-  createdAt       DateTime      @default(now())
-  messages        CallMessage[]
+  createdAt       DateTime  @default(now())
 
   @@index([projectId, startsAt])
   @@map("meeting")
-}
-
-/// One message in a call: a scheduled meeting's, or an unscheduled call's
-/// when there is no meeting.
-model CallMessage {
-  id        String   @id @default(cuid())
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  meetingId String?
-  meeting   Meeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  /// "user" or "assistant".
-  role      String
-  /// Which guest spoke, when role is "assistant".
-  guestId   String?
-  content   String
-  /// "done", "pending" while the guest answers, or "failed".
-  status    String   @default("done")
-  /// The Actions run a CLI agent is answering this in, if any.
-  runnerJob String?
-  /// What the assistant proposed in this message, waiting on the person.
-  proposals Json     @default("[]")
-  createdAt DateTime @default(now())
-
-  @@index([projectId, createdAt])
-  @@index([meetingId, createdAt])
-  @@map("call_message")
 }
 
 /// A card's chat with its column's agent: a conversation per Epic or

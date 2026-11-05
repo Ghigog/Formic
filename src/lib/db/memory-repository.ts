@@ -3,7 +3,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isPrunableEventType } from "@/lib/domain/events";
-import type { GuestId } from "@/lib/meetings/guests";
 
 import type {
   AttachmentContent,
@@ -34,7 +33,6 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
-  CallMessage,
   CreateMeetingInput,
   Meeting,
   AuditKind,
@@ -211,7 +209,6 @@ interface Store {
   actors: Map<string, string>;
   assistant: AssistantMessage[];
   meetings: Meeting[];
-  callMessages: CallMessage[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
   audits: AuditRecord[];
@@ -310,7 +307,6 @@ function store(): Store {
     actors: new Map(),
     assistant: [],
     meetings: [],
-    callMessages: [],
     cardChat: [],
     attachments: new Map(),
     audits: [],
@@ -641,7 +637,6 @@ export class MemoryRepository implements Repository {
       s.events = s.events.filter((e) => e.projectId !== projectId);
       s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
       s.meetings = s.meetings.filter((m) => m.projectId !== projectId);
-      s.callMessages = s.callMessages.filter((m) => m.projectId !== projectId);
       s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
       s.audits = s.audits.filter((a) => a.projectId !== projectId);
       s.epicNumbers.delete(projectId);
@@ -2165,48 +2160,6 @@ export class MemoryRepository implements Repository {
   async deleteMeeting(id: string): Promise<void> {
     const s = store();
     s.meetings = s.meetings.filter((m) => m.id !== id);
-    s.callMessages = s.callMessages.filter((m) => m.meetingId !== id);
-  }
-
-  async callMessages(projectId: string, meetingId: string | null): Promise<CallMessage[]> {
-    return store()
-      .callMessages.filter((m) => m.projectId === projectId && m.meetingId === meetingId)
-      .map((m) => ({ ...m }));
-  }
-
-  async addCallMessage(input: {
-    projectId: string;
-    meetingId?: string | null;
-    role: "user" | "assistant";
-    guestId?: GuestId | null;
-    content: string;
-    status?: CallMessage["status"];
-  }): Promise<CallMessage> {
-    const message: CallMessage = {
-      id: `cm_${Math.random().toString(36).slice(2, 10)}`,
-      runnerJob: null,
-      proposals: [],
-      createdAt: new Date(),
-      ...input,
-      meetingId: input.meetingId ?? null,
-      guestId: input.guestId ?? null,
-      status: input.status ?? "done",
-    };
-    store().callMessages.push(message);
-    return { ...message };
-  }
-
-  async callMessage(id: string): Promise<CallMessage | null> {
-    const found = store().callMessages.find((m) => m.id === id);
-    return found ? { ...found } : null;
-  }
-
-  async updateCallMessage(
-    id: string,
-    update: Partial<Pick<CallMessage, "content" | "status" | "runnerJob" | "proposals">>,
-  ): Promise<void> {
-    const found = store().callMessages.find((m) => m.id === id);
-    if (found) Object.assign(found, update);
   }
 
   async assistantMessages(projectId: string): Promise<AssistantMessage[]> {
