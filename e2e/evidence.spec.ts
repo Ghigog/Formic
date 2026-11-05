@@ -80,7 +80,8 @@ const SHOTS: Shot[] = [
     open: async (page) => {
       await gotoBoard(page);
       await closeSetup(page);
-      await page.locator("[data-rfd-draggable-id]").filter({ hasText: "EPIC" }).first().click();
+      // The title button: the epic's group is not itself a click target.
+      await page.locator('[role="group"][data-tid]').filter({ hasText: "EPIC" }).first().locator("h3 button").click();
       await expect(page.getByRole("dialog", { name: "Epic detail" })).toBeVisible();
       await settleDialog(page);
     },
