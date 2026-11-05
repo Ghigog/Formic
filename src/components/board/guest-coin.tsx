@@ -8,7 +8,7 @@ export const OCTAGON =
 function guestInk(id: GuestId): { ground: string; ink: string } {
   if (id === "assistant" || id === "pm") return { ground: "var(--anthracite)", ink: "var(--cream)" };
   if (id.startsWith("sentinel:")) return { ground: "var(--jade)", ink: "#fff" };
-  if (id === "product") return { ground: "var(--terracotta-cta)", ink: "#fff" };
+  if (id === "product") return { ground: "var(--color-cta)", ink: "#fff" };
   if (id === "architect") return { ground: "var(--clay)", ink: "#fff" };
   if (id === "coder") return { ground: "var(--rust)", ink: "#fff" };
   return { ground: "var(--terracotta-deep)", ink: "#fff" };

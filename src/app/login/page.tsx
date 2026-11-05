@@ -62,7 +62,7 @@ export default async function LoginPage({
                     />
                     <SubmitOnce
                       pending="Sending your link…"
-                      className="bg-terracotta-cta h-10 rounded-lg text-[14px] font-semibold text-white"
+                      className="bg-cta h-10 rounded-lg text-[14px] font-semibold text-white"
                     >
                       Email me a sign-in link
                     </SubmitOnce>
@@ -108,7 +108,7 @@ export default async function LoginPage({
             />
             <button
               type="submit"
-              className="bg-terracotta-cta h-10 rounded-lg text-[14px] font-semibold text-white"
+              className="bg-cta h-10 rounded-lg text-[14px] font-semibold text-white"
             >
               Sign in
             </button>

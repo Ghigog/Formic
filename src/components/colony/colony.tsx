@@ -617,7 +617,7 @@ export function ColonyProvider({
       const s = colonyEl("score");
       if (s && !fx.reducedMotion) {
         s.animate(
-          [{ transform: "scale(1)" }, { transform: "scale(1.28)", color: "var(--terracotta-cta)" }, { transform: "scale(1)" }],
+          [{ transform: "scale(1)" }, { transform: "scale(1.28)", color: "var(--color-cta)" }, { transform: "scale(1)" }],
           { duration: 380, easing: "ease-out" },
         );
       }
@@ -630,7 +630,7 @@ export function ColonyProvider({
       fx.shake(2);
       fx.ring(cx, cy, "var(--jade)", 100, 0.6, 3);
       fx.burst(cx, cy, ["var(--jade)", "var(--terracotta)", "var(--clay)", "var(--text)"], 26, { speed: 300, size: 3.2 });
-      fx.pop(cx, r.top + 4, `+${pts}`, `MERGED · ${pointsOf(card)} SP × ${mult.toFixed(1)}`, "var(--terracotta-cta)", 22);
+      fx.pop(cx, r.top + 4, `+${pts}`, `MERGED · ${pointsOf(card)} SP × ${mult.toFixed(1)}`, "var(--color-cta)", 22);
       const heat = colonyEl("heat");
       if (heat && !fx.reducedMotion) {
         heat.animate(

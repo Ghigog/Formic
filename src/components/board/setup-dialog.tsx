@@ -178,7 +178,7 @@ export function SetupDialog({
                   href={merging?.setupUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="bg-terracotta-cta inline-flex h-[30px] items-center rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
+                  className="bg-cta inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
                 >
                   Open pull request ↗
                 </a>
@@ -232,7 +232,7 @@ export function SetupDialog({
               ref={primary}
               type="button"
               onClick={markAdded}
-              className="bg-terracotta-cta h-[34px] rounded-lg px-3.5 text-[13px] font-semibold text-white hover:opacity-90"
+              className="bg-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white hover:opacity-90"
             >
               I&apos;ve added them
             </button>
@@ -242,7 +242,7 @@ export function SetupDialog({
               ref={primary}
               type="button"
               onClick={onRetry}
-              className="bg-terracotta-cta h-[34px] rounded-lg px-3.5 text-[13px] font-semibold text-white hover:opacity-90"
+              className="bg-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white hover:opacity-90"
             >
               Try again
             </button>
@@ -250,7 +250,7 @@ export function SetupDialog({
           <button
             type="button"
             onClick={dismiss}
-            className="border-line bg-card text-ink h-[34px] rounded-lg border px-3 text-[13px] font-medium active:scale-[0.96]"
+            className="border-line bg-card text-ink h-9 rounded-lg border px-3 text-[13px] font-medium active:scale-[0.96]"
           >
             Not now
           </button>
@@ -291,7 +291,7 @@ function SecretName({ value }: { value: string }) {
       <button
         type="button"
         onClick={copy}
-        className="border-line bg-card text-ink h-[28px] self-start rounded-md border px-2.5 text-[12px] font-medium active:scale-[0.96]"
+        className="border-line bg-card text-ink h-8 self-start rounded-lg border px-2.5 text-[12px] font-medium active:scale-[0.96]"
       >
         {copied ? "Copied" : "Copy name"}
       </button>
@@ -338,7 +338,7 @@ export function SetupCard({
           <button
             type="button"
             onClick={onRetry}
-            className="bg-terracotta-cta inline-flex h-[28px] items-center rounded-md px-2.5 text-[12px] font-semibold text-white hover:opacity-90"
+            className="bg-cta inline-flex h-8 items-center rounded-lg px-2.5 text-[12px] font-semibold text-white hover:opacity-90"
           >
             Try again
           </button>
@@ -348,7 +348,7 @@ export function SetupCard({
               href={setup.setupUrl}
               target="_blank"
               rel="noreferrer"
-              className="bg-terracotta-cta inline-flex h-[28px] items-center rounded-md px-2.5 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
+              className="bg-cta inline-flex h-8 items-center rounded-lg px-2.5 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
             >
               Open pull request ↗
             </a>

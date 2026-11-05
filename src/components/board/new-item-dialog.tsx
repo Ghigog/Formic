@@ -199,14 +199,14 @@ export function NewItemDialog({
           <button
             type="button"
             onClick={onClose}
-            className="border-line bg-card text-ink h-[34px] rounded-lg border px-3 text-[13px] font-medium active:scale-[0.96]"
+            className="border-line bg-card text-ink h-9 rounded-lg border px-3 text-[13px] font-medium active:scale-[0.96]"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="bg-terracotta-cta h-[34px] rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 active:scale-[0.96] disabled:opacity-60"
+            className="bg-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 active:scale-[0.96] disabled:opacity-60"
           >
             {busy ? "Drafting…" : copy.submitLabel}
           </button>
