@@ -50,6 +50,7 @@ import type {
   HostUsageCheck,
   Reservation,
 } from "./repository";
+import { RUNNING_AUDITS_LIMIT, EPIC_AUDITS_LIMIT } from "./repository";
 import { precisionChanges } from "./ticket-changes";
 import type {
   AgentRole,
@@ -940,6 +941,14 @@ export class PrismaRepository implements Repository {
       exitedAt: e.exitedAt?.toISOString() ?? null,
       synthetic: e.synthetic,
     }));
+  }
+
+  async archivedTicketKeys(epicId: string): Promise<string[]> {
+    const rows = await prisma().ticket.findMany({
+      where: { epicId, archived: true, archivedWithEpic: false, scoutOf: null },
+      select: { key: true },
+    });
+    return rows.map((r) => r.key);
   }
 
   async archivedTickets(projectId: string): Promise<BoardCard[]> {
@@ -2185,6 +2194,22 @@ export class PrismaRepository implements Repository {
     return rows.map(toAssistantMessage);
   }
 
+  async pendingAssistantMessage(projectId: string, role?: "user" | "assistant"): Promise<AssistantMessage | null> {
+    const row = await prisma().assistantMessage.findFirst({
+      where: { projectId, status: "pending", ...(role ? { role } : {}) },
+      orderBy: { createdAt: "asc" },
+    });
+    return row ? toAssistantMessage(row) : null;
+  }
+
+  async lastAssistantAnswer(projectId: string): Promise<AssistantMessage | null> {
+    const row = await prisma().assistantMessage.findFirst({
+      where: { projectId, role: "assistant", status: { not: "pending" } },
+      orderBy: { createdAt: "desc" },
+    });
+    return row ? toAssistantMessage(row) : null;
+  }
+
   async assistantMessage(id: string): Promise<AssistantMessage | null> {
     const row = await prisma().assistantMessage.findUnique({ where: { id } });
     return row ? toAssistantMessage(row) : null;
@@ -2224,6 +2249,14 @@ export class PrismaRepository implements Repository {
       orderBy: { createdAt: "asc" },
     });
     return rows.map(toCardChatMessage);
+  }
+
+  async pendingCardChatMessage(cardId: string): Promise<CardChatMessage | null> {
+    const row = await prisma().cardChatMessage.findFirst({
+      where: { cardId, status: "pending" },
+      orderBy: { createdAt: "asc" },
+    });
+    return row ? toCardChatMessage(row) : null;
   }
 
   async cardChatMessage(id: string): Promise<CardChatMessage | null> {
@@ -2288,6 +2321,35 @@ export class PrismaRepository implements Repository {
       orderBy: { startedAt: "asc" },
     });
     return rows.map(toAuditRecord);
+  }
+
+  async runningAuditJobs(projectId: string): Promise<AuditRecord[]> {
+    const rows = await prisma().audit.findMany({
+      where: { projectId, status: "running", runnerJob: { not: null } },
+      orderBy: { startedAt: "desc" },
+      take: RUNNING_AUDITS_LIMIT,
+    });
+    return rows.map(toAuditRecord);
+  }
+
+  async latestAudits(projectId: string): Promise<AuditRecord[]> {
+    const db = prisma();
+    const newest = (where: object) =>
+      db.audit.findMany({ where: { projectId, ...where }, orderBy: { startedAt: "desc" }, distinct: ["sentinel"] });
+    const [any, done, calibrated, withEpic] = await Promise.all([
+      newest({}),
+      newest({ kind: "audit", status: "done" }),
+      newest({ kind: "calibrate", status: "done", rubric: { not: Prisma.DbNull } }),
+      db.audit.findMany({
+        where: { projectId, epicId: { not: null } },
+        orderBy: { startedAt: "desc" },
+        take: EPIC_AUDITS_LIMIT,
+      }),
+    ]);
+    const byId = new Map([...any, ...done, ...calibrated, ...withEpic].map((r) => [r.id, r]));
+    return [...byId.values()]
+      .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
+      .map(toAuditRecord);
   }
 
   async startAudit(projectId: string, sentinel: string, kind: AuditKind = "audit", rubric: Rubric | null = null, commitSha: string | null = null): Promise<AuditRecord> {

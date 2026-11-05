@@ -7,6 +7,7 @@ import {
   useKeyboardInset,
 } from "@/lib/hooks/use-keyboard-inset";
 import { cn } from "@/components/ui/cn";
+import { useRestoreFocus } from "@/lib/hooks/use-restore-focus";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { PlanSteps } from "@/components/ui/plan-steps";
@@ -71,6 +72,8 @@ export function TicketDrawer({
   const [archiving, setArchiving] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [tab, setTab] = useState<"ticket" | "agent">("ticket");
+
+  useRestoreFocus(!!ticketId);
 
   // Another ticket: nothing of the last one's stays on screen.
   const [shownFor, setShownFor] = useState(ticketId);

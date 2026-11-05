@@ -447,7 +447,7 @@ export async function existingTicketsFor(epicId: string): Promise<ExistingTicket
  * but keeps its row, and its key with it, so a new ticket cannot reuse one.
  */
 export async function archivedKeysFor(projectId: string, epicId: string): Promise<string[]> {
-  return (await repository().archivedTickets(projectId)).filter((t) => t.epicId === epicId).map((t) => t.key);
+  return repository().archivedTicketKeys(epicId);
 }
 
 /** Stage 3 done: the ticket graph goes on the board under its Epic. */
