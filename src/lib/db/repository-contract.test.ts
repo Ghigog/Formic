@@ -286,6 +286,22 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.epicDetail(epic.id))?.rawRequest).toBe("Do E");
       });
 
+      it("stores every dependency edge of a batch whose dependent is listed first", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "Do E", position: 1 });
+        const [c, a, b] = await repo.createTickets([
+          ticket(epic.id, "T-3", { position: 3, dependsOnKeys: ["T-1", "T-2"] }),
+          ticket(epic.id, "T-1", { position: 1 }),
+          ticket(epic.id, "T-2", { position: 2 }),
+        ]);
+
+        expect([c!.key, a!.key, b!.key]).toEqual(["T-3", "T-1", "T-2"]);
+        expect([c!.status, a!.status, b!.status]).toEqual(["waiting", "ready", "ready"]);
+        expect([...c!.dependsOn].sort()).toEqual([a!.id, b!.id].sort());
+        const stored = (await repo.boardCards(p.id)).find((card) => card.id === c!.id);
+        expect([...(stored?.dependsOn ?? [])].sort()).toEqual([a!.id, b!.id].sort());
+      });
+
       it("updates a ticket's story points", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
