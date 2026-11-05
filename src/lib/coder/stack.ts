@@ -6,6 +6,9 @@ import type { BoardCard } from "@/lib/domain/entities";
 import { readiness } from "@/lib/domain/stack";
 import { publish } from "@/lib/events/bus";
 import type { VcsClient } from "@/lib/vcs";
+import { credentialsForProject } from "@/lib/auth/credentials";
+import { projectFor } from "@/lib/board/project";
+import { openCheckout, rebaseOntoTarget } from "./checkout";
 
 /**
  * Stacked pull requests, as the pipelines see them. The rules are in
@@ -59,24 +62,68 @@ export async function ticketBelow(ticket: TicketDetail): Promise<TicketDetail | 
  * on the target now, so its diff goes back to being only its own work, and
  * from here it goes through review, CI and the merge queue like any other.
  *
- * A conflict in bringing the target in is not handled here: the pull
- * request reads as conflicted, and the Reviewer Agent resolves it as it
- * would any other.
+ * The ticket's branch is rebuilt first: its own commits are replayed onto
+ * the target, cut at the head the branch below had when it merged, so the
+ * squash-merged copy of that work does not come back as a conflict. When
+ * that cannot be done (no checkout, or the ticket's own commits conflict
+ * with the target) the target is merged in instead, and a conflict there
+ * is the Reviewer Agent's, as for any other pull request.
  */
 export async function restack(
   projectId: string,
   ticket: TicketDetail,
   client: VcsClient,
   target: string,
-  belowKey: string,
+  below: { key: string; prNumber: number | null },
 ): Promise<void> {
   if (!ticket.prNumber) return;
+  const rebuilt = await rebuildOnTarget(projectId, ticket, client, target, below).catch(() => false);
   await client.retargetPullRequest(ticket.prNumber, target);
   await repository().updateTicket(ticket.id, { stackedOn: null });
-  await client.updateBranch(ticket.prNumber).catch(() => undefined);
+  if (!rebuilt) await client.updateBranch(ticket.prNumber).catch(() => undefined);
   await client
-    .comment(ticket.prNumber, `${belowKey} merged, so this pull request now targets \`${target}\`, and \`${target}\` has been brought in.`)
+    .comment(
+      ticket.prNumber,
+      rebuilt
+        ? `${below.key} merged, so this branch now holds only ${ticket.key}'s own commits on top of \`${target}\`, and its pull request targets \`${target}\`.`
+        : `${below.key} merged, so this pull request now targets \`${target}\`, and \`${target}\` has been brought in.`,
+    )
     .catch(() => undefined);
+}
+
+/** Rebases the ticket's own commits onto the target; false when that was not possible. */
+async function rebuildOnTarget(
+  projectId: string,
+  ticket: TicketDetail,
+  client: VcsClient,
+  target: string,
+  below: { prNumber: number | null },
+): Promise<boolean> {
+  if (!ticket.branchName || !below.prNumber) return false;
+  // The merged pull request still names the head the branch below ended on,
+  // which is where this ticket's own commits begin.
+  const cut = (await client.pullRequest(below.prNumber)).headSha;
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const abort = new AbortController();
+  const checkout = await openCheckout({
+    projectId,
+    repoFullName: project.repoFullName,
+    fromBranch: ticket.branchName,
+    newBranch: null,
+    ticket,
+    ctx: { runId: `restack-${ticket.id}`, projectId, emit: () => undefined, signal: abort.signal },
+    githubToken: creds.githubToken,
+    e2bKey: creds.e2bKey,
+    e2bFallbackUserId: creds.e2bFallbackUserId,
+  });
+  try {
+    // A mock checkout has no git to rebase.
+    if (checkout.sandboxId === null) return false;
+    return (await rebaseOntoTarget(checkout, { branch: ticket.branchName, target, cut })).ok;
+  } finally {
+    await checkout.dispose();
+  }
 }
 
 /** Restacks every ticket built on `merged`'s branch that has its pull request open. */
@@ -93,7 +140,7 @@ export async function restackOnto(
     if (card.kind !== "ticket" || !card.dependsOn.includes(merged.id) || !card.prNumber) continue;
     const ticket = await repo.ticketDetail(card.id);
     if (!ticket || ticket.stackedOn !== merged.branchName || ticket.status === "merged") continue;
-    await restack(projectId, ticket, client, target, merged.key);
+    await restack(projectId, ticket, client, target, merged);
     moved.push(ticket);
   }
   return moved;

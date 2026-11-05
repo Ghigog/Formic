@@ -17,6 +17,7 @@ import type {
   ReviewerAgent,
 } from "@/lib/agents/ports";
 import { MockVcsClient, mergeTarget, resetVcs, setVcs } from "@/lib/vcs";
+import { restackOnto } from "./stack";
 import { MockArchitectAgent, MockProductAgent, MockShowcaseAgent } from "@/lib/agents/mock";
 import { projectFor } from "@/lib/board/project";
 
@@ -218,5 +219,93 @@ describe("stacked pull requests", () => {
     const after = (await repo.ticketDetail(three!.id))!;
     expect(after.status).toBe("blocked");
     expect(after.blockedReason).toContain("could not take in the work merged since it was cut");
+  });
+
+  describe("restacking onto the merge target", () => {
+    /** A sandbox whose git is scripted: records commands, fails the rebase on demand. */
+    function fakeSandbox(opts: { conflict: boolean }) {
+      const commands: string[] = [];
+      let disposed = false;
+      setCheckoutFactory(async (request) => {
+        const memory = new MemoryWorkspace();
+        const raw: Workspace = {
+          id: "fake",
+          readFile: (path) => memory.readFile(path),
+          writeFile: (path, contents) => memory.writeFile(path, contents),
+          changedFiles: () => memory.changedFiles(),
+          diff: (path) => memory.diff(path),
+          async exec(command) {
+            commands.push(command);
+            const failed = opts.conflict && command.includes(" rebase --onto ");
+            return { exitCode: failed ? 1 : 0, stdout: "", stderr: failed ? "CONFLICT" : "", timedOut: false };
+          },
+        };
+        return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: "sbx", async dispose() { disposed = true; } };
+      });
+      return { commands, disposed: () => disposed };
+    }
+
+    async function stackedPair() {
+      const repo = repository();
+      recordCheckouts();
+      const { first, second } = await chain();
+      await runCoderAgent(PROJECT, first.id);
+      await runCoderAgent(PROJECT, second.id);
+      await repo.updateTicket(first.id, { status: "merged" });
+      return {
+        one: (await repo.ticketDetail(first.id))!,
+        two: (await repo.ticketDetail(second.id))!,
+        base: mergeTarget((await projectFor(PROJECT)).baseBranch),
+      };
+    }
+
+    it("replays only the ticket's own commits, cut at the head of the one below, and force-pushes with lease", async () => {
+      const { one, two, base } = await stackedPair();
+      const client = new MockVcsClient(REPO);
+      const cut = (await client.pullRequest(one.prNumber!)).headSha;
+      const before = (await client.pullRequest(two.prNumber!)).headSha;
+      const sandbox = fakeSandbox({ conflict: false });
+
+      await restackOnto(PROJECT, one, client, base);
+
+      const rebase = sandbox.commands.find((c) => c.includes(" rebase --onto "))!;
+      expect(rebase).toContain(`'origin/${base}' '${cut}' '${two.branchName}'`);
+      expect(sandbox.commands.at(-1)).toBe(`git push --force-with-lease origin '${two.branchName}'`);
+      expect(sandbox.commands).not.toContain("git rebase --abort");
+      expect(sandbox.disposed()).toBe(true);
+      expect((await client.pullRequest(two.prNumber!)).baseBranch).toBe(base);
+      expect((await repository().ticketDetail(two.id))!.stackedOn).toBeNull();
+      // The rebase did the bringing-up-to-date: the branch head is untouched.
+      expect((await client.pullRequest(two.prNumber!)).headSha).toBe(before);
+    });
+
+    it("aborts a conflicting rebase and falls back to retargeting and updating the branch", async () => {
+      const { one, two, base } = await stackedPair();
+      const client = new MockVcsClient(REPO);
+      MockVcsClient.behindBase(two.prNumber!);
+      const before = (await client.pullRequest(two.prNumber!)).headSha;
+      const sandbox = fakeSandbox({ conflict: true });
+
+      await restackOnto(PROJECT, one, client, base);
+
+      expect(sandbox.commands).toContain("git rebase --abort");
+      expect(sandbox.commands.some((c) => c.includes("--force-with-lease"))).toBe(false);
+      expect((await client.pullRequest(two.prNumber!)).baseBranch).toBe(base);
+      expect((await client.pullRequest(two.prNumber!)).headSha).not.toBe(before);
+      expect((await repository().ticketDetail(two.id))!.stackedOn).toBeNull();
+    });
+
+    it("leaves a ticket that was never stacked alone", async () => {
+      const { one, two, base } = await stackedPair();
+      await repository().updateTicket(two.id, { stackedOn: null });
+      const client = new MockVcsClient(REPO);
+      const sandbox = fakeSandbox({ conflict: false });
+      const head = (await client.pullRequest(two.prNumber!)).headSha;
+
+      expect(await restackOnto(PROJECT, one, client, base)).toEqual([]);
+
+      expect(sandbox.commands).toEqual([]);
+      expect((await client.pullRequest(two.prNumber!)).headSha).toBe(head);
+    });
   });
 });

@@ -554,7 +554,7 @@ export async function openTicketPullRequest(
   // the merge target now rather than waiting for a merge it already missed.
   const opened = { ...ticket, prNumber: pull.number, stackedOn: stacked };
   const below = await ticketBelow(opened);
-  if (stacked && below?.status === "merged") await restack(projectId, opened, client, target, below.key);
+  if (stacked && below?.status === "merged") await restack(projectId, opened, client, target, below);
 
   // Tickets waiting on this one can build on it now that its pull request is open.
   await releaseWaiting(projectId);

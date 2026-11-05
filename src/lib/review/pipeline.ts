@@ -429,7 +429,7 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
       // The one under it merged where this board did not see it (a person on
       // GitHub, while no instance was listening): it moves on now.
       if (below?.status === "merged") {
-        await restack(projectId, ticket, client, mergeTarget(project.baseBranch), below.key);
+        await restack(projectId, ticket, client, mergeTarget(project.baseBranch), below);
         continue;
       }
       // The one under it started over on a new branch, or is gone: what this
