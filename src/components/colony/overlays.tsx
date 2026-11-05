@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { BoardCard } from "@/lib/domain/entities";
 import { XP_PER_LEVEL, isMaxLevel } from "@/lib/colony/game";
-import { showcaseHeadline } from "@/lib/domain/showcase";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { useColony } from "./colony";
 import { centerOf } from "./fx";
@@ -86,59 +85,20 @@ export function ColonyToast() {
   );
 }
 
-/**
- * The PM Agent's showcase for an epic, looked for again until it is written.
- * `offered` is set once it has none and is only written on request, so there
- * is nothing to wait for.
- */
-function useShowcase(epicId: string | undefined): { text: string | null; offered: boolean } {
-  const [found, setFound] = useState<{ id: string; text: string | null; offered: boolean } | null>(null);
-  const mine = found && found.id === epicId ? found : null;
-  const stop = !!mine && (!!mine.text || mine.offered);
-  useEffect(() => {
-    if (!epicId || stop) return;
-    let live = true;
-    const look = () =>
-      fetch(`/api/epics/${epicId}`, { cache: "no-store" })
-        .then((res) =>
-          res.ok
-            ? (res.json() as Promise<{ showcase?: string | null; canGenerateShowcase?: boolean }>)
-            : null,
-        )
-        .then((body) => {
-          if (!live || !body) return;
-          if (body.showcase) setFound({ id: epicId, text: body.showcase, offered: false });
-          else if (body.canGenerateShowcase) setFound({ id: epicId, text: null, offered: true });
-        })
-        .catch(() => undefined);
-    void look();
-    const timer = setInterval(() => {
-      if (document.visibilityState !== "hidden") void look();
-    }, 8000);
-    return () => {
-      live = false;
-      clearInterval(timer);
-    };
-  }, [epicId, stop]);
-  return { text: mine?.text ?? null, offered: mine?.offered ?? false };
-}
-
 /** When each beat of the win lands, in ms from the dialog opening. */
-const BEAT = { burst: 720, count: 900, countMs: 1100, fill: 2150, fillMs: 700, summary: 2950 };
+const BEAT = { burst: 720, count: 900, countMs: 1100, fill: 2150, fillMs: 700 };
 
 /** An epic landed in Done: what it scored, where the colony stands, and what shipped. */
-export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) => void }) {
+export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) => void }) {
   const c = useColony();
   const backdrop = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const coin = useRef<HTMLSpanElement>(null);
   const score = useRef<HTMLSpanElement>(null);
-  const summary = useRef<HTMLParagraphElement>(null);
   const keep = useRef<HTMLButtonElement>(null);
   const win = c?.win;
-  const { text: showcase, offered } = useShowcase(win?.epic.id);
   const reduced = !!c?.fx.reducedMotion;
-  const fresh = () => ({ total: reduced ? (win?.tally.total ?? 0) : 0, filled: reduced, summary: reduced });
+  const fresh = () => ({ total: reduced ? (win?.tally.total ?? 0) : 0, filled: reduced });
   const [shown, setShown] = useState(fresh);
   // Another win: its own count from zero, not the last one's.
   const [shownFor, setShownFor] = useState(win);
@@ -215,7 +175,6 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
         sfx("fill");
         setShown((v) => ({ ...v, filled: true }));
       }),
-      at(BEAT.summary, () => setShown((v) => ({ ...v, summary: true }))),
     );
 
     const onKey = (e: KeyboardEvent) => {
@@ -233,27 +192,9 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win]);
 
-  const headline = showcase ? showcaseHeadline(showcase) : null;
-  const visible = shown.summary && !!headline;
-  useEffect(() => {
-    if (!visible || !c) return;
-    c.sfx("reveal");
-    if (!reduced) {
-      summary.current?.animate(
-        [
-          { opacity: 0, transform: "translateY(6px)" },
-          { opacity: 1, transform: "none" },
-        ],
-        { duration: 420, easing: "ease-out" },
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-
   if (!c || !win) return null;
 
   const { tally } = win;
-  const yours = showcase ? (showcase.match(/^- \[ \] /gm) ?? []).length : 0;
   const s = c.score;
   const before = Math.max(0, s.intoLevel - tally.total);
   const maxed = isMaxLevel(s.level);
@@ -353,41 +294,19 @@ export function EpicWinDialog({ onShowcase }: { onShowcase?: (epic: BoardCard) =
           </div>
         </div>
 
-        <div className="bg-sunken w-full rounded-lg p-4 text-left">
-          <span className="text-muted font-mono text-[10px] tracking-[0.12em]">SUMMARY</span>
-          {visible ? (
-            <p ref={summary} className="text-ink m-0 mt-1.5 font-serif text-[17px] leading-[1.4] font-medium">
-              {headline}
-            </p>
-          ) : (
-            <p className={`text-muted m-0 mt-1.5 text-[13px] leading-[1.55]${offered ? "" : " animate-pulse"}`}>
-              {offered
-                ? "No showcase yet. Generate it from the Epic when you want one."
-                : shown.summary
-                  ? "The PM Agent is writing the showcase…"
-                  : "Tallying…"}
-            </p>
-          )}
-          {visible && yours > 0 && (
-            <p className="text-terracotta-cta m-0 mt-2 text-[12px] font-semibold">
-              {yours === 1 ? "1 step is" : `${yours} steps are`} yours before it all works. They are in the showcase.
-            </p>
-          )}
-        </div>
-
         <div className="mt-1 flex w-full gap-2">
-          {onShowcase && (
+          {onOpenEpic && (
             <button
               type="button"
               onPointerEnter={hover}
               onClick={() => {
                 c.sfx("click");
                 c.closeWin();
-                onShowcase(win.epic);
+                onOpenEpic(win.epic);
               }}
               className="bg-terracotta-cta inline-flex h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold text-white transition-transform hover:-translate-y-px active:translate-y-px"
             >
-              {offered ? "Open Epic" : "View showcase"}
+              Open Epic
             </button>
           )}
           <button
