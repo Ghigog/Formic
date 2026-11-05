@@ -69,6 +69,8 @@ export function sentinelStates(
       .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
     const done = mine.filter((a) => a.kind === "audit" && a.status === "done").at(-1) ?? null;
     const calibrated = mine.filter((a) => a.kind === "calibrate" && a.status === "done" && a.rubric).at(-1) ?? null;
+    // Any report's Epic still open holds the next audit, not only the latest report's.
+    const heldBy = mine.filter((a) => a.epicId && openEpics[a.epicId]).at(-1)?.epicId ?? null;
     const newest = mine.at(-1) ?? null;
     const later = newest && newest !== done && newest !== calibrated ? newest : null;
     const stale =
@@ -97,7 +99,7 @@ export function sentinelStates(
             model: calibrated.model,
           }
         : null,
-      hold: done?.epicId && openEpics[done.epicId] ? { epicId: done.epicId, key: openEpics[done.epicId]! } : null,
+      hold: heldBy ? { epicId: heldBy, key: openEpics[heldBy]! } : null,
       rubricChanged: !!done?.rubric && !!calibrated && !sameRubric(done.rubric, calibrated.rubric),
       doneSince,
       auditStale: finishedAt !== null && doneSince > s.staleAfterPoints,

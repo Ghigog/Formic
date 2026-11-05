@@ -606,7 +606,7 @@ describe("a problem notice", () => {
 });
 
 describe("an epic in the backlog", () => {
-  it("shows its stage caption but no stage count tag", () => {
+  it("shows its stage caption but no stage count tag or stage pips", () => {
     const card = makeCard({ kind: "epic", size: null, stage: 2 });
     const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
     renderInDnd(
@@ -616,5 +616,7 @@ describe("an epic in the backlog", () => {
     );
     expect(screen.getByText("PRD draft")).toBeTruthy();
     expect(screen.queryByText(/\d\/8/)).toBeNull();
+    const shell = screen.getByText("PRD draft").parentElement!;
+    expect(shell.querySelector(".oct.size-3")).toBeNull();
   });
 });
