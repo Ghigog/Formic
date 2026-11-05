@@ -123,6 +123,11 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
   const [reportId, setReportId] = useState<string | null>(null);
   const reportRef = useRef<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // Holds are those of the last fetch; opening the page shows current ones.
+  const { refresh } = s;
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
   const g = s.grade;
 
   /** The card whose plop last played, so each new centred card plops once. */

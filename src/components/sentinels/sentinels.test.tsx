@@ -164,7 +164,14 @@ describe("SentinelsPage report and rail cues", () => {
     running[x.id] = { ...running[x.id]!, running: { kind: "audit", log: [], startedAt: new Date().toISOString() } };
     const landed = states([]);
     landed[x.id] = { ...landed[x.id]!, stars, at: new Date().toISOString() };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sentinels: landed }) }));
+    // Opening the page fetches once and still finds the run going; the next poll finds it landed.
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sentinels: running }) })
+        .mockResolvedValue({ ok: true, json: async () => ({ sentinels: landed }) }),
+    );
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       render(
