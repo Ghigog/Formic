@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { CardChat } from "./card-chat";
+import { useCardChat } from "@/lib/hooks/use-card-chat";
 
-vi.mock("@/lib/hooks/use-card-chat", () => ({
-  useCardChat: () => ({
+const base = () => ({
     messages: [
       { id: "1", role: "user", content: "How's it going? **stars**", status: "done" },
       {
@@ -20,8 +21,14 @@ vi.mock("@/lib/hooks/use-card-chat", () => ({
     error: null,
     ask: vi.fn(),
     clear: vi.fn(),
-  }),
-}));
+    hasEarlier: false,
+    loadingEarlier: false,
+    earlierError: null,
+    loadEarlier: vi.fn(),
+});
+
+vi.mock("@/lib/hooks/use-card-chat", () => ({ useCardChat: vi.fn() }));
+beforeEach(() => vi.mocked(useCardChat).mockImplementation(() => base() as never));
 
 describe("CardChat", () => {
   it("shows the conversation with its input", () => {
@@ -50,5 +57,40 @@ describe("CardChat", () => {
     render(<CardChat kind="epic" cardId="e1" agentLabel="Architect" />);
     expect(screen.getByText("there").tagName).toBe("STRONG");
     expect(screen.getByText("How's it going? **stars**")).toBeInTheDocument();
+  });
+});
+
+describe("Earlier messages", () => {
+  const mk = (over: Record<string, unknown> = {}) => {
+    vi.mocked(useCardChat).mockReturnValue({
+      ...base(),
+      hasEarlier: true,
+      loadEarlier: vi.fn().mockResolvedValue(undefined),
+      ...over,
+    } as never);
+  };
+
+  it("shows the link only when there is something earlier, and asks for it when tapped", async () => {
+    const loadEarlier = vi.fn().mockResolvedValue(undefined);
+    mk({ loadEarlier });
+    const { rerender } = render(<CardChat kind="ticket" cardId="t1" agentLabel="Architect" />);
+    await userEvent.click(screen.getByRole("button", { name: "Earlier messages" }));
+    expect(loadEarlier).toHaveBeenCalled();
+    mk({ hasEarlier: false });
+    rerender(<CardChat kind="ticket" cardId="t1" agentLabel="Architect" />);
+    expect(screen.queryByText("Earlier messages")).toBeNull();
+  });
+
+  it("reads Loading… as plain text while it loads", () => {
+    mk({ loadingEarlier: true });
+    render(<CardChat kind="ticket" cardId="t1" agentLabel="Architect" />);
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Earlier messages" })).toBeNull();
+  });
+
+  it("shows a failure inline", () => {
+    mk({ earlierError: "Nope." });
+    render(<CardChat kind="ticket" cardId="t1" agentLabel="Architect" />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Nope.");
   });
 });

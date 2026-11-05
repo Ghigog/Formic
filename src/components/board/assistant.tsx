@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { AgentSelect } from "./agent-select";
+import { EarlierMessages, useKeepPlace } from "./earlier-messages";
 import { useDraft } from "./use-draft";
 import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
@@ -34,6 +35,11 @@ export interface AssistantControls {
   setOpen: (open: boolean) => void;
   presetId: string | null;
   messages: AssistantMessageView[];
+  /** Whether the thread has messages before the ones loaded. */
+  hasEarlier?: boolean;
+  loadingEarlier?: boolean;
+  earlierError?: string | null;
+  loadEarlier?: () => Promise<void>;
   pending: boolean;
   error: string | null;
   /** Sends a message; `speakers` are who answers it, in order (the PM by default). */
@@ -519,7 +525,7 @@ function Shade({
     keyboardTop !== undefined && visibleHeight !== null
       ? Math.max(0, visibleHeight - keyboardTop)
       : null;
-  const list = useRef<HTMLDivElement>(null);
+  const { list, keepPlace } = useKeepPlace(a.messages[0]?.id);
   const selected = a.presets.find((p) => p.id === a.presetId) ?? null;
   const cli = selected
     ? providerInfo(selected.provider)?.kind === "cli"
@@ -533,7 +539,7 @@ function Shade({
         top: list.current.scrollHeight,
         behavior: "smooth",
       });
-  }, [a.open]);
+  }, [a.open, list]);
 
   useEffect(() => {
     if (!a.open) return;
@@ -604,14 +610,23 @@ function Shade({
             )}
           </div>
         ) : (
-          a.messages.map((m) => (
-            <Message
-              key={m.id}
-              m={m}
-              cli={cli}
-              onDecide={(i, d) => a.decide(m.id, i, d)}
-            />
-          ))
+          <>
+            {a.hasEarlier && a.loadEarlier && (
+              <EarlierMessages
+                loading={!!a.loadingEarlier}
+                error={a.earlierError ?? null}
+                onLoad={() => void keepPlace(a.loadEarlier!)}
+              />
+            )}
+            {a.messages.map((m) => (
+              <Message
+                key={m.id}
+                m={m}
+                cli={cli}
+                onDecide={(i, d) => a.decide(m.id, i, d)}
+              />
+            ))}
+          </>
         )}
         {!!a.waiting?.length && <WaitingQuestions a={a} />}
         {a.error && (

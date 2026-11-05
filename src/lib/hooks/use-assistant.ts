@@ -1,5 +1,6 @@
 "use client";
 
+import { mergeMessages } from "./merge-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /** One message, as the assistant API returns it. */
@@ -35,6 +36,8 @@ export interface AssistantMessageView {
 interface State {
   presetId: string | null;
   messages: AssistantMessageView[];
+  /** The id to pass as ?before= for the page before these, or null when nothing is earlier. */
+  earlierCursor?: string | null;
 }
 
 async function send(
@@ -66,7 +69,17 @@ const POLL_MS = 4_000;
  * seconds, a CLI agent in GitHub Actions in a minute or two.
  */
 export function useAssistant(enabled: boolean) {
-  const [state, setState] = useState<State>({ presetId: null, messages: [] });
+  const [state, setStateRaw] = useState<State>({ presetId: null, messages: [] });
+  // Earlier pages live apart from the polled newest page, so a poll cannot drop them.
+  const [earlier, setEarlier] = useState<{ messages: AssistantMessageView[]; cursor: string | null } | null>(null);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [earlierError, setEarlierError] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  /** A new newest page: a conversation that was cleared starts over. */
+  const setState = useCallback((next: State) => {
+    setStateRaw(next);
+    if (next.messages.length === 0) setEarlier(null);
+  }, []);
   const loaded = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
@@ -90,7 +103,7 @@ export function useAssistant(enabled: boolean) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [setState]);
 
   useEffect(() => {
     if (!enabled || loaded.current) return;
@@ -112,7 +125,7 @@ export function useAssistant(enabled: boolean) {
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
       return [];
     }
-  }, []);
+  }, [setState]);
 
   const answering = state.messages.some((m) => m.status === "pending");
   const pending = asking || answering;
@@ -125,7 +138,7 @@ export function useAssistant(enabled: boolean) {
         .catch(() => undefined);
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [answering]);
+  }, [answering, setState]);
 
   const ask = useCallback(
     async (text: string, speakers?: string[]) => {
@@ -186,8 +199,44 @@ export function useAssistant(enabled: boolean) {
       setError(data?.error ?? "Could not change the agent.");
       return;
     }
-    setState((s) => ({ ...s, presetId }));
+    setStateRaw((s) => ({ ...s, presetId }));
   }, []);
 
-  return { ...state, pending, error, ask, stop, clear, decide, load, setAgent };
+  const cursor = earlier ? earlier.cursor : (state.earlierCursor ?? null);
+  const loadEarlier = useCallback(async () => {
+    if (!cursor || loadingRef.current) return;
+    loadingRef.current = true;
+    setLoadingEarlier(true);
+    setEarlierError(null);
+    try {
+      const page = await send(`/api/assistant?before=${encodeURIComponent(cursor)}`, "GET");
+      if (!alive.current) return;
+      setEarlier((prev) => ({
+        messages: mergeMessages(page.messages, prev?.messages ?? []),
+        cursor: page.earlierCursor ?? null,
+      }));
+    } catch (e) {
+      if (alive.current) setEarlierError(e instanceof Error ? e.message : String(e));
+    } finally {
+      loadingRef.current = false;
+      if (alive.current) setLoadingEarlier(false);
+    }
+  }, [cursor]);
+
+  return {
+    presetId: state.presetId,
+    messages: mergeMessages(earlier?.messages ?? [], state.messages),
+    pending,
+    error,
+    ask,
+    stop,
+    clear,
+    decide,
+    load,
+    setAgent,
+    hasEarlier: cursor !== null,
+    loadingEarlier,
+    earlierError,
+    loadEarlier,
+  };
 }
