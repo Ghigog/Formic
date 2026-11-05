@@ -1081,7 +1081,7 @@ describe("work that needs files outside the ticket's scope", () => {
     expect(after.fileScope).toEqual(["src/app/page.tsx", "src/lib/feature"]);
     expect(after.scopeRequest).toEqual([]);
     expect(after.prNumber).not.toBeNull();
-    const chat = await repository().cardChatMessages(after.id);
+    const chat = (await repository().cardChatMessages(after.id)).messages;
     expect(chat.at(-1)!.content).toContain("src/app/page.tsx");
   });
 
@@ -1094,7 +1094,7 @@ describe("work that needs files outside the ticket's scope", () => {
     expect(after.scopeRequest).toEqual(["src/app/page.tsx"]);
     expect(after.blockedReason).toContain("src/app/page.tsx");
     expect(after.prNumber).toBeNull();
-    const chat = await repository().cardChatMessages(after.id);
+    const chat = (await repository().cardChatMessages(after.id)).messages;
     expect(chat.at(-1)).toMatchObject({ role: "assistant" });
     expect(chat.at(-1)!.content).toContain("src/app/page.tsx");
   });

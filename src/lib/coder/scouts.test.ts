@@ -185,7 +185,7 @@ describe("scouts", () => {
     expect(kept.summary).toBe("with tests");
     expect(parent.branchName).toBe(kept.branchName);
     expect(parent.prNumber).not.toBeNull();
-    expect((await repo.cardChatMessages(t.id)).at(-1)?.content).toMatch(/Sent 2 scouts\. Kept S2: It has tests\./);
+    expect(((await repo.cardChatMessages(t.id)).messages).at(-1)?.content).toMatch(/Sent 2 scouts\. Kept S2: It has tests\./);
 
     const notes = await repo.eventsOfTypes([PROJECT], ["repo.note"], new Date(0));
     expect(notes.map((n) => (n.payload as { text: string }).text)).toContain("The db module wants a test beside it.");

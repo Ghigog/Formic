@@ -241,7 +241,7 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
 
 /** What the reply `messageId` sees: the conversation up to its own message. */
 async function historyBefore(projectId: string, messageId: string) {
-  const all = await repository().assistantMessages(projectId);
+  const { messages: all } = await repository().assistantMessages(projectId);
   const at = all.findIndex((m) => m.id === messageId);
   const past = history(at < 0 ? all : all.slice(0, at));
   // Another speaker's reply may be the last: the person's question still stands.
@@ -729,7 +729,7 @@ async function askAgain(
   if (speaker !== "assistant" && !column) return false;
   const agent = column ? await columnChatAgentFor(projectId, column) : await assistantAgentFor(projectId);
   if (agent.kind !== "cli") return false;
-  const all = await repository().assistantMessages(projectId);
+  const { messages: all } = await repository().assistantMessages(projectId);
   const past = history(all.filter((m) => m.id !== messageId));
   const system = column
     ? await guestPrompt(projectId, column, speaker, agent.agent.brief)

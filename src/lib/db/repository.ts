@@ -29,6 +29,26 @@ import type { ProviderId } from "@/lib/llm/providers";
 export const RUNNING_AUDITS_LIMIT = 50;
 /** How many of the newest Epic-carrying audits latestAudits reads; a report replaces its sentinel's earlier ones, so few exist. */
 export const EPIC_AUDITS_LIMIT = 50;
+/** Newest audits auditsFor returns. */
+export const AUDITS_LIMIT = 200;
+/** Cards per archive page. */
+export const ARCHIVE_PAGE_LIMIT = 50;
+/** Chat messages per page. */
+export const MESSAGES_PAGE_LIMIT = 100;
+/** Upper bound for the pending/orphaned chat lookups. */
+export const PENDING_MESSAGES_LIMIT = 200;
+
+/** One page of a card list: nextCursor is null on the last page. */
+export interface CardPage {
+  cards: BoardCard[];
+  nextCursor: string | null;
+}
+
+/** One page of a conversation, oldest first; earlierCursor is null when nothing is earlier. */
+export interface MessagePage<T> {
+  messages: T[];
+  earlierCursor: string | null;
+}
 
 export interface CreateEpicInput {
   projectId: string;
@@ -810,11 +830,11 @@ export interface BoardRepository {
   projectOfCard(cardId: string): Promise<string | null>;
   boardCards(projectId: string): Promise<BoardCard[]>;
   /** The archive: a project's archived tickets, off the active board. Those archived with their Epic show under it. */
-  archivedTickets(projectId: string): Promise<BoardCard[]>;
+  archivedTickets(projectId: string, page?: { cursor?: string; limit?: number }): Promise<CardPage>;
   /** The keys of an Epic's archived tickets, as archivedTickets lists them. */
   archivedTicketKeys(epicId: string): Promise<string[]>;
   /** The archive: a project's archived Epics. */
-  archivedEpics(projectId: string): Promise<BoardCard[]>;
+  archivedEpics(projectId: string, page?: { cursor?: string; limit?: number }): Promise<CardPage>;
   /**
    * Archives an Epic and each of its non-archived tickets, marking those as
    * taken by the Epic, in one transaction. Idempotent.
@@ -1098,8 +1118,8 @@ export interface AgentRepository {
 
 /** Conversations: the assistant and card chat. */
 export interface ConversationRepository {
-  /** The assistant conversation, oldest first. */
-  assistantMessages(projectId: string): Promise<AssistantMessage[]>;
+  /** One page of the assistant conversation, oldest first: the newest by default, or the ones before a message id. */
+  assistantMessages(projectId: string, page?: { before?: string; limit?: number }): Promise<MessagePage<AssistantMessage>>;
   assistantMessage(id: string): Promise<AssistantMessage | null>;
   /** The oldest pending assistant message (of one role, if given), or null. */
   pendingAssistantMessage(projectId: string, role?: "user" | "assistant"): Promise<AssistantMessage | null>;
@@ -1117,8 +1137,8 @@ export interface ConversationRepository {
     update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void>;
   clearAssistant(projectId: string): Promise<void>;
-  /** One card's chat, oldest first. */
-  cardChatMessages(cardId: string): Promise<CardChatMessage[]>;
+  /** One page of a card's chat, oldest first: the newest by default, or the ones before a message id. */
+  cardChatMessages(cardId: string, page?: { before?: string; limit?: number }): Promise<MessagePage<CardChatMessage>>;
   cardChatMessage(id: string): Promise<CardChatMessage | null>;
   /** A card's pending chat message, or null. */
   pendingCardChatMessage(cardId: string): Promise<CardChatMessage | null>;
@@ -1157,7 +1177,7 @@ export interface ConversationRepository {
 
 /** Sentinels: audits. */
 export interface AuditRepository {
-  /** Every audit a project keeps, oldest first. */
+  /** A project's newest audits, oldest first. */
   auditsFor(projectId: string): Promise<AuditRecord[]>;
   /** An audit is started with the rubric it will be scored against. */
   startAudit(

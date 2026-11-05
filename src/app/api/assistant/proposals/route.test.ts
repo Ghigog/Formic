@@ -33,7 +33,7 @@ beforeEach(() => {
   activeProject.mockResolvedValue({ id: "p-1" });
   repo.assistantMessage.mockResolvedValue({ id: "m-1", projectId: "p-1", proposals: [{ state: "proposed", action }] });
   repo.assistantAgent.mockResolvedValue(null);
-  repo.assistantMessages.mockResolvedValue([]);
+  repo.assistantMessages.mockResolvedValue({ messages: [], earlierCursor: null });
   checkAction.mockReturnValue({ ok: true, action });
   applyAction.mockResolvedValue("Done.");
 });

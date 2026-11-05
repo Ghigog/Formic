@@ -37,21 +37,28 @@ beforeEach(() => {
   vi.resetAllMocks();
   activeProject.mockResolvedValue({ id: "p-1" });
   repo.projectOfCard.mockResolvedValue("p-1");
-  repo.cardChatMessages.mockResolvedValue([{ role: "user", text: "hi" }]);
+  repo.cardChatMessages.mockResolvedValue({ messages: [{ role: "user", text: "hi" }], earlierCursor: null });
 });
 
 describe("/api/tickets/[id]/chat", () => {
   it("GET returns the chat messages", async () => {
     const res = await get();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ messages: [{ role: "user", text: "hi" }] });
+    expect(await res.json()).toEqual({ messages: [{ role: "user", text: "hi" }], earlierCursor: null });
+  });
+
+  it("GET ?before= reads the page before that message", async () => {
+    repo.cardChatMessages.mockResolvedValue({ messages: [{ role: "user", text: "old" }], earlierCursor: "m-0" });
+    const res = await GET(new NextRequest("http://localhost/api/tickets/t-1/chat?before=m-9"), params);
+    expect(repo.cardChatMessages).toHaveBeenCalledWith("t-1", { before: "m-9" });
+    expect(await res.json()).toEqual({ messages: [{ role: "user", text: "old" }], earlierCursor: "m-0" });
   });
 
   it("POST asks the column agent and returns the chat", async () => {
     const res = await post({ text: "  what next?  " });
     expect(res.status).toBe(200);
     expect(ask).toHaveBeenCalledWith("p-1", "ticket", "t-1", "what next?");
-    expect(await res.json()).toEqual({ messages: [{ role: "user", text: "hi" }] });
+    expect(await res.json()).toEqual({ messages: [{ role: "user", text: "hi" }], earlierCursor: null });
   });
 
   it("POST 400s on an empty question", async () => {

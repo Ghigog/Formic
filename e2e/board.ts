@@ -129,6 +129,35 @@ export async function dragCardTo(
 }
 
 /**
+ * Move a card to another column with the keyboard alone: focus it, Space to
+ * lift, ArrowRight once per column to cross, Space to drop. Only moves right,
+ * the way the library's keyboard sensor moves along a row. Resolves once the
+ * card is rendered in the new column and the drop animation has settled.
+ */
+export async function keyboardMoveCard(
+  page: Page,
+  cardId: string,
+  to: ColumnName,
+  timeout = 10_000,
+): Promise<void> {
+  const source = card(page, cardId);
+  const steps = COLUMNS.indexOf(to) - COLUMNS.indexOf(await columnOf(page, cardId));
+  if (steps < 1) throw new Error(`Cannot move ${cardId} right to ${to}.`);
+
+  await source.focus();
+  await expect(source).toBeFocused();
+  await page.keyboard.press("Space");
+  for (let i = 0; i < steps; i++) {
+    await page.keyboard.press("ArrowRight");
+    // Each step animates; the library ignores keys while it is moving.
+    await page.waitForTimeout(300);
+  }
+  await page.keyboard.press("Space");
+  await expect.poll(() => columnOf(page, cardId), { timeout }).toBe(to);
+  await waitForDragSettle(source);
+}
+
+/**
  * Drag a card to the empty space at the bottom of a column: below every
  * card, and outside any epic's accordion.
  */

@@ -236,15 +236,17 @@ export function EpicDrawer({
 
   return (
     <div
-      role="dialog"
-      aria-modal
-      aria-label="Epic detail"
+      role="presentation"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       style={kb.backdrop}
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal
+        aria-label="Epic detail"
         style={kb.panel}
         className="bg-bg border-line flex h-[92dvh] w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >

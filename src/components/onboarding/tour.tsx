@@ -456,6 +456,8 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
             </button>
           </div>
 
+          {/* Mouse shortcut only: the Next button finishes the line for the keyboard. */}
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
           <p
             aria-live="polite"
             onClick={finishLine}

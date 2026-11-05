@@ -28,7 +28,7 @@ async function board() {
   return { project, user };
 }
 
-async function state(project: ProjectSummary, user: UserRecord) {
+async function state(project: ProjectSummary, user: UserRecord, before?: string) {
   const projectId = project.id;
   const repo = repository();
   // An answer from GitHub Actions is collected here too, not only when the
@@ -38,15 +38,16 @@ async function state(project: ProjectSummary, user: UserRecord) {
   );
   return {
     presetId: await assistantPick(project, user),
-    messages: await repo.assistantMessages(projectId),
+    ...(await repo.assistantMessages(projectId, { before })),
   };
 }
 
 /** The assistant's conversation on the active board, and its agent. */
-export async function GET() {
+export async function GET(req: Request) {
   const found = await board();
   if ("error" in found) return found.error;
-  return Response.json(await state(found.project, found.user));
+  const before = new URL(req.url).searchParams.get("before") ?? undefined;
+  return Response.json(await state(found.project, found.user, before));
 }
 
 /** Asks the assistant something. The answer arrives on a later GET. */

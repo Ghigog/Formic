@@ -32,7 +32,7 @@ beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset());
   m.activeProject.mockResolvedValue({ id: "project_default" });
   m.projectOfCard.mockResolvedValue("project_default");
-  m.cardChatMessages.mockResolvedValue(messages);
+  m.cardChatMessages.mockResolvedValue({ messages, earlierCursor: null });
 });
 
 const req = (method: string, body?: unknown) =>
@@ -45,7 +45,14 @@ describe("/api/epics/[id]/chat", () => {
   it("GET returns the chat messages", async () => {
     const res = await GET(req("GET"), ctx);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ messages });
+    expect(await res.json()).toEqual({ messages, earlierCursor: null });
+  });
+
+  it("GET ?before= reads the page before that message", async () => {
+    m.cardChatMessages.mockResolvedValue({ messages, earlierCursor: "m-0" });
+    const res = await GET(new NextRequest("http://localhost/api/epics/e-1/chat?before=m-9"), ctx);
+    expect(m.cardChatMessages).toHaveBeenCalledWith("e-1", { before: "m-9" });
+    expect(await res.json()).toEqual({ messages, earlierCursor: "m-0" });
   });
 
   it("answers 404 for an Epic outside the active project", async () => {
@@ -60,7 +67,7 @@ describe("/api/epics/[id]/chat", () => {
     const res = await POST(req("POST", { text: " hello " }), ctx);
     expect(res.status).toBe(200);
     expect(m.ask).toHaveBeenCalledWith("project_default", "epic", "e-1", "hello");
-    expect(await res.json()).toEqual({ messages });
+    expect(await res.json()).toEqual({ messages, earlierCursor: null });
   });
 
   it("POST answers 400 for an empty or missing text", async () => {

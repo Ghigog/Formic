@@ -37,8 +37,8 @@ describe("the archive on the in-memory store", () => {
 
     // Off the active board, in the archive, and only archived ones there.
     expect((await repo.boardCards(project.id)).map((c) => c.id)).toEqual([epic.id, b!.id]);
-    expect((await repo.archivedTickets(project.id)).map((c) => c.id)).toEqual([a!.id]);
-    expect((await repo.archivedTickets(project.id)).every((c) => c.archived === true)).toBe(true);
+    expect(((await repo.archivedTickets(project.id)).cards).map((c) => c.id)).toEqual([a!.id]);
+    expect(((await repo.archivedTickets(project.id)).cards).every((c) => c.archived === true)).toBe(true);
     expect(await repo.cardById(a!.id)).toMatchObject({ archived: true });
   });
 
@@ -57,7 +57,7 @@ describe("the archive on the in-memory store", () => {
     await repo.updateTicket(a!.id, { archived: true });
 
     expect((await repo.boardCards(project.id)).map((c) => c.id)).toEqual([epic.id]);
-    expect((await repo.archivedTickets(project.id)).map((c) => c.id)).toEqual([a!.id]);
+    expect(((await repo.archivedTickets(project.id)).cards).map((c) => c.id)).toEqual([a!.id]);
     expect(await repo.cardById(a!.id)).toMatchObject({ archived: true });
   });
 
@@ -78,8 +78,8 @@ describe("the archive on the in-memory store", () => {
     const [t] = await repo.createTickets([ticketInput(epic.id, "W-1", 2)]);
     await repo.updateTicket(t!.id, { archived: true });
 
-    expect((await repo.archivedTickets(other.id)).map((c) => c.id)).toEqual([t!.id]);
-    expect(await repo.archivedTickets(home.id)).toEqual([]);
+    expect(((await repo.archivedTickets(other.id)).cards).map((c) => c.id)).toEqual([t!.id]);
+    expect((await repo.archivedTickets(home.id)).cards).toEqual([]);
   });
 
   it("leaves an archived ticket out of its epic's counts, and back in when restored", async () => {
