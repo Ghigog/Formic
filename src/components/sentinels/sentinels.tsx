@@ -125,8 +125,19 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
   const [now, setNow] = useState(() => Date.now());
   const g = s.grade;
 
+  /** The card whose plop last played, so each new centred card plops once. */
+  const plopped = useRef(0);
+  const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const plop = (i: number) => {
+    if (i === plopped.current) return;
+    plopped.current = i;
+    c.sfx("plop", i / (SENTINELS.length - 1));
+  };
+  useEffect(() => () => clearTimeout(settle.current), []);
+
   const goTo = (i: number) => {
     const el = rail.current;
+    plop(i);
     const item = el?.children[i] as HTMLElement | undefined;
     idxRef.current = i;
     setIdx(i);
@@ -170,6 +181,9 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
     const best = centredNow();
     idxRef.current = best;
     setIdx(best);
+    // Plop when the swipe settles on a card, not on every scroll event.
+    clearTimeout(settle.current);
+    settle.current = setTimeout(() => plop(centredNow()), 90);
   };
 
   // On mobile a mouse wheel gesture is one step: further wheel events are swallowed
@@ -282,6 +296,8 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
       }
       if (!is?.at || is.at === was.at) continue;
       const stars = is.stars ?? 0;
+      c.sfx("ring");
+      if (stars === 5) setTimeout(() => c.sfx("chord"), stars * 110);
       const els =
         root.current?.querySelectorAll<SVGElement>(`[data-star="${x.id}"]`) ??
         [];
