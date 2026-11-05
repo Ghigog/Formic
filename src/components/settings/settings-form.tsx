@@ -248,7 +248,7 @@ export function SettingsForm({
           ← Board
         </Link>
         <span aria-hidden className="bg-line h-6 w-px" />
-        <h1 className="font-serif text-[19px] font-semibold">Settings</h1>
+        <h1 className="font-serif text-[18px] font-semibold">Settings</h1>
       </header>
       <AutoTour id="settings" delay={600} />
 

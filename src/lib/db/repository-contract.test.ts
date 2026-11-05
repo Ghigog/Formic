@@ -1648,6 +1648,15 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.reservations(repoName)).toEqual([]);
       });
 
+      it("counts errors recorded inside the window and forgets older ones", async () => {
+        const before = new Date(Date.now() - 1000);
+        expect(await repo.recordErrorOccurrence(before)).toBe(1);
+        expect(await repo.recordErrorOccurrence(before)).toBe(2);
+        // A window that starts after every row forgets them all, the new one included.
+        expect(await repo.recordErrorOccurrence(new Date(Date.now() + 60_000))).toBe(0);
+        expect(await repo.recordErrorOccurrence(before)).toBe(1);
+      });
+
       it("gives a lease to one holder at a time, and to the next once it lapses or is let go", async () => {
         const key = `contract:${randomUUID()}`;
         expect(await repo.acquireLease(key, "a", 60_000)).toBe(true);

@@ -136,6 +136,8 @@ interface AttachmentRow {
 interface Store {
   /** Lease key to who holds it and until when (ms since epoch). */
   leases: Map<string, { holder: string; expiresAt: number }>;
+  /** When each recent error happened (ms since epoch). */
+  errorTimes: number[];
   /** Host usage by UTC day, "YYYY-MM-DD". */
   platformUsage: Map<string, PlatformUsage>;
   hostUsageCheck?: HostUsageCheck;
@@ -247,6 +249,7 @@ function store(): Store {
     existing.audits ??= [];
     existing.platformUsage ??= new Map();
     existing.leases ??= new Map();
+    existing.errorTimes ??= [];
     existing.members ??= new Set();
     existing.opens ??= new Map();
     existing.tourSeen ??= new Set();
@@ -296,6 +299,7 @@ function store(): Store {
     events: [],
     platformUsage: new Map(),
     leases: new Map(),
+    errorTimes: [],
     runs: new Map(),
     deliveries: new Set(),
     presets: new Map(),
@@ -827,6 +831,13 @@ export class MemoryRepository implements Repository {
     if (held && held.holder !== holder && held.expiresAt > now) return false;
     s.leases.set(key, { holder, expiresAt: now + ttlMs });
     return true;
+  }
+
+  async recordErrorOccurrence(windowStart: Date): Promise<number> {
+    const s = store();
+    s.errorTimes.push(Date.now());
+    s.errorTimes = s.errorTimes.filter((t) => t >= windowStart.getTime());
+    return s.errorTimes.length;
   }
 
   async releaseLease(key: string, holder: string): Promise<void> {

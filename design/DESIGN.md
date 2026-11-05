@@ -115,16 +115,7 @@ hero        32   sentinel hero figure on mobile
 ```
 42  keep    sentinel hero figure at sm and up (sentinels.tsx); the one size above 32
 8   keep    compact colony strip labels (header-stats.tsx); the smallest legible mono
-7   remove  used once; use micro (9)
-17  remove  use subhead (16)
-19  remove  use heading (18)
-21  remove  use title (20)
-26  remove  use display-lg (28)
-30  remove  use display-lg (28)
 ```
-
-"Remove" values still exist in code. New work must not add them; they move to the named size
-when the screen they sit on is next touched.
 
 ## Grid
 
@@ -142,14 +133,7 @@ Radii: cards 8, columns 12, chips 999, modals 12.
 7   keep    octagon chamfer, and the horizontal padding that clears it on small badges
 34  keep    timeline row height and the header logo box; fits a 20px node plus its border
 42  keep    colony nest ant badge; a 40px badge plus its 1px border pair
-9   remove  use 8
-10  remove  gaps and the trail gutter offset; use 8, or 12 where column padding applies
-14  remove  timeline indent; use 16
-18  remove  use 16
 ```
-
-Remove means: do not add new uses, and snap existing ones to the value given when you next touch
-the file.
 
 ## Custom components
 

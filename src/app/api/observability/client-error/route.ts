@@ -20,6 +20,6 @@ export async function POST(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return new Response(null, { status: 204 });
 
-  trackError({ ...parsed.data, source: "client" });
+  await trackError({ ...parsed.data, source: "client" });
   return new Response(null, { status: 204 });
 }

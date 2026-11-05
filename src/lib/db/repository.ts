@@ -762,6 +762,11 @@ export interface CoordinationRepository {
    * Atomic across instances.
    */
   acquireLease(key: string, holder: string, ttlMs: number): Promise<boolean>;
+  /**
+   * Records one error now, forgets those before `windowStart`, and returns how
+   * many are left in the window. Counts across every instance sharing the store.
+   */
+  recordErrorOccurrence(windowStart: Date): Promise<number>;
   /** Lets go of `key`, only if `holder` still has it. */
   releaseLease(key: string, holder: string): Promise<void>;
   /** Who holds `key` now, or null when nobody does or the holder let it lapse. */
