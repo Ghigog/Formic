@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.stubEnv("DATABASE_URL", "");
 vi.stubEnv("POSTGRES_PRISMA_URL", "");
@@ -12,6 +12,8 @@ const {
   recoverStaleAssistantAnswers,
   recoverStaleCardChats,
   resetChatRecovery,
+  startRecoveryClock,
+  stopRecoveryClock,
 } = await import("./recovery");
 
 const PROJECT = "project_default";
@@ -36,6 +38,48 @@ describe("reconcileOrphanedRuns", () => {
     expect(
       await reconcileOrphanedRuns(new Date(Date.now() + ORPHAN_AFTER_MS + 1_000)),
     ).toBe(1);
+  });
+});
+
+describe("startRecoveryClock", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    stopRecoveryClock();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("fails a run left live past ORPHAN_AFTER_MS without any restart", async () => {
+    startRecoveryClock();
+    await vi.advanceTimersByTimeAsync(0);
+    await repository().startRun({
+      id: "run_dead",
+      role: "product",
+      epicId: null,
+      ticketId: null,
+      model: "mock",
+      sandboxId: null,
+    });
+
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+
+    expect(await repository().unfinishedRuns(new Date(Date.now() + 1_000))).toHaveLength(0);
+  });
+
+  it("only logs a warning when the repository rejects", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(repository(), "unfinishedRuns").mockRejectedValue(new Error("db down"));
+
+    startRecoveryClock();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(warn).toHaveBeenCalledWith("[formic] orphan recovery skipped:", expect.any(Error));
+  });
+
+  it("starts one interval however often it is called", () => {
+    startRecoveryClock();
+    startRecoveryClock();
+    expect(vi.getTimerCount()).toBe(1);
   });
 });
 
