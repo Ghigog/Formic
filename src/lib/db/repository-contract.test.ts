@@ -930,7 +930,7 @@ function contract(name: string, make: () => Repository) {
         const answer = await repo.addCardChatMessage({ ...base, role: "assistant", content: "", status: "pending" });
         await repo.updateCardChatMessage(answer.id, { runnerJob: "job-9" });
 
-        expect((await repo.cardChatMessages(epic.id)).map((m) => m.role)).toEqual(["user", "assistant"]);
+        expect(((await repo.cardChatMessages(epic.id)).messages).map((m) => m.role)).toEqual(["user", "assistant"]);
         expect((await repo.pendingCardChatJobs(p.id)).map((m) => m.id)).toEqual([answer.id]);
 
         await repo.updateCardChatMessage(answer.id, { content: "because", status: "done" });
@@ -938,7 +938,7 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.pendingCardChatJobs(p.id)).toEqual([]);
 
         await repo.clearCardChat(epic.id);
-        expect(await repo.cardChatMessages(epic.id)).toEqual([]);
+        expect((await repo.cardChatMessages(epic.id)).messages).toEqual([]);
       });
 
       it("finds the one pending card chat message and the one pending assistant message", async () => {
@@ -1311,6 +1311,27 @@ function contract(name: string, make: () => Repository) {
     });
 
     describe("card details", () => {
+      it("pages the archive in board order, every ticket exactly once", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const made = await repo.createTickets(
+          [1, 2, 3, 4, 5].map((n) => ticket(epic.id, `P-${n}`, { position: n })),
+        );
+        for (const t of made) await repo.updateTicket(t.id, { archived: true });
+
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        let pages = 0;
+        do {
+          const page = await repo.archivedTickets(p.id, { cursor, limit: 2 });
+          seen.push(...page.cards.map((c) => c.id));
+          cursor = page.nextCursor ?? undefined;
+          pages++;
+        } while (cursor);
+        expect(pages).toBe(3);
+        expect(seen).toEqual(made.map((t) => t.id));
+      });
+
       it("keeps archived tickets off the board and in the archive", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
@@ -1318,7 +1339,7 @@ function contract(name: string, make: () => Repository) {
 
         await repo.updateTicket(a!.id, { archived: true });
 
-        const archived = await repo.archivedTickets(p.id);
+        const archived = (await repo.archivedTickets(p.id)).cards;
         expect(archived.map((c) => c.id)).toEqual([a!.id]);
         // It keeps the column it came from, not a placeholder.
         expect(archived[0]).toMatchObject({
@@ -1360,15 +1381,15 @@ function contract(name: string, make: () => Repository) {
         await repo.archiveEpic(epic.id);
 
         expect((await repo.boardCards(p.id)).map((c) => c.id)).toEqual([]);
-        expect((await repo.archivedEpics(p.id)).map((c) => c.id)).toEqual([epic.id]);
-        expect((await repo.archivedTickets(p.id)).map((c) => c.id)).toEqual([own!.id]);
+        expect(((await repo.archivedEpics(p.id)).cards).map((c) => c.id)).toEqual([epic.id]);
+        expect(((await repo.archivedTickets(p.id)).cards).map((c) => c.id)).toEqual([own!.id]);
         expect(await repo.cardById(epic.id)).toMatchObject({ archived: true });
 
         await repo.restoreEpic(epic.id);
 
         expect((await repo.boardCards(p.id)).map((c) => c.id).sort()).toEqual([epic.id, a!.id, b!.id].sort());
-        expect(await repo.archivedEpics(p.id)).toEqual([]);
-        expect((await repo.archivedTickets(p.id)).map((c) => c.id)).toEqual([own!.id]);
+        expect((await repo.archivedEpics(p.id)).cards).toEqual([]);
+        expect(((await repo.archivedTickets(p.id)).cards).map((c) => c.id)).toEqual([own!.id]);
       });
 
       it("treats an archived ticket as if it never existed in its epic, until restored", async () => {
@@ -1495,15 +1516,55 @@ function contract(name: string, make: () => Repository) {
         const a = await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "A" });
         const kept = await repo.addAssistantMessage({ projectId: other.id, role: "user", content: "Other" });
 
-        expect((await repo.assistantMessages(p.id)).map((m) => m.content)).toEqual(["Q", "A"]);
+        expect(((await repo.assistantMessages(p.id)).messages).map((m) => m.content)).toEqual(["Q", "A"]);
         expect(await repo.assistantMessage(a.id)).toMatchObject({ id: a.id, role: "assistant", content: "A", speaker: "assistant" });
         expect(await repo.assistantMessage(randomUUID())).toBeNull();
 
         await repo.clearAssistant(p.id);
 
-        expect(await repo.assistantMessages(p.id)).toEqual([]);
+        expect((await repo.assistantMessages(p.id)).messages).toEqual([]);
         expect(await repo.assistantMessage(q.id)).toBeNull();
-        expect((await repo.assistantMessages(other.id)).map((m) => m.id)).toEqual([kept.id]);
+        expect(((await repo.assistantMessages(other.id)).messages).map((m) => m.id)).toEqual([kept.id]);
+      });
+
+      it("pages the assistant conversation newest first, each page oldest first, with no gaps or repeats", async () => {
+        const p = await project();
+        const ids: string[] = [];
+        for (let i = 0; i < 5; i++) {
+          ids.push((await repo.addAssistantMessage({ projectId: p.id, role: "user", content: `M${i}` })).id);
+        }
+
+        const newest = await repo.assistantMessages(p.id, { limit: 2 });
+        expect(newest.messages.map((m) => m.id)).toEqual(ids.slice(3));
+        expect(newest.earlierCursor).not.toBeNull();
+        const middle = await repo.assistantMessages(p.id, { before: newest.earlierCursor!, limit: 2 });
+        expect(middle.messages.map((m) => m.id)).toEqual(ids.slice(1, 3));
+        const oldest = await repo.assistantMessages(p.id, { before: middle.earlierCursor!, limit: 2 });
+        expect(oldest.messages.map((m) => m.id)).toEqual(ids.slice(0, 1));
+        expect(oldest.earlierCursor).toBeNull();
+      });
+
+      it("pages a card's chat the same way", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const ids: string[] = [];
+        for (let i = 0; i < 4; i++) {
+          const m = await repo.addCardChatMessage({
+            projectId: p.id,
+            cardKind: "epic",
+            cardId: epic.id,
+            role: "user",
+            content: `M${i}`,
+          });
+          ids.push(m.id);
+        }
+        const newest = await repo.cardChatMessages(epic.id, { limit: 2 });
+        expect(newest.messages.map((m) => m.id)).toEqual(ids.slice(2));
+        const older = await repo.cardChatMessages(epic.id, { before: newest.earlierCursor!, limit: 2 });
+        expect(older.messages.map((m) => m.id)).toEqual(ids.slice(0, 2));
+        expect(older.earlierCursor).toBeNull();
+        // A whole chat that fits one page has nothing earlier.
+        expect((await repo.cardChatMessages(epic.id)).earlierCursor).toBeNull();
       });
 
       it("keeps who each assistant reply is from, the assistant by default", async () => {
