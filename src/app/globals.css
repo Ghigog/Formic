@@ -472,6 +472,12 @@
   }
 }
 
+@keyframes swapHintIn {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes tlPing {
   0% {
     transform: scale(1);
