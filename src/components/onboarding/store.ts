@@ -11,6 +11,7 @@ import type { TourId } from "./tours";
 
 const SEEN_KEY = "formic:tours:seen";
 const VOICE_KEY = "formic:tours:voice";
+const REPLAY_KEY = "formic:tours:replay";
 
 const listeners = new Set<() => void>();
 let active: TourId | null = null;
@@ -59,13 +60,40 @@ export function forgetTours() {
   writeSeen(new Set());
 }
 
+/** Whether a replay is waiting for the board tour to end, so the unlocked features are revealed and toured again. */
+export function replayPending(): boolean {
+  try {
+    return window.localStorage.getItem(REPLAY_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** The board takes the replay once, when it queues the reveals. */
+export function takeReplay(): boolean {
+  if (!replayPending()) return false;
+  try {
+    window.localStorage.removeItem(REPLAY_KEY);
+  } catch {
+    // It may replay once more on the next board visit. No harm done.
+  }
+  return true;
+}
+
 /**
- * From the account menu: forget every tour and, on the board, start its tour
- * again. Elsewhere it returns false, and the board's tour plays when the
- * board next opens. Each screen's own tour plays the next time it opens.
+ * From Settings or the account menu: forget every tour and, on the board,
+ * start its tour again. Elsewhere it returns false, and the board's tour
+ * plays when the board next opens. Either way, once the board tour ends the
+ * board reveals and tours each feature it has unlocked, in level order.
+ * Each screen's own tour plays the next time it opens.
  */
 export function replayTours(): boolean {
   forgetTours();
+  try {
+    window.localStorage.setItem(REPLAY_KEY, "1");
+  } catch {
+    // Without storage the replay is just the tours.
+  }
   if (!document.querySelector('[data-tour~="column"]')) return false;
   startTour("board");
   return true;

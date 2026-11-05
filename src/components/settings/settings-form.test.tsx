@@ -46,6 +46,8 @@ describe("Guided tours", () => {
 
     expect(JSON.parse(window.localStorage.getItem("formic:tours:seen")!)).toEqual([]);
     expect(screen.getByText(/plays again the next time you open it/)).toBeInTheDocument();
+    // The board replays each unlocked feature once its tour is over.
+    expect(window.localStorage.getItem("formic:tours:replay")).toBe("1");
   });
 });
 

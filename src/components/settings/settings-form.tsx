@@ -1,7 +1,7 @@
 "use client";
 
 import { AutoTour } from "@/components/onboarding/tour";
-import { forgetTours } from "@/components/onboarding/store";
+import { replayTours } from "@/components/onboarding/store";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -529,7 +529,7 @@ function ToursSection() {
         <button
           type="button"
           onClick={() => {
-            forgetTours();
+            replayTours();
             setDone(true);
           }}
           disabled={done}
