@@ -58,7 +58,8 @@ export type Sfx =
   | "surface"
   | "plop"
   | "ring"
-  | "chord";
+  | "chord"
+  | "celebrate";
 
 /** One sentinel's voice: a pitch, a wave and a glide to another pitch. */
 export interface SentinelVoice {
@@ -579,6 +580,17 @@ export class SoundEngine {
         [523, 659, 784, 1047].forEach((f, i) =>
           this.tone(f, 0.4, { type: "triangle", gain: 0.04, delay: i * 0.06 }),
         );
+        break;
+      case "celebrate":
+        // A feature arriving: a rising fanfare that lands on a held, bright chord.
+        [392, 523, 659].forEach((f, i) =>
+          this.tone(f, 0.14, { type: "square", gain: 0.03, delay: i * 0.09 }),
+        );
+        [523, 659, 784, 1047].forEach((f) =>
+          this.tone(f, 0.7, { type: "triangle", gain: 0.045, delay: 0.3, attack: 0.02 }),
+        );
+        this.noise(0.25, { freq: 3000, hp: true, gain: 0.04, delay: 0.3 });
+        this.tone(2093, 0.4, { gain: 0.015, delay: 0.34 });
         break;
       case "sentinelVoice": {
         // v: the sentinel's place in the roster.
