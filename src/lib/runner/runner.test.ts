@@ -1485,6 +1485,40 @@ describe("signed attachment URLs for a CLI agent with no Formic session", () => 
   });
 });
 
+describe("a coding job's attachments", () => {
+  it("hands a CLI coder fresh links to the ticket's and its Epic's files", async () => {
+    vi.stubEnv("FORMIC_URL", "https://formic.example");
+    await assignClaudeCode();
+    await installRunner();
+    const ticket = await seedTicket();
+    const repo = repository();
+    const attach = async (requestId: string, filename: string, ref: { epicId: string } | { ticketId: string }) => {
+      await repo.createAttachment({
+        projectId: PROJECT,
+        requestId,
+        filename,
+        mimeType: "text/markdown",
+        kind: "file",
+        size: 3,
+        bytes: new Uint8Array([1, 2, 3]),
+      });
+      await repo.claimAttachments(requestId, ref);
+    };
+    await attach("req-epic", "design.md", { epicId: ticket.epicId });
+    await attach("req-ticket", "notes.md", { ticketId: ticket.id });
+
+    await runCoderAgent(PROJECT, ticket.id);
+    const prompt = MockVcsClient.runner().dispatches[0]!.inputs.prompt!;
+
+    for (const name of ["design.md", "notes.md"]) {
+      const line = prompt.split("\n").find((l) => l.startsWith(`- ${name} (file): `))!;
+      const url = new URL(line.slice(line.indexOf("https://")));
+      const id = url.pathname.split("/").pop()!;
+      expect(attachmentUrlAllowed(id, url.searchParams.get("expires")!, url.searchParams.get("token")!)).toBe(true);
+    }
+  });
+});
+
 describe("a CLI agent seen while it works", () => {
   async function dispatched() {
     await assignClaudeCode();
