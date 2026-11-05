@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { TicketDrawer } from "./ticket-drawer";
 import { PlanSteps } from "@/components/ui/plan-steps";
@@ -697,5 +698,45 @@ describe("TicketDrawer KPIs", () => {
     open(VIEW, [], { ...NO_KPIS, precision: { changes: 2, precise: false } });
     const label = await screen.findByText("Precision");
     expect(label.nextElementSibling).toHaveTextContent("2");
+  });
+});
+
+describe("TicketDrawer Escape and focus", () => {
+  function Harness() {
+    const [id, setId] = useState<string | null>(null);
+    return (
+      <>
+        <button onClick={() => setId("t-1")}>Open ticket</button>
+        <TicketDrawer
+          ticketId={id}
+          onClose={() => setId(null)}
+          onOpenEpic={() => {}}
+          onOpenTicket={setId}
+          subscribe={() => () => {}}
+          kpisUnlocked
+        />
+      </>
+    );
+  }
+
+  it("closes on Escape and returns focus to the opener", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/kpi/")) return Response.json(NO_KPIS);
+        if (url.includes("/api/attachments"))
+          return Response.json({ attachments: [] });
+        return Response.json(VIEW);
+      }),
+    );
+    render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Open ticket" });
+    opener.focus();
+    fireEvent.click(opener);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
   });
 });

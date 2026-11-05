@@ -1,5 +1,6 @@
 import { questionReason } from "@/lib/domain/question";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import {
   act,
   fireEvent,
@@ -386,5 +387,37 @@ describe("EpicDrawer on-screen keyboard", () => {
       );
       expect(screen.getByTestId("chat")).toBeInTheDocument();
     });
+  });
+});
+
+describe("EpicDrawer Escape and focus", () => {
+  function Harness() {
+    const [id, setId] = useState<string | null>(null);
+    return (
+      <>
+        <button onClick={() => setId("e-1")}>Open epic</button>
+        <EpicDrawer epicId={id} onClose={() => setId(null)} />
+      </>
+    );
+  }
+
+  it("closes on Escape and returns focus to the opener", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/attachments"))
+          return Response.json({ attachments: [] });
+        return Response.json(detail());
+      }),
+    );
+    render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Open epic" });
+    opener.focus();
+    fireEvent.click(opener);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
   });
 });
