@@ -34,11 +34,18 @@ describe("ArchiveView", () => {
   });
 
   it("lists an archived Epic and restores it through the Epic route", async () => {
-    const epic = makeCard({ kind: "epic", key: "EPIC-9", title: "Old Epic", archived: true });
+    const epic = makeCard({
+      kind: "epic",
+      key: "EPIC-9",
+      title: "Old Epic",
+      archived: true,
+    });
     serve([makeCard({ title: "A ticket", archived: true })], true, [epic]);
     const { onRestored } = open();
     await userEvent.click(await screen.findByRole("button", { name: /Restore EPIC-9/ }));
-    expect(fetchMock).toHaveBeenCalledWith(`/api/epics/${epic.id}/archive`, { method: "DELETE" });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/epics/${epic.id}/archive`, {
+      method: "DELETE",
+    });
     await waitFor(() => expect(screen.queryByText("Old Epic")).toBeNull());
     expect(screen.getByText("A ticket")).toBeInTheDocument();
     expect(onRestored).toHaveBeenCalledWith({ ...epic, archived: false });
@@ -55,7 +62,9 @@ describe("ArchiveView", () => {
     serve([card]);
     const { onRestored } = open();
     await userEvent.click(await screen.findByRole("button", { name: /Restore/ }));
-    expect(fetchMock).toHaveBeenCalledWith(`/api/tickets/${card.id}/archive`, { method: "DELETE" });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/tickets/${card.id}/archive`, {
+      method: "DELETE",
+    });
     await waitFor(() => expect(screen.queryByText("Old")).toBeNull());
     expect(onRestored).toHaveBeenCalledWith({ ...card, archived: false });
   });
@@ -77,5 +86,62 @@ describe("ArchiveView", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getByTestId("archive-backdrop"));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  describe("Show older", () => {
+    const first = [makeCard({ title: "Newest", archived: true })];
+    const second = [makeCard({ title: "Older", archived: true })];
+    const pages = (second_: () => Promise<unknown>) =>
+      fetchMock.mockImplementation(async (url: string) =>
+        url.includes("cursor=c2")
+          ? second_()
+          : {
+              ok: true,
+              json: async () => ({
+                tickets: first,
+                epics: [],
+                nextCursor: "c2",
+              }),
+            },
+      );
+
+    it("appends the next page and drops the link on the last page", async () => {
+      pages(async () => ({
+        ok: true,
+        json: async () => ({
+          tickets: [...first, ...second],
+          epics: [],
+          nextCursor: null,
+        }),
+      }));
+      open();
+      await userEvent.click(await screen.findByRole("button", { name: "Show older" }));
+      expect(await screen.findByText("Older")).toBeInTheDocument();
+      expect(screen.getAllByText("Newest")).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: "Show older" })).toBeNull();
+    });
+
+    it("reads Loading… and cannot be tapped twice while the page loads", async () => {
+      let release!: (v: unknown) => void;
+      pages(() => new Promise((r) => (release = r)));
+      open();
+      await userEvent.click(await screen.findByRole("button", { name: "Show older" }));
+      expect(screen.getByText("Loading…")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Show older" })).toBeNull();
+      release({
+        ok: true,
+        json: async () => ({ tickets: second, epics: [], nextCursor: null }),
+      });
+      expect(await screen.findByText("Older")).toBeInTheDocument();
+    });
+
+    it("keeps the cards and offers a retry when the page fails", async () => {
+      pages(async () => ({ ok: false, json: async () => ({}) }));
+      open();
+      await userEvent.click(await screen.findByRole("button", { name: "Show older" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(/older cards/i);
+      expect(screen.getByText("Newest")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Show older" })).toBeInTheDocument();
+    });
   });
 });
