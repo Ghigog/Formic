@@ -43,6 +43,7 @@ import { placeDrop } from "./placement";
 import { QUEEN_CARRY_EVENT, type QueenCarryDetail } from "@/components/colony/queen-carry";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
+import type { ColumnAgentControls } from "./agent-select";
 import { ARCHIVE_DROPPABLE_ID, ArchiveDropZone } from "./archive-drop-zone";
 import { EdgeDropZones, edgeDestination, edgeTargets } from "./edge-drop-zones";
 
@@ -367,14 +368,18 @@ export function Board({
   );
 
   /** Whether a column would take a card dragged out of `from`. */
+  // The parts of `agents` that matter, so a parent that rebuilds the object
+  // each render does not redraw every card.
+  const presets = agents?.presets;
+  const agentColumns = agents?.columns;
   const accepts = useCallback(
     (from: ColumnId, to: ColumnId) => {
       if (from === to) return true;
       if (!canUserMove(from, to).ok) return false;
-      const until = agents?.presets.find((p) => p.id === agents.columns[to])?.limitedUntil;
+      const until = presets?.find((p) => p.id === agentColumns?.[to])?.limitedUntil;
       return !until || new Date(until).getTime() <= Date.now();
     },
-    [agents],
+    [presets, agentColumns],
   );
 
   /* A swipe on the mobile board: where the touch began, unless it is not ours. */
@@ -431,6 +436,118 @@ export function Board({
     [dragged, accepts],
   );
 
+  // The same map while no Epic changed, so a ticket's event does not reach every card through the env.
+  const [epicsById, setEpicsById] = useState<ReadonlyMap<string, BoardCard>>(() => new Map());
+  const epicsNow = useMemo(() => new Map(live.filter((c) => c.kind === "epic").map((c) => [c.id, c])), [live]);
+  if (
+    epicsNow.size !== epicsById.size ||
+    [...epicsNow].some(([id, epic]) => epicsById.get(id) !== epic)
+  ) {
+    setEpicsById(epicsNow);
+  }
+
+
+  /*
+   * A card's arrow: the one step forward a person may take it. Backlog to
+   * To Do for anything, To Do to In Progress for a ticket that is ready,
+   * and never into a column whose agent is out of usage.
+   */
+  const [leaving, setLeaving] = useState<CardEnv["leaving"]>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+  }, []);
+
+  const pending = useMemo(() => new Set(optimistic.map((c) => c.id)), [optimistic]);
+
+  /*
+   * Everything a column is given must keep its identity from one render to the
+   * next, or the column and all its cards redraw for any event. So the handlers
+   * are built once per column and read the latest state through this ref, which
+   * is filled after each render: they only ever run in events.
+   */
+  const latest = useRef({
+    live,
+    accepts,
+    toggleCollapse,
+    onNewItem,
+    onOpenCard,
+    onShowcase,
+    agents,
+  });
+  useEffect(() => {
+    latest.current = { live, accepts, toggleCollapse, onNewItem, onOpenCard, onShowcase, agents };
+  });
+  const handlers = useMemo(() => {
+    const out = {} as Record<
+      ColumnId,
+      {
+        onViewChange: (view: ColumnView) => void;
+        accepts: (cardId: string) => boolean;
+        onToggleCollapse: (epicId: string) => void;
+        onNewItem: () => void;
+        onAssign: (presetId: string | null) => Promise<void> | undefined;
+        onEdit: (preset: AgentPreset | null) => void;
+      }
+    >;
+    for (const col of COLUMNS) {
+      out[col] = {
+        onViewChange: (view) => {
+          ownViews.current = { ...ownViews.current, [col]: view };
+          setViews((prev) => ({ ...prev, [col]: view }));
+        },
+        accepts: (cardId) => {
+          const { live, accepts } = latest.current;
+          const card = live.find((c) => c.id === cardId);
+          // Where it can work: its own column, or a move the rules allow
+          // from there. Anywhere else still takes it, with a warning.
+          return (
+            !card ||
+            col === columnOf(card) ||
+            accepts(columnFor(card.status, card.stalledIn), col)
+          );
+        },
+        onToggleCollapse: (epicId) => latest.current.toggleCollapse(col, epicId),
+        onNewItem: () => latest.current.onNewItem(col as CaptureColumn),
+        onAssign: (presetId) => latest.current.agents?.onAssign(col, presetId),
+        onEdit: (preset) => latest.current.agents?.onEdit(col, preset),
+      };
+    }
+    return out;
+  }, []);
+  const openCard = useCallback((card: BoardCard) => latest.current.onOpenCard(card), []);
+  const showcase = useCallback((epic: BoardCard) => latest.current.onShowcase?.(epic), []);
+  const hasShowcase = !!onShowcase;
+  const columnAgents = useMemo(() => {
+    const out: Partial<Record<ColumnId, ColumnAgentControls>> = {};
+    // Done has no agent of its own: it's the PM's column, managed from the
+    // chat in the top bar, not a per-column picker.
+    if (presets && agentColumns) {
+      for (const col of COLUMNS) {
+        if (col === "done") continue;
+        out[col] = {
+          presets,
+          selected: presets.find((p) => p.id === agentColumns[col]),
+          onAssign: handlers[col].onAssign as ColumnAgentControls["onAssign"],
+          onEdit: handlers[col].onEdit,
+        };
+      }
+    }
+    return out;
+  }, [presets, agentColumns, handlers]);
+  const composers = useMemo(
+    () => ({
+      backlog: <NewRequestButton onClick={handlers.backlog.onNewItem} />,
+      todo: (
+        <>
+          <NewRequestButton onClick={handlers.todo.onNewItem} />
+          {setupCard}
+        </>
+      ),
+    }),
+    [handlers, setupCard],
+  );
+
   const columnElements = visibleColumns.map((col) => (
     <Column
       key={col}
@@ -440,45 +557,15 @@ export function Board({
       bare={isMobile}
       collapsed={collapsed[col]}
       view={views[col]}
-      onViewChange={(view) => {
-        ownViews.current = { ...ownViews.current, [col]: view };
-        setViews((prev) => ({ ...prev, [col]: view }));
-      }}
-      accepts={(cardId) => {
-        const card = live.find((c) => c.id === cardId);
-        // Where it can work: its own column, or a move the rules allow
-        // from there. Anywhere else still takes it, with a warning.
-        return (
-          !card ||
-          col === columnOf(card) ||
-          accepts(columnFor(card.status, card.stalledIn), col)
-        );
-      }}
-      onToggleCollapse={(epicId) => toggleCollapse(col, epicId)}
-      // Done has no agent of its own: it's the PM's column, managed from the
-      // chat in the top bar, not a per-column picker.
-      agent={
-        agents && col !== "done"
-          ? {
-              presets: agents.presets,
-              selected: agents.presets.find((p) => p.id === agents.columns[col]),
-              onAssign: (presetId) => agents.onAssign(col, presetId),
-              onEdit: (preset) => agents.onEdit(col, preset),
-            }
-          : undefined
-      }
-      composer={
-        col === "backlog" ? (
-          <NewRequestButton onClick={() => onNewItem(col)} />
-        ) : col === "todo" ? (
-          <>
-            <NewRequestButton onClick={() => onNewItem(col)} />
-            {setupCard}
-          </>
-        ) : undefined
-      }
-      onOpen={onOpenCard}
-      onShowcase={onShowcase}
+      onViewChange={handlers[col].onViewChange}
+      accepts={handlers[col].accepts}
+      onToggleCollapse={handlers[col].onToggleCollapse}
+      agent={columnAgents[col]}
+      composer={col === "backlog" ? composers.backlog : col === "todo" ? composers.todo : undefined}
+      onOpen={openCard}
+      onShowcase={hasShowcase ? showcase : undefined}
+      pending={pending}
+      leaving={leaving}
     />
   ));
 
@@ -573,24 +660,13 @@ export function Board({
     onArchived?.(id);
   };
 
-  const epicsById = useMemo(
-    () => new Map(live.filter((c) => c.kind === "epic").map((c) => [c.id, c])),
-    [live],
-  );
 
-  /*
-   * A card's arrow: the one step forward a person may take it. Backlog to
-   * To Do for anything, To Do to In Progress for a ticket that is ready,
-   * and never into a column whose agent is out of usage.
-   */
-  const [leaving, setLeaving] = useState<CardEnv["leaving"]>(null);
-  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (leaveTimer.current) clearTimeout(leaveTimer.current);
-  }, []);
-
-  const pending = useMemo(() => new Set(optimistic.map((c) => c.id)), [optimistic]);
-
+  // Rebuilt only when what a card shows from it changes. What moves with a
+  // single card (pending, leaving, the live cards) is read when it is needed.
+  const latestEnv = useRef({ live, commit, reducedMotion, leaving, pending });
+  useEffect(() => {
+    latestEnv.current = { live, commit, reducedMotion, leaving, pending };
+  });
   const cardEnv = useMemo<CardEnv>(
     () => ({
       epics: epicsById,
@@ -611,9 +687,14 @@ export function Board({
         return isMobile && to && !card.misplacedIn && accepts(column, to) ? to : null;
       },
       mobile: isMobile,
-      leaving,
-      pending,
+      get leaving() {
+        return latestEnv.current.leaving;
+      },
+      get pending() {
+        return latestEnv.current.pending;
+      },
       onAdvance: (card, to) => {
+        const { commit, reducedMotion } = latestEnv.current;
         const move = () => void commit(card, to, Number.MAX_SAFE_INTEGER);
         // A phone shows one column, so the move would otherwise end the card
         // in one frame: let it slide away first, and ignore taps meanwhile.
@@ -626,11 +707,11 @@ export function Board({
           move();
         }, LEAVE_MS);
       },
-      queuedBehind: (card) => runningConflict(card, live),
+      queuedBehind: (card) => runningConflict(card, latestEnv.current.live),
       noCi,
       autoMerge,
     }),
-    [epicsById, accepts, commit, live, isMobile, reducedMotion, leaving, pending, noCi, autoMerge],
+    [epicsById, accepts, isMobile, noCi, autoMerge, setLeaving],
   );
 
   return (
