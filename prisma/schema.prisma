@@ -554,6 +554,16 @@ model Lease {
   @@map("lease")
 }
 
+/// One server or client error, kept just long enough to count a spike across
+/// instances. See src/lib/observability/error-tracking.ts.
+model ErrorOccurrence {
+  id String   @id @default(cuid())
+  at DateTime @default(now())
+
+  @@index([at])
+  @@map("error_occurrence")
+}
+
 /// A file attached to a raw request. Stored as bytes in Postgres, not on
 /// disk or in a blob store: Vercel gives the app no persistent disk and none
 /// is wired up yet. Keyed at upload time to a client-generated requestId so a

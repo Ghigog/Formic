@@ -329,6 +329,13 @@ export class PrismaRepository implements Repository {
     return rows.length > 0;
   }
 
+  async recordErrorOccurrence(windowStart: Date): Promise<number> {
+    const db = prisma();
+    await db.errorOccurrence.create({ data: {} });
+    await db.errorOccurrence.deleteMany({ where: { at: { lt: windowStart } } });
+    return db.errorOccurrence.count({ where: { at: { gte: windowStart } } });
+  }
+
   async releaseLease(key: string, holder: string): Promise<void> {
     await prisma().lease.deleteMany({ where: { key, holder } });
   }
