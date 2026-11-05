@@ -72,8 +72,9 @@ export async function addOnboardingTicket(projectId: string): Promise<void> {
  * The second ticket on a new board: a design philosophy for the product,
  * from the person's own words. Without one, every agent designs from nothing
  * and features come out generic (see docs/plans/craft-and-direction.md). It
- * starts as a question to the person: their answer in its chat starts the
- * Coder Agent, which writes DESIGN.md from it and from what the repository
+ * starts as a question to the person: their answer in its chat is saved as a
+ * note and the ticket stays in To Do. When the person moves it to In Progress,
+ * the Coder Agent writes DESIGN.md from the note and from what the repository
  * already shows. Every agent's prompt sends it to that file (DESIGN_RULE).
  */
 export const DESIGN_TICKET = {
