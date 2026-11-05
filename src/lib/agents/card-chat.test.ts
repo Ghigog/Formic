@@ -528,7 +528,7 @@ describe("a ticket's chat", () => {
     expect(answerMessage.agentPresetId).toBe(preset.id);
     // llama-3.3-70b is a priced model, so the money half is counted too.
     expect(answerMessage.costCents).toBeGreaterThan(0);
-    const asked = (await repository().cardChatMessages(ticket.id))[0]!;
+    const asked = ((await repository().cardChatMessages(ticket.id)).messages)[0]!;
     expect(asked).toMatchObject({ role: "user", tokensIn: 0, tokensOut: 0, costCents: 0 });
   });
 
@@ -715,7 +715,7 @@ describe("a question the card is waiting on", () => {
     expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([
       "You asked the person:\nSilver or gold first?\n   Why: It sets the unlock.\n\nThey answered: Silver first.",
     ]);
-    const said = await repo.cardChatMessages(epic.id);
+    const said = (await repo.cardChatMessages(epic.id)).messages;
     expect(said.at(-1)).toMatchObject({ role: "assistant", status: "pending" });
     expect(launched).toEqual([`product agent for ${epic.key}, from its chat`, `epic chat answer ${said.at(-1)!.id}`]);
     const after = await repo.cardById(epic.id);

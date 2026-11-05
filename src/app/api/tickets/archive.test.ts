@@ -144,19 +144,20 @@ describe("GET /api/tickets/archived", () => {
   it("returns only the project's archived tickets", async () => {
     const archivedTickets = vi
       .fn()
-      .mockResolvedValue([{ id: "ticket-1", kind: "ticket", archived: true }]);
-    const archivedEpics = vi.fn().mockResolvedValue([]);
+      .mockResolvedValue({ cards: [{ id: "ticket-1", kind: "ticket", archived: true }], nextCursor: null });
+    const archivedEpics = vi.fn().mockResolvedValue({ cards: [], nextCursor: null });
     repository.mockReturnValue({ archivedTickets, archivedEpics });
     activeProject.mockResolvedValue(project);
 
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/tickets/archived"));
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       tickets: [{ id: "ticket-1", kind: "ticket", archived: true }],
       epics: [],
+      nextCursor: null,
     });
-    expect(archivedTickets).toHaveBeenCalledWith(project.id);
+    expect(archivedTickets).toHaveBeenCalledWith(project.id, { cursor: undefined });
   });
 
   it("returns an empty list when no project is active", async () => {
@@ -164,10 +165,10 @@ describe("GET /api/tickets/archived", () => {
     repository.mockReturnValue({ archivedTickets });
     activeProject.mockResolvedValue(null);
 
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/tickets/archived"));
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ tickets: [], epics: [] });
+    expect(await res.json()).toEqual({ tickets: [], epics: [], nextCursor: null });
     expect(archivedTickets).not.toHaveBeenCalled();
   });
 });

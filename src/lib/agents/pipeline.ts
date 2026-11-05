@@ -590,7 +590,7 @@ export async function stallEpic(
 async function sayQuestionInChat(projectId: string, epicId: string, reason: string): Promise<boolean> {
   const repo = repository();
   const content = questionMessage(reason);
-  const last = (await repo.cardChatMessages(epicId)).at(-1);
+  const last = (await repo.cardChatMessages(epicId)).messages.at(-1);
   if (last?.role === "assistant" && last.content === content) return false;
   await repo.addCardChatMessage({ projectId, cardKind: "epic", cardId: epicId, role: "assistant", content });
   return true;

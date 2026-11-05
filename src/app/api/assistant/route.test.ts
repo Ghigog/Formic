@@ -28,7 +28,7 @@ vi.mock("@/lib/rate-limit", () => ({ limited, RUN: "run" }));
 const route = await import("./route");
 
 // The handlers' inferred type admits undefined; they always respond.
-const GET = async () => (await route.GET()) as Response;
+const GET = async (query = "") => (await route.GET(new Request(`http://localhost/api/assistant${query}`))) as Response;
 const PATCH = async () => (await route.PATCH()) as Response;
 const DELETE = async () => (await route.DELETE()) as Response;
 
@@ -43,17 +43,24 @@ beforeEach(() => {
   limited.mockReturnValue(null);
   collectCliRuns.mockResolvedValue(undefined);
   repo.assistantAgent.mockResolvedValue("preset-1");
-  repo.assistantMessages.mockResolvedValue([]);
+  repo.assistantMessages.mockResolvedValue({ messages: [], earlierCursor: null });
   repo.pendingAssistantMessage.mockResolvedValue(null);
   repo.addAssistantMessage.mockResolvedValue({ id: "m-2" });
 });
 
 describe("GET /api/assistant", () => {
   it("returns the agent and the conversation", async () => {
-    repo.assistantMessages.mockResolvedValue([{ id: "m-1" }]);
+    repo.assistantMessages.mockResolvedValue({ messages: [{ id: "m-1" }], earlierCursor: null });
     const res = await GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ presetId: "preset-1", messages: [{ id: "m-1" }] });
+    expect(await res.json()).toEqual({ presetId: "preset-1", messages: [{ id: "m-1" }], earlierCursor: null });
+  });
+
+  it("reads the page before a message with ?before=", async () => {
+    repo.assistantMessages.mockResolvedValue({ messages: [{ id: "m-0" }], earlierCursor: "m--1" });
+    const body = await (await GET("?before=m-1")).json();
+    expect(repo.assistantMessages).toHaveBeenCalledWith("p-1", { before: "m-1" });
+    expect(body.earlierCursor).toBe("m--1");
   });
 
   it("still answers when checking the runs fails", async () => {

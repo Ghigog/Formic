@@ -25,19 +25,19 @@ async function projectOwning(epicId: string) {
 
 const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
 
-async function state(epicId: string) {
-  return { messages: await repository().cardChatMessages(epicId) };
+async function state(epicId: string, before?: string) {
+  return await repository().cardChatMessages(epicId, { before });
 }
 
 /** An Epic's chat with the Product Agent, or whichever agent its column runs now. */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   const project = await projectOwning(id);
   if (!project) return notFound();
-  return Response.json(await state(id));
+  return Response.json(await state(id, req.nextUrl.searchParams.get("before") ?? undefined));
 }
 
 /** Asks the Epic's column agent something. The answer arrives on a later GET. */
