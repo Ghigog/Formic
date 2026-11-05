@@ -367,7 +367,7 @@ export function EpicDrawer({
               onClick={() => setTab(t)}
               className={cn(
                 "rounded px-2 py-1 text-[12px] font-medium",
-                tab === t ? "bg-amber text-on-amber" : "text-fg-muted",
+                tab === t ? "bg-cta text-on-amber" : "text-fg-muted",
               )}
             >
               {t === "prd"
