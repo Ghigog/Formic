@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AutoTour, Tour, TourHost } from "./tour";
-import { endTour, hasSeen, replayTours, startTour } from "./store";
+import { endTour, hasSeen, offerTour, replayTours, startTour } from "./store";
 import { TOURS, type TourDef } from "./tours";
 import { AgentSelect } from "@/components/board/agent-select";
 import { speaks, syllable } from "./voice";
@@ -266,5 +266,31 @@ describe("the board tour", () => {
   it("says columns start with no agent", () => {
     const step = TOURS.board.steps.find((s) => s.title === "Column agents");
     expect(step?.text).toContain("start with no agent");
+  });
+});
+
+describe("the board tour on a Lv 1 board", () => {
+  it("says nothing of Sentinels, Timeline, Calls or KPIs", () => {
+    for (const step of TOURS.board.steps) {
+      expect(`${step.target} ${step.title} ${step.text}`).not.toMatch(/sentinel|timeline|calls|kpi/i);
+    }
+  });
+});
+
+describe("feature intro tours", () => {
+  const intros = ["sentinels-intro", "timeline-intro", "calls-intro", "kpis-intro"] as const;
+
+  it("starts on the feature's button and ends in the nest", () => {
+    expect(TOURS["timeline-intro"].steps[0]!.target).toBe("timeline");
+    for (const id of intros) expect(TOURS[id].endInNest).toBe(true);
+  });
+
+  it("plays once per person, whichever board reaches the level", () => {
+    for (const id of intros) {
+      expect(offerTour(id)).toBe(true);
+      endTour();
+      // A second board reaching the same level offers it again.
+      expect(offerTour(id)).toBe(false);
+    }
   });
 });
