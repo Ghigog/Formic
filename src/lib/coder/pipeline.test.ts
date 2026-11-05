@@ -198,8 +198,11 @@ async function until(
   throw new Error(`Timed out waiting for ${what}.`);
 }
 
-// Work a test launched finishes before the next test's store exists.
-afterEach(() => settleLaunched());
+// Work a test launched finishes before the next test's store exists. The wait
+// is long on purpose: on a busy CI runner a review loop can outlast the
+// default 2s, then land in the next test's store, where ticket ids repeat
+// and its pull request (same branch name) is found instead of the new one.
+afterEach(() => settleLaunched(15_000), 20_000);
 
 beforeEach(() => {
   // A fresh board per test: the in-memory store is a module global, which is
