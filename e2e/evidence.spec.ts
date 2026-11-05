@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { gotoBoard } from "./board";
+import { column, gotoBoard } from "./board";
 
 /**
  * What the Sentinels cannot see from source: the app as it renders. Each
@@ -35,6 +35,11 @@ async function closeSetup(page: Page): Promise<void> {
   }
 }
 
+/** A dialog's open motion must land before it is photographed and scanned. */
+async function settleDialog(page: Page): Promise<void> {
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))));
+}
+
 const SHOTS: Shot[] = [
   { name: "board", open: gotoBoard },
   {
@@ -58,6 +63,49 @@ const SHOTS: Shot[] = [
     open: async (page) => {
       await page.goto("/legal", { waitUntil: "domcontentloaded" });
       await expect(page.locator("main, body").first()).toBeVisible();
+    },
+  },
+  {
+    name: "ticket-drawer",
+    open: async (page) => {
+      await gotoBoard(page);
+      await closeSetup(page);
+      await column(page, "In Progress").locator("[data-rfd-draggable-id]").first().click();
+      await expect(page.getByRole("dialog", { name: "Ticket detail" })).toBeVisible();
+      await settleDialog(page);
+    },
+  },
+  {
+    name: "epic-drawer",
+    open: async (page) => {
+      await gotoBoard(page);
+      await closeSetup(page);
+      // The title button: the epic's group is not itself a click target.
+      await page.locator('[role="group"][data-tid]').filter({ hasText: "EPIC" }).first().locator("h3 button").click();
+      await expect(page.getByRole("dialog", { name: "Epic detail" })).toBeVisible();
+      await settleDialog(page);
+    },
+  },
+  {
+    name: "new-item",
+    open: async (page) => {
+      await gotoBoard(page);
+      await closeSetup(page);
+      await page.getByRole("button", { name: "New request" }).first().click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await settleDialog(page);
+    },
+  },
+  {
+    name: "agent-editor",
+    open: async (page) => {
+      await gotoBoard(page);
+      await closeSetup(page);
+      const inProgress = column(page, "In Progress");
+      await inProgress.getByRole("button", { name: /Agent for In Progress:/ }).click();
+      await inProgress.getByRole("menuitem", { name: /New agent/ }).click();
+      await expect(page.getByRole("dialog", { name: "New agent" })).toBeVisible();
+      await settleDialog(page);
     },
   },
 ];

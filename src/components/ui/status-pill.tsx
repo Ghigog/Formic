@@ -36,7 +36,7 @@ export function StatusChip({
   return (
     <span
       className={cn(
-        "text-ink inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
+        "text-anthracite inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
         "text-[10px] leading-4 font-semibold whitespace-nowrap",
         className,
       )}
@@ -70,7 +70,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "text-ink inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
+        "text-anthracite inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
         "text-[10px] leading-4 font-semibold whitespace-nowrap",
         className,
       )}
@@ -85,7 +85,7 @@ export function StatusPill({
         )}
       />
       {STATUS_LABEL[status]}
-      {detail ? <span className="text-muted font-normal">· {detail}</span> : null}
+      {detail ? <span className="font-normal opacity-75">· {detail}</span> : null}
     </span>
   );
 }

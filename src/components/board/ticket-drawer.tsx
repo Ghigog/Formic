@@ -315,7 +315,7 @@ export function TicketDrawer({
               onClick={() => setTab(t)}
               className={cn(
                 "rounded px-2 py-1 text-[12px] font-medium lg:hidden",
-                tab === t ? "bg-amber text-on-amber" : "text-fg-muted",
+                tab === t ? "bg-cta text-on-amber" : "text-fg-muted",
               )}
             >
               {t === "ticket" ? "Ticket" : "Agent"}
@@ -625,7 +625,7 @@ function StopButton({
         setBusy(false);
         onStopped();
       }}
-      className="text-log-error border-log-error/40 hover:bg-log-error/10 rounded border px-1.5 py-0.5 text-[12px] font-medium disabled:opacity-60"
+      className="text-crimson-text dark:text-log-error border-current hover:bg-crimson-text/10 dark:hover:bg-log-error/10 rounded border px-1.5 py-0.5 text-[12px] font-medium disabled:opacity-60"
     >
       {busy ? "Stopping…" : "Stop agent"}
     </button>

@@ -17,7 +17,7 @@ describe("StatusPill", () => {
     const dot = chip.firstElementChild!;
 
     // The label is anthracite on every status.
-    expect(chip.className).toContain("text-ink");
+    expect(chip.className).toContain("text-anthracite");
     // The colour is on the dot, and the dot alone.
     expect(dot.className).toMatch(/\bbg-(idle|clay|jade|rust|crimson|terracotta)\b/);
     expect(chip).toHaveTextContent(STATUS_LABEL[status]);
@@ -26,7 +26,7 @@ describe("StatusPill", () => {
   it("fills the chip with a palette tint under ink text", () => {
     const { container } = render(<StatusChip tone="jade">Done</StatusChip>);
     const chip = container.firstElementChild as HTMLElement;
-    expect(chip).toHaveClass("text-ink");
+    expect(chip).toHaveClass("text-anthracite");
     expect(chip.style.backgroundColor).toBe("rgb(192, 211, 193)");
   });
 
@@ -42,7 +42,7 @@ describe("StatusPill", () => {
 
   it("appends an optional detail without colouring it", () => {
     render(<StatusPill status="failed" detail="scope violation" />);
-    expect(screen.getByText(/scope violation/)).toHaveClass("text-muted");
+    expect(screen.getByText(/scope violation/)).toHaveClass("opacity-75");
   });
 });
 
