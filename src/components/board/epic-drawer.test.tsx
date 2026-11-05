@@ -312,8 +312,8 @@ describe("EpicDrawer on-screen keyboard", () => {
     open();
     await screen.findByText("Board export");
     const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveStyle({ paddingBottom: "300px" });
-    expect(dialog.firstElementChild).toHaveStyle({ maxHeight: "500px" });
+    expect(dialog.parentElement).toHaveStyle({ paddingBottom: "300px" });
+    expect(dialog).toHaveStyle({ maxHeight: "500px" });
   });
 
   it("hides the progress strip while the keyboard is open", async () => {

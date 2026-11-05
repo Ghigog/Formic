@@ -117,15 +117,18 @@ export function AttachmentGallery({
           role="dialog"
           aria-modal
           aria-label={enlarged.filename}
-          onClick={() => setEnlarged(null)}
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-6"
         >
+          <div
+            role="presentation"
+            className="absolute inset-0"
+            onClick={() => setEnlarged(null)}
+          />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={enlarged.url}
             alt={enlarged.filename}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-full max-w-full rounded-md object-contain"
+            className="relative max-h-full max-w-full rounded-md object-contain"
           />
         </div>
       )}

@@ -65,6 +65,7 @@ export function ArchiveView({
     >
       <div
         data-testid="archive-backdrop"
+        role="presentation"
         className="fixed inset-0 bg-black/60 backdrop-blur-md"
         onClick={onClose}
       />

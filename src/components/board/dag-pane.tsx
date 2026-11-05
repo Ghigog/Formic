@@ -131,6 +131,8 @@ export function DagPane({
 
       <ul className="relative flex flex-col gap-1 pl-4">
         {ordered.map((card) => (
+          // Hover only highlights the row; nothing here acts on it.
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
           <li
             key={card.id}
             ref={(el) => {
