@@ -120,6 +120,15 @@ describe("EpicWinDialog", () => {
     expect(closeWin).toHaveBeenCalledTimes(2);
   });
 
+  it("wraps Shift+Tab from the first control to the last", async () => {
+    await open();
+    const dialog = screen.getByRole("dialog");
+    const buttons = Array.from(dialog.querySelectorAll<HTMLElement>("button"));
+    buttons[0]!.focus();
+    fireEvent.keyDown(buttons[0]!, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(buttons[buttons.length - 1]);
+  });
+
   it("closes on Escape", async () => {
     const closeWin = vi.fn();
     await open({ closeWin });
