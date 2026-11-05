@@ -350,3 +350,16 @@ describe("Column with an agent out of usage", () => {
     });
   });
 });
+
+describe("column list semantics", () => {
+  it("holds only <li> children, none of them a button handle", () => {
+    const cards = [makeCard(), ...makeEpicWithChildren({}, [{}, {}])];
+    const { container } = column("todo", cards);
+    const list = container.querySelector("[data-column-list]")!;
+    expect(list.children.length).toBeGreaterThan(0);
+    for (const child of Array.from(list.children)) expect(child.tagName).toBe("LI");
+    for (const handle of Array.from(container.querySelectorAll("[data-rfd-drag-handle-draggable-id]"))) {
+      expect(handle.getAttribute("role")).not.toBe("button");
+    }
+  });
+});
