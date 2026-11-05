@@ -55,7 +55,7 @@ function PointsCounter({
       aria-live="polite"
       className={cn(
         "inline-block font-mono leading-none font-medium tabular-nums",
-        className ?? "min-w-[72px] origin-right text-right text-[18px]",
+        className ?? "text-[18px]",
       )}
     >
       {value.toLocaleString("en-US")}

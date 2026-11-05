@@ -233,6 +233,12 @@ describe("Points panel and heat indicator", () => {
     expect(panel().closest('[data-tour="points"]')).not.toBeNull();
   });
 
+  it("fits the score to its digits, with no minimum width", () => {
+    renderHeader();
+    const score = panel().querySelector('[data-colony="score"]')!;
+    expect(score.className).not.toMatch(/min-w/);
+  });
+
   it("is neutral with empty pips and no multiplier at ×1.0", () => {
     renderHeader();
     const heat = document.querySelector('[data-colony="heat"]')!;
