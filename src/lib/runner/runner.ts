@@ -1494,14 +1494,14 @@ export async function collectCliRuns(projectId: string): Promise<void> {
           : null;
     if (job) waiting.add(job);
   }
-  for (const m of await repo.assistantMessages(projectId)) {
-    if (m.status === "pending" && m.runnerJob) waiting.add(m.runnerJob);
-  }
+  // Replies queue, and only the oldest pending one is being answered.
+  const answering = await repo.pendingAssistantMessage(projectId);
+  if (answering?.runnerJob) waiting.add(answering.runnerJob);
   for (const m of await repo.pendingCardChatJobs(projectId)) {
     if (m.runnerJob) waiting.add(m.runnerJob);
   }
-  for (const a of await repo.auditsFor(projectId)) {
-    if (a.status === "running" && a.runnerJob) waiting.add(a.runnerJob);
+  for (const a of await repo.runningAuditJobs(projectId)) {
+    if (a.runnerJob) waiting.add(a.runnerJob);
   }
   if (waiting.size === 0) return;
 
@@ -1541,7 +1541,8 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
     ]);
 
   // A sentinel's audit is the other thing an "ask" run can be for.
-  const audit = messageId ? (await repo.auditsFor(projectId)).find((a) => a.id === messageId) : undefined;
+  const found = messageId ? await repo.auditDetail(messageId) : null;
+  const audit = found?.projectId === projectId ? found : null;
   if (audit) {
     await completeCliSentinel(projectId, result, audit, client, cleanUp);
     return;

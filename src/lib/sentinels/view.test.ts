@@ -136,4 +136,48 @@ describe("sentinelStates", () => {
       expect(sentinelStates([], T0, shipped(1000)).secops).toMatchObject({ doneSince: 0, auditStale: false });
     });
   });
+
+  describe("with the audits latestAudits keeps", () => {
+    it("computes what the full history does", () => {
+      const rubric = { checks: [] } as never;
+      const at = (n: number) => new Date(T0 + n * 60_000);
+      const history: AuditRecord[] = [];
+      for (const sentinel of ["secops", "qa"]) {
+        for (let i = 0; i < 12; i++) {
+          history.push(
+            audit({
+              sentinel,
+              startedAt: at(i),
+              finishedAt: at(i + 0.5),
+              stars: (i % 5) + 1,
+              // An old report whose Epic is still open, then calibrate and done runs.
+              epicId: i === 1 ? `epic-${sentinel}` : null,
+              ...(i % 4 === 3 ? { kind: "calibrate" as const, rubric } : {}),
+            }),
+          );
+        }
+        history.push(audit({ sentinel, startedAt: at(20), status: "failed", stars: null, error: "boom" }));
+      }
+      const newest = (pred: (a: AuditRecord) => boolean) => (s: string) =>
+        history.filter((a) => a.sentinel === s && pred(a)).at(-1);
+      const kept = new Set<AuditRecord>();
+      for (const s of ["secops", "qa"]) {
+        for (const pick of [
+          newest(() => true)(s),
+          newest((a) => a.kind === "audit" && a.status === "done")(s),
+          newest((a) => a.kind === "calibrate" && a.status === "done" && !!a.rubric)(s),
+        ])
+          if (pick) kept.add(pick);
+      }
+      for (const a of history.filter((x) => x.epicId)) kept.add(a);
+      const slim = history.filter((a) => kept.has(a));
+      expect(slim.length).toBeLessThan(history.length);
+
+      const open = { "epic-secops": "S-1", "epic-qa": "Q-1" };
+      const now = T0 + 30 * 60_000;
+      const full = sentinelStates(history, now, [], open);
+      expect(sentinelStates(slim, now, [], open)).toEqual(full);
+      expect(full.secops).toMatchObject({ error: "boom", hold: { epicId: "epic-secops", key: "S-1" } });
+    });
+  });
 });
