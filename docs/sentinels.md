@@ -129,8 +129,11 @@ Formic's own CI is the example to copy (`.github/workflows/ci.yml`):
 - The `build` job runs `scripts/bundle-stats.mjs` after the build. Its e2e
   run includes `e2e/evidence.spec.ts`, which photographs the main pages in
   both themes and scans each one with axe. On pushes to main, the job
-  uploads `e2e/.evidence` as `sentinel-evidence`. The spec only records: an
-  axe violation never fails the build.
+  uploads `e2e/.evidence` as `sentinel-evidence`. Each scan is written to
+  `e2e/.evidence/axe/<page>-<theme>.json` as `{ url, violations, passed }`,
+  and the passed rule ids to `e2e/.evidence/axe-passes/`, outside the
+  artifact reader's axe glob. The spec records first, then gates: an axe
+  violation of any impact, contrast included, fails the test.
 
 ## Token permissions
 
