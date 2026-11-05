@@ -10,6 +10,7 @@ import { columnFor } from "@/lib/domain/status";
  */
 export function QueenPanel({ card, onChanged }: { card: BoardCard; onChanged: () => void }) {
   const [unspent, setUnspent] = useState<number | null>(null);
+  const [unlimited, setUnlimited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,9 +20,13 @@ export function QueenPanel({ card, onChanged }: { card: BoardCard; onChanged: ()
   useEffect(() => {
     if (!shown || hasQueen) return;
     fetch("/api/queens", { cache: "no-store" })
-      .then((res) => (res.ok ? (res.json() as Promise<{ unspent: number }>) : null))
+      .then((res) => (res.ok ? (res.json() as Promise<{ unspent: number; unlimited?: boolean }>) : null))
       .then(
-        (found) => found && setUnspent(found.unspent),
+        (found) => {
+          if (!found) return;
+          setUnspent(found.unspent);
+          setUnlimited(found.unlimited === true);
+        },
         () => {},
       );
   }, [shown, hasQueen, card.id]);
@@ -46,7 +51,7 @@ export function QueenPanel({ card, onChanged }: { card: BoardCard; onChanged: ()
   };
 
   if (!shown) return null;
-  const none = !hasQueen && unspent === 0;
+  const none = !hasQueen && !unlimited && unspent === 0;
 
   return (
     <div data-queen className="flex flex-wrap items-center gap-2 text-[12px]">
@@ -58,6 +63,11 @@ export function QueenPanel({ card, onChanged }: { card: BoardCard; onChanged: ()
       >
         {hasQueen ? "Remove Queen" : "Add Queen"}
       </button>
+      {!hasQueen && unlimited && (
+        <span className="text-fg-muted tabular-nums" title="Queens are unlimited at Lv 99">
+          ∞ Queens
+        </span>
+      )}
       {none && <span className="text-fg-muted">No unspent Queens</span>}
       {error && (
         <span role="alert" className="text-log-error text-[11px]">

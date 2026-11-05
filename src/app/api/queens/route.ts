@@ -4,7 +4,7 @@ import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
 import { repository } from "@/lib/db";
 import { activeProject, noProject } from "@/lib/board/project";
-import { queensEarned, scoreOf } from "@/lib/colony/game";
+import { isMaxLevel, queensEarned, scoreOf } from "@/lib/colony/game";
 import { publish } from "@/lib/events/bus";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,11 @@ export async function GET() {
     repo.listQueens(project.id),
     repo.queensSpent(project.id),
   ]);
-  return Response.json({ unspent: Math.max(0, queensEarned(scoreOf(cards).level) - placed.length - spent) });
+  const level = scoreOf(cards).level;
+  return Response.json({
+    unspent: Math.max(0, queensEarned(level) - placed.length - spent),
+    unlimited: isMaxLevel(level),
+  });
 }
 
 /**
@@ -46,7 +50,8 @@ async function postHandler(req: NextRequest) {
   if (card.queen) return Response.json({ error: "It already has a Queen." }, { status: 409 });
 
   const [placed, spent] = await Promise.all([repo.listQueens(project.id), repo.queensSpent(project.id)]);
-  const unspent = queensEarned(scoreOf(cards).level) - placed.length - spent;
+  const level = scoreOf(cards).level;
+  const unspent = queensEarned(level) - placed.length - spent;
   if (unspent <= 0) return Response.json({ error: "No unspent Queens." }, { status: 409 });
 
   const queen = await repo.placeQueen(project.id, card.id, card.kind);
@@ -55,7 +60,9 @@ async function postHandler(req: NextRequest) {
   await startedBy(card.id);
 
   await publish(project.id, { type: "card.queen", cardId: card.id, kind: card.kind });
-  return Response.json({ queen, unspent: unspent - 1 }, { status: 201 });
+  // JSON cannot carry Infinity: at the top level the count is a flag instead.
+  const unlimited = isMaxLevel(level);
+  return Response.json({ queen, unspent: unlimited ? 0 : unspent - 1, unlimited }, { status: 201 });
 }
 
 /** Takes a Queen off a card. She stays spent: nothing is given back. */
