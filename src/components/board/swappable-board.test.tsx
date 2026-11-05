@@ -22,6 +22,8 @@ vi.mock("./board-shell", async () => {
   };
 });
 
+vi.mock("@/components/onboarding/tour", () => ({ AutoTour: ({ id }: { id: string }) => <div data-testid="auto-tour">{id}</div> }));
+
 const account = { login: "u", name: "U", avatarUrl: null, signedIn: false };
 const props = (name: string) => ({ projectName: name }) as unknown as BoardProps;
 
@@ -58,6 +60,16 @@ const opened = () => calls.filter((c) => c.url === "/api/projects/opened");
 const toLoad = { timeout: 3000 };
 
 describe("SwappableBoard", () => {
+  it("offers the switch-boards tour once after a board was just created", () => {
+    window.localStorage.clear();
+    window.localStorage.setItem("formic:tours:new-board", "1");
+    const first = renderBoard();
+    expect(screen.getByTestId("auto-tour").textContent).toBe("swap-intro");
+    first.unmount();
+    renderBoard();
+    expect(screen.queryByTestId("auto-tour")).toBeNull();
+  });
+
   it("has no swap handle and no keyboard shortcut: the gestures are the way", () => {
     renderBoard();
     expect(screen.queryByRole("button", { name: /swap board/i })).toBeNull();

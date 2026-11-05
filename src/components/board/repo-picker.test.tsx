@@ -132,6 +132,22 @@ describe("RepoPicker", () => {
     );
   });
 
+  it.each([true, false])("notes a new board for the switch tip only when created (%s)", async (created) => {
+    window.localStorage.clear();
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (url === "/api/projects" && init?.method === "POST") return Response.json({ project: { id: "p1" }, created });
+      return Response.json(url.includes("/api/projects") ? { projects: [] } : { ok: true, repos: [] });
+    });
+    render(<RepoPicker current={null} inline onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText("Search repositories"), { target: { value: "ada/fresh" } });
+    fireEvent.click(await screen.findByText("ada/fresh"));
+    if (created) await waitFor(() => expect(window.localStorage.getItem("formic:tours:new-board")).toBe("1"));
+    else {
+      await new Promise((r) => setTimeout(r, 50));
+      expect(window.localStorage.getItem("formic:tours:new-board")).toBeNull();
+    }
+  });
+
   describe("standing", () => {
     function serveBoards(projects: unknown[]) {
       vi.stubGlobal("fetch", async (url: string) =>

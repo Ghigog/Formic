@@ -16,7 +16,7 @@ import {
   type Spot,
 } from "./placement";
 import { endTour, offerTour, activeTour, useActiveTour, useAntVoice } from "./store";
-import { TOURS, type TourDef, type TourId } from "./tours";
+import { TOURS, stepText, type TourDef, type TourId } from "./tours";
 import { attachVoice, mutter, speaks, whenHeard } from "./voice";
 
 /** At most this many boxes are lit at once: the five columns, say. */
@@ -136,7 +136,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   const reduced = prefersReducedMotion();
 
   const step = steps[index];
-  const text = step?.text ?? "";
+  const text = step ? stepText(step) : "";
   const last = index === steps.length - 1;
 
   useEffect(() => {
@@ -252,7 +252,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
         const spot = antSpot(again, s.side, window.innerWidth, window.innerHeight);
         place({ x: spot.x, y: spot.y, angle: nearestAngle(antRef.current.angle, spot.face), dur: 0 });
       }
-      speak(s.text);
+      speak(stepText(s));
     });
   }
 

@@ -60,6 +60,18 @@ const flush = () =>
   });
 
 describe("Tour", () => {
+  it.each([
+    [true, "Swipe up with three fingers"],
+    [false, "Hold the right mouse button"],
+  ])("says the touch line only on a coarse pointer (%s)", async (coarse, line) => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce") || (coarse && q.includes("coarse")), addEventListener() {}, removeEventListener() {} }));
+    target("column");
+    render(<Tour def={TOURS["swap-intro"]} onEnd={() => {}} />);
+    await flush();
+    expect(screen.getByText(new RegExp(line))).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Got it" })).toBeTruthy();
+  });
+
   it("talks about each step in turn, leaving out and not counting one whose target is hidden", async () => {
     target("one");
     hiddenTarget("phone-hidden");
