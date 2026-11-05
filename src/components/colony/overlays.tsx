@@ -6,6 +6,7 @@ import { XP_PER_LEVEL, isMaxLevel } from "@/lib/colony/game";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { useColony } from "./colony";
 import { centerOf } from "./fx";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 
 /** What card.rerouted leaves for RerouteToast to show, until it clears itself. */
 export interface RerouteNotice {
@@ -195,6 +196,13 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win]);
 
+  const trap = useFocusTrap({
+    onEscape: () => {
+      c?.sfx("close");
+      c?.closeWin();
+    },
+  });
+
   if (!c || !win) return null;
 
   const { tally } = win;
@@ -217,10 +225,13 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
       }}
       className="fixed inset-0 z-[80] flex items-center justify-center bg-[color-mix(in_srgb,var(--anthracite)_38%,transparent)] p-4 backdrop-blur-md"
     >
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         ref={card}
         role="dialog"
         aria-modal
+        tabIndex={-1}
+        onKeyDown={trap}
         aria-labelledby="win-title"
         className="bg-card box-border flex max-h-[calc(100dvh-32px)] w-[480px] max-w-full flex-col items-center gap-3.5 overflow-y-auto rounded-xl px-6 pt-9 pb-6 text-center shadow-[0_40px_80px_-24px_color-mix(in_srgb,var(--anthracite)_50%,transparent)] sm:px-8"
       >

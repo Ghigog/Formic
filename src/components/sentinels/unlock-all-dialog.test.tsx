@@ -49,6 +49,16 @@ describe("UnlockAllDialog", () => {
     expect(screen.getByRole("link", { name: "Open Settings" })).toHaveAttribute("href", "/settings#sentinels");
   });
 
+  it("wraps Tab from the last control to the first", async () => {
+    answer({ established: true, unlockAllSentinels: false, unlockAllOfferDismissedAt: null });
+    at(0, <UnlockAllDialog projectId="p1" unlockAll={false} />);
+    const notNow = (await screen.findByRole("dialog")).querySelector("button")!;
+    const link = screen.getByRole("link", { name: "Open Settings" });
+    link.focus();
+    await userEvent.tab();
+    expect(notNow).toHaveFocus();
+  });
+
   it("does not appear for a short history", async () => {
     const fetchMock = answer({ established: false, unlockAllSentinels: false, unlockAllOfferDismissedAt: null });
     at(0, <UnlockAllDialog projectId="p1" unlockAll={false} />);
