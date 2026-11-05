@@ -18,6 +18,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { attemptsFor } from "@/lib/budget/in-process";
 import { repository } from "@/lib/db";
+import { columnOf } from "@/lib/domain/status";
 import type { AssistantMessage, AssistantProposal } from "@/lib/db/repository";
 import { extractJson } from "@/lib/llm/openai-compat";
 import { startCliAsk } from "@/lib/runner/runner";
@@ -71,6 +72,8 @@ export function changeBranchFor(id: string): string {
 
 /** How many cards' live state a CLI agent is handed up front. */
 const MAX_CLI_REPORTS = 4;
+/** How many cards in review or blocked it is handed when the person names none. */
+const MAX_CLI_FALLBACK_REPORTS = 8;
 
 export const TOOL_DEFS: ToolDef[] = [
   {
@@ -544,7 +547,7 @@ async function answerAsGuest(projectId: string, messageId: string, speaker: stri
   let tools: ToolDef[] = [];
   if (column) {
     system = await columnSystemPrompt(projectId, column, speaker as AgentRole, project.repoFullName, agent.brief);
-    tools = [...FILE_TOOL_DEFS, ACT_ON_CARD_DEF];
+    tools = [...FILE_TOOL_DEFS, TOOL_DEFS.find((t) => t.name === "card_status")!, ACT_ON_CARD_DEF];
   } else {
     const prompt = await sentinelSystemPrompt(projectId, sentinelId!);
     if (!prompt) {
@@ -580,6 +583,15 @@ async function answerAsGuest(projectId: string, messageId: string, speaker: stri
   const proposals: AssistantProposal[] = [];
   const done: string[] = [];
   const runTool = async (call: ToolCall) => {
+    // Reading is not acting: a column agent may look at any card on the board.
+    if (call.name === "card_status" && column) {
+      try {
+        const { key } = cardInput.parse(call.input);
+        return { content: await cardReport(projectId, key, client), isError: false };
+      } catch (e) {
+        return { content: e instanceof Error ? e.message : String(e), isError: true };
+      }
+    }
     if (call.name === "act_on_card" && column) {
       try {
         const { key, action } = actOnCardInput.parse(call.input);
@@ -630,13 +642,23 @@ const cliAnswerSchema = z.object({
  */
 async function cliReports(projectId: string, past: Array<{ role: "user" | "assistant"; content: string }>): Promise<string> {
   const asked = past.filter((m) => m.role === "user").slice(-3).map((m) => m.content).join("\n");
-  const keys = mentionedKeys(asked, await repository().boardCards(projectId)).slice(0, MAX_CLI_REPORTS);
+  const cards = await repository().boardCards(projectId);
+  const named = mentionedKeys(asked, cards).slice(0, MAX_CLI_REPORTS);
+  // With no card named, the cards most likely being asked about: in review first, then blocked or misplaced.
+  const inReview = cards.filter((c) => !c.archived && columnOf(c) === "in_review");
+  const stuck = cards.filter((c) => !c.archived && columnOf(c) !== "in_review" && (c.blockedReason || c.misplacedReason));
+  const keys = named.length
+    ? named
+    : [...inReview, ...stuck].slice(0, MAX_CLI_FALLBACK_REPORTS).map((c) => c.key);
   if (keys.length === 0) return "";
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.githubToken);
   const reports = await Promise.all(keys.map((k) => cardReport(projectId, k, client).catch((e) => `${k}: could not read it (${e instanceof Error ? e.message : String(e)}).`)));
-  return ["The live state of the cards the person asked about, read from the board and GitHub just now:", "", ...reports.flatMap((r) => [r, ""])].join("\n");
+  const header = named.length
+    ? "The live state of the cards the person asked about, read from the board and GitHub just now:"
+    : "The person named no card. These are the cards in review or blocked, read from the board and GitHub just now:";
+  return [header, "", ...reports.flatMap((r) => [r, ""])].join("\n");
 }
 
 function cliPrompt(
@@ -655,7 +677,7 @@ function cliPrompt(
     ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
     "How to answer:",
     "- You may change the code. What you change in the checkout is kept on a branch of its own and offered to the person as a pull request, with the title and body you give in \"change\". Change files only when the person asked for a change or agreed to one. Install the project's dependencies if they are not there, and run its checks on your change before you finish. Changes under .github/workflows are not kept. Leave \"change\" out when you changed nothing.",
-    "- You have no card_status tool here: the live state above is what Formic read for you. A card it does not cover, ask the person to name.",
+    "- Formic has read GitHub for you: the live state of the cards above is current. Answer about those cards from it, and never say you cannot see GitHub. For a card it does not cover, ask the person to name it.",
     "- You have no propose tool here. A proposal is an entry in the JSON below: describing one in your reply does nothing, and the person can only approve what is in the JSON.",
     "- Your final message is your answer, and it must be one JSON object and nothing else (you may write the same object to the file named by the FORMIC_OUTPUT environment variable instead). An answer that is not that JSON is thrown away:",
     '  {"reply": "<your answer, in Markdown>", "proposals": [{"summary": "<one line>", "action": <an action>}], "change": {"title": "<pull request title>", "body": "<what changed, why, and how you checked it>"}}',
