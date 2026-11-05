@@ -397,12 +397,11 @@ action fixes it. Say what will fill the space and what makes it appear. Seen tod
 tickets yet. Move this Epic to To Do and the Architect Agent…" (DAG pane), "No epics with tickets
 yet. Once the Architect Agent breaks one…" and "No merges yet" (timeline), "Nothing yet. The
 commands agents run, and what they print, show here as they work." (terminal), "Nothing flagged"
-(sentinel findings), "Came back empty" (scout), "No showcase yet. Generate it from the Epic when you
-want one." Charts with no data say so in place of the chart, under their title.
+(sentinel findings), "Came back empty" (scout). Charts with no data say so in place of the chart, under their title.
 
 **Loading.** Show the real container with a text placeholder, never a spinner or skeleton blocks.
 Titles read "Loading…" (ticket and epic drawers) until the card arrives. Inline waits use three
-1.5-unit clay dots with `animate-pulse` (chat) or pulsing muted text ("The PM Agent is writing the showcase…", "Tallying…").
+1.5-unit clay dots with `animate-pulse` (chat) or pulsing muted text.
 A board swap uses the dig transition with a polite live region ("Loading <board>"). Sentinel runs
 show "Auditing N…" on the button. Every pulse is gated for reduced motion; the words stay.
 

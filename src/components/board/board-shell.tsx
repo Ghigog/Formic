@@ -359,7 +359,7 @@ export function BoardShell({
       <CallPill assistant={assistantControls} />
       <ColonyToast />
       <RerouteToast toast={rerouteToast} />
-      <EpicWinDialog onShowcase={(epic) => setOpenEpicId(epic.id)} />
+      <EpicWinDialog onOpenEpic={(epic) => setOpenEpicId(epic.id)} />
 
       {connection === "reconnecting" && (
         <div
