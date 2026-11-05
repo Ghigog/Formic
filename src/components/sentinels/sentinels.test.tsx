@@ -388,6 +388,12 @@ describe("SentinelsPage carousel and report modal", () => {
     expect(dialog.getAttribute("aria-modal")).toBe("true");
     expect(within(dialog).getByRole("complementary", { name: "Audit report" })).toBeTruthy();
     expect(dialog.contains(document.activeElement)).toBe(true);
+    const tabbable = Array.from(dialog.querySelectorAll<HTMLElement>("button, a[href], [tabindex='0']"));
+    tabbable[tabbable.length - 1]!.focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(tabbable[0]);
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(tabbable[tabbable.length - 1]);
     await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(card(0));

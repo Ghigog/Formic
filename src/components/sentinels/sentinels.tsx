@@ -3,6 +3,7 @@
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useColony, type ColonyApi } from "@/components/colony/colony";
 import { centerOf } from "@/components/colony/fx";
 import { cappedByFindings } from "@/lib/sentinels/rubric";
@@ -164,6 +165,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
     setReportId(null);
     root.current?.querySelector<HTMLElement>(`[data-card="${id}"]`)?.focus();
   };
+  const trapReport = useFocusTrap({ onEscape: closeReport });
   /** The card nearest the rail's middle, measured from the layout as it is now. */
   const centredNow = () => {
     const el = rail.current;
@@ -551,9 +553,12 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
             if (e.target === e.currentTarget) closeReport();
           }}
         >
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
           <div
             role="dialog"
             aria-modal
+            tabIndex={-1}
+            onKeyDown={trapReport}
             aria-label={`${reporting.who} audit report`}
             className="relative max-h-full w-full max-w-[460px] overflow-auto rounded-[14px]"
           >
