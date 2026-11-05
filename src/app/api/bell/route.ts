@@ -3,7 +3,7 @@ import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
 import { repository } from "@/lib/db";
 import { activeProject, noProject } from "@/lib/board/project";
-import { goldenBellsLeft, scoreOf } from "@/lib/colony/game";
+import { goldenBellsLeft, isMaxLevel, scoreOf } from "@/lib/colony/game";
 import { ringBell } from "@/lib/colony/bell";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,10 @@ const bodySchema = z.object({ action: z.enum(["ring", "arm", "disarm"]) });
 async function view(projectId: string) {
   const repo = repository();
   const [cards, bell] = await Promise.all([repo.boardCards(projectId), repo.goldenBell(projectId)]);
-  return { left: goldenBellsLeft(scoreOf(cards).level, bell.used), armed: bell.armed };
+  const level = scoreOf(cards).level;
+  const unlimited = isMaxLevel(level);
+  // JSON cannot carry Infinity: at the top level the count is a flag instead.
+  return { left: unlimited ? 0 : goldenBellsLeft(level, bell.used), armed: bell.armed, unlimited };
 }
 
 export async function GET() {
@@ -39,8 +42,8 @@ async function postHandler(req: NextRequest) {
     return Response.json({ ...(await ringBell(project.id)), ...(await view(project.id)) });
   }
   if (parsed.data.action === "arm") {
-    const { left } = await view(project.id);
-    if (left === 0) return Response.json({ error: "No golden bell left.", left, armed: false }, { status: 400 });
+    const { left, unlimited } = await view(project.id);
+    if (left === 0 && !unlimited) return Response.json({ error: "No golden bell left.", left, armed: false }, { status: 400 });
   }
   await repository().setGoldenBellArmed(project.id, parsed.data.action === "arm");
   return Response.json(await view(project.id));

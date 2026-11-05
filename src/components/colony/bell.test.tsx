@@ -12,7 +12,7 @@ vi.mock("./colony", () => ({
 
 import { Bell } from "./bell";
 
-type State = { left: number; armed: boolean };
+type State = { left: number; armed: boolean; unlimited?: boolean };
 let state: State;
 let posts: string[];
 
@@ -89,6 +89,14 @@ describe("the bell", () => {
     expect(note).toMatch(/swing the cord/);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("shows ∞ and says golden bells are unlimited at Lv 99", async () => {
+    state = { left: 0, armed: false, unlimited: true };
+    render(<Harness />);
+    await screen.findByText("∞");
+    fireEvent.click(screen.getByRole("button", { name: "How the bell works" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/unlimited at Lv 99/);
   });
 
   it("does nothing but sway on a tap of the cord, so a misclick never rings it", async () => {
