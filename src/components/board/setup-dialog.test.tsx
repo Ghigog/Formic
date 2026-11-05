@@ -133,6 +133,34 @@ describe("the setup dialog", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
+  it("puts the dialog away the same way on Escape as on Not now, and reopens it", async () => {
+    const show = () =>
+      render(
+        <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} />,
+      );
+    const pill = () => screen.getByRole("button", { name: /Setup pull request waiting/ });
+
+    const first = show();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(pill()).toHaveFocus();
+    const afterEscape = first.container.innerHTML;
+    first.unmount();
+
+    const second = show();
+    await userEvent.click(screen.getByRole("button", { name: "Not now" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(pill()).toHaveFocus();
+    expect(second.container.innerHTML).toBe(afterEscape);
+
+    await userEvent.click(pill());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("link", { name: /Open pull request/ })).toHaveFocus());
+
+    await userEvent.keyboard("{Escape}");
+    expect(pill()).toHaveFocus();
+  });
+
   it("shows why it cannot set up, with a retry", async () => {
     const onRetry = vi.fn();
     render(
