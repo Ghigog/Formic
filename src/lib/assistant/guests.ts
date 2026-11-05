@@ -103,6 +103,7 @@ export async function columnSystemPrompt(
     "",
     CARD_ACTIONS_GUIDE.replace("this column's work on the card", "this column's work on the card named"),
     "Name the card you act on by its key in act_on_card. A move to Done is only a proposal: the person approves it.",
+    "Before you say why any card is where it is, look at it with card_status: it shows the card's pull request, checks and agent runs from GitHub. You may look at any card, not only yours.",
     "",
     `The cards in ${COLUMN_LABELS[column]} now:`,
     ...(cards.length
