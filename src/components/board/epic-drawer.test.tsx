@@ -416,8 +416,66 @@ describe("EpicDrawer Escape and focus", () => {
     opener.focus();
     fireEvent.click(opener);
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
+  it("wraps Tab and Shift+Tab inside the drawer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/attachments"))
+          return Response.json({ attachments: [] });
+        return Response.json(detail());
+      }),
+    );
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "Open epic" }));
+    const dialog = await screen.findByRole("dialog");
+    const buttons = within(dialog).getAllByRole("button");
+    const first = buttons[0] as HTMLElement;
+    const last = buttons[buttons.length - 1] as HTMLElement;
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    first.focus();
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it("closes only an enlarged attachment on the first Escape", async () => {
+    const attachment: AttachmentSummary = {
+      id: "a-1",
+      filename: "shot.png",
+      kind: "image",
+      size: 10,
+      url: "/a/shot.png",
+    } as AttachmentSummary;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/attachments"))
+          return Response.json({ attachments: [attachment] });
+        return Response.json(detail());
+      }),
+    );
+    render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Open epic" });
+    opener.focus();
+    fireEvent.click(opener);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Enlarge shot.png" }),
+    );
+    const enlarged = screen.getByRole("dialog", { name: "shot.png" });
+    expect(enlarged).toHaveFocus();
+    fireEvent.keyDown(enlarged, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "shot.png" })).toBeNull();
+    const drawer = screen.getByRole("dialog", { name: "Epic detail" });
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(opener).toHaveFocus();
   });
 });
