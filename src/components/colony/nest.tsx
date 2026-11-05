@@ -393,10 +393,10 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
                   }}
                 >
                   <BugPreview shape={u.key} locked={locked} on={on && !locked} c={c} />
-                  <span className={`text-center text-[10px] leading-tight font-semibold ${locked ? "text-muted" : "text-ink"}`}>
+                  <span className={`min-w-0 text-center text-[10px] leading-tight font-semibold break-words ${locked ? "text-muted" : "text-ink"}`}>
                     {u.label}
                   </span>
-                  <span className="text-muted min-h-3 font-mono text-[9px]">
+                  <span className="text-muted min-h-3 min-w-0 text-center font-mono text-[9px] leading-tight break-words">
                     {locked ? `Lv ${u.lv}` : on ? "Equipped" : ""}
                   </span>
                 </button>
@@ -433,7 +433,7 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
                       </svg>
                     )}
                   </span>
-                  <span className="text-muted font-mono text-[9px] whitespace-nowrap">
+                  <span className="text-muted min-w-0 text-center font-mono text-[9px] leading-tight break-words">
                     {locked ? `Lv ${u.lv}` : u.label}
                   </span>
                 </button>
