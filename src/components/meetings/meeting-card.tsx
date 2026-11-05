@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { useColony } from "@/components/colony/colony";
+import { useRef } from "react";
 import type { Meeting } from "@/lib/db/repository";
 import { GuestCoin } from "./guest-coin";
+import { JoinNow } from "./join-meeting";
 import { whenLabel } from "./up-next";
 
 const REPEATS: Record<Meeting["repeat"], string> = {
@@ -24,6 +24,7 @@ export function MeetingCard({
   onEdit,
   onDelete,
   onClose,
+  onJoined,
 }: {
   meeting: Meeting;
   at: Date;
@@ -32,8 +33,9 @@ export function MeetingCard({
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onJoined?: () => void;
 }) {
-  const c = useColony();
+  const coins = useRef<HTMLDivElement>(null);
   return (
     <section aria-label={meeting.title} className="border-line bg-card grid gap-3 rounded-xl border p-4">
       <div className="flex items-start gap-3">
@@ -50,9 +52,11 @@ export function MeetingCard({
       </div>
       {meeting.agenda.trim() && <p className="text-ink m-0 text-[13px] leading-5 whitespace-pre-line">{meeting.agenda}</p>}
       {meeting.guests.length > 0 && (
-        <div className="flex -space-x-1.5">
+        <div ref={coins} className="flex -space-x-1.5">
           {meeting.guests.map((g) => (
-            <GuestCoin key={g} id={g} size={24} />
+            <span key={g} data-mcoin className="inline-flex">
+              <GuestCoin id={g} size={24} />
+            </span>
           ))}
         </div>
       )}
@@ -62,9 +66,12 @@ export function MeetingCard({
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Link href={`/calls/${meeting.id}`} onClick={() => c?.sfx("chord")} className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white">
-          Join now
-        </Link>
+        <JoinNow
+          meeting={meeting}
+          source={() => coins.current}
+          onJoined={onJoined}
+          className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white"
+        />
         <button type="button" onClick={onEdit} disabled={busy} className={action}>
           Edit
         </button>

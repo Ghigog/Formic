@@ -12,7 +12,7 @@ import { FakeEngine } from "@/lib/voice/engine";
 import type { AssistantMessageView } from "@/lib/hooks/use-assistant";
 import { CallPill } from "./call-pill";
 import { AgentCallButton } from "./agent-call-button";
-import { CallProvider, LOOKING_NOW } from "./call-provider";
+import { CallProvider, LOOKING_NOW, useCall } from "./call-provider";
 
 const msg = (
   id: string,
@@ -32,7 +32,17 @@ let controls: {
   push: (m: AssistantMessageView[]) => void;
   ask: ReturnType<typeof vi.fn>;
   decide: ReturnType<typeof vi.fn>;
+  openCall: ReturnType<typeof vi.fn>;
 };
+
+function MeetingButton() {
+  const call = useCall();
+  return (
+    <button onClick={() => call?.startMeeting({ id: "mt-1", guests: ["assistant", "coder", "reviewer"] })}>
+      join meeting
+    </button>
+  );
+}
 
 function Harness({
   engine,
@@ -49,9 +59,10 @@ function Harness({
     }),
   );
   const [decide] = useState(() => vi.fn(async () => {}));
+  const [openCall] = useState(() => vi.fn(async (_meetingId?: string) => {}));
   useEffect(() => {
-    controls = { push: setMessages, ask, decide };
-  }, [ask, decide]);
+    controls = { push: setMessages, ask, decide, openCall };
+  }, [ask, decide, openCall]);
   const a: AssistantControls = {
     open: isOpen,
     setOpen,
@@ -61,6 +72,7 @@ function Harness({
       messages.at(-1)?.status === "pending" || messages.at(-1)?.role === "user",
     error: null,
     ask,
+    openCall,
     stop: vi.fn(),
     clear: vi.fn(),
     decide,
@@ -73,6 +85,7 @@ function Harness({
       <AskBox a={a} repoName="demo" />
       <CallPill assistant={a} />
       <AgentCallButton guest="reviewer" />
+      <MeetingButton />
     </CallProvider>
   );
 }
@@ -94,6 +107,15 @@ describe("a call on the PM chat", () => {
       "data-state",
       "listening",
     );
+  });
+
+  it("starts a meeting: all its guests on the bar and the PM opening it with the meeting", async () => {
+    const engine = new FakeEngine();
+    render(<Harness engine={engine} />);
+    await userEvent.click(screen.getByText("join meeting"));
+    expect(engine.live).toBe(true);
+    expect(controls.openCall).toHaveBeenCalledWith("mt-1");
+    expect(screen.getByText(/On a call with PM, Coder, Reviewer/)).toBeInTheDocument();
   });
 
   it("disables the phone, saying why, when speech is not supported", () => {

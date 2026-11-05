@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { repo, currentUser, activeProject, launch, answer, limited } = vi.hoisted(() => ({
-  repo: { assistantMessages: vi.fn(), addAssistantMessage: vi.fn(), boardCards: vi.fn() },
+  repo: { assistantMessages: vi.fn(), addAssistantMessage: vi.fn(), boardCards: vi.fn(), meetings: vi.fn() },
   currentUser: vi.fn(),
   activeProject: vi.fn(),
   launch: vi.fn(),
@@ -17,7 +17,10 @@ vi.mock("@/lib/assistant/turn", () => ({ answer }));
 vi.mock("@/lib/rate-limit", () => ({ limited, RUN: "run" }));
 
 const route = await import("./route");
-const post = async () => (await route.POST(new Request("http://localhost/api/assistant/call", { method: "POST" }))) as Response;
+const post = async (body?: unknown) =>
+  (await route.POST(
+    new Request("http://localhost/api/assistant/call", { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  )) as Response;
 
 const QUESTION = "Question: Which scope?\nThe Coder is waiting for your answer.\n\nWhich scope?";
 
@@ -63,5 +66,22 @@ describe("POST /api/assistant/call", () => {
     await post();
     expect(repo.addAssistantMessage).not.toHaveBeenCalled();
     expect(launch).not.toHaveBeenCalled();
+  });
+
+  it("queues a meeting: the PM, each guest in turn, then the PM", async () => {
+    repo.meetings.mockResolvedValue([
+      { id: "mt-1", title: "Sprint planning", agenda: "Scope\nRisks", guests: ["assistant", "coder"] },
+    ]);
+    repo.addAssistantMessage.mockImplementation(async (m: { speaker?: string }) => ({ id: `m-${m.speaker ?? "user"}` }));
+    expect((await post({ meetingId: "mt-1" })).status).toBe(200);
+    const added = repo.addAssistantMessage.mock.calls.map((c) => c[0]);
+    expect(added[0]).toMatchObject({ role: "user", content: expect.stringContaining("Sprint planning") });
+    expect(added.slice(1).map((m) => m.speaker)).toEqual(["assistant", "coder", "assistant"]);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a meeting that is not on the board", async () => {
+    repo.meetings.mockResolvedValue([]);
+    expect((await post({ meetingId: "nope" })).status).toBe(404);
   });
 });

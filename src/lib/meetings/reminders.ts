@@ -57,7 +57,7 @@ export async function remindDueMeetings(
     await deps.send(to, {
       title: meeting.title,
       body: "Your meeting is starting.",
-      url: `/calls/${meeting.id}`,
+      url: `/?meeting=${meeting.id}`,
     });
     reminded++;
   }

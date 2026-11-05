@@ -6,6 +6,7 @@ import { AutoTour } from "@/components/onboarding/tour";
 import { centerOf } from "@/components/colony/fx";
 import { useMeetings } from "@/lib/hooks/use-meetings";
 import { upNext } from "@/lib/meetings/due";
+import { occurrencesBetween } from "@/lib/meetings/occurrences";
 import { guestOptions } from "@/lib/meetings/guests";
 import { Calendar, visibleOccurrences, weekStart } from "./calendar";
 import { plopSchedule } from "./entrance";
@@ -23,13 +24,49 @@ function nextSlot(now: Date): Date {
 /** The Meetings menu, over the board in the Timeline's frame. */
 export function MeetingsMenu({ repoName, unlockAllSentinels = false }: { repoName: string; unlockAllSentinels?: boolean }) {
   const c = useColony();
+  // A reminder push links to /?meeting=<id>: open the menu on that meeting, once.
+  const [wanted, setWanted] = useState<string | null>(null);
+  const read = useRef(false);
+  useEffect(() => {
+    if (read.current || !c) return;
+    read.current = true;
+    const id = new URLSearchParams(window.location.search).get("meeting");
+    if (!id) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read once from the address on arrival
+    setWanted(id);
+    c.setMeetingsOpen(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("meeting");
+    window.history.replaceState(null, "", url);
+  }, [c]);
   if (!c?.meetingsOpen) return null;
-  return <MeetingsView repoName={repoName} level={c.score.level} unlockAll={unlockAllSentinels} close={() => c.setMeetingsOpen(false)} />;
+  return (
+    <MeetingsView
+      repoName={repoName}
+      level={c.score.level}
+      unlockAll={unlockAllSentinels}
+      open={wanted}
+      close={() => c.setMeetingsOpen(false)}
+    />
+  );
 }
 
 type Panel = { kind: "form"; at: Date; editing?: string } | { kind: "card"; id: string; at: Date } | null;
 
-function MeetingsView({ repoName, level, unlockAll, close }: { repoName: string; level: number; unlockAll: boolean; close: () => void }) {
+function MeetingsView({
+  repoName,
+  level,
+  unlockAll,
+  open,
+  close,
+}: {
+  repoName: string;
+  level: number;
+  unlockAll: boolean;
+  /** A meeting whose card opens once the meetings are in. */
+  open: string | null;
+  close: () => void;
+}) {
   const c = useColony();
   const { meetings, loaded, error, create, update, remove } = useMeetings();
   const [now] = useState(() => new Date());
@@ -47,6 +84,18 @@ function MeetingsView({ repoName, level, unlockAll, close }: { repoName: string;
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Opened from a reminder: that meeting's card, at its next time (or its start).
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!open || !loaded || opened.current) return;
+    opened.current = true;
+    const meeting = meetings.find((m) => m.id === open);
+    if (!meeting) return;
+    const at = occurrencesBetween([meeting], new Date(0), new Date(now.getTime() + 14 * 86_400_000)).find((o) => o.at >= now)?.at;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the card opens once, when the meetings arrive
+    setPanel({ kind: "card", id: meeting.id, at: at ?? meeting.startsAt });
+  }, [open, loaded, meetings, now]);
 
   // The page drops in, with a squash and a settle.
   useEffect(() => {
@@ -207,6 +256,7 @@ function MeetingsView({ repoName, level, unlockAll, close }: { repoName: string;
             busy={busy}
             error={deleteError}
             onClose={() => setPanel(null)}
+            onJoined={close}
             onEdit={() => setPanel({ kind: "form", at: card.startsAt, editing: card.id })}
             onDelete={async () => {
               setBusy(true);
@@ -224,7 +274,7 @@ function MeetingsView({ repoName, level, unlockAll, close }: { repoName: string;
         )}
 
         {next ? (
-          <UpNext next={next} />
+          <UpNext next={next} onJoined={close} />
         ) : (
           <p data-tour="meetings-empty" className="text-muted border-line rounded-xl border border-dashed p-6 text-center text-[14px]">
             No meetings yet. Let&apos;s plan one.

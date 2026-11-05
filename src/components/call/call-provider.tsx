@@ -42,6 +42,8 @@ export interface CallApi {
   mic: MicState;
   /** Starts the call; `guest` is who is on it first, besides the PM. */
   start: (guest?: GuestId) => void;
+  /** Starts a meeting: the PM chairs, with the meeting's guests on the call. */
+  startMeeting: (meeting: { id: string; guests: GuestId[] }) => void;
   addGuest: (id: GuestId) => void;
   hangUp: () => void;
   setMuted: (muted: boolean) => void;
@@ -271,26 +273,30 @@ export function CallProvider({
     );
   }, [live, reading, assistant.messages, say]);
 
-  const start = useCallback((guest?: GuestId) => {
+  const begin = useCallback((guest?: GuestId, meeting?: { id: string; guests: GuestId[] }) => {
     if (!engine?.supported || live) return;
     engine.start(); // inside the tap: iOS speaks only after a gesture
     silenceMutter(true);
     spoken.current = new Set(a.current.messages.map((m) => m.id));
     const first = guest && guest !== "assistant" ? guest : null;
-    guestsRef.current = first ? ["assistant", first] : ["assistant"];
+    const others = meeting ? meeting.guests.filter((g) => g !== "assistant" && (g as string) !== "pm") : first ? [first] : [];
+    guestsRef.current = ["assistant", ...others];
     setGuests(guestsRef.current);
     lastSpeaker.current = first;
     // The opener is the PM's own reply, read aloud like any other.
-    asked.current = !!first || !!a.current.openCall;
+    asked.current = !!first || !!meeting || !!a.current.openCall;
     lookingSaid.current = false;
     setQueue([]);
     setMutedState(false);
     setStartedAt(Date.now());
     setLive(true);
     a.current.setOpen(true);
-    if (first) void a.current.ask("Hello!", [first]);
+    if (meeting) void a.current.openCall?.(meeting.id);
+    else if (first) void a.current.ask("Hello!", [first]);
     else void a.current.openCall?.();
   }, [engine, live]);
+  const start = useCallback((guest?: GuestId) => begin(guest), [begin]);
+  const startMeeting = useCallback((meeting: { id: string; guests: GuestId[] }) => begin(undefined, meeting), [begin]);
 
   const hangUp = useCallback(() => {
     if (!live) return;
@@ -348,11 +354,12 @@ export function CallProvider({
       startedAt,
       mic,
       start,
+      startMeeting,
       addGuest,
       hangUp,
       setMuted,
     }),
-    [live, engine, guests, options, active, muted, startedAt, mic, start, addGuest, hangUp, setMuted],
+    [live, engine, guests, options, active, muted, startedAt, mic, start, startMeeting, addGuest, hangUp, setMuted],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

@@ -92,7 +92,7 @@ describe("MeetingsMenu", () => {
     await userEvent.click((await screen.findAllByTitle("Retro"))[0]!);
     const card = screen.getByRole("region", { name: "Retro" });
     expect(card).toHaveTextContent("Join now");
-    expect(screen.getAllByRole("link", { name: "Join now" })[0]).toHaveAttribute("href", "/calls/m1");
+    expect(screen.getAllByRole("button", { name: "Join now" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(await screen.findByText("No meetings yet. Let's plan one.")).toBeInTheDocument();
@@ -144,5 +144,14 @@ describe("MeetingsMenu", () => {
       expect(Element.prototype.animate).not.toHaveBeenCalled();
       play.mockRestore();
     });
+  });
+
+  it("opens on the meeting a reminder links to", async () => {
+    const soon = tomorrow();
+    stored = [{ id: "m1", projectId: "p", title: "Retro", startsAt: soon.toISOString(), agenda: "", guests: [], repeat: "none", lastRemindedFor: null, createdAt: soon.toISOString() }];
+    window.history.pushState(null, "", "/?meeting=m1");
+    mount();
+    expect(await screen.findByRole("region", { name: "Retro" })).toBeInTheDocument();
+    expect(window.location.search).toBe("");
   });
 });

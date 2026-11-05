@@ -158,9 +158,9 @@ export function useAssistant(enabled: boolean) {
   );
   /** A PM call started: the PM opens it (the questions waiting, or a greeting). */
   const openCall = useCallback(
-    () =>
+    (meetingId?: string) =>
       run(async () => {
-        await send("/api/assistant/call", "POST");
+        await send("/api/assistant/call", "POST", meetingId ? { meetingId } : undefined);
         return send("/api/assistant", "GET");
       }),
     [run],

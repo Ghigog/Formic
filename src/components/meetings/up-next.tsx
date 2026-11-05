@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { useColony } from "@/components/colony/colony";
+import { useRef } from "react";
 import type { Occurrence } from "@/lib/meetings/occurrences";
 import { GuestCoin } from "./guest-coin";
+import { JoinNow } from "./join-meeting";
 
 const AGENDA_LINES = 3;
 
@@ -11,8 +11,8 @@ export const whenLabel = (d: Date) =>
   d.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 /** The next meeting: title, time, who is coming, the top of the agenda and the way in. */
-export function UpNext({ next }: { next: Occurrence }) {
-  const c = useColony();
+export function UpNext({ next, onJoined }: { next: Occurrence; onJoined?: () => void }) {
+  const coins = useRef<HTMLDivElement>(null);
   const { meeting, at } = next;
   const lines = meeting.agenda.split("\n").map((l) => l.trim()).filter(Boolean);
   return (
@@ -40,7 +40,7 @@ export function UpNext({ next }: { next: Occurrence }) {
       </div>
       <div className="flex items-center gap-4 self-end">
         {meeting.guests.length > 0 && (
-          <div className="flex -space-x-1.5">
+          <div ref={coins} className="flex -space-x-1.5">
             {meeting.guests.map((g) => (
               <span key={g} data-mcoin className="inline-flex">
                 <GuestCoin id={g} size={28} />
@@ -48,14 +48,12 @@ export function UpNext({ next }: { next: Occurrence }) {
             ))}
           </div>
         )}
-        <Link
-          data-tour="meetings-join"
-          onClick={() => c?.sfx("chord")}
-          href={`/calls/${meeting.id}`}
+        <JoinNow
+          meeting={meeting}
+          source={() => coins.current}
+          onJoined={onJoined}
           className="bg-terracotta-cta inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold text-white"
-        >
-          Join now
-        </Link>
+        />
       </div>
     </section>
   );
