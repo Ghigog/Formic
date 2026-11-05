@@ -1,13 +1,13 @@
 import { AGENT_ROLE_LABELS, COLUMN_AGENT_ROLE, type AgentRole } from "@/lib/domain/entities";
-import { isUnlocked, SENTINELS } from "@/lib/sentinels/roster";
+import { SENTINELS } from "@/lib/sentinels/roster";
 
-/** Who can join a call: the assistant, a column's agent, or a Sentinel. */
+/** Who can answer in the assistant chat: the assistant, a column's agent, or a Sentinel. */
 export type GuestId = "assistant" | AgentRole | `sentinel:${string}`;
 
 const SENTINEL_PREFIX = "sentinel:";
 
 /**
- * The column agents a call can invite, in column order. The Done column's PM
+ * The column agents that can answer, in column order. The Done column's PM
  * is the board's PM, who joins as "assistant", so it is not a second guest.
  */
 export const COLUMN_AGENT_GUESTS: readonly AgentRole[] = [...new Set(Object.values(COLUMN_AGENT_ROLE))].filter((r) => r !== "pm");
@@ -27,16 +27,6 @@ export function isGuestId(value: unknown): value is GuestId {
   if (value.startsWith(SENTINEL_PREFIX)) {
     return SENTINELS.some((s) => `${SENTINEL_PREFIX}${s.id}` === value);
   }
-  // "pm" stays readable: meetings saved before the PM led the board name it.
+  // "pm" stays readable: older replies saved before the PM led the board name it.
   return value === "pm" || (COLUMN_AGENT_GUESTS as readonly string[]).includes(value);
-}
-
-/** The guests a call can invite at a colony level: Sentinels not yet unlocked are left out. */
-export function guestOptions(level: number, unlockAll: boolean): { id: GuestId; label: string }[] {
-  const ids: GuestId[] = [
-    "assistant",
-    ...COLUMN_AGENT_GUESTS,
-    ...SENTINELS.filter((s) => isUnlocked(s, level, unlockAll)).map((s): GuestId => `${SENTINEL_PREFIX}${s.id}`),
-  ];
-  return ids.map((id) => ({ id, label: guestLabel(id) }));
 }

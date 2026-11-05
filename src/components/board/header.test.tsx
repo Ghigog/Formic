@@ -20,7 +20,6 @@ vi.mock("@/components/colony/header-stats", () => ({
   ColonyHeaderStats: () => null,
   ColonyLevelStats: () => null,
   ColonyMobileStats: () => null,
-  MeetingsButton: () => null,
 }));
 
 afterEach(() => {
@@ -31,7 +30,7 @@ const renderHeader = () =>
   render(<BoardHeader projectName="Formic" repoFullName="acme/formic" />);
 
 describe("BoardHeader calls link", () => {
-  it("no longer links to a Calls page; Meetings replaces it", () => {
+  it("has no Calls link", () => {
     renderHeader();
     expect(screen.queryByRole("link", { name: "Calls" })).toBeNull();
   });

@@ -36,7 +36,7 @@ import {
   sentinelOfSpeaker,
   sentinelSystemPrompt,
 } from "./guests";
-import { guestLabel, type GuestId } from "@/lib/meetings/guests";
+import { guestLabel, type GuestId } from "@/lib/assistant/guest-ids";
 import type { AgentRole } from "@/lib/domain/entities";
 import { DESIGN_RULE, ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
 import { askedIn, isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";

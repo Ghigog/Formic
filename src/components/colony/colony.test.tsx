@@ -268,14 +268,14 @@ describe("ColonyProvider featureUnlocked", () => {
 
 describe("feature reveal queue", () => {
   it("lists the features a rise crosses in level order", () => {
-    expect(featuresCrossed(9, 15)).toEqual(["timeline", "calls"]);
-    expect(featuresCrossed(1, 25)).toEqual(["sentinels", "timeline", "calls", "kpis"]);
+    expect(featuresCrossed(9, 20)).toEqual(["timeline", "kpis"]);
+    expect(featuresCrossed(1, 25)).toEqual(["sentinels", "timeline", "kpis"]);
     expect(featuresCrossed(10, 14)).toEqual([]);
   });
 
   it("names the feature in the level-up pill", () => {
     expect(levelUpText(10)).toMatch(/unlocked .*Timeline/);
-    expect(levelUpText(15)).toContain("Calls");
+    expect(levelUpText(20)).toContain("KPIs");
   });
 
   const boardAt = (level: number) => {
@@ -303,10 +303,10 @@ describe("feature reveal queue", () => {
     );
     const { rerender } = render(tree(9));
     expect(api.featureUnlocked("timeline")).toBe(false);
-    rerender(tree(15));
+    rerender(tree(20));
     // Reached, but held back behind the pill.
     expect(api.featureUnlocked("timeline")).toBe(false);
-    expect(api.featureUnlocked("calls")).toBe(false);
+    expect(api.featureUnlocked("kpis")).toBe(false);
     expect(api.revealing).toBeNull();
 
     // The pill is left alone and times out.
@@ -315,17 +315,17 @@ describe("feature reveal queue", () => {
     });
     expect(api.revealing).toBe("timeline");
     expect(api.featureUnlocked("timeline")).toBe(true);
-    expect(api.featureUnlocked("calls")).toBe(false);
+    expect(api.featureUnlocked("kpis")).toBe(false);
 
     act(() => api.settleReveal());
     expect(activeTour()).toBe("timeline-intro");
     expect(api.revealing).toBe("timeline");
 
     act(() => endTour());
-    expect(api.revealing).toBe("calls");
-    expect(api.featureUnlocked("calls")).toBe(true);
+    expect(api.revealing).toBe("kpis");
+    expect(api.featureUnlocked("kpis")).toBe(true);
     act(() => api.settleReveal());
-    expect(activeTour()).toBe("calls-intro");
+    expect(activeTour()).toBe("kpis-intro");
     act(() => endTour());
     expect(api.revealing).toBeNull();
   });
@@ -386,10 +386,10 @@ describe("feature reveal queue", () => {
       return () => api;
     }
 
-    it("reveals and tours all four features in level order on a Lv 20 board", async () => {
+    it("reveals and tours all three features in level order on a Lv 20 board", async () => {
       const get = await replayAt(20);
       act(() => endTour());
-      for (const f of ["sentinels", "timeline", "calls", "kpis"] as const) {
+      for (const f of ["sentinels", "timeline", "kpis"] as const) {
         expect(get().revealing).toBe(f);
         act(() => get().settleReveal());
         expect(activeTour()).toBe(`${f}-intro`);

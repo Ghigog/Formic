@@ -136,7 +136,6 @@ export const SENTINEL_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: n
 export const FEATURE_UNLOCKS = [
   { key: "sentinels", label: "Sentinels", lv: 2 },
   { key: "timeline", label: "Timeline", lv: 10 },
-  { key: "calls", label: "Calls", lv: 15 },
   { key: "kpis", label: "KPIs", lv: 20 },
 ] as const;
 

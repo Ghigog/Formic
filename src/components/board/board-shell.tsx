@@ -28,11 +28,8 @@ import type { AgentPreset, ColumnAgents, ColumnOverrides } from "@/lib/domain/en
 import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
 import type { AssistantControls } from "./assistant";
-import { CallProvider } from "@/components/call/call-provider";
-import { CallPill } from "@/components/call/call-pill";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
 import { ColonyTimeline } from "@/components/colony/timeline";
-import { MeetingsMenu } from "@/components/meetings/meetings-menu";
 import { SentinelsPage } from "@/components/sentinels/sentinels";
 import { UnlockAllDialog } from "@/components/sentinels/unlock-all-dialog";
 import { featureUnlocked, scoreOf } from "@/lib/colony/game";
@@ -239,7 +236,6 @@ export function BoardShell({
 
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged} unlockAll={unlockAllSentinels}>
-    <CallProvider assistant={assistantControls} unlockAllSentinels={unlockAllSentinels}>
     <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level} unlockAll={unlockAllSentinels}>
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
@@ -351,12 +347,10 @@ export function BoardShell({
       <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
       <BoardTour projectId={projectId} tourSeen={tourSeen} />
       <ColonyTimeline repoName={repoName} />
-      <MeetingsMenu repoName={repoName} unlockAllSentinels={unlockAllSentinels} />
       <SentinelsPage repoName={repoName} onOpenEpic={setOpenEpicId} />
       {projectId && <UnlockAllDialog projectId={projectId} unlockAll={unlockAllSentinels} />}
       <ColonyPopover onOpenArchive={() => setArchiveOpen(true)} />
       {archiveOpen && <ArchiveView onClose={() => setArchiveOpen(false)} onRestored={restore} />}
-      <CallPill assistant={assistantControls} />
       <ColonyToast />
       <RerouteToast toast={rerouteToast} />
       <EpicWinDialog onOpenEpic={(epic) => setOpenEpicId(epic.id)} />
@@ -371,7 +365,6 @@ export function BoardShell({
       )}
     </div>
     </SentinelsProvider>
-    </CallProvider>
     </ColonyProvider>
   );
 }

@@ -56,9 +56,6 @@ export type Sfx =
   | "dig"
   | "grit"
   | "surface"
-  | "plop"
-  | "ring"
-  | "chord"
   | "celebrate";
 
 /** One sentinel's voice: a pitch, a wave and a glide to another pitch. */
@@ -559,26 +556,6 @@ export class SoundEngine {
         // A soft rising chime: the numbers have arrived.
         [784, 988, 1319].forEach((f, i) =>
           this.tone(f, 0.28, { type: "triangle", gain: 0.025, delay: i * 0.08 }),
-        );
-        break;
-      case "plop": {
-        // A drop landing in water. v: 0 to 1, how early in the day the meeting
-        // is: morning high, evening low.
-        const f = 330 * Math.pow(2, Math.min(1, Math.max(0, v)) * 1.5);
-        this.tone(f, 0.14, { to: f * 1.6, gain: 0.06, attack: 0.004 });
-        this.noise(0.03, { freq: 2400, to: 900, gain: 0.03 });
-        break;
-      }
-      case "ring":
-        // Two notes, like a phone about to be picked up.
-        this.tone(988, 0.2, { gain: 0.045, type: "triangle" });
-        this.tone(1319, 0.34, { gain: 0.045, type: "triangle", delay: 0.14 });
-        this.tone(2637, 0.2, { gain: 0.012, delay: 0.14 });
-        break;
-      case "chord":
-        // Joining: a rising major chord.
-        [523, 659, 784, 1047].forEach((f, i) =>
-          this.tone(f, 0.4, { type: "triangle", gain: 0.04, delay: i * 0.06 }),
         );
         break;
       case "celebrate":

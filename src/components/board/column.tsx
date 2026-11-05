@@ -5,11 +5,9 @@ import { Droppable } from "@hello-pangea/dnd";
 import { cn } from "@/components/ui/cn";
 import { CoinBadge } from "@/components/ui/coin-badge";
 import { EpicGroup, KanbanCard, type ExtrasMap } from "./card";
-import { COLUMN_AGENT_ROLE, type BoardCard } from "@/lib/domain/entities";
+import type { BoardCard } from "@/lib/domain/entities";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { layout } from "./placement";
-import { AgentCallButton } from "@/components/call/agent-call-button";
-import type { GuestId } from "@/lib/meetings/guests";
 import { AgentSelect, type ColumnAgentControls } from "./agent-select";
 import { ViewMenu } from "./view-menu";
 import { applyView, EMPTY_VIEW, isViewActive, type ColumnView } from "./view";
@@ -185,7 +183,6 @@ export function Column({
           <div className="min-w-0 flex-1">
             <AgentSelect slot={id} {...agent} />
           </div>
-          <AgentCallButton guest={guestOf(id)} />
           {inlineMenu && menu}
         </div>
       )}
@@ -283,10 +280,4 @@ function LimitBanner({
       </span>
     </div>
   );
-}
-
-/** Who a column's phone calls: its agent, or the PM for the Done column. */
-function guestOf(column: ColumnId): GuestId {
-  const role = COLUMN_AGENT_ROLE[column];
-  return role === "pm" ? "assistant" : role;
 }
