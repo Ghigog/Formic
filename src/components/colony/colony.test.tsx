@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
 import { ColonyProvider, crewPhase, scoutCrews, levelUpText, featuresCrossed, useColony } from "./colony";
-import { endTour, activeTour, forgetTours } from "@/components/onboarding/store";
+import { endTour, activeTour, forgetTours, replayTours } from "@/components/onboarding/store";
 import { SENTINEL_UNLOCKS, pointsOf, scoreOf } from "@/lib/colony/game";
 import { SoundEngine } from "./sound";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
@@ -356,5 +356,64 @@ describe("feature reveal queue", () => {
     act(() => api.settleReveal());
     expect(activeTour()).toBeNull();
     expect(api.revealing).toBeNull();
+  });
+
+  describe("Show tours again", () => {
+    afterEach(() => document.querySelectorAll('[data-tour="column"]').forEach((e) => e.remove()));
+
+    async function replayAt(level: number) {
+      window.localStorage.clear();
+      forgetTours();
+      endTour();
+      fakeTimers();
+      let api!: NonNullable<ReturnType<typeof useColony>>;
+      function Probe() {
+        api = useColony()!;
+        return null;
+      }
+      render(
+        <ColonyProvider storageKey={`colony-test-replay-${level}`} cards={boardAt(level)} extras={{}}>
+          <Probe />
+        </ColonyProvider>,
+      );
+      document.body.insertAdjacentHTML("beforeend", '<div data-tour="column"></div>');
+      // Show tours again, pressed on the board: its tour plays first.
+      act(() => {
+        replayTours();
+      });
+      expect(activeTour()).toBe("board");
+      expect(api.revealing).toBeNull();
+      return () => api;
+    }
+
+    it("reveals and tours all four features in level order on a Lv 20 board", async () => {
+      const get = await replayAt(20);
+      act(() => endTour());
+      for (const f of ["sentinels", "timeline", "calls", "kpis"] as const) {
+        expect(get().revealing).toBe(f);
+        act(() => get().settleReveal());
+        expect(activeTour()).toBe(`${f}-intro`);
+        act(() => endTour());
+      }
+      expect(get().revealing).toBeNull();
+    });
+
+    it("reveals only Sentinels on a Lv 5 board", async () => {
+      const get = await replayAt(5);
+      act(() => endTour());
+      expect(get().revealing).toBe("sentinels");
+      expect(get().featureUnlocked("timeline")).toBe(false);
+      act(() => get().settleReveal());
+      expect(activeTour()).toBe("sentinels-intro");
+      act(() => endTour());
+      expect(get().revealing).toBeNull();
+    });
+
+    it("reveals nothing on a Lv 1 board", async () => {
+      const get = await replayAt(1);
+      act(() => endTour());
+      expect(get().revealing).toBeNull();
+      expect(activeTour()).toBeNull();
+    });
   });
 });
