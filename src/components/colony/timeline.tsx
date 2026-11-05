@@ -499,7 +499,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   <div className="flex items-center gap-2.5">
                     <span
                       data-tlforecast
-                      className="inline-block font-serif text-[30px] leading-none font-semibold tracking-[-0.01em]"
+                      className="inline-block font-serif text-[28px] leading-none font-semibold tracking-[-0.01em]"
                     >
                       {tl.forecast === null ? "—" : fmt(tl.forecast)}
                     </span>
@@ -634,7 +634,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
               ) : (
                 <div
                   key={r.t.id}
-                  className={`box-border flex h-[34px] items-center gap-2 pr-3 ${compact ? "pl-[14px]" : "pl-[42px]"}`}
+                  className={`box-border flex h-[34px] items-center gap-2 pr-3 ${compact ? "pl-[16px]" : "pl-[42px]"}`}
                 >
                   <span
                     className="size-1.5 shrink-0 rounded-full"
@@ -856,7 +856,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                       top: `${(Y(tl.remaining) / 200) * 100}%`,
                     }}
                   >
-                    <span className="bg-clay absolute -top-[9px] -left-[9px] size-[18px] animate-[tlPing_1.8s_ease-out_infinite] rounded-full motion-reduce:hidden" />
+                    <span className="bg-clay absolute -top-[8px] -left-[8px] size-[18px] animate-[tlPing_1.8s_ease-out_infinite] rounded-full motion-reduce:hidden" />
                     <span className="bg-anthracite absolute -top-[5px] -left-[5px] box-border size-2.5 rounded-full border-2 border-white shadow-[0_1px_3px_color-mix(in_srgb,var(--anthracite)_40%,transparent)]" />
                   </span>
                 )}
