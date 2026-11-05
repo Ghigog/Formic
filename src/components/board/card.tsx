@@ -12,7 +12,6 @@ import { StatusChip } from "@/components/ui/status-pill";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { ColumnTrail } from "@/components/ui/pheromone-trail";
 import {
-  STAGE_COUNT,
   type AgentRole,
   type BoardCard,
 } from "@/lib/domain/entities";
@@ -38,7 +37,7 @@ export interface CardExtras {
   progress?: { label: string; fraction: number | null };
   /** One-line summary under a backlog epic's title. */
   summary?: string;
-  /** Stage caption beside the eight stage pips, e.g. "PRD draft". */
+  /** Stage caption on a Backlog Epic, e.g. "PRD draft". */
   stageLabel?: string;
   /** Caption under a To Do epic, e.g. "DAG ready · 4 tickets". */
   dagSummary?: string;
@@ -106,19 +105,6 @@ export interface CardEnv {
 const NO_EPICS: ReadonlyMap<string, BoardCard> = new Map();
 
 export const CardEnvContext = createContext<CardEnv | null>(null);
-
-function Pips({ stage }: { stage: number }) {
-  return (
-    <span aria-hidden className="inline-flex items-center gap-1">
-      {Array.from({ length: STAGE_COUNT }, (_, i) => (
-        <span
-          key={i}
-          className={cn("oct size-3", i < stage ? "bg-anthracite" : "bg-line")}
-        />
-      ))}
-    </span>
-  );
-}
 
 function TerminalIcon() {
   return (
@@ -671,12 +657,9 @@ function BacklogEpic({
         <p className="text-muted text-[11px] leading-[1.5]">{extras.summary}</p>
       )}
       <EpicWorking card={card} />
-      <div className="flex items-center gap-1">
-        <Pips stage={card.stage} />
-        {extras.stageLabel && (
-          <span className="text-muted ml-1 font-mono text-[10px]">{extras.stageLabel}</span>
-        )}
-      </div>
+      {extras.stageLabel && (
+        <span className="text-muted font-mono text-[10px]">{extras.stageLabel}</span>
+      )}
     </CardShell>
   );
 }
