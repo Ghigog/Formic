@@ -719,8 +719,10 @@ function Card({
                   e.stopPropagation();
                   onSummon(x.id);
                 }}
+                disabled={!!st.hold}
+                title={st.hold ? `${st.hold.key} is still open. Finish or archive it to audit again.` : undefined}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96]",
+                  "inline-flex items-center gap-1.5 rounded-md text-[12px] font-semibold active:scale-[0.96] disabled:opacity-60",
                   done
                     ? "border-line bg-cream text-ink hover:border-terracotta h-7 border px-2.5"
                     : "bg-anthracite text-on-anthracite h-[30px] px-3",
