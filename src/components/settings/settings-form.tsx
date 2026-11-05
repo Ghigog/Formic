@@ -716,7 +716,7 @@ function KeyField({
           <button
             type="submit"
             disabled={busy || !value.trim()}
-            className="bg-terracotta-cta h-10 rounded-lg px-3.5 text-[13px] font-semibold text-white disabled:opacity-50"
+            className="bg-cta h-10 rounded-lg px-3.5 text-[13px] font-semibold text-white disabled:opacity-50"
           >
             {busy ? "Saving…" : "Save"}
           </button>

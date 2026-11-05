@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useDraft } from "./use-draft";
+import { useRestoreFocus } from "@/lib/hooks/use-restore-focus";
 import { AttachmentPicker, pastedFileName } from "./attachment-picker";
 
 /** Which column's capture dialog this is: swaps its copy and submit target. */
@@ -74,6 +75,8 @@ export function NewItemDialog({
       setRequestId(crypto.randomUUID());
     }
   }
+
+  useRestoreFocus(open);
 
   useEffect(() => {
     // Focus after the dialog paints, or the caret lands nowhere.
@@ -196,14 +199,14 @@ export function NewItemDialog({
           <button
             type="button"
             onClick={onClose}
-            className="border-line bg-card text-ink h-[34px] rounded-lg border px-3 text-[13px] font-medium active:scale-[0.96]"
+            className="border-line bg-card text-ink h-9 rounded-lg border px-3 text-[13px] font-medium active:scale-[0.96]"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="bg-terracotta-cta h-[34px] rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 active:scale-[0.96] disabled:opacity-60"
+            className="bg-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 active:scale-[0.96] disabled:opacity-60"
           >
             {busy ? "Drafting…" : copy.submitLabel}
           </button>

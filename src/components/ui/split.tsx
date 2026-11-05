@@ -105,6 +105,9 @@ export function SplitHandle({
   };
 
   return (
+    // A focusable separator: its keyboard path is the arrow keys above, the
+    // pointer handlers add dragging.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       role="separator"
       aria-orientation={axis === "x" ? "vertical" : "horizontal"}

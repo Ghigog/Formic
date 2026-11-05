@@ -78,6 +78,47 @@ export async function reconcileOrphanedRuns(now = new Date()): Promise<number> {
   return orphans.length;
 }
 
+/** A run orphaned at ORPHAN_AFTER_MS is failed within 15 minutes of going live. */
+const RECOVERY_TICK_MS = 5 * 60 * 1000;
+
+let clock: ReturnType<typeof setInterval> | null = null;
+let reconciling = false;
+
+async function reconcileOnce(): Promise<void> {
+  if (reconciling) return;
+  reconciling = true;
+  try {
+    const reclaimed = await reconcileOrphanedRuns();
+    if (reclaimed > 0) {
+      console.info(`[formic] failed ${reclaimed} run(s) orphaned by a restart`);
+    }
+  } catch (e) {
+    // A database that is not up yet must not stop the server from running.
+    console.warn("[formic] orphan recovery skipped:", e);
+  } finally {
+    reconciling = false;
+  }
+}
+
+/**
+ * Orphans are looked for at boot and then every few minutes, so a run whose
+ * worker died is failed even if this server never restarts. Started once per
+ * process (src/instrumentation.ts); the boot reconcile is not awaited.
+ */
+export function startRecoveryClock(): void {
+  if (clock) return;
+  clock = setInterval(() => void reconcileOnce(), RECOVERY_TICK_MS);
+  clock.unref?.();
+  void reconcileOnce();
+}
+
+/** Test seam, like the bell's. */
+export function stopRecoveryClock(): void {
+  if (clock) clearInterval(clock);
+  clock = null;
+  reconciling = false;
+}
+
 /**
  * How long a chat answer may sit pending before it is treated as lost. Past
  * every route's `maxDuration` (300s on Vercel) with the same margin

@@ -456,6 +456,8 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
             </button>
           </div>
 
+          {/* Mouse shortcut only: the Next button finishes the line for the keyboard. */}
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
           <p
             aria-live="polite"
             onClick={finishLine}
@@ -488,7 +490,7 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
                 ref={nextButton}
                 type="button"
                 onClick={next}
-                className="bg-terracotta-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white"
+                className="bg-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white"
               >
                 {step.next ?? (last ? "Done" : "Next")}
               </button>

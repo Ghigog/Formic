@@ -26,6 +26,30 @@ vi.mock("@hello-pangea/dnd", async (orig) => {
   };
 });
 
+// Counts what each column and card draws. A card is told apart by its work
+// type, which TypeTag receives; a column by its view menu, one per column.
+const renders = vi.hoisted(() => ({ types: [] as string[], menus: 0 }));
+vi.mock("./type-tag", async (orig) => {
+  const actual = await orig<typeof import("./type-tag")>();
+  return {
+    ...actual,
+    TypeTag: (p: React.ComponentProps<typeof actual.TypeTag>) => {
+      renders.types.push(p.type);
+      return <actual.TypeTag {...p} />;
+    },
+  };
+});
+vi.mock("./view-menu", async (orig) => {
+  const actual = await orig<typeof import("./view-menu")>();
+  return {
+    ...actual,
+    ViewMenu: (p: React.ComponentProps<typeof actual.ViewMenu>) => {
+      renders.menus++;
+      return <actual.ViewMenu {...p} />;
+    },
+  };
+});
+
 /**
  * Integration level: the board wired to its columns and cards, with the
  * server replaced by a spy. What it is for is the trigger contract — a user
@@ -844,5 +868,37 @@ describe("Board remembering each column's view", () => {
     window.localStorage.setItem(COLUMN_VIEWS_KEY, "{nope");
     renderBoard(cards());
     expect(screen.getByText("Plain")).toBeInTheDocument();
+  });
+});
+
+describe("Board, redrawing", () => {
+  it("redraws only the card that moved, and the two columns it moved between", () => {
+    const types = ["user_story", "task", "feature", "spike", "tech_debt"] as const;
+    // The moved card is last in To Do and lands last in In Progress, so no
+    // other card's place changes: those a drop shifts must redraw, and this
+    // test is about the ones it does not touch.
+    const moving = makeCard({ key: "T-1", status: "ready", workType: types[0], position: 2 });
+    const others = [
+      makeCard({ key: "T-2", status: "ready", workType: types[1], position: 1 }),
+      makeCard({ key: "T-3", status: "running", workType: types[2], position: 1 }),
+      makeCard({ key: "T-4", status: "review", workType: types[3], position: 1 }),
+      makeCard({ key: "T-5", status: "merged", workType: types[4], position: 1 }),
+    ];
+    const props = {
+      projectName: "Formic",
+      repoFullName: "formic-labs/formic-web",
+      onOpenCard: vi.fn(),
+      onNewItem: vi.fn(),
+      onTransition: vi.fn(),
+    };
+    const { rerender } = render(<Board cards={[moving, ...others]} {...props} />);
+
+    renders.types.length = 0;
+    renders.menus = 0;
+    // The server starts T-1: its card is replaced, the others keep their identity.
+    rerender(<Board cards={[{ ...moving, status: "running", position: 2 }, ...others]} {...props} />);
+
+    expect(renders.types).toEqual(["user_story"]);
+    expect(renders.menus).toBe(2);
   });
 });

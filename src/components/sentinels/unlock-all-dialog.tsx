@@ -102,7 +102,7 @@ export function UnlockAllDialog({ projectId, unlockAll }: { projectId: string; u
           <Link
             href="/settings#sentinels"
             onClick={dismiss}
-            className="bg-terracotta-cta inline-flex h-[30px] items-center rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
+            className="bg-cta inline-flex h-[30px] items-center rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
           >
             Open Settings
           </Link>

@@ -250,7 +250,7 @@ function QuestionCount({ n }: { n: number }) {
     <span
       data-testid="pm-questions"
       aria-label={`${n} ${n === 1 ? "question" : "questions"} for you`}
-      className="bg-terracotta-cta text-on-accent absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[9px] leading-none font-bold"
+      className="bg-cta text-on-accent absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[9px] leading-none font-bold"
     >
       {n}
     </span>
@@ -351,7 +351,7 @@ function ProposalCard({
               type="button"
               disabled={busy}
               onClick={() => void decide("apply")}
-              className="bg-terracotta-cta inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold text-white disabled:opacity-60"
+              className="bg-cta inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold text-white disabled:opacity-60"
             >
               Approve
             </button>
