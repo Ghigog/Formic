@@ -34,7 +34,7 @@ export function PlanSteps({
         const isLast = i === steps.length - 1;
         const marching = working && i === now && !isLast;
         return (
-          <li key={i} ref={i === now ? activeRef : undefined} className="flex w-32 shrink-0 flex-col gap-1.5">
+          <li key={i} ref={i === now ? activeRef : undefined} className="flex w-32 min-w-0 shrink-0 flex-col gap-1.5">
             <div className="flex items-center">
               <span
                 aria-hidden
@@ -59,7 +59,7 @@ export function PlanSteps({
             </div>
             <p
               className={cn(
-                "pr-3 text-[13px] leading-5",
+                "wrap-anywhere pr-3 text-[13px] leading-5",
                 state === "pending" ? "text-fg-subtle" : "text-fg",
                 state === "active" && "font-medium",
               )}

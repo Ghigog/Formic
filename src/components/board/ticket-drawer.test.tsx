@@ -492,6 +492,16 @@ describe("PlanSteps", () => {
     rerender(<PlanSteps steps={steps} working={false} />);
     expect(container.querySelectorAll(".ant-trail")).toHaveLength(0);
   });
+
+  it("lets a label break inside a long word so it stays in its own column", () => {
+    const steps = [
+      { step: "Add unit/route/component tests", status: "pending" },
+      { step: "Run checks, write summary", status: "pending" },
+    ] as typeof VIEW.plan;
+    render(<PlanSteps steps={steps} />);
+    const label = screen.getByText(/unit\/route\/component/).closest("p");
+    expect(label).toHaveClass("wrap-anywhere");
+  });
 });
 
 describe("TicketDrawer on-screen keyboard", () => {
