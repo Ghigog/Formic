@@ -1,7 +1,8 @@
 "use client";
 
 import { useDraft } from "./use-draft";
-import { useEffect, useRef, type FormEvent, type KeyboardEvent } from "react";
+import { EarlierMessages, useKeepPlace } from "./earlier-messages";
+import { useEffect, type FormEvent, type KeyboardEvent } from "react";
 import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { compact } from "@/components/ui/compact-number";
@@ -79,11 +80,14 @@ export function CardChat({
 }) {
   const c = useCardChat(kind, cardId);
   const [text, setText] = useDraft(`chat:${kind}:${cardId}`);
-  const list = useRef<HTMLDivElement>(null);
 
+  const { list, keepPlace } = useKeepPlace(c.messages[0]?.id);
+
+  // Follow new messages at the bottom, not earlier ones added at the top.
+  const newest = c.messages.at(-1)?.id;
   useEffect(() => {
     list.current?.scrollTo?.({ top: list.current.scrollHeight, behavior: "smooth" });
-  }, [c.messages.length]);
+  }, [newest, list]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -117,7 +121,18 @@ export function CardChat({
                 : `Talk to the ${agentLabel} Agent about this ticket. Ask it anything, or tell it what to do: change the work, move it, close it. Every agent that works it reads what you send.`}
             </p>
           ) : (
-            c.messages.map((m) => <Message key={m.id} m={m} />)
+            <>
+              {c.hasEarlier && (
+                <EarlierMessages
+                  loading={c.loadingEarlier}
+                  error={c.earlierError}
+                  onLoad={() => void keepPlace(c.loadEarlier)}
+                />
+              )}
+              {c.messages.map((m) => (
+                <Message key={m.id} m={m} />
+              ))}
+            </>
           )}
           {c.error && (
             <p role="alert" className="text-crimson-text text-[12px]">

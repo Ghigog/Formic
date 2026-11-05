@@ -1,5 +1,6 @@
 "use client";
 
+import { mergeMessages } from "./merge-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /** One message, as a card's chat API returns it. */
@@ -20,6 +21,8 @@ export interface CardChatMessageView {
 
 interface State {
   messages: CardChatMessageView[];
+  /** The id to pass as ?before= for the page before these, or null when nothing is earlier. */
+  earlierCursor: string | null;
 }
 
 async function send(url: string, method: string, body?: unknown): Promise<State> {
@@ -30,7 +33,10 @@ async function send(url: string, method: string, body?: unknown): Promise<State>
   });
   const data = (await res.json().catch(() => null)) as (Partial<State> & { error?: string }) | null;
   if (!res.ok || !data) throw new Error(data?.error ?? "That did not go through. Try again.");
-  return { messages: Array.isArray(data.messages) ? data.messages : [] };
+  return {
+    messages: Array.isArray(data.messages) ? data.messages : [],
+    earlierCursor: data.earlierCursor ?? null,
+  };
 }
 
 /** How often to look for an answer while one is being written. */
@@ -42,7 +48,17 @@ const POLL_MS = 4_000;
  */
 export function useCardChat(kind: "epic" | "ticket", cardId: string | null) {
   const url = cardId ? `/api/${kind === "epic" ? "epics" : "tickets"}/${cardId}/chat` : null;
-  const [state, setState] = useState<State>({ messages: [] });
+  const [state, setStateRaw] = useState<State>({ messages: [], earlierCursor: null });
+  // Earlier pages live apart from the polled newest page, so a poll cannot drop them.
+  const [earlier, setEarlier] = useState<{ messages: CardChatMessageView[]; cursor: string | null } | null>(null);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [earlierError, setEarlierError] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  /** A new newest page: a chat that was cleared or emptied starts over. */
+  const setState = useCallback((next: State) => {
+    setStateRaw(next);
+    if (next.messages.length === 0) setEarlier(null);
+  }, []);
   const loadedFor = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
@@ -63,14 +79,16 @@ export function useCardChat(kind: "epic" | "ticket", cardId: string | null) {
     } catch (e) {
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [setState]);
 
   useEffect(() => {
     if (!url || loadedFor.current === url) return;
     loadedFor.current = url;
-    setState({ messages: [] });
+    setState({ messages: [], earlierCursor: null });
+    setEarlier(null);
+    setEarlierError(null);
     void run(() => send(url, "GET"));
-  }, [url, run]);
+  }, [url, run, setState]);
 
   const pending = state.messages.some((m) => m.status === "pending");
   useEffect(() => {
@@ -82,7 +100,7 @@ export function useCardChat(kind: "epic" | "ticket", cardId: string | null) {
         .catch(() => undefined);
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [pending, url]);
+  }, [pending, url, setState]);
 
   const ask = useCallback(
     (text: string) => (url ? run(() => send(url, "POST", { text })) : Promise.resolve()),
@@ -90,5 +108,36 @@ export function useCardChat(kind: "epic" | "ticket", cardId: string | null) {
   );
   const clear = useCallback(() => (url ? run(() => send(url, "DELETE")) : Promise.resolve()), [run, url]);
 
-  return { ...state, pending, error, ask, clear };
+  const cursor = earlier ? earlier.cursor : state.earlierCursor;
+  const loadEarlier = useCallback(async () => {
+    if (!url || !cursor || loadingRef.current) return;
+    loadingRef.current = true;
+    setLoadingEarlier(true);
+    setEarlierError(null);
+    try {
+      const page = await send(`${url}?before=${encodeURIComponent(cursor)}`, "GET");
+      if (!alive.current) return;
+      setEarlier((prev) => ({
+        messages: mergeMessages(page.messages, prev?.messages ?? []),
+        cursor: page.earlierCursor,
+      }));
+    } catch (e) {
+      if (alive.current) setEarlierError(e instanceof Error ? e.message : String(e));
+    } finally {
+      loadingRef.current = false;
+      if (alive.current) setLoadingEarlier(false);
+    }
+  }, [url, cursor]);
+
+  return {
+    messages: mergeMessages(earlier?.messages ?? [], state.messages),
+    pending,
+    error,
+    ask,
+    clear,
+    hasEarlier: cursor !== null,
+    loadingEarlier,
+    earlierError,
+    loadEarlier,
+  };
 }

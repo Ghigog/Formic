@@ -337,3 +337,39 @@ describe("list scrolling", () => {
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Earlier messages", () => {
+  Element.prototype.scrollTo = vi.fn();
+  const thread = (over: Partial<AssistantControls> = {}): AssistantControls => ({
+    ...controls,
+    messages: [{ id: "m2", role: "user", content: "newest", status: "done", proposals: [] }],
+    hasEarlier: true,
+    loadingEarlier: false,
+    earlierError: null,
+    loadEarlier: vi.fn().mockResolvedValue(undefined),
+    ...over,
+  });
+
+  it("asks for the earlier page when the link is tapped", async () => {
+    const a = thread();
+    render(<AskBox a={a} repoName="demo" />);
+    await userEvent.click(screen.getByRole("button", { name: "Earlier messages" }));
+    expect(a.loadEarlier).toHaveBeenCalled();
+  });
+
+  it("shows no link for a thread that fits one page", () => {
+    render(<AskBox a={thread({ hasEarlier: false })} repoName="demo" />);
+    expect(screen.queryByText("Earlier messages")).toBeNull();
+  });
+
+  it("reads Loading… as plain text while it loads", () => {
+    render(<AskBox a={thread({ loadingEarlier: true })} repoName="demo" />);
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Earlier messages" })).toBeNull();
+  });
+
+  it("shows a failure inline", () => {
+    render(<AskBox a={thread({ earlierError: "Nope." })} repoName="demo" />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Nope.");
+  });
+});
