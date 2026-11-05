@@ -209,6 +209,73 @@ describe("what the assistant knows of the board", () => {
     expect(prompt).toContain("Reason shown on the card: CI is red on build.");
     expect(prompt).toContain(`- fix: success https://github.com/${REPO}/actions/runs/9`);
   });
+
+  it("hands a CLI agent the cards in review when the person names none", async () => {
+    await useAgent("claude-code");
+    await new MockVcsClient(REPO).commitFile((await projectFor(PROJECT)).baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    await seedRedTicket();
+    const pending = await ask("why are the cards in review stuck?");
+
+    await answer(PROJECT, pending.id);
+
+    const prompt = MockVcsClient.runner().dispatches.at(-1)!.inputs.prompt!;
+    expect(prompt).toContain("cards in review or blocked, read from the board and GitHub just now");
+    expect(prompt).toContain("Reason shown on the card: CI is red on build.");
+    expect(prompt).toContain("check ci / test: failure");
+    expect(prompt).toContain("Why ci / test failed:");
+    expect(prompt).not.toContain("You have no card_status tool");
+  });
+
+  it("hands a CLI agent at most 8 unnamed cards, in review first", async () => {
+    await useAgent("claude-code");
+    await new MockVcsClient(REPO).commitFile((await projectFor(PROJECT)).baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Many", rawRequest: "r", position: 1 });
+    const made = await repo.createTickets(
+      Array.from({ length: 10 }, (_, i) => ({
+        epicId: epic.id,
+        key: `T-${200 + i}`,
+        title: `Ticket ${i}`,
+        description: "d",
+        acceptanceCriteria: ["c"],
+        fileScope: ["src/a"],
+        storyPoints: 1,
+        position: i + 1,
+        dependsOnKeys: [],
+      })),
+    );
+    // The first two are blocked in progress; the other eight are in review.
+    for (const [i, t] of made.entries()) {
+      await repo.updateTicket(t.id, i < 2 ? { status: "running", blockedReason: "Waiting." } : { status: "review" });
+    }
+    const pending = await ask("why are these stuck?");
+
+    await answer(PROJECT, pending.id);
+
+    const prompt = MockVcsClient.runner().dispatches.at(-1)!.inputs.prompt!;
+    expect(prompt.match(/^T-2\d\d \(ticket\)/gm)).toHaveLength(8);
+    expect(prompt).not.toContain("T-200 (ticket)");
+    expect(prompt).not.toContain("T-201 (ticket)");
+  });
+
+  it("lets a column agent read any card's live state with card_status", async () => {
+    await seedRedTicket();
+    const preset = await savePreset({ name: "col", provider: "groq", model: "llama-3.3-70b", prompt: "", apiKey: "gsk_test" });
+    await repository().setColumnAgent(PROJECT, "todo", preset.id);
+    const sent = fakeProvider([
+      { role: "assistant", content: null, tool_calls: [call("c1", "card_status", { key: "T-94" })] },
+      { role: "assistant", content: "Its build check is red." },
+    ]);
+    const repo = repository();
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "why is T-94 stuck?" });
+    const pending = await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "", status: "pending", speaker: "architect" });
+
+    await answer(PROJECT, pending.id);
+
+    const tool = (sent[1]!.messages as Array<{ role: string; content: string }>).find((m) => m.role === "tool")!;
+    expect(tool.content).toContain("check ci / test: failure");
+    expect(tool.content).toContain("Why ci / test failed:");
+  });
 });
 
 describe("changing the code without a ticket", () => {
