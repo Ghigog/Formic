@@ -6,7 +6,9 @@ browser, or read the markup for exact values. Where this brief and an artboard d
 artboard wins.
 
 Screens: `Main` (5-column board), `EpicDrawer` (PRD + DAG), `Sandbox` (live inspector),
-`Showcase` (async walkthrough), `Mobile` (390px board), `Foundations` (token sheet).
+`Showcase` (async walkthrough), `Mobile` (390px board), `Foundations` (token sheet),
+`FoundationsDark` (the same sheet in the dark theme), `ColonyBoard` (the colony view of the
+board), `Sentinels` (the sentinels screen).
 
 Each artboard is wrapped in `<x-dc>` and loads `support.js` — that is canvas scaffolding, not
 part of the design. Ignore both when porting. Everything inside the fixed-size root `<div>` is
@@ -226,7 +228,7 @@ scrolls and marches).
 - JS: motion driven from script asks `prefersReducedMotion()`, i.e.
   `window.matchMedia("(prefers-reduced-motion: reduce)").matches`, and skips to the end state.
   It is checked in `board/board.tsx`, `board/dig-transition.tsx`, `colony/fx.ts`,
-  `colony/bell.tsx`, `onboarding/tour.tsx` and `sentinels/kpi.tsx`. New JS animation must too.
+  `colony/bell.tsx`, `onboarding/tour.tsx` and `colony/kpi.tsx`. New JS animation must too.
 
 ## Sound
 
