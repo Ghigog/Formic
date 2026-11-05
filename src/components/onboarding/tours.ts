@@ -55,7 +55,11 @@ export type TourId =
   | "agent-menu"
   | "colony"
   | "meetings"
-  | "call";
+  | "call"
+  | "sentinels-intro"
+  | "timeline-intro"
+  | "calls-intro"
+  | "kpis-intro";
 
 export const TOURS: Record<TourId, TourDef> = {
   login: {
@@ -108,22 +112,10 @@ export const TOURS: Record<TourId, TourDef> = {
         text: "That's you. Your settings live in here.",
       },
       {
-        target: "timeline",
-        side: "below",
-        title: "Timeline",
-        text: "The timeline. Your epics laid out day by day, so you can see what shipped when.",
-      },
-      {
         target: "points",
         side: "below",
         title: "Points",
         text: "Points! Each merged ticket earns some, and quick merges in a row heat up for a bonus.",
-      },
-      {
-        target: "sentinels",
-        side: "below",
-        title: "Sentinels",
-        text: "The Sentinels. They audit your code and grade it. Your colony's level lives here too.",
       },
       {
         target: "chat",
@@ -149,6 +141,58 @@ export const TOURS: Record<TourId, TourDef> = {
         title: "One more thing…",
         next: "See you inside",
         text: "Oh! One more thing. Down here is the colony, where your ants live. It grows every time you ship. Each screen has its own little tour, and I'll be waiting there. Bye for now!",
+      },
+    ],
+  },
+
+  "sentinels-intro": {
+    id: "sentinels-intro",
+    endInNest: true,
+    steps: [
+      {
+        target: "sentinels",
+        side: "below",
+        title: "Sentinels",
+        text: "Your first Sentinel! They audit your code and grade it. Tap your level badge to meet them.",
+      },
+    ],
+  },
+
+  "timeline-intro": {
+    id: "timeline-intro",
+    endInNest: true,
+    steps: [
+      {
+        target: "timeline",
+        side: "below",
+        title: "Timeline",
+        text: "The timeline. Your epics laid out day by day, so you can see what shipped when. Tap it to open, and again to come back.",
+      },
+    ],
+  },
+
+  "calls-intro": {
+    id: "calls-intro",
+    endInNest: true,
+    steps: [
+      {
+        target: "calls",
+        side: "below",
+        title: "Calls",
+        text: "Calls! Talk to your agents out loud, and they talk back. Tap here to start one.",
+      },
+    ],
+  },
+
+  "kpis-intro": {
+    id: "kpis-intro",
+    endInNest: true,
+    steps: [
+      {
+        target: "kpis",
+        side: "below",
+        title: "KPIs",
+        text: "Your board's numbers: how fast work ships and how much comes back. Tap to look closer.",
       },
     ],
   },
