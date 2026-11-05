@@ -64,7 +64,7 @@ async function postHandler(req: Request) {
   const projectId = found.project.id;
   // Messages queue: a reply starts only when no earlier one is pending, and
   // each finished one starts the next.
-  const busy = (await repo.assistantMessages(projectId)).some((m) => m.status === "pending");
+  const busy = !!(await repo.pendingAssistantMessage(projectId));
   await repo.addAssistantMessage({ projectId, role: "user", content: body.data.text });
   const replies = [];
   for (const speaker of body.data.speakers) {

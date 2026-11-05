@@ -708,7 +708,7 @@ export async function ask(
   text: string,
 ): Promise<void> {
   const repo = repository();
-  if ((await repo.cardChatMessages(cardId)).some((m) => m.status === "pending")) {
+  if (await repo.pendingCardChatMessage(cardId)) {
     throw new ChatBusyError();
   }
   await repo.addCardChatMessage({ projectId, cardKind, cardId, role: "user", content: text });
