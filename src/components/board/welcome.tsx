@@ -20,14 +20,14 @@ export function Welcome({ account }: { account: Account }) {
         >
           F
         </span>
-        <span className="font-serif text-[19px] font-semibold">Formic</span>
+        <span className="font-serif text-[18px] font-semibold">Formic</span>
         <span className="flex-grow" />
         <AccountMenu account={account} />
       </header>
 
       <main className="flex flex-1 flex-col items-center gap-5 px-4 py-10">
         <div className="max-w-md text-center">
-          <h1 className="font-serif text-[26px] font-semibold">
+          <h1 className="font-serif text-[28px] font-semibold">
             {githubOff ? "Start a board" : "Pick a repository to start"}
           </h1>
           <p className="text-muted mt-2 text-[13px] leading-[1.6]">

@@ -588,7 +588,7 @@ function Shade({
       <div ref={list} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
         {a.messages.length === 0 ? (
           <div className="text-muted mx-auto max-w-[460px] pt-6 text-center text-[13px] leading-[1.6]">
-            <p className="text-ink font-serif text-[17px]">
+            <p className="text-ink font-serif text-[16px]">
               Ask anything about {repoName}.
             </p>
             <p className="mt-2">
