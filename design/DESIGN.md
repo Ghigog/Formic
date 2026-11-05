@@ -422,7 +422,8 @@ Status colour still lives in the dot or icon; the message text stays `#1C1917` o
 
 Real `<button>`, `<a href>`, `<input>` + `<label>` throughout, including in static comps. Every
 icon-only button has `aria-label`. Body text is 4.5:1 minimum; `#57534E` is the floor for muted
-text on cream. Do not use `#D96B27` behind white text.
+text on cream. Do not use `#D96B27` behind white text: `bg-cta` (#B5511A) is the only
+filled-button background.
 
 ## What is fiction
 
