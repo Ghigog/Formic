@@ -1,5 +1,6 @@
 "use client";
 
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useEffect, useId, useRef, useState } from "react";
 import { useDraft } from "./use-draft";
 import { useRestoreFocus } from "@/lib/hooks/use-restore-focus";
@@ -83,14 +84,7 @@ export function NewItemDialog({
     if (open) requestAnimationFrame(() => ref.current?.focus());
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const trapKeys = useFocusTrap({ onEscape: onClose });
 
   // Ctrl/Cmd+V with an image on the clipboard attaches it, without the
   // person having to save it to disk first. Only image data is intercepted:
@@ -148,9 +142,11 @@ export function NewItemDialog({
       }}
     >
       {/* Full-width bottom sheet on mobile, centered modal above it. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <form
         role="dialog"
         aria-modal
+        onKeyDown={trapKeys}
         aria-labelledby={titleId}
         onSubmit={(e) => {
           e.preventDefault();

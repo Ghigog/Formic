@@ -371,4 +371,23 @@ describe("NewItemDialog keyboard and focus", () => {
     expect(screen.queryByLabelText("New feature request")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
   });
+
+  it("wraps Tab and Shift+Tab inside the dialog", async () => {
+    const user = userEvent.setup();
+    render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+    await screen.findByLabelText("New feature request");
+    const dialog = screen.getByRole("dialog");
+    const tabbable = Array.from(dialog.querySelectorAll<HTMLElement>("button, input, textarea, select, a[href]")).filter(
+      (el) => !(el as HTMLButtonElement).disabled,
+    );
+    const first = tabbable[0]!;
+    const last = tabbable[tabbable.length - 1]!;
+    last.focus();
+    await user.tab();
+    expect(first).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
 });

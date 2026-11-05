@@ -1,5 +1,6 @@
 "use client";
 
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useActiveTour } from "@/components/onboarding/store";
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
@@ -106,12 +107,8 @@ export function SetupDialog({
   useEffect(() => {
     if (!open) return;
     requestAnimationFrame(() => primary.current?.focus());
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") dismiss();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, dismiss]);
+  }, [open]);
+  const trapKeys = useFocusTrap({ onEscape: dismiss });
 
   if (!setup || !needed || touring) return null;
 
@@ -149,9 +146,11 @@ export function SetupDialog({
 
   return (
     <div className="fixed inset-0 z-[120] flex items-end justify-center bg-[color-mix(in_srgb,var(--anthracite)_32%,transparent)] p-0 backdrop-blur-[3px] motion-safe:animate-[reqFade_160ms_ease-out] sm:items-center sm:p-6">
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         role="dialog"
         aria-modal
+        onKeyDown={trapKeys}
         aria-labelledby={titleId}
         className="bg-card border-line box-border flex max-h-[92dvh] w-full max-w-[480px] flex-col gap-4 overflow-y-auto rounded-t-xl border p-5 shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)] sm:rounded-xl"
       >

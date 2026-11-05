@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRestoreFocus } from "@/lib/hooks/use-restore-focus";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { useEffect, useRef, useState } from "react";
 import type { BoardCard } from "@/lib/domain/entities";
 import { COLUMN_LABELS, columnOf } from "@/lib/domain/status";
 
@@ -70,11 +72,11 @@ export function ArchiveView({
     }
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const trapKeys = useFocusTrap({ onEscape: onClose });
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Remember the opener first, then take focus into the dialog so Escape and Tab reach it.
+  useRestoreFocus(true);
+  useEffect(() => dialogRef.current?.focus(), []);
 
   const restore = async (card: BoardCard) => {
     setError(null);
@@ -92,11 +94,15 @@ export function ArchiveView({
   };
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
+      onKeyDown={trapKeys}
       aria-label="Archived"
-      className="fixed inset-0 z-50 overflow-y-auto p-6"
+      className="fixed inset-0 z-50 overflow-y-auto p-6 outline-none"
     >
       <div
         data-testid="archive-backdrop"
