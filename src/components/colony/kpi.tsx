@@ -27,8 +27,12 @@ function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** `startAfterMs` holds the reveal back, so it begins after the host's entrance. */
-export function KpiSection({ startAfterMs = 0 }: { startAfterMs?: number } = {}) {
+/** Absent until the board reaches the KPIs level (`unlocked`). `startAfterMs` holds the reveal back, so it begins after the host's entrance. */
+export function KpiSection({ unlocked, startAfterMs = 0 }: { unlocked: boolean; startAfterMs?: number }) {
+  return unlocked ? <Kpis startAfterMs={startAfterMs} /> : null;
+}
+
+function Kpis({ startAfterMs }: { startAfterMs: number }) {
   const c = useColony();
   const [soundOn] = useSound();
   const ref = useRef<HTMLElement>(null);

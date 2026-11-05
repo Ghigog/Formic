@@ -54,6 +54,7 @@ export function TicketDrawer({
   onOpenTicket,
   subscribe,
   onChanged,
+  kpisUnlocked,
 }: {
   ticketId: string | null;
   onClose: () => void;
@@ -62,6 +63,8 @@ export function TicketDrawer({
   subscribe: SubscribeToEvents;
   /** Called after the ticket itself was edited here, so the board can refetch. */
   onChanged?: () => void;
+  /** Whether the board has reached the KPIs level; below it the KPIs block is absent. */
+  kpisUnlocked: boolean;
 }) {
   const [view, setView] = useState<TicketView | null>(null);
   const [failed, setFailed] = useState(false);
@@ -361,6 +364,7 @@ export function TicketDrawer({
                 <TicketBody
                   view={view}
                   onOpenTicket={onOpenTicket}
+                  kpisUnlocked={kpisUnlocked}
                   onChanged={() => {
                     void load();
                     onChanged?.();
@@ -452,10 +456,12 @@ function TicketBody({
   view,
   onOpenTicket,
   onChanged,
+  kpisUnlocked,
 }: {
   view: TicketView;
   onOpenTicket: (ticketId: string) => void;
   onChanged: () => void;
+  kpisUnlocked: boolean;
 }) {
   return (
     <div className="text-fg space-y-4 text-[13px] leading-6">
@@ -510,7 +516,7 @@ function TicketBody({
 
       <AttachmentGallery ticketId={view.card.id} />
 
-      <TicketKpis key={view.card.id} ticketId={view.card.id} />
+      <TicketKpis key={view.card.id} ticketId={view.card.id} unlocked={kpisUnlocked} />
 
       {view.dependsOn.length > 0 && (
         <div>
