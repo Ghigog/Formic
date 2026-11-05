@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import type { AttachmentSummary } from "@/lib/domain/entities";
 
 function formatSize(bytes: number): string {
@@ -55,14 +56,9 @@ export function AttachmentGallery({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerId]);
 
-  useEffect(() => {
-    if (!enlarged) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setEnlarged(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [enlarged]);
+  const closeEnlarged = useCallback(() => setEnlarged(null), []);
+  const trapKeys = useFocusTrap({ onEscape: closeEnlarged });
+  const focusDialog = useCallback((el: HTMLElement | null) => el?.focus({ preventScroll: true }), []);
 
   if (attachments.length === 0) return null;
 
@@ -113,11 +109,15 @@ export function AttachmentGallery({
       )}
 
       {enlarged && (
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
         <div
           role="dialog"
           aria-modal
+          ref={focusDialog}
+          tabIndex={-1}
+          onKeyDown={trapKeys}
           aria-label={enlarged.filename}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-6"
+          className="fixed inset-0 z-[60] flex items-center outline-none justify-center bg-black/60 p-6"
         >
           <div
             role="presentation"
