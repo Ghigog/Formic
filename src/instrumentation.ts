@@ -40,7 +40,7 @@ export const onRequestError: Instrumentation.onRequestError = async (error, _req
     typeof error === "object" && error !== null && "digest" in error
       ? String((error as { digest: unknown }).digest)
       : undefined;
-  trackThrown(error, { route: context.routePath, digest, source: "server" });
+  await trackThrown(error, { route: context.routePath, digest, source: "server" });
 };
 
 /**
