@@ -41,6 +41,7 @@ import { byCompletion, byPosition } from "@/lib/ordering";
 import { runningConflict } from "@/lib/domain/queue";
 import { placeDrop } from "./placement";
 import { QUEEN_CARRY_EVENT, type QueenCarryDetail } from "@/components/colony/queen-carry";
+import { TOUR_COLUMN_EVENT, type TourColumnDetail } from "@/components/onboarding/tours";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
 import type { ColumnAgentControls } from "./agent-select";
@@ -208,6 +209,17 @@ export function Board({
     };
     window.addEventListener(QUEEN_CARRY_EVENT, onCarry);
     return () => window.removeEventListener(QUEEN_CARRY_EVENT, onCarry);
+  }, [isMobile]);
+
+  // A tour step in a column that is not on screen: on a phone, bring that column up.
+  useEffect(() => {
+    if (!isMobile) return;
+    const onTour = (e: Event) => {
+      const column = (e as CustomEvent<TourColumnDetail>).detail?.column;
+      if (column) setActiveTab(column);
+    };
+    window.addEventListener(TOUR_COLUMN_EVENT, onTour);
+    return () => window.removeEventListener(TOUR_COLUMN_EVENT, onTour);
   }, [isMobile]);
 
   const toggleCollapse = useCallback(

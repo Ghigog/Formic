@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AutoTour, Tour, TourHost } from "./tour";
 import { endTour, hasSeen, offerTour, replayTours, startTour } from "./store";
-import { TOURS, type TourDef } from "./tours";
+import { TOURS, TOUR_COLUMN_EVENT, type TourDef } from "./tours";
 import { AgentSelect } from "@/components/board/agent-select";
 import { speaks, syllable } from "./voice";
 
@@ -91,6 +91,35 @@ describe("Tour", () => {
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     await flush();
     expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it("asks the board for a step's column when its target is not on screen", async () => {
+    const asked: string[] = [];
+    const listen = (e: Event) => asked.push((e as CustomEvent<{ column: string }>).detail.column);
+    window.addEventListener(TOUR_COLUMN_EVENT, listen);
+    const phoneDef: TourDef = {
+      id: "board",
+      steps: [{ target: "later", column: "todo", side: "right", title: "Ticket", text: "In To Do." }],
+    };
+    render(<Tour def={phoneDef} onEnd={() => {}} />);
+    await flush();
+    window.removeEventListener(TOUR_COLUMN_EVENT, listen);
+    expect(asked).toEqual(["todo"]);
+  });
+
+  it("does not ask for a column when the target is already on screen", async () => {
+    const asked: string[] = [];
+    const listen = () => asked.push("asked");
+    window.addEventListener(TOUR_COLUMN_EVENT, listen);
+    target("later");
+    const phoneDef: TourDef = {
+      id: "board",
+      steps: [{ target: "later", column: "todo", side: "right", title: "Ticket", text: "In To Do." }],
+    };
+    render(<Tour def={phoneDef} onEnd={() => {}} />);
+    await flush();
+    window.removeEventListener(TOUR_COLUMN_EVENT, listen);
+    expect(asked).toEqual([]);
   });
 
   it("goes back a step", async () => {

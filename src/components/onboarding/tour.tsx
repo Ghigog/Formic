@@ -16,7 +16,7 @@ import {
   type Spot,
 } from "./placement";
 import { endTour, offerTour, activeTour, useActiveTour, useAntVoice } from "./store";
-import { TOURS, stepText, type TourDef, type TourId } from "./tours";
+import { TOURS, TOUR_COLUMN_EVENT, stepText, type TourColumnDetail, type TourDef, type TourId } from "./tours";
 import { attachVoice, mutter, speaks, whenHeard } from "./voice";
 
 /** At most this many boxes are lit at once: the five columns, say. */
@@ -219,6 +219,10 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   function go(i: number, tries: number) {
     const s = steps[i];
     if (!s) return finish();
+    // A phone shows one column: ask for the one this step is in, once, then wait for it below.
+    if (s.column && tries === 0 && !findTargets(s.target).exists) {
+      window.dispatchEvent(new CustomEvent<TourColumnDetail>(TOUR_COLUMN_EVENT, { detail: { column: s.column } }));
+    }
     let found = findTargets(s.target);
     if (found.first && tries === 0) {
       found.first.scrollIntoView?.({ block: "nearest", inline: "nearest" });
