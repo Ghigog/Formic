@@ -196,7 +196,7 @@ async function ensureTicketIssue(
     if (parent) {
       // Sub-issues are newer than issues; without them the link is a line.
       await ctx.client.addSubIssue(parent, issue.id).catch(() =>
-        ctx.client.comment(issue.number, `Part of #${parent}.`),
+        ctx.client.comment(issue.number, `Part of #${parent}.`, "issue"),
       );
     }
   }
@@ -259,7 +259,7 @@ async function syncTicket(
       await ctx.client.updateIssue(number, { state: "closed" });
     }
     const note = event ? ticketNote(event, ticket) : null;
-    if (note) await ctx.client.comment(number, note);
+    if (note) await ctx.client.comment(number, note, "issue");
   });
 }
 
@@ -286,7 +286,7 @@ async function syncEpic(
       });
     }
     const note = event ? epicNote(event) : null;
-    if (note) await ctx.client.comment(number, note);
+    if (note) await ctx.client.comment(number, note, "issue");
   });
 }
 

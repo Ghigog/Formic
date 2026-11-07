@@ -220,8 +220,12 @@ export interface VcsClient {
   mergeBranch(base: string, head: string): Promise<UpdateOutcome>;
   /** `expectedHeadSha` guards against merging a commit nobody reviewed. */
   merge(number: number, expectedHeadSha: string): Promise<MergeOutcome>;
-  /** Comments on a pull request or an issue: they share numbers. */
-  comment(number: number, body: string): Promise<void>;
+  /**
+   * Comments on a pull request, or on an issue with `on: "issue"`. GitHub
+   * numbers both the same way and ignores `on`; GitLab numbers merge requests
+   * and issues apart, so it needs to know which.
+   */
+  comment(number: number, body: string, on?: "pull" | "issue"): Promise<void>;
 
   /* Issues: every Epic and ticket is tracked as one, for people on GitHub. */
 

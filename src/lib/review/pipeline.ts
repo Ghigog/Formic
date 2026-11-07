@@ -699,7 +699,7 @@ async function closeWithoutMerge(
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
     await vcs(project.repoFullName, creds.repoToken)
-      .comment(ticket.issueNumber, input.comment)
+      .comment(ticket.issueNumber, input.comment, "issue")
       .catch((e) => console.warn("[formic] could not note a closed ticket:", e));
   }
 
