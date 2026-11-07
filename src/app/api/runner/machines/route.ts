@@ -19,9 +19,9 @@ export async function GET() {
   const none: MachinesResponse = { repoFullName: project.repoFullName, private: null, runners: null };
   if (!project.repoFullName) return Response.json(none);
   const creds = await credentialsForProject(project);
-  if (!creds.githubToken) return Response.json(none);
+  if (!creds.repoToken) return Response.json(none);
   try {
-    const machines = await vcs(project.repoFullName, creds.githubToken).actionsMachines();
+    const machines = await vcs(project.repoFullName, creds.repoToken).actionsMachines();
     return Response.json({ ...machines, repoFullName: project.repoFullName } satisfies MachinesResponse);
   } catch {
     return Response.json(none);

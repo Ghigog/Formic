@@ -17,6 +17,7 @@ import type {
   TicketChange,
   TicketColumnEntry,
   GithubProfile,
+  GitlabAccount,
   NewLoginToken,
   OwnerScope,
   PresetRecord,
@@ -378,7 +379,7 @@ export class PrismaRepository implements Repository {
       await db.project.create({
         data: {
           ownerId: input.ownerId,
-          name: input.name ?? input.repoFullName?.split("/")[1] ?? input.repoFullName ?? "Board",
+          name: input.name ?? input.repoFullName?.split("/").at(-1) ?? input.repoFullName ?? "Board",
           repoFullName: input.repoFullName,
           baseBranch: input.baseBranch,
         },
@@ -431,6 +432,35 @@ export class PrismaRepository implements Repository {
         githubTokenExpiresAt: null,
         githubRefreshCipher: null,
         githubRefreshExpiresAt: null,
+      },
+    });
+  }
+
+  async userByGitlabId(gitlabId: number): Promise<UserRecord | null> {
+    return prisma().user.findUnique({ where: { gitlabId } });
+  }
+
+  async linkGitlab(userId: string, account: GitlabAccount): Promise<UserRecord> {
+    const db = prisma();
+    const holder = await db.user.findUnique({ where: { gitlabId: account.gitlabId } });
+    if (holder && holder.id !== userId) {
+      throw new Error(`GitLab account ${account.gitlabId} is already linked to another user.`);
+    }
+    return db.user.update({
+      where: { id: userId },
+      data: { gitlabId: account.gitlabId, gitlabLogin: account.login },
+    });
+  }
+
+  async unlinkGitlab(userId: string): Promise<UserRecord> {
+    return prisma().user.update({
+      where: { id: userId },
+      data: {
+        gitlabId: null,
+        gitlabLogin: null,
+        gitlabTokenCipher: null,
+        gitlabTokenExpiresAt: null,
+        gitlabRefreshCipher: null,
       },
     });
   }

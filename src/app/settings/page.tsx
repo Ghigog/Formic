@@ -19,10 +19,11 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ github_error?: string; merged?: string }>;
+  searchParams?: Promise<{ github_error?: string; gitlab_error?: string; merged?: string }>;
 }) {
   const query = await searchParams;
   const githubError = query?.github_error ?? null;
+  const gitlabError = query?.gitlab_error ?? null;
   const merged = query?.merged === "1";
   const user = await currentUser();
   if (!user) redirect("/login?next=/settings");
@@ -50,6 +51,7 @@ export default async function SettingsPage({
     <SettingsForm
       account={accountFor(user)}
       githubError={githubError}
+      gitlabError={gitlabError}
       merged={merged}
       installUrl={installUrl()}
       project={project}

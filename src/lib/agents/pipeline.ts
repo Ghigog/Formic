@@ -393,9 +393,9 @@ export async function applyReroute(
  */
 export async function repoTree(projectId: string): Promise<string[]> {
   const project = await projectFor(projectId);
-  const { githubToken } = await credentialsForProject(project);
-  const tree = githubToken
-    ? await fileLayout(project.repoFullName, project.baseBranch, githubToken)
+  const { repoToken } = await credentialsForProject(project);
+  const tree = repoToken
+    ? await fileLayout(project.repoFullName, project.baseBranch, repoToken)
     : null;
   if (tree && tree.length > 0) return tree;
   return [

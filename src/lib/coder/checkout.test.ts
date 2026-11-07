@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openCheckout, pullRequestTitle, type CheckoutRequest } from "./checkout";
+import { cloneUrl, openCheckout, pullRequestTitle, type CheckoutRequest } from "./checkout";
 import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { FALLBACK_CAP_MESSAGE } from "@/lib/sandbox/fallback-cap";
@@ -29,7 +29,7 @@ async function request(fallback: boolean): Promise<CheckoutRequest> {
     newBranch: null,
     ticket: { fileScope: [] },
     ctx: { signal: undefined, emit() {}, runId: "r" },
-    githubToken: "t",
+    repoToken: "t",
     e2bKey: "k",
     e2bFallbackUserId: fallback ? user.id : null,
   } as unknown as CheckoutRequest;
@@ -114,5 +114,12 @@ describe("the pull request title", () => {
 
   it("falls back to the ticket's title when the agent sent nothing usable", () => {
     expect(pullRequestTitle(ticket(), { summary: "  \n" })).toBe("T-1: Write the operating manual");
+  });
+});
+
+describe("where a sandbox clones from", () => {
+  it("uses the host's own address and token form: GitHub's x-access-token, GitLab's oauth2", () => {
+    expect(cloneUrl("acme/widgets", "ghs_1")).toBe("https://x-access-token:ghs_1@github.com/acme/widgets.git");
+    expect(cloneUrl("gitlab:acme/tools/widgets", "glo_1")).toBe("https://oauth2:glo_1@gitlab.com/acme/tools/widgets.git");
   });
 });

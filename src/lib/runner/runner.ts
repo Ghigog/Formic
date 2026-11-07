@@ -92,6 +92,7 @@ import {
   type CheckpointFile,
   type VcsClient,
 } from "@/lib/vcs";
+import { hostName, repoHost } from "@/lib/vcs/host";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ALREADY_DONE_TRAILER,
@@ -736,7 +737,7 @@ export async function startJobRun(input: {
   const { projectId, ticket, agent, run } = input;
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   // Resolving merge conflicts starts over: the merge is the work. A loop run
   // is a fresh implementation, so it carries on the way one does.
@@ -934,8 +935,8 @@ export async function startCliAnswer(input: {
   };
 
   const base = await answerPrompt(projectId, epicId, mode, agent, async () =>
-    creds.githubToken
-      ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.githubToken)) ?? [])
+    creds.repoToken
+      ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.repoToken)) ?? [])
       : [],
   );
   if (!card || !base) {
@@ -956,7 +957,7 @@ export async function startCliAnswer(input: {
     : base;
 
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent,
     job: jobId(epicId, randomUUID().slice(0, 8), input.retry?.attempt ?? 1),
@@ -1007,8 +1008,8 @@ export async function startCliDraftTicket(input: {
     return;
   }
 
-  const tree = creds.githubToken
-    ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.githubToken)) ?? [])
+  const tree = creds.repoToken
+    ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.repoToken)) ?? [])
     : [];
   const attachments = attachmentsPrompt(await repo.attachmentsFor({ ticketId }));
   const base = [
@@ -1040,7 +1041,7 @@ export async function startCliDraftTicket(input: {
     : base;
 
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent,
     job: jobId(ticketId, randomUUID().slice(0, 8), input.retry?.attempt ?? 1),
@@ -1130,7 +1131,7 @@ async function completeCliAnswer(
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
@@ -1242,7 +1243,7 @@ async function completeCliDraft(projectId: string, result: RunnerResult): Promis
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
@@ -1327,7 +1328,7 @@ export async function startCliAsk(input: {
   const project = await projectFor(input.projectId);
   const creds = await credentialsForProject(project);
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent: input.agent,
     job: jobId(input.messageId, randomUUID().slice(0, 8), input.attempt ?? 1),
@@ -1367,7 +1368,7 @@ export async function startCliSentinel(input: {
   const project = await projectFor(input.projectId);
   const creds = await credentialsForProject(project);
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent: input.agent,
     job: jobId(input.auditId, randomUUID().slice(0, 8), input.attempt ?? 1),
@@ -1452,7 +1453,7 @@ export async function startCliCardChat(input: {
   const project = await projectFor(input.projectId);
   const creds = await credentialsForProject(project);
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent: input.agent,
     job: jobId(input.messageId, randomUUID().slice(0, 8)),
@@ -1507,7 +1508,7 @@ export async function collectCliRuns(projectId: string): Promise<void> {
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const runs = await vcs(project.repoFullName, creds.githubToken)
+  const runs = await vcs(project.repoFullName, creds.repoToken)
     .recentRuns(RUNNER_WORKFLOW_FILE)
     .catch(() => []);
   for (const run of runs) {
@@ -1529,7 +1530,7 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const message = messageId ? await repo.assistantMessage(messageId) : null;
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   // The board's assistant may also have changed the code: the workflow
   // keeps that on a staging branch of its own, beside the answer.
@@ -1560,8 +1561,12 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const { finishCliAnswer } = await import("@/lib/assistant/turn");
   // Without a token the client is the mock, which has no answer to read: say
   // so, rather than blame an agent whose answer is waiting on GitHub.
-  if (!creds.githubToken && authMode() === "accounts") {
-    await finishCliAnswer(message.id, null, "GitHub isn't connected for this board. Connect GitHub in Settings, then ask again.");
+  if (!creds.repoToken && authMode() === "accounts") {
+    await finishCliAnswer(
+      message.id,
+      null,
+      `${hostName(repoHost(project.repoFullName))} isn't connected for this board. Connect it in Settings, then ask again.`,
+    );
     return;
   }
   if (result.conclusion !== "success") {
@@ -1641,7 +1646,7 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
@@ -1965,7 +1970,7 @@ async function saveCheckpoint(
   try {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
-    await vcs(project.repoFullName, creds.githubToken).saveCheckpoint(ticket.id, {
+    await vcs(project.repoFullName, creds.repoToken).saveCheckpoint(ticket.id, {
       base: checkpoint.base,
       files: checkpoint.files,
       deleted: checkpoint.deleted,
@@ -2136,7 +2141,7 @@ export async function cancelJob(projectId: string, job: string): Promise<void> {
   try {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
-    const client = vcs(project.repoFullName, creds.githubToken);
+    const client = vcs(project.repoFullName, creds.repoToken);
     for (const run of await client.recentRuns(RUNNER_WORKFLOW_FILE)) {
       if (parseRunTitle(run.title)?.job === job && run.status !== "completed") {
         await client.cancelRun(run.id);

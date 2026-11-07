@@ -5,6 +5,7 @@ import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
 import { authMode } from "@/lib/auth/session";
 import { credentialsFor } from "@/lib/auth/credentials";
 import { getRepository } from "@/lib/vcs/repositories";
+import { repoHost } from "@/lib/vcs/host";
 
 /**
  * One board per repository, shared by everyone who can reach it on GitHub.
@@ -32,8 +33,8 @@ export async function canSeeBoard(user: UserRecord, project: ProjectSummary): Pr
 
 /** Whether this person's own GitHub access reaches a repository. */
 export async function canReach(user: UserRecord, repoFullName: string): Promise<boolean> {
-  const { githubToken } = await credentialsFor(user);
-  return !!githubToken && (await getRepository(repoFullName, githubToken)) !== null;
+  const { repoToken } = await credentialsFor(user, repoHost(repoFullName));
+  return !!repoToken && (await getRepository(repoFullName, repoToken)) !== null;
 }
 
 /**

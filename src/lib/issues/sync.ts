@@ -301,7 +301,7 @@ async function sync(projectId: string, event: FormicEvent): Promise<void> {
   if (!project.repoFullName) return;
   const creds = await credentialsForProject(project);
   const ctx: Context = {
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     repoFullName: project.repoFullName,
   };
 

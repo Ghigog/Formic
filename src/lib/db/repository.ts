@@ -539,6 +539,12 @@ export interface UserRecord {
   githubTokenExpiresAt: Date | null;
   githubRefreshCipher: string | null;
   githubRefreshExpiresAt: Date | null;
+  /** Null until the person connects gitlab.com. */
+  gitlabId: number | null;
+  gitlabLogin: string | null;
+  gitlabTokenCipher: string | null;
+  gitlabTokenExpiresAt: Date | null;
+  gitlabRefreshCipher: string | null;
   e2bKeyCipher: string | null;
   e2bKeyHint: string | null;
   anthropicKeyCipher: string | null;
@@ -598,12 +604,21 @@ export type UserSecrets = Partial<
     | "githubTokenExpiresAt"
     | "githubRefreshCipher"
     | "githubRefreshExpiresAt"
+    | "gitlabTokenCipher"
+    | "gitlabTokenExpiresAt"
+    | "gitlabRefreshCipher"
     | "e2bKeyCipher"
     | "e2bKeyHint"
     | "anthropicKeyCipher"
     | "anthropicKeyHint"
   >
 >;
+
+/** A gitlab.com account, as connecting one records it. */
+export interface GitlabAccount {
+  gitlabId: number;
+  login: string;
+}
 
 export interface GithubProfile {
   githubId: number;
@@ -788,6 +803,12 @@ export interface UserRepository {
   linkGithub(userId: string, profile: GithubProfile): Promise<UserRecord>;
   /** Detaches GitHub: clears the GitHub id and every GitHub token. */
   unlinkGithub(userId: string): Promise<UserRecord>;
+  /** The person who connected this gitlab.com account, if anyone has. */
+  userByGitlabId(gitlabId: number): Promise<UserRecord | null>;
+  /** Connects a gitlab.com account to a person. Refuses one already connected to someone else. */
+  linkGitlab(userId: string, account: GitlabAccount): Promise<UserRecord>;
+  /** Forgets a person's gitlab.com account and its tokens. */
+  unlinkGitlab(userId: string): Promise<UserRecord>;
   /**
    * Folds an email account into a GitHub one when one person turns out to
    * have both: `from`'s boards, saved agents, access tokens and push

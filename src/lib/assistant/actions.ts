@@ -361,7 +361,7 @@ async function rerunCi(projectId: string, key: string): Promise<string> {
   if (card.kind !== "ticket" || !card.prNumber) throw new Error(`${key} has no pull request to run CI on.`);
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const pull = await client.pullRequest(card.prNumber);
   const started = await rerunRedActions(client, pull.headBranch, await client.checksFor(pull.headSha));
   if (started === 0) {
@@ -379,7 +379,7 @@ async function openPullRequest(
 ): Promise<string> {
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   if (!(await client.branchHead(action.branch))) throw new Error(`${action.branch} is not on GitHub any more.`);
   const pull =
     (await client.findPullRequest(action.branch)) ??

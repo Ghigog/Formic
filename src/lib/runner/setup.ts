@@ -28,8 +28,8 @@ export async function runnerSetup(project: ProjectSummary): Promise<RunnerSetup>
   if (!project.repoFullName) return { state: "ready" };
   const creds = await credentialsForProject(project);
   // No GitHub token means the mock repository: nothing to install.
-  if (!creds.githubToken) return { state: "ready" };
-  const client = vcs(project.repoFullName, creds.githubToken);
+  if (!creds.repoToken) return { state: "ready" };
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   try {
     await closeStaleSetupPulls(client);

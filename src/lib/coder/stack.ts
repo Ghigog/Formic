@@ -113,7 +113,7 @@ async function rebuildOnTarget(
     newBranch: null,
     ticket,
     ctx: { runId: `restack-${ticket.id}`, projectId, emit: () => undefined, signal: abort.signal },
-    githubToken: creds.githubToken,
+    repoToken: creds.repoToken,
     e2bKey: creds.e2bKey,
     e2bFallbackUserId: creds.e2bFallbackUserId,
   });

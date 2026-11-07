@@ -41,7 +41,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
     // Whether review cards have checks to wait for. Unknown reads as yes,
     // so the card says CI is running, as it did before it could tell.
     credentials
-      .then((creds) => (creds && project.repoFullName ? vcs(project.repoFullName, creds.githubToken).hasCi(project.baseBranch) : true))
+      .then((creds) => (creds && project.repoFullName ? vcs(project.repoFullName, creds.repoToken).hasCi(project.baseBranch) : true))
       .catch(() => true),
     // No agent can run without a sandbox, so the board says so before
     // anyone starts a ticket rather than when the first one fails.
@@ -62,7 +62,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
   const reviewCi = demo || !project.repoFullName
     ? {}
     : await credentials
-        .then((creds) => (creds ? seedReviewCi(vcs(project.repoFullName, creds.githubToken), cards) : {}))
+        .then((creds) => (creds ? seedReviewCi(vcs(project.repoFullName, creds.repoToken), cards) : {}))
         .catch(() => ({}));
 
   return {

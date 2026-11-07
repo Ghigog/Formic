@@ -196,7 +196,7 @@ describe("summonSentinel", () => {
   it("stamps the audit with the base branch head, or null when it cannot be resolved", async () => {
     audits = [calibrated];
     projectFor.mockResolvedValue({ repoFullName: "o/r", baseBranch: "main", unlockAllSentinels: false });
-    credentialsForProject.mockResolvedValue({ githubToken: "tok" });
+    credentialsForProject.mockResolvedValue({ githubToken: "tok", repoToken: "tok" });
     branchHead.mockResolvedValueOnce("abc1234");
     await summonSentinel("p", locked.id);
     expect(branchHead).toHaveBeenCalledWith("main");
@@ -280,13 +280,13 @@ describe("the detached run", () => {
     beforeEach(() => {
       sentinelAgent.mockResolvedValue({ kind: "configured", config });
       projectFor.mockResolvedValue(project);
-      credentialsForProject.mockResolvedValue({ githubToken: "tok" });
+      credentialsForProject.mockResolvedValue({ githubToken: "tok", repoToken: "tok" });
       listFiles.mockResolvedValue(["a.ts", "big.ts"]);
       gatherEvidence.mockResolvedValue({});
     });
 
     it("fails when the project has no GitHub access", async () => {
-      credentialsForProject.mockResolvedValue({ githubToken: null });
+      credentialsForProject.mockResolvedValue({ githubToken: null, repoToken: null });
       await start();
       await runJob();
       expect(finishAudit).toHaveBeenCalledWith("a1", expect.objectContaining({ status: "failed", error: expect.stringContaining("no GitHub access") }));

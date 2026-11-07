@@ -66,8 +66,8 @@ async function shippedTickets(projectId: string): Promise<Shipped[]> {
 async function baseHead(projectId: string): Promise<string | null> {
   try {
     const project = await projectFor(projectId);
-    const { githubToken } = await credentialsForProject(project);
-    return await vcs(project.repoFullName, githubToken).branchHead(project.baseBranch);
+    const { repoToken } = await credentialsForProject(project);
+    return await vcs(project.repoFullName, repoToken).branchHead(project.baseBranch);
   } catch {
     return null;
   }
@@ -140,11 +140,11 @@ export async function summonSentinel(
       }
 
       const project = await projectFor(projectId);
-      const { githubToken } = await credentialsForProject(project);
-      if (!githubToken) {
+      const { repoToken } = await credentialsForProject(project);
+      if (!repoToken) {
         return await fail("Sentinels read the code through GitHub, and this project has no GitHub access.");
       }
-      const client = vcs(project.repoFullName, githubToken);
+      const client = vcs(project.repoFullName, repoToken);
       const files = await client.listFiles(project.baseBranch);
       await log("Gathering the facts");
       // The whole repository in one download, for reading and for the

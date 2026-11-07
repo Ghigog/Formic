@@ -17,6 +17,7 @@ import type { FormicEvent } from "@/lib/domain/events";
 import { verdict } from "@/lib/usage/governor";
 import { scoreOf } from "@/lib/colony/game";
 import { gradeOf } from "@/lib/sentinels/grade";
+import { gitlabRepo, normalizeGitlabPath, repoHost, repoPath } from "@/lib/vcs/host";
 import { sentinelStates, starsOf } from "@/lib/sentinels/view";
 
 export const dynamic = "force-dynamic";
@@ -128,22 +129,33 @@ export async function POST(req: NextRequest) {
       baseBranch: "main",
     });
   } else {
-    const fullName = normalizeRepo(parsed.data.repoFullName);
+    const asked = parsed.data.repoFullName;
+    const host = repoHost(asked);
+    const gitlabPath = host === "gitlab" ? normalizeGitlabPath(asked) : null;
+    const fullName = host === "gitlab" ? (gitlabPath ? gitlabRepo(gitlabPath) : null) : normalizeRepo(asked);
     if (!fullName) {
       return Response.json(
-        { error: "Use owner/repo, or paste the repository URL." },
+        {
+          error:
+            host === "gitlab"
+              ? "Use gitlab:group/project, or paste the project's URL."
+              : "Use owner/repo, or paste the repository URL.",
+        },
         { status: 400 },
       );
     }
     // With accounts, a repository must be one this person's token
     // can reach: that is what their agents will push with. In local mode a
     // typed name is taken on trust, as before.
-    const { githubToken } = await credentialsFor(user);
-    const remote = githubToken ? await getRepository(fullName, githubToken) : null;
+    const { repoToken } = await credentialsFor(user, host);
+    const remote = repoToken ? await getRepository(fullName, repoToken) : null;
     if (!remote && authMode() === "accounts") {
       return Response.json(
         {
-          error: `Formic can't reach ${fullName}. Install the Formic GitHub App on it first.`,
+          error:
+            host === "gitlab"
+              ? `Formic can't reach ${repoPath(fullName)} on GitLab. Connect GitLab in Settings, with an account that can push to it.`
+              : `Formic can't reach ${fullName}. Install the Formic GitHub App on it first.`,
         },
         { status: 404 },
       );

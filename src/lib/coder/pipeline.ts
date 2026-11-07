@@ -166,7 +166,7 @@ async function codeTicket(
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   // Its pull request was closed without merging: that attempt is over, and
   // this one starts from the current code on a branch of its own.
@@ -370,7 +370,7 @@ async function codeTicket(
     newBranch: continuing ? null : branch,
     ticket,
     ctx: run.ctx,
-    githubToken: creds.githubToken,
+    repoToken: creds.repoToken,
     e2bKey: creds.e2bKey,
     e2bFallbackUserId: creds.e2bFallbackUserId,
   }).catch((e: unknown) => e as Error);

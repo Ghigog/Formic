@@ -14,6 +14,7 @@ import type {
   TicketChange,
   TicketColumnEntry,
   GithubProfile,
+  GitlabAccount,
   NewLoginToken,
   OwnerScope,
   PresetRecord,
@@ -476,6 +477,33 @@ export class MemoryRepository implements Repository {
     return user;
   }
 
+  async userByGitlabId(gitlabId: number): Promise<UserRecord | null> {
+    return [...store().users.values()].find((u) => u.gitlabId === gitlabId) ?? null;
+  }
+
+  async linkGitlab(userId: string, account: GitlabAccount): Promise<UserRecord> {
+    const s = store();
+    const user = s.users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    const taken = [...s.users.values()].find((u) => u.gitlabId === account.gitlabId && u.id !== userId);
+    if (taken) throw new Error(`GitLab account ${account.gitlabId} is already linked to another user.`);
+    Object.assign(user, { gitlabId: account.gitlabId, gitlabLogin: account.login });
+    return user;
+  }
+
+  async unlinkGitlab(userId: string): Promise<UserRecord> {
+    const user = store().users.get(userId);
+    if (!user) throw new Error(`No user ${userId}.`);
+    Object.assign(user, {
+      gitlabId: null,
+      gitlabLogin: null,
+      gitlabTokenCipher: null,
+      gitlabTokenExpiresAt: null,
+      gitlabRefreshCipher: null,
+    });
+    return user;
+  }
+
   async mergeUserInto(fromId: string, intoId: string): Promise<UserRecord> {
     const s = store();
     const from = s.users.get(fromId);
@@ -523,6 +551,11 @@ export class MemoryRepository implements Repository {
       githubTokenExpiresAt: null,
       githubRefreshCipher: null,
       githubRefreshExpiresAt: null,
+      gitlabId: null,
+      gitlabLogin: null,
+      gitlabTokenCipher: null,
+      gitlabTokenExpiresAt: null,
+      gitlabRefreshCipher: null,
       e2bKeyCipher: null,
       e2bKeyHint: null,
       anthropicKeyCipher: null,
@@ -868,7 +901,7 @@ export class MemoryRepository implements Repository {
     const project: ProjectSummary = {
       id: id("project"),
       ownerId: input.ownerId,
-      name: input.name ?? input.repoFullName?.split("/")[1] ?? input.repoFullName ?? "Board",
+      name: input.name ?? input.repoFullName?.split("/").at(-1) ?? input.repoFullName ?? "Board",
       repoFullName: input.repoFullName ?? "",
       baseBranch: input.baseBranch,
       autoMerge: false,

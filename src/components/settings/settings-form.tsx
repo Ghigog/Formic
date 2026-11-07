@@ -56,11 +56,13 @@ function AccountSection({
   account,
   installUrl,
   githubError,
+  gitlabError,
   merged,
 }: {
   account: Account;
   installUrl: string | null;
   githubError: string | null;
+  gitlabError?: string | null;
   merged?: boolean;
 }) {
   const router = useRouter();
@@ -182,12 +184,90 @@ function AccountSection({
         </Section>
       )}
 
+      {account.gitlab && <GitlabSection gitlab={account.gitlab} initialError={gitlabError ?? null} />}
+
       {!github && installUrl && (
         <a href={installUrl} className="text-terracotta text-[13px] font-semibold">
           Choose which repositories Formic can access →
         </a>
       )}
     </>
+  );
+}
+
+/**
+ * Their gitlab.com connection: connect it to work on GitLab projects, or
+ * disconnect it, which revokes Formic's token at GitLab straight away.
+ * GitLab is never a way to sign in: email comes first.
+ */
+function GitlabSection({
+  gitlab,
+  initialError,
+}: {
+  gitlab: NonNullable<Account["gitlab"]>;
+  initialError: string | null;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(initialError);
+
+  async function disconnect() {
+    if (
+      !window.confirm(
+        "Disconnect GitLab? Formic's access is revoked at GitLab now. Your boards and cards stay; agents on GitLab boards stop until you connect again.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/account/gitlab", { method: "DELETE" }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      setError("That did not work. Try again.");
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <Section title="GitLab">
+      {gitlab.connected ? (
+        <>
+          <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+            Connected as <span className="text-ink font-mono">@{gitlab.login}</span>. Agents push and open
+            merge requests as you, on the gitlab.com projects you can push to.
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void disconnect()}
+            className="text-muted hover:text-ink h-9 px-2 text-[12px] font-medium disabled:opacity-50"
+          >
+            Disconnect GitLab
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+            Not connected. Connect gitlab.com when you want agents to work on a GitLab project. GitLab will
+            ask you to let Formic act on your behalf. You can disconnect at any time, and Formic&apos;s access
+            is revoked at GitLab straight away.
+          </p>
+          <a
+            href="/api/auth/gitlab/login"
+            className="bg-anthracite text-on-anthracite inline-flex h-9 items-center rounded-lg px-3.5 text-[13px] font-semibold"
+          >
+            Connect GitLab
+          </a>
+        </>
+      )}
+      {error && (
+        <p role="alert" className="text-crimson-text mt-2 text-[12px]">
+          {error}
+        </p>
+      )}
+    </Section>
   );
 }
 
@@ -211,6 +291,7 @@ export function SettingsForm({
   vapidPublicKey = null,
   presets = [],
   githubError = null,
+  gitlabError = null,
   merged = false,
 }: {
   /** The email account was just folded into this GitHub one. */
@@ -218,6 +299,8 @@ export function SettingsForm({
   account: Account;
   /** Why connecting GitHub just failed, from the callback. */
   githubError?: string | null;
+  /** Why connecting GitLab just failed, from the callback. */
+  gitlabError?: string | null;
   installUrl: string | null;
   /** The board this browser is on; auto-merge is switched on for it alone. */
   project?: ProjectSetting | null;
@@ -253,7 +336,13 @@ export function SettingsForm({
       <AutoTour id="settings" delay={600} />
 
       <main className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-6">
-        <AccountSection account={account} installUrl={installUrl} githubError={githubError} merged={merged} />
+        <AccountSection
+          account={account}
+          installUrl={installUrl}
+          githubError={githubError}
+          gitlabError={gitlabError}
+          merged={merged}
+        />
 
         {github && (
           <KeyField

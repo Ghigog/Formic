@@ -28,8 +28,8 @@ async function history(project: ProjectSummary) {
 async function countBaseCommits(project: ProjectSummary): Promise<number | null> {
   if (!project.repoFullName) return null;
   try {
-    const { githubToken } = await credentialsForProject(project);
-    return await vcs(project.repoFullName, githubToken).countCommits(project.baseBranch);
+    const { repoToken } = await credentialsForProject(project);
+    return await vcs(project.repoFullName, repoToken).countCommits(project.baseBranch);
   } catch {
     return null;
   }
