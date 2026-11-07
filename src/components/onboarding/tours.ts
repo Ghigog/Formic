@@ -9,7 +9,10 @@ import type { Side } from "./placement";
 export const TOUR_COLUMN_EVENT = "formic:tour-column";
 
 export interface TourColumnDetail {
-  column: ColumnId;
+  /** The column to show, or null to put back the one that was showing (the step was skipped). */
+  column: ColumnId | null;
+  /** Set by the board, as it handles the event, when it brought a hidden column up. */
+  shown?: boolean;
 }
 
 /**

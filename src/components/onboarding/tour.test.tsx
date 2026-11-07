@@ -54,6 +54,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/** Time to reach the next step without waiting: less than the 1.8s a step waits for a target that has not rendered. */
+const FIND_WAIT_UNDER = 1000;
+
 const flush = () =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(2000);
@@ -93,9 +96,36 @@ describe("Tour", () => {
     expect(onEnd).toHaveBeenCalledOnce();
   });
 
-  it("asks the board for a step's column when its target is not on screen", async () => {
-    const asked: string[] = [];
-    const listen = (e: Event) => asked.push((e as CustomEvent<{ column: string }>).detail.column);
+  it("asks the board for a step's column, and hands it back when the target never turns up", async () => {
+    const asked: Array<string | null> = [];
+    // A phone's board: it brings the column up, but the card is not there.
+    const listen = (e: Event) => {
+      const detail = (e as CustomEvent<{ column: string | null; shown?: boolean }>).detail;
+      asked.push(detail.column);
+      if (detail.column) detail.shown = true;
+    };
+    window.addEventListener(TOUR_COLUMN_EVENT, listen);
+    const phoneDef: TourDef = {
+      id: "board",
+      steps: [{ target: "later", column: "todo", side: "right", title: "Ticket", text: "In To Do." }],
+    };
+    render(<Tour def={phoneDef} onEnd={() => {}} />);
+    await flush();
+    window.removeEventListener(TOUR_COLUMN_EVENT, listen);
+    expect(asked).toEqual(["todo", null]);
+  });
+
+  it("keeps the column it asked for when the target turns up there", async () => {
+    const asked: Array<string | null> = [];
+    // The board answers by rendering the column: here, the target appears.
+    const listen = (e: Event) => {
+      const detail = (e as CustomEvent<{ column: string | null; shown?: boolean }>).detail;
+      asked.push(detail.column);
+      if (detail.column) {
+        detail.shown = true;
+        target("later");
+      }
+    };
     window.addEventListener(TOUR_COLUMN_EVENT, listen);
     const phoneDef: TourDef = {
       id: "board",
@@ -105,6 +135,55 @@ describe("Tour", () => {
     await flush();
     window.removeEventListener(TOUR_COLUMN_EVENT, listen);
     expect(asked).toEqual(["todo"]);
+    expect(screen.getByRole("dialog", { name: "Tour: Ticket" })).toBeTruthy();
+  });
+
+  describe("in a tour of what is already on screen, like the board's", () => {
+    const allThere: TourDef = {
+      id: "board",
+      allThere: true,
+      steps: [
+        { target: "one", side: "below", title: "First", text: "The first thing." },
+        { target: "later", column: "todo", side: "right", title: "Ticket", text: "In To Do." },
+        { target: "two", side: "right", title: "Second", text: "The second thing." },
+      ],
+    };
+
+    it("keeps a step whose column a phone is not showing, and shows it once the board brings the column up", async () => {
+      target("one");
+      target("two");
+      const listen = (e: Event) => {
+        const detail = (e as CustomEvent<{ column: string | null; shown?: boolean }>).detail;
+        if (detail.column) {
+          detail.shown = true;
+          target("later");
+        }
+      };
+      window.addEventListener(TOUR_COLUMN_EVENT, listen);
+      render(<Tour def={allThere} onEnd={() => {}} />);
+      await flush();
+      expect(screen.getByText("1 / 3")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      await flush();
+      window.removeEventListener(TOUR_COLUMN_EVENT, listen);
+      expect(screen.getByRole("dialog", { name: "Tour: Ticket" })).toBeTruthy();
+    });
+
+    it("moves straight on when no board brings the column up (every column already shows)", async () => {
+      target("one");
+      target("two");
+      render(<Tour def={allThere} onEnd={() => {}} />);
+      await flush();
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      // No waiting for a card that is not there: well under the find timeout.
+      // In small ticks, so React runs its effects between the tour's timers.
+      for (let t = 0; t < FIND_WAIT_UNDER; t += 100) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+        });
+      }
+      expect(screen.getByRole("dialog", { name: "Tour: Second" })).toBeTruthy();
+    });
   });
 
   it("does not ask for a column when the target is already on screen", async () => {
