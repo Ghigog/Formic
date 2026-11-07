@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runnerSetup } from "./setup";
+import { seal } from "@/lib/secrets/vault";
 import { RUNNER_SETUP_PREFIX, RUNNER_WORKFLOW_PATH, runnerWorkflow, runnerSetupBranch } from "./workflow";
 import { repository } from "@/lib/db";
 import { resetEnvCache } from "@/lib/secrets/env";
@@ -39,8 +40,8 @@ describe("runner setup", () => {
   it("opens the setup pull request on a new repository, once", async () => {
     const project = await repository().defaultProject();
 
-    const first = await runnerSetup(project);
-    const second = await runnerSetup(project);
+    const first = await runnerSetup(project, { approve: true });
+    const second = await runnerSetup(project, { approve: true });
 
     expect(first).toMatchObject({ state: "waiting", update: false });
     expect(second).toEqual(first);
@@ -49,11 +50,11 @@ describe("runner setup", () => {
 
   it("is ready once the workflow is on the base branch", async () => {
     const project = await repository().defaultProject();
-    await runnerSetup(project);
+    await runnerSetup(project, { approve: true });
 
     await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "merged");
 
-    expect(await runnerSetup(project)).toEqual({ state: "ready" });
+    expect(await runnerSetup(project, { approve: true })).toEqual({ state: "ready" });
   });
 
   it("asks for an update when an older workflow is there", async () => {
@@ -79,7 +80,7 @@ describe("runner setup", () => {
   it("adds only the workflow, with no generated file", async () => {
     const project = await repository().defaultProject();
 
-    await runnerSetup(project);
+    await runnerSetup(project, { approve: true });
 
     const onBranch = [...MockVcsClient.runner().files.keys()].filter((k) => k.startsWith(`${runnerSetupBranch()}:`));
     expect(onBranch).toEqual([`${runnerSetupBranch()}:${RUNNER_WORKFLOW_PATH}`]);
@@ -94,7 +95,7 @@ describe("runner setup", () => {
       body: "",
     });
 
-    const setup = await runnerSetup(project);
+    const setup = await runnerSetup(project, { approve: true });
 
     expect((await client.pullRequest(old.number)).state).toBe("closed");
     expect(setup).toMatchObject({ state: "waiting" });
@@ -120,7 +121,7 @@ describe("runner setup", () => {
     await client.commitFile(project.baseBranch, "project.godot", 'config/features=PackedStringArray("4.7")\n', "game");
     MockVcsClient.runner().noCi = true;
 
-    await runnerSetup(project);
+    await runnerSetup(project, { approve: true });
 
     const checks = MockVcsClient.runner().files.get(`${runnerSetupBranch()}:${CHECKS_WORKFLOW_PATH}`);
     expect(checks).toContain("godot --headless -s addons/gut/gut_cmdln.gd");
@@ -129,7 +130,7 @@ describe("runner setup", () => {
   it("proposes no CI where the repository has its own, or Formic has none for its toolchain", async () => {
     const project = await repository().defaultProject();
     await client.commitFile(project.baseBranch, "project.godot", "", "game");
-    await runnerSetup(project);
+    await runnerSetup(project, { approve: true });
     const branch = runnerSetupBranch();
     expect(MockVcsClient.runner().files.get(`${branch}:${CHECKS_WORKFLOW_PATH}`)).toBeUndefined();
 
@@ -138,7 +139,7 @@ describe("runner setup", () => {
     setVcs(client);
     await client.commitFile(project.baseBranch, "package-lock.json", "{}", "node");
     MockVcsClient.runner().noCi = true;
-    await runnerSetup(project);
+    await runnerSetup(project, { approve: true });
     expect(MockVcsClient.runner().files.get(`${branch}:${CHECKS_WORKFLOW_PATH}`)).toBeUndefined();
   });
 
@@ -163,5 +164,74 @@ describe("runner setup", () => {
     const project = await repository().defaultProject();
 
     expect(await runnerSetup(project)).toEqual({ state: "ready" });
+  });
+});
+
+describe("asking before the setup pull request", () => {
+  const setupFiles = () =>
+    [...MockVcsClient.runner().files.keys()].filter((k) => k.startsWith(`${runnerSetupBranch()}:`));
+
+  /** The default board, owned by a person of its own, whose keys are theirs to set. */
+  async function ownedProject() {
+    const owner = await repository().upsertUser({ githubId: 42, login: "ada", name: null, avatarUrl: null });
+    return { ...(await repository().defaultProject()), ownerId: owner.id };
+  }
+
+  async function agentOn(projectId: string, ownerId: string, provider: "claude-code" | "anthropic") {
+    const preset = await repository().savePreset({
+      ownerId,
+      column: "in_progress",
+      provider,
+      name: provider,
+      model: "",
+      prompt: "",
+    });
+    await repository().setColumnAgent(projectId, "in_progress", preset.id);
+  }
+
+  it("asks before opening anything on a new repository", async () => {
+    const project = await repository().defaultProject();
+
+    expect(await runnerSetup(project)).toEqual({ state: "ask", plans: false });
+    expect(setupFiles()).toEqual([]);
+  });
+
+  it("says when an agent on the board runs on a plan, which only runs in GitHub Actions", async () => {
+    const project = await repository().defaultProject();
+    await agentOn(project.id, project.ownerId!, "claude-code");
+
+    expect(await runnerSetup(project)).toEqual({ state: "ask", plans: true });
+  });
+
+  it("needs no workflow with your own E2B key and agents on API keys", async () => {
+    const project = await ownedProject();
+    await agentOn(project.id, project.ownerId!, "anthropic");
+    await repository().updateUser(project.ownerId!, { e2bKeyCipher: seal("e2b_test"), e2bKeyHint: "test" });
+
+    expect(await runnerSetup(project)).toEqual({ state: "ready" });
+    expect(setupFiles()).toEqual([]);
+  });
+
+  it("still asks with your own E2B key when an agent runs on a plan", async () => {
+    const project = await ownedProject();
+    await agentOn(project.id, project.ownerId!, "claude-code");
+    await repository().updateUser(project.ownerId!, { e2bKeyCipher: seal("e2b_test"), e2bKeyHint: "test" });
+
+    expect(await runnerSetup(project)).toEqual({ state: "ask", plans: true });
+  });
+
+  it("does not count the server's shared E2B key as the person's own", async () => {
+    vi.stubEnv("E2B_API_KEY", "e2b_operator");
+    resetEnvCache();
+    const project = await ownedProject();
+
+    expect(await runnerSetup(project)).toEqual({ state: "ask", plans: false });
+  });
+
+  it("opens the pull request once the person says yes", async () => {
+    const project = await repository().defaultProject();
+
+    expect(await runnerSetup(project, { approve: true })).toMatchObject({ state: "waiting", update: false });
+    expect(setupFiles()).toEqual([`${runnerSetupBranch()}:${RUNNER_WORKFLOW_PATH}`]);
   });
 });

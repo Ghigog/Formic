@@ -244,7 +244,14 @@ export function BoardShell({
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}
-        setupCard={<SetupCard setup={runner.setup} repoName={repoName} onRetry={() => void runner.check()} />}
+        setupCard={
+          <SetupCard
+            setup={runner.setup}
+            repoName={repoName}
+            onRetry={() => void runner.check()}
+            onApprove={() => void runner.approve()}
+          />
+        }
         onArchivedWanted={setArchiveWanted}
         extras={merged}
         projectName={projectName}
@@ -346,6 +353,7 @@ export function BoardShell({
         repoFullName={repoFullName}
         keyless={keyless}
         onRetry={() => void runner.check()}
+        onApprove={runner.approve}
       />
 
       <ColonyAmbient stats={stats} connection={connection} onStopAll={() => void stopAll()} />
