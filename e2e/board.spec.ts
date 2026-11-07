@@ -252,7 +252,9 @@ test("a column runs a saved agent: create, pick, edit, remove", async ({ page })
   const editor = page.getByRole("dialog", { name: "New agent" });
   await expect(editor.getByRole("textbox").last()).toHaveValue(/implement one ticket/);
   await editor.getByPlaceholder("claude-worker").fill("claude-worker");
-  await editor.getByRole("combobox", { name: "Provider", exact: true }).selectOption("anthropic");
+  // Providers are a grid of logo tiles: each is a label around a visually hidden radio.
+  await editor.getByText("Anthropic (Claude)", { exact: true }).click();
+  await expect(editor.getByRole("radio", { name: /Anthropic/ })).toBeChecked();
   await editor.getByPlaceholder("sk-ant-…").fill("sk-ant-test-9876");
   await editor.getByRole("combobox", { name: "Model", exact: true }).fill("claude-sonnet-5");
   await editor.getByRole("button", { name: "Create agent" }).click();
