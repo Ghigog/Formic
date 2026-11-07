@@ -331,6 +331,19 @@ export interface VcsClient {
   saveCheckpoint(card: string, input: CheckpointInput): Promise<string>;
   /** A card's last checkpoint, or null when it has none. */
   checkpoint(card: string): Promise<Checkpoint | null>;
+  /**
+   * Switches on what the host needs before Formic's runner can work, as the
+   * person the board acts for. GitLab only: pushing from a job with its own
+   * token, and pipelines run with variables. Absent where there is nothing.
+   */
+  prepareRunner?(): Promise<void>;
+  /**
+   * Makes sure the host tells Formic when its agent job finishes: a webhook
+   * to `url` carrying `token`. GitLab only; GitHub's comes with the App.
+   */
+  ensureWebhook?(url: string, token: string): Promise<void>;
+  /** The repository's path on its host, where a client knows it. */
+  readonly repoPath?: string;
   /** Drops a card's checkpoint. Quiet when there is none. */
   deleteCheckpoint(card: string): Promise<void>;
 }

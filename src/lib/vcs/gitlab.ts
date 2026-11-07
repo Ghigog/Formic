@@ -188,11 +188,11 @@ export class GitLabClient implements VcsClient {
 
   constructor(
     /** The project's path on gitlab.com, `group/project`. */
-    private readonly path: string,
+    readonly repoPath: string,
     /** The project owner's token: their access, their name on the commits. */
     private readonly token: string,
   ) {
-    this.base = `/projects/${projectId(path)}`;
+    this.base = `/projects/${projectId(repoPath)}`;
   }
 
   private api<T>(path: string, init?: Parameters<typeof gl>[2]): Promise<T> {
@@ -739,6 +739,51 @@ export class GitLabClient implements VcsClient {
     if (!job || job.failure_reason !== "job_execution_timeout") return null;
     const minutes = Math.round((job.duration ?? 0) / 60);
     return `${minutes}m0s`;
+  }
+
+  /**
+   * What Formic's job needs from the project, switched on as the person the
+   * board acts for (a Maintainer can): pushing its work with its own job
+   * token, and pipelines started with variables, which carry the run's
+   * inputs. Refused for anyone else, with what to ask a Maintainer for.
+   */
+  async prepareRunner(): Promise<void> {
+    try {
+      await this.api("", {
+        method: "PUT",
+        body: {
+          ci_push_repository_for_job_token_allowed: true,
+          ci_pipeline_variables_minimum_override_role: "developer",
+        },
+      });
+    } catch (e) {
+      if (e instanceof VcsError && (e.status === 400 || e.status === 403)) {
+        throw new VcsError(
+          "GitLab: Formic could not change this project's CI settings, which takes a Maintainer. Ask one to turn on " +
+            "\"Allow Git push requests to the repository\" (Settings, CI/CD, Job token permissions) and to let " +
+            "Developers run pipelines with variables (Settings, CI/CD, Variables), then try again.",
+          403,
+        );
+      }
+      throw e;
+    }
+  }
+
+  /** One webhook for Formic's job events at `url`, made or brought up to date. */
+  async ensureWebhook(url: string, token: string): Promise<void> {
+    const hooks = await this.api<Array<{ id: number; url: string }>>("/hooks?per_page=100");
+    const body = {
+      url,
+      token,
+      job_events: true,
+      push_events: false,
+      pipeline_events: false,
+      merge_requests_events: false,
+      enable_ssl_verification: true,
+    };
+    const found = hooks.find((h) => h.url === url);
+    if (found) await this.api(`/hooks/${found.id}`, { method: "PUT", body });
+    else await this.api("/hooks", { method: "POST", body });
   }
 
   /* Checkpoints: one branch per card, its commit on the work's base */

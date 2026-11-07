@@ -288,3 +288,31 @@ describe("checkpoints", () => {
     expect(await client().checkpoint("ticket_1")).toEqual({ sha: "cp1", parent: "base1", message: "T-1: checkpoint\n\nnotes" });
   });
 });
+
+describe("preparing a project for Formic's job", () => {
+  it("switches on job-token pushes and pipeline variables", async () => {
+    on("PUT", /^$/, { id: 1 });
+    await client().prepareRunner();
+    expect(calls[0]!.body).toEqual({
+      ci_push_repository_for_job_token_allowed: true,
+      ci_pipeline_variables_minimum_override_role: "developer",
+    });
+  });
+
+  it("says what to ask a Maintainer for when GitLab refuses", async () => {
+    on("PUT", /^$/, () => Response.json({ message: "403 Forbidden" }, { status: 403 }));
+    await expect(client().prepareRunner()).rejects.toThrow(/takes a Maintainer/);
+  });
+
+  it("makes Formic's webhook once, and brings an existing one up to date", async () => {
+    on("GET", /^\/hooks/, [{ id: 7, url: "https://formic.example/api/webhooks/gitlab" }]);
+    on("PUT", /^\/hooks\/7$/, { id: 7 });
+    on("POST", /^\/hooks$/, { id: 8 });
+
+    await client().ensureWebhook("https://formic.example/api/webhooks/gitlab", "tok");
+    await client().ensureWebhook("https://elsewhere.example/api/webhooks/gitlab", "tok");
+
+    expect(calls.filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}`)).toEqual(["PUT /hooks/7", "POST /hooks"]);
+    expect(calls.at(-1)!.body).toMatchObject({ token: "tok", job_events: true, push_events: false });
+  });
+});

@@ -4,8 +4,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { vcs, VcsError } from "@/lib/vcs";
 import { boardHasCliAgent } from "@/lib/board/first-agent";
-import { closeStaleSetupPulls, ensureRunner, explain } from "./runner";
-import { RUNNER_WORKFLOW_PATH, runnerSetupBranch, runnerVersion } from "./workflow";
+import { closeStaleSetupPulls, ensureRunner, explain, hostRunner } from "./runner";
 
 /**
  * Where a project stands on the one pull request a person has to merge
@@ -49,9 +48,10 @@ export async function runnerSetup(
 
   try {
     await closeStaleSetupPulls(client);
-    const current = await client.readFile(RUNNER_WORKFLOW_PATH, project.baseBranch);
-    if (current?.includes(runnerVersion())) return { state: "ready" };
-    const open = await client.findPullRequest(runnerSetupBranch());
+    const { path, version, setupBranch } = hostRunner(client);
+    const current = await client.readFile(path, project.baseBranch);
+    if (current?.includes(version)) return { state: "ready" };
+    const open = await client.findPullRequest(setupBranch);
     if (open) return { state: "waiting", setupUrl: open.url, update: current !== null };
 
     if (current === null && !approve) {
