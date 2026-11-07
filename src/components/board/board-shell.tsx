@@ -248,6 +248,7 @@ export function BoardShell({
           <SetupCard
             setup={runner.setup}
             repoName={repoName}
+            repoFullName={repoFullName}
             onRetry={() => void runner.check()}
             onApprove={() => void runner.approve()}
           />

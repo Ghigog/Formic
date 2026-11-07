@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { MachinesResponse } from "@/app/api/runner/machines/route";
+import { repoHost, repoPath } from "@/lib/vcs/host";
 import { RUNNER_LABEL_VAR } from "@/lib/toolchains/actions";
 
 /** The label a runner GitHub's setup page registers always carries. */
@@ -45,6 +46,15 @@ export function RunnerSection() {
         <p className="text-muted m-0 text-[12px] leading-[1.5]">
           This board has no repository, so no agent runs on GitHub.
         </p>
+      ) : repoHost(repo) === "gitlab" ? (
+        <div className="flex flex-col gap-3">
+          <p className="text-muted m-0 text-[12px] leading-[1.5]">
+            Agents run in this project&apos;s GitLab CI, on GitLab&apos;s shared runners unless you add one of your
+            own. A project runner that runs untagged jobs picks up Formic&apos;s job too.
+          </p>
+          <ExternalLink href={`https://gitlab.com/${repoPath(repo)}/-/runners/new`}>New project runner ↗</ExternalLink>
+          <Runners runners={machines.runners} />
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           <BillingNote repoFullName={repo} isPrivate={machines.private} />

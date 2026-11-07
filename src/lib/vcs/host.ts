@@ -68,3 +68,20 @@ export function ciName(host: RepoHost): string {
 export function changeRequestName(host: RepoHost): string {
   return host === "gitlab" ? "merge request" : "pull request";
 }
+
+/** Where a person adds the variables their agents sign in with. */
+export function agentSecretsUrl(repoFullName: string): string {
+  return repoHost(repoFullName) === "gitlab"
+    ? `https://gitlab.com/${repoPath(repoFullName)}/-/settings/ci_cd#js-cicd-variables-settings`
+    : `https://github.com/${repoFullName}/settings/secrets/actions`;
+}
+
+/** What those are called there. */
+export function agentSecretsName(host: RepoHost): string {
+  return host === "gitlab" ? "CI/CD variables" : "Actions secrets";
+}
+
+/** What Formic's runner is on that host, for sentences. */
+export function runnerFileName(host: RepoHost): string {
+  return host === "gitlab" ? "CI file" : "workflow file";
+}

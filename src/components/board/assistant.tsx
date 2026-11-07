@@ -430,7 +430,7 @@ function Message({
           aria-hidden
         />
         {cli
-          ? "Working in GitHub Actions. This takes a minute or two."
+          ? "Working in your repository's CI. This takes a minute or two."
           : "Thinking…"}
       </div>,
     );
