@@ -16,7 +16,7 @@ import {
   type Spot,
 } from "./placement";
 import { endTour, offerTour, activeTour, useActiveTour, useAntVoice } from "./store";
-import { TOURS, stepText, type TourDef, type TourId } from "./tours";
+import { TOURS, TOUR_COLUMN_EVENT, stepText, type TourColumnDetail, type TourDef, type TourId } from "./tours";
 import { attachVoice, mutter, speaks, whenHeard } from "./voice";
 
 /** At most this many boxes are lit at once: the five columns, say. */
@@ -114,7 +114,8 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   const [steps, setSteps] = useState(() =>
     def.steps.filter((s) => {
       const found = findTargets(s.target);
-      return found.boxes.length > 0 || (!found.exists && !def.allThere);
+      // A step in a column the board may not be showing (a phone) is kept: it asks for the column when reached.
+      return found.boxes.length > 0 || (!found.exists && (!def.allThere || !!s.column));
     }),
   );
   const [holes, setHoles] = useState<Box[]>([]);
@@ -129,6 +130,8 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   const [view, setView] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const antRef = useRef(ant);
   const timers = useRef<{ walk?: number; type?: number; find?: number; end?: number }>({});
+  /** Whether this step asked the board for its column, so a skip can hand it back. */
+  const askedColumn = useRef(false);
   const nextButton = useRef<HTMLButtonElement>(null);
   const voice = soundOn && voiceOn;
   const voiceRef = useRef(voice);
@@ -219,6 +222,14 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
   function go(i: number, tries: number) {
     const s = steps[i];
     if (!s) return finish();
+    // A phone shows one column: ask for the one this step is in, once, then wait for it below.
+    if (tries === 0) askedColumn.current = false;
+    if (s.column && tries === 0 && !findTargets(s.target).exists) {
+      // The board answers as it handles the event: `shown` when it brought the column up.
+      const detail: TourColumnDetail = { column: s.column };
+      window.dispatchEvent(new CustomEvent<TourColumnDetail>(TOUR_COLUMN_EVENT, { detail }));
+      askedColumn.current = detail.shown === true;
+    }
     let found = findTargets(s.target);
     if (found.first && tries === 0) {
       found.first.scrollIntoView?.({ block: "nearest", inline: "nearest" });
@@ -227,9 +238,17 @@ export function Tour({ def, onEnd }: { def: TourDef; onEnd: () => void }) {
     if (found.boxes.length === 0) {
       // Not rendered yet: wait a moment. Rendered but hidden (a desktop-only
       // control on a phone): move straight on.
-      if (!found.exists && tries < FIND_TRIES) {
+      // A tour of what is already on screen waits only for a column it just brought up.
+      if (!found.exists && tries < FIND_TRIES && (!def.allThere || askedColumn.current)) {
         timers.current.find = window.setTimeout(() => go(i, tries + 1), FIND_MS);
-      } else if (i < steps.length - 1) {
+        return;
+      }
+      // Skipped: a column brought up for it and still empty goes back to the one that was showing.
+      if (askedColumn.current) {
+        askedColumn.current = false;
+        window.dispatchEvent(new CustomEvent<TourColumnDetail>(TOUR_COLUMN_EVENT, { detail: { column: null } }));
+      }
+      if (i < steps.length - 1) {
         // The next step slides into this index; the effect below runs it.
         setSteps(steps.filter((x) => x !== s));
       } else {

@@ -11,6 +11,7 @@ import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { modelLabel } from "@/lib/agents/models";
 import { provider as providerInfo, shortModelName } from "@/lib/llm/providers";
 import { AutoTour } from "@/components/onboarding/tour";
+import { ProviderLogo } from "./provider-logo";
 import { useCountdown } from "@/lib/hooks/use-countdown";
 
 /** "Sonnet 5" for a known Claude model, the bare id for anything else. */
@@ -92,7 +93,7 @@ export function AgentSelect({
           "border-line hover:border-clay",
         )}
       >
-        <AgentIcon />
+        {selected ? <ProviderLogo provider={selected.provider} size={14} /> : <AgentIcon />}
         <span className="text-ink min-w-0 flex-1 truncate font-medium">
           {selected ? selected.name : "No agent"}
         </span>
@@ -143,6 +144,7 @@ export function AgentSelect({
                   className={item}
                   onClick={() => void pick(p.id)}
                 >
+                  <ProviderLogo provider={p.provider} size={16} />
                   <span className="min-w-0 flex-1">
                     <span className="text-ink block truncate font-medium">{p.name}</span>
                     <span className="text-muted block font-mono text-[10px]">

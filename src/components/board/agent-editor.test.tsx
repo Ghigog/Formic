@@ -386,10 +386,7 @@ describe("AgentEditor CLI agent secret", () => {
     );
     await settled();
     await userEvent.type(screen.getByLabelText("Name"), "cc");
-    await userEvent.selectOptions(
-      screen.getByLabelText("Provider"),
-      "claude-code",
-    );
+    await userEvent.click(screen.getByRole("radio", { name: /Claude Code/ }));
     await userEvent.click(screen.getByRole("button", { name: "Create agent" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.not.objectContaining({ apiKey: expect.anything() }),
@@ -411,7 +408,7 @@ describe("AgentEditor CLI agent secret", () => {
     );
     await settled();
     await userEvent.type(screen.getByLabelText("Name"), "cc");
-    await userEvent.selectOptions(screen.getByLabelText("Provider"), "claude-code");
+    await userEvent.click(screen.getByRole("radio", { name: /Claude Code/ }));
     const secret = screen.getByLabelText("Secret name");
     expect(secret).toHaveValue("FORMIC_CLAUDE_CODE_TOKEN");
 
@@ -437,7 +434,7 @@ describe("AgentEditor CLI agent secret", () => {
     );
     await settled();
     await userEvent.type(screen.getByLabelText("Name"), "cc");
-    await userEvent.selectOptions(screen.getByLabelText("Provider"), "claude-code");
+    await userEvent.click(screen.getByRole("radio", { name: /Claude Code/ }));
     await userEvent.clear(screen.getByLabelText("Secret name"));
     await userEvent.type(screen.getByLabelText("Secret name"), "DEPLOY_KEY");
     await userEvent.click(screen.getByRole("button", { name: "Create agent" }));
@@ -466,4 +463,18 @@ describe("AgentEditor CLI agent secret", () => {
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
   });
 
+
+describe("the provider grid", () => {
+  it("shows every provider as a radio with its logo, plans first, and picks one on click", async () => {
+    stubModelsFetch();
+    render(<AgentEditor repoFullName="acme/widgets" column="backlog" preset={null} onClose={vi.fn()} onSave={vi.fn()} onDelete={vi.fn()} />);
+    await settled();
+    const radios = screen.getAllByRole("radio") as HTMLInputElement[];
+    expect(radios.map((r) => r.value)).toEqual(["claude-code", "codex", "gemini-cli", "anthropic", "clinepass", "deepseek", "gemini", "groq", "openai", "openrouter"]);
+    for (const r of radios) expect(r.closest("label")?.querySelector("img")?.getAttribute("src")).toMatch(/^\/provider-logos\//);
+    expect(screen.getByRole("radio", { name: /Anthropic/ })).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: /Groq/ }));
+    expect(screen.getByRole("radio", { name: /Groq/ })).toBeChecked();
+  });
+});
 });

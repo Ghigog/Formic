@@ -9,14 +9,16 @@ const POLL_MS = 15_000;
 
 type Subscribe = (listener: (event: FormicEvent, seq: number) => void) => () => void;
 
-async function load(): Promise<RunnerSetup | null> {
-  const res = await fetch("/api/runner/setup", { cache: "no-store" }).catch(() => null);
+async function load(approve = false): Promise<RunnerSetup | null> {
+  const res = await fetch("/api/runner/setup", approve ? { cache: "no-store", method: "POST" } : { cache: "no-store" }).catch(
+    () => null,
+  );
   const body = (await res?.json().catch(() => null)) as RunnerSetup | null;
   return body?.state ? body : null;
 }
 
 /**
- * Whether this board's repository can run CLI agents yet. Asked on load,
+ * Whether this board's repository can run agents yet. Asked on load,
  * then again while the setup pull request waits: on the merge webhook, on a
  * timer in case that never arrives, and when the person comes back to the
  * tab from GitHub.
@@ -24,6 +26,8 @@ async function load(): Promise<RunnerSetup | null> {
 export function useRunnerSetup(subscribe: Subscribe): {
   setup: RunnerSetup | null;
   check: () => Promise<void>;
+  /** The person's yes: opens the setup pull request. */
+  approve: () => Promise<void>;
 } {
   const [setup, setSetup] = useState<RunnerSetup | null>(null);
 
@@ -31,6 +35,7 @@ export function useRunnerSetup(subscribe: Subscribe): {
     if (next) setSetup(next);
   }, []);
   const check = useCallback(() => load().then(apply), [apply]);
+  const approve = useCallback(() => load(true).then(apply), [apply]);
 
   useEffect(() => {
     void load().then(apply);
@@ -60,5 +65,5 @@ export function useRunnerSetup(subscribe: Subscribe): {
     [subscribe],
   );
 
-  return { setup, check };
+  return { setup, check, approve };
 }

@@ -33,6 +33,20 @@ describe("useRunnerSetup", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/runner/setup", { cache: "no-store" });
   });
 
+  it("asks, then opens the setup pull request only when told yes", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      Response.json(init?.method === "POST" ? waiting : { state: "ask", plans: false }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useRunnerSetup(bus().subscribe));
+    await waitFor(() => expect(result.current.setup).toEqual({ state: "ask", plans: false }));
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+
+    await act(() => result.current.approve());
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/runner/setup", { cache: "no-store", method: "POST" });
+    expect(result.current.setup).toEqual(waiting);
+  });
+
   it("stays unknown when the request fails or the body is not a setup", async () => {
     vi.stubGlobal("fetch", async () => {
       throw new Error("offline");
