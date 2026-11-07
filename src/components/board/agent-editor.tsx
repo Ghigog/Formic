@@ -1,6 +1,8 @@
 "use client";
 
 import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { cn } from "@/components/ui/cn";
+import { ProviderLogo } from "./provider-logo";
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -363,32 +365,49 @@ export function AgentEditor({
             </label>
           )}
 
-          <label data-tour="agent-provider" className="flex flex-col gap-1">
-            <span className={label}>Provider</span>
-            <select
-              aria-label="Provider"
-              value={provider}
-              onChange={(e) => {
-                setProvider(e.target.value as ProviderId);
-                setSecretName(providerInfo(e.target.value as ProviderId)?.secretName ?? "");
-                setModel("");
-                setApiKey(undefined);
-              }}
-              className={`${field} h-9`}
-            >
-              {PROVIDER_GROUPS.map((g) => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.providers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                      {p.freeTier ? " · free tier" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+          <fieldset data-tour="agent-provider" className="flex min-w-0 flex-col gap-2">
+            <legend className={`${label} mb-1`}>Provider</legend>
+            {PROVIDER_GROUPS.map((g) => (
+              <div key={g.label} className="flex flex-col gap-1.5">
+                <span className="text-muted text-[11px]">{g.label}</span>
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  {g.providers.map((p) => {
+                    const on = p.id === provider;
+                    return (
+                      <label
+                        key={p.id}
+                        className={cn(
+                          "bg-card flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-[12px] transition-colors",
+                          "has-[:focus-visible]:ring-anthracite has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-offset-1",
+                          on ? "border-clay bg-cream" : "border-line hover:border-clay",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="agent-provider"
+                          value={p.id}
+                          checked={on}
+                          onChange={() => {
+                            setProvider(p.id);
+                            setSecretName(p.secretName ?? "");
+                            setModel("");
+                            setApiKey(undefined);
+                          }}
+                          className="sr-only"
+                        />
+                        <ProviderLogo provider={p.id} />
+                        <span className="min-w-0 flex-1 leading-tight">
+                          <span className="text-ink block font-medium">{p.label}</span>
+                          {p.freeTier && <span className="text-muted block text-[10px]">Free tier</span>}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
             <span className="text-muted text-[11px]">{info.note}</span>
-          </label>
+          </fieldset>
 
           {cli ? (
             <label className="flex flex-col gap-1">

@@ -9,7 +9,7 @@ vi.mock("@/lib/board/project", () => ({
 vi.mock("@/lib/runner/setup", () => ({ runnerSetup }));
 
 const { repository } = await import("@/lib/db");
-const { GET } = await import("./route");
+const { GET, POST } = await import("./route");
 
 let project: { id: string; repoFullName: string; baseBranch: string };
 
@@ -46,7 +46,7 @@ describe("GET /api/runner/setup", () => {
     const res = await GET();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ state: "waiting", setupUrl: "https://x/pull/1", update: false });
-    expect(runnerSetup).toHaveBeenCalledWith(project);
+    expect(runnerSetup).toHaveBeenCalledWith(project, { approve: false });
   });
 
   it("answers with the no-board response when no project is active", async () => {
@@ -60,5 +60,19 @@ describe("GET /api/runner/setup", () => {
     const res = await GET();
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ state: "blocked", reason: "no permission" });
+  });
+});
+
+describe("POST /api/runner/setup", () => {
+  it("is the person's yes: it asks setup to open the pull request", async () => {
+    runnerSetup.mockResolvedValue({ state: "waiting", setupUrl: "https://x/pull/9", update: false });
+    expect(await (await POST()).json()).toEqual({ state: "waiting", setupUrl: "https://x/pull/9", update: false });
+    expect(runnerSetup).toHaveBeenCalledWith(project, { approve: true });
+  });
+
+  it("opens nothing on a board with no agent", async () => {
+    await repository().setColumnAgent(project.id, "in_progress", null);
+    expect(await (await POST()).json()).toEqual({ state: "ready" });
+    expect(runnerSetup).not.toHaveBeenCalled();
   });
 });

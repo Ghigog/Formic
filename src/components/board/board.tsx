@@ -41,6 +41,7 @@ import { byCompletion, byPosition } from "@/lib/ordering";
 import { runningConflict } from "@/lib/domain/queue";
 import { placeDrop } from "./placement";
 import { QUEEN_CARRY_EVENT, type QueenCarryDetail } from "@/components/colony/queen-carry";
+import { TOUR_COLUMN_EVENT, type TourColumnDetail } from "@/components/onboarding/tours";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
 import type { ColumnAgentControls } from "./agent-select";
@@ -209,6 +210,28 @@ export function Board({
     window.addEventListener(QUEEN_CARRY_EVENT, onCarry);
     return () => window.removeEventListener(QUEEN_CARRY_EVENT, onCarry);
   }, [isMobile]);
+
+  // A tour step in a column that is not on screen: on a phone, bring that
+  // column up, and put back the one that was showing if the step is skipped.
+  const tourReturn = useRef<ColumnId | null>(null);
+  useEffect(() => {
+    if (!isMobile) return;
+    const onTour = (e: Event) => {
+      const detail = (e as CustomEvent<TourColumnDetail>).detail;
+      const column = detail?.column;
+      if (column) {
+        if (column === activeTab) return;
+        tourReturn.current = activeTab;
+        setActiveTab(column);
+        detail.shown = true;
+      } else if (tourReturn.current) {
+        setActiveTab(tourReturn.current);
+        tourReturn.current = null;
+      }
+    };
+    window.addEventListener(TOUR_COLUMN_EVENT, onTour);
+    return () => window.removeEventListener(TOUR_COLUMN_EVENT, onTour);
+  }, [isMobile, activeTab]);
 
   const toggleCollapse = useCallback(
     (column: ColumnId, epicId: string) => {

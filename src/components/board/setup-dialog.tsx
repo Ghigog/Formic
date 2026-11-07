@@ -59,14 +59,18 @@ export function SetupDialog({
   repoFullName,
   keyless,
   onRetry,
+  onApprove,
 }: {
   setup: RunnerSetup | null;
   repoName: string;
   repoFullName: string;
   keyless: KeylessAgent[];
   onRetry: () => void;
+  /** The person's yes to running agents in GitHub Actions: opens the setup pull request. */
+  onApprove: () => Promise<void>;
 }) {
   const [hidden, setHidden] = useState(false);
+  const [approving, setApproving] = useState(false);
   // Null on the server and until the browser answers: nothing is asked before then.
   const saved = useSyncExternalStore(
     watchAcked,
@@ -128,7 +132,9 @@ export function SetupDialog({
         <span aria-hidden className="bg-clay pulse-dot size-1.5 rounded-full" />
         {secretsOnly
           ? "Agent secrets not added"
-          : setup.state === "waiting"
+          : setup.state === "ask"
+            ? "Agents need your OK"
+            : setup.state === "waiting"
             ? "Setup pull request waiting"
             : "Agents can't run yet"}
       </button>
@@ -136,9 +142,20 @@ export function SetupDialog({
   }
 
   const merging = setup.state === "waiting" ? setup : null;
+  const asking = setup.state === "ask" ? setup : null;
+  const approve = async () => {
+    setApproving(true);
+    try {
+      await onApprove();
+    } finally {
+      setApproving(false);
+    }
+  };
   const title = secretsOnly
     ? "Add your agents' secrets"
-    : setup.state === "blocked"
+    : asking
+      ? `Let agents work on ${repoName}`
+      : setup.state === "blocked"
       ? `Formic can't set up ${repoName} yet`
       : merging?.update
         ? "Formic's agent workflow changed"
@@ -158,7 +175,9 @@ export function SetupDialog({
           {title}
         </h2>
 
-        {setup.state === "blocked" ? (
+        {asking ? (
+          <AskBody plans={asking.plans} />
+        ) : setup.state === "blocked" ? (
           <p className="text-muted m-0 text-[13px] leading-[1.6]">{setup.reason}</p>
         ) : (
           <>
@@ -226,6 +245,17 @@ export function SetupDialog({
             </span>
           )}
           <div className="flex-grow" />
+          {asking && (
+            <button
+              ref={primary}
+              type="button"
+              onClick={() => void approve()}
+              disabled={approving}
+              className="bg-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-60"
+            >
+              {approving ? "Opening…" : "Open the setup pull request"}
+            </button>
+          )}
           {secretsOnly && (
             <button
               ref={primary}
@@ -255,6 +285,66 @@ export function SetupDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Why Formic asks for GitHub Actions, and the way round it for people who know E2B. */
+function AskBody({ plans }: { plans: boolean }) {
+  return (
+    <>
+      <p className="text-muted m-0 text-[13px] leading-[1.6]">
+        Your agents work in this repository&apos;s own GitHub Actions, with your GitHub access. To allow that,
+        Formic opens one pull request that adds a workflow file. Nothing runs until you merge it.
+      </p>
+      {plans ? (
+        <p className="text-muted m-0 text-[12px] leading-[1.6]">
+          Claude Code, Codex and Gemini CLI run on your own plan, which only works in GitHub Actions.
+        </p>
+      ) : (
+        <E2bAlternative />
+      )}
+    </>
+  );
+}
+
+/**
+ * The way round GitHub Actions, for people who know E2B. The note opens in
+ * the dialog's flow, not floating: a floating one is cut off by the dialog's
+ * scrolling box on a short screen.
+ */
+function E2bAlternative() {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-muted m-0 text-[12px] leading-[1.6]">
+        Rather not use GitHub Actions?{" "}
+        <a href="/settings#sandbox" className="text-ink underline">
+          Bring your own E2B key
+        </a>{" "}
+        instead.{" "}
+        <button
+          type="button"
+          aria-label="What is E2B?"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen(!open)}
+          className={`border-line inline-flex size-[18px] items-center justify-center rounded-full border align-middle font-serif text-[11px] leading-none font-semibold italic ${
+            open ? "bg-anthracite text-on-anthracite" : "bg-card text-muted"
+          }`}
+        >
+          i
+        </button>
+      </p>
+      {open && (
+        <p id={id} className="border-line bg-cream text-ink m-0 rounded-lg border px-3 py-2.5 text-[11px] leading-[1.5]">
+          E2B (e2b.dev) runs each agent in a short-lived cloud sandbox instead of your GitHub Actions, so your
+          repository needs no workflow file. You need your own E2B account and API key, and you pay E2B for the time
+          your agents run. It works for agents on API keys only: Claude Code, Codex and Gemini CLI run on your plan in
+          GitHub Actions.
+        </p>
+      )}
     </div>
   );
 }
@@ -307,12 +397,37 @@ export function SetupCard({
   setup,
   repoName,
   onRetry,
+  onApprove,
 }: {
   setup: RunnerSetup | null;
   repoName: string;
   onRetry: () => void;
+  onApprove: () => void;
 }) {
   if (!setup || setup.state === "ready") return null;
+  if (setup.state === "ask") {
+    return (
+      <div
+        data-testid="setup-card"
+        className="border-terracotta/50 bg-card mt-2 flex flex-col gap-1.5 rounded-lg border border-dashed px-3 py-2.5"
+      >
+        <span className="text-muted font-mono text-[10px] tracking-[0.06em] uppercase">Start here</span>
+        <span className="text-ink text-[13px] leading-[1.4] font-semibold">Let agents work on {repoName}</span>
+        <span className="text-muted text-[12px] leading-[1.5]">
+          Agents run in {repoName}&apos;s own GitHub Actions. Formic opens one pull request for you to merge.
+        </span>
+        <div className="mt-0.5">
+          <button
+            type="button"
+            onClick={onApprove}
+            className="bg-cta inline-flex h-8 items-center rounded-lg px-2.5 text-[12px] font-semibold text-white hover:opacity-90"
+          >
+            Open the setup pull request
+          </button>
+        </div>
+      </div>
+    );
+  }
   const blocked = setup.state === "blocked";
   return (
     <div

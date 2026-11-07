@@ -1,4 +1,19 @@
+import type { ColumnId } from "@/lib/domain/status";
 import type { Side } from "./placement";
+
+/**
+ * Asks the board to show a column, for a step whose target sits in one that
+ * is not on screen (a phone shows one column at a time). The board answers
+ * by switching to it; on a wider screen every column is already there.
+ */
+export const TOUR_COLUMN_EVENT = "formic:tour-column";
+
+export interface TourColumnDetail {
+  /** The column to show, or null to put back the one that was showing (the step was skipped). */
+  column: ColumnId | null;
+  /** Set by the board, as it handles the event, when it brought a hidden column up. */
+  shown?: boolean;
+}
 
 /**
  * Every guided tour the ant gives, in the words it says them.
@@ -27,6 +42,8 @@ export interface TourStep {
    * picking a project) instead of offering Next. Shown beside the buttons.
    */
   waitFor?: string;
+  /** The column its target sits in: a phone shows that column before the step runs. */
+  column?: ColumnId;
 }
 
 export interface TourDef {
@@ -131,6 +148,7 @@ export const TOURS: Record<TourId, TourDef> = {
       },
       {
         target: "first-ticket",
+        column: "todo",
         side: "right",
         title: "Your first ticket",
         text: "Every new project starts with this ticket: write an AGENTS.md. It's a test ticket, so you can see how the app works from start to finish.",

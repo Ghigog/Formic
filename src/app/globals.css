@@ -264,6 +264,11 @@
     color: var(--text);
   }
 
+  /* Black provider marks (OpenAI, Codex, Anthropic…) would vanish on the dark ground. */
+  :root[data-theme="dark"] .logo-mono {
+    filter: invert(1);
+  }
+
   /* 12px card padding: the one exception the 8px grid grants, for density. */
   .p-card {
     padding: 12px;

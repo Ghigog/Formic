@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SetupCard, SetupDialog } from "./setup-dialog";
 import { endTour, startTour } from "@/components/onboarding/store";
+
+/** The setup pull request opening, for renders that never press it. */
+const approveNoop = async () => {};
 
 const waiting = {
   state: "waiting",
@@ -14,7 +17,7 @@ describe("the setup dialog", () => {
   it("says a private repository's agent runs are billed, and links to the runner settings", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ repoFullName: "acme/widgets", private: true, runners: [] })));
     render(
-      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} />,
+      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} onApprove={approveNoop} />,
     );
     expect(await screen.findByText(/widgets is private/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "setting up a self-hosted runner" })).toHaveAttribute("href", "/settings#runner");
@@ -24,7 +27,7 @@ describe("the setup dialog", () => {
   it("waits for the guided tour to finish", () => {
     act(() => startTour("board"));
     render(
-      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} />,
+      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} onApprove={approveNoop} />,
     );
     expect(screen.queryByRole("dialog")).toBeNull();
     act(() => endTour());
@@ -38,7 +41,7 @@ describe("the setup dialog", () => {
         repoName="widgets"
         repoFullName="acme/widgets"
         keyless={[]}
-        onRetry={() => {}}
+        onRetry={() => {}} onApprove={approveNoop}
       />,
     );
 
@@ -60,7 +63,7 @@ describe("the setup dialog", () => {
         repoName="widgets"
         repoFullName="acme/widgets"
         keyless={[]}
-        onRetry={() => {}}
+        onRetry={() => {}} onApprove={approveNoop}
       />,
     );
 
@@ -83,7 +86,7 @@ describe("the setup dialog", () => {
             secretName: "FORMIC_CLAUDE_CODE_TOKEN_P1",
           },
         ]}
-        onRetry={() => {}}
+        onRetry={() => {}} onApprove={approveNoop}
       />,
     );
 
@@ -105,7 +108,7 @@ describe("the setup dialog", () => {
         keyless={[
           { names: ["architect", "worker"], keyName: "Claude Code token", secretName: "FORMIC_CLAUDE_CODE_TOKEN" },
         ]}
-        onRetry={() => {}}
+        onRetry={() => {}} onApprove={approveNoop}
       />,
     );
 
@@ -120,7 +123,7 @@ describe("the setup dialog", () => {
         repoName="widgets"
         repoFullName="acme/widgets"
         keyless={[]}
-        onRetry={() => {}}
+        onRetry={() => {}} onApprove={approveNoop}
       />,
     );
 
@@ -136,7 +139,7 @@ describe("the setup dialog", () => {
   it("puts the dialog away the same way on Escape as on Not now, and reopens it", async () => {
     const show = () =>
       render(
-        <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} />,
+        <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} onApprove={approveNoop} />,
       );
     const pill = () => screen.getByRole("button", { name: /Setup pull request waiting/ });
 
@@ -173,7 +176,7 @@ describe("the setup dialog", () => {
         repoName="widgets"
         repoFullName="acme/widgets"
         keyless={[]}
-        onRetry={onRetry}
+        onRetry={onRetry} onApprove={approveNoop}
       />,
     );
 
@@ -189,7 +192,7 @@ describe("the setup dialog", () => {
         repoName="widgets"
         repoFullName="acme/widgets"
         keyless={[]}
-        onRetry={() => {}}
+        onRetry={() => {}} onApprove={approveNoop}
       />,
     );
     expect(container.innerHTML).toBe("");
@@ -207,7 +210,7 @@ describe("the setup dialog", () => {
           repoName="widgets"
           repoFullName="acme/widgets"
           keyless={keyless}
-          onRetry={() => {}}
+          onRetry={() => {}} onApprove={approveNoop}
         />,
       );
 
@@ -234,7 +237,7 @@ describe("the setup dialog", () => {
           repoName="widgets"
           repoFullName="acme/widgets"
           keyless={[{ ...keyless[0]!, secretName: "FORMIC_CLAUDE_CODE_TOKEN_WORK" }]}
-          onRetry={() => {}}
+          onRetry={() => {}} onApprove={approveNoop}
         />,
       );
       expect(await screen.findByRole("dialog")).toBeTruthy();
@@ -251,7 +254,7 @@ describe("the setup dialog", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ repoFullName: "acme/widgets", private: false, runners: [] })));
     const user = userEvent.setup();
     render(
-      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} />,
+      <SetupDialog setup={waiting} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} onApprove={approveNoop} />,
     );
     const dialog = screen.getByRole("dialog");
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: /Open pull request/ })));
@@ -271,17 +274,60 @@ describe("the setup dialog", () => {
 
 describe("the setup card", () => {
   it("links the waiting pull request, and goes once the workflow is in", () => {
-    const { rerender } = render(<SetupCard setup={waiting} repoName="widgets" onRetry={() => {}} />);
+    const { rerender } = render(<SetupCard setup={waiting} repoName="widgets" onRetry={() => {}} onApprove={approveNoop} />);
     expect(screen.getByRole("link", { name: /Open pull request/ })).toHaveAttribute("href", waiting.setupUrl);
-    rerender(<SetupCard setup={{ state: "ready" }} repoName="widgets" onRetry={() => {}} />);
+    rerender(<SetupCard setup={{ state: "ready" }} repoName="widgets" onRetry={() => {}} onApprove={approveNoop} />);
     expect(screen.queryByTestId("setup-card")).toBeNull();
   });
 
   it("says why and offers a retry when Formic is blocked", async () => {
     const onRetry = vi.fn();
-    render(<SetupCard setup={{ state: "blocked", reason: "Install the app." }} repoName="widgets" onRetry={onRetry} />);
+    render(<SetupCard setup={{ state: "blocked", reason: "Install the app." }} repoName="widgets" onRetry={onRetry} onApprove={approveNoop} />);
     expect(screen.getByText("Install the app.")).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
     expect(onRetry).toHaveBeenCalled();
+  });
+});
+
+describe("asking before the setup pull request", () => {
+  const ask = (plans: boolean) => ({ state: "ask" as const, plans });
+
+  it("explains GitHub Actions and opens the pull request only on yes", async () => {
+    const onApprove = vi.fn(async () => {});
+    render(
+      <SetupDialog setup={ask(false)} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} onApprove={onApprove} />,
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Let agents work on widgets" });
+    expect(dialog.textContent).toContain("GitHub Actions");
+    expect(dialog.textContent).toContain("Nothing runs until you merge it");
+    expect(onApprove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open the setup pull request" }));
+    expect(onApprove).toHaveBeenCalledOnce();
+  });
+
+  it("offers your own E2B key instead, with a note on what E2B is", async () => {
+    render(
+      <SetupDialog setup={ask(false)} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} onApprove={approveNoop} />,
+    );
+    await screen.findByRole("dialog");
+    expect(screen.getByRole("link", { name: "Bring your own E2B key" }).getAttribute("href")).toBe("/settings#sandbox");
+    fireEvent.click(screen.getByRole("button", { name: "What is E2B?" }));
+    expect(screen.getByText(/short-lived cloud sandbox/)).toBeTruthy();
+  });
+
+  it("does not offer E2B when an agent runs on a plan, which needs GitHub Actions", async () => {
+    render(
+      <SetupDialog setup={ask(true)} repoName="widgets" repoFullName="acme/widgets" keyless={[]} onRetry={() => {}} onApprove={approveNoop} />,
+    );
+    await screen.findByRole("dialog");
+    expect(screen.queryByRole("link", { name: "Bring your own E2B key" })).toBeNull();
+    expect(screen.getByText(/only works in GitHub Actions/)).toBeTruthy();
+  });
+
+  it("keeps the question on the board as the first card in To Do", () => {
+    const onApprove = vi.fn();
+    render(<SetupCard setup={ask(false)} repoName="widgets" onRetry={() => {}} onApprove={onApprove} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open the setup pull request" }));
+    expect(onApprove).toHaveBeenCalledOnce();
   });
 });
