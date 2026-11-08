@@ -14,6 +14,7 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { env } from "@/lib/secrets/env";
 import { capMonth, FALLBACK_CAP_MESSAGE, fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
+import { repoHost, repoPath } from "@/lib/vcs/host";
 import { setupScript } from "@/lib/toolchains";
 
 /**
@@ -49,7 +50,8 @@ export interface CheckoutRequest {
   ticket: TicketDetail;
   ctx: AgentContext;
   /** The project owner's GitHub token. Null runs on an in-memory checkout. */
-  githubToken: string | null;
+  /** The token for the repository's host (GitHub or GitLab): what clones and pushes. */
+  repoToken: string | null;
   e2bKey: string | null;
   /** Set when e2bKey is the operator's: whose monthly sandbox minutes it counts against. */
   e2bFallbackUserId?: string | null;
@@ -68,6 +70,13 @@ export function setCheckoutFactory(next: CheckoutFactory | null): void {
   factory = next;
 }
 
+/** Where a sandbox clones from and pushes to, with the token in it. Never stored. */
+export function cloneUrl(repoFullName: string, token: string): string {
+  return repoHost(repoFullName) === "gitlab"
+    ? `https://oauth2:${token}@gitlab.com/${repoPath(repoFullName)}.git`
+    : `https://x-access-token:${token}@github.com/${repoFullName}.git`;
+}
+
 export async function openCheckout(
   request: CheckoutRequest,
 ): Promise<Checkout> {
@@ -76,7 +85,7 @@ export async function openCheckout(
   // With no GitHub credential there is nothing to clone and nowhere to push.
   // The board still runs: the agents work against an in-memory checkout and
   // the pull requests are mock ones. See src/lib/vcs/mock.ts.
-  if (!request.githubToken) {
+  if (!request.repoToken) {
     const memory = new MemoryWorkspace();
     return {
       workspace: scopedWorkspace(memory, request.ticket.fileScope),
@@ -100,7 +109,7 @@ export async function openCheckout(
     repoFullName: request.repoFullName,
     // Built here and never stored, so the token cannot end up in a database
     // column or an event payload.
-    cloneUrl: `https://x-access-token:${request.githubToken}@github.com/${request.repoFullName}.git`,
+    cloneUrl: cloneUrl(request.repoFullName, request.repoToken),
     e2bApiKey: request.e2bKey,
     baseBranch: request.fromBranch,
     branchName: request.newBranch ?? undefined,

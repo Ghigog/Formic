@@ -28,6 +28,7 @@ import { reasoningNote, reasoningRoleFor, roleReasoning } from "@/lib/agents/rea
 import type { ModelInfo } from "@/lib/llm/openai-compat";
 import { pricingNote } from "@/lib/budget/limits";
 import { compact } from "@/components/ui/compact-number";
+import { agentSecretsName, agentSecretsUrl, repoHost } from "@/lib/vcs/host";
 import type { AgentTokens, TokenWindowView } from "@/lib/hooks/use-agents";
 
 /** What Formic always adds after a column's prompt, whatever the provider. */
@@ -55,7 +56,7 @@ function windowLabel({ kind, since, timezone }: TokenWindowView): string {
 /** The provider picker: plans first, then API keys, each A to Z. */
 const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
 const PROVIDER_GROUPS = [
-  { label: "Your plan (runs in GitHub Actions)", providers: PROVIDERS.filter((p) => p.kind === "cli").sort(byLabel) },
+  { label: "Your plan (runs in your repository's CI)", providers: PROVIDERS.filter((p) => p.kind === "cli").sort(byLabel) },
   { label: "API key", providers: PROVIDERS.filter((p) => p.kind !== "cli").sort(byLabel) },
 ];
 
@@ -424,13 +425,8 @@ export function AgentEditor({
               />
               <span className="text-muted text-[11px] leading-[1.5]">
                 The name of the secret in{" "}
-                <a
-                  href={`https://github.com/${repoFullName}/settings/secrets/actions`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-ink underline"
-                >
-                  your repository&apos;s Actions secrets
+                <a href={agentSecretsUrl(repoFullName)} target="_blank" rel="noreferrer" className="text-ink underline">
+                  your repository&apos;s {agentSecretsName(repoHost(repoFullName))}
                 </a>
                 . It starts with {info.secretName}. Use the same name on several agents to share one{" "}
                 {info.keyName}, or add a suffix (like {info.secretName}_WORK) for another account. Formic keeps only

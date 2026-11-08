@@ -331,3 +331,39 @@ describe("asking before the setup pull request", () => {
     expect(onApprove).toHaveBeenCalledOnce();
   });
 });
+
+describe("on a GitLab project", () => {
+  it("asks in GitLab's words: its CI, a merge request, and what a Maintainer must allow", async () => {
+    render(
+      <SetupDialog
+        setup={{ state: "ask", plans: false }}
+        repoName="widgets"
+        repoFullName="gitlab:acme/widgets"
+        keyless={[]}
+        onRetry={() => {}}
+        onApprove={approveNoop}
+      />,
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("GitLab CI");
+    expect(dialog.textContent).toContain("merge request");
+    expect(dialog.textContent).toContain("Maintainer");
+    expect(dialog.textContent).not.toContain("GitHub");
+    expect(screen.getByRole("button", { name: "Open the setup merge request" })).toBeTruthy();
+  });
+
+  it("sends people to the project's CI/CD variables for their agents' secrets", async () => {
+    render(
+      <SetupDialog
+        setup={{ state: "ready" }}
+        repoName="widgets"
+        repoFullName="gitlab:acme/widgets"
+        keyless={[{ names: ["Claude"], keyName: "Claude Code token", secretName: "FORMIC_CLAUDE_CODE_TOKEN" }]}
+        onRetry={() => {}}
+        onApprove={approveNoop}
+      />,
+    );
+    const link = await screen.findByRole("link", { name: /CI\/CD variables/ });
+    expect(link.getAttribute("href")).toBe("https://gitlab.com/acme/widgets/-/settings/ci_cd#js-cicd-variables-settings");
+  });
+});

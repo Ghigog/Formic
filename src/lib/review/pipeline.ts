@@ -204,7 +204,7 @@ async function react(
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   const pull = await client.pullRequest(prNumber);
   // Anything but an approved head on its way to merging gives up the merge
@@ -432,7 +432,7 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   // With no webhook secret, GitHub has no address to report to, so no report
   // will ever start a review: the sweep has to. Configured, the report starts
   // them and the sweep only finishes, to avoid a poll racing a push.
@@ -543,7 +543,7 @@ export async function markMergedExternally(
   // just as it would after a merge from the queue.
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  await restackOnto(projectId, ticket, vcs(project.repoFullName, creds.githubToken), mergeTarget(project.baseBranch)).catch(
+  await restackOnto(projectId, ticket, vcs(project.repoFullName, creds.repoToken), mergeTarget(project.baseBranch)).catch(
     (e: unknown) => console.error(`[formic] restacking on ${ticket.key} failed:`, e),
   );
   await releaseDependents(projectId, ticket);
@@ -576,7 +576,7 @@ export async function closeAlreadyDone(
   if (ticket.prNumber) {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
-    const client = vcs(project.repoFullName, creds.githubToken);
+    const client = vcs(project.repoFullName, creds.repoToken);
     const pull = await client.pullRequest(ticket.prNumber);
     if (pull.merged) {
       await markMergedExternally(projectId, pull.number);
@@ -698,8 +698,8 @@ async function closeWithoutMerge(
   if (ticket.issueNumber && input.comment) {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
-    await vcs(project.repoFullName, creds.githubToken)
-      .comment(ticket.issueNumber, input.comment)
+    await vcs(project.repoFullName, creds.repoToken)
+      .comment(ticket.issueNumber, input.comment, "issue")
       .catch((e) => console.warn("[formic] could not note a closed ticket:", e));
   }
 
@@ -958,7 +958,7 @@ export async function mergeByPerson(
 ): Promise<string> {
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   const pull = await client.pullRequest(prNumber);
   if (pull.merged) {
@@ -1008,7 +1008,7 @@ async function mergeTicket(
   const repo = repository();
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   const before = await client.pullRequest(prNumber);
   if (before.merged) return { merged: true };
@@ -1268,7 +1268,7 @@ async function reviewTicket(
   }
 
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   // Written down before the review runs, so the other reports about this same
   // commit do not each start one of their own; see parkedOnReview.
   await repo.updateTicket(ticket.id, { attempts: attempt, reviewedHead: pull.headSha });
@@ -1324,7 +1324,7 @@ async function reviewTicket(
     newBranch: null,
     ticket,
     ctx: run.ctx,
-    githubToken: creds.githubToken,
+    repoToken: creds.repoToken,
     e2bKey: creds.e2bKey,
     e2bFallbackUserId: creds.e2bFallbackUserId,
   }).catch((e: unknown) => e as Error);
@@ -1443,7 +1443,7 @@ async function resolveIfStillConflicted(
   if (!ticket || ticket.status !== "review" || ticket.runnerJob || ticket.prNumber !== prNumber) return;
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const pull =
     (await settle(client, prNumber, (p) => p.mergeable !== null)) ??
     (await client.pullRequest(prNumber));
@@ -1512,7 +1512,7 @@ async function resolveConflicts(
   const branch = ticket.branchName;
 
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   // A pass counts as an attempt only once the agent has had something to
   // resolve (or, in a runner job, started on it): GitHub being unable to build
   // the pull request is not the code's fault.
@@ -1565,7 +1565,7 @@ async function resolveConflicts(
     newBranch: null,
     ticket,
     ctx: run.ctx,
-    githubToken: creds.githubToken,
+    repoToken: creds.repoToken,
     e2bKey: creds.e2bKey,
     e2bFallbackUserId: creds.e2bFallbackUserId,
   }).catch((e: unknown) => e as Error);
@@ -1841,7 +1841,7 @@ export async function approve(
   // have changed. The lane decides again from what is true now.
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const pull = await client.pullRequest(prNumber);
   if (pull.merged || pull.state === "closed" || pull.headSha !== headSha) return;
   const checks = await client.checksFor(headSha);
@@ -1893,7 +1893,7 @@ export async function recordFix(
   // stage directly, as opening the pull request does.
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const pull = client.name === "mock" ? await client.pullRequest(prNumber).catch(() => null) : null;
   if (pull) {
     await repository().updateTicket(ticket.id, { reviewedSha: pull.headSha });

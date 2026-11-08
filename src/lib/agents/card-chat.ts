@@ -543,7 +543,7 @@ async function reply(
     }
 
     const creds = await credentialsForProject(project);
-    const client = vcs(project.repoFullName, creds.githubToken);
+    const client = vcs(project.repoFullName, creds.repoToken);
     const done: string[] = [];
     const act = async (action: CardAction) => {
       if (answered) return "Not done: the work already started again with their answer.";

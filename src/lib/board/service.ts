@@ -382,7 +382,7 @@ export async function applyTransition(
     launch(async () => {
       const project = await projectFor(projectId);
       const creds = await credentialsForProject(project);
-      const pull = await vcs(project.repoFullName, creds.githubToken).pullRequest(prNumber);
+      const pull = await vcs(project.repoFullName, creds.repoToken).pullRequest(prNumber);
       await boardPorts().review.reviewPullRequest(projectId, prNumber, pull.headSha);
     }, `review for ${card.key}`);
   }

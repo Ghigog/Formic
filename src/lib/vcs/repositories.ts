@@ -1,5 +1,8 @@
 import "server-only";
 
+import { getGitlabProject, gitlabTree } from "./gitlab-repositories";
+import { repoHost, repoPath } from "./host";
+
 /** A repository someone can point the board at. */
 export interface RepoOption {
   fullName: string;
@@ -101,6 +104,7 @@ export async function listRepositories(
 
 /** One repository, for its real name and default branch. Null if unseen. */
 export async function getRepository(fullName: string, token: string): Promise<RepoOption | null> {
+  if (repoHost(fullName) === "gitlab") return getGitlabProject(repoPath(fullName), token);
   const res = await fetch(`${API}/repos/${fullName}`, {
     headers: headers(token),
     cache: "no-store",
@@ -189,6 +193,15 @@ export async function directoryTree(
   branch: string,
   token: string,
 ): Promise<string[] | null> {
+  if (repoHost(fullName) === "gitlab") {
+    const tree = await gitlabTree(repoPath(fullName), branch, token);
+    if (!tree) return null;
+    return tree
+      .filter((e) => e.type === "tree" && e.path.split("/").length <= 2)
+      .filter((e) => !/(^|\/)(node_modules|\.git|dist|build|\.next)(\/|$)/.test(e.path))
+      .map((e) => e.path)
+      .slice(0, 200);
+  }
   const res = await fetch(
     `${API}/repos/${fullName}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     { headers: headers(token), cache: "no-store" },
@@ -254,6 +267,10 @@ export async function fileLayout(
   branch: string,
   token: string,
 ): Promise<string[] | null> {
+  if (repoHost(fullName) === "gitlab") {
+    const tree = await gitlabTree(repoPath(fullName), branch, token);
+    return tree ? layoutLines(tree.filter((e) => e.type === "blob").map((e) => e.path)) : null;
+  }
   const res = await fetch(
     `${API}/repos/${fullName}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     { headers: headers(token), cache: "no-store" },

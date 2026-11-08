@@ -18,6 +18,11 @@ export interface Account {
    * in (an email). Absent in local mode.
    */
   github?: { connected: boolean; canConnect: boolean; canDisconnect: boolean } | null;
+  /**
+   * gitlab.com, with accounts, when this deployment has a GitLab application:
+   * whether it is connected, and as whom. Absent otherwise.
+   */
+  gitlab?: { connected: boolean; login: string | null } | null;
 }
 
 export const SUPPORT_EMAIL = "support@formic.dev";

@@ -452,7 +452,7 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
 
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
-    const client = vcs(project.repoFullName, creds.githubToken);
+    const client = vcs(project.repoFullName, creds.repoToken);
     const proposals: AssistantProposal[] = [];
     const turnContext: TurnContext = {
       projectId,
@@ -605,7 +605,7 @@ async function answerAsGuest(projectId: string, messageId: string, speaker: stri
     speak = openAiSpeak(info, agent.apiKey, agent.model, system, past, tools);
   }
 
-  const client = vcs(project.repoFullName, (await credentialsForProject(project)).githubToken);
+  const client = vcs(project.repoFullName, (await credentialsForProject(project)).repoToken);
   const proposals: AssistantProposal[] = [];
   const done: string[] = [];
   const runTool = async (call: ToolCall) => {
@@ -679,7 +679,7 @@ async function cliReports(projectId: string, past: Array<{ role: "user" | "assis
   if (keys.length === 0) return "";
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const reports = await Promise.all(keys.map((k) => cardReport(projectId, k, client).catch((e) => `${k}: could not read it (${e instanceof Error ? e.message : String(e)}).`)));
   const header = named.length
     ? "The live state of the cards the person asked about, read from the board and GitHub just now:"

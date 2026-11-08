@@ -1,6 +1,8 @@
 import "server-only";
 
 import { GitHubClient } from "./github";
+import { GitLabClient } from "./gitlab";
+import { repoHost, repoPath } from "./host";
 import { MockVcsClient } from "./mock";
 import { disconnectedVcs } from "./disconnected";
 import type { VcsClient } from "./types";
@@ -36,7 +38,8 @@ export function usingMockVcs(): boolean {
 }
 
 /**
- * The GitHub client for a repository, acting with a given token.
+ * The client for a repository on its host (GitHub, or gitlab.com for a
+ * `gitlab:` name), acting with a given token.
  *
  * Mock agents are self-contained by construction: with `AGENT_PROVIDER=mock`
  * the mock GitHub is returned whatever token this process holds, so a mock run
@@ -49,8 +52,12 @@ export function usingMockVcs(): boolean {
 export function vcs(repoFullName: string, token: string | null): VcsClient {
   if (override) return override;
   if (mockAgentsEnabled()) return new MockVcsClient(repoFullName);
-  if (token) return new GitHubClient(repoFullName, token);
-  return authMode() === "accounts" ? disconnectedVcs() : new MockVcsClient(repoFullName);
+  if (token) {
+    return repoHost(repoFullName) === "gitlab"
+      ? new GitLabClient(repoPath(repoFullName), token)
+      : new GitHubClient(repoFullName, token);
+  }
+  return authMode() === "accounts" ? disconnectedVcs(repoHost(repoFullName)) : new MockVcsClient(repoFullName);
 }
 
 /** Test seam: every repository gets this client. */
@@ -74,4 +81,4 @@ export function mergeNeedsPromotion(baseBranch: string): boolean {
 
 export * from "./types";
 export { MockVcsClient } from "./mock";
-export { GITHUB_NOT_CONNECTED, GitHubNotConnectedError } from "./disconnected";
+export { GITHUB_NOT_CONNECTED, GITLAB_NOT_CONNECTED, GitHubNotConnectedError } from "./disconnected";

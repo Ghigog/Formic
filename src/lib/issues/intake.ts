@@ -102,8 +102,8 @@ async function run(projectId: string, only?: number): Promise<void> {
   const creds = await credentialsForProject(project);
   // No token, no GitHub: there is nothing to read and asking would only be a
   // failure. The board runs without one, against the mock.
-  if (!creds.githubToken) return;
-  const client = vcs(project.repoFullName, creds.githubToken);
+  if (!creds.repoToken) return;
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   await inLane(`intake:${projectId}`, async () => {
     // One page of what is labelled, or just the one the webhook named.

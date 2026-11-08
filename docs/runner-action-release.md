@@ -112,3 +112,14 @@ Same steps 2 to 5 with the next version (`v1.0.1`, `v1.1.0`, …). The repositor
 | v1.0.0 | `90a9f3cb8e99ae7592998805361d23e6c7cde474` | `0a77209fde34dd2974afce502fd6fef3f0e1a93d` |
 | v1.0.1 | `5a93137f6112c207402fc451a45f3cabc9bc533a` | `d0d0b411a96c74a7e0a92c3e3e59c0e0a062973d` |
 | v1.0.2 | `d9fc607520b3842efee2b885e9c2ee4e4130237c` | `9e26ff036d0b9f1f1353b1a9c922f03735f548d1` |
+
+## GitLab
+
+GitLab CI cannot run an Action, so its job (`src/lib/runner/gitlab-ci-config.ts`) downloads the same release's `dist/index.mjs` from this repository at the pinned commit and checks its SHA-256 before running it. Each release records that hash in `RUNNER_BUNDLE` beside the commit:
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/Ghigog/formic-runner/<sha>/dist/index.mjs" | sha256sum
+```
+
+A test fails until `RUNNER_BUNDLE.sha` matches `RUNNER_ACTION.sha`, so a bump cannot leave GitLab projects on the old hash.
+

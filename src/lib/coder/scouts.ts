@@ -283,7 +283,7 @@ async function judge(projectId: string, parent: TicketDetail, scouts: TicketDeta
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   if (back.length === 1) {
     await adopt(projectId, parent, back[0]!, `${label(back[0]!)} was the only scout that came back with a change.`, [], client);
@@ -402,7 +402,7 @@ export async function swapScout(projectId: string, parentId: string, scoutId: st
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   if (parent.branchName) {
     await client.closeSupersededPulls(parent.branchName, scout.branchName, `Swapped for ${label(scout)}, another scout's change.`);
   }

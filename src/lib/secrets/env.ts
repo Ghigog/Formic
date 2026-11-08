@@ -16,6 +16,8 @@ const schema = z.object({
   DATABASE_URL: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   GITHUB_TOKEN: z.string().optional(),
+  /** Local mode's gitlab.com personal access token (`api` scope), for GitLab boards. */
+  GITLAB_TOKEN: z.string().optional(),
   GITHUB_REPO: z
     .string()
     .regex(/^[\w.-]+\/[\w.-]+$/, "Expected owner/repo")

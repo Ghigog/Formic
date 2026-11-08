@@ -4,6 +4,16 @@ import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useActiveTour } from "@/components/onboarding/store";
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { RunnerSetup } from "@/lib/runner/setup";
+import {
+  agentSecretsName,
+  agentSecretsUrl,
+  changeRequestName,
+  ciName,
+  hostName,
+  repoHost,
+  runnerFileName,
+  type RepoHost,
+} from "@/lib/vcs/host";
 import { BillingNote, useActionsMachines } from "@/components/settings/runner-section";
 
 /** A secret that column CLI agents sign in with, which they cannot run without in the repository's Actions secrets. */
@@ -135,7 +145,7 @@ export function SetupDialog({
           : setup.state === "ask"
             ? "Agents need your OK"
             : setup.state === "waiting"
-            ? "Setup pull request waiting"
+            ? `Setup ${changeRequestName(repoHost(repoFullName))} waiting`
             : "Agents can't run yet"}
       </button>
     );
@@ -143,6 +153,8 @@ export function SetupDialog({
 
   const merging = setup.state === "waiting" ? setup : null;
   const asking = setup.state === "ask" ? setup : null;
+  const host = repoHost(repoFullName);
+  const cr = changeRequestName(host);
   const approve = async () => {
     setApproving(true);
     try {
@@ -158,7 +170,9 @@ export function SetupDialog({
       : setup.state === "blocked"
       ? `Formic can't set up ${repoName} yet`
       : merging?.update
-        ? "Formic's agent workflow changed"
+        ? host === "gitlab"
+          ? "Formic's agent job changed"
+          : "Formic's agent workflow changed"
         : `Getting ${repoName} ready`;
 
   return (
@@ -176,21 +190,21 @@ export function SetupDialog({
         </h2>
 
         {asking ? (
-          <AskBody plans={asking.plans} />
+          <AskBody plans={asking.plans} host={host} />
         ) : setup.state === "blocked" ? (
           <p className="text-muted m-0 text-[13px] leading-[1.6]">{setup.reason}</p>
         ) : (
           <>
             <p className="text-muted m-0 text-[13px] leading-[1.6]">
               {secretsOnly
-                ? `${repoName}'s agents sign in with secrets stored on GitHub. Until they are added, an agent's run stops straight away.`
+                ? `${repoName}'s agents sign in with secrets stored on ${hostName(host)}. Until they are added, an agent's run stops straight away.`
                 : merging?.update
                   ? `Merge this update to ${repoName} so its agents keep running.`
-                  : "Agents run in this repository's own GitHub Actions. That takes one workflow file, which you merge yourself because it runs with the repository's secrets."}
+                  : `Agents run in this repository's own ${ciName(host)}. That takes one ${runnerFileName(host)}, which you merge yourself because it runs with the repository's secrets.`}
             </p>
             <ol className="m-0 flex list-none flex-col gap-2.5 p-0 text-[13px]">
               {!secretsOnly && (
-              <Step n={1} label="Merge the setup pull request">
+              <Step n={1} label={`Merge the setup ${cr}`}>
                 <a
                   ref={primary}
                   href={merging?.setupUrl}
@@ -198,7 +212,7 @@ export function SetupDialog({
                   rel="noreferrer"
                   className="bg-cta inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
                 >
-                  Open pull request ↗
+                  Open {cr} ↗
                 </a>
               </Step>
               )}
@@ -213,25 +227,20 @@ export function SetupDialog({
             </ol>
             {(secretsOnly ? pending : keyless).length > 0 && (
               <p className="text-muted m-0 text-[12px] leading-[1.6]">
-                On GitHub, choose New repository secret in{" "}
-                <a
-                  href={`https://github.com/${repoFullName}/settings/secrets/actions`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-ink underline"
-                >
-                  your repository&apos;s Actions secrets
+                {host === "gitlab" ? "On GitLab, choose Add variable in" : "On GitHub, choose New repository secret in"}{" "}
+                <a href={agentSecretsUrl(repoFullName)} target="_blank" rel="noreferrer" className="text-ink underline">
+                  your repository&apos;s {agentSecretsName(host)}
                 </a>
-                , then paste the name and the value. Formic keeps only the name, never the value. Agents can share a secret or each use their own: choose in the agent&apos;s settings.
+                , then paste the name and the value{host === "gitlab" ? ", and mark it Masked" : ""}. Formic keeps only the name, never the value. Agents can share a secret or each use their own: choose in the agent&apos;s settings.
               </p>
             )}
-            {!merging?.update && !secretsOnly && machines?.repoFullName && (
+            {host === "github" && !merging?.update && !secretsOnly && machines?.repoFullName && (
               <BillingNote repoFullName={machines.repoFullName} isPrivate={machines.private} settingsLink />
             )}
             {!merging?.update && !secretsOnly && (
               <p className="text-muted m-0 text-[12px] leading-[1.6]">
                 Your first ticket is waiting in To Do: an AGENTS.md that tells every agent how this codebase is
-                built and tested. Start it once the pull request is merged.
+                built and tested. Start it once the {cr} is merged.
               </p>
             )}
           </>
@@ -253,7 +262,7 @@ export function SetupDialog({
               disabled={approving}
               className="bg-cta h-9 rounded-lg px-3.5 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-60"
             >
-              {approving ? "Opening…" : "Open the setup pull request"}
+              {approving ? "Opening…" : `Open the setup ${cr}`}
             </button>
           )}
           {secretsOnly && (
@@ -290,19 +299,26 @@ export function SetupDialog({
 }
 
 /** Why Formic asks for GitHub Actions, and the way round it for people who know E2B. */
-function AskBody({ plans }: { plans: boolean }) {
+function AskBody({ plans, host }: { plans: boolean; host: RepoHost }) {
   return (
     <>
       <p className="text-muted m-0 text-[13px] leading-[1.6]">
-        Your agents work in this repository&apos;s own GitHub Actions, with your GitHub access. To allow that,
-        Formic opens one pull request that adds a workflow file. Nothing runs until you merge it.
+        Your agents work in this repository&apos;s own {ciName(host)}, with your {hostName(host)} access. To allow
+        that, Formic opens one {changeRequestName(host)} that adds a {runnerFileName(host)}. Nothing runs until you
+        merge it.
       </p>
+      {host === "gitlab" && (
+        <p className="text-muted m-0 text-[12px] leading-[1.6]">
+          Formic also lets this project&apos;s jobs push with their own token, and lets developers run pipelines with
+          variables. Changing those takes a Maintainer.
+        </p>
+      )}
       {plans ? (
         <p className="text-muted m-0 text-[12px] leading-[1.6]">
-          Claude Code, Codex and Gemini CLI run on your own plan, which only works in GitHub Actions.
+          Claude Code, Codex and Gemini CLI run on your own plan, which only works in {ciName(host)}.
         </p>
       ) : (
-        <E2bAlternative />
+        <E2bAlternative host={host} />
       )}
     </>
   );
@@ -313,13 +329,13 @@ function AskBody({ plans }: { plans: boolean }) {
  * the dialog's flow, not floating: a floating one is cut off by the dialog's
  * scrolling box on a short screen.
  */
-function E2bAlternative() {
+function E2bAlternative({ host }: { host: RepoHost }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-muted m-0 text-[12px] leading-[1.6]">
-        Rather not use GitHub Actions?{" "}
+        Rather not use {ciName(host)}?{" "}
         <a href="/settings#sandbox" className="text-ink underline">
           Bring your own E2B key
         </a>{" "}
@@ -339,10 +355,10 @@ function E2bAlternative() {
       </p>
       {open && (
         <p id={id} className="border-line bg-cream text-ink m-0 rounded-lg border px-3 py-2.5 text-[11px] leading-[1.5]">
-          E2B (e2b.dev) runs each agent in a short-lived cloud sandbox instead of your GitHub Actions, so your
-          repository needs no workflow file. You need your own E2B account and API key, and you pay E2B for the time
+          E2B (e2b.dev) runs each agent in a short-lived cloud sandbox instead of your {ciName(host)}, so your
+          repository needs no {runnerFileName(host)}. You need your own E2B account and API key, and you pay E2B for the time
           your agents run. It works for agents on API keys only: Claude Code, Codex and Gemini CLI run on your plan in
-          GitHub Actions.
+          {ciName(host)}.
         </p>
       )}
     </div>
@@ -396,15 +412,20 @@ function SecretName({ value }: { value: string }) {
 export function SetupCard({
   setup,
   repoName,
+  repoFullName = "",
   onRetry,
   onApprove,
 }: {
   setup: RunnerSetup | null;
   repoName: string;
+  /** Which host it is on: GitHub when omitted. */
+  repoFullName?: string;
   onRetry: () => void;
   onApprove: () => void;
 }) {
   if (!setup || setup.state === "ready") return null;
+  const host = repoHost(repoFullName);
+  const cr = changeRequestName(host);
   if (setup.state === "ask") {
     return (
       <div
@@ -414,7 +435,7 @@ export function SetupCard({
         <span className="text-muted font-mono text-[10px] tracking-[0.06em] uppercase">Start here</span>
         <span className="text-ink text-[13px] leading-[1.4] font-semibold">Let agents work on {repoName}</span>
         <span className="text-muted text-[12px] leading-[1.5]">
-          Agents run in {repoName}&apos;s own GitHub Actions. Formic opens one pull request for you to merge.
+          Agents run in {repoName}&apos;s own {ciName(host)}. Formic opens one {cr} for you to merge.
         </span>
         <div className="mt-0.5">
           <button
@@ -422,7 +443,7 @@ export function SetupCard({
             onClick={onApprove}
             className="bg-cta inline-flex h-8 items-center rounded-lg px-2.5 text-[12px] font-semibold text-white hover:opacity-90"
           >
-            Open the setup pull request
+            Open the setup {cr}
           </button>
         </div>
       </div>
@@ -440,12 +461,12 @@ export function SetupCard({
           ? `Formic can't set up ${repoName} yet`
           : setup.update
             ? "Merge the agent workflow update"
-            : "Merge the setup pull request"}
+            : `Merge the setup ${cr}`}
       </span>
       <span className="text-muted text-[12px] leading-[1.5]">
         {blocked
           ? setup.reason
-          : `Agents run in ${repoName}'s own GitHub Actions. The tickets below wait for this one workflow.`}
+          : `Agents run in ${repoName}'s own ${ciName(host)}. The tickets below wait for this one ${runnerFileName(host)}.`}
       </span>
       <div className="mt-0.5 flex items-center gap-2">
         {blocked ? (
@@ -464,7 +485,7 @@ export function SetupCard({
               rel="noreferrer"
               className="bg-cta inline-flex h-8 items-center rounded-lg px-2.5 text-[12px] font-semibold whitespace-nowrap text-white hover:opacity-90"
             >
-              Open pull request ↗
+              Open {cr} ↗
             </a>
             <span className="text-muted flex items-center gap-1.5 text-[11px]">
               <span aria-hidden className="bg-clay pulse-dot size-1.5 rounded-full" />

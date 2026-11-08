@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { noteNewBoard } from "@/components/onboarding/store";
 import { cn } from "@/components/ui/cn";
 import { gradeText } from "@/lib/sentinels/grade";
+import { repoPath } from "@/lib/vcs/host";
 import {
   markSeen,
   readSeen,
@@ -69,6 +70,13 @@ export function RepoPicker({
   const [install, setInstall] = useState<string | null>(null);
   /** Set when GitHub isn't connected: where connecting it starts. */
   const [connect, setConnect] = useState<string | null>(null);
+  /** GitLab projects, or null while loading; `gitlab.configured` false hides the section. */
+  const [gitlab, setGitlab] = useState<{
+    configured: boolean;
+    repos: RepoOption[] | null;
+    notice: string | null;
+    connect: string | null;
+  }>({ configured: false, repos: null, notice: null, connect: null });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [waiting, setWaiting] = useState<Record<string, Waiting[]>>({});
@@ -109,6 +117,17 @@ export function RepoPicker({
         setRepos([]);
         setNotice("Could not list repositories.");
       });
+    void fetch("/api/gitlab/repos", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { configured?: boolean; ok: boolean; repos?: RepoOption[]; reason?: string; connectUrl?: string | null }) =>
+        setGitlab({
+          configured: !!d.configured,
+          repos: d.repos ?? [],
+          notice: d.ok ? null : (d.reason ?? null),
+          connect: d.connectUrl ?? null,
+        }),
+      )
+      .catch(() => setGitlab({ configured: false, repos: [], notice: null, connect: null }));
   }, []);
 
   useEffect(() => {
@@ -137,6 +156,14 @@ export function RepoPicker({
         .filter((r) => r.fullName.toLowerCase().includes(q))
         .slice(0, 50),
     [repos, known, q],
+  );
+  const fromGitLab = useMemo(
+    () =>
+      (gitlab.repos ?? [])
+        .filter((r) => !known.has(r.fullName.toLowerCase()))
+        .filter((r) => r.fullName.toLowerCase().includes(q))
+        .slice(0, 50),
+    [gitlab.repos, known, q],
   );
   const typed =
     OWNER_REPO.test(query.trim()) &&
@@ -338,6 +365,46 @@ export function RepoPicker({
               ))
             )}
           </Section>
+
+          {gitlab.configured && (
+            <Section label="Your GitLab projects">
+              {gitlab.repos === null ? (
+                <p className="text-muted px-2.5 py-2 text-[12px]">Loading…</p>
+              ) : fromGitLab.length === 0 ? (
+                <p className="text-muted px-2.5 py-2 text-[12px] leading-[1.5]">
+                  {gitlab.notice ?? (q ? "No match." : "Nothing else to add.")}
+                  {gitlab.connect && (
+                    <a href={gitlab.connect} className="text-terracotta mt-1.5 block font-semibold">
+                      Connect GitLab →
+                    </a>
+                  )}
+                </p>
+              ) : (
+                fromGitLab.map((r) => (
+                  <button
+                    key={r.fullName}
+                    type="button"
+                    className={row}
+                    disabled={busy !== null}
+                    onClick={() => void choose({ repoFullName: r.fullName }, r.fullName)}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="text-ink block truncate font-medium">{repoPath(r.fullName)}</span>
+                      {r.description && (
+                        <span className="text-muted block truncate text-[11px]">{r.description}</span>
+                      )}
+                    </span>
+                    {r.private && (
+                      <span className="text-muted border-line rounded border px-1 font-mono text-[9px]">
+                        private
+                      </span>
+                    )}
+                    {busy === r.fullName && <span className="text-muted text-[11px]">…</span>}
+                  </button>
+                ))
+              )}
+            </Section>
+          )}
 
           {!q && (
             <div data-tour="examples">

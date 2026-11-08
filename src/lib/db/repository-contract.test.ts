@@ -248,6 +248,23 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("a connected gitlab.com account", () => {
+      it("links one account to one person, finds them by it, and forgets it and its tokens", async () => {
+        const gitlabId = Math.floor(Math.random() * 1_000_000_000);
+        const ana = await repo.createEmailUser({ email: `${randomUUID()}@example.com`, login: "ana" });
+        const bo = await repo.createEmailUser({ email: `${randomUUID()}@example.com`, login: "bo" });
+
+        await repo.linkGitlab(ana.id, { gitlabId, login: "ana-gl" });
+        await repo.updateUser(ana.id, { gitlabTokenCipher: "sealed", gitlabRefreshCipher: "sealed-r" });
+        expect((await repo.userByGitlabId(gitlabId))?.id).toBe(ana.id);
+        await expect(repo.linkGitlab(bo.id, { gitlabId, login: "ana-gl" })).rejects.toThrow();
+
+        const after = await repo.unlinkGitlab(ana.id);
+        expect(after).toMatchObject({ gitlabId: null, gitlabLogin: null, gitlabTokenCipher: null, gitlabRefreshCipher: null });
+        expect(await repo.userByGitlabId(gitlabId)).toBeNull();
+      });
+    });
+
     describe("projects", () => {
       it("creates a project for a repository once, whatever the casing", async () => {
         const repoName = `Contract/${randomUUID()}`;
@@ -256,6 +273,13 @@ function contract(name: string, make: () => Repository) {
         expect(b.id).toBe(a.id);
         expect(await repo.projectById(a.id)).toEqual(a);
         expect((await repo.projectsForRepo(repoName.toUpperCase())).map((p) => p.id)).toEqual([a.id]);
+      });
+
+      it("names a GitLab board after the project, not its group", async () => {
+        const path = `gitlab:acme/tools/${randomUUID()}`;
+        const board = await repo.ensureProject({ ownerId: null, repoFullName: path, baseBranch: "main" });
+        expect(board.name).toBe(path.split("/").at(-1));
+        expect(board.repoFullName).toBe(path);
       });
 
       it("returns null for a project that does not exist", async () => {

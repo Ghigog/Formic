@@ -136,7 +136,7 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
         const { reviewPullRequest } = await import("@/lib/review/pipeline");
         const project = await projectFor(projectId);
         const creds = await credentialsForProject(project);
-        const pull = await vcs(project.repoFullName, creds.githubToken).pullRequest(prNumber);
+        const pull = await vcs(project.repoFullName, creds.repoToken).pullRequest(prNumber);
         await reviewPullRequest(projectId, prNumber, pull.headSha);
       }, `review for ${ticket.key}, restarted`);
     }

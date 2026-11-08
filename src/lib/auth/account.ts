@@ -4,6 +4,7 @@ import type { Account } from "@/components/board/account-menu";
 import type { UserRecord } from "@/lib/db/repository";
 import { authMode, githubSignIn } from "./session";
 import { isGithubLinked } from "./github";
+import { gitlabConfig, isGitlabLinked } from "./gitlab";
 
 /** What the header and Settings show about the person signed in. */
 export function accountFor(user: UserRecord): Account {
@@ -18,5 +19,9 @@ export function accountFor(user: UserRecord): Account {
     github: accounts
       ? { connected, canConnect: githubSignIn(), canDisconnect: connected && !!user.email }
       : null,
+    gitlab:
+      accounts && gitlabConfig()
+        ? { connected: isGitlabLinked(user), login: user.gitlabLogin }
+        : null,
   };
 }

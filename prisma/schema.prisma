@@ -102,6 +102,15 @@ model User {
   githubRefreshCipher    String?
   githubRefreshExpiresAt DateTime?
 
+  /// gitlab.com account, connected after email sign-in. Its OAuth token
+  /// lasts two hours and is renewed with the refresh token, which GitLab
+  /// replaces on every renewal.
+  gitlabId             Int?      @unique
+  gitlabLogin          String?
+  gitlabTokenCipher    String?
+  gitlabTokenExpiresAt DateTime?
+  gitlabRefreshCipher  String?
+
   e2bKeyCipher       String?
   e2bKeyHint         String?
   anthropicKeyCipher String?

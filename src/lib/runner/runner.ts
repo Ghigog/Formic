@@ -92,6 +92,7 @@ import {
   type CheckpointFile,
   type VcsClient,
 } from "@/lib/vcs";
+import { hostName, repoHost } from "@/lib/vcs/host";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ALREADY_DONE_TRAILER,
@@ -107,6 +108,7 @@ import {
   USAGE_TRAILER,
   attemptOfJob,
   workflowCeiling,
+  RUNNER_JOB_MINUTES,
   cardOfJob,
   isAnswerMode,
   isCarried,
@@ -122,6 +124,9 @@ import {
   type LoopMode,
   type RunnerMode,
 } from "./workflow";
+import { GITLAB_CI_PATH, GITLAB_RUNNER_PATH } from "./gitlab-ci";
+import { gitlabRunnerConfig, gitlabRunnerVersion, gitlabSetupBody, gitlabSetupBranch, withRunnerInclude } from "./gitlab-ci-config";
+import { gitlabHookToken, gitlabHookUrl } from "./gitlab-hook";
 import { sweepInterval } from "@/lib/usage/governor";
 import { configuredOrigin } from "@/lib/origin";
 
@@ -204,6 +209,16 @@ export function usageOf(messages: string[]): Usage | null {
 }
 
 /**
+ * Where a repository's host keeps Formic's runner, and which version is
+ * current there: GitHub's Actions workflow, or the GitLab CI file.
+ */
+export function hostRunner(client: VcsClient): { path: string; version: string; setupBranch: string } {
+  return client.name === "gitlab"
+    ? { path: GITLAB_RUNNER_PATH, version: gitlabRunnerVersion(), setupBranch: gitlabSetupBranch() }
+    : { path: RUNNER_WORKFLOW_PATH, version: runnerVersion(), setupBranch: runnerSetupBranch() };
+}
+
+/**
  * Closes setup pull requests for other versions of the workflow. One left
  * open would install a stale file and fail the repository's own check that
  * the file matches its generator, whether or not a new one is needed: a
@@ -212,7 +227,7 @@ export function usageOf(messages: string[]): Usage | null {
 export async function closeStaleSetupPulls(client: VcsClient): Promise<void> {
   await client.closeSupersededPulls(
     RUNNER_SETUP_PREFIX,
-    runnerSetupBranch(),
+    hostRunner(client).setupBranch,
     "The Formic agent workflow changed since this was opened, so this version is out of date. Closing it.",
   );
 }
@@ -229,6 +244,7 @@ export type RunnerState =
  * merges it, once.
  */
 export async function ensureRunner(client: VcsClient, baseBranch: string): Promise<RunnerState> {
+  if (client.name === "gitlab") return ensureGitlabRunner(client, baseBranch);
   const version = runnerVersion();
   const branch = runnerSetupBranch();
 
@@ -292,6 +308,51 @@ async function proposedChecks(
   return { workflow, names };
 }
 
+/** The project path a GitLab client works on, for its webhook token. */
+function repoPathOf(client: VcsClient): string {
+  return client.repoPath ?? "";
+}
+
+/**
+ * The GitLab side of ensureRunner: Formic's CI file, included from the
+ * project's .gitlab-ci.yml, in one merge request a person merges once. The
+ * project settings the job needs (pushing with its own token, pipelines run
+ * with variables) are switched on first, as the person the board acts for.
+ */
+async function ensureGitlabRunner(client: VcsClient, baseBranch: string): Promise<RunnerState> {
+  const { version, setupBranch: branch } = hostRunner(client);
+  await closeStaleSetupPulls(client);
+  const [current, ci] = await Promise.all([
+    client.readFile(GITLAB_RUNNER_PATH, baseBranch),
+    client.readFile(GITLAB_CI_PATH, baseBranch),
+  ]);
+  if (current?.includes(version) && ci?.includes(GITLAB_RUNNER_PATH)) return { ready: true };
+  const update = current !== null;
+
+  await client.prepareRunner?.();
+  // Results come back at once through a webhook, where this Formic has a public address.
+  const hook = gitlabHookUrl();
+  if (hook) await client.ensureWebhook?.(hook, gitlabHookToken(repoPathOf(client)));
+  await client.ensureBranch(branch, baseBranch);
+  if (!(await client.readFile(GITLAB_RUNNER_PATH, branch))?.includes(version)) {
+    await client.commitFile(branch, GITLAB_RUNNER_PATH, gitlabRunnerConfig(), "Add the Formic agent job");
+  }
+  // The branch was cut from the base, so its CI file is the base's until the include is added.
+  const included = withRunnerInclude((await client.readFile(GITLAB_CI_PATH, branch)) ?? ci);
+  if (included !== null) {
+    await client.commitFile(branch, GITLAB_CI_PATH, included, "Include the Formic agent job");
+  }
+  const pull =
+    (await client.findPullRequest(branch)) ??
+    (await client.openPullRequest({
+      headBranch: branch,
+      baseBranch,
+      title: "Let Formic run agents in GitLab CI",
+      body: gitlabSetupBody(),
+    }));
+  return { ready: false, setupUrl: pull.url, update };
+}
+
 /**
  * Whether this repository can run Formic's own loop: it has the current
  * workflow installed. A repository on an older one keeps running its API-key
@@ -301,14 +362,16 @@ async function proposedChecks(
  * because a feature exists.
  */
 export async function loopRunnerReady(client: VcsClient, baseBranch: string): Promise<boolean> {
-  const version = runnerVersion();
-  const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch).catch(() => null);
+  const { path, version } = hostRunner(client);
+  const current = await client.readFile(path, baseBranch).catch(() => null);
   return current !== null && current.includes(version);
 }
 
 /** What a 403 or 404 from the runner's endpoints usually means. */
 export function explain(e: unknown): string {
   const message = e instanceof Error ? e.message : String(e);
+  // GitLab says what it wants in its own words; the advice below is GitHub's.
+  if (message.startsWith("GitLab")) return message;
   if (e instanceof VcsError && (e.status === 403 || e.status === 404)) {
     return `${message}. Formic's GitHub App needs Actions, Secrets and Workflows (read and write) on this repository, and the workflow must be on its default branch.`;
   }
@@ -662,7 +725,11 @@ async function dispatch(input: {
     const secret = secretNameFor(agent);
 
     // A workflow from before the timeout input keeps its own ceiling.
-    const ceiling = workflowCeiling(await client.readFile(RUNNER_WORKFLOW_PATH, input.baseBranch));
+    // GitLab's job always takes the run's own timeout.
+    const ceiling =
+      client.name === "gitlab"
+        ? { minutes: RUNNER_JOB_MINUTES, takesTimeout: true }
+        : workflowCeiling(await client.readFile(RUNNER_WORKFLOW_PATH, input.baseBranch));
 
     await input.record(input.job);
     await client.dispatchWorkflow(RUNNER_WORKFLOW_FILE, input.baseBranch, {
@@ -736,7 +803,7 @@ export async function startJobRun(input: {
   const { projectId, ticket, agent, run } = input;
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
 
   // Resolving merge conflicts starts over: the merge is the work. A loop run
   // is a fresh implementation, so it carries on the way one does.
@@ -934,8 +1001,8 @@ export async function startCliAnswer(input: {
   };
 
   const base = await answerPrompt(projectId, epicId, mode, agent, async () =>
-    creds.githubToken
-      ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.githubToken)) ?? [])
+    creds.repoToken
+      ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.repoToken)) ?? [])
       : [],
   );
   if (!card || !base) {
@@ -956,7 +1023,7 @@ export async function startCliAnswer(input: {
     : base;
 
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent,
     job: jobId(epicId, randomUUID().slice(0, 8), input.retry?.attempt ?? 1),
@@ -1007,8 +1074,8 @@ export async function startCliDraftTicket(input: {
     return;
   }
 
-  const tree = creds.githubToken
-    ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.githubToken)) ?? [])
+  const tree = creds.repoToken
+    ? ((await directoryTree(project.repoFullName, project.baseBranch, creds.repoToken)) ?? [])
     : [];
   const attachments = attachmentsPrompt(await repo.attachmentsFor({ ticketId }));
   const base = [
@@ -1040,7 +1107,7 @@ export async function startCliDraftTicket(input: {
     : base;
 
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent,
     job: jobId(ticketId, randomUUID().slice(0, 8), input.retry?.attempt ?? 1),
@@ -1130,7 +1197,7 @@ async function completeCliAnswer(
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
@@ -1242,7 +1309,7 @@ async function completeCliDraft(projectId: string, result: RunnerResult): Promis
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
@@ -1327,7 +1394,7 @@ export async function startCliAsk(input: {
   const project = await projectFor(input.projectId);
   const creds = await credentialsForProject(project);
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent: input.agent,
     job: jobId(input.messageId, randomUUID().slice(0, 8), input.attempt ?? 1),
@@ -1367,7 +1434,7 @@ export async function startCliSentinel(input: {
   const project = await projectFor(input.projectId);
   const creds = await credentialsForProject(project);
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent: input.agent,
     job: jobId(input.auditId, randomUUID().slice(0, 8), input.attempt ?? 1),
@@ -1452,7 +1519,7 @@ export async function startCliCardChat(input: {
   const project = await projectFor(input.projectId);
   const creds = await credentialsForProject(project);
   const started = await dispatch({
-    client: vcs(project.repoFullName, creds.githubToken),
+    client: vcs(project.repoFullName, creds.repoToken),
     baseBranch: project.baseBranch,
     agent: input.agent,
     job: jobId(input.messageId, randomUUID().slice(0, 8)),
@@ -1478,9 +1545,10 @@ const LOOK_EVERY_MS = 15_000;
  * an Epic or a question hanging. Each result is claimed under the webhook's
  * own key, so whichever arrives first takes it and the other does nothing.
  */
-export async function collectCliRuns(projectId: string): Promise<void> {
+export async function collectCliRuns(projectId: string, options: { now?: boolean } = {}): Promise<void> {
   const now = Date.now();
-  if (now - (lastLooked.get(projectId) ?? 0) < sweepInterval(LOOK_EVERY_MS)) return;
+  // A webhook saying a run just finished looks straight away.
+  if (!options.now && now - (lastLooked.get(projectId) ?? 0) < sweepInterval(LOOK_EVERY_MS)) return;
   lastLooked.set(projectId, now);
 
   const repo = repository();
@@ -1507,7 +1575,7 @@ export async function collectCliRuns(projectId: string): Promise<void> {
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const runs = await vcs(project.repoFullName, creds.githubToken)
+  const runs = await vcs(project.repoFullName, creds.repoToken)
     .recentRuns(RUNNER_WORKFLOW_FILE)
     .catch(() => []);
   for (const run of runs) {
@@ -1529,7 +1597,7 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const message = messageId ? await repo.assistantMessage(messageId) : null;
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   // The board's assistant may also have changed the code: the workflow
   // keeps that on a staging branch of its own, beside the answer.
@@ -1560,8 +1628,12 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
   const { finishCliAnswer } = await import("@/lib/assistant/turn");
   // Without a token the client is the mock, which has no answer to read: say
   // so, rather than blame an agent whose answer is waiting on GitHub.
-  if (!creds.githubToken && authMode() === "accounts") {
-    await finishCliAnswer(message.id, null, "GitHub isn't connected for this board. Connect GitHub in Settings, then ask again.");
+  if (!creds.repoToken && authMode() === "accounts") {
+    await finishCliAnswer(
+      message.id,
+      null,
+      `${hostName(repoHost(project.repoFullName))} isn't connected for this board. Connect it in Settings, then ask again.`,
+    );
     return;
   }
   if (result.conclusion !== "success") {
@@ -1641,7 +1713,7 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
 
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  const client = vcs(project.repoFullName, creds.githubToken);
+  const client = vcs(project.repoFullName, creds.repoToken);
   const staging = `${STAGING_PREFIX}${result.job}`;
   const cleanUp = () => client.deleteStagingBranch(staging).catch(() => undefined);
 
@@ -1965,7 +2037,7 @@ async function saveCheckpoint(
   try {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
-    await vcs(project.repoFullName, creds.githubToken).saveCheckpoint(ticket.id, {
+    await vcs(project.repoFullName, creds.repoToken).saveCheckpoint(ticket.id, {
       base: checkpoint.base,
       files: checkpoint.files,
       deleted: checkpoint.deleted,
@@ -2136,7 +2208,7 @@ export async function cancelJob(projectId: string, job: string): Promise<void> {
   try {
     const project = await projectFor(projectId);
     const creds = await credentialsForProject(project);
-    const client = vcs(project.repoFullName, creds.githubToken);
+    const client = vcs(project.repoFullName, creds.repoToken);
     for (const run of await client.recentRuns(RUNNER_WORKFLOW_FILE)) {
       if (parseRunTitle(run.title)?.job === job && run.status !== "completed") {
         await client.cancelRun(run.id);

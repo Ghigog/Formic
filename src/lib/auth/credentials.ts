@@ -5,6 +5,8 @@ import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
 import { env } from "@/lib/secrets/env";
 import { open } from "@/lib/secrets/vault";
 import { githubTokenFor, isGithubLinked } from "./github";
+import { gitlabTokenFor, isGitlabLinked } from "./gitlab";
+import { repoHost, type RepoHost } from "@/lib/vcs/host";
 import { authMode } from "./session";
 import { actingUserId } from "./actor";
 
@@ -22,6 +24,13 @@ import { actingUserId } from "./actor";
  */
 export interface Credentials {
   githubToken: string | null;
+  /** The person's gitlab.com token, looked up only for work on a GitLab project. */
+  gitlabToken: string | null;
+  /**
+   * The token for the project's own host: what `vcs()` acts with. GitHub's
+   * for a GitHub repository, GitLab's for a GitLab one.
+   */
+  repoToken: string | null;
   /** An app user token lists repositories through its installations. */
   githubTokenKind: "app" | "pat" | null;
   e2bKey: string | null;
@@ -29,7 +38,7 @@ export interface Credentials {
   e2bFallbackUserId: string | null;
 }
 
-export async function credentialsFor(user: UserRecord | null): Promise<Credentials> {
+export async function credentialsFor(user: UserRecord | null, host: RepoHost = "github"): Promise<Credentials> {
   const config = env();
   const e2bCredentials = (u: UserRecord | null) => {
     const own = u?.e2bKeyCipher ? open(u.e2bKeyCipher) : null;
@@ -44,16 +53,23 @@ export async function credentialsFor(user: UserRecord | null): Promise<Credentia
   // by email and never connected GitHub has none: never the server's token.
   if (authMode() === "accounts") {
     const githubToken = user && isGithubLinked(user) ? await githubTokenFor(user) : null;
+    const gitlabToken = host === "gitlab" && user && isGitlabLinked(user) ? await gitlabTokenFor(user) : null;
     return {
       githubToken,
       githubTokenKind: githubToken ? "app" : null,
+      gitlabToken,
+      repoToken: host === "gitlab" ? gitlabToken : githubToken,
       ...e2bCredentials(user),
     };
   }
 
+  const githubToken = config.GITHUB_TOKEN ?? null;
+  const gitlabToken = host === "gitlab" ? (config.GITLAB_TOKEN ?? null) : null;
   return {
-    githubToken: config.GITHUB_TOKEN ?? null,
-    githubTokenKind: config.GITHUB_TOKEN ? "pat" : null,
+    githubToken,
+    githubTokenKind: githubToken ? "pat" : null,
+    gitlabToken,
+    repoToken: host === "gitlab" ? gitlabToken : githubToken,
     ...e2bCredentials(user),
   };
 }
@@ -66,12 +82,13 @@ export async function credentialsFor(user: UserRecord | null): Promise<Credentia
 export async function credentialsForProject(project: ProjectSummary): Promise<Credentials> {
   const repo = repository();
   const owner = project.ownerId ? await repo.userById(project.ownerId) : null;
+  const host = repoHost(project.repoFullName);
   const actorId = actingUserId();
-  if (!actorId || actorId === project.ownerId || authMode() !== "accounts") return credentialsFor(owner);
+  if (!actorId || actorId === project.ownerId || authMode() !== "accounts") return credentialsFor(owner, host);
   const member = await repo.userById(actorId);
-  if (!member) return credentialsFor(owner);
-  const own = await credentialsFor(member);
+  if (!member) return credentialsFor(owner, host);
+  const own = await credentialsFor(member, host);
   if (own.e2bKey || !project.shareKeys) return own;
-  const shared = await credentialsFor(owner);
+  const shared = await credentialsFor(owner, host);
   return { ...own, e2bKey: shared.e2bKey, e2bFallbackUserId: shared.e2bFallbackUserId };
 }

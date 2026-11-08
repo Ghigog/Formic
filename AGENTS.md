@@ -15,6 +15,9 @@ Production is **one AWS Lightsail instance**, not Vercel.
   `DEPLOY_HOST` repository variable set, the `deploy` job builds on the CI
   runner, ships the build over SSH, and `deploy/server/deploy.sh` migrates
   and switches to it.
+- **GitLab:** gitlab.com projects work once `GITLAB_CLIENT_ID` and
+  `GITLAB_CLIENT_SECRET` are in that `.env` ([`docs/gitlab.md`](docs/gitlab.md)).
+  A board on one is named `gitlab:group/project`.
 - **No preview deploys.** A PR is never deployed anywhere; CI runs its tests
   against throwaway databases.
 

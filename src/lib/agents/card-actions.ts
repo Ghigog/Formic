@@ -342,7 +342,7 @@ async function redoTicket(projectId: string, card: BoardCard, instruction: strin
       });
       const project = await projectFor(projectId);
       const creds = await credentialsForProject(project);
-      const pull = await vcs(project.repoFullName, creds.githubToken).pullRequest(prNumber);
+      const pull = await vcs(project.repoFullName, creds.repoToken).pullRequest(prNumber);
       const { reviewPullRequest } = await import("@/lib/review/pipeline");
       await reviewPullRequest(projectId, prNumber, pull.headSha);
     }, `review for ${card.key}, from its chat`);
