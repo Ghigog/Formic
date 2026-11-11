@@ -31,11 +31,37 @@ interface Point {
   clientY: number;
 }
 
+/** Travel, in px, a two-finger gesture needs before it is told apart as a swipe or a pinch. */
+const SLOP = 12;
+
+/** What two fingers are doing: not clear yet, a parallel vertical swipe, or a pinch. */
+export type TwoFingerTravel = "pending" | "swipe" | "pinch";
+
+const midpoint = (a: Point, b: Point): Point => ({ clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 });
+const gap = (a: Point, b: Point) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+/**
+ * Tells a two-finger swipe from a pinch. Travel is that of the fingers'
+ * midpoint. A swipe moves both fingers the same way, mostly vertically, with
+ * the distance between them staying roughly the same; a pinch changes that
+ * distance by more than the shared travel.
+ */
+export function classifyTwoFingerTravel(start: readonly [Point, Point], now: readonly [Point, Point]): TwoFingerTravel {
+  const a = midpoint(...start);
+  const b = midpoint(...now);
+  const dx = b.clientX - a.clientX;
+  const dy = b.clientY - a.clientY;
+  const spread = Math.abs(gap(...now) - gap(...start));
+  if (spread >= SLOP && spread > Math.hypot(dx, dy)) return "pinch";
+  if (Math.abs(dy) >= SLOP && Math.abs(dy) > Math.abs(dx) * 2 && spread <= Math.max(SLOP, Math.abs(dy) * 0.4)) return "swipe";
+  return "pending";
+}
+
 export interface SwapGestureEvents {
   touchStart(e: { touches: ArrayLike<Point>; target: EventTarget | null }, boundary: Element): void;
-  /** True while three fingers are swapping, so the caller can stop the page scrolling under them. */
+  /** True while two fingers are swiping, so the caller can stop the page scrolling under them. */
   touchMove(e: { touches: ArrayLike<Point> }): boolean;
-  touchEnd(e: { changedTouches: ArrayLike<Point> }): void;
+  touchEnd(): void;
   touchCancel(): void;
   pointerDown(e: Point & { button: number; target: EventTarget | null }, boundary: Element): void;
   /** `buttons` is the bitmask of buttons now held: a move without the right one means its release was missed. */
@@ -65,10 +91,12 @@ export interface SwapAim {
   x: number;
   y: number;
   armed: boolean;
+  /** The aim comes from a finger swipe, not a right-button drag. */
+  touch?: true;
 }
 
 /**
- * Turns three-finger vertical swipes and right-button drags into `onSwap`
+ * Turns two-finger vertical swipes and right-button drags into `onSwap`
  * requests, and reports the gesture's travel as it goes to `onPull` (null once
  * it lets go), so the board can follow the hand.
  */
@@ -77,10 +105,21 @@ export function createSwapGestures(
   onPull: (pull: number | null) => void = () => {},
   onAim: (aim: SwapAim | null) => void = () => {},
 ): SwapGestureEvents {
-  let touch: Point | null = null;
+  /** The two fingers' start, once down, and the midpoint of their latest move once swiping. */
+  let touch: { start: readonly [Point, Point]; last: Point | null } | null = null;
   let drag: Point | null = null;
   let suppressMenu = false;
   const release = () => onPull(null);
+  /** Lets go of a touch gesture without swapping; false, as touchMove returns it. */
+  const stopTouch = () => {
+    const swiping = touch?.last;
+    touch = null;
+    if (swiping) {
+      release();
+      onAim(null);
+    }
+    return false;
+  };
   const cancel = () => {
     if (!drag) return;
     drag = null;
@@ -89,34 +128,38 @@ export function createSwapGestures(
   };
   return {
     touchStart(e, boundary) {
-      const first = e.touches[0];
-      // Exactly three fingers: one finger is a column swipe or card drag.
-      touch = first && e.touches.length === 3 && !ownsGesture(e.target, boundary) ? first : null;
+      const [first, second] = [e.touches[0], e.touches[1]];
+      // Exactly two fingers: one finger is a column swipe or card drag, three or more do nothing.
+      touch = first && second && e.touches.length === 2 && !ownsGesture(e.target, boundary) ? { start: [first, second], last: null } : null;
     },
     touchMove(e) {
       if (!touch) return false;
-      if (e.touches.length !== 3) {
-        touch = null;
-        release();
-        return false;
-      }
-      const now = e.touches[0]!;
-      onPull(pullFor(now.clientX - touch.clientX, now.clientY - touch.clientY));
+      const [first, second] = [e.touches[0], e.touches[1]];
+      const kind = first && second && e.touches.length === 2 ? classifyTwoFingerTravel(touch.start, [first, second]) : "pinch";
+      if (kind === "pinch") return stopTouch();
+      if (kind === "pending") return false;
+      const from = midpoint(...touch.start);
+      const now = midpoint(first!, second!);
+      touch.last = now;
+      const dx = now.clientX - from.clientX;
+      const dy = now.clientY - from.clientY;
+      // One threshold from where the fingers started, the way they are travelling.
+      onAim({ x: from.clientX, y: from.clientY + (dy < 0 ? -SWAP_THRESHOLD : SWAP_THRESHOLD), armed: swapDirection(dx, dy) !== null, touch: true });
+      onPull(pullFor(dx, dy));
       return true;
     },
-    touchEnd(e) {
-      const start = touch;
-      const end = e.changedTouches[0];
+    touchEnd() {
+      const t = touch;
       touch = null;
-      if (!start || !end) return;
+      if (!t?.last) return;
       release();
-      const direction = swapDirection(end.clientX - start.clientX, end.clientY - start.clientY);
+      onAim(null);
+      const from = midpoint(...t.start);
+      const direction = swapDirection(t.last.clientX - from.clientX, t.last.clientY - from.clientY);
       if (direction) onSwap(direction);
     },
     touchCancel() {
-      if (!touch) return;
-      touch = null;
-      release();
+      stopTouch();
     },
     pointerDown(e, boundary) {
       suppressMenu = false;
