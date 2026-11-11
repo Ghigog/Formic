@@ -93,48 +93,41 @@ JetBrains Mono      400/500           ticket ids, commit hashes, file scopes, lo
 All three from Google Fonts, one `css2` link. Fallbacks: Georgia for Newsreader, system-ui for
 Jakarta, `monospace` for JetBrains.
 
-**Scale.** Pick a size from this list; do not choose between values.
+**Scale.** Eight sizes. Pick one from this list; do not choose between values.
 
 ```
 name        px   use
-micro        9   octagon badge counts, size letters (mono)
-caption     10   metadata, timestamps, chip text
+caption     10   metadata, timestamps, badge counts, size letters, chip text
 label       11   column headers, chips, status text
 body-sm     12   secondary body, card meta, dense lists
-body        13   card titles, default UI text
-body-lg     14   drawer and form body
+body        13   card titles, default UI text, drawer and form body
 prose       15   PRD and showcase prose (Newsreader)
-subhead     16   section titles, mobile body
-heading     18   drawer and modal titles
-title       20   screen and panel titles
-display     22   epic titles, big numbers
-display-lg  28   sentinel and colony headline figures
-hero        32   sentinel hero figure on mobile
-```
-
-**Exceptions** (sizes in use outside the scale):
-
-```
-42  keep    sentinel hero figure at sm and up (sentinels.tsx); the one size above 32
-8   keep    compact colony strip labels (header-stats.tsx); the smallest legible mono
+heading     18   drawer, modal, screen and panel titles
+display     22   epic titles, big numbers, headline figures
+hero        32   sentinel hero figure
 ```
 
 ## Grid
 
-8px everywhere: 8 / 16 / 24 / 32 / 48. The one exception the spec grants is **12px card
-padding**, for vertical density. Board padding 24, column gap 16, card gap 8, column padding 12.
-Radii: cards 8, columns 12, chips 999, modals 12.
+8px everywhere: 8 / 16 / 24 / 32 / 48, plus a **4px half-step** for tight gaps inside icon +
+label pairs. The one exception the spec grants is **12px card padding**, for vertical density.
+Board padding 24, column gap 16, card gap 8, column padding 12.
 
-**Named off-grid values.** Anything not on the grid or in this list is a bug.
+Arbitrary `[Npx]` padding, margin and gap are not allowed; use the Tailwind step (`gap-2`, not
+`gap-[8px]`). Tailwind half steps (`0.5`, `1.5`, `2.5`, `3.5` = 2, 6, 10, 14px) are allowed only
+inside buttons, chips, badges, inputs and menu rows.
+
+### Radius
+
+Pick a radius from this list. `rounded-[Npx]` is never used.
 
 ```
-2   keep    hairline gaps inside dense mono chips
-3   keep    vertical padding and gaps of octagon badges and chips; optical balance with 9-11px text
-4   keep    half-step gap inside icon + label pairs
-5   keep    chip dot (5px) and the gap beside it
-7   keep    octagon chamfer, and the horizontal padding that clears it on small badges
-34  keep    timeline row height and the header logo box; fits a 20px node plus its border
-42  keep    colony nest ant badge; a 40px badge plus its 1px border pair
+px   class                use
+4    rounded-sm, rounded  chips inside badges
+6    rounded-md           inputs and menu rows
+8    rounded-lg           buttons (every variant) and cards
+12   rounded-xl           columns, modals and panels
+999  rounded-full         pills
 ```
 
 ## Custom components
@@ -191,13 +184,14 @@ Terminal toggle. Collapsed to icon + count on mobile.
 ## Motion
 
 Motion is functional or characterful, never filler. All of it is `@keyframes` in
-`src/app/globals.css` (44 blocks), grouped here by what it animates.
+`src/app/globals.css`, grouped here by what it animates.
 
 ```
 Agent liveness   clayPulse 2.4s (running card border + box-shadow, active step), dotPulse 1.6s
                  (live-agent dots), trailPulse 2.4s (dependency trail), readyGlow 2.4s (ready
                  tickets), ant-march 0.9s (trail ants)
-Board            columnSlideFromRight, columnSlideFromLeft 250ms (column change)
+Board            columnSlideFromRight, columnSlideFromLeft 250ms (column change),
+                 swapHintIn 150ms (swap hint)
 Dig transition   digBoardOutUp, digBoardOutDown, digEarthInFromBelow, digEarthInFromAbove,
                  digBoardInFromBelow, digBoardInFromAbove, digEarthOutUp, digEarthOutDown,
                  digBounceUp, digBounceDown, digPeekBelow, digPeekAbove, digTowardIn: 320-460ms
@@ -206,14 +200,19 @@ Dig transition   digBoardOutUp, digBoardOutDown, digEarthInFromBelow, digEarthIn
                  digFadeIn 200ms: the reduced-motion stand-ins
 Guide ant, tour  guideAntIdle 2.6s, guideAntLegsA, guideAntLegsB and guideAntBob 0.19s, guideAntTalk 0.32s,
                  tourBubbleIn 0.22s
+Feature reveal   featureSpace 220ms, featureRise 460ms, featureRing 460ms, featureBurst 360ms,
+                 featureGlow 460ms, featureFade 150ms (colony/feature-reveal.tsx)
 Colony           bellWave 900ms, bellGlint 2.6s
 Timeline         tlStripe, tlPing 1.8s
 Requests         reqFade, reqPop, reqSlideDown
 Sentinels        sentinelScan, sentinelBob, sentinelLine, sentinelFade, auditSweep
 ```
 
-One-shot transitions run 150-460ms, `ease-out`; loops run 0.9-2.6s, `ease-in-out` (`linear` for
-scrolls and marches).
+One-shot transitions run 150-460ms, `ease-out`. Loops are the ones that run `infinite`: clayPulse,
+dotPulse, trailPulse, readyGlow, ant-march, the guide ant (guideAntIdle, guideAntLegsA,
+guideAntLegsB, guideAntBob, guideAntTalk), the four dig scrolls, bellGlint, tlStripe, tlPing,
+sentinelBob and sentinelScan. They run 0.19-2.6s, `ease-in-out` (`linear` for scrolls, marches
+and tlStripe; `ease-out` for tlPing).
 
 **Reduced motion.** Every keyframe is switched off or flattened under
 `@media (prefers-reduced-motion: reduce)`.
@@ -228,7 +227,7 @@ scrolls and marches).
 - JS: motion driven from script asks `prefersReducedMotion()`, i.e.
   `window.matchMedia("(prefers-reduced-motion: reduce)").matches`, and skips to the end state.
   It is checked in `board/board.tsx`, `board/dig-transition.tsx`, `colony/fx.ts`,
-  `colony/bell.tsx`, `onboarding/tour.tsx` and `colony/kpi.tsx`. New JS animation must too.
+  `colony/bell.tsx`, `colony/feature-reveal.tsx`, `onboarding/tour.tsx` and `colony/kpi.tsx`. New JS animation must too.
 
 ## Sound
 
