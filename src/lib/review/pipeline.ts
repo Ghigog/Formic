@@ -838,7 +838,7 @@ async function startBatch(
       "Once CI passes here, Formic merges each of them and closes this one. Do not merge this pull request itself.",
     ].join("\n"),
   });
-  const batch: MergeBatch = { projectId, pr: pull.number, branch, targetSha, members };
+  const batch: MergeBatch = { projectId, pr: pull.number, branch, targetSha, members, startedAt: Date.now() };
   if (!(await recordBatch(projectId, batch, null))) {
     await endBatch(client, batch, "Another merge batch is already open.");
     return "alone";
@@ -872,7 +872,16 @@ async function driveBatch(projectId: string, client: Client, batch: MergeBatch):
   }
 
   const checks = await client.checksFor(batchPull.headSha);
-  if (await ciPending(client, checks, batchPull.baseBranch)) return "waiting";
+  if (await ciPending(client, checks, batchPull.baseBranch)) {
+    // A batch holds the whole merge queue, so CI that will never report on it
+    // (a cancelled run nobody re-runs, or one that never started) must not
+    // keep everything behind it waiting.
+    const stuck = stuckBatchCi(batch, checks);
+    if (!stuck) return "waiting";
+    for (const m of left) await mergeAlone(m.ticketId, m.headSha);
+    await endBatch(client, batch, `${stuck} Each pull request in it now merges on its own, with its own CI.`);
+    return "alone";
+  }
   const red = failing(checks);
   if (red.length > 0) {
     for (const m of left) await mergeAlone(m.ticketId, m.headSha);
@@ -903,6 +912,23 @@ async function driveBatch(projectId: string, client: Client, batch: MergeBatch):
   }
   await endBatch(client, current, `Landed ${left.map((m) => m.key).join(", ")}.`);
   return "landed";
+}
+
+/** How long a batch waits on its CI before the queue goes on without it. */
+export const BATCH_CI_LIMIT_MS = 40 * 60_000;
+
+/** Why a batch's unfinished CI is never going to finish, or null while it may. */
+function stuckBatchCi(batch: MergeBatch, checks: CheckSummary[]): string | null {
+  const cancelled = checks.filter(
+    (c) => c.status === "completed" && c.conclusion !== null && NOT_A_RESULT.includes(c.conclusion),
+  );
+  if (cancelled.length > 0) {
+    return `${cancelled.map((c) => c.name).join(", ")} was cancelled on this batch.`;
+  }
+  if (batch.startedAt !== undefined && Date.now() - batch.startedAt > BATCH_CI_LIMIT_MS) {
+    return `CI on this batch had not finished after ${BATCH_CI_LIMIT_MS / 60_000} minutes.`;
+  }
+  return null;
 }
 
 /**

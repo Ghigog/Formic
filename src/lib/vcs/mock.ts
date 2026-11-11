@@ -577,6 +577,14 @@ export class MockVcsClient implements VcsClient {
     return pull.headSha;
   }
 
+  /** Test seam: CI on a mock PR's head is still running. */
+  static checksRunning(number: number): string {
+    const pull = pulls().get(number);
+    if (!pull) throw new Error(`No mock pull request ${number}.`);
+    pull.checks = pull.checks.map((c) => ({ ...c, status: "in_progress", conclusion: null }));
+    return pull.headSha;
+  }
+
   /** Test seam: the repository runs no CI, so a mock PR's head gets no checks. */
   static withoutCi(number: number): string {
     const pull = pulls().get(number);
