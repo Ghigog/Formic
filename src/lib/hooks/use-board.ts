@@ -11,6 +11,13 @@ import { useBoardEvents } from "./use-board-events";
 /** Most recent log lines kept for the ambient terminal. */
 const LOG_TAIL = 200;
 
+const REFETCH_DEBOUNCE_MS = 120;
+/** A failed refresh is tried again after 2 s, 4 s, 8 s, 16 s, 32 s. */
+const REFETCH_RETRY_MS = 2_000;
+const REFETCH_RETRIES = 5;
+/** How often a visible board looks again on its own. */
+export const CATCH_UP_MS = 60_000;
+
 export function useBoard(
   initialCards: BoardCard[],
   initialStats: AmbientStats,
@@ -34,18 +41,40 @@ export function useBoard(
 
   // Refetch is debounced: a burst of card events should cost one request.
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Each look is numbered. Only the latest one started may set the cards: an
+  // older, slower answer arriving last would put the board back as it was.
+  const latestLook = useRef(0);
 
   const refetch = useCallback(async () => {
+    const look = ++latestLook.current;
     const res = await fetch("/api/board", { cache: "no-store" });
     if (!res.ok) throw new Error(`Board refresh failed (${res.status})`);
     const data = (await res.json()) as { cards: BoardCard[] };
+    if (look !== latestLook.current) return;
     setCards(data.cards);
   }, []);
 
+  // A look that fails is tried again, so the board never keeps showing a
+  // move it heard about but could not fetch.
   const scheduleRefetch = useCallback(() => {
-    if (refetchTimer.current) clearTimeout(refetchTimer.current);
-    refetchTimer.current = setTimeout(() => void refetch().catch(() => {}), 120);
+    const at = (delay: number, attempt: number) => {
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
+      refetchTimer.current = setTimeout(() => {
+        refetch().catch(() => {
+          if (attempt < REFETCH_RETRIES) at(REFETCH_RETRY_MS * 2 ** attempt, attempt + 1);
+        });
+      }, delay);
+    };
+    at(REFETCH_DEBOUNCE_MS, 0);
   }, [refetch]);
+
+  // A catch-up look while the board is on screen, in case an event was missed.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") scheduleRefetch();
+    }, CATCH_UP_MS);
+    return () => clearInterval(timer);
+  }, [scheduleRefetch]);
 
   const onEvent = useCallback(
     (event: FormicEvent, seq: number) => {

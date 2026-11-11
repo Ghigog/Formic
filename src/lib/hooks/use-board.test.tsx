@@ -12,7 +12,7 @@ vi.mock("./use-board-events", () => ({
   },
 }));
 
-import { useBoard } from "./use-board";
+import { CATCH_UP_MS, useBoard } from "./use-board";
 
 const card = (id: string, key: string) =>
   ({ id, key, kind: "ticket", title: key }) as unknown as BoardCard;
@@ -103,6 +103,47 @@ describe("useBoard", () => {
     await act(() => vi.advanceTimersByTimeAsync(120));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith("/api/board", { cache: "no-store" });
+    expect(result.current.cards.map((c) => c.id)).toEqual(["c2"]);
+  });
+
+  it("keeps the newest look when an older one answers last", async () => {
+    let releaseOld: (r: Response) => void = () => {};
+    fetchMock
+      .mockImplementationOnce(() => new Promise<Response>((r) => (releaseOld = r)))
+      .mockImplementationOnce(async () => Response.json({ cards: [card("new", "T-NEW")] }));
+    const { result } = renderHook(() => useBoard([card("c1", "T-1")], stats));
+
+    send({ type: "card.status", cardId: "c1", kind: "ticket", status: "review" }, 1);
+    await act(() => vi.advanceTimersByTimeAsync(120));
+    send({ type: "card.status", cardId: "c1", kind: "ticket", status: "merged" }, 2);
+    await act(() => vi.advanceTimersByTimeAsync(120));
+    expect(result.current.cards.map((c) => c.id)).toEqual(["new"]);
+
+    await act(async () => releaseOld(Response.json({ cards: [card("old", "T-OLD")] })));
+    expect(result.current.cards.map((c) => c.id)).toEqual(["new"]);
+  });
+
+  it("tries a failed look again", async () => {
+    fetchMock
+      .mockImplementationOnce(async () => new Response(null, { status: 502 }))
+      .mockImplementationOnce(async () => Response.json({ cards: [card("c9", "T-9")] }));
+    const { result } = renderHook(() => useBoard([card("c1", "T-1")], stats));
+
+    send({ type: "card.status", cardId: "c1", kind: "ticket", status: "merged" }, 1);
+    await act(() => vi.advanceTimersByTimeAsync(120));
+    expect(result.current.cards.map((c) => c.id)).toEqual(["c1"]);
+
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.cards.map((c) => c.id)).toEqual(["c9"]);
+  });
+
+  it("looks again on its own while on screen", async () => {
+    const { result } = renderHook(() => useBoard([card("c1", "T-1")], stats));
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(() => vi.advanceTimersByTimeAsync(CATCH_UP_MS + 120));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.current.cards.map((c) => c.id)).toEqual(["c2"]);
   });
 
