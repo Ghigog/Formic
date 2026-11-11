@@ -17,12 +17,13 @@ type RingResult = BellState & { sent?: number; skipped?: number };
 
 async function postBell(
   action: "ring" | "arm" | "disarm",
+  projectId?: string,
 ): Promise<RingResult | null> {
   try {
     const res = await fetch("/api/bell", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, projectId }),
     });
     if (!res.ok) return null;
     return (await res.json()) as RingResult;
@@ -55,11 +56,14 @@ function rangLine(r: RingResult | null): string {
  * to carry on. Tapping the bell itself arms a golden one, earned every five
  * levels, which rings itself a minute after a limit resets.
  */
-export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
+export function Bell({ projectId, onSay }: { projectId?: string; onSay?: (said: string | null) => void }) {
   // The colony's own sound engine: it honours the sound switch and keeps the
   // audio alive where WebKit parks it (the desktop app, iPhone).
   const sfx = useColony()?.sfx;
-  const [bell, setBell] = useState<BellState | null>(null);
+  // The state is kept with the board it came from, so a board never shows another's.
+  const [loaded, setLoaded] = useState<{ of: string | undefined; state: BellState } | null>(null);
+  const bell = loaded && loaded.of === projectId ? loaded.state : null;
+  const setBell = (state: BellState) => setLoaded({ of: projectId, state });
   const [said, setSaid] = useState<string | null>(null);
   const [cord, setCord] = useState({ x: 0, y: 0 });
   const [angle, setAngle] = useState(0);
@@ -75,18 +79,24 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
 
   useEffect(() => {
     let live = true;
-    fetch("/api/bell")
+    fetch(projectId ? `/api/bell?projectId=${encodeURIComponent(projectId)}` : "/api/bell")
       .then((r) => (r.ok ? r.json() : null))
       .then(
         (b: BellState | null) =>
-          live && b && setBell({ left: b.left, armed: b.armed, unlimited: b.unlimited }),
+          live && b && setLoaded({ of: projectId, state: { left: b.left, armed: b.armed, unlimited: b.unlimited } }),
       )
       .catch(() => {});
     return () => {
       live = false;
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
     };
-  }, []);
+  }, [projectId]);
+
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
 
   useEffect(() => onSay?.(said), [said, onSay]);
 
@@ -128,7 +138,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
   const ring = () => {
     sfx?.("bell", 1);
     setRinging((n) => n + 1);
-    void postBell("ring").then((r) => {
+    void postBell("ring", projectId).then((r) => {
       if (r) setBell({ left: r.left, armed: r.armed });
       setSaid(rangLine(r));
     });
@@ -192,7 +202,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
     }
     spring.current.velocity += bell.armed ? -40 : 40;
     animate();
-    const next = await postBell(bell.armed ? "disarm" : "arm");
+    const next = await postBell(bell.armed ? "disarm" : "arm", projectId);
     if (next) {
       setBell({ left: next.left, armed: next.armed, unlimited: next.unlimited });
       setSaid(
@@ -264,6 +274,8 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
             style={{
               transform: `rotate(${angle}deg)`,
               transformOrigin: "48px 18px",
+              // Nothing to show until this board's bell has loaded: no silver flash.
+              opacity: bell ? 1 : 0,
             }}
           >
             {/* Sound, on a ring: arcs that open out from the lip and fade. */}

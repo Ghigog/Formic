@@ -164,4 +164,36 @@ describe("the bell", () => {
       /^url\(#.*gold\)$/,
     );
   });
+
+  it("fetches and arms the board it is given, and refetches when the board changes", async () => {
+    const urls: string[] = [];
+    const bodies: unknown[] = [];
+    const boards: Record<string, State | undefined> = {
+      A: { left: 1, armed: true },
+      B: { left: 1, armed: false },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        urls.push(url);
+        if (init?.method === "POST") {
+          const body = JSON.parse(init.body as string);
+          bodies.push(body);
+          boards[body.projectId] = { ...boards[body.projectId]!, armed: body.action === "arm" };
+          return Response.json(boards[body.projectId]);
+        }
+        return Response.json(boards[new URL(url, "http://x").searchParams.get("projectId")!]);
+      }),
+    );
+    const { rerender } = render(<Bell projectId="A" />);
+    await waitFor(() => expect(screen.getByTestId("bell-rig").dataset.armed).toBe("true"));
+    expect(urls[0]).toBe("/api/bell?projectId=A");
+    rerender(<Bell projectId="B" />);
+    await waitFor(() => expect(urls).toContain("/api/bell?projectId=B"));
+    await waitFor(() => expect(screen.getByTestId("bell-rig").dataset.armed).toBeUndefined());
+    fireEvent.click(screen.getByRole("button", { name: /tap to arm/i }));
+    await waitFor(() => expect(bodies).toEqual([{ action: "arm", projectId: "B" }]));
+    await waitFor(() => expect(screen.getByRole("button", { name: /armed/i }).getAttribute("aria-pressed")).toBe("true"));
+    expect(boards.A!.armed).toBe(true);
+  });
 });
