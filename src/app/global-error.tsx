@@ -25,7 +25,7 @@ export default function GlobalError({
             <button
               type="button"
               onClick={reset}
-              className="bg-cta h-10 rounded-lg text-[14px] font-semibold text-white"
+              className="bg-cta h-10 rounded-lg text-[13px] font-semibold text-white"
             >
               Try again
             </button>

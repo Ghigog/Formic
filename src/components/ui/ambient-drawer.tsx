@@ -32,7 +32,7 @@ function Divider() {
 
 function LiveDots({ count = 3 }: { count?: number }) {
   return (
-    <span aria-hidden className="inline-flex gap-[3px]">
+    <span aria-hidden className="inline-flex gap-1">
       {Array.from({ length: count }, (_, i) => (
         <span
           key={i}
@@ -199,7 +199,7 @@ export function AmbientDrawer({
       </div>
 
       {/* Mobile: icon and count only. */}
-      <div className="flex h-14 items-center gap-[8px] px-4 md:hidden">
+      <div className="flex h-14 items-center gap-2 px-4 md:hidden">
         {busy ? (
           <LiveDots />
         ) : (

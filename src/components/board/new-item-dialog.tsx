@@ -155,7 +155,7 @@ export function NewItemDialog({
         className="bg-card border-line box-border flex w-full max-w-[520px] flex-col gap-3.5 rounded-b-xl border p-5 pt-[max(1.25rem,env(safe-area-inset-top))] shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqSlideDown_240ms_ease-out] sm:rounded-xl sm:pt-5 sm:motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)]"
       >
         <div className="flex items-baseline justify-between gap-3">
-          <h2 id={titleId} className="text-ink m-0 text-[16px] font-semibold">
+          <h2 id={titleId} className="text-ink m-0 text-[15px] font-semibold">
             {copy.title}
           </h2>
           <span className="text-muted text-[11px]">{copy.agentLabel}</span>
@@ -174,7 +174,7 @@ export function NewItemDialog({
           }}
           rows={5}
           placeholder={copy.placeholder}
-          className="border-line bg-cream text-ink placeholder:text-muted focus:outline-terracotta box-border min-h-[110px] w-full resize-y rounded-lg border px-3 py-2.5 text-[14px] leading-[1.5]"
+          className="border-line bg-cream text-ink placeholder:text-muted focus:outline-terracotta box-border min-h-[110px] w-full resize-y rounded-lg border px-3 py-2.5 text-[13px] leading-[1.5]"
         />
 
         <AttachmentPicker

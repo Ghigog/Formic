@@ -811,7 +811,7 @@ export function Board({
             type="button"
             onClick={() => setNotice(null)}
             aria-label="Dismiss"
-            className="text-muted hover:text-ink -my-1 px-1 text-[14px] leading-none"
+            className="text-muted hover:text-ink -my-1 px-1 text-[13px] leading-none"
           >
             ×
           </button>

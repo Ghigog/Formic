@@ -185,7 +185,7 @@ export function SetupDialog({
         aria-labelledby={titleId}
         className="bg-card border-line box-border flex max-h-[92dvh] w-full max-w-[480px] flex-col gap-4 overflow-y-auto rounded-t-xl border p-5 shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)] sm:rounded-xl"
       >
-        <h2 id={titleId} className="text-ink m-0 text-[16px] font-semibold">
+        <h2 id={titleId} className="text-ink m-0 text-[15px] font-semibold">
           {title}
         </h2>
 

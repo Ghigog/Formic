@@ -16,7 +16,7 @@ export function Welcome({ account }: { account: Account }) {
       <header className="border-line bg-card flex h-16 shrink-0 items-center gap-3 border-b px-4 md:px-6">
         <span
           aria-hidden
-          className="oct-lg bg-anthracite text-on-anthracite inline-flex size-7 items-center justify-center font-serif text-[16px] font-semibold"
+          className="oct-lg bg-anthracite text-on-anthracite inline-flex size-7 items-center justify-center font-serif text-[15px] font-semibold"
         >
           F
         </span>
@@ -27,7 +27,7 @@ export function Welcome({ account }: { account: Account }) {
 
       <main className="flex flex-1 flex-col items-center gap-5 px-4 py-10">
         <div className="max-w-md text-center">
-          <h1 className="font-serif text-[28px] font-semibold">
+          <h1 className="font-serif text-[22px] font-semibold">
             {githubOff ? "Start a board" : "Pick a repository to start"}
           </h1>
           <p className="text-muted mt-2 text-[13px] leading-[1.6]">

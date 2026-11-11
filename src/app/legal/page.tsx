@@ -61,7 +61,7 @@ export default async function LegalPage({
           </p>
           <button
             type="submit"
-            className="bg-cta h-10 shrink-0 rounded-lg px-3.5 text-[14px] font-semibold text-white"
+            className="bg-cta h-10 shrink-0 rounded-lg px-3.5 text-[13px] font-semibold text-white"
           >
             Accept and continue
           </button>

@@ -106,7 +106,7 @@ function AccountSection({
             <img src={account.avatarUrl} alt="" className="size-10 rounded-full" />
           ) : null}
           <div className="min-w-0 flex-1">
-            <p className="text-ink text-[14px] font-semibold">{account.name ?? account.login}</p>
+            <p className="text-ink text-[13px] font-semibold">{account.name ?? account.login}</p>
             <p className="text-muted text-[12px]">{who}</p>
             {merged && (
               <p role="status" className="text-ink mt-1 text-[12px]">

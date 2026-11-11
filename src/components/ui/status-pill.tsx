@@ -36,7 +36,7 @@ export function StatusChip({
   return (
     <span
       className={cn(
-        "text-anthracite inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
+        "text-anthracite inline-flex items-center gap-1 rounded-full px-2 py-0.5",
         "text-[10px] leading-4 font-semibold whitespace-nowrap",
         className,
       )}
@@ -70,7 +70,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "text-anthracite inline-flex items-center gap-[5px] rounded-full px-2 py-[3px]",
+        "text-anthracite inline-flex items-center gap-1 rounded-full px-2 py-0.5",
         "text-[10px] leading-4 font-semibold whitespace-nowrap",
         className,
       )}

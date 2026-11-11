@@ -138,7 +138,7 @@ export function PrdPane({
       </div>
 
       <Section title="Problem">
-        <p className="text-[14px] leading-relaxed">{prd.problem}</p>
+        <p className="text-[13px] leading-relaxed">{prd.problem}</p>
       </Section>
 
       <Section title="Scope">
@@ -189,7 +189,7 @@ function Section({
 
 function List({ items }: { items: string[] }) {
   return (
-    <ul className="flex list-disc flex-col gap-1 pl-4 text-[14px] leading-relaxed">
+    <ul className="flex list-disc flex-col gap-1 pl-4 text-[13px] leading-relaxed">
       {items.map((item, i) => (
         <li key={i}>{item}</li>
       ))}
