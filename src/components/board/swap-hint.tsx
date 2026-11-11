@@ -1,7 +1,7 @@
 import type { SwapAim } from "./swap-gesture";
 
 /**
- * Where to drag to switch boards: the timeline's live ping inside an octagonal
+ * Where to drag (or swipe) to switch boards: the timeline's live ping inside an octagonal
  * coin, with its label above, centred on the point where releasing would swap.
  * It turns terracotta and stops pinging once the drag is there. Not shown when
  * that point is above the window: leaving the window cancels the drag.
@@ -21,7 +21,7 @@ export function SwapHint({ aim }: { aim: SwapAim | null }) {
           aim.armed ? "text-terracotta" : "text-anthracite"
         }`}
       >
-        Drag here to switch boards
+        {aim.touch ? "Release here to switch boards" : "Drag here to switch boards"}
       </span>
       <span className={`oct flex size-8 items-center justify-center ${aim.armed ? "bg-terracotta" : "bg-anthracite"}`}>
         <span className="relative size-2.5">
