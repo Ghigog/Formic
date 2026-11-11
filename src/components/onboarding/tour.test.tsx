@@ -64,7 +64,7 @@ const flush = () =>
 
 describe("Tour", () => {
   it.each([
-    [true, "Swipe up with three fingers"],
+    [true, "Swipe up with two fingers"],
     [false, "Hold the right mouse button"],
   ])("says the touch line only on a coarse pointer (%s)", async (coarse, line) => {
     vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce") || (coarse && q.includes("coarse")), addEventListener() {}, removeEventListener() {} }));

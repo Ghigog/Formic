@@ -5,7 +5,7 @@ import { gotoBoard } from "./board";
  * Swapping boards with a real right-button drag: the board digs through the
  * earth to the next board in the picker's order, and that board is the one
  * left open. Two boards without a repository give the order somewhere to go.
- * The three-finger swipe is in mobile.spec.ts.
+ * The two-finger swipe is in mobile.spec.ts.
  */
 
 /** The board in view, by the name its header shows. */
