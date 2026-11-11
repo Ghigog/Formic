@@ -458,7 +458,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
               className={`${gradeText(g.grade)} inline-flex size-[68px] sm:size-[84px] shrink-0 flex-col items-center justify-center gap-0.5 transition-[background] duration-400`}
               style={{ background: g.ink, clipPath: BIG_OCT }}
             >
-              <span className="font-mono text-[9px] tracking-[0.14em]">
+              <span className="font-mono text-[10px] tracking-[0.14em]">
                 GRADE
               </span>
               <span className="font-serif text-[32px] leading-none font-semibold">
@@ -652,7 +652,7 @@ function Card({
         >
           <Portrait id={x.id} />
         </div>
-        <span className="text-anthracite absolute top-2.5 left-2.5 rounded-full bg-white/90 px-2 py-1 font-mono text-[9px] font-medium tracking-[0.12em] uppercase">
+        <span className="text-anthracite absolute top-2.5 left-2.5 rounded-full bg-white/90 px-2 py-1 font-mono text-[10px] font-medium tracking-[0.12em] uppercase">
           {x.name}
         </span>
         <span
@@ -669,7 +669,7 @@ function Card({
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 md:flex-none">
         <div className="flex flex-col gap-1">
-          <span className="text-ink font-serif text-[20px] leading-[1.1] font-semibold">
+          <span className="text-ink font-serif text-[22px] leading-[1.1] font-semibold">
             {x.who}
           </span>
           <span className="text-muted text-[12px]">{x.kind}</span>
@@ -677,7 +677,7 @@ function Card({
         <Stars n={st.stars ?? 0} size={17} id={x.id} dull={st.auditStale} />
         <p
           className={cn(
-            "m-0 font-serif text-[16px] leading-[1.4] text-pretty italic",
+            "m-0 font-serif text-[15px] leading-[1.4] text-pretty italic",
             st.quote ? "text-ink" : "text-muted",
           )}
         >
@@ -825,7 +825,7 @@ function Report({
           <Portrait id={x.id} />
         </span>
         <div className="flex min-w-0 grow flex-col gap-1">
-          <span className="font-serif text-[20px] leading-[1.1] font-semibold">
+          <span className="font-serif text-[22px] leading-[1.1] font-semibold">
             {x.who}
           </span>
           <span className="text-muted font-mono text-[10px] uppercase">
@@ -911,7 +911,7 @@ function Report({
                 These stars are capped by the findings listed below, not by a rubric failure.
               </p>
             )}
-            <p className="text-ink m-0 font-serif text-[16px] leading-[1.4] text-pretty">
+            <p className="text-ink m-0 font-serif text-[15px] leading-[1.4] text-pretty">
               {st.summary}
             </p>
           </div>
@@ -1003,7 +1003,7 @@ function Report({
       )}
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-muted font-mono text-[9px] tracking-[0.12em]">
+        <span className="text-muted font-mono text-[10px] tracking-[0.12em]">
           PROMPT
         </span>
         <p className="bg-panel text-muted m-0 rounded-lg px-3.5 py-3 font-mono text-[11px] leading-[1.6] text-pretty">
