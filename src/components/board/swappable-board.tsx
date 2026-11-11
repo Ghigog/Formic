@@ -22,7 +22,7 @@ export interface SwappableBoardProps {
 
 /**
  * The board, swappable for the next or previous one in the repo picker's
- * order without a reload: a three-finger swipe up (or a right-button drag up)
+ * order without a reload: a two-finger swipe up (or a right-button drag up)
  * digs down to the next board, down goes back up. The board follows the hand
  * as it moves, and the swap itself is a dig through the colony's earth (see
  * DigTransition). The order is fetched on the first swap and frozen for the
@@ -98,7 +98,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
 
   useEffect(() => attachSwapSound(), []);
 
-  // Native listeners: a three-finger move must stop the page scrolling under
+  // Native listeners: a two-finger move must stop the page scrolling under
   // it, which a passive (React) touch listener cannot do.
   useEffect(() => {
     const el = stage.current;
@@ -112,7 +112,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
     const touchMove = (e: TouchEvent) => {
       if (g.touchMove(e)) e.preventDefault();
     };
-    const touchEnd = (e: TouchEvent) => g.touchEnd(e);
+    const touchEnd = () => g.touchEnd();
     const touchCancel = () => g.touchCancel();
     const pointerDown = (e: PointerEvent) => g.pointerDown(e, el);
     const pointerMove = (e: PointerEvent) => g.pointerMove(e);
@@ -155,7 +155,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
 
   /*
    * Anything but a swap ends the streak and records the board in view as
-   * opened. A click, not a press: every finger of a three-finger swipe and
+   * opened. A click, not a press: every finger of a two-finger swipe and
    * the right button of a drag press too, and neither clicks.
    */
   const endStreak = () => {

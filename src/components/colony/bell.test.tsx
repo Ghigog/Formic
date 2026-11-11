@@ -3,10 +3,13 @@ import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const struck = vi.hoisted(() => [] as number[]);
+const cues = vi.hoisted(() => [] as string[]);
 vi.mock("./colony", () => ({
   useColony: () => ({
-    sfx: (name: string, strength = 0) =>
-      name === "bell" && struck.push(strength),
+    sfx: (name: string, strength = 0) => {
+      cues.push(name);
+      if (name === "bell") struck.push(strength);
+    },
   }),
 }));
 
@@ -18,6 +21,7 @@ let posts: string[];
 
 beforeEach(() => {
   struck.length = 0;
+  cues.length = 0;
   posts = [];
   state = { left: 0, armed: false };
   vi.stubGlobal("matchMedia", (query: string) => ({
@@ -129,10 +133,33 @@ describe("the bell", () => {
       expect(screen.getByRole("status")).toHaveTextContent(/Golden bell armed/),
     );
     expect(screen.getByTestId("bell-rig")).toHaveAttribute("data-armed");
+    expect(cues.filter((c) => c === "dong")).toHaveLength(1);
     expect(screen.getByRole("button", { name: /armed/i })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+  });
+
+  it("is silent when put back to silver", async () => {
+    state = { left: 1, armed: true };
+    render(<Harness />);
+    await screen.findByRole("button", { name: /armed/i });
+    fireEvent.click(screen.getByRole("button", { name: /armed/i }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Back to silver."));
+    expect(posts).toEqual(["disarm"]);
+    expect(cues).not.toContain("dong");
+  });
+
+  it("does not dong when the arm request fails", async () => {
+    state = { left: 2, armed: false };
+    render(<Harness />);
+    await screen.findByRole("button", { name: /2 golden bells left/ });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("no", { status: 500 })));
+    fireEvent.click(screen.getByRole("button", { name: /tap to arm a golden bell/i }));
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(cues).not.toContain("dong");
+    expect(screen.getByTestId("bell-rig")).not.toHaveAttribute("data-armed");
   });
 
   it("explains there is no golden bell yet, without arming, when none are left", async () => {
@@ -145,6 +172,7 @@ describe("the bell", () => {
       /one comes every five levels/,
     );
     expect(posts).toEqual([]);
+    expect(cues).not.toContain("dong");
   });
 
   it("draws a flat bell in currentColor when silver and gold when armed, with no hook", async () => {
@@ -163,5 +191,37 @@ describe("the bell", () => {
     expect(screen.getByTestId("bell-body").getAttribute("fill")).toMatch(
       /^url\(#.*gold\)$/,
     );
+  });
+
+  it("fetches and arms the board it is given, and refetches when the board changes", async () => {
+    const urls: string[] = [];
+    const bodies: unknown[] = [];
+    const boards: Record<string, State | undefined> = {
+      A: { left: 1, armed: true },
+      B: { left: 1, armed: false },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        urls.push(url);
+        if (init?.method === "POST") {
+          const body = JSON.parse(init.body as string);
+          bodies.push(body);
+          boards[body.projectId] = { ...boards[body.projectId]!, armed: body.action === "arm" };
+          return Response.json(boards[body.projectId]);
+        }
+        return Response.json(boards[new URL(url, "http://x").searchParams.get("projectId")!]);
+      }),
+    );
+    const { rerender } = render(<Bell projectId="A" />);
+    await waitFor(() => expect(screen.getByTestId("bell-rig").dataset.armed).toBe("true"));
+    expect(urls[0]).toBe("/api/bell?projectId=A");
+    rerender(<Bell projectId="B" />);
+    await waitFor(() => expect(urls).toContain("/api/bell?projectId=B"));
+    await waitFor(() => expect(screen.getByTestId("bell-rig").dataset.armed).toBeUndefined());
+    fireEvent.click(screen.getByRole("button", { name: /tap to arm/i }));
+    await waitFor(() => expect(bodies).toEqual([{ action: "arm", projectId: "B" }]));
+    await waitFor(() => expect(screen.getByRole("button", { name: /armed/i }).getAttribute("aria-pressed")).toBe("true"));
+    expect(boards.A!.armed).toBe(true);
   });
 });

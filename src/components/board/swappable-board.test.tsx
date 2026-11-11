@@ -47,14 +47,17 @@ afterEach(() => vi.unstubAllGlobals());
 
 const renderBoard = () => render(<SwappableBoard account={account} projectId="a" board={props("A")} />);
 const stage = () => screen.getByTestId("dig-transition").parentElement!;
-const fingers = (y: number) => [0, 20, 40].map((x) => ({ clientX: 100 + x, clientY: y, identifier: x }));
+const fingers = (y: number) => [0, 40].map((x) => ({ clientX: 100 + x, clientY: y, identifier: x }));
 
-/** A three-finger swipe on the board: up digs down to the next board, down goes back. */
+/** A two-finger swipe on the board: up digs down to the next board, down goes back. */
 function swipe(direction: "down" | "up") {
   const [from, to] = direction === "down" ? [400, 250] : [250, 400];
   fireEvent.touchStart(stage(), { touches: fingers(from) });
   fireEvent.touchMove(stage(), { touches: fingers((from + to) / 2) });
+  expect(screen.getByTestId("swap-hint").textContent).toContain("Release here to switch boards");
+  fireEvent.touchMove(stage(), { touches: fingers(to) });
   fireEvent.touchEnd(stage(), { touches: [], changedTouches: fingers(to) });
+  expect(screen.queryByTestId("swap-hint")).toBeNull();
 }
 const opened = () => calls.filter((c) => c.url === "/api/projects/opened");
 const toLoad = { timeout: 3000 };
@@ -77,11 +80,11 @@ describe("SwappableBoard", () => {
     expect(calls.filter((c) => c.url === "/api/projects/swap")).toHaveLength(0);
   });
 
-  it("digs down to the next board on a three-finger swipe up, remounted, without recording it as opened", async () => {
+  it("digs down to the next board on a two-finger swipe up, remounted, without recording it as opened", async () => {
     renderBoard();
     swipe("down");
     expect(await screen.findByText("B", undefined, toLoad)).toBeTruthy();
-    expect(mounts.count).toBe(2);
+    await waitFor(() => expect(mounts.count).toBe(2), toLoad);
     expect(opened()).toHaveLength(0);
   });
 
