@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { approve, closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
+import { approve, BATCH_CI_LIMIT_MS, closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
 import { resetMergeLanes } from "./lane";
 import { repository } from "@/lib/db";
 import { subscribe } from "@/lib/events/bus";
@@ -377,6 +377,42 @@ describe("merge batches", () => {
     expect((await vcs.pullRequest(queue[0]!.prNumber)).headSha).not.toBe(queue[0]!.headSha);
     // And none of them joins another batch on the head that failed.
     await vi.waitFor(async () => expect(await vcs.findPullRequest(BATCH)).toBeNull());
+  });
+
+  it("gives the batch up when its CI is cancelled, so the queue goes on without it", async () => {
+    const queue = await seedApproved(3);
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+    const batch = (await vcs.findPullRequest(BATCH))!;
+
+    await reviewPullRequest(PROJECT, batch.number, MockVcsClient.setChecks(batch.number, "cancelled"));
+
+    expect((await vcs.pullRequest(batch.number)).state).toBe("closed");
+    for (const q of queue) expect(await merged(q.prNumber)).toBe(false);
+    expect((await vcs.pullRequest(queue[0]!.prNumber)).headSha).not.toBe(queue[0]!.headSha);
+    await vi.waitFor(async () => expect(await vcs.findPullRequest(BATCH)).toBeNull());
+  });
+
+  it("gives the batch up when its CI has not finished in time", async () => {
+    const queue = await seedApproved(3);
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+    const batch = (await vcs.findPullRequest(BATCH))!;
+
+    // Still running: it waits.
+    MockVcsClient.checksRunning(batch.number);
+    await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+    expect((await vcs.pullRequest(batch.number)).state).toBe("open");
+
+    const later = Date.now() + BATCH_CI_LIMIT_MS + 60_000;
+    const now = vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      await reviewPullRequest(PROJECT, queue[0]!.prNumber, queue[0]!.headSha);
+    } finally {
+      now.mockRestore();
+    }
+
+    expect((await vcs.pullRequest(batch.number)).state).toBe("closed");
+    for (const q of queue) expect(await merged(q.prNumber)).toBe(false);
+    expect((await vcs.pullRequest(queue[0]!.prNumber)).headSha).not.toBe(queue[0]!.headSha);
   });
 
   it("leaves out one that conflicts with the rest", async () => {

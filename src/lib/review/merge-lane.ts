@@ -119,6 +119,8 @@ export interface MergeBatch {
   targetSha: string;
   /** In the order they were merged onto the batch branch, which is the order they land. */
   members: Array<{ ticketId: string; key: string; prNumber: number; headSha: string }>;
+  /** When it was opened, in epoch ms. Missing on batches recorded before it was kept. */
+  startedAt?: number;
 }
 
 const BATCH_TTL_MS = 2 * 60 * 60 * 1000;
