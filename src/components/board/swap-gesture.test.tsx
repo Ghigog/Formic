@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSwapGestures, MAX_PULL, pullFor } from "./swap-gesture";
+import { classifyTwoFingerTravel, createSwapGestures, MAX_PULL, pullFor } from "./swap-gesture";
 
 const boundary = document.createElement("div");
 const target = document.createElement("div");
@@ -11,37 +11,73 @@ function setup() {
   return { onSwap, g: createSwapGestures(onSwap) };
 }
 
-describe("three-finger swipe", () => {
+const two = (y: number, x = 100) => [at(x, y), at(x + 40, y)];
+const three = (y: number) => [at(100, y), at(120, y), at(140, y)];
+
+/** Two fingers down at y=300, moved to `to` in a few steps, then lifted. */
+function swipe(g: ReturnType<typeof createSwapGestures>, to: number) {
+  g.touchStart({ touches: two(300), target }, boundary);
+  g.touchMove({ touches: two((300 + to) / 2) });
+  g.touchMove({ touches: two(to) });
+  g.touchEnd();
+}
+
+describe("two-finger swipe", () => {
   it("requests a down swap for an upward swipe past the threshold", () => {
     const { g, onSwap } = setup();
-    g.touchStart({ touches: [at(100, 300), at(120, 300), at(140, 300)], target }, boundary);
-    g.touchEnd({ changedTouches: [at(102, 200)] });
+    swipe(g, 200);
     expect(onSwap).toHaveBeenCalledWith("down");
   });
 
   it("requests an up swap for a downward swipe", () => {
     const { g, onSwap } = setup();
-    g.touchStart({ touches: [at(100, 100), at(120, 100), at(140, 100)], target }, boundary);
-    g.touchEnd({ changedTouches: [at(100, 200)] });
+    swipe(g, 400);
     expect(onSwap).toHaveBeenCalledWith("up");
   });
 
-  it("ignores one-finger sideways swipes", () => {
+  it("ignores one-finger swipes, sideways or vertical", () => {
     const { g, onSwap } = setup();
     g.touchStart({ touches: [at(300, 100)], target }, boundary);
-    g.touchEnd({ changedTouches: [at(100, 100)] });
+    expect(g.touchMove({ touches: [at(100, 100)] })).toBe(false);
+    g.touchEnd();
+    g.touchStart({ touches: [at(0, 300)], target }, boundary);
+    expect(g.touchMove({ touches: [at(0, 100)] })).toBe(false);
+    g.touchEnd();
     expect(onSwap).not.toHaveBeenCalled();
   });
 
-  it("ignores one-finger vertical travel and short or sideways three-finger travel", () => {
+  it("ignores short and sideways two-finger travel", () => {
     const { g, onSwap } = setup();
-    g.touchStart({ touches: [at(0, 300)], target }, boundary);
-    g.touchEnd({ changedTouches: [at(0, 100)] });
-    const three = [at(0, 300), at(10, 300), at(20, 300)];
-    g.touchStart({ touches: three, target }, boundary);
-    g.touchEnd({ changedTouches: [at(0, 280)] });
-    g.touchStart({ touches: three, target }, boundary);
-    g.touchEnd({ changedTouches: [at(200, 200)] });
+    swipe(g, 280);
+    g.touchStart({ touches: two(300), target }, boundary);
+    g.touchMove({ touches: two(200, 300) });
+    g.touchEnd();
+    expect(onSwap).not.toHaveBeenCalled();
+  });
+
+  it("never swaps with three fingers", () => {
+    const { g, onSwap } = setup();
+    g.touchStart({ touches: three(300), target }, boundary);
+    expect(g.touchMove({ touches: three(200) })).toBe(false);
+    g.touchEnd();
+    // A third finger joining two that were already down ends the swipe.
+    g.touchStart({ touches: two(300), target }, boundary);
+    g.touchStart({ touches: three(300), target }, boundary);
+    expect(g.touchMove({ touches: three(200) })).toBe(false);
+    g.touchEnd();
+    expect(onSwap).not.toHaveBeenCalled();
+  });
+
+  it("never swaps on a pinch, and does not claim it", () => {
+    const onSwap = vi.fn();
+    const onPull = vi.fn();
+    const g = createSwapGestures(onSwap, onPull);
+    g.touchStart({ touches: [at(100, 300), at(140, 300)], target }, boundary);
+    expect(g.touchMove({ touches: [at(60, 300), at(180, 300)] })).toBe(false);
+    // Spreading while drifting up is still a pinch.
+    expect(g.touchMove({ touches: [at(40, 200), at(200, 280)] })).toBe(false);
+    g.touchEnd();
+    expect(onPull).not.toHaveBeenCalled();
     expect(onSwap).not.toHaveBeenCalled();
   });
 
@@ -50,10 +86,29 @@ describe("three-finger swipe", () => {
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
     boundary.append(dialog);
-    g.touchStart({ touches: [at(0, 300), at(10, 300), at(20, 300)], target: dialog }, boundary);
-    g.touchEnd({ changedTouches: [at(0, 100)] });
+    g.touchStart({ touches: two(300), target: dialog }, boundary);
+    expect(g.touchMove({ touches: two(100) })).toBe(false);
+    g.touchEnd();
     dialog.remove();
     expect(onSwap).not.toHaveBeenCalled();
+  });
+});
+
+describe("classifyTwoFingerTravel", () => {
+  const start = [at(100, 300), at(140, 300)] as const;
+  it("is pending until the fingers have travelled", () => {
+    expect(classifyTwoFingerTravel(start, [at(100, 295), at(140, 295)])).toBe("pending");
+  });
+  it("calls parallel vertical travel a swipe, either way", () => {
+    expect(classifyTwoFingerTravel(start, [at(102, 250), at(142, 252)])).toBe("swipe");
+    expect(classifyTwoFingerTravel(start, [at(100, 350), at(140, 350)])).toBe("swipe");
+  });
+  it("calls a change in the distance between them a pinch", () => {
+    expect(classifyTwoFingerTravel(start, [at(70, 300), at(170, 300)])).toBe("pinch");
+    expect(classifyTwoFingerTravel(start, [at(100, 290), at(140, 340)])).toBe("pinch");
+  });
+  it("does not call sideways travel a swipe", () => {
+    expect(classifyTwoFingerTravel(start, [at(200, 280), at(240, 280)])).toBe("pending");
   });
 });
 
@@ -87,16 +142,17 @@ describe("right-button drag", () => {
 });
 
 describe("following the hand", () => {
-  it("reports a three-finger swipe's travel as it goes, with resistance, and lets go at the end", () => {
+  it("reports a two-finger swipe's travel as it goes, with resistance, and lets go at the end", () => {
     const onSwap = vi.fn();
     const onPull = vi.fn();
     const g = createSwapGestures(onSwap, onPull);
-    g.touchStart({ touches: [at(100, 300), at(120, 300), at(140, 300)], target }, boundary);
-    expect(g.touchMove({ touches: [at(100, 260), at(120, 260), at(140, 260)] })).toBe(true);
+    g.touchStart({ touches: two(300), target }, boundary);
+    expect(g.touchMove({ touches: two(260) })).toBe(true);
     const pulled = onPull.mock.calls.at(-1)![0] as number;
     expect(pulled).toBeLessThan(0);
     expect(pulled).toBeGreaterThan(-40);
-    g.touchEnd({ changedTouches: [at(100, 200)] });
+    g.touchMove({ touches: two(200) });
+    g.touchEnd();
     expect(onPull).toHaveBeenLastCalledWith(null);
     expect(onSwap).toHaveBeenCalledWith("down");
   });
@@ -201,13 +257,54 @@ describe("aiming", () => {
     expect(onAim).toHaveBeenLastCalledWith(null);
   });
 
-  it("does not aim for the left button or a three-finger swipe", () => {
+  it("aims a two-finger swipe at one threshold in its direction, armed once it has travelled that far", () => {
+    const onAim = vi.fn();
+    const g = createSwapGestures(vi.fn(), vi.fn(), onAim);
+    g.touchStart({ touches: two(300), target }, boundary);
+    g.touchMove({ touches: two(270) });
+    expect(onAim).toHaveBeenLastCalledWith({ x: 120, y: 240, armed: false, touch: true });
+    g.touchMove({ touches: two(235) });
+    expect(onAim).toHaveBeenLastCalledWith({ x: 120, y: 240, armed: true, touch: true });
+    g.touchEnd();
+    expect(onAim).toHaveBeenLastCalledWith(null);
+  });
+
+  it("aims below the fingers when they swipe down", () => {
+    const onAim = vi.fn();
+    const g = createSwapGestures(vi.fn(), vi.fn(), onAim);
+    g.touchStart({ touches: two(300), target }, boundary);
+    g.touchMove({ touches: two(340) });
+    expect(onAim).toHaveBeenLastCalledWith({ x: 120, y: 360, armed: false, touch: true });
+  });
+
+  it("takes the aim away on a cancel, a lost finger or a pinch", () => {
+    for (const end of [
+      (g: ReturnType<typeof createSwapGestures>) => g.touchCancel(),
+      (g: ReturnType<typeof createSwapGestures>) => g.touchMove({ touches: [at(100, 250)] }),
+      (g: ReturnType<typeof createSwapGestures>) => g.touchMove({ touches: [at(40, 250), at(200, 250)] }),
+    ]) {
+      const onAim = vi.fn();
+      const onSwap = vi.fn();
+      const g = createSwapGestures(onSwap, vi.fn(), onAim);
+      g.touchStart({ touches: two(300), target }, boundary);
+      g.touchMove({ touches: two(250) });
+      end(g);
+      g.touchEnd();
+      expect(onAim).toHaveBeenLastCalledWith(null);
+      expect(onSwap).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not aim for the left button, three fingers or a one-finger swipe", () => {
     const onAim = vi.fn();
     const g = createSwapGestures(vi.fn(), vi.fn(), onAim);
     g.pointerDown({ ...at(100, 300), button: 0, target }, boundary);
-    g.touchStart({ touches: [at(100, 300), at(120, 300), at(140, 300)], target }, boundary);
-    g.touchMove({ touches: [at(100, 200), at(120, 200), at(140, 200)] });
-    g.touchEnd({ changedTouches: [at(100, 200)] });
+    g.touchStart({ touches: three(300), target }, boundary);
+    g.touchMove({ touches: three(200) });
+    g.touchEnd();
+    g.touchStart({ touches: [at(100, 300)], target }, boundary);
+    g.touchMove({ touches: [at(100, 200)] });
+    g.touchEnd();
     expect(onAim).not.toHaveBeenCalled();
   });
 });
