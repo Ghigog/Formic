@@ -59,8 +59,8 @@ export function CoinBadge({
       <span
         style={t.tint ? { backgroundColor: t.tint } : undefined}
         className={cn(
-          "oct inline-flex items-center gap-1 px-[7px] py-[2px]",
-          "font-mono text-[9px] whitespace-nowrap",
+          "oct inline-flex items-center gap-1 px-2 py-0.5",
+          "font-mono text-[10px] whitespace-nowrap",
           fill,
           t.text,
           className,

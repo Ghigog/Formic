@@ -10,7 +10,7 @@ export default function NotFound() {
         </p>
         <Link
           href="/"
-          className="bg-cta inline-flex h-10 items-center justify-center rounded-lg text-[14px] font-semibold text-white"
+          className="bg-cta inline-flex h-10 items-center justify-center rounded-lg text-[13px] font-semibold text-white"
         >
           Back to the board
         </Link>

@@ -459,7 +459,7 @@ function EpicLine({ card }: { card: BoardCard }) {
   const epic = card.epicId ? env?.epics.get(card.epicId) : undefined;
   const text = epic ? `${epic.key} · ${epic.title}` : isBug(card, env?.epics ?? NO_EPICS) ? "Triage" : card.epicId ? null : "Raw idea";
   if (!text) return null;
-  return <span className="text-muted truncate font-mono text-[9px]">{text}</span>;
+  return <span className="text-muted truncate font-mono text-[10px]">{text}</span>;
 }
 
 /**
@@ -508,7 +508,7 @@ function CardShell({
       <canvas
         data-trail
         aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 size-full rounded-[7px]"
+        className="pointer-events-none absolute inset-0 -z-10 size-full rounded-lg"
       />
       {children}
     </div>
@@ -650,7 +650,7 @@ function BacklogEpic({
         <ProblemBadge card={card} />
         <AdvanceButton card={card} column={column} />
       </div>
-      <h3 className="text-ink font-serif text-[16px] leading-dense font-semibold">
+      <h3 className="text-ink font-serif text-[15px] leading-dense font-semibold">
         {card.title}
       </h3>
       {extras.summary && (
@@ -677,7 +677,7 @@ function RawIdea({
     <CardShell card={card} className="bg-card border-line flex flex-col gap-2 p-3">
       <TicketHead card={card} column={column} />
       <Title>{card.title}</Title>
-      <span className="text-muted truncate font-mono text-[9px]">
+      <span className="text-muted truncate font-mono text-[10px]">
         {isBug(card, NO_EPICS) ? "Triage" : "Raw idea"}
         {extras.age ? ` · ${extras.age}` : ""}
       </span>
@@ -856,10 +856,10 @@ function ReviewCard({
           the error without opening the sandbox inspector. */}
       {extras.logExcerpt && (
         <div className="bg-anthracite rounded-md p-2">
-          <span className="text-log-text block font-mono text-[9px] leading-[1.6]">
+          <span className="text-log-text block font-mono text-[10px] leading-[1.6]">
             {extras.logExcerpt[0]}
           </span>
-          <span className="text-log-error block font-mono text-[9px] leading-[1.6]">
+          <span className="text-log-error block font-mono text-[10px] leading-[1.6]">
             {extras.logExcerpt[1]}
           </span>
         </div>
@@ -899,7 +899,7 @@ function DoneCard({ card, column, extras }: { card: BoardCard; column: ColumnId;
       <TicketHead card={card} column={column} />
       <Title>{card.title}</Title>
       <EpicLine card={card} />
-      <span className="text-muted inline-flex items-center gap-1.5 font-mono text-[9px]">
+      <span className="text-muted inline-flex items-center gap-1.5 font-mono text-[10px]">
         <span aria-hidden className="bg-jade size-[5px] rounded-full" />
         {trail}
       </span>
@@ -946,7 +946,7 @@ function PlainTicket({
         </span>
       ) : (
         card.blockedReason && (
-          <span className="text-muted inline-flex min-w-0 items-center gap-1.5 font-mono text-[9px]">
+          <span className="text-muted inline-flex min-w-0 items-center gap-1.5 font-mono text-[10px]">
             <span aria-hidden className="bg-idle size-[5px] shrink-0 rounded-full" />
             <span className="truncate" title={card.blockedReason}>
               {card.blockedReason}
@@ -1132,7 +1132,7 @@ function ChildRow({ card, column }: { card: BoardCard; column: ColumnId }) {
         <CardQueenMark card={card} />
         <ProblemBadge card={card} />
         {card.storyPoints != null && (
-          <span className="text-muted ml-auto shrink-0 font-mono text-[9px]">{card.storyPoints} SP</span>
+          <span className="text-muted ml-auto shrink-0 font-mono text-[10px]">{card.storyPoints} SP</span>
         )}
       </div>
       <span className="text-muted font-mono text-[10px] whitespace-nowrap">{card.key}</span>
@@ -1167,7 +1167,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
   return (
     <div
       data-tid={card.id}
-      className="bg-nested border-line flex flex-col gap-[5px] rounded-md border px-2.5 py-2 leading-[normal]"
+      className="bg-nested border-line flex flex-col gap-1 rounded-md border px-2.5 py-2 leading-[normal]"
     >
       <div className="flex items-center gap-1.5">
         <span aria-hidden className="bg-jade size-[5px] shrink-0 rounded-full" />
@@ -1178,7 +1178,7 @@ function MergedRow({ card, extras }: { card: BoardCard; extras: CardExtras }) {
           {card.title}
         </h4>
       </div>
-      <span className="text-muted font-mono text-[9px]">{trail}</span>
+      <span className="text-muted font-mono text-[10px]">{trail}</span>
     </div>
   );
 }
@@ -1300,7 +1300,7 @@ export const EpicGroup = memo(function EpicGroup({
               </button>
             </div>
 
-            <h3 className="text-ink font-serif text-[16px] leading-dense font-semibold">
+            <h3 className="text-ink font-serif text-[15px] leading-dense font-semibold">
               <button
                 type="button"
                 onClick={() => onOpen(epic)}
@@ -1350,7 +1350,7 @@ export const EpicGroup = memo(function EpicGroup({
             // A long list scrolls inside the group, so one big Epic does not
             // push everything else in the column out of reach.
             "group scroll-area relative max-h-[min(420px,55dvh)]",
-            done ? "bg-card p-3" : "bg-nested py-3 pr-3 pl-[34px]",
+            done ? "bg-card p-3" : "bg-nested py-3 pr-3 pl-8",
           )}
         >
           {!done && (
