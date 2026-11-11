@@ -175,7 +175,7 @@ test("the sentinel Re-audit label stays on one line at 390px", async ({
   expect(label).toBeLessThanOrEqual(lineHeight + 1);
 });
 
-test("a three-finger swipe digs through the earth to another board", async ({
+test("a two-finger swipe digs through the earth to another board", async ({
   page,
   context,
 }) => {
@@ -209,7 +209,7 @@ test("a three-finger swipe digs through the earth to another board", async ({
 
   const cdp = await context.newCDPSession(page);
   const fingers = (y: number) =>
-    [0, 40, 80].map((dx, id) => ({ x: 140 + dx, y, id }));
+    [0, 40].map((dx, id) => ({ x: 140 + dx, y, id }));
   const [from, to] = down ? [600, 420] : [300, 480];
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchStart",
@@ -222,6 +222,7 @@ test("a three-finger swipe digs through the earth to another board", async ({
     });
   }
   await expect(page.getByTestId("dig-band")).toBeVisible();
+  await expect(page.getByTestId("swap-hint")).toBeVisible();
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchEnd",
     touchPoints: [],

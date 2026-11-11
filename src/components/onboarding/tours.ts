@@ -199,7 +199,7 @@ export const TOURS: Record<TourId, TourDef> = {
         title: "Switch boards",
         next: "Got it",
         text: "Hold the right mouse button and drag up to dig down to your next board. Drag down to come back up.",
-        touchText: "Swipe up with three fingers to dig down to your next board. Swipe down to come back up.",
+        touchText: "Swipe up with two fingers to dig down to your next board. Swipe down to come back up.",
       },
     ],
   },
