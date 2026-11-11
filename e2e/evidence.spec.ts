@@ -66,6 +66,36 @@ const SHOTS: Shot[] = [
     },
   },
   {
+    name: "login",
+    open: async (page) => {
+      await page.goto("/login", { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    },
+  },
+  {
+    // The token only has to be present: the page spends nothing until the button is pressed.
+    name: "login-verify",
+    open: async (page) => {
+      await page.goto("/login/verify?token=evidence", { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("button", { name: "Sign in to Formic" })).toBeVisible();
+    },
+  },
+  {
+    // /legal/accept only takes the POST; the terms a person accepts are on /legal.
+    name: "legal-accept",
+    open: async (page) => {
+      await page.goto("/legal?next=%2F", { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("button", { name: "Accept and continue" })).toBeVisible();
+    },
+  },
+  {
+    name: "not-found",
+    open: async (page) => {
+      await page.goto("/no-such-page", { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+    },
+  },
+  {
     name: "ticket-drawer",
     open: async (page) => {
       await gotoBoard(page);
