@@ -17,12 +17,14 @@ describe("SoundEngine skitter and hiss", () => {
     expect(() => {
       engine.play("skitter");
       engine.play("hiss");
+      engine.play("dong");
     }).not.toThrow();
     engine.setEnabled(false);
     const ac = vi.fn();
     vi.stubGlobal("AudioContext", ac);
     engine.play("skitter");
     engine.play("hiss");
+    engine.play("dong");
     expect(ac).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });

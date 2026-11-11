@@ -53,6 +53,7 @@ export type Sfx =
   | "sentinelVoice"
   | "kpi"
   | "bell"
+  | "dong"
   | "dig"
   | "grit"
   | "surface"
@@ -533,6 +534,25 @@ export class SoundEngine {
           [3.011, 0.012, 0.35],
         ] as const) {
           this.tone(1318.5 * ratio, dur, { gain: gain * loud, attack: 0.003 });
+        }
+        break;
+      }
+      case "dong": {
+        // The golden bell, armed: a big tower bell in the silver bell's family.
+        // A low fundamental, a hum an octave under it, inharmonic partials above
+        // fading at their own rates (high ones first), a soft thud for the
+        // strike, and a long ring. Deep and long, not loud.
+        this.noise(0.12, { freq: 500, to: 120, gain: 0.08, q: 0.7 });
+        for (const [ratio, gain, dur] of [
+          [0.5, 0.06, 3.8],
+          [1, 0.07, 3.4],
+          [1.183, 0.045, 2.8],
+          [1.506, 0.035, 2.2],
+          [2, 0.028, 1.7],
+          [2.514, 0.018, 1.1],
+          [3.011, 0.012, 0.7],
+        ] as const) {
+          this.tone(146.8 * ratio, dur, { gain, attack: 0.006 });
         }
         break;
       }

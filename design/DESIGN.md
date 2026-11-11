@@ -287,7 +287,8 @@ Epic win and timeline
 coin, tally, tick, fill, epic, close
                the epic win overlay sequence (tick climbs with v)
 stamp, scrub   timeline stamp on a merge; dragging the timeline scrubber (v = direction)
-bell           the golden bell is rung (v = swing strength)
+bell           the silver bell is rung by swinging its cord (v = swing strength)
+dong           the golden bell is armed (a deep tower bell, ~3.5 s ring; celebration, so past 0.8 s)
 Sentinels
 sentinelLand   a sentinel card slides in
 sentinelVoice  hover or tap on an avatar; one voice per roster id in SENTINEL_VOICES; throttled
