@@ -91,7 +91,7 @@ export function UnlockAllDialog({ projectId, unlockAll }: { projectId: string; u
         aria-labelledby={titleId}
         className="bg-card border-line box-border flex w-full max-w-[420px] flex-col gap-4 rounded-t-xl border p-5 shadow-[0_30px_60px_-24px_color-mix(in_srgb,var(--anthracite)_45%,transparent)] motion-safe:animate-[reqPop_240ms_cubic-bezier(.2,.9,.3,1.15)] sm:rounded-xl"
       >
-        <h2 id={titleId} className="text-ink m-0 text-[16px] font-semibold">
+        <h2 id={titleId} className="text-ink m-0 text-[18px] font-semibold">
           This project has a long history
         </h2>
         <p className="text-muted m-0 text-[13px] leading-[1.6]">

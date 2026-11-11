@@ -165,7 +165,7 @@ function Composer({
         aria-label="Ask the PM"
         className={cn(
           "border-line bg-cream text-ink placeholder:text-muted h-9 w-full resize-none rounded-lg border py-2 pl-9 text-[13px] leading-5 outline-none focus:border-terracotta",
-          toggle ? "pr-[4.5rem]" : "pr-10",
+          toggle ? "pr-18" : "pr-10",
         )}
       />
       {a.pending && !text.trim() ? (
