@@ -316,11 +316,11 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
         <AutoTour id="colony" delay={800} />
         <div data-tour="colony-rank" className="flex items-center gap-3">
           <span className="bg-anthracite text-on-anthracite inline-flex size-[42px] shrink-0 flex-col items-center justify-center gap-px [clip-path:polygon(10px_0,calc(100%-10px)_0,100%_10px,100%_calc(100%-10px),calc(100%-10px)_100%,10px_100%,0_calc(100%-10px),0_10px)]">
-            <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">LV</span>
+            <span className="text-drawer-muted font-mono text-[10px] tracking-[0.1em]">LV</span>
             <span className="font-serif text-[18px] leading-none font-semibold">{s.level}</span>
           </span>
-          <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
-            <span className="text-ink font-serif text-[20px] leading-[1.1] font-semibold">{s.rank}</span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-ink font-serif text-[18px] leading-[1.1] font-semibold">{s.rank}</span>
             <span className="text-muted font-mono text-[10px]">
               {s.xp.toLocaleString("en-US")} XP earned · {isMaxLevel(s.level) ? "Max level" : `${s.intoLevel}/${XP_PER_LEVEL} this level`}
             </span>
@@ -396,7 +396,7 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
                   <span className={`min-w-0 text-center text-[10px] leading-tight font-semibold break-words ${locked ? "text-muted" : "text-ink"}`}>
                     {u.label}
                   </span>
-                  <span className="text-muted min-h-3 min-w-0 text-center font-mono text-[9px] leading-tight break-words">
+                  <span className="text-muted min-h-3 min-w-0 text-center font-mono text-[10px] leading-tight break-words">
                     {locked ? `Lv ${u.lv}` : on ? "Equipped" : ""}
                   </span>
                 </button>
@@ -433,7 +433,7 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
                       </svg>
                     )}
                   </span>
-                  <span className="text-muted min-w-0 text-center font-mono text-[9px] leading-tight break-words">
+                  <span className="text-muted min-w-0 text-center font-mono text-[10px] leading-tight break-words">
                     {locked ? `Lv ${u.lv}` : u.label}
                   </span>
                 </button>
