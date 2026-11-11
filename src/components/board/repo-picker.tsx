@@ -270,7 +270,7 @@ export function RepoPicker({
             >
               <span className="text-muted">Create</span>
               <span className="text-ink min-w-0 flex-1 truncate font-medium">{fresh}</span>
-              <span className="text-muted border-line rounded border px-1 font-mono text-[9px]">
+              <span className="text-muted border-line rounded border px-1 font-mono text-[10px]">
                 new private repo
               </span>
               {busy === `create:${fresh}` && <span className="text-muted text-[11px]">…</span>}
@@ -356,7 +356,7 @@ export function RepoPicker({
                     )}
                   </span>
                   {r.private && (
-                    <span className="text-muted border-line rounded border px-1 font-mono text-[9px]">
+                    <span className="text-muted border-line rounded border px-1 font-mono text-[10px]">
                       private
                     </span>
                   )}
@@ -395,7 +395,7 @@ export function RepoPicker({
                       )}
                     </span>
                     {r.private && (
-                      <span className="text-muted border-line rounded border px-1 font-mono text-[9px]">
+                      <span className="text-muted border-line rounded border px-1 font-mono text-[10px]">
                         private
                       </span>
                     )}
@@ -421,7 +421,7 @@ export function RepoPicker({
                       A safe board to experiment on. Nothing touches your code.
                     </span>
                   </span>
-                  <span className="bg-jade-chip text-jade-chip-text rounded-full px-1.5 py-px font-mono text-[9px]">
+                  <span className="bg-jade-chip text-jade-chip-text rounded-full px-1.5 py-px font-mono text-[10px]">
                     example
                   </span>
                   {busy === "example" && <span className="text-muted text-[11px]">…</span>}

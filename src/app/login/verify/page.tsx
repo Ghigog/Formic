@@ -25,7 +25,7 @@ export default async function VerifyPage({
             <SubmitOnce
               pending="Signing you in…"
               autoFocus
-              className="bg-cta h-10 rounded-lg text-[14px] font-semibold text-white"
+              className="bg-cta h-10 rounded-lg text-[13px] font-semibold text-white"
             >
               Sign in to Formic
             </SubmitOnce>

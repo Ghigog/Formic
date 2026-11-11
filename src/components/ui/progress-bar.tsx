@@ -29,7 +29,7 @@ export function ProgressBar({
     value == null ? null : Math.round(Math.min(1, Math.max(0, value)) * 100);
 
   return (
-    <div className={cn("flex flex-col gap-[5px]", className)}>
+    <div className={cn("flex flex-col gap-1", className)}>
       <span
         role="progressbar"
         aria-valuenow={pct ?? undefined}

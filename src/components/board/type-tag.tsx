@@ -60,8 +60,8 @@ export function TypeTag({
       style={style}
       className={
         bug && squashed
-          ? "bg-hairline text-muted inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap uppercase"
-          : "inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[9px] tracking-[0.08em] whitespace-nowrap uppercase"
+          ? "bg-hairline text-muted inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[10px] tracking-[0.08em] whitespace-nowrap uppercase"
+          : "inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[10px] tracking-[0.08em] whitespace-nowrap uppercase"
       }
     >
       {label}

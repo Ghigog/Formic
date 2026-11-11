@@ -17,7 +17,7 @@ export function SwapHint({ aim }: { aim: SwapAim | null }) {
       style={{ left: aim.x, top: aim.y }}
     >
       <span
-        className={`absolute bottom-full mb-1.5 font-mono text-[9px] tracking-[0.1em] whitespace-nowrap uppercase ${
+        className={`absolute bottom-full mb-1.5 font-mono text-[10px] tracking-[0.1em] whitespace-nowrap uppercase ${
           aim.armed ? "text-terracotta" : "text-anthracite"
         }`}
       >

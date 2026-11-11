@@ -164,7 +164,7 @@ function Composer({
         }
         aria-label="Ask the PM"
         className={cn(
-          "border-line bg-cream text-ink placeholder:text-muted h-9 w-full resize-none rounded-lg border py-[7px] pl-9 text-[13px] leading-5 outline-none focus:border-terracotta",
+          "border-line bg-cream text-ink placeholder:text-muted h-9 w-full resize-none rounded-lg border py-2 pl-9 text-[13px] leading-5 outline-none focus:border-terracotta",
           toggle ? "pr-[4.5rem]" : "pr-10",
         )}
       />
@@ -181,7 +181,7 @@ function Composer({
             toggle ? "right-9" : "right-1",
           )}
         >
-          <span className="bg-ink size-2.5 rounded-[2px]" aria-hidden />
+          <span className="bg-ink size-2.5 rounded-sm" aria-hidden />
         </button>
       ) : (
         <button
@@ -250,7 +250,7 @@ function QuestionCount({ n }: { n: number }) {
     <span
       data-testid="pm-questions"
       aria-label={`${n} ${n === 1 ? "question" : "questions"} for you`}
-      className="bg-cta text-on-accent absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[9px] leading-none font-bold"
+      className="bg-cta text-on-accent absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[10px] leading-none font-bold"
     >
       {n}
     </span>
@@ -276,7 +276,7 @@ export function AskButton({
         aria-label={a.open ? "Roll the PM up" : "Ask the PM"}
         aria-expanded={a.open}
         data-tour="chat"
-        className="border-line text-ink relative inline-flex size-11 items-center justify-center rounded-[10px] border"
+        className="border-line text-ink relative inline-flex size-11 items-center justify-center rounded-lg border"
       >
         <SparkIcon />
         {!!a.questions && <QuestionCount n={a.questions} />}
@@ -557,7 +557,7 @@ function Shade({
       data-open={a.open}
       data-colony-mask={a.open ? "" : undefined}
       className={cn(
-        "assistant-shade border-line bg-card z-50 flex flex-col rounded-b-2xl border border-t-0 shadow-[0_18px_40px_-12px_rgba(28,25,23,0.28)]",
+        "assistant-shade border-line bg-card z-50 flex flex-col rounded-b-xl border border-t-0 shadow-[0_18px_40px_-12px_rgba(28,25,23,0.28)]",
         className,
       )}
       style={{
@@ -594,7 +594,7 @@ function Shade({
       <div ref={list} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
         {a.messages.length === 0 ? (
           <div className="text-muted mx-auto max-w-[460px] pt-6 text-center text-[13px] leading-[1.6]">
-            <p className="text-ink font-serif text-[16px]">
+            <p className="text-ink font-serif text-[15px]">
               Ask anything about {repoName}.
             </p>
             <p className="mt-2">

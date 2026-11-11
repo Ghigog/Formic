@@ -31,7 +31,7 @@ export default async function LoginPage({
               {email &&
                 (sent ? (
                   <div role="status" className="flex flex-col gap-1">
-                    <p className="text-ink text-[14px] font-semibold">Check your inbox</p>
+                    <p className="text-ink text-[13px] font-semibold">Check your inbox</p>
                     <p className="text-muted text-[13px]">
                       If that address can sign in here, a link is on its way. It works once, for 15
                       minutes.
@@ -58,11 +58,11 @@ export default async function LoginPage({
                       required
                       autoFocus
                       autoComplete="email"
-                      className="border-line bg-cream text-ink focus:border-clay h-10 rounded-md border px-3 text-[14px] outline-none"
+                      className="border-line bg-cream text-ink focus:border-clay h-10 rounded-md border px-3 text-[13px] outline-none"
                     />
                     <SubmitOnce
                       pending="Sending your link…"
-                      className="bg-cta h-10 rounded-lg text-[14px] font-semibold text-white"
+                      className="bg-cta h-10 rounded-lg text-[13px] font-semibold text-white"
                     >
                       Email me a sign-in link
                     </SubmitOnce>
@@ -83,8 +83,8 @@ export default async function LoginPage({
                     href={`/api/auth/github/login?next=${encodeURIComponent(next)}`}
                     className={
                       email
-                        ? "border-line text-ink inline-flex h-10 items-center justify-center gap-2 rounded-lg border text-[14px] font-semibold"
-                        : "bg-anthracite text-on-anthracite inline-flex h-10 items-center justify-center gap-2 rounded-lg text-[14px] font-semibold"
+                        ? "border-line text-ink inline-flex h-10 items-center justify-center gap-2 rounded-lg border text-[13px] font-semibold"
+                        : "bg-anthracite text-on-anthracite inline-flex h-10 items-center justify-center gap-2 rounded-lg text-[13px] font-semibold"
                     }
                   >
                     <GitHubMark />
@@ -104,11 +104,11 @@ export default async function LoginPage({
               aria-label="Password"
               autoFocus
               autoComplete="current-password"
-              className="border-line bg-cream text-ink focus:border-clay h-10 rounded-md border px-3 text-[14px] outline-none"
+              className="border-line bg-cream text-ink focus:border-clay h-10 rounded-md border px-3 text-[13px] outline-none"
             />
             <button
               type="submit"
-              className="bg-cta h-10 rounded-lg text-[14px] font-semibold text-white"
+              className="bg-cta h-10 rounded-lg text-[13px] font-semibold text-white"
             >
               Sign in
             </button>
