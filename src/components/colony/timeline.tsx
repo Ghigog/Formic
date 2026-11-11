@@ -361,13 +361,13 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
             <span className="text-muted font-mono text-[10px] tracking-[0.12em] uppercase">
               Roadmap · {repoName}
             </span>
-            <h1 className="m-0 font-serif text-[28px] leading-none font-semibold tracking-[-0.01em]">
+            <h1 className="m-0 font-serif text-[22px] leading-none font-semibold tracking-[-0.01em]">
               Timeline
             </h1>
           </div>
           <div
             data-tour="timeline-nav"
-            className="text-muted flex items-center gap-1.5 pb-[3px] text-[13px]"
+            className="text-muted flex items-center gap-1.5 pb-0.5 text-[13px]"
           >
             <button
               type="button"
@@ -493,19 +493,19 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
             <div className="border-line box-border flex h-[232px] shrink-0 flex-col gap-3 border-b p-4">
               {!compact && live && (
                 <div className="flex flex-col gap-1">
-                  <span className="text-muted font-mono text-[9px] tracking-[0.12em]">
+                  <span className="text-muted font-mono text-[10px] tracking-[0.12em]">
                     FORECAST FINISH
                   </span>
                   <div className="flex items-center gap-2.5">
                     <span
                       data-tlforecast
-                      className="inline-block font-serif text-[28px] leading-none font-semibold tracking-[-0.01em]"
+                      className="inline-block font-serif text-[22px] leading-none font-semibold tracking-[-0.01em]"
                     >
                       {tl.forecast === null ? "—" : fmt(tl.forecast)}
                     </span>
                     {daysLeft !== null && (
                       <span className="oct inline-flex bg-line p-px">
-                        <span className="oct bg-cream text-ink inline-flex px-2 py-[3px] font-mono text-[10px] tracking-[0.04em]">
+                        <span className="oct bg-cream text-ink inline-flex px-2 py-0.5 font-mono text-[10px] tracking-[0.04em]">
                           {tl.remaining === 0
                             ? "All merged"
                             : daysLeft < 1
@@ -571,12 +571,12 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     <Chevron open={r.open} />
                   </button>
                   {compact ? (
-                    <span className="text-muted min-w-0 flex-1 truncate font-mono text-[9px] tracking-[0.06em]">
+                    <span className="text-muted min-w-0 flex-1 truncate font-mono text-[10px] tracking-[0.06em]">
                       {r.e.key}
                     </span>
                   ) : (
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="text-muted font-mono text-[9px] tracking-[0.06em]">
+                      <span className="text-muted font-mono text-[10px] tracking-[0.06em]">
                         {r.e.key} · {r.e.doneSp}/{r.e.totalSp} SP
                       </span>
                       <span className="truncate font-serif text-[15px] font-semibold">
@@ -587,7 +587,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   {r.e.merged && r.e.grade ? (
                     <div className="flex shrink-0 items-center gap-1.5">
                       {!compact && (
-                        <span className="text-muted font-mono text-[9px]">
+                        <span className="text-muted font-mono text-[10px]">
                           {r.e.yieldRatio!.toFixed(1)}× yield
                         </span>
                       )}
@@ -595,7 +595,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                         data-tlstamp
                         data-color={r.e.grade.color}
                         title={`${r.e.key} merged · ${r.e.yieldRatio!.toFixed(1)}× yield`}
-                        className="oct inline-flex size-7 rotate-[-6deg] items-center justify-center font-serif text-[16px] font-semibold text-white"
+                        className="oct inline-flex size-7 rotate-[-6deg] items-center justify-center font-serif text-[15px] font-semibold text-white"
                         style={{ background: r.e.grade.color }}
                       >
                         {r.e.grade.grade}
@@ -604,7 +604,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                   ) : compact ? (
                     r.e.grade && (
                       <span
-                        className="shrink-0 rounded-full px-[7px] py-[3px] font-mono text-[9px]"
+                        className="shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px]"
                         style={{
                           background: GRADE_CHIP[r.e.grade.grade][0],
                           color: GRADE_CHIP[r.e.grade.grade][1],
@@ -615,7 +615,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     )
                   ) : (
                     <span
-                      className="shrink-0 rounded-full px-[7px] py-[3px] font-mono text-[9px] whitespace-nowrap"
+                      className="shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px] whitespace-nowrap"
                       style={{
                         background: r.e.grade
                           ? GRADE_CHIP[r.e.grade.grade][0]
@@ -634,7 +634,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
               ) : (
                 <div
                   key={r.t.id}
-                  className={`box-border flex h-[34px] items-center gap-2 pr-3 ${compact ? "pl-[16px]" : "pl-[42px]"}`}
+                  className={`box-border flex h-[34px] items-center gap-2 pr-3 ${compact ? "pl-4" : "pl-10"}`}
                 >
                   <span
                     className="size-1.5 shrink-0 rounded-full"
@@ -723,7 +723,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     className="flex flex-col items-center justify-center gap-0.5"
                   >
                     <span
-                      className="font-mono text-[8px] tracking-[0.08em]"
+                      className="font-mono text-[10px] tracking-[0.08em]"
                       style={{
                         color: isT
                           ? "var(--terracotta-deep)"
@@ -755,10 +755,10 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
             </div>
 
             <div className="border-line relative box-border h-[232px] shrink-0 border-b">
-              <span className="text-muted absolute top-3 left-1.5 font-mono text-[9px]">
+              <span className="text-muted absolute top-3 left-1.5 font-mono text-[10px]">
                 {tl.total}
               </span>
-              <span className="text-muted absolute bottom-3 left-1.5 font-mono text-[9px]">
+              <span className="text-muted absolute bottom-3 left-1.5 font-mono text-[10px]">
                 0
               </span>
               <div data-tlreveal className="absolute inset-x-0 top-5 bottom-5">
@@ -836,7 +836,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                       }}
                     />
                     <span
-                      className="bg-epic-chip text-terracotta-deep absolute -translate-x-1/2 -translate-y-[150%] rounded px-1.5 py-0.5 font-mono text-[9px] whitespace-nowrap"
+                      className="bg-epic-chip text-terracotta-deep absolute -translate-x-1/2 -translate-y-[150%] rounded px-1.5 py-0.5 font-mono text-[10px] whitespace-nowrap"
                       style={{
                         left: pct(fEnd[0]),
                         top: `${(Y(fEnd[1]) / 200) * 100}%`,
@@ -961,7 +961,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     className="flex flex-col items-center justify-end gap-1"
                   >
                     <span
-                      className="font-mono text-[9px]"
+                      className="font-mono text-[10px]"
                       style={{
                         color: inStreak
                           ? "var(--terracotta-deep)"
@@ -972,7 +972,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     </span>
                     <span
                       data-tlmound
-                      className="block w-[72%] origin-bottom rounded-[999px_999px_2px_2px]"
+                      className="block w-[72%] origin-bottom rounded-t-full rounded-b-xs"
                       style={{
                         height: d.sp
                           ? `${Math.min(46, 8 + d.sp * 3.8)}px`
@@ -1002,7 +1002,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                 />
                 <span
                   title={`Reached Lv ${lv.level} · ${rankOf(lv.level)}`}
-                  className="bg-anthracite text-on-anthracite absolute top-[250px] -translate-x-1/2 px-[7px] py-[3px] font-mono text-[9px] tracking-[0.08em] whitespace-nowrap [clip-path:polygon(5px_0,calc(100%-5px)_0,100%_5px,100%_calc(100%-5px),calc(100%-5px)_100%,5px_100%,0_calc(100%-5px),0_5px)]"
+                  className="bg-anthracite text-on-anthracite absolute top-[250px] -translate-x-1/2 px-1.5 py-0.5 font-mono text-[10px] tracking-[0.08em] whitespace-nowrap [clip-path:polygon(5px_0,calc(100%-5px)_0,100%_5px,100%_calc(100%-5px),calc(100%-5px)_100%,5px_100%,0_calc(100%-5px),0_5px)]"
                   style={{ left: pct(lv.day) }}
                 >
                   LV {lv.level}
@@ -1019,7 +1019,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                 />
                 <span
                   aria-hidden
-                  className="bg-clay pointer-events-none absolute top-12 -translate-x-1/2 rounded px-1.5 py-0.5 font-mono text-[8px] tracking-[0.1em] text-white"
+                  className="bg-clay pointer-events-none absolute top-12 -translate-x-1/2 rounded px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] text-white"
                   style={{ left: pct(tl.now) }}
                 >
                   NOW
@@ -1080,7 +1080,7 @@ function Legend({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="h-2 w-4 rounded-[3px]" style={swatch} />
+      <span className="h-2 w-4 rounded-sm" style={swatch} />
       {children}
     </span>
   );

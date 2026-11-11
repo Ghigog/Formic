@@ -99,7 +99,7 @@ function Heat({ c }: { c: ColonyApi }) {
           ×{c.multiplier.toFixed(1)}
         </span>
       )}
-      <span aria-hidden className="flex gap-[2px]">
+      <span aria-hidden className="flex gap-0.5">
         {Array.from({ length: HEAT_MAX }, (_, i) => (
           <span
             key={i}
@@ -239,7 +239,7 @@ function TimelineButton({
           {!iconOnly && (
             <>
               Board
-              <span className="border-line text-muted rounded border px-[5px] py-0.5 font-mono text-[9px] font-medium">
+              <span className="border-line text-muted rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium">
                 ESC
               </span>
             </>
@@ -285,7 +285,7 @@ function TimelineButton({
           {!iconOnly && (
             <>
               Timeline
-              <span aria-hidden className="flex gap-[3px] max-xl:hidden">
+              <span aria-hidden className="flex gap-1 max-xl:hidden">
                 {epicPips(c).map((p) => (
                   <span
                     key={p.id}
@@ -349,10 +349,10 @@ export function LevelBadge({
 
   const big = size === 36;
   const face = "absolute inset-0 flex flex-col items-center justify-center gap-px";
-  const label = cn("font-mono tracking-[0.1em]", big ? "text-[8px]" : "text-[9px]");
+  const label = "font-mono text-[10px] leading-none tracking-[0.1em]";
   const num = cn(
     "font-serif leading-none font-semibold",
-    big ? "text-[16px]" : "text-[14px]",
+    big ? "text-[15px]" : "text-[13px]",
   );
   const box = cn(
     "oct-lg bg-anthracite text-on-anthracite relative inline-flex shrink-0",
@@ -499,13 +499,13 @@ export function ColonyMobileStats() {
         role="group"
         aria-label={`Level ${s.level} ${s.rank}, ${c.shownPoints} points`}
         data-tour={c.featureUnlocked("sentinels") ? "points sentinels" : "points"}
-        className="flex h-11 shrink-0 items-center gap-1.5 rounded-[10px] px-1"
+        className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-1"
       >
         <LevelBadge level={s.level} size={32} />
         <PointsPanel c={c} className="h-8 gap-1.5 px-2">
           <PointsCounter
             value={c.shownPoints}
-            className="origin-left text-[14px] max-[359px]:hidden"
+            className="origin-left text-[13px] max-[359px]:hidden"
           />
         </PointsPanel>
       </div>

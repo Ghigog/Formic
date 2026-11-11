@@ -102,8 +102,8 @@ function Kpis({ startAfterMs }: { startAfterMs: number }) {
     <Progress.Provider value={progress}>
     <section ref={ref} aria-label="KPIs" className="flex shrink-0 flex-col gap-3 pt-2">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-ink m-0 font-serif text-[20px] font-semibold">Board KPIs</h2>
-        <div role="group" aria-label="KPI window" className="border-line bg-card flex rounded-[10px] border p-0.5">
+        <h2 className="text-ink m-0 font-serif text-[18px] font-semibold">Board KPIs</h2>
+        <div role="group" aria-label="KPI window" className="border-line bg-card flex rounded-lg border p-0.5">
           {WINDOWS.map((w) => (
             <button
               key={w.id}
@@ -156,9 +156,9 @@ function counted(value: string, p: number): string {
 function Tile({ label, value }: { label: string; value: string }) {
   const p = useContext(Progress);
   return (
-    <div role="group" aria-label={label} className="border-line bg-card rounded-[14px] border px-4 py-3">
+    <div role="group" aria-label={label} className="border-line bg-card rounded-xl border px-4 py-3">
       <div className="text-muted text-[12px]">{label}</div>
-      <div className="text-ink font-mono text-[28px] leading-tight font-medium">{counted(value, p)}</div>
+      <div className="text-ink font-mono text-[22px] leading-tight font-medium">{counted(value, p)}</div>
     </div>
   );
 }
@@ -166,7 +166,7 @@ function Tile({ label, value }: { label: string; value: string }) {
 function Chart({ title, empty, children }: { title: string; empty: boolean; children: React.ReactNode }) {
   const p = useContext(Progress);
   return (
-    <figure role="group" aria-label={title} className="border-line bg-card m-0 rounded-[14px] border px-4 py-3">
+    <figure role="group" aria-label={title} className="border-line bg-card m-0 rounded-xl border px-4 py-3">
       <figcaption className="text-ink mb-2 text-[13px] font-semibold">{title}</figcaption>
       {empty ? (
         <p className="text-muted m-0 text-[12px]">No data in this window.</p>
