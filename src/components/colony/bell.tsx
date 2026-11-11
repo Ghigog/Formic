@@ -195,6 +195,7 @@ export function Bell({ onSay }: { onSay?: (said: string | null) => void }) {
     const next = await postBell(bell.armed ? "disarm" : "arm");
     if (next) {
       setBell({ left: next.left, armed: next.armed, unlimited: next.unlimited });
+      if (next.armed) sfx?.("dong");
       setSaid(
         next.armed
           ? "Golden bell armed. It rings itself a minute after a usage limit resets."
