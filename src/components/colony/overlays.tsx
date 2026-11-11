@@ -41,7 +41,7 @@ export function RerouteToast({ toast }: { toast: RerouteNotice | null }) {
         role="status"
         className="bg-anthracite text-on-anthracite flex max-w-[min(90vw,420px)] items-center gap-2.5 rounded-full py-2.5 pr-4 pl-2.5 text-[12px] font-semibold shadow-[0_16px_32px_-14px_color-mix(in_srgb,var(--anthracite)_55%,transparent)]"
       >
-        <span className="oct bg-clay text-anthracite inline-flex shrink-0 items-center justify-center px-2 py-1 font-mono text-[9px] tracking-[0.08em]">
+        <span className="oct bg-clay text-anthracite inline-flex shrink-0 items-center justify-center px-2 py-1 font-mono text-[10px] tracking-[0.08em]">
           MOVED
         </span>
         <span className="min-w-0 truncate">
@@ -246,11 +246,11 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
           </span>
         </span>
         <span className="oct bg-jade inline-flex p-px">
-          <span className="oct bg-jade-chip text-jade-chip-text inline-flex px-[8px] py-[3px] font-mono text-[10px] tracking-[0.1em]">
+          <span className="oct bg-jade-chip text-jade-chip-text inline-flex px-2 py-0.5 font-mono text-[10px] tracking-[0.1em]">
             EPIC COMPLETE · {win.epic.key}
           </span>
         </span>
-        <h2 id="win-title" className="text-ink m-0 font-serif text-[28px] leading-[1.1] font-semibold tracking-[-0.01em]">
+        <h2 id="win-title" className="text-ink m-0 font-serif text-[22px] leading-[1.1] font-semibold tracking-[-0.01em]">
           {win.epic.title}
         </h2>
 
@@ -259,7 +259,7 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
             <span className="text-muted font-mono text-[10px] tracking-[0.12em]">EPIC SCORE</span>
             <span
               ref={score}
-              className="text-cta inline-block font-mono text-[28px] leading-none font-medium tabular-nums"
+              className="text-cta inline-block font-mono text-[22px] leading-none font-medium tabular-nums"
             >
               +{shown.total}
             </span>
@@ -284,8 +284,8 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
 
         <div className="flex w-full items-center gap-3 text-left">
           <span className="oct-lg bg-anthracite text-on-anthracite inline-flex size-10 shrink-0 flex-col items-center justify-center gap-px">
-            <span className="text-drawer-muted font-mono text-[8px] tracking-[0.1em]">LV</span>
-            <span className="font-serif text-[16px] leading-none font-semibold">{s.level}</span>
+            <span className="text-drawer-muted font-mono text-[10px] tracking-[0.1em]">LV</span>
+            <span className="font-serif text-[15px] leading-none font-semibold">{s.level}</span>
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-2">
