@@ -267,7 +267,7 @@ function QueenTray({ c, onDragging, onError }: { c: ColonyApi; onDragging: (on: 
 }
 
 /** Levels and bug styles: what the colony has earned and what it can wear. */
-export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void }) {
+export function ColonyPopover({ projectId, onOpenArchive }: { projectId?: string; onOpenArchive?: () => void }) {
   const c = useColony();
   const panel = useRef<HTMLDivElement>(null);
   const open = !!c?.colonyOpen;
@@ -340,7 +340,7 @@ export function ColonyPopover({ onOpenArchive }: { onOpenArchive?: () => void })
         <div data-colony-tiles className="relative grid grid-cols-4 gap-2">
           <QueenTray c={c} onDragging={setCarrying} onError={setQueenError} />
           <ColonyPanel level={s.level} onError={setScoutError} />
-          <Bell onSay={setBellSaid} />
+          <Bell projectId={projectId} onSay={setBellSaid} />
         </div>
         {/* One line for what the tiles say, so a message never grows a tile. */}
         <div className="flex flex-col gap-0.5 empty:hidden">

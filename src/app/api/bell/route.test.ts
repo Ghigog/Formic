@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { activeProject, boardCards, goldenBell, setGoldenBellArmed, useGoldenBell, ringBell, level } = vi.hoisted(() => ({
+const { projectById, canSeeBoard, activeProject, boardCards, goldenBell, setGoldenBellArmed, useGoldenBell, ringBell, level } = vi.hoisted(() => ({
+  projectById: vi.fn(),
+  canSeeBoard: vi.fn(),
   activeProject: vi.fn(),
   boardCards: vi.fn(),
   goldenBell: vi.fn(),
@@ -10,7 +12,9 @@ const { activeProject, boardCards, goldenBell, setGoldenBellArmed, useGoldenBell
   level: { value: 12 },
 }));
 
-vi.mock("@/lib/db", () => ({ repository: () => ({ boardCards, goldenBell, setGoldenBellArmed, useGoldenBell }) }));
+vi.mock("@/lib/auth/user", () => ({ asSignedIn: <T,>(h: T) => h, currentUser: async () => ({ id: "u1" }) }));
+vi.mock("@/lib/board/sharing", () => ({ canSeeBoard }));
+vi.mock("@/lib/db", () => ({ repository: () => ({ projectById, boardCards, goldenBell, setGoldenBellArmed, useGoldenBell }) }));
 vi.mock("@/lib/colony/bell", () => ({ ringBell }));
 vi.mock("@/lib/colony/game", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/colony/game")>()),
@@ -27,6 +31,8 @@ const post = (body: unknown) =>
   POST(new Request("http://localhost/api/bell", { method: "POST", body: JSON.stringify(body) }) as never);
 
 beforeEach(() => {
+  projectById.mockReset().mockImplementation(async (id: string) => ({ id }));
+  canSeeBoard.mockReset().mockResolvedValue(true);
   level.value = 12;
   activeProject.mockReset().mockResolvedValue({ id: "p1" });
   boardCards.mockReset().mockResolvedValue([]);
@@ -88,5 +94,33 @@ describe("/api/bell", () => {
 
   it("POST answers 400 for a bad action", async () => {
     expect((await post({ action: "bang" })).status).toBe(400);
+  });
+
+  it("GET reads the board named by projectId, not the cookie's", async () => {
+    activeProject.mockResolvedValue({ id: "B" });
+    goldenBell.mockImplementation(async (id: string) => ({ used: 0, armed: id === "A" }));
+    const res = await GET(new Request("http://localhost/api/bell?projectId=A") as never);
+    expect(await res.json()).toMatchObject({ armed: true });
+    expect(goldenBell).toHaveBeenCalledWith("A");
+    expect(goldenBell).not.toHaveBeenCalledWith("B");
+  });
+
+  it("POST arm arms the named board when the cookie points elsewhere", async () => {
+    activeProject.mockResolvedValue({ id: "B" });
+    expect((await post({ action: "arm", projectId: "A" })).status).toBe(200);
+    expect(setGoldenBellArmed).toHaveBeenCalledWith("A", true);
+    expect(setGoldenBellArmed).not.toHaveBeenCalledWith("B", expect.anything());
+  });
+
+  it("answers 404 and changes nothing for a board the person cannot see", async () => {
+    canSeeBoard.mockResolvedValue(false);
+    expect((await GET(new Request("http://localhost/api/bell?projectId=X") as never)).status).toBe(404);
+    expect((await post({ action: "arm", projectId: "X" })).status).toBe(404);
+    expect(setGoldenBellArmed).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a board that does not exist", async () => {
+    projectById.mockResolvedValue(null);
+    expect((await post({ action: "arm", projectId: "gone" })).status).toBe(404);
   });
 });
