@@ -362,7 +362,7 @@ export function BoardShell({
       <LazyColonyTimeline repoName={repoName} />
       <LazySentinelsPage repoName={repoName} onOpenEpic={setOpenEpicId} />
       {projectId && <UnlockAllDialog projectId={projectId} unlockAll={unlockAllSentinels} />}
-      <ColonyPopover onOpenArchive={() => setArchiveOpen(true)} />
+      <ColonyPopover projectId={projectId} onOpenArchive={() => setArchiveOpen(true)} />
       {archiveOpen && <ArchiveView onClose={() => setArchiveOpen(false)} onRestored={restore} />}
       <LazyColonyToast />
       <LazyRerouteToast toast={rerouteToast} />
