@@ -427,10 +427,10 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
       <div className="mx-auto flex min-h-full max-w-[1640px] flex-col gap-4">
         <h1 className="sr-only">Sentinels</h1>
         <AutoTour id="sentinels" delay={450} />
-        <section data-tour="sentinels-grade" className="border-line bg-card flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-[14px] border px-4 py-3 sm:px-5 sm:py-4">
+        <section data-tour="sentinels-grade" className="border-line bg-card flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
             <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
-              <div className="flex items-baseline gap-2.5">
+              <div className="flex items-baseline gap-2">
                 <span className="text-ink font-mono text-[12px] font-medium">
                   {g.avg.toFixed(2)} / 5 avg
                 </span>
@@ -461,7 +461,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
               <span className="font-mono text-[9px] tracking-[0.14em]">
                 GRADE
               </span>
-              <span className="font-serif text-[32px] sm:text-[42px] leading-none font-semibold">
+              <span className="font-serif text-[32px] leading-none font-semibold">
                 {g.grade}
               </span>
             </span>
@@ -474,7 +474,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
             }}
             disabled={nBusy === unlocked}
             data-tour="sentinels-summon"
-            className="bg-anthracite text-on-anthracite inline-flex h-11 w-full items-center justify-center gap-2.5 sm:w-auto rounded-[10px] px-[16px] text-[14px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
+            className="bg-anthracite text-on-anthracite inline-flex h-11 w-full items-center justify-center gap-2 sm:w-auto rounded-lg px-4 text-[13px] font-semibold transition-transform active:scale-[0.97] disabled:opacity-70"
           >
             <PlayIcon />
             {nBusy ? `Auditing ${nBusy}…` : `Summon all ${unlocked}`}
@@ -560,7 +560,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
             tabIndex={-1}
             onKeyDown={trapReport}
             aria-label={`${reporting.who} audit report`}
-            className="relative max-h-full w-full max-w-[460px] overflow-auto rounded-[14px]"
+            className="relative max-h-full w-full max-w-[460px] overflow-auto rounded-xl"
           >
             <AutoTour id="sentinel-report" delay={450} />
             <button
@@ -631,7 +631,7 @@ function Card({
         }
       }}
       className={cn(
-        "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-center snap-always flex-col md:snap-align-none md:snap-normal overflow-hidden rounded-[14px] border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
+        "bg-card focus-visible:border-terracotta flex w-[264px] shrink-0 cursor-pointer snap-center snap-always flex-col md:snap-align-none md:snap-normal overflow-hidden rounded-xl border outline-none transition-[border-color,box-shadow] hover:shadow-[0_14px_28px_-20px_rgb(28_25_23/0.55)]",
         !reported(st) && "sentinel-motion animate-[sentinelFade_0.4s_ease-out]",
         on
           ? "border-terracotta shadow-[0_0_0_3px_rgb(217_107_39/0.14)]"
@@ -667,8 +667,8 @@ function Card({
           </>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-4 md:flex-none">
-        <div className="flex flex-col gap-[3px]">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 md:flex-none">
+        <div className="flex flex-col gap-1">
           <span className="text-ink font-serif text-[20px] leading-[1.1] font-semibold">
             {x.who}
           </span>
@@ -815,7 +815,7 @@ function Report({
     <aside
       aria-label="Audit report"
       data-tour="sentinel-report"
-      className="border-line bg-card box-border flex flex-col gap-[16px] rounded-[14px] border p-5 pt-12"
+      className="border-line bg-card box-border flex flex-col gap-4 rounded-xl border p-5 pt-12"
     >
       <div className="flex items-center gap-3">
         <span
@@ -824,7 +824,7 @@ function Report({
         >
           <Portrait id={x.id} />
         </span>
-        <div className="flex min-w-0 grow flex-col gap-[3px]">
+        <div className="flex min-w-0 grow flex-col gap-1">
           <span className="font-serif text-[20px] leading-[1.1] font-semibold">
             {x.who}
           </span>
@@ -866,7 +866,7 @@ function Report({
       )}
 
       {running && (
-        <div className="bg-anthracite flex flex-col gap-2 rounded-[10px] px-4 py-3.5">
+        <div className="bg-anthracite flex flex-col gap-2 rounded-lg px-4 py-3.5">
           {(st.running!.log.length ? st.running!.log : ["Waking up"]).map(
             (t, i, all) => {
               const past = i < all.length - 1;
@@ -888,8 +888,8 @@ function Report({
       )}
 
       {done && (
-        <div className="flex flex-col gap-[16px]">
-          <div className="bg-panel flex flex-col gap-2 rounded-[10px] px-4 py-3.5">
+        <div className="flex flex-col gap-4">
+          <div className="bg-panel flex flex-col gap-2 rounded-lg px-4 py-3.5">
             <Stars n={st.stars ?? 0} size={20} dull={st.auditStale} />
             {st.auditStale && (
               <div className="flex flex-wrap items-center gap-2">
@@ -982,7 +982,7 @@ function Report({
       )}
 
       {!done && !running && (
-        <div className="border-line-dashed flex flex-col gap-3 rounded-[10px] border border-dashed p-4">
+        <div className="border-line-dashed flex flex-col gap-3 rounded-lg border border-dashed p-4">
           <span className="text-muted text-[13px] leading-normal text-pretty">
             {locked
               ? `${x.who} unlocks at colony Lv ${x.unlockLevel}, and counts toward the grade from then.`
@@ -1040,9 +1040,9 @@ function Ladder({
   const scored = !st.rubricChanged && st.scoredWith ? st.report?.checks : undefined;
   const marks = new Map((scored ?? []).map((c) => [c.id, c]));
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <span className="bg-clay size-2 rounded-[2px]" />
+        <span className="bg-clay size-2 rounded-sm" />
         <span className="text-ink text-[11px] font-bold tracking-[0.08em] uppercase">
           Rubric
         </span>
@@ -1104,7 +1104,7 @@ function Ladder({
                     >
                       {m ? (m.met ? "✓" : "✗") : "·"}
                     </span>
-                    <span className="flex min-w-0 flex-col gap-[2px]">
+                    <span className="flex min-w-0 flex-col gap-0.5">
                       <span className="text-ink text-[13px] leading-[1.45] text-pretty">
                         {k.text}
                       </span>
@@ -1135,7 +1135,7 @@ function Section({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <span className="size-2 rounded-[2px]" style={{ background: ink }} />
+        <span className="size-2 rounded-sm" style={{ background: ink }} />
         <span className="text-ink text-[11px] font-bold tracking-[0.08em] uppercase">
           {title}
         </span>
@@ -1147,7 +1147,7 @@ function Section({
         items.map((it, i) => (
           <div
             key={i}
-            className="border-hairline flex flex-col gap-[3px] border-b pb-2 pl-4"
+            className="border-hairline flex flex-col gap-1 border-b pb-2 pl-4"
           >
             <span className="text-ink text-[13px] leading-[1.45] text-pretty">
               {it.text}
