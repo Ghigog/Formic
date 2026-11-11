@@ -367,7 +367,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
           </div>
           <div
             data-tour="timeline-nav"
-            className="text-muted flex items-center gap-1.5 pb-[3px] text-[13px]"
+            className="text-muted flex items-center gap-1.5 pb-0.5 text-[13px]"
           >
             <button
               type="button"
@@ -972,7 +972,7 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
                     </span>
                     <span
                       data-tlmound
-                      className="block w-[72%] origin-bottom rounded-[999px_999px_2px_2px]"
+                      className="block w-[72%] origin-bottom rounded-t-full rounded-b-xs"
                       style={{
                         height: d.sp
                           ? `${Math.min(46, 8 + d.sp * 3.8)}px`

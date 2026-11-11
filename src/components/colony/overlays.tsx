@@ -246,7 +246,7 @@ export function EpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCard) =
           </span>
         </span>
         <span className="oct bg-jade inline-flex p-px">
-          <span className="oct bg-jade-chip text-jade-chip-text inline-flex px-[8px] py-0.5 font-mono text-[10px] tracking-[0.1em]">
+          <span className="oct bg-jade-chip text-jade-chip-text inline-flex px-2 py-0.5 font-mono text-[10px] tracking-[0.1em]">
             EPIC COMPLETE · {win.epic.key}
           </span>
         </span>
