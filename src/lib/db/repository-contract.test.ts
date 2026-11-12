@@ -290,14 +290,16 @@ function contract(name: string, make: () => Repository) {
     describe("epics and tickets", () => {
       it("makes at most one Epic per spike and finds it again", async () => {
         const p = await project();
-        const first = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1, spikeTicketId: "spike-1" });
+        // Unique per run: the database outlives the test, and the column is unique.
+        const spike = `spike-${randomUUID()}`;
+        const first = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1, spikeTicketId: spike });
 
-        expect(await repo.epicForSpike("spike-1")).toBe(first.id);
+        expect(await repo.epicForSpike(spike)).toBe(first.id);
         expect(await repo.epicForSpike("other")).toBeNull();
         await expect(
-          repo.createEpic({ projectId: p.id, title: "F", rawRequest: "F", position: 2, spikeTicketId: "spike-1" }),
+          repo.createEpic({ projectId: p.id, title: "F", rawRequest: "F", position: 2, spikeTicketId: spike }),
         ).rejects.toThrow();
-        expect(await repo.epicForSpike("spike-1")).toBe(first.id);
+        expect(await repo.epicForSpike(spike)).toBe(first.id);
       });
 
       it("creates an Epic with tickets, their dependencies, and the project they belong to", async () => {
@@ -1472,6 +1474,39 @@ function contract(name: string, make: () => Repository) {
         await repo.addDependencies([{ ticketId: b!.id, dependsOnTicketId: a!.id }]);
 
         expect((await repo.boardCards(p.id)).find((c) => c.id === b!.id)!.dependsOn).toEqual([a!.id]);
+      });
+
+      it("makes an Epic wait for another once, and forgets the wait when that Epic is deleted", async () => {
+        const p = await project();
+        const first = await repo.createEpic({ projectId: p.id, title: "A", rawRequest: "A", position: 1 });
+        const second = await repo.createEpic({ projectId: p.id, title: "B", rawRequest: "B", position: 2 });
+        const read = async () => await repo.boardCards(p.id);
+
+        await repo.setEpicWaits(second.id, [first.id]);
+        await repo.setEpicWaits(second.id, [first.id]);
+
+        const cards = await read();
+        expect(cards.find((c) => c.id === second.id)!.waitsFor).toEqual([first.id]);
+        expect(cards.filter((c) => c.id !== second.id).every((c) => c.waitsFor?.length === 0)).toBe(true);
+
+        await repo.deleteEpic(first.id);
+        expect((await read()).find((c) => c.id === second.id)!.waitsFor).toEqual([]);
+      });
+
+      it("keeps a move-only ticket's commit clock and stuck note", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "M-1", { moveOnly: true })]);
+        const at = new Date("2026-11-12T10:00:00.000Z");
+
+        await repo.updateTicket(t!.id, { lastCommitAt: at, stuckNote: "waiting on the build" });
+
+        expect(await repo.ticketDetail(t!.id)).toMatchObject({
+          moveOnly: true,
+          lastCommitAt: at.toISOString(),
+          stuckNote: "waiting on the build",
+        });
+        expect((await repo.boardCards(p.id)).find((c) => c.id === t!.id)!.moveOnly).toBe(true);
       });
 
       it("hides a standalone Epic from the board, and shows it again when it is not", async () => {

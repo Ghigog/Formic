@@ -2043,6 +2043,8 @@ async function saveCheckpoint(
       deleted: checkpoint.deleted,
       message: checkpointMessage(ticket.key, job, checkpoint.note),
     });
+    // A new commit is the clock's proof of life, and moves a stuck ticket on.
+    await repository().updateTicket(ticket.id, { lastCommitAt: new Date(), stuckNote: null });
     return true;
   } catch (e) {
     console.error("[formic] could not save a checkpoint:", explain(e));
@@ -2051,6 +2053,14 @@ async function saveCheckpoint(
 }
 
 const MAX_AUDIT_STEP = 120;
+
+/** What each ticket's CLI run last reported doing, for the no-commit clock to quote. */
+const lastSteps = new Map<string, string>();
+
+/** What a ticket's run last did, as one line; null when it has said nothing. */
+export function lastStepOf(ticketId: string): string | null {
+  return lastSteps.get(ticketId) ?? null;
+}
 
 /** The newest thing a batch says or does, as one short line; null when it has none. */
 function latestStep(lines: string[]): string | null {
@@ -2156,6 +2166,8 @@ export async function receiveReport(input: {
     }
   }
   if (planChanged) await repo.updateTicket(ticket.id, { plan });
+  const step = latestStep(input.lines);
+  if (step) lastSteps.set(ticket.id, step);
 
   const checkpointed = input.checkpoint
     ? await saveCheckpoint(projectId, ticket, input.job, input.checkpoint)
