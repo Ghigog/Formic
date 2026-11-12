@@ -14,6 +14,7 @@ import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
+import { proposeFollowUps } from "@/lib/assistant/follow-up-messages";
 import { recordFollowUps } from "@/lib/board/follow-ups";
 import { positionForIndex } from "@/lib/ordering";
 import {
@@ -1122,6 +1123,7 @@ async function mergeTicket(
     stage: STAGE_MERGE,
     blockedReason: null,
   });
+  await proposeFollowUps(projectId, ticket.id).catch(() => undefined);
 
   if (mergeNeedsPromotion(project.baseBranch)) {
     await client.comment(
@@ -1867,6 +1869,9 @@ export async function approve(
     kind: "text",
     text: `Approved: ${verdict.detail.trim() || verdict.summary}`.slice(0, 4_000),
   });
+
+  // Finished as far as the review goes, merged yet or not.
+  await proposeFollowUps(projectId, ticket.id).catch(() => undefined);
 
   // Re-read: a push could have landed while it reviewed, and a result could
   // have changed. The lane decides again from what is true now.

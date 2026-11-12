@@ -358,13 +358,18 @@ describe("the Coder Agent pipeline", () => {
     await until(async () => reviewer.reviews.length > 0, "the review");
 
     await until(
-      async () => (await repository().ticketDetail(ticket.id))!.followUps.length === 2,
-      "both follow-ups on the ticket",
+      async () => {
+        const followUps = (await repository().ticketDetail(ticket.id))!.followUps;
+        return followUps.length === 2 && followUps.every((f) => f.outcome?.kind === "proposed");
+      },
+      "both follow-ups proposed in the chat",
     );
-    expect((await repository().ticketDetail(ticket.id))!.followUps).toEqual([
-      { ...coderFound, outcome: { kind: "pending" } },
-      { ...reviewerFound, outcome: { kind: "pending" } },
+    const followUps = (await repository().ticketDetail(ticket.id))!.followUps;
+    expect(followUps).toEqual([
+      { ...coderFound, outcome: { kind: "proposed", messageId: expect.any(String) } },
+      { ...reviewerFound, outcome: { kind: "proposed", messageId: expect.any(String) } },
     ]);
+    expect(followUps[0]?.outcome).toEqual(followUps[1]?.outcome);
   });
 
   it("carries steps outside the repository through to the Epic's showcase", async () => {

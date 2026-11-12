@@ -13,6 +13,7 @@ import { describeProblems } from "@/lib/domain/problems";
 import { COLUMN_LABELS, COLUMNS, columnOf, hasActiveRun } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
+import { addFollowUpTicket } from "@/lib/board/follow-ups";
 import { rerunRedActions } from "@/lib/review/pipeline";
 import { vcs } from "@/lib/vcs";
 
@@ -42,6 +43,11 @@ import { vcs } from "@/lib/vcs";
 export const ASSISTANT_BRANCH_PREFIX = "formic/chat-";
 
 export const assistantActionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("add_follow_up"),
+    ticket: z.string().trim().min(1).describe("The key of the ticket that proposed it."),
+    title: z.string().trim().min(1).describe("The follow-up's title, as that ticket lists it."),
+  }),
   z.object({
     type: z.literal("create_backlog_item"),
     request: z.string().trim().min(1).describe("The feature request, as the Product Agent should read it."),
@@ -143,6 +149,7 @@ export async function applyAction(projectId: string, action: AssistantAction): P
     const card = await boardPorts().service.createBacklogItem(projectId, action.request);
     return `Added ${card.key} to Backlog. The Product Agent is writing its PRD.`;
   }
+  if (action.type === "add_follow_up") return addFollowUp(projectId, action);
   if (action.type === "move_card") return moveCard(projectId, action.key, action.to);
   if (action.type === "close_card") return closeCard(projectId, action.key);
   if (action.type === "add_tickets_to_epic") return addTicketsToEpic(projectId, action.epic, action.tickets);
@@ -191,6 +198,43 @@ export async function applyAction(projectId: string, action: AssistantAction): P
   });
   await applyTickets(projectId, epic.id, tickets);
   return `Added ${epic.key} to To Do with ${tickets.length} ticket${tickets.length === 1 ? "" : "s"}.`;
+}
+
+/** The source ticket and the index of the follow-up an add_follow_up names. */
+async function followUpOf(projectId: string, action: Extract<AssistantAction, { type: "add_follow_up" }>) {
+  const card = await cardByKey(projectId, action.ticket);
+  const ticket = await repository().ticketDetail(card.id);
+  if (!ticket) throw new Error(`${action.ticket} is not on the board.`);
+  const index = ticket.followUps.findIndex((f) => f.title.toLowerCase() === action.title.toLowerCase());
+  return { ticket, index };
+}
+
+/** A proposed follow-up becomes a ticket, and the source remembers it. */
+async function addFollowUp(
+  projectId: string,
+  action: Extract<AssistantAction, { type: "add_follow_up" }>,
+): Promise<string> {
+  const { ticket, index } = await followUpOf(projectId, action);
+  const followUp = ticket.followUps[index];
+  const kind = followUp?.outcome?.kind;
+  if (!followUp || (kind !== "pending" && kind !== "proposed")) {
+    throw new Error(`"${action.title}" was already decided on ${action.ticket}.`);
+  }
+  const created = await addFollowUpTicket(projectId, ticket, followUp);
+  const followUps = ticket.followUps.map((f, i) =>
+    i === index ? { ...f, outcome: { kind: "added" as const, key: created.key, cardId: created.id, announced: true } } : f,
+  );
+  await repository().updateTicket(ticket.id, { followUps });
+  return `Added ${created.key}.`;
+}
+
+/** The person dismissed an add_follow_up proposal: its follow-up is dismissed too. */
+export async function dismissAction(projectId: string, action: AssistantAction): Promise<void> {
+  if (action.type !== "add_follow_up") return;
+  const { ticket, index } = await followUpOf(projectId, action);
+  if (index < 0) return;
+  const followUps = ticket.followUps.map((f, i) => (i === index ? { ...f, outcome: { kind: "dismissed" as const } } : f));
+  await repository().updateTicket(ticket.id, { followUps });
 }
 
 async function cardByKey(projectId: string, key: string) {
