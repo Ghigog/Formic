@@ -239,6 +239,23 @@ export class PrismaRepository implements Repository {
     return row?.tourSeenAt != null;
   }
 
+  async markPmRead(userId: string, projectId: string, at: Date): Promise<void> {
+    if ((await prisma().project.count({ where: { id: projectId } })) === 0) return;
+    await prisma().projectOpen.upsert({
+      where: { projectId_userId: { projectId, userId } },
+      create: { projectId, userId, pmReadAt: at },
+      update: { pmReadAt: at },
+    });
+  }
+
+  async pmReadAt(userId: string, projectId: string): Promise<Date | null> {
+    const row = await prisma().projectOpen.findUnique({
+      where: { projectId_userId: { projectId, userId } },
+      select: { pmReadAt: true },
+    });
+    return row?.pmReadAt ?? null;
+  }
+
   async openedAtByProject(userId: string): Promise<Map<string, Date>> {
     const rows = await prisma().projectOpen.findMany({ where: { userId } });
     return new Map(rows.map((r) => [r.projectId, r.openedAt]));
@@ -2321,11 +2338,29 @@ export class PrismaRepository implements Repository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    cards?: AssistantMessage["cards"];
+    proposals?: AssistantProposal[];
   }): Promise<AssistantMessage> {
     const row = await prisma().assistantMessage.create({
-      data: { ...input, status: input.status ?? "done" },
+      data: {
+        ...input,
+        cards: input.cards?.length ? input.cards : undefined,
+        proposals: input.proposals?.length ? (input.proposals as unknown as Prisma.InputJsonValue) : undefined,
+        status: input.status ?? "done",
+      },
     });
     return toAssistantMessage(row);
+  }
+
+  async unreadPmCount(projectId: string, since: Date | null): Promise<number> {
+    return prisma().assistantMessage.count({
+      where: {
+        projectId,
+        role: "assistant",
+        status: { in: ["done", "failed"] },
+        ...(since ? { createdAt: { gt: since } } : {}),
+      },
+    });
   }
 
   async updateAssistantMessage(
@@ -2618,6 +2653,7 @@ function toAssistantMessage(row: {
   role: string;
   content: string;
   proposals: unknown;
+  cards: unknown;
   status: string;
   runnerJob: string | null;
   runnerAgent: string | null;
@@ -2629,6 +2665,7 @@ function toAssistantMessage(row: {
     role: row.role === "user" ? "user" : "assistant",
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
+    cards: Array.isArray(row.cards) ? (row.cards as AssistantMessage["cards"]) : [],
   };
 }
 

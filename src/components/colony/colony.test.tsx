@@ -417,3 +417,46 @@ describe("feature reveal queue", () => {
     });
   });
 });
+
+describe("ColonyProvider spike findings", () => {
+  function Probe({ out }: { out: { spikeWin?: string | null } }) {
+    out.spikeWin = useColony()?.spikeWin?.id ?? null;
+    return null;
+  }
+
+  async function run(workType: "spike" | null, mergedAtLoad: boolean) {
+    fakeTimers();
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const out: { spikeWin?: string | null } = {};
+    const card = makeCard({ status: mergedAtLoad ? "merged" : "review", workType, prNumber: 3 });
+    const tree = (c: typeof card) => (
+      <ColonyProvider storageKey="colony-test-spike-win" cards={[c] as never} extras={{}}>
+        <div data-tid={c.id} />
+        <Probe out={out} />
+      </ColonyProvider>
+    );
+    const { rerender } = render(tree(card));
+    await flushFrame();
+    if (!mergedAtLoad) {
+      rerender(tree({ ...card, status: "merged" }));
+      await flushFrame();
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    return { id: card.id, win: out.spikeWin };
+  }
+
+  it("opens for a spike that merges while the board is open", async () => {
+    const { id, win } = await run("spike", false);
+    expect(win).toBe(id);
+  });
+
+  it("does not open for a regular ticket", async () => {
+    expect((await run(null, false)).win).toBeNull();
+  });
+
+  it("does not open for a spike already merged when the board loads", async () => {
+    expect((await run("spike", true)).win).toBeNull();
+  });
+});

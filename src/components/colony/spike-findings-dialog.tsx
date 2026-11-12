@@ -134,7 +134,7 @@ export function SpikeFindingsDialog({
 
   const found = load.state === "ready" && load.findings.found;
   const parts = load.state === "ready" && load.findings.found ? splitRecommendation(load.findings.markdown) : null;
-  const prose = "text-ink font-serif text-[15px] leading-relaxed [&_h1]:text-[18px] [&_h2]:text-[15px] [&_h3]:text-[15px]";
+  const prose = "text-ink font-serif text-[15px] leading-relaxed [&_h1]:text-[22px] [&_h2]:text-[18px] [&_h3]:text-[15px]";
 
   return (
     <div

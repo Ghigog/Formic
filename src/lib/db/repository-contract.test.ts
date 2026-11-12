@@ -58,6 +58,33 @@ function contract(name: string, make: () => Repository) {
       expect(await repo.boardTourSeen(user.id, "no-such-project")).toBe(false);
     });
 
+    it("keeps PM read state per person and counts unread PM messages after it", async () => {
+      const mk = () => repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+      const [user, other] = [await mk(), await mk()];
+      const p = await repo.ensureProject({ ownerId: user.id, repoFullName: `acme/${randomUUID()}`, baseBranch: "main" });
+      expect(await repo.pmReadAt(user.id, p.id)).toBeNull();
+      const before = new Date(Date.now() - 60_000);
+      await repo.addAssistantMessage({ projectId: p.id, role: "user", content: "hi" });
+      await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "", status: "pending" });
+      expect(await repo.unreadPmCount(p.id, before)).toBe(0);
+      const sent = await repo.addAssistantMessage({
+        projectId: p.id,
+        role: "assistant",
+        content: "A follow-up",
+        cards: [{ id: "c1", key: "K-1", title: "T" }],
+      });
+      expect(sent.cards).toEqual([{ id: "c1", key: "K-1", title: "T" }]);
+      expect(await repo.unreadPmCount(p.id, before)).toBe(1);
+      expect(await repo.unreadPmCount(p.id, null)).toBe(1);
+      await repo.markPmRead(user.id, p.id, new Date(Date.now() + 1000));
+      await repo.markPmRead(other.id, p.id, before);
+      const read = await repo.pmReadAt(user.id, p.id);
+      expect(await repo.unreadPmCount(p.id, read)).toBe(0);
+      expect((await repo.pmReadAt(other.id, p.id))?.getTime()).toBe(before.getTime());
+      await repo.markPmRead(user.id, "no-such-project", new Date());
+      expect(await repo.pmReadAt(user.id, "no-such-project")).toBeNull();
+    });
+
     it("adds host usage per day and totals it from a given day on", async () => {
       // A random year far in the past, so this case meets neither a real
       // deployment's days nor an earlier run's on a database that is kept.

@@ -210,6 +210,7 @@ export function useBoardEvents(
       "card.queen",
       "card.chat",
       "assistant.failed",
+      "assistant.message",
       "epic.prd",
       "epic.showcase",
       "run.progress",
