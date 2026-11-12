@@ -203,6 +203,7 @@ Guide ant, tour  guideAntIdle 2.6s, guideAntLegsA, guideAntLegsB and guideAntBob
 Feature reveal   featureSpace 220ms, featureRise 460ms, featureRing 460ms, featureBurst 360ms,
                  featureGlow 460ms, featureFade 150ms (colony/feature-reveal.tsx)
 Colony           bellWave 900ms, bellGlint 2.6s
+PM chat          pmBadgePop 200ms (unread badge on the PM's button, once, when the count goes from none)
 Timeline         tlStripe, tlPing 1.8s
 Requests         reqFade, reqPop, reqSlideDown
 Sentinels        sentinelScan, sentinelBob, sentinelLine, sentinelFade, auditSweep
