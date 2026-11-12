@@ -86,7 +86,7 @@ describe("nextTicketKey", () => {
 });
 
 describe("addFollowUpTicket", () => {
-  const followUp: FollowUp = { title: "Tidy the seams", why: "They leak.", points: 3 };
+  const followUp: FollowUp = { title: "Tidy the seams", why: "They leak.", points: 3, need: "nice" };
 
   it("gives a standalone source a standalone ticket of its own at the end of To Do", async () => {
     const repo = repository();
