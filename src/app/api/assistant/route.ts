@@ -38,6 +38,8 @@ async function state(project: ProjectSummary, user: UserRecord, before?: string)
   );
   return {
     presetId: await assistantPick(project, user),
+    // When this person last read the chat, so a newer message can be marked New.
+    readAt: (await repo.pmReadAt(user.id, projectId))?.toISOString() ?? null,
     ...(await repo.assistantMessages(projectId, { before })),
   };
 }

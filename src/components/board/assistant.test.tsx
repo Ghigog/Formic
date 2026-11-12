@@ -373,3 +373,92 @@ describe("Earlier messages", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Nope.");
   });
 });
+
+describe("unread PM messages", () => {
+  it("shows the count on the button, and hides it at none", () => {
+    const { rerender } = render(<AskButton a={{ ...controls, unread: 3 }} repoName="demo" />);
+    expect(screen.getByTestId("pm-unread")).toHaveTextContent("3");
+    expect(screen.getByLabelText("3 new messages from the PM")).toBeInTheDocument();
+    rerender(<AskButton a={{ ...controls, unread: 0 }} repoName="demo" />);
+    expect(screen.queryByTestId("pm-unread")).toBeNull();
+  });
+
+  it("sits on the left when the question count shows too, and keeps both counts", () => {
+    render(<AskButton a={{ ...controls, unread: 1, questions: 2 }} repoName="demo" />);
+    expect(screen.getByTestId("pm-unread")).toHaveClass("-left-1");
+    expect(screen.getByTestId("pm-unread")).toHaveTextContent("1");
+    expect(screen.getByTestId("pm-questions")).toHaveClass("-right-1");
+    expect(screen.getByTestId("pm-questions")).toHaveTextContent("2");
+  });
+
+  it("pops in only when the count goes from none to some", () => {
+    const { rerender } = render(<AskButton a={{ ...controls, unread: 2 }} repoName="demo" />);
+    expect(screen.getByTestId("pm-unread")).not.toHaveClass("pm-badge-pop");
+    rerender(<AskButton a={{ ...controls, unread: 0 }} repoName="demo" />);
+    rerender(<AskButton a={{ ...controls, unread: 1 }} repoName="demo" />);
+    expect(screen.getByTestId("pm-unread")).toHaveClass("pm-badge-pop");
+    rerender(<AskButton a={{ ...controls, unread: 2 }} repoName="demo" />);
+    expect(screen.getByTestId("pm-unread")).not.toHaveClass("pm-badge-pop");
+  });
+
+  const at = (id: string, createdAt: string, extra = {}) => ({
+    id,
+    role: "assistant" as const,
+    content: `text ${id}`,
+    status: "done" as const,
+    proposals: [],
+    createdAt,
+    ...extra,
+  });
+
+  it("puts a New rule above the first message newer than the last read", () => {
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          readAt: "2026-11-12T10:00:00.000Z",
+          messages: [
+            at("m1", "2026-11-12T09:00:00.000Z"),
+            at("m2", "2026-11-12T11:00:00.000Z"),
+            at("m3", "2026-11-12T12:00:00.000Z"),
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const rule = screen.getByTestId("pm-new");
+    expect(screen.getAllByTestId("pm-new")).toHaveLength(1);
+    expect(rule).toHaveTextContent("New");
+    expect(screen.getByText("text m1").compareDocumentPosition(rule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(rule.compareDocumentPosition(screen.getByText("text m2")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows no New rule when everything was read", () => {
+    render(
+      <AskBox
+        a={{ ...controls, readAt: "2026-11-12T10:00:00.000Z", messages: [at("m1", "2026-11-12T09:00:00.000Z")] }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.queryByTestId("pm-new")).toBeNull();
+  });
+
+  it("opens a linked card from its chip and rolls the chat up", async () => {
+    const onOpenQuestion = vi.fn();
+    const setOpen = vi.fn();
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          setOpen,
+          onOpenQuestion,
+          messages: [at("m1", "2026-11-12T09:00:00.000Z", { cards: [{ id: "c-9", key: "T-9", title: "Add dark mode" }] })],
+        }}
+        repoName="demo"
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "T-9 · Add dark mode" }));
+    expect(onOpenQuestion).toHaveBeenCalledWith("c-9");
+    expect(setOpen).toHaveBeenCalledWith(false);
+  });
+});

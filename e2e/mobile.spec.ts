@@ -267,3 +267,21 @@ for (const width of [360, 390]) {
     }
   });
 }
+
+test("the PM's unread badge pops in on the button, fits on screen, and clears when the chat opens", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  // Ask over the API with the chat rolled up: the reply lands while it is closed.
+  const asked = await page.request.post("/api/assistant", { data: { text: "Anything to report?" } });
+  expect(asked.ok()).toBe(true);
+
+  const badge = page.getByTestId("pm-unread").first();
+  await expect(badge).toBeVisible({ timeout: 15_000 });
+  const box = (await badge.boundingBox())!;
+  const view = page.viewportSize()!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(view.width);
+
+  await page.getByRole("button", { name: "Ask the PM" }).click();
+  await expect(page.getByTestId("pm-unread")).toHaveCount(0);
+});

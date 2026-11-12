@@ -30,7 +30,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
   const provider = process.env.SANDBOX_PROVIDER ?? "local";
   // The viewer's own keys: on a shared board, theirs are what their runs use.
   const credentials = withActor(user.id, () => credentialsForProject(project)).catch(() => null);
-  const [cards, { presets, columns: columnAgents }, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey, tourSeen] = await Promise.all([
+  const [cards, { presets, columns: columnAgents }, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey, tourSeen, pmReadAt] = await Promise.all([
     repo.boardCards(project.id),
     agentView(project, user),
     repo.columnOverrides(project.id),
@@ -48,7 +48,10 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
     credentials.then((creds) => provider === "e2b" && !!creds && !creds.e2bKey),
     // Whether this person took this board's tour on another device.
     repo.boardTourSeen(user.id, project.id).catch(() => false),
+    // When this person last read the PM's chat, on any device.
+    repo.pmReadAt(user.id, project.id).catch(() => null),
   ]);
+  const pmUnread = await repo.unreadPmCount(project.id, pmReadAt).catch(() => 0);
 
   // With no database the default project runs on the demo fixtures, so the
   // ambient bar and the card detail are seeded to match. Anywhere else both
@@ -74,6 +77,8 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
     noCi: !hasCi,
     noSandboxKey,
     tourSeen,
+    initialPmUnread: pmUnread,
+    initialPmReadAt: pmReadAt?.toISOString() ?? null,
     autoMerge: project.autoMerge,
     unlockAllSentinels: project.unlockAllSentinels,
     baseBranch: project.baseBranch,

@@ -11,6 +11,10 @@ export interface AssistantMessageView {
   status: "done" | "pending" | "failed";
   /** Who a reply is from: "assistant", a column role or "sentinel:<id>". */
   speaker?: string;
+  /** When it was written (ISO). */
+  createdAt?: string;
+  /** Cards it links to. */
+  cards?: Array<{ id: string; key: string; title: string }>;
   proposals: Array<{
     summary: string;
     action: {
@@ -35,6 +39,8 @@ export interface AssistantMessageView {
 
 interface State {
   presetId: string | null;
+  /** When the person last read the chat (ISO), or null if never. */
+  readAt?: string | null;
   messages: AssistantMessageView[];
   /** The id to pass as ?before= for the page before these, or null when nothing is earlier. */
   earlierCursor?: string | null;
