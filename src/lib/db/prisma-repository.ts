@@ -1104,6 +1104,11 @@ export class PrismaRepository implements Repository {
     ]);
   }
 
+  async epicForSpike(ticketId: string): Promise<string | null> {
+    const epic = await prisma().epic.findUnique({ where: { spikeTicketId: ticketId }, select: { id: true } });
+    return epic?.id ?? null;
+  }
+
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
     const db = prisma();
     const number = await this.nextEpicNumber(input.projectId);
@@ -1116,6 +1121,7 @@ export class PrismaRepository implements Repository {
         position: input.position,
         workType: input.workType ?? null,
         bugSeverity: severityFor(input.workType, input.bugSeverity),
+        spikeTicketId: input.spikeTicketId ?? null,
         status: "draft",
         stage: 1,
       },

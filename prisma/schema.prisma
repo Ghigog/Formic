@@ -280,6 +280,8 @@ model Epic {
   actorId          String?
   /// The GitHub issue that tracks this epic, once created.
   issueNumber      Int?
+  /// The spike this Epic was made from its findings. One Epic per spike.
+  spikeTicketId    String?      @unique
 
   status          TicketStatus @default(draft)
   /// Set only for blocked/failed cards, so a stalled card keeps its column.

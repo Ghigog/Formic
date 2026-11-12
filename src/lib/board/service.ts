@@ -28,6 +28,7 @@ import { boardPorts, type EpicActionResult } from "@/lib/board/ports";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
+import { spikeFindings } from "@/lib/board/spike-findings";
 import { columnIsPlain, columnLimit } from "@/lib/agents/presets";
 import { startedBy } from "@/lib/auth/actor";
 import { prdSchema } from "@/lib/domain/entities";
@@ -528,6 +529,70 @@ export async function createBacklogItem(
   /** The id the request's attachments were uploaded against, to move onto the Epic. */
   requestId?: string,
 ): Promise<BoardCard> {
+  return startBacklogEpic(projectId, rawRequest, { requestId });
+}
+
+/** The spike's findings are not on the board's branch: nothing to plan from. */
+export class SpikeFindingsMissing extends Error {
+  constructor() {
+    super("The findings could not be found. Check that the spike's pull request is merged.");
+  }
+}
+
+/**
+ * A new Epic whose PRD the Product Agent writes from a merged spike's
+ * findings. The whole document is attached to the Epic, so findings of any
+ * length reach the PM. Asked twice, or at once, it returns the first Epic
+ * and starts nothing.
+ */
+export async function createEpicFromSpike(
+  projectId: string,
+  ticketId: string,
+): Promise<{ card: BoardCard | null; epicId: string; existing: boolean }> {
+  const repo = repository();
+  const existingCard = async (epicId: string) => ({
+    card: (await repo.boardCards(projectId)).find((c) => c.id === epicId) ?? null,
+    epicId,
+    existing: true,
+  });
+  const already = await repo.epicForSpike(ticketId);
+  if (already) return existingCard(already);
+
+  const ticket = await repo.ticketDetail(ticketId);
+  const project = await projectFor(projectId);
+  if (!ticket || !project) throw new SpikeFindingsMissing();
+  const findings = await spikeFindings(project, ticket);
+  if (!findings.found) throw new SpikeFindingsMissing();
+
+  const rawRequest =
+    `Plan the work recommended by spike ${ticket.key}: ${ticket.title}. ` +
+    `Its findings, ${findings.path}, are attached.`;
+  try {
+    const card = await startBacklogEpic(projectId, rawRequest, {
+      spikeTicketId: ticketId,
+      attachment: { filename: findings.path.split("/").pop()!, text: findings.markdown },
+    });
+    return { card, epicId: card.id, existing: false };
+  } catch (err) {
+    // A second press got there first: the unique spike column refused ours.
+    const winner = await repo.epicForSpike(ticketId);
+    if (winner) return existingCard(winner);
+    throw err;
+  }
+}
+
+interface BacklogEpicOptions {
+  requestId?: string;
+  spikeTicketId?: string;
+  /** A text document to attach to the Epic before the Product Agent starts. */
+  attachment?: { filename: string; text: string };
+}
+
+async function startBacklogEpic(
+  projectId: string,
+  rawRequest: string,
+  options: BacklogEpicOptions,
+): Promise<BoardCard> {
   const repo = repository();
   const positions = await repo.columnPositions(projectId, "backlog");
   const position = positionForIndex(positions, positions.length);
@@ -540,9 +605,22 @@ export async function createBacklogItem(
     title,
     rawRequest: rawRequest.trim(),
     position,
+    spikeTicketId: options.spikeTicketId,
   });
 
-  if (requestId) await repo.claimAttachments(requestId, { epicId: card.id });
+  if (options.requestId) await repo.claimAttachments(options.requestId, { epicId: card.id });
+  if (options.attachment) {
+    const bytes = new TextEncoder().encode(options.attachment.text);
+    await repo.createAttachment({
+      projectId,
+      epicId: card.id,
+      filename: options.attachment.filename,
+      mimeType: "text/markdown",
+      kind: "file",
+      size: bytes.length,
+      bytes,
+    });
+  }
   await startedBy(card.id);
 
   await publish(projectId, {

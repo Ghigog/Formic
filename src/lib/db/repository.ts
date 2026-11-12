@@ -57,6 +57,8 @@ export interface CreateEpicInput {
   position: number;
   workType?: WorkType | null;
   bugSeverity?: BugSeverity | null;
+  /** The spike whose findings this Epic plans. Throws when it already has one. */
+  spikeTicketId?: string | null;
 }
 
 export interface CreateTicketInput {
@@ -883,6 +885,8 @@ export interface BoardRepository {
   /** Restores an Epic and only the tickets its archive took. Idempotent. */
   restoreEpic(epicId: string): Promise<void>;
   createEpic(input: CreateEpicInput): Promise<BoardCard>;
+  /** The id of the Epic made from a spike's findings, or null. */
+  epicForSpike(ticketId: string): Promise<string | null>;
   /**
    * The next standalone ticket's number, T-<number>. Claimed atomically and
    * never reused, so a deleted ticket's key keeps meaning that ticket.
