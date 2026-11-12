@@ -7,6 +7,7 @@ const { repo, currentUser, activeProject, launch, answer, cancelPending, collect
     pendingAssistantMessage: vi.fn(),
     addAssistantMessage: vi.fn(),
     clearAssistant: vi.fn(),
+    pmReadAt: vi.fn(),
   },
   currentUser: vi.fn(),
   activeProject: vi.fn(),
@@ -44,6 +45,7 @@ beforeEach(() => {
   collectCliRuns.mockResolvedValue(undefined);
   repo.assistantAgent.mockResolvedValue("preset-1");
   repo.assistantMessages.mockResolvedValue({ messages: [], earlierCursor: null });
+  repo.pmReadAt.mockResolvedValue(null);
   repo.pendingAssistantMessage.mockResolvedValue(null);
   repo.addAssistantMessage.mockResolvedValue({ id: "m-2" });
 });
@@ -53,7 +55,14 @@ describe("GET /api/assistant", () => {
     repo.assistantMessages.mockResolvedValue({ messages: [{ id: "m-1" }], earlierCursor: null });
     const res = await GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ presetId: "preset-1", messages: [{ id: "m-1" }], earlierCursor: null });
+    expect(await res.json()).toEqual({ presetId: "preset-1", readAt: null, messages: [{ id: "m-1" }], earlierCursor: null });
+  });
+
+  it("returns when the person last read the chat", async () => {
+    repo.pmReadAt.mockResolvedValue(new Date("2026-11-12T10:00:00.000Z"));
+    const res = await GET();
+    expect((await res.json()).readAt).toBe("2026-11-12T10:00:00.000Z");
+    expect(repo.pmReadAt).toHaveBeenCalledWith("u-1", "p-1");
   });
 
   it("reads the page before a message with ?before=", async () => {

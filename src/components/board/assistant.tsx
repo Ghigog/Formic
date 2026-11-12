@@ -2,6 +2,7 @@
 
 import { AutoTour } from "@/components/onboarding/tour";
 import {
+  Fragment,
   useEffect,
   useRef,
   useState,
@@ -58,6 +59,10 @@ export interface AssistantControls {
   /** The questions themselves, shown at the bottom of the PM's chat, after the newest message; each opens its card, where it is answered. */
   waiting?: Array<{ id: string; key: string; title: string; question: string }>;
   onOpenQuestion?: (cardId: string) => void;
+  /** How many PM messages the person has not read yet; the PM's button shows it until they open the chat. */
+  unread?: number;
+  /** When the person last read the chat (ISO), as of opening it: the "New" rule sits above the first PM message after it. */
+  readAt?: string | null;
   /** Opens the agent editor: an existing preset, or null for a new one. */
   onEdit: (preset: AgentPreset | null) => void;
 }
@@ -235,6 +240,7 @@ export function AskBox({
   return (
     <div data-tour="chat" className="relative w-full max-w-[520px]">
       <Composer a={a} repoName={repoName} />
+      <UnreadCount n={a.unread ?? 0} withQuestions={false} />
       <Shade
         a={a}
         repoName={repoName}
@@ -251,6 +257,33 @@ function QuestionCount({ n }: { n: number }) {
       data-testid="pm-questions"
       aria-label={`${n} ${n === 1 ? "question" : "questions"} for you`}
       className="bg-cta text-on-accent absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[10px] leading-none font-bold"
+    >
+      {n}
+    </span>
+  );
+}
+
+/**
+ * The PM's messages the person has not read, on its button. It pops in once
+ * when the count goes from none to some; after that it just changes.
+ */
+function UnreadCount({ n, withQuestions }: { n: number; withQuestions: boolean }) {
+  const [prev, setPrev] = useState(n);
+  const [pop, setPop] = useState(false);
+  if (prev !== n) {
+    setPrev(n);
+    setPop(prev === 0 && n > 0);
+  }
+  if (!n) return null;
+  return (
+    <span
+      data-testid="pm-unread"
+      aria-label={`${n} new ${n === 1 ? "message" : "messages"} from the PM`}
+      className={cn(
+        "bg-cta text-on-accent absolute -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[10px] leading-none font-bold",
+        withQuestions ? "-left-1" : "-right-1",
+        pop && "pm-badge-pop",
+      )}
     >
       {n}
     </span>
@@ -280,6 +313,7 @@ export function AskButton({
       >
         <SparkIcon />
         {!!a.questions && <QuestionCount n={a.questions} />}
+        <UnreadCount n={a.unread ?? 0} withQuestions={!!a.questions} />
       </button>
       <Shade
         a={a}
@@ -389,10 +423,12 @@ function Message({
   m,
   cli,
   onDecide,
+  onOpenCard,
 }: {
   m: AssistantMessageView;
   cli: boolean;
   onDecide: (index: number, decision: "apply" | "dismiss") => Promise<void>;
+  onOpenCard: (cardId: string) => void;
 }) {
   if (m.role === "user") {
     return (
@@ -451,6 +487,23 @@ function Message({
           <MarkdownLite text={m.content} keepLineBreaks />
         )}
       </div>
+      {!!m.cards?.length && (
+        <ul data-testid="pm-cards" className="m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0">
+          {m.cards.map((c) => (
+            <li key={c.id} className="max-w-full">
+              <button
+                type="button"
+                onClick={() => onOpenCard(c.id)}
+                className="border-line bg-card hover:border-terracotta text-muted inline-flex min-h-11 max-w-full items-center rounded-md border px-2.5 text-left font-mono text-[10px] md:min-h-8"
+              >
+                <span className="truncate">
+                  {c.key} · {c.title}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {m.proposals.map((p, i) => (
         <ProposalCard key={i} p={p} onDecide={(d) => onDecide(i, d)} />
       ))}
@@ -505,6 +558,17 @@ function WaitingQuestions({ a }: { a: AssistantControls }) {
   );
 }
 
+/** Above the first message the person has not read. */
+function NewRule() {
+  return (
+    <div data-testid="pm-new" role="separator" className="text-clay flex items-center gap-2 font-mono text-[10px] tracking-[0.08em] uppercase">
+      <span className="border-clay flex-1 border-t" />
+      New
+      <span className="border-clay flex-1 border-t" aria-hidden />
+    </div>
+  );
+}
+
 function Shade({
   a,
   repoName,
@@ -530,6 +594,14 @@ function Shade({
   const cli = selected
     ? providerInfo(selected.provider)?.kind === "cli"
     : false;
+
+  // The first PM message written after the person last read the chat.
+  const firstNew = a.messages.find(
+    (m) =>
+      m.role === "assistant" &&
+      m.status !== "pending" &&
+      (!a.readAt || (m.createdAt ?? "") > a.readAt),
+  )?.id;
 
   // Land on the newest message when the panel opens. Not on every streamed
   // update: that would yank the list away from whatever the person is reading.
@@ -619,12 +691,18 @@ function Shade({
               />
             )}
             {a.messages.map((m) => (
-              <Message
-                key={m.id}
-                m={m}
-                cli={cli}
-                onDecide={(i, d) => a.decide(m.id, i, d)}
-              />
+              <Fragment key={m.id}>
+                {m.id === firstNew && <NewRule />}
+                <Message
+                  m={m}
+                  cli={cli}
+                  onDecide={(i, d) => a.decide(m.id, i, d)}
+                  onOpenCard={(id) => {
+                    a.setOpen(false);
+                    a.onOpenQuestion?.(id);
+                  }}
+                />
+              </Fragment>
             ))}
           </>
         )}

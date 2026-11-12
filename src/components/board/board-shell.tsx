@@ -65,6 +65,8 @@ export function BoardShell({
   initialSentinels = {},
   unlockAllSentinels = false,
   tourSeen = false,
+  initialPmUnread = 0,
+  initialPmReadAt = null,
   initialOverrides = {},
   account,
   noCi,
@@ -91,6 +93,9 @@ export function BoardShell({
   unlockAllSentinels?: boolean;
   /** This person took this board's tour on some device: do not offer it again. */
   tourSeen?: boolean;
+  /** PM messages this person has not read, and when they last read the chat. */
+  initialPmUnread?: number;
+  initialPmReadAt?: string | null;
   /** Each column agent's own limits. */
   initialOverrides?: ColumnOverrides;
   account?: Account;
@@ -176,10 +181,42 @@ export function BoardShell({
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantUsed, setAssistantUsed] = useState(false);
   const assistant = useAssistant(assistantUsed);
+  const [pmUnread, setPmUnread] = useState(initialPmUnread);
+  // When the chat was last read, and what it was when it opened: the "New"
+  // rule stays put while the chat is open, though opening reads it.
+  const lastRead = useRef<string | null>(initialPmReadAt);
+  const [pmReadAtOpen, setPmReadAtOpen] = useState<string | null>(initialPmReadAt);
+  const assistantOpenRef = useRef(false);
+  const markPmRead = useCallback(() => {
+    setPmUnread(0);
+    void fetch("/api/assistant/read", { method: "POST" })
+      .then((res) => (res.ok ? (res.json() as Promise<{ readAt?: string }>) : null))
+      .then((data) => {
+        if (data?.readAt) lastRead.current = data.readAt;
+      })
+      .catch(() => undefined);
+  }, []);
   const openAssistant = (open: boolean) => {
-    if (open) setAssistantUsed(true);
+    if (open) {
+      setAssistantUsed(true);
+      if (!assistantOpenRef.current) {
+        setPmReadAtOpen(lastRead.current);
+        markPmRead();
+      }
+    }
+    assistantOpenRef.current = open;
     setAssistantOpen(open);
   };
+  // A PM message: unread while the chat is closed, read as it lands while open.
+  useEffect(
+    () =>
+      subscribe((event) => {
+        if (event.type !== "assistant.message") return;
+        if (assistantOpenRef.current) markPmRead();
+        else setPmUnread((n) => n + 1);
+      }),
+    [subscribe, markPmRead],
+  );
 
   const stopAll = async () => {
     await fetch("/api/runs/stop", { method: "POST" });
@@ -224,6 +261,8 @@ export function BoardShell({
         if (card?.kind === "epic") setOpenEpicId(id);
         else setOpenTicketId(id);
       },
+      unread: pmUnread,
+      readAt: pmReadAtOpen,
       open: assistantOpen,
       setOpen: openAssistant,
       presets: agentState.presets,
