@@ -554,7 +554,8 @@ export async function openTicketPullRequest(
   // the merge target now rather than waiting for a merge it already missed.
   const opened = { ...ticket, prNumber: pull.number, stackedOn: stacked };
   const below = await ticketBelow(opened);
-  if (stacked && below?.status === "merged") await restack(projectId, opened, client, target, below);
+  const { handToReviewer, reviewPullRequest } = await import("@/lib/review/pipeline");
+  if (stacked && below?.status === "merged") await restack(projectId, opened, client, target, below, handToReviewer(projectId));
 
   // Tickets waiting on this one can build on it now that its pull request is open.
   await releaseWaiting(projectId);
@@ -562,7 +563,6 @@ export async function openTicketPullRequest(
   // The review starts now, alongside CI, rather than on CI's first webhook.
   // With a mock GitHub no webhook will ever arrive at all, so this is also
   // what makes the no-credential demo reach Done.
-  const { reviewPullRequest } = await import("@/lib/review/pipeline");
   launch(
     () => reviewPullRequest(projectId, pull.number, pull.headSha),
     `review for ${ticket.key}`,
