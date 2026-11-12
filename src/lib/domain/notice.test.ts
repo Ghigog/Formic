@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNotice } from "./notice";
+import { classifyNotice, STUCK_RUN } from "./notice";
 
 describe("classifyNotice", () => {
   it("makes a failed ticket a warning with a title and both descriptions", () => {
@@ -32,6 +32,11 @@ describe("classifyNotice", () => {
       blockedReason: "Needs files outside its scope: `src/a.ts`. Allow them in its chat to carry on.",
     });
     expect(n?.severity).toBe("alert");
+  });
+
+  it("titles a stuck run 'Stuck' at alert severity, with what each run did as the detail", () => {
+    const n = classifyNotice({ status: "blocked", stalledIn: "in_progress", blockedReason: `${STUCK_RUN}\nRun 1 last edited a.ts` });
+    expect(n).toEqual({ severity: "alert", title: "Stuck", shortDescription: STUCK_RUN, longDescription: "Run 1 last edited a.ts" });
   });
 
   it("makes any other pause that waits for a person an alert", () => {
