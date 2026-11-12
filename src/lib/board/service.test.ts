@@ -907,3 +907,21 @@ describe("the board ports", () => {
     }
   });
 });
+
+describe("a ticket of an Epic that waits for another Epic", () => {
+  it("is refused In Progress, naming the Epic, while that Epic is not done", async () => {
+    const [first, review] = makeEpicWithChildren({ key: "EPIC-95" }, [{ status: "review", prNumber: 3 }]);
+    const [second, ticket] = makeEpicWithChildren({ key: "EPIC-96", waitsFor: [first!.id] }, [{ status: "ready" }]);
+    seedMemory([first!, review!, second!, ticket!]);
+
+    const result = await applyTransition(PROJECT, { cardId: ticket!.id, kind: "ticket", from: "todo", to: "in_progress", position: 1, actor: "user" });
+
+    expect(result).toMatchObject({ ok: true, status: "ready", runId: null });
+    expect(await repository().cardById(ticket!.id)).toMatchObject({
+      status: "ready",
+      misplacedIn: "in_progress",
+      misplacedReason: "Waits for EPIC-95: it starts once EPIC-95 is done.",
+    });
+    expect(launched).toEqual([]);
+  });
+});

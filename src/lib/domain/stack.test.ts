@@ -40,3 +40,20 @@ describe("readiness", () => {
     expect(readiness(card("b", "waiting", { dependsOn: ["gone"] }), []).ready).toBe(false);
   });
 });
+
+describe("readiness of a ticket whose Epic waits for another Epic", () => {
+  const epic = (id: string, over: Partial<Stackable> = {}): Stackable => ({ ...card(id, "ready", { kind: "epic" }), ...over });
+  const waiter = epic("e2", { waitsFor: ["e1"] });
+  const ticket = card("t", "ready", { epicId: "e2" });
+
+  it("is not ready while the Epic it waits for is not done", () => {
+    const first = epic("e1", { childCount: 2, doneCount: 1 });
+    expect(readiness(ticket, [first, waiter, ticket]).ready).toBe(false);
+  });
+
+  it("is ready once that Epic is merged, all its tickets merged, or gone", () => {
+    expect(readiness(ticket, [epic("e1", { status: "merged" }), waiter, ticket]).ready).toBe(true);
+    expect(readiness(ticket, [epic("e1", { childCount: 2, doneCount: 2 }), waiter, ticket]).ready).toBe(true);
+    expect(readiness(ticket, [waiter, ticket]).ready).toBe(true);
+  });
+});
