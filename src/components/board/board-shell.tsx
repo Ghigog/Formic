@@ -33,6 +33,7 @@ import {
   LazyColonyTimeline,
   LazyColonyToast,
   LazyEpicWinDialog,
+  LazySpikeFindingsDialog,
   LazyRerouteToast,
 } from "@/components/colony/lazy";
 import { LazySentinelsPage, UnlockAllDialog } from "@/components/sentinels/lazy";
@@ -406,6 +407,7 @@ export function BoardShell({
       <LazyColonyToast />
       <LazyRerouteToast toast={rerouteToast} />
       <LazyEpicWinDialog onOpenEpic={(epic) => setOpenEpicId(epic.id)} />
+      <LazySpikeFindingsDialog onOpenEpic={setOpenEpicId} />
 
       {connection === "reconnecting" && (
         <div
