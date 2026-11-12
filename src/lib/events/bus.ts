@@ -4,6 +4,7 @@ import { repository } from "@/lib/db";
 import type { FormicEvent, SequencedEvent } from "@/lib/domain/events";
 import { redactDeep } from "@/lib/secrets/redact";
 import { syncIssues } from "@/lib/issues/sync";
+import { reportStall } from "@/lib/assistant/stall-messages";
 import { notifyOwner } from "@/lib/notifications/notify";
 import { boardPorts } from "@/lib/board/ports";
 import { pingBoards } from "./realtime";
@@ -88,6 +89,10 @@ export async function publish(
   // The board's owner hears about moves, finished Epics and anything that
   // waits on them. Awaited like the above; never throws.
   await notifyOwner(projectId, event, seq);
+
+  // The PM tells the person in the chat when a ticket stalls on them.
+  // Awaited; never throws.
+  await reportStall(projectId, event, seq);
 
   // A ticket moved out of In Progress before its scouts were back calls
   // them back (src/lib/coder/scouts.ts).
