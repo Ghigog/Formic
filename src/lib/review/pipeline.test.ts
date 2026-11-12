@@ -606,4 +606,34 @@ describe("a conflict in review", () => {
     expect(asked).toHaveBeenCalledOnce();
     expect((await repository().ticketDetail(ticketId))!.attempts).toBe(2);
   });
+
+  it("hands a stacked ticket whose rebase conflicts to the Reviewer Agent, and blocks it with the conflict when that cannot resolve it", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const base = { epicId: epic.id, description: "d", acceptanceCriteria: ["c"], fileScope: ["src"], storyPoints: 3 };
+    const [first, second] = await repo.createTickets([
+      { ...base, key: "T-1", title: "First", position: 1, dependsOnKeys: [] },
+      { ...base, key: "T-2", title: "Second", position: 2, dependsOnKeys: ["T-1"] },
+    ]);
+    const below = await vcs.openPullRequest({ headBranch: "t-1", baseBranch: "main", title: "T-1", body: "" });
+    await repo.updateTicket(first!.id, { status: "review", prNumber: below.number, branchName: "t-1" });
+    const pull = await vcs.openPullRequest({ headBranch: "t-2", baseBranch: "t-1", title: "T-2", body: "" });
+    await repo.updateTicket(second!.id, { status: "review", stage: 6, prNumber: pull.number, branchName: "t-2", stackedOn: "t-1" });
+    MockVcsClient.setPull(pull.number, { mergeable: false });
+    MockVcsClient.refuseBaseUpdate(pull.number, "Merge conflict");
+    setCheckoutFactory(async (request) => {
+      const raw = new MemoryWorkspace();
+      const conflicting: Workspace = Object.create(raw, {
+        exec: { value: async (cmd: string) => ({ exitCode: cmd.includes(" rebase --onto ") ? 1 : 0, stdout: "", stderr: "CONFLICT" }) },
+      });
+      return { workspace: scopedWorkspace(conflicting, request.ticket.fileScope), raw: conflicting, sandboxId: "sbx", async dispose() {} };
+    });
+    // Every command "succeeds" but the rebase, so the Reviewer Agent finds conflict markers it cannot clear.
+    await markMergedExternally(PROJECT, below.number);
+
+    // Pointed at the merge target, and the Reviewer Agent had it.
+    expect((await vcs.pullRequest(pull.number)).baseBranch).toBe("main");
+    await vi.waitFor(async () => expect((await repository().ticketDetail(second!.id))!.status).toBe("blocked"));
+    expect((await repository().ticketDetail(second!.id))!.blockedReason).toContain("conflicts with main");
+  });
 });
