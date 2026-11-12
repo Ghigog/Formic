@@ -8,8 +8,8 @@ afterEach(() => {
 });
 
 const FOLLOW_UPS = [
-  { title: "Raise branch coverage to 78%", why: "About 540 branches are uncovered.", points: 5 as const },
-  { title: "Fix order-dependent tests", why: "They fail when shuffled.", points: null },
+  { title: "Raise branch coverage to 78%", why: "About 540 branches are uncovered.", points: 5 as const, need: "nice" as const },
+  { title: "Fix order-dependent tests", why: "They fail when shuffled.", points: null, need: "nice" as const },
 ];
 
 function serve(status = 200, body: object = { message: "ok" }) {

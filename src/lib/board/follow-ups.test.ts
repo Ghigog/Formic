@@ -23,8 +23,8 @@ async function seed() {
     },
   ]);
   await recordFollowUps(ticket!.id, [
-    { title: "Raise branch coverage to 78%", why: "About 540 branches are uncovered.", points: 5 },
-    { title: "Fix order-dependent tests", why: "They fail when shuffled.", points: null },
+    { title: "Raise branch coverage to 78%", why: "About 540 branches are uncovered.", points: 5, need: "nice" },
+    { title: "Fix order-dependent tests", why: "They fail when shuffled.", points: null, need: "nice" },
   ]);
   return { epic, ticket: ticket! };
 }
@@ -36,7 +36,7 @@ beforeEach(() => {
 describe("recordFollowUps", () => {
   it("adds to what the ticket had, without repeats", async () => {
     const { ticket } = await seed();
-    await recordFollowUps(ticket.id, [{ title: "Fix order-dependent tests", why: "Again.", points: 1 }]);
+    await recordFollowUps(ticket.id, [{ title: "Fix order-dependent tests", why: "Again.", points: 1, need: "nice" }]);
     const followUps = (await repository().ticketDetail(ticket.id))!.followUps;
     expect(followUps.map((f) => f.title)).toEqual(["Raise branch coverage to 78%", "Fix order-dependent tests"]);
   });
@@ -86,7 +86,7 @@ describe("nextTicketKey", () => {
 });
 
 describe("addFollowUpTicket", () => {
-  const followUp: FollowUp = { title: "Tidy the seams", why: "They leak.", points: 3 };
+  const followUp: FollowUp = { title: "Tidy the seams", why: "They leak.", points: 3, need: "nice" };
 
   it("gives a standalone source a standalone ticket of its own at the end of To Do", async () => {
     const repo = repository();

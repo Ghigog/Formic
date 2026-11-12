@@ -444,8 +444,14 @@ const FOLLOW_UPS = {
       title: { type: "string" },
       why: { type: "string", description: "What the work is and why it was left out of this ticket." },
       points: { type: ["integer", "null"], description: "The estimate: 1, 2, 3, 5, 8 or 13." },
+      need: {
+        type: "string",
+        enum: ["needed", "nice"],
+        description:
+          "\"needed\" when the ticket's acceptance criteria are not met without this work, or you found a real defect you are not sending back. \"nice\" for everything else.",
+      },
     },
-    required: ["title", "why", "points"],
+    required: ["title", "why", "points", "need"],
     additionalProperties: false,
   },
   description:

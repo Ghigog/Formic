@@ -162,7 +162,7 @@ describe("the loop entry a GitHub Actions job runs", () => {
     const sent = fakeProvider([
       finish({
         already_done: false,
-        follow_ups: [{ title: "Retry from the run log too", why: "The log page has no card to click.", points: 3 }],
+        follow_ups: [{ title: "Retry from the run log too", why: "The log page has no card to click.", points: 3, need: "needed" }],
       }),
     ]);
 
@@ -174,7 +174,7 @@ describe("the loop entry a GitHub Actions job runs", () => {
     expect(messages(sent, 0)[0]!.content).toContain(FOLLOW_UP_RULE);
     expect(messages(sent, 0)[1]!.content).toContain("Estimate: 2 story points.");
     expect(report.ok && followUpsFromSummary(report.detail)).toEqual([
-      { title: "Retry from the run log too", why: "The log page has no card to click.", points: 3 },
+      { title: "Retry from the run log too", why: "The log page has no card to click.", points: 3, need: "needed" },
     ]);
   });
 
