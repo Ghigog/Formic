@@ -926,6 +926,13 @@ export class MemoryRepository implements Repository {
     return card ? projectOf(s, card) : null;
   }
 
+  async ticketsWithLiveRun(): Promise<Array<{ ticketId: string; projectId: string }>> {
+    const s = store();
+    return [...s.cards.values()]
+      .filter((c) => c.kind === "ticket" && !c.archived && (c.status === "running" || !!s.ticketExtras.get(c.id)?.runnerJob))
+      .map((c) => ({ ticketId: c.id, projectId: projectOf(s, c) }));
+  }
+
   async placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null> {
     const s = store();
     if (s.queens.has(cardId)) return null;

@@ -146,6 +146,16 @@ https://52-200-209-60.sslip.io.
   then every 5 minutes. A run still live after `ORPHAN_AFTER_MS` (10 minutes)
   is failed, so a run whose worker died is failed within 15 minutes of going
   live. See [Ticket stuck after a worker restart](#ticket-stuck-after-a-worker-restart).
+- **No-commit clock.** On the same 5-minute tick, a ticket with a live Coder
+  or Reviewer run whose last commit (`lastCommitAt`: the later of the run's
+  start and its last saved checkpoint) is older than `STUCK_AFTER_MS` (30
+  minutes) is stuck. The first time, the run is stopped and its column's agent
+  started again, as "resume" does; the ticket's chat says what the run was
+  last doing, and you get a "needs attention" push. If the restarted run goes
+  another 30 minutes without a commit, it is not restarted again: the card is
+  blocked with "Run stuck: no new commits for 30 minutes" and what each run
+  last did. A new commit, or you moving the ticket, clears the first-stuck
+  note (`stuckNote`).
 
 Things to know about the GitHub-side checks:
 

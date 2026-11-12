@@ -224,6 +224,7 @@ export function useBoardEvents(
       "ci.status",
       "sandbox.count",
       "budget.exhausted",
+      "run.stuck",
       "agent.limited",
       "runner.ready",
     ];
