@@ -699,6 +699,8 @@ model ProjectOpen {
   openedAt   DateTime  @default(now())
   /// When this person first took (or started) the board's tour. Null until then.
   tourSeenAt DateTime?
+  /// When this person last read the board's PM chat. Null until they first do.
+  pmReadAt   DateTime?
 
   @@id([projectId, userId])
   @@index([userId])
@@ -750,6 +752,8 @@ model AssistantMessage {
   content     String
   /// Changes the assistant proposed, each waiting for the person's approval.
   proposals   Json?
+  /// Cards this message links to: [{ id, key, title }].
+  cards       Json?
   /// "done", "pending" while the agent works, or "failed".
   status      String   @default("done")
   /// The Actions run a CLI agent is answering this in, if any.

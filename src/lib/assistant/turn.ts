@@ -18,6 +18,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { attemptsFor } from "@/lib/budget/in-process";
 import { repository } from "@/lib/db";
+import { publish } from "@/lib/events/bus";
 import { columnOf } from "@/lib/domain/status";
 import type { AssistantMessage, AssistantProposal } from "@/lib/db/repository";
 import { extractJson } from "@/lib/llm/openai-compat";
@@ -370,6 +371,7 @@ async function finish(
     runnerAgent: null,
   });
   // The person may have asked and walked away: tell them it is in.
+  await publish(current.projectId, { type: "assistant.message", messageId });
   const { notifyPmAnswer } = await import("@/lib/notifications/notify");
   await notifyPmAnswer(current.projectId, { content: update.content, failed: update.status === "failed" });
   await startNext(current.projectId);
