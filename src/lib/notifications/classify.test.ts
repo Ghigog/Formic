@@ -53,3 +53,19 @@ describe("classifyEvent", () => {
     expect(classifyEvent({ type: "runner.ready" }, ctx)).toBeNull();
   });
 });
+
+describe("classifyEvent: run.stuck", () => {
+  it("tells the person the run was restarted and what it was last doing", () => {
+    expect(
+      classifyEvent(
+        { type: "run.stuck", ticketId: "t1", agent: "Coder Agent", step: "Running the tests" },
+        { cardKey: "T-5", cardTitle: "Export", boardName: "Acme" },
+      ),
+    ).toEqual({
+      kind: "needsAttention",
+      title: "T-5 on Acme went quiet",
+      body: "No new commits for 30 minutes, so the Coder Agent was restarted. It was last: Running the tests",
+      url: "/",
+    });
+  });
+});

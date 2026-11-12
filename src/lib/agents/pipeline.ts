@@ -97,6 +97,12 @@ export function startRun(
   void repository()
     .startRun(record)
     .catch((e) => console.error("[formic] could not journal run:", e));
+  // The no-commit clock counts from the later of a run's start and its last commit.
+  if (ids.ticketId && (role === "coder" || role === "reviewer")) {
+    void repository()
+      .updateTicket(ids.ticketId, { lastCommitAt: new Date() })
+      .catch((e) => console.error("[formic] could not stamp the run's start:", e));
+  }
 
   // What has already been billed to the budget. An agent that loops charges
   // as it goes; finish() must then settle only the difference, or a run pays

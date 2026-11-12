@@ -673,6 +673,14 @@ export class PrismaRepository implements Repository {
     return ticket?.epic.projectId ?? null;
   }
 
+  async ticketsWithLiveRun(): Promise<Array<{ ticketId: string; projectId: string }>> {
+    const rows = await prisma().ticket.findMany({
+      where: { archived: false, OR: [{ status: "running" }, { runnerJob: { not: null } }] },
+      select: { id: true, epic: { select: { projectId: true } } },
+    });
+    return rows.map((r: { id: string; epic: { projectId: string } }) => ({ ticketId: r.id, projectId: r.epic.projectId }));
+  }
+
   async placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null> {
     try {
       const row = await prisma().queen.create({

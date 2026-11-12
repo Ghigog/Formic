@@ -201,6 +201,15 @@ export type FormicEvent =
       type: "runner.ready";
     }
   | {
+      /** A run with no new commit for too long was restarted. */
+      type: "run.stuck";
+      ticketId: string;
+      /** The agent that was restarted, as the board names it. */
+      agent: string;
+      /** What it last did; null when it had said nothing. */
+      step: string | null;
+    }
+  | {
       type: "budget.exhausted";
       scope: "run" | "epic" | "global";
       id: string;
