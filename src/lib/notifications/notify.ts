@@ -99,7 +99,7 @@ function sentRecently(userId: string, notification: Notification): boolean {
  */
 export async function notifyOwner(projectId: string, event: FormicEvent, seq?: number): Promise<void> {
   try {
-    if (event.type !== "card.status" && event.type !== "budget.exhausted") return;
+    if (event.type !== "card.status" && event.type !== "budget.exhausted" && event.type !== "run.stuck") return;
 
     let was: CardSeen | undefined;
     let now: CardSeen | undefined;
@@ -116,8 +116,8 @@ export async function notifyOwner(projectId: string, event: FormicEvent, seq?: n
 
     let cardKey = "";
     let cardTitle = "";
-    if (event.type === "card.status") {
-      const card = await repo.cardById(event.cardId);
+    if (event.type === "card.status" || event.type === "run.stuck") {
+      const card = await repo.cardById(event.type === "run.stuck" ? event.ticketId : event.cardId);
       if (!card) return;
       cardKey = card.key;
       cardTitle = card.title;

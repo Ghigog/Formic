@@ -866,6 +866,8 @@ export interface UserRepository {
 export interface BoardRepository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
+  /** Every ticket with an agent run live on it (running, or holding a runner job), on any board. */
+  ticketsWithLiveRun(): Promise<Array<{ ticketId: string; projectId: string }>>;
   boardCards(projectId: string): Promise<BoardCard[]>;
   /** The archive: a project's archived tickets, off the active board. Those archived with their Epic show under it. */
   archivedTickets(projectId: string, page?: { cursor?: string; limit?: number }): Promise<CardPage>;

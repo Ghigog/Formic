@@ -4,10 +4,21 @@ vi.stubEnv("DATABASE_URL", "");
 vi.stubEnv("POSTGRES_PRISMA_URL", "");
 vi.stubEnv("POSTGRES_URL", "");
 
+const resume = vi.fn(async () => "restarted");
+vi.mock("./card-actions", () => ({ resume: (...a: unknown[]) => (resume as (...x: unknown[]) => unknown)(...a) }));
+const stopTicket = vi.fn(async () => true);
+const lastStepOf = vi.fn((): string | null => null);
+vi.mock("@/lib/runner/runner", () => ({
+  stopTicket: (...a: unknown[]) => (stopTicket as (...x: unknown[]) => unknown)(...a),
+  lastStepOf: () => lastStepOf(),
+}));
+
 const { repository } = await import("@/lib/db");
 const {
   CHAT_ORPHAN_AFTER_MS,
   ORPHAN_AFTER_MS,
+  STUCK_AFTER_MS,
+  handleStuckRuns,
   reconcileOrphanedRuns,
   recoverStaleAssistantAnswers,
   recoverStaleCardChats,
@@ -168,5 +179,82 @@ describe("recoverStaleAssistantAnswers", () => {
     await repository().updateAssistantMessage(message.id, { runnerJob: "job-1" });
     expect(await recoverStaleAssistantAnswers(PROJECT, later())).toBe(0);
     expect((await repository().assistantMessage(message.id))?.status).toBe("pending");
+  });
+});
+
+describe("handleStuckRuns", () => {
+  const MIN = 60 * 1000;
+  const T0 = new Date("2026-01-01T12:00:00Z");
+
+  /** A ticket with a Coder Agent run live on it, whose last commit was `minutesAgo` before T0. */
+  async function runningTicket(minutesAgo: number, stuckNote: string | null = null) {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const [card] = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "Do it",
+        description: "d",
+        acceptanceCriteria: ["done"],
+        fileScope: ["src"],
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.updateTicket(card!.id, {
+      status: "running",
+      lastCommitAt: new Date(T0.getTime() - minutesAgo * MIN),
+      stuckNote,
+    });
+    return card!.id;
+  }
+
+  beforeEach(() => {
+    resume.mockClear();
+    stopTicket.mockClear();
+    lastStepOf.mockReturnValue("Running the tests");
+  });
+
+  it("restarts a run with no commit for 31 minutes, says so in chat and notifies", async () => {
+    const id = await runningTicket(31);
+
+    expect(await handleStuckRuns(T0)).toBe(1);
+
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect((await repository().ticketDetail(id))?.stuckNote).toBe("Running the tests");
+    const { messages: chat } = await repository().cardChatMessages(id);
+    expect(chat.map((m) => m.content)).toEqual([
+      "No new commits for 30 minutes, so the Coder Agent was restarted. It was last: Running the tests",
+    ]);
+    const events = await repository().eventsAfter(PROJECT, 0, 50);
+    expect(events.map((e) => e.payload)).toContainEqual({
+      type: "run.stuck",
+      ticketId: id,
+      agent: "Coder Agent",
+      step: "Running the tests",
+    });
+  });
+
+  it("leaves a run that committed 10 minutes ago alone, however long it has run", async () => {
+    await runningTicket(10);
+
+    expect(await handleStuckRuns(T0)).toBe(0);
+    expect(resume).not.toHaveBeenCalled();
+    expect(STUCK_AFTER_MS).toBe(30 * MIN);
+  });
+
+  it("blocks a ticket whose restarted run is stuck too, instead of restarting it again", async () => {
+    const id = await runningTicket(31, "Reading the schema");
+
+    expect(await handleStuckRuns(T0)).toBe(1);
+
+    expect(resume).not.toHaveBeenCalled();
+    expect(stopTicket).toHaveBeenCalledTimes(1);
+    const ticket = await repository().ticketDetail(id);
+    expect(ticket?.status).toBe("blocked");
+    expect(ticket?.blockedReason).toBe(
+      "Run stuck: no new commits for 30 minutes\nFirst run last: Reading the schema\nRestarted run last: Running the tests",
+    );
   });
 });
