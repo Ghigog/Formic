@@ -37,6 +37,12 @@ const spec: TicketSpec = {
 };
 
 describe("the ticket template", () => {
+  it("tells the Architect to put pure file moves in their own moveOnly ticket", () => {
+    const prompt = withPlanningConventions("Custom architect.");
+    expect(prompt).toContain("Put pure file moves and renames in one small ticket of their own, marked moveOnly");
+    expect(prompt).toContain("those depend on it");
+  });
+
   it("renders the user story and the requirements as the ticket's description", () => {
     const t = toDraftTicket(spec);
     expect(t.description).toBe(
