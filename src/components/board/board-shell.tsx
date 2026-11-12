@@ -383,6 +383,10 @@ export function BoardShell({
           setOpenEpicId(epicId);
         }}
         onOpenTicket={setOpenTicketId}
+        onOpenChat={() => {
+          setOpenTicketId(null);
+          openAssistant(true);
+        }}
         kpisUnlocked={featureUnlocked("kpis", scoreOf(cards).level)}
         subscribe={subscribe}
         onChanged={() => void refetch().catch(() => {})}

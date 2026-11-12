@@ -55,6 +55,7 @@ export function TicketDrawer({
   onClose,
   onOpenEpic,
   onOpenTicket,
+  onOpenChat,
   subscribe,
   onChanged,
   kpisUnlocked,
@@ -63,6 +64,8 @@ export function TicketDrawer({
   onClose: () => void;
   onOpenEpic: (epicId: string) => void;
   onOpenTicket: (ticketId: string) => void;
+  /** Open the PM's chat (the board closes this drawer first). */
+  onOpenChat: () => void;
   subscribe: SubscribeToEvents;
   /** Called after the ticket itself was edited here, so the board can refetch. */
   onChanged?: () => void;
@@ -374,6 +377,7 @@ export function TicketDrawer({
                 <TicketBody
                   view={view}
                   onOpenTicket={onOpenTicket}
+                  onOpenChat={onOpenChat}
                   onOpenEpic={onOpenEpic}
                   kpisUnlocked={kpisUnlocked}
                   onChanged={() => {
@@ -466,12 +470,14 @@ function NoticeBanner({
 function TicketBody({
   view,
   onOpenTicket,
+  onOpenChat,
   onOpenEpic,
   onChanged,
   kpisUnlocked,
 }: {
   view: TicketView;
   onOpenTicket: (ticketId: string) => void;
+  onOpenChat: () => void;
   onOpenEpic: (epicId: string) => void;
   onChanged: () => void;
   kpisUnlocked: boolean;
@@ -545,6 +551,8 @@ function TicketBody({
         ticketId={view.card.id}
         followUps={view.followUps}
         onChanged={onChanged}
+        onOpenCard={onOpenTicket}
+        onOpenChat={onOpenChat}
       />
 
       <div>
