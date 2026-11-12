@@ -21,5 +21,6 @@ export async function GET(
   if (ticket.workType !== "spike") {
     return Response.json({ error: "Only a spike has findings." }, { status: 409 });
   }
-  return Response.json(await spikeFindings(project, ticket));
+  const findings = await spikeFindings(project, ticket);
+  return Response.json({ ...findings, epicId: await repository().epicForSpike(id) });
 }

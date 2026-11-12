@@ -158,6 +158,8 @@ interface Store {
   prds: Map<string, unknown>;
   prdTimes: Map<string, Date>;
   rawRequests: Map<string, string>;
+  /** Spike ticket id -> the Epic made from its findings. */
+  spikeEpics: Map<string, string>;
   showcases: Map<string, string>;
   epicJobs: Map<string, string>;
   epicJobAgents: Map<string, string | null>;
@@ -286,6 +288,7 @@ function store(): Store {
     prds: new Map(),
     prdTimes: new Map(),
     rawRequests: new Map(),
+    spikeEpics: new Map(),
     showcases: new Map(),
     epicJobs: new Map(),
     epicJobAgents: new Map(),
@@ -1104,6 +1107,10 @@ export class MemoryRepository implements Repository {
     epic.archived = false;
   }
 
+  async epicForSpike(ticketId: string): Promise<string | null> {
+    return store().spikeEpics.get(ticketId) ?? null;
+  }
+
   async createEpic(input: CreateEpicInput): Promise<BoardCard> {
     const s = store();
     // One past the highest ever used, so a deleted Epic's key is never reused.
@@ -1114,6 +1121,9 @@ export class MemoryRepository implements Repository {
           .filter((c) => c.kind === "epic")
           .map((c) => Number(c.key.replace(/^EPIC-/, "")) || 0),
       ) + 1;
+    if (input.spikeTicketId && s.spikeEpics.has(input.spikeTicketId)) {
+      throw new Error("An Epic already exists for this spike.");
+    }
     s.epicNumbers.set(input.projectId, n);
     const card: BoardCard = {
       id: id("epic"),
@@ -1147,6 +1157,7 @@ export class MemoryRepository implements Repository {
     s.cards.set(card.id, card);
     s.epicProject.set(card.id, input.projectId);
     s.rawRequests.set(card.id, input.rawRequest);
+    if (input.spikeTicketId) s.spikeEpics.set(input.spikeTicketId, card.id);
     return card;
   }
 
@@ -1463,6 +1474,7 @@ export class MemoryRepository implements Repository {
     s.queens.delete(epicId);
     s.epicProject.delete(epicId);
     s.rawRequests.delete(epicId);
+    for (const [spike, epic] of s.spikeEpics) if (epic === epicId) s.spikeEpics.delete(spike);
     s.prds.delete(epicId);
     s.showcases.delete(epicId);
     s.epicJobs.delete(epicId);

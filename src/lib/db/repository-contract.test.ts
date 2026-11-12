@@ -288,6 +288,18 @@ function contract(name: string, make: () => Repository) {
     });
 
     describe("epics and tickets", () => {
+      it("makes at most one Epic per spike and finds it again", async () => {
+        const p = await project();
+        const first = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1, spikeTicketId: "spike-1" });
+
+        expect(await repo.epicForSpike("spike-1")).toBe(first.id);
+        expect(await repo.epicForSpike("other")).toBeNull();
+        await expect(
+          repo.createEpic({ projectId: p.id, title: "F", rawRequest: "F", position: 2, spikeTicketId: "spike-1" }),
+        ).rejects.toThrow();
+        expect(await repo.epicForSpike("spike-1")).toBe(first.id);
+      });
+
       it("creates an Epic with tickets, their dependencies, and the project they belong to", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "Do E", position: 1 });
