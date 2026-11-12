@@ -134,6 +134,11 @@ export type FormicEvent =
       state: "answering" | "idle";
     }
   | {
+      /** The PM added a message to the board chat (an answer landed, or it wrote unasked). */
+      type: "assistant.message";
+      messageId: string;
+    }
+  | {
       /** An answer in the board assistant's conversation was marked failed. */
       type: "assistant.failed";
       messageId: string;

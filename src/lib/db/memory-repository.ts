@@ -34,6 +34,7 @@ import type {
   TicketDetail,
   TicketUpdate,
   AssistantMessage,
+  AssistantProposal,
   AuditKind,
   AuditRecord,
   AuditResult,
@@ -216,6 +217,8 @@ interface Store {
   /** `${userId}:${projectId}` to when that person last opened it. */
   opens: Map<string, Date>;
   tourSeen: Set<string>;
+  /** `${userId}:${projectId}` to when that person last read the PM chat. */
+  pmRead: Map<string, Date>;
   /** `${projectId}:${userId}:${slot}` to a member's own preset id. */
   memberAgents: Map<string, string>;
   /** Card id to whose keys its work runs on. */
@@ -258,6 +261,7 @@ function store(): Store {
     existing.members ??= new Set();
     existing.opens ??= new Map();
     existing.tourSeen ??= new Set();
+    existing.pmRead ??= new Map();
     existing.memberAgents ??= new Map();
     existing.actors ??= new Map();
     return existing;
@@ -318,6 +322,7 @@ function store(): Store {
     members: new Set(),
     opens: new Map(),
     tourSeen: new Set(),
+    pmRead: new Map(),
     memberAgents: new Map(),
     actors: new Map(),
     assistant: [],
@@ -725,6 +730,16 @@ export class MemoryRepository implements Repository {
 
   async boardTourSeen(userId: string, projectId: string): Promise<boolean> {
     return store().tourSeen.has(`${userId}:${projectId}`);
+  }
+
+  async markPmRead(userId: string, projectId: string, at: Date): Promise<void> {
+    const s = store();
+    if (!s.projects.has(projectId)) return;
+    s.pmRead.set(`${userId}:${projectId}`, at);
+  }
+
+  async pmReadAt(userId: string, projectId: string): Promise<Date | null> {
+    return store().pmRead.get(`${userId}:${projectId}`) ?? null;
   }
 
   async openedAtByProject(userId: string): Promise<Map<string, Date>> {
@@ -2271,19 +2286,32 @@ export class MemoryRepository implements Repository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    cards?: AssistantMessage["cards"];
+    proposals?: AssistantProposal[];
   }): Promise<AssistantMessage> {
     const message: AssistantMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 10)}`,
-      proposals: [],
       runnerJob: null,
       runnerAgent: null,
       speaker: "assistant",
       createdAt: new Date(),
       ...input,
+      cards: input.cards ?? [],
+      proposals: input.proposals ?? [],
       status: input.status ?? "done",
     };
     store().assistant.push(message);
     return { ...message };
+  }
+
+  async unreadPmCount(projectId: string, since: Date | null): Promise<number> {
+    return store().assistant.filter(
+      (x) =>
+        x.projectId === projectId &&
+        x.role === "assistant" &&
+        x.status !== "pending" &&
+        (since === null || x.createdAt > since),
+    ).length;
   }
 
   async updateAssistantMessage(
