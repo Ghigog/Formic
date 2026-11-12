@@ -308,9 +308,12 @@ model Epic {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tickets Ticket[]
-  runs    AgentRun[]
-  queen   Queen?
+  tickets    Ticket[]
+  runs       AgentRun[]
+  /// The Epics this one waits for, and the Epics that wait for it.
+  waitsFor   EpicDependency[] @relation("waiting")
+  waitedOnBy EpicDependency[] @relation("waitedOn")
+  queen      Queen?
 
   @@index([projectId, status])
   @@map("epic")
@@ -358,6 +361,13 @@ model Ticket {
   rerouteFrom      ColumnId?
   rerouteReason    String?
 
+  /// The ticket only moves or renames files: quick to review, stale within
+  /// hours, so it ships small and fast.
+  moveOnly          Boolean   @default(false)
+  /// When its run last pushed a commit or checkpoint. The no-commit clock.
+  lastCommitAt      DateTime?
+  /// What the first stuck run last did. Null once the ticket moves on.
+  stuckNote         String?
   branchName        String?
   /// A stacked ticket's start: the branch of the prerequisite whose open pull
   /// request it builds on, which its own pull request targets until that one
@@ -490,6 +500,18 @@ model TicketChange {
 
   @@index([ticketId])
   @@map("ticket_change")
+}
+
+/// An Epic that waits for another Epic to finish before it starts.
+model EpicDependency {
+  epicId         String
+  epic           Epic   @relation("waiting", fields: [epicId], references: [id], onDelete: Cascade)
+  waitsForEpicId String
+  waitsFor       Epic   @relation("waitedOn", fields: [waitsForEpicId], references: [id], onDelete: Cascade)
+
+  @@id([epicId, waitsForEpicId])
+  @@index([waitsForEpicId])
+  @@map("epic_dependency")
 }
 
 model TicketDependency {

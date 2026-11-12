@@ -244,6 +244,10 @@ export interface BoardCard {
   model: string | null;
   fileScope: string[];
   dependsOn: string[];
+  /** Epics only: the ids of the Epics it waits for. [] otherwise. */
+  waitsFor?: string[];
+  /** Tickets only: it only moves or renames files. */
+  moveOnly?: boolean;
   prNumber: number | null;
   prUrl: string | null;
   blockedReason: string | null;
