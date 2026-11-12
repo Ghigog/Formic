@@ -90,6 +90,7 @@ type EpicRow = {
   id: string;
   archived: boolean;
   queen?: { id: string } | null;
+  waitsFor: Array<{ waitsForEpicId: string }>;
   number: number | null;
   title: string;
   status: TicketStatus;
@@ -782,6 +783,7 @@ export class PrismaRepository implements Repository {
         position: true,
         createdAt: true,
         updatedAt: true,
+        waitsFor: { select: { waitsForEpicId: true } },
         tickets: { where: { scoutOf: null, archived: false }, select: { id: true, status: true } },
         queen: { select: { id: true } },
         runs: {
@@ -829,6 +831,7 @@ export class PrismaRepository implements Repository {
         mergeMultiplier: true,
         scouts: true,
         scoutPick: true,
+        moveOnly: true,
         dependsOn: { select: { dependsOnTicketId: true } },
         queen: { select: { id: true } },
         columnEntries: { where: { exitedAt: null }, select: { enteredAt: true }, take: 1 },
@@ -884,6 +887,8 @@ export class PrismaRepository implements Repository {
         workingSince: epicAgent(epic)?.since?.toISOString() ?? null,
         fileScope: [],
         dependsOn: [],
+        waitsFor: epic.waitsFor.map((w) => w.waitsForEpicId),
+        moveOnly: false,
         prNumber: null,
         prUrl: null,
         blockedReason: epic.blockedReason,
@@ -932,6 +937,8 @@ export class PrismaRepository implements Repository {
       workingSince: since?.toISOString() ?? null,
       fileScope: t.fileScope,
       dependsOn: t.dependsOn.map((d) => d.dependsOnTicketId),
+      waitsFor: [],
+      moveOnly: t.moveOnly,
       prNumber: t.prNumber,
       prUrl: t.prUrl,
       blockedReason: t.blockedReason,
@@ -1214,6 +1221,7 @@ export class PrismaRepository implements Repository {
               size: input.size ?? "M",
               storyPoints: input.storyPoints ?? null,
               needsHuman: input.needsHuman ?? null,
+              moveOnly: input.moveOnly ?? false,
               workType: input.workType ?? null,
               bugSeverity: severityFor(input.workType, input.bugSeverity),
               position: input.position,
@@ -1522,6 +1530,13 @@ export class PrismaRepository implements Repository {
   async deleteTickets(ticketIds: string[]): Promise<void> {
     if (ticketIds.length === 0) return;
     await prisma().ticket.deleteMany({ where: { id: { in: ticketIds } } });
+  }
+
+  async setEpicWaits(epicId: string, waitsForEpicIds: string[]): Promise<void> {
+    await prisma().epicDependency.createMany({
+      data: [...new Set(waitsForEpicIds)].map((waitsForEpicId) => ({ epicId, waitsForEpicId })),
+      skipDuplicates: true,
+    });
   }
 
   async addDependencies(edges: Array<{ ticketId: string; dependsOnTicketId: string }>): Promise<void> {
@@ -2556,6 +2571,9 @@ type TicketRow = {
   reviewedSha: string | null;
   reviewedHead: string | null;
   stackedOn: string | null;
+  moveOnly: boolean;
+  lastCommitAt: Date | null;
+  stuckNote: string | null;
   autoEscalatedAt: Date | null;
   needsHuman: string | null;
   workType: WorkType | null;
@@ -2660,6 +2678,9 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     reviewedSha: row.reviewedSha,
     reviewedHead: row.reviewedHead,
     stackedOn: row.stackedOn,
+    moveOnly: row.moveOnly,
+    lastCommitAt: row.lastCommitAt?.toISOString() ?? null,
+    stuckNote: row.stuckNote,
     autoEscalatedAt: row.autoEscalatedAt?.toISOString() ?? null,
     needsHuman: row.needsHuman,
     workType: row.workType,
