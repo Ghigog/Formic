@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { repo, currentUser, activeProject, applyAction, checkAction } = vi.hoisted(() => ({
+const { repo, currentUser, activeProject, applyAction, checkAction, dismissAction } = vi.hoisted(() => ({
   repo: {
     assistantMessage: vi.fn(),
     updateAssistantMessage: vi.fn(),
@@ -12,12 +12,13 @@ const { repo, currentUser, activeProject, applyAction, checkAction } = vi.hoiste
   activeProject: vi.fn(),
   applyAction: vi.fn(),
   checkAction: vi.fn(),
+  dismissAction: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
 vi.mock("@/lib/auth/user", () => ({ currentUser, asSignedIn: <T,>(handler: T) => handler }));
 vi.mock("@/lib/board/project", () => ({ activeProject, noProject: () => Response.json({}, { status: 409 }) }));
-vi.mock("@/lib/assistant/actions", () => ({ applyAction, checkAction }));
+vi.mock("@/lib/assistant/actions", () => ({ applyAction, checkAction, dismissAction }));
 
 const { POST } = await import("./route");
 
@@ -36,6 +37,7 @@ beforeEach(() => {
   repo.assistantMessages.mockResolvedValue({ messages: [], earlierCursor: null });
   checkAction.mockReturnValue({ ok: true, action });
   applyAction.mockResolvedValue("Done.");
+  dismissAction.mockResolvedValue(undefined);
 });
 
 describe("POST /api/assistant/proposals", () => {
@@ -43,6 +45,7 @@ describe("POST /api/assistant/proposals", () => {
     const res = await decide({ messageId: "m-1", index: 0, decision: "dismiss" });
     expect(res.status).toBe(200);
     expect(applyAction).not.toHaveBeenCalled();
+    expect(dismissAction).toHaveBeenCalledWith("p-1", action);
     expect(repo.updateAssistantMessage).toHaveBeenCalledWith("m-1", {
       proposals: [{ state: "dismissed", action }],
     });

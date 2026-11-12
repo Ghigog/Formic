@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { assistantPick } from "@/lib/agents/board-agents";
-import { applyAction, checkAction } from "@/lib/assistant/actions";
+import { applyAction, checkAction, dismissAction } from "@/lib/assistant/actions";
 import { asSignedIn, currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
@@ -41,6 +41,8 @@ async function postHandler(req: Request) {
   const proposals = [...message.proposals];
   if (body.data.decision === "dismiss") {
     proposals[body.data.index] = { ...proposal, state: "dismissed" };
+    const checked = checkAction(proposal.action);
+    if (checked.ok) await dismissAction(project.id, checked.action).catch(() => undefined);
   } else {
     // Mark it first, so a double click cannot apply it twice.
     proposals[body.data.index] = { ...proposal, state: "applied" };

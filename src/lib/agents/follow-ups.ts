@@ -24,7 +24,7 @@ export type FollowUpNeed = "needed" | "nice";
 
 export type FollowUpOutcome =
   | { kind: "pending" }
-  | { kind: "added"; key: string; cardId: string }
+  | { kind: "added"; key: string; cardId: string; announced?: boolean }
   | { kind: "proposed"; messageId: string }
   | { kind: "dismissed" };
 
@@ -46,7 +46,7 @@ const needSchema = z
 const outcomeSchema = z
   .union([
     z.object({ kind: z.literal("pending") }),
-    z.object({ kind: z.literal("added"), key: z.string(), cardId: z.string() }),
+    z.object({ kind: z.literal("added"), key: z.string(), cardId: z.string(), announced: z.boolean().optional() }),
     z.object({ kind: z.literal("proposed"), messageId: z.string() }),
     z.object({ kind: z.literal("dismissed") }),
   ])
