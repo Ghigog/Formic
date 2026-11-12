@@ -21,6 +21,12 @@ export interface Stackable {
   status: string;
   prNumber: number | null;
   dependsOn: readonly string[];
+  /** The Epic a ticket belongs to; an Epic's own id is its card id. */
+  epicId?: string | null;
+  /** Epics only: the ids of the Epics it waits for. */
+  waitsFor?: readonly string[];
+  childCount?: number;
+  doneCount?: number;
 }
 
 export type Readiness<T extends Stackable> =
@@ -30,9 +36,29 @@ export type Readiness<T extends Stackable> =
   | { ready: true; onto: T }
   | { ready: false; waitingOn: T[] };
 
+/**
+ * The Epics this Epic waits for that are not done yet. Done is merged, every
+ * ticket merged, or no longer on the board.
+ */
+export function openWaits<T extends Stackable>(epic: Stackable | undefined, all: Iterable<T>): T[] {
+  if (!epic?.waitsFor?.length) return [];
+  const byId = new Map<string, T>();
+  for (const c of all) if (c.kind === "epic") byId.set(c.id, c);
+  const open: T[] = [];
+  for (const id of epic.waitsFor) {
+    const e = byId.get(id);
+    if (!e || e.status === "merged") continue;
+    if ((e.childCount ?? 0) > 0 && e.doneCount === e.childCount) continue;
+    open.push(e);
+  }
+  return open;
+}
+
 /** Whether a ticket can start now, and from where. */
 export function readiness<T extends Stackable>(card: Stackable, all: readonly T[]): Readiness<T> {
   const byId = new Map(all.map((c) => [c.id, c]));
+  const epic = card.epicId ? byId.get(card.epicId) : undefined;
+  if (card.kind === "ticket" && openWaits(epic, all).length > 0) return { ready: false, waitingOn: [] };
   const open: T[] = [];
   let missing = false;
   for (const id of card.dependsOn) {

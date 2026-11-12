@@ -33,3 +33,10 @@ describe("a ticket's type and severity", () => {
     expect(spike).not.toHaveProperty("bugSeverity");
   });
 });
+
+describe("moveOnly", () => {
+  it("defaults to false and is carried onto the draft when true", () => {
+    expect(toDraftTicket(ticketSpecSchema.parse({ ...base, type: "task" })).moveOnly).toBeUndefined();
+    expect(toDraftTicket(ticketSpecSchema.parse({ ...base, type: "task", moveOnly: true })).moveOnly).toBe(true);
+  });
+});

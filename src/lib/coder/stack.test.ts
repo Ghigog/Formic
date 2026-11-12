@@ -295,6 +295,122 @@ describe("stacked pull requests", () => {
       expect((await repository().ticketDetail(two.id))!.stackedOn).toBeNull();
     });
 
+    /** Three tickets, each stacked on the one before, each approved on its head `old-<branch>`. */
+    async function threeHigh() {
+      const repo = repository();
+      recordCheckouts();
+      const epic = await repo.createEpic({ projectId: PROJECT, title: "Layers", rawRequest: "Schema, API, UI", position: 1 });
+      const [first, second, third] = await repo.createTickets(
+        [["T-1", "src/db", []], ["T-2", "src/api", ["T-1"]], ["T-3", "src/ui", ["T-2"]]].map(([key, scope, deps], i) => ({
+          epicId: epic.id,
+          key: key as string,
+          title: key as string,
+          description: key as string,
+          acceptanceCriteria: ["a"],
+          fileScope: [scope as string],
+          size: "S" as const,
+          position: i + 1,
+          dependsOnKeys: deps as string[],
+        })),
+      ) as unknown as [{ id: string }, { id: string }, { id: string }];
+      await runCoderAgent(PROJECT, first.id);
+      await runCoderAgent(PROJECT, second.id);
+      await runCoderAgent(PROJECT, third.id);
+      const [one, two, three] = await Promise.all([first.id, second.id, third.id].map((id) => repo.ticketDetail(id)));
+      // Let their reviews finish before the test sets the approvals it wants.
+      await until(async () => (await repo.ticketDetail(three!.id))!.reviewedSha !== null && (await repo.ticketDetail(second.id))!.reviewedSha !== null, "T-2 and T-3 to be approved");
+      for (const t of [two!, three!]) await repo.updateTicket(t.id, { reviewedSha: `old-${t.branchName}` });
+      await repo.updateTicket(one!.id, { status: "merged" });
+      return { one: one!, two: (await repo.ticketDetail(two!.id))!, three: (await repo.ticketDetail(three!.id))! };
+    }
+
+    /** Git, scripted: heads move on rebase, and a patch is the same unless the test says a branch's changed. */
+    function scriptedGit(opts: { conflictOn?: string; patchChangedOn?: string }) {
+      const commands: string[] = [];
+      const rebased = new Set<string>();
+      setCheckoutFactory(async (request) => {
+        const memory = new MemoryWorkspace();
+        const raw: Workspace = {
+          id: "fake",
+          readFile: (path) => memory.readFile(path),
+          writeFile: (path, contents) => memory.writeFile(path, contents),
+          changedFiles: () => memory.changedFiles(),
+          diff: (path) => memory.diff(path),
+          async exec(command) {
+            commands.push(command);
+            const out = (stdout: string, exitCode = 0) => ({ exitCode, stdout, stderr: exitCode ? "CONFLICT" : "", timedOut: false });
+            const branch = /rebase --onto '[^']+' '[^']+' '([^']+)'/.exec(command)?.[1];
+            if (branch) {
+              if (branch === opts.conflictOn) return out("", 1);
+              rebased.add(branch);
+              return out("");
+            }
+            const head = /git rev-parse '([^']+)'/.exec(command)?.[1];
+            if (head) return out(`${rebased.has(head) ? "new" : "old"}-${head}`);
+            const mergeBase = /merge-base 'origin\/([^']+)'/.exec(command)?.[1];
+            if (mergeBase) return out(`cut-${mergeBase}`);
+            if (command.includes("patch-id")) {
+              const changed = opts.patchChangedOn && command.includes(`'${opts.patchChangedOn}'`) && command.includes("'origin/");
+              return out(changed ? "different" : "same");
+            }
+            return out("");
+          },
+        };
+        return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: "sbx", async dispose() {} };
+      });
+      return commands;
+    }
+
+    it("walks the whole stack in order when the bottom merges, keeping each approval whose change did not change", async () => {
+      const { one, two, three, base } = { ...(await threeHigh()), base: mergeTarget((await projectFor(PROJECT)).baseBranch) };
+      const client = new MockVcsClient(REPO);
+      const cutOfTwo = (await client.pullRequest(one.prNumber!)).headSha;
+      const commands = scriptedGit({});
+
+      await restackOnto(PROJECT, one, client, base);
+
+      const rebases = commands.filter((c) => c.includes(" rebase --onto "));
+      expect(rebases).toHaveLength(2);
+      expect(rebases[0]).toContain(`'origin/${base}' '${cutOfTwo}' '${two.branchName}'`);
+      // T-3 goes onto T-2's rewritten branch, cut where its own commits begin on T-2's old head.
+      expect(rebases[1]).toContain(`'origin/${two.branchName}' 'cut-${three.branchName}' '${three.branchName}'`);
+
+      const repo = repository();
+      expect((await repo.ticketDetail(two.id))!.reviewedSha).toBe(`new-${two.branchName}`);
+      expect((await repo.ticketDetail(three.id))!.reviewedSha).toBe(`new-${three.branchName}`);
+      // T-2 now targets the merge target; T-3 stays stacked on T-2, with its pull request base.
+      expect((await client.pullRequest(two.prNumber!)).baseBranch).toBe(base);
+      expect((await repo.ticketDetail(two.id))!.stackedOn).toBeNull();
+      expect((await client.pullRequest(three.prNumber!)).baseBranch).toBe(two.branchName);
+      expect((await repo.ticketDetail(three.id))!.stackedOn).toBe(two.branchName);
+    });
+
+    it("drops the approval of a ticket whose own patch changed in the rebase", async () => {
+      const { one, two, three, base } = { ...(await threeHigh()), base: mergeTarget((await projectFor(PROJECT)).baseBranch) };
+      scriptedGit({ patchChangedOn: three.branchName! });
+
+      await restackOnto(PROJECT, one, new MockVcsClient(REPO), base);
+
+      const repo = repository();
+      expect((await repo.ticketDetail(two.id))!.reviewedSha).toBe(`new-${two.branchName}`);
+      expect((await repo.ticketDetail(three.id))!.reviewedSha).toBe(`old-${three.branchName}`);
+    });
+
+    it("hands a conflicting rebase to the Reviewer Agent; only that ticket waits", async () => {
+      const { one, two, three, base } = { ...(await threeHigh()), base: mergeTarget((await projectFor(PROJECT)).baseBranch) };
+      const client = new MockVcsClient(REPO);
+      scriptedGit({ conflictOn: three.branchName! });
+      const handed: string[] = [];
+
+      MockVcsClient.refuseBaseUpdate(three.prNumber!, "Merge conflict");
+
+      await restackOnto(PROJECT, one, client, base, (id) => void handed.push(id));
+      const repo = repository();
+      expect(handed).toEqual([three.id]);
+      expect((await repo.ticketDetail(two.id))!.reviewedSha).toBe(`new-${two.branchName}`);
+      expect((await client.pullRequest(three.prNumber!)).baseBranch).toBe(two.branchName);
+    });
+
     it("leaves a ticket that was never stacked alone", async () => {
       const { one, two, base } = await stackedPair();
       await repository().updateTicket(two.id, { stackedOn: null });

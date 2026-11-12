@@ -244,7 +244,7 @@ async function move(projectId: string, card: BoardCard, to: ColumnId): Promise<s
 }
 
 /** Starts a stalled card's column agent again, where it stopped. */
-async function resume(projectId: string, card: BoardCard): Promise<string> {
+export async function resume(projectId: string, card: BoardCard): Promise<string> {
   if (card.kind === "epic") {
     const result = await boardPorts().service.retryEpic(projectId, card.id);
     return result.ok ? `Starting ${card.key} again where it stopped.` : `Could not restart ${card.key}: ${result.reason}`;

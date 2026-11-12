@@ -67,7 +67,7 @@ async function latestNotifications(
   if (projectIds.length === 0) return found;
   const events = await repository().eventsOfTypes(
     projectIds,
-    ["card.status", "budget.exhausted"],
+    ["card.status", "budget.exhausted", "run.stuck"],
     new Date(Date.now() - NOTIFICATION_WINDOW_MS),
     1000,
   );

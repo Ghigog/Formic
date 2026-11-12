@@ -77,6 +77,8 @@ export interface CreateTicketInput {
   bugSeverity?: BugSeverity | null;
   /** Work for a person, not an agent: why. */
   needsHuman?: string | null;
+  /** The ticket only moves or renames files. */
+  moveOnly?: boolean;
 }
 
 /** A ticket's stay in one column. `exitedAt` is null while it is still there. */
@@ -372,6 +374,12 @@ export interface TicketDetail {
    * Null on the merge target.
    */
   stackedOn: string | null;
+  /** The ticket only moves or renames files. */
+  moveOnly: boolean;
+  /** When its run last pushed a commit or checkpoint (ISO). Null before any has. */
+  lastCommitAt: string | null;
+  /** What the first stuck run last did. Null once the ticket moves on. */
+  stuckNote: string | null;
   /** Work for a person, not an agent: why. Null when an agent can do it. */
   needsHuman: string | null;
   /** When story points were auto-escalated (ISO), so it happens once. Null if never. */
@@ -427,6 +435,10 @@ export interface TicketUpdate {
   reviewedSha?: string | null;
   reviewedHead?: string | null;
   stackedOn?: string | null;
+  moveOnly?: boolean;
+  /** When its run last pushed a commit or checkpoint; null clears it. */
+  lastCommitAt?: Date | null;
+  stuckNote?: string | null;
   scouts?: number;
   scoutPick?: string | null;
   scoutWhy?: string | null;
@@ -856,6 +868,8 @@ export interface UserRepository {
 export interface BoardRepository {
   /** Which project an epic or ticket belongs to. */
   projectOfCard(cardId: string): Promise<string | null>;
+  /** Every ticket with an agent run live on it (running, or holding a runner job), on any board. */
+  ticketsWithLiveRun(): Promise<Array<{ ticketId: string; projectId: string }>>;
   boardCards(projectId: string): Promise<BoardCard[]>;
   /** The archive: a project's archived tickets, off the active board. Those archived with their Epic show under it. */
   archivedTickets(projectId: string, page?: { cursor?: string; limit?: number }): Promise<CardPage>;
@@ -881,6 +895,8 @@ export interface BoardRepository {
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   /** Adds dependency edges by ticket id, for dependencies that name tickets created elsewhere. */
   addDependencies(edges: Array<{ ticketId: string; dependsOnTicketId: string }>): Promise<void>;
+  /** Makes an Epic wait for other Epics, by id. Waits it already has are kept, none twice. */
+  setEpicWaits(epicId: string, waitsForEpicIds: string[]): Promise<void>;
   move(input: MoveInput): Promise<void>;
   /** Epics only: whether it is a holder with no card of its own. */
   setStandalone(epicId: string, standalone: boolean): Promise<void>;

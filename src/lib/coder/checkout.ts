@@ -203,23 +203,41 @@ export async function commitAndPush(
   return { ok: true, sha: sha.stdout.trim() };
 }
 
+/** The patch-id of a range: the same for two ranges that make the same change. Empty when it cannot be read. */
+async function patchId(raw: Checkout["raw"], range: string): Promise<string> {
+  const out = await raw.exec(`git diff ${range} | git patch-id --stable`);
+  return out.exitCode === 0 ? (out.stdout.trim().split(/\s+/)[0] ?? "") : "";
+}
+
 /**
- * Replays a stacked branch's own commits onto the merge target, cutting at
- * the head the branch below had when it merged: `git rebase --onto`. The
- * squash-merged copy of the work below is already on the target, so only
- * the commits after the cut come along. A conflict aborts the rebase and
+ * Replays a stacked branch's own commits onto another branch (the merge
+ * target, or the branch that was below it), cutting at the head the branch
+ * below had: `git rebase --onto`. The work below is already in `target`, so
+ * only the commits after the cut come along. A conflict aborts the rebase and
  * leaves the checkout as it was; a success is force-pushed with a lease.
+ *
+ * It also says whether the change is the same change: the patch-id of
+ * cut..oldHead equals that of target..newHead. Then a review of the old head
+ * still holds for the new one (`samePatch`).
  */
 export async function rebaseOntoTarget(
   checkout: Checkout,
   input: { branch: string; target: string; cut: string },
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<
+  { ok: true; oldHead: string; newHead: string; samePatch: boolean } | { ok: false; reason: string }
+> {
   const { raw } = checkout;
   const identity = `-c user.name=${quote(AGENT_COMMIT_AUTHOR.name)} -c user.email=${quote(AGENT_COMMIT_AUTHOR.email)}`;
-  const fetched = await raw.exec(`git fetch origin ${quote(input.target)}`, { timeoutMs: 3 * 60 * 1000 });
+  const fetched = await raw.exec(`git fetch origin ${quote(input.target)} ${quote(input.branch)}`, {
+    timeoutMs: 3 * 60 * 1000,
+  });
   if (fetched.exitCode !== 0) return { ok: false, reason: `Fetch failed: ${fetched.stderr.trim()}` };
   // The cut is normally in the clone already; this only matters if it is not.
   await raw.exec(`git cat-file -e ${quote(input.cut)} || git fetch origin ${quote(input.cut)}`);
+  // One checkout can serve a whole stack: put this branch where the remote has it.
+  await raw.exec(`git checkout -q -B ${quote(input.branch)} ${quote(`origin/${input.branch}`)}`);
+  const oldHead = (await raw.exec(`git rev-parse ${quote(input.branch)}`)).stdout.trim();
+  const before = await patchId(raw, `${quote(input.cut)}..${quote(input.branch)}`);
   const rebase = await raw.exec(
     `git ${identity} rebase --onto ${quote(`origin/${input.target}`)} ${quote(input.cut)} ${quote(input.branch)}`,
     { timeoutMs: 3 * 60 * 1000 },
@@ -228,9 +246,11 @@ export async function rebaseOntoTarget(
     await raw.exec("git rebase --abort");
     return { ok: false, reason: `Rebase failed: ${(rebase.stderr || rebase.stdout).trim()}` };
   }
+  const newHead = (await raw.exec(`git rev-parse ${quote(input.branch)}`)).stdout.trim();
+  const after = await patchId(raw, `${quote(`origin/${input.target}`)}..${quote(input.branch)}`);
   const push = await raw.exec(`git push --force-with-lease origin ${quote(input.branch)}`, { timeoutMs: 3 * 60 * 1000 });
   if (push.exitCode !== 0) return { ok: false, reason: `Push failed: ${push.stderr.trim() || push.stdout.trim()}` };
-  return { ok: true };
+  return { ok: true, oldHead, newHead, samePatch: before !== "" && before === after };
 }
 
 /** The pull request body. Links back to the ticket that caused it. */

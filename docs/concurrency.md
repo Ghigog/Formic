@@ -132,6 +132,16 @@ that cost it effort calls `share_note` (`src/lib/coder/shared-notes.ts`).
 - **Every path.** A loop run in GitHub Actions shares through its reporter and
   is briefed when it starts; a CLI agent is briefed when it starts.
 
+## Epics over the same files
+
+When an Epic's breakdown is applied, `src/lib/board/epic-order.ts` compares
+its file scopes with those of the board's other unmerged Epics
+(`src/lib/domain/epic-order.ts`). A new Epic waits for every Epic it overlaps,
+and says so in its chat. A restructure, an Epic where `moveOnly` tickets are
+at least half the story points, goes first: the Epics it overlaps wait for it,
+unless an earlier restructure overlaps it, which it then waits for. The
+Architect Agent puts pure file moves in one `moveOnly` ticket of their own.
+
 ## What is not covered
 
 - People pushing straight to the repository outside Formic hold no

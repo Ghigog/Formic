@@ -109,6 +109,8 @@ interface TicketExtras {
   reviewedSha?: string | null;
   reviewedHead?: string | null;
   stackedOn?: string | null;
+  lastCommitAt?: Date | null;
+  stuckNote?: string | null;
   autoEscalatedAt?: string | null;
   scopeRequest?: string[];
   /** On a scout: the ticket it scouts for, its approach and its agent template. */
@@ -927,6 +929,13 @@ export class MemoryRepository implements Repository {
     return card ? projectOf(s, card) : null;
   }
 
+  async ticketsWithLiveRun(): Promise<Array<{ ticketId: string; projectId: string }>> {
+    const s = store();
+    return [...s.cards.values()]
+      .filter((c) => c.kind === "ticket" && !c.archived && (c.status === "running" || !!s.ticketExtras.get(c.id)?.runnerJob))
+      .map((c) => ({ ticketId: c.id, projectId: projectOf(s, c) }));
+  }
+
   async placeQueen(projectId: string, cardId: string, kind: CardKind): Promise<QueenRecord | null> {
     const s = store();
     if (s.queens.has(cardId)) return null;
@@ -1145,6 +1154,8 @@ export class MemoryRepository implements Repository {
       model: null,
       fileScope: [],
       dependsOn: [],
+      waitsFor: [],
+      moveOnly: false,
       prNumber: null,
       prUrl: null,
       blockedReason: null,
@@ -1201,6 +1212,8 @@ export class MemoryRepository implements Repository {
         model: null,
         fileScope: normalizeScope(input.fileScope),
         dependsOn: [],
+        waitsFor: [],
+        moveOnly: input.moveOnly ?? false,
         prNumber: null,
         prUrl: null,
         blockedReason: null,
@@ -1443,6 +1456,12 @@ export class MemoryRepository implements Repository {
     }
   }
 
+  async setEpicWaits(epicId: string, waitsForEpicIds: string[]): Promise<void> {
+    const card = store().cards.get(epicId);
+    if (!card) return;
+    card.waitsFor = [...new Set([...(card.waitsFor ?? []), ...waitsForEpicIds])];
+  }
+
   async addDependencies(edges: Array<{ ticketId: string; dependsOnTicketId: string }>): Promise<void> {
     const s = store();
     for (const edge of edges) {
@@ -1471,6 +1490,9 @@ export class MemoryRepository implements Repository {
       }
     }
     s.cards.delete(epicId);
+    for (const card of s.cards.values()) {
+      if (card.waitsFor?.includes(epicId)) card.waitsFor = card.waitsFor.filter((w) => w !== epicId);
+    }
     s.queens.delete(epicId);
     s.epicProject.delete(epicId);
     s.rawRequests.delete(epicId);
@@ -1726,6 +1748,9 @@ export class MemoryRepository implements Repository {
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
     if (update.reviewedHead !== undefined) extras.reviewedHead = update.reviewedHead;
     if (update.stackedOn !== undefined) extras.stackedOn = update.stackedOn;
+    if (update.moveOnly !== undefined && card) card.moveOnly = update.moveOnly;
+    if (update.lastCommitAt !== undefined) extras.lastCommitAt = update.lastCommitAt;
+    if (update.stuckNote !== undefined) extras.stuckNote = update.stuckNote;
     if (update.scopeRequest !== undefined) extras.scopeRequest = update.scopeRequest;
     if (update.scoutWhy !== undefined) extras.scoutWhy = update.scoutWhy;
   }
@@ -2404,6 +2429,9 @@ function toDetail(
     reviewedSha: extras?.reviewedSha ?? null,
     reviewedHead: extras?.reviewedHead ?? null,
     stackedOn: extras?.stackedOn ?? null,
+    moveOnly: card.moveOnly ?? false,
+    lastCommitAt: extras?.lastCommitAt?.toISOString() ?? null,
+    stuckNote: extras?.stuckNote ?? null,
     autoEscalatedAt: extras?.autoEscalatedAt ?? null,
     needsHuman: card.needsHuman ?? null,
     workType: card.workType ?? null,

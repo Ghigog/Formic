@@ -33,7 +33,7 @@ import { columnIsPlain, columnLimit } from "@/lib/agents/presets";
 import { startedBy } from "@/lib/auth/actor";
 import { prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
-import { readiness } from "@/lib/domain/stack";
+import { openWaits, readiness } from "@/lib/domain/stack";
 import { claimOrQueue, startQueued } from "@/lib/board/queue";
 
 /**
@@ -103,6 +103,14 @@ async function whatIsWrong(
 
   if (to === "in_progress" && card.needsHuman) {
     return `${card.key} is for you, not an agent: ${card.needsHuman} When it is done, say so in its chat and it closes. ${back}`;
+  }
+
+  if (to === "in_progress" && card.kind === "ticket") {
+    const waits = openWaits(card.epicId ? cards.find((c) => c.id === card.epicId) : undefined, cards);
+    if (waits.length > 0) {
+      const keys = waits.map((e) => e.key).join(", ");
+      return `Waits for ${keys}: it starts once ${waits.length > 1 ? "they are" : `${keys} is`} done.`;
+    }
   }
 
   if (to === "in_progress" && !dependenciesMet(card, cards)) {
@@ -281,7 +289,11 @@ export async function applyTransition(
   // never started, and that one waits forever if this guesses wrong.
   // Whoever moved it now drives it: its agents run on their keys. A move the
   // system makes (a Queen, the queue) leaves that as it was.
-  if (t.actor === "user") await startedBy(card.id);
+  if (t.actor === "user") {
+    await startedBy(card.id);
+    // A person moving a ticket on ends what the no-commit clock was holding against it.
+    if (card.kind === "ticket") await repo.updateTicket(card.id, { stuckNote: null });
+  }
 
   const met = dependenciesMet(card, cards);
   const toArchitect = card.kind === "epic" && t.to === "todo";
