@@ -620,3 +620,26 @@ describe("an epic in the backlog", () => {
     expect(shell.querySelector(".oct.size-3")).toBeNull();
   });
 });
+
+describe("an Epic that waits for another Epic", () => {
+  function renderWaiting(waitedOn: Partial<BoardCard>) {
+    const first = makeCard({ kind: "epic", key: "EPIC-95", size: null, childCount: 2, doneCount: 1, ...waitedOn });
+    const second = makeCard({ kind: "epic", key: "EPIC-96", size: null, waitsFor: [first.id] });
+    const env = { epics: new Map([[first.id, first], [second.id, second]]), nextFor: () => null, onAdvance: vi.fn() };
+    renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="backlog" cards={[second]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+  }
+
+  it("says who it waits for, until that Epic is done", () => {
+    renderWaiting({});
+    expect(screen.getByText("Waits for EPIC-95")).toBeTruthy();
+  });
+
+  it("drops the line once that Epic is done", () => {
+    renderWaiting({ doneCount: 2 });
+    expect(screen.queryByText(/Waits for/)).toBeNull();
+  });
+});

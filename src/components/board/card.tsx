@@ -22,6 +22,7 @@ import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { isQuestion } from "@/lib/domain/question";
+import { openWaits } from "@/lib/domain/stack";
 import { formatDuration } from "./format-duration";
 import { LinkifiedText } from "./linkified-text";
 import { TypeTag } from "./type-tag";
@@ -628,6 +629,18 @@ function Title({ children, muted = false }: { children: React.ReactNode; muted?:
  * Backlog
  * ---------------------------------------------------------------------- */
 
+/** "Waits for EPIC-95": under an Epic's title while an Epic it waits for is not done. */
+function WaitsForLine({ epic }: { epic: BoardCard }) {
+  const env = useContext(CardEnvContext);
+  const open = openWaits(epic, env?.epics.values() ?? []);
+  if (open.length === 0) return null;
+  return (
+    <span className="text-muted font-mono text-[10px]">
+      Waits for {open.map((e) => e.key).join(", ")}
+    </span>
+  );
+}
+
 function BacklogEpic({
   card,
   column,
@@ -657,6 +670,7 @@ function BacklogEpic({
         <p className="text-muted text-[11px] leading-[1.5]">{extras.summary}</p>
       )}
       <EpicWorking card={card} />
+      <WaitsForLine epic={card} />
       {extras.stageLabel && (
         <span className="text-muted font-mono text-[10px]">{extras.stageLabel}</span>
       )}
@@ -1317,6 +1331,8 @@ export const EpicGroup = memo(function EpicGroup({
                 {own.dagSummary}
               </span>
             )}
+
+            {!done && <WaitsForLine epic={epic} />}
 
             {done && onShowcase && (
               <button
