@@ -41,7 +41,7 @@ import {
   releaseMergeSlot,
 } from "./merge-lane";
 import { claimOrQueue } from "@/lib/board/queue";
-import { releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
+import { handOffToReviewer, releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
@@ -453,18 +453,14 @@ export async function sweepOpenPullRequests(projectId: string): Promise<void> {
       // The one under it merged where this board did not see it (a person on
       // GitHub, while no instance was listening): it moves on now.
       if (below?.status === "merged") {
-        await restack(projectId, ticket, client, mergeTarget(project.baseBranch), below);
+        await restack(projectId, ticket, client, mergeTarget(project.baseBranch), below, handToReviewer(projectId));
         continue;
       }
       // The one under it started over on a new branch, or is gone: what this
-      // pull request was built on will never merge.
+      // pull request was built on will never merge, so it is pointed at the
+      // merge target and the Reviewer Agent takes what conflicts there.
       if (!below) {
-        await stallTicket(
-          projectId,
-          ticket,
-          `${ticket.key}'s pull request #${pull.number} is built on ${ticket.stackedOn}, which the ticket it depends on no longer uses, so it can never merge as it is. Close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`,
-          { blocked: true, stalledIn: "in_review" },
-        );
+        await handOffToReviewer(ticket, client, mergeTarget(project.baseBranch), handToReviewer(projectId), { unstack: true });
         continue;
       }
     }
@@ -543,7 +539,7 @@ export async function markMergedExternally(
   // just as it would after a merge from the queue.
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
-  await restackOnto(projectId, ticket, vcs(project.repoFullName, creds.repoToken), mergeTarget(project.baseBranch)).catch(
+  await restackOnto(projectId, ticket, vcs(project.repoFullName, creds.repoToken), mergeTarget(project.baseBranch), handToReviewer(projectId)).catch(
     (e: unknown) => console.error(`[formic] restacking on ${ticket.key} failed:`, e),
   );
   await releaseDependents(projectId, ticket);
@@ -1134,7 +1130,7 @@ async function mergeTicket(
     );
   }
 
-  await restackOnto(projectId, ticket, client, target);
+  await restackOnto(projectId, ticket, client, target, handToReviewer(projectId));
   await releaseDependents(projectId, ticket);
   await completeEpic(projectId, ticket.epicId);
   return { merged: true };
@@ -1454,6 +1450,15 @@ async function reviewTicket(
   } finally {
     await checkout.dispose();
   }
+}
+
+/** The hand-off a restack uses for a pull request it could not rebase: the Reviewer Agent, in the ticket's lane. */
+export function handToReviewer(projectId: string): (ticketId: string, prNumber: number) => void {
+  return (ticketId, prNumber) =>
+    launch(
+      () => inTicketLane(ticketId, () => resolveIfStillConflicted(projectId, ticketId, prNumber)),
+      `conflict resolution for the restacked pull request #${prNumber}`,
+    );
 }
 
 /**

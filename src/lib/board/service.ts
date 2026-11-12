@@ -281,7 +281,11 @@ export async function applyTransition(
   // never started, and that one waits forever if this guesses wrong.
   // Whoever moved it now drives it: its agents run on their keys. A move the
   // system makes (a Queen, the queue) leaves that as it was.
-  if (t.actor === "user") await startedBy(card.id);
+  if (t.actor === "user") {
+    await startedBy(card.id);
+    // A person moving a ticket on ends what the no-commit clock was holding against it.
+    if (card.kind === "ticket") await repo.updateTicket(card.id, { stuckNote: null });
+  }
 
   const met = dependenciesMet(card, cards);
   const toArchitect = card.kind === "epic" && t.to === "todo";
