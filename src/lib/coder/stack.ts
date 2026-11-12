@@ -56,94 +56,191 @@ export async function ticketBelow(ticket: TicketDetail): Promise<TicketDetail | 
   return null;
 }
 
+/** Hands a pull request that conflicts to the Reviewer Agent (resolveIfStillConflicted, passed in so this file needs nothing from review). */
+export type HandToReviewer = (ticketId: string, prNumber: number) => void;
+
+/** The tickets built directly on `ticket`'s branch, whose pull requests are still open. */
+async function stackedAbove(projectId: string, ticket: TicketDetail): Promise<TicketDetail[]> {
+  if (!ticket.branchName) return [];
+  const repo = repository();
+  const above: TicketDetail[] = [];
+  for (const card of await repo.boardCards(projectId)) {
+    if (card.kind !== "ticket" || !card.dependsOn.includes(ticket.id) || !card.prNumber) continue;
+    const found = await repo.ticketDetail(card.id);
+    if (found && found.stackedOn === ticket.branchName && found.status !== "merged") above.push(found);
+  }
+  return above;
+}
+
 /**
- * The one under it merged: a stacked pull request is pointed at the merge
- * target and brought up to date with it. What the one under it carried is
- * on the target now, so its diff goes back to being only its own work, and
- * from here it goes through review, CI and the merge queue like any other.
- *
- * The ticket's branch is rebuilt first: its own commits are replayed onto
- * the target, cut at the head the branch below had when it merged, so the
- * squash-merged copy of that work does not come back as a conflict. When
- * that cannot be done (no checkout, or the ticket's own commits conflict
- * with the target) the target is merged in instead, and a conflict there
- * is the Reviewer Agent's, as for any other pull request.
+ * A stacked pull request that could not be rebased is not blocked straight
+ * away: it is pointed at the base it belongs on, brought up to date by the
+ * platform, and what still conflicts goes to the Reviewer Agent, which blocks
+ * the ticket only when it cannot resolve it. `base` is the merge target for
+ * the ticket right above what merged, or the branch below it otherwise (that
+ * one is still open, so the ticket stays stacked on it).
  */
+export async function handOffToReviewer(
+  ticket: TicketDetail,
+  client: VcsClient,
+  base: string,
+  hand: HandToReviewer | undefined,
+  options: { unstack: boolean },
+): Promise<void> {
+  if (!ticket.prNumber) return;
+  await client.retargetPullRequest(ticket.prNumber, base);
+  if (options.unstack) await repository().updateTicket(ticket.id, { stackedOn: null });
+  const update = await client.updateBranch(ticket.prNumber).catch(() => null);
+  if (!update?.ok) hand?.(ticket.id, ticket.prNumber);
+}
+
+type Rung = { ticket: TicketDetail; parent: TicketDetail | null };
+
+/**
+ * `below` merged: each ticket built on it moves onto the merge target (cut at
+ * the head `below` ended on, so its squash-merged copy does not come back as a
+ * conflict), then what is stacked on that is rebased onto its new head, and so
+ * on up the stack. A ticket above keeps its stackedOn and its pull request
+ * base; its cut is where its own commits begin on the old head of the branch
+ * below it, read before that branch is rewritten. A review of the old head
+ * stands for the new one when the change is the same change.
+ *
+ * A ticket that cannot be rebased goes to the Reviewer Agent; what is stacked
+ * on it waits, and the rest of the stack carries on.
+ */
+async function restackStack(
+  projectId: string,
+  roots: TicketDetail[],
+  below: { key: string; prNumber: number | null },
+  client: VcsClient,
+  target: string,
+  hand: HandToReviewer | undefined,
+): Promise<void> {
+  const rungs: Rung[] = [];
+  const collect = async (ticket: TicketDetail, parent: TicketDetail | null) => {
+    rungs.push({ ticket, parent });
+    for (const above of await stackedAbove(projectId, ticket)) await collect(above, ticket);
+  };
+  for (const root of roots) await collect(root, null);
+  if (rungs.length === 0) return;
+
+  const repo = repository();
+  // The merged pull request still names the head the branch below ended on,
+  // which is where the first tickets' own commits begin.
+  const mergedHead = below.prNumber ? await client.pullRequest(below.prNumber).then((p) => p.headSha, () => null) : null;
+  const first = rungs[0]!.ticket;
+  const abort = new AbortController();
+  const checkout = await (async () => {
+    if (!first.branchName) return null;
+    try {
+      const project = await projectFor(projectId);
+      const creds = await credentialsForProject(project);
+      const opened = await openCheckout({
+        projectId,
+        repoFullName: project.repoFullName,
+        fromBranch: first.branchName,
+        newBranch: null,
+        ticket: first,
+        ctx: { runId: `restack-${first.id}`, projectId, emit: () => undefined, signal: abort.signal },
+        repoToken: creds.repoToken,
+        e2bKey: creds.e2bKey,
+        e2bFallbackUserId: creds.e2bFallbackUserId,
+      });
+      // A mock checkout has no git to rebase.
+      if (opened.sandboxId !== null) return opened;
+      await opened.dispose();
+    } catch {
+      /* no checkout: the platform brings the base in instead */
+    }
+    return null;
+  })();
+
+  try {
+    // Every cut is read before any branch is rewritten.
+    const cuts = new Map<string, string | null>();
+    for (const { ticket, parent } of rungs) {
+      if (!parent) {
+        cuts.set(ticket.id, mergedHead);
+      } else if (checkout && ticket.branchName && parent.branchName) {
+        const { branchName: own } = ticket;
+        const { branchName: under } = parent;
+        await checkout.raw.exec(`git fetch origin '${under}' '${own}'`).catch(() => undefined);
+        const base = await checkout.raw
+          .exec(`git merge-base 'origin/${own}' 'origin/${under}'`)
+          .then((r) => (r.exitCode === 0 ? r.stdout.trim() || null : null), () => null);
+        cuts.set(ticket.id, base);
+      }
+    }
+
+    const waiting = new Set<string>();
+    for (const { ticket, parent } of rungs) {
+      if (parent && waiting.has(parent.id)) {
+        waiting.add(ticket.id);
+        continue;
+      }
+      const onto = parent?.branchName ?? target;
+      const cut = cuts.get(ticket.id);
+      const rebased =
+        checkout && ticket.branchName && cut
+          ? await rebaseOntoTarget(checkout, { branch: ticket.branchName, target: onto, cut }).catch(() => null)
+          : null;
+      if (!ticket.prNumber) continue;
+      if (!rebased?.ok) {
+        waiting.add(ticket.id);
+        await handOffToReviewer(ticket, client, onto, hand, { unstack: !parent });
+        await client
+          .comment(
+            ticket.prNumber,
+            `${below.key} merged, but this branch could not be rebased onto \`${onto}\`${rebased ? ` (${rebased.reason})` : ""}; it has gone to the Reviewer Agent.`,
+          )
+          .catch(() => undefined);
+        continue;
+      }
+      if (!parent) {
+        await client.retargetPullRequest(ticket.prNumber, target);
+        await repo.updateTicket(ticket.id, { stackedOn: null });
+      }
+      // The same change on a new base: the approval stands, and CI on the new head decides the merge.
+      if (rebased.samePatch && ticket.reviewedSha && ticket.reviewedSha === rebased.oldHead) {
+        await repo.updateTicket(ticket.id, { reviewedSha: rebased.newHead });
+      }
+      await client
+        .comment(
+          ticket.prNumber,
+          `${below.key} merged, so this branch now holds only ${ticket.key}'s own commits on top of \`${onto}\`${parent ? "" : `, and its pull request targets \`${target}\``}.`,
+        )
+        .catch(() => undefined);
+    }
+  } finally {
+    await checkout?.dispose();
+  }
+}
+
+/** One ticket whose prerequisite has merged: moved onto the merge target, with whatever is stacked on it. */
 export async function restack(
   projectId: string,
   ticket: TicketDetail,
   client: VcsClient,
   target: string,
   below: { key: string; prNumber: number | null },
+  hand?: HandToReviewer,
 ): Promise<void> {
   if (!ticket.prNumber) return;
-  const rebuilt = await rebuildOnTarget(projectId, ticket, client, target, below).catch(() => false);
-  await client.retargetPullRequest(ticket.prNumber, target);
-  await repository().updateTicket(ticket.id, { stackedOn: null });
-  if (!rebuilt) await client.updateBranch(ticket.prNumber).catch(() => undefined);
-  await client
-    .comment(
-      ticket.prNumber,
-      rebuilt
-        ? `${below.key} merged, so this branch now holds only ${ticket.key}'s own commits on top of \`${target}\`, and its pull request targets \`${target}\`.`
-        : `${below.key} merged, so this pull request now targets \`${target}\`, and \`${target}\` has been brought in.`,
-    )
-    .catch(() => undefined);
+  await restackStack(projectId, [ticket], below, client, target, hand);
 }
 
-/** Rebases the ticket's own commits onto the target; false when that was not possible. */
-async function rebuildOnTarget(
-  projectId: string,
-  ticket: TicketDetail,
-  client: VcsClient,
-  target: string,
-  below: { prNumber: number | null },
-): Promise<boolean> {
-  if (!ticket.branchName || !below.prNumber) return false;
-  // The merged pull request still names the head the branch below ended on,
-  // which is where this ticket's own commits begin.
-  const cut = (await client.pullRequest(below.prNumber)).headSha;
-  const project = await projectFor(projectId);
-  const creds = await credentialsForProject(project);
-  const abort = new AbortController();
-  const checkout = await openCheckout({
-    projectId,
-    repoFullName: project.repoFullName,
-    fromBranch: ticket.branchName,
-    newBranch: null,
-    ticket,
-    ctx: { runId: `restack-${ticket.id}`, projectId, emit: () => undefined, signal: abort.signal },
-    repoToken: creds.repoToken,
-    e2bKey: creds.e2bKey,
-    e2bFallbackUserId: creds.e2bFallbackUserId,
-  });
-  try {
-    // A mock checkout has no git to rebase.
-    if (checkout.sandboxId === null) return false;
-    return (await rebaseOntoTarget(checkout, { branch: ticket.branchName, target, cut })).ok;
-  } finally {
-    await checkout.dispose();
-  }
-}
-
-/** Restacks every ticket built on `merged`'s branch that has its pull request open. */
+/** Restacks every ticket built on `merged`'s branch that has its pull request open, and what is stacked on them. */
 export async function restackOnto(
   projectId: string,
   merged: TicketDetail,
   client: VcsClient,
   target: string,
+  hand?: HandToReviewer,
 ): Promise<TicketDetail[]> {
-  if (!merged.branchName) return [];
-  const repo = repository();
-  const moved: TicketDetail[] = [];
-  for (const card of await repo.boardCards(projectId)) {
-    if (card.kind !== "ticket" || !card.dependsOn.includes(merged.id) || !card.prNumber) continue;
-    const ticket = await repo.ticketDetail(card.id);
-    if (!ticket || ticket.stackedOn !== merged.branchName || ticket.status === "merged") continue;
-    await restack(projectId, ticket, client, target, merged);
-    moved.push(ticket);
-  }
-  return moved;
+  const roots = await stackedAbove(projectId, merged);
+  if (roots.length === 0) return [];
+  await restackStack(projectId, roots, merged, client, target, hand);
+  return roots;
 }
 
 /**
