@@ -72,19 +72,55 @@ async function slotKey(projectId: string): Promise<string | null> {
 }
 
 /**
+ * A ticket that only moves files, green and approved but behind the slot,
+ * waits "next": the slot goes to it before anyone else, so a move lands
+ * within hours instead of going stale behind the queue. One lease per lane,
+ * lapsing so a holder that went quiet lets the queue go on.
+ */
+const NEXT_TTL_MS = 20 * 60 * 1000;
+
+async function nextKey(projectId: string): Promise<string | null> {
+  const lane = await laneOf(projectId);
+  return lane && `merge-next:${lane}`;
+}
+
+/** Still in review with its pull request open: a ticket that can take the slot. */
+async function waitingInReview(ticketId: string): Promise<boolean> {
+  const ticket = await repository().ticketDetail(ticketId);
+  return !!ticket && ticket.status === "review" && ticket.prNumber !== null;
+}
+
+/**
  * Takes the merge slot for `ticketId`, or renews it if it is theirs. False
- * while another ticket is still merging through it.
+ * while another ticket is still merging through it, or while a move-only
+ * ticket waits next. The slot already held is never taken away mid-CI.
  */
 export async function claimMergeSlot(projectId: string, ticketId: string): Promise<boolean> {
   const repo = repository();
   const key = await slotKey(projectId);
   if (!key) return true;
+  const next = (await nextKey(projectId))!;
+
+  const waiting = await repo.leaseHolder(next);
+  // The one already holding the slot renews it whoever waits next.
+  if (waiting && waiting !== ticketId && (await repo.leaseHolder(key)) !== ticketId) {
+    if (await waitingInReview(waiting)) return false;
+    // Sent back, merged or closed without letting go: it is not waiting.
+    await repo.releaseLease(next, waiting);
+  }
+
   for (let i = 0; i < 2; i++) {
-    if (await repo.acquireLease(key, ticketId, SLOT_TTL_MS)) return true;
+    if (await repo.acquireLease(key, ticketId, SLOT_TTL_MS)) {
+      if (waiting === ticketId) await repo.releaseLease(next, ticketId);
+      return true;
+    }
     const holder = await repo.leaseHolder(key);
     if (!holder) continue;
-    const ahead = await repo.ticketDetail(holder);
-    if (ahead && ahead.status === "review" && ahead.prNumber !== null) return false;
+    if (await waitingInReview(holder)) {
+      const self = await repo.ticketDetail(ticketId);
+      if (self?.moveOnly) await repo.acquireLease(next, ticketId, NEXT_TTL_MS);
+      return false;
+    }
     // Merged, closed, sent back or parked somewhere nothing let go of the
     // slot (a person on GitHub, an instance that died): it is not merging.
     await repo.releaseLease(key, holder);
@@ -96,7 +132,10 @@ export async function claimMergeSlot(projectId: string, ticketId: string): Promi
 export async function releaseMergeSlot(projectId: string, ticketId: string): Promise<boolean> {
   const repo = repository();
   const key = await slotKey(projectId);
-  if (!key || (await repo.leaseHolder(key)) !== ticketId) return false;
+  if (!key) return false;
+  const next = await nextKey(projectId);
+  if (next) await repo.releaseLease(next, ticketId);
+  if ((await repo.leaseHolder(key)) !== ticketId) return false;
   await repo.releaseLease(key, ticketId);
   return true;
 }
