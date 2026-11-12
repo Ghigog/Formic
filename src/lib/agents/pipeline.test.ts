@@ -304,6 +304,60 @@ describe("applyTickets on an Epic broken down again", () => {
   });
 });
 
+describe("applyTickets ordering Epics over the same files", () => {
+  const draft = (fileScope: string[], extra: Partial<DraftTicket> = {}): DraftTicket => ({
+    key: "T-1",
+    title: "t",
+    description: "d",
+    acceptanceCriteria: ["a"],
+    fileScope,
+    storyPoints: 3,
+    dependsOn: [],
+    ...extra,
+  });
+  const chat = async (id: string) => (await repository().cardChatMessages(id)).messages.map((m) => m.content);
+
+  it("makes the new Epic wait for an in-flight one and says which files they share", async () => {
+    const [e95, t95] = makeEpicWithChildren({ key: "EPIC-95", status: "ready" }, [
+      { status: "review", fileScope: ["src/app/layout.tsx"] },
+    ]);
+    const e96 = makeCard({ kind: "epic", key: "EPIC-96", status: "ready", size: null });
+    seedMemory([e95!, t95!, e96]);
+
+    await applyTickets(PROJECT, e96.id, [draft(["src/app/layout.tsx"])]);
+
+    const cards = await repository().boardCards(PROJECT);
+    expect(cards.find((c) => c.id === e96.id)?.waitsFor).toEqual([e95!.id]);
+    expect(await chat(e96.id)).toEqual(["Waits for EPIC-95: both change src/app/layout.tsx."]);
+  });
+
+  it("makes an in-flight Epic wait for a new restructure", async () => {
+    const [e96, t96] = makeEpicWithChildren({ key: "EPIC-96", status: "ready" }, [
+      { status: "ready", fileScope: ["src/app"] },
+    ]);
+    const e95 = makeCard({ kind: "epic", key: "EPIC-95", status: "ready", size: null });
+    seedMemory([e96!, t96!, e95]);
+
+    await applyTickets(PROJECT, e95.id, [draft(["src/app"], { moveOnly: true })]);
+
+    const cards = await repository().boardCards(PROJECT);
+    expect(cards.find((c) => c.id === e96!.id)?.waitsFor).toEqual([e95.id]);
+    expect(cards.find((c) => c.id === e95.id)?.waitsFor ?? []).toEqual([]);
+    expect(await chat(e96!.id)).toEqual(["Waits for EPIC-95: both change src/app."]);
+  });
+
+  it("waits for nothing and says nothing when no files overlap", async () => {
+    const [e1, t1] = makeEpicWithChildren({ key: "EPIC-1", status: "ready" }, [{ fileScope: ["docs"] }]);
+    const e2 = makeCard({ kind: "epic", key: "EPIC-2", status: "ready", size: null });
+    seedMemory([e1!, t1!, e2]);
+
+    await applyTickets(PROJECT, e2.id, [draft(["src/lib"])]);
+
+    expect((await repository().boardCards(PROJECT)).find((c) => c.id === e2.id)?.waitsFor ?? []).toEqual([]);
+    expect(await chat(e2.id)).toEqual([]);
+  });
+});
+
 describe("applyPrd on an Epic already broken down in To Do", () => {
   it("keeps it in To Do and breaks it down again", async () => {
     const epic = makeCard({ kind: "epic", status: "ready", size: null });

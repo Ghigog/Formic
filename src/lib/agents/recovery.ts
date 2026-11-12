@@ -3,6 +3,8 @@ import "server-only";
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { columnFor } from "@/lib/domain/status";
+import { STUCK_RUN } from "@/lib/domain/notice";
+import { stuckLine } from "@/lib/notifications/classify";
 
 /**
  * What happens to a run whose worker died.
@@ -78,6 +80,73 @@ export async function reconcileOrphanedRuns(now = new Date()): Promise<number> {
   return orphans.length;
 }
 
+/**
+ * A run live on a ticket that has pushed no commit (checkpoint) for this long
+ * is stuck. The clock counts from the later of the run's start and its last
+ * commit (`lastCommitAt`), so a long run that keeps committing is left alone.
+ */
+export const STUCK_AFTER_MS = 30 * 60 * 1000;
+
+const NOTHING_REPORTED = "nothing it reported";
+
+/**
+ * The no-commit clock. A ticket whose live Coder or Reviewer run is past
+ * STUCK_AFTER_MS gets its column's agent restarted the way a person's
+ * "resume" does it, and the person is told. If it was already restarted once
+ * (`stuckNote` is set) it is stopped and blocked instead. Returns how many
+ * tickets it acted on.
+ */
+export async function handleStuckRuns(now = new Date()): Promise<number> {
+  const repo = repository();
+  let acted = 0;
+  for (const { ticketId, projectId } of await repo.ticketsWithLiveRun()) {
+    const ticket = await repo.ticketDetail(ticketId);
+    if (!ticket || ticket.status === "merged" || !ticket.lastCommitAt) continue;
+    if (now.getTime() - Date.parse(ticket.lastCommitAt) < STUCK_AFTER_MS) continue;
+
+    const { lastStepOf } = await import("@/lib/runner/runner");
+    const step = lastStepOf(ticket.id);
+    const reviewing = ticket.status === "review";
+    const agent = reviewing ? "Reviewer Agent" : "Coder Agent";
+
+    if (ticket.stuckNote) {
+      const { stopTicket } = await import("@/lib/runner/runner");
+      const { stallTicket } = await import("@/lib/coder/pipeline");
+      await stopTicket(projectId, ticket.id);
+      const stopped = (await repo.ticketDetail(ticket.id)) ?? ticket;
+      await stallTicket(
+        projectId,
+        stopped,
+        [
+          STUCK_RUN,
+          `First run last: ${ticket.stuckNote}`,
+          `Restarted run last: ${step ?? NOTHING_REPORTED}`,
+        ].join("\n"),
+        { blocked: true, stalledIn: reviewing ? "in_review" : "in_progress" },
+      );
+      acted++;
+      continue;
+    }
+
+    await repo.updateTicket(ticket.id, { stuckNote: step ?? NOTHING_REPORTED });
+    await repo.addCardChatMessage({
+      projectId,
+      cardKind: "ticket",
+      cardId: ticket.id,
+      role: "assistant",
+      content: stuckLine(agent, step),
+    });
+    await publish(projectId, { type: "run.stuck", ticketId: ticket.id, agent, step });
+    const card = await repo.cardById(ticket.id);
+    if (card) {
+      const { resume } = await import("./card-actions");
+      await resume(projectId, card);
+    }
+    acted++;
+  }
+  return acted;
+}
+
 /** A run orphaned at ORPHAN_AFTER_MS is failed within 15 minutes of going live. */
 const RECOVERY_TICK_MS = 5 * 60 * 1000;
 
@@ -88,6 +157,7 @@ async function reconcileOnce(): Promise<void> {
   if (reconciling) return;
   reconciling = true;
   try {
+    await handleStuckRuns();
     const reclaimed = await reconcileOrphanedRuns();
     if (reclaimed > 0) {
       console.info(`[formic] failed ${reclaimed} run(s) orphaned by a restart`);

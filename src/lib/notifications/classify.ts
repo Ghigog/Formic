@@ -46,6 +46,11 @@ export function classifyPmAnswer(answer: { content: string; failed: boolean }, b
   };
 }
 
+/** The line the ticket's chat and the notification both say when a run is restarted. */
+export function stuckLine(agent: string, step: string | null): string {
+  return `No new commits for 30 minutes, so the ${agent} was restarted.${step ? ` It was last: ${step}` : ""}`;
+}
+
 /**
  * Whether a board event is worth a push, and what it says. Pure: the caller
  * looks up the context and decides who hears it.
@@ -57,6 +62,14 @@ export function classifyEvent(event: FormicEvent, ctx: NotificationContext): Not
       kind: "needsAttention",
       title: `${ctx.boardName} needs your attention`,
       body: event.detail,
+      url,
+    };
+  }
+  if (event.type === "run.stuck") {
+    return {
+      kind: "needsAttention",
+      title: `${ctx.cardKey} on ${ctx.boardName} went quiet`,
+      body: stuckLine(event.agent, event.step),
       url,
     };
   }
