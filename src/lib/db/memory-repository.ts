@@ -2291,13 +2291,13 @@ export class MemoryRepository implements Repository {
   }): Promise<AssistantMessage> {
     const message: AssistantMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 10)}`,
-      proposals: [],
-      cards: [],
       runnerJob: null,
       runnerAgent: null,
       speaker: "assistant",
       createdAt: new Date(),
       ...input,
+      cards: input.cards ?? [],
+      proposals: input.proposals ?? [],
       status: input.status ?? "done",
     };
     store().assistant.push(message);
