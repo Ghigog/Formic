@@ -29,6 +29,7 @@ import { TicketKpis } from "./ticket-kpis";
 import { ScoutsPanel } from "./scouts-panel";
 import { QueenPanel } from "./queen-panel";
 import { FollowUps } from "./follow-ups";
+import { SpikeFindingsDialog } from "@/components/colony/spike-findings-dialog";
 import {
   activityOf,
   appendActivity,
@@ -373,6 +374,7 @@ export function TicketDrawer({
                 <TicketBody
                   view={view}
                   onOpenTicket={onOpenTicket}
+                  onOpenEpic={onOpenEpic}
                   kpisUnlocked={kpisUnlocked}
                   onChanged={() => {
                     void load();
@@ -464,17 +466,46 @@ function NoticeBanner({
 function TicketBody({
   view,
   onOpenTicket,
+  onOpenEpic,
   onChanged,
   kpisUnlocked,
 }: {
   view: TicketView;
   onOpenTicket: (ticketId: string) => void;
+  onOpenEpic: (epicId: string) => void;
   onChanged: () => void;
   kpisUnlocked: boolean;
 }) {
+  const [findingsOpen, setFindingsOpen] = useState(false);
   return (
     <div className="text-fg space-y-4 text-[13px] leading-6">
       <MarkdownLite text={view.description} />
+
+      {view.card.workType === "spike" && view.card.status === "merged" && (
+        <div>
+          <Heading>Findings</Heading>
+          <p className="text-fg-muted mt-1 text-[12px]">
+            What this spike found, and a way to make an Epic from it.
+          </p>
+          <button
+            type="button"
+            onClick={() => setFindingsOpen(true)}
+            className="border-line bg-surface hover:bg-sunken mt-1.5 min-h-9 cursor-pointer rounded-md border px-3 text-[12px] font-semibold"
+          >
+            Findings
+          </button>
+          {findingsOpen && (
+            <SpikeFindingsDialog
+              ticket={view.card}
+              onClose={() => setFindingsOpen(false)}
+              onOpenEpic={(epicId) => {
+                setFindingsOpen(false);
+                onOpenEpic(epicId);
+              }}
+            />
+          )}
+        </div>
+      )}
 
       {view.acceptanceCriteria.length > 0 && (
         <div>

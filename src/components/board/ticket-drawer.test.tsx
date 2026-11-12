@@ -72,6 +72,8 @@ function open(
     vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url.includes("/api/kpi/")) return Response.json(kpis);
+      if (url.endsWith("/findings"))
+        return Response.json({ found: true, markdown: "## Finding\nIt works.", epicId: "e-9" });
       if (url.includes("/api/attachments"))
         return Response.json({ attachments });
       return Response.json(view);
@@ -139,6 +141,30 @@ describe("TicketDrawer notice", () => {
     open(stalled("waiting", "Waiting on PROT-1"));
     await screen.findByText("Waiting on PROT-1");
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("TicketDrawer findings", () => {
+  const spike = (status: "merged" | "review") => ({ ...VIEW, card: { ...card, workType: "spike" as const, status } });
+
+  it("opens the findings dialog from a merged spike, and Open Epic opens the Epic", async () => {
+    const { onOpenEpic } = open(spike("merged"));
+    fireEvent.click(await screen.findByRole("button", { name: "Findings" }));
+    expect(await screen.findByText(/SPIKE COMPLETE/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /open epic/i }));
+    expect(onOpenEpic).toHaveBeenCalledWith("e-9");
+  });
+
+  it("has no Findings section before the spike merges, or on a regular ticket", async () => {
+    open(spike("review"));
+    await screen.findByText("Export endpoint");
+    expect(screen.queryByRole("button", { name: "Findings" })).toBeNull();
+  });
+
+  it("has no Findings section on a regular merged ticket", async () => {
+    open({ ...VIEW, card: { ...card, status: "merged" } });
+    await screen.findByText("Export endpoint");
+    expect(screen.queryByRole("button", { name: "Findings" })).toBeNull();
   });
 });
 

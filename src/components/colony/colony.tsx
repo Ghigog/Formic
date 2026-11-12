@@ -98,6 +98,9 @@ export interface ColonyApi {
   toast: { text: string; key: number } | null;
   win: EpicWin | null;
   closeWin: () => void;
+  /** The spike whose findings dialog is open: a spike that just merged. */
+  spikeWin: BoardCard | null;
+  closeSpikeWin: () => void;
   sfx: (n: Sfx, v?: number) => void;
   fx: ColonyFx;
   /** Epoch ms, a second at a time: what the heat bars are measured against. */
@@ -218,6 +221,7 @@ export function ColonyProvider({
   const [colonyOpen, setColonyOpen] = useState(false);
   const [toast, setToast] = useState<ColonyApi["toast"]>(null);
   const [win, setWin] = useState<EpicWin | null>(null);
+  const [spikeWin, setSpikeWin] = useState<BoardCard | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const topRef = useRef<HTMLCanvasElement>(null);
@@ -545,6 +549,7 @@ export function ColonyProvider({
         flying.current.add(card.id);
         const heat = heatStacks(cards, Date.now()).length;
         later.push(() => merged(card, mergePoints(card), card.mergeMultiplier ?? 1, heat));
+        if (card.workType === "spike") later.push(() => spikeMerged(card));
       } else if (card.kind === "epic" && card.status === "merged") {
         flying.current.add(card.id);
         later.push(() => epicMerged(card, epicTally(card, cards)));
@@ -682,6 +687,15 @@ export function ColonyProvider({
       const flight = flights.current.get(epic.id);
       if (flight) void flight.then(show);
       else setTimeout(() => sound.whenAudible(show), 900);
+    }
+    function spikeMerged(spike: BoardCard) {
+      // After the usual landing: wait for the score flight to release the card.
+      let tries = 0;
+      const open = () => {
+        if (flying.current.has(spike.id) && tries++ < 40) return void setTimeout(open, 150);
+        setSpikeWin(spike);
+      };
+      setTimeout(open, 600);
     }
     function dispatched(card: BoardCard) {
       const e = el(card);
@@ -872,6 +886,8 @@ export function ColonyProvider({
     toast,
     win,
     closeWin: () => setWin(null),
+    spikeWin,
+    closeSpikeWin: () => setSpikeWin(null),
     sfx,
     fx,
     now,

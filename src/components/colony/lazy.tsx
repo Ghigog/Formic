@@ -23,6 +23,10 @@ const ColonyToast = dynamic(() => import("./overlays").then((m) => m.ColonyToast
 const RerouteToast = dynamic(() => import("./overlays").then((m) => m.RerouteToast), { ssr: false });
 const EpicWinDialog = dynamic(() => import("./overlays").then((m) => m.EpicWinDialog), { ssr: false });
 
+const SpikeFindingsDialog = dynamic(() => import("./spike-findings-dialog").then((m) => m.SpikeFindingsDialog), {
+  ssr: false,
+});
+
 export function LazyColonyTimeline({ repoName }: { repoName: string }) {
   const c = useColony();
   if (!c?.timelineOpen) return null;
@@ -44,4 +48,19 @@ export function LazyEpicWinDialog({ onOpenEpic }: { onOpenEpic?: (epic: BoardCar
   const c = useColony();
   if (!c?.win) return null;
   return <EpicWinDialog onOpenEpic={onOpenEpic} />;
+}
+
+export function LazySpikeFindingsDialog({ onOpenEpic }: { onOpenEpic?: (epicId: string) => void }) {
+  const c = useColony();
+  if (!c?.spikeWin) return null;
+  return (
+    <SpikeFindingsDialog
+      ticket={c.spikeWin}
+      onClose={c.closeSpikeWin}
+      onOpenEpic={(epicId) => {
+        c.closeSpikeWin();
+        onOpenEpic?.(epicId);
+      }}
+    />
+  );
 }
