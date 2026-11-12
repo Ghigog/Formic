@@ -92,6 +92,7 @@ function open(
       onClose={() => {}}
       onOpenEpic={onOpenEpic}
       onOpenTicket={onOpenTicket}
+      onOpenChat={() => {}}
       subscribe={subscribe}
       kpisUnlocked={kpisUnlocked}
     />,
@@ -198,6 +199,7 @@ function openTodo(view: TicketView) {
       onClose={() => {}}
       onOpenEpic={() => {}}
       onOpenTicket={() => {}}
+      onOpenChat={() => {}}
       subscribe={() => () => {}}
       kpisUnlocked
     />,
@@ -543,6 +545,7 @@ describe("TicketDrawer on-screen keyboard", () => {
           onClose={() => {}}
           onOpenEpic={() => {}}
           onOpenTicket={() => {}}
+          onOpenChat={() => {}}
           subscribe={() => () => {}}
           kpisUnlocked
         />,
@@ -623,6 +626,7 @@ describe("TicketDrawer archive", () => {
         onChanged={onChanged}
         onOpenEpic={() => {}}
         onOpenTicket={() => {}}
+        onOpenChat={() => {}}
         subscribe={() => () => {}}
         kpisUnlocked
       />,
@@ -738,6 +742,7 @@ describe("TicketDrawer Escape and focus", () => {
           onClose={() => setId(null)}
           onOpenEpic={() => {}}
           onOpenTicket={setId}
+          onOpenChat={() => {}}
           subscribe={() => () => {}}
           kpisUnlocked
         />
