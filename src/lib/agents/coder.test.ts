@@ -12,6 +12,7 @@ vi.mock("./openai-agents", () => ({ compareScoutsOnOpenAi: compareOnOpenAi }));
 
 import { LoopCoderAgent, LoopReviewerAgent, coderPrompt, failuresBrief, reviewBrief, taskBrief } from "./coder";
 import type { AgentContext, CoderTask, ReviewTask } from "./ports";
+import { isQuestion } from "@/lib/domain/question";
 import { MemoryWorkspace } from "@/lib/sandbox/workspace";
 
 const TASK: CoderTask = {
@@ -141,6 +142,43 @@ describe("LoopCoderAgent", () => {
     const out = await new LoopCoderAgent().implement(CTX, { task: TASK, workspace: new MemoryWorkspace() });
 
     expect(out).toBe(failed);
+  });
+});
+
+describe("LoopCoderAgent on a spike", () => {
+  it("keeps the question in finish, and a set question stops the run for the PM", async () => {
+    const bodies: { tools?: { function?: { name: string; parameters: { properties: Record<string, unknown> } } }[] }[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      if (!init?.body) return Response.json({ data: [] });
+      bodies.push(JSON.parse(String(init.body)));
+      const args = { summary: "s", detail: "d", verified_with: null, question: "Should the spike cover iOS too? It doubles the work." };
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [{ id: "c1", type: "function", function: { name: "finish", arguments: JSON.stringify(args) } }],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      });
+    });
+    const { runCodingLoop: actual } = await vi.importActual<typeof import("./coding-loop")>("./coding-loop");
+    runCodingLoop.mockImplementation((input) => actual({ ...input, provider: "deepseek", model: "deepseek-chat", apiKey: "sk" }));
+
+    const out = await new LoopCoderAgent().implement(CTX, {
+      task: { ...TASK, workType: "spike" },
+      workspace: new MemoryWorkspace(),
+    });
+
+    const finish = bodies[0]!.tools!.find((t) => t.function?.name === "finish");
+    expect(finish!.function!.parameters.properties).toHaveProperty("question");
+    expect(out).toMatchObject({ ok: false, blocked: true });
+    expect(isQuestion(out.ok ? "" : out.error)).toBe(true);
+    vi.unstubAllGlobals();
   });
 });
 
