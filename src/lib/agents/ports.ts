@@ -127,6 +127,8 @@ export interface DraftTicket {
   dependsOn: string[];
   /** Work for a person, not an agent: why. */
   needsHuman?: string;
+  /** The ticket only moves or renames files, nothing else. */
+  moveOnly?: boolean;
   /** What kind of ticket the Architect Agent judged it to be. */
   workType?: WorkType;
   /** Only for a bug. */
