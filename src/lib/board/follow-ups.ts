@@ -13,13 +13,29 @@ import { positionBetween } from "@/lib/ordering";
  * ticket that found them until the person adds or dismisses each one.
  */
 
-/** Keeps what an agent proposed on its ticket, beside what was there. */
+/**
+ * Keeps what an agent proposed on its ticket, beside what was there. A needed
+ * follow-up becomes a ticket at the end of To Do at once; a nice one waits as
+ * pending. A repeat of one already recorded does neither.
+ */
 export async function recordFollowUps(ticketId: string, more: FollowUp[]): Promise<void> {
   if (more.length === 0) return;
   const repo = repository();
   const ticket = await repo.ticketDetail(ticketId);
   if (!ticket) return;
-  await repo.updateTicket(ticketId, { followUps: mergeFollowUps(ticket.followUps, more) });
+  const had = new Set(ticket.followUps.map((f) => f.title.toLowerCase()));
+  const merged: FollowUp[] = [];
+  for (const f of mergeFollowUps(ticket.followUps, more)) {
+    if (had.has(f.title.toLowerCase())) {
+      merged.push(f);
+    } else if (f.need === "needed") {
+      const card = await addFollowUpTicket(ticket.projectId, ticket, f);
+      merged.push({ ...f, outcome: { kind: "added", key: card.key, cardId: card.id } });
+    } else {
+      merged.push({ ...f, outcome: { kind: "pending" } });
+    }
+  }
+  await repo.updateTicket(ticketId, { followUps: merged });
 }
 
 /** The next key on an Epic, after the tickets it already has: EPIC-n-Tm. */
