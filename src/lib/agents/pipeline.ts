@@ -1,6 +1,7 @@
 import "server-only";
 
 import { withCardActor } from "@/lib/auth/actor";
+import { orderNewEpic } from "@/lib/board/epic-order";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
@@ -502,6 +503,7 @@ export async function applyTickets(
       size: t.size,
       storyPoints: t.storyPoints ?? null,
       needsHuman: t.needsHuman ?? null,
+      moveOnly: t.moveOnly ?? false,
       ...typeOf(t),
       position: positionForIndex(positions, cursor++),
       dependsOnKeys: t.dependsOn.map((k) => keyFor.get(k) ?? k),
@@ -514,6 +516,8 @@ export async function applyTickets(
     kind: "epic",
     epicId,
   });
+
+  await orderNewEpic(projectId, epicId);
 
   // A record of what a re-decomposition changed: it deletes tickets outright,
   // so this is the only trace of what they were, kept where a person already

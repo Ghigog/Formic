@@ -59,6 +59,10 @@ export const ticketSpecSchema = z
     .describe(
       "Only for a ticket no coding agent can do, such as setting up an account, a manual test on production, or a decision: why it needs a person. Leave it out for every ticket an agent can do in the repository.",
     ),
+  moveOnly: z
+    .boolean()
+    .optional()
+    .describe("True only for a ticket that does nothing but move or rename files. Leave it out for every other ticket (false)."),
   type: z.enum(WORK_TYPES).describe("What kind of ticket this is: user_story, task, feature, bug or spike."),
   severity: z
     .enum(BUG_SEVERITIES)
@@ -105,6 +109,7 @@ export function toDraftTicket(spec: TicketSpec): DraftTicket {
     storyPoints: spec.storyPoints,
     dependsOn: spec.dependsOn,
     ...(spec.needsHuman?.trim() ? { needsHuman: spec.needsHuman.trim() } : {}),
+    ...(spec.moveOnly ? { moveOnly: true } : {}),
     workType: spec.type,
     ...(spec.severity ? { bugSeverity: spec.severity } : {}),
   };
