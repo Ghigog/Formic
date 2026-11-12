@@ -155,6 +155,8 @@ export interface AssistantMessage {
   content: string;
   /** What the assistant proposed changing; each needs the person's approval. */
   proposals: AssistantProposal[];
+  /** Cards the message links to. */
+  cards: Array<{ id: string; key: string; title: string }>;
   status: "done" | "pending" | "failed";
   runnerJob: string | null;
   /** The preset that job was dispatched with, so a failure is blamed on it. */
@@ -740,6 +742,10 @@ export interface SharingRepository {
   markBoardTourSeen(userId: string, projectId: string): Promise<void>;
   /** Whether this person has taken the board's tour on any device. */
   boardTourSeen(userId: string, projectId: string): Promise<boolean>;
+  /** Records that this person has read the PM chat up to `at`. Works before the first markOpened; an unknown project is ignored. */
+  markPmRead(userId: string, projectId: string, at: Date): Promise<void>;
+  /** When this person last read the PM chat, or null if never. */
+  pmReadAt(userId: string, projectId: string): Promise<Date | null>;
   /** A member's own agents on a shared board, by column or "assistant". */
   memberAgents(projectId: string, userId: string): Promise<Record<string, string>>;
   setMemberAgent(projectId: string, userId: string, slot: string, presetId: string | null): Promise<void>;
@@ -1177,7 +1183,11 @@ export interface ConversationRepository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    cards?: AssistantMessage["cards"];
+    proposals?: AssistantProposal[];
   }): Promise<AssistantMessage>;
+  /** How many PM messages (done or failed) were written after `since`; all of them when null. */
+  unreadPmCount(projectId: string, since: Date | null): Promise<number>;
   updateAssistantMessage(
     id: string,
     update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
