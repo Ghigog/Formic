@@ -3,6 +3,7 @@ import { act, render } from "@testing-library/react";
 import type { BoardCard } from "@/lib/domain/entities";
 import { ColonyProvider, useColony, type ColonyApi } from "./colony";
 import { SoundEngine } from "./sound";
+import { STUCK_RUN } from "@/lib/domain/notice";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 afterEach(() => {
@@ -127,5 +128,33 @@ describe("ColonyProvider reactions", () => {
     expect(api.sentinelsOpen).toBe(true);
     act(() => api.setSentinelsOpen(false));
     act(() => api.setColonyOpen(false));
+  });
+});
+
+describe("ColonyProvider stuck run", () => {
+  it("plays reject once when a card turns blocked as stuck, not on load or while it stays blocked", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date", "requestAnimationFrame", "cancelAnimationFrame"] });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    Element.prototype.animate = vi.fn() as never;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const play = vi.spyOn(SoundEngine.prototype, "play").mockImplementation(() => {});
+    const running = makeCard({ status: "running" });
+    const stuck = { ...running, status: "blocked", blockedReason: `${STUCK_RUN}\nRun 1 last edited a.ts` } as BoardCard;
+    const tree = (cards: BoardCard[]) => (
+      <ColonyProvider storageKey="colony-test-stuck" cards={cards} extras={{}}>
+        <Board cards={cards} onApi={() => {}} />
+      </ColonyProvider>
+    );
+    const { rerender } = render(tree([stuck]));
+    await settle(100);
+    expect(play).not.toHaveBeenCalledWith("reject", expect.anything());
+
+    rerender(tree([running]));
+    await settle();
+    rerender(tree([stuck]));
+    await settle();
+    rerender(tree([{ ...stuck, blockedReason: `${STUCK_RUN}\nRun 2 last edited b.ts` }]));
+    await settle();
+    expect(play.mock.calls.filter(([n]) => n === "reject")).toHaveLength(1);
   });
 });
