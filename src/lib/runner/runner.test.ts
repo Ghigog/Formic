@@ -1002,6 +1002,7 @@ describe("taking a CLI agent's work", () => {
         why: "about 540 branches are uncovered, far past this ticket's estimate.",
         points: 5,
         need: "nice",
+        outcome: { kind: "pending" },
       },
     ]);
   });

@@ -42,6 +42,47 @@ describe("recordFollowUps", () => {
   });
 });
 
+describe("recordFollowUps triage", () => {
+  const needed: FollowUp = { title: "Add the missing index", why: "Slow query.", points: 2, need: "needed" };
+
+  it("creates a needed follow-up at once and records its key", async () => {
+    const { epic, ticket } = await seed();
+    await recordFollowUps(ticket.id, [needed]);
+    const repo = repository();
+    const added = (await repo.ticketsForEpic(epic.id)).find((t) => t.key === `${epic.key}-T2`)!;
+    expect(added.title).toBe("Add the missing index");
+    const rec = (await repo.ticketDetail(ticket.id))!.followUps.find((f) => f.title === needed.title)!;
+    expect(rec.outcome).toEqual({ kind: "added", key: `${epic.key}-T2`, cardId: added.id });
+  });
+
+  it("creates no ticket for a nice one and stores it as pending", async () => {
+    const { epic, ticket } = await seed();
+    expect((await repository().ticketsForEpic(epic.id)).length).toBe(1);
+    const followUps = (await repository().ticketDetail(ticket.id))!.followUps;
+    expect(followUps.every((f) => f.outcome?.kind === "pending")).toBe(true);
+  });
+
+  it("does not create a repeated needed follow-up twice", async () => {
+    const { epic, ticket } = await seed();
+    await recordFollowUps(ticket.id, [needed]);
+    await recordFollowUps(ticket.id, [needed]);
+    expect((await repository().ticketsForEpic(epic.id)).length).toBe(2);
+  });
+
+  it("makes a standalone ticket from a standalone one", async () => {
+    const repo = repository();
+    const holder = await repo.createEpic({ projectId: PROJECT, title: "Solo", rawRequest: "Solo", position: 1 });
+    await repo.setStandalone(holder.id, true);
+    const [t] = await repo.createTickets([
+      { epicId: holder.id, key: "T-1", title: "Solo", description: "", acceptanceCriteria: [], fileScope: [], storyPoints: 1, position: 1, dependsOnKeys: [] },
+    ]);
+    await recordFollowUps(t!.id, [needed]);
+    const rec = (await repo.ticketDetail(t!.id))!.followUps[0]!;
+    expect(rec.outcome).toMatchObject({ kind: "added" });
+    expect((rec.outcome as { key: string }).key).toMatch(/^T-\d+$/);
+  });
+});
+
 describe("answerFollowUp", () => {
   it("adds one as a tech debt ticket on the same Epic and takes it off the list", async () => {
     const { epic, ticket } = await seed();
