@@ -2052,7 +2052,7 @@ export class MemoryRepository implements Repository {
   async finishAudit(id: string, result: AuditResult): Promise<void> {
     const s = store();
     const audit = s.audits.find((a) => a.id === id);
-    if (!audit) return;
+    if (!audit || audit.status !== "running") return;
     Object.assign(audit, {
       status: result.status,
       stars: result.stars ?? null,

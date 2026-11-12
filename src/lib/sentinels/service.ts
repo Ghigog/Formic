@@ -7,7 +7,7 @@ import { sentinelAgent } from "@/lib/agents/presets";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { vcs } from "@/lib/vcs";
-import { startCliSentinel } from "@/lib/runner/runner";
+import { cancelJob, startCliSentinel } from "@/lib/runner/runner";
 import { CANNED } from "./canned";
 import { runAudit } from "./agent";
 import { cannedChecks, cannedRubric, scoredReport, type Goal } from "./rubric";
@@ -26,7 +26,7 @@ function snapshotWanted(path: string, size: number): boolean {
 import { scoreOf } from "@/lib/colony/game";
 import { isUnlocked, sentinel as findSentinel, stepsFor } from "./roster";
 import { columnOf } from "@/lib/domain/status";
-import { sentinelStates, type OpenEpics, type SentinelStates, type Shipped } from "./view";
+import { SENTINEL_STOPPED, sentinelStates, type OpenEpics, type SentinelStates, type Shipped } from "./view";
 
 /**
  * Summoning a sentinel: calibrating writes its rubric for the project, and
@@ -73,6 +73,32 @@ async function baseHead(projectId: string): Promise<string | null> {
   }
 }
 
+declare global {
+  var __formicSentinelRuns: Map<string, AbortController> | undefined;
+}
+
+/** The in-process runs, by audit id, so a stop can abort the one on this instance. */
+function liveRuns(): Map<string, AbortController> {
+  return (globalThis.__formicSentinelRuns ??= new Map());
+}
+
+/**
+ * Stops the sentinel's running audit or calibration: it ends as failed with
+ * SENTINEL_STOPPED, the in-process run is aborted and a GitHub Actions run is
+ * cancelled. Whatever the run reports later is ignored. False when none runs.
+ */
+export async function stopSentinel(projectId: string, sentinelId: string): Promise<boolean> {
+  const repo = repository();
+  const audit = (await repo.latestAudits(projectId))
+    .filter((a) => a.sentinel === sentinelId && a.status === "running")
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
+  if (!audit) return false;
+  await repo.finishAudit(audit.id, { status: "failed", error: SENTINEL_STOPPED });
+  liveRuns().get(audit.id)?.abort();
+  if (audit.runnerJob) await cancelJob(projectId, audit.runnerJob);
+  return true;
+}
+
 export async function summonSentinel(
   projectId: string,
   sentinelId: string,
@@ -101,9 +127,13 @@ export async function summonSentinel(
   // The code this run reads, resolved once. An audit that cannot is stamped null and still runs.
   const commitSha = await baseHead(projectId);
   const audit = await repo.startAudit(projectId, s.id, kind, goal.kind === "audit" ? goal.rubric : null, commitSha);
+  const controller = new AbortController();
+  liveRuns().set(audit.id, controller);
   const log = (step: string) => repo.logAudit(audit.id, step);
   const fail = (error: string, model: string | null = null) =>
     repo.finishAudit(audit.id, { status: "failed", error, model });
+
+  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(280_000)]);
 
   launch(async () => {
     try {
@@ -128,8 +158,10 @@ export async function summonSentinel(
         // No key and no GitHub needed: a canned report at a believable pace.
         for (const step of stepsFor(s, kind).slice(1)) {
           await new Promise((r) => setTimeout(r, 700 + Math.random() * 400));
+          if (signal.aborted) return;
           await log(step);
         }
+        if (signal.aborted) return;
         if (goal.kind === "calibrate") {
           const made = cannedRubric(s);
           return await repo.finishAudit(audit.id, { status: "done", rubric: made, summary: made.context, model: "mock" });
@@ -163,13 +195,15 @@ export async function summonSentinel(
         },
         evidence,
         log,
-        signal: AbortSignal.timeout(280_000),
+        signal,
       });
       if (!outcome.ok) return await fail(outcome.error, outcome.usage.model);
       const { ok: _, usage, ...done } = outcome;
       await repo.finishAudit(audit.id, { status: "done", ...done, model: usage.model });
     } catch (e) {
       await fail(e instanceof Error ? e.message : kind === "calibrate" ? "Calibrating failed." : "The audit failed.");
+    } finally {
+      liveRuns().delete(audit.id);
     }
   }, `sentinel ${s.id}`);
 

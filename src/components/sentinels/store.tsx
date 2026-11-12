@@ -27,6 +27,10 @@ export interface SentinelsApi {
    * against that rubric. A second summon while it runs does nothing.
    */
   summon: (id: string, kind?: AuditKind) => Promise<void>;
+  /** Stops one sentinel's running audit or calibration. */
+  stop: (id: string) => Promise<void>;
+  /** The sentinels whose stop request is in flight. */
+  stopping: ReadonlySet<string>;
   /** Audits every unlocked sentinel that no open Epic holds, calibrating the ones that have no rubric yet. */
   summonAll: () => void;
   /** Fetches the Sentinels' current states, so holds and counts are not those of page load. */
@@ -119,6 +123,29 @@ export function SentinelsProvider({
     void refresh();
   }, [refresh]);
 
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
+  const stop = useCallback(async (id: string) => {
+    setRefusal(null);
+    setStopping((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch(`/api/sentinels/${id}/stop`, { method: "POST" }).catch(() => null);
+      if (res?.ok) {
+        const body = (await res.json()) as { sentinels: SentinelStates };
+        setStates(body.sentinels);
+        return;
+      }
+      const body = res ? ((await res.json().catch(() => null)) as { error?: string } | null) : null;
+      setRefusal(body?.error ?? "Could not reach the server.");
+      void refresh();
+    } finally {
+      setStopping((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }, [refresh]);
+
   const latest = useRef(states);
   useEffect(() => {
     latest.current = states;
@@ -132,8 +159,8 @@ export function SentinelsProvider({
   }, [summon, level, unlockAll]);
 
   const api = useMemo<SentinelsApi>(
-    () => ({ states, grade, level, unlockAll, summon, summonAll, refresh, refusal }),
-    [states, grade, level, unlockAll, summon, summonAll, refresh, refusal],
+    () => ({ states, grade, level, unlockAll, summon, stop, stopping, summonAll, refresh, refusal }),
+    [states, grade, level, unlockAll, summon, stop, stopping, summonAll, refresh, refusal],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }
