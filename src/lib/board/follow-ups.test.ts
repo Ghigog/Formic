@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { answerFollowUp, nextTicketKey, recordFollowUps } from "./follow-ups";
+import { addFollowUpTicket, answerFollowUp, nextTicketKey, recordFollowUps } from "./follow-ups";
 import { repository } from "@/lib/db";
+import type { FollowUp } from "@/lib/agents/follow-ups";
 
 const PROJECT = "project_default";
 
@@ -81,5 +82,46 @@ describe("nextTicketKey", () => {
   it("follows the Epic's highest ticket number", () => {
     expect(nextTicketKey("EPIC-9", ["EPIC-9-T1", "EPIC-9-T7", "EPIC-9-T3-2", "EPIC-10-T20"])).toBe("EPIC-9-T8");
     expect(nextTicketKey("EPIC-9", [])).toBe("EPIC-9-T1");
+  });
+});
+
+describe("addFollowUpTicket", () => {
+  const followUp: FollowUp = { title: "Tidy the seams", why: "They leak.", points: 3 };
+
+  it("gives a standalone source a standalone ticket of its own at the end of To Do", async () => {
+    const repo = repository();
+    const holder = await repo.createEpic({ projectId: PROJECT, title: "Alone", rawRequest: "Alone", position: 1 });
+    await repo.setStandalone(holder.id, true);
+    const [source] = await repo.createTickets([
+      {
+        epicId: holder.id,
+        key: `T-${await repo.nextStandaloneTicketNumber(PROJECT)}`,
+        title: "Alone",
+        description: "",
+        acceptanceCriteria: [],
+        fileScope: ["src/a.ts"],
+        storyPoints: null,
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    const detail = (await repo.ticketDetail(source!.id))!;
+
+    const card = await addFollowUpTicket(PROJECT, detail, followUp);
+
+    expect(card.key).toBe("T-2");
+    expect(card.epicId).not.toBe(holder.id);
+    const added = (await repo.ticketDetail(card.id))!;
+    expect(added).toMatchObject({ status: "ready", workType: "tech_debt", fileScope: ["src/a.ts"], storyPoints: 3 });
+    expect((await repo.cardById(card.epicId!))?.standalone).toBe(true);
+    const todo = await repo.columnPositions(PROJECT, "todo");
+    expect(card.position).toBeGreaterThanOrEqual(Math.max(...todo));
+  });
+
+  it("keeps a source on a real Epic on that Epic", async () => {
+    const { epic, ticket } = await seed();
+    const card = await addFollowUpTicket(PROJECT, (await repository().ticketDetail(ticket.id))!, followUp);
+    expect(card.key).toBe(`${epic.key}-T2`);
+    expect(card.epicId).toBe(epic.id);
   });
 });
