@@ -55,7 +55,7 @@ beforeEach(async () => {
     },
   ]);
   ticketId = ticket!.id;
-  await repo.updateTicket(ticketId, { followUps: [{ title: "Tidy up", why: "Left out", points: 2 }] });
+  await repo.updateTicket(ticketId, { followUps: [{ title: "Tidy up", why: "Left out", points: 2, need: "nice" as const }] });
 });
 
 describe("POST /api/tickets/[id]/follow-ups", () => {

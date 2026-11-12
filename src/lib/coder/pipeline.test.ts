@@ -348,8 +348,8 @@ describe("the Coder Agent pipeline", () => {
   });
 
   it("keeps the follow-ups the Coder and Reviewer Agents propose on the ticket", async () => {
-    const coderFound: FollowUp = { title: "Raise branch coverage to 78%", why: "About 540 branches are uncovered.", points: 5 };
-    const reviewerFound: FollowUp = { title: "Fix order-dependent tests", why: "They fail when shuffled.", points: 2 };
+    const coderFound: FollowUp = { title: "Raise branch coverage to 78%", why: "About 540 branches are uncovered.", points: 5, need: "nice" as const };
+    const reviewerFound: FollowUp = { title: "Fix order-dependent tests", why: "They fail when shuffled.", points: 2, need: "nice" as const };
     const reviewer = new StubReviewer(async () => {}, [reviewerFound]);
     useAgents(new StubCoder(writesInScope(), [], [coderFound]), reviewer);
     const ticket = await seedTicket();

@@ -29,8 +29,41 @@ describe("followUpsFromSummary", () => {
         title: "Raise branch coverage to 78%",
         why: "about 540 branches are uncovered, far more than this ticket's estimate.",
         points: 5,
+        need: "nice",
       },
-      { title: "Fix order-dependent tests", why: "scouts.test.ts fails when shuffled.", points: null },
+      { title: "Fix order-dependent tests", why: "scouts.test.ts fails when shuffled.", points: null, need: "nice" },
+    ]);
+  });
+
+  it("reads the needed and nice to have labels, defaulting to nice", () => {
+    const text = [
+      "Follow-ups:",
+      "- [needed] Wire the retry (3 pt): AC2 fails without it",
+      "- [Nice to have] Tidy the copy (1 pt): wording",
+      "- Polish copy (1 pt): nicer wording",
+    ].join("\n");
+    expect(followUpsFromSummary(text).map((f) => [f.title, f.points, f.need])).toEqual([
+      ["Wire the retry", 3, "needed"],
+      ["Tidy the copy", 1, "nice"],
+      ["Polish copy", 1, "nice"],
+    ]);
+  });
+
+  it("round-trips through the section", () => {
+    const list = followUpsFromSummary("Follow-ups:\n- [needed] A (2 pt): why a\n- [nice to have] B: why b");
+    expect(followUpsFromSummary(followUpsSection(list))).toEqual(list);
+  });
+
+  it("keeps need and outcome, and reads an unknown need as nice", () => {
+    const outcome = { kind: "added", key: "T-1", cardId: "c1" };
+    expect(
+      checkFollowUps([
+        { title: "A", why: "", points: null, need: "needed", outcome },
+        { title: "B", why: "", points: null, need: "bogus" },
+      ]),
+    ).toEqual([
+      { title: "A", why: "", points: null, need: "needed", outcome },
+      { title: "B", why: "", points: null, need: "nice" },
     ]);
   });
 
@@ -57,7 +90,7 @@ describe("checkFollowUps", () => {
         { why: "No title at all" },
         "not an object",
       ]),
-    ).toEqual([{ title: "Add tests", why: "Too many for this ticket.", points: 3 }]);
+    ).toEqual([{ title: "Add tests", why: "Too many for this ticket.", points: 3, need: "nice" }]);
   });
 
   it("is empty for anything but a list", () => {
@@ -67,10 +100,10 @@ describe("checkFollowUps", () => {
 
 describe("mergeFollowUps", () => {
   it("adds new titles once, ignoring case, up to the cap", () => {
-    const had: FollowUp[] = [{ title: "Add tests", why: "", points: null }];
+    const had: FollowUp[] = [{ title: "Add tests", why: "", points: null, need: "nice" }];
     const more: FollowUp[] = [
-      { title: "add TESTS", why: "again", points: 2 },
-      ...Array.from({ length: MAX_FOLLOW_UPS }, (_, i) => ({ title: `Job ${i}`, why: "", points: null })),
+      { title: "add TESTS", why: "again", points: 2, need: "nice" },
+      ...Array.from({ length: MAX_FOLLOW_UPS }, (_, i) => ({ title: `Job ${i}`, why: "", points: null, need: "nice" as const })),
     ];
     const merged = mergeFollowUps(had, more);
     expect(merged).toHaveLength(MAX_FOLLOW_UPS);
