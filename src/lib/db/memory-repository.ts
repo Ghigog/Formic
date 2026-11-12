@@ -2298,6 +2298,8 @@ export class MemoryRepository implements Repository {
       speaker: "assistant",
       createdAt: new Date(),
       ...input,
+      cards: input.cards ?? [],
+      proposals: input.proposals ?? [],
       status: input.status ?? "done",
     };
     store().assistant.push(message);
