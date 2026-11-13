@@ -118,17 +118,17 @@ export function AgentSelect({
           </>
         ) : (
           <>
-        {selected ? <ProviderLogo provider={selected.provider} size={14} /> : <AgentIcon />}
-        <span className="text-ink min-w-0 flex-1 truncate font-medium">
-          {selected ? selected.name : "No agent"}
-        </span>
-        <span className="text-muted shrink-0 font-mono text-[10px]">
-          {selected
-            ? selected.model
-              ? modelName(selected.model)
-              : (providerInfo(selected.provider)?.label ?? selected.provider).split(" (")[0]
-            : role}
-        </span>
+            {selected ? <ProviderLogo provider={selected.provider} size={14} /> : <AgentIcon />}
+            <span className="text-ink min-w-0 flex-1 truncate font-medium">
+              {selected ? selected.name : "No agent"}
+            </span>
+            <span className="text-muted shrink-0 font-mono text-[10px]">
+              {selected
+                ? selected.model
+                  ? modelName(selected.model)
+                  : (providerInfo(selected.provider)?.label ?? selected.provider).split(" (")[0]
+                : role}
+            </span>
           </>
         )}
         <Chevron />
