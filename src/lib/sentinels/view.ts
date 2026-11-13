@@ -12,6 +12,9 @@ export const STALE_AFTER_MS = 10 * 60_000;
 /** A GitHub Actions job takes minutes to start and read the repository, and reports when it ends. */
 export const STALE_JOB_AFTER_MS = 45 * 60_000;
 
+/** The error of a run its board owner stopped, so the page can tell it from a failure. */
+export const SENTINEL_STOPPED = "Stopped by you. Summon it again when you're ready.";
+
 export interface SentinelState {
   id: string;
   /** The report's audit, to mark when an Epic is made from it. */

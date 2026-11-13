@@ -16,7 +16,7 @@ import {
   stepsFor,
   type Sentinel,
 } from "@/lib/sentinels/roster";
-import type { SentinelState } from "@/lib/sentinels/view";
+import { SENTINEL_STOPPED, type SentinelState } from "@/lib/sentinels/view";
 import type { AuditKind, AuditPoint } from "@/lib/db/repository";
 import { portraitSvg, portraitGround } from "./portraits";
 import { useSentinels, type SentinelsApi } from "./store";
@@ -297,6 +297,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
       const was = before[x.id];
       const is = s.states[x.id];
       if (!was?.running || is?.running) continue;
+      if (is?.error === SENTINEL_STOPPED) continue;
       if (is?.error && is.error !== was.error) {
         c.sfx("deny");
         continue;
@@ -690,10 +691,13 @@ function Card({
         <div className="grow" />
         {running ? (
           <div className="border-hairline flex flex-col gap-1.5 border-t pt-2.5">
-            <span className="text-terracotta-deep flex items-center gap-1.5 font-mono text-[10px]">
-              <span className="bg-terracotta size-1.5 motion-safe:animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
-              {st.running?.log.at(-1) ?? "Waking up"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-terracotta-deep flex min-w-0 grow items-center gap-1.5 font-mono text-[10px]">
+                <span className="bg-terracotta size-1.5 shrink-0 motion-safe:animate-[dotPulse_1s_ease-in-out_infinite] rounded-full" />
+                <span className="truncate">{st.running?.log.at(-1) ?? "Waking up"}</span>
+              </span>
+              <StopButton id={x.id} card />
+            </div>
             <span className="bg-column block h-1 overflow-hidden rounded-sm">
               <span
                 className="bg-terracotta block h-1 transition-[width] duration-600 ease-linear"
@@ -703,7 +707,11 @@ function Card({
           </div>
         ) : (
           <div className="border-hairline flex items-center gap-2 border-t pt-2.5">
-            {st.error ? (
+            {st.error === SENTINEL_STOPPED ? (
+              <span className="text-muted text-[11px]" title={st.error}>
+                Stopped
+              </span>
+            ) : st.error ? (
               <span
                 className="text-crimson-chip-text line-clamp-2 text-[11px]"
                 title={st.error}
@@ -748,6 +756,30 @@ function Card({
         )}
       </div>
     </div>
+  );
+}
+
+/** Stops the sentinel's run: the Small crimson-outline button, on its card or in its report. */
+function StopButton({ id, card = false }: { id: string; card?: boolean }) {
+  const s = useSentinels();
+  const busy = !!s?.stopping.has(id);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={(e) => {
+        // On the card, neither the click nor a key opens the report.
+        e.stopPropagation();
+        void s?.stop(id);
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className={cn(
+        "text-crimson-text dark:text-log-error hover:bg-crimson-text/10 dark:hover:bg-log-error/10 h-8 shrink-0 rounded-lg border border-current px-3 text-[12px] font-semibold whitespace-nowrap active:scale-[0.96] disabled:opacity-60 max-md:h-11",
+        card && "h-7 rounded-md px-2.5 max-md:h-11",
+      )}
+    >
+      {busy ? "Stopping…" : "Stop"}
+    </button>
   );
 }
 
@@ -832,14 +864,18 @@ function Report({
             {meta}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => onSummon(st.rubric ? "audit" : "calibrate")}
-          disabled={running || locked || held}
-          className="border-line bg-cream text-ink hover:border-terracotta h-8 shrink-0 rounded-lg border px-3 text-[12px] font-semibold whitespace-nowrap active:scale-[0.96] disabled:opacity-60"
-        >
-          {running ? "Running…" : locked ? `Lv ${x.unlockLevel}` : summonLabel(st)}
-        </button>
+        {running ? (
+          <StopButton id={x.id} />
+        ) : (
+          <button
+            type="button"
+            onClick={() => onSummon(st.rubric ? "audit" : "calibrate")}
+            disabled={locked || held}
+            className="border-line bg-cream text-ink hover:border-terracotta h-8 shrink-0 rounded-lg border px-3 text-[12px] font-semibold whitespace-nowrap active:scale-[0.96] disabled:opacity-60 max-md:h-11"
+          >
+            {locked ? `Lv ${x.unlockLevel}` : summonLabel(st)}
+          </button>
+        )}
       </div>
 
       {st.hold && (
@@ -855,7 +891,14 @@ function Report({
         </p>
       )}
 
-      {st.error && !running && (
+      {st.error === SENTINEL_STOPPED && !running && (
+        <p role="status" className="text-muted m-0 text-[13px] leading-[1.45]">
+          {st.error}
+          {st.stars !== null || st.rubric ? " What was saved before still counts." : ""}
+        </p>
+      )}
+
+      {st.error && st.error !== SENTINEL_STOPPED && !running && (
         <p
           role="status"
           className="bg-crimson-chip text-crimson-chip-text m-0 rounded-lg px-3.5 py-2.5 text-[13px] leading-[1.45]"
