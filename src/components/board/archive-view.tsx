@@ -21,8 +21,8 @@ export function ArchiveView({
   onRestored,
 }: {
   onClose: () => void;
-  /** A card was restored: the board should show it in its column. */
-  onRestored: (card: BoardCard) => void;
+  /** A card was restored: the board should show it in its column. Resolves once it does. */
+  onRestored: (card: BoardCard) => void | Promise<void>;
 }) {
   const [cards, setCards] = useState<BoardCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,11 +86,13 @@ export function ArchiveView({
         { method: "DELETE" },
       );
       if (!res.ok) throw new Error("restore");
-      setCards((prev) => prev?.filter((c) => c.id !== card.id) ?? prev);
-      onRestored({ ...card, archived: false });
     } catch {
       setError(`Could not restore ${card.key}. Try again.`);
+      return;
     }
+    // Off the list only once the board has the card.
+    await onRestored({ ...card, archived: false });
+    setCards((prev) => prev?.filter((c) => c.id !== card.id) ?? prev);
   };
 
   return (

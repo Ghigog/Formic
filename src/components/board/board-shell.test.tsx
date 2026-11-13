@@ -23,7 +23,7 @@ vi.mock("@/lib/hooks/use-board", () => ({
     transition: vi.fn(),
     createEpic: vi.fn(),
     createTicket: vi.fn(),
-    refetch: vi.fn(),
+    refetch: vi.fn(async () => {}),
   }),
 }));
 vi.mock("@/lib/hooks/use-agents", () => ({
