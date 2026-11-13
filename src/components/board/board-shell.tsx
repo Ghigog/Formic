@@ -150,7 +150,7 @@ export function BoardShell({
         fetchedArchive.current = false;
       });
   }, [archiveWanted]);
-  const restore = (card: BoardCard) => {
+  const restore = async (card: BoardCard) => {
     setArchivedIds((prev) => {
       const next = new Set(prev);
       next.delete(card.id);
@@ -158,7 +158,12 @@ export function BoardShell({
     });
     setArchive((prev) => prev.filter((c) => c.id !== card.id));
     setRestored((prev) => [...prev.filter((c) => c.id !== card.id), card]);
-    void refetch();
+    // The restore is done on the server. Once the board has the card the stand-in goes, so a
+    // later archive of it cannot bring it back; a failed look keeps it until the board's catch-up.
+    try {
+      await refetch();
+      setRestored((prev) => prev.filter((c) => c.id !== card.id));
+    } catch {}
   };
   // Cards archived this session stay in the list, marked archived.
   const boardShown = useMemo(() => {
