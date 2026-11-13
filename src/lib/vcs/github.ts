@@ -3,6 +3,7 @@ import "server-only";
 import {
   type CheckLog,
   type CheckSummary,
+  BranchMovedError,
   type MergeOutcome,
   type OpenPullRequestInput,
   type PullRequestDetail,
@@ -854,10 +855,35 @@ export class GitHubClient implements VcsClient {
       });
     } catch (e) {
       if (!(e instanceof VcsError) || (e.status !== 404 && e.status !== 422)) throw e;
-      // 422 on a branch that does not exist yet: create it instead. On one
-      // that does exist it means "not a fast-forward", and creating fails too,
-      // which is the refusal we want.
+      // 422 on a branch that does not exist yet: create it. On one that does
+      // exist it means "not a fast-forward": the branch moved.
+      const head = await this.branchHead(branch);
+      if (head !== null) throw new BranchMovedError(branch, head);
       await this.request("POST", "/git/refs", { ref: `refs/heads/${branch}`, sha });
+    }
+  }
+
+  async mergeOntoBranch(branch: string, sha: string): Promise<MergeOutcome> {
+    // POST /merges takes a branch name, so the commit gets a staging branch.
+    const staging = `${STAGING_PREFIX}merge-${sha.slice(0, 12)}`;
+    await this.request("POST", "/git/refs", { ref: `refs/heads/${staging}`, sha }).catch((e: unknown) => {
+      if (!(e instanceof VcsError) || e.status !== 422) throw e; // left by an earlier try
+    });
+    try {
+      const { status, data } = await this.request<{ sha?: string }>("POST", "/merges", {
+        base: branch,
+        head: staging,
+        commit_message: `Bring ${sha.slice(0, 7)} onto ${branch}`,
+      });
+      // 201 made a merge commit; 204 means the branch already had the commit.
+      if (status === 201 && data.sha) return { ok: true, sha: data.sha };
+      const head = await this.branchHead(branch);
+      return head ? { ok: true, sha: head } : { ok: false, reason: `No branch ${branch}.`, conflict: false };
+    } catch (e) {
+      if (e instanceof VcsError && e.status === 409) return { ok: false, reason: e.message, conflict: true };
+      throw e;
+    } finally {
+      await this.deleteStagingBranch(staging).catch(() => undefined);
     }
   }
 

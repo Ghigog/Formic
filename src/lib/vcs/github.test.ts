@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitHubClient } from "./github";
+import { BranchMovedError } from "./types";
 import { MockVcsClient } from "./mock";
 
 /**
@@ -406,6 +407,32 @@ describe("GitHubClient", () => {
     });
   });
 
+  describe("mergeOntoBranch", () => {
+    it("merges a staging branch holding the commit into the branch, then removes it", async () => {
+      const calls = stubFetch((url, init) =>
+        url.endsWith("/merges") ? Response.json({ sha: "merged1" }, { status: 201 }) : init.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({}),
+      );
+
+      expect(await client().mergeOntoBranch("feat/x", "agent1234567890")).toEqual({ ok: true, sha: "merged1" });
+
+      const staging = "formic-staging/merge-agent1234567";
+      expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ ref: `refs/heads/${staging}`, sha: "agent1234567890" });
+      expect(JSON.parse(String(calls[1]!.init.body))).toMatchObject({ base: "feat/x", head: staging });
+      expect(calls[2]!.init.method).toBe("DELETE");
+    });
+
+    it("reports a conflict and leaves no staging branch", async () => {
+      const calls = stubFetch((url, init) =>
+        url.endsWith("/merges")
+          ? new Response(JSON.stringify({ message: "Merge conflict" }), { status: 409 })
+          : init.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({}),
+      );
+
+      expect(await client().mergeOntoBranch("feat/x", "agent1234567890")).toMatchObject({ ok: false, conflict: true });
+      expect(calls.at(-1)!.init.method).toBe("DELETE");
+    });
+  });
+
   describe("moveBranch", () => {
     it("fast-forwards an existing branch without force", async () => {
       const calls = stubFetch(() => Response.json({}));
@@ -418,25 +445,138 @@ describe("GitHubClient", () => {
       expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ sha: "s1", force: false });
     });
 
-    it.each([404, 422])("creates the branch after a %i", async (status) => {
+    it.each([404, 422])("creates a branch that does not exist after a %i", async (status) => {
       const calls = stubFetch((_url, init) =>
         init.method === "PATCH"
           ? new Response(JSON.stringify({ message: "x" }), { status })
-          : Response.json({}),
+          : init.method === "GET"
+            ? new Response(JSON.stringify({ message: "Not Found" }), { status: 404 })
+            : Response.json({}),
       );
 
       await client().moveBranch("feat/x", "s1");
 
-      expect(calls[1]!.url).toBe("https://api.github.com/repos/acme/widgets/git/refs");
-      expect(calls[1]!.init.method).toBe("POST");
-      expect(JSON.parse(String(calls[1]!.init.body))).toEqual({ ref: "refs/heads/feat/x", sha: "s1" });
+      expect(calls[2]!.url).toBe("https://api.github.com/repos/acme/widgets/git/refs");
+      expect(calls[2]!.init.method).toBe("POST");
+      expect(JSON.parse(String(calls[2]!.init.body))).toEqual({ ref: "refs/heads/feat/x", sha: "s1" });
     });
 
-    it("rethrows other failures without creating", async () => {
-      const calls = stubFetch(() => new Response(JSON.stringify({ message: "x" }), { status: 500 }));
+    it("says the branch moved, with its head, when the new commit is not a fast-forward", async () => {
+      const calls = stubFetch((_url, init) =>
+        init.method === "PATCH"
+          ? new Response(JSON.stringify({ message: "Update is not a fast forward" }), { status: 422 })
+          : Response.json({ object: { sha: "tip999" } }),
+      );
 
-      await expect(client().moveBranch("feat/x", "s1")).rejects.toMatchObject({ status: 500 });
-      expect(calls).toHaveLength(1);
+      const err = await client().moveBranch("feat/x", "s1").catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(BranchMovedError);
+      expect(err).toMatchObject({ branch: "feat/x", head: "tip999" });
+      expect((err as Error).message).not.toMatch(/already exists/i);
+      expect(calls.some((c) => c.init.method === "POST")).toBe(false);
+    });
+
+    it("rethrows other failures", async () => {
+      stubFetch(() => new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }));
+
+      await expect(client().mergeBranch("main", "feat")).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe("landCarried", () => {
+    const AUTHOR = { name: "A", email: "a@x", date: "2026-01-01T00:00:00Z" };
+
+    /** A commit whose tree holds `deleted` as the CARRY_DELETED blob and one carried file. */
+    function carryStub(deleted: string) {
+      return stubFetch((url, init) => {
+        const path = url.replace("https://api.github.com/repos/acme/widgets", "");
+        if (path === "/git/commits/c1") {
+          return Response.json({ message: "msg", tree: { sha: "t1" }, parents: [{ sha: "p1" }], author: AUTHOR });
+        }
+        if (path === "/git/trees/t1?recursive=1") {
+          return Response.json({
+            tree: [
+              { path: ".formic/carry-deleted", mode: "100644", type: "blob", sha: "bd" },
+              { path: ".formic/carry/.github/workflows/ci.yml", mode: "100644", type: "blob", sha: "bc" },
+              { path: "src", mode: "040000", type: "tree", sha: "ts" },
+            ],
+          });
+        }
+        if (path === "/git/blobs/bd") {
+          return Response.json({ content: Buffer.from(deleted).toString("base64") });
+        }
+        if (path === "/git/trees" && init.method === "POST") return Response.json({ sha: "t2" });
+        if (path === "/git/commits" && init.method === "POST") return Response.json({ sha: "c2" });
+        return new Response("{}", { status: 404 });
+      });
+    }
+
+    it("sends exactly the listed deletions in the tree and commit", async () => {
+      const calls = carryStub(".github/workflows/old.yml\n\n  .github/workflows/gone.yml  \n");
+
+      const out = await client().landCarried("c1");
+
+      expect(out).toEqual({
+        sha: "c2",
+        files: [".github/workflows/old.yml", ".github/workflows/gone.yml", ".github/workflows/ci.yml"],
+      });
+      const posts = calls.filter((c) => c.init.method === "POST");
+      expect(posts.map((c) => c.url)).toEqual([
+        "https://api.github.com/repos/acme/widgets/git/trees",
+        "https://api.github.com/repos/acme/widgets/git/commits",
+      ]);
+      expect(JSON.parse(String(posts[0]!.init.body))).toEqual({
+        base_tree: "t1",
+        tree: [
+          { path: ".formic/carry-deleted", mode: "100644", type: "blob", sha: null },
+          { path: ".github/workflows/old.yml", mode: "100644", type: "blob", sha: null },
+          { path: ".github/workflows/gone.yml", mode: "100644", type: "blob", sha: null },
+          { path: ".formic/carry/.github/workflows/ci.yml", mode: "100644", type: "blob", sha: null },
+          { path: ".github/workflows/ci.yml", mode: "100644", type: "blob", sha: "bc" },
+        ],
+      });
+      expect(JSON.parse(String(posts[1]!.init.body))).toEqual({
+        message: "msg",
+        tree: "t2",
+        parents: ["p1"],
+        author: AUTHOR,
+      });
+    });
+
+    it.each(["/etc/passwd", "../outside", ".github/../../x", ".formic/carry/x.yml"])(
+      "refuses a deletion of %s before making any tree or commit",
+      async (bad) => {
+        const calls = carryStub(`.github/workflows/old.yml\n${bad}\n`);
+
+        await expect(client().landCarried("c1")).rejects.toMatchObject({ name: "VcsError" });
+
+        expect(calls.filter((c) => c.init.method === "POST")).toEqual([]);
+      },
+    );
+  });
+
+  describe("recordMerge", () => {
+    it("commits the same tree with the merged commit added as a parent", async () => {
+      const calls = stubFetch((url, init) =>
+        init.method === "POST"
+          ? Response.json({ sha: "m1" })
+          : Response.json({
+              message: "msg",
+              tree: { sha: "t1" },
+              parents: [{ sha: "p1" }],
+              author: { name: "A", email: "a@x", date: "d" },
+            }),
+      );
+
+      expect(await client().recordMerge("c1", "other")).toBe("m1");
+      expect(calls[0]!.url).toBe("https://api.github.com/repos/acme/widgets/git/commits/c1");
+      expect(calls[1]!.url).toBe("https://api.github.com/repos/acme/widgets/git/commits");
+      expect(JSON.parse(String(calls[1]!.init.body))).toEqual({
+        message: "msg",
+        tree: "t1",
+        parents: ["p1", "other"],
+        author: { name: "A", email: "a@x", date: "d" },
+      });
     });
   });
 });
