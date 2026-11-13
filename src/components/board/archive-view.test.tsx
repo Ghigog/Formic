@@ -69,6 +69,19 @@ describe("ArchiveView", () => {
     expect(onRestored).toHaveBeenCalledWith({ ...card, archived: false });
   });
 
+  it("keeps the card listed until the board has it", async () => {
+    const card = makeCard({ title: "Waiting", archived: true });
+    serve([card]);
+    let boardHasIt!: () => void;
+    const onRestored = vi.fn(() => new Promise<void>((resolve) => (boardHasIt = resolve)));
+    render(<ArchiveView onClose={vi.fn()} onRestored={onRestored} />);
+    await userEvent.click(await screen.findByRole("button", { name: /Restore/ }));
+    await waitFor(() => expect(onRestored).toHaveBeenCalled());
+    expect(screen.getByText("Waiting")).toBeInTheDocument();
+    boardHasIt();
+    await waitFor(() => expect(screen.queryByText("Waiting")).toBeNull());
+  });
+
   it("keeps the card and shows an error when the restore fails", async () => {
     serve([makeCard({ title: "Stuck", archived: true })], false);
     const { onRestored } = open();
