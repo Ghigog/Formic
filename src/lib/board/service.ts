@@ -517,7 +517,8 @@ async function separateFromEpic(
 
   const fresh = await repo.boardCards(projectId);
   for (const sibling of fresh) {
-    if (sibling.kind !== "ticket" || sibling.epicId !== epic.id) continue;
+    // The ticket itself may have been waiting only on its former siblings.
+    if (sibling.kind !== "ticket" || (sibling.epicId !== epic.id && sibling.id !== card.id)) continue;
     if (sibling.status !== "waiting" || !dependenciesMet(sibling, fresh)) continue;
     await repo.move({
       cardId: sibling.id,
