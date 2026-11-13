@@ -1,6 +1,7 @@
 import {
   type CheckLog,
   type CheckSummary,
+  BranchMovedError,
   type MergeOutcome,
   type OpenPullRequestInput,
   type PullRequestDetail,
@@ -68,6 +69,8 @@ interface MockRepo {
   comments: Map<number, string[]>;
   /** `${base}<-${head}` pairs that conflict when merged, as a test says. */
   conflicts: Set<string>;
+  /** Branches a test says gained a commit the next move does not follow from. */
+  moved: Set<string>;
   /** Every branch merge asked for, in order. */
   merges: Array<{ base: string; head: string }>;
   /** Heads made by bringing the base into a PR, to the head they were made on. */
@@ -126,6 +129,7 @@ function repo(): MockRepo {
     labels: new Set(),
     comments: new Map(),
     conflicts: new Set(),
+    moved: new Set(),
     merges: [],
     baseMerges: new Map(),
     refusals: new Map(),
@@ -442,11 +446,35 @@ export class MockVcsClient implements VcsClient {
   }
 
   async moveBranch(branch: string, sha: string): Promise<void> {
+    const head = repo().branches.get(branch);
+    if (head && head !== sha && repo().moved.has(branch)) throw new BranchMovedError(branch, head);
     repo().branches.set(branch, sha);
     // A PR from this branch now points at the new head, as on GitHub.
     for (const pull of pulls().values()) {
       if (pull.headBranch === branch) pull.headSha = sha;
     }
+  }
+
+  async mergeOntoBranch(branch: string, sha: string): Promise<MergeOutcome> {
+    repo().merges.push({ base: branch, head: sha });
+    const head = repo().branches.get(branch);
+    if (!head) return { ok: false, reason: `No branch ${branch}.`, conflict: false };
+    if (repo().conflicts.has(`${branch}<-${sha}`)) {
+      return { ok: false, reason: "Merge conflict", conflict: true };
+    }
+    const ours = repo().commits.get(head);
+    const theirs = repo().commits.get(sha);
+    const merged = fakeSha();
+    repo().commits.set(merged, {
+      files: [...new Set([...(ours?.files ?? []), ...(theirs?.files ?? [])])],
+      message: theirs?.message ?? ours?.message ?? "",
+    });
+    repo().branches.set(branch, merged);
+    repo().moved.delete(branch);
+    for (const pull of pulls().values()) {
+      if (pull.headBranch === branch) pull.headSha = merged;
+    }
+    return { ok: true, sha: merged };
   }
 
   async deleteStagingBranch(branch: string): Promise<void> {

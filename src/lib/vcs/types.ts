@@ -296,8 +296,18 @@ export interface VcsClient {
    * GitHub count a conflict an agent resolved by hand as brought in.
    */
   recordMerge(sha: string, merged: string): Promise<string>;
-  /** Creates `branch` at `sha`, or fast-forwards it there. Never forces. */
+  /**
+   * Creates `branch` at `sha`, or fast-forwards it there. Never forces.
+   * Throws BranchMovedError when the branch exists and `sha` does not follow
+   * from where it is now.
+   */
   moveBranch(branch: string, sha: string): Promise<void>;
+  /**
+   * Brings the commit at `sha` onto `branch`'s current head as a new commit on
+   * that branch, so the branch holds both. Returns the branch's new head, or
+   * says the changes conflict. The branch does not move on a conflict.
+   */
+  mergeOntoBranch(branch: string, sha: string): Promise<MergeOutcome>;
   /** Deletes a staging branch. Refuses any branch outside STAGING_PREFIX. */
   deleteStagingBranch(branch: string): Promise<void>;
   /** The commit a branch points at, or null when there is no such branch. */
@@ -377,6 +387,18 @@ export class VcsError extends Error {
   ) {
     super(message);
     this.name = "VcsError";
+  }
+}
+
+/** A branch gained commits since the one being moved onto it was made. */
+export class BranchMovedError extends VcsError {
+  constructor(
+    readonly branch: string,
+    /** Where the branch points now. */
+    readonly head: string,
+  ) {
+    super(`The branch ${branch} moved on to ${head.slice(0, 7)}; the new commit does not follow from it.`, 422);
+    this.name = "BranchMovedError";
   }
 }
 
