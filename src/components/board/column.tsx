@@ -11,7 +11,7 @@ import { layout } from "./placement";
 import { AgentSelect, type ColumnAgentControls } from "./agent-select";
 import { ViewMenu } from "./view-menu";
 import { applyView, EMPTY_VIEW, isViewActive, type ColumnView } from "./view";
-import { formatCountdown, useCountdown } from "@/lib/hooks/use-countdown";
+import { useCountdown } from "@/lib/hooks/use-countdown";
 
 /** The header dot. Only In Progress breathes: it is the only live column. */
 const COLUMN_DOT: Record<ColumnId, { color: string; live: boolean }> = {
@@ -180,15 +180,6 @@ export const Column = memo(function Column({
 
       {bare && menu && !inlineMenu && <div className="flex justify-end">{menu}</div>}
 
-      {!view.collapsed && limited && agent?.selected && (
-        <LimitBanner
-          agentName={agent.selected.name}
-          until={agent.selected.limitedUntil!}
-          left={limitedFor}
-          note={agent.selected.limitNote}
-        />
-      )}
-
       {!view.collapsed && agent && (
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
@@ -289,40 +280,4 @@ function sameColumn(a: ColumnProps, b: ColumnProps): boolean {
     return false;
   }
   return true;
-}
-
-/**
- * The front of a column whose agent is out of usage: when it can work
- * again, counting down, and what the agent said.
- */
-function LimitBanner({
-  agentName,
-  until,
-  left,
-  note,
-}: {
-  agentName: string;
-  until: string;
-  left: number;
-  note: string | null;
-}) {
-  const at = new Date(until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  return (
-    <div
-      role="status"
-      title={note ?? undefined}
-      className="border-line bg-card flex items-center gap-2 rounded-md border px-2 py-1.5"
-    >
-      <span aria-hidden className="bg-idle size-1.5 shrink-0 rounded-full" />
-      <span className="text-muted min-w-0 flex-1 truncate text-[11px]">
-        {agentName} is out of usage · back at {at}
-      </span>
-      <span
-        aria-label={`Available in ${formatCountdown(left)}`}
-        className="text-ink shrink-0 font-mono text-[11px] font-semibold tabular-nums"
-      >
-        {formatCountdown(left)}
-      </span>
-    </div>
-  );
 }
