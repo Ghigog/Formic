@@ -1500,6 +1500,35 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.nextStandaloneTicketNumber(other.id)).toBe(1);
       });
 
+      it("separates a ticket from its Epic, cutting its dependencies both ways and nothing else", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const holder = await repo.createEpic({ projectId: p.id, title: "H", rawRequest: "H", position: 2 });
+        await repo.setStandalone(holder.id, true);
+        const [a, b, c] = await repo.createTickets([
+          ticket(epic.id, "S-1", { storyPoints: 3 }),
+          ticket(epic.id, "S-2", { position: 2, dependsOnKeys: ["S-1"] }),
+          ticket(epic.id, "S-3", { position: 3, dependsOnKeys: ["S-1", "S-2"] }),
+        ]);
+        await repo.addDependencies([{ ticketId: a!.id, dependsOnTicketId: c!.id }]);
+
+        await repo.separateTicket(a!.id, { epicId: holder.id, key: "T-9" });
+
+        const cards = await repo.boardCards(p.id);
+        const moved = cards.find((x) => x.id === a!.id)!;
+        expect(moved).toMatchObject({
+          epicId: holder.id,
+          key: "T-9",
+          detached: true,
+          fileScope: ["src/S-1"],
+          storyPoints: 3,
+          dependsOn: [],
+        });
+        expect(cards.find((x) => x.id === b!.id)!.dependsOn).toEqual([]);
+        expect(cards.find((x) => x.id === c!.id)!.dependsOn).toEqual([b!.id]);
+        expect(cards.find((x) => x.id === epic.id)).toMatchObject({ childCount: 2 });
+      });
+
       it("adds dependencies between tickets made separately", async () => {
         const p = await project();
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });

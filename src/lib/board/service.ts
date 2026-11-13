@@ -152,6 +152,12 @@ export async function applyTransition(
   }
 
   const detached = card.kind === "ticket" ? (t.detached ?? false) : undefined;
+  // Dropped on its own in To Do or Backlog, a ticket leaves its Epic for good.
+  const separateIfDroppedAlone = async () => {
+    if (card.kind === "ticket" && detached && (t.to === "todo" || t.to === "backlog")) {
+      await separateFromEpic(projectId, card, cards);
+    }
+  };
 
   // A reorder within a column changes where the card sits and nothing else:
   // status, stall, misplacement and agents all stay as they are. Without
@@ -184,6 +190,7 @@ export async function applyTransition(
       stage: card.stage,
       blockedReason: card.blockedReason,
     });
+    await separateIfDroppedAlone();
     return { ok: true, status: card.status, runId: null, problem: misplaced?.reason ?? null };
   }
 
@@ -213,6 +220,7 @@ export async function applyTransition(
       stage: card.stage,
       blockedReason: null,
     });
+    await separateIfDroppedAlone();
     return { ok: true, status, runId: null };
   }
 
@@ -351,6 +359,8 @@ export async function applyTransition(
     blockedReason: waitReason,
   });
 
+  await separateIfDroppedAlone();
+
   if (card.kind === "epic" && t.to === "backlog") await parkTickets(projectId, card.id);
   if (parked.length > 0) await unparkTickets(projectId, parked, cards);
 
@@ -474,6 +484,60 @@ async function parkTickets(projectId: string, epicId: string): Promise<void> {
       blockedReason: null,
     });
   }
+}
+
+/**
+ * A ticket dropped on its own, outside its Epic's group, leaves that Epic for
+ * good: it moves under a standalone holder with a key of its own, its
+ * dependencies on and from its former siblings are cut, and siblings that were
+ * only waiting on it become ready. File scope is untouched, so the queue still
+ * keeps them off its files. Tickets already standalone are left alone.
+ */
+async function separateFromEpic(
+  projectId: string,
+  card: BoardCard,
+  cards: BoardCard[],
+): Promise<void> {
+  const repo = repository();
+  // A standalone holder is never a card on the board, so only a real Epic is found.
+  const epic = card.epicId ? cards.find((c) => c.id === card.epicId && c.kind === "epic") : undefined;
+  if (!epic) return;
+
+  const holder = await repo.createEpic({
+    projectId,
+    title: card.title,
+    rawRequest: card.title,
+    position: 0,
+  });
+  await repo.setStandalone(holder.id, true);
+  await repo.separateTicket(card.id, {
+    epicId: holder.id,
+    key: `T-${await repo.nextStandaloneTicketNumber(projectId)}`,
+  });
+
+  const fresh = await repo.boardCards(projectId);
+  for (const sibling of fresh) {
+    // The ticket itself may have been waiting only on its former siblings.
+    if (sibling.kind !== "ticket" || (sibling.epicId !== epic.id && sibling.id !== card.id)) continue;
+    if (sibling.status !== "waiting" || !dependenciesMet(sibling, fresh)) continue;
+    await repo.move({
+      cardId: sibling.id,
+      kind: "ticket",
+      status: "ready",
+      stalledIn: null,
+      position: sibling.position,
+    });
+    await publish(projectId, {
+      type: "card.status",
+      cardId: sibling.id,
+      kind: "ticket",
+      status: "ready",
+      stalledIn: null,
+      stage: sibling.stage,
+      blockedReason: null,
+    });
+  }
+  await publish(projectId, { type: "card.created", cardId: card.id, kind: "ticket", epicId: holder.id });
 }
 
 /** Parked tickets back in To Do, ready or waiting on what they depend on. */
