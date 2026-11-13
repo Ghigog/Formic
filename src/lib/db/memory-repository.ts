@@ -1505,6 +1505,12 @@ export class MemoryRepository implements Repository {
     }
   }
 
+  async removeDependenciesOn(ticketId: string): Promise<void> {
+    for (const card of store().cards.values()) {
+      card.dependsOn = card.dependsOn.filter((id) => id !== ticketId);
+    }
+  }
+
   async deleteEpic(epicId: string): Promise<void> {
     const s = store();
     for (const card of [...s.cards.values()]) {

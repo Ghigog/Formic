@@ -7,10 +7,13 @@ const { repo, activeProject } = vi.hoisted(() => ({
     ticketDetail: vi.fn(),
     cardById: vi.fn(),
     updateTicket: vi.fn(),
+    removeDependenciesOn: vi.fn(),
   },
   activeProject: vi.fn(),
 }));
 
+const { releaseWaiting } = vi.hoisted(() => ({ releaseWaiting: vi.fn() }));
+vi.mock("@/lib/coder/stack", () => ({ releaseWaiting }));
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
 vi.mock("@/lib/board/project", () => ({ activeProject }));
 
@@ -35,6 +38,8 @@ describe("PATCH /api/tickets/[id]/archive", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ archived: true });
     expect(repo.updateTicket).toHaveBeenCalledWith("t-1", { archived: true });
+    expect(repo.removeDependenciesOn).toHaveBeenCalledWith("t-1");
+    expect(releaseWaiting).toHaveBeenCalledWith("p-1");
   });
 
   it("404s for an unknown ticket", async () => {
