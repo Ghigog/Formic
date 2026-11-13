@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitLabClient } from "./gitlab";
-import { VcsError } from "./types";
+import { BranchMovedError, VcsError } from "./types";
 import { runTitle } from "@/lib/runner/workflow";
 
 /**
@@ -96,8 +96,18 @@ describe("files and branches", () => {
     on("GET", /^\/repository\/branches\/formic%2Ft-1$/, { commit: { id: "old" } });
     on("GET", /^\/repository\/merge_base/, { id: "elsewhere" });
 
-    await expect(client().moveBranch("formic/t-1", "new")).rejects.toThrow(/does not follow/);
+    const err = await client().moveBranch("formic/t-1", "new").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BranchMovedError);
+    expect(err).toMatchObject({ branch: "formic/t-1", head: "old" });
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  it("cherry-picks a commit onto a branch that moved, or reports the conflict", async () => {
+    on("POST", /^\/repository\/commits\/agent1\/cherry_pick\?branch=formic%2Ft-1$/, { id: "picked" });
+    expect(await client().mergeOntoBranch("formic/t-1", "agent1")).toEqual({ ok: true, sha: "picked" });
+
+    on("POST", /cherry_pick\?branch=other$/, () => Response.json({ message: "Sorry, we cannot cherry-pick: conflict" }, { status: 400 }));
+    expect(await client().mergeOntoBranch("other", "agent1")).toMatchObject({ ok: false, conflict: true });
   });
 
   it("deletes only staging branches", async () => {
