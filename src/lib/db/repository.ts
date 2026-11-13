@@ -898,6 +898,13 @@ export interface BoardRepository {
    * never reused, so a deleted ticket's key keeps meaning that ticket.
    */
   nextStandaloneTicketNumber(projectId: string): Promise<number>;
+  /**
+   * Takes a ticket out of its Epic for good: reparents it under `epicId` with
+   * a new key, keeps it detached, and drops every dependency between it and
+   * the tickets of its former Epic, in both directions. File scope, branch,
+   * pull request, issue, points and status stay as they were.
+   */
+  separateTicket(ticketId: string, to: { epicId: string; key: string }): Promise<void>;
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   /** Adds dependency edges by ticket id, for dependencies that name tickets created elsewhere. */
   addDependencies(edges: Array<{ ticketId: string; dependsOnTicketId: string }>): Promise<void>;
