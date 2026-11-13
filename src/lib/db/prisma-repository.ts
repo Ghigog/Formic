@@ -1376,6 +1376,26 @@ export class PrismaRepository implements Repository {
     }
   }
 
+  async separateTicket(ticketId: string, to: { epicId: string; key: string }): Promise<void> {
+    await prisma().$transaction(async (tx) => {
+      const ticket = await tx.ticket.findUnique({ where: { id: ticketId }, select: { epicId: true } });
+      if (!ticket) return;
+      const former = { epicId: ticket.epicId };
+      await tx.ticketDependency.deleteMany({
+        where: {
+          OR: [
+            { ticketId, dependsOn: former },
+            { dependsOnTicketId: ticketId, ticket: former },
+          ],
+        },
+      });
+      await tx.ticket.update({
+        where: { id: ticketId },
+        data: { epicId: to.epicId, key: to.key, detached: true },
+      });
+    });
+  }
+
   async setStandalone(epicId: string, standalone: boolean): Promise<void> {
     await prisma().epic.updateMany({ where: { id: epicId }, data: { standalone } });
   }
@@ -1573,6 +1593,10 @@ export class PrismaRepository implements Repository {
   async addDependencies(edges: Array<{ ticketId: string; dependsOnTicketId: string }>): Promise<void> {
     if (edges.length === 0) return;
     await prisma().ticketDependency.createMany({ data: edges, skipDuplicates: true });
+  }
+
+  async removeDependenciesOn(ticketId: string): Promise<void> {
+    await prisma().ticketDependency.deleteMany({ where: { dependsOnTicketId: ticketId } });
   }
 
   async deleteEpic(epicId: string): Promise<void> {

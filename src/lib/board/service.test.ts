@@ -179,6 +179,62 @@ describe("applyTransition within one column", () => {
   });
 });
 
+describe("applyTransition pulling a ticket out of its Epic", () => {
+  const dropAlone = (id: string) =>
+    applyTransition(PROJECT, {
+      cardId: id,
+      kind: "ticket",
+      from: "todo",
+      to: "todo",
+      position: 1e9,
+      detached: true,
+      actor: "user",
+    });
+
+  it("makes it a standalone ticket and frees its former siblings", async () => {
+    const [epic, t1, t2, t3] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "ready", fileScope: ["src/lib/auth"] },
+      { status: "waiting" },
+      { status: "waiting" },
+    ]);
+    t2!.dependsOn = [t1!.id];
+    t3!.dependsOn = [t1!.id];
+    seedMemory([epic!, t1!, t2!, t3!]);
+
+    expect((await dropAlone(t1!.id)).ok).toBe(true);
+
+    const repo = repository();
+    const moved = await repo.cardById(t1!.id);
+    expect(moved?.key).toMatch(/^T-\d+$/);
+    expect(moved).toMatchObject({ detached: true, fileScope: ["src/lib/auth"] });
+    expect(moved?.epicId).not.toBe(epic!.id);
+    expect(await repo.cardById(t2!.id)).toMatchObject({ status: "ready", dependsOn: [] });
+    expect(await repo.cardById(t3!.id)).toMatchObject({ status: "ready", dependsOn: [] });
+    expect((await repo.cardById(epic!.id))?.childCount).toBe(2);
+  });
+
+  it("keeps a former sibling queued behind it while it runs", async () => {
+    const [epic, t1, t2] = makeEpicWithChildren({ status: "ready" }, [
+      { status: "ready", fileScope: ["src/lib/auth"] },
+      { status: "ready", fileScope: ["src/lib/auth"] },
+    ]);
+    seedMemory([epic!, t1!, t2!]);
+    await dropAlone(t1!.id);
+    await repository().updateTicket(t1!.id, { status: "running" });
+
+    const result = await applyTransition(PROJECT, {
+      cardId: t2!.id,
+      kind: "ticket",
+      from: "todo",
+      to: "in_progress",
+      position: 1e9,
+      actor: "user",
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "queued" });
+  });
+});
+
 describe("applyTransition of an epic into To Do", () => {
   const PRD = { summary: "s", problem: "p", scope: ["x"], successCriteria: ["y"] };
   const drop = (id: string) =>

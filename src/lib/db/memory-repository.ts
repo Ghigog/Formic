@@ -1305,6 +1305,24 @@ export class MemoryRepository implements Repository {
     if (input.detached !== undefined) card.detached = input.detached;
   }
 
+  async separateTicket(ticketId: string, to: { epicId: string; key: string }): Promise<void> {
+    const s = store();
+    const card = s.cards.get(ticketId);
+    if (!card) return;
+    const formerId = card.epicId;
+    const siblings = new Set(
+      [...s.cards.values()].filter((c) => c.kind === "ticket" && c.epicId === formerId && c.id !== ticketId).map((c) => c.id),
+    );
+    card.dependsOn = card.dependsOn.filter((id) => !siblings.has(id));
+    for (const id of siblings) {
+      const sibling = s.cards.get(id)!;
+      sibling.dependsOn = sibling.dependsOn.filter((d) => d !== ticketId);
+    }
+    card.epicId = to.epicId;
+    card.key = to.key;
+    card.detached = true;
+  }
+
   async setStandalone(epicId: string, standalone: boolean): Promise<void> {
     const card = store().cards.get(epicId);
     if (card) card.standalone = standalone;
@@ -1484,6 +1502,12 @@ export class MemoryRepository implements Repository {
       if (card && !card.dependsOn.includes(edge.dependsOnTicketId)) {
         card.dependsOn.push(edge.dependsOnTicketId);
       }
+    }
+  }
+
+  async removeDependenciesOn(ticketId: string): Promise<void> {
+    for (const card of store().cards.values()) {
+      card.dependsOn = card.dependsOn.filter((id) => id !== ticketId);
     }
   }
 

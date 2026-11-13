@@ -22,6 +22,7 @@ import {
   type IssueRef,
   type IssueState,
   type IssueSummary,
+  BranchMovedError,
   type MergeOutcome,
   type OpenPullRequestInput,
   type PullRequestDetail,
@@ -257,14 +258,27 @@ export class GitLabClient implements VcsClient {
       `/repository/merge_base?refs[]=${encodePath(current)}&refs[]=${encodePath(sha)}`,
       { allow404: true },
     );
-    if (base?.id !== current) {
-      throw new VcsError(`Refusing to move ${branch}: ${sha.slice(0, 7)} does not follow from where it is now.`, 422);
-    }
+    if (base?.id !== current) throw new BranchMovedError(branch, current);
     // GitLab has no endpoint that moves a branch, so it is made again at the
     // new commit. A protected branch refuses the delete, which is the refusal
     // wanted: Formic never moves those by hand.
     await this.api(`/repository/branches/${encodePath(branch)}`, { method: "DELETE" });
     await this.api(`/repository/branches?branch=${encodePath(branch)}&ref=${encodePath(sha)}`, { method: "POST" });
+  }
+
+  async mergeOntoBranch(branch: string, sha: string): Promise<MergeOutcome> {
+    // GitLab merges a branch only through a merge request, so the commit is
+    // cherry-picked onto the branch instead: the same result for one commit.
+    try {
+      const picked = await this.api<{ id: string }>(
+        `/repository/commits/${encodePath(sha)}/cherry_pick?branch=${encodePath(branch)}`,
+        { method: "POST" },
+      );
+      return { ok: true, sha: picked.id };
+    } catch (e) {
+      if (e instanceof VcsError && e.status === 400) return { ok: false, reason: e.message, conflict: /conflict/i.test(e.message) };
+      throw e;
+    }
   }
 
   async deleteStagingBranch(branch: string): Promise<void> {
