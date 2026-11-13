@@ -901,6 +901,8 @@ export interface BoardRepository {
   createTickets(input: CreateTicketInput[]): Promise<BoardCard[]>;
   /** Adds dependency edges by ticket id, for dependencies that name tickets created elsewhere. */
   addDependencies(edges: Array<{ ticketId: string; dependsOnTicketId: string }>): Promise<void>;
+  /** Removes every dependency edge that points at this ticket, so nothing waits for it any more. */
+  removeDependenciesOn(ticketId: string): Promise<void>;
   /** Makes an Epic wait for other Epics, by id. Waits it already has are kept, none twice. */
   setEpicWaits(epicId: string, waitsForEpicIds: string[]): Promise<void>;
   move(input: MoveInput): Promise<void>;
