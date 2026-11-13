@@ -2531,8 +2531,9 @@ export class PrismaRepository implements Repository {
 
   async finishAudit(id: string, result: AuditResult): Promise<void> {
     const db = prisma();
-    const row = await db.audit.update({
-      where: { id },
+    // Only a run still going can end: a stopped one stays stopped.
+    const { count } = await db.audit.updateMany({
+      where: { id, status: "running" },
       data: {
         status: result.status,
         stars: result.stars ?? null,
@@ -2549,6 +2550,8 @@ export class PrismaRepository implements Repository {
         finishedAt: new Date(),
       },
     });
+    if (count === 0) return;
+    const row = await db.audit.findUniqueOrThrow({ where: { id } });
     await db.audit.deleteMany({
       where: {
         projectId: row.projectId,

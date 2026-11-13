@@ -1153,6 +1153,14 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.auditsFor(p.id)).map((x) => x.epicId)).toEqual([null]);
       });
 
+      it("ignores a finish for an audit that already ended", async () => {
+        const p = await project();
+        const a = await repo.startAudit(p.id, "qa");
+        await repo.finishAudit(a.id, { status: "failed", error: "Stopped" });
+        await repo.finishAudit(a.id, { status: "done", stars: 5, quote: "q", summary: "s", report, files: [] });
+        expect((await repo.auditsFor(p.id)).map((x) => [x.status, x.stars, x.error])).toEqual([["failed", null, "Stopped"]]);
+      });
+
       it("keeps the last report when a newer run fails", async () => {
         const p = await project();
         const done = await repo.startAudit(p.id, "qa");

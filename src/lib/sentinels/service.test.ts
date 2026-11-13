@@ -12,6 +12,7 @@ const logAudit = vi.fn(async (..._args: unknown[]) => {});
 const finishAudit = vi.fn(async (..._args: unknown[]) => {});
 const sentinelAgent = vi.fn();
 const startCliSentinel = vi.fn();
+const cancelJob = vi.fn(async (..._args: unknown[]) => {});
 const projectFor = vi.fn();
 const credentialsForProject = vi.fn();
 const listFiles = vi.fn();
@@ -39,14 +40,18 @@ vi.mock("@/lib/agents/pipeline", () => ({
   },
 }));
 vi.mock("@/lib/agents/presets", () => ({ sentinelAgent: (...a: unknown[]) => sentinelAgent(...a) }));
-vi.mock("@/lib/runner/runner", () => ({ startCliSentinel: (...a: unknown[]) => startCliSentinel(...a) }));
+vi.mock("@/lib/runner/runner", () => ({
+  startCliSentinel: (...a: unknown[]) => startCliSentinel(...a),
+  cancelJob: (...a: unknown[]) => cancelJob(...a),
+}));
 vi.mock("@/lib/board/project", () => ({ projectFor: (...a: unknown[]) => projectFor(...a) }));
 vi.mock("@/lib/auth/credentials", () => ({ credentialsForProject: (...a: unknown[]) => credentialsForProject(...a) }));
 vi.mock("@/lib/vcs", () => ({ vcs: () => ({ listFiles, snapshot, readFile, branchHead }) }));
 vi.mock("./gather", () => ({ gatherEvidence: (...a: unknown[]) => gatherEvidence(...a) }));
 vi.mock("./agent", () => ({ runAudit: (...a: unknown[]) => runAudit(...a) }));
 
-import { sentinelsFor, summonSentinel } from "./service";
+import { sentinelsFor, stopSentinel, summonSentinel } from "./service";
+import { SENTINEL_STOPPED } from "./view";
 import { SENTINELS } from "./roster";
 import { cannedRubric } from "./rubric";
 
@@ -332,5 +337,51 @@ describe("the detached run", () => {
       await runJob();
       expect(finishAudit).toHaveBeenLastCalledWith("a1", { status: "failed", error: "The audit failed.", model: null });
     });
+  });
+});
+
+describe("stopSentinel", () => {
+  const running = (extra = {}) => ({
+    id: "a1",
+    sentinel: locked.id,
+    kind: "audit",
+    status: "running",
+    startedAt: new Date().toISOString(),
+    log: [],
+    runnerJob: null,
+    ...extra,
+  });
+
+  it("is false when nothing is running", async () => {
+    audits = [calibrated];
+    expect(await stopSentinel("p", locked.id)).toBe(false);
+    expect(finishAudit).not.toHaveBeenCalled();
+  });
+
+  it("ends a running audit as stopped, and cancels a CLI run's job", async () => {
+    audits = [calibrated, running({ runnerJob: "job-1" })];
+    expect(await stopSentinel("p", locked.id)).toBe(true);
+    expect(finishAudit).toHaveBeenCalledWith("a1", { status: "failed", error: SENTINEL_STOPPED });
+    expect(cancelJob).toHaveBeenCalledWith("p", "job-1");
+  });
+
+  it("aborts a mock run in process: no report is written", async () => {
+    vi.useFakeTimers();
+    try {
+      sentinelAgent.mockResolvedValue({ kind: "mock" });
+      audits = [calibrated];
+      await summonSentinel("p", locked.id, "audit");
+      const p = runJob();
+      audits = [calibrated, running()];
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await stopSentinel("p", locked.id)).toBe(true);
+      await vi.runAllTimersAsync();
+      await p;
+      expect(finishAudit).toHaveBeenCalledTimes(1);
+      expect(finishAudit).toHaveBeenCalledWith("a1", { status: "failed", error: SENTINEL_STOPPED });
+      expect(cancelJob).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

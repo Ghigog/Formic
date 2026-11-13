@@ -1260,7 +1260,8 @@ export interface AuditRepository {
   /**
    * Ends an audit. A report replaces the sentinel's earlier ones of the same
    * kind; a failure keeps the last report, so a bad run never costs the
-   * project its stars or its rubric.
+   * project its stars or its rubric. Only a run still "running" can end: a
+   * finish for one already ended (stopped) is ignored.
    */
   finishAudit(id: string, result: AuditResult): Promise<void>;
   /** Records the Epic made from an audit's report. */

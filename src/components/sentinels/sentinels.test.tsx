@@ -6,7 +6,7 @@ import { ColonyFx } from "@/components/colony/fx";
 import { SoundEngine } from "@/components/colony/sound";
 import { resetViewport, setViewportMatches } from "@/test/viewport";
 import { SENTINELS } from "@/lib/sentinels/roster";
-import type { SentinelStates } from "@/lib/sentinels/view";
+import { SENTINEL_STOPPED, type SentinelStates } from "@/lib/sentinels/view";
 import { SentinelsPage } from "./sentinels";
 import { SentinelsProvider } from "./store";
 
@@ -486,5 +486,59 @@ describe("SentinelsPage summary layout", () => {
     const section = grade.closest("section")!;
     expect(section.className).not.toMatch(/flex-col/);
     expect(grade.parentElement!.className).not.toMatch(/flex-(col|wrap)/);
+  });
+});
+
+describe("Stopping a Sentinel", () => {
+  const x = SENTINELS[0]!;
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function openRunning() {
+    const running = states([x.id]);
+    running[x.id] = { ...running[x.id]!, running: { kind: "audit", log: ["Reading"], startedAt: new Date().toISOString() } };
+    const stopped = states([x.id]);
+    stopped[x.id] = { ...stopped[x.id]!, error: SENTINEL_STOPPED };
+    let finish!: () => void;
+    const answer = new Promise<void>((r) => (finish = r));
+    const fetchMock = vi.fn(async () => {
+      await answer;
+      return { ok: true, json: async () => ({ sentinels: stopped }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <ColonyProvider storageKey="colony-test-sentinels-stop" cards={[]} extras={{}}>
+        <SentinelsProvider initial={running} level={34}>
+          <Open />
+          <SentinelsPage repoName="repo" onOpenEpic={() => {}} />
+        </SentinelsProvider>
+      </ColonyProvider>,
+    );
+    await userEvent.click(screen.getByText("open sentinels"));
+    return { fetchMock, finish };
+  }
+
+  it("stops from the card without opening the report, then reads Stopped", async () => {
+    const { fetchMock, finish } = await openRunning();
+    const card = document.querySelector<HTMLElement>(`[data-card="${x.id}"]`)!;
+    await userEvent.click(within(card).getByRole("button", { name: "Stop" }));
+    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${x.id}/stop`, { method: "POST" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const busy = within(card).getByRole("button", { name: "Stopping…" }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    await act(async () => finish());
+    expect(await within(card).findByText("Stopped")).toBeTruthy();
+    expect(within(card).queryByText("Last run failed")).toBeNull();
+  });
+
+  it("stops from the report header in place of Running…", async () => {
+    const { fetchMock, finish } = await openRunning();
+    const card = document.querySelector<HTMLElement>(`[data-card="${x.id}"]`)!;
+    await userEvent.click(card);
+    const report = screen.getByRole("complementary", { name: "Audit report" });
+    expect(within(report).queryByText("Running…")).toBeNull();
+    await userEvent.click(within(report).getByRole("button", { name: "Stop" }));
+    expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${x.id}/stop`, { method: "POST" });
+    await act(async () => finish());
+    expect(await within(report).findByText(/Stopped by you/)).toBeTruthy();
   });
 });
