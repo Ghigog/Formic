@@ -13,6 +13,7 @@ vi.mock("@/lib/board/project", () => ({
   noProject: () => Response.json({ error: "Pick a repository first." }, { status: 409 }),
 }));
 vi.mock("@/lib/board/service", () => ({ createTodoItem }));
+vi.mock("@/lib/coder/stack", () => ({ releaseWaiting: vi.fn() }));
 
 const { GET } = await import("./archived/route");
 const { PATCH } = await import("./[id]/archive/route");
@@ -32,7 +33,13 @@ describe("PATCH /api/tickets/{id}/archive", () => {
     const ticketDetail = vi.fn().mockResolvedValue({ id: "ticket-1", status: "stopped" });
     const cardById = vi.fn().mockResolvedValue({ id: "ticket-1" });
     const updateTicket = vi.fn().mockResolvedValue(undefined);
-    repository.mockReturnValue({ projectOfCard, ticketDetail, cardById, updateTicket });
+    repository.mockReturnValue({
+      projectOfCard,
+      ticketDetail,
+      cardById,
+      updateTicket,
+      removeDependenciesOn: vi.fn().mockResolvedValue(undefined),
+    });
     activeProject.mockResolvedValue(project);
 
     const res = await PATCH(archiveRequest("ticket-1"), {
@@ -49,7 +56,13 @@ describe("PATCH /api/tickets/{id}/archive", () => {
     const ticketDetail = vi.fn().mockResolvedValue({ id: "ticket-1", status: "stopped" });
     const cardById = vi.fn().mockResolvedValue({ id: "ticket-1" });
     const updateTicket = vi.fn().mockResolvedValue(undefined);
-    repository.mockReturnValue({ projectOfCard, ticketDetail, cardById, updateTicket });
+    repository.mockReturnValue({
+      projectOfCard,
+      ticketDetail,
+      cardById,
+      updateTicket,
+      removeDependenciesOn: vi.fn().mockResolvedValue(undefined),
+    });
     activeProject.mockResolvedValue(project);
 
     const res = await PATCH(archiveRequest("ticket-1"), {
@@ -92,6 +105,7 @@ describe("PATCH /api/tickets/{id}/archive", () => {
       ticketDetail: vi.fn().mockResolvedValue({ id: "ticket-1", status: "stopped" }),
       cardById: vi.fn().mockResolvedValue({ id: "ticket-1" }),
       updateTicket: vi.fn(),
+      removeDependenciesOn: vi.fn().mockResolvedValue(undefined),
     });
     activeProject.mockResolvedValue(project);
     const call = () =>
@@ -108,6 +122,7 @@ describe("PATCH /api/tickets/{id}/archive", () => {
       projectOfCard: vi.fn().mockResolvedValue("project_other"),
       ticketDetail: vi.fn(),
       updateTicket: vi.fn(),
+      removeDependenciesOn: vi.fn().mockResolvedValue(undefined),
     });
     const other = await PATCH(archiveRequest("ticket-1"), {
       params: Promise.resolve({ id: "ticket-1" }),
@@ -118,6 +133,7 @@ describe("PATCH /api/tickets/{id}/archive", () => {
       projectOfCard: vi.fn().mockResolvedValue(project.id),
       ticketDetail: vi.fn().mockResolvedValue(null),
       updateTicket: vi.fn(),
+      removeDependenciesOn: vi.fn().mockResolvedValue(undefined),
     });
     const epic = await PATCH(archiveRequest("epic-1"), {
       params: Promise.resolve({ id: "epic-1" }),
@@ -131,6 +147,7 @@ describe("PATCH /api/tickets/{id}/archive", () => {
       projectOfCard: vi.fn(),
       ticketDetail: vi.fn(),
       updateTicket: vi.fn(),
+      removeDependenciesOn: vi.fn().mockResolvedValue(undefined),
     });
 
     const res = await PATCH(archiveRequest("ticket-1"), {
