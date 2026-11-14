@@ -12,7 +12,7 @@ import { modelLabel } from "@/lib/agents/models";
 import { provider as providerInfo, shortModelName } from "@/lib/llm/providers";
 import { AutoTour } from "@/components/onboarding/tour";
 import { ProviderLogo } from "./provider-logo";
-import { useCountdown } from "@/lib/hooks/use-countdown";
+import { formatCountdown, useCountdown } from "@/lib/hooks/use-countdown";
 
 /** "Sonnet 5" for a known Claude model, the bare id for anything else. */
 function modelName(model: string): string {
@@ -42,6 +42,11 @@ export function AgentSelect({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const left = useCountdown(selected?.limitedUntil);
+  const backAt =
+    left !== null && selected?.limitedUntil
+      ? new Date(selected.limitedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      : null;
   const isAssistant = slot === "assistant";
   const role = `${AGENT_ROLE_LABELS[isAssistant ? "pm" : COLUMN_AGENT_ROLE[slot]]} Agent`;
   // The PM's agents have no column; a column lists only its own.
@@ -87,23 +92,45 @@ export function AgentSelect({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`${name}: ${selected?.name ?? `built-in ${role}`}. Change`}
+        title={backAt && selected ? (selected.limitNote ?? undefined) : undefined}
+        aria-label={
+          backAt && selected
+            ? `${name}: ${selected.name}, out of usage until ${backAt}. Change`
+            : `${name}: ${selected?.name ?? `built-in ${role}`}. Change`
+        }
         className={cn(
           "bg-card flex h-11 w-full items-center gap-1.5 rounded-md border px-2 md:h-8 text-left text-[11px] transition-colors",
           "border-line hover:border-clay",
         )}
       >
-        {selected ? <ProviderLogo provider={selected.provider} size={14} /> : <AgentIcon />}
-        <span className="text-ink min-w-0 flex-1 truncate font-medium">
-          {selected ? selected.name : "No agent"}
-        </span>
-        <span className="text-muted shrink-0 font-mono text-[10px]">
-          {selected
-            ? selected.model
-              ? modelName(selected.model)
-              : (providerInfo(selected.provider)?.label ?? selected.provider).split(" (")[0]
-            : role}
-        </span>
+        {backAt && selected && left !== null ? (
+          <>
+            <span aria-hidden className="bg-idle size-1.5 shrink-0 rounded-full" />
+            <span role="status" className="text-muted min-w-0 flex-1 truncate">
+              {selected.name} is out of usage · back at {backAt}
+            </span>
+            <span
+              aria-label={`Available in ${formatCountdown(left)}`}
+              className="text-ink shrink-0 font-mono font-semibold tabular-nums"
+            >
+              {formatCountdown(left)}
+            </span>
+          </>
+        ) : (
+          <>
+            {selected ? <ProviderLogo provider={selected.provider} size={14} /> : <AgentIcon />}
+            <span className="text-ink min-w-0 flex-1 truncate font-medium">
+              {selected ? selected.name : "No agent"}
+            </span>
+            <span className="text-muted shrink-0 font-mono text-[10px]">
+              {selected
+                ? selected.model
+                  ? modelName(selected.model)
+                  : (providerInfo(selected.provider)?.label ?? selected.provider).split(" (")[0]
+                : role}
+            </span>
+          </>
+        )}
         <Chevron />
       </button>
 
