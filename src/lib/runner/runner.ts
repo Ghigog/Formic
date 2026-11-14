@@ -21,7 +21,7 @@ import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
 import { attemptsFor } from "@/lib/budget/in-process";
 import { diagnose, lastWords } from "@/lib/agents/limits";
-import { mergePlan, planFraction, planFromSummary } from "@/lib/agents/plan";
+import { handedInPlan, mergePlan, planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo, secretNameFor, type ProviderInfo } from "@/lib/llm/providers";
 import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
 import { decompositionGuidance } from "@/lib/agents/decomposition-guidance";
@@ -552,15 +552,20 @@ export function loopPayload(input: {
 async function recordCliWork(
   projectId: string,
   ticketId: string,
-  summary: string,
+  messages: string[],
   role: "coder" | "reviewer" = "coder",
 ): Promise<void> {
-  const incoming = planFromSummary(summary);
+  const summary = messages.at(-1) ?? "";
+  // The checklist is on the agent's own commit, which a later merge or
+  // carried-workflow commit on top of it does not repeat.
+  const checklist = [...messages].reverse().map(planFromSummary).find((c) => c.length > 0) ?? [];
+  const stored = (await repository().ticketDetail(ticketId))?.plan ?? [];
+  const own = stored.filter((s) => (s.role ?? "coder") === role);
+  const incoming = role === "coder" ? handedInPlan(own, checklist) : checklist;
   if (incoming.length > 0) {
-    const stored = (await repository().ticketDetail(ticketId))?.plan ?? [];
     const steps = mergePlan(stored, incoming, role);
     await repository().updateTicket(ticketId, { plan: steps });
-    await publish(projectId, { type: "ticket.plan", ticketId, steps: steps.filter((s) => s.role === role) });
+    await publish(projectId, { type: "ticket.plan", ticketId, steps: steps.filter((s) => (s.role ?? "coder") === role) });
   }
   const text = summary.trim();
   if (text) {
@@ -1886,14 +1891,14 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
 
     if (result.mode === "fix") {
       const message = change.messages.at(-1) ?? "";
-      await recordCliWork(projectId, ticket.id, message, ticket.status === "review" ? "reviewer" : "coder");
+      await recordCliWork(projectId, ticket.id, change.messages, ticket.status === "review" ? "reviewer" : "coder");
       const { recordFix } = await import("@/lib/review/pipeline");
       await recordFix(projectId, ticket, ticket.prNumber!, head, handoffFromSummary(message));
       return;
     }
 
     const message = change.messages.at(-1) ?? "";
-    await recordCliWork(projectId, ticket.id, message, ticket.status === "review" ? "reviewer" : "coder");
+    await recordCliWork(projectId, ticket.id, change.messages, ticket.status === "review" ? "reviewer" : "coder");
     const [first, ...rest] = message.split("\n");
     const line = (first ?? "").trim();
     const summary =

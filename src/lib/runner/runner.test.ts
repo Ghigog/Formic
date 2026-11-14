@@ -831,6 +831,57 @@ describe("taking a CLI agent's work", () => {
     expect(after.blockedReason).not.toContain(".formic/carry");
   });
 
+  describe("the coder's plan when its work is taken", () => {
+    const live = [
+      { step: "Read the code", status: "in_progress", role: "coder" },
+      { step: "Write the tests", status: "pending", role: "coder" },
+    ] as const;
+    const planOf = async (id: string) => (await repository().ticketDetail(id))!.plan;
+
+    it("replaces the live plan with the summary's checklist, all done", async () => {
+      const { ticket, job, staging } = await dispatched();
+      await repository().updateTicket(ticket.id, { plan: [...live] });
+      MockVcsClient.stage(staging, ["src/lib/feature/a.ts"], "T-1: Add it\n\nDone.\n\nPlan:\n- [x] Read\n- [x] Write\n- [x] Ship");
+
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+      expect((await planOf(ticket.id)).map((s) => [s.step, s.status])).toEqual([
+        ["Read", "done"],
+        ["Write", "done"],
+        ["Ship", "done"],
+      ]);
+    });
+
+    it("reads the checklist from the agent's commit when a later commit sits on top of it", async () => {
+      const { ticket, job, staging } = await dispatched();
+      await repository().updateTicket(ticket.id, { plan: [...live] });
+      MockVcsClient.stage(staging, ["src/lib/feature/a.ts"], "T-1: Add it");
+      const compare = MockVcsClient.prototype.compare;
+      vi.spyOn(MockVcsClient.prototype, "compare").mockImplementation(async function (this: MockVcsClient, ...args) {
+        const c = await compare.apply(this, args);
+        return { ...c, messages: ["T-1: Add it\n\nPlan:\n- [x] Read\n- [ ] Docs", "Merge branch 'main'"] };
+      });
+
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+      vi.restoreAllMocks();
+
+      expect((await planOf(ticket.id)).map((s) => [s.step, s.status])).toEqual([
+        ["Read", "done"],
+        ["Docs", "pending"],
+      ]);
+    });
+
+    it("marks the steps done when the summary has no checklist", async () => {
+      const { ticket, job, staging } = await dispatched();
+      await repository().updateTicket(ticket.id, { plan: [...live] });
+      MockVcsClient.stage(staging, ["src/lib/feature/a.ts"], "T-1: Add it");
+
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+      expect((await planOf(ticket.id)).map((s) => s.status)).toEqual(["done", "done"]);
+    });
+  });
+
   it("keeps work outside the file scope on the ticket's branch and asks, when a running ticket uses the files", async () => {
     const { ticket, job, staging } = await dispatched();
     await runningIn(ticket.epicId, ["package.json"]);
