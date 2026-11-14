@@ -349,7 +349,7 @@ test("the PM composer shows no scrollbar, on desktop and on a phone", async ({ p
   await noScrollbar();
 });
 
-test("the assistant shade stays inside the window",async ({ page }) => {
+test("the assistant shade stays inside the window", async ({ page }) => {
   const shade = page.locator("section[aria-label=PM]");
   for (const size of [
     { width: 1024, height: 600 },
