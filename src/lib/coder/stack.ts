@@ -21,7 +21,7 @@ import { openCheckout, rebaseOntoTarget } from "./checkout";
 export async function stackBase(
   projectId: string,
   ticket: TicketDetail,
-): Promise<{ key: string; branch: string } | null> {
+): Promise<{ id: string; key: string; branch: string } | null> {
   const repo = repository();
   const cards = await repo.boardCards(projectId);
   const card = cards.find((c) => c.id === ticket.id);
@@ -32,7 +32,7 @@ export async function stackBase(
   if (!ready.ready || !ready.onto) return null;
   const below = await repo.ticketDetail(ready.onto.id);
   if (!below?.branchName) return null;
-  return { key: below.key, branch: below.branchName };
+  return { id: below.id, key: below.key, branch: below.branchName };
 }
 
 /** Tells the ticket's chat what it is stacked on, and what that means. */
@@ -40,6 +40,21 @@ export async function announceStack(projectId: string, ticket: TicketDetail, bel
   const text =
     `${below.key}'s pull request is still open, so ${ticket.key} builds on it: it starts from ${below.key}'s branch, ` +
     `and its pull request targets that branch, showing only ${ticket.key}'s own change. Once ${below.key} merges, it is pointed at ${target} and merges after it.`;
+  await repository().addCardChatMessage({ projectId, cardKind: "ticket", cardId: ticket.id, role: "assistant", content: text });
+  await publish(projectId, { type: "ticket.reply", ticketId: ticket.id, agent: "Coder Agent", text });
+}
+
+/**
+ * Parks a ticket in the queue until the prerequisite it would build on has
+ * merged: that branch conflicts with the merge target, so it cannot be
+ * stacked on, and the prerequisite is likely sorting itself out in review.
+ * The queue skips it until then (waitsForMerge), and the merge starts it.
+ */
+export async function holdForMerge(projectId: string, ticket: TicketDetail, below: { id: string; key: string }, target: string) {
+  const reason = `Waits for ${below.key} to merge: its branch conflicts with ${target}. ${ticket.key} starts on its own then.`;
+  await repository().updateTicket(ticket.id, { status: "queued", stalledIn: null, blockedReason: reason, waitsForMerge: below.id });
+  await publish(projectId, { type: "card.status", cardId: ticket.id, kind: "ticket", status: "queued", stalledIn: null, stage: ticket.stage, blockedReason: reason });
+  const text = `${below.key}'s branch conflicts with ${target}, so ${ticket.key} cannot build on it yet. It waits here and starts on its own once ${below.key} has merged.`;
   await repository().addCardChatMessage({ projectId, cardKind: "ticket", cardId: ticket.id, role: "assistant", content: text });
   await publish(projectId, { type: "ticket.reply", ticketId: ticket.id, agent: "Coder Agent", text });
 }

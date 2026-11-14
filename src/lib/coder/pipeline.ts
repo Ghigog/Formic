@@ -16,7 +16,7 @@ import { recordFollowUps } from "@/lib/board/follow-ups";
 import { runScouts, scoutReturned, scouting, ticketNoteTexts } from "./scouts";
 import { sharedNoteLine, sharedNotesFor } from "./shared-notes";
 import { newBranchName } from "@/lib/sandbox";
-import { announceStack, releaseWaiting, restack, stackBase, ticketBelow } from "./stack";
+import { announceStack, holdForMerge, releaseWaiting, restack, stackBase, ticketBelow } from "./stack";
 import { mergeTarget, vcs } from "@/lib/vcs";
 import {
   commitAndPush,
@@ -226,6 +226,10 @@ async function codeTicket(
       const synced = await client.mergeBranch(below.branch, target.branch).catch(
         (e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : String(e), conflict: false }),
       );
+      if (!synced.ok && synced.conflict) {
+        await holdForMerge(projectId, ticket, below, target.branch);
+        return;
+      }
       if (!synced.ok) {
         await stallTicket(
           projectId,

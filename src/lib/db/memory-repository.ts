@@ -110,6 +110,7 @@ interface TicketExtras {
   reviewedSha?: string | null;
   reviewedHead?: string | null;
   stackedOn?: string | null;
+  waitsForMerge?: string | null;
   lastCommitAt?: Date | null;
   stuckNote?: string | null;
   autoEscalatedAt?: string | null;
@@ -1302,6 +1303,7 @@ export class MemoryRepository implements Repository {
     card.misplacedReason = input.misplaced?.reason ?? null;
     // Out of a stall, the reason goes with it.
     if (input.stalledIn === null) card.blockedReason = null;
+    card.waitsForMerge = null;
     if (input.detached !== undefined) card.detached = input.detached;
   }
 
@@ -1787,6 +1789,7 @@ export class MemoryRepository implements Repository {
     if (update.reviewedSha !== undefined) extras.reviewedSha = update.reviewedSha;
     if (update.reviewedHead !== undefined) extras.reviewedHead = update.reviewedHead;
     if (update.stackedOn !== undefined) extras.stackedOn = update.stackedOn;
+    if (update.waitsForMerge !== undefined) card.waitsForMerge = update.waitsForMerge;
     if (update.moveOnly !== undefined && card) card.moveOnly = update.moveOnly;
     if (update.lastCommitAt !== undefined) extras.lastCommitAt = update.lastCommitAt;
     if (update.stuckNote !== undefined) extras.stuckNote = update.stuckNote;
@@ -2481,6 +2484,7 @@ function toDetail(
     reviewedSha: extras?.reviewedSha ?? null,
     reviewedHead: extras?.reviewedHead ?? null,
     stackedOn: extras?.stackedOn ?? null,
+    waitsForMerge: card.waitsForMerge ?? null,
     moveOnly: card.moveOnly ?? false,
     lastCommitAt: extras?.lastCommitAt?.toISOString() ?? null,
     stuckNote: extras?.stuckNote ?? null,
