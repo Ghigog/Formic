@@ -279,7 +279,7 @@ describe("Column with an agent out of usage", () => {
     limitNote: "Claude Code hit its usage limit.",
   };
 
-  it("counts down to when it is back, at the front of the column", () => {
+  it("counts down to when it is back, inside the agent dropdown", () => {
     renderInDnd(
       <Column
         id="in_progress"
@@ -291,6 +291,7 @@ describe("Column with an agent out of usage", () => {
     );
     const region = screen.getByRole("region", { name: "In Progress" });
     expect(region).toHaveAttribute("data-limited", "true");
+    expect(within(region).getAllByRole("button", { name: /Agent for/ })).toHaveLength(1);
     expect(within(region).getByRole("status")).toHaveTextContent("Claude (work) is out of usage");
     expect(within(region).getByLabelText(/^Available in 2:0[45]:\d\d$/)).toBeInTheDocument();
   });

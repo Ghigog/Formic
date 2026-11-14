@@ -108,4 +108,30 @@ describe("AgentSelect", () => {
     render(<AgentSelect slot="assistant" presets={[]} selected={undefined} onAssign={vi.fn()} onEdit={vi.fn()} />);
     expect(screen.getByText("PM Agent")).toBeInTheDocument();
   });
+
+  describe("out of usage", () => {
+    const limited = () =>
+      preset({
+        name: "Claude (work)",
+        limitedUntil: new Date(Date.now() + 2 * 3_600_000 + 5 * 60_000).toISOString(),
+        limitNote: "Hit its usage limit.",
+      });
+
+    it("shows the warning and countdown, and still opens the menu to switch agents", async () => {
+      const mine = { ...limited(), column: "todo" as const };
+      const other = preset({ id: "p2", name: "Other", column: "todo" });
+      const onAssign = vi.fn().mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      render(
+        <AgentSelect slot="todo" presets={[mine, other]} selected={mine} onAssign={onAssign} onEdit={vi.fn()} />,
+      );
+      const trigger = screen.getByRole("button", { name: /Agent for To Do: Claude \(work\), out of usage until .*\. Change/ });
+      expect(trigger).toHaveAttribute("title", "Hit its usage limit.");
+      expect(screen.getByRole("status")).toHaveTextContent("Claude (work) is out of usage · back at");
+      expect(screen.getByLabelText(/^Available in 2:0[45]:\d\d$/)).toBeInTheDocument();
+      await user.click(trigger);
+      await user.click(screen.getByRole("menuitemradio", { name: /Other/ }));
+      expect(onAssign).toHaveBeenCalledWith("p2");
+    });
+  });
 });
