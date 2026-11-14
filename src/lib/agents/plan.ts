@@ -39,6 +39,16 @@ export function planFromSummary(text: string): PlanStep[] {
   return steps;
 }
 
+/**
+ * The coder's steps once it hands its work in. Its own checklist stands as
+ * written, a step it left "- [ ]" still to do. With no checklist the work was
+ * taken whole, so nothing it left in progress or pending stays that way.
+ */
+export function handedInPlan(stored: readonly PlanStep[], checklist: readonly PlanStep[]): PlanStep[] {
+  if (checklist.length > 0) return [...checklist];
+  return stored.map((s) => (s.status === "done" ? s : { ...s, status: "done" as const }));
+}
+
 /** The plan role a step belongs to; a step without one is the coder's. */
 const roleOf = (s: PlanStep) => s.role ?? "coder";
 

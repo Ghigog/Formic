@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkPlan, currentStep, mergePlan, planFromSummary } from "./plan";
+import { checkPlan, currentStep, handedInPlan, mergePlan, planFromSummary } from "./plan";
 
 describe("checkPlan", () => {
   it("takes a well-formed plan", () => {
@@ -94,5 +94,30 @@ describe("mergePlan", () => {
       ["Fix the finding", "coder"],
       ["Read the diff", "reviewer"],
     ]);
+  });
+});
+
+describe("handedInPlan", () => {
+  const stored = [
+    { step: "Read", status: "done", role: "coder" },
+    { step: "Write", status: "in_progress", role: "coder" },
+    { step: "Ship", status: "pending", role: "coder" },
+  ] as const;
+
+  it("takes the summary's checklist as written, a step left undone stays to do", () => {
+    const checklist = [
+      { step: "Read", status: "done" },
+      { step: "Docs", status: "pending" },
+    ] as const;
+    expect(handedInPlan(stored, checklist)).toEqual(checklist);
+  });
+
+  it("marks what the agent left in progress or pending done when there is no checklist", () => {
+    expect(handedInPlan(stored, []).map((s) => s.status)).toEqual(["done", "done", "done"]);
+    expect(handedInPlan(stored, [])[1]).toMatchObject({ step: "Write", role: "coder" });
+  });
+
+  it("has nothing to say when there is no plan at all", () => {
+    expect(handedInPlan([], [])).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { TicketDrawer } from "./ticket-drawer";
 import { PlanSteps } from "@/components/ui/plan-steps";
 import { makeCard } from "@/test/cards";
@@ -503,6 +503,19 @@ describe("TicketDrawer", () => {
     open();
     await screen.findByRole("region", { name: "Ticket" });
     expect(screen.queryByText("Attachments")).not.toBeInTheDocument();
+  });
+});
+
+describe("the drawer's plan stepper", () => {
+  it("marches ants only while an agent is on the ticket, not on one waiting in review", async () => {
+    open({ ...VIEW, card: { ...card, status: "review", workingSince: null } });
+    await screen.findByRole("list", { name: "Agent's plan" });
+    expect(document.body.querySelectorAll(".ant-trail")).toHaveLength(0);
+    cleanup();
+
+    open({ ...VIEW, card: { ...card, status: "running", workingSince: new Date().toISOString() } });
+    await screen.findByRole("list", { name: "Agent's plan" });
+    expect(document.body.querySelectorAll(".ant-trail")).toHaveLength(1);
   });
 });
 
