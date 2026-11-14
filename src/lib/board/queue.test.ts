@@ -176,6 +176,51 @@ describe("a ticket waiting for a prerequisite to merge", () => {
   });
 });
 
+describe("a ticket dropped into In Progress before its prerequisites are ready", () => {
+  async function drop(mine: { id: string }) {
+    return applyTransition(PROJECT, { cardId: mine.id, kind: "ticket", from: "todo", to: "in_progress", position: 1, actor: "user" });
+  }
+
+  it("waits queued with the reason, then starts once the prerequisite opens its pull request", async () => {
+    const [epic, below, mine] = makeEpicWithChildren({ status: "ready" }, [{ status: "ready" }, { status: "waiting" }]);
+    mine!.dependsOn = [below!.id];
+    seedMemory([epic!, below!, mine!], {
+      [below!.id]: { description: "Below", acceptanceCriteria: [] },
+      [mine!.id]: { description: "Mine", acceptanceCriteria: [] },
+    });
+
+    const result = await drop(mine!);
+    expect(result).toMatchObject({ ok: true, status: "queued" });
+    expect(result.ok ? result.problem : undefined).toBeUndefined();
+    const card = await repository().cardById(mine!.id);
+    expect(card?.status).toBe("queued");
+    expect(card?.blockedReason).toBe(`Waiting for ${below!.key} to merge or open its pull request. It starts on its own then.`);
+    expect(launched).toEqual([]);
+
+    await startQueued(PROJECT);
+    expect((await repository().cardById(mine!.id))?.status).toBe("queued");
+    expect(launched).toEqual([]);
+
+    await repository().updateTicket(below!.id, { status: "review", prNumber: 4 });
+    await startQueued(PROJECT);
+    expect((await repository().cardById(mine!.id))?.status).toBe("running");
+    expect(launched).toEqual([`coder agent for ${mine!.key}`]);
+  });
+
+  it("starts once the prerequisite merges", async () => {
+    const [epic, below, mine] = makeEpicWithChildren({ status: "ready" }, [{ status: "ready" }, { status: "waiting" }]);
+    mine!.dependsOn = [below!.id];
+    seedMemory([epic!, below!, mine!], {
+      [below!.id]: { description: "Below", acceptanceCriteria: [] },
+      [mine!.id]: { description: "Mine", acceptanceCriteria: [] },
+    });
+    await drop(mine!);
+    await repository().updateTicket(below!.id, { status: "merged" });
+    await startQueued(PROJECT);
+    expect((await repository().cardById(mine!.id))?.status).toBe("running");
+  });
+});
+
 describe("withLease", () => {
   it("runs one holder at a time and lets the next in when it is done", async () => {
     const order: string[] = [];

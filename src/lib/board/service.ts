@@ -34,7 +34,7 @@ import { startedBy } from "@/lib/auth/actor";
 import { prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
 import { openWaits, readiness } from "@/lib/domain/stack";
-import { claimOrQueue, startQueued } from "@/lib/board/queue";
+import { claimOrQueue, prerequisiteReason, startQueued } from "@/lib/board/queue";
 
 /**
  * Server-side move handling. The board proposes; this decides.
@@ -111,15 +111,6 @@ async function whatIsWrong(
       const keys = waits.map((e) => e.key).join(", ");
       return `Waits for ${keys}: it starts once ${waits.length > 1 ? "they are" : `${keys} is`} done.`;
     }
-  }
-
-  if (to === "in_progress" && !dependenciesMet(card, cards)) {
-    const blocking = card.dependsOn
-      .map((id) => cards.find((c) => c.id === id))
-      .filter((c) => c && c.status !== "merged")
-      .map((c) => c!.key)
-      .join(", ");
-    return `${card.key} is waiting on ${blocking || "a dependency"}. It can start once every ticket it depends on has merged, or all but one have and that one has its pull request open, which it then builds on. Drag it back to To Do; it is ready to go then.`;
   }
 
   return null;
@@ -342,7 +333,14 @@ export async function applyTransition(
   // repository's reservation, so two moves landing together cannot both win.
   let status = dropped;
   let waitReason: string | null = null;
-  if (card.kind === "ticket" && dropped === "running") {
+  if (card.kind === "ticket" && dropped === "running" && !met) {
+    // Prerequisites unfinished: it waits in In Progress like one waiting on
+    // held files, and starts once they are ready (see startQueued).
+    status = "queued";
+    waitReason = prerequisiteReason(card, cards);
+    await write(status);
+    await repo.updateTicket(card.id, { blockedReason: waitReason });
+  } else if (card.kind === "ticket" && dropped === "running") {
     ({ status, reason: waitReason } = await claimOrQueue(projectId, card, write));
   } else {
     await write(status);
