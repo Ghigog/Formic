@@ -168,7 +168,7 @@ export function TicketDrawer({
   // A ticket of a bug Epic is a bug too.
   const tagType = card ? (card.workType ?? (view?.epic?.workType === "bug" ? "bug" : null)) : null;
   const notice = card && !card.misplacedReason ? classifyNotice(card) : null;
-  const working = card?.status === "running" || card?.status === "review";
+  const working = Boolean(card?.workingSince);
 
   return (
     <div
