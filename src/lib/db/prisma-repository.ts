@@ -857,6 +857,7 @@ export class PrismaRepository implements Repository {
         scouts: true,
         scoutPick: true,
         moveOnly: true,
+        waitsForMerge: true,
         dependsOn: { select: { dependsOnTicketId: true } },
         queen: { select: { id: true } },
         columnEntries: { where: { exitedAt: null }, select: { enteredAt: true }, take: 1 },
@@ -964,6 +965,7 @@ export class PrismaRepository implements Repository {
       dependsOn: t.dependsOn.map((d) => d.dependsOnTicketId),
       waitsFor: [],
       moveOnly: t.moveOnly,
+      waitsForMerge: t.waitsForMerge,
       prNumber: t.prNumber,
       prUrl: t.prUrl,
       blockedReason: t.blockedReason,
@@ -1319,6 +1321,8 @@ export class PrismaRepository implements Repository {
       // Out of a stall, the reason goes with it.
       ...(input.stalledIn === null ? { blockedReason: null } : {}),
     };
+    // A person's move drops a hold on a prerequisite's merge.
+    const ticketData = { ...data, waitsForMerge: null };
     if (input.kind === "epic") {
       await db.epic.update({ where: { id: input.cardId }, data });
     } else {
@@ -1351,7 +1355,7 @@ export class PrismaRepository implements Repository {
         await tx.ticket.update({
           where: { id: input.cardId },
           data: {
-            ...data,
+            ...ticketData,
             ...merge,
             ...(input.detached !== undefined ? { detached: input.detached } : {}),
           },
@@ -2647,6 +2651,7 @@ type TicketRow = {
   reviewedSha: string | null;
   reviewedHead: string | null;
   stackedOn: string | null;
+  waitsForMerge: string | null;
   moveOnly: boolean;
   lastCommitAt: Date | null;
   stuckNote: string | null;
@@ -2756,6 +2761,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
     reviewedSha: row.reviewedSha,
     reviewedHead: row.reviewedHead,
     stackedOn: row.stackedOn,
+    waitsForMerge: row.waitsForMerge,
     moveOnly: row.moveOnly,
     lastCommitAt: row.lastCommitAt?.toISOString() ?? null,
     stuckNote: row.stuckNote,

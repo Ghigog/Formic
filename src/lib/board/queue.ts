@@ -125,6 +125,11 @@ async function claimQueued(
         await stillWaits(card, TOP_PRIORITY_REASON);
         continue;
       }
+      const prerequisite = card.waitsForMerge ? cards.find((c) => c.id === card.waitsForMerge) : undefined;
+      if (prerequisite && prerequisite.status !== "merged") {
+        await stillWaits(card, card.blockedReason ?? `Waiting for ${prerequisite.key} to merge. It starts on its own then.`);
+        continue;
+      }
       const blocker = heldBy(card, claims);
       if (blocker) {
         await stillWaits(card, heldReason(blocker, projectId));
@@ -147,6 +152,7 @@ async function claimQueued(
       await repo.updateTicket(card.id, {
         status: "running",
         blockedReason: null,
+        waitsForMerge: null,
         ...(card.prNumber ? {} : { attempts: 0 }),
       });
       card.status = "running";

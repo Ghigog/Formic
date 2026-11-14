@@ -199,7 +199,7 @@ describe("stacked pull requests", () => {
     expect(merges).toContainEqual({ base: below, head: mergeTarget((await projectFor(PROJECT)).baseBranch) });
   });
 
-  it("stops and says why when that branch cannot take in the merged work", async () => {
+  it("waits queued for the prerequisite to merge when its branch conflicts with the merge target", async () => {
     const repo = repository();
     recordCheckouts();
     const epic = await repo.createEpic({ projectId: PROJECT, title: "Swap", rawRequest: "Swap boards", position: 1 });
@@ -217,8 +217,12 @@ describe("stacked pull requests", () => {
     await runCoderAgent(PROJECT, three!.id);
 
     const after = (await repo.ticketDetail(three!.id))!;
-    expect(after.status).toBe("blocked");
-    expect(after.blockedReason).toContain("could not take in the work merged since it was cut");
+    expect(after.status).toBe("queued");
+    expect(after.waitsForMerge).toBe(one!.id);
+    expect(after.blockedReason).toBe(
+      `Waits for T-1 to merge: its branch conflicts with ${mergeTarget((await projectFor(PROJECT)).baseBranch)}. T-3 starts on its own then.`,
+    );
+    expect(after.branchName).toBeNull();
   });
 
   describe("restacking onto the merge target", () => {

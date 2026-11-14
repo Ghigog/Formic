@@ -153,6 +153,29 @@ describe("a ticket sent back from review", () => {
   });
 });
 
+describe("a ticket waiting for a prerequisite to merge", () => {
+  it("is not started until that prerequisite merges, then starts and drops the hold", async () => {
+    const [epic, below, mine] = makeEpicWithChildren({ status: "ready" }, [{ status: "review", prNumber: 3 }, { status: "queued" }]);
+    seedMemory([epic!, below!, mine!], {
+      [below!.id]: { description: "Below", acceptanceCriteria: [] },
+      [mine!.id]: { description: "Mine", acceptanceCriteria: [] },
+    });
+    const reason = "Waits for X to merge: its branch conflicts with main. Y starts on its own then.";
+    await repository().updateTicket(mine!.id, { waitsForMerge: below!.id, blockedReason: reason });
+
+    await startQueued(PROJECT);
+    expect((await repository().cardById(mine!.id))?.status).toBe("queued");
+    expect((await repository().cardById(mine!.id))?.blockedReason).toBe(reason);
+    expect(launched).toEqual([]);
+
+    await repository().updateTicket(below!.id, { status: "merged" });
+    await startQueued(PROJECT);
+    expect((await repository().cardById(mine!.id))?.status).toBe("running");
+    expect((await repository().ticketDetail(mine!.id))?.waitsForMerge).toBeNull();
+    expect(launched).toEqual([`coder agent for ${mine!.key}`]);
+  });
+});
+
 describe("withLease", () => {
   it("runs one holder at a time and lets the next in when it is done", async () => {
     const order: string[] = [];

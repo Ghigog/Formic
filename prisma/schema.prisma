@@ -375,6 +375,9 @@ model Ticket {
   /// request it builds on, which its own pull request targets until that one
   /// merges. Null for a ticket on the merge target, and once retargeted.
   stackedOn         String?
+  /// The prerequisite (its id) whose merge this ticket waits for, held in the
+  /// queue because that prerequisite's branch conflicts with the merge target.
+  waitsForMerge     String?
   /// One line describing what the Coder Agent actually changed. Feeds the
   /// Epic showcase, which would otherwise only know ticket titles.
   summary           String?
