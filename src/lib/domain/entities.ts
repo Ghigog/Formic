@@ -246,6 +246,8 @@ export interface BoardCard {
   dependsOn: string[];
   /** Epics only: the ids of the Epics it waits for. [] otherwise. */
   waitsFor?: string[];
+  /** Tickets only: the id of the prerequisite whose merge it is queued for; null otherwise. */
+  waitsForMerge?: string | null;
   /** Tickets only: it only moves or renames files. */
   moveOnly?: boolean;
   prNumber: number | null;

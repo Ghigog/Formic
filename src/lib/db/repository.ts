@@ -376,6 +376,8 @@ export interface TicketDetail {
    * Null on the merge target.
    */
   stackedOn: string | null;
+  /** The prerequisite's id this ticket is queued for until it merges; null when not held. */
+  waitsForMerge: string | null;
   /** The ticket only moves or renames files. */
   moveOnly: boolean;
   /** When its run last pushed a commit or checkpoint (ISO). Null before any has. */
@@ -437,6 +439,7 @@ export interface TicketUpdate {
   reviewedSha?: string | null;
   reviewedHead?: string | null;
   stackedOn?: string | null;
+  waitsForMerge?: string | null;
   moveOnly?: boolean;
   /** When its run last pushed a commit or checkpoint; null clears it. */
   lastCommitAt?: Date | null;
