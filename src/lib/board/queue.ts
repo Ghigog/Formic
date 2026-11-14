@@ -6,6 +6,7 @@ import type { Reservation } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
 import { claimLabel, heldBy } from "@/lib/domain/queue";
 import { byPosition } from "@/lib/ordering";
+import { readiness } from "@/lib/domain/stack";
 import { LeaseBusy, repoKey, withLease } from "./lease";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { scoreOf } from "@/lib/colony/game";
@@ -130,6 +131,10 @@ async function claimQueued(
         await stillWaits(card, card.blockedReason ?? `Waiting for ${prerequisite.key} to merge. It starts on its own then.`);
         continue;
       }
+      if (!readiness(card, cards).ready) {
+        await stillWaits(card, prerequisiteReason(card, cards));
+        continue;
+      }
       const blocker = heldBy(card, claims);
       if (blocker) {
         await stillWaits(card, heldReason(blocker, projectId));
@@ -165,6 +170,16 @@ async function claimQueued(
 
 /** What a queued ticket's card says while a critical or high bug is ahead of it. */
 export const TOP_PRIORITY_REASON = "Waiting for critical and high bugs to be cleared first.";
+
+/** What a queued ticket's card says while prerequisites it needs are not ready. */
+export function prerequisiteReason(card: BoardCard, cards: readonly BoardCard[]): string {
+  const keys = readiness(card, cards).ready
+    ? []
+    : card.dependsOn.map((id) => cards.find((c) => c.id === id)).filter((c) => c && c.status !== "merged").map((c) => c!.key);
+  return keys.length > 0
+    ? `Waiting for ${keys.join(", ")} to merge or open ${keys.length > 1 ? "their pull requests" : "its pull request"}. It starts on its own then.`
+    : "Waiting for what it depends on. It starts on its own then.";
+}
 
 /** What a queued ticket's card says while another ticket holds its files. */
 export function heldReason(blocker: Reservation, projectId: string): string {
