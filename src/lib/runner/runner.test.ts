@@ -739,6 +739,59 @@ describe("taking a CLI agent's work", () => {
     expect(MockVcsClient.runner().branches.get(branch)).toBe(sha);
   });
 
+  describe("when the ticket's branch moved while the agent worked", () => {
+    async function movedRun() {
+      await assignClaudeCode();
+      await installRunner();
+      const ticket = await seedTicket();
+      const branch = "formic/t-1-earlier";
+      const pull = await new MockVcsClient("acme/widgets").openPullRequest({
+        headBranch: branch,
+        baseBranch: "formic/integration",
+        title: "T-1: first try",
+        body: "",
+      });
+      await repository().updateTicket(ticket.id, { branchName: branch, prNumber: pull.number, prUrl: pull.url });
+      MockVcsClient.stage(branch, ["src/lib/feature/base.ts"], "T-1: first try");
+      await runCoderAgent(PROJECT, ticket.id);
+      const job = MockVcsClient.runner().dispatches.at(-1)!.inputs.job!;
+      const work = MockVcsClient.stage(`${STAGING_PREFIX}${job}`, ["src/lib/feature/work.ts"], "T-1: Do it again");
+      // Someone pushes to the branch after the agent started.
+      const newTip = MockVcsClient.stage(branch, ["src/lib/feature/other.ts"], "Someone else");
+      MockVcsClient.runner().moved.add(branch);
+      return { ticket, branch, job, work, newTip };
+    }
+
+    it("carries the work onto the new tip and carries on", async () => {
+      const { ticket, branch, job, newTip } = await movedRun();
+
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+      const runner = MockVcsClient.runner();
+      const head = runner.branches.get(branch)!;
+      expect(head).not.toBe(newTip);
+      expect(runner.commits.get(head)!.files).toEqual(
+        expect.arrayContaining(["src/lib/feature/other.ts", "src/lib/feature/work.ts"]),
+      );
+      const after = (await repository().ticketDetail(ticket.id))!;
+      expect(after).toMatchObject({ runnerJob: null, summary: "Do it again" });
+      expect(after.status).not.toBe("running");
+    });
+
+    it("keeps the work on a side branch and stops the card on a conflict", async () => {
+      const { ticket, branch, job, work } = await movedRun();
+      MockVcsClient.conflictOn(branch, work);
+
+      await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+      const side = `${branch}-agent-work`;
+      expect(MockVcsClient.runner().branches.get(side)).toBe(work);
+      const card = (await repository().cardById(ticket.id))!;
+      expect(card.blockedReason).toContain("moved");
+      expect(card.blockedReason).toContain(side);
+    });
+  });
+
   it("lands carried workflow changes in place, judged by their real paths", async () => {
     await assignClaudeCode();
     await installRunner();

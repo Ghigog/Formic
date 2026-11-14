@@ -86,6 +86,7 @@ import type { LoopEntryPayload } from "./loop-entry";
 import {
   STAGING_PREFIX,
   VcsError,
+  BranchMovedError,
   mergeTarget,
   vcs,
   type Checkpoint,
@@ -1859,9 +1860,28 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
     // Recorded as the merge it was, so GitHub counts the branch as brought in.
     if (merged) head = await client.recordMerge(head, merged);
 
-    // Fast-forward only. If the branch moved while the agent worked, this
-    // refuses rather than overwrite what moved it.
-    await client.moveBranch(branch, head);
+    // Fast-forward only: it never overwrites what moved the branch. When the
+    // branch gained a commit while the agent worked, the agent's work is
+    // carried onto the new tip instead; a real conflict keeps it on a side
+    // branch and stops the card.
+    try {
+      await client.moveBranch(branch, head);
+    } catch (e) {
+      if (!(e instanceof BranchMovedError)) throw e;
+      const carried = await client.mergeOntoBranch(branch, head);
+      if (!carried.ok) {
+        const side = `${branch}-agent-work`;
+        await client.moveBranch(side, head);
+        lost = true;
+        await stop(
+          `The branch ${branch} moved while the agent worked, and its work conflicts with the new commit` +
+            `${carried.conflict ? "" : ` (${carried.reason})`}. The agent's work is kept on the branch ${side}.`,
+          true,
+        );
+        return;
+      }
+      head = carried.sha;
+    }
     await cleanUp();
 
     if (result.mode === "fix") {
