@@ -327,6 +327,28 @@ test("the assistant pulls down from the top bar and rolls back up", async ({ pag
   await expect(shade).toBeHidden();
 });
 
+test("the PM composer shows no scrollbar, on desktop and on a phone", async ({ page }) => {
+  const shade = page.locator("section[aria-label=PM]");
+  const composer = page.locator("textarea[aria-label='Ask the PM']:visible");
+  const noScrollbar = async () => {
+    await expect(composer.first()).toBeVisible();
+    const { overflow, width } = await composer.first().evaluate((el) => ({
+      overflow: el.scrollHeight - el.clientHeight,
+      width: getComputedStyle(el).scrollbarWidth,
+    }));
+    expect(overflow).toBeLessThanOrEqual(0);
+    expect(width).toBe("none");
+  };
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await noScrollbar();
+
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.getByRole("button", { name: "Ask the PM" }).click();
+  await expect(shade).toHaveAttribute("data-open", "true");
+  await noScrollbar();
+});
+
 test("the assistant shade stays inside the window", async ({ page }) => {
   const shade = page.locator("section[aria-label=PM]");
   for (const size of [
