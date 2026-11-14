@@ -180,6 +180,14 @@ describe("work bigger than the ticket", () => {
     expect(REVIEWER_FOLLOW_UP_RULE).toContain("Send back only for work that fits the ticket's estimate");
   });
 
+  it("tells the Coder and the Reviewer not to propose a follow-up that is only looking at a real screen", () => {
+    for (const role of ["coder", "reviewer"] as const) {
+      const prompt = withCodingRules("Custom agent.", role);
+      expect(prompt).toContain("Never propose a follow-up whose work is only to eyeball the change on a real screen or device");
+      expect(prompt).toContain("whether labelled needed or nice to have");
+    }
+  });
+
   it("never sits in a ticket's acceptance criteria as a wait on other tickets", () => {
     const prompt = withPlanningConventions("Custom architect.");
     expect(prompt).toContain("never one that holds only once other tickets are done");
