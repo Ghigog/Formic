@@ -158,6 +158,18 @@ describe("the loop entry a GitHub Actions job runs", () => {
     expect(await run("task")).not.toContain(SPIKE_RULE);
   });
 
+  it("shows the coder the follow-ups the ticket already has", async () => {
+    const sent = fakeProvider([finish({ summary: "nothing to change" })]);
+    await runLoopEntry(
+      payload({ ticket: { ...TICKET, followUps: ["Seed the test (1 pt): added as EPIC-6-T14", "Old idea (2 pt): dismissed"] } }),
+      { workspace: new MemoryWorkspace(), log: () => {} },
+    );
+    const brief = messages(sent, 0)[1]!.content;
+    expect(brief).toContain("Follow-ups already proposed on this ticket");
+    expect(brief).toContain("- Seed the test (1 pt): added as EPIC-6-T14");
+    expect(brief).toContain("- Old idea (2 pt): dismissed");
+  });
+
   it("holds the coder to the ticket's estimate and writes its follow-ups where Formic reads them", async () => {
     const sent = fakeProvider([
       finish({

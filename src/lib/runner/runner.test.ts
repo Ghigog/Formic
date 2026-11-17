@@ -4,6 +4,7 @@ import {
   STOPPED_BY_PERSON,
   attachmentUrlAllowed,
   cliPrompt,
+  loopPayload,
   mergedFrom,
   PLAN_FIRST_RULE,
   collectCliRuns,
@@ -1314,6 +1315,47 @@ describe("a CLI agent fixing red CI", () => {
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.status).toBe("merged");
     expect(after.followUps.map((f) => f.title)).toEqual(["Raise branch coverage to 78%"]);
+  });
+
+  it("lists the follow-ups the ticket already has in the reviewer's prompt and the loop payload", async () => {
+    const { ticket } = await reviewed("Formic-Review: approved");
+    const withFollowUps: TicketDetail = {
+      ...ticket,
+      followUps: [
+        {
+          title: "Seed the test",
+          why: "Flaky.",
+          points: 1,
+          need: "nice",
+          outcome: { kind: "pending" },
+        },
+        { title: "Old idea", why: "No.", points: 2, need: "nice", outcome: { kind: "dismissed" } },
+      ],
+    };
+    const prompt = cliPrompt((await cliAgentFor(PROJECT, "in_review"))!, "fix", withFollowUps, {
+      baseBranch: "main",
+      changedFiles: [],
+      checks: [],
+      attempt: 1,
+      maxAttempts: 3,
+    });
+    expect(prompt).toContain("- Seed the test (1 pt): waiting for the person");
+    expect(prompt).toContain("- Old idea (2 pt): dismissed");
+
+    const budget = { minutes: {}, tokens: {} } as Parameters<typeof loopPayload>[0]["budget"];
+    const input = {
+      runId: "r",
+      projectId: PROJECT,
+      ticket,
+      repoFullName: "acme/widgets",
+      baseBranch: "main",
+      provider: "deepseek",
+      model: "m",
+      notes: [],
+      budget,
+    };
+    expect(loopPayload({ ...input, followUps: ["A (1 pt): dismissed"] }).ticket.followUps).toEqual(["A (1 pt): dismissed"]);
+    expect(loopPayload(input).ticket).not.toHaveProperty("followUps");
   });
 
   it("tells the reviewer how to approve or send back", async () => {

@@ -10,6 +10,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
 import type { Origin } from "@/lib/agents/origin";
+import type { FollowUp } from "@/lib/agents/follow-ups";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { recordFollowUps } from "@/lib/board/follow-ups";
@@ -53,6 +54,15 @@ import { askForScope, hasKeptWork, takeKeptWork, widenScope } from "./scope-requ
 const STAGE_CODE_RUN = 5;
 const STAGE_PR_OPEN = 6;
 
+/** One follow-up as a line for the agents' brief: title, points, what became of it. */
+export function followUpLine(f: FollowUp): string {
+  const points = f.points ? ` (${f.points} pt)` : "";
+  const o = f.outcome;
+  const fate =
+    o?.kind === "added" ? `added as ${o.key}` : o?.kind === "dismissed" ? "dismissed" : "waiting for the person";
+  return `${f.title}${points}: ${fate}`;
+}
+
 export function taskFor(
   ticket: TicketDetail,
   notes: string[] = [],
@@ -66,6 +76,7 @@ export function taskFor(
     ...(instruction ? { instruction } : {}),
     ...(origin ? { origin } : {}),
     ...(sharedNotes.length ? { sharedNotes } : {}),
+    ...(ticket.followUps?.length ? { followUps: ticket.followUps.map(followUpLine) } : {}),
     ticketId: ticket.id,
     key: ticket.key,
     title: ticket.title,
@@ -356,6 +367,7 @@ async function codeTicket(
             budget,
             notes: resumed ? [...notes, resumeBrief(resumed, ticket.plan)] : notes,
             sharedNotes: shared,
+            ...(ticket.followUps?.length ? { followUps: ticket.followUps.map(followUpLine) } : {}),
             ...(options.instruction ? { instruction: options.instruction } : {}),
             ...(origin ? { origin } : {}),
           }),

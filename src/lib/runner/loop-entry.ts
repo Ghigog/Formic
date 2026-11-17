@@ -77,6 +77,8 @@ export const loopEntryPayloadSchema = z.object({
     notes: z.array(z.string()).optional(),
     /** What agents on the repository's other tickets shared, one line each. */
     sharedNotes: z.array(z.string()).optional(),
+    /** What the ticket already proposed as follow-ups, one line each. */
+    followUps: z.array(z.string()).optional(),
     /** What this run was asked to do from the ticket's chat, if anything. */
     instruction: z.string().optional(),
     /** The request the ticket's Epic came from, in the person's own words. */
@@ -293,6 +295,7 @@ export async function runLoopEntry(
       storyPoints: ticket.storyPoints ?? null,
       notes: ticket.notes ?? [],
       ...(ticket.sharedNotes?.length ? { sharedNotes: ticket.sharedNotes } : {}),
+      ...(ticket.followUps?.length ? { followUps: ticket.followUps } : {}),
       ...(ticket.origin ? { origin: ticket.origin } : {}),
     };
 

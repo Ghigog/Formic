@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ATTEMPT_DEFAULTS } from "@/lib/budget/budget-for";
-import { runCoderAgent } from "./pipeline";
+import { runCoderAgent, taskFor } from "./pipeline";
 import { settleLaunched } from "@/lib/agents/pipeline";
 import { reviewBrief } from "@/lib/agents/coder";
 import type { FollowUp } from "@/lib/agents/follow-ups";
@@ -1186,5 +1186,28 @@ describe("work that needs files outside the ticket's scope", () => {
     await until(async () => coder.tasks.length === 2, "the second run");
     expect(coder.tasks[1]!.fileScope).toEqual(["src/lib/feature"]);
     expect((await noteTexts(PROJECT, ticket.id)).at(-1)).toContain("inside the file scope");
+  });
+});
+
+describe("taskFor's follow-ups", () => {
+  const base = { id: "t", key: "T-1", title: "x", description: "", acceptanceCriteria: [], fileScope: [] } as unknown as TicketDetail;
+
+  it("turns each recorded follow-up into a line with what became of it", () => {
+    const followUps: FollowUp[] = [
+      { title: "Added one", why: "", points: 1, need: "needed", outcome: { kind: "added", key: "EPIC-6-T14", cardId: "c" } },
+      { title: "Asked one", why: "", points: 2, need: "nice", outcome: { kind: "pending" } },
+      { title: "Sent one", why: "", points: null, need: "nice", outcome: { kind: "proposed", messageId: "m" } },
+      { title: "Dismissed one", why: "", points: 3, need: "nice", outcome: { kind: "dismissed" } },
+    ];
+    expect(taskFor({ ...base, followUps }).followUps).toEqual([
+      "Added one (1 pt): added as EPIC-6-T14",
+      "Asked one (2 pt): waiting for the person",
+      "Sent one: waiting for the person",
+      "Dismissed one (3 pt): dismissed",
+    ]);
+  });
+
+  it("leaves the field out when there are none", () => {
+    expect(taskFor({ ...base, followUps: [] })).not.toHaveProperty("followUps");
   });
 });
