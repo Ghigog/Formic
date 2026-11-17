@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createTodoItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
 import { limited, RUN } from "@/lib/rate-limit";
+import { MAX_REQUEST } from "@/lib/domain/request";
 
 export const dynamic = "force-dynamic";
 // POST starts the Architect Agent drafting the ticket (see launch() in
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  rawRequest: z.string().trim().min(3, "Describe the ticket in a sentence or two.").max(4000),
+  rawRequest: z.string().trim().min(3, "Describe the ticket in a sentence or two.").max(MAX_REQUEST),
   requestId: z.string().optional(),
 });
 

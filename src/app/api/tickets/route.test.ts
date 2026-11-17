@@ -49,8 +49,15 @@ describe("POST /api/tickets", () => {
   });
 
   it("rejects a request over the length limit", async () => {
-    const res = await POST(request({ rawRequest: "x".repeat(4001) }));
+    const res = await POST(request({ rawRequest: "x".repeat(16_001) }));
     expect(res.status).toBe(400);
+  });
+
+  it("accepts a request of a few pages, up to 16,000 characters", async () => {
+    activeProject.mockResolvedValue({ id: "project_default" });
+    createTodoItem.mockResolvedValue({ id: "ticket-1", kind: "ticket" });
+    const res = await POST(request({ rawRequest: "x".repeat(16_000) }));
+    expect(res.status).toBe(201);
   });
 
   it("ignores a workType in the body and still creates the ticket", async () => {

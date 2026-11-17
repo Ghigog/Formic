@@ -2,7 +2,7 @@ import type { AuditPoint, AuditReport, Rubric } from "@/lib/db/repository";
 import type { Sentinel } from "./roster";
 import { cappedByFindings, unmetChecks } from "./rubric";
 
-/** createBacklogItem refuses a request longer than this (see POST /api/epics). */
+/** An audit's Epic request is trimmed to this, well under MAX_REQUEST, so agents read a short brief. */
 export const REQUEST_CAP = 4000;
 
 const SECTIONS = [
