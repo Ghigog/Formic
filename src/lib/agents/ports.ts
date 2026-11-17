@@ -215,6 +215,11 @@ export interface CoderTask {
    */
   sharedNotes?: string[];
   /**
+   * What the ticket's agents already proposed as follow-ups, one line each:
+   * title, points and what became of it. Agents must not propose them again.
+   */
+  followUps?: string[];
+  /**
    * What the person asked this run, from the ticket's chat, to do. The
    * ticket is then background: the run does this, not the ticket over.
    */

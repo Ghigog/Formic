@@ -59,6 +59,24 @@ describe("taskBrief", () => {
   });
 });
 
+describe("taskBrief's follow-ups", () => {
+  it("lists the follow-ups already proposed, once, under an instruction not to propose them again", () => {
+    const brief = taskBrief({ ...TASK, followUps: ["Seed the test (1 pt): added as EPIC-6-T14", "Raise coverage (2 pt): dismissed"] });
+
+    expect(brief).toContain("Follow-ups already proposed on this ticket. Do not propose any of them again, even reworded");
+    expect(brief).toContain("- Seed the test (1 pt): added as EPIC-6-T14");
+    expect(brief).toContain("- Raise coverage (2 pt): dismissed");
+    expect(brief.match(/Follow-ups already proposed/g)).toHaveLength(1);
+    expect(coderPrompt({ ...TASK, followUps: ["A (1 pt): dismissed"] })).toContain("- A (1 pt): dismissed");
+    expect(reviewBrief({ ...reviewInput(), task: { ...TASK, followUps: ["A (1 pt): dismissed"] } } as ReviewTask)).toContain("- A (1 pt): dismissed");
+  });
+
+  it("has no such section when there are none", () => {
+    expect(taskBrief(TASK)).not.toContain("Follow-ups already proposed");
+    expect(taskBrief({ ...TASK, followUps: [] })).toBe(taskBrief(TASK));
+  });
+});
+
 describe("coderPrompt", () => {
   it("asks for the work and says how to report it done already", () => {
     const prompt = coderPrompt(TASK);

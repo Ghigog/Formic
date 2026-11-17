@@ -60,6 +60,13 @@ export function taskBrief(task: CoderTask): string {
           ...task.sharedNotes.map((n) => `- ${n}`),
         ]
       : []),
+    ...(task.followUps?.length
+      ? [
+          "",
+          "Follow-ups already proposed on this ticket. Do not propose any of them again, even reworded or re-estimated; propose only work none of them covers:",
+          ...task.followUps.map((f) => `- ${f}`),
+        ]
+      : []),
   ].join("\n");
 }
 

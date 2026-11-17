@@ -503,6 +503,8 @@ export function loopPayload(input: {
   notes: string[];
   /** What agents on the repository's other tickets shared, one line each. */
   sharedNotes?: string[];
+  /** What the ticket already proposed as follow-ups, one line each. */
+  followUps?: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
   instruction?: string;
   /** The request the ticket's Epic came from, in the person's own words. */
@@ -525,6 +527,7 @@ export function loopPayload(input: {
       storyPoints: ticket.storyPoints,
       ...(input.notes.length ? { notes: input.notes } : {}),
       ...(input.sharedNotes?.length ? { sharedNotes: input.sharedNotes } : {}),
+      ...(input.followUps?.length ? { followUps: input.followUps } : {}),
       ...(input.instruction ? { instruction: input.instruction } : {}),
       ...(input.origin ? { origin: input.origin } : {}),
     },
