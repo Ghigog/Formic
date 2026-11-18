@@ -405,7 +405,6 @@ export function SettingsForm({
         <SoundSection />
         <ToursSection />
 
-
         <KeyField
           field="e2bKey"
           id="sandbox"

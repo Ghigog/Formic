@@ -174,7 +174,6 @@ export function Board({
     setBoardView(boardWide);
     const own = loadColumnViews();
     ownViews.current = own;
-     
     setViews({
       backlog: own.backlog ?? boardWide,
       todo: own.todo ?? boardWide,
@@ -183,7 +182,6 @@ export function Board({
       done: own.done ?? boardWide,
     });
     setViewsLoaded(true);
-     
   }, []);
   useEffect(() => {
     if (viewsLoaded) saveColumnViews(ownViews.current);
