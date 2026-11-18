@@ -40,6 +40,11 @@ import type {
   AssistantProposal,
   CardChatMessage,
   AuditKind,
+  NewRubricFix,
+  RubricCheck,
+  RubricFix,
+  RubricFixPatch,
+  RubricFixStatus,
   AuditRecord,
   AuditReport,
   AuditResult,
@@ -2582,6 +2587,50 @@ export class PrismaRepository implements Repository {
     await prisma().audit.update({ where: { id: auditId }, data: { epicId } });
   }
 
+  async reviseCalibration(auditId: string, rubric: Rubric): Promise<void> {
+    const { count } = await prisma().audit.updateMany({
+      where: { id: auditId, kind: "calibrate", status: "done" },
+      data: { rubric: rubric as never },
+    });
+    if (count === 0) throw new Error("Only a done calibration's rubric can be revised");
+  }
+
+  async addRubricFix(input: NewRubricFix): Promise<RubricFix> {
+    const row = await prisma().rubricFix.create({ data: input });
+    return toRubricFix(row);
+  }
+
+  async rubricFix(id: string): Promise<RubricFix | null> {
+    const row = await prisma().rubricFix.findUnique({ where: { id } });
+    return row ? toRubricFix(row) : null;
+  }
+
+  async rubricFixesFor(projectId: string, sentinel?: string): Promise<RubricFix[]> {
+    const rows = await prisma().rubricFix.findMany({
+      where: { projectId, ...(sentinel ? { sentinel } : {}) },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toRubricFix);
+  }
+
+  async updateRubricFix(id: string, patch: RubricFixPatch): Promise<RubricFix | null> {
+    const { before, after, ...rest } = patch;
+    try {
+      const row = await prisma().rubricFix.update({
+        where: { id },
+        data: {
+          ...rest,
+          ...(before !== undefined ? { before: (before ?? Prisma.DbNull) as never } : {}),
+          ...(after !== undefined ? { after: (after ?? Prisma.DbNull) as never } : {}),
+        },
+      });
+      return toRubricFix(row);
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return null;
+      throw e;
+    }
+  }
+
   async finishAudit(id: string, result: AuditResult): Promise<void> {
     const db = prisma();
     // Only a run still going can end: a stopped one stays stopped.
@@ -2901,6 +2950,34 @@ const rubric = z.object({
   ),
 });
 
+function toRubricFix(row: {
+  id: string;
+  projectId: string;
+  sentinel: string;
+  checkId: string;
+  problem: string;
+  suggestion: string;
+  ticketId: string | null;
+  ticketKey: string | null;
+  flaggedBy: string | null;
+  status: string;
+  messageId: string | null;
+  before: unknown;
+  after: unknown;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  appliedAt: Date | null;
+  error: string | null;
+  createdAt: Date;
+}): RubricFix {
+  return {
+    ...row,
+    status: row.status as RubricFixStatus,
+    before: (row.before as RubricCheck | null) ?? null,
+    after: (row.after as RubricCheck | null) ?? null,
+  };
+}
+
 function toAuditRecord(row: {
   id: string;
   projectId: string;
@@ -2927,7 +3004,7 @@ function toAuditRecord(row: {
   const scale = rubric.safeParse(row.rubric);
   return {
     ...row,
-    kind: row.kind === "calibrate" ? "calibrate" : "audit",
+    kind: row.kind === "calibrate" || row.kind === "revise" ? row.kind : "audit",
     status: row.status === "done" || row.status === "failed" ? row.status : "running",
     report: report.success ? (report.data satisfies AuditReport) : null,
     rubric: scale.success ? (scale.data satisfies Rubric) : null,

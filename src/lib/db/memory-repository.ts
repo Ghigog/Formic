@@ -36,6 +36,9 @@ import type {
   AssistantMessage,
   AssistantProposal,
   AuditKind,
+  NewRubricFix,
+  RubricFix,
+  RubricFixPatch,
   AuditRecord,
   AuditResult,
   Rubric,
@@ -228,6 +231,7 @@ interface Store {
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
   audits: AuditRecord[];
+  rubricFixes: RubricFix[];
 }
 
 declare global {
@@ -330,6 +334,7 @@ function store(): Store {
     cardChat: [],
     attachments: new Map(),
     audits: [],
+    rubricFixes: [],
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -699,6 +704,7 @@ export class MemoryRepository implements Repository {
       s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
       s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
       s.audits = s.audits.filter((a) => a.projectId !== projectId);
+      s.rubricFixes = s.rubricFixes.filter((f) => f.projectId !== projectId);
       s.epicNumbers.delete(projectId);
       s.standaloneTicketNumbers.delete(projectId);
       s.queensSpent.delete(projectId);
@@ -2089,6 +2095,54 @@ export class MemoryRepository implements Repository {
   async markAuditEpic(auditId: string, epicId: string): Promise<void> {
     const audit = store().audits.find((a) => a.id === auditId);
     if (audit) audit.epicId = epicId;
+  }
+
+  async reviseCalibration(auditId: string, rubric: Rubric): Promise<void> {
+    const audit = store().audits.find((a) => a.id === auditId);
+    if (!audit || audit.kind !== "calibrate" || audit.status !== "done") {
+      throw new Error("Only a done calibration's rubric can be revised");
+    }
+    audit.rubric = structuredClone(rubric);
+  }
+
+  async addRubricFix(input: NewRubricFix): Promise<RubricFix> {
+    const fix: RubricFix = {
+      id: `fix_${Math.random().toString(36).slice(2, 10)}`,
+      ticketId: null,
+      ticketKey: null,
+      flaggedBy: null,
+      status: "flagged",
+      messageId: null,
+      before: null,
+      after: null,
+      approvedBy: null,
+      approvedAt: null,
+      appliedAt: null,
+      error: null,
+      createdAt: new Date(),
+      ...input,
+    };
+    store().rubricFixes.push(fix);
+    return structuredClone(fix);
+  }
+
+  async rubricFix(id: string): Promise<RubricFix | null> {
+    const fix = store().rubricFixes.find((f) => f.id === id);
+    return fix ? structuredClone(fix) : null;
+  }
+
+  async rubricFixesFor(projectId: string, sentinel?: string): Promise<RubricFix[]> {
+    return store()
+      .rubricFixes.filter((f) => f.projectId === projectId && (!sentinel || f.sentinel === sentinel))
+      .map((f) => structuredClone(f))
+      .reverse();
+  }
+
+  async updateRubricFix(id: string, patch: RubricFixPatch): Promise<RubricFix | null> {
+    const fix = store().rubricFixes.find((f) => f.id === id);
+    if (!fix) return null;
+    Object.assign(fix, structuredClone(patch));
+    return structuredClone(fix);
   }
 
   async finishAudit(id: string, result: AuditResult): Promise<void> {

@@ -264,7 +264,7 @@ export function promptFor(s: Sentinel): string {
 }
 
 /** The steps a run reports, in order. */
-export function stepsFor(s: Sentinel, kind: "audit" | "calibrate" = "audit"): string[] {
+export function stepsFor(s: Sentinel, kind: "audit" | "calibrate" | "revise" = "audit"): string[] {
   return [
     "Listing files",
     "Gathering the facts",
