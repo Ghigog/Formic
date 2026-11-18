@@ -880,7 +880,8 @@ function Report({
 
       {st.hold && (
         <p className="text-muted m-0 -mt-2 text-[13px] leading-[1.45]">
-          {st.hold.key} is still open. Finish or archive it to audit again.{" "}
+          {st.hold.key} is still open. Finish or archive it to audit again.
+          You can still recalibrate: that writes a new rubric, not a report.{" "}
           <button
             type="button"
             onClick={() => onOpenEpic(st.hold!.epicId)}

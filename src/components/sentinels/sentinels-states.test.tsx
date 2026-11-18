@@ -135,7 +135,11 @@ describe("SentinelsPage card states", () => {
     it("disables both Re-audit buttons, says why, and keeps Recalibrate enabled", async () => {
       await openReport(held);
       const panel = screen.getByRole("complementary", { name: "Audit report" });
-      expect(within(panel).getByText("EPIC-7 is still open. Finish or archive it to audit again.")).toBeTruthy();
+      expect(
+        within(panel).getByText(
+          /EPIC-7 is still open\. Finish or archive it to audit again\. You can still recalibrate: that writes a new rubric, not a report\./,
+        ),
+      ).toBeTruthy();
       const reaudit = within(panel).getAllByRole("button", { name: "Re-audit" });
       expect(reaudit.length).toBe(2);
       for (const b of reaudit) expect((b as HTMLButtonElement).disabled).toBe(true);
