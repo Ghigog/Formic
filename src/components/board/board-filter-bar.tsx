@@ -32,7 +32,7 @@ export function BoardFilterBar({ value, onChange }: BoardFilterBarProps) {
             type="button"
             aria-label="Clear filter"
             onClick={() => onChange({ ...value, query: "" })}
-            className="text-muted hover:text-ink absolute top-0 right-0 flex size-11 items-center justify-center text-[16px] leading-none md:size-8"
+            className="text-muted hover:text-ink absolute top-0 right-0 flex size-11 items-center justify-center text-[13px] leading-none md:size-8"
           >
             ×
           </button>
