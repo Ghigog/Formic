@@ -150,6 +150,20 @@ function epicNumbers(epics: Array<{ id: string; number: number | null; createdAt
   return new Map(byAge.map((e, i) => [e.id, e.number ?? i + 1]));
 }
 
+/** Closes a ticket's open column stay and opens the next at one instant. */
+async function recordColumnChange(
+  tx: Pick<Prisma.TransactionClient, "ticketColumnEntry">,
+  ticketId: string,
+  column: ColumnId,
+): Promise<void> {
+  const now = new Date();
+  await tx.ticketColumnEntry.updateMany({
+    where: { ticketId, exitedAt: null },
+    data: { exitedAt: now },
+  });
+  await tx.ticketColumnEntry.create({ data: { ticketId, column, enteredAt: now } });
+}
+
 export class PrismaRepository implements Repository {
   async defaultProject(): Promise<ProjectSummary> {
     const db = prisma();
@@ -1367,15 +1381,7 @@ export class PrismaRepository implements Repository {
           misplacedIn: input.misplaced?.in,
         });
         if (columnOf(before) === to) return;
-        // One instant closes the old stay and starts the new one.
-        const now = new Date();
-        await tx.ticketColumnEntry.updateMany({
-          where: { ticketId: input.cardId, exitedAt: null },
-          data: { exitedAt: now },
-        });
-        await tx.ticketColumnEntry.create({
-          data: { ticketId: input.cardId, column: to, enteredAt: now },
-        });
+        await recordColumnChange(tx, input.cardId, to);
       });
     }
   }
@@ -1869,9 +1875,10 @@ export class PrismaRepository implements Repository {
       severity = { bugSeverity: severityFor(rest.workType ?? current?.workType, rest.bugSeverity) };
     }
 
-    await db.ticket.update({
-      where: { id: ticketId },
-      data: {
+    // A change of status or stall that moves the card to another column
+    // closes its open stay and opens the next, with the update.
+    const movesColumn = rest.status !== undefined || rest.stalledIn !== undefined;
+    const data = {
         ...rest,
         ...merge,
         ...severity,
@@ -1890,8 +1897,26 @@ export class PrismaRepository implements Repository {
         ...(costCents !== undefined ? { costCents: { increment: costCents } } : {}),
         ...(tokensIn !== undefined ? { tokensIn: { increment: tokensIn } } : {}),
         ...(tokensOut !== undefined ? { tokensOut: { increment: tokensOut } } : {}),
-      },
-    });
+      };
+    if (!movesColumn) {
+      await db.ticket.update({ where: { id: ticketId }, data });
+    } else {
+      await db.$transaction(async (tx) => {
+        const before = await tx.ticket.findUnique({
+          where: { id: ticketId },
+          select: { status: true, stalledIn: true, misplacedIn: true },
+        });
+        await tx.ticket.update({ where: { id: ticketId }, data });
+        if (!before) return;
+        const to = columnOf({
+          status: rest.status ?? before.status,
+          stalledIn: rest.stalledIn !== undefined ? rest.stalledIn : before.stalledIn,
+          // A status change clears a misplacement; a stall alone keeps it.
+          misplacedIn: rest.status !== undefined ? null : before.misplacedIn,
+        });
+        if (columnOf(before) !== to) await recordColumnChange(tx, ticketId, to);
+      });
+    }
     if (changes.length > 0) {
       await prisma().ticketChange.createMany({
         data: changes.map((change) => ({

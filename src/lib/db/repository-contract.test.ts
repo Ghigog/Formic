@@ -207,6 +207,53 @@ function contract(name: string, make: () => Repository) {
         await move(t.id, "ready");
         expect(await repo.ticketColumnEntries(t.id)).toHaveLength(1);
       });
+
+      it("records every column an agent takes a ticket through with updateTicket", async () => {
+        const { t } = await started();
+        await repo.updateTicket(t.id, { status: "running" });
+        await repo.updateTicket(t.id, { status: "review" });
+        await repo.updateTicket(t.id, { status: "merged" });
+        const entries = await repo.ticketColumnEntries(t.id);
+        expect(entries.map((e) => e.column)).toEqual(["todo", "in_progress", "in_review", "done"]);
+        expect(entries[0]?.exitedAt).toBe(entries[1]?.enteredAt);
+        expect(entries[1]?.exitedAt).toBe(entries[2]?.enteredAt);
+        expect(entries[2]?.exitedAt).toBe(entries[3]?.enteredAt);
+        expect(entries.slice(0, 3).every((e) => e.exitedAt !== null)).toBe(true);
+        expect(entries[3]?.exitedAt).toBeNull();
+        expect((await repo.cardById(t.id))?.enteredAt).toBe(entries[3]?.enteredAt);
+      });
+
+      it("writes nothing when updateTicket changes the status within a column", async () => {
+        const { t } = await started();
+        await repo.updateTicket(t.id, { status: "waiting" });
+        await repo.updateTicket(t.id, { status: "ready" });
+        expect(await repo.ticketColumnEntries(t.id)).toHaveLength(1);
+      });
+
+      it("records a stall that changes the column", async () => {
+        const { t } = await started();
+        await repo.updateTicket(t.id, { status: "blocked", stalledIn: "backlog" });
+        const entries = await repo.ticketColumnEntries(t.id);
+        expect(entries.map((e) => e.column)).toEqual(["todo", "backlog"]);
+        expect(entries[0]?.exitedAt).toBe(entries[1]?.enteredAt);
+      });
+
+      it("closes a misplaced stay when an agent's status sends the ticket back", async () => {
+        const { t } = await started();
+        await repo.move({
+          cardId: t.id,
+          kind: "ticket",
+          status: "ready",
+          stalledIn: null,
+          position: 1,
+          misplaced: { in: "in_review", reason: "placed by hand" },
+        });
+        await repo.updateTicket(t.id, { status: "running" });
+        const entries = await repo.ticketColumnEntries(t.id);
+        expect(entries.map((e) => e.column)).toEqual(["todo", "in_review", "in_progress"]);
+        expect(entries[1]?.exitedAt).toBe(entries[2]?.enteredAt);
+        expect(entries[2]?.exitedAt).toBeNull();
+      });
     });
 
     describe("a person moving a ticket to Done in a plain column", () => {
