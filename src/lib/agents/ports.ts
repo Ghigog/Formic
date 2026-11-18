@@ -4,6 +4,7 @@ import type { Workspace } from "@/lib/sandbox/workspace";
 import type { Budget } from "@/lib/budget/budget-for";
 import type { ProviderId } from "@/lib/llm/providers";
 import type { ScoutCandidate, ScoutVerdict } from "./judge";
+import type { RubricFixFlag } from "@/lib/sentinels/rubric-fix";
 import type { FollowUp } from "./follow-ups";
 import type { Origin } from "./origin";
 import type { AgentQuestion } from "@/lib/domain/question";
@@ -244,6 +245,8 @@ export interface CodeChange {
   handoff?: string[];
   /** Work found that is not this ticket's, for the person to add as its own (FOLLOW_UP_RULE). */
   followUps?: FollowUp[];
+  /** Rubric checks found wrong, for the person to approve a change to (RUBRIC_FIX_RULE). */
+  rubricFixes?: RubricFixFlag[];
 }
 
 /** PROT-06. Ticket in, edited workspace out. Commits and pushes are the caller's. */

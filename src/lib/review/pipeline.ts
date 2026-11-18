@@ -16,6 +16,7 @@ import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { proposeFollowUps } from "@/lib/assistant/follow-up-messages";
 import { recordFollowUps } from "@/lib/board/follow-ups";
+import { recordRubricFixes } from "@/lib/board/rubric-fixes";
 import { positionForIndex } from "@/lib/ordering";
 import {
   AGENT_COMMIT_AUTHOR,
@@ -1387,6 +1388,7 @@ async function reviewTicket(
 
     const verdict = outcome.value;
     await recordFollowUps(ticket.id, verdict.followUps ?? []);
+    await recordRubricFixes(ticket.id, verdict.rubricFixes ?? []);
     // The review answered, whatever it is about to be asked to do with the
     // answer: this head is no longer one a report can hand to it again.
     await repo.updateTicket(ticket.id, {
