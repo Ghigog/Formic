@@ -271,6 +271,10 @@ export function stepsFor(s: Sentinel, kind: "audit" | "calibrate" | "revise" = "
     `Choosing what a ${s.name} reads`,
     "Reading the code",
     "Reading more",
-    ...(kind === "calibrate" ? ["Writing the rubric", "Saving the rubric"] : [`Scoring as ${s.name}`, "Writing report"]),
+    ...(kind === "calibrate"
+      ? ["Writing the rubric", "Saving the rubric"]
+      : kind === "revise"
+        ? ["Revising the check", "Saving the check"]
+        : [`Scoring as ${s.name}`, "Writing report"]),
   ];
 }

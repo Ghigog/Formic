@@ -1,7 +1,7 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
-import type { AuditKind } from "@/lib/db/repository";
+import type { AuditKind, RubricFix } from "@/lib/db/repository";
 import { launch } from "@/lib/agents/pipeline";
 import { sentinelAgent } from "@/lib/agents/presets";
 import { projectFor } from "@/lib/board/project";
@@ -12,6 +12,7 @@ import { CANNED } from "./canned";
 import { runAudit } from "./agent";
 import { cannedChecks, cannedRubric, scoredReport, type Goal } from "./rubric";
 import { gatherEvidence } from "./gather";
+import { failRevision, isApproved, landRevision } from "./revise";
 
 /** Bytes of repository a sentinel downloads at most. */
 const SNAPSHOT_BUDGET = 80_000_000;
@@ -99,11 +100,36 @@ export async function stopSentinel(projectId: string, sentinelId: string): Promi
   return true;
 }
 
+type Started = { ok: true } | { ok: false; error: string; status: number };
+
 export async function summonSentinel(
   projectId: string,
   sentinelId: string,
   kind: Exclude<AuditKind, "revise"> = "audit",
-): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+): Promise<Started> {
+  return run(projectId, sentinelId, kind);
+}
+
+/**
+ * Starts the Sentinel revising the one check of an approved fix. Refused for
+ * any fix the person has not approved, or one that is already being revised.
+ */
+export async function reviseRubricCheck(projectId: string, fixId: string): Promise<Started> {
+  const repo = repository();
+  const fix = await repo.rubricFix(fixId);
+  if (!fix || fix.projectId !== projectId) return { ok: false, error: "No such rubric fix.", status: 404 };
+  if (fix.status !== "approved" || !isApproved(fix)) {
+    return { ok: false, error: "Only a fix the person approved can be applied.", status: 409 };
+  }
+  return run(projectId, fix.sentinel, "revise", fix);
+}
+
+async function run(
+  projectId: string,
+  sentinelId: string,
+  kind: AuditKind,
+  fix?: RubricFix,
+): Promise<Started> {
   const s = findSentinel(sentinelId);
   if (!s) return { ok: false, error: "No such sentinel.", status: 404 };
   // The level the colony shows, from the same stamped merge scores.
@@ -121,17 +147,29 @@ export async function summonSentinel(
   if (kind === "audit" && !rubric) {
     return { ok: false, error: `Calibrate ${s.who} first: an audit is scored against the rubric calibrating writes.`, status: 409 };
   }
-  const goal: Goal = kind === "calibrate" ? { kind } : { kind, rubric: rubric! };
+  if (kind === "revise" && !rubric) {
+    return { ok: false, error: `${s.who} has no rubric to revise.`, status: 409 };
+  }
+  const goal: Goal =
+    kind === "calibrate"
+      ? { kind }
+      : kind === "revise"
+        ? { kind, rubric: rubric!, checkId: fix!.checkId, note: fix!.suggestion }
+        : { kind, rubric: rubric! };
 
   const repo = repository();
   // The code this run reads, resolved once. An audit that cannot is stamped null and still runs.
   const commitSha = await baseHead(projectId);
-  const audit = await repo.startAudit(projectId, s.id, kind, goal.kind === "audit" ? goal.rubric : null, commitSha);
+  const audit = await repo.startAudit(projectId, s.id, kind, goal.kind === "calibrate" ? null : goal.rubric, commitSha);
+  // Before the run can land, so a fast one is not marked revising after it applied.
+  if (fix) await repo.updateRubricFix(fix.id, { status: "revising", error: null });
   const controller = new AbortController();
   liveRuns().set(audit.id, controller);
   const log = (step: string) => repo.logAudit(audit.id, step);
-  const fail = (error: string, model: string | null = null) =>
-    repo.finishAudit(audit.id, { status: "failed", error, model });
+  const fail = async (error: string, model: string | null = null) => {
+    await repo.finishAudit(audit.id, { status: "failed", error, model });
+    if (goal.kind === "revise") await failRevision(audit.id, error);
+  };
 
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(280_000)]);
 
@@ -162,6 +200,14 @@ export async function summonSentinel(
           await log(step);
         }
         if (signal.aborted) return;
+        if (goal.kind === "revise") {
+          // The mock agent takes the approved note as the new wording.
+          const check = { text: goal.note, how: "A mock check: always reads the same.", command: null, pass: null };
+          const landed = await landRevision(audit.id, check);
+          return landed.ok
+            ? await repo.finishAudit(audit.id, { status: "done", summary: check.text, model: "mock" })
+            : await repo.finishAudit(audit.id, { status: "failed", error: landed.reason, model: "mock" });
+        }
         if (goal.kind === "calibrate") {
           const made = cannedRubric(s);
           return await repo.finishAudit(audit.id, { status: "done", rubric: made, summary: made.context, model: "mock" });
@@ -198,10 +244,14 @@ export async function summonSentinel(
         signal,
       });
       if (!outcome.ok) return await fail(outcome.error, outcome.usage.model);
-      const { ok: _, usage, ...done } = outcome;
+      const { ok: _, usage, check, ...done } = outcome;
+      if (goal.kind === "revise") {
+        const landed = check ? await landRevision(audit.id, check) : { ok: false as const, reason: "The run gave no check." };
+        if (!landed.ok) return await repo.finishAudit(audit.id, { status: "failed", error: landed.reason, model: usage.model });
+      }
       await repo.finishAudit(audit.id, { status: "done", ...done, model: usage.model });
     } catch (e) {
-      await fail(e instanceof Error ? e.message : kind === "calibrate" ? "Calibrating failed." : "The audit failed.");
+      await fail(e instanceof Error ? e.message : kind === "calibrate" ? "Calibrating failed." : kind === "revise" ? "The revision failed." : "The audit failed.");
     } finally {
       liveRuns().delete(audit.id);
     }
