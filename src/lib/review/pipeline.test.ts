@@ -523,6 +523,7 @@ describe("closeAlreadyDone", () => {
       url: `https://github.com/${REPO}/actions/runs/77`,
     };
     MockVcsClient.runner().branchRuns.set(pull.headBranch, [run]);
+    MockVcsClient.runner().logs.set(run.url, "npm ERR! network request failed: ECONNRESET");
 
     await closeAlreadyDone(PROJECT, ticket, { summary: "already there", detail: "found in place" });
     expect(MockVcsClient.runner().reruns).toEqual([77]);
@@ -532,6 +533,26 @@ describe("closeAlreadyDone", () => {
     run.attempt = 2;
     await closeAlreadyDone(PROJECT, (await repository().ticketDetail(ticketId))!, { summary: "s", detail: "d" });
     expect(MockVcsClient.runner().reruns).toEqual([77]);
+  });
+
+  it("blocks rather than re-run a check whose log shows a failing assertion", async () => {
+    const { ticketId } = await seedTicketWithPull({ merged: false, state: "open" });
+    const ticket = (await repository().ticketDetail(ticketId))!;
+    const pull = await vcs.pullRequest(ticket.prNumber!);
+    MockVcsClient.setChecks(pull.number, "failure");
+    (await vcs.checksFor(pull.headSha))[0]!.detailsUrl = `https://github.com/${REPO}/actions/runs/78/job/9`;
+    const url = `https://github.com/${REPO}/actions/runs/78`;
+    MockVcsClient.runner().branchRuns.set(pull.headBranch, [
+      { name: "CI", sha: pull.headSha, status: "completed", conclusion: "failure", attempt: 1, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", url },
+    ]);
+    MockVcsClient.runner().logs.set(url, "AssertionError: expected 2 to be 3");
+
+    await closeAlreadyDone(PROJECT, ticket, { summary: "already there", detail: "found in place" });
+
+    expect(MockVcsClient.runner().reruns).toEqual([]);
+    const after = (await repository().ticketDetail(ticketId))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain("was not run again");
   });
 });
 
