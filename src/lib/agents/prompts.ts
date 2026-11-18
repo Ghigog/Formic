@@ -100,6 +100,13 @@ export const CODER_DESIGN_RULE = `The ticket's requirements are the Architect's 
 export const FOLLOW_UP_RULE = `Keep the work to the ticket's size. When an acceptance criterion needs far more than the ticket's estimate allows (tens of tests where it asks for a few, a refactor across modules), or only holds once other tickets are done, do not do that work here. Do the part that fits, say in your summary which criterion is not met and why, and propose the rest as a follow-up: a short title, an estimate in story points, and a sentence or two on what the work is and why it was left out. Label each one: needed means the ticket's acceptance criteria are not met without the work; nice to have means everything else. Needed follow-ups go straight onto the board; nice to have ones ask the person. Propose only work this ticket uncovered, not ideas. Never propose a follow-up whose work is only to eyeball the change on a real screen or device (a visual check, a manual pass in a browser or on a phone, a look at it at phone width, manual QA), whether labelled needed or nice to have: a person looks at what ships anyway, so it never needs stating. A follow-up already listed under "Follow-ups already proposed on this ticket", whether added, waiting or dismissed, is never proposed again; a dismissed one stays dismissed.`;
 
 /**
+ * A rubric is how agents are graded, so an agent never changes one and never
+ * works around a wrong check: it flags the check, and only the person can
+ * approve a change (src/lib/board/rubric-fixes.ts).
+ */
+export const RUBRIC_FIX_RULE = `A Sentinel's rubric is how agents are graded, and you cannot change one: only the person can approve a change. When a rubric check you are held to is impossible to meet, names the wrong file or is outdated, flag it: name the Sentinel, the check id, what is wrong and the change you suggest. Never work around the check or reinterpret it, and never propose lowering a bar because the code does not meet it; a check the code fails is a defect to fix, not a wrong check.`;
+
+/**
  * The Reviewer's side of FOLLOW_UP_RULE: a gap the Coder reported, and was
  * right to leave, is not a send-back. Sending it back asks for exactly the
  * work the Coder was right to refuse.
@@ -284,8 +291,8 @@ export function withCodingRules(
 ): string {
   const rules = codingRules(
     role === "coder"
-      ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE} Put each in finish's follow_ups.`
-      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`,
+      ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${RUBRIC_FIX_RULE} Put each in finish's rubric_fixes.`
+      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${RUBRIC_FIX_RULE} Put each in finish's rubric_fixes.\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`,
   );
   return `${brief.trim()}\n\n${rules}\n\n${HANDOFF_RULE}${options.spike ? `\n\n${SPIKE_RULE}` : ""}\n\n${DESIGN_RULE}\n\n${ENGINEERING_PRACTICES}`;
 }

@@ -266,7 +266,40 @@ export interface AuditCheck {
  * project keeps at most two of each per sentinel: the last one that
  * finished, and a newer one running or failed.
  */
-export type AuditKind = "audit" | "calibrate";
+export type AuditKind = "audit" | "calibrate" | "revise";
+
+export type RubricFixStatus = "flagged" | "proposed" | "approved" | "revising" | "applied" | "declined" | "failed";
+
+/** One change to a single rubric check, from the flag to the applied edit. */
+export interface RubricFix {
+  id: string;
+  projectId: string;
+  sentinel: string;
+  checkId: string;
+  problem: string;
+  suggestion: string;
+  /** The card that flagged it. */
+  ticketId: string | null;
+  ticketKey: string | null;
+  /** The agent's label, or null when a person asked for it. */
+  flaggedBy: string | null;
+  status: RubricFixStatus;
+  /** The PM chat message that brought it to the person. */
+  messageId: string | null;
+  before: RubricCheck | null;
+  after: RubricCheck | null;
+  /** User id of whoever approved it. */
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  appliedAt: Date | null;
+  error: string | null;
+  createdAt: Date;
+}
+
+export type NewRubricFix = Pick<RubricFix, "projectId" | "sentinel" | "checkId" | "problem" | "suggestion"> &
+  Partial<Pick<RubricFix, "ticketId" | "ticketKey" | "flaggedBy" | "status" | "messageId">>;
+
+export type RubricFixPatch = Partial<Omit<RubricFix, "id" | "projectId" | "createdAt">>;
 
 /**
  * One sentinel's audit of a project. A project keeps at most two per
@@ -1278,6 +1311,17 @@ export interface AuditRepository {
   finishAudit(id: string, result: AuditResult): Promise<void>;
   /** Records the Epic made from an audit's report. */
   markAuditEpic(auditId: string, epicId: string): Promise<void>;
+  /**
+   * Replaces the rubric of a done calibration, and only that: audits keep
+   * the rubric they were scored against. Throws for any other record.
+   */
+  reviseCalibration(auditId: string, rubric: Rubric): Promise<void>;
+  /** Records a change to one rubric check. */
+  addRubricFix(input: NewRubricFix): Promise<RubricFix>;
+  rubricFix(id: string): Promise<RubricFix | null>;
+  /** A project's rubric fixes, newest first; one sentinel's when given. */
+  rubricFixesFor(projectId: string, sentinel?: string): Promise<RubricFix[]>;
+  updateRubricFix(id: string, patch: RubricFixPatch): Promise<RubricFix | null>;
 }
 
 /** Webhook deliveries. */

@@ -239,6 +239,7 @@ model Project {
   assistantMessages AssistantMessage[]
   cardChatMessages  CardChatMessage[]
   audits            Audit[]
+  rubricFixes       RubricFix[]
 
   @@index([ownerId])
   @@map("project")
@@ -847,6 +848,42 @@ model Audit {
 
   @@index([projectId, sentinel])
   @@map("audit")
+}
+
+/// One change to a single rubric check: flagged by an agent, brought to the
+/// person, and applied only once they approve. Its own table, because a
+/// project keeps at most two audit runs per kind and this record outlives them.
+model RubricFix {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The roster id, such as "architecture".
+  sentinel   String
+  /// The check's id within the rubric, such as "5b".
+  checkId    String
+  problem    String
+  suggestion String
+  /// The card that flagged it.
+  ticketId   String?
+  ticketKey  String?
+  /// The agent's label, or null when a person asked for it.
+  flaggedBy  String?
+  /// "flagged", "proposed", "approved", "revising", "applied", "declined" or "failed".
+  status     String    @default("flagged")
+  /// The PM chat message that brought it to the person.
+  messageId  String?
+  /// The RubricCheck before and after the change.
+  before     Json?
+  after      Json?
+  /// The user id of whoever approved it.
+  approvedBy String?
+  approvedAt DateTime?
+  appliedAt  DateTime?
+  error      String?
+  createdAt  DateTime  @default(now())
+
+  @@index([projectId, sentinel])
+  @@map("rubric_fix")
 }
 
 /// A Queen a person placed on a ticket or an Epic: at most one per card, and

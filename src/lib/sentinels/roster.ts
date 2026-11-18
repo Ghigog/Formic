@@ -264,13 +264,17 @@ export function promptFor(s: Sentinel): string {
 }
 
 /** The steps a run reports, in order. */
-export function stepsFor(s: Sentinel, kind: "audit" | "calibrate" = "audit"): string[] {
+export function stepsFor(s: Sentinel, kind: "audit" | "calibrate" | "revise" = "audit"): string[] {
   return [
     "Listing files",
     "Gathering the facts",
     `Choosing what a ${s.name} reads`,
     "Reading the code",
     "Reading more",
-    ...(kind === "calibrate" ? ["Writing the rubric", "Saving the rubric"] : [`Scoring as ${s.name}`, "Writing report"]),
+    ...(kind === "calibrate"
+      ? ["Writing the rubric", "Saving the rubric"]
+      : kind === "revise"
+        ? ["Revising the check", "Saving the check"]
+        : [`Scoring as ${s.name}`, "Writing report"]),
   ];
 }

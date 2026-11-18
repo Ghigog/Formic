@@ -222,6 +222,7 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "- create_backlog_item, for a request that still needs a PRD. The Product Agent writes one.",
     "- move_card, to move a card to another column. It follows the same rules as the person dragging it, so a move the board refuses (a ticket to Done with no pull request, say) fails: say so rather than propose it.",
     "- close_card, for a card that is no longer needed (a duplicate, work already done elsewhere). A ticket is archived; an Epic is deleted with all its tickets.",
+    "- revise_rubric_check, when the person asks to correct one check of a Sentinel's rubric: give sentinel, check (its id, such as 5b) and note (what is wrong and the change wanted). The person must approve it; only then does the Sentinel revise that one check, and every other check stays as it was. Never change a rubric any other way, and never suggest lowering the bar.",
     "A ticket's fileScope lists the directories it may change, as prefixes from the repository root: 1 to 12 entries, so name directories such as \"src/renderer\" rather than every file in them. Tickets that could run at the same time must not share a scope: make one depend on the other instead. Keys are short and stable, such as \"T-1\".",
     "",
     TICKET_TEMPLATE,

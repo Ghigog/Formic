@@ -14,6 +14,7 @@ import type { FollowUp } from "@/lib/agents/follow-ups";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { recordFollowUps } from "@/lib/board/follow-ups";
+import { recordRubricFixes } from "@/lib/board/rubric-fixes";
 import { runScouts, scoutReturned, scouting, ticketNoteTexts } from "./scouts";
 import { sharedNoteLine, sharedNotesFor } from "./shared-notes";
 import { newBranchName } from "@/lib/sandbox";
@@ -511,6 +512,7 @@ export async function openTicketPullRequest(
   }
   const repo = repository();
   await recordFollowUps(ticket.id, input.change.followUps ?? []);
+  await recordRubricFixes(ticket.id, input.change.rubricFixes ?? []);
   // A scout sent mid-run was kept first: its change is the pull request.
   const current = await repo.ticketDetail(ticket.id);
   if (current?.scoutPick && current.branchName !== input.branch) return;
