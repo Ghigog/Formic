@@ -83,7 +83,7 @@ afterEach(() => {
 describe("NewItemDialog", () => {
   it("tags nothing by words: a request that says 'error' is plain work", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={onSubmit} />);
+    render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={onSubmit} />);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("New feature request"), "Fix the error page");
     expect(screen.getByText("Product Agent")).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe("NewItemDialog", () => {
   });
 
   it("offers no Bug or Spike buttons", () => {
-    render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
+    render(<NewItemDialog repoFullName="o/r" open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /bug|spike/i })).toBeNull();
     expect(screen.queryByRole("group", { name: "Work type" })).toBeNull();
   });
@@ -101,7 +101,7 @@ describe("NewItemDialog", () => {
   it("drafts on submit and closes", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const onClose = vi.fn();
-    render(<NewItemDialog open column="backlog" onClose={onClose} onSubmit={onSubmit} />);
+    render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={onClose} onSubmit={onSubmit} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("New feature request"), "Rate-limit the merge queue");
@@ -112,7 +112,7 @@ describe("NewItemDialog", () => {
   });
 
   it("labels the To Do dialog for a ticket, naming the Architect Agent", () => {
-    render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
+    render(<NewItemDialog repoFullName="o/r" open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
     expect(screen.getByRole("heading", { name: "New ticket" })).toBeInTheDocument();
     expect(screen.getByText("Architect Agent")).toBeInTheDocument();
@@ -121,7 +121,7 @@ describe("NewItemDialog", () => {
 
   it("posts a ticket request's own copy of requestId, distinct per open dialog", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={onSubmit} />);
+    render(<NewItemDialog repoFullName="o/r" open column="todo" onClose={vi.fn()} onSubmit={onSubmit} />);
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("New ticket request"), "Fix the flaky retry test");
@@ -132,7 +132,7 @@ describe("NewItemDialog", () => {
 
   describe("attachments", () => {
     it("opens the file dialog from the Attach files button, without forcing the camera", async () => {
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
       const input = screen.getByLabelText("Attach files");
       const opened = vi.fn((e: Event) => e.preventDefault());
@@ -148,7 +148,7 @@ describe("NewItemDialog", () => {
 
     it("attaches a file, lists it with a filename, and removes it", async () => {
       serveUploads();
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
       const user = userEvent.setup();
       await user.upload(screen.getByLabelText("Attach files"), file("notes.txt", "text/plain"));
@@ -162,7 +162,7 @@ describe("NewItemDialog", () => {
     it("submits the same requestId its attachment was uploaded under", async () => {
       const fetchSpy = serveUploads();
       const onSubmit = vi.fn().mockResolvedValue(undefined);
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={onSubmit} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={onSubmit} />);
 
       const user = userEvent.setup();
       await user.upload(screen.getByLabelText("Attach files"), file("notes.txt", "text/plain"));
@@ -178,7 +178,7 @@ describe("NewItemDialog", () => {
     it("rejects a disallowed file type immediately, without uploading it", async () => {
       const fetchSpy = vi.fn();
       vi.stubGlobal("fetch", fetchSpy);
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
       // The input's own `accept` narrows what a picker shows; a real OS
       // dialog can still be told to show every file, so the client check
@@ -194,7 +194,7 @@ describe("NewItemDialog", () => {
     it("rejects a 6th attachment over the per-request cap, and still lets the request submit", async () => {
       serveUploads();
       const onSubmit = vi.fn().mockResolvedValue(undefined);
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={onSubmit} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={onSubmit} />);
 
       const user = userEvent.setup();
       const input = screen.getByLabelText("Attach files");
@@ -214,19 +214,19 @@ describe("NewItemDialog", () => {
 
     it("offers the device camera on a mobile viewport, and not on a wide one", () => {
       const { unmount } = render(
-        <NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />,
+        <NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />,
       );
       expect(screen.queryByLabelText("Take a photo")).not.toBeInTheDocument();
       unmount();
 
       setViewportMatches(true);
-      render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
       expect(screen.getByLabelText("Take a photo")).toBeInTheDocument();
     });
 
     it("attaches a pasted image immediately, names it, and uploads it to /api/attachments", async () => {
       const fetchSpy = serveUploads();
-      render(<NewItemDialog open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="todo" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
       pasteImages(screen.getByLabelText("New ticket request"), [file("image.png", "image/png")]);
 
@@ -244,7 +244,7 @@ describe("NewItemDialog", () => {
 
     it("attaches a pasted image in the New request dialog too, since both share NewItemDialog", async () => {
       serveUploads();
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
       pasteImages(screen.getByLabelText("New feature request"), [file("image.png", "image/png")]);
 
@@ -253,7 +253,7 @@ describe("NewItemDialog", () => {
 
     it("shows the same inline error when a paste hits the per-request cap", async () => {
       serveUploads();
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
       const input = screen.getByLabelText("Attach files");
       const user = userEvent.setup();
@@ -269,7 +269,7 @@ describe("NewItemDialog", () => {
 
     it("shows the same inline error when a pasted image is over the size limit", async () => {
       serveUploads();
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
       pasteImages(screen.getByLabelText("New feature request"), [
         file("image.png", "image/png", 11 * 1024 * 1024),
@@ -280,7 +280,7 @@ describe("NewItemDialog", () => {
 
     it("leaves a plain-text paste alone, so the browser inserts it into the textarea", async () => {
       const user = userEvent.setup();
-      render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
 
       const textarea = screen.getByLabelText("New feature request");
       await user.type(textarea, "Already typing");
@@ -296,28 +296,28 @@ describe("NewItemDialog", () => {
   describe("draft", () => {
     it("keeps the text when closed and reopened", async () => {
       const props = { column: "backlog" as const, onClose: vi.fn(), onSubmit: vi.fn() };
-      const { rerender } = render(<NewItemDialog open {...props} />);
+      const { rerender } = render(<NewItemDialog repoFullName="o/r" open {...props} />);
       await userEvent.setup().type(screen.getByLabelText("New feature request"), "Half written");
-      rerender(<NewItemDialog open={false} {...props} />);
-      rerender(<NewItemDialog open {...props} />);
+      rerender(<NewItemDialog repoFullName="o/r" open={false} {...props} />);
+      rerender(<NewItemDialog repoFullName="o/r" open {...props} />);
       expect(screen.getByLabelText("New feature request")).toHaveValue("Half written");
     });
 
     it("restores the text after a reload, per column", async () => {
       const props = { onClose: vi.fn(), onSubmit: vi.fn() };
-      const first = render(<NewItemDialog open column="backlog" {...props} />);
+      const first = render(<NewItemDialog repoFullName="o/r" open column="backlog" {...props} />);
       await userEvent.setup().type(screen.getByLabelText("New feature request"), "Saved");
       first.unmount();
-      render(<NewItemDialog open column="backlog" {...props} />);
+      render(<NewItemDialog repoFullName="o/r" open column="backlog" {...props} />);
       await waitFor(() => expect(screen.getByLabelText("New feature request")).toHaveValue("Saved"));
-      render(<NewItemDialog open column="todo" {...props} />);
+      render(<NewItemDialog repoFullName="o/r" open column="todo" {...props} />);
       expect(screen.getByLabelText("New ticket request")).toHaveValue("");
     });
 
     it("is empty after a successful submit, and kept after a failed one", async () => {
       const onSubmit = vi.fn().mockRejectedValueOnce(new Error("nope")).mockResolvedValue(undefined);
       const props = { column: "backlog" as const, onClose: vi.fn(), onSubmit };
-      const { rerender } = render(<NewItemDialog open {...props} />);
+      const { rerender } = render(<NewItemDialog repoFullName="o/r" open {...props} />);
       const user = userEvent.setup();
       await user.type(screen.getByLabelText("New feature request"), "Add dark mode");
       await user.click(screen.getByRole("button", { name: "Draft PRD" }));
@@ -325,8 +325,8 @@ describe("NewItemDialog", () => {
       expect(screen.getByLabelText("New feature request")).toHaveValue("Add dark mode");
       await user.click(screen.getByRole("button", { name: "Draft PRD" }));
       await waitFor(() => expect(props.onClose).toHaveBeenCalled());
-      rerender(<NewItemDialog open={false} {...props} />);
-      rerender(<NewItemDialog open {...props} />);
+      rerender(<NewItemDialog repoFullName="o/r" open={false} {...props} />);
+      rerender(<NewItemDialog repoFullName="o/r" open {...props} />);
       expect(screen.getByLabelText("New feature request")).toHaveValue("");
       expect(window.localStorage.length).toBe(0);
     });
@@ -339,7 +339,7 @@ describe("NewItemDialog keyboard and focus", () => {
     return (
       <>
         <button onClick={() => setOpen(true)}>Open</button>
-        <NewItemDialog
+        <NewItemDialog repoFullName="o/r"
           open={open}
           column="backlog"
           onClose={() => {
@@ -353,7 +353,7 @@ describe("NewItemDialog keyboard and focus", () => {
   }
 
   it("moves focus to the textarea when it opens", async () => {
-    render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+    render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("New feature request")));
   });
 
@@ -374,7 +374,7 @@ describe("NewItemDialog keyboard and focus", () => {
 
   it("wraps Tab and Shift+Tab inside the dialog", async () => {
     const user = userEvent.setup();
-    render(<NewItemDialog open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
+    render(<NewItemDialog repoFullName="o/r" open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />);
     const textarea = await screen.findByLabelText("New feature request");
     await waitFor(() => expect(textarea).toHaveFocus());
     const dialog = screen.getByRole("dialog");
@@ -389,6 +389,23 @@ describe("NewItemDialog keyboard and focus", () => {
     await user.tab({ shift: true });
     expect(last).toHaveFocus();
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
+
+  it("keeps an unsent request per board", async () => {
+    const user = userEvent.setup();
+    const ui = (repo: string) => (
+      <NewItemDialog repoFullName={repo} open column="backlog" onClose={vi.fn()} onSubmit={vi.fn()} />
+    );
+    const { rerender, unmount } = render(ui("o/a"));
+    await user.type(screen.getByLabelText("New feature request"), "for board a");
+    rerender(ui("o/b"));
+    expect(screen.getByLabelText("New feature request")).toHaveValue("");
+    rerender(ui("o/a"));
+    expect(screen.getByLabelText("New feature request")).toHaveValue("for board a");
+    unmount();
+    render(ui("o/b"));
+    expect(screen.getByLabelText("New feature request")).toHaveValue("");
   });
 
 });
