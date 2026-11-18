@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Account } from "@/components/board/account-menu";
 import { useSound } from "@/components/colony/store";
-import { BoardViewSection } from "@/components/settings/board-view-section";
 import { RunTimeBudgetSection } from "@/components/settings/run-time-budget-section";
 import { RenewalDaySection, type Renewal } from "@/components/settings/renewal-day-section";
 import { SentinelsSection } from "@/components/settings/sentinels-section";
@@ -406,7 +405,6 @@ export function SettingsForm({
         <SoundSection />
         <ToursSection />
 
-        <BoardViewSection />
 
         <KeyField
           field="e2bKey"
