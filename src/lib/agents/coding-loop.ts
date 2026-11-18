@@ -3,7 +3,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
-import type { AgentContext, AgentOutcome, CodeChange, Usage } from "./ports";
+import type { AgentContext, AgentOutcome, BlockedByFix, CodeChange, Usage } from "./ports";
 import { budgetTokens } from "./ports";
 import type { Workspace } from "@/lib/sandbox/workspace";
 import { ScopeError } from "@/lib/domain/scope";
@@ -268,6 +268,18 @@ const finishInput = z.object({
   // Optional here: a model that leaves it out has changed something.
   already_done: z.boolean().optional(),
   send_back: z.string().nullable().optional(),
+  blocked_by_fix: z
+    .object({
+      cause: z.string().trim().min(1),
+      check: z.string().trim().min(1),
+      bug: z.object({
+        title: z.string().trim().min(1),
+        story: z.string().trim().min(1),
+        scope: z.array(z.string()),
+      }),
+    })
+    .nullable()
+    .optional(),
   for_you: z.array(z.string()).optional(),
   follow_ups: z.array(z.unknown()).optional(),
   rubric_fixes: z.array(z.unknown()).optional(),
@@ -543,13 +555,35 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
           description:
             "To send the ticket back to the Coder Agent: what is wrong and what to do about it. Change nothing when you send it back. Null to approve or fix.",
         },
+        blocked_by_fix: {
+          type: ["object", "null"],
+          description:
+            "Red CI this ticket's change did not cause (a check failing in code it does not touch): the ticket waits on a fix of its own. Change nothing. Null otherwise.",
+          properties: {
+            cause: { type: "string", description: "Why the check fails and why the change is not the reason." },
+            check: { type: "string", description: "The failing check, such as the test's name." },
+            bug: {
+              type: "object",
+              description: "The bug ticket that fixes it.",
+              properties: {
+                title: { type: "string" },
+                story: { type: "string", description: "What is broken and what done looks like." },
+                scope: { type: "array", items: { type: "string" }, description: "The files the fix is expected to touch." },
+              },
+              required: ["title", "story", "scope"],
+              additionalProperties: false,
+            },
+          },
+          required: ["cause", "check", "bug"],
+          additionalProperties: false,
+        },
         for_you: FOR_YOU,
         follow_ups: FOLLOW_UPS,
         rubric_fixes: RUBRIC_FIXES,
         blocked_reason: BLOCKED,
         question: QUESTION,
       },
-      required: ["summary", "detail", "verified_with", "send_back", "for_you", "follow_ups", "rubric_fixes", "blocked_reason", "question"],
+      required: ["summary", "detail", "verified_with", "send_back", "blocked_by_fix", "for_you", "follow_ups", "rubric_fixes", "blocked_reason", "question"],
       additionalProperties: false,
     },
     strict: true,
@@ -853,7 +887,7 @@ function openAiConversation(
 }
 
 /** What the agent reported. A reviewer's `sendBack` is null for a coder. */
-export type LoopResult = CodeChange & { sendBack: string | null };
+export type LoopResult = CodeChange & { sendBack: string | null; blockedByFix?: BlockedByFix | null };
 
 /**
  * Runs the loop until the agent calls `finish`, the budget stops it, or it
@@ -1023,6 +1057,7 @@ export async function runCodingLoop(
               followUps: checkFollowUps(parsed.data.follow_ups),
               rubricFixes: checkRubricFixFlags(parsed.data.rubric_fixes),
               sendBack: parsed.data.send_back?.trim() || null,
+              blockedByFix: role === "reviewer" ? (parsed.data.blocked_by_fix ?? null) : null,
             },
             usage: total,
           };

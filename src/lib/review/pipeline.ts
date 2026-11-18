@@ -3,7 +3,8 @@ import "server-only";
 import { withCardActor } from "@/lib/auth/actor";
 import { attemptsFor, inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
-import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
+import type { BlockedByFix, FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
+import type { BoardCard } from "@/lib/domain/entities";
 import { type Checkout, commitAndPush, openCheckout, rebaseOntoTarget } from "@/lib/coder/checkout";
 import { runCoderAgent, stallTicket, taskFor, ticketOrigin } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
@@ -15,7 +16,7 @@ import { prdSchema } from "@/lib/domain/entities";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { proposeFollowUps } from "@/lib/assistant/follow-up-messages";
-import { recordFollowUps } from "@/lib/board/follow-ups";
+import { recordFollowUps, requestFix, waitingOnFixReason } from "@/lib/board/follow-ups";
 import { recordRubricFixes } from "@/lib/board/rubric-fixes";
 import { positionForIndex } from "@/lib/ordering";
 import {
@@ -1173,6 +1174,34 @@ async function releaseDependents(
   // The store may not show it merged yet to every reader; this one knows.
   for (const card of cards) if (card.id === merged.id) card.status = "merged";
   await releaseWaiting(projectId, cards);
+  await reviewAgainAfterFix(projectId, merged, cards);
+}
+
+/**
+ * The Reviewer blocked a ticket on a fix of its own (blockOnFix). That fix
+ * has merged: review the ticket again on its current head.
+ */
+async function reviewAgainAfterFix(projectId: string, merged: TicketDetail, cards: BoardCard[]): Promise<void> {
+  for (const card of cards) {
+    if (card.kind !== "ticket" || card.status !== "blocked" || !card.dependsOn.includes(merged.id)) continue;
+    const waiting = await repository().ticketDetail(card.id);
+    if (!waiting?.prNumber || waiting.stage < STAGE_PR) continue;
+    // Still waiting on another unmerged ticket: that one's merge brings it back.
+    if (card.dependsOn.some((id) => id !== merged.id && cards.find((c) => c.id === id)?.status !== "merged")) continue;
+    const prNumber = waiting.prNumber;
+    launch(async () => {
+      await repository().updateTicket(waiting.id, { status: "review", stalledIn: null, blockedReason: null, reviewedHead: null });
+      const project = await projectFor(projectId);
+      const pull = await vcs(project.repoFullName, (await credentialsForProject(project)).repoToken).pullRequest(prNumber);
+      await reviewPullRequest(projectId, prNumber, pull.headSha);
+    }, `review of ${card.key} after the fix it waited on merged`);
+  }
+}
+
+/** The ticket stops, naming the failing check and the fix it waits on; the fix is asked for as a ticket of its own. */
+export async function blockOnFix(projectId: string, ticket: TicketDetail, fix: BlockedByFix): Promise<void> {
+  const created = await requestFix(projectId, ticket, fix);
+  await stallTicket(projectId, ticket, waitingOnFixReason(fix, created.key), { blocked: true, stalledIn: "in_review" });
 }
 
 /**
@@ -1403,6 +1432,14 @@ async function reviewTicket(
     if (verdict.sendBack) {
       // Whatever it edited on the way to deciding this is not pushed.
       await sendBack(projectId, ticket, verdict.sendBack);
+      await run.finish(outcome);
+      return;
+    }
+
+    if (verdict.blockedByFix) {
+      // Not this change's failure: nothing is pushed, and the ticket waits
+      // on a bug ticket of its own instead of going round again.
+      await blockOnFix(projectId, ticket, verdict.blockedByFix);
       await run.finish(outcome);
       return;
     }

@@ -279,6 +279,8 @@ export const SPIKE_RULE = `This ticket is a spike: an investigation, not a chang
 
 export const ARCHITECT_AUDIT_RULE = `When the request is a sentinel's audit, each check it lists as not met is a rule over the whole project, and the places the audit found are examples of where it breaks, not the list of them. Give each check a ticket whose acceptance criteria state the check as written and carry its Verify line, so the reviewer runs it. Scope that ticket to everywhere the rule applies: search the code for every place the rule covers before you set the scope, not only the files the audit named.`;
 
+export const REVIEWER_BLOCKED_RULE = `When CI is red, find out whose failure it is before you change anything: read the failing check's log and compare the failing test or file with the diff. If the only red checks fail in code this change does not touch, it is not this ticket's to fix and sending it back or re-running the check will not help. Change nothing and finish with blocked_by_fix: the cause, the failing check, and a bug ticket (title, story, file scope) that fixes it. The ticket waits on that fix and is reviewed again when it merges. Never re-run a check whose code has not changed unless you can say what changed in the environment.`;
+
 export const REVIEWER_PROOF_RULE = `Passing tests are not the same as met criteria. For each acceptance criterion, find the test or check that proves it and ask whether it covers everything the criterion says. A test narrower than its criterion (it reads only some of the files the rule covers, or lists cases by hand where the code could find them) does not prove it: widen the test, or send the change back saying what it misses.`;
 
 export const REVIEWER_AUDIT_RULE = `When the ticket cites a check from a sentinel's audit with a verification (a "Verify:" line: the file to read or the command to run, and what passing looks like), run that check yourself on the branch and judge from its result. The Coder Agent's summary is not evidence that the check passes. A ticket without such a check is judged as before.`;
@@ -292,7 +294,7 @@ export function withCodingRules(
   const rules = codingRules(
     role === "coder"
       ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${RUBRIC_FIX_RULE} Put each in finish's rubric_fixes.`
-      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${RUBRIC_FIX_RULE} Put each in finish's rubric_fixes.\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`,
+      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${RUBRIC_FIX_RULE} Put each in finish's rubric_fixes.\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}\n- ${REVIEWER_BLOCKED_RULE}`,
   );
   return `${brief.trim()}\n\n${rules}\n\n${HANDOFF_RULE}${options.spike ? `\n\n${SPIKE_RULE}` : ""}\n\n${DESIGN_RULE}\n\n${ENGINEERING_PRACTICES}`;
 }
