@@ -31,6 +31,21 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/assistant/pm-messages", () => ({ postPmMessage: (...a: unknown[]) => postPmMessage(...a) }));
 
+const rewriteOther = vi.hoisted(() => ({ on: false }));
+vi.mock("./rubric-fix", async (orig) => {
+  const real = await orig<typeof import("./rubric-fix")>();
+  return {
+    ...real,
+    // Stands in for a revision that also rewrites check 3a.
+    reviseCheck: (...a: Parameters<typeof real.reviseCheck>) => {
+      const r = real.reviseCheck(...a);
+      if (!rewriteOther.on) return r;
+      const first = r.rungs[0]!;
+      return { ...r, rungs: [{ ...first, checks: [{ ...first.checks[0]!, text: "Lowered bar" }] }, ...r.rungs.slice(1)] };
+    },
+  };
+});
+
 import { landRevision } from "./revise";
 
 const audit = (over: Partial<AuditRecord>): AuditRecord =>
@@ -38,6 +53,7 @@ const audit = (over: Partial<AuditRecord>): AuditRecord =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  rewriteOther.on = false;
   calibration = audit({ id: "c1", kind: "calibrate", rubric });
   revision = audit({ id: "r1", kind: "revise", status: "running", rubric });
   fix = {
@@ -91,5 +107,14 @@ describe("landRevision", () => {
     expect((await landRevision("r1", check)).ok).toBe(false);
     expect(reviseCalibration).not.toHaveBeenCalled();
     expect(fix.status).toBe("failed");
+  });
+
+  it("rejects a revision that also rewrites check 3a: nothing saved, the PM says it was not changed", async () => {
+    rewriteOther.on = true;
+    expect((await landRevision("r1", check)).ok).toBe(false);
+    expect(reviseCalibration).not.toHaveBeenCalled();
+    expect(calibration.rubric).toEqual(rubric);
+    expect(fix.status).toBe("failed");
+    expect((postPmMessage.mock.calls[0]![1] as { content: string }).content).toContain("did not change");
   });
 });
