@@ -12,6 +12,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { env } from "@/lib/secrets/env";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
+import { REVIEW_CEILING } from "@/lib/domain/notice";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { proposeFollowUps } from "@/lib/assistant/follow-up-messages";
@@ -386,20 +387,32 @@ function ceilingReason(
   pull: PullRequestDetail,
   red: CheckSummary[],
   maxReviews: number,
+  logs: FailingCheck[],
 ): string {
   if (red.length === 0) {
-    return `${ticket.key} has been reviewed ${maxReviews} times without being approved. This needs a human.`;
+    return `${REVIEW_CEILING}: ${ticket.key} was reviewed ${maxReviews} times without being approved`;
   }
   const names = red.map((c) => c.name).join(", ");
-  if (ticket.reviewedSha === pull.headSha) {
-    return (
-      `${names} fails on the commit the Reviewer Agent approved on pull request #${pull.number}, ` +
-      `so the change is vouched for and the check is the question. Re-run ${names} on GitHub and the card carries on by itself if it passes, ` +
-      `or say "resume" in ${ticket.key}'s chat to give the reviews another go at it, ` +
-      `or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code. This needs a human.`
-    );
-  }
-  return `${names} is still failing after ${maxReviews} reviews of pull request #${pull.number}. This needs a human.`;
+  const approved = ticket.reviewedSha === pull.headSha;
+  const failed = logs.flatMap((log) => {
+    const notes = log.annotations.slice(0, 3).map((a) => `${a.path}${a.line ? `:${a.line}` : ""} ${a.message}`);
+    return [`${log.name}: ${log.summary}`, ...notes];
+  });
+  const options = approved
+    ? [
+        `${names} fails on the commit the Reviewer Agent approved on pull request #${pull.number}, so the change is vouched for and the check is the question.`,
+        `Re-run ${names} on GitHub and the card carries on by itself if it passes, or say "resume" in ${ticket.key}'s chat to give the reviews another go at it, or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`,
+      ]
+    : [
+        `You can re-run ${names} on GitHub, say "resume" in ${ticket.key}'s chat to give the reviews another go, or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it.`,
+      ];
+  const subtitle = approved
+    ? `${REVIEW_CEILING}: ${names} fails on the approved commit of pull request #${pull.number}`
+    : `${REVIEW_CEILING}: ${names} still failing after ${maxReviews} reviews of pull request #${pull.number}`;
+  // The log is capped, not the options after it: about 1,500 characters in all.
+  const log = failed.join("\n");
+  const quoted = log.length > 900 ? `${log.slice(0, 899)}…` : log;
+  return [subtitle, ...(quoted ? ["What failed:", quoted, ""] : []), ...options].join("\n");
 }
 
 /** When each board's open pull requests were last looked at, to go easy on the API. */
@@ -1275,7 +1288,13 @@ async function reviewTicket(
   const maxReviews = await attemptsFor(project.ownerId, "review");
 
   if (attempt > maxReviews) {
-    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red, maxReviews), {
+    const ceilingClient = vcs(project.repoFullName, (await credentialsForProject(project)).repoToken);
+    const failing: FailingCheck[] = [];
+    for (const check of red) {
+      const log = await ceilingClient.checkLog(check.id).catch(() => null);
+      if (log) failing.push(log);
+    }
+    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red, maxReviews, failing), {
       blocked: true,
       stalledIn: "in_review",
     });
