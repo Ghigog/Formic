@@ -1470,7 +1470,10 @@ async function completeCliSentinel(
     await cleanUp();
     return;
   }
-  const fail = (error: string) => repo.finishAudit(audit.id, { status: "failed", error, model: null });
+  const fail = async (error: string) => {
+    await repo.finishAudit(audit.id, { status: "failed", error, model: null });
+    if (audit.kind === "revise") await failRevision(audit.id, error);
+  };
   if (result.conclusion !== "success") {
     await cleanUp();
     await fail(await whyItFailed(projectId, client, result, audit.runnerAgent));
@@ -1480,12 +1483,21 @@ async function completeCliSentinel(
   await cleanUp();
 
   const { goalOf } = await import("@/lib/sentinels/rubric");
-  const goal = goalOf(audit);
+  const { landRevision, failRevision, fixOf } = await import("@/lib/sentinels/revise");
+  let goal = goalOf(audit);
+  if (audit.kind === "revise") {
+    const fix = await fixOf(audit);
+    goal = fix && audit.rubric ? { kind: "revise", rubric: audit.rubric, checkId: fix.checkId, note: fix.suggestion } : null;
+  }
   if (!goal) return void (await fail("This audit started without a rubric. Calibrate, then audit again."));
   const { parseCliReport } = await import("@/lib/sentinels/cli");
   const report = parseCliReport(answer, goal);
   if (report.ok) {
-    const { ok: _, ...done } = report;
+    const { ok: _, check, ...done } = report;
+    if (goal.kind === "revise") {
+      const landed = check ? await landRevision(audit.id, check) : { ok: false as const, reason: "The run gave no check." };
+      if (!landed.ok) return await repo.finishAudit(audit.id, { status: "failed", error: landed.reason, model: null });
+    }
     await repo.finishAudit(audit.id, { status: "done", ...done, model: null });
     return;
   }
