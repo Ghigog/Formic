@@ -781,7 +781,9 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.status).toBe("blocked");
     expect(after.stalledIn).toBe("in_review");
     expect(after.blockedReason).toContain("ci / test");
-    expect(after.blockedReason).toContain("needs a human");
+    // Title / subtitle / description: the subtitle is line 1, the rest says what to do.
+    expect(after.blockedReason?.startsWith("Out of reviews")).toBe(true);
+    expect(after.blockedReason?.split("\n").length).toBeGreaterThan(1);
   });
 
   it("says the failing commit was approved when a check fails on it at the ceiling", async () => {
@@ -805,7 +807,7 @@ describe("the Reviewer Agent pipeline", () => {
     // The cheap way out on the board is named too, since a plain "resume"
     // lands the card back in In Review, which gives the reviews a fresh count.
     expect(after.blockedReason).toContain('say "resume"');
-    expect(after.blockedReason).toContain("needs a human");
+    expect(after.blockedReason?.startsWith("Out of reviews")).toBe(true);
   });
 
   it("announces a ticket parked at the ceiling once, however often it is reviewed again", async () => {

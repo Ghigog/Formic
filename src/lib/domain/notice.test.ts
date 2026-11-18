@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNotice, NO_CHANGES, STUCK_RUN } from "./notice";
+import { classifyNotice, NO_CHANGES, REVIEW_CEILING, STUCK_RUN } from "./notice";
 
 describe("classifyNotice", () => {
   it("calls a run that hit the usage limit paused, not failed", () => {
@@ -56,6 +56,12 @@ describe("classifyNotice", () => {
   it("titles a stuck run 'Stuck' at alert severity, with what each run did as the detail", () => {
     const n = classifyNotice({ status: "blocked", stalledIn: "in_progress", blockedReason: `${STUCK_RUN}\nRun 1 last edited a.ts` });
     expect(n).toEqual({ severity: "alert", title: "Stuck", shortDescription: STUCK_RUN, longDescription: "Run 1 last edited a.ts" });
+  });
+
+  it("titles a card stopped at the review ceiling 'Out of reviews'", () => {
+    const sub = `${REVIEW_CEILING}: build still failing after 4 reviews of pull request #9`;
+    const n = classifyNotice({ status: "blocked", stalledIn: "in_review", blockedReason: `${sub}\nWhat failed:\nx` });
+    expect(n).toEqual({ severity: "alert", title: "Out of reviews", shortDescription: sub, longDescription: "What failed:\nx" });
   });
 
   it("makes any other pause that waits for a person an alert", () => {
