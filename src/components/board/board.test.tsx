@@ -156,6 +156,44 @@ describe("Board seeded from the saved board view", () => {
   });
 });
 
+describe("Board filter bar", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("narrows every column as you type and clears with Escape", async () => {
+    const user = userEvent.setup();
+    renderBoard([
+      makeCard({ status: "ready", key: "FOR-1", title: "Login page" }),
+      makeCard({ status: "draft", key: "FOR-2", title: "Fix sorting" }),
+      makeCard({ status: "ready", key: "FOR-3", title: "Sorting tests" }),
+    ]);
+    await user.type(screen.getByLabelText("Filter cards"), "sort");
+    expect(screen.queryByText("Login page")).toBeNull();
+    expect(screen.getByText("Fix sorting")).toBeInTheDocument();
+    expect(screen.getByText("Sorting tests")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.getByText("Login page")).toBeInTheDocument();
+  });
+
+  it("applies a sort from the bar to every column and saves it", async () => {
+    const user = userEvent.setup();
+    renderBoard([
+      makeCard({ status: "ready", title: "Zed" }),
+      makeCard({ status: "ready", title: "Alpha" }),
+      makeCard({ status: "draft", title: "Yak" }),
+      makeCard({ status: "draft", title: "Bee" }),
+    ]);
+    await user.click(screen.getByRole("button", { name: "Board options" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Title" }));
+    const todo = screen.getByRole("region", { name: "To Do" });
+    const backlog = screen.getByRole("region", { name: "Backlog" });
+    const order = (r: HTMLElement, a: string, b: string) =>
+      r.textContent!.indexOf(a) < r.textContent!.indexOf(b);
+    expect(order(todo, "Alpha", "Zed")).toBe(true);
+    expect(order(backlog, "Bee", "Yak")).toBe(true);
+    expect(JSON.parse(window.localStorage.getItem(BOARD_VIEW_KEY)!).sort).toBe("title");
+  });
+});
+
 describe("Board, on a wide screen", () => {
   it("keeps a ticket in To Do when In Progress has no agent", async () => {
     const ticket = makeCard({ kind: "ticket", status: "ready", key: "T-1" });
@@ -305,11 +343,10 @@ describe("Board, on a wide screen", () => {
     expect(screen.queryByRole("button", { name: /^Move PROT-17/ })).toBeNull();
   });
 
-  it("has no logo, sync badge, board options menu or app bar + button", () => {
+  it("has no logo, sync badge or app bar + button", () => {
     renderBoard([makeCard()]);
     expect(screen.queryByText("Formic")).toBeNull();
     expect(screen.queryByText(/synced|behind/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Board options" })).toBeNull();
     expect(screen.queryByRole("button", { name: "New backlog item" })).toBeNull();
   });
 });
@@ -899,6 +936,7 @@ describe("Board, redrawing", () => {
     rerender(<Board cards={[{ ...moving, status: "running", position: 2 }, ...others]} {...props} />);
 
     expect(renders.types).toEqual(["user_story"]);
-    expect(renders.menus).toBe(2);
+    // Two columns, plus the filter bar's menu, which redraws with the board.
+    expect(renders.menus).toBe(3);
   });
 });
