@@ -41,6 +41,15 @@ export function classifyNotice(card: {
   if (isQuestion(card.blockedReason)) {
     return { severity: "question", title: "Question for you", shortDescription: shortDescription.replace(/^Question: /, ""), longDescription };
   }
+  if (card.status === "failed" && shortDescription === NO_CHANGES) {
+    const [subtitle = "", ...description] = rest;
+    return {
+      severity: "warning",
+      title: NO_CHANGES,
+      shortDescription: subtitle.trim(),
+      longDescription: description.join("\n").trim(),
+    };
+  }
   if (card.status === "failed") {
     return { severity: "warning", title: "Failed", shortDescription, longDescription };
   }
@@ -49,6 +58,9 @@ export function classifyNotice(card: {
   const title = SCOPE_REQUEST_REASON.test(shortDescription) ? "Needs authorization" : "Waiting for you";
   return { severity: "alert", title, shortDescription, longDescription };
 }
+
+/** The title runner.ts gives a card whose agent ended without changing a file. */
+export const NO_CHANGES = "No changes made";
 
 /** The failure type runner.ts gives a card whose agent ran out of usage mid-run. */
 export const USAGE_LIMIT = "Usage limit reached";

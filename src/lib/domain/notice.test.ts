@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNotice, REVIEW_CEILING, STUCK_RUN } from "./notice";
+import { classifyNotice, NO_CHANGES, REVIEW_CEILING, STUCK_RUN } from "./notice";
 
 describe("classifyNotice", () => {
   it("makes a failed ticket a warning with a title and both descriptions", () => {
@@ -74,5 +74,25 @@ describe("classifyNotice", () => {
   it("gives no notice for a failed card with an agent working on it", () => {
     const card = { status: "failed" as const, stalledIn: "in_progress" as const, blockedReason: "Tests failed" };
     expect(classifyNotice({ ...card, workingSince: "2026-01-01T00:00:00Z" })).toBeNull();
+  });
+});
+
+describe("classifyNotice for a run that changed nothing", () => {
+  it("splits the reason into title, subtitle and description", () => {
+    expect(
+      classifyNotice({ status: "failed", blockedReason: `${NO_CHANGES}\nNo test added.\nNo test added. T4 is open.\nLog: https://x/1` }),
+    ).toEqual({
+      severity: "warning",
+      title: NO_CHANGES,
+      shortDescription: "No test added.",
+      longDescription: "No test added. T4 is open.\nLog: https://x/1",
+    });
+  });
+
+  it("leaves any other failure as it was", () => {
+    expect(classifyNotice({ status: "failed", blockedReason: "Boom\nLog: u" })).toMatchObject({
+      title: "Failed",
+      shortDescription: "Boom",
+    });
   });
 });
