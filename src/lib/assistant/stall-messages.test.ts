@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn(async () => 1) }));
 vi.mock("server-only", () => ({}));
+const wake = vi.hoisted(() => vi.fn(async () => {}));
+const agent = vi.hoisted(() => ({ kind: "none" as string }));
+vi.mock("@/lib/pm/questions", () => ({ wakePmForStall: wake }));
+vi.mock("@/lib/agents/presets", () => ({ assistantAgentFor: async () => agent }));
 
 import { repository } from "@/lib/db";
 import type { FormicEvent } from "@/lib/domain/events";
@@ -33,6 +37,8 @@ const messages = async () => (await repository().assistantMessages(PROJECT)).mes
 beforeEach(() => {
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
   resetStallsReported();
+  wake.mockClear();
+  agent.kind = "none";
 });
 
 describe("reportStall", () => {
@@ -66,6 +72,32 @@ describe("reportStall", () => {
   it("posts nothing for a usage-limit stop", async () => {
     const t = await seed();
     await reportStall(PROJECT, stall(t.id, "blocked", "Usage limit reached\nresets at noon"));
+    expect(await messages()).toHaveLength(0);
+  });
+
+  it("wakes the PM for a non-question stop when an agent can answer, and posts nothing canned", async () => {
+    agent.kind = "api";
+    const t = await seed();
+    const reason = "Out of reviews: build still failing\nWhat failed:\nx";
+    await reportStall(PROJECT, stall(t.id, "blocked", reason));
+    await vi.waitFor(() => expect(wake).toHaveBeenCalledWith(PROJECT, t.id, reason));
+    expect(await messages()).toHaveLength(0);
+  });
+
+  it("posts the canned message with the description when no agent can answer", async () => {
+    const t = await seed();
+    await reportStall(PROJECT, stall(t.id, "blocked", "Out of reviews: build still failing\nWhat failed:\nboom"));
+    const [m] = await messages();
+    expect(m!.content).toContain("needs you: Out of reviews. Out of reviews: build still failing");
+    expect(m!.content).toContain("boom");
+    expect(wake).not.toHaveBeenCalled();
+  });
+
+  it("does not wake the PM for a usage-limit stop", async () => {
+    agent.kind = "api";
+    const t = await seed();
+    await reportStall(PROJECT, stall(t.id, "blocked", "Usage limit reached\nresets at noon"));
+    expect(wake).not.toHaveBeenCalled();
     expect(await messages()).toHaveLength(0);
   });
 });

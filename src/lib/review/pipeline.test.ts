@@ -156,6 +156,23 @@ describe("approval arriving after the last CI report", () => {
     expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
   });
 
+  it("stops at the review ceiling with a note that says what failed", async () => {
+    const { ticketId, prNumber } = await seedApproved(true);
+    await repository().updateTicket(ticketId, { reviewedSha: null, attempts: 50, branchName: "t-1" });
+    MockVcsClient.setChecks(prNumber, "failure");
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    const [first, ...rest] = ((await repository().ticketDetail(ticketId))!.blockedReason ?? "").split("\n");
+    expect(first!.startsWith("Out of reviews")).toBe(true);
+    expect(first).toContain(`pull request #${prNumber}`);
+    const description = rest.join("\n");
+    expect(description).toContain("expected 3, received 2");
+    expect(description).toContain("src/lib/example.ts:12");
+    expect(description).toContain('say "resume"');
+    expect(description).not.toContain("This needs a human");
+  });
+
   it("does not merge on approval when a check has failed", async () => {
     const { ticketId, prNumber } = await seedApproved(true);
     const headSha = MockVcsClient.setChecks(prNumber, "failure");

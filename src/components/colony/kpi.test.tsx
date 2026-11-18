@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ProjectKpis } from "@/lib/kpi/compute";
 import { SOUND_KEY } from "@/components/colony/store";
@@ -134,5 +134,43 @@ describe("KpiSection reveal", () => {
     act(() => reveal());
     expect(within(done).getByText("3")).toBeTruthy();
     expect(frames).toHaveLength(0);
+  });
+
+  describe("at a measured width", () => {
+    beforeEach(() => {
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(private cb: ResizeObserverCallback) {}
+          observe() {
+            this.cb([{ contentRect: { width: 280 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+          }
+          unobserve() {}
+          disconnect() {}
+        },
+      );
+    });
+
+    it("draws each chart 280 wide with text of 10 or more", async () => {
+      render(<KpiSection unlocked />);
+      await screen.findByRole("group", { name: "Done" });
+      const charts = screen.getAllByRole("img");
+      expect(charts).toHaveLength(4);
+      for (const chart of charts) {
+        await waitFor(() => expect(chart.getAttribute("viewBox")).toBe("0 0 280 140"));
+        const sizes = [...chart.querySelectorAll("text, g[font-size]")].map((t) =>
+          Number((t.closest("[font-size]") ?? t).getAttribute("font-size")),
+        );
+        expect(sizes.length).toBeGreaterThan(0);
+        for (const size of sizes) expect(size).toBeGreaterThanOrEqual(10);
+      }
+    });
+
+    it("puts two-word column labels on two lines", async () => {
+      render(<KpiSection unlocked />);
+      const chart = await screen.findByRole("img", { name: "Average time in column" });
+      const text = [...chart.querySelectorAll("text")].find((t) => t.textContent === "InProgress");
+      expect([...text!.querySelectorAll("tspan")].map((t) => t.textContent)).toEqual(["In", "Progress"]);
+    });
   });
 });

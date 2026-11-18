@@ -7,7 +7,7 @@ import { SoundEngine } from "@/components/colony/sound";
 import { resetViewport, setViewportMatches } from "@/test/viewport";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import { SENTINEL_STOPPED, type SentinelStates } from "@/lib/sentinels/view";
-import { SentinelsPage } from "./sentinels";
+import { LAND_MS, SLIDE_MS, SLIDE_STAGGER_MS, SentinelsPage } from "./sentinels";
 import { SentinelsProvider } from "./store";
 
 const RUBRIC = {
@@ -49,7 +49,7 @@ function Open() {
   return <button onClick={() => c?.setSentinelsOpen(true)}>open sentinels</button>;
 }
 
-async function open(level = 34) {
+async function open(level = 34, sync = false) {
   render(
     <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
       <SentinelsProvider initial={states([SENTINELS[0]!.id, SENTINELS[3]!.id])} level={level}>
@@ -58,7 +58,8 @@ async function open(level = 34) {
       </SentinelsProvider>
     </ColonyProvider>,
   );
-  await userEvent.click(screen.getByText("open sentinels"));
+  if (sync) act(() => screen.getByText("open sentinels").click());
+  else await userEvent.click(screen.getByText("open sentinels"));
 }
 
 // jsdom has no Web Animations API; every test gets a fresh stub and none leaks.
@@ -99,17 +100,30 @@ describe("SentinelsPage motion and sound", () => {
     expect(play).not.toHaveBeenCalledWith("sentinelsOpen", expect.anything());
   });
 
-  it("plays one toc per reported card as it lands, none for the sweep", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  it("plays each reported sentinel's voice and toc the moment its card lands", async () => {
+    vi.useFakeTimers();
     try {
-      await open();
-      const lands = () => play.mock.calls.filter(([n]: unknown[]) => n === "sentinelLand");
-      expect(lands()).toHaveLength(0);
+      await open(34, true);
+      const sounds = () =>
+        play.mock.calls.filter(([n]: unknown[]) => n === "sentinelLand" || n === "sentinelVoice");
+      const keyframes = animate.mock.calls[0]![0] as { transform: string; offset?: number }[];
+      expect(keyframes.find((k) => k.transform === "none")?.offset).toBeCloseTo(LAND_MS / SLIDE_MS);
       act(() => {
-        vi.advanceTimersByTime(10_000);
+        vi.advanceTimersByTime(LAND_MS - 20);
       });
-      expect(lands()).toEqual([
+      expect(sounds()).toHaveLength(0);
+      act(() => {
+        vi.advanceTimersByTime(20);
+      });
+      expect(sounds()).toEqual([
+        ["sentinelVoice", 0],
         ["sentinelLand", 0],
+      ]);
+      act(() => {
+        vi.advanceTimersByTime(SLIDE_STAGGER_MS);
+      });
+      expect(sounds().slice(2)).toEqual([
+        ["sentinelVoice", 3],
         ["sentinelLand", 1],
       ]);
       expect(play.mock.calls.some(([n]: unknown[]) => n === "sentinelsOpen")).toBe(false);

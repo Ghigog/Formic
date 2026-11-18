@@ -8,9 +8,11 @@ export interface ViewMenuProps {
   value: ColumnView;
   onChange: (view: ColumnView) => void;
   scope?: "column" | "board";
+  /** Show the menu's own search box. The board hides it: its filter bar searches. */
+  search?: boolean;
 }
 
-export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
+export function ViewMenu({ value, onChange, scope = "column", search = true }: ViewMenuProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const active = isViewActive(value);
@@ -60,18 +62,21 @@ export function ViewMenu({ value, onChange, scope = "column" }: ViewMenuProps) {
           aria-label={buttonLabel}
           className="bg-card border-line shadow-lift absolute top-full right-0 z-50 mt-1 w-64 rounded-lg border p-1"
         >
-          {/* Search input */}
-          <div className="p-1.5">
-            <input
-              type="text"
-              placeholder="Search key or title..."
-              value={value.query}
-              onChange={(e) => onChange({ ...value, query: e.target.value })}
-              className="border-line bg-cream text-ink placeholder:text-muted focus:border-terracotta w-full rounded-md border px-2.5 py-1 text-[12px] outline-none"
-            />
-          </div>
+          {search && (
+            <>
+            <div className="p-1.5">
+              <input
+                type="text"
+                placeholder="Search key or title..."
+                value={value.query}
+                onChange={(e) => onChange({ ...value, query: e.target.value })}
+                className="border-line bg-cream text-ink placeholder:text-muted focus:border-terracotta w-full rounded-md border px-2.5 py-1 text-[12px] outline-none"
+              />
+            </div>
 
-          <div aria-hidden className="bg-hairline my-1 h-px" />
+            <div aria-hidden className="bg-hairline my-1 h-px" />
+            </>
+          )}
 
           {/* Sort options */}
           <div className="px-2 py-1 text-[10px] font-semibold text-muted uppercase tracking-wider">
