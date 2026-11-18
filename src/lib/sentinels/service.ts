@@ -102,7 +102,7 @@ export async function stopSentinel(projectId: string, sentinelId: string): Promi
 export async function summonSentinel(
   projectId: string,
   sentinelId: string,
-  kind: AuditKind = "audit",
+  kind: Exclude<AuditKind, "revise"> = "audit",
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const s = findSentinel(sentinelId);
   if (!s) return { ok: false, error: "No such sentinel.", status: 404 };

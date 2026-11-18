@@ -1144,6 +1144,70 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.runningAuditJobs(p.id)).map((a) => a.id)).toEqual([withJob.id]);
       });
 
+      describe("rubric fixes", () => {
+        const rubricOf = (text: string) =>
+          ({ rungs: [{ stars: 5, checks: [{ id: "5b", text, how: "read it" }] }] }) as never;
+
+        it("revises a calibration's rubric and leaves an audit's alone", async () => {
+          const p = await project();
+          const cal = await repo.startAudit(p.id, "architecture", "calibrate");
+          await repo.finishAudit(cal.id, { status: "done", rubric: rubricOf("old") });
+          const audit = await repo.startAudit(p.id, "architecture", "audit", rubricOf("old"));
+          await repo.finishAudit(audit.id, { status: "done", stars: 3 });
+
+          await repo.reviseCalibration(cal.id, rubricOf("new"));
+
+          expect((await repo.auditDetail(cal.id))?.rubric).toEqual(rubricOf("new"));
+          expect((await repo.auditDetail(audit.id))?.rubric).toEqual(rubricOf("old"));
+        });
+
+        it("refuses an audit record and saves nothing", async () => {
+          const p = await project();
+          const audit = await repo.startAudit(p.id, "architecture", "audit", rubricOf("old"));
+          await repo.finishAudit(audit.id, { status: "done", stars: 3 });
+          await expect(repo.reviseCalibration(audit.id, rubricOf("new"))).rejects.toThrow();
+          expect((await repo.auditDetail(audit.id))?.rubric).toEqual(rubricOf("old"));
+        });
+
+        it("keeps an applied fix, newest first, through later calibrations", async () => {
+          const p = await project();
+          const first = await repo.addRubricFix({
+            projectId: p.id,
+            sentinel: "architecture",
+            checkId: "5b",
+            problem: "Names the wrong file",
+            suggestion: "Use app/src/main/java/com/juice/overlay/OverlayService.kt",
+            flaggedBy: "Claude",
+          });
+          expect(first.status).toBe("flagged");
+          const before = { id: "5b", text: "old", how: "x" };
+          const after = { id: "5b", text: "new", how: "x" };
+          const approvedAt = new Date("2026-11-18T10:00:00Z");
+          const appliedAt = new Date("2026-11-18T10:01:00Z");
+          await repo.updateRubricFix(first.id, { status: "applied", before, after, approvedBy: "user_1", approvedAt, appliedAt });
+          const second = await repo.addRubricFix({ projectId: p.id, sentinel: "secops", checkId: "1a", problem: "p", suggestion: "s" });
+
+          for (let i = 0; i < 3; i++) {
+            const c = await repo.startAudit(p.id, "architecture", "calibrate");
+            await repo.finishAudit(c.id, { status: "done", rubric: rubricOf(`r${i}`) });
+          }
+
+          const all = await repo.rubricFixesFor(p.id);
+          expect(all.map((f) => f.id)).toEqual([second.id, first.id]);
+          expect((await repo.rubricFixesFor(p.id, "architecture")).map((f) => f.id)).toEqual([first.id]);
+          expect(await repo.rubricFix(first.id)).toMatchObject({
+            status: "applied",
+            before,
+            after,
+            approvedBy: "user_1",
+            approvedAt,
+            appliedAt,
+            flaggedBy: "Claude",
+            checkId: "5b",
+          });
+        });
+      });
+
       it("reads the audits the sentinels need: newest, newest done, newest calibration, Epic reports", async () => {
         const p = await project();
         const rubric = { checks: [] } as never;
