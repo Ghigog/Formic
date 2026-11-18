@@ -4,7 +4,7 @@ import { MemoryRepository } from "./memory-repository";
 import { PrismaRepository } from "./prisma-repository";
 import { prisma } from "./client";
 import { readFileSync } from "node:fs";
-import type { CreateTicketInput, Repository } from "./repository";
+import type { CreateTicketInput, Repository, Rubric } from "./repository";
 
 /**
  * One contract, both stores. The in-memory store is what the app runs on
@@ -1145,8 +1145,10 @@ function contract(name: string, make: () => Repository) {
       });
 
       describe("rubric fixes", () => {
-        const rubricOf = (text: string) =>
-          ({ rungs: [{ stars: 5, checks: [{ id: "5b", text, how: "read it" }] }] }) as never;
+        const rubricOf = (text: string): Rubric => ({
+          context: "A rubric for the contract test",
+          rungs: [{ stars: 5, checks: [{ id: "5b", text, how: "read it" }] }],
+        });
 
         it("revises a calibration's rubric and leaves an audit's alone", async () => {
           const p = await project();
