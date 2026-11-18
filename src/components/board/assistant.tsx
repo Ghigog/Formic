@@ -364,6 +364,16 @@ function ProposalCard({
             {p.action.body}
           </p>
         )}
+        {p.action.type === "revise_rubric_check" && (p.action.current || p.action.proposed) && (
+          <div className="mt-1.5 space-y-1.5 text-[12px]">
+            {p.action.current && (
+              <p className="text-muted font-mono text-[11px] break-words whitespace-pre-line">{p.action.current}</p>
+            )}
+            {p.action.proposed && (
+              <p className="text-ink font-mono text-[11px] break-words whitespace-pre-line">{p.action.proposed}</p>
+            )}
+          </div>
+        )}
         {tickets.length > 0 && (
           <ul className="text-muted mt-1.5 space-y-0.5 text-[12px]">
             {tickets.map((t) => (
@@ -395,7 +405,7 @@ function ProposalCard({
               onClick={() => void decide("dismiss")}
               className="text-muted hover:text-ink inline-flex h-8 items-center rounded-lg px-2 text-[12px]"
             >
-              Dismiss
+              {p.action.type === "revise_rubric_check" ? "Decline" : "Dismiss"}
             </button>
           </>
         ) : (
@@ -410,7 +420,9 @@ function ProposalCard({
             {p.state === "applied"
               ? "Approved"
               : p.state === "dismissed"
-                ? "Dismissed"
+                ? p.action.type === "revise_rubric_check"
+                  ? "Declined"
+                  : "Dismissed"
                 : `Could not apply: ${p.error ?? "unknown error"}`}
           </span>
         )}
