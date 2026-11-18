@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { wakePm, questionPrompt } from "./questions";
+import { wakePm, questionPrompt, stallPrompt } from "./questions";
 import { finishCliAnswer } from "@/lib/assistant/turn";
 import { epicNoteTexts } from "@/lib/agents/epic-notes";
 import { savePreset } from "@/lib/agents/presets";
@@ -164,5 +164,15 @@ describe("a CLI PM's answers", () => {
     expect(await epicNoteTexts(PROJECT, epic.id)).toEqual([expect.stringContaining("The PM answered for them")]);
     expect(await epicNoteTexts(PROJECT, answered.id)).toEqual([]);
     expect((await repository().assistantMessage(pending.id))?.content).toBe("I answered the Architect.");
+  });
+});
+
+describe("stallPrompt", () => {
+  it("names the card, carries the reason and asks the PM to read card_status", () => {
+    const text = stallPrompt({ key: "T-9", title: "Motion" }, "Out of reviews: build still failing");
+    expect(text.startsWith("[From Formic, not the person]")).toBe(true);
+    expect(text).toContain("T-9 (Motion)");
+    expect(text).toContain("Out of reviews: build still failing");
+    expect(text).toContain("card_status");
   });
 });

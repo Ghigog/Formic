@@ -20,7 +20,7 @@ import {
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
 import { attemptsFor } from "@/lib/budget/in-process";
-import { diagnose, lastWords } from "@/lib/agents/limits";
+import { diagnose, finalMessage, lastWords } from "@/lib/agents/limits";
 import { handedInPlan, mergePlan, planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo, secretNameFor, type ProviderInfo } from "@/lib/llm/providers";
 import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
@@ -96,6 +96,7 @@ import {
   type CheckpointFile,
   type VcsClient,
 } from "@/lib/vcs";
+import { NO_CHANGES } from "@/lib/domain/notice";
 import { hostName, repoHost } from "@/lib/vcs/host";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
@@ -420,6 +421,11 @@ export async function whyItFailed(
   const diagnosis = diagnose(text, label);
   if (!diagnosis) {
     const last = lastWords(text);
+    if (last === NO_CHANGES_ECHO) {
+      const said = finalMessage(text);
+      if (!said) return failure(NO_CHANGES, `${label} finished without changing any files`, log);
+      return failure(NO_CHANGES, subtitleOf(said), said, log);
+    }
     return last
       ? failure(
           `${label} stopped before finishing`,
@@ -456,6 +462,16 @@ function duration(limit: string): string {
   if (!m || m[3] && m[3] !== "0") return limit;
   const minutes = Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0);
   return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
+
+/** What the hand-off step prints when the agent ended without changing a file. */
+const NO_CHANGES_ECHO = "The agent finished without changing anything.";
+
+/** The first sentence of the agent's message, on one line and cut to about 120 characters. */
+function subtitleOf(message: string): string {
+  const one = message.replace(/\s+/g, " ").trim();
+  const sentence = /^.*?[.!?](?=\s|$)/.exec(one)?.[0] ?? one;
+  return sentence.length > 120 ? `${sentence.slice(0, 119).trimEnd()}…` : sentence;
 }
 
 function failure(type: string, ...detail: string[]): string {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeProviderError, diagnose, isTransientProviderError, lastWords } from "./limits";
+import { describeProviderError, diagnose, finalMessage, isTransientProviderError, lastWords } from "./limits";
 
 /** A failed "Run the agent" step as GitHub logs it. */
 function stepLog(output: string, prompt = "Turn these into tickets."): string {
@@ -404,5 +404,25 @@ describe("isTransientProviderError", () => {
     expect(
       isTransientProviderError({ status: 400, message: "This model's maximum context length is 200000 tokens" }),
     ).toBe(false);
+  });
+});
+
+describe("finalMessage", () => {
+  const echo =
+    "##[group]Run hand off\n##[endgroup]\nThe agent finished without changing anything.\n##[error]Process completed with exit code 1.";
+
+  it("is the result of Claude's last report, read past the failing step", () => {
+    const report = JSON.stringify({ type: "result", result: "I made no changes, because X is missing.", total_cost_usd: 0.1 });
+    const log = `2026-01-01T10:00:00.0000000Z ${report}\n2026-01-01T10:00:01.0000000Z ${echo}`;
+    expect(finalMessage(log)).toBe("I made no changes, because X is missing.");
+  });
+
+  it("is the last text thought of a Codex line", () => {
+    const line = JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "Nothing to change here." } });
+    expect(finalMessage(`${line}\n${echo}`)).toBe("Nothing to change here.");
+  });
+
+  it("is null when the agent said nothing", () => {
+    expect(finalMessage(echo)).toBeNull();
   });
 });

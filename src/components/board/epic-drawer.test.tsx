@@ -304,6 +304,32 @@ describe("EpicDrawer", () => {
   });
 });
 
+describe("EpicDrawer progress strip", () => {
+  it("shows the three planning stages while there are no tickets", async () => {
+    open(detail({ epic: { ...epic, stage: 2 } }));
+    await screen.findByText("Board export");
+    const stepper = screen.getByLabelText("Epic lifecycle");
+    expect(within(stepper).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(stepper).getByText("PRD Draft: active")).toBeInTheDocument();
+    expect(screen.queryByText("Sandbox Mint")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Epic timeline")).not.toBeInTheDocument();
+  });
+
+  it("shows the Epic timeline instead once there are tickets", async () => {
+    open(
+      detail({
+        children: [
+          makeCard({ id: "t-1", key: "T-1", title: "One", status: "merged" }),
+          makeCard({ id: "t-2", key: "T-2", title: "Two", status: "ready" }),
+        ],
+      }),
+    );
+    expect(await screen.findByLabelText("Epic timeline")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Epic lifecycle")).not.toBeInTheDocument();
+    expect(screen.getByText("1 merged · 1 to do")).toBeInTheDocument();
+  });
+});
+
 describe("EpicDrawer on-screen keyboard", () => {
   it("lifts the drawer above the keyboard and caps its height", async () => {
     const vv = Object.assign(new EventTarget(), { height: 500, offsetTop: 0 });
@@ -328,6 +354,7 @@ describe("EpicDrawer on-screen keyboard", () => {
       vv.dispatchEvent(new Event("resize"));
     });
     expect(screen.queryByLabelText("Epic lifecycle")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Epic timeline")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
 

@@ -72,6 +72,7 @@ async function startQueuedOn(repoFullName: string): Promise<void> {
   // Announced and launched after the lease is let go: an agent's events go
   // through the bus, and the bus starts queue passes of its own.
   const { runCoderAgent } = await import("@/lib/coder/pipeline");
+  const { waitsForReviewFiles } = await import("@/lib/review/pipeline");
   const { launch } = await import("@/lib/agents/pipeline");
   for (const { projectId, card } of started) {
     await publish(projectId, {
@@ -83,6 +84,12 @@ async function startQueuedOn(repoFullName: string): Promise<void> {
       stage: card.stage,
       blockedReason: null,
     });
+    const ticket = card.prNumber ? await repository().ticketDetail(card.id) : null;
+    if (ticket && waitsForReviewFiles(ticket)) {
+      const { reviewWithFiles } = await import("@/lib/review/pipeline");
+      launch(() => reviewWithFiles(projectId, card.id), `review for ${card.key}, with the files it asked for`);
+      continue;
+    }
     launch(() => runCoderAgent(projectId, card.id), `coder agent for ${card.key}`);
   }
 }
@@ -135,7 +142,9 @@ async function claimQueued(
         await stillWaits(card, prerequisiteReason(card, cards));
         continue;
       }
-      const blocker = heldBy(card, claims);
+      // A review waiting on files holds its claim on those too.
+      const asked = card.prNumber ? ((await repo.ticketDetail(card.id))?.scopeRequest ?? []) : [];
+      const blocker = heldBy(asked.length ? { ...card, fileScope: [...card.fileScope, ...asked] } : card, claims);
       if (blocker) {
         await stillWaits(card, heldReason(blocker, projectId));
         continue;

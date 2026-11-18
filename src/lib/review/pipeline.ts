@@ -12,6 +12,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { env } from "@/lib/secrets/env";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
+import { REVIEW_CEILING } from "@/lib/domain/notice";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { proposeFollowUps } from "@/lib/assistant/follow-up-messages";
@@ -43,6 +44,8 @@ import {
   releaseMergeSlot,
 } from "./merge-lane";
 import { claimOrQueue } from "@/lib/board/queue";
+import { widenScope } from "@/lib/coder/scope-request";
+import { normalizeScope } from "@/lib/domain/scope";
 import { handOffToReviewer, releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
@@ -386,20 +389,32 @@ function ceilingReason(
   pull: PullRequestDetail,
   red: CheckSummary[],
   maxReviews: number,
+  logs: FailingCheck[],
 ): string {
   if (red.length === 0) {
-    return `${ticket.key} has been reviewed ${maxReviews} times without being approved. This needs a human.`;
+    return `${REVIEW_CEILING}: ${ticket.key} was reviewed ${maxReviews} times without being approved`;
   }
   const names = red.map((c) => c.name).join(", ");
-  if (ticket.reviewedSha === pull.headSha) {
-    return (
-      `${names} fails on the commit the Reviewer Agent approved on pull request #${pull.number}, ` +
-      `so the change is vouched for and the check is the question. Re-run ${names} on GitHub and the card carries on by itself if it passes, ` +
-      `or say "resume" in ${ticket.key}'s chat to give the reviews another go at it, ` +
-      `or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code. This needs a human.`
-    );
-  }
-  return `${names} is still failing after ${maxReviews} reviews of pull request #${pull.number}. This needs a human.`;
+  const approved = ticket.reviewedSha === pull.headSha;
+  const failed = logs.flatMap((log) => {
+    const notes = log.annotations.slice(0, 3).map((a) => `${a.path}${a.line ? `:${a.line}` : ""} ${a.message}`);
+    return [`${log.name}: ${log.summary}`, ...notes];
+  });
+  const options = approved
+    ? [
+        `${names} fails on the commit the Reviewer Agent approved on pull request #${pull.number}, so the change is vouched for and the check is the question.`,
+        `Re-run ${names} on GitHub and the card carries on by itself if it passes, or say "resume" in ${ticket.key}'s chat to give the reviews another go at it, or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`,
+      ]
+    : [
+        `You can re-run ${names} on GitHub, say "resume" in ${ticket.key}'s chat to give the reviews another go, or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it.`,
+      ];
+  const subtitle = approved
+    ? `${REVIEW_CEILING}: ${names} fails on the approved commit of pull request #${pull.number}`
+    : `${REVIEW_CEILING}: ${names} still failing after ${maxReviews} reviews of pull request #${pull.number}`;
+  // The log is capped, not the options after it: about 1,500 characters in all.
+  const log = failed.join("\n");
+  const quoted = log.length > 900 ? `${log.slice(0, 899)}…` : log;
+  return [subtitle, ...(quoted ? ["What failed:", quoted, ""] : []), ...options].join("\n");
 }
 
 /** When each board's open pull requests were last looked at, to go easy on the API. */
@@ -1275,7 +1290,13 @@ async function reviewTicket(
   const maxReviews = await attemptsFor(project.ownerId, "review");
 
   if (attempt > maxReviews) {
-    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red, maxReviews), {
+    const ceilingClient = vcs(project.repoFullName, (await credentialsForProject(project)).repoToken);
+    const failing: FailingCheck[] = [];
+    for (const check of red) {
+      const log = await ceilingClient.checkLog(check.id).catch(() => null);
+      if (log) failing.push(log);
+    }
+    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red, maxReviews, failing), {
       blocked: true,
       stalledIn: "in_review",
     });
@@ -1421,16 +1442,14 @@ async function reviewTicket(
       return;
     }
 
+    // The scope keeps parallel tickets apart; it does not limit a good fix.
+    // Files nothing running is using join it, as for the Coder Agent. When a
+    // running ticket holds them, nothing is pushed and the review is done
+    // again with the files once they are free.
     const violations = violationsInDiff(changed, ticket.fileScope);
-    if (violations.length > 0) {
-      const reason =
-        `The review's fix touched ${violations.slice(0, 5).join(", ")}, outside ${ticket.key}'s ` +
-        `file scope. Nothing was pushed.`;
-      await stallTicket(projectId, ticket, reason, {
-        blocked: true,
-        stalledIn: "in_review",
-      });
-      await run.finish({ ...outcome, ok: false, error: reason, blocked: true });
+    if (violations.length > 0 && !(await widenScope(projectId, ticket, violations))) {
+      await waitForFiles(projectId, ticket, violations);
+      await run.finish(outcome);
       return;
     }
 
@@ -1977,6 +1996,62 @@ export async function sendBack(
     return;
   }
   launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
+}
+
+/**
+ * The review's fix needs `files` a running ticket holds. Nothing is pushed:
+ * the ticket asks for them (scopeRequest) and goes through the same
+ * claim-or-queue as a send-back, so it waits while they are held and is
+ * reviewed again with them (see reviewWithFiles) once they are free.
+ */
+async function waitForFiles(projectId: string, ticket: TicketDetail, files: string[]): Promise<void> {
+  const requested = normalizeScope(files);
+  const repo = repository();
+  await repo.updateTicket(ticket.id, { scopeRequest: requested });
+  const card = await repo.cardById(ticket.id);
+  const wanted = card && { ...card, fileScope: normalizeScope([...card.fileScope, ...requested]) };
+  const write = (status: "running" | "queued") =>
+    repo.updateTicket(ticket.id, { reviewedSha: null, reviewedHead: null, status });
+  const { status, reason } = wanted
+    ? await claimOrQueue(projectId, wanted, write)
+    : (await write("running"), { status: "running" as const, reason: null });
+  if (status === "queued") {
+    await publish(projectId, {
+      type: "card.status",
+      cardId: ticket.id,
+      kind: "ticket",
+      status: "queued",
+      stalledIn: null,
+      stage: card?.stage ?? ticket.stage,
+      blockedReason: reason,
+    });
+    return;
+  }
+  await reviewWithFiles(projectId, ticket.id);
+}
+
+/** Whether a ticket in the queue is a review waiting on files, not a Coder Agent run. */
+export function waitsForReviewFiles(ticket: Pick<TicketDetail, "scopeRequest" | "prNumber" | "stage">): boolean {
+  return ticket.scopeRequest.length > 0 && !!ticket.prNumber && ticket.stage >= 6;
+}
+
+/** The files a waiting review asked for are free: take them into the scope and review again. */
+export async function reviewWithFiles(projectId: string, ticketId: string): Promise<void> {
+  const repo = repository();
+  const ticket = await repo.ticketDetail(ticketId);
+  if (!ticket?.prNumber) return;
+  const asked = ticket.scopeRequest;
+  await repo.updateTicket(ticket.id, { scopeRequest: [], status: "review" });
+  if (asked.length > 0 && !(await widenScope(projectId, ticket, asked))) {
+    // Taken by another ticket after all: wait again.
+    await waitForFiles(projectId, ticket, asked);
+    return;
+  }
+  const project = await projectFor(projectId);
+  const pull = await vcs(project.repoFullName, (await credentialsForProject(project)).repoToken).pullRequest(
+    ticket.prNumber,
+  );
+  await reviewPullRequest(projectId, ticket.prNumber, pull.headSha);
 }
 
 /** Steps outside the repository, from every run of the ticket, once each. */
