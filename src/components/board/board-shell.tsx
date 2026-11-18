@@ -361,6 +361,7 @@ export function BoardShell({
       <NewItemDialog
         open={dialog !== null}
         column={dialog?.column ?? "backlog"}
+        repoFullName={repoFullName}
         onClose={() => setDialog(null)}
         onSubmit={(rawRequest, requestId) =>
           dialog?.column === "todo"

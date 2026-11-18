@@ -47,16 +47,19 @@ const COPY: Record<
 export function NewItemDialog({
   open,
   column,
+  repoFullName,
   onClose,
   onSubmit,
 }: {
   open: boolean;
+  /** The board's identity; each board keeps its own unsent request. */
+  repoFullName: string;
   column: CaptureColumn;
   onClose: () => void;
   /** `requestId` is the id its attachments were uploaded against. */
   onSubmit: (rawRequest: string, requestId: string) => Promise<void>;
 }) {
-  const [value, setValue] = useDraft(`new-item:${column}`);
+  const [value, setValue] = useDraft(`new-item:${repoFullName}:${column}`);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
