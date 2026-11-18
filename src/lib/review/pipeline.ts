@@ -33,6 +33,7 @@ import {
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inTicketLane } from "./lane";
+import { classifyFailure } from "./rerun/classify";
 import {
   type MergeBatch,
   claimMergeSlot,
@@ -610,7 +611,18 @@ export async function closeAlreadyDone(
     // install, a lost runner). Left as it is, the review sends the ticket
     // back for the same red check, the coder finds nothing to do again, and
     // the two go round for as long as the attempts last.
-    await rerunRedActions(client, pull.headBranch, await client.checksFor(pull.headSha)).catch(() => 0);
+    const rerun = await rerunRedActions(client, pull.headBranch, await client.checksFor(pull.headSha), {
+      onlyWithReason: true,
+    }).catch(() => ({ started: 0, declined: [] as string[] }));
+    if (rerun.started === 0 && rerun.declined.length > 0) {
+      await stallTicket(
+        projectId,
+        ticket,
+        `${rerun.declined.join(", ")} failed on code that has not changed, and was not run again: its log shows no network or install error, lost runner or known-unreliable test, so a repeat would fail the same way. The failure needs a fix.`,
+        { blocked: true, stalledIn: "in_review", stage: STAGE_PR },
+      );
+      return;
+    }
     await repository().updateTicket(ticket.id, {
       status: "review",
       stalledIn: null,
@@ -649,24 +661,39 @@ export async function rerunRedActions(
   client: VcsClient,
   branch: string,
   checks: CheckSummary[],
-): Promise<number> {
-  const runIds = [
-    ...new Set(
-      failing(checks)
-        .map((c) => /\/actions\/runs\/(\d+)/.exec(c.detailsUrl ?? "")?.[1])
-        .filter((id): id is string => !!id),
-    ),
-  ];
-  if (runIds.length === 0) return 0;
-  const runs = await client.branchRuns(branch);
-  let started = 0;
-  for (const id of runIds) {
-    const run = runs.find((r) => /\/runs\/(\d+)/.exec(r.url)?.[1] === id);
-    if (run && run.attempt > 1) continue;
-    await client.rerunFailedJobs(Number(id));
-    started++;
+  options: { onlyWithReason: true },
+): Promise<{ started: number; declined: string[] }>;
+export async function rerunRedActions(client: VcsClient, branch: string, checks: CheckSummary[]): Promise<number>;
+export async function rerunRedActions(
+  client: VcsClient,
+  branch: string,
+  checks: CheckSummary[],
+  options?: { onlyWithReason: true },
+): Promise<number | { started: number; declined: string[] }> {
+  const byRun = new Map<string, string>();
+  for (const c of failing(checks)) {
+    const id = /\/actions\/runs\/(\d+)/.exec(c.detailsUrl ?? "")?.[1];
+    if (id && !byRun.has(id)) byRun.set(id, c.name);
   }
-  return started;
+  const declined: string[] = [];
+  let started = 0;
+  if (byRun.size > 0) {
+    const runs = await client.branchRuns(branch);
+    for (const [id, name] of byRun) {
+      const run = runs.find((r) => /\/runs\/(\d+)/.exec(r.url)?.[1] === id);
+      if (run && run.attempt > 1) continue;
+      if (options?.onlyWithReason) {
+        const log = run ? await client.runLog(run.url).catch(() => null) : null;
+        if (!classifyFailure(log).rerun) {
+          declined.push(name);
+          continue;
+        }
+      }
+      await client.rerunFailedJobs(Number(id));
+      started++;
+    }
+  }
+  return options ? { started, declined } : started;
 }
 
 /**
