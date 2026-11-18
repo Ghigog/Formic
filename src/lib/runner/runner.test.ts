@@ -1030,6 +1030,46 @@ describe("taking a CLI agent's work", () => {
     expect(detail.join("\n")).toContain('The last thing it said: "Error: ENOSPC: no space left on device"');
   });
 
+  it("says why a run changed nothing, in the agent's own words", async () => {
+    const { ticket, job } = await dispatched();
+    const url = "https://github.com/acme/widgets/actions/runs/4";
+    const message = "I made no changes and added no test, because `landRevision` isn't on main yet. T4 hasn't merged.";
+    const report = JSON.stringify({ type: "result", result: message, total_cost_usd: 0.2 });
+    MockVcsClient.runner().logs.set(
+      url,
+      `##[group]Run agent\n##[endgroup]\n${report}\n##[group]Run hand off\n##[endgroup]\nThe agent finished without changing anything.\n##[error]Process completed with exit code 1.`,
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const reason = (await repository().ticketDetail(ticket.id))!.blockedReason!;
+    expect(reason.split("\n")).toEqual([
+      "No changes made",
+      "I made no changes and added no test, because `landRevision` isn't on main yet.",
+      message,
+      `Log: ${url}`,
+    ]);
+    expect(reason).not.toMatch(/ran into an error|stopped before finishing/);
+  });
+
+  it("says so plainly when a run changed nothing and the agent said nothing", async () => {
+    const { ticket, job } = await dispatched();
+    const url = "https://github.com/acme/widgets/actions/runs/5";
+    MockVcsClient.runner().logs.set(
+      url,
+      "##[group]Run x\n##[endgroup]\nThe agent finished without changing anything.\n##[error]Process completed with exit code 1.",
+    );
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const reason = (await repository().ticketDetail(ticket.id))!.blockedReason!;
+    expect(reason.split("\n")).toEqual([
+      "No changes made",
+      expect.stringMatching(/ finished without changing any files$/),
+      `Log: ${url}`,
+    ]);
+  });
+
   it("closes a ticket that was already done, with no pull request", async () => {
     const { ticket, job, staging } = await dispatched();
     MockVcsClient.stage(
