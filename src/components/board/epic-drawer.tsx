@@ -23,7 +23,8 @@ import {
   type Prd,
 } from "@/lib/domain/entities";
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
-import { epicProgress } from "@/lib/domain/stages";
+import { LIFECYCLE_STAGES } from "@/lib/domain/stages";
+import { EpicTimeline } from "./epic-timeline";
 
 interface EpicDetail {
   epic: BoardCard | null;
@@ -218,9 +219,7 @@ export function EpicDrawer({
 
   const epic = detail?.epic;
   const failedAt = epic && isStalled(epic.status) ? epic.stage : null;
-  const progress = epic
-    ? epicProgress(epic, detail?.children ?? [])
-    : { current: 1, working: false };
+  const children = detail?.children ?? [];
 
   const chat = epic && (
     <CardChat
@@ -341,14 +340,22 @@ export function EpicDrawer({
             </p>
           )}
 
-          {!kb.open && (
-            <StepIndicator
-              className="mt-3"
-              current={progress.current}
-              failedAt={failedAt}
-              working={progress.working}
-            />
-          )}
+          {!kb.open &&
+            (children.length > 0 ? (
+              <EpicTimeline
+                className="mt-3"
+                tickets={children}
+                onOpenTicket={onOpenTicket}
+              />
+            ) : (
+              <StepIndicator
+                className="mt-3"
+                stages={LIFECYCLE_STAGES.slice(0, 3)}
+                current={Math.min(epic?.stage ?? 1, 3)}
+                failedAt={failedAt == null ? null : Math.min(failedAt, 3)}
+                working={epic?.status === "running" || !!epic?.agentRole}
+              />
+            ))}
 
           {/* Survives the toast that announced it: where it came from, and why. */}
           {epic?.rerouteFrom && (
