@@ -5,11 +5,12 @@ import { isStalled, type ColumnId, type TicketStatus } from "./status";
  * A stalled card told apart by what it asks of a person: a critical stop is a
  * warning, a pause that waits for the person to act (authorize more files,
  * add a key) is an alert, and an agent waiting on the person's answer is a
- * question (see ./question.ts). A dependency wait is none of them, so it has
+ * question (see ./question.ts). A card waiting for an agent's usage to come
+ * back is paused: nothing is wrong and nothing is asked. A dependency wait is none of them, so it has
  * no notice.
  */
 export type Notice = {
-  severity: "warning" | "alert" | "question";
+  severity: "warning" | "alert" | "question" | "paused";
   title: string;
   shortDescription: string;
   longDescription: string;
@@ -38,6 +39,9 @@ export function classifyNotice(card: {
   if (isQuestion(card.blockedReason)) {
     return { severity: "question", title: "Question for you", shortDescription: shortDescription.replace(/^Question: /, ""), longDescription };
   }
+  if (isUsageLimitReason(shortDescription)) {
+    return { severity: "paused", title: "Paused for usage limit", shortDescription, longDescription };
+  }
   if (card.status === "failed" && shortDescription === NO_CHANGES) {
     const [subtitle = "", ...description] = rest;
     return {
@@ -64,12 +68,15 @@ export const USAGE_LIMIT = "Usage limit reached";
 /** The wording limitReason (agents/presets.ts) puts between the agent's name and the reset time. */
 export const OUT_OF_USAGE_PHRASE = " is out of usage until ";
 
+function isUsageLimitReason(short: string): boolean {
+  return short === USAGE_LIMIT || (short.includes(OUT_OF_USAGE_PHRASE) && short.endsWith("."));
+}
+
 /**
  * Whether a stalled card waits for an agent's usage to come back: its run hit
  * the limit, or the start gate refused it because the column's agent was
  * already out of usage.
  */
 export function isUsageLimitStop(card: Parameters<typeof classifyNotice>[0]): boolean {
-  const short = classifyNotice(card)?.shortDescription;
-  return short === USAGE_LIMIT || (!!short && short.includes(OUT_OF_USAGE_PHRASE) && short.endsWith("."));
+  return classifyNotice(card)?.severity === "paused";
 }

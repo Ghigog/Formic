@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { classifyNotice, NO_CHANGES, STUCK_RUN } from "./notice";
 
 describe("classifyNotice", () => {
+  it("calls a run that hit the usage limit paused, not failed", () => {
+    const n = classifyNotice({ status: "failed", stalledIn: "in_progress", blockedReason: "Usage limit reached\nWorks again at 3pm" });
+    expect(n).toEqual({
+      severity: "paused",
+      title: "Paused for usage limit",
+      shortDescription: "Usage limit reached",
+      longDescription: "Works again at 3pm",
+    });
+  });
+
+  it("calls a card the start gate held for an agent out of usage paused", () => {
+    const n = classifyNotice({ status: "blocked", stalledIn: "todo", blockedReason: "Claude is out of usage until 3pm." });
+    expect(n?.severity).toBe("paused");
+  });
+
+  it("keeps an ordinary failure a warning", () => {
+    expect(classifyNotice({ status: "failed", stalledIn: "todo", blockedReason: "Tests failed" })?.severity).toBe("warning");
+  });
+
   it("makes a failed ticket a warning with a title and both descriptions", () => {
     const n = classifyNotice({ status: "failed", stalledIn: "in_progress", blockedReason: "Tests failed" });
     expect(n).toEqual({
