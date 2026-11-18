@@ -82,8 +82,10 @@ function PlayIcon({ size = 14 }: { size?: number }) {
 /** Whether a sentinel has reported: the ones worth celebrating. */
 const reported = (st: SentinelState | undefined) => st?.stars != null;
 
-const SLIDE_MS = 520;
-const SLIDE_STAGGER_MS = 110;
+export const SLIDE_MS = 520;
+// When a card reaches its place; the motion and its sound share this moment.
+export const LAND_MS = 300;
+export const SLIDE_STAGGER_MS = 110;
 /** Hover scrubbing across the rail makes one voice per this long. */
 const VOICE_GAP_MS = 120;
 /** A wheel gesture ends once the wheel has been quiet this long. */
@@ -254,7 +256,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
       reported(s.states[x.id]),
     );
     if (landed.length && !c.fx.reducedMotion) {
-      landed.forEach(({ x }, n) => {
+      landed.forEach(({ x, i }, n) => {
         const delay = n * SLIDE_STAGGER_MS;
         root.current
           ?.querySelector<HTMLElement>(`[data-card="${x.id}"]`)
@@ -264,6 +266,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
                 opacity: 0,
                 transform: `translateY(60vh) rotate(${n % 2 ? 4 : -4}deg)`,
               },
+              { opacity: 1, transform: "none", offset: LAND_MS / SLIDE_MS },
               { opacity: 1, transform: "none" },
             ],
             {
@@ -274,7 +277,10 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
             },
           );
         timers.push(
-          setTimeout(() => c.sfx("sentinelLand", n), delay + SLIDE_MS),
+          setTimeout(() => {
+            c.sfx("sentinelVoice", i);
+            c.sfx("sentinelLand", n);
+          }, delay + LAND_MS),
         );
       });
     }
