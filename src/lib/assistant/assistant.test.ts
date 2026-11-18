@@ -10,7 +10,7 @@ vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
   },
 }));
 
-import { answer, cancelPending, finishCliAnswer, MAX_ANSWER_MS } from "./turn";
+import { answer, cancelPending, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
 import { applyAction, checkAction } from "./actions";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
@@ -734,5 +734,46 @@ describe("the assistant on a CLI plan", () => {
     const done = await reload(pending.id);
     expect(done.status).toBe("done");
     expect(done.proposals.map((p) => p.summary)).toEqual(["Add it"]);
+  });
+});
+
+describe("pictures in the chat", () => {
+  /** A user message carrying one image, as the route stores and claims it. */
+  async function sendPicture(name: string, text: string) {
+    const repo = repository();
+    const row = await repo.createAttachment({
+      projectId: PROJECT,
+      requestId: `r-${name}`,
+      filename: name,
+      mimeType: "image/png",
+      kind: "image",
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+    const message = await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: text });
+    await repo.claimAttachments(`r-${name}`, { assistantMessageId: message.id });
+    return row;
+  }
+
+  it("sends the latest three messages' pictures as pixels and names older ones", async () => {
+    for (const n of ["a.png", "b.png", "c.png", "d.png"]) await sendPicture(n, n === "d.png" ? "" : `see ${n}`);
+    const past = await history((await repository().assistantMessages(PROJECT)).messages);
+    expect(past.map((m) => m.images?.length ?? 0)).toEqual([0, 1, 1, 1]);
+    expect(past[0]!.content).toBe("see a.png\n[Image: a.png]");
+    expect(past[1]!.images![0]).toEqual({ mimeType: "image/png", base64: "AQID" });
+    expect(past[3]!.content).toBe("");
+  });
+
+  it("hands an OpenAI-compatible model the image as a data URL on its own turn", async () => {
+    await useAgent("groq");
+    await sendPicture("shot.png", "what is this?");
+    const sent = fakeProvider([{ role: "assistant", content: "A screenshot." }]);
+    const pending = await repository().addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "", status: "pending" });
+    await answer(PROJECT, pending.id);
+    const user = (sent[0]!.messages as Array<{ role: string; content: unknown }>).find((m) => m.role === "user")!;
+    expect(user.content).toEqual([
+      { type: "image_url", image_url: { url: "data:image/png;base64,AQID" } },
+      { type: "text", text: "what is this?" },
+    ]);
   });
 });

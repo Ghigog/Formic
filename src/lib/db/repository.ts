@@ -140,7 +140,8 @@ export interface CreateAttachmentInput {
 export type AttachmentRef =
   | { epicId: string }
   | { ticketId: string }
-  | { requestId: string };
+  | { requestId: string }
+  | { assistantMessageId: string };
 
 export interface AttachmentContent {
   bytes: Uint8Array;
@@ -157,6 +158,8 @@ export interface AssistantMessage {
   proposals: AssistantProposal[];
   /** Cards the message links to. */
   cards: Array<{ id: string; key: string; title: string }>;
+  /** Images the person sent with it. Filled by `assistantMessages`; empty from the single-message reads. */
+  attachments: AttachmentSummary[];
   status: "done" | "pending" | "failed";
   runnerJob: string | null;
   /** The preset that job was dispatched with, so a failure is blamed on it. */
@@ -1023,10 +1026,10 @@ export interface AttachmentRepository {
   attachmentScope(id: string): Promise<{ projectId: string; requestId: string | null } | null>;
   /** The stored bytes and mime type, or null when no such attachment exists. */
   attachmentContent(id: string): Promise<AttachmentContent | null>;
-  /** Moves every attachment under requestId to a real card, once it exists. */
+  /** Moves every attachment under requestId to a real card or chat message, once it exists. */
   claimAttachments(
     requestId: string,
-    ref: { epicId: string } | { ticketId: string },
+    ref: { epicId: string } | { ticketId: string } | { assistantMessageId: string },
   ): Promise<void>;
   deleteAttachments(ids: string[]): Promise<void>;
   /** Moves a ticket's attachments to another, such as the ticket drafted from a placeholder. */

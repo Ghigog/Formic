@@ -39,7 +39,7 @@ export function pastedFileName(type: string): string {
 }
 
 /** Turns a browser File into what /api/attachments's upload() expects. */
-async function post(requestId: string, projectId: string, file: File): Promise<AttachmentSummary> {
+export async function post(requestId: string, projectId: string, file: File): Promise<AttachmentSummary> {
   const form = new FormData();
   form.set("requestId", requestId);
   form.set("projectId", projectId);

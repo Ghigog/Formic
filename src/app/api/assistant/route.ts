@@ -15,7 +15,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const askSchema = z.object({
-  text: z.string().trim().min(1).max(20_000),
+  /** May be empty when `requestId` holds an image: the picture is the message. */
+  text: z.string().trim().max(20_000),
+  /** The draft's id the composer uploaded its images under (POST /api/attachments). */
+  requestId: z.string().min(1).max(100).optional(),
   /** Who answers, in order: the PM by default. */
   speakers: z.array(z.string().refine((v) => v !== "pm" && isGuestId(v), "Not someone who can answer here.")).min(1).max(8).default(["assistant"]),
 });
@@ -65,10 +68,21 @@ async function postHandler(req: Request) {
 
   const repo = repository();
   const projectId = found.project.id;
+  const { requestId } = body.data;
+  // Only this board's own images count: a request id is a client-made secret,
+  // but the files under it are checked against the project all the same.
+  const images = [];
+  for (const a of requestId ? await repo.attachmentsFor({ requestId }) : []) {
+    if (a.kind === "image" && (await repo.attachmentScope(a.id))?.projectId === projectId) images.push(a);
+  }
+  if (!body.data.text && images.length === 0) {
+    return Response.json({ error: "Ask something first." }, { status: 400 });
+  }
   // Messages queue: a reply starts only when no earlier one is pending, and
   // each finished one starts the next.
   const busy = !!(await repo.pendingAssistantMessage(projectId));
-  await repo.addAssistantMessage({ projectId, role: "user", content: body.data.text });
+  const asked = await repo.addAssistantMessage({ projectId, role: "user", content: body.data.text });
+  if (requestId && images.length > 0) await repo.claimAttachments(requestId, { assistantMessageId: asked.id });
   const replies = [];
   for (const speaker of body.data.speakers) {
     replies.push(await repo.addAssistantMessage({ projectId, role: "assistant", content: "", status: "pending", speaker }));

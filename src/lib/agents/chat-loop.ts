@@ -3,9 +3,10 @@ import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 
 import { anthropicClient, billedInputTokens, cachedSystem, cachedToHere } from "./anthropic";
+import type { AttachmentSummary } from "@/lib/domain/entities";
 import type { Usage } from "./ports";
 import { estimateCostCents } from "@/lib/budget/limits";
-import { type ChatMessage, type ModelInfo, type ToolSpec, advertisedModel, chat } from "@/lib/llm/openai-compat";
+import { type ChatRequestMessage, type ModelInfo, type ToolSpec, advertisedModel, chat } from "@/lib/llm/openai-compat";
 import { reasoningFor } from "@/lib/agents/reasoning";
 import type { ProviderId, ProviderInfo } from "@/lib/llm/providers";
 
@@ -37,6 +38,47 @@ export interface SpeakOptions {
    * (see `outOfRoundsReply` in card-chat.ts).
    */
   answerOnly?: boolean;
+}
+
+/** A picture sent with a person's message, ready for a model that reads pixels. */
+export interface PastImage {
+  mimeType: string;
+  base64: string;
+}
+
+/**
+ * One earlier message of the conversation. `images` are the pictures the model
+ * gets as input on this turn; any others the message had are already a text
+ * line in `content`.
+ */
+export interface PastMessage {
+  role: "user" | "assistant";
+  content: string;
+  images?: PastImage[];
+  /** Every picture the message had, for a CLI agent that downloads them by link. */
+  files?: AttachmentSummary[];
+}
+
+const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+function claudeContent(m: PastMessage): Anthropic.MessageParam["content"] {
+  const images = (m.images ?? []).filter((i) => IMAGE_MEDIA_TYPES.has(i.mimeType));
+  if (images.length === 0) return m.content;
+  return [
+    ...images.map((i) => ({
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: i.mimeType as "image/png", data: i.base64 },
+    })),
+    ...(m.content.trim() ? [{ type: "text" as const, text: m.content }] : []),
+  ];
+}
+
+function openAiContent(m: PastMessage): ChatRequestMessage["content"] {
+  if (!m.images?.length) return m.content;
+  return [
+    ...m.images.map((i) => ({ type: "image_url" as const, image_url: { url: `data:${i.mimeType};base64,${i.base64}` } })),
+    ...(m.content.trim() ? [{ type: "text" as const, text: m.content }] : []),
+  ];
 }
 
 export type Speak = (
@@ -73,10 +115,10 @@ export function claudeSpeak(
   apiKey: string | null,
   model: string,
   system: string,
-  past: Array<{ role: "user" | "assistant"; content: string }>,
+  past: PastMessage[],
   tools: ToolDef[],
 ): Speak {
-  const messages: Anthropic.MessageParam[] = past.map((m) => ({ role: m.role, content: m.content }));
+  const messages: Anthropic.MessageParam[] = past.map((m) => ({ role: m.role, content: claudeContent(m) }));
   const claudeTools: Anthropic.Tool[] = tools.map((t) => ({
     name: t.name,
     description: t.description,
@@ -125,10 +167,10 @@ export function openAiSpeak(
   apiKey: string,
   model: string,
   system: string,
-  past: Array<{ role: "user" | "assistant"; content: string }>,
+  past: PastMessage[],
   tools: ToolDef[],
 ): Speak {
-  const messages: ChatMessage[] = [{ role: "system", content: system }, ...past];
+  const messages: ChatRequestMessage[] = [{ role: "system", content: system }, ...past.map((m): ChatRequestMessage => ({ role: m.role, content: openAiContent(m) }))];
   const toolSpecs: ToolSpec[] = tools.map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.schema },

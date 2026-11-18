@@ -8,6 +8,9 @@ const { repo, currentUser, activeProject, launch, answer, cancelPending, collect
     addAssistantMessage: vi.fn(),
     clearAssistant: vi.fn(),
     pmReadAt: vi.fn(),
+    attachmentsFor: vi.fn(),
+    attachmentScope: vi.fn(),
+    claimAttachments: vi.fn(),
   },
   currentUser: vi.fn(),
   activeProject: vi.fn(),
@@ -104,6 +107,34 @@ describe("POST /api/assistant", () => {
     expect(launch).toHaveBeenCalledOnce();
     launch.mock.calls[0]?.[0]();
     expect(answer).toHaveBeenCalledWith("p-1", "m-2");
+  });
+
+  describe("with images", () => {
+    const image = { id: "a-1", filename: "shot.png", mimeType: "image/png", kind: "image", size: 10, url: "/api/attachments/a-1" };
+    beforeEach(() => {
+      repo.attachmentsFor.mockResolvedValue([image]);
+      repo.attachmentScope.mockResolvedValue({ projectId: "p-1", requestId: "r-1" });
+    });
+
+    it("stores an image-only message and claims the request's images onto it", async () => {
+      const res = await ask({ text: "", requestId: "r-1" });
+      expect(res.status).toBe(200);
+      expect(repo.addAssistantMessage).toHaveBeenNthCalledWith(1, { projectId: "p-1", role: "user", content: "" });
+      expect(repo.claimAttachments).toHaveBeenCalledWith("r-1", { assistantMessageId: "m-2" });
+      expect(launch).toHaveBeenCalledOnce();
+    });
+
+    it("rejects an empty message whose request holds no image", async () => {
+      repo.attachmentsFor.mockResolvedValue([]);
+      expect((await ask({ text: "", requestId: "r-1" })).status).toBe(400);
+      expect(repo.addAssistantMessage).not.toHaveBeenCalled();
+    });
+
+    it("ignores images that belong to another project", async () => {
+      repo.attachmentScope.mockResolvedValue({ projectId: "p-2", requestId: "r-1" });
+      expect((await ask({ text: "", requestId: "r-1" })).status).toBe(400);
+      expect(repo.claimAttachments).not.toHaveBeenCalled();
+    });
   });
 
   it("returns the rate limit response", async () => {
