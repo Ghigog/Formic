@@ -258,7 +258,7 @@ export function BoardShell({
   }
 
   const assistantControls: AssistantControls = {
-    boardId,
+      boardId,
       ...assistant,
       questions: cards.filter((c) => isQuestion(c.blockedReason)).length,
       waiting: cards

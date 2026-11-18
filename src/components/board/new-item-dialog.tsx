@@ -52,7 +52,6 @@ export function NewItemDialog({
   onSubmit,
 }: {
   open: boolean;
-  /** The board's identity; each board keeps its own unsent request. */
   /** The board's identity; each board keeps its own unsent draft. */
   boardId: string;
   column: CaptureColumn;

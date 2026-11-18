@@ -316,7 +316,6 @@ export function AskBox({
       <Shade
         a={a}
         repoName={repoName}
-       
         className="fixed top-16 left-1/2 w-[min(920px,calc(100vw-48px))] -translate-x-1/2"
       />
     </div>
@@ -397,7 +396,6 @@ export function AskButton({
       <Shade
         a={a}
         repoName={repoName}
-       
         withComposer
         keyboardTop={MOBILE_SHADE_TOP}
         className="fixed top-14 right-0 left-0"
