@@ -265,6 +265,8 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
               {
                 opacity: 0,
                 transform: `translateY(60vh) rotate(${n % 2 ? 4 : -4}deg)`,
+                // Per-segment, so the ease spans exactly the 0 to LAND_MS slide.
+                easing: "cubic-bezier(.2,.8,.2,1)",
               },
               { opacity: 1, transform: "none", offset: LAND_MS / SLIDE_MS },
               { opacity: 1, transform: "none" },
@@ -272,7 +274,6 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
             {
               duration: SLIDE_MS,
               delay,
-              easing: "cubic-bezier(.2,.8,.2,1)",
               fill: "backwards",
             },
           );
