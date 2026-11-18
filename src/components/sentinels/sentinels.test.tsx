@@ -33,6 +33,7 @@ const states = (reported: string[]): SentinelStates =>
         files: [],
         commitSha: null,
         rubric: reported.includes(x.id) ? { rubric: RUBRIC, at: null, model: null } : null,
+        edits: {},
         rubricChanged: false,
         hold: null,
         doneSince: 0,
@@ -540,5 +541,74 @@ describe("Stopping a Sentinel", () => {
     expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${x.id}/stop`, { method: "POST" });
     await act(async () => finish());
     expect(await within(report).findByText(/Stopped by you/)).toBeTruthy();
+  });
+});
+
+describe("Rubric checks: edited chip, earlier wordings and Edit", () => {
+  const x = SENTINELS[0]!;
+  const before = { id: "5a", text: "Reads app/Old.kt.", how: "Read it." };
+  const edited = (): SentinelStates => {
+    const all = states([x.id]);
+    const rubric = { ...RUBRIC, rungs: RUBRIC.rungs.map((r) => (r.stars === 5 ? { ...r, checks: [{ ...before, text: "Reads app/New.kt." }] } : r)) };
+    all[x.id] = {
+      ...all[x.id]!,
+      rubric: { rubric, at: null, model: null },
+      rubricChanged: true,
+      report: { likes: [], dislikes: [], wrong: [], missing: [] },
+      edits: {
+        "5a": [
+          {
+            before,
+            after: { ...before, text: "Reads app/New.kt." },
+            approver: "Ada",
+            approvedAt: new Date(Date.now() - 3_600_000).toISOString(),
+          },
+        ],
+      },
+    };
+    return all;
+  };
+
+  async function openWith(initial: SentinelStates) {
+    render(
+      <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
+        <SentinelsProvider initial={initial} level={34}>
+          <Open />
+          <SentinelsPage repoName="repo" onOpenEpic={() => {}} />
+        </SentinelsProvider>
+      </ColonyProvider>,
+    );
+    await userEvent.click(screen.getByText("open sentinels"));
+    await userEvent.click(document.querySelector<HTMLElement>(`[data-card="${x.id}"]`)!);
+  }
+
+  it("shows an edited chip with when and by whom, and the earlier-rubric note", async () => {
+    await openWith(edited());
+    expect(screen.getByRole("button", { name: /edited .* by Ada/ })).toBeTruthy();
+    expect(screen.getByText(/scored against an earlier rubric/)).toBeTruthy();
+    expect(screen.queryByText("Reads app/Old.kt.", { exact: false })).toBeNull();
+  });
+
+  it("reveals the earlier wordings when the chip is tapped", async () => {
+    await openWith(edited());
+    await userEvent.click(screen.getByRole("button", { name: /edited .* by Ada/ }));
+    expect(screen.getByText("5a: Reads app/Old.kt.")).toBeTruthy();
+  });
+
+  it("sends a note for one check and shows the Sentinel running", async () => {
+    const fetchMock = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+    const initial = states([x.id]);
+    initial[x.id]!.report = { likes: [], dislikes: [], wrong: [], missing: [] };
+    await openWith(initial);
+    await userEvent.click(screen.getByRole("button", { name: "Edit check 3a" }));
+    await userEvent.type(screen.getByRole("textbox", { name: /check 3a/ }), "Name the real file");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/sentinels/${x.id}/checks`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ checkId: "3a", note: "Name the real file" }) }),
+    );
+    expect(await screen.findByText(/revising a check/)).toBeTruthy();
+    vi.unstubAllGlobals();
   });
 });

@@ -27,7 +27,7 @@ function snapshotWanted(path: string, size: number): boolean {
 import { scoreOf } from "@/lib/colony/game";
 import { isUnlocked, sentinel as findSentinel, stepsFor } from "./roster";
 import { columnOf } from "@/lib/domain/status";
-import { SENTINEL_STOPPED, sentinelStates, type OpenEpics, type SentinelStates, type Shipped } from "./view";
+import { SENTINEL_STOPPED, sentinelStates, type AppliedFix, type OpenEpics, type SentinelStates, type Shipped } from "./view";
 
 /**
  * Summoning a sentinel: calibrating writes its rubric for the project, and
@@ -48,7 +48,30 @@ export async function sentinelsFor(projectId: string): Promise<SentinelStates> {
       if (card && card.kind === "epic" && !card.archived && columnOf(card) !== "done") openEpics[id] = card.key;
     }),
   );
-  return sentinelStates(audits, Date.now(), shipped, openEpics);
+  return sentinelStates(audits, Date.now(), shipped, openEpics, await appliedFixes(projectId));
+}
+
+/** The project's applied rubric fixes, with their approvers' names. */
+async function appliedFixes(projectId: string): Promise<AppliedFix[]> {
+  const repo = repository();
+  const applied = (await repo.rubricFixesFor(projectId)).filter(
+    (f) => f.status === "applied" && f.before && f.after && f.approvedAt,
+  );
+  const names = new Map<string, string>();
+  await Promise.all(
+    [...new Set(applied.map((f) => f.approvedBy).filter((id): id is string => !!id))].map(async (id) => {
+      const user = await repo.userById(id);
+      if (user) names.set(id, user.name ?? user.login);
+    }),
+  );
+  return applied.map((f) => ({
+    sentinel: f.sentinel,
+    checkId: f.checkId,
+    before: f.before!,
+    after: f.after!,
+    approver: (f.approvedBy && names.get(f.approvedBy)) || "someone",
+    approvedAt: f.approvedAt!.toISOString(),
+  }));
 }
 
 /** When each ticket in or past Done first got there, with its points; unestimated tickets are worth 0. */
@@ -122,6 +145,35 @@ export async function reviseRubricCheck(projectId: string, fixId: string): Promi
     return { ok: false, error: "Only a fix the person approved can be applied.", status: 409 };
   }
   return run(projectId, fix.sentinel, "revise", fix);
+}
+
+/**
+ * A person's own request to correct one check: the note is the instruction,
+ * and sending it is their approval. Refused for a check the rubric lacks.
+ */
+export async function editRubricCheck(
+  projectId: string,
+  sentinelId: string,
+  checkId: string,
+  note: string,
+  userId: string,
+): Promise<Started> {
+  const rubric = (await sentinelsFor(projectId))[sentinelId]?.rubric?.rubric;
+  if (!rubric) return { ok: false, error: "That Sentinel has no rubric to edit.", status: 409 };
+  if (!rubric.rungs.some((r) => r.checks.some((c) => c.id === checkId))) {
+    return { ok: false, error: `There is no check ${checkId} in the rubric.`, status: 404 };
+  }
+  const repo = repository();
+  const fix = await repo.addRubricFix({
+    projectId,
+    sentinel: sentinelId,
+    checkId,
+    problem: "Edit asked for from the rubric screen.",
+    suggestion: note,
+    status: "approved",
+  });
+  await repo.updateRubricFix(fix.id, { approvedBy: userId, approvedAt: new Date() });
+  return reviseRubricCheck(projectId, fix.id);
 }
 
 async function run(
