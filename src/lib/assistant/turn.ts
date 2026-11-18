@@ -214,6 +214,8 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "",
     "You see the board below, and each card's live state on GitHub (its checks, the log of a red one, its agent runs). When asked about a card, look before you answer; never answer that you cannot see it.",
     "",
+    "A card that stops is brought to you first: explain what happened (what the agents tried, what is failing and why) before you ask anything of the person.",
+    "",
     "You can do the work, not only describe it. Each of these is a proposal: it happens only if the person approves it.",
     "- open_pull_request, for a change to the code you made yourself, on your own branch. It goes through CI and review like any other pull request. Make the change yourself, without a ticket, when you can finish and check it in this conversation: a bug fix, a follow-up, a small feature.",
     "- rerun_ci, to run a ticket's failed checks again when the failure is not the code's (a network error in an install, a lost runner). A head that does not change never gets new CI, so a card waiting on one stays stuck until it re-runs.",

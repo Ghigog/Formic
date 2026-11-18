@@ -53,6 +53,33 @@ export async function wakePm(projectId: string, cardId: string, reason: string):
   await answer(projectId, pending.id, questionPrompt({ key: card.key, title: card.title }, reason));
 }
 
+/** What wakes the PM when a card stops for a reason that is not a question. */
+export function stallPrompt(card: { key: string; title: string }, reason: string): string {
+  return [
+    `[From Formic, not the person] ${card.key} (${card.title}) has stopped and needs a person. Formic recorded this reason:`,
+    "",
+    reason,
+    "",
+    `Do not just repeat it. Call card_status on ${card.key}, read its runs and the log of the check that failed, then tell the person in a few plain sentences: what the agents tried, what is actually failing and why you think so, and your suggested next step. Where the fix is a board action (rerun_ci, move_card), offer it with propose.`,
+  ].join("\n");
+}
+
+/**
+ * A card stopped for a reason other than a question or a usage limit: wake
+ * the PM to look into it and tell the person what happened. Does nothing when
+ * the board has no PM agent it can use.
+ */
+export async function wakePmForStall(projectId: string, cardId: string, reason: string): Promise<void> {
+  const agent = await assistantAgentFor(projectId);
+  if (agent.kind === "none" || agent.kind === "limited") return;
+  const repo = repository();
+  const card = await repo.cardById(cardId);
+  if (!card) return;
+  const pending = await repo.addAssistantMessage({ projectId, role: "assistant", content: "", status: "pending" });
+  const { answer } = await import("@/lib/assistant/turn");
+  await answer(projectId, pending.id, stallPrompt({ key: card.key, title: card.title }, reason));
+}
+
 const ORDINALS = ["First", "Second", "Third", "Fourth", "Fifth"];
 const NUMBERS = ["Zero", "One", "Two", "Three", "Four", "Five"];
 

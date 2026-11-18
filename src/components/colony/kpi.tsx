@@ -12,9 +12,12 @@ const WINDOWS: Array<{ id: KpiWindow; label: string }> = [
   { id: "all", label: "All time" },
 ];
 
-const W = 320;
+/** Width a chart draws in until it has been measured (and in jsdom). */
+const FALLBACK_W = 320;
 const H = 140;
-const PAD = { l: 34, r: 8, t: 8, b: 22 };
+/** Caption size from design/DESIGN.md. */
+const TEXT = 10;
+const PAD = { l: 34, r: 8, t: 8 };
 const pct = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%`);
 const days = (v: number | null) => (v === null ? "–" : `${v < 10 ? v.toFixed(1) : Math.round(v)} d`);
 
@@ -101,7 +104,7 @@ function Kpis({ startAfterMs }: { startAfterMs: number }) {
   return (
     <Progress.Provider value={progress}>
     <section ref={ref} aria-label="KPIs" className="flex shrink-0 flex-col gap-3 pt-2">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-ink m-0 font-serif text-[18px] font-semibold">Board KPIs</h2>
         <div role="group" aria-label="KPI window" className="border-line bg-card flex rounded-lg border p-0.5">
           {WINDOWS.map((w) => (
@@ -111,7 +114,7 @@ function Kpis({ startAfterMs }: { startAfterMs: number }) {
               aria-pressed={win === w.id}
               onClick={() => setWin(w.id)}
               className={cn(
-                "rounded-lg px-3 py-1 text-[12px] font-medium",
+                "rounded-lg px-3 py-1 text-[12px] font-medium max-md:h-11",
                 win === w.id ? "bg-anthracite text-on-anthracite" : "text-muted",
               )}
             >
@@ -121,7 +124,7 @@ function Kpis({ startAfterMs }: { startAfterMs: number }) {
         </div>
       </div>
       {failed && (
-        <p role="alert" className="text-muted m-0 text-[13px]">
+        <p role="alert" className="text-muted m-0 text-[12px]">
           KPIs could not be loaded.
         </p>
       )}
@@ -132,7 +135,7 @@ function Kpis({ startAfterMs }: { startAfterMs: number }) {
             <Tile label="In flight" value={String(data.tiles.inFlight)} />
             <Tile label="Cycle time" value={days(data.tiles.cycleTimeDays)} />
             <Tile label="Pass rate" value={pct(data.tiles.passRate)} />
-            <Tile label="Precision" value={pct(data.tiles.precision)} />
+            <Tile label="Precision" value={pct(data.tiles.precision)} className="max-md:col-span-2" />
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <TimeInColumn data={data.timeInColumn} />
@@ -153,30 +156,45 @@ function counted(value: string, p: number): string {
   return value.replace(/\d+(\.\d+)?/, (n) => (Number(n) * p).toFixed(n.split(".")[1]?.length ?? 0));
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
+function Tile({ label, value, className }: { label: string; value: string; className?: string }) {
   const p = useContext(Progress);
   return (
-    <div role="group" aria-label={label} className="border-line bg-card rounded-xl border px-4 py-3">
+    <div role="group" aria-label={label} className={cn("border-line bg-card rounded-xl border px-4 py-3", className)}>
       <div className="text-muted text-[12px]">{label}</div>
       <div className="text-ink font-mono text-[22px] leading-tight font-medium">{counted(value, p)}</div>
     </div>
   );
 }
 
-function Chart({ title, empty, children }: { title: string; empty: boolean; children: React.ReactNode }) {
+/** `padB` is the room under the plot for column labels or the legend. */
+function Chart({ title, empty, padB = 22, children }: { title: string; empty: boolean; padB?: number; children: React.ReactNode }) {
   const p = useContext(Progress);
+  const svg = useRef<SVGSVGElement>(null);
+  // 1 viewBox unit = 1 CSS px, so text keeps its size at any width.
+  const [measured, setMeasured] = useState(0);
+  useEffect(() => {
+    const el = svg.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.floor(entries[0]?.contentRect.width ?? 0);
+      if (w > 0) setMeasured(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [empty]);
+  const geo = geometry(measured || FALLBACK_W, padB);
   return (
     <figure role="group" aria-label={title} className="border-line bg-card m-0 rounded-xl border px-4 py-3">
-      <figcaption className="text-ink mb-2 text-[13px] font-semibold">{title}</figcaption>
+      <figcaption className="text-ink mb-2 text-[12px] font-semibold">{title}</figcaption>
       {empty ? (
         <p className="text-muted m-0 text-[12px]">No data in this window.</p>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title} className="block h-auto w-full">
+        <svg ref={svg} viewBox={`0 0 ${geo.W} ${H}`} role="img" aria-label={title} className="block h-auto w-full">
           <g
             data-progress={p}
-            style={p < 1 ? { opacity: p, transform: `scaleY(${p})`, transformOrigin: `0px ${base}px` } : undefined}
+            style={p < 1 ? { opacity: p, transform: `scaleY(${p})`, transformOrigin: `0px ${geo.base}px` } : undefined}
           >
-            {children}
+            <Geometry.Provider value={geo}>{children}</Geometry.Provider>
           </g>
         </svg>
       )}
@@ -184,13 +202,19 @@ function Chart({ title, empty, children }: { title: string; empty: boolean; chil
   );
 }
 
-const plotW = W - PAD.l - PAD.r;
-const plotH = H - PAD.t - PAD.b;
-const base = PAD.t + plotH;
+type Geo = { W: number; plotW: number; plotH: number; base: number };
+const Geometry = createContext<Geo>(geometry(FALLBACK_W, 22));
+
+/** The drawing's measurements for a figure `W` units (CSS px) wide with `padB` units under the plot. */
+function geometry(W: number, padB: number): Geo {
+  const plotH = H - PAD.t - padB;
+  return { W, plotW: W - PAD.l - PAD.r, plotH, base: PAD.t + plotH };
+}
 
 function Axes({ max, fmt }: { max: number; fmt: (v: number) => string }) {
+  const { W, plotH, base } = useContext(Geometry);
   return (
-    <g className="text-muted" fontSize={9}>
+    <g className="text-muted" fontSize={TEXT}>
       {[0, 0.5, 1].map((f) => (
         <g key={f}>
           <line x1={PAD.l} x2={W - PAD.r} y1={base - f * plotH} y2={base - f * plotH} className="stroke-line" />
@@ -206,10 +230,19 @@ function Axes({ max, fmt }: { max: number; fmt: (v: number) => string }) {
 function TimeInColumn({ data }: { data: ProjectKpis["timeInColumn"] }) {
   const vals = COLUMNS.map((c) => data[c] ?? 0);
   const max = Math.max(...vals) || 1;
+  return (
+    <Chart title="Average time in column" empty={vals.every((v) => v === 0)} padB={TWO_LINE_PAD}>
+      <Axes max={max} fmt={(v) => days(v)} />
+      <ColumnBars vals={vals} max={max} data={data} />
+    </Chart>
+  );
+}
+
+function ColumnBars({ vals, max, data }: { vals: number[]; max: number; data: ProjectKpis["timeInColumn"] }) {
+  const { plotW, plotH, base } = useContext(Geometry);
   const slot = plotW / COLUMNS.length;
   return (
-    <Chart title="Average time in column" empty={vals.every((v) => v === 0)}>
-      <Axes max={max} fmt={(v) => days(v)} />
+    <>
       {COLUMNS.map((c, i) => {
         const h = (vals[i]! / max) * plotH;
         return (
@@ -226,13 +259,33 @@ function TimeInColumn({ data }: { data: ProjectKpis["timeInColumn"] }) {
             >
               <title>{`${COLUMN_LABELS[c]}: ${days(data[c])}`}</title>
             </rect>
-            <text x={PAD.l + i * slot + slot / 2} y={H - 8} textAnchor="middle" fontSize={9} className="fill-muted">
-              {COLUMN_LABELS[c]}
-            </text>
+            <SlotLabel x={PAD.l + i * slot + slot / 2} slot={slot} text={COLUMN_LABELS[c]} />
           </g>
         );
       })}
-    </Chart>
+    </>
+  );
+}
+
+/** Room for two lines of caption text under the plot. */
+const TWO_LINE_PAD = 34;
+/** Rough width of one caption character, in px. */
+const CHAR_W = 6;
+
+/** A label centred under a slot; a two-word label wider than the slot goes on two lines. */
+function SlotLabel({ x, slot, text }: { x: number; slot: number; text: string }) {
+  const words = text.split(" ");
+  const wrap = words.length === 2 && text.length * CHAR_W > slot - 4;
+  return (
+    <text x={x} y={H - (wrap ? 20 : 8)} textAnchor="middle" fontSize={TEXT} className="fill-muted">
+      {wrap
+        ? words.map((w, i) => (
+            <tspan key={w} x={x} dy={i ? 12 : 0}>
+              {w}
+            </tspan>
+          ))
+        : text}
+    </text>
   );
 }
 
@@ -241,13 +294,22 @@ function line(points: Array<[number, number]>) {
 }
 
 function QualityChart({ data }: { data: ProjectKpis["quality"] }) {
+  return (
+    <Chart title="Pass rate and precision over time" empty={!data.length}>
+      <QualityPlot data={data} />
+    </Chart>
+  );
+}
+
+function QualityPlot({ data }: { data: ProjectKpis["quality"] }) {
+  const { plotW, plotH, base } = useContext(Geometry);
   const x = (i: number) => PAD.l + (data.length < 2 ? plotW / 2 : (i / (data.length - 1)) * plotW);
   const series = [
     { name: "Pass rate", cls: "stroke-clay fill-clay", get: (q: ProjectKpis["quality"][number]) => q.passRate },
     { name: "Precision", cls: "stroke-jade fill-jade", get: (q: ProjectKpis["quality"][number]) => q.precision },
   ];
   return (
-    <Chart title="Pass rate and precision over time" empty={!data.length}>
+    <>
       <Axes max={1} fmt={pct} />
       {series.map((s) => {
         const pts = data.flatMap((q, i): Array<[number, number]> => {
@@ -265,21 +327,30 @@ function QualityChart({ data }: { data: ProjectKpis["quality"] }) {
           </g>
         );
       })}
-      <g fontSize={9} className="fill-muted">
+      <g fontSize={TEXT} className="fill-muted">
         <circle cx={PAD.l} cy={H - 10} r={3} className="fill-clay" />
         <text x={PAD.l + 7} y={H - 7}>Pass rate</text>
-        <circle cx={PAD.l + 62} cy={H - 10} r={3} className="fill-jade" />
-        <text x={PAD.l + 69} y={H - 7}>Precision</text>
+        <circle cx={PAD.l + 70} cy={H - 10} r={3} className="fill-jade" />
+        <text x={PAD.l + 77} y={H - 7}>Precision</text>
       </g>
-    </Chart>
+    </>
   );
 }
 
 function Throughput({ data }: { data: ProjectKpis["throughput"] }) {
+  return (
+    <Chart title="Throughput (done per day)" empty={!data.length}>
+      <ThroughputBars data={data} />
+    </Chart>
+  );
+}
+
+function ThroughputBars({ data }: { data: ProjectKpis["throughput"] }) {
+  const { plotW, plotH, base } = useContext(Geometry);
   const max = Math.max(1, ...data.map((d) => d.done));
   const slot = plotW / Math.max(data.length, 1);
   return (
-    <Chart title="Throughput (done per day)" empty={!data.length}>
+    <>
       <Axes max={max} fmt={(v) => String(Math.round(v))} />
       {data.map((d, i) => {
         const h = (d.done / max) * plotH;
@@ -289,11 +360,20 @@ function Throughput({ data }: { data: ProjectKpis["throughput"] }) {
           </rect>
         );
       })}
-    </Chart>
+    </>
   );
 }
 
 function CycleTime({ data }: { data: ProjectKpis["cycleTime"] }) {
+  return (
+    <Chart title="Cycle time distribution" empty={!data.length}>
+      <CycleBars data={data} />
+    </Chart>
+  );
+}
+
+function CycleBars({ data }: { data: ProjectKpis["cycleTime"] }) {
+  const { plotW, plotH, base } = useContext(Geometry);
   const BINS = 6;
   const top = Math.max(0, ...data.map((d) => d.days));
   const size = top / BINS || 1;
@@ -302,7 +382,7 @@ function CycleTime({ data }: { data: ProjectKpis["cycleTime"] }) {
   const max = Math.max(1, ...counts);
   const slot = plotW / BINS;
   return (
-    <Chart title="Cycle time distribution" empty={!data.length}>
+    <>
       <Axes max={max} fmt={(v) => String(Math.round(v))} />
       {counts.map((n, i) => {
         const h = (n / max) * plotH;
@@ -311,12 +391,12 @@ function CycleTime({ data }: { data: ProjectKpis["cycleTime"] }) {
             <rect x={PAD.l + i * slot + 1} y={base - h} width={slot - 2} height={h} rx={3} className="fill-clay">
               <title>{`${days(i * size)}–${days((i + 1) * size)}: ${n}`}</title>
             </rect>
-            <text x={PAD.l + i * slot + slot / 2} y={H - 8} textAnchor="middle" fontSize={9} className="fill-muted">
+            <text x={PAD.l + i * slot + slot / 2} y={H - 8} textAnchor="middle" fontSize={TEXT} className="fill-muted">
               {days(i * size)}
             </text>
           </g>
         );
       })}
-    </Chart>
+    </>
   );
 }

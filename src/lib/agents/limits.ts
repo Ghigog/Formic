@@ -9,6 +9,8 @@
  * No server imports: pure text in, a diagnosis out.
  */
 
+import { readStream } from "@/lib/runner/stream";
+
 export type Diagnosis =
   | {
       kind: "limit";
@@ -170,6 +172,27 @@ export function lastWords(log: string): string | null {
   const text = reason ?? spoken.at(-1)?.text;
   if (!text) return null;
   return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+}
+
+/**
+ * What the agent said last, from the whole log: the `result` of Claude Code's
+ * closing report, otherwise the last text thought a Codex or Gemini line
+ * carries. Unlike `lastWords` it reads past the failing step, because an agent
+ * that ended without changing a file explains itself in an earlier step.
+ */
+export function finalMessage(log: string): string | null {
+  const all = lines(log).filter((l) => l.text);
+  for (let i = all.length - 1; i >= 0; i--) {
+    const text = all[i]!.text;
+    if (!text.startsWith("{")) continue;
+    const report = resultReport(text);
+    if (report?.text) return report.text;
+  }
+  const thoughts = readStream(all.map((l) => l.text)).filter(
+    (item) => item.kind === "thought" && item.thought === "text",
+  );
+  const last = thoughts.at(-1);
+  return last?.kind === "thought" ? last.text : null;
 }
 
 /* ------------------------------------------------------------------------ */

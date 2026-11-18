@@ -122,6 +122,18 @@ describe("TicketDrawer notice", () => {
     expect(within(banner).getAllByText(/line two of the log/)).toHaveLength(1);
   });
 
+  it("shows a gray Paused banner for a run that hit the usage limit", async () => {
+    open(stalled("failed", "Usage limit reached\nWorks again at 3pm"));
+    const banner = await screen.findByRole("alert");
+    expect(banner.dataset.severity).toBe("paused");
+    expect(banner.className).not.toContain("crimson");
+    expect(within(banner).getByText("Paused")).toBeInTheDocument();
+    expect(within(banner).getByText("Paused for usage limit")).toBeInTheDocument();
+    expect(within(banner).getByRole("img", { name: "Paused for usage limit" })).toBeInTheDocument();
+    expect(within(banner).getByText(/Works again at 3pm/)).toBeInTheDocument();
+    expect(within(banner).queryByText("!")).toBeNull();
+  });
+
   it("shows a single-line failure once, with no gray block", async () => {
     open(stalled("failed", "The run timed out"));
     const banner = await screen.findByRole("alert");

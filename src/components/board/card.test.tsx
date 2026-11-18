@@ -217,6 +217,21 @@ describe("a notice on a card", () => {
     expect(screen.queryByText(/stack trace/)).toBeNull();
   });
 
+  it("shows a gray clock on a muted ground, with no red, for a run that hit the usage limit", () => {
+    const { container } = renderTodo(
+      makeCard({ status: "failed", stalledIn: "todo", blockedReason: "Usage limit reached\nWorks again at 3pm" }),
+    );
+    const notice = screen.getByTestId("card-notice");
+    expect(notice.dataset.severity).toBe("paused");
+    expect(notice.className).toContain("text-muted");
+    expect(notice.textContent).toContain("Paused for usage limit");
+    expect(screen.getAllByRole("img", { name: /Paused for usage limit/ }).length).toBeGreaterThan(0);
+    expect(container.querySelector("svg circle")).not.toBeNull();
+    expect(container.innerHTML).not.toContain("crimson");
+    expect(container.innerHTML).toContain("bg-nested-muted");
+    expect(screen.queryByText("!")).toBeNull();
+  });
+
   it("shows a yellow alert icon and the title only for a ticket paused for authorization", () => {
     renderTodo(makeCard({ status: "blocked", stalledIn: "todo", blockedReason: SCOPE }));
     const notice = screen.getByTestId("card-notice");

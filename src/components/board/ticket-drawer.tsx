@@ -431,9 +431,10 @@ const BANNER: Record<Notice["severity"], { ground: string; label: string }> = {
   warning: { ground: "bg-crimson/10", label: "Warning" },
   alert: { ground: "bg-clay/10", label: "Alert" },
   question: { ground: "bg-terracotta/10", label: "Question" },
+  paused: { ground: "bg-idle/15", label: "Paused" },
 };
 
-/** A warning (red), alert (yellow) or question (terracotta) in full: title, the short line, then the long text. */
+/** A warning (red), alert (yellow), question (terracotta) or pause (gray) in full: title, the short line, then the long text. */
 function NoticeBanner({
   notice,
   className,
