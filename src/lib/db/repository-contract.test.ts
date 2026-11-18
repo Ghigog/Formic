@@ -1146,7 +1146,7 @@ function contract(name: string, make: () => Repository) {
 
       describe("rubric fixes", () => {
         const rubricOf = (text: string) =>
-          ({ rungs: [{ stars: 5, checks: [{ id: "5b", text, how: "read it" }] }] }) as never;
+          ({ context: "An app", rungs: [{ stars: 5, checks: [{ id: "5b", text, how: "read it" }] }] }) as never;
 
         it("revises a calibration's rubric and leaves an audit's alone", async () => {
           const p = await project();
