@@ -2,6 +2,7 @@
 
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { noteNewBoard } from "@/components/onboarding/store";
 import { cn } from "@/components/ui/cn";
 import { gradeText } from "@/lib/sentinels/grade";
@@ -225,14 +226,14 @@ export function RepoPicker({
   const row =
     "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] hover:bg-cream focus-visible:bg-cream outline-none disabled:opacity-60";
 
-  return (
+  const picker = (
     <>
-      {!inline && <div aria-hidden className="fixed inset-0 z-40" onClick={onClose} />}
+      {!inline && <div aria-hidden className="fixed inset-0 z-[199]" onClick={onClose} />}
       <div
         role="dialog"
         aria-label="Choose a repository"
         className={cn(
-          "bg-card border-line shadow-lift z-50 flex max-h-[70dvh] w-[380px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border",
+          "bg-card border-line shadow-lift z-[200] flex max-h-[70dvh] w-[380px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border",
           className,
         )}
       >
@@ -458,6 +459,10 @@ export function RepoPicker({
       </div>
     </>
   );
+
+  // A popover goes to the body so no ancestor's stacking context (the header's)
+  // can put the page's other layers over it. Below the onboarding tour (z-[1000]).
+  return inline ? picker : createPortal(picker, document.body);
 }
 
 function Section({ label, tour, children }: { label: string; tour?: string; children: React.ReactNode }) {
