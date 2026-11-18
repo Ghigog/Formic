@@ -363,6 +363,15 @@ function historyOf(s: Store, card: BoardCard): TicketColumnEntry[] {
   return history;
 }
 
+/** Closes the open stay and opens the next at one instant, if the column changed. */
+function recordColumnChange(history: TicketColumnEntry[], column: ColumnId): void {
+  if (history.at(-1)?.column === column) return;
+  const now = new Date().toISOString();
+  const open = history.at(-1);
+  if (open) open.exitedAt = now;
+  history.push({ column, enteredAt: now, exitedAt: null, synthetic: false });
+}
+
 function projectOf(s: Store, card: BoardCard): string {
   const epicId = card.kind === "epic" ? card.id : card.epicId;
   return (epicId && s.epicProject.get(epicId)) || s.project.id;
@@ -1280,12 +1289,7 @@ export class MemoryRepository implements Repository {
         stalledIn: input.stalledIn,
         misplacedIn: input.misplaced?.in,
       });
-      if (history.at(-1)?.column !== to) {
-        const now = new Date().toISOString();
-        const open = history.at(-1);
-        if (open) open.exitedAt = now;
-        history.push({ column: to, enteredAt: now, exitedAt: null, synthetic: false });
-      }
+      recordColumnChange(history, to);
     }
     if (card.status !== input.status) {
       card.updatedAt = new Date().toISOString();
@@ -1732,6 +1736,17 @@ export class MemoryRepository implements Repository {
     if (update.workType !== undefined || update.bugSeverity !== undefined) {
       if (update.workType !== undefined) card.workType = update.workType;
       card.bugSeverity = severityFor(card.workType, update.bugSeverity !== undefined ? update.bugSeverity : card.bugSeverity);
+    }
+    if (card.kind === "ticket" && (update.status !== undefined || update.stalledIn !== undefined)) {
+      recordColumnChange(
+        historyOf(s, card),
+        columnOf({
+          status: update.status ?? card.status,
+          stalledIn: update.stalledIn !== undefined ? update.stalledIn : card.stalledIn,
+          // A status change clears a misplacement; a stall alone keeps it.
+          misplacedIn: update.status !== undefined ? null : card.misplacedIn,
+        }),
+      );
     }
     if (update.status !== undefined && update.status !== card.status) {
       card.updatedAt = new Date().toISOString();
