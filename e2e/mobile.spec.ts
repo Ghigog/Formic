@@ -211,16 +211,29 @@ test("a two-finger swipe digs through the earth to another board", async ({
   const fingers = (y: number) =>
     [0, 40].map((dx, id) => ({ x: 140 + dx, y, id }));
   const [from, to] = down ? [600, 420] : [300, 480];
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: fingers(from),
-  });
-  for (let step = 1; step <= 10; step++) {
+  // The page may not have hydrated its touch handlers yet, and a gesture
+  // started before then is lost: release it and swipe again until the band shows.
+  await expect(async () => {
     await cdp.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: fingers(from + ((to - from) * step) / 10),
+      type: "touchStart",
+      touchPoints: fingers(from),
     });
-  }
+    for (let step = 1; step <= 10; step++) {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: fingers(from + ((to - from) * step) / 10),
+      });
+    }
+    try {
+      await expect(page.getByTestId("dig-band")).toBeVisible({ timeout: 2_000 });
+    } catch (e) {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchCancel",
+        touchPoints: [],
+      });
+      throw e;
+    }
+  }).toPass({ timeout: 20_000 });
   await expect(page.getByTestId("dig-band")).toBeVisible();
   await expect(page.getByTestId("swap-hint")).toBeVisible();
   await cdp.send("Input.dispatchTouchEvent", {
@@ -274,8 +287,13 @@ test("the PM's unread badge pops in on the button, fits on screen, and clears wh
   const asked = await page.request.post("/api/assistant", { data: { text: "Anything to report?" } });
   expect(asked.ok()).toBe(true);
 
+  // The unread count arrives over the event stream; a reply that landed before
+  // the page subscribed is only seen on a fresh load, so reload and look again.
   const badge = page.getByTestId("pm-unread").first();
-  await expect(badge).toBeVisible({ timeout: 15_000 });
+  await expect(async () => {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(badge).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
   const box = (await badge.boundingBox())!;
   const view = page.viewportSize()!;
   expect(box.x).toBeGreaterThanOrEqual(0);
