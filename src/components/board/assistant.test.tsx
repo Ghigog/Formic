@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
 
 const controls: AssistantControls = {
+  boardId: "p1",
   open: true,
   setOpen: vi.fn(),
   presetId: null,
@@ -23,7 +24,7 @@ describe("AskBox", () => {
   Element.prototype.scrollTo = vi.fn();
 
   it("anchors the shade to the viewport, not the composer", () => {
-    const { container } = render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    const { container } = render(<AskBox a={controls} repoName="demo" />);
     const shade = container.querySelector("section[aria-label=PM]")!;
     expect(shade).toHaveClass(
       "fixed",
@@ -36,7 +37,7 @@ describe("AskBox", () => {
 
   it("sends on Enter and clears the field", async () => {
     const ask = vi.fn();
-    render(<AskBox a={{ ...controls, ask }} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={{ ...controls, ask }} repoName="demo" />);
     const box = screen.getByLabelText("Ask the PM");
     await userEvent.setup().type(box, "hello{Enter}");
     expect(ask).toHaveBeenCalledWith("hello");
@@ -45,7 +46,7 @@ describe("AskBox", () => {
 
   it("adds a line on Shift+Enter without sending", async () => {
     const ask = vi.fn();
-    render(<AskBox a={{ ...controls, ask }} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={{ ...controls, ask }} repoName="demo" />);
     const box = screen.getByLabelText("Ask the PM");
     await userEvent.setup().type(box, "one{Shift>}{Enter}{/Shift}two");
     expect(ask).not.toHaveBeenCalled();
@@ -54,7 +55,7 @@ describe("AskBox", () => {
 
   it("still sends on Cmd+Enter and Ctrl+Enter", async () => {
     const ask = vi.fn();
-    render(<AskBox a={{ ...controls, ask }} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={{ ...controls, ask }} repoName="demo" />);
     const box = screen.getByLabelText("Ask the PM");
     const user = userEvent.setup();
     await user.type(box, "a{Control>}{Enter}{/Control}");
@@ -66,13 +67,13 @@ describe("AskBox", () => {
   it("does not send on Enter when empty, but keeps the input open for more while an answer is pending", async () => {
     const ask = vi.fn();
     const { rerender } = render(
-      <AskBox a={{ ...controls, ask }} repoName="demo" repoFullName="o/r" />,
+      <AskBox a={{ ...controls, ask }} repoName="demo" />,
     );
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Ask the PM"), "{Enter}");
     expect(ask).not.toHaveBeenCalled();
     rerender(
-      <AskBox a={{ ...controls, ask, pending: true }} repoName="demo" repoFullName="o/r" />,
+      <AskBox a={{ ...controls, ask, pending: true }} repoName="demo" />,
     );
     expect(screen.getByLabelText("Ask the PM")).not.toBeDisabled();
     await user.type(screen.getByLabelText("Ask the PM"), "hi{Enter}");
@@ -90,7 +91,7 @@ describe("AskBox", () => {
             { ...base, id: "m-2", content: "From the reviewer", speaker: "reviewer" },
           ],
         }}
-        repoName="demo" repoFullName="o/r"
+        repoName="demo"
       />,
     );
     expect(screen.getByText("Reviewer")).toBeInTheDocument();
@@ -100,7 +101,7 @@ describe("AskBox", () => {
 
   it("swaps Send for Stop while pending, and stops on click", async () => {
     const stop = vi.fn();
-    render(<AskBox a={{ ...controls, pending: true, stop }} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={{ ...controls, pending: true, stop }} repoName="demo" />);
     expect(screen.queryByLabelText("Send")).toBeNull();
     const box = screen.getByLabelText("Ask the PM");
     expect(box).not.toBeDisabled();
@@ -118,7 +119,7 @@ describe("AskButton on a phone", () => {
     const vv = Object.assign(new EventTarget(), { height: 800, offsetTop: 0 });
     vi.stubGlobal("innerHeight", 800);
     vi.stubGlobal("visualViewport", vv);
-    const { container } = render(<AskButton a={controls} repoName="demo" repoFullName="o/r" />);
+    const { container } = render(<AskButton a={controls} repoName="demo" />);
     const shade = container.querySelector<HTMLElement>(
       "section[aria-label=PM]",
     )!;
@@ -137,10 +138,10 @@ describe("AskButton on a phone", () => {
   });
 
   it("shows how many questions the PM has for the person, and none when there are none", () => {
-    const { rerender } = render(<AskButton a={{ ...controls, questions: 2 }} repoName="demo" repoFullName="o/r" />);
+    const { rerender } = render(<AskButton a={{ ...controls, questions: 2 }} repoName="demo" />);
     expect(screen.getByTestId("pm-questions")).toHaveTextContent("2");
     expect(screen.getByLabelText("2 questions for you")).toBeInTheDocument();
-    rerender(<AskButton a={{ ...controls, questions: 0 }} repoName="demo" repoFullName="o/r" />);
+    rerender(<AskButton a={{ ...controls, questions: 0 }} repoName="demo" />);
     expect(screen.queryByTestId("pm-questions")).toBeNull();
   });
 });
@@ -159,7 +160,7 @@ describe("the PM's waiting questions", () => {
           waiting: [{ id: "c-2", key: "T-2", title: "Write DESIGN.md", question: "How should this product look and feel?" }],
           onOpenQuestion,
         }}
-        repoName="demo" repoFullName="o/r"
+        repoName="demo"
       />,
     );
     expect(screen.getByTestId("pm-waiting")).toHaveTextContent("How should this product look and feel?");
@@ -180,7 +181,7 @@ describe("the PM's waiting questions", () => {
           questions: 1,
           waiting: [{ id: "c-2", key: "T-2", title: "Write DESIGN.md", question: "How should this look?" }],
         }}
-        repoName="demo" repoFullName="o/r"
+        repoName="demo"
       />,
     );
     const newest = screen.getByText("newest message");
@@ -191,7 +192,7 @@ describe("the PM's waiting questions", () => {
 
 describe("AskBox's prompt", () => {
   it("says the PM has a question waiting", () => {
-    render(<AskBox a={{ ...controls, open: false, questions: 1 }} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={{ ...controls, open: false, questions: 1 }} repoName="demo" />);
     expect(screen.getByLabelText("Ask the PM")).toHaveAttribute("placeholder", "The PM has a question for you…");
   });
 });
@@ -227,7 +228,7 @@ describe("proposal cards", () => {
   const body = () => screen.getByText("Add dark mode").parentElement!;
 
   it("shows a proposed card at full strength with enabled buttons", () => {
-    render(<AskBox a={withProposal("proposed")} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={withProposal("proposed")} repoName="demo" />);
     expect(card()).toHaveAttribute("data-state", "proposed");
     expect(body()).not.toHaveClass("opacity-60");
     expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
@@ -235,7 +236,7 @@ describe("proposal cards", () => {
   });
 
   it("grays out an approved card and drops the buttons", () => {
-    render(<AskBox a={withProposal("applied")} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={withProposal("applied")} repoName="demo" />);
     expect(card()).toHaveAttribute("data-state", "applied");
     expect(body()).toHaveClass("opacity-60");
     expect(screen.getByText("Approved")).toBeInTheDocument();
@@ -244,14 +245,14 @@ describe("proposal cards", () => {
   });
 
   it("grays out a dismissed card", () => {
-    render(<AskBox a={withProposal("dismissed")} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={withProposal("dismissed")} repoName="demo" />);
     expect(card()).toHaveAttribute("data-state", "dismissed");
     expect(body()).toHaveClass("opacity-60");
     expect(screen.getByText("Dismissed")).toBeInTheDocument();
   });
 
   it("grays out a failed card but keeps the error", () => {
-    render(<AskBox a={withProposal("failed", "boom")} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={withProposal("failed", "boom")} repoName="demo" />);
     expect(card()).toHaveAttribute("data-state", "failed");
     expect(body()).toHaveClass("opacity-60");
     expect(screen.getByText("Could not apply: boom")).toBeInTheDocument();
@@ -259,9 +260,9 @@ describe("proposal cards", () => {
 
   it("grays out once the decision completes, without a reload", () => {
     const { rerender } = render(
-      <AskBox a={withProposal("proposed")} repoName="demo" repoFullName="o/r" />,
+      <AskBox a={withProposal("proposed")} repoName="demo" />,
     );
-    rerender(<AskBox a={withProposal("applied")} repoName="demo" repoFullName="o/r" />);
+    rerender(<AskBox a={withProposal("applied")} repoName="demo" />);
     expect(body()).toHaveClass("opacity-60");
   });
 });
@@ -274,7 +275,7 @@ describe("agent selector", () => {
   } as AssistantControls["presets"][number];
 
   it("uses the column selector, without Runs on, Edit or New agent buttons", () => {
-    render(<AskBox a={{ ...controls, presets: [planner], presetId: "p1" }} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={{ ...controls, presets: [planner], presetId: "p1" }} repoName="demo" />);
     expect(screen.queryByText("Runs on")).toBeNull();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     expect(screen.queryByRole("button", { name: "New agent" })).toBeNull();
@@ -285,7 +286,7 @@ describe("agent selector", () => {
     const setAgent = vi.fn().mockResolvedValue(undefined);
     const onEdit = vi.fn();
     const user = userEvent.setup();
-    render(<AskBox a={{ ...controls, presets: [planner], setAgent, onEdit }} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={{ ...controls, presets: [planner], setAgent, onEdit }} repoName="demo" />);
     await user.click(screen.getByRole("button", { name: /The PM's agent/ }));
     await user.click(screen.getByRole("menuitemradio", { name: /Planner/ }));
     expect(setAgent).toHaveBeenCalledWith("p1");
@@ -309,7 +310,7 @@ describe("message formatting", () => {
         { id: "a", role: "assistant", content: "- **x** and `y`", status: "done", proposals: [] },
       ],
     };
-    render(<AskBox a={a} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={a} repoName="demo" />);
     expect(screen.getByText("say **x**")).toBeInTheDocument();
     expect(screen.getByText("x").tagName).toBe("STRONG");
     expect(screen.getByText("y").tagName).toBe("CODE");
@@ -328,11 +329,11 @@ describe("list scrolling", () => {
       proposals: [],
     });
     const { rerender } = render(
-      <AskBox a={{ ...controls, messages: [msg("one")] }} repoName="demo" repoFullName="o/r" />,
+      <AskBox a={{ ...controls, messages: [msg("one")] }} repoName="demo" />,
     );
     expect(scrollTo).toHaveBeenCalledTimes(1);
     rerender(
-      <AskBox a={{ ...controls, messages: [msg("one two")] }} repoName="demo" repoFullName="o/r" />,
+      <AskBox a={{ ...controls, messages: [msg("one two")] }} repoName="demo" />,
     );
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
@@ -352,39 +353,39 @@ describe("Earlier messages", () => {
 
   it("asks for the earlier page when the link is tapped", async () => {
     const a = thread();
-    render(<AskBox a={a} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={a} repoName="demo" />);
     await userEvent.click(screen.getByRole("button", { name: "Earlier messages" }));
     expect(a.loadEarlier).toHaveBeenCalled();
   });
 
   it("shows no link for a thread that fits one page", () => {
-    render(<AskBox a={thread({ hasEarlier: false })} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={thread({ hasEarlier: false })} repoName="demo" />);
     expect(screen.queryByText("Earlier messages")).toBeNull();
   });
 
   it("reads Loading… as plain text while it loads", () => {
-    render(<AskBox a={thread({ loadingEarlier: true })} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={thread({ loadingEarlier: true })} repoName="demo" />);
     expect(screen.getByText("Loading…")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Earlier messages" })).toBeNull();
   });
 
   it("shows a failure inline", () => {
-    render(<AskBox a={thread({ earlierError: "Nope." })} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={thread({ earlierError: "Nope." })} repoName="demo" />);
     expect(screen.getByRole("alert")).toHaveTextContent("Nope.");
   });
 });
 
 describe("unread PM messages", () => {
   it("shows the count on the button, and hides it at none", () => {
-    const { rerender } = render(<AskButton a={{ ...controls, unread: 3 }} repoName="demo" repoFullName="o/r" />);
+    const { rerender } = render(<AskButton a={{ ...controls, unread: 3 }} repoName="demo" />);
     expect(screen.getByTestId("pm-unread")).toHaveTextContent("3");
     expect(screen.getByLabelText("3 new messages from the PM")).toBeInTheDocument();
-    rerender(<AskButton a={{ ...controls, unread: 0 }} repoName="demo" repoFullName="o/r" />);
+    rerender(<AskButton a={{ ...controls, unread: 0 }} repoName="demo" />);
     expect(screen.queryByTestId("pm-unread")).toBeNull();
   });
 
   it("sits on the left when the question count shows too, and keeps both counts", () => {
-    render(<AskButton a={{ ...controls, unread: 1, questions: 2 }} repoName="demo" repoFullName="o/r" />);
+    render(<AskButton a={{ ...controls, unread: 1, questions: 2 }} repoName="demo" />);
     expect(screen.getByTestId("pm-unread")).toHaveClass("-left-1");
     expect(screen.getByTestId("pm-unread")).toHaveTextContent("1");
     expect(screen.getByTestId("pm-questions")).toHaveClass("-right-1");
@@ -392,12 +393,12 @@ describe("unread PM messages", () => {
   });
 
   it("pops in only when the count goes from none to some", () => {
-    const { rerender } = render(<AskButton a={{ ...controls, unread: 2 }} repoName="demo" repoFullName="o/r" />);
+    const { rerender } = render(<AskButton a={{ ...controls, unread: 2 }} repoName="demo" />);
     expect(screen.getByTestId("pm-unread")).not.toHaveClass("pm-badge-pop");
-    rerender(<AskButton a={{ ...controls, unread: 0 }} repoName="demo" repoFullName="o/r" />);
-    rerender(<AskButton a={{ ...controls, unread: 1 }} repoName="demo" repoFullName="o/r" />);
+    rerender(<AskButton a={{ ...controls, unread: 0 }} repoName="demo" />);
+    rerender(<AskButton a={{ ...controls, unread: 1 }} repoName="demo" />);
     expect(screen.getByTestId("pm-unread")).toHaveClass("pm-badge-pop");
-    rerender(<AskButton a={{ ...controls, unread: 2 }} repoName="demo" repoFullName="o/r" />);
+    rerender(<AskButton a={{ ...controls, unread: 2 }} repoName="demo" />);
     expect(screen.getByTestId("pm-unread")).not.toHaveClass("pm-badge-pop");
   });
 
@@ -423,7 +424,7 @@ describe("unread PM messages", () => {
             at("m3", "2026-11-12T12:00:00.000Z"),
           ],
         }}
-        repoName="demo" repoFullName="o/r"
+        repoName="demo"
       />,
     );
     const rule = screen.getByTestId("pm-new");
@@ -437,7 +438,7 @@ describe("unread PM messages", () => {
     render(
       <AskBox
         a={{ ...controls, readAt: "2026-11-12T10:00:00.000Z", messages: [at("m1", "2026-11-12T09:00:00.000Z")] }}
-        repoName="demo" repoFullName="o/r"
+        repoName="demo"
       />,
     );
     expect(screen.queryByTestId("pm-new")).toBeNull();
@@ -454,7 +455,7 @@ describe("unread PM messages", () => {
           onOpenQuestion,
           messages: [at("m1", "2026-11-12T09:00:00.000Z", { cards: [{ id: "c-9", key: "T-9", title: "Add dark mode" }] })],
         }}
-        repoName="demo" repoFullName="o/r"
+        repoName="demo"
       />,
     );
     await userEvent.setup().click(screen.getByRole("button", { name: "T-9 · Add dark mode" }));
@@ -468,24 +469,24 @@ describe("per-board PM drafts", () => {
 
   it("keeps an unsent AskBox draft on its own board, including across a re-render", async () => {
     const user = userEvent.setup();
-    const { rerender, unmount } = render(<AskBox a={controls} repoName="a" repoFullName="o/a" />);
+    const { rerender, unmount } = render(<AskBox a={{ ...controls, boardId: "o/a" }} repoName="a" />);
     await user.type(field(), "half a thought");
-    rerender(<AskBox a={controls} repoName="b" repoFullName="o/b" />);
+    rerender(<AskBox a={{ ...controls, boardId: "o/b" }} repoName="b" />);
     expect(field().value).toBe("");
-    rerender(<AskBox a={controls} repoName="a" repoFullName="o/a" />);
+    rerender(<AskBox a={{ ...controls, boardId: "o/a" }} repoName="a" />);
     expect(field().value).toBe("half a thought");
     unmount();
-    render(<AskBox a={controls} repoName="b" repoFullName="o/b" />);
+    render(<AskBox a={{ ...controls, boardId: "o/b" }} repoName="b" />);
     expect(field().value).toBe("");
   });
 
   it("keeps the mobile shade's draft per board", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<AskButton a={controls} repoName="a" repoFullName="o/a" />);
+    const { rerender } = render(<AskButton a={{ ...controls, boardId: "o/a" }} repoName="a" />);
     await user.type(field(), "on a phone");
-    rerender(<AskButton a={controls} repoName="b" repoFullName="o/b" />);
+    rerender(<AskButton a={{ ...controls, boardId: "o/b" }} repoName="b" />);
     expect(field().value).toBe("");
-    rerender(<AskButton a={controls} repoName="a" repoFullName="o/a" />);
+    rerender(<AskButton a={{ ...controls, boardId: "o/a" }} repoName="a" />);
     expect(field().value).toBe("on a phone");
   });
 });
@@ -522,7 +523,7 @@ describe("images in the composer", () => {
 
   it("attaches a pasted screenshot, dimmed until it is uploaded", async () => {
     const s = server({ hold: true });
-    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={controls} repoName="demo" />);
     fireEvent.paste(screen.getByLabelText("Ask the PM"), pasteOf(picture()));
     const thumb = await screen.findByAltText(/pasted-image-\d+\.png/);
     expect(thumb.parentElement).toHaveAttribute("data-status", "uploading");
@@ -535,7 +536,7 @@ describe("images in the composer", () => {
 
   it("leaves a paste of plain text to the browser", () => {
     const s = server();
-    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={controls} repoName="demo" />);
     const notPrevented = fireEvent.paste(screen.getByLabelText("Ask the PM"), {
       clipboardData: { items: [{ kind: "string", type: "text/plain", getAsFile: () => null }] },
     });
@@ -545,7 +546,7 @@ describe("images in the composer", () => {
 
   it("removes an attached image before sending", async () => {
     const s = server();
-    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={controls} repoName="demo" />);
     fireEvent.paste(screen.getByLabelText("Ask the PM"), pasteOf(picture()));
     const remove = await screen.findByRole("button", { name: /^Remove pasted-image/ });
     await waitFor(() => expect(screen.getByAltText(/pasted-image/).parentElement).toHaveAttribute("data-status", "done"));
@@ -557,7 +558,7 @@ describe("images in the composer", () => {
   it("sends an image with an empty field on Enter, carrying the draft's requestId, and clears the row", async () => {
     const s = server();
     const ask = vi.fn();
-    render(<AskBox a={{ ...controls, ask }} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={{ ...controls, ask }} repoName="demo" />);
     const box = screen.getByLabelText("Ask the PM");
     fireEvent.paste(box, pasteOf(picture()));
     await waitFor(() => expect(screen.getByAltText(/pasted-image/).parentElement).toHaveAttribute("data-status", "done"));
@@ -571,7 +572,7 @@ describe("images in the composer", () => {
     ["an image over 10 MB", new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.png", { type: "image/png" })],
   ])("refuses %s in muted text without uploading it", async (_, file) => {
     const s = server();
-    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={controls} repoName="demo" />);
     await userEvent.setup({ applyAccept: false }).upload(screen.getByLabelText("Attach an image"), file);
     expect(await screen.findByRole("alert")).toHaveClass("text-muted");
     expect(s.uploads).toHaveLength(0);
@@ -579,7 +580,7 @@ describe("images in the composer", () => {
 
   it("refuses a sixth image and keeps the five", async () => {
     server();
-    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    render(<AskBox a={controls} repoName="demo" />);
     const input = screen.getByLabelText("Attach an image");
     await userEvent.setup().upload(input, Array.from({ length: 6 }, (_, i) => new File(["x"], `${i}.png`, { type: "image/png" })));
     expect(await screen.findByRole("alert")).toHaveTextContent("at most 5");
@@ -591,7 +592,7 @@ describe("images in the composer", () => {
     render(
       <AskBox
         a={{ ...controls, messages: [{ id: "m-1", role: "user", content: "", status: "done", proposals: [], attachments: [attachment] }] }}
-        repoName="demo" repoFullName="o/r"
+        repoName="demo"
       />,
     );
     const user = userEvent.setup();

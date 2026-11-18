@@ -41,6 +41,8 @@ import { provider as providerInfo } from "@/lib/llm/providers";
  */
 
 export interface AssistantControls {
+  /** The board's identity; each board keeps its own unsent draft. */
+  boardId: string;
   open: boolean;
   setOpen: (open: boolean) => void;
   presetId: string | null;
@@ -123,21 +125,18 @@ function SparkIcon() {
 function Composer({
   a,
   repoName,
-  repoFullName,
   className,
   onAsked,
   toggle = true,
 }: {
   a: AssistantControls;
   repoName: string;
-  /** The board's identity; each board keeps its own unsent draft. */
-  repoFullName: string;
   className?: string;
   onAsked?: () => void;
   /** The pull-down arrow. Off inside the shade, which has its own. */
   toggle?: boolean;
 }) {
-  const [text, setText] = useDraft(`assistant:${repoFullName}`);
+  const [text, setText] = useDraft(`assistant:${a.boardId}`);
   const field = useRef<HTMLTextAreaElement>(null);
   const images = useComposerImages();
   const submit = async (e?: FormEvent) => {
@@ -306,20 +305,18 @@ function Composer({
 export function AskBox({
   a,
   repoName,
-  repoFullName,
 }: {
   a: AssistantControls;
   repoName: string;
-  repoFullName: string;
 }) {
   return (
     <div data-tour="chat" className="relative w-full max-w-[520px]">
-      <Composer a={a} repoName={repoName} repoFullName={repoFullName} />
+      <Composer a={a} repoName={repoName} />
       <UnreadCount n={a.unread ?? 0} withQuestions={false} />
       <Shade
         a={a}
         repoName={repoName}
-        repoFullName={repoFullName}
+       
         className="fixed top-16 left-1/2 w-[min(920px,calc(100vw-48px))] -translate-x-1/2"
       />
     </div>
@@ -379,11 +376,9 @@ const MOBILE_SHADE_TOP = 56;
 export function AskButton({
   a,
   repoName,
-  repoFullName,
 }: {
   a: AssistantControls;
   repoName: string;
-  repoFullName: string;
 }) {
   return (
     <>
@@ -402,7 +397,7 @@ export function AskButton({
       <Shade
         a={a}
         repoName={repoName}
-        repoFullName={repoFullName}
+       
         withComposer
         keyboardTop={MOBILE_SHADE_TOP}
         className="fixed top-14 right-0 left-0"
@@ -686,14 +681,12 @@ function NewRule() {
 function Shade({
   a,
   repoName,
-  repoFullName,
   className,
   withComposer = false,
   keyboardTop,
 }: {
   a: AssistantControls;
   repoName: string;
-  repoFullName: string;
   className?: string;
   withComposer?: boolean;
   /** Top offset in px; when set, the shade shrinks to stay above the on-screen keyboard. */
@@ -835,7 +828,7 @@ function Shade({
           <Composer
             a={a}
             repoName={repoName}
-            repoFullName={repoFullName}
+           
             toggle={false}
             className="flex-1"
           />
