@@ -37,6 +37,7 @@ import {
   CODER_DESIGN_RULE,
   CODER_SCOPE_RULE,
   FOLLOW_UP_RULE,
+  RUBRIC_FIX_RULE,
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
   REVIEWER_AUDIT_RULE,
@@ -59,6 +60,8 @@ import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { followUpsFromSummary } from "@/lib/agents/follow-ups";
 import { recordFollowUps } from "@/lib/board/follow-ups";
+import { recordRubricFixes } from "@/lib/board/rubric-fixes";
+import { rubricFixesFromSummary } from "@/lib/sentinels/rubric-fix";
 import { askForScope, widenScope } from "@/lib/coder/scope-request";
 import {
   checkDecomposition,
@@ -158,7 +161,7 @@ const MAX_REPORT = 20_000;
 const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${PLAN_FIRST_RULE}
 - ${CHECKPOINT_RULE}
-- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- [needed] Title (N pt): what and why" or "- [nice to have] Title (N pt): what and why" per line, before the plan.${mode === "implement" ? "" : `\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`}
+- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- [needed] Title (N pt): what and why" or "- [nice to have] Title (N pt): what and why" per line, before the plan.\n- ${RUBRIC_FIX_RULE} Put them in the summary as a "Rubric fixes:" section, one "- Collum 5b: what is wrong -> the change you suggest" per line.${mode === "implement" ? "" : `\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${CHECKS_RULE}
 - ${VERIFY_RULE}
@@ -1781,6 +1784,7 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
     // What it proposed as tickets of their own stands whatever else it did,
     // a send-back included.
     await recordFollowUps(ticket.id, followUpsFromSummary(change.messages.at(-1) ?? ""));
+    await recordRubricFixes(ticket.id, rubricFixesFromSummary(change.messages.at(-1) ?? ""));
     const asked = change.files.length === 0 ? questionsFromSummary(change.messages.at(-1) ?? "") : [];
     if (asked.length > 0) {
       await stop(questionReason(isTicketImplementation(result.mode) ? "The Coder Agent" : "The Reviewer Agent", asked), true);

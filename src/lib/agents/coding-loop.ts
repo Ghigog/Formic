@@ -22,6 +22,7 @@ import { HELPER_MODEL, requestShape } from "./models";
 import { SHARED_NOTES_INTRO } from "./prompts";
 import { MAX_SHARED_NOTE } from "@/lib/domain/events";
 import { MAX_PLAN_STEPS, checkPlan, currentStep, planFraction } from "./plan";
+import { checkRubricFixFlags } from "@/lib/sentinels/rubric-fix";
 import { checkFollowUps } from "./follow-ups";
 import { checkHandoff } from "./handoff";
 import { questionReason } from "@/lib/domain/question";
@@ -269,6 +270,7 @@ const finishInput = z.object({
   send_back: z.string().nullable().optional(),
   for_you: z.array(z.string()).optional(),
   follow_ups: z.array(z.unknown()).optional(),
+  rubric_fixes: z.array(z.unknown()).optional(),
   blocked_reason: z.string().nullable().optional(),
   question: z.string().nullable().optional(),
 });
@@ -458,6 +460,23 @@ const FOLLOW_UPS = {
     "Work this ticket uncovered that is not its own: a criterion too big for its estimate, or one that waits on other tickets. The person may add each as its own ticket. Empty when there is none.",
 };
 
+const RUBRIC_FIXES = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      sentinel: { type: "string", description: "The Sentinel's roster id." },
+      check: { type: "string", description: "The check's id in its rubric, such as \"5b\"." },
+      problem: { type: "string", description: "What is wrong with the check." },
+      suggestion: { type: "string", description: "The change you suggest to its wording." },
+    },
+    required: ["sentinel", "check", "problem", "suggestion"],
+    additionalProperties: false,
+  },
+  description:
+    "A rubric check that is impossible to meet, names the wrong file or is outdated. Only the person can approve a change to it. Empty when there is none.",
+};
+
 const BLOCKED = {
   type: ["string", "null"],
   description:
@@ -493,10 +512,11 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
         },
         for_you: FOR_YOU,
         follow_ups: FOLLOW_UPS,
+        rubric_fixes: RUBRIC_FIXES,
         blocked_reason: BLOCKED,
         question: QUESTION,
       },
-      required: ["summary", "detail", "verified_with", "already_done", "for_you", "follow_ups", "blocked_reason", "question"],
+      required: ["summary", "detail", "verified_with", "already_done", "for_you", "follow_ups", "rubric_fixes", "blocked_reason", "question"],
       additionalProperties: false,
     },
     strict: true,
@@ -525,10 +545,11 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
         },
         for_you: FOR_YOU,
         follow_ups: FOLLOW_UPS,
+        rubric_fixes: RUBRIC_FIXES,
         blocked_reason: BLOCKED,
         question: QUESTION,
       },
-      required: ["summary", "detail", "verified_with", "send_back", "for_you", "follow_ups", "blocked_reason", "question"],
+      required: ["summary", "detail", "verified_with", "send_back", "for_you", "follow_ups", "rubric_fixes", "blocked_reason", "question"],
       additionalProperties: false,
     },
     strict: true,
@@ -1000,6 +1021,7 @@ export async function runCodingLoop(
               alreadyDone: parsed.data.already_done ?? false,
               handoff: checkHandoff(parsed.data.for_you),
               followUps: checkFollowUps(parsed.data.follow_ups),
+              rubricFixes: checkRubricFixFlags(parsed.data.rubric_fixes),
               sendBack: parsed.data.send_back?.trim() || null,
             },
             usage: total,
