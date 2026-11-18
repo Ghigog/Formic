@@ -233,6 +233,8 @@ export function BoardShell({
     merged[id] = { ...merged[id], ...live };
   }
 
+  // Repo-less boards have no repository name, so the board's own id tells them apart.
+  const boardId = projectId ?? repoFullName;
   const repoName = repoFullName.split("/")[1] ?? repoFullName;
 
   // The secrets the CLI agents on columns sign in with: the other half of setup. Agents
@@ -256,6 +258,7 @@ export function BoardShell({
   }
 
   const assistantControls: AssistantControls = {
+      boardId,
       ...assistant,
       questions: cards.filter((c) => isQuestion(c.blockedReason)).length,
       waiting: cards
@@ -361,7 +364,7 @@ export function BoardShell({
       <NewItemDialog
         open={dialog !== null}
         column={dialog?.column ?? "backlog"}
-        repoFullName={repoFullName}
+        boardId={boardId}
         onClose={() => setDialog(null)}
         onSubmit={(rawRequest, requestId) =>
           dialog?.column === "todo"

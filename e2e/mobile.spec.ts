@@ -303,3 +303,122 @@ test("the PM's unread badge pops in on the button, fits on screen, and clears wh
   await page.getByRole("button", { name: "Ask the PM" }).click();
   await expect(page.getByTestId("pm-unread")).toHaveCount(0);
 });
+
+test("at 390px a PM draft stays with its board across a swipe, with no flash of it on the next", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  for (const name of ["Draft one", "Draft two"]) {
+    expect(
+      (
+        await page.request.post("/api/projects", {
+          data: { noRepository: true, name },
+        })
+      ).ok(),
+    ).toBe(true);
+  }
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const shown = async () =>
+    (
+      (await page
+        .getByRole("button", { name: /^Project: / })
+        .first()
+        .getAttribute("aria-label")) ?? ""
+    )
+      .replace(/^Project: /, "")
+      .replace(/\. Choose another project$/, "");
+  const original = await shown();
+  const order = (
+    (await (await page.request.get("/api/projects")).json()) as {
+      projects: Array<{ name: string }>;
+    }
+  ).projects.map((p) => p.name);
+  const i = order.indexOf(original);
+  const down = i + 1 < order.length;
+  const expected = order[down ? i + 1 : i - 1]!;
+
+  const draft = "Unsent note for the first board";
+  await page.getByRole("button", { name: "Ask the PM" }).first().click();
+  const field = page.getByRole("textbox", { name: "Ask the PM" }).first();
+  await field.fill(draft);
+  await expect(field).toHaveValue(draft);
+
+  // Sample the composer on every frame, tagged with the board shown beside it.
+  await page.evaluate((draftText) => {
+    const w = window as unknown as { __flash: number; __stop: () => void };
+    w.__flash = 0;
+    let on = true;
+    w.__stop = () => (on = false);
+    const label = () =>
+      (
+        document
+          .querySelector<HTMLElement>('button[aria-label^="Project: "]')
+          ?.getAttribute("aria-label") ?? ""
+      )
+        .replace(/^Project: /, "")
+        .replace(/\. Choose another project$/, "");
+    const first = label();
+    const tick = () => {
+      if (!on) return;
+      const now = label();
+      if (now && now !== first) {
+        for (const t of document.querySelectorAll<HTMLTextAreaElement>(
+          'textarea[aria-label="Ask the PM"]',
+        )) {
+          if (t.value === draftText) w.__flash++;
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, draft);
+
+  const cdp = await context.newCDPSession(page);
+  const fingers = (y: number) =>
+    [0, 40].map((dx, id) => ({ x: 140 + dx, y, id }));
+  const [from, to] = down ? [600, 420] : [300, 480];
+  await expect(async () => {
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: fingers(from),
+    });
+    for (let step = 1; step <= 10; step++) {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: fingers(from + ((to - from) * step) / 10),
+      });
+    }
+    try {
+      await expect(page.getByTestId("dig-band")).toBeVisible({ timeout: 2_000 });
+    } catch (e) {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchCancel",
+        touchPoints: [],
+      });
+      throw e;
+    }
+  }).toPass({ timeout: 20_000 });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await expect.poll(shown, { timeout: 10_000 }).toBe(expected);
+  await expect(page.getByTestId("dig-transition")).toHaveAttribute(
+    "data-phase",
+    "idle",
+  );
+
+  expect(
+    await page.evaluate(() => {
+      const w = window as unknown as { __flash: number; __stop: () => void };
+      w.__stop();
+      return w.__flash;
+    }),
+  ).toBe(0);
+  const next = page.getByRole("textbox", { name: "Ask the PM" }).first();
+  if (!(await next.isVisible())) {
+    await page.getByRole("button", { name: "Ask the PM" }).first().click();
+  }
+  await expect(next).toHaveValue("");
+});
