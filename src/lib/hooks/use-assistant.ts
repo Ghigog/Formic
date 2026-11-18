@@ -25,7 +25,11 @@ export interface AssistantMessageView {
         | "rerun_ci"
         | "open_pull_request"
         | "move_card"
-        | "close_card";
+        | "close_card"
+        | "revise_rubric_check";
+      /** revise_rubric_check: the check's wording now, and the proposed change. */
+      current?: string;
+      proposed?: string;
       title?: string;
       request?: string;
       /** open_pull_request: what the pull request says. */
