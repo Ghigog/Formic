@@ -44,6 +44,8 @@ import {
   releaseMergeSlot,
 } from "./merge-lane";
 import { claimOrQueue } from "@/lib/board/queue";
+import { widenScope } from "@/lib/coder/scope-request";
+import { normalizeScope } from "@/lib/domain/scope";
 import { handOffToReviewer, releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
@@ -1440,16 +1442,14 @@ async function reviewTicket(
       return;
     }
 
+    // The scope keeps parallel tickets apart; it does not limit a good fix.
+    // Files nothing running is using join it, as for the Coder Agent. When a
+    // running ticket holds them, nothing is pushed and the review is done
+    // again with the files once they are free.
     const violations = violationsInDiff(changed, ticket.fileScope);
-    if (violations.length > 0) {
-      const reason =
-        `The review's fix touched ${violations.slice(0, 5).join(", ")}, outside ${ticket.key}'s ` +
-        `file scope. Nothing was pushed.`;
-      await stallTicket(projectId, ticket, reason, {
-        blocked: true,
-        stalledIn: "in_review",
-      });
-      await run.finish({ ...outcome, ok: false, error: reason, blocked: true });
+    if (violations.length > 0 && !(await widenScope(projectId, ticket, violations))) {
+      await waitForFiles(projectId, ticket, violations);
+      await run.finish(outcome);
       return;
     }
 
@@ -1996,6 +1996,62 @@ export async function sendBack(
     return;
   }
   launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
+}
+
+/**
+ * The review's fix needs `files` a running ticket holds. Nothing is pushed:
+ * the ticket asks for them (scopeRequest) and goes through the same
+ * claim-or-queue as a send-back, so it waits while they are held and is
+ * reviewed again with them (see reviewWithFiles) once they are free.
+ */
+async function waitForFiles(projectId: string, ticket: TicketDetail, files: string[]): Promise<void> {
+  const requested = normalizeScope(files);
+  const repo = repository();
+  await repo.updateTicket(ticket.id, { scopeRequest: requested });
+  const card = await repo.cardById(ticket.id);
+  const wanted = card && { ...card, fileScope: normalizeScope([...card.fileScope, ...requested]) };
+  const write = (status: "running" | "queued") =>
+    repo.updateTicket(ticket.id, { reviewedSha: null, reviewedHead: null, status });
+  const { status, reason } = wanted
+    ? await claimOrQueue(projectId, wanted, write)
+    : (await write("running"), { status: "running" as const, reason: null });
+  if (status === "queued") {
+    await publish(projectId, {
+      type: "card.status",
+      cardId: ticket.id,
+      kind: "ticket",
+      status: "queued",
+      stalledIn: null,
+      stage: card?.stage ?? ticket.stage,
+      blockedReason: reason,
+    });
+    return;
+  }
+  await reviewWithFiles(projectId, ticket.id);
+}
+
+/** Whether a ticket in the queue is a review waiting on files, not a Coder Agent run. */
+export function waitsForReviewFiles(ticket: Pick<TicketDetail, "scopeRequest" | "prNumber" | "stage">): boolean {
+  return ticket.scopeRequest.length > 0 && !!ticket.prNumber && ticket.stage >= 6;
+}
+
+/** The files a waiting review asked for are free: take them into the scope and review again. */
+export async function reviewWithFiles(projectId: string, ticketId: string): Promise<void> {
+  const repo = repository();
+  const ticket = await repo.ticketDetail(ticketId);
+  if (!ticket?.prNumber) return;
+  const asked = ticket.scopeRequest;
+  await repo.updateTicket(ticket.id, { scopeRequest: [], status: "review" });
+  if (asked.length > 0 && !(await widenScope(projectId, ticket, asked))) {
+    // Taken by another ticket after all: wait again.
+    await waitForFiles(projectId, ticket, asked);
+    return;
+  }
+  const project = await projectFor(projectId);
+  const pull = await vcs(project.repoFullName, (await credentialsForProject(project)).repoToken).pullRequest(
+    ticket.prNumber,
+  );
+  await reviewPullRequest(projectId, ticket.prNumber, pull.headSha);
 }
 
 /** Steps outside the repository, from every run of the ticket, once each. */

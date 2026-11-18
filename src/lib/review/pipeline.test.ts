@@ -654,3 +654,132 @@ describe("a conflict in review", () => {
     expect((await repository().ticketDetail(second!.id))!.blockedReason).toContain("conflicts with main");
   });
 });
+
+describe("a review's fix that needs files outside the ticket's scope", () => {
+  const NO_USAGE = { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 };
+
+  /** T-1 in review with red CI, scope `src`; the reviewer's fix changes `changed`. */
+  async function seedRed(changed: string[]) {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const [ticket] = await repo.createTickets([
+      {
+        epicId: epic.id,
+        key: "T-1",
+        title: "T",
+        description: "d",
+        acceptanceCriteria: ["c"],
+        fileScope: ["src"],
+        storyPoints: 3,
+        position: 1,
+        dependsOnKeys: [],
+      },
+    ]);
+    const pull = await vcs.openPullRequest({ headBranch: "t-1", baseBranch: "main", title: "T", body: "" });
+    MockVcsClient.setChecks(pull.number, "failure");
+    await repo.updateTicket(ticket!.id, {
+      status: "review",
+      stage: 6,
+      prNumber: pull.number,
+      branchName: "t-1",
+      attempts: 0,
+    });
+    const commands: string[] = [];
+    setCheckoutFactory(async (request) => {
+      const memory = new MemoryWorkspace();
+      const raw: Workspace = Object.create(memory, {
+        changedFiles: { value: async () => changed },
+        exec: {
+          value: async (cmd: string) => {
+            commands.push(cmd);
+            return { exitCode: 0, stdout: "abc123\n", stderr: "" };
+          },
+        },
+      });
+      return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: "sbx", async dispose() {} };
+    });
+    setAgents({
+      reviewer: {
+        review: async () => ({
+          ok: true,
+          value: { summary: "fix", detail: "", verifiedWith: null, sendBack: null, handoff: [] },
+          usage: NO_USAGE,
+        }),
+      },
+    } as never);
+    return { ticketId: ticket!.id, epicId: epic.id, prNumber: pull.number, commands };
+  }
+
+  /** Another ticket, running in `app`. */
+  async function holdApp(epicId: string, status: "running" | "review") {
+    const repo = repository();
+    const [other] = await repo.createTickets([
+      {
+        epicId,
+        key: "T-9",
+        title: "App",
+        description: "d",
+        acceptanceCriteria: ["c"],
+        fileScope: ["app"],
+        storyPoints: 1,
+        position: 9,
+        dependsOnKeys: [],
+      },
+    ]);
+    await repo.updateTicket(other!.id, { status });
+    return other!.id;
+  }
+
+  afterEach(() => {
+    setCheckoutFactory(null);
+    resetAgents();
+  });
+
+  const pushed = (commands: string[]) => commands.some((c) => c.includes("git push"));
+
+  it("takes files no running ticket claims into the scope, pushes, and says so in the chat", async () => {
+    const { ticketId, prNumber, commands } = await seedRed(["src/a.ts", "app/b.ts"]);
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    const after = (await repository().ticketDetail(ticketId))!;
+    expect(after.fileScope).toEqual(["app/b.ts", "src"]);
+    expect(pushed(commands)).toBe(true);
+    const chat = (await repository().cardChatMessages(ticketId)).messages;
+    expect(chat.some((m) => m.content.includes("app/b.ts"))).toBe(true);
+  });
+
+  it("pushes nothing and waits while a running ticket holds the files, then reviews again with them", async () => {
+    const { ticketId, epicId, prNumber, commands } = await seedRed(["src/a.ts", "app/b.ts"]);
+    const otherId = await holdApp(epicId, "running");
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    const waiting = (await repository().ticketDetail(ticketId))!;
+    expect(pushed(commands)).toBe(false);
+    expect(waiting.status).toBe("queued");
+    expect(waiting.scopeRequest).toEqual(["app/b.ts"]);
+    expect(waiting.blockedReason).toContain("T-9");
+    expect(waiting.fileScope).toEqual(["src"]);
+
+    // The other ticket lets go: the review runs again with the files.
+    await repository().updateTicket(otherId, { status: "review" });
+    commands.length = 0;
+    const { startQueued } = await import("@/lib/board/queue");
+    await startQueued(PROJECT);
+    await vi.waitFor(async () => {
+      expect((await repository().ticketDetail(ticketId))!.fileScope).toEqual(["app/b.ts", "src"]);
+      expect(pushed(commands)).toBe(true);
+    });
+    expect((await repository().ticketDetail(ticketId))!.scopeRequest).toEqual([]);
+  });
+
+  it("pushes a fix inside the scope as it is", async () => {
+    const { ticketId, prNumber, commands } = await seedRed(["src/a.ts"]);
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    expect(pushed(commands)).toBe(true);
+    expect((await repository().ticketDetail(ticketId))!.fileScope).toEqual(["src"]);
+  });
+});

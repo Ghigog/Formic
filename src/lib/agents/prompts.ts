@@ -150,7 +150,7 @@ Rules that are enforced, not advisory:
 export const CODER_SCOPE_RULE = `The ticket's file scope is where its change is expected to go; other agents may be working next to it. Keep to it when a change inside it is as good. When the right change needs files outside it, make that change anyway: never settle for a worse one or stop because of the scope. Formic takes those files into the scope when no running ticket is using them, and asks the person only when one is. Say in your summary which files outside the scope you changed, and why.`;
 
 /** The file scope, for an agent fixing a pull request that is already open. */
-export const REVIEWER_SCOPE_RULE = `Fix only inside the ticket's file scope; a fix outside it is refused before anything is pushed. When the right fix needs files outside it, send the ticket back saying which files and why, and the Coder Agent asks the person for them.`;
+export const REVIEWER_SCOPE_RULE = `The ticket's file scope is where its change is expected to go; other agents may be working next to it. Keep to it when a change inside it is as good. When the right fix needs files outside it, make that fix anyway: never settle for a worse one or stop because of the scope. Formic takes those files into the scope when no running ticket is using them, and otherwise holds the ticket and reviews it again once they are free. Say in your summary which files outside the scope you changed, and why.`;
 
 /**
  * What a coding agent does when the ticket's work is already in the
