@@ -21,6 +21,9 @@ const SCOPE_REQUEST_REASON = /^Needs files outside its scope:/;
 /** The first line of a blocked card's reason when its run went 30 minutes without a new commit; the lines after it say what each run last did. */
 export const STUCK_RUN = "Run stuck: no new commits for 30 minutes";
 
+/** What a blocked card's reason starts with when the review ceiling stopped it (ceilingReason in review/pipeline.ts); the lines after it say what failed and what the person can do. */
+export const REVIEW_CEILING = "Out of reviews";
+
 export function classifyNotice(card: {
   status: TicketStatus;
   stalledIn?: ColumnId | null;
@@ -42,6 +45,7 @@ export function classifyNotice(card: {
     return { severity: "warning", title: "Failed", shortDescription, longDescription };
   }
   if (shortDescription === STUCK_RUN) return { severity: "alert", title: "Stuck", shortDescription, longDescription };
+  if (shortDescription.startsWith(REVIEW_CEILING)) return { severity: "alert", title: REVIEW_CEILING, shortDescription, longDescription };
   const title = SCOPE_REQUEST_REASON.test(shortDescription) ? "Needs authorization" : "Waiting for you";
   return { severity: "alert", title, shortDescription, longDescription };
 }
