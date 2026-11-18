@@ -27,6 +27,8 @@ export interface SentinelsApi {
    * against that rubric. A second summon while it runs does nothing.
    */
   summon: (id: string, kind?: AuditKind) => Promise<void>;
+  /** Asks the Sentinel to revise one check with the person's note; sending it is their approval. */
+  editCheck: (id: string, checkId: string, note: string) => Promise<void>;
   /** Stops one sentinel's running audit or calibration. */
   stop: (id: string) => Promise<void>;
   /** The sentinels whose stop request is in flight. */
@@ -123,6 +125,29 @@ export function SentinelsProvider({
     void refresh();
   }, [refresh]);
 
+  const editCheck = useCallback(async (id: string, checkId: string, note: string) => {
+    setRefusal(null);
+    // Shown running at once, as a summon is; the server's answer fills in the real log.
+    setStates((prev) => {
+      const s = prev[id];
+      if (!s || s.running) return prev;
+      return { ...prev, [id]: { ...s, error: null, running: { kind: "revise", log: [], startedAt: new Date().toISOString() } } };
+    });
+    const res = await fetch(`/api/sentinels/${id}/checks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checkId, note }),
+    }).catch(() => null);
+    if (res?.ok) {
+      const body = (await res.json()) as { sentinels: SentinelStates };
+      setStates(body.sentinels);
+      return;
+    }
+    const body = res ? ((await res.json().catch(() => null)) as { error?: string } | null) : null;
+    setRefusal(body?.error ?? "Could not reach the server.");
+    void refresh();
+  }, [refresh]);
+
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
   const stop = useCallback(async (id: string) => {
     setRefusal(null);
@@ -159,8 +184,8 @@ export function SentinelsProvider({
   }, [summon, level, unlockAll]);
 
   const api = useMemo<SentinelsApi>(
-    () => ({ states, grade, level, unlockAll, summon, stop, stopping, summonAll, refresh, refusal }),
-    [states, grade, level, unlockAll, summon, stop, stopping, summonAll, refresh, refusal],
+    () => ({ states, grade, level, unlockAll, summon, editCheck, stop, stopping, summonAll, refresh, refusal }),
+    [states, grade, level, unlockAll, summon, editCheck, stop, stopping, summonAll, refresh, refusal],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }
