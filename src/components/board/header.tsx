@@ -68,7 +68,7 @@ export function BoardHeader({
 
           <div className="flex min-w-0 flex-1">
             {assistant && !isMobile && (
-              <AskBox a={assistant} repoName={repo ?? repoFullName} repoFullName={repoFullName} />
+              <AskBox a={assistant} repoName={repo ?? repoFullName} />
             )}
           </div>
         </div>
@@ -98,7 +98,7 @@ export function BoardHeader({
           />
         )}
         {assistant && isMobile && (
-          <AskButton a={assistant} repoName={repo ?? repoFullName} repoFullName={repoFullName} />
+          <AskButton a={assistant} repoName={repo ?? repoFullName} />
         )}
         <div className="min-w-0 flex-grow" />
         <ColonyMobileStats />
