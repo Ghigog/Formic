@@ -2,6 +2,7 @@
 
 import { mergeMessages } from "./merge-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { AttachmentSummary } from "@/lib/domain/entities";
 
 /** One message, as the assistant API returns it. */
 export interface AssistantMessageView {
@@ -15,6 +16,8 @@ export interface AssistantMessageView {
   createdAt?: string;
   /** Cards it links to. */
   cards?: Array<{ id: string; key: string; title: string }>;
+  /** Pictures sent with it. */
+  attachments?: AttachmentSummary[];
   proposals: Array<{
     summary: string;
     action: {
@@ -151,7 +154,7 @@ export function useAssistant(enabled: boolean) {
   }, [answering, setState]);
 
   const ask = useCallback(
-    async (text: string, speakers?: string[]) => {
+    async (text: string, speakers?: string[], requestId?: string) => {
       const controller = new AbortController();
       asked.current = controller;
       setAsking(true);
@@ -160,7 +163,7 @@ export function useAssistant(enabled: boolean) {
           send(
             "/api/assistant",
             "POST",
-            { text, ...(speakers ? { speakers } : {}) },
+            { text, ...(speakers ? { speakers } : {}), ...(requestId ? { requestId } : {}) },
             controller.signal,
           ),
         );

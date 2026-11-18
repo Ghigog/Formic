@@ -1775,6 +1775,20 @@ function contract(name: string, make: () => Repository) {
         expect(((await repo.assistantMessages(other.id)).messages).map((m) => m.id)).toEqual([kept.id]);
       });
 
+      it("carries a chat message's images, and clearing the chat deletes them", async () => {
+        const p = await project();
+        const requestId = randomUUID();
+        const file = await repo.createAttachment({ projectId: p.id, requestId, filename: "s.png", mimeType: "image/png", kind: "image", size: 1, bytes: new Uint8Array([1]) });
+        const m = await repo.addAssistantMessage({ projectId: p.id, role: "user", content: "" });
+        await repo.claimAttachments(requestId, { assistantMessageId: m.id });
+
+        expect((await repo.assistantMessages(p.id)).messages[0]!.attachments.map((x) => x.id)).toEqual([file.id]);
+        expect(await repo.attachmentScope(file.id)).toEqual({ projectId: p.id, requestId: null });
+
+        await repo.clearAssistant(p.id);
+        expect(await repo.attachmentContent(file.id)).toBeNull();
+      });
+
       it("pages the assistant conversation newest first, each page oldest first, with no gaps or repeats", async () => {
         const p = await project();
         const ids: string[] = [];

@@ -133,6 +133,7 @@ interface AttachmentRow {
   epicId: string | null;
   ticketId: string | null;
   requestId: string | null;
+  assistantMessageId?: string | null;
   filename: string;
   mimeType: string;
   kind: AttachmentSummary["kind"];
@@ -1389,13 +1390,14 @@ export class MemoryRepository implements Repository {
 
   async claimAttachments(
     requestId: string,
-    ref: { epicId: string } | { ticketId: string },
+    ref: { epicId: string } | { ticketId: string } | { assistantMessageId: string },
   ): Promise<void> {
     for (const row of store().attachments.values()) {
       if (row.requestId !== requestId) continue;
       row.requestId = null;
       if ("epicId" in ref) row.epicId = ref.epicId;
-      else row.ticketId = ref.ticketId;
+      else if ("ticketId" in ref) row.ticketId = ref.ticketId;
+      else row.assistantMessageId = ref.assistantMessageId;
     }
   }
 
@@ -2354,7 +2356,13 @@ export class MemoryRepository implements Repository {
     projectId: string,
     page: { before?: string; limit?: number } = {},
   ): Promise<MessagePage<AssistantMessage>> {
-    return pageMessages(store().assistant.filter((m) => m.projectId === projectId), page);
+    const found = await pageMessages(store().assistant.filter((m) => m.projectId === projectId), page);
+    return {
+      ...found,
+      messages: await Promise.all(
+        found.messages.map(async (m) => ({ ...m, attachments: await this.attachmentsFor({ assistantMessageId: m.id }) })),
+      ),
+    };
   }
 
   async pendingAssistantMessage(projectId: string, role?: "user" | "assistant"): Promise<AssistantMessage | null> {
@@ -2393,6 +2401,7 @@ export class MemoryRepository implements Repository {
       createdAt: new Date(),
       ...input,
       cards: input.cards ?? [],
+      attachments: [],
       proposals: input.proposals ?? [],
       status: input.status ?? "done",
     };
@@ -2421,6 +2430,9 @@ export class MemoryRepository implements Repository {
   async clearAssistant(projectId: string): Promise<void> {
     const s = store();
     s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
+    for (const [id, row] of s.attachments) {
+      if (row.projectId === projectId && row.assistantMessageId) s.attachments.delete(id);
+    }
   }
 
   async cardChatMessages(cardId: string, page: { before?: string; limit?: number } = {}): Promise<MessagePage<CardChatMessage>> {
@@ -2577,6 +2589,7 @@ function isScout(s: Store, card: BoardCard): boolean {
 function matchesAttachmentRef(row: AttachmentRow, ref: AttachmentRef): boolean {
   if ("epicId" in ref) return row.epicId === ref.epicId;
   if ("ticketId" in ref) return row.ticketId === ref.ticketId;
+  if ("assistantMessageId" in ref) return row.assistantMessageId === ref.assistantMessageId;
   return row.requestId === ref.requestId;
 }
 
