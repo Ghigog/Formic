@@ -612,6 +612,8 @@ model Attachment {
   epicId    String?
   ticketId  String?
   requestId String?
+  /// Set once a PM chat message has claimed it.
+  assistantMessageId String?
   filename  String
   mimeType  String
   kind      AttachmentKind
@@ -620,6 +622,7 @@ model Attachment {
   createdAt DateTime       @default(now())
 
   @@index([requestId])
+  @@index([assistantMessageId])
   @@index([epicId])
   @@index([ticketId])
   @@map("attachment")

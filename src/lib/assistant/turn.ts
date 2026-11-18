@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { MODELS } from "@/lib/agents/anthropic";
-import { claudeSpeak, openAiSpeak, runChatLoop, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
+import { claudeSpeak, openAiSpeak, runChatLoop, type PastMessage, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
 import {
   ask as askCardChat,
   CHAT_ANSWER_BUDGET_MS,
@@ -22,7 +22,7 @@ import { publish } from "@/lib/events/bus";
 import { columnOf } from "@/lib/domain/status";
 import type { AssistantMessage, AssistantProposal } from "@/lib/db/repository";
 import { extractJson } from "@/lib/llm/openai-compat";
-import { startCliAsk } from "@/lib/runner/runner";
+import { attachmentsPrompt, startCliAsk } from "@/lib/runner/runner";
 import { vcs, type VcsClient } from "@/lib/vcs";
 import { ASSISTANT_BRANCH_PREFIX, assistantActionSchema, checkAction } from "./actions";
 import { boardSnapshot, cardReport, mentionedKeys } from "./context";
@@ -245,22 +245,48 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
 async function historyBefore(projectId: string, messageId: string) {
   const { messages: all } = await repository().assistantMessages(projectId);
   const at = all.findIndex((m) => m.id === messageId);
-  const past = history(at < 0 ? all : all.slice(0, at));
+  const past = await history(at < 0 ? all : all.slice(0, at));
   // Another speaker's reply may be the last: the person's question still stands.
   return past.at(-1)?.role === "assistant" ? [...past, { role: "user" as const, content: "Now it is your turn to answer the person's last message." }] : past;
 }
 
-/** Earlier messages as plain text, the way every provider accepts them. */
-function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistant"; content: string }> {
-  return messages
-    .filter((m) => m.status === "done" && m.content.trim())
-    .map((m) => ({
-      role: m.role,
-      content: [
-        m.role === "assistant" && m.speaker !== "assistant" ? `${guestLabel(m.speaker as GuestId)}: ${m.content}` : m.content,
-        ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
-      ].join("\n"),
-    }));
+/** How many of the person's latest messages go to the model with their pictures; older pictures are a text line. */
+const MESSAGES_WITH_PIXELS = 3;
+
+/**
+ * Earlier messages, the way every provider accepts them. A user message's
+ * images ride on its own turn, but only for the latest few: older ones are a
+ * line naming the file, so the token cost of a long chat stays bounded.
+ */
+export async function history(messages: AssistantMessage[]): Promise<PastMessage[]> {
+  const kept = messages.filter((m) => m.status === "done" && (m.content.trim() || m.attachments.length > 0));
+  const withPixels = new Set(
+    kept.filter((m) => m.role === "user" && m.attachments.some((a) => a.kind === "image")).slice(-MESSAGES_WITH_PIXELS),
+  );
+  return Promise.all(
+    kept.map(async (m): Promise<PastMessage> => {
+      const pictures = m.attachments.filter((a) => a.kind === "image");
+      const images: NonNullable<PastMessage["images"]> = [];
+      const lines: string[] = [];
+      for (const a of pictures) {
+        const content = withPixels.has(m) ? await repository().attachmentContent(a.id) : null;
+        if (content) images.push({ mimeType: a.mimeType, base64: Buffer.from(content.bytes).toString("base64") });
+        else lines.push(`[Image: ${a.filename}]`);
+      }
+      return {
+        role: m.role,
+        content: [
+          ...(m.content.trim()
+            ? [m.role === "assistant" && m.speaker !== "assistant" ? `${guestLabel(m.speaker as GuestId)}: ${m.content}` : m.content]
+            : []),
+          ...lines,
+          ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
+        ].join("\n"),
+        ...(images.length ? { images } : {}),
+        ...(pictures.length ? { files: pictures } : {}),
+      };
+    }),
+  );
 }
 
 /**
@@ -268,12 +294,12 @@ function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistan
  * agent's question the PM is woken for. It is not kept: the PM's answer is.
  */
 function withPrompt(
-  past: Array<{ role: "user" | "assistant"; content: string }>,
+  past: PastMessage[],
   prompt: string | undefined,
-): Array<{ role: "user" | "assistant"; content: string }> {
+): PastMessage[] {
   if (!prompt) return past;
   const last = past.at(-1);
-  if (last?.role === "user") return [...past.slice(0, -1), { role: "user", content: `${last.content}\n\n${prompt}` }];
+  if (last?.role === "user") return [...past.slice(0, -1), { ...last, content: `${last.content}\n\n${prompt}` }];
   return [...past, { role: "user", content: prompt }];
 }
 
@@ -669,7 +695,7 @@ const cliAnswerSchema = z.object({
  * A CLI agent cannot call card_status, so the live state of the cards the
  * person has been asking about is read for it before it starts.
  */
-async function cliReports(projectId: string, past: Array<{ role: "user" | "assistant"; content: string }>): Promise<string> {
+async function cliReports(projectId: string, past: PastMessage[]): Promise<string> {
   const asked = past.filter((m) => m.role === "user").slice(-3).map((m) => m.content).join("\n");
   const cards = await repository().boardCards(projectId);
   const named = mentionedKeys(asked, cards).slice(0, MAX_CLI_REPORTS);
@@ -692,9 +718,11 @@ async function cliReports(projectId: string, past: Array<{ role: "user" | "assis
 
 function cliPrompt(
   system: string,
-  past: Array<{ role: "user" | "assistant"; content: string }>,
+  past: PastMessage[],
   reports: string,
 ): string {
+  // The pictures the person sent, as signed links: a CLI agent has no way to be handed pixels.
+  const files = attachmentsPrompt(past.flatMap((m) => m.files ?? []));
   return [
     system,
     "",
@@ -704,6 +732,7 @@ function cliPrompt(
     "The conversation so far, oldest first. Answer the last message from the person.",
     "",
     ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
+    ...(files ? [files, ""] : []),
     "How to answer:",
     "- You may change the code. What you change in the checkout is kept on a branch of its own and offered to the person as a pull request, with the title and body you give in \"change\". Change files only when the person asked for a change or agreed to one. Install the project's dependencies if they are not there, and run its checks on your change before you finish. Changes under .github/workflows are not kept. Leave \"change\" out when you changed nothing.",
     "- Formic has read GitHub for you: the live state of the cards above is current. Answer about those cards from it, and never say you cannot see GitHub. For a card it does not cover, ask the person to name it.",
@@ -733,7 +762,7 @@ async function askAgain(
   const agent = column ? await columnChatAgentFor(projectId, column) : await assistantAgentFor(projectId);
   if (agent.kind !== "cli") return false;
   const { messages: all } = await repository().assistantMessages(projectId);
-  const past = history(all.filter((m) => m.id !== messageId));
+  const past = await history(all.filter((m) => m.id !== messageId));
   const system = column
     ? await guestPrompt(projectId, column, speaker, agent.agent.brief)
     : await systemPrompt(projectId, agent.agent.brief);

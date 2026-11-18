@@ -1485,14 +1485,11 @@ export class PrismaRepository implements Repository {
 
   async claimAttachments(
     requestId: string,
-    ref: { epicId: string } | { ticketId: string },
+    ref: { epicId: string } | { ticketId: string } | { assistantMessageId: string },
   ): Promise<void> {
     await prisma().attachment.updateMany({
       where: { requestId },
-      data:
-        "epicId" in ref
-          ? { epicId: ref.epicId, requestId: null }
-          : { ticketId: ref.ticketId, requestId: null },
+      data: { ...ref, requestId: null },
     });
   }
 
@@ -2363,8 +2360,15 @@ export class PrismaRepository implements Repository {
       ...(before ? { cursor: { id: before }, skip: 1 } : {}),
     });
     const page = rows.slice(0, limit);
+    const files = await prisma().attachment.findMany({
+      where: { assistantMessageId: { in: page.map((m) => m.id) } },
+      orderBy: { createdAt: "asc" },
+      select: { ...ATTACHMENT_SUMMARY, assistantMessageId: true },
+    });
     return {
-      messages: page.reverse().map(toAssistantMessage),
+      messages: page.reverse().map((m) =>
+        toAssistantMessage(m, files.filter((f) => f.assistantMessageId === m.id).map(toAttachmentSummary)),
+      ),
       earlierCursor: rows.length > limit ? page[0]!.id : null,
     };
   }
@@ -2433,6 +2437,7 @@ export class PrismaRepository implements Repository {
   }
 
   async clearAssistant(projectId: string): Promise<void> {
+    await prisma().attachment.deleteMany({ where: { projectId, assistantMessageId: { not: null } } });
     await prisma().assistantMessage.deleteMany({ where: { projectId } });
   }
 
@@ -2517,7 +2522,7 @@ export class PrismaRepository implements Repository {
       where: { projectId, role: "assistant", status: "pending", runnerJob: null, createdAt: { lt: olderThan } },
       take: PENDING_MESSAGES_LIMIT,
     });
-    return rows.map(toAssistantMessage);
+    return rows.map((r) => toAssistantMessage(r));
   }
 
   async auditsFor(projectId: string): Promise<AuditRecord[]> {
@@ -2765,9 +2770,10 @@ function toAssistantMessage(row: {
   runnerAgent: string | null;
   speaker: string;
   createdAt: Date;
-}): AssistantMessage {
+}, attachments: AttachmentSummary[] = []): AssistantMessage {
   return {
     ...row,
+    attachments,
     role: row.role === "user" ? "user" : "assistant",
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
@@ -2855,6 +2861,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
 function attachmentRefWhere(ref: AttachmentRef) {
   if ("epicId" in ref) return { epicId: ref.epicId };
   if ("ticketId" in ref) return { ticketId: ref.ticketId };
+  if ("assistantMessageId" in ref) return { assistantMessageId: ref.assistantMessageId };
   return { requestId: ref.requestId };
 }
 

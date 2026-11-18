@@ -10,6 +10,9 @@ import { liveToken } from "./cline-session";
  * one small client over fetch covers them; no SDK per provider.
  */
 
+/** One part of a user turn that carries an image: text, or a picture as a data URL. */
+export type ChatPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
@@ -33,6 +36,9 @@ export interface ToolSpec {
   type: "function";
   function: { name: string; description: string; parameters: unknown };
 }
+
+/** A message as sent: a user turn may carry image parts, which a reply never does. */
+export type ChatRequestMessage = Omit<ChatMessage, "content"> & { content: string | ChatPart[] | null };
 
 export interface ChatResult {
   message: ChatMessage;
@@ -189,7 +195,7 @@ async function pause(ms: number, signal?: AbortSignal): Promise<void> {
 
 export interface ChatRequest {
   model: string;
-  messages: ChatMessage[];
+  messages: ChatRequestMessage[];
   tools?: ToolSpec[];
   /** Ask for a JSON object back. Dropped and retried if refused. */
   json?: boolean;

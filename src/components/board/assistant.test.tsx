@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
 
@@ -487,5 +487,118 @@ describe("per-board PM drafts", () => {
     expect(field().value).toBe("");
     rerender(<AskButton a={controls} repoName="a" repoFullName="o/a" />);
     expect(field().value).toBe("on a phone");
+  });
+});
+
+describe("images in the composer", () => {
+  Element.prototype.scrollTo = vi.fn();
+  afterEach(() => vi.unstubAllGlobals());
+
+  const picture = () => new File(["x"], "shot.png", { type: "image/png" });
+  const pasteOf = (file: File) => ({
+    clipboardData: { items: [{ kind: "file", type: file.type, getAsFile: () => file }] },
+  });
+
+  /** A server that accepts uploads, optionally holding them until `release` is called. */
+  function server({ hold = false } = {}) {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const uploads: FormData[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/projects") return Response.json({ active: { id: "p-1" } });
+      if (init?.method === "DELETE") return Response.json({});
+      uploads.push(init!.body as FormData);
+      if (hold) await gate;
+      return Response.json({ attachment: { id: `a-${uploads.length}`, filename: "shot.png", mimeType: "image/png", kind: "image", size: 1, url: "/api/attachments/a-1" } }, { status: 201 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return { fetchMock, uploads, release };
+  }
+
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:preview");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("attaches a pasted screenshot, dimmed until it is uploaded", async () => {
+    const s = server({ hold: true });
+    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    fireEvent.paste(screen.getByLabelText("Ask the PM"), pasteOf(picture()));
+    const thumb = await screen.findByAltText(/pasted-image-\d+\.png/);
+    expect(thumb.parentElement).toHaveAttribute("data-status", "uploading");
+    expect(thumb.parentElement).toHaveClass("size-12", "rounded-lg", "border-line");
+    await act(async () => s.release());
+    await waitFor(() => expect(thumb.parentElement).toHaveAttribute("data-status", "done"));
+    expect(s.uploads[0]!.get("projectId")).toBe("p-1");
+    expect((s.uploads[0]!.get("file") as File).name).toMatch(/^pasted-image-\d+\.png$/);
+  });
+
+  it("leaves a paste of plain text to the browser", () => {
+    const s = server();
+    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    const notPrevented = fireEvent.paste(screen.getByLabelText("Ask the PM"), {
+      clipboardData: { items: [{ kind: "string", type: "text/plain", getAsFile: () => null }] },
+    });
+    expect(notPrevented).toBe(true);
+    expect(s.uploads).toHaveLength(0);
+  });
+
+  it("removes an attached image before sending", async () => {
+    const s = server();
+    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    fireEvent.paste(screen.getByLabelText("Ask the PM"), pasteOf(picture()));
+    const remove = await screen.findByRole("button", { name: /^Remove pasted-image/ });
+    await waitFor(() => expect(screen.getByAltText(/pasted-image/).parentElement).toHaveAttribute("data-status", "done"));
+    await userEvent.setup().click(remove);
+    expect(screen.queryByAltText(/pasted-image/)).toBeNull();
+    expect(s.fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/attachments\/a-1\?requestId=/), { method: "DELETE" });
+  });
+
+  it("sends an image with an empty field on Enter, carrying the draft's requestId, and clears the row", async () => {
+    const s = server();
+    const ask = vi.fn();
+    render(<AskBox a={{ ...controls, ask }} repoName="demo" repoFullName="o/r" />);
+    const box = screen.getByLabelText("Ask the PM");
+    fireEvent.paste(box, pasteOf(picture()));
+    await waitFor(() => expect(screen.getByAltText(/pasted-image/).parentElement).toHaveAttribute("data-status", "done"));
+    await userEvent.setup().type(box, "{Enter}");
+    expect(ask).toHaveBeenCalledWith("", undefined, s.uploads[0]!.get("requestId"));
+    expect(screen.queryByAltText(/pasted-image/)).toBeNull();
+  });
+
+  it.each([
+    ["a PDF", new File(["x"], "spec.pdf", { type: "application/pdf" })],
+    ["an image over 10 MB", new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.png", { type: "image/png" })],
+  ])("refuses %s in muted text without uploading it", async (_, file) => {
+    const s = server();
+    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    await userEvent.setup({ applyAccept: false }).upload(screen.getByLabelText("Attach an image"), file);
+    expect(await screen.findByRole("alert")).toHaveClass("text-muted");
+    expect(s.uploads).toHaveLength(0);
+  });
+
+  it("refuses a sixth image and keeps the five", async () => {
+    server();
+    render(<AskBox a={controls} repoName="demo" repoFullName="o/r" />);
+    const input = screen.getByLabelText("Attach an image");
+    await userEvent.setup().upload(input, Array.from({ length: 6 }, (_, i) => new File(["x"], `${i}.png`, { type: "image/png" })));
+    expect(await screen.findByRole("alert")).toHaveTextContent("at most 5");
+    expect(screen.getAllByRole("button", { name: /^Remove / })).toHaveLength(5);
+  });
+
+  it("shows a sent image in the conversation, enlarges it on tap and closes it on Escape", async () => {
+    const attachment = { id: "a-1", filename: "shot.png", mimeType: "image/png", kind: "image" as const, size: 1, url: "/api/attachments/a-1" };
+    render(
+      <AskBox
+        a={{ ...controls, messages: [{ id: "m-1", role: "user", content: "", status: "done", proposals: [], attachments: [attachment] }] }}
+        repoName="demo" repoFullName="o/r"
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Enlarge shot.png" }));
+    expect(screen.getByRole("dialog", { name: "shot.png" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(controls.setOpen).not.toHaveBeenCalledWith(false);
   });
 });
