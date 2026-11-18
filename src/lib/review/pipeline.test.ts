@@ -783,3 +783,96 @@ describe("a review's fix that needs files outside the ticket's scope", () => {
     expect((await repository().ticketDetail(ticketId))!.fileScope).toEqual(["src"]);
   });
 });
+
+describe("red CI the ticket's change did not cause", () => {
+  const NO_USAGE = { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 };
+  const fix = {
+    cause: "The date helper broke on a leap day.",
+    check: "dates.test.ts > formats 29 February",
+    bug: { title: "Fix leap-day formatting", story: "29 February formats wrongly.", scope: ["src/dates.ts"] },
+  };
+
+  async function seed() {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const [ticket] = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "T", description: "d", acceptanceCriteria: ["c"], fileScope: ["app"], storyPoints: 3, position: 1, dependsOnKeys: [] },
+    ]);
+    const pull = await vcs.openPullRequest({ headBranch: "t-1", baseBranch: "main", title: "T", body: "" });
+    MockVcsClient.setChecks(pull.number, "failure");
+    await repo.updateTicket(ticket!.id, { status: "review", stage: 6, prNumber: pull.number, branchName: "t-1", attempts: 0 });
+    setCheckoutFactory(async (request) => {
+      const raw = new MemoryWorkspace();
+      return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: "sbx", async dispose() {} };
+    });
+    setAgents({
+      reviewer: {
+        review: async () => ({
+          ok: true,
+          value: { summary: "blocked", detail: "", verifiedWith: null, sendBack: null, blockedByFix: fix },
+          usage: NO_USAGE,
+        }),
+      },
+    } as never);
+    return { ticketId: ticket!.id, epicId: epic.id, prNumber: pull.number };
+  }
+
+  afterEach(() => {
+    setCheckoutFactory(null);
+    resetAgents();
+  });
+
+  it("blocks the ticket on a bug ticket in its Epic and names both on the card", async () => {
+    const { ticketId, epicId, prNumber } = await seed();
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    const repo = repository();
+    const after = (await repo.ticketDetail(ticketId))!;
+    const bug = (await repo.ticketsForEpic(epicId)).find((t) => t.id !== ticketId)!;
+    expect(bug.title).toBe("Fix leap-day formatting");
+    expect(bug.workType).toBe("bug");
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toContain(fix.check);
+    expect(after.blockedReason).toContain(bug.key);
+    const card = (await repo.boardCards(PROJECT)).find((c) => c.id === ticketId)!;
+    expect(card.dependsOn).toEqual([bug.id]);
+  });
+
+  it("asks the person in chat, with one confirmation, when the Epic has no Queen", async () => {
+    const { prNumber } = await seed();
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    const messages = (await repository().assistantMessages(PROJECT)).messages;
+    const ask = messages.find((m) => m.content.includes(fix.check));
+    expect(ask?.proposals?.map((p) => p.action)).toEqual([expect.objectContaining({ type: "move_card", to: "in_progress" })]);
+  });
+
+  it("starts the fix at once when a Queen is running the Epic", async () => {
+    const { epicId, prNumber } = await seed();
+    await repository().placeQueen(PROJECT, epicId, "epic");
+
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+
+    const bug = (await repository().ticketsForEpic(epicId)).find((t) => t.title === fix.bug.title)!;
+    expect(["running", "queued"]).toContain(bug.status);
+    const messages = (await repository().assistantMessages(PROJECT)).messages;
+    expect(messages.some((m) => m.content.includes(fix.check))).toBe(false);
+  });
+
+  it("reviews the blocked ticket again when the fix merges", async () => {
+    const { ticketId, epicId, prNumber } = await seed();
+    await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+    const repo = repository();
+    const bug = (await repo.ticketsForEpic(epicId)).find((t) => t.id !== ticketId)!;
+    const bugPull = await vcs.openPullRequest({ headBranch: "t-2", baseBranch: "main", title: "Fix", body: "" });
+    await repo.updateTicket(bug.id, { prNumber: bugPull.number, status: "review", stage: 6 });
+    const reviewed = vi.fn(async () => ({ ok: true, value: { summary: "ok", detail: "", verifiedWith: null, sendBack: null }, usage: NO_USAGE }));
+    setAgents({ reviewer: { review: reviewed } } as never);
+    MockVcsClient.setChecks(prNumber, "success");
+
+    await markMergedExternally(PROJECT, bugPull.number);
+    await vi.waitFor(async () => expect((await repo.ticketDetail(ticketId))!.status).not.toBe("blocked"));
+  });
+});

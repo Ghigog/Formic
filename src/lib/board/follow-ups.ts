@@ -7,6 +7,10 @@ import type { BoardCard } from "@/lib/domain/entities";
 import { mergeFollowUps, type FollowUp } from "@/lib/agents/follow-ups";
 import { publish } from "@/lib/events/bus";
 import { positionBetween } from "@/lib/ordering";
+import { boardPorts } from "@/lib/board/ports";
+import { columnOf } from "@/lib/domain/status";
+import { postPmMessage } from "@/lib/assistant/pm-messages";
+import type { BlockedByFix } from "@/lib/agents/ports";
 
 /**
  * What agents propose as tickets of their own (FOLLOW_UP_RULE), kept on the
@@ -140,4 +144,66 @@ export async function answerFollowUp(
   const created = await addFollowUpTicket(projectId, ticket, followUp);
   await repo.updateTicket(ticketId, { followUps: rest });
   return { ok: true, message: `Added ${created.key}.` };
+}
+
+/** The reason a ticket shows while it waits on the fix it asked for. */
+export function waitingOnFixReason(fix: BlockedByFix, key: string): string {
+  return `Waiting on ${key}: ${fix.check} fails and this change does not touch it. ${fix.cause.trim()}`;
+}
+
+/**
+ * The Reviewer found red CI that is not this ticket's. The bug that fixes it
+ * joins the ticket's Epic and the ticket depends on it. A Queen on the Epic
+ * starts it at once; without one the PM tells the person it needs to go and
+ * asks only for their confirmation.
+ */
+export async function requestFix(projectId: string, source: TicketDetail, fix: BlockedByFix): Promise<BoardCard> {
+  const repo = repository();
+  const epic = await repo.cardById(source.epicId);
+  const realEpic = epic && !epic.standalone ? epic : null;
+  const siblings = await repo.ticketsForEpic(source.epicId);
+  const key = realEpic ? nextTicketKey(realEpic.key, siblings.map((t) => t.key)) : `T-${await repo.nextStandaloneTicketNumber(projectId)}`;
+  const positions = await repo.columnPositions(projectId, "todo");
+  const [created] = await repo.createTickets([
+    {
+      epicId: source.epicId,
+      key,
+      title: fix.bug.title,
+      description: [fix.bug.story, `Blocks ${source.key}: ${fix.check} fails. ${fix.cause}`].join("\n\n"),
+      acceptanceCriteria: [],
+      fileScope: fix.bug.scope,
+      storyPoints: null,
+      workType: "bug",
+      position: positionBetween(positions.at(-1) ?? null, null),
+      dependsOnKeys: [],
+    },
+  ]);
+  const card = created!;
+  await repo.addDependencies([{ ticketId: source.id, dependsOnTicketId: card.id }]);
+  await publish(projectId, { type: "card.created", cardId: card.id, kind: "ticket", epicId: source.epicId });
+
+  const queened = (await repo.listQueens(projectId)).some((q) => q.cardId === source.epicId);
+  if (queened) {
+    await boardPorts().service.applyTransition(projectId, {
+      cardId: card.id,
+      kind: "ticket",
+      from: columnOf(card),
+      to: "in_progress",
+      position: card.position,
+      actor: "system",
+    });
+  } else {
+    await postPmMessage(projectId, {
+      content: `${source.key} is blocked: ${fix.check} fails and its change does not touch it. ${fix.cause}\n\nThe fix needs to go first, so I added ${card.key}: ${fix.bug.title}. Shall I start it?`,
+      cards: [{ id: card.id, key: card.key, title: card.title }],
+      proposals: [
+        {
+          summary: `Start ${card.key}: ${fix.bug.title}`,
+          action: { type: "move_card", key: card.key, to: "in_progress" },
+          state: "proposed",
+        },
+      ],
+    });
+  }
+  return card;
 }

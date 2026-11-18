@@ -299,6 +299,15 @@ export interface ReviewTask {
 export interface ReviewVerdict extends CodeChange {
   /** Why the ticket goes back to the Coder Agent, when it does. */
   sendBack: string | null;
+  /** Red CI the ticket's change did not cause: the ticket waits on a fix of its own. */
+  blockedByFix?: BlockedByFix | null;
+}
+
+/** The Reviewer's 'blocked by another fix' verdict: the cause, the failing check and the bug to raise. */
+export interface BlockedByFix {
+  cause: string;
+  check: string;
+  bug: { title: string; story: string; scope: string[] };
 }
 
 /**
