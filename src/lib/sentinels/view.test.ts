@@ -181,3 +181,25 @@ describe("sentinelStates", () => {
     });
   });
 });
+
+describe("sentinelStates edits", () => {
+  it("lists each Sentinel's applied fixes by check id, oldest first", () => {
+    const c = (text: string) => ({ id: "5b", text, how: "h" });
+    const fix = (sentinel: string, before: string, after: string, at: string) => ({
+      sentinel,
+      checkId: "5b",
+      before: c(before),
+      after: c(after),
+      approver: "Ada",
+      approvedAt: at,
+    });
+    const s = sentinelStates([], T0, [], {}, [
+      fix("secops", "b", "c", "2026-09-02T00:00:00.000Z"),
+      fix("secops", "a", "b", "2026-09-01T00:00:00.000Z"),
+      fix("architect", "x", "y", "2026-09-01T00:00:00.000Z"),
+    ]);
+    expect(s.secops!.edits["5b"]!.map((e) => e.before.text)).toEqual(["a", "b"]);
+    expect(s.secops!.edits["5b"]![0]).toMatchObject({ approver: "Ada", approvedAt: "2026-09-01T00:00:00.000Z" });
+    expect(s.cartographer?.edits ?? {}).toEqual({});
+  });
+});
