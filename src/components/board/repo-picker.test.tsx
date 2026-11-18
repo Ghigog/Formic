@@ -192,3 +192,20 @@ describe("RepoPicker", () => {
     });
   });
 });
+
+describe("RepoPicker layering", () => {
+  it("renders the popover into document.body above every other layer", () => {
+    serve([]);
+    const { container } = render(<RepoPicker current={null} onClose={() => {}} />);
+    const dialog = screen.getByRole("dialog", { name: "Choose a repository" });
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.parentElement).toBe(document.body);
+    expect(dialog).toHaveClass("z-[200]");
+  });
+
+  it("leaves the inline picker where it is", () => {
+    serve([]);
+    const { container } = render(<RepoPicker current={null} inline onClose={() => {}} />);
+    expect(container.contains(screen.getByRole("dialog", { name: "Choose a repository" }))).toBe(true);
+  });
+});
