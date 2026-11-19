@@ -14,11 +14,12 @@ const INFRASTRUCTURE = [
   /npm (ERR! )?(code )?(ERR! network|error network)/i,
   /\b(socket hang up|TLS handshake timeout|connection (reset|timed out|refused))\b/i,
   /could not resolve host/i,
-  /(error|failed) (fetching|downloading|pulling)\b/i,
+  /\b(error|failed) (fetching|downloading|pulling) (from |image |action |package |archive |https?:\/\/|docker|registry)/i,
   /received a shutdown signal/i,
   /runner .*(lost communication|has received a shutdown)/i,
   /the operation was canceled/i,
-  /\bHTTP (5\d\d|429)\b/i,
+  /^HTTP\/[\d.]+ (5\d\d|429)\b/im,
+  /\b(5\d\d|429) (Bad Gateway|Service Unavailable|Gateway Time-?out|Too Many Requests|Internal Server Error)\b/i,
 ];
 
 export type RerunVerdict = { rerun: true; reason: string } | { rerun: false };
