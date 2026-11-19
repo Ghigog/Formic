@@ -35,7 +35,9 @@ describe("POST /api/tickets", () => {
     // other route that starts one, and spent is spent.
     // The limiter counts in clock-minute windows: pin the clock mid-minute so the calls cannot straddle one.
     vi.setSystemTime(new Date("2026-01-01T00:00:30Z"));
-    onTestFinished(() => vi.useRealTimers());
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     for (let i = 0; i < 60; i++) expect((await post()).status).toBe(201);
 
     const res = await post();

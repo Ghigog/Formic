@@ -42,7 +42,9 @@ describe("GET /api/board", () => {
     // own generous bucket rather than the shared run-start one.
     // The limiter counts in clock-minute windows: pin the clock mid-minute so the calls cannot straddle one.
     vi.setSystemTime(new Date("2026-01-01T00:00:30Z"));
-    onTestFinished(() => vi.useRealTimers());
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     for (let i = 0; i < 300; i++) expect((await refresh()).status).toBe(200);
 
     const res = await refresh();
