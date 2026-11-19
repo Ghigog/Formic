@@ -76,6 +76,15 @@ const MAX_CLI_REPORTS = 4;
 /** How many cards in review or blocked it is handed when the person names none. */
 const MAX_CLI_FALLBACK_REPORTS = 8;
 
+/** How the PM treats a note written while playtesting. See docs/plans/playtest.md. */
+export const PLAYTEST_RULE = [
+  "Messages that start with [Playtest note] were written while the person played the default branch in Playtest. They are quick notes, not orders: never change code for one. For each note, or each group of notes about the same thing, check it against the Epics' PRDs, the tickets and the code, and start your answer with one bold verdict:",
+  "- **Intended**: the PRD, a ticket or the code means it to work this way. Quote the line that says so.",
+  "- **Already known**: a card or pull request already covers it. Name its key.",
+  "- **Worth a ticket**: propose create_backlog_item with the note in the person's words and what you found, and pass the note's screenshot ids as screenshots.",
+  "One or two lines each. Use playtest_sessions to look at earlier playtests when a note refers back to one.",
+].join("\n");
+
 export const TOOL_DEFS: ToolDef[] = [
   {
     name: "list_files",
@@ -146,6 +155,16 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "playtest_sessions",
+    description:
+      "The board's recent playtests, newest first: when, which build, how each ended, and its notes with your replies. Give a session id for just that one.",
+    schema: {
+      type: "object",
+      properties: { id: { type: "string", description: "A session id, to read only that one." } },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "propose",
     description:
       "Propose a change to the board. The person sees it with Approve and Dismiss buttons; it only happens if they approve.",
@@ -210,6 +229,8 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
         ]
       : ["No card is waiting on a question right now.", ""]),
     ...(asked.length ? ["What the person asked for, in their own words, for each Epic still in progress:", ...asked, ""] : []),
+    PLAYTEST_RULE,
+    "",
     "Read the repository before you answer a question about its code. Do not guess at what a file contains.",
     "",
     "You see the board below, and each card's live state on GitHub (its checks, the log of a red one, its agent runs). When asked about a card, look before you answer; never answer that you cannot see it.",
@@ -279,7 +300,15 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
         role: m.role,
         content: [
           ...(m.content.trim()
-            ? [m.role === "assistant" && m.speaker !== "assistant" ? `${guestLabel(m.speaker as GuestId)}: ${m.content}` : m.content]
+            ? [
+                m.role === "user" && m.playtestId
+                  ? `${playtestLabel(m)} ${m.content}`
+                  : m.role === "assistant" && m.speaker !== "assistant"
+                    ? `${guestLabel(m.speaker as GuestId)}: ${m.content}`
+                    : m.content,
+              ]
+            : m.role === "user" && m.playtestId
+              ? [playtestLabel(m)]
             : []),
           ...lines,
           ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
@@ -289,6 +318,12 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
       };
     }),
   );
+}
+
+/** How a playtest note reads to the PM: what it is, and the ids of its screenshots for create_backlog_item. */
+export function playtestLabel(m: AssistantMessage): string {
+  const shots = m.attachments.filter((a) => a.kind === "image").map((a) => a.id);
+  return `[Playtest note${shots.length ? `, screenshots: ${shots.join(", ")}` : ""}]`;
 }
 
 /**
@@ -341,6 +376,10 @@ export async function runTool(
       return text === null
         ? { content: `${path} does not exist on ${ref}.`, isError: true }
         : { content: readWindow(clean, text, offset ?? 0), isError: false };
+    }
+    if (call.name === "playtest_sessions") {
+      const { id } = z.object({ id: z.string().optional() }).parse(call.input ?? {});
+      return { content: await playtestReport(turn.projectId, id), isError: false };
     }
     if (call.name === "card_status") {
       const { key } = cardInput.parse(call.input);
@@ -885,4 +924,23 @@ function changeProposal(
     },
     state: "proposed",
   };
+}
+
+/** The playtest_sessions read: recent sessions and what was said in them. */
+export async function playtestReport(projectId: string, id?: string): Promise<string> {
+  const repo = repository();
+  const sessions = (await repo.playtestsFor(projectId, id ? 50 : 5)).filter((s) => !id || s.id === id);
+  if (!sessions.length) return id ? `There is no playtest ${id} on this board.` : "No playtests on this board yet.";
+  const out: string[] = [];
+  for (const s of sessions) {
+    out.push(
+      `## Playtest ${s.id}, ${s.startedAt.toISOString().slice(0, 16).replace("T", " ")} UTC, build ${s.commitSha?.slice(0, 7) ?? "unknown"}, ${s.status}${s.endReason ? ` (${s.endReason})` : ""}`,
+    );
+    if (s.summary) out.push(s.summary);
+    for (const m of await repo.playtestMessages(s.id)) {
+      if (m.status !== "done" || !m.content.trim()) continue;
+      out.push(m.role === "user" ? `- Note: ${playtestLabel(m)} ${m.content}` : `- You: ${m.content.slice(0, 600)}`);
+    }
+  }
+  return out.join("\n");
 }

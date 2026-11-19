@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { AttachmentSummary } from "@/lib/domain/entities";
+
 import { z } from "zod";
 
 import { applyTickets, archivedKeysFor } from "@/lib/agents/pipeline";
@@ -62,6 +64,11 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("create_backlog_item"),
     request: z.string().trim().min(1).describe("The feature request, as the Product Agent should read it."),
+    screenshots: z
+      .array(z.string().min(1))
+      .max(5)
+      .optional()
+      .describe("For a playtest note: the screenshot ids its [Playtest note] line lists, so the item carries the pictures."),
   }),
   z.object({
     type: z.literal("create_epic_with_tickets"),
@@ -161,7 +168,22 @@ export function checkAction(
 export async function applyAction(projectId: string, action: AssistantAction, approvedBy?: string): Promise<string> {
   if (action.type === "revise_rubric_check") return reviseRubric(projectId, action, approvedBy);
   if (action.type === "create_backlog_item") {
+    const shots = await ownScreenshots(projectId, action.screenshots ?? []);
     const card = await boardPorts().service.createBacklogItem(projectId, action.request);
+    // Copied, not moved: the note keeps its picture in the chat.
+    for (const shot of shots) {
+      const content = await repository().attachmentContent(shot.id);
+      if (!content) continue;
+      await repository().createAttachment({
+        projectId,
+        epicId: card.id,
+        filename: shot.filename,
+        mimeType: content.mimeType,
+        kind: "image",
+        size: content.bytes.length,
+        bytes: content.bytes,
+      });
+    }
     return `Added ${card.key} to Backlog. The Product Agent is writing its PRD.`;
   }
   if (action.type === "add_follow_up") return addFollowUp(projectId, action);
@@ -216,6 +238,16 @@ export async function applyAction(projectId: string, action: AssistantAction, ap
 }
 
 /** The source ticket and the index of the follow-up an add_follow_up names. */
+/** The screenshots named that really are on this board's playtest notes: a model cannot name another board's. */
+async function ownScreenshots(projectId: string, asked: string[]): Promise<AttachmentSummary[]> {
+  if (!asked.length) return [];
+  const { messages } = await repository().assistantMessages(projectId, { limit: 500 });
+  const known = new Map(
+    messages.filter((m) => m.playtestId).flatMap((m) => m.attachments.filter((a) => a.kind === "image").map((a) => [a.id, a] as const)),
+  );
+  return [...new Set(asked)].flatMap((id) => (known.has(id) ? [known.get(id)!] : []));
+}
+
 async function followUpOf(projectId: string, action: Extract<AssistantAction, { type: "add_follow_up" }>) {
   const card = await cardByKey(projectId, action.ticket);
   const ticket = await repository().ticketDetail(card.id);

@@ -45,6 +45,27 @@ rolls it back up, and the conversation is there next time.
 - It never changes code. Code changes are tickets, and go through the file
   scope, pull requests and CI like everything else.
 
+## Playtest
+
+At Lv 60 the Done column gets a **Playtest** button where the other columns
+have their agent. It runs the default branch in a throwaway E2B sandbox and
+shows it inside Formic, with the PM beside it.
+
+- It runs on your own E2B key only (Settings → Sandbox), never the owner's
+  shared one or the server's, and clones with your own repository access.
+  The token is taken out of the clone before any project code runs.
+- It starts web apps (`dev`, else `start`), Godot 4.3+ games (exported to the
+  web), and plain `index.html` pages. Anything else can add
+  `.github/formic/playtest.sh`, which serves on `$PORT`.
+- Write notes as you play; Enter sends. Drag across the game to add a
+  screenshot. The PM answers each burst of notes once you pause: intended,
+  already known, or worth a ticket (which you approve).
+- A session lasts 20 minutes, one per person. The URL is public while it
+  runs. Every session and its notes stay under **Sessions**, and the PM can
+  read them later.
+
+The design and its rules: [`docs/plans/playtest.md`](plans/playtest.md).
+
 ## Work tracked as GitHub issues
 
 Every Epic is filed as a GitHub issue in its repository, and each of its

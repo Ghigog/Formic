@@ -51,7 +51,7 @@ async function postHandler(req: Request) {
     try {
       if (!checked.ok) throw new Error(checked.problem);
       const done = await applyAction(project.id, checked.action, user.id);
-      await repo.addAssistantMessage({ projectId: project.id, role: "assistant", content: done });
+      await repo.addAssistantMessage({ projectId: project.id, role: "assistant", content: done, playtestId: message.playtestId });
     } catch (e) {
       proposals[body.data.index] = {
         ...proposal,

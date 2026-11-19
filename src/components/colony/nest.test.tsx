@@ -49,9 +49,9 @@ function openPopoverAt(earned: number, onOpenArchive?: () => void) {
 
 describe("ColonyPopover progress bar", () => {
   it("is full once everything is unlocked, and the header keeps the level XP", () => {
-    expect(openPopoverAt(33 * XP_PER_LEVEL + 20)).toBe("100%");
+    expect(openPopoverAt(59 * XP_PER_LEVEL + 20)).toBe("100%");
     expect(screen.getByText("Everything unlocked")).toBeTruthy();
-    expect(screen.getByText(/1,?670 XP earned · 20\/50 this level/)).toBeTruthy();
+    expect(screen.getByText(/2,?970 XP earned · 20\/50 this level/)).toBeTruthy();
   });
 
   it("shows progress into the level before the last unlock", () => {

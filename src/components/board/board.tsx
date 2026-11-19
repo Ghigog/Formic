@@ -46,6 +46,7 @@ import { TOUR_COLUMN_EVENT, type TourColumnDetail } from "@/components/onboardin
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { CaptureColumn } from "./new-item-dialog";
 import type { ColumnAgentControls } from "./agent-select";
+import { PlaytestButton } from "@/components/playtest/playtest-button";
 import { ARCHIVE_DROPPABLE_ID, ArchiveDropZone } from "./archive-drop-zone";
 import { EdgeDropZones, edgeDestination, edgeTargets } from "./edge-drop-zones";
 
@@ -595,6 +596,9 @@ export function Board({
     [handlers, setupCard],
   );
 
+  // Done's slot, where the others have their agent. It reads its own state from PlaytestProvider.
+  const playtestAction = useMemo(() => <PlaytestButton />, []);
+
   const columnElements = visibleColumns.map((col) => (
     <Column
       key={col}
@@ -608,6 +612,7 @@ export function Board({
       accepts={handlers[col].accepts}
       onToggleCollapse={handlers[col].onToggleCollapse}
       agent={columnAgents[col]}
+      action={col === "done" ? playtestAction : undefined}
       composer={col === "backlog" ? composers.backlog : col === "todo" ? composers.todo : undefined}
       onOpen={openCard}
       onShowcase={hasShowcase ? showcase : undefined}

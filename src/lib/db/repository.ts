@@ -166,8 +166,58 @@ export interface AssistantMessage {
   runnerAgent: string | null;
   /** Who a reply comes from: "assistant", a column role or "sentinel:<id>" (a GuestId). */
   speaker: string;
+  /** The playtest a note was written in, or a reply to one. Null otherwise. */
+  playtestId?: string | null;
   createdAt: Date;
 }
+
+export type PlaytestStatus = "starting" | "live" | "failed" | "ended";
+
+/** One Playtest. See docs/plans/playtest.md. */
+export interface PlaytestRecord {
+  id: string;
+  projectId: string;
+  userId: string;
+  commitSha: string | null;
+  sandboxId: string | null;
+  url: string | null;
+  status: PlaytestStatus;
+  stage: string | null;
+  kind: string | null;
+  logTail: string | null;
+  error: string | null;
+  endReason: string | null;
+  summary: string | null;
+  warned: boolean;
+  nudgedSha: string | null;
+  answeredAt: Date | null;
+  heartbeatAt: Date;
+  startedAt: Date;
+  endsAt: Date;
+  endedAt: Date | null;
+}
+
+export type PlaytestPatch = Partial<
+  Pick<
+    PlaytestRecord,
+    | "commitSha"
+    | "sandboxId"
+    | "url"
+    | "status"
+    | "stage"
+    | "kind"
+    | "logTail"
+    | "error"
+    | "endReason"
+    | "summary"
+    | "warned"
+    | "nudgedSha"
+    | "answeredAt"
+    | "heartbeatAt"
+    | "endsAt"
+    | "endedAt"
+  >
+>;
 
 export interface AssistantProposal {
   /** One line for the person to approve or not. */
@@ -1233,6 +1283,7 @@ export interface ConversationRepository {
     speaker?: string;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
+    playtestId?: string | null;
   }): Promise<AssistantMessage>;
   /** How many PM messages (done or failed) were written after `since`; all of them when null. */
   unreadPmCount(projectId: string, since: Date | null): Promise<number>;
@@ -1277,6 +1328,21 @@ export interface ConversationRepository {
    * job, older than the cut-off. See recoverStaleAssistantAnswers.
    */
   orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]>;
+}
+
+/** Playtest sessions. */
+export interface PlaytestRepository {
+  createPlaytest(input: { projectId: string; userId: string; endsAt: Date }): Promise<PlaytestRecord>;
+  playtest(id: string): Promise<PlaytestRecord | null>;
+  updatePlaytest(id: string, patch: PlaytestPatch): Promise<void>;
+  /** A board's playtests, newest first. */
+  playtestsFor(projectId: string, limit?: number): Promise<PlaytestRecord[]>;
+  /** Someone's playtests still starting or live, on any board. */
+  openPlaytestsFor(userId: string): Promise<PlaytestRecord[]>;
+  /** Every playtest still starting or live, for the reaper. */
+  openPlaytests(): Promise<PlaytestRecord[]>;
+  /** A playtest's notes and the PM's replies to them, oldest first. */
+  playtestMessages(playtestId: string): Promise<AssistantMessage[]>;
 }
 
 /** Sentinels: audits. */
@@ -1368,6 +1434,7 @@ export interface Repository
     RunRepository,
     AgentRepository,
     ConversationRepository,
+    PlaytestRepository,
     AuditRepository,
     DeliveryRepository,
     UsageRepository {}

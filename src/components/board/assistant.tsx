@@ -404,7 +404,7 @@ export function AskButton({
   );
 }
 
-function ProposalCard({
+export function ProposalCard({
   p,
   onDecide,
 }: {

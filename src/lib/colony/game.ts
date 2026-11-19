@@ -44,6 +44,7 @@ export const RANKS = [
 /**
  * The level schedule runs to Lv 34, one unlock a level after the first: a bug
  * shape, a colour, a Sentinel (see roster.ts) or a colony rule (see reserve.ts).
+ * Past it, only Playtest is left to unlock, at PLAYTEST_LEVEL.
  */
 export const MAX_UNLOCK_LEVEL = 34;
 
@@ -128,6 +129,9 @@ export const SENTINEL_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: n
   lv: s.unlockLevel,
 }));
 
+/** The level that unlocks Playtest: run what Done holds in a sandbox, with the PM beside it. */
+export const PLAYTEST_LEVEL = 60;
+
 /**
  * The board features that stay hidden until the colony reaches their level, in
  * level order. General chat and the points, with heat, are always on, so they
@@ -137,6 +141,7 @@ export const FEATURE_UNLOCKS = [
   { key: "sentinels", label: "Sentinels", lv: 2 },
   { key: "timeline", label: "Timeline", lv: 10 },
   { key: "kpis", label: "KPIs", lv: 20 },
+  { key: "playtest", label: "Playtest", lv: PLAYTEST_LEVEL },
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_UNLOCKS)[number]["key"];
