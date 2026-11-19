@@ -50,6 +50,12 @@ export interface TicketHistory {
   changes: TicketChange[];
 }
 
+export interface TimeInColumn {
+  avgMs: number;
+  totalMs: number;
+  tickets: number;
+}
+
 export interface ProjectKpis {
   window: KpiWindow;
   tiles: {
@@ -60,13 +66,18 @@ export interface ProjectKpis {
     passRate: number | null;
     precision: number | null;
   };
-  /** Average days a ticket spends in each column. */
-  timeInColumn: Record<ColumnId, number | null>;
+  /**
+   * Per column a ticket can leave: the average, over tickets that have left it, of the
+   * total time one ticket spent there across all its stays. Null when none has left in
+   * the window. Done has none: its stay never ends.
+   */
+  timeInColumn: Record<Exclude<ColumnId, "done">, TimeInColumn | null>;
   /** Tickets reaching Done per day, oldest first. */
   throughput: Array<{ date: string; done: number }>;
   cycleTime: Array<{ doneAt: string; days: number }>;
   /** Per day tickets reached Done, oldest first: mean review pass rate (null with no review) and share of precise tickets. */
-  quality: Array<{ date: string; passRate: number | null; precision: number }>;
+  /** Per day: the mean pass rate and precision of the tickets that reached Done, and how many there were. */
+  quality: Array<{ date: string; passRate: number | null; precision: number; done: number }>;
 }
 
 const day = (t: number) => new Date(t).toISOString().slice(0, 10);
@@ -87,14 +98,20 @@ export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: 
     const last = entries.at(-1);
     if (!last) continue;
     if (last.column === "in_progress" || last.column === "in_review") inFlight++;
+    // One ticket's stays in a column add up; only stays that ended count, so a parked ticket doesn't inflate it.
+    const perColumn = new Map<ColumnId, number>();
     for (const t of timeline(entries, now)) {
-      if (t.durationMs === null || ms(t.enteredAt) < from) continue;
-      sums[t.column].total += t.durationMs;
-      sums[t.column].n++;
+      if (t.durationMs === null || t.exitedAt === null || ms(t.enteredAt) < from) continue;
+      perColumn.set(t.column, (perColumn.get(t.column) ?? 0) + t.durationMs);
+    }
+    for (const [column, total] of perColumn) {
+      sums[column].total += total;
+      sums[column].n++;
     }
     const doneEntry = entries.find((e) => e.column === "done");
-    if (doneEntry && ms(doneEntry.enteredAt) >= from) {
-      done++;
+    // A synthetic Done has a guessed date: it counts in All time only, never when or how fast.
+    if (doneEntry && (window === "all" || (!doneEntry.synthetic && ms(doneEntry.enteredAt) >= from))) done++;
+    if (doneEntry && !doneEntry.synthetic && ms(doneEntry.enteredAt) >= from) {
       perDay.set(day(ms(doneEntry.enteredAt)), (perDay.get(day(ms(doneEntry.enteredAt))) ?? 0) + 1);
       const key = day(ms(doneEntry.enteredAt));
       doneByDay.set(key, [...(doneByDay.get(key) ?? []), { rate: passRate(entries), precise: changes.length === 0 }]);
@@ -103,7 +120,7 @@ export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: 
     }
     const rate = passRate(entries.filter((e) => ms(e.enteredAt) >= from));
     if (rate !== null) rates.push(rate);
-    if (ms(last.enteredAt) >= from || changes.length) {
+    if (entries.some((e) => !e.synthetic && ms(e.enteredAt) >= from)) {
       considered++;
       if (changes.length === 0) precise++;
     }
@@ -125,7 +142,10 @@ export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: 
       precision: considered ? precise / considered : null,
     },
     timeInColumn: Object.fromEntries(
-      COLUMNS.map((c) => [c, sums[c].n ? sums[c].total / sums[c].n / DAY : null]),
+      COLUMNS.filter((c) => c !== "done").map((c) => [
+        c,
+        sums[c].n ? { avgMs: sums[c].total / sums[c].n, totalMs: sums[c].total, tickets: sums[c].n } : null,
+      ]),
     ) as ProjectKpis["timeInColumn"],
     throughput: [...perDay].sort(([a], [b]) => a.localeCompare(b)).map(([date, n]) => ({ date, done: n })),
     cycleTime: cycle,
@@ -135,6 +155,7 @@ export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: 
         date,
         passRate: mean(ts.flatMap((t) => (t.rate === null ? [] : [t.rate]))),
         precision: ts.filter((t) => t.precise).length / ts.length,
+        done: ts.length,
       })),
   };
 }

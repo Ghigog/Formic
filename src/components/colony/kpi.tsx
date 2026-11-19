@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { formatDuration } from "@/components/board/format-duration";
 import { useColony } from "./colony";
 import { useSound } from "./store";
 import { cn } from "@/components/ui/cn";
@@ -22,6 +23,43 @@ const pct = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%
 const days = (v: number | null) => (v === null ? "–" : `${v < 10 ? v.toFixed(1) : Math.round(v)} d`);
 
 const COUNT_UP_MS = 900;
+const DAY_MS = 86_400_000;
+
+/** What the tooltip shows for one mark, and where the mark is in the drawing. */
+/** `x` is the mark's centre and `r` half its width, so the tooltip clears it on either side. */
+type Tip = { id: string; x: number; r: number; y: number; heading: string; lines: string[] };
+type TipApi = {
+  active: string | null;
+  show: (tip: Tip) => void;
+  hide: () => void;
+};
+const TipContext = createContext<TipApi>({ active: null, show: () => {}, hide: () => {} });
+
+/** Handlers that make a chart mark show its tooltip on hover (mouse) and on tap, and dim when another mark is active. */
+function useMark(tip: Tip) {
+  const { active, show, hide } = useContext(TipContext);
+  return {
+    "data-tip-mark": "",
+    onPointerEnter: (e: React.PointerEvent) => {
+      if (e.pointerType !== "touch") show(tip);
+    },
+    onPointerLeave: (e: React.PointerEvent) => {
+      if (e.pointerType !== "touch") hide();
+    },
+    onClick: () => show(tip),
+    opacity: active === null || active === tip.id ? 1 : 0.35,
+  };
+}
+
+/** A chart mark: `children` drawn in a group that carries the tooltip's handlers and the dimming. */
+function Mark({ tip, children }: { tip: Tip; children: React.ReactNode }) {
+  const { opacity, ...handlers } = useMark(tip);
+  return (
+    <g {...handlers} opacity={opacity}>
+      {children}
+    </g>
+  );
+}
 
 /** How far the reveal animation has got, 0 to 1; charts and tiles read it. */
 const Progress = createContext(1);
@@ -169,6 +207,26 @@ function Tile({ label, value, className }: { label: string; value: string; class
 /** `padB` is the room under the plot for column labels or the legend. */
 function Chart({ title, empty, padB = 22, children }: { title: string; empty: boolean; padB?: number; children: React.ReactNode }) {
   const p = useContext(Progress);
+  const [tip, setTip] = useState<Tip | null>(null);
+  // A tap elsewhere or Escape closes the tooltip, as InfoTip does.
+  useEffect(() => {
+    if (!tip) return;
+    const away = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.("[data-tip-mark]")) setTip(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setTip(null);
+    };
+    window.addEventListener("pointerdown", away);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("pointerdown", away);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [tip]);
+  const api: TipApi = { active: tip?.id ?? null, show: setTip, hide: () => setTip(null) };
   const svg = useRef<SVGSVGElement>(null);
   // 1 viewBox unit = 1 CSS px, so text keeps its size at any width.
   const [measured, setMeasured] = useState(0);
@@ -184,19 +242,41 @@ function Chart({ title, empty, padB = 22, children }: { title: string; empty: bo
   }, [empty]);
   const geo = geometry(measured || FALLBACK_W, padB);
   return (
-    <figure role="group" aria-label={title} className="border-line bg-card m-0 rounded-xl border px-4 py-3">
+    <figure role="group" aria-label={title} className="border-line bg-card relative m-0 rounded-xl border px-4 py-3">
       <figcaption className="text-ink mb-2 text-[12px] font-semibold">{title}</figcaption>
       {empty ? (
         <p className="text-muted m-0 text-[12px]">No data in this window.</p>
       ) : (
-        <svg ref={svg} viewBox={`0 0 ${geo.W} ${H}`} role="img" aria-label={title} className="block h-auto w-full">
-          <g
-            data-progress={p}
-            style={p < 1 ? { opacity: p, transform: `scaleY(${p})`, transformOrigin: `0px ${geo.base}px` } : undefined}
-          >
-            <Geometry.Provider value={geo}>{children}</Geometry.Provider>
-          </g>
-        </svg>
+        <div className="relative">
+          <svg ref={svg} viewBox={`0 0 ${geo.W} ${H}`} role="img" aria-label={title} className="block h-auto w-full">
+            <g
+              data-progress={p}
+              style={p < 1 ? { opacity: p, transform: `scaleY(${p})`, transformOrigin: `0px ${geo.base}px` } : undefined}
+            >
+              <Geometry.Provider value={geo}>
+                <TipContext.Provider value={api}>{children}</TipContext.Provider>
+              </Geometry.Provider>
+            </g>
+          </svg>
+          {tip && (
+            <div
+              role="tooltip"
+              className="bg-anthracite text-on-anthracite pointer-events-none absolute z-10 flex flex-col gap-0.5 rounded-lg px-2.5 py-2 whitespace-nowrap shadow-[0_10px_20px_-12px_color-mix(in_srgb,var(--anthracite)_60%,transparent)]"
+              style={{
+                left: tip.x + (tip.x > geo.W / 2 ? -tip.r : tip.r),
+                top: Math.max(0, tip.y),
+                transform: tip.x > geo.W / 2 ? "translateX(calc(-100% - 10px))" : "translateX(10px)",
+              }}
+            >
+              <span className="text-[12px] font-semibold">{tip.heading}</span>
+              {tip.lines.map((l) => (
+                <span key={l} className="text-line-dashed font-mono text-[10px]">
+                  {l}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </figure>
   );
@@ -227,11 +307,13 @@ function Axes({ max, fmt }: { max: number; fmt: (v: number) => string }) {
   );
 }
 
+const SHOWN_COLUMNS = COLUMNS.filter((c) => c !== "done");
+
 function TimeInColumn({ data }: { data: ProjectKpis["timeInColumn"] }) {
-  const vals = COLUMNS.map((c) => data[c] ?? 0);
+  const vals = SHOWN_COLUMNS.map((c) => (data[c]?.avgMs ?? 0) / DAY_MS);
   const max = Math.max(...vals) || 1;
   return (
-    <Chart title="Average time in column" empty={vals.every((v) => v === 0)} padB={TWO_LINE_PAD}>
+    <Chart title="Average time in column" empty={SHOWN_COLUMNS.every((c) => !data[c])} padB={TWO_LINE_PAD}>
       <Axes max={max} fmt={(v) => days(v)} />
       <ColumnBars vals={vals} max={max} data={data} />
     </Chart>
@@ -240,27 +322,45 @@ function TimeInColumn({ data }: { data: ProjectKpis["timeInColumn"] }) {
 
 function ColumnBars({ vals, max, data }: { vals: number[]; max: number; data: ProjectKpis["timeInColumn"] }) {
   const { plotW, plotH, base } = useContext(Geometry);
-  const slot = plotW / COLUMNS.length;
+  const slot = plotW / SHOWN_COLUMNS.length;
   return (
     <>
-      {COLUMNS.map((c, i) => {
+      {SHOWN_COLUMNS.map((c, i) => {
         const h = (vals[i]! / max) * plotH;
+        const t = data[c];
+        const cx = PAD.l + i * slot + slot / 2;
+        const tip: Tip = {
+          id: c,
+          x: cx,
+          r: slot * 0.3,
+          y: base - h,
+          heading: COLUMN_LABELS[c],
+          lines: t
+            ? [`avg ${formatDuration(t.avgMs)} · total ${formatDuration(t.totalMs)}`, `${t.tickets} ${t.tickets === 1 ? "ticket" : "tickets"}`]
+            : [`No ticket has left ${COLUMN_LABELS[c]} in this window`],
+        };
         return (
-          <g key={c}>
-            <rect
-              data-column={c}
-              data-height={h}
-              x={PAD.l + i * slot + slot * 0.2}
-              y={base - h}
-              width={slot * 0.6}
-              height={h}
-              rx={4}
-              className="fill-clay"
-            >
-              <title>{`${COLUMN_LABELS[c]}: ${days(data[c])}`}</title>
-            </rect>
-            <SlotLabel x={PAD.l + i * slot + slot / 2} slot={slot} text={COLUMN_LABELS[c]} />
-          </g>
+          <Mark key={c} tip={tip}>
+            {t ? (
+              <rect
+                data-column={c}
+                data-height={h}
+                x={PAD.l + i * slot + slot * 0.2}
+                y={base - h}
+                width={slot * 0.6}
+                height={h}
+                rx={4}
+                className="fill-clay"
+              />
+            ) : (
+              <text data-column={c} data-height={0} x={cx} y={base - 4} textAnchor="middle" fontSize={TEXT} className="fill-muted">
+                –
+              </text>
+            )}
+            {/* The whole slot takes the pointer, so a short bar or a tap is easy to hit. */}
+            <rect x={PAD.l + i * slot} y={PAD.t} width={slot} height={plotH} fill="transparent" />
+            <SlotLabel x={cx} slot={slot} text={COLUMN_LABELS[c]} />
+          </Mark>
         );
       })}
     </>
@@ -312,17 +412,18 @@ function QualityPlot({ data }: { data: ProjectKpis["quality"] }) {
     <>
       <Axes max={1} fmt={pct} />
       {series.map((s) => {
+        const idx: number[] = [];
         const pts = data.flatMap((q, i): Array<[number, number]> => {
           const v = s.get(q);
-          return v === null ? [] : [[x(i), base - v * plotH]];
+          if (v === null) return [];
+          idx.push(i);
+          return [[x(i), base - v * plotH]];
         });
         return (
           <g key={s.name} className={s.cls}>
             <path d={line(pts)} fill="none" strokeWidth={2} />
             {pts.map(([px, py], i) => (
-              <circle key={i} cx={px} cy={py} r={3}>
-                <title>{s.name}</title>
-              </circle>
+              <QualityPoint key={i} cx={px} cy={py} name={s.name} q={data[idx[i]!]!} />
             ))}
           </g>
         );
@@ -335,6 +436,24 @@ function QualityPlot({ data }: { data: ProjectKpis["quality"] }) {
       </g>
     </>
   );
+}
+
+function QualityPoint({ cx, cy, name, q }: { cx: number; cy: number; name: string; q: ProjectKpis["quality"][number] }) {
+  const tip: Tip = {
+    id: `${name}-${q.date}`,
+    x: cx,
+    r: 3,
+    y: cy,
+    heading: dateLabel(q.date),
+    lines: [`Pass rate ${pct(q.passRate)} · Precision ${pct(q.precision)}`, `${q.done} ${q.done === 1 ? "ticket" : "tickets"} reached Done`],
+  };
+  const { opacity, ...handlers } = useMark(tip);
+  return <circle cx={cx} cy={cy} r={3} opacity={opacity} {...handlers} />;
+}
+
+/** "Tue, Nov 18" for a YYYY-MM-DD day. */
+function dateLabel(date: string): string {
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 function Throughput({ data }: { data: ProjectKpis["throughput"] }) {
@@ -355,9 +474,9 @@ function ThroughputBars({ data }: { data: ProjectKpis["throughput"] }) {
       {data.map((d, i) => {
         const h = (d.done / max) * plotH;
         return (
-          <rect key={d.date} x={PAD.l + i * slot + slot * 0.15} y={base - h} width={slot * 0.7} height={h} rx={3} className="fill-clay">
-            <title>{`${d.date}: ${d.done}`}</title>
-          </rect>
+          <Mark key={d.date} tip={{ id: d.date, x: PAD.l + i * slot + slot / 2, r: slot * 0.35, y: base - h, heading: dateLabel(d.date), lines: [`${d.done} ${d.done === 1 ? "ticket" : "tickets"} done`] }}>
+            <rect x={PAD.l + i * slot + slot * 0.15} y={base - h} width={slot * 0.7} height={h} rx={3} className="fill-clay" />
+          </Mark>
         );
       })}
     </>
@@ -387,14 +506,12 @@ function CycleBars({ data }: { data: ProjectKpis["cycleTime"] }) {
       {counts.map((n, i) => {
         const h = (n / max) * plotH;
         return (
-          <g key={i}>
-            <rect x={PAD.l + i * slot + 1} y={base - h} width={slot - 2} height={h} rx={3} className="fill-clay">
-              <title>{`${days(i * size)}–${days((i + 1) * size)}: ${n}`}</title>
-            </rect>
+          <Mark key={i} tip={{ id: String(i), x: PAD.l + i * slot + slot / 2, r: slot / 2 - 1, y: base - h, heading: `${days(i * size)}–${days((i + 1) * size)}`, lines: [`${n} ${n === 1 ? "ticket" : "tickets"}`] }}>
+            <rect x={PAD.l + i * slot + 1} y={base - h} width={slot - 2} height={h} rx={3} className="fill-clay" />
             <text x={PAD.l + i * slot + slot / 2} y={H - 8} textAnchor="middle" fontSize={TEXT} className="fill-muted">
               {days(i * size)}
             </text>
-          </g>
+          </Mark>
         );
       })}
     </>

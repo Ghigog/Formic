@@ -8,13 +8,20 @@ import { KpiSection } from "./kpi";
 const sfx = vi.fn();
 vi.mock("@/components/colony/colony", () => ({ useColony: () => ({ sfx }) }));
 
+const H = 3_600_000;
+const D = 24 * H;
 const kpis = (window: ProjectKpis["window"], done: number): ProjectKpis => ({
   window,
   tiles: { done, inFlight: 2, cycleTimeDays: 3.5, passRate: 0.75, precision: 0.9 },
-  timeInColumn: { backlog: 1, todo: 0.5, in_progress: 2, in_review: 4, done: null },
+  timeInColumn: {
+    backlog: { avgMs: D, totalMs: 3 * D, tickets: 3 },
+    todo: null,
+    in_progress: { avgMs: 20 * H, totalMs: 40 * H, tickets: 2 },
+    in_review: { avgMs: 28 * H, totalMs: 9 * D + 2 * H, tickets: 7 },
+  },
   throughput: [{ date: "2026-10-01", done: 2 }, { date: "2026-10-02", done: 1 }],
   cycleTime: [{ doneAt: "2026-10-01T00:00:00Z", days: 2 }, { doneAt: "2026-10-02T00:00:00Z", days: 5 }],
-  quality: [{ date: "2026-10-01", passRate: 0.5, precision: 1 }, { date: "2026-10-02", passRate: 1, precision: 0.8 }],
+  quality: [{ date: "2026-10-01", passRate: 0.5, precision: 1, done: 1 }, { date: "2026-10-02", passRate: 1, precision: 0.8, done: 2 }],
 });
 
 const fetchMock = vi.fn();
@@ -54,6 +61,45 @@ describe("KpiSection", () => {
     ] as const);
     const largest = heights.reduce((a, b) => (b[1] > a[1] ? b : a));
     expect(largest[0]).toBe("in_review");
+  });
+
+  it("shows a column's exact numbers when hovering or tapping its bar, and Escape closes it", async () => {
+    render(<KpiSection unlocked />);
+    const chart = await screen.findByRole("img", { name: "Average time in column" });
+    const bar = chart.querySelector("rect[data-column=in_review]")!;
+    await userEvent.hover(bar);
+    expect((await screen.findByRole("tooltip")).textContent).toContain("avg 1d 4h · total 9d 2h");
+    expect(screen.getByRole("tooltip").textContent).toContain("7 tickets");
+    await userEvent.unhover(bar);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    await userEvent.click(bar);
+    expect(screen.getByRole("tooltip").textContent).toContain("In Review");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    await userEvent.click(bar);
+    await userEvent.click(document.body);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("shows a dash and an explanation for a column no ticket has left", async () => {
+    render(<KpiSection unlocked />);
+    const chart = await screen.findByRole("img", { name: "Average time in column" });
+    const dash = chart.querySelector("text[data-column=todo]")!;
+    expect(dash.textContent).toBe("–");
+    await userEvent.hover(dash);
+    expect(screen.getByRole("tooltip").textContent).toContain("No ticket has left To Do in this window");
+  });
+
+  it("shows the date and counts for a throughput bar and a quality point", async () => {
+    render(<KpiSection unlocked />);
+    const thr = await screen.findByRole("img", { name: "Throughput (done per day)" });
+    await userEvent.hover(thr.querySelector("rect.fill-clay")!);
+    expect(screen.getByRole("tooltip").textContent).toContain("Thu, Oct 1");
+    expect(screen.getByRole("tooltip").textContent).toContain("2 tickets done");
+    await userEvent.unhover(thr.querySelector("rect.fill-clay")!);
+    const q = screen.getByRole("img", { name: "Pass rate and precision over time" });
+    await userEvent.hover(q.querySelector("circle[data-tip-mark]")!);
+    expect(screen.getByRole("tooltip").textContent).toContain("1 ticket reached Done");
   });
 
   it("refetches and redraws for all time", async () => {
