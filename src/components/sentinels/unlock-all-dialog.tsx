@@ -95,7 +95,8 @@ export function UnlockAllDialog({ projectId, unlockAll }: { projectId: string; u
           This project has a long history
         </h2>
         <p className="text-muted m-0 text-[13px] leading-[1.6]">
-          All Sentinels can be unlocked in Settings, without earning the colony XP first.
+          Everything the levels unlock, Sentinels and Playtest included, can be opened in Settings without earning the
+          colony XP first.
         </p>
         <div className="flex justify-end gap-2">
           <button

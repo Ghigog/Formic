@@ -22,11 +22,13 @@ press Approve.
   (`src/components/board/column.tsx`, the `agent` row). Done has no agent of
   its own (`board.tsx`, `columnAgents` skips it), so the slot is free. One
   full-width button: a play icon and **Playtest**.
-- **Unlocks at Lv 60.** A new `FEATURE_UNLOCKS` entry,
-  `{ key: "playtest", lv: 60 }` (`src/lib/colony/game.ts`). Below Lv 60 the
+- **Unlocks at Lv 15.** A new `FEATURE_UNLOCKS` entry,
+  `{ key: "playtest", lv: 15 }` (`src/lib/colony/game.ts`). Below Lv 15 the
   slot stays empty, like every other locked feature. The colony's "next
-  unlock" names it on the way.
-- **The ant introduces it.** At Lv 60 the button rises in with `FeatureReveal`
+  unlock" names it on the way. Lv 15 because by then several Epics have
+  merged, so there is a real product to play, and the person knows the loop
+  from Timeline (Lv 10). **Unlock everything** in Settings opens it early.
+- **The ant introduces it.** At Lv 15 the button rises in with `FeatureReveal`
   (ring, burst, celebration cue), then the `playtest-intro` tour
   (`src/components/onboarding/tours.ts`) points at it, with its column set to
   `done` so a phone brings Done up first.
@@ -39,7 +41,7 @@ press Approve.
 
 | State | Looks like | Pressing it |
 | :-- | :-- | :-- |
-| Locked (below Lv 60) | Not there | — |
+| Locked (below Lv 15) | Not there | — |
 | No E2B key of your own | Grayed, small lock | A popover: "Playtest runs in an E2B sandbox on your own key. Add it in Settings." with a button to `/settings#sandbox` |
 | Nothing merged yet | Grayed | "Nothing shipped yet. Playtest opens once a ticket has merged." |
 | Ready | Normal, "default branch" | Opens the Playtest screen and starts a session |
@@ -229,7 +231,7 @@ model PlaytestSession {
 ## Steps
 
 - [x] 1. This plan.
-- [x] 2. Unlock and onboarding: `playtest` at Lv 60, reveal, `playtest-intro`
+- [x] 2. Unlock and onboarding: `playtest` at Lv 15, reveal, `playtest-intro`
       tour, the Done-column button and its states.
 - [x] 3. Data: `PlaytestSession`, the `AssistantMessage` columns, repository
       methods (Prisma and memory), migration.

@@ -112,17 +112,17 @@ describe("levels", () => {
     expect(unlocksAt(10)).toContain("Timeline");
     expect(unlocksAt(15)).not.toContain("Calls");
     expect(unlocksAt(20)).toContain("KPIs");
-    expect(featureUnlocked("playtest", 59)).toBe(false);
-    expect(featureUnlocked("playtest", 60)).toBe(true);
-    expect(unlocksAt(60)).toEqual(["Playtest"]);
-    expect(nextUnlock(34)).toEqual({ level: 60, labels: ["Playtest"] });
+    expect(featureUnlocked("playtest", 14)).toBe(false);
+    expect(featureUnlocked("playtest", 15)).toBe(true);
+    expect(unlocksAt(15)).toContain("Playtest");
     expect(nextUnlock(9)?.level).toBe(10);
     expect(nextUnlock(9)?.labels).toContain("Timeline");
   });
 
   it("lists features in level order for reveal and replay", () => {
-    expect(FEATURE_UNLOCKS.map((f) => f.key)).toEqual(["sentinels", "timeline", "kpis", "playtest"]);
-    expect(featuresAt(15)).toEqual([]);
+    expect(FEATURE_UNLOCKS.map((f) => f.key)).toEqual(["sentinels", "timeline", "playtest", "kpis"]);
+    expect(featuresAt(15)).toEqual(["playtest"]);
+    expect(featuresAt(16)).toEqual([]);
     expect(featuresAt(3)).toEqual([]);
   });
 
@@ -136,7 +136,7 @@ describe("levels", () => {
     expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Tester", "Sentinels"] });
     expect(nextUnlock(4)).toEqual({ level: 5, labels: ["Crimson", "a golden bell every 5 levels"] });
     expect(nextUnlock(33)).toEqual({ level: 34, labels: ["Sales"] });
-    expect(nextUnlock(60)).toBeNull();
+    expect(nextUnlock(34)).toBeNull();
   });
 });
 

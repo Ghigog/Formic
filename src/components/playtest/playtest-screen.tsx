@@ -464,7 +464,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 function Log({ lines }: { lines: string[] }) {
   const end = useRef<HTMLPreElement>(null);
   useEffect(() => {
-    end.current?.scrollTo({ top: end.current.scrollHeight });
+    end.current?.scrollTo?.({ top: end.current.scrollHeight });
   }, [lines]);
   if (!lines.length) return null;
   return (
@@ -549,7 +549,7 @@ function NotesColumn({
   const [sending, setSending] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
+    list.current?.scrollTo?.({ top: list.current.scrollHeight, behavior: "smooth" });
   }, [messages.length]);
 
   const submit = async () => {

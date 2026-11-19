@@ -47,7 +47,8 @@ export function ownE2bKey(user: UserRecord | null): string | null {
 
 export async function playtestAccess(project: ProjectSummary, user: UserRecord | null): Promise<PlaytestAccess> {
   const cards = await repository().boardCards(project.id);
-  if (scoreOf(cards).level < PLAYTEST_LEVEL) return blocked("locked");
+  // "Unlock everything" in Settings (stored as unlockAllSentinels) opens Playtest early too.
+  if (!project.unlockAllSentinels && scoreOf(cards).level < PLAYTEST_LEVEL) return blocked("locked");
   const e2bKey = ownE2bKey(user);
   if (!e2bKey) return blocked("no-key");
   if (!project.repoFullName) return blocked("no-repo");

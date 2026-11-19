@@ -47,7 +47,7 @@ rolls it back up, and the conversation is there next time.
 
 ## Playtest
 
-At Lv 60 the Done column gets a **Playtest** button where the other columns
+At Lv 15 the Done column gets a **Playtest** button where the other columns
 have their agent. It runs the default branch in a throwaway E2B sandbox and
 shows it inside Formic, with the PM beside it.
 

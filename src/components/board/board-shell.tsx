@@ -398,7 +398,7 @@ export function BoardShell({
           setOpenTicketId(null);
           openAssistant(true);
         }}
-        kpisUnlocked={featureUnlocked("kpis", scoreOf(cards).level)}
+        kpisUnlocked={unlockAllSentinels || featureUnlocked("kpis", scoreOf(cards).level)}
         subscribe={subscribe}
         onChanged={() => void refetch().catch(() => {})}
       />

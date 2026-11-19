@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
 import { ColonyProvider, crewPhase, scoutCrews, levelUpText, featuresCrossed, useColony } from "./colony";
 import { endTour, activeTour, forgetTours, replayTours } from "@/components/onboarding/store";
-import { SENTINEL_UNLOCKS, pointsOf, scoreOf } from "@/lib/colony/game";
+import { MAX_LEVEL, SENTINEL_UNLOCKS, pointsOf, scoreOf } from "@/lib/colony/game";
 import { SoundEngine } from "./sound";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
@@ -261,15 +261,33 @@ describe("ColonyProvider featureUnlocked", () => {
     expect(probe(10)).toBe("sentinels:true timeline:true");
   });
 
-  it("shows Sentinels at once on a Lv 1 board with Unlock all on, but not Timeline", () => {
-    expect(probe(1, true)).toBe("sentinels:true timeline:false");
+  it("shows every feature at once on a Lv 1 board with Unlock everything on", () => {
+    expect(probe(1, true)).toBe("sentinels:true timeline:true");
+  });
+
+  it("opens every bug style with Unlock everything on, and only the level's without", () => {
+    let level = 0;
+    function Style() {
+      level = useColony()!.styleLevel;
+      return null;
+    }
+    const at = (unlockAll: boolean) => {
+      render(
+        <ColonyProvider storageKey={`colony-test-styles-${unlockAll}`} cards={boardAt(3)} extras={{}} unlockAll={unlockAll}>
+          <Style />
+        </ColonyProvider>,
+      );
+      return level;
+    };
+    expect(at(false)).toBe(3);
+    expect(at(true)).toBe(MAX_LEVEL);
   });
 });
 
 describe("feature reveal queue", () => {
   it("lists the features a rise crosses in level order", () => {
-    expect(featuresCrossed(9, 20)).toEqual(["timeline", "kpis"]);
-    expect(featuresCrossed(1, 25)).toEqual(["sentinels", "timeline", "kpis"]);
+    expect(featuresCrossed(9, 20)).toEqual(["timeline", "playtest", "kpis"]);
+    expect(featuresCrossed(1, 25)).toEqual(["sentinels", "timeline", "playtest", "kpis"]);
     expect(featuresCrossed(10, 14)).toEqual([]);
   });
 
@@ -320,6 +338,12 @@ describe("feature reveal queue", () => {
     act(() => api.settleReveal());
     expect(activeTour()).toBe("timeline-intro");
     expect(api.revealing).toBe("timeline");
+
+    act(() => endTour());
+    expect(api.revealing).toBe("playtest");
+    expect(api.featureUnlocked("kpis")).toBe(false);
+    act(() => api.settleReveal());
+    expect(activeTour()).toBe("playtest-intro");
 
     act(() => endTour());
     expect(api.revealing).toBe("kpis");
@@ -386,10 +410,10 @@ describe("feature reveal queue", () => {
       return () => api;
     }
 
-    it("reveals and tours all three features in level order on a Lv 20 board", async () => {
+    it("reveals and tours every feature in level order on a Lv 20 board", async () => {
       const get = await replayAt(20);
       act(() => endTour());
-      for (const f of ["sentinels", "timeline", "kpis"] as const) {
+      for (const f of ["sentinels", "timeline", "playtest", "kpis"] as const) {
         expect(get().revealing).toBe(f);
         act(() => get().settleReveal());
         expect(activeTour()).toBe(`${f}-intro`);
