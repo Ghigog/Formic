@@ -106,13 +106,21 @@ describe("PlaytestScreen", () => {
   });
 
   it("explains a failed start, and can ask the PM for a fix with the log", async () => {
-    m.api = api({ ...base, status: "failed", url: null, error: "Playtest runs web apps and Godot games for now.", logTail: ["npm ERR! missing script"] });
+    m.api = api({ ...base, status: "failed", url: null, endReason: "failed", error: "Installing failed.", logTail: ["npm ERR! missing script"] });
     render(<PlaytestScreen />);
     expect(screen.getByText("It did not start.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Ask an agent to fix it" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Asked the PM" })).toBeTruthy());
     const note = requests.find((r) => r.url.endsWith("/notes"))!;
     expect((note.body as { text: string }).text).toContain("npm ERR! missing script");
+  });
+
+  it("offers no agent when the failure is Playtest's own, only Try again", () => {
+    m.api = api({ ...base, status: "failed", url: null, endReason: "unavailable", error: "Fetching what Playtest needs to run it failed.", logTail: ["curl: (23) Failure writing output"] });
+    render(<PlaytestScreen />);
+    expect(screen.getByText(/on Playtest's side, not your project's/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ask an agent to fix it" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
   it("sums up an ended session and offers to play again", async () => {

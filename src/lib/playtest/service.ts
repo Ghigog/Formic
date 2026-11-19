@@ -13,7 +13,7 @@ import { repoHost, repoPath } from "@/lib/vcs/host";
 import { columnFor } from "@/lib/domain/status";
 import { credentialsFor } from "@/lib/auth/credentials";
 import { ownE2bKey } from "./access";
-import { e2bRunner, type PlaytestRunner, type PlaytestStage } from "./runner";
+import { PlaytestError, e2bRunner, type PlaytestRunner, type PlaytestStage } from "./runner";
 
 /**
  * Playtest sessions: start, watch, stop. See docs/plans/playtest.md.
@@ -186,7 +186,14 @@ async function runSession(
     const now = await repo.playtest(id);
     if (now?.sandboxId) await runner.kill(now.sandboxId, input.e2bKey);
     if (now && isOpen(now)) {
-      await repo.updatePlaytest(id, { status: "failed", error: message, endedAt: new Date(), endReason: "failed" });
+      // "failed" is the project's to fix, so the screen offers an agent; "unavailable" is Playtest's own.
+      const fault = e instanceof PlaytestError ? e.fault : "playtest";
+      await repo.updatePlaytest(id, {
+        status: "failed",
+        error: message,
+        endedAt: new Date(),
+        endReason: fault === "project" ? "failed" : "unavailable",
+      });
     }
     live.delete(id);
   }

@@ -91,8 +91,15 @@ there for anyone who wants it.
 
 A progress line while the sandbox comes up, with the ants digging:
 opening a sandbox → cloning → installing → starting → live. On failure: the
-last log lines and **Ask an agent to fix it**, which proposes a Backlog item
-with the log in it.
+last log lines and **Try again**. Each failure says whose it is
+(`PlaytestError.fault` in `src/lib/playtest/runner.ts`):
+
+- **The project's** (session `endReason` "failed"): its install or export
+  failed, its server never answered, or Playtest cannot tell how to start it.
+  **Ask an agent to fix it** proposes a Backlog item with the log in it.
+- **Playtest's own** (`endReason` "unavailable"): no sandbox, a clone or fetch
+  that failed, the time limit. No change to the repository fixes these, so no
+  agent is offered; the screen says it is on Playtest's side.
 
 ### Notes and the PM
 
@@ -154,7 +161,11 @@ the session closes, and a `playtest_sessions` read lets it look further back.
 In order, first match wins:
 
 1. `.github/formic/playtest.sh`: run as is. It must serve on `$PORT`.
-2. Godot (`project.godot`): install export templates for the engine version,
+2. Godot (`project.godot`): fetch the Web export template for the engine
+   version. The templates come as one archive of about 1.3 GB, which does not
+   fit on a sandbox's disk, so only `web_nothreads_release.zip` (about 10 MB)
+   is read out of it with HTTP range requests (`src/lib/playtest/zip-member.ts`).
+   Then
    `godot --headless --export-release Web build/web/index.html` with a Web
    preset written if none exists (single-threaded, so no COOP/COEP needed),
    then serve `build/web` statically.

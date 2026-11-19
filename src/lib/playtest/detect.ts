@@ -10,6 +10,8 @@
  * Pure, so it is tested without a sandbox.
  */
 
+import { ZIP_MEMBER_SCRIPT } from "./zip-member";
+
 export const PLAYTEST_SCRIPT = ".github/formic/playtest.sh";
 /** The port the product is asked to listen on when it takes one. */
 export const APP_PORT = 3000;
@@ -22,7 +24,13 @@ export interface StartPlan {
   kind: PlaytestKind;
   /** Shown while it starts: "Godot game", "Node app". */
   label: string;
-  /** Run first, in the foreground, from the checkout: install, export. */
+  /**
+   * Playtest's own setup, before the project's: what it fetches to be able to
+   * run it (Godot's Web export template). A failure here is Playtest's, not
+   * the project's, so no agent is asked to fix it.
+   */
+  fetch: string | null;
+  /** Run first, in the foreground, from the checkout: install, export. A failure here is the project's. */
   prepare: string | null;
   /** Run in the background from the checkout, for a product that serves itself. Null when served statically. */
   serve: string | null;
@@ -41,7 +49,8 @@ export interface DetectInput {
   exportPresets: string | null;
 }
 
-export type Detected = { ok: true; plan: StartPlan } | { ok: false; reason: string };
+/** A project Playtest cannot start is the project's to fix (a playtest.sh, a newer Godot); a Godot that did not install is Playtest's. */
+export type Detected = { ok: true; plan: StartPlan } | { ok: false; reason: string; fault: "project" | "playtest" };
 
 export const UNSUPPORTED =
   "Playtest runs web apps and Godot games for now. Add .github/formic/playtest.sh to tell it how to start yours: it should serve on $PORT.";
@@ -52,7 +61,7 @@ export function detect(input: DetectInput): Detected {
   if (has(PLAYTEST_SCRIPT)) {
     return {
       ok: true,
-      plan: { kind: "script", label: "your playtest script", prepare: null, serve: `bash ${PLAYTEST_SCRIPT}`, staticDir: null },
+      plan: { kind: "script", label: "your playtest script", fetch: null, prepare: null, serve: `bash ${PLAYTEST_SCRIPT}`, staticDir: null },
     };
   }
 
@@ -64,10 +73,10 @@ export function detect(input: DetectInput): Detected {
   }
 
   if (has("index.html")) {
-    return { ok: true, plan: { kind: "static", label: "web page", prepare: null, serve: null, staticDir: "." } };
+    return { ok: true, plan: { kind: "static", label: "web page", fetch: null, prepare: null, serve: null, staticDir: "." } };
   }
 
-  return { ok: false, reason: UNSUPPORTED };
+  return { ok: false, reason: UNSUPPORTED, fault: "project" };
 }
 
 /** The Godot engine's major and minor version, from `godot --version`. */
@@ -109,26 +118,28 @@ export const PLAYTEST_PRESET = [
 
 function godotPlan(input: DetectInput): Detected {
   const v = godotMinor(input.godotVersion);
-  if (!v) return { ok: false, reason: "Godot did not install, so the game cannot be exported. The log above says why." };
+  if (!v) return { ok: false, reason: "Godot did not install, so the game cannot be exported. The log above says why.", fault: "playtest" };
   // Before 4.3 a Web export needs threads, and threads need headers a frame inside Formic cannot have.
   if (v.major < 4 || (v.major === 4 && v.minor < 3)) {
     return {
       ok: false,
       reason: `Playtest exports Godot games to the web single-threaded, which needs Godot 4.3 or newer (this project is on ${v.major}.${v.minor}). Add .github/formic/playtest.sh to serve it your own way.`,
+      fault: "project",
     };
   }
   const preset = webPresetName(input.exportPresets);
   const templates = `$HOME/.local/share/godot/export_templates/${v.folder}`;
-  const tpz = `Godot_v${v.tag}_export_templates.tpz`;
-  const prepare = [
+  const tpz = `https://github.com/godotengine/godot-builds/releases/download/${v.tag}/Godot_v${v.tag}_export_templates.tpz`;
+  // Only the Web template, read out of the 1.3 GB archive by range: the whole archive does not fit on the sandbox's disk.
+  const fetch = [
     "set -e",
     `if [ ! -f "${templates}/web_nothreads_release.zip" ]; then`,
-    '  echo "Downloading the Web export templates..."',
-    `  mkdir -p "${templates}"`,
-    `  curl -fsSL -o /tmp/templates.tpz "https://github.com/godotengine/godot-builds/releases/download/${v.tag}/${tpz}"`,
-    `  unzip -o -j -q /tmp/templates.tpz templates/web_nothreads_release.zip templates/version.txt -d "${templates}"`,
-    "  rm -f /tmp/templates.tpz",
+    '  echo "Fetching the Web export template..."',
+    `  python3 - "${tpz}" "${templates}" templates/web_nothreads_release.zip templates/version.txt <<'FORMIC_ZIP'${ZIP_MEMBER_SCRIPT}FORMIC_ZIP`,
     "fi",
+  ].join("\n");
+  const prepare = [
+    "set -e",
     ...(preset
       ? []
       : [
@@ -141,7 +152,7 @@ function godotPlan(input: DetectInput): Detected {
     'echo "Exporting to the web..."',
     `godot --headless --export-release ${shellWord(preset ?? "Playtest Web")} ${GODOT_EXPORT_DIR}/index.html`,
   ].join("\n");
-  return { ok: true, plan: { kind: "godot", label: "Godot game", prepare, serve: null, staticDir: GODOT_EXPORT_DIR } };
+  return { ok: true, plan: { kind: "godot", label: "Godot game", fetch, prepare, serve: null, staticDir: GODOT_EXPORT_DIR } };
 }
 
 function nodePlan(input: DetectInput): StartPlan | null {
@@ -165,10 +176,10 @@ function nodePlan(input: DetectInput): StartPlan | null {
           : "npm install";
   if (!script) {
     // A package.json for tooling, beside a page that is the product.
-    if (has("index.html")) return { kind: "static", label: "web page", prepare: install, serve: null, staticDir: "." };
+    if (has("index.html")) return { kind: "static", label: "web page", fetch: null, prepare: install, serve: null, staticDir: "." };
     return null;
   }
-  return { kind: "node", label: "web app", prepare: install, serve: `${pm} run ${script}`, staticDir: null };
+  return { kind: "node", label: "web app", fetch: null, prepare: install, serve: `${pm} run ${script}`, staticDir: null };
 }
 
 /** The port a dev server says it is on, from a line of its output. */

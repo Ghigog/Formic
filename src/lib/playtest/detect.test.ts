@@ -17,8 +17,12 @@ describe("detect", () => {
     expect(r.plan.kind).toBe("godot");
     expect(r.plan.serve).toBeNull();
     expect(r.plan.staticDir).toBe("build/playtest-web");
-    expect(r.plan.prepare).toContain("releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz");
-    expect(r.plan.prepare).toContain("export_templates/4.3.stable");
+    // Only the Web template is read out of the archive, which is too big for the sandbox's disk.
+    expect(r.plan.fetch).toContain("releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz");
+    expect(r.plan.fetch).toContain("export_templates/4.3.stable");
+    expect(r.plan.fetch).toContain("templates/web_nothreads_release.zip");
+    expect(r.plan.fetch).not.toMatch(/curl|unzip/);
+    expect(r.plan.prepare).not.toContain("export_templates.tpz");
     expect(r.plan.prepare).toContain("variant/thread_support=false");
     expect(r.plan.prepare).toContain("--export-release 'Playtest Web'");
   });
@@ -50,7 +54,7 @@ describe("detect", () => {
     const page = detect({ ...base, files: ["package.json", "index.html"], packageJson: JSON.stringify({ scripts: { lint: "x" } }) });
     expect(page.ok && page.plan).toMatchObject({ kind: "static", staticDir: "." });
     expect(detect({ ...base, files: ["index.html"] })).toMatchObject({ ok: true, plan: { kind: "static", prepare: null } });
-    expect(detect({ ...base, files: ["main.go"] })).toEqual({ ok: false, reason: UNSUPPORTED });
+    expect(detect({ ...base, files: ["main.go"] })).toEqual({ ok: false, reason: UNSUPPORTED, fault: "project" });
   });
 });
 

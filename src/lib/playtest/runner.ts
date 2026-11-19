@@ -47,8 +47,20 @@ export interface PlaytestRunner {
   kill(sandboxId: string, apiKey: string): Promise<void>;
 }
 
+/**
+ * Whose a failure is. "project" is the repository's own (its install, its
+ * export, a server that never answers, a project Playtest cannot start), which
+ * an agent can fix with a ticket. "playtest" is Playtest's or the sandbox's
+ * (no sandbox, a fetch that failed, the time limit), which no change to the
+ * repository can fix, so no agent is offered.
+ */
+export type PlaytestFault = "project" | "playtest";
+
 export class PlaytestError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly fault: PlaytestFault = "playtest",
+  ) {
     super(message);
     this.name = "PlaytestError";
   }
@@ -96,7 +108,11 @@ function lines(data: string, onLog: (line: string) => void, also?: (line: string
 }
 
 /** Runs a command and throws its last lines when it fails. E2B raises on a non-zero exit. */
-async function run(sb: E2BSandbox, cmd: string, opts: RunOpts & { onLog: (l: string) => void; what: string }): Promise<Cmd> {
+async function run(
+  sb: E2BSandbox,
+  cmd: string,
+  opts: RunOpts & { onLog: (l: string) => void; what: string; fault: PlaytestFault },
+): Promise<Cmd> {
   const tail: string[] = [];
   const keep = (l: string) => {
     tail.push(l);
@@ -114,7 +130,10 @@ async function run(sb: E2BSandbox, cmd: string, opts: RunOpts & { onLog: (l: str
     return r;
   } catch (e) {
     const why = redact(e instanceof Error ? e.message : String(e));
-    throw new PlaytestError(`${opts.what} failed${/timeout|deadline/i.test(why) ? ", out of time" : ""}.${tail.length ? `\n${tail.join("\n")}` : ""}`);
+    throw new PlaytestError(
+      `${opts.what} failed${/timeout|deadline/i.test(why) ? ", out of time" : ""}.${tail.length ? `\n${tail.join("\n")}` : ""}`,
+      opts.fault,
+    );
   }
 }
 
@@ -145,7 +164,7 @@ export const e2bRunner: PlaytestRunner = {
     await run(
       sb,
       `git clone --depth 1 --branch ${q(o.branch)} ${q(o.cloneUrl)} ${REPO} && git -C ${REPO} remote set-url origin ${q(o.bareUrl)}`,
-      { timeoutMs: Math.min(left(), 3 * 60 * 1000), onLog: o.onLog, what: "Cloning" },
+      { timeoutMs: Math.min(left(), 3 * 60 * 1000), onLog: o.onLog, what: "Cloning", fault: "playtest" },
     );
     const sha = (await sb.commands.run(`git -C ${REPO} rev-parse HEAD`).catch(() => null))?.stdout.trim() || null;
     aborted();
@@ -187,17 +206,26 @@ export const e2bRunner: PlaytestRunner = {
       exportPresets: none(presets),
       godotVersion: none(godot),
     });
-    if (!found.ok) throw new PlaytestError(found.reason);
+    if (!found.ok) throw new PlaytestError(found.reason, found.fault);
     const { plan } = found;
     o.onStage("install", plan.label);
 
     const appEnv = { PORT: String(APP_PORT), HOST: "0.0.0.0", BROWSER: "none", CI: "true" };
+    if (plan.fetch) {
+      await run(sb, `${ON_PATH}\ncd ${REPO}\n${plan.fetch}`, {
+        timeoutMs: left(),
+        onLog: o.onLog,
+        what: "Fetching what Playtest needs to run it",
+        fault: "playtest",
+      });
+    }
     if (plan.prepare) {
       await run(sb, `${ON_PATH}\ncd ${REPO}\n${plan.prepare}`, {
         envs: appEnv,
         timeoutMs: left(),
         onLog: o.onLog,
         what: plan.kind === "godot" ? "Exporting the game" : "Installing",
+        fault: "project",
       });
     }
     aborted();
@@ -224,7 +252,7 @@ export const e2bRunner: PlaytestRunner = {
           .run(`(exec 3<>/dev/tcp/127.0.0.1/${APP_PORT}) 2>/dev/null && echo up || true`, { timeoutMs: 10_000 })
           .catch(() => null);
         if (up?.stdout.includes("up")) break;
-        if (left() < 1000) throw new PlaytestError("The product never started listening. The log above says why.");
+        if (left() < 1000) throw new PlaytestError("The product never started listening. The log above says why.", "project");
         await sleep(2000);
       }
     }
@@ -251,7 +279,10 @@ export const e2bRunner: PlaytestRunner = {
         .run(`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${PROXY_PORT}/__formic/ready || true`, { timeoutMs: 10_000 })
         .catch(() => null);
       if (r?.stdout.trim() === "200") break;
-      if (left() < 1000) throw new PlaytestError("The product never answered. The log above says why.");
+      if (left() < 1000) throw new PlaytestError(
+          plan.serve ? "The product never answered. The log above says why." : "Playtest could not serve the files it built.",
+          plan.serve ? "project" : "playtest",
+        );
       await sleep(1500);
     }
 

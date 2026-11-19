@@ -120,12 +120,16 @@ describe("e2bRunner", () => {
 
   it("says what it supports when it cannot tell how to start the project", async () => {
     fake.replies = [[/ls -A1/, { stdout: probe(["main.go"], null) }]];
-    await expect(e2bRunner.start(options().o)).rejects.toThrow(/web apps and Godot games/);
+    // The project's to fix: a playtest.sh would do it.
+    await expect(e2bRunner.start(options().o)).rejects.toMatchObject({ message: expect.stringMatching(/web apps and Godot games/), fault: "project" });
   });
 
   it("explains a failed clone with its last lines, and a sandbox that would not open", async () => {
     fake.replies = [[/git clone/, { say: "fatal: repository not found", throws: "exit status 128" }]];
-    await expect(e2bRunner.start(options().o)).rejects.toThrow(/Cloning failed\.\nfatal: repository not found/);
+    await expect(e2bRunner.start(options().o)).rejects.toMatchObject({
+      message: expect.stringMatching(/Cloning failed\.\nfatal: repository not found/),
+      fault: "playtest",
+    });
 
     fake.createError = "401: invalid API key";
     await expect(e2bRunner.start(options().o)).rejects.toThrow(/Could not open an E2B sandbox: 401: invalid API key/);
@@ -142,7 +146,39 @@ describe("e2bRunner", () => {
       [/ls -A1/, { stdout: probe(["index.html"], null) }],
       [/__formic\/ready/, { stdout: "503" }],
     ];
-    await expect(e2bRunner.start(options({ startMs: 50 }).o)).rejects.toThrow(/never answered|longer than the time/);
+    await expect(e2bRunner.start(options({ startMs: 50 }).o)).rejects.toMatchObject({
+      message: expect.stringMatching(/could not serve the files|longer than the time/),
+      fault: "playtest",
+    });
+  });
+
+  it("blames a failed template fetch on Playtest, and a failed export on the project", async () => {
+    const godot = [
+      "project.godot",
+      "@@package",
+      "@@none",
+      "@@presets",
+      "@@none",
+      "@@godot",
+      "4.7.2.stable.official.ed1daf0bf",
+    ].join("\n");
+    fake.replies = [
+      [/ls -A1/, { stdout: godot }],
+      [/FORMIC_ZIP/, { say: "No space left on device", throws: "exit status 1" }],
+    ];
+    await expect(e2bRunner.start(options().o)).rejects.toMatchObject({
+      message: expect.stringMatching(/^Fetching what Playtest needs to run it failed\./),
+      fault: "playtest",
+    });
+
+    fake.replies = [
+      [/ls -A1/, { stdout: godot }],
+      [/--export-release/, { say: "ERROR: Cannot export project with preset", throws: "exit status 1" }],
+    ];
+    await expect(e2bRunner.start(options().o)).rejects.toMatchObject({
+      message: expect.stringMatching(/^Exporting the game failed\./),
+      fault: "project",
+    });
   });
 
   it("kills a sandbox by id", async () => {
