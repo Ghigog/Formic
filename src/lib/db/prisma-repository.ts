@@ -38,6 +38,8 @@ import type {
   TicketUpdate,
   AssistantMessage,
   AssistantProposal,
+  PlaytestPatch,
+  PlaytestRecord,
   CardChatMessage,
   AuditKind,
   NewRubricFix,
@@ -2402,6 +2404,7 @@ export class PrismaRepository implements Repository {
     speaker?: string;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
+    playtestId?: string | null;
   }): Promise<AssistantMessage> {
     const row = await prisma().assistantMessage.create({
       data: {
@@ -2412,6 +2415,54 @@ export class PrismaRepository implements Repository {
       },
     });
     return toAssistantMessage(row);
+  }
+
+  async createPlaytest(input: { projectId: string; userId: string; endsAt: Date }): Promise<PlaytestRecord> {
+    return toPlaytest(await prisma().playtestSession.create({ data: input }));
+  }
+
+  async playtest(id: string): Promise<PlaytestRecord | null> {
+    const row = await prisma().playtestSession.findUnique({ where: { id } });
+    return row ? toPlaytest(row) : null;
+  }
+
+  async updatePlaytest(id: string, patch: PlaytestPatch): Promise<void> {
+    await prisma().playtestSession.update({ where: { id }, data: patch });
+  }
+
+  async playtestsFor(projectId: string, limit = 30): Promise<PlaytestRecord[]> {
+    const rows = await prisma().playtestSession.findMany({
+      where: { projectId },
+      orderBy: { startedAt: "desc" },
+      take: limit,
+    });
+    return rows.map(toPlaytest);
+  }
+
+  async openPlaytestsFor(userId: string): Promise<PlaytestRecord[]> {
+    const rows = await prisma().playtestSession.findMany({
+      where: { userId, status: { in: ["starting", "live"] } },
+      orderBy: { startedAt: "desc" },
+    });
+    return rows.map(toPlaytest);
+  }
+
+  async openPlaytests(): Promise<PlaytestRecord[]> {
+    const rows = await prisma().playtestSession.findMany({ where: { status: { in: ["starting", "live"] } } });
+    return rows.map(toPlaytest);
+  }
+
+  async playtestMessages(playtestId: string): Promise<AssistantMessage[]> {
+    const rows = await prisma().assistantMessage.findMany({
+      where: { playtestId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    const files = await prisma().attachment.findMany({
+      where: { assistantMessageId: { in: rows.map((m) => m.id) } },
+      orderBy: { createdAt: "asc" },
+      select: { ...ATTACHMENT_SUMMARY, assistantMessageId: true },
+    });
+    return rows.map((m) => toAssistantMessage(m, files.filter((f) => f.assistantMessageId === m.id).map(toAttachmentSummary)));
   }
 
   async unreadPmCount(projectId: string, since: Date | null): Promise<number> {
@@ -2769,16 +2820,44 @@ function toAssistantMessage(row: {
   runnerJob: string | null;
   runnerAgent: string | null;
   speaker: string;
+  playtestId?: string | null;
   createdAt: Date;
 }, attachments: AttachmentSummary[] = []): AssistantMessage {
   return {
     ...row,
     attachments,
+    playtestId: row.playtestId ?? null,
     role: row.role === "user" ? "user" : "assistant",
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
     cards: Array.isArray(row.cards) ? (row.cards as AssistantMessage["cards"]) : [],
   };
+}
+
+function toPlaytest(row: {
+  id: string;
+  projectId: string;
+  userId: string;
+  commitSha: string | null;
+  sandboxId: string | null;
+  url: string | null;
+  status: string;
+  stage: string | null;
+  kind: string | null;
+  logTail: string | null;
+  error: string | null;
+  endReason: string | null;
+  summary: string | null;
+  warned: boolean;
+  nudgedSha: string | null;
+  answeredAt: Date | null;
+  heartbeatAt: Date;
+  startedAt: Date;
+  endsAt: Date;
+  endedAt: Date | null;
+}): PlaytestRecord {
+  const status = (["starting", "live", "failed", "ended"] as const).find((x) => x === row.status) ?? "ended";
+  return { ...row, status };
 }
 
 function toCardChatMessage(row: {

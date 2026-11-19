@@ -37,6 +37,7 @@ import {
   LazyRerouteToast,
 } from "@/components/colony/lazy";
 import { LazySentinelsPage, UnlockAllDialog } from "@/components/sentinels/lazy";
+import { PlaytestProvider } from "@/components/playtest/playtest-context";
 import { featureUnlocked, scoreOf } from "@/lib/colony/game";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import type { SentinelStates } from "@/lib/sentinels/view";
@@ -289,6 +290,7 @@ export function BoardShell({
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged} unlockAll={unlockAllSentinels}>
     <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level} unlockAll={unlockAllSentinels} cards={cards}>
+    <PlaytestProvider repoName={repoName} projectId={projectId ?? ""}>
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}
@@ -396,7 +398,7 @@ export function BoardShell({
           setOpenTicketId(null);
           openAssistant(true);
         }}
-        kpisUnlocked={featureUnlocked("kpis", scoreOf(cards).level)}
+        kpisUnlocked={unlockAllSentinels || featureUnlocked("kpis", scoreOf(cards).level)}
         subscribe={subscribe}
         onChanged={() => void refetch().catch(() => {})}
       />
@@ -431,6 +433,7 @@ export function BoardShell({
         </div>
       )}
     </div>
+    </PlaytestProvider>
     </SentinelsProvider>
     </ColonyProvider>
   );

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const m = vi.hoisted(() => ({
@@ -117,6 +117,11 @@ describe("POST and DELETE /api/epics/[id]", () => {
 
   it("answers 429 over the limit", async () => {
     m.retryEpic.mockResolvedValue({ ok: true });
+    // The limiter counts in clock-minute windows: pin the clock mid-minute so the calls cannot straddle one.
+    vi.setSystemTime(new Date("2026-01-01T00:00:30Z"));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     for (let i = 0; i < 60; i++) expect((await POST(req("POST"), ctx)).status).toBe(200);
     expect((await POST(req("POST"), ctx)).status).toBe(429);
   });

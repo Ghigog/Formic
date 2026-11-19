@@ -492,6 +492,29 @@ describe("applying an approved proposal", () => {
     expect(said).toContain("2 tickets");
   });
 
+  it("copies a playtest note's screenshot onto the Backlog item, and ignores one that is not on a note", async () => {
+    const repo = repository();
+    const upload = (requestId: string) =>
+      repo.createAttachment({ projectId: PROJECT, requestId, filename: "shot.png", mimeType: "image/png", kind: "image", size: 2, bytes: new Uint8Array([7, 8]) });
+    const shot = await upload("playtest-note-1");
+    const stray = await upload("playtest-stray");
+    const note = await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "Score never resets", playtestId: "pt1" });
+    await repo.claimAttachments("playtest-note-1", { assistantMessageId: note.id });
+
+    const checked = checkAction({ type: "create_backlog_item", request: "Reset the score", screenshots: [shot.id, stray.id] });
+    if (!checked.ok) throw new Error(checked.problem);
+    const before = new Set((await repo.boardCards(PROJECT)).map((c) => c.id));
+    await applyAction(PROJECT, checked.action);
+    const epic = (await repo.boardCards(PROJECT)).find((c) => !before.has(c.id) && c.kind === "epic")!;
+
+    const onEpic = await repo.attachmentsFor({ epicId: epic.id });
+    expect(onEpic).toHaveLength(1);
+    expect(onEpic[0]).toMatchObject({ filename: "shot.png", mimeType: "image/png", kind: "image" });
+    expect((await repo.attachmentContent(onEpic[0]!.id))?.bytes).toEqual(new Uint8Array([7, 8]));
+    // The note keeps its own picture.
+    expect((await repo.attachmentsFor({ assistantMessageId: note.id })).map((a) => a.id)).toEqual([shot.id]);
+  });
+
   async function plannedTickets() {
     const checked = checkAction({ type: "create_epic_with_tickets", title: "Export", summary: "CSV export", tickets: TICKETS });
     if (!checked.ok) throw new Error(checked.problem);

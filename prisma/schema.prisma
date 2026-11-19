@@ -171,6 +171,7 @@ model User {
   memberAgents      MemberAgent[]
   pushSubscriptions PushSubscription[]
   accessTokens      AccessToken[]
+  playtests         PlaytestSession[]
 
   @@map("user")
 }
@@ -240,6 +241,7 @@ model Project {
   cardChatMessages  CardChatMessage[]
   audits            Audit[]
   rubricFixes       RubricFix[]
+  playtests         PlaytestSession[]
 
   @@index([ownerId])
   @@map("project")
@@ -770,10 +772,52 @@ model AssistantMessage {
   runnerAgent String?
   /// Who a reply comes from: "assistant", a column role or "sentinel:<id>".
   speaker     String   @default("assistant")
+  /// The playtest a note was written in, and its replies. See docs/plans/playtest.md.
+  playtestId  String?
   createdAt   DateTime @default(now())
 
   @@index([projectId, createdAt])
+  @@index([playtestId])
   @@map("assistant_message")
+}
+
+/// One Playtest: the default branch running in an E2B sandbox on the
+/// person's own key, with notes to the PM beside it. See docs/plans/playtest.md.
+model PlaytestSession {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commitSha   String?
+  sandboxId   String?
+  /// The public address of the running product. Dies with the sandbox.
+  url         String?
+  /// "starting", "live", "failed" or "ended".
+  status      String    @default("starting")
+  /// Where a starting session is: "sandbox", "clone", "install", "start".
+  stage       String?
+  /// What the product is: "node", "godot", "static" or "script".
+  kind        String?
+  logTail     String?
+  error       String?
+  /// How it ended: "stopped", "time", "closed", "replaced", "failed".
+  endReason   String?
+  summary     String?
+  /// Whether the five-minute warning was said.
+  warned      Boolean   @default(false)
+  /// The default-branch head the PM last said was ready to play.
+  nudgedSha   String?
+  /// The newest note the PM has been asked about.
+  answeredAt  DateTime?
+  heartbeatAt DateTime  @default(now())
+  startedAt   DateTime  @default(now())
+  endsAt      DateTime
+  endedAt     DateTime?
+
+  @@index([projectId, startedAt])
+  @@index([userId, status])
+  @@map("playtest_session")
 }
 
 /// A card's chat with its column's agent: a conversation per Epic or

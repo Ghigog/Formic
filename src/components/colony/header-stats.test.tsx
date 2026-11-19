@@ -138,10 +138,10 @@ describe("Hidden features", () => {
     expect(document.querySelector('[data-colony="timeline"]')).toBeInTheDocument();
   });
 
-  it("shows Sentinels at once on a Lv 1 board with Unlock all on", () => {
+  it("shows Sentinels and Timeline at once on a Lv 1 board with Unlock everything on", () => {
     renderHeader(<ColonyHeaderStats />, lv1(), true);
     expect(screen.getByRole("button", { name: /Audit grade/ })).toBeInTheDocument();
-    expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
+    expect(document.querySelector('[data-colony="timeline"]')).toBeInTheDocument();
   });
 });
 

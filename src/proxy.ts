@@ -48,6 +48,8 @@ const FINISHES_WORK = [
   /^\/api\/runner\/report$/,
   /^\/api\/runs\/stop$/,
   /^\/api\/tickets\/[^/]+\/stop$/,
+  // Stopping a playtest ends a sandbox.
+  /^\/api\/playtest\/[^/]+$/,
   /^\/api\/login$/,
   /^\/api\/auth\//,
 ];
@@ -93,6 +95,8 @@ export function contentSecurityPolicy(nonce: string): string {
     "img-src 'self' data: blob: https://avatars.githubusercontent.com",
     ["connect-src 'self'", ...realtimeOrigins()].join(" "),
     "object-src 'none'",
+    // Playtest shows the product from its E2B sandbox (docs/plans/playtest.md).
+    "frame-src 'self' https://*.e2b.app https://*.e2b.dev",
   ].join("; ");
 }
 

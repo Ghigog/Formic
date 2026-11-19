@@ -41,6 +41,45 @@ function contract(name: string, make: () => Repository) {
       expect((await repo.openedAtByProject(other.id)).size).toBe(0);
     });
 
+    it("keeps playtest sessions, their notes, and which are still open", async () => {
+      const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+      const project = await repo.ensureProject({ ownerId: user.id, repoFullName: `acme/${randomUUID()}`, baseBranch: "main" });
+      const endsAt = new Date(Date.now() + 20 * 60_000);
+      const first = await repo.createPlaytest({ projectId: project.id, userId: user.id, endsAt });
+      expect(first).toMatchObject({ status: "starting", url: null, warned: false, answeredAt: null, endedAt: null });
+      expect(first.endsAt.getTime()).toBe(endsAt.getTime());
+
+      await repo.updatePlaytest(first.id, { status: "live", url: "https://8484-x.e2b.app", commitSha: "abc", warned: true });
+      expect(await repo.playtest(first.id)).toMatchObject({ status: "live", url: "https://8484-x.e2b.app", commitSha: "abc", warned: true });
+      expect((await repo.openPlaytestsFor(user.id)).map((p) => p.id)).toEqual([first.id]);
+      expect((await repo.openPlaytests()).some((p) => p.id === first.id)).toBe(true);
+
+      const requestId = `playtest-${randomUUID()}`;
+      const shot = await repo.createAttachment({
+        projectId: project.id,
+        requestId,
+        filename: "shot.png",
+        mimeType: "image/png",
+        kind: "image",
+        size: 3,
+        bytes: new Uint8Array([1, 2, 3]),
+      });
+      const note = await repo.addAssistantMessage({ projectId: project.id, role: "user", content: "Jump is late", playtestId: first.id });
+      await repo.claimAttachments(requestId, { assistantMessageId: note.id });
+      await repo.addAssistantMessage({ projectId: project.id, role: "user", content: "not in a playtest" });
+      expect(note.playtestId).toBe(first.id);
+      const notes = await repo.playtestMessages(first.id);
+      expect(notes.map((m) => m.content)).toEqual(["Jump is late"]);
+      expect(notes[0]!.attachments.map((a) => a.id)).toEqual([shot.id]);
+
+      await repo.updatePlaytest(first.id, { status: "ended", endedAt: new Date(), endReason: "stopped" });
+      expect(await repo.openPlaytestsFor(user.id)).toEqual([]);
+      await new Promise((r) => setTimeout(r, 5));
+      const second = await repo.createPlaytest({ projectId: project.id, userId: user.id, endsAt });
+      expect((await repo.playtestsFor(project.id)).map((p) => p.id)).toEqual([second.id, first.id]);
+      expect(await repo.playtest("no-such-playtest")).toBeNull();
+    });
+
     it("remembers a board's tour per person and board, even before the first open", async () => {
       const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
       const other = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const { repository, activeProject, launch, collectCliRuns, sweepOpenPullRequests, sweepIdleCards } =
@@ -40,6 +40,11 @@ describe("GET /api/board", () => {
   it("lets three hundred refreshes from one address through in a minute and refuses the next", async () => {
     // A refresh starts the sweeps and the UI polls it, so the board has its
     // own generous bucket rather than the shared run-start one.
+    // The limiter counts in clock-minute windows: pin the clock mid-minute so the calls cannot straddle one.
+    vi.setSystemTime(new Date("2026-01-01T00:00:30Z"));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     for (let i = 0; i < 300; i++) expect((await refresh()).status).toBe(200);
 
     const res = await refresh();

@@ -35,6 +35,8 @@ import type {
   TicketUpdate,
   AssistantMessage,
   AssistantProposal,
+  PlaytestPatch,
+  PlaytestRecord,
   AuditKind,
   NewRubricFix,
   RubricFix,
@@ -229,6 +231,7 @@ interface Store {
   /** Card id to whose keys its work runs on. */
   actors: Map<string, string>;
   assistant: AssistantMessage[];
+  playtests: PlaytestRecord[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
   audits: AuditRecord[];
@@ -332,6 +335,7 @@ function store(): Store {
     memberAgents: new Map(),
     actors: new Map(),
     assistant: [],
+    playtests: [],
     cardChat: [],
     attachments: new Map(),
     audits: [],
@@ -2392,6 +2396,7 @@ export class MemoryRepository implements Repository {
     speaker?: string;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
+    playtestId?: string | null;
   }): Promise<AssistantMessage> {
     const message: AssistantMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 10)}`,
@@ -2400,6 +2405,7 @@ export class MemoryRepository implements Repository {
       speaker: "assistant",
       createdAt: new Date(),
       ...input,
+      playtestId: input.playtestId ?? null,
       cards: input.cards ?? [],
       attachments: [],
       proposals: input.proposals ?? [],
@@ -2407,6 +2413,70 @@ export class MemoryRepository implements Repository {
     };
     store().assistant.push(message);
     return { ...message };
+  }
+
+  async createPlaytest(input: { projectId: string; userId: string; endsAt: Date }): Promise<PlaytestRecord> {
+    const now = new Date();
+    const record: PlaytestRecord = {
+      id: `pt_${Math.random().toString(36).slice(2, 10)}`,
+      ...input,
+      commitSha: null,
+      sandboxId: null,
+      url: null,
+      status: "starting",
+      stage: null,
+      kind: null,
+      logTail: null,
+      error: null,
+      endReason: null,
+      summary: null,
+      warned: false,
+      nudgedSha: null,
+      answeredAt: null,
+      heartbeatAt: now,
+      startedAt: now,
+      endedAt: null,
+    };
+    store().playtests.push(record);
+    return { ...record };
+  }
+
+  async playtest(id: string): Promise<PlaytestRecord | null> {
+    const found = store().playtests.find((p) => p.id === id);
+    return found ? { ...found } : null;
+  }
+
+  async updatePlaytest(id: string, patch: PlaytestPatch): Promise<void> {
+    const found = store().playtests.find((p) => p.id === id);
+    if (found) Object.assign(found, patch);
+  }
+
+  async playtestsFor(projectId: string, limit = 30): Promise<PlaytestRecord[]> {
+    return store()
+      .playtests.filter((p) => p.projectId === projectId)
+      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
+      .slice(0, limit)
+      .map((p) => ({ ...p }));
+  }
+
+  async openPlaytestsFor(userId: string): Promise<PlaytestRecord[]> {
+    return store()
+      .playtests.filter((p) => p.userId === userId && (p.status === "starting" || p.status === "live"))
+      .map((p) => ({ ...p }));
+  }
+
+  async openPlaytests(): Promise<PlaytestRecord[]> {
+    return store()
+      .playtests.filter((p) => p.status === "starting" || p.status === "live")
+      .map((p) => ({ ...p }));
+  }
+
+  async playtestMessages(playtestId: string): Promise<AssistantMessage[]> {
+    return Promise.all(
+      store()
+        .assistant.filter((m) => m.playtestId === playtestId)
+        .map(async (m) => ({ ...m, attachments: await this.attachmentsFor({ assistantMessageId: m.id }) })),
+    );
   }
 
   async unreadPmCount(projectId: string, since: Date | null): Promise<number> {

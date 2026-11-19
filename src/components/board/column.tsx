@@ -59,6 +59,8 @@ interface ColumnProps {
   accepts?: (cardId: string) => boolean;
   /** Which agent works this column, and the controls to change it. */
   agent?: ColumnAgentControls;
+  /** What a column with no agent shows in that slot instead: Done's Playtest. */
+  action?: React.ReactNode;
   /** This column's search, sort, filter and fold. The board owns it. */
   view?: ColumnView;
   onViewChange?: (view: ColumnView) => void;
@@ -84,6 +86,7 @@ export const Column = memo(function Column({
   onToggleCollapse,
   accepts,
   agent,
+  action,
   view = EMPTY_VIEW,
   onViewChange,
   onOpen,
@@ -186,6 +189,12 @@ export const Column = memo(function Column({
             <AgentSelect slot={id} {...agent} />
           </div>
           {inlineMenu && menu}
+        </div>
+      )}
+
+      {!view.collapsed && !agent && action && (
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">{action}</div>
         </div>
       )}
 
