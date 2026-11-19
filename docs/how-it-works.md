@@ -63,6 +63,10 @@ shows it inside Formic, with the PM beside it.
 - A session lasts 20 minutes, one per person. The URL is public while it
   runs. Every session and its notes stay under **Sessions**, and the PM can
   read them later.
+- The sandbox has 512 MiB of memory and no secrets. A project that needs more
+  memory, or an env var, database or API key, fails with that reason and no
+  agent offered, since no ticket can fix it. Calls to `http://localhost` from
+  the page cannot work; same-origin `/api` calls do.
 
 The design and its rules: [`docs/plans/playtest.md`](plans/playtest.md).
 

@@ -100,6 +100,34 @@ export function webPresetName(cfg: string | null): string | null {
   return null;
 }
 
+/**
+ * The one preset Playtest exports with. It starts from the project's own Web
+ * preset when there is one (its HTML shell, its options) and always turns
+ * threads off: a threaded export needs a template Playtest does not fetch,
+ * and threads cannot run inside Formic's frame anyway. With no Web preset it
+ * is PLAYTEST_PRESET.
+ */
+export function playtestPreset(cfg: string | null): string {
+  const name = webPresetName(cfg);
+  if (!cfg || !name) return PLAYTEST_PRESET;
+  // The project's Web preset and its options, renumbered as the only preset.
+  const sections = cfg.split(/^(?=\[preset\.\d+(?:\.options)?\]\s*$)/m);
+  const index = sections
+    .map((s) => s.match(/^\[preset\.(\d+)\]\s*$/m)?.[1] ?? null)
+    .find((i, n) => i !== null && /^platform="Web"\s*$/m.test(sections[n]!));
+  const own = (header: string) => sections.find((s) => s.startsWith(header)) ?? "";
+  const main = own(`[preset.${index}]`)
+    .replace(/^\[preset\.\d+\]/m, "[preset.0]")
+    .replace(/^name=".*"\s*$/m, 'name="Playtest Web"')
+    .replace(/^export_path=".*"\s*$/m, `export_path="${GODOT_EXPORT_DIR}/index.html"`);
+  let options = own(`[preset.${index}.options]`).replace(/^\[preset\.\d+\.options\]/m, "[preset.0.options]");
+  if (!options) options = "[preset.0.options]\n\n";
+  options = /^variant\/thread_support=/m.test(options)
+    ? options.replace(/^variant\/thread_support=.*$/m, "variant/thread_support=false")
+    : options.replace(/^\[preset\.0\.options\]\s*\n/m, "[preset.0.options]\n\nvariant/thread_support=false\n");
+  return `${main.trimEnd()}\n\n${options.trimEnd()}\n`;
+}
+
 /** A Web export preset Playtest writes when the project has none. Single-threaded, so no special headers. */
 export const PLAYTEST_PRESET = [
   "[preset.0]",
@@ -127,7 +155,6 @@ function godotPlan(input: DetectInput): Detected {
       fault: "project",
     };
   }
-  const preset = webPresetName(input.exportPresets);
   const templates = `$HOME/.local/share/godot/export_templates/${v.folder}`;
   const tpz = `https://github.com/godotengine/godot-builds/releases/download/${v.tag}/Godot_v${v.tag}_export_templates.tpz`;
   // Only the Web template, read out of the 1.3 GB archive by range: the whole archive does not fit on the sandbox's disk.
@@ -140,17 +167,13 @@ function godotPlan(input: DetectInput): Detected {
   ].join("\n");
   const prepare = [
     "set -e",
-    ...(preset
-      ? []
-      : [
-          "# No Web preset: write one. The sandbox is thrown away, so the project's own file is not changed anywhere else.",
-          `cat > export_presets.cfg <<'FORMIC_PRESET'\n${PLAYTEST_PRESET}FORMIC_PRESET`,
-        ]),
+    "# Playtest's own preset, single-threaded. The sandbox is thrown away, so the project's file is not changed anywhere else.",
+    `cat > export_presets.cfg <<'FORMIC_PRESET'\n${playtestPreset(input.exportPresets)}FORMIC_PRESET`,
     `mkdir -p ${GODOT_EXPORT_DIR}`,
     'echo "Importing the project..."',
     "godot --headless --import || true",
     'echo "Exporting to the web..."',
-    `godot --headless --export-release ${shellWord(preset ?? "Playtest Web")} ${GODOT_EXPORT_DIR}/index.html`,
+    `godot --headless --export-release 'Playtest Web' ${GODOT_EXPORT_DIR}/index.html`,
   ].join("\n");
   return { ok: true, plan: { kind: "godot", label: "Godot game", fetch, prepare, serve: null, staticDir: GODOT_EXPORT_DIR } };
 }
@@ -190,8 +213,4 @@ export function portFromLine(line: string): number | null {
   if (!m) return null;
   const port = Number(m[1]);
   return port > 0 && port < 65536 ? port : null;
-}
-
-function shellWord(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
 }

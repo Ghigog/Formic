@@ -123,6 +123,26 @@ describe("PlaytestScreen", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
+  it("says an app that needs secrets is nothing for an agent to fix", () => {
+    m.api = api({ ...base, status: "failed", url: null, endReason: "needs-config", error: "This app needs configuration Playtest doesn't have." });
+    render(<PlaytestScreen />);
+    expect(screen.getByText(/can't add your secrets/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ask an agent to fix it" })).toBeNull();
+  });
+
+  it("points to a new tab when the product uses cookies, which some browsers refuse in a frame", () => {
+    m.api = api(base);
+    render(<PlaytestScreen />);
+    expect(screen.queryByRole("note")).toBeNull();
+    act(() => {
+      window.dispatchEvent(new MessageEvent("message", { origin: "https://8484-sb.e2b.app", data: { type: "formic:hello", cookies: true } }));
+    });
+    expect(screen.getByRole("note").textContent).toMatch(/Signing in\?/);
+    expect(screen.getByRole("link", { name: "Open it in a new tab" }).getAttribute("href")).toBe("https://8484-sb.e2b.app");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
   it("sums up an ended session and offers to play again", async () => {
     m.api = api({ ...base, status: "ended", url: null, endReason: "time", summary: "3 notes, 1 ticket proposed." });
     render(<PlaytestScreen />);

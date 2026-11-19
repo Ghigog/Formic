@@ -32,7 +32,10 @@ async function startProxy(port: number, env: Record<string, string>): Promise<st
 
 beforeAll(async () => {
   app = createServer((req, res) => {
-    if (req.url === "/page") {
+    if (req.url === "/login") {
+      res.writeHead(200, { "content-type": "text/plain", "set-cookie": ["sid=abc; Path=/; HttpOnly; SameSite=Lax", "theme=dark"] });
+      res.end("ok");
+    } else if (req.url === "/page") {
       res.writeHead(200, { "content-type": "text/html", "x-frame-options": "DENY", "content-security-policy": "frame-ancestors 'none'" });
       res.end(`<html><head></head><body>host=${req.headers.host}</body></html>`);
     } else {
@@ -60,6 +63,16 @@ describe("playtest proxy", () => {
     expect(res.headers.get("content-security-policy")).toBeNull();
     expect(await (await fetch(`${base}/api`)).json()).toEqual({ ok: true });
     expect((await fetch(`${base}/__formic/ready`)).status).toBe(200);
+
+    // Cookies are made to work in a frame on another site, and the helper is told there are some.
+    const before = await (await fetch(`${base}/__formic/helper.js`)).text();
+    expect(before).toContain("cookies = false ||");
+    const login = await fetch(`${base}/login`);
+    expect(login.headers.getSetCookie()).toEqual([
+      "sid=abc; Path=/; HttpOnly; SameSite=None; Secure; Partitioned",
+      "theme=dark; SameSite=None; Secure; Partitioned",
+    ]);
+    expect(await (await fetch(`${base}/__formic/helper.js`)).text()).toContain("cookies = true ||");
   });
 
   it("serves a static export, with the helper, and only the formic origin baked in", async () => {

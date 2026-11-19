@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLAYTEST_SCRIPT, UNSUPPORTED, detect, godotMinor, portFromLine, webPresetName } from "./detect";
+import { PLAYTEST_SCRIPT, UNSUPPORTED, detect, godotMinor, playtestPreset, portFromLine, webPresetName } from "./detect";
 
 const base = { packageJson: null, godotVersion: null, exportPresets: null };
 
@@ -27,11 +27,27 @@ describe("detect", () => {
     expect(r.plan.prepare).toContain("--export-release 'Playtest Web'");
   });
 
-  it("uses a Web preset the project already has", () => {
-    const presets = '[preset.0]\n\nname="Windows"\nplatform="Windows Desktop"\n\n[preset.1]\n\nname="Browser"\nplatform="Web"\n';
+  it("exports through its own copy of the project's Web preset, always single-threaded", () => {
+    const presets = [
+      "[preset.0]", "", 'name="Windows"', 'platform="Windows Desktop"', "",
+      "[preset.0.options]", "", "binary_format/embed_pck=false", "",
+      "[preset.1]", "", 'name="Browser"', 'platform="Web"', 'export_path="build/web/index.html"', "",
+      "[preset.1.options]", "", 'html/custom_html_shell="res://shell.html"', "variant/thread_support=true", "",
+    ].join("\n");
     const r = detect({ ...base, files: ["project.godot"], godotVersion: "4.4.1.stable.official", exportPresets: presets });
-    expect(r.ok && r.plan.prepare).toContain("--export-release 'Browser'");
-    expect(r.ok && r.plan.prepare).not.toContain("FORMIC_PRESET");
+    expect(r.ok && r.plan.prepare).toContain("--export-release 'Playtest Web'");
+    const own = playtestPreset(presets);
+    // The project's own options are kept; threads are off; the Windows preset is gone.
+    expect(own).toContain('html/custom_html_shell="res://shell.html"');
+    expect(own).toContain("variant/thread_support=false");
+    expect(own).not.toContain("thread_support=true");
+    expect(own).not.toContain("Windows");
+    expect(own).toMatch(/^\[preset\.0\]\n[\s\S]*name="Playtest Web"[\s\S]*export_path="build\/playtest-web\/index\.html"[\s\S]*\[preset\.0\.options\]/);
+  });
+
+  it("turns threads off even when the project's preset never set them", () => {
+    expect(playtestPreset('[preset.0]\nname="W"\nplatform="Web"\n')).toContain("variant/thread_support=false");
+    expect(playtestPreset(null)).toContain("variant/thread_support=false");
   });
 
   it("explains a Godot that is too old for a single-threaded export", () => {
