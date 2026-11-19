@@ -879,7 +879,8 @@ describe("red CI the ticket's change did not cause", () => {
     const bug = (await repository().ticketsForEpic(epicId)).find((t) => t.title === fix.bug.title)!;
     expect(["running", "queued"]).toContain(bug.status);
     const messages = (await repository().assistantMessages(PROJECT)).messages;
-    expect(messages.some((m) => m.content.includes(fix.check))).toBe(false);
+    // No confirmation is asked. (The fix's own coder run may post about the check meanwhile.)
+    expect(messages.some((m) => m.content.includes(fix.check) && m.proposals?.length)).toBe(false);
   });
 
   it("reviews the blocked ticket again when the fix merges", async () => {
