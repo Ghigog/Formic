@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatDuration } from "@/components/board/format-duration";
 import { useColony } from "./colony";
 import { useSound } from "./store";
@@ -241,6 +241,18 @@ function Chart({ title, empty, padB = 22, children }: { title: string; empty: bo
     return () => ro.disconnect();
   }, [empty]);
   const geo = geometry(measured || FALLBACK_W, padB);
+  // Keep the card inside the chart at either edge: flipping at the midpoint is not enough
+  // when the card is wider than the room on that side (a 390px screen).
+  const card = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = card.current;
+    if (!el || !tip) return;
+    const w = el.offsetWidth;
+    const flip = tip.x > geo.W / 2;
+    const left = flip ? tip.x - tip.r - 10 - w : tip.x + tip.r + 10;
+    el.style.left = `${Math.max(0, Math.min(left, geo.W - w))}px`;
+    el.style.transform = "none";
+  }, [tip, geo.W]);
   return (
     <figure role="group" aria-label={title} className="border-line bg-card relative m-0 rounded-xl border px-4 py-3">
       <figcaption className="text-ink mb-2 text-[12px] font-semibold">{title}</figcaption>
@@ -260,6 +272,7 @@ function Chart({ title, empty, padB = 22, children }: { title: string; empty: bo
           </svg>
           {tip && (
             <div
+              ref={card}
               role="tooltip"
               className="bg-anthracite text-on-anthracite pointer-events-none absolute z-10 flex flex-col gap-0.5 rounded-lg px-2.5 py-2 whitespace-nowrap shadow-[0_10px_20px_-12px_color-mix(in_srgb,var(--anthracite)_60%,transparent)]"
               style={{
