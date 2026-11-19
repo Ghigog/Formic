@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 const { activeProject, sentinelsFor, summonSentinel } = vi.hoisted(() => ({
   activeProject: vi.fn(),
@@ -48,6 +48,9 @@ describe("POST /api/sentinels/[id]", () => {
   });
 
   it("answers 429 once the run bucket is exhausted", async () => {
+    // The limiter counts in clock-minute windows: pin the clock mid-minute so the calls cannot straddle one.
+    vi.setSystemTime(new Date("2026-01-01T00:00:30Z"));
+    onTestFinished(() => vi.useRealTimers());
     for (let i = 0; i < 60; i++) expect((await call()).status).toBe(202);
     const res = await call();
     expect(res.status).toBe(429);
