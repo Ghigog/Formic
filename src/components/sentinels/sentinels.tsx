@@ -82,8 +82,10 @@ function PlayIcon({ size = 14 }: { size?: number }) {
 /** Whether a sentinel has reported: the ones worth celebrating. */
 const reported = (st: SentinelState | undefined) => st?.stars != null;
 
-const SLIDE_MS = 520;
-const SLIDE_STAGGER_MS = 110;
+export const SLIDE_MS = 520;
+// When a card reaches its place; the motion and its sound share this moment.
+export const LAND_MS = 300;
+export const SLIDE_STAGGER_MS = 110;
 /** Hover scrubbing across the rail makes one voice per this long. */
 const VOICE_GAP_MS = 120;
 /** A wheel gesture ends once the wheel has been quiet this long. */
@@ -254,7 +256,7 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
       reported(s.states[x.id]),
     );
     if (landed.length && !c.fx.reducedMotion) {
-      landed.forEach(({ x }, n) => {
+      landed.forEach(({ x, i }, n) => {
         const delay = n * SLIDE_STAGGER_MS;
         root.current
           ?.querySelector<HTMLElement>(`[data-card="${x.id}"]`)
@@ -263,18 +265,23 @@ function SentinelsView({ c, s, onOpenEpic }: { c: ColonyApi; s: SentinelsApi; on
               {
                 opacity: 0,
                 transform: `translateY(60vh) rotate(${n % 2 ? 4 : -4}deg)`,
+                // Per-segment, so the ease spans exactly the 0 to LAND_MS slide.
+                easing: "cubic-bezier(.2,.8,.2,1)",
               },
+              { opacity: 1, transform: "none", offset: LAND_MS / SLIDE_MS },
               { opacity: 1, transform: "none" },
             ],
             {
               duration: SLIDE_MS,
               delay,
-              easing: "cubic-bezier(.2,.8,.2,1)",
               fill: "backwards",
             },
           );
         timers.push(
-          setTimeout(() => c.sfx("sentinelLand", n), delay + SLIDE_MS),
+          setTimeout(() => {
+            c.sfx("sentinelVoice", i);
+            c.sfx("sentinelLand", n);
+          }, delay + LAND_MS),
         );
       });
     }
@@ -809,12 +816,13 @@ function Report({
   onSummon: (kind: AuditKind) => void;
   onOpenEpic: (epicId: string) => void;
 }) {
+  const s = useSentinels();
   const running = !!st.running;
   const held = !!st.hold;
   const done = st.stars !== null && !!st.report;
   const first = x.who.split(" ").at(-1);
   const meta = running
-    ? `${x.name} · ${st.running!.kind === "calibrate" ? "calibrating" : "auditing"}…`
+    ? `${x.name} · ${st.running!.kind === "calibrate" ? "calibrating" : st.running!.kind === "revise" ? "revising a check" : "auditing"}…`
     : st.stars !== null
       ? `${x.name} · ${st.stars} of 5 · ${ago(st.at, now)}`
       : `${x.name} · not audited`;
@@ -964,6 +972,7 @@ function Report({
             now={now}
             busy={running || locked}
             onCalibrate={() => onSummon("calibrate")}
+            onEdit={(checkId, note) => void s?.editCheck(x.id, checkId, note)}
           />
           {SECTIONS.map((sec) => (
             <Section
@@ -1022,6 +1031,7 @@ function Report({
           now={now}
           busy={running || locked}
           onCalibrate={() => onSummon("calibrate")}
+          onEdit={(checkId, note) => void s?.editCheck(x.id, checkId, note)}
         />
       )}
 
@@ -1073,12 +1083,18 @@ function Ladder({
   now,
   busy,
   onCalibrate,
+  onEdit,
 }: {
   st: SentinelState;
   now: number;
   busy: boolean;
   onCalibrate: () => void;
+  onEdit: (checkId: string, note: string) => void;
 }) {
+  // The check whose earlier wordings are open, and the one being edited.
+  const [shown, setShown] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [note, setNote] = useState("");
   const rubric = st.rubric?.rubric ?? st.scoredWith;
   // Marks only where the checks are the ones the last audit was scored on.
   const scored = !st.rubricChanged && st.scoredWith ? st.report?.checks : undefined;
@@ -1130,6 +1146,7 @@ function Ladder({
               </span>
               {r.checks.map((k) => {
                 const m = marks.get(k.id);
+                const edits = st.edits[k.id];
                 return (
                   <div
                     key={k.id}
@@ -1148,14 +1165,88 @@ function Ladder({
                     >
                       {m ? (m.met ? "✓" : "✗") : "·"}
                     </span>
-                    <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex min-w-0 grow flex-col gap-0.5">
                       <span className="text-ink text-[13px] leading-[1.45] text-pretty">
                         {k.text}
                       </span>
                       <span className="text-muted text-[11px] leading-[1.4] text-pretty">
                         {m?.evidence || k.how}
                       </span>
+                      {edits && (
+                        <button
+                          type="button"
+                          aria-expanded={shown === k.id}
+                          onClick={() => setShown(shown === k.id ? null : k.id)}
+                          className="bg-clay-chip text-clay-chip-text min-h-6 self-start rounded-md px-2 text-[11px] font-semibold active:scale-[0.96]"
+                        >
+                          edited {ago(edits.at(-1)!.approvedAt, now)} by {edits.at(-1)!.approver}
+                        </button>
+                      )}
+                      {edits && shown === k.id && (
+                        <span className="flex flex-col gap-1 pt-0.5">
+                          <span className="text-muted text-[10px] font-bold tracking-[0.08em] uppercase">
+                            Earlier wordings
+                          </span>
+                          {edits.map((e, i) => (
+                            <span key={i} className="text-muted font-mono text-[11px] leading-[1.4] break-words">
+                              {e.before.id}: {e.before.text}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                      {editing === k.id && (
+                        <form
+                          className="flex flex-col gap-1.5 pt-1"
+                          onSubmit={(ev) => {
+                            ev.preventDefault();
+                            if (!note.trim() || busy) return;
+                            onEdit(k.id, note.trim());
+                            setEditing(null);
+                            setNote("");
+                          }}
+                        >
+                          <textarea
+                            autoFocus
+                            rows={2}
+                            value={note}
+                            onChange={(ev) => setNote(ev.target.value)}
+                            aria-label={`What should check ${k.id} say?`}
+                            placeholder="What should this check say instead?"
+                            className="border-line bg-cream text-ink focus:border-terracotta w-full resize-none rounded-md border px-2 py-1.5 text-[13px] outline-none"
+                          />
+                          <span className="flex gap-2">
+                            <button
+                              type="submit"
+                              disabled={!note.trim() || busy}
+                              className="bg-terracotta h-7 rounded-md px-2.5 text-[12px] font-semibold text-white active:scale-[0.96] disabled:opacity-60"
+                            >
+                              Send
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditing(null)}
+                              className="border-line bg-cream text-ink h-7 rounded-md border px-2.5 text-[12px] font-semibold active:scale-[0.96]"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        </form>
+                      )}
                     </span>
+                    {st.rubric && editing !== k.id && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        aria-label={`Edit check ${k.id}`}
+                        onClick={() => {
+                          setEditing(k.id);
+                          setNote("");
+                        }}
+                        className="text-terracotta-deep h-6 shrink-0 self-start rounded-md px-1.5 text-[12px] font-semibold active:scale-[0.96] disabled:opacity-60"
+                      >
+                        Edit
+                      </button>
+                    )}
                   </div>
                 );
               })}

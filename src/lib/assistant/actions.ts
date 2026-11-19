@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { AttachmentSummary } from "@/lib/domain/entities";
+
 import { z } from "zod";
 
 import { applyTickets, archivedKeysFor } from "@/lib/agents/pipeline";
@@ -15,6 +17,8 @@ import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
 import { addFollowUpTicket } from "@/lib/board/follow-ups";
 import { rerunRedActions } from "@/lib/review/pipeline";
+import { SENTINELS, sentinel as findSentinel } from "@/lib/sentinels/roster";
+import { reviseRubricCheck } from "@/lib/sentinels/service";
 import { vcs } from "@/lib/vcs";
 
 /**
@@ -44,6 +48,15 @@ export const ASSISTANT_BRANCH_PREFIX = "formic/chat-";
 
 export const assistantActionSchema = z.discriminatedUnion("type", [
   z.object({
+    type: z.literal("revise_rubric_check"),
+    fix: z.string().trim().min(1).optional().describe("The id of a rubric fix an agent flagged."),
+    sentinel: z.string().trim().min(1).optional().describe("Without a fix: the Sentinel's name or id."),
+    check: z.string().trim().min(1).optional().describe("Without a fix: the check's id, such as 5b."),
+    note: z.string().trim().min(1).optional().describe("Without a fix: what is wrong and the change the person wants."),
+    current: z.string().optional().describe("The check's wording now, for the card to show."),
+    proposed: z.string().optional().describe("The proposed change, for the card to show."),
+  }),
+  z.object({
     type: z.literal("add_follow_up"),
     ticket: z.string().trim().min(1).describe("The key of the ticket that proposed it."),
     title: z.string().trim().min(1).describe("The follow-up's title, as that ticket lists it."),
@@ -51,6 +64,11 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("create_backlog_item"),
     request: z.string().trim().min(1).describe("The feature request, as the Product Agent should read it."),
+    screenshots: z
+      .array(z.string().min(1))
+      .max(5)
+      .optional()
+      .describe("For a playtest note: the screenshot ids its [Playtest note] line lists, so the item carries the pictures."),
   }),
   z.object({
     type: z.literal("create_epic_with_tickets"),
@@ -112,6 +130,9 @@ export function checkAction(
     };
   }
   const action = parsed.data;
+  if (action.type === "revise_rubric_check" && !action.fix && !(action.sentinel && action.check && action.note)) {
+    return { ok: false, problem: "Name the flagged fix, or the Sentinel, the check and the change." };
+  }
   if (action.type === "create_epic_with_tickets") {
     const tickets = action.tickets.map(toDraftTicket);
     const keys = new Set(tickets.map((t) => t.key));
@@ -144,9 +165,25 @@ export function checkAction(
 }
 
 /** Makes an approved change. Returns what now exists, for the conversation. */
-export async function applyAction(projectId: string, action: AssistantAction): Promise<string> {
+export async function applyAction(projectId: string, action: AssistantAction, approvedBy?: string): Promise<string> {
+  if (action.type === "revise_rubric_check") return reviseRubric(projectId, action, approvedBy);
   if (action.type === "create_backlog_item") {
+    const shots = await ownScreenshots(projectId, action.screenshots ?? []);
     const card = await boardPorts().service.createBacklogItem(projectId, action.request);
+    // Copied, not moved: the note keeps its picture in the chat.
+    for (const shot of shots) {
+      const content = await repository().attachmentContent(shot.id);
+      if (!content) continue;
+      await repository().createAttachment({
+        projectId,
+        epicId: card.id,
+        filename: shot.filename,
+        mimeType: content.mimeType,
+        kind: "image",
+        size: content.bytes.length,
+        bytes: content.bytes,
+      });
+    }
     return `Added ${card.key} to Backlog. The Product Agent is writing its PRD.`;
   }
   if (action.type === "add_follow_up") return addFollowUp(projectId, action);
@@ -201,6 +238,16 @@ export async function applyAction(projectId: string, action: AssistantAction): P
 }
 
 /** The source ticket and the index of the follow-up an add_follow_up names. */
+/** The screenshots named that really are on this board's playtest notes: a model cannot name another board's. */
+async function ownScreenshots(projectId: string, asked: string[]): Promise<AttachmentSummary[]> {
+  if (!asked.length) return [];
+  const { messages } = await repository().assistantMessages(projectId, { limit: 500 });
+  const known = new Map(
+    messages.filter((m) => m.playtestId).flatMap((m) => m.attachments.filter((a) => a.kind === "image").map((a) => [a.id, a] as const)),
+  );
+  return [...new Set(asked)].flatMap((id) => (known.has(id) ? [known.get(id)!] : []));
+}
+
 async function followUpOf(projectId: string, action: Extract<AssistantAction, { type: "add_follow_up" }>) {
   const card = await cardByKey(projectId, action.ticket);
   const ticket = await repository().ticketDetail(card.id);
@@ -230,11 +277,58 @@ async function addFollowUp(
 
 /** The person dismissed an add_follow_up proposal: its follow-up is dismissed too. */
 export async function dismissAction(projectId: string, action: AssistantAction): Promise<void> {
+  if (action.type === "revise_rubric_check") {
+    if (!action.fix) return;
+    const fix = await repository().rubricFix(action.fix);
+    if (fix && fix.projectId === projectId && (fix.status === "flagged" || fix.status === "proposed")) {
+      await repository().updateRubricFix(fix.id, { status: "declined" });
+    }
+    return;
+  }
   if (action.type !== "add_follow_up") return;
   const { ticket, index } = await followUpOf(projectId, action);
   if (index < 0) return;
   const followUps = ticket.followUps.map((f, i) => (i === index ? { ...f, outcome: { kind: "dismissed" as const } } : f));
   await repository().updateTicket(ticket.id, { followUps });
+}
+
+/**
+ * The person approved a rubric change: the fix records who and when, and the
+ * Sentinel revises that one check. A fix already decided is not applied again.
+ */
+async function reviseRubric(
+  projectId: string,
+  action: Extract<AssistantAction, { type: "revise_rubric_check" }>,
+  approvedBy?: string,
+): Promise<string> {
+  if (!approvedBy) throw new Error("A rubric change needs the person's approval.");
+  const repo = repository();
+  let fix = action.fix ? await repo.rubricFix(action.fix) : null;
+  if (action.fix) {
+    if (!fix || fix.projectId !== projectId) throw new Error("That rubric fix no longer exists.");
+    if (fix.status !== "flagged" && fix.status !== "proposed") throw new Error("That rubric fix was already decided.");
+  } else {
+    const name = (action.sentinel ?? "").toLowerCase();
+    const s = SENTINELS.find((x) => x.id.toLowerCase() === name || x.who.toLowerCase() === name);
+    if (!s) throw new Error(`There is no Sentinel called ${action.sentinel}.`);
+    fix = await repo.addRubricFix({
+      projectId,
+      sentinel: s.id,
+      checkId: action.check!,
+      problem: action.note!,
+      suggestion: action.note!,
+      flaggedBy: null,
+      status: "proposed",
+    });
+  }
+  const who = findSentinel(fix!.sentinel)?.who ?? fix!.sentinel;
+  await repo.updateRubricFix(fix!.id, { status: "approved", approvedBy, approvedAt: new Date() });
+  const started = await reviseRubricCheck(projectId, fix!.id);
+  if (!started.ok) {
+    await repo.updateRubricFix(fix!.id, { status: "failed", error: started.error });
+    throw new Error(started.error);
+  }
+  return `${who} is revising check ${fix!.checkId}. Every other check stays as it is.`;
 }
 
 async function cardByKey(projectId: string, key: string) {

@@ -2,7 +2,7 @@ import type { AuditPoint, AuditReport, Rubric } from "@/lib/db/repository";
 import type { Sentinel } from "./roster";
 import { cappedByFindings, unmetChecks } from "./rubric";
 
-/** createBacklogItem refuses a request longer than this (see POST /api/epics). */
+/** An audit's Epic request is trimmed to this, well under MAX_REQUEST, so agents read a short brief. */
 export const REQUEST_CAP = 4000;
 
 const SECTIONS = [
@@ -20,23 +20,28 @@ const line = (p: AuditPoint) => `- ${p.text}${p.ref ? ` (${p.ref})` : ""}`;
  * points.
  */
 export function requestFromReport(
-  sentinel: Pick<Sentinel, "who" | "name">,
+  sentinel: Pick<Sentinel, "id" | "who" | "name">,
   audit: { stars: number; summary: string | null; report: AuditReport; rubric?: Rubric | null; commitSha?: string | null; at?: string | null },
 ): string {
   const head = [
     `Fix ${sentinel.who}'s audit findings (${audit.stars} of 5 stars)`,
     audit.commitSha ? `Audited commit ${audit.commitSha.slice(0, 7)}${audit.at ? ` on ${audit.at.slice(0, 10)}` : ""}.` : "",
-    `Fix what ${sentinel.who} (${sentinel.name}) found in their audit. They rated the project ${audit.stars} of 5 stars.`,
+    `Fix what ${sentinel.who} (${sentinel.name}, id ${sentinel.id}) found in their audit. They rated the project ${audit.stars} of 5 stars.`,
     audit.summary ? `Summary: ${audit.summary}` : "",
   ]
     .filter(Boolean)
     .join("\n")
     .slice(0, 1000);
 
+  // unmetChecks keeps rubric order and leaves the id out, so pair the ids in the same order.
+  const unmetIds = (() => {
+    const met = new Set((audit.report.checks ?? []).filter((c) => c.met).map((c) => c.id));
+    return (audit.rubric?.rungs ?? []).flatMap((r) => r.checks).filter((k) => !met.has(k.id)).map((k) => k.id);
+  })();
   const unmet =
     audit.rubric && audit.report.checks
       ? unmetChecks(audit.rubric, audit.report.checks).map(
-          (c) => `- (${c.stars} stars) ${c.text}${c.evidence ? ` Found: ${c.evidence}` : ""}${c.how ? `\n  Verify: ${c.how}` : ""}`,
+          (c, i) => `- (${c.stars} stars, check ${unmetIds[i]}) ${c.text}${c.evidence ? ` Found: ${c.evidence}` : ""}${c.how ? `\n  Verify: ${c.how}` : ""}`,
         )
       : [];
   const capped = !!audit.rubric && cappedByFindings(audit.rubric, audit.report);

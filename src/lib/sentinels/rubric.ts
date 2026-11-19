@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { AuditCheck, AuditKind, AuditReport, CommandPass, Rubric, RubricCheck } from "@/lib/db/repository";
 import type { Sentinel } from "./roster";
+import type { CheckRevision } from "./rubric-fix";
 
 /**
  * A sentinel's rubric: the star ladder it writes for one project by
@@ -13,11 +14,17 @@ import type { Sentinel } from "./roster";
  */
 
 /** What a sentinel's run is for: writing its rubric, or scoring against one. */
-export type Goal = { kind: "calibrate" } | { kind: "audit"; rubric: Rubric };
+export type Goal =
+  | { kind: "calibrate" }
+  | { kind: "audit"; rubric: Rubric }
+  /** Rewrite one check of the rubric from the note the person approved. */
+  | { kind: "revise"; rubric: Rubric; checkId: string; note: string };
 
 /** A run's goal from its record, or null for an audit started without a rubric. */
 export function goalOf(run: { kind: AuditKind; rubric: Rubric | null }): Goal | null {
   if (run.kind === "calibrate") return { kind: "calibrate" };
+  // A revision needs its check and note, which only its fix knows.
+  if (run.kind === "revise") return null;
   return run.rubric ? { kind: "audit", rubric: run.rubric } : null;
 }
 
@@ -31,6 +38,23 @@ export const CALIBRATE_RULES = `You are calibrating, not auditing: do not rate t
 
 /** What every audit is asked about its rubric. */
 export const SCORE_RULES = `Your stars are not yours to choose: they come from the rubric below, which you wrote when you calibrated on this project. For every check, say whether it is met and give the evidence: the file and line you read, or the command you ran and what it showed. For a check with a Command, run exactly that command from the repository root and put its exit code and full output in ran: that result decides the check, not your reading of it. When you cannot run commands, leave ran null and judge it from the code as you would any other check. A check you could not verify is not met; say why. Judge each check exactly as written: do not raise or lower its bar, and do not add checks. Everything else you find goes in the report, where it informs the next calibration. 5 stars means you have no findings: every finding you report (what does not work, what is wrong, what is missing) holds the project below 5, so an audit that meets every check but lists a finding is scored 4.`;
+
+/** What a revision is asked: one check, from a note the person approved. */
+export const REVISE_RULES = `You are revising one check of your rubric, not auditing and not calibrating. The person approved the note below as the change to make. Rewrite only that check from the note: keep its id, and write its text, how, command and pass so the check is still one pass/fail statement a later audit can verify the same way every time. Do not touch, restate or reorder any other check. Only name files you were shown: read the repository, and when the note names a path, confirm it exists before you write it into the check. When one shell command run from the repository root settles the check, give it as the command with pass "empty" or "exit0"; otherwise leave command and pass null.`;
+
+/** A revision's answer: the one check, without its id. */
+export const revisionSchema = z.object({
+  text: z.string().describe("The check, as one pass/fail statement about this project."),
+  how: z.string().describe("How to verify it: the file to read or the command to run, and what passing looks like."),
+  command: z.string().nullable().default(null).describe("The one shell command that decides this check, or null."),
+  pass: z.enum(["empty", "exit0"]).nullable().default(null).describe('With a command: "empty" or "exit0". Null without one.'),
+});
+
+/** A revision as it is applied: trimmed, with a command's pass defaulted. */
+export function finishedRevision(r: z.infer<typeof revisionSchema>): CheckRevision {
+  const command = r.command?.trim() || null;
+  return { text: r.text.trim(), how: r.how.trim(), command, pass: command ? (r.pass ?? "exit0") : null };
+}
 
 export const calibrationSchema = z.object({
   context: z.string().describe("Two plain sentences: what this project is, and what matters most in it for your role."),

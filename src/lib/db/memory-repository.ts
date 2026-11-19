@@ -35,7 +35,12 @@ import type {
   TicketUpdate,
   AssistantMessage,
   AssistantProposal,
+  PlaytestPatch,
+  PlaytestRecord,
   AuditKind,
+  NewRubricFix,
+  RubricFix,
+  RubricFixPatch,
   AuditRecord,
   AuditResult,
   Rubric,
@@ -130,6 +135,7 @@ interface AttachmentRow {
   epicId: string | null;
   ticketId: string | null;
   requestId: string | null;
+  assistantMessageId?: string | null;
   filename: string;
   mimeType: string;
   kind: AttachmentSummary["kind"];
@@ -225,9 +231,11 @@ interface Store {
   /** Card id to whose keys its work runs on. */
   actors: Map<string, string>;
   assistant: AssistantMessage[];
+  playtests: PlaytestRecord[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
   audits: AuditRecord[];
+  rubricFixes: RubricFix[];
 }
 
 declare global {
@@ -327,9 +335,11 @@ function store(): Store {
     memberAgents: new Map(),
     actors: new Map(),
     assistant: [],
+    playtests: [],
     cardChat: [],
     attachments: new Map(),
     audits: [],
+    rubricFixes: [],
   };
   globalThis.__formicMemoryStore = s;
   return s;
@@ -361,6 +371,15 @@ function historyOf(s: Store, card: BoardCard): TicketColumnEntry[] {
     s.columnEntries.set(card.id, history);
   }
   return history;
+}
+
+/** Closes the open stay and opens the next at one instant, if the column changed. */
+function recordColumnChange(history: TicketColumnEntry[], column: ColumnId): void {
+  if (history.at(-1)?.column === column) return;
+  const now = new Date().toISOString();
+  const open = history.at(-1);
+  if (open) open.exitedAt = now;
+  history.push({ column, enteredAt: now, exitedAt: null, synthetic: false });
 }
 
 function projectOf(s: Store, card: BoardCard): string {
@@ -690,6 +709,7 @@ export class MemoryRepository implements Repository {
       s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
       s.cardChat = s.cardChat.filter((m) => m.projectId !== projectId);
       s.audits = s.audits.filter((a) => a.projectId !== projectId);
+      s.rubricFixes = s.rubricFixes.filter((f) => f.projectId !== projectId);
       s.epicNumbers.delete(projectId);
       s.standaloneTicketNumbers.delete(projectId);
       s.queensSpent.delete(projectId);
@@ -1280,12 +1300,7 @@ export class MemoryRepository implements Repository {
         stalledIn: input.stalledIn,
         misplacedIn: input.misplaced?.in,
       });
-      if (history.at(-1)?.column !== to) {
-        const now = new Date().toISOString();
-        const open = history.at(-1);
-        if (open) open.exitedAt = now;
-        history.push({ column: to, enteredAt: now, exitedAt: null, synthetic: false });
-      }
+      recordColumnChange(history, to);
     }
     if (card.status !== input.status) {
       card.updatedAt = new Date().toISOString();
@@ -1379,13 +1394,14 @@ export class MemoryRepository implements Repository {
 
   async claimAttachments(
     requestId: string,
-    ref: { epicId: string } | { ticketId: string },
+    ref: { epicId: string } | { ticketId: string } | { assistantMessageId: string },
   ): Promise<void> {
     for (const row of store().attachments.values()) {
       if (row.requestId !== requestId) continue;
       row.requestId = null;
       if ("epicId" in ref) row.epicId = ref.epicId;
-      else row.ticketId = ref.ticketId;
+      else if ("ticketId" in ref) row.ticketId = ref.ticketId;
+      else row.assistantMessageId = ref.assistantMessageId;
     }
   }
 
@@ -1733,6 +1749,17 @@ export class MemoryRepository implements Repository {
       if (update.workType !== undefined) card.workType = update.workType;
       card.bugSeverity = severityFor(card.workType, update.bugSeverity !== undefined ? update.bugSeverity : card.bugSeverity);
     }
+    if (card.kind === "ticket" && (update.status !== undefined || update.stalledIn !== undefined)) {
+      recordColumnChange(
+        historyOf(s, card),
+        columnOf({
+          status: update.status ?? card.status,
+          stalledIn: update.stalledIn !== undefined ? update.stalledIn : card.stalledIn,
+          // A status change clears a misplacement; a stall alone keeps it.
+          misplacedIn: update.status !== undefined ? null : card.misplacedIn,
+        }),
+      );
+    }
     if (update.status !== undefined && update.status !== card.status) {
       card.updatedAt = new Date().toISOString();
       if (update.status === "running" && !card.startedAt) card.startedAt = card.updatedAt;
@@ -2076,6 +2103,54 @@ export class MemoryRepository implements Repository {
     if (audit) audit.epicId = epicId;
   }
 
+  async reviseCalibration(auditId: string, rubric: Rubric): Promise<void> {
+    const audit = store().audits.find((a) => a.id === auditId);
+    if (!audit || audit.kind !== "calibrate" || audit.status !== "done") {
+      throw new Error("Only a done calibration's rubric can be revised");
+    }
+    audit.rubric = structuredClone(rubric);
+  }
+
+  async addRubricFix(input: NewRubricFix): Promise<RubricFix> {
+    const fix: RubricFix = {
+      id: `fix_${Math.random().toString(36).slice(2, 10)}`,
+      ticketId: null,
+      ticketKey: null,
+      flaggedBy: null,
+      status: "flagged",
+      messageId: null,
+      before: null,
+      after: null,
+      approvedBy: null,
+      approvedAt: null,
+      appliedAt: null,
+      error: null,
+      createdAt: new Date(),
+      ...input,
+    };
+    store().rubricFixes.push(fix);
+    return structuredClone(fix);
+  }
+
+  async rubricFix(id: string): Promise<RubricFix | null> {
+    const fix = store().rubricFixes.find((f) => f.id === id);
+    return fix ? structuredClone(fix) : null;
+  }
+
+  async rubricFixesFor(projectId: string, sentinel?: string): Promise<RubricFix[]> {
+    return store()
+      .rubricFixes.filter((f) => f.projectId === projectId && (!sentinel || f.sentinel === sentinel))
+      .map((f) => structuredClone(f))
+      .reverse();
+  }
+
+  async updateRubricFix(id: string, patch: RubricFixPatch): Promise<RubricFix | null> {
+    const fix = store().rubricFixes.find((f) => f.id === id);
+    if (!fix) return null;
+    Object.assign(fix, structuredClone(patch));
+    return structuredClone(fix);
+  }
+
   async finishAudit(id: string, result: AuditResult): Promise<void> {
     const s = store();
     const audit = s.audits.find((a) => a.id === id);
@@ -2285,7 +2360,13 @@ export class MemoryRepository implements Repository {
     projectId: string,
     page: { before?: string; limit?: number } = {},
   ): Promise<MessagePage<AssistantMessage>> {
-    return pageMessages(store().assistant.filter((m) => m.projectId === projectId), page);
+    const found = await pageMessages(store().assistant.filter((m) => m.projectId === projectId), page);
+    return {
+      ...found,
+      messages: await Promise.all(
+        found.messages.map(async (m) => ({ ...m, attachments: await this.attachmentsFor({ assistantMessageId: m.id }) })),
+      ),
+    };
   }
 
   async pendingAssistantMessage(projectId: string, role?: "user" | "assistant"): Promise<AssistantMessage | null> {
@@ -2315,6 +2396,7 @@ export class MemoryRepository implements Repository {
     speaker?: string;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
+    playtestId?: string | null;
   }): Promise<AssistantMessage> {
     const message: AssistantMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 10)}`,
@@ -2323,12 +2405,78 @@ export class MemoryRepository implements Repository {
       speaker: "assistant",
       createdAt: new Date(),
       ...input,
+      playtestId: input.playtestId ?? null,
       cards: input.cards ?? [],
+      attachments: [],
       proposals: input.proposals ?? [],
       status: input.status ?? "done",
     };
     store().assistant.push(message);
     return { ...message };
+  }
+
+  async createPlaytest(input: { projectId: string; userId: string; endsAt: Date }): Promise<PlaytestRecord> {
+    const now = new Date();
+    const record: PlaytestRecord = {
+      id: `pt_${Math.random().toString(36).slice(2, 10)}`,
+      ...input,
+      commitSha: null,
+      sandboxId: null,
+      url: null,
+      status: "starting",
+      stage: null,
+      kind: null,
+      logTail: null,
+      error: null,
+      endReason: null,
+      summary: null,
+      warned: false,
+      nudgedSha: null,
+      answeredAt: null,
+      heartbeatAt: now,
+      startedAt: now,
+      endedAt: null,
+    };
+    store().playtests.push(record);
+    return { ...record };
+  }
+
+  async playtest(id: string): Promise<PlaytestRecord | null> {
+    const found = store().playtests.find((p) => p.id === id);
+    return found ? { ...found } : null;
+  }
+
+  async updatePlaytest(id: string, patch: PlaytestPatch): Promise<void> {
+    const found = store().playtests.find((p) => p.id === id);
+    if (found) Object.assign(found, patch);
+  }
+
+  async playtestsFor(projectId: string, limit = 30): Promise<PlaytestRecord[]> {
+    return store()
+      .playtests.filter((p) => p.projectId === projectId)
+      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
+      .slice(0, limit)
+      .map((p) => ({ ...p }));
+  }
+
+  async openPlaytestsFor(userId: string): Promise<PlaytestRecord[]> {
+    return store()
+      .playtests.filter((p) => p.userId === userId && (p.status === "starting" || p.status === "live"))
+      .map((p) => ({ ...p }));
+  }
+
+  async openPlaytests(): Promise<PlaytestRecord[]> {
+    return store()
+      .playtests.filter((p) => p.status === "starting" || p.status === "live")
+      .map((p) => ({ ...p }));
+  }
+
+  async playtestMessages(playtestId: string): Promise<AssistantMessage[]> {
+    return Promise.all(
+      store()
+        .assistant.filter((m) => m.playtestId === playtestId)
+        .map(async (m) => ({ ...m, attachments: await this.attachmentsFor({ assistantMessageId: m.id }) })),
+    );
   }
 
   async unreadPmCount(projectId: string, since: Date | null): Promise<number> {
@@ -2352,6 +2500,9 @@ export class MemoryRepository implements Repository {
   async clearAssistant(projectId: string): Promise<void> {
     const s = store();
     s.assistant = s.assistant.filter((m) => m.projectId !== projectId);
+    for (const [id, row] of s.attachments) {
+      if (row.projectId === projectId && row.assistantMessageId) s.attachments.delete(id);
+    }
   }
 
   async cardChatMessages(cardId: string, page: { before?: string; limit?: number } = {}): Promise<MessagePage<CardChatMessage>> {
@@ -2508,6 +2659,7 @@ function isScout(s: Store, card: BoardCard): boolean {
 function matchesAttachmentRef(row: AttachmentRow, ref: AttachmentRef): boolean {
   if ("epicId" in ref) return row.epicId === ref.epicId;
   if ("ticketId" in ref) return row.ticketId === ref.ticketId;
+  if ("assistantMessageId" in ref) return row.assistantMessageId === ref.assistantMessageId;
   return row.requestId === ref.requestId;
 }
 

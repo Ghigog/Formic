@@ -7,7 +7,7 @@ import { SoundEngine } from "@/components/colony/sound";
 import { resetViewport, setViewportMatches } from "@/test/viewport";
 import { SENTINELS } from "@/lib/sentinels/roster";
 import { SENTINEL_STOPPED, type SentinelStates } from "@/lib/sentinels/view";
-import { SentinelsPage } from "./sentinels";
+import { LAND_MS, SLIDE_MS, SLIDE_STAGGER_MS, SentinelsPage } from "./sentinels";
 import { SentinelsProvider } from "./store";
 
 const RUBRIC = {
@@ -33,6 +33,7 @@ const states = (reported: string[]): SentinelStates =>
         files: [],
         commitSha: null,
         rubric: reported.includes(x.id) ? { rubric: RUBRIC, at: null, model: null } : null,
+        edits: {},
         rubricChanged: false,
         hold: null,
         doneSince: 0,
@@ -48,7 +49,7 @@ function Open() {
   return <button onClick={() => c?.setSentinelsOpen(true)}>open sentinels</button>;
 }
 
-async function open(level = 34) {
+async function open(level = 34, sync = false) {
   render(
     <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
       <SentinelsProvider initial={states([SENTINELS[0]!.id, SENTINELS[3]!.id])} level={level}>
@@ -57,7 +58,8 @@ async function open(level = 34) {
       </SentinelsProvider>
     </ColonyProvider>,
   );
-  await userEvent.click(screen.getByText("open sentinels"));
+  if (sync) act(() => screen.getByText("open sentinels").click());
+  else await userEvent.click(screen.getByText("open sentinels"));
 }
 
 // jsdom has no Web Animations API; every test gets a fresh stub and none leaks.
@@ -98,17 +100,30 @@ describe("SentinelsPage motion and sound", () => {
     expect(play).not.toHaveBeenCalledWith("sentinelsOpen", expect.anything());
   });
 
-  it("plays one toc per reported card as it lands, none for the sweep", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  it("plays each reported sentinel's voice and toc the moment its card lands", async () => {
+    vi.useFakeTimers();
     try {
-      await open();
-      const lands = () => play.mock.calls.filter(([n]: unknown[]) => n === "sentinelLand");
-      expect(lands()).toHaveLength(0);
+      await open(34, true);
+      const sounds = () =>
+        play.mock.calls.filter(([n]: unknown[]) => n === "sentinelLand" || n === "sentinelVoice");
+      const keyframes = animate.mock.calls[0]![0] as { transform: string; offset?: number }[];
+      expect(keyframes.find((k) => k.transform === "none")?.offset).toBeCloseTo(LAND_MS / SLIDE_MS);
       act(() => {
-        vi.advanceTimersByTime(10_000);
+        vi.advanceTimersByTime(LAND_MS - 20);
       });
-      expect(lands()).toEqual([
+      expect(sounds()).toHaveLength(0);
+      act(() => {
+        vi.advanceTimersByTime(20);
+      });
+      expect(sounds()).toEqual([
+        ["sentinelVoice", 0],
         ["sentinelLand", 0],
+      ]);
+      act(() => {
+        vi.advanceTimersByTime(SLIDE_STAGGER_MS);
+      });
+      expect(sounds().slice(2)).toEqual([
+        ["sentinelVoice", 3],
         ["sentinelLand", 1],
       ]);
       expect(play.mock.calls.some(([n]: unknown[]) => n === "sentinelsOpen")).toBe(false);
@@ -540,5 +555,74 @@ describe("Stopping a Sentinel", () => {
     expect(fetchMock).toHaveBeenCalledWith(`/api/sentinels/${x.id}/stop`, { method: "POST" });
     await act(async () => finish());
     expect(await within(report).findByText(/Stopped by you/)).toBeTruthy();
+  });
+});
+
+describe("Rubric checks: edited chip, earlier wordings and Edit", () => {
+  const x = SENTINELS[0]!;
+  const before = { id: "5a", text: "Reads app/Old.kt.", how: "Read it." };
+  const edited = (): SentinelStates => {
+    const all = states([x.id]);
+    const rubric = { ...RUBRIC, rungs: RUBRIC.rungs.map((r) => (r.stars === 5 ? { ...r, checks: [{ ...before, text: "Reads app/New.kt." }] } : r)) };
+    all[x.id] = {
+      ...all[x.id]!,
+      rubric: { rubric, at: null, model: null },
+      rubricChanged: true,
+      report: { likes: [], dislikes: [], wrong: [], missing: [] },
+      edits: {
+        "5a": [
+          {
+            before,
+            after: { ...before, text: "Reads app/New.kt." },
+            approver: "Ada",
+            approvedAt: new Date(Date.now() - 3_600_000).toISOString(),
+          },
+        ],
+      },
+    };
+    return all;
+  };
+
+  async function openWith(initial: SentinelStates) {
+    render(
+      <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
+        <SentinelsProvider initial={initial} level={34}>
+          <Open />
+          <SentinelsPage repoName="repo" onOpenEpic={() => {}} />
+        </SentinelsProvider>
+      </ColonyProvider>,
+    );
+    await userEvent.click(screen.getByText("open sentinels"));
+    await userEvent.click(document.querySelector<HTMLElement>(`[data-card="${x.id}"]`)!);
+  }
+
+  it("shows an edited chip with when and by whom, and the earlier-rubric note", async () => {
+    await openWith(edited());
+    expect(screen.getByRole("button", { name: /edited .* by Ada/ })).toBeTruthy();
+    expect(screen.getByText(/scored against an earlier rubric/)).toBeTruthy();
+    expect(screen.queryByText("Reads app/Old.kt.", { exact: false })).toBeNull();
+  });
+
+  it("reveals the earlier wordings when the chip is tapped", async () => {
+    await openWith(edited());
+    await userEvent.click(screen.getByRole("button", { name: /edited .* by Ada/ }));
+    expect(screen.getByText("5a: Reads app/Old.kt.")).toBeTruthy();
+  });
+
+  it("sends a note for one check and shows the Sentinel running", async () => {
+    const fetchMock = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+    const initial = states([x.id]);
+    initial[x.id]!.report = { likes: [], dislikes: [], wrong: [], missing: [] };
+    await openWith(initial);
+    await userEvent.click(screen.getByRole("button", { name: "Edit check 3a" }));
+    await userEvent.type(screen.getByRole("textbox", { name: /check 3a/ }), "Name the real file");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/sentinels/${x.id}/checks`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ checkId: "3a", note: "Name the real file" }) }),
+    );
+    expect(await screen.findByText(/revising a check/)).toBeTruthy();
+    vi.unstubAllGlobals();
   });
 });

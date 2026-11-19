@@ -1,4 +1,4 @@
-import type { AuditKind, AuditRecord, AuditReport, Rubric } from "@/lib/db/repository";
+import type { AuditKind, AuditRecord, AuditReport, Rubric, RubricCheck } from "@/lib/db/repository";
 import { SENTINELS } from "./roster";
 import { sameRubric } from "./rubric";
 
@@ -14,6 +14,22 @@ export const STALE_JOB_AFTER_MS = 45 * 60_000;
 
 /** The error of a run its board owner stopped, so the page can tell it from a failure. */
 export const SENTINEL_STOPPED = "Stopped by you. Summon it again when you're ready.";
+
+/** One applied correction of a single rubric check. */
+export interface CheckEdit {
+  before: RubricCheck;
+  after: RubricCheck;
+  /** Who approved it: their name, or login. */
+  approver: string;
+  /** When they approved it, ISO. */
+  approvedAt: string;
+}
+
+/** What the page needs of an applied fix. */
+export interface AppliedFix extends CheckEdit {
+  sentinel: string;
+  checkId: string;
+}
 
 export interface SentinelState {
   id: string;
@@ -37,6 +53,8 @@ export interface SentinelState {
   rubric: { rubric: Rubric; at: string | null; model: string | null } | null;
   /** The Epic made from the report while it is still open: a new audit waits for it to be Done or archived. */
   hold: { epicId: string; key: string } | null;
+  /** The rubric's edited checks by check id, each with its edits oldest first. */
+  edits: Record<string, CheckEdit[]>;
   /** Whether the report was scored against a rubric since replaced by calibrating again. */
   rubricChanged: boolean;
   /** Story points of tickets that reached Done since the report was written. */
@@ -64,6 +82,7 @@ export function sentinelStates(
   now = Date.now(),
   shipped: Shipped[] = [],
   openEpics: OpenEpics = {},
+  applied: AppliedFix[] = [],
 ): SentinelStates {
   const out: SentinelStates = {};
   for (const s of SENTINELS) {
@@ -103,6 +122,7 @@ export function sentinelStates(
           }
         : null,
       hold: heldBy ? { epicId: heldBy, key: openEpics[heldBy]! } : null,
+      edits: editsOf(applied.filter((f) => f.sentinel === s.id)),
       rubricChanged: !!done?.rubric && !!calibrated && !sameRubric(done.rubric, calibrated.rubric),
       doneSince,
       auditStale: finishedAt !== null && doneSince > s.staleAfterPoints,
@@ -118,6 +138,13 @@ export function sentinelStates(
             : null,
     };
   }
+  return out;
+}
+
+function editsOf(fixes: AppliedFix[]): Record<string, CheckEdit[]> {
+  const out: Record<string, CheckEdit[]> = {};
+  for (const { sentinel: _s, checkId, ...edit } of fixes) (out[checkId] ??= []).push(edit);
+  for (const list of Object.values(out)) list.sort((a, b) => a.approvedAt.localeCompare(b.approvedAt));
   return out;
 }
 

@@ -376,7 +376,7 @@ export function ColonyPopover({ projectId, onOpenArchive }: { projectId?: string
           <h3 className="text-ink m-0 text-[11px] font-semibold tracking-[0.1em] uppercase">Bug shape</h3>
           <div className="grid grid-cols-6 gap-1.5">
             {SHAPE_UNLOCKS.map((u) => {
-              const locked = s.level < u.lv;
+              const locked = c.styleLevel < u.lv;
               const on = c.shape === u.key;
               return (
                 <button
@@ -409,7 +409,7 @@ export function ColonyPopover({ projectId, onOpenArchive }: { projectId?: string
           <h3 className="text-ink m-0 text-[11px] font-semibold tracking-[0.1em] uppercase">Bug colour</h3>
           <div className="grid grid-cols-6 gap-1.5">
             {COLOR_UNLOCKS.map((u) => {
-              const locked = s.level < u.lv;
+              const locked = c.styleLevel < u.lv;
               const on = c.color === u.key;
               return (
                 <button

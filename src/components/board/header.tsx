@@ -61,7 +61,7 @@ export function BoardHeader({
               <RepoPicker
                 current={repoFullName}
                 onClose={() => setPicker(false)}
-                className="absolute top-full left-0 mt-2"
+                className="fixed top-[57px] left-6"
               />
             )}
           </div>

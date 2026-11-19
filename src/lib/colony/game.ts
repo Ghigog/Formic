@@ -128,6 +128,9 @@ export const SENTINEL_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: n
   lv: s.unlockLevel,
 }));
 
+/** The level that unlocks Playtest: run what Done holds in a sandbox, with the PM beside it. */
+export const PLAYTEST_LEVEL = 15;
+
 /**
  * The board features that stay hidden until the colony reaches their level, in
  * level order. General chat and the points, with heat, are always on, so they
@@ -136,6 +139,7 @@ export const SENTINEL_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: n
 export const FEATURE_UNLOCKS = [
   { key: "sentinels", label: "Sentinels", lv: 2 },
   { key: "timeline", label: "Timeline", lv: 10 },
+  { key: "playtest", label: "Playtest", lv: PLAYTEST_LEVEL },
   { key: "kpis", label: "KPIs", lv: 20 },
 ] as const;
 

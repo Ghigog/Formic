@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { UserRecord } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
+import { MAX_REQUEST } from "@/lib/domain/request";
 import { COLUMNS } from "@/lib/domain/status";
 import {
   commentCard,
@@ -64,7 +65,7 @@ export function mcpServerFor(user: UserRecord, readOnly: boolean): McpServer {
     "create_backlog_card",
     {
       description: "Adds a request to the board's Backlog, as the UI's New card does.",
-      inputSchema: { board: z.string(), rawRequest: z.string().trim().min(3).max(4000) },
+      inputSchema: { board: z.string(), rawRequest: z.string().trim().min(3).max(MAX_REQUEST) },
     },
     async (input) => reply(await createBacklogCard(caller, input)),
   );
@@ -75,7 +76,7 @@ export function mcpServerFor(user: UserRecord, readOnly: boolean): McpServer {
       inputSchema: {
         board: z.string(),
         title: z.string().trim().min(1).max(120),
-        rawRequest: z.string().trim().min(1).max(4000),
+        rawRequest: z.string().trim().min(1).max(MAX_REQUEST),
         tickets: z
           .array(
             z.object({

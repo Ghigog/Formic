@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { asSignedIn } from "@/lib/auth/user";
 import { z } from "zod";
+import { MAX_REQUEST } from "@/lib/domain/request";
 import { createBacklogItem } from "@/lib/board/service";
 import { activeProject, noProject } from "@/lib/board/project";
 import { limited, RUN } from "@/lib/rate-limit";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  rawRequest: z.string().trim().min(3, "Describe the feature in a sentence or two.").max(4000),
+  rawRequest: z.string().trim().min(3, "Describe the feature in a sentence or two.").max(MAX_REQUEST),
   requestId: z.string().optional(),
 });
 

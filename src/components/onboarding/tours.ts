@@ -76,6 +76,8 @@ export type TourId =
   | "sentinels-intro"
   | "timeline-intro"
   | "kpis-intro"
+  | "playtest-intro"
+  | "playtest"
   | "swap-intro";
 
 export const TOURS: Record<TourId, TourDef> = {
@@ -213,6 +215,60 @@ export const TOURS: Record<TourId, TourDef> = {
         side: "below",
         title: "KPIs",
         text: "Your board's numbers: how fast work ships and how much comes back. Tap to look closer.",
+      },
+    ],
+  },
+
+  "playtest-intro": {
+    id: "playtest-intro",
+    endInNest: true,
+    allThere: true,
+    steps: [
+      {
+        target: "playtest",
+        side: "below",
+        column: "done",
+        title: "Playtest",
+        text: "Playtest! Try what your colony built, live in its own sandbox. Write notes as you play and I'll sort out what needs fixing.",
+      },
+      {
+        target: "playtest-key",
+        side: "below",
+        column: "done",
+        title: "Your sandbox",
+        next: "Got it",
+        text: "It runs on your own E2B key. Add it in Settings and this button wakes up.",
+      },
+    ],
+  },
+
+  playtest: {
+    id: "playtest",
+    steps: [
+      {
+        target: "playtest-frame",
+        side: "inside",
+        title: "Play",
+        text: "This is your project, running in its own sandbox. Play it like anyone would.",
+      },
+      {
+        target: "playtest-notes",
+        side: "left",
+        title: "Notes",
+        text: "Something off? Write it here and press Enter. I'll say if it needs a ticket, is already known, or is meant to be that way.",
+      },
+      {
+        target: "playtest-shot",
+        side: "below",
+        title: "Screenshot",
+        text: "Drag across the part you mean and it joins your note.",
+        touchText: "Drag a finger across the part you mean and it joins your note.",
+      },
+      {
+        target: "playtest-sessions",
+        side: "below",
+        title: "Sessions",
+        text: "Every playtest is kept here, notes and all, after you close it.",
       },
     ],
   },

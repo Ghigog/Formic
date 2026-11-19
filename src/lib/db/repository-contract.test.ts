@@ -4,7 +4,7 @@ import { MemoryRepository } from "./memory-repository";
 import { PrismaRepository } from "./prisma-repository";
 import { prisma } from "./client";
 import { readFileSync } from "node:fs";
-import type { CreateTicketInput, Repository } from "./repository";
+import type { CreateTicketInput, Repository, Rubric } from "./repository";
 
 /**
  * One contract, both stores. The in-memory store is what the app runs on
@@ -39,6 +39,45 @@ function contract(name: string, make: () => Repository) {
       expect([...(await repo.openedAtByProject(user.id)).keys()]).toEqual([project.id]);
       const other = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
       expect((await repo.openedAtByProject(other.id)).size).toBe(0);
+    });
+
+    it("keeps playtest sessions, their notes, and which are still open", async () => {
+      const user = await repo.upsertUser({ githubId: Math.floor(Math.random() * 2 ** 31), login: `u${randomUUID()}`, name: null, avatarUrl: null });
+      const project = await repo.ensureProject({ ownerId: user.id, repoFullName: `acme/${randomUUID()}`, baseBranch: "main" });
+      const endsAt = new Date(Date.now() + 20 * 60_000);
+      const first = await repo.createPlaytest({ projectId: project.id, userId: user.id, endsAt });
+      expect(first).toMatchObject({ status: "starting", url: null, warned: false, answeredAt: null, endedAt: null });
+      expect(first.endsAt.getTime()).toBe(endsAt.getTime());
+
+      await repo.updatePlaytest(first.id, { status: "live", url: "https://8484-x.e2b.app", commitSha: "abc", warned: true });
+      expect(await repo.playtest(first.id)).toMatchObject({ status: "live", url: "https://8484-x.e2b.app", commitSha: "abc", warned: true });
+      expect((await repo.openPlaytestsFor(user.id)).map((p) => p.id)).toEqual([first.id]);
+      expect((await repo.openPlaytests()).some((p) => p.id === first.id)).toBe(true);
+
+      const requestId = `playtest-${randomUUID()}`;
+      const shot = await repo.createAttachment({
+        projectId: project.id,
+        requestId,
+        filename: "shot.png",
+        mimeType: "image/png",
+        kind: "image",
+        size: 3,
+        bytes: new Uint8Array([1, 2, 3]),
+      });
+      const note = await repo.addAssistantMessage({ projectId: project.id, role: "user", content: "Jump is late", playtestId: first.id });
+      await repo.claimAttachments(requestId, { assistantMessageId: note.id });
+      await repo.addAssistantMessage({ projectId: project.id, role: "user", content: "not in a playtest" });
+      expect(note.playtestId).toBe(first.id);
+      const notes = await repo.playtestMessages(first.id);
+      expect(notes.map((m) => m.content)).toEqual(["Jump is late"]);
+      expect(notes[0]!.attachments.map((a) => a.id)).toEqual([shot.id]);
+
+      await repo.updatePlaytest(first.id, { status: "ended", endedAt: new Date(), endReason: "stopped" });
+      expect(await repo.openPlaytestsFor(user.id)).toEqual([]);
+      await new Promise((r) => setTimeout(r, 5));
+      const second = await repo.createPlaytest({ projectId: project.id, userId: user.id, endsAt });
+      expect((await repo.playtestsFor(project.id)).map((p) => p.id)).toEqual([second.id, first.id]);
+      expect(await repo.playtest("no-such-playtest")).toBeNull();
     });
 
     it("remembers a board's tour per person and board, even before the first open", async () => {
@@ -206,6 +245,53 @@ function contract(name: string, make: () => Repository) {
         await move(t.id, "waiting");
         await move(t.id, "ready");
         expect(await repo.ticketColumnEntries(t.id)).toHaveLength(1);
+      });
+
+      it("records every column an agent takes a ticket through with updateTicket", async () => {
+        const { t } = await started();
+        await repo.updateTicket(t.id, { status: "running" });
+        await repo.updateTicket(t.id, { status: "review" });
+        await repo.updateTicket(t.id, { status: "merged" });
+        const entries = await repo.ticketColumnEntries(t.id);
+        expect(entries.map((e) => e.column)).toEqual(["todo", "in_progress", "in_review", "done"]);
+        expect(entries[0]?.exitedAt).toBe(entries[1]?.enteredAt);
+        expect(entries[1]?.exitedAt).toBe(entries[2]?.enteredAt);
+        expect(entries[2]?.exitedAt).toBe(entries[3]?.enteredAt);
+        expect(entries.slice(0, 3).every((e) => e.exitedAt !== null)).toBe(true);
+        expect(entries[3]?.exitedAt).toBeNull();
+        expect((await repo.cardById(t.id))?.enteredAt).toBe(entries[3]?.enteredAt);
+      });
+
+      it("writes nothing when updateTicket changes the status within a column", async () => {
+        const { t } = await started();
+        await repo.updateTicket(t.id, { status: "waiting" });
+        await repo.updateTicket(t.id, { status: "ready" });
+        expect(await repo.ticketColumnEntries(t.id)).toHaveLength(1);
+      });
+
+      it("records a stall that changes the column", async () => {
+        const { t } = await started();
+        await repo.updateTicket(t.id, { status: "blocked", stalledIn: "backlog" });
+        const entries = await repo.ticketColumnEntries(t.id);
+        expect(entries.map((e) => e.column)).toEqual(["todo", "backlog"]);
+        expect(entries[0]?.exitedAt).toBe(entries[1]?.enteredAt);
+      });
+
+      it("closes a misplaced stay when an agent's status sends the ticket back", async () => {
+        const { t } = await started();
+        await repo.move({
+          cardId: t.id,
+          kind: "ticket",
+          status: "ready",
+          stalledIn: null,
+          position: 1,
+          misplaced: { in: "in_review", reason: "placed by hand" },
+        });
+        await repo.updateTicket(t.id, { status: "running" });
+        const entries = await repo.ticketColumnEntries(t.id);
+        expect(entries.map((e) => e.column)).toEqual(["todo", "in_review", "in_progress"]);
+        expect(entries[1]?.exitedAt).toBe(entries[2]?.enteredAt);
+        expect(entries[2]?.exitedAt).toBeNull();
       });
     });
 
@@ -1097,6 +1183,72 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.runningAuditJobs(p.id)).map((a) => a.id)).toEqual([withJob.id]);
       });
 
+      describe("rubric fixes", () => {
+        const rubricOf = (text: string): Rubric => ({
+          context: "A rubric for the contract test",
+          rungs: [{ stars: 5, checks: [{ id: "5b", text, how: "read it" }] }],
+        });
+
+        it("revises a calibration's rubric and leaves an audit's alone", async () => {
+          const p = await project();
+          const cal = await repo.startAudit(p.id, "architecture", "calibrate");
+          await repo.finishAudit(cal.id, { status: "done", rubric: rubricOf("old") });
+          const audit = await repo.startAudit(p.id, "architecture", "audit", rubricOf("old"));
+          await repo.finishAudit(audit.id, { status: "done", stars: 3 });
+
+          await repo.reviseCalibration(cal.id, rubricOf("new"));
+
+          expect((await repo.auditDetail(cal.id))?.rubric).toEqual(rubricOf("new"));
+          expect((await repo.auditDetail(audit.id))?.rubric).toEqual(rubricOf("old"));
+        });
+
+        it("refuses an audit record and saves nothing", async () => {
+          const p = await project();
+          const audit = await repo.startAudit(p.id, "architecture", "audit", rubricOf("old"));
+          await repo.finishAudit(audit.id, { status: "done", stars: 3 });
+          await expect(repo.reviseCalibration(audit.id, rubricOf("new"))).rejects.toThrow();
+          expect((await repo.auditDetail(audit.id))?.rubric).toEqual(rubricOf("old"));
+        });
+
+        it("keeps an applied fix, newest first, through later calibrations", async () => {
+          const p = await project();
+          const first = await repo.addRubricFix({
+            projectId: p.id,
+            sentinel: "architecture",
+            checkId: "5b",
+            problem: "Names the wrong file",
+            suggestion: "Use app/src/main/java/com/juice/overlay/OverlayService.kt",
+            flaggedBy: "Claude",
+          });
+          expect(first.status).toBe("flagged");
+          const before = { id: "5b", text: "old", how: "x" };
+          const after = { id: "5b", text: "new", how: "x" };
+          const approvedAt = new Date("2026-11-18T10:00:00Z");
+          const appliedAt = new Date("2026-11-18T10:01:00Z");
+          await repo.updateRubricFix(first.id, { status: "applied", before, after, approvedBy: "user_1", approvedAt, appliedAt });
+          const second = await repo.addRubricFix({ projectId: p.id, sentinel: "secops", checkId: "1a", problem: "p", suggestion: "s" });
+
+          for (let i = 0; i < 3; i++) {
+            const c = await repo.startAudit(p.id, "architecture", "calibrate");
+            await repo.finishAudit(c.id, { status: "done", rubric: rubricOf(`r${i}`) });
+          }
+
+          const all = await repo.rubricFixesFor(p.id);
+          expect(all.map((f) => f.id)).toEqual([second.id, first.id]);
+          expect((await repo.rubricFixesFor(p.id, "architecture")).map((f) => f.id)).toEqual([first.id]);
+          expect(await repo.rubricFix(first.id)).toMatchObject({
+            status: "applied",
+            before,
+            after,
+            approvedBy: "user_1",
+            approvedAt,
+            appliedAt,
+            flaggedBy: "Claude",
+            checkId: "5b",
+          });
+        });
+      });
+
       it("reads the audits the sentinels need: newest, newest done, newest calibration, Epic reports", async () => {
         const p = await project();
         const rubric = { checks: [] } as never;
@@ -1660,6 +1812,20 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.assistantMessages(p.id)).messages).toEqual([]);
         expect(await repo.assistantMessage(q.id)).toBeNull();
         expect(((await repo.assistantMessages(other.id)).messages).map((m) => m.id)).toEqual([kept.id]);
+      });
+
+      it("carries a chat message's images, and clearing the chat deletes them", async () => {
+        const p = await project();
+        const requestId = randomUUID();
+        const file = await repo.createAttachment({ projectId: p.id, requestId, filename: "s.png", mimeType: "image/png", kind: "image", size: 1, bytes: new Uint8Array([1]) });
+        const m = await repo.addAssistantMessage({ projectId: p.id, role: "user", content: "" });
+        await repo.claimAttachments(requestId, { assistantMessageId: m.id });
+
+        expect((await repo.assistantMessages(p.id)).messages[0]!.attachments.map((x) => x.id)).toEqual([file.id]);
+        expect(await repo.attachmentScope(file.id)).toEqual({ projectId: p.id, requestId: null });
+
+        await repo.clearAssistant(p.id);
+        expect(await repo.attachmentContent(file.id)).toBeNull();
       });
 
       it("pages the assistant conversation newest first, each page oldest first, with no gaps or repeats", async () => {

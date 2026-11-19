@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { MODELS } from "@/lib/agents/anthropic";
-import { claudeSpeak, openAiSpeak, runChatLoop, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
+import { claudeSpeak, openAiSpeak, runChatLoop, type PastMessage, type Speak, type ToolCall, type ToolDef } from "@/lib/agents/chat-loop";
 import {
   ask as askCardChat,
   CHAT_ANSWER_BUDGET_MS,
@@ -22,7 +22,7 @@ import { publish } from "@/lib/events/bus";
 import { columnOf } from "@/lib/domain/status";
 import type { AssistantMessage, AssistantProposal } from "@/lib/db/repository";
 import { extractJson } from "@/lib/llm/openai-compat";
-import { startCliAsk } from "@/lib/runner/runner";
+import { attachmentsPrompt, startCliAsk } from "@/lib/runner/runner";
 import { vcs, type VcsClient } from "@/lib/vcs";
 import { ASSISTANT_BRANCH_PREFIX, assistantActionSchema, checkAction } from "./actions";
 import { boardSnapshot, cardReport, mentionedKeys } from "./context";
@@ -75,6 +75,15 @@ export function changeBranchFor(id: string): string {
 const MAX_CLI_REPORTS = 4;
 /** How many cards in review or blocked it is handed when the person names none. */
 const MAX_CLI_FALLBACK_REPORTS = 8;
+
+/** How the PM treats a note written while playtesting. See docs/plans/playtest.md. */
+export const PLAYTEST_RULE = [
+  "Messages that start with [Playtest note] were written while the person played the default branch in Playtest. They are quick notes, not orders: never change code for one. For each note, or each group of notes about the same thing, check it against the Epics' PRDs, the tickets and the code, and start your answer with one bold verdict:",
+  "- **Intended**: the PRD, a ticket or the code means it to work this way. Quote the line that says so.",
+  "- **Already known**: a card or pull request already covers it. Name its key.",
+  "- **Worth a ticket**: propose create_backlog_item with the note in the person's words and what you found, and pass the note's screenshot ids as screenshots.",
+  "One or two lines each. Use playtest_sessions to look at earlier playtests when a note refers back to one.",
+].join("\n");
 
 export const TOOL_DEFS: ToolDef[] = [
   {
@@ -146,6 +155,16 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "playtest_sessions",
+    description:
+      "The board's recent playtests, newest first: when, which build, how each ended, and its notes with your replies. Give a session id for just that one.",
+    schema: {
+      type: "object",
+      properties: { id: { type: "string", description: "A session id, to read only that one." } },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "propose",
     description:
       "Propose a change to the board. The person sees it with Approve and Dismiss buttons; it only happens if they approve.",
@@ -210,9 +229,13 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
         ]
       : ["No card is waiting on a question right now.", ""]),
     ...(asked.length ? ["What the person asked for, in their own words, for each Epic still in progress:", ...asked, ""] : []),
+    PLAYTEST_RULE,
+    "",
     "Read the repository before you answer a question about its code. Do not guess at what a file contains.",
     "",
     "You see the board below, and each card's live state on GitHub (its checks, the log of a red one, its agent runs). When asked about a card, look before you answer; never answer that you cannot see it.",
+    "",
+    "A card that stops is brought to you first: explain what happened (what the agents tried, what is failing and why) before you ask anything of the person.",
     "",
     "You can do the work, not only describe it. Each of these is a proposal: it happens only if the person approves it.",
     "- open_pull_request, for a change to the code you made yourself, on your own branch. It goes through CI and review like any other pull request. Make the change yourself, without a ticket, when you can finish and check it in this conversation: a bug fix, a follow-up, a small feature.",
@@ -222,6 +245,7 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "- create_backlog_item, for a request that still needs a PRD. The Product Agent writes one.",
     "- move_card, to move a card to another column. It follows the same rules as the person dragging it, so a move the board refuses (a ticket to Done with no pull request, say) fails: say so rather than propose it.",
     "- close_card, for a card that is no longer needed (a duplicate, work already done elsewhere). A ticket is archived; an Epic is deleted with all its tickets.",
+    "- revise_rubric_check, when the person asks to correct one check of a Sentinel's rubric: give sentinel, check (its id, such as 5b) and note (what is wrong and the change wanted). The person must approve it; only then does the Sentinel revise that one check, and every other check stays as it was. Never change a rubric any other way, and never suggest lowering the bar.",
     "A ticket's fileScope lists the directories it may change, as prefixes from the repository root: 1 to 12 entries, so name directories such as \"src/renderer\" rather than every file in them. Tickets that could run at the same time must not share a scope: make one depend on the other instead. Keys are short and stable, such as \"T-1\".",
     "",
     TICKET_TEMPLATE,
@@ -244,22 +268,62 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
 async function historyBefore(projectId: string, messageId: string) {
   const { messages: all } = await repository().assistantMessages(projectId);
   const at = all.findIndex((m) => m.id === messageId);
-  const past = history(at < 0 ? all : all.slice(0, at));
+  const past = await history(at < 0 ? all : all.slice(0, at));
   // Another speaker's reply may be the last: the person's question still stands.
   return past.at(-1)?.role === "assistant" ? [...past, { role: "user" as const, content: "Now it is your turn to answer the person's last message." }] : past;
 }
 
-/** Earlier messages as plain text, the way every provider accepts them. */
-function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistant"; content: string }> {
-  return messages
-    .filter((m) => m.status === "done" && m.content.trim())
-    .map((m) => ({
-      role: m.role,
-      content: [
-        m.role === "assistant" && m.speaker !== "assistant" ? `${guestLabel(m.speaker as GuestId)}: ${m.content}` : m.content,
-        ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
-      ].join("\n"),
-    }));
+/** How many of the person's latest messages go to the model with their pictures; older pictures are a text line. */
+const MESSAGES_WITH_PIXELS = 3;
+
+/**
+ * Earlier messages, the way every provider accepts them. A user message's
+ * images ride on its own turn, but only for the latest few: older ones are a
+ * line naming the file, so the token cost of a long chat stays bounded.
+ */
+export async function history(messages: AssistantMessage[]): Promise<PastMessage[]> {
+  const kept = messages.filter((m) => m.status === "done" && (m.content.trim() || m.attachments.length > 0));
+  const withPixels = new Set(
+    kept.filter((m) => m.role === "user" && m.attachments.some((a) => a.kind === "image")).slice(-MESSAGES_WITH_PIXELS),
+  );
+  return Promise.all(
+    kept.map(async (m): Promise<PastMessage> => {
+      const pictures = m.attachments.filter((a) => a.kind === "image");
+      const images: NonNullable<PastMessage["images"]> = [];
+      const lines: string[] = [];
+      for (const a of pictures) {
+        const content = withPixels.has(m) ? await repository().attachmentContent(a.id) : null;
+        if (content) images.push({ mimeType: a.mimeType, base64: Buffer.from(content.bytes).toString("base64") });
+        else lines.push(`[Image: ${a.filename}]`);
+      }
+      return {
+        role: m.role,
+        content: [
+          ...(m.content.trim()
+            ? [
+                m.role === "user" && m.playtestId
+                  ? `${playtestLabel(m)} ${m.content}`
+                  : m.role === "assistant" && m.speaker !== "assistant"
+                    ? `${guestLabel(m.speaker as GuestId)}: ${m.content}`
+                    : m.content,
+              ]
+            : m.role === "user" && m.playtestId
+              ? [playtestLabel(m)]
+            : []),
+          ...lines,
+          ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
+        ].join("\n"),
+        ...(images.length ? { images } : {}),
+        ...(pictures.length ? { files: pictures } : {}),
+      };
+    }),
+  );
+}
+
+/** How a playtest note reads to the PM: what it is, and the ids of its screenshots for create_backlog_item. */
+export function playtestLabel(m: AssistantMessage): string {
+  const shots = m.attachments.filter((a) => a.kind === "image").map((a) => a.id);
+  return `[Playtest note${shots.length ? `, screenshots: ${shots.join(", ")}` : ""}]`;
 }
 
 /**
@@ -267,12 +331,12 @@ function history(messages: AssistantMessage[]): Array<{ role: "user" | "assistan
  * agent's question the PM is woken for. It is not kept: the PM's answer is.
  */
 function withPrompt(
-  past: Array<{ role: "user" | "assistant"; content: string }>,
+  past: PastMessage[],
   prompt: string | undefined,
-): Array<{ role: "user" | "assistant"; content: string }> {
+): PastMessage[] {
   if (!prompt) return past;
   const last = past.at(-1);
-  if (last?.role === "user") return [...past.slice(0, -1), { role: "user", content: `${last.content}\n\n${prompt}` }];
+  if (last?.role === "user") return [...past.slice(0, -1), { ...last, content: `${last.content}\n\n${prompt}` }];
   return [...past, { role: "user", content: prompt }];
 }
 
@@ -312,6 +376,10 @@ export async function runTool(
       return text === null
         ? { content: `${path} does not exist on ${ref}.`, isError: true }
         : { content: readWindow(clean, text, offset ?? 0), isError: false };
+    }
+    if (call.name === "playtest_sessions") {
+      const { id } = z.object({ id: z.string().optional() }).parse(call.input ?? {});
+      return { content: await playtestReport(turn.projectId, id), isError: false };
     }
     if (call.name === "card_status") {
       const { key } = cardInput.parse(call.input);
@@ -668,7 +736,7 @@ const cliAnswerSchema = z.object({
  * A CLI agent cannot call card_status, so the live state of the cards the
  * person has been asking about is read for it before it starts.
  */
-async function cliReports(projectId: string, past: Array<{ role: "user" | "assistant"; content: string }>): Promise<string> {
+async function cliReports(projectId: string, past: PastMessage[]): Promise<string> {
   const asked = past.filter((m) => m.role === "user").slice(-3).map((m) => m.content).join("\n");
   const cards = await repository().boardCards(projectId);
   const named = mentionedKeys(asked, cards).slice(0, MAX_CLI_REPORTS);
@@ -691,9 +759,11 @@ async function cliReports(projectId: string, past: Array<{ role: "user" | "assis
 
 function cliPrompt(
   system: string,
-  past: Array<{ role: "user" | "assistant"; content: string }>,
+  past: PastMessage[],
   reports: string,
 ): string {
+  // The pictures the person sent, as signed links: a CLI agent has no way to be handed pixels.
+  const files = attachmentsPrompt(past.flatMap((m) => m.files ?? []));
   return [
     system,
     "",
@@ -703,6 +773,7 @@ function cliPrompt(
     "The conversation so far, oldest first. Answer the last message from the person.",
     "",
     ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
+    ...(files ? [files, ""] : []),
     "How to answer:",
     "- You may change the code. What you change in the checkout is kept on a branch of its own and offered to the person as a pull request, with the title and body you give in \"change\". Change files only when the person asked for a change or agreed to one. Install the project's dependencies if they are not there, and run its checks on your change before you finish. Changes under .github/workflows are not kept. Leave \"change\" out when you changed nothing.",
     "- Formic has read GitHub for you: the live state of the cards above is current. Answer about those cards from it, and never say you cannot see GitHub. For a card it does not cover, ask the person to name it.",
@@ -732,7 +803,7 @@ async function askAgain(
   const agent = column ? await columnChatAgentFor(projectId, column) : await assistantAgentFor(projectId);
   if (agent.kind !== "cli") return false;
   const { messages: all } = await repository().assistantMessages(projectId);
-  const past = history(all.filter((m) => m.id !== messageId));
+  const past = await history(all.filter((m) => m.id !== messageId));
   const system = column
     ? await guestPrompt(projectId, column, speaker, agent.agent.brief)
     : await systemPrompt(projectId, agent.agent.brief);
@@ -853,4 +924,23 @@ function changeProposal(
     },
     state: "proposed",
   };
+}
+
+/** The playtest_sessions read: recent sessions and what was said in them. */
+export async function playtestReport(projectId: string, id?: string): Promise<string> {
+  const repo = repository();
+  const sessions = (await repo.playtestsFor(projectId, id ? 50 : 5)).filter((s) => !id || s.id === id);
+  if (!sessions.length) return id ? `There is no playtest ${id} on this board.` : "No playtests on this board yet.";
+  const out: string[] = [];
+  for (const s of sessions) {
+    out.push(
+      `## Playtest ${s.id}, ${s.startedAt.toISOString().slice(0, 16).replace("T", " ")} UTC, build ${s.commitSha?.slice(0, 7) ?? "unknown"}, ${s.status}${s.endReason ? ` (${s.endReason})` : ""}`,
+    );
+    if (s.summary) out.push(s.summary);
+    for (const m of await repo.playtestMessages(s.id)) {
+      if (m.status !== "done" || !m.content.trim()) continue;
+      out.push(m.role === "user" ? `- Note: ${playtestLabel(m)} ${m.content}` : `- You: ${m.content.slice(0, 600)}`);
+    }
+  }
+  return out.join("\n");
 }

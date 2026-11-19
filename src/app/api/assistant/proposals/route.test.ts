@@ -54,7 +54,7 @@ describe("POST /api/assistant/proposals", () => {
   it("applies a proposal and posts the outcome", async () => {
     const res = await decide({ messageId: "m-1", index: 0, decision: "apply" });
     expect(res.status).toBe(200);
-    expect(applyAction).toHaveBeenCalledWith("p-1", action);
+    expect(applyAction).toHaveBeenCalledWith("p-1", action, "u-1");
     expect(repo.addAssistantMessage).toHaveBeenCalledWith({ projectId: "p-1", role: "assistant", content: "Done." });
     expect(repo.updateAssistantMessage).toHaveBeenLastCalledWith("m-1", {
       proposals: [{ state: "applied", action }],

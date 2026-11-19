@@ -3,7 +3,8 @@ import "server-only";
 import { withCardActor } from "@/lib/auth/actor";
 import { attemptsFor, inProcessBudget } from "@/lib/budget/in-process";
 import { applyShowcase, launch, startRun } from "@/lib/agents/pipeline";
-import type { FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
+import type { BlockedByFix, FailingCheck, ReviewVerdict } from "@/lib/agents/ports";
+import type { BoardCard } from "@/lib/domain/entities";
 import { type Checkout, commitAndPush, openCheckout, rebaseOntoTarget } from "@/lib/coder/checkout";
 import { runCoderAgent, stallTicket, taskFor, ticketOrigin } from "@/lib/coder/pipeline";
 import { repository } from "@/lib/db";
@@ -12,10 +13,12 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { env } from "@/lib/secrets/env";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
+import { REVIEW_CEILING } from "@/lib/domain/notice";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
 import { proposeFollowUps } from "@/lib/assistant/follow-up-messages";
-import { recordFollowUps } from "@/lib/board/follow-ups";
+import { recordFollowUps, requestFix, waitingOnFixReason } from "@/lib/board/follow-ups";
+import { recordRubricFixes } from "@/lib/board/rubric-fixes";
 import { positionForIndex } from "@/lib/ordering";
 import {
   AGENT_COMMIT_AUTHOR,
@@ -30,6 +33,7 @@ import {
 } from "@/lib/vcs";
 import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inTicketLane } from "./lane";
+import { classifyFailure } from "./rerun/classify";
 import {
   type MergeBatch,
   claimMergeSlot,
@@ -42,6 +46,8 @@ import {
   releaseMergeSlot,
 } from "./merge-lane";
 import { claimOrQueue } from "@/lib/board/queue";
+import { widenScope } from "@/lib/coder/scope-request";
+import { normalizeScope } from "@/lib/domain/scope";
 import { handOffToReviewer, releaseWaiting, restack, restackOnto, ticketBelow } from "@/lib/coder/stack";
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
@@ -385,20 +391,32 @@ function ceilingReason(
   pull: PullRequestDetail,
   red: CheckSummary[],
   maxReviews: number,
+  logs: FailingCheck[],
 ): string {
   if (red.length === 0) {
-    return `${ticket.key} has been reviewed ${maxReviews} times without being approved. This needs a human.`;
+    return `${REVIEW_CEILING}: ${ticket.key} was reviewed ${maxReviews} times without being approved`;
   }
   const names = red.map((c) => c.name).join(", ");
-  if (ticket.reviewedSha === pull.headSha) {
-    return (
-      `${names} fails on the commit the Reviewer Agent approved on pull request #${pull.number}, ` +
-      `so the change is vouched for and the check is the question. Re-run ${names} on GitHub and the card carries on by itself if it passes, ` +
-      `or say "resume" in ${ticket.key}'s chat to give the reviews another go at it, ` +
-      `or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code. This needs a human.`
-    );
-  }
-  return `${names} is still failing after ${maxReviews} reviews of pull request #${pull.number}. This needs a human.`;
+  const approved = ticket.reviewedSha === pull.headSha;
+  const failed = logs.flatMap((log) => {
+    const notes = log.annotations.slice(0, 3).map((a) => `${a.path}${a.line ? `:${a.line}` : ""} ${a.message}`);
+    return [`${log.name}: ${log.summary}`, ...notes];
+  });
+  const options = approved
+    ? [
+        `${names} fails on the commit the Reviewer Agent approved on pull request #${pull.number}, so the change is vouched for and the check is the question.`,
+        `Re-run ${names} on GitHub and the card carries on by itself if it passes, or say "resume" in ${ticket.key}'s chat to give the reviews another go at it, or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it on the current code.`,
+      ]
+    : [
+        `You can re-run ${names} on GitHub, say "resume" in ${ticket.key}'s chat to give the reviews another go, or close the pull request and move ${ticket.key} to To Do, then In Progress, to redo it.`,
+      ];
+  const subtitle = approved
+    ? `${REVIEW_CEILING}: ${names} fails on the approved commit of pull request #${pull.number}`
+    : `${REVIEW_CEILING}: ${names} still failing after ${maxReviews} reviews of pull request #${pull.number}`;
+  // The log is capped, not the options after it: about 1,500 characters in all.
+  const log = failed.join("\n");
+  const quoted = log.length > 900 ? `${log.slice(0, 899)}…` : log;
+  return [subtitle, ...(quoted ? ["What failed:", quoted, ""] : []), ...options].join("\n");
 }
 
 /** When each board's open pull requests were last looked at, to go easy on the API. */
@@ -593,7 +611,18 @@ export async function closeAlreadyDone(
     // install, a lost runner). Left as it is, the review sends the ticket
     // back for the same red check, the coder finds nothing to do again, and
     // the two go round for as long as the attempts last.
-    await rerunRedActions(client, pull.headBranch, await client.checksFor(pull.headSha)).catch(() => 0);
+    const rerun = await rerunRedActions(client, pull.headBranch, await client.checksFor(pull.headSha), {
+      onlyWithReason: true,
+    }).catch(() => ({ started: 0, declined: [] as string[] }));
+    if (rerun.started === 0 && rerun.declined.length > 0) {
+      await stallTicket(
+        projectId,
+        ticket,
+        `${rerun.declined.join(", ")} failed on code that has not changed, and was not run again: its log shows no network or install error, lost runner or known-unreliable test, so a repeat would fail the same way. The failure needs a fix.`,
+        { blocked: true, stalledIn: "in_review", stage: STAGE_PR },
+      );
+      return;
+    }
     await repository().updateTicket(ticket.id, {
       status: "review",
       stalledIn: null,
@@ -632,24 +661,39 @@ export async function rerunRedActions(
   client: VcsClient,
   branch: string,
   checks: CheckSummary[],
-): Promise<number> {
-  const runIds = [
-    ...new Set(
-      failing(checks)
-        .map((c) => /\/actions\/runs\/(\d+)/.exec(c.detailsUrl ?? "")?.[1])
-        .filter((id): id is string => !!id),
-    ),
-  ];
-  if (runIds.length === 0) return 0;
-  const runs = await client.branchRuns(branch);
-  let started = 0;
-  for (const id of runIds) {
-    const run = runs.find((r) => /\/runs\/(\d+)/.exec(r.url)?.[1] === id);
-    if (run && run.attempt > 1) continue;
-    await client.rerunFailedJobs(Number(id));
-    started++;
+  options: { onlyWithReason: true },
+): Promise<{ started: number; declined: string[] }>;
+export async function rerunRedActions(client: VcsClient, branch: string, checks: CheckSummary[]): Promise<number>;
+export async function rerunRedActions(
+  client: VcsClient,
+  branch: string,
+  checks: CheckSummary[],
+  options?: { onlyWithReason: true },
+): Promise<number | { started: number; declined: string[] }> {
+  const byRun = new Map<string, string>();
+  for (const c of failing(checks)) {
+    const id = /\/actions\/runs\/(\d+)/.exec(c.detailsUrl ?? "")?.[1];
+    if (id && !byRun.has(id)) byRun.set(id, c.name);
   }
-  return started;
+  const declined: string[] = [];
+  let started = 0;
+  if (byRun.size > 0) {
+    const runs = await client.branchRuns(branch);
+    for (const [id, name] of byRun) {
+      const run = runs.find((r) => /\/runs\/(\d+)/.exec(r.url)?.[1] === id);
+      if (run && run.attempt > 1) continue;
+      if (options?.onlyWithReason) {
+        const log = run ? await client.runLog(run.url).catch(() => null) : null;
+        if (!classifyFailure(log).rerun) {
+          declined.push(name);
+          continue;
+        }
+      }
+      await client.rerunFailedJobs(Number(id));
+      started++;
+    }
+  }
+  return options ? { started, declined } : started;
 }
 
 /**
@@ -1170,6 +1214,34 @@ async function releaseDependents(
   // The store may not show it merged yet to every reader; this one knows.
   for (const card of cards) if (card.id === merged.id) card.status = "merged";
   await releaseWaiting(projectId, cards);
+  await reviewAgainAfterFix(projectId, merged, cards);
+}
+
+/**
+ * The Reviewer blocked a ticket on a fix of its own (blockOnFix). That fix
+ * has merged: review the ticket again on its current head.
+ */
+async function reviewAgainAfterFix(projectId: string, merged: TicketDetail, cards: BoardCard[]): Promise<void> {
+  for (const card of cards) {
+    if (card.kind !== "ticket" || card.status !== "blocked" || !card.dependsOn.includes(merged.id)) continue;
+    const waiting = await repository().ticketDetail(card.id);
+    if (!waiting?.prNumber || waiting.stage < STAGE_PR) continue;
+    // Still waiting on another unmerged ticket: that one's merge brings it back.
+    if (card.dependsOn.some((id) => id !== merged.id && cards.find((c) => c.id === id)?.status !== "merged")) continue;
+    const prNumber = waiting.prNumber;
+    launch(async () => {
+      await repository().updateTicket(waiting.id, { status: "review", stalledIn: null, blockedReason: null, reviewedHead: null });
+      const project = await projectFor(projectId);
+      const pull = await vcs(project.repoFullName, (await credentialsForProject(project)).repoToken).pullRequest(prNumber);
+      await reviewPullRequest(projectId, prNumber, pull.headSha);
+    }, `review of ${card.key} after the fix it waited on merged`);
+  }
+}
+
+/** The ticket stops, naming the failing check and the fix it waits on; the fix is asked for as a ticket of its own. */
+export async function blockOnFix(projectId: string, ticket: TicketDetail, fix: BlockedByFix): Promise<void> {
+  const created = await requestFix(projectId, ticket, fix);
+  await stallTicket(projectId, ticket, waitingOnFixReason(fix, created.key), { blocked: true, stalledIn: "in_review" });
 }
 
 /**
@@ -1274,7 +1346,13 @@ async function reviewTicket(
   const maxReviews = await attemptsFor(project.ownerId, "review");
 
   if (attempt > maxReviews) {
-    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red, maxReviews), {
+    const ceilingClient = vcs(project.repoFullName, (await credentialsForProject(project)).repoToken);
+    const failing: FailingCheck[] = [];
+    for (const check of red) {
+      const log = await ceilingClient.checkLog(check.id).catch(() => null);
+      if (log) failing.push(log);
+    }
+    await stallTicket(projectId, ticket, ceilingReason(ticket, pull, red, maxReviews, failing), {
       blocked: true,
       stalledIn: "in_review",
     });
@@ -1387,6 +1465,7 @@ async function reviewTicket(
 
     const verdict = outcome.value;
     await recordFollowUps(ticket.id, verdict.followUps ?? []);
+    await recordRubricFixes(ticket.id, verdict.rubricFixes ?? []);
     // The review answered, whatever it is about to be asked to do with the
     // answer: this head is no longer one a report can hand to it again.
     await repo.updateTicket(ticket.id, {
@@ -1399,6 +1478,14 @@ async function reviewTicket(
     if (verdict.sendBack) {
       // Whatever it edited on the way to deciding this is not pushed.
       await sendBack(projectId, ticket, verdict.sendBack);
+      await run.finish(outcome);
+      return;
+    }
+
+    if (verdict.blockedByFix) {
+      // Not this change's failure: nothing is pushed, and the ticket waits
+      // on a bug ticket of its own instead of going round again.
+      await blockOnFix(projectId, ticket, verdict.blockedByFix);
       await run.finish(outcome);
       return;
     }
@@ -1419,16 +1506,14 @@ async function reviewTicket(
       return;
     }
 
+    // The scope keeps parallel tickets apart; it does not limit a good fix.
+    // Files nothing running is using join it, as for the Coder Agent. When a
+    // running ticket holds them, nothing is pushed and the review is done
+    // again with the files once they are free.
     const violations = violationsInDiff(changed, ticket.fileScope);
-    if (violations.length > 0) {
-      const reason =
-        `The review's fix touched ${violations.slice(0, 5).join(", ")}, outside ${ticket.key}'s ` +
-        `file scope. Nothing was pushed.`;
-      await stallTicket(projectId, ticket, reason, {
-        blocked: true,
-        stalledIn: "in_review",
-      });
-      await run.finish({ ...outcome, ok: false, error: reason, blocked: true });
+    if (violations.length > 0 && !(await widenScope(projectId, ticket, violations))) {
+      await waitForFiles(projectId, ticket, violations);
+      await run.finish(outcome);
       return;
     }
 
@@ -1975,6 +2060,62 @@ export async function sendBack(
     return;
   }
   launch(() => runCoderAgent(projectId, ticket.id), `coder agent for ${ticket.key}, sent back`);
+}
+
+/**
+ * The review's fix needs `files` a running ticket holds. Nothing is pushed:
+ * the ticket asks for them (scopeRequest) and goes through the same
+ * claim-or-queue as a send-back, so it waits while they are held and is
+ * reviewed again with them (see reviewWithFiles) once they are free.
+ */
+async function waitForFiles(projectId: string, ticket: TicketDetail, files: string[]): Promise<void> {
+  const requested = normalizeScope(files);
+  const repo = repository();
+  await repo.updateTicket(ticket.id, { scopeRequest: requested });
+  const card = await repo.cardById(ticket.id);
+  const wanted = card && { ...card, fileScope: normalizeScope([...card.fileScope, ...requested]) };
+  const write = (status: "running" | "queued") =>
+    repo.updateTicket(ticket.id, { reviewedSha: null, reviewedHead: null, status });
+  const { status, reason } = wanted
+    ? await claimOrQueue(projectId, wanted, write)
+    : (await write("running"), { status: "running" as const, reason: null });
+  if (status === "queued") {
+    await publish(projectId, {
+      type: "card.status",
+      cardId: ticket.id,
+      kind: "ticket",
+      status: "queued",
+      stalledIn: null,
+      stage: card?.stage ?? ticket.stage,
+      blockedReason: reason,
+    });
+    return;
+  }
+  await reviewWithFiles(projectId, ticket.id);
+}
+
+/** Whether a ticket in the queue is a review waiting on files, not a Coder Agent run. */
+export function waitsForReviewFiles(ticket: Pick<TicketDetail, "scopeRequest" | "prNumber" | "stage">): boolean {
+  return ticket.scopeRequest.length > 0 && !!ticket.prNumber && ticket.stage >= 6;
+}
+
+/** The files a waiting review asked for are free: take them into the scope and review again. */
+export async function reviewWithFiles(projectId: string, ticketId: string): Promise<void> {
+  const repo = repository();
+  const ticket = await repo.ticketDetail(ticketId);
+  if (!ticket?.prNumber) return;
+  const asked = ticket.scopeRequest;
+  await repo.updateTicket(ticket.id, { scopeRequest: [], status: "review" });
+  if (asked.length > 0 && !(await widenScope(projectId, ticket, asked))) {
+    // Taken by another ticket after all: wait again.
+    await waitForFiles(projectId, ticket, asked);
+    return;
+  }
+  const project = await projectFor(projectId);
+  const pull = await vcs(project.repoFullName, (await credentialsForProject(project)).repoToken).pullRequest(
+    ticket.prNumber,
+  );
+  await reviewPullRequest(projectId, ticket.prNumber, pull.headSha);
 }
 
 /** Steps outside the repository, from every run of the ticket, once each. */

@@ -10,7 +10,13 @@ import { publish } from "@/lib/events/bus";
  */
 export async function postPmMessage(
   projectId: string,
-  message: { content: string; cards?: AssistantMessage["cards"]; proposals?: AssistantProposal[] },
+  message: {
+    content: string;
+    cards?: AssistantMessage["cards"];
+    proposals?: AssistantProposal[];
+    /** A line in a playtest: the time it has left, newer work to play. */
+    playtestId?: string;
+  },
 ): Promise<AssistantMessage> {
   const posted = await repository().addAssistantMessage({
     projectId,
@@ -18,6 +24,7 @@ export async function postPmMessage(
     content: message.content,
     cards: message.cards,
     proposals: message.proposals,
+    playtestId: message.playtestId,
     status: "done",
     speaker: "assistant",
   });

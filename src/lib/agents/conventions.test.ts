@@ -7,6 +7,7 @@ import {
   REVIEWER_BRIEF,
   ENGINEERING_PRACTICES,
   FOLLOW_UP_RULE,
+  RUBRIC_FIX_RULE,
   ARCHITECT_AUDIT_RULE,
   REVIEWER_AUDIT_RULE,
   REVIEWER_PROOF_RULE,
@@ -170,6 +171,7 @@ describe("work bigger than the ticket", () => {
   it("is a follow-up for the Coder, whatever its prompt, not work to grind through", () => {
     const prompt = withCodingRules("Custom coder.", "coder");
     expect(prompt).toContain(FOLLOW_UP_RULE);
+    expect(prompt).toContain(RUBRIC_FIX_RULE);
     expect(prompt).toContain("follow_ups");
     expect(prompt).not.toContain(REVIEWER_FOLLOW_UP_RULE);
   });
@@ -177,6 +179,7 @@ describe("work bigger than the ticket", () => {
   it("is not a reason for the Reviewer to send the change back", () => {
     const prompt = withCodingRules("Custom reviewer.", "reviewer");
     expect(prompt).toContain(REVIEWER_FOLLOW_UP_RULE);
+    expect(prompt).toContain(RUBRIC_FIX_RULE);
     expect(REVIEWER_FOLLOW_UP_RULE).toContain("Send back only for work that fits the ticket's estimate");
   });
 

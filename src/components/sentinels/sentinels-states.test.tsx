@@ -32,6 +32,7 @@ function blank(id: string): SentinelState {
     files: [],
     commitSha: null,
     rubric: null,
+    edits: {},
     rubricChanged: false,
     hold: null,
     doneSince: 0,

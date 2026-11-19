@@ -7,11 +7,20 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { AgentSelect } from "./agent-select";
 import { EarlierMessages, useKeepPlace } from "./earlier-messages";
 import { useDraft } from "./use-draft";
+import { pastedFileName } from "./attachment-picker";
+import {
+  DraftImages,
+  IMAGE_TYPES,
+  PaperclipIcon,
+  SentImages,
+  useComposerImages,
+} from "./composer-images";
 import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { GuestCoin } from "@/components/board/guest-coin";
@@ -32,6 +41,8 @@ import { provider as providerInfo } from "@/lib/llm/providers";
  */
 
 export interface AssistantControls {
+  /** The board's identity; each board keeps its own unsent draft. */
+  boardId: string;
   open: boolean;
   setOpen: (open: boolean) => void;
   presetId: string | null;
@@ -43,8 +54,8 @@ export interface AssistantControls {
   loadEarlier?: () => Promise<void>;
   pending: boolean;
   error: string | null;
-  /** Sends a message; `speakers` are who answers it, in order (the PM by default). */
-  ask: (text: string, speakers?: string[]) => Promise<void>;
+  /** Sends a message; `speakers` are who answers it, in order (the PM by default), `requestId` the draft its images were uploaded under. */
+  ask: (text: string, speakers?: string[], requestId?: string) => Promise<void>;
   stop: () => void;
   clear: () => Promise<void>;
   decide: (
@@ -125,16 +136,36 @@ function Composer({
   /** The pull-down arrow. Off inside the shade, which has its own. */
   toggle?: boolean;
 }) {
-  const [text, setText] = useDraft("assistant");
+  const [text, setText] = useDraft(`assistant:${a.boardId}`);
   const field = useRef<HTMLTextAreaElement>(null);
+  const images = useComposerImages();
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     const value = text.trim();
-    if (!value) return;
+    if ((!value && !images.hasImages) || images.uploading) return;
+    const withImages = images.hasImages ? images.requestId : null;
     a.setOpen(true);
     setText("");
-    await a.ask(value);
+    images.reset();
+    await (withImages ? a.ask(value, undefined, withImages) : a.ask(value));
     onAsked?.();
+  };
+  // A screenshot on the clipboard becomes an attachment; plain text pastes as usual.
+  const onPaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const files: File[] = [];
+    for (const item of Array.from(e.clipboardData?.items ?? [])) {
+      if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+      const file = item.getAsFile();
+      if (file)
+        files.push(
+          new File([file], pastedFileName(file.type || "image/png"), {
+            type: file.type,
+          }),
+        );
+    }
+    if (files.length === 0) return;
+    e.preventDefault();
+    images.add(files);
   };
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Escape") a.setOpen(false);
@@ -148,83 +179,124 @@ function Composer({
   return (
     <form
       onSubmit={(e) => void submit(e)}
-      className={cn("relative flex items-center", className)}
+      className={cn("relative flex flex-col", className)}
     >
-      <span className="text-muted pointer-events-none absolute left-3">
-        <SparkIcon />
-      </span>
-      <textarea
-        ref={field}
-        rows={1}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onFocus={() => a.messages.length > 0 && a.setOpen(true)}
-        onKeyDown={onKeyDown}
-        placeholder={
-          a.pending
-            ? "Answering… you can keep typing"
-            : a.questions
-              ? `The PM has ${a.questions === 1 ? "a question" : `${a.questions} questions`} for you…`
-              : `Ask the PM about ${repoName}…`
-        }
-        aria-label="Ask the PM"
-        className={cn(
-          "border-line bg-cream text-ink placeholder:text-muted h-9 w-full resize-none rounded-lg border py-1.75 pl-9 text-[13px] leading-5 outline-none [scrollbar-width:none] focus:border-terracotta [&::-webkit-scrollbar]:hidden",
-          toggle ? "pr-18" : "pr-10",
-        )}
-      />
-      {a.pending && !text.trim() ? (
-        <button
-          type="button"
-          onClick={() => {
-            a.stop();
-            field.current?.focus();
-          }}
-          aria-label="Stop"
+      {(images.items.length > 0 || images.error) && (
+        <div
           className={cn(
-            "text-ink hover:bg-column absolute inline-flex size-8 items-center justify-center rounded-md",
-            toggle ? "right-9" : "right-1",
+            "flex min-w-0 flex-col gap-1",
+            // The bar has no room above the box, so its row hangs below it.
+            toggle
+              ? "border-line bg-cream absolute top-full right-0 left-0 z-10 mt-1.5 rounded-lg border p-2"
+              : "pb-1.5",
           )}
         >
-          <span className="bg-ink size-2.5 rounded-sm" aria-hidden />
-        </button>
-      ) : (
-        <button
-          type="submit"
-          aria-label="Send"
-          className={cn(
-            "text-muted hover:text-ink absolute inline-flex size-8 items-center justify-center rounded-md",
-            toggle ? "right-9" : "right-1",
+          <DraftImages images={images} />
+          {images.error && (
+            <p role="alert" className="text-muted text-[12px]">
+              {images.error}
+            </p>
           )}
+        </div>
+      )}
+      <div className="relative flex items-center">
+        <span className="text-muted pointer-events-none absolute left-3">
+          <SparkIcon />
+        </span>
+        <textarea
+          ref={field}
+          rows={1}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={() => a.messages.length > 0 && a.setOpen(true)}
+          onKeyDown={onKeyDown}
+          onPaste={onPaste}
+          placeholder={
+            a.pending
+              ? "Answering… you can keep typing"
+              : a.questions
+                ? `The PM has ${a.questions === 1 ? "a question" : `${a.questions} questions`} for you…`
+                : `Ask the PM about ${repoName}…`
+          }
+          aria-label="Ask the PM"
+          className={cn(
+            "border-line bg-cream text-ink placeholder:text-muted h-9 w-full resize-none rounded-lg border py-1.75 pl-9 text-[13px] leading-5 outline-none [scrollbar-width:none] focus:border-terracotta [&::-webkit-scrollbar]:hidden",
+            toggle ? "pr-26" : "pr-18",
+          )}
+        />
+        <label
+          className={cn(
+            "text-muted hover:text-ink absolute inline-flex size-8 cursor-pointer items-center justify-center rounded-md focus-within:outline-2",
+            toggle ? "right-17" : "right-9",
+          )}
+          title="Attach an image"
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            aria-hidden="true"
+          <PaperclipIcon />
+          <input
+            type="file"
+            multiple
+            accept={IMAGE_TYPES.join(",")}
+            aria-label="Attach an image"
+            className="sr-only"
+            onChange={(e) => {
+              images.add(e.target.files ?? []);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {a.pending && !text.trim() && !images.hasImages ? (
+          <button
+            type="button"
+            onClick={() => {
+              a.stop();
+              field.current?.focus();
+            }}
+            aria-label="Stop"
+            className={cn(
+              "text-ink hover:bg-column absolute inline-flex size-8 items-center justify-center rounded-md",
+              toggle ? "right-9" : "right-1",
+            )}
           >
-            <path
-              d="M6 10V2M2.5 5.5 6 2l3.5 3.5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      )}
-      {toggle && (
-        <button
-          type="button"
-          onClick={() => a.setOpen(!a.open)}
-          aria-label={a.open ? "Roll the PM up" : "Pull the PM down"}
-          aria-expanded={a.open}
-          className="text-muted hover:text-ink absolute right-1 inline-flex size-8 items-center justify-center rounded-md"
-        >
-          <Chevron up={a.open} />
-        </button>
-      )}
+            <span className="bg-ink size-2.5 rounded-sm" aria-hidden />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            aria-label="Send"
+            className={cn(
+              "text-muted hover:text-ink absolute inline-flex size-8 items-center justify-center rounded-md",
+              toggle ? "right-9" : "right-1",
+            )}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M6 10V2M2.5 5.5 6 2l3.5 3.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
+        {toggle && (
+          <button
+            type="button"
+            onClick={() => a.setOpen(!a.open)}
+            aria-label={a.open ? "Roll the PM up" : "Pull the PM down"}
+            aria-expanded={a.open}
+            className="text-muted hover:text-ink absolute right-1 inline-flex size-8 items-center justify-center rounded-md"
+          >
+            <Chevron up={a.open} />
+          </button>
+        )}
+      </div>
     </form>
   );
 }
@@ -267,7 +339,13 @@ function QuestionCount({ n }: { n: number }) {
  * The PM's messages the person has not read, on its button. It pops in once
  * when the count goes from none to some; after that it just changes.
  */
-function UnreadCount({ n, withQuestions }: { n: number; withQuestions: boolean }) {
+function UnreadCount({
+  n,
+  withQuestions,
+}: {
+  n: number;
+  withQuestions: boolean;
+}) {
   const [prev, setPrev] = useState(n);
   const [pop, setPop] = useState(false);
   if (prev !== n) {
@@ -326,7 +404,7 @@ export function AskButton({
   );
 }
 
-function ProposalCard({
+export function ProposalCard({
   p,
   onDecide,
 }: {
@@ -364,6 +442,21 @@ function ProposalCard({
             {p.action.body}
           </p>
         )}
+        {p.action.type === "revise_rubric_check" &&
+          (p.action.current || p.action.proposed) && (
+            <div className="mt-1.5 space-y-1.5 text-[12px]">
+              {p.action.current && (
+                <p className="text-muted font-mono text-[11px] break-words whitespace-pre-line">
+                  {p.action.current}
+                </p>
+              )}
+              {p.action.proposed && (
+                <p className="text-ink font-mono text-[11px] break-words whitespace-pre-line">
+                  {p.action.proposed}
+                </p>
+              )}
+            </div>
+          )}
         {tickets.length > 0 && (
           <ul className="text-muted mt-1.5 space-y-0.5 text-[12px]">
             {tickets.map((t) => (
@@ -395,7 +488,7 @@ function ProposalCard({
               onClick={() => void decide("dismiss")}
               className="text-muted hover:text-ink inline-flex h-8 items-center rounded-lg px-2 text-[12px]"
             >
-              Dismiss
+              {p.action.type === "revise_rubric_check" ? "Decline" : "Dismiss"}
             </button>
           </>
         ) : (
@@ -410,7 +503,9 @@ function ProposalCard({
             {p.state === "applied"
               ? "Approved"
               : p.state === "dismissed"
-                ? "Dismissed"
+                ? p.action.type === "revise_rubric_check"
+                  ? "Declined"
+                  : "Dismissed"
                 : `Could not apply: ${p.error ?? "unknown error"}`}
           </span>
         )}
@@ -433,8 +528,13 @@ function Message({
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="bg-column text-ink max-w-[80%] rounded-xl rounded-br-sm px-3 py-2 text-[13px] whitespace-pre-wrap">
-          {m.content}
+        <div className="flex max-w-[80%] flex-col items-end">
+          {!!m.attachments?.length && <SentImages images={m.attachments} />}
+          {m.content && (
+            <div className="bg-column text-ink rounded-xl rounded-br-sm px-3 py-2 text-[13px] whitespace-pre-wrap">
+              {m.content}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -488,7 +588,10 @@ function Message({
         )}
       </div>
       {!!m.cards?.length && (
-        <ul data-testid="pm-cards" className="m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0">
+        <ul
+          data-testid="pm-cards"
+          className="m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0"
+        >
           {m.cards.map((c) => (
             <li key={c.id} className="max-w-full">
               <button
@@ -561,7 +664,11 @@ function WaitingQuestions({ a }: { a: AssistantControls }) {
 /** Above the first message the person has not read. */
 function NewRule() {
   return (
-    <div data-testid="pm-new" role="separator" className="text-clay flex items-center gap-2 font-mono text-[10px] tracking-[0.08em] uppercase">
+    <div
+      data-testid="pm-new"
+      role="separator"
+      className="text-clay flex items-center gap-2 font-mono text-[10px] tracking-[0.08em] uppercase"
+    >
       <span className="border-clay flex-1 border-t" />
       New
       <span className="border-clay flex-1 border-t" aria-hidden />
@@ -719,6 +826,7 @@ function Shade({
           <Composer
             a={a}
             repoName={repoName}
+           
             toggle={false}
             className="flex-1"
           />

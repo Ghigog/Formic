@@ -11,7 +11,7 @@ describe("SentinelsSection", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<SentinelsSection projectId="p1" initial={false} />);
 
-    await userEvent.click(screen.getByRole("checkbox", { name: "Unlock all Sentinels" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Unlock everything" }));
 
     await waitFor(() => expect(screen.getByRole("checkbox")).toBeChecked());
     expect(fetchMock).toHaveBeenCalledWith(

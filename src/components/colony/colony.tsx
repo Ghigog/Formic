@@ -30,6 +30,7 @@ import {
   epicTally,
   featureUnlocked as featureUnlockedAt,
   FEATURE_UNLOCKS,
+  MAX_LEVEL,
   type BugColor,
   type FeatureKey,
   type BugShape,
@@ -73,8 +74,10 @@ export interface ColonyApi {
   bugHex: string;
   /** Equips a style, or refuses one the level has not reached. */
   tryStyle: (patch: { shape?: BugShape; color?: BugColor }, from: HTMLElement) => void;
-  /** Whether this board's own level has reached the feature. Hidden features are not rendered. */
+  /** Whether this board's own level has reached the feature, or it unlocks everything. Hidden features are not rendered. */
   featureUnlocked: (feature: FeatureKey) => boolean;
+  /** The level bug styles are checked against: the top level on a board that unlocks everything. */
+  styleLevel: number;
   /** The feature being revealed now (its button rising, then the ant's tour), if any. */
   revealing: FeatureKey | null;
   /** The reveal animation is over: the ant may tour the feature. Called by the revealed button. */
@@ -199,7 +202,7 @@ export function ColonyProvider({
   storageKey: string;
   cards: BoardCard[];
   extras: ExtrasMap;
-  /** Unlock all Sentinels: shows Sentinels whatever the level. */
+  /** "Unlock everything" in Settings: every feature, Sentinel and bug style, whatever the level. */
   unlockAll?: boolean;
   children: React.ReactNode;
 }) {
@@ -227,8 +230,10 @@ export function ColonyProvider({
   const topRef = useRef<HTMLCanvasElement>(null);
 
   const score = useMemo(() => scoreOf(cards), [cards]);
+  // "Unlock everything" in Settings opens every shape and colour too.
+  const styleLevel = unlockAll ? MAX_LEVEL : score.level;
   // A style chosen under an older level schedule may now sit above the level.
-  const saved = styleUnlocked(stored, score.level) ? stored : DEFAULTS;
+  const saved = styleUnlocked(stored, styleLevel) ? stored : DEFAULTS;
   const stacks = useMemo(() => heatStacks(cards, now), [cards, now]);
   const held = useMemo(() => {
     if (!landed) return 0;
@@ -811,7 +816,7 @@ export function ColonyProvider({
 
   const tryStyle = useCallback<ColonyApi["tryStyle"]>(
     (patch, from) => {
-      const lv = score.level;
+      const lv = styleLevel;
       const need = patch.shape
         ? (SHAPE_UNLOCKS.find((u) => u.key === patch.shape)?.lv ?? 1)
         : (COLOR_UNLOCKS.find((u) => u.key === patch.color)?.lv ?? 1);
@@ -839,7 +844,7 @@ export function ColonyProvider({
         );
       });
     },
-    [fx, sfx, score.level, setSaved],
+    [fx, sfx, styleLevel, setSaved],
   );
 
   const api: ColonyApi = {
@@ -853,8 +858,8 @@ export function ColonyProvider({
     color: saved.color,
     bugHex,
     tryStyle,
-    featureUnlocked: (feature) =>
-      (unlockAll && feature === "sentinels") || (featureUnlockedAt(feature, score.level) && !queue.includes(feature)),
+    featureUnlocked: (feature) => unlockAll || (featureUnlockedAt(feature, score.level) && !queue.includes(feature)),
+    styleLevel,
     revealing,
     settleReveal,
     enqueueReveals,

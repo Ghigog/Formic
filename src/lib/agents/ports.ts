@@ -4,6 +4,7 @@ import type { Workspace } from "@/lib/sandbox/workspace";
 import type { Budget } from "@/lib/budget/budget-for";
 import type { ProviderId } from "@/lib/llm/providers";
 import type { ScoutCandidate, ScoutVerdict } from "./judge";
+import type { RubricFixFlag } from "@/lib/sentinels/rubric-fix";
 import type { FollowUp } from "./follow-ups";
 import type { Origin } from "./origin";
 import type { AgentQuestion } from "@/lib/domain/question";
@@ -244,6 +245,8 @@ export interface CodeChange {
   handoff?: string[];
   /** Work found that is not this ticket's, for the person to add as its own (FOLLOW_UP_RULE). */
   followUps?: FollowUp[];
+  /** Rubric checks found wrong, for the person to approve a change to (RUBRIC_FIX_RULE). */
+  rubricFixes?: RubricFixFlag[];
 }
 
 /** PROT-06. Ticket in, edited workspace out. Commits and pushes are the caller's. */
@@ -296,6 +299,15 @@ export interface ReviewTask {
 export interface ReviewVerdict extends CodeChange {
   /** Why the ticket goes back to the Coder Agent, when it does. */
   sendBack: string | null;
+  /** Red CI the ticket's change did not cause: the ticket waits on a fix of its own. */
+  blockedByFix?: BlockedByFix | null;
+}
+
+/** The Reviewer's 'blocked by another fix' verdict: the cause, the failing check and the bug to raise. */
+export interface BlockedByFix {
+  cause: string;
+  check: string;
+  bug: { title: string; story: string; scope: string[] };
 }
 
 /**

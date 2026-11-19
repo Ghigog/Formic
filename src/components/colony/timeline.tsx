@@ -2,7 +2,7 @@
 
 import { AutoTour } from "@/components/onboarding/tour";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GRADES, featureUnlocked, levelOf, rankOf } from "@/lib/colony/game";
+import { GRADES, levelOf, rankOf } from "@/lib/colony/game";
 import {
   WINDOW_DAYS as N,
   TODAY,
@@ -355,7 +355,9 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
       className="bg-cream fixed top-14 right-0 bottom-14 left-0 md:top-16 z-[60] box-border overflow-auto px-6 pt-5 pb-8"
     >
       <AutoTour id="timeline" delay={450} />
-      <div className="mx-auto flex max-w-[1520px] min-w-[960px] flex-col gap-4">
+      <div className="mx-auto flex max-w-[1520px] flex-col gap-4">
+      <div className="max-md:overflow-x-auto">
+        <div className="flex min-w-[960px] flex-col gap-4">
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1">
             <span className="text-muted font-mono text-[10px] tracking-[0.12em] uppercase">
@@ -1062,9 +1064,11 @@ function TimelineView({ c, repoName }: { c: ColonyApi; repoName: string }) {
             )}
           </div>
         </div>
+        </div>
+      </div>
 
         <div data-tour="timeline-kpis">
-          <KpiSection unlocked={featureUnlocked("kpis", c.score.level)} startAfterMs={KPI_REVEAL_DELAY_MS} />
+          <KpiSection unlocked={c.featureUnlocked("kpis")} startAfterMs={KPI_REVEAL_DELAY_MS} />
         </div>
       </div>
     </div>

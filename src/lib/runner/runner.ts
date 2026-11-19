@@ -20,7 +20,7 @@ import {
 import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
 import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
 import { attemptsFor } from "@/lib/budget/in-process";
-import { diagnose, lastWords } from "@/lib/agents/limits";
+import { diagnose, finalMessage, lastWords } from "@/lib/agents/limits";
 import { handedInPlan, mergePlan, planFraction, planFromSummary } from "@/lib/agents/plan";
 import { provider as providerInfo, secretNameFor, type ProviderInfo } from "@/lib/llm/providers";
 import { epicNoteTexts, withEpicNotes } from "@/lib/agents/epic-notes";
@@ -37,6 +37,7 @@ import {
   CODER_DESIGN_RULE,
   CODER_SCOPE_RULE,
   FOLLOW_UP_RULE,
+  RUBRIC_FIX_RULE,
   PRODUCT_BRIEF,
   REVIEWER_BRIEF,
   REVIEWER_AUDIT_RULE,
@@ -59,6 +60,8 @@ import type { AttachmentSummary } from "@/lib/domain/entities";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { followUpsFromSummary } from "@/lib/agents/follow-ups";
 import { recordFollowUps } from "@/lib/board/follow-ups";
+import { recordRubricFixes } from "@/lib/board/rubric-fixes";
+import { rubricFixesFromSummary } from "@/lib/sentinels/rubric-fix";
 import { askForScope, widenScope } from "@/lib/coder/scope-request";
 import {
   checkDecomposition,
@@ -93,6 +96,7 @@ import {
   type CheckpointFile,
   type VcsClient,
 } from "@/lib/vcs";
+import { NO_CHANGES } from "@/lib/domain/notice";
 import { hostName, repoHost } from "@/lib/vcs/host";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
@@ -158,7 +162,7 @@ const MAX_REPORT = 20_000;
 const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${PLAN_FIRST_RULE}
 - ${CHECKPOINT_RULE}
-- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- [needed] Title (N pt): what and why" or "- [nice to have] Title (N pt): what and why" per line, before the plan.${mode === "implement" ? "" : `\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`}
+- ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- [needed] Title (N pt): what and why" or "- [nice to have] Title (N pt): what and why" per line, before the plan.\n- ${RUBRIC_FIX_RULE} Put them in the summary as a "Rubric fixes:" section, one "- Collum 5b: what is wrong -> the change you suggest" per line.${mode === "implement" ? "" : `\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${CHECKS_RULE}
 - ${VERIFY_RULE}
@@ -417,6 +421,11 @@ export async function whyItFailed(
   const diagnosis = diagnose(text, label);
   if (!diagnosis) {
     const last = lastWords(text);
+    if (last === NO_CHANGES_ECHO) {
+      const said = finalMessage(text);
+      if (!said) return failure(NO_CHANGES, `${label} finished without changing any files`, log);
+      return failure(NO_CHANGES, subtitleOf(said), said, log);
+    }
     return last
       ? failure(
           `${label} stopped before finishing`,
@@ -453,6 +462,16 @@ function duration(limit: string): string {
   if (!m || m[3] && m[3] !== "0") return limit;
   const minutes = Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0);
   return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
+
+/** What the hand-off step prints when the agent ended without changing a file. */
+const NO_CHANGES_ECHO = "The agent finished without changing anything.";
+
+/** The first sentence of the agent's message, on one line and cut to about 120 characters. */
+function subtitleOf(message: string): string {
+  const one = message.replace(/\s+/g, " ").trim();
+  const sentence = /^.*?[.!?](?=\s|$)/.exec(one)?.[0] ?? one;
+  return sentence.length > 120 ? `${sentence.slice(0, 119).trimEnd()}…` : sentence;
 }
 
 function failure(type: string, ...detail: string[]): string {
@@ -1470,7 +1489,10 @@ async function completeCliSentinel(
     await cleanUp();
     return;
   }
-  const fail = (error: string) => repo.finishAudit(audit.id, { status: "failed", error, model: null });
+  const fail = async (error: string) => {
+    await repo.finishAudit(audit.id, { status: "failed", error, model: null });
+    if (audit.kind === "revise") await failRevision(audit.id, error);
+  };
   if (result.conclusion !== "success") {
     await cleanUp();
     await fail(await whyItFailed(projectId, client, result, audit.runnerAgent));
@@ -1480,12 +1502,21 @@ async function completeCliSentinel(
   await cleanUp();
 
   const { goalOf } = await import("@/lib/sentinels/rubric");
-  const goal = goalOf(audit);
+  const { landRevision, failRevision, fixOf } = await import("@/lib/sentinels/revise");
+  let goal = goalOf(audit);
+  if (audit.kind === "revise") {
+    const fix = await fixOf(audit);
+    goal = fix && audit.rubric ? { kind: "revise", rubric: audit.rubric, checkId: fix.checkId, note: fix.suggestion } : null;
+  }
   if (!goal) return void (await fail("This audit started without a rubric. Calibrate, then audit again."));
   const { parseCliReport } = await import("@/lib/sentinels/cli");
   const report = parseCliReport(answer, goal);
   if (report.ok) {
-    const { ok: _, ...done } = report;
+    const { ok: _, check, ...done } = report;
+    if (goal.kind === "revise") {
+      const landed = check ? await landRevision(audit.id, check) : { ok: false as const, reason: "The run gave no check." };
+      if (!landed.ok) return await repo.finishAudit(audit.id, { status: "failed", error: landed.reason, model: null });
+    }
     await repo.finishAudit(audit.id, { status: "done", ...done, model: null });
     return;
   }
@@ -1769,6 +1800,7 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
     // What it proposed as tickets of their own stands whatever else it did,
     // a send-back included.
     await recordFollowUps(ticket.id, followUpsFromSummary(change.messages.at(-1) ?? ""));
+    await recordRubricFixes(ticket.id, rubricFixesFromSummary(change.messages.at(-1) ?? ""));
     const asked = change.files.length === 0 ? questionsFromSummary(change.messages.at(-1) ?? "") : [];
     if (asked.length > 0) {
       await stop(questionReason(isTicketImplementation(result.mode) ? "The Coder Agent" : "The Reviewer Agent", asked), true);

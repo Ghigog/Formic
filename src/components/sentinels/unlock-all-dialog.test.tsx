@@ -45,7 +45,7 @@ describe("UnlockAllDialog", () => {
     answer({ established: true, unlockAllSentinels: false, unlockAllOfferDismissedAt: null });
     at(0, <UnlockAllDialog projectId="p1" unlockAll={false} />);
 
-    expect(await screen.findByRole("dialog")).toHaveTextContent("All Sentinels can be unlocked in Settings");
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Sentinels and Playtest included");
     expect(screen.getByRole("link", { name: "Open Settings" })).toHaveAttribute("href", "/settings#sentinels");
   });
 

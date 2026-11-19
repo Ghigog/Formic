@@ -13,14 +13,18 @@ import { promptFor, type Sentinel } from "./roster";
 import {
   CALIBRATE_RULES,
   SCORE_RULES,
+  REVISE_RULES,
   calibrationSchema,
+  finishedRevision,
   finishedRubric,
+  revisionSchema,
   rubricText,
   scoredReport,
   type Goal,
 } from "./rubric";
 
 export type { Goal } from "./rubric";
+import type { CheckRevision } from "./rubric-fix";
 import { outline } from "./analysis";
 import type { Evidence } from "./gather";
 
@@ -135,6 +139,8 @@ export interface Finished {
   summary?: string;
   report?: AuditReport;
   rubric?: Rubric;
+  /** A revision's one check, to be applied by landRevision. */
+  check?: CheckRevision;
 }
 
 /** A report as the page stores it: the text trimmed, the stars from its checks. */
@@ -151,6 +157,12 @@ export function finishedRun(goal: Goal, raw: unknown): { ok: true; value: Finish
     const r = finishedRubric(c.data);
     return r.ok ? { ok: true, value: { rubric: r.rubric, summary: r.rubric.context } } : r;
   }
+  if (goal.kind === "revise") {
+    const r = revisionSchema.safeParse(raw);
+    if (!r.success) return { ok: false, problem: "The revised check did not match the expected shape." };
+    const check = finishedRevision(r.data);
+    return check.text ? { ok: true, value: { check, summary: check.text } } : { ok: false, problem: "The revised check has no text." };
+  }
   const r = reportSchema.safeParse(raw);
   return r.success
     ? { ok: true, value: finishedReport(goal.rubric, r.data) }
@@ -159,6 +171,9 @@ export function finishedRun(goal: Goal, raw: unknown): { ok: true; value: Finish
 
 /** The full brief for the last call: the role, then what this run is for. */
 export function briefFor(s: Sentinel, goal: Goal): string {
+  if (goal.kind === "revise") {
+    return `${s.persona} ${s.task} ${REVISE_RULES}\n\n${rubricText(goal.rubric)}\n\nThe check to revise: [${goal.checkId}]. The approved note: ${goal.note}`;
+  }
   return goal.kind === "calibrate"
     ? `${s.persona} ${s.task} ${CALIBRATE_RULES}`
     : `${promptFor(s)} ${SCORE_RULES}\n\n${rubricText(goal.rubric)}`;
@@ -186,7 +201,7 @@ export type AuditOutcome =
 
 export async function runAudit(config: AgentConfig, run: AuditRun): Promise<AuditOutcome> {
   const { sentinel: s, goal } = run;
-  const doing = goal.kind === "calibrate" ? "calibrate on" : "audit";
+  const doing = goal.kind === "calibrate" ? "calibrate on" : goal.kind === "revise" ? "revise one check of the rubric for" : "audit";
   const model = config.model ?? SENTINEL_MODEL;
   let usage: Usage = { model, tokensIn: 0, tokensOut: 0, costCents: 0 };
   const add = (u: Usage) => {
@@ -264,7 +279,7 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
     texts.push(read);
   }
 
-  await run.log(goal.kind === "calibrate" ? "Writing the rubric" : `Scoring as ${s.name}`);
+  await run.log(goal.kind === "calibrate" ? "Writing the rubric" : goal.kind === "revise" ? "Revising the check" : `Scoring as ${s.name}`);
   const sections = run.evidence?.sections ?? [];
   const images = run.evidence?.images ?? [];
   const answer = await ask(config, model, run.signal, {
@@ -280,7 +295,7 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
       ...texts.map((t) => `\n=== ${t.path} (${t.note}) ===\n${t.text}`),
     ].join("\n"),
     images,
-    schema: goal.kind === "calibrate" ? (calibrationSchema as z.ZodType<unknown>) : (reportSchema as z.ZodType<unknown>),
+    schema: (goal.kind === "calibrate" ? calibrationSchema : goal.kind === "revise" ? revisionSchema : reportSchema) as z.ZodType<unknown>,
     effort: "medium",
   });
   if (answer.usage) add(answer.usage);
@@ -288,7 +303,7 @@ export async function runAudit(config: AgentConfig, run: AuditRun): Promise<Audi
   const done = finishedRun(goal, answer.value);
   if (!done.ok) return { ok: false, error: done.problem, usage };
 
-  await run.log(goal.kind === "calibrate" ? "Saving the rubric" : "Writing report");
+  await run.log(goal.kind === "calibrate" ? "Saving the rubric" : goal.kind === "revise" ? "Saving the check" : "Writing report");
   return { ok: true, ...done.value, files: [...new Set(texts.map((t) => t.path))], usage };
 }
 

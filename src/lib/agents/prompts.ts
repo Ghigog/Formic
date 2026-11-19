@@ -100,6 +100,13 @@ export const CODER_DESIGN_RULE = `The ticket's requirements are the Architect's 
 export const FOLLOW_UP_RULE = `Keep the work to the ticket's size. When an acceptance criterion needs far more than the ticket's estimate allows (tens of tests where it asks for a few, a refactor across modules), or only holds once other tickets are done, do not do that work here. Do the part that fits, say in your summary which criterion is not met and why, and propose the rest as a follow-up: a short title, an estimate in story points, and a sentence or two on what the work is and why it was left out. Label each one: needed means the ticket's acceptance criteria are not met without the work; nice to have means everything else. Needed follow-ups go straight onto the board; nice to have ones ask the person. Propose only work this ticket uncovered, not ideas. Never propose a follow-up whose work is only to eyeball the change on a real screen or device (a visual check, a manual pass in a browser or on a phone, a look at it at phone width, manual QA), whether labelled needed or nice to have: a person looks at what ships anyway, so it never needs stating. A follow-up already listed under "Follow-ups already proposed on this ticket", whether added, waiting or dismissed, is never proposed again; a dismissed one stays dismissed.`;
 
 /**
+ * A rubric is how agents are graded, so an agent never changes one and never
+ * works around a wrong check: it flags the check, and only the person can
+ * approve a change (src/lib/board/rubric-fixes.ts).
+ */
+export const RUBRIC_FIX_RULE = `A Sentinel's rubric is how agents are graded, and you cannot change one: only the person can approve a change. When a rubric check you are held to is impossible to meet, names the wrong file or is outdated, flag it: name the Sentinel, the check id, what is wrong and the change you suggest. Never work around the check or reinterpret it, and never propose lowering a bar because the code does not meet it; a check the code fails is a defect to fix, not a wrong check.`;
+
+/**
  * The Reviewer's side of FOLLOW_UP_RULE: a gap the Coder reported, and was
  * right to leave, is not a send-back. Sending it back asks for exactly the
  * work the Coder was right to refuse.
@@ -143,7 +150,7 @@ Rules that are enforced, not advisory:
 export const CODER_SCOPE_RULE = `The ticket's file scope is where its change is expected to go; other agents may be working next to it. Keep to it when a change inside it is as good. When the right change needs files outside it, make that change anyway: never settle for a worse one or stop because of the scope. Formic takes those files into the scope when no running ticket is using them, and asks the person only when one is. Say in your summary which files outside the scope you changed, and why.`;
 
 /** The file scope, for an agent fixing a pull request that is already open. */
-export const REVIEWER_SCOPE_RULE = `Fix only inside the ticket's file scope; a fix outside it is refused before anything is pushed. When the right fix needs files outside it, send the ticket back saying which files and why, and the Coder Agent asks the person for them.`;
+export const REVIEWER_SCOPE_RULE = `The ticket's file scope is where its change is expected to go; other agents may be working next to it. Keep to it when a change inside it is as good. When the right fix needs files outside it, make that fix anyway: never settle for a worse one or stop because of the scope. Formic takes those files into the scope when no running ticket is using them, and otherwise holds the ticket and reviews it again once they are free. Say in your summary which files outside the scope you changed, and why.`;
 
 /**
  * What a coding agent does when the ticket's work is already in the
@@ -272,6 +279,8 @@ export const SPIKE_RULE = `This ticket is a spike: an investigation, not a chang
 
 export const ARCHITECT_AUDIT_RULE = `When the request is a sentinel's audit, each check it lists as not met is a rule over the whole project, and the places the audit found are examples of where it breaks, not the list of them. Give each check a ticket whose acceptance criteria state the check as written and carry its Verify line, so the reviewer runs it. Scope that ticket to everywhere the rule applies: search the code for every place the rule covers before you set the scope, not only the files the audit named.`;
 
+export const REVIEWER_BLOCKED_RULE = `When CI is red, find out whose failure it is before you change anything: read the failing check's log and compare the failing test or file with the diff. If the only red checks fail in code this change does not touch, it is not this ticket's to fix and sending it back or re-running the check will not help. Change nothing and finish with blocked_by_fix: the cause, the failing check, and a bug ticket (title, story, file scope) that fixes it. The ticket waits on that fix and is reviewed again when it merges. Never re-run a check whose code has not changed unless you can say what changed in the environment.`;
+
 export const REVIEWER_PROOF_RULE = `Passing tests are not the same as met criteria. For each acceptance criterion, find the test or check that proves it and ask whether it covers everything the criterion says. A test narrower than its criterion (it reads only some of the files the rule covers, or lists cases by hand where the code could find them) does not prove it: widen the test, or send the change back saying what it misses.`;
 
 export const REVIEWER_AUDIT_RULE = `When the ticket cites a check from a sentinel's audit with a verification (a "Verify:" line: the file to read or the command to run, and what passing looks like), run that check yourself on the branch and judge from its result. The Coder Agent's summary is not evidence that the check passes. A ticket without such a check is judged as before.`;
@@ -284,8 +293,8 @@ export function withCodingRules(
 ): string {
   const rules = codingRules(
     role === "coder"
-      ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE} Put each in finish's follow_ups.`
-      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`,
+      ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${RUBRIC_FIX_RULE} Put each in finish's rubric_fixes.`
+      : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE} Put each in finish's follow_ups.\n- ${RUBRIC_FIX_RULE} Put each in finish's rubric_fixes.\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}\n- ${REVIEWER_BLOCKED_RULE}`,
   );
   return `${brief.trim()}\n\n${rules}\n\n${HANDOFF_RULE}${options.spike ? `\n\n${SPIKE_RULE}` : ""}\n\n${DESIGN_RULE}\n\n${ENGINEERING_PRACTICES}`;
 }

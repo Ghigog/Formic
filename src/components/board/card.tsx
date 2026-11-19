@@ -328,6 +328,14 @@ function EpicWorking({ card }: { card: BoardCard }) {
 export function ProblemBadge({ card }: { card: BoardCard }) {
   const problem = cardProblem(card);
   if (!problem) return null;
+  if (classifyNotice(card)?.severity === "paused") {
+    const why = problem.split("\n").filter(Boolean).join(" ");
+    return (
+      <span title={why} className="text-muted inline-flex shrink-0">
+        <NoticeIcon severity="paused" label={`Paused for usage limit: ${why}`} />
+      </span>
+    );
+  }
   return (
     <span
       role="img"
@@ -342,9 +350,20 @@ export function ProblemBadge({ card }: { card: BoardCard }) {
 
 /**
  * The mark for a notice: a red warning dot, a yellow alert square, or, for a
- * question an agent is waiting on, a terracotta speech bubble.
+ * question an agent is waiting on, a terracotta speech bubble, or, for a card
+ * waiting on an agent's usage, a gray clock.
  */
-export function NoticeIcon({ severity }: { severity: Notice["severity"] }) {
+export function NoticeIcon({ severity, label }: { severity: Notice["severity"]; label?: string }) {
+  if (severity === "paused") {
+    return (
+      <span role="img" aria-label={label ?? "Paused for usage limit"} className="text-muted inline-flex size-4 shrink-0">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 4.5V8l2.5 1.5" />
+        </svg>
+      </span>
+    );
+  }
   if (severity === "question") {
     return (
       <span role="img" aria-label="Question" className="text-cta inline-flex size-4 shrink-0">
@@ -376,6 +395,7 @@ export const NOTICE_INK: Record<Notice["severity"], string> = {
   warning: "text-crimson",
   alert: "text-clay",
   question: "text-cta",
+  paused: "text-muted",
 };
 
 /**
@@ -936,8 +956,8 @@ function PlainTicket({
   column: ColumnId;
   extras: CardExtras;
 }) {
-  const held = card.status === "waiting" || card.status === "blocked";
   const notice = classifyNotice(card);
+  const held = card.status === "waiting" || card.status === "blocked" || notice?.severity === "paused";
   return (
     <CardShell
       card={card}
@@ -950,6 +970,7 @@ function PlainTicket({
         <span
           data-testid="card-notice"
           data-severity={notice.severity}
+          title={notice.shortDescription || undefined}
           className={cn(
             "inline-flex min-w-0 items-center gap-1.5 text-[11px] font-semibold",
             NOTICE_INK[notice.severity],

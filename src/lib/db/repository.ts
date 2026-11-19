@@ -140,7 +140,8 @@ export interface CreateAttachmentInput {
 export type AttachmentRef =
   | { epicId: string }
   | { ticketId: string }
-  | { requestId: string };
+  | { requestId: string }
+  | { assistantMessageId: string };
 
 export interface AttachmentContent {
   bytes: Uint8Array;
@@ -157,14 +158,66 @@ export interface AssistantMessage {
   proposals: AssistantProposal[];
   /** Cards the message links to. */
   cards: Array<{ id: string; key: string; title: string }>;
+  /** Images the person sent with it. Filled by `assistantMessages`; empty from the single-message reads. */
+  attachments: AttachmentSummary[];
   status: "done" | "pending" | "failed";
   runnerJob: string | null;
   /** The preset that job was dispatched with, so a failure is blamed on it. */
   runnerAgent: string | null;
   /** Who a reply comes from: "assistant", a column role or "sentinel:<id>" (a GuestId). */
   speaker: string;
+  /** The playtest a note was written in, or a reply to one. Null otherwise. */
+  playtestId?: string | null;
   createdAt: Date;
 }
+
+export type PlaytestStatus = "starting" | "live" | "failed" | "ended";
+
+/** One Playtest. See docs/plans/playtest.md. */
+export interface PlaytestRecord {
+  id: string;
+  projectId: string;
+  userId: string;
+  commitSha: string | null;
+  sandboxId: string | null;
+  url: string | null;
+  status: PlaytestStatus;
+  stage: string | null;
+  kind: string | null;
+  logTail: string | null;
+  error: string | null;
+  endReason: string | null;
+  summary: string | null;
+  warned: boolean;
+  nudgedSha: string | null;
+  answeredAt: Date | null;
+  heartbeatAt: Date;
+  startedAt: Date;
+  endsAt: Date;
+  endedAt: Date | null;
+}
+
+export type PlaytestPatch = Partial<
+  Pick<
+    PlaytestRecord,
+    | "commitSha"
+    | "sandboxId"
+    | "url"
+    | "status"
+    | "stage"
+    | "kind"
+    | "logTail"
+    | "error"
+    | "endReason"
+    | "summary"
+    | "warned"
+    | "nudgedSha"
+    | "answeredAt"
+    | "heartbeatAt"
+    | "endsAt"
+    | "endedAt"
+  >
+>;
 
 export interface AssistantProposal {
   /** One line for the person to approve or not. */
@@ -266,7 +319,40 @@ export interface AuditCheck {
  * project keeps at most two of each per sentinel: the last one that
  * finished, and a newer one running or failed.
  */
-export type AuditKind = "audit" | "calibrate";
+export type AuditKind = "audit" | "calibrate" | "revise";
+
+export type RubricFixStatus = "flagged" | "proposed" | "approved" | "revising" | "applied" | "declined" | "failed";
+
+/** One change to a single rubric check, from the flag to the applied edit. */
+export interface RubricFix {
+  id: string;
+  projectId: string;
+  sentinel: string;
+  checkId: string;
+  problem: string;
+  suggestion: string;
+  /** The card that flagged it. */
+  ticketId: string | null;
+  ticketKey: string | null;
+  /** The agent's label, or null when a person asked for it. */
+  flaggedBy: string | null;
+  status: RubricFixStatus;
+  /** The PM chat message that brought it to the person. */
+  messageId: string | null;
+  before: RubricCheck | null;
+  after: RubricCheck | null;
+  /** User id of whoever approved it. */
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  appliedAt: Date | null;
+  error: string | null;
+  createdAt: Date;
+}
+
+export type NewRubricFix = Pick<RubricFix, "projectId" | "sentinel" | "checkId" | "problem" | "suggestion"> &
+  Partial<Pick<RubricFix, "ticketId" | "ticketKey" | "flaggedBy" | "status" | "messageId">>;
+
+export type RubricFixPatch = Partial<Omit<RubricFix, "id" | "projectId" | "createdAt">>;
 
 /**
  * One sentinel's audit of a project. A project keeps at most two per
@@ -990,10 +1076,10 @@ export interface AttachmentRepository {
   attachmentScope(id: string): Promise<{ projectId: string; requestId: string | null } | null>;
   /** The stored bytes and mime type, or null when no such attachment exists. */
   attachmentContent(id: string): Promise<AttachmentContent | null>;
-  /** Moves every attachment under requestId to a real card, once it exists. */
+  /** Moves every attachment under requestId to a real card or chat message, once it exists. */
   claimAttachments(
     requestId: string,
-    ref: { epicId: string } | { ticketId: string },
+    ref: { epicId: string } | { ticketId: string } | { assistantMessageId: string },
   ): Promise<void>;
   deleteAttachments(ids: string[]): Promise<void>;
   /** Moves a ticket's attachments to another, such as the ticket drafted from a placeholder. */
@@ -1197,6 +1283,7 @@ export interface ConversationRepository {
     speaker?: string;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
+    playtestId?: string | null;
   }): Promise<AssistantMessage>;
   /** How many PM messages (done or failed) were written after `since`; all of them when null. */
   unreadPmCount(projectId: string, since: Date | null): Promise<number>;
@@ -1243,6 +1330,21 @@ export interface ConversationRepository {
   orphanedAssistantAnswers(projectId: string, olderThan: Date): Promise<AssistantMessage[]>;
 }
 
+/** Playtest sessions. */
+export interface PlaytestRepository {
+  createPlaytest(input: { projectId: string; userId: string; endsAt: Date }): Promise<PlaytestRecord>;
+  playtest(id: string): Promise<PlaytestRecord | null>;
+  updatePlaytest(id: string, patch: PlaytestPatch): Promise<void>;
+  /** A board's playtests, newest first. */
+  playtestsFor(projectId: string, limit?: number): Promise<PlaytestRecord[]>;
+  /** Someone's playtests still starting or live, on any board. */
+  openPlaytestsFor(userId: string): Promise<PlaytestRecord[]>;
+  /** Every playtest still starting or live, for the reaper. */
+  openPlaytests(): Promise<PlaytestRecord[]>;
+  /** A playtest's notes and the PM's replies to them, oldest first. */
+  playtestMessages(playtestId: string): Promise<AssistantMessage[]>;
+}
+
 /** Sentinels: audits. */
 export interface AuditRepository {
   /** A project's newest audits, oldest first. */
@@ -1278,6 +1380,17 @@ export interface AuditRepository {
   finishAudit(id: string, result: AuditResult): Promise<void>;
   /** Records the Epic made from an audit's report. */
   markAuditEpic(auditId: string, epicId: string): Promise<void>;
+  /**
+   * Replaces the rubric of a done calibration, and only that: audits keep
+   * the rubric they were scored against. Throws for any other record.
+   */
+  reviseCalibration(auditId: string, rubric: Rubric): Promise<void>;
+  /** Records a change to one rubric check. */
+  addRubricFix(input: NewRubricFix): Promise<RubricFix>;
+  rubricFix(id: string): Promise<RubricFix | null>;
+  /** A project's rubric fixes, newest first; one sentinel's when given. */
+  rubricFixesFor(projectId: string, sentinel?: string): Promise<RubricFix[]>;
+  updateRubricFix(id: string, patch: RubricFixPatch): Promise<RubricFix | null>;
 }
 
 /** Webhook deliveries. */
@@ -1321,6 +1434,7 @@ export interface Repository
     RunRepository,
     AgentRepository,
     ConversationRepository,
+    PlaytestRepository,
     AuditRepository,
     DeliveryRepository,
     UsageRepository {}

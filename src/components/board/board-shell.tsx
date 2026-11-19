@@ -37,6 +37,7 @@ import {
   LazyRerouteToast,
 } from "@/components/colony/lazy";
 import { LazySentinelsPage, UnlockAllDialog } from "@/components/sentinels/lazy";
+import { PlaytestProvider } from "@/components/playtest/playtest-context";
 import { featureUnlocked, scoreOf } from "@/lib/colony/game";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import type { SentinelStates } from "@/lib/sentinels/view";
@@ -233,6 +234,8 @@ export function BoardShell({
     merged[id] = { ...merged[id], ...live };
   }
 
+  // Repo-less boards have no repository name, so the board's own id tells them apart.
+  const boardId = projectId ?? repoFullName;
   const repoName = repoFullName.split("/")[1] ?? repoFullName;
 
   // The secrets the CLI agents on columns sign in with: the other half of setup. Agents
@@ -256,6 +259,7 @@ export function BoardShell({
   }
 
   const assistantControls: AssistantControls = {
+      boardId,
       ...assistant,
       questions: cards.filter((c) => isQuestion(c.blockedReason)).length,
       waiting: cards
@@ -286,6 +290,7 @@ export function BoardShell({
   return (
     <ColonyProvider storageKey={`formic:colony:${repoFullName}`} cards={cards} extras={merged} unlockAll={unlockAllSentinels}>
     <SentinelsProvider initial={initialSentinels} level={scoreOf(cards).level} unlockAll={unlockAllSentinels} cards={cards}>
+    <PlaytestProvider repoName={repoName} projectId={projectId ?? ""}>
     <div data-board-root className="flex h-dvh flex-col overflow-hidden">
       <Board
         cards={boardShown}
@@ -361,6 +366,7 @@ export function BoardShell({
       <NewItemDialog
         open={dialog !== null}
         column={dialog?.column ?? "backlog"}
+        boardId={boardId}
         onClose={() => setDialog(null)}
         onSubmit={(rawRequest, requestId) =>
           dialog?.column === "todo"
@@ -392,7 +398,7 @@ export function BoardShell({
           setOpenTicketId(null);
           openAssistant(true);
         }}
-        kpisUnlocked={featureUnlocked("kpis", scoreOf(cards).level)}
+        kpisUnlocked={unlockAllSentinels || featureUnlocked("kpis", scoreOf(cards).level)}
         subscribe={subscribe}
         onChanged={() => void refetch().catch(() => {})}
       />
@@ -427,6 +433,7 @@ export function BoardShell({
         </div>
       )}
     </div>
+    </PlaytestProvider>
     </SentinelsProvider>
     </ColonyProvider>
   );

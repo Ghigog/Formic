@@ -38,8 +38,15 @@ import type {
   TicketUpdate,
   AssistantMessage,
   AssistantProposal,
+  PlaytestPatch,
+  PlaytestRecord,
   CardChatMessage,
   AuditKind,
+  NewRubricFix,
+  RubricCheck,
+  RubricFix,
+  RubricFixPatch,
+  RubricFixStatus,
   AuditRecord,
   AuditReport,
   AuditResult,
@@ -148,6 +155,20 @@ function epicKey(number: number): string {
 function epicNumbers(epics: Array<{ id: string; number: number | null; createdAt: Date }>) {
   const byAge = [...epics].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return new Map(byAge.map((e, i) => [e.id, e.number ?? i + 1]));
+}
+
+/** Closes a ticket's open column stay and opens the next at one instant. */
+async function recordColumnChange(
+  tx: Pick<Prisma.TransactionClient, "ticketColumnEntry">,
+  ticketId: string,
+  column: ColumnId,
+): Promise<void> {
+  const now = new Date();
+  await tx.ticketColumnEntry.updateMany({
+    where: { ticketId, exitedAt: null },
+    data: { exitedAt: now },
+  });
+  await tx.ticketColumnEntry.create({ data: { ticketId, column, enteredAt: now } });
 }
 
 export class PrismaRepository implements Repository {
@@ -1367,15 +1388,7 @@ export class PrismaRepository implements Repository {
           misplacedIn: input.misplaced?.in,
         });
         if (columnOf(before) === to) return;
-        // One instant closes the old stay and starts the new one.
-        const now = new Date();
-        await tx.ticketColumnEntry.updateMany({
-          where: { ticketId: input.cardId, exitedAt: null },
-          data: { exitedAt: now },
-        });
-        await tx.ticketColumnEntry.create({
-          data: { ticketId: input.cardId, column: to, enteredAt: now },
-        });
+        await recordColumnChange(tx, input.cardId, to);
       });
     }
   }
@@ -1474,14 +1487,11 @@ export class PrismaRepository implements Repository {
 
   async claimAttachments(
     requestId: string,
-    ref: { epicId: string } | { ticketId: string },
+    ref: { epicId: string } | { ticketId: string } | { assistantMessageId: string },
   ): Promise<void> {
     await prisma().attachment.updateMany({
       where: { requestId },
-      data:
-        "epicId" in ref
-          ? { epicId: ref.epicId, requestId: null }
-          : { ticketId: ref.ticketId, requestId: null },
+      data: { ...ref, requestId: null },
     });
   }
 
@@ -1869,9 +1879,10 @@ export class PrismaRepository implements Repository {
       severity = { bugSeverity: severityFor(rest.workType ?? current?.workType, rest.bugSeverity) };
     }
 
-    await db.ticket.update({
-      where: { id: ticketId },
-      data: {
+    // A change of status or stall that moves the card to another column
+    // closes its open stay and opens the next, with the update.
+    const movesColumn = rest.status !== undefined || rest.stalledIn !== undefined;
+    const data = {
         ...rest,
         ...merge,
         ...severity,
@@ -1890,8 +1901,26 @@ export class PrismaRepository implements Repository {
         ...(costCents !== undefined ? { costCents: { increment: costCents } } : {}),
         ...(tokensIn !== undefined ? { tokensIn: { increment: tokensIn } } : {}),
         ...(tokensOut !== undefined ? { tokensOut: { increment: tokensOut } } : {}),
-      },
-    });
+      };
+    if (!movesColumn) {
+      await db.ticket.update({ where: { id: ticketId }, data });
+    } else {
+      await db.$transaction(async (tx) => {
+        const before = await tx.ticket.findUnique({
+          where: { id: ticketId },
+          select: { status: true, stalledIn: true, misplacedIn: true },
+        });
+        await tx.ticket.update({ where: { id: ticketId }, data });
+        if (!before) return;
+        const to = columnOf({
+          status: rest.status ?? before.status,
+          stalledIn: rest.stalledIn !== undefined ? rest.stalledIn : before.stalledIn,
+          // A status change clears a misplacement; a stall alone keeps it.
+          misplacedIn: rest.status !== undefined ? null : before.misplacedIn,
+        });
+        if (columnOf(before) !== to) await recordColumnChange(tx, ticketId, to);
+      });
+    }
     if (changes.length > 0) {
       await prisma().ticketChange.createMany({
         data: changes.map((change) => ({
@@ -2333,8 +2362,15 @@ export class PrismaRepository implements Repository {
       ...(before ? { cursor: { id: before }, skip: 1 } : {}),
     });
     const page = rows.slice(0, limit);
+    const files = await prisma().attachment.findMany({
+      where: { assistantMessageId: { in: page.map((m) => m.id) } },
+      orderBy: { createdAt: "asc" },
+      select: { ...ATTACHMENT_SUMMARY, assistantMessageId: true },
+    });
     return {
-      messages: page.reverse().map(toAssistantMessage),
+      messages: page.reverse().map((m) =>
+        toAssistantMessage(m, files.filter((f) => f.assistantMessageId === m.id).map(toAttachmentSummary)),
+      ),
       earlierCursor: rows.length > limit ? page[0]!.id : null,
     };
   }
@@ -2368,6 +2404,7 @@ export class PrismaRepository implements Repository {
     speaker?: string;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
+    playtestId?: string | null;
   }): Promise<AssistantMessage> {
     const row = await prisma().assistantMessage.create({
       data: {
@@ -2378,6 +2415,54 @@ export class PrismaRepository implements Repository {
       },
     });
     return toAssistantMessage(row);
+  }
+
+  async createPlaytest(input: { projectId: string; userId: string; endsAt: Date }): Promise<PlaytestRecord> {
+    return toPlaytest(await prisma().playtestSession.create({ data: input }));
+  }
+
+  async playtest(id: string): Promise<PlaytestRecord | null> {
+    const row = await prisma().playtestSession.findUnique({ where: { id } });
+    return row ? toPlaytest(row) : null;
+  }
+
+  async updatePlaytest(id: string, patch: PlaytestPatch): Promise<void> {
+    await prisma().playtestSession.update({ where: { id }, data: patch });
+  }
+
+  async playtestsFor(projectId: string, limit = 30): Promise<PlaytestRecord[]> {
+    const rows = await prisma().playtestSession.findMany({
+      where: { projectId },
+      orderBy: { startedAt: "desc" },
+      take: limit,
+    });
+    return rows.map(toPlaytest);
+  }
+
+  async openPlaytestsFor(userId: string): Promise<PlaytestRecord[]> {
+    const rows = await prisma().playtestSession.findMany({
+      where: { userId, status: { in: ["starting", "live"] } },
+      orderBy: { startedAt: "desc" },
+    });
+    return rows.map(toPlaytest);
+  }
+
+  async openPlaytests(): Promise<PlaytestRecord[]> {
+    const rows = await prisma().playtestSession.findMany({ where: { status: { in: ["starting", "live"] } } });
+    return rows.map(toPlaytest);
+  }
+
+  async playtestMessages(playtestId: string): Promise<AssistantMessage[]> {
+    const rows = await prisma().assistantMessage.findMany({
+      where: { playtestId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    const files = await prisma().attachment.findMany({
+      where: { assistantMessageId: { in: rows.map((m) => m.id) } },
+      orderBy: { createdAt: "asc" },
+      select: { ...ATTACHMENT_SUMMARY, assistantMessageId: true },
+    });
+    return rows.map((m) => toAssistantMessage(m, files.filter((f) => f.assistantMessageId === m.id).map(toAttachmentSummary)));
   }
 
   async unreadPmCount(projectId: string, since: Date | null): Promise<number> {
@@ -2403,6 +2488,7 @@ export class PrismaRepository implements Repository {
   }
 
   async clearAssistant(projectId: string): Promise<void> {
+    await prisma().attachment.deleteMany({ where: { projectId, assistantMessageId: { not: null } } });
     await prisma().assistantMessage.deleteMany({ where: { projectId } });
   }
 
@@ -2487,7 +2573,7 @@ export class PrismaRepository implements Repository {
       where: { projectId, role: "assistant", status: "pending", runnerJob: null, createdAt: { lt: olderThan } },
       take: PENDING_MESSAGES_LIMIT,
     });
-    return rows.map(toAssistantMessage);
+    return rows.map((r) => toAssistantMessage(r));
   }
 
   async auditsFor(projectId: string): Promise<AuditRecord[]> {
@@ -2555,6 +2641,50 @@ export class PrismaRepository implements Repository {
 
   async markAuditEpic(auditId: string, epicId: string): Promise<void> {
     await prisma().audit.update({ where: { id: auditId }, data: { epicId } });
+  }
+
+  async reviseCalibration(auditId: string, rubric: Rubric): Promise<void> {
+    const { count } = await prisma().audit.updateMany({
+      where: { id: auditId, kind: "calibrate", status: "done" },
+      data: { rubric: rubric as never },
+    });
+    if (count === 0) throw new Error("Only a done calibration's rubric can be revised");
+  }
+
+  async addRubricFix(input: NewRubricFix): Promise<RubricFix> {
+    const row = await prisma().rubricFix.create({ data: input });
+    return toRubricFix(row);
+  }
+
+  async rubricFix(id: string): Promise<RubricFix | null> {
+    const row = await prisma().rubricFix.findUnique({ where: { id } });
+    return row ? toRubricFix(row) : null;
+  }
+
+  async rubricFixesFor(projectId: string, sentinel?: string): Promise<RubricFix[]> {
+    const rows = await prisma().rubricFix.findMany({
+      where: { projectId, ...(sentinel ? { sentinel } : {}) },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toRubricFix);
+  }
+
+  async updateRubricFix(id: string, patch: RubricFixPatch): Promise<RubricFix | null> {
+    const { before, after, ...rest } = patch;
+    try {
+      const row = await prisma().rubricFix.update({
+        where: { id },
+        data: {
+          ...rest,
+          ...(before !== undefined ? { before: (before ?? Prisma.DbNull) as never } : {}),
+          ...(after !== undefined ? { after: (after ?? Prisma.DbNull) as never } : {}),
+        },
+      });
+      return toRubricFix(row);
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return null;
+      throw e;
+    }
   }
 
   async finishAudit(id: string, result: AuditResult): Promise<void> {
@@ -2690,15 +2820,44 @@ function toAssistantMessage(row: {
   runnerJob: string | null;
   runnerAgent: string | null;
   speaker: string;
+  playtestId?: string | null;
   createdAt: Date;
-}): AssistantMessage {
+}, attachments: AttachmentSummary[] = []): AssistantMessage {
   return {
     ...row,
+    attachments,
+    playtestId: row.playtestId ?? null,
     role: row.role === "user" ? "user" : "assistant",
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
     cards: Array.isArray(row.cards) ? (row.cards as AssistantMessage["cards"]) : [],
   };
+}
+
+function toPlaytest(row: {
+  id: string;
+  projectId: string;
+  userId: string;
+  commitSha: string | null;
+  sandboxId: string | null;
+  url: string | null;
+  status: string;
+  stage: string | null;
+  kind: string | null;
+  logTail: string | null;
+  error: string | null;
+  endReason: string | null;
+  summary: string | null;
+  warned: boolean;
+  nudgedSha: string | null;
+  answeredAt: Date | null;
+  heartbeatAt: Date;
+  startedAt: Date;
+  endsAt: Date;
+  endedAt: Date | null;
+}): PlaytestRecord {
+  const status = (["starting", "live", "failed", "ended"] as const).find((x) => x === row.status) ?? "ended";
+  return { ...row, status };
 }
 
 function toCardChatMessage(row: {
@@ -2781,6 +2940,7 @@ function toTicketDetail(row: TicketRow): TicketDetail {
 function attachmentRefWhere(ref: AttachmentRef) {
   if ("epicId" in ref) return { epicId: ref.epicId };
   if ("ticketId" in ref) return { ticketId: ref.ticketId };
+  if ("assistantMessageId" in ref) return { assistantMessageId: ref.assistantMessageId };
   return { requestId: ref.requestId };
 }
 
@@ -2876,6 +3036,34 @@ const rubric = z.object({
   ),
 });
 
+function toRubricFix(row: {
+  id: string;
+  projectId: string;
+  sentinel: string;
+  checkId: string;
+  problem: string;
+  suggestion: string;
+  ticketId: string | null;
+  ticketKey: string | null;
+  flaggedBy: string | null;
+  status: string;
+  messageId: string | null;
+  before: unknown;
+  after: unknown;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  appliedAt: Date | null;
+  error: string | null;
+  createdAt: Date;
+}): RubricFix {
+  return {
+    ...row,
+    status: row.status as RubricFixStatus,
+    before: (row.before as RubricCheck | null) ?? null,
+    after: (row.after as RubricCheck | null) ?? null,
+  };
+}
+
 function toAuditRecord(row: {
   id: string;
   projectId: string;
@@ -2902,7 +3090,7 @@ function toAuditRecord(row: {
   const scale = rubric.safeParse(row.rubric);
   return {
     ...row,
-    kind: row.kind === "calibrate" ? "calibrate" : "audit",
+    kind: row.kind === "calibrate" || row.kind === "revise" ? row.kind : "audit",
     status: row.status === "done" || row.status === "failed" ? row.status : "running",
     report: report.success ? (report.data satisfies AuditReport) : null,
     rubric: scale.success ? (scale.data satisfies Rubric) : null,
