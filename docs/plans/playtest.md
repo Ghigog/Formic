@@ -91,8 +91,15 @@ there for anyone who wants it.
 
 A progress line while the sandbox comes up, with the ants digging:
 opening a sandbox → cloning → installing → starting → live. On failure: the
-last log lines and **Ask an agent to fix it**, which proposes a Backlog item
-with the log in it.
+last log lines and **Try again**. Each failure says whose it is
+(`PlaytestError.fault` in `src/lib/playtest/runner.ts`):
+
+- **The project's** (session `endReason` "failed"): its install or export
+  failed, its server never answered, or Playtest cannot tell how to start it.
+  **Ask an agent to fix it** proposes a Backlog item with the log in it.
+- **Playtest's own** (`endReason` "unavailable"): no sandbox, a clone or fetch
+  that failed, the time limit. No change to the repository fixes these, so no
+  agent is offered; the screen says it is on Playtest's side.
 
 ### Notes and the PM
 
@@ -154,7 +161,11 @@ the session closes, and a `playtest_sessions` read lets it look further back.
 In order, first match wins:
 
 1. `.github/formic/playtest.sh`: run as is. It must serve on `$PORT`.
-2. Godot (`project.godot`): install export templates for the engine version,
+2. Godot (`project.godot`): fetch the Web export template for the engine
+   version. The templates come as one archive of about 1.3 GB, which does not
+   fit on a sandbox's disk, so only `web_nothreads_release.zip` (about 10 MB)
+   is read out of it with HTTP range requests (`src/lib/playtest/zip-member.ts`).
+   Then
    `godot --headless --export-release Web build/web/index.html` with a Web
    preset written if none exists (single-threaded, so no COOP/COEP needed),
    then serve `build/web` statically.
@@ -200,8 +211,31 @@ is uploaded, and joins the note being written (or starts one).
 - **Public URL warning** beside Open in new tab: "Anyone with this link can
   open it while it runs."
 - **One session per person**, across boards. Starting another stops the old.
-- **Hard limits:** 20 minutes per session, 5 minutes to start.
+- **Hard limits:** 20 minutes per session, 12 minutes to start. The sandbox
+  lives for both, plus a minute.
 - **Never the local sandbox**: Playtest always uses E2B.
+
+## What the sandbox can't do
+
+Playtest runs in E2B's default sandbox: 2 vCPU, 512 MiB of RAM, and the disk
+left over after the image (about 10 GiB on the lower plan). Formic does not
+use E2B Pro, so these are fixed. What each limit means, and what Playtest does
+about it (`src/lib/playtest/diagnose.ts`, `runner.ts`):
+
+| Limit | What breaks | What Playtest does |
+| :-- | :-- | :-- |
+| 512 MiB of memory | A large Godot import or export, a big `npm ci`, a heavy dev server | Reads "Killed" or exit 137 and says the sandbox ran out of memory: Playtest's side, no agent offered |
+| Disk | A 1.3 GB download, big `node_modules`, LFS assets | Reads only the Web template out of Godot's archive; stops early with under 500 MB free after the clone; reads "No space left on device" as Playtest's |
+| 12 minutes to start | A clone with LFS, the toolchain, a Godot import and export | Says it ran out of time: Playtest's side |
+| No secrets | An app that needs an env var, a database or an API key | Reads the usual errors and says the app needs configuration ("needs-config"): no agent, since one cannot add secrets |
+| Git LFS | Textures and audio arrive as pointer files | Fetches LFS files (installing git-lfs if needed) before the token is taken out |
+| Threaded Godot export | Needs a template Playtest does not fetch, and threads cannot run in a frame | Always exports through its own copy of the project's Web preset, threads off |
+| Cookies in a frame | A frame on another site gets no Lax cookies | The proxy marks them `SameSite=None; Secure; Partitioned`, which Chrome and Firefox keep; Safari may not, so the screen points to Open in new tab when the app uses cookies |
+| `http://localhost` calls | A page that calls `http://localhost:…` reaches the viewer's own machine, and HTTPS blocks it | Not fixable from outside: same-origin calls (`/api/…`) work through the proxy |
+
+If a Godot game still needs more memory than the sandbox has, the way out is
+to export it in GitHub Actions, where Formic already caches the engine and the
+runner has gigabytes of RAM, and have the sandbox only serve the files.
 
 ## Data
 

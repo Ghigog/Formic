@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository, resetMemoryStore } from "@/lib/db/memory-repository";
 import type { ProjectSummary } from "@/lib/db/repository";
-import type { PlaytestRunner, StartOptions } from "./runner";
+import { PlaytestError, type PlaytestRunner, type StartOptions } from "./runner";
 
 const { launched, answer, branchHead } = vi.hoisted(() => ({
   launched: [] as Promise<void>[],
@@ -86,13 +86,45 @@ describe("playtest sessions", () => {
       ...runner,
       async start(o) {
         o.onSandbox("sb-2");
-        throw new Error("Playtest runs web apps and Godot games for now.");
+        throw new PlaytestError("Playtest runs web apps and Godot games for now.", "project");
       },
     });
     const r = await start();
     await settle();
     expect(await repo.playtest(r.id)).toMatchObject({ status: "failed", endReason: "failed", error: "Playtest runs web apps and Godot games for now." });
     expect(kills).toEqual(["sb-2"]);
+  });
+
+  it("records an app that needs configuration apart from both", async () => {
+    service.setPlaytestRunner({
+      ...runner,
+      async start() {
+        throw new PlaytestError("The product never started listening. This app needs configuration Playtest doesn't have.", "config");
+      },
+    });
+    const r = await start();
+    await settle();
+    expect(await repo.playtest(r.id)).toMatchObject({ status: "failed", endReason: "needs-config" });
+  });
+
+  it("keeps the sandbox alive for the whole start and the whole session", async () => {
+    await start();
+    await settle();
+    expect(seen!.lifetimeMs).toBe(service.START_MS + service.SESSION_MS + 60_000);
+  });
+
+  it("marks Playtest's own failures apart from the project's, so no agent is offered for them", async () => {
+    for (const thrown of [new PlaytestError("Fetching what Playtest needs to run it failed.", "playtest"), new Error("socket hang up")]) {
+      service.setPlaytestRunner({
+        ...runner,
+        async start() {
+          throw thrown;
+        },
+      });
+      const r = await start();
+      await settle();
+      expect(await repo.playtest(r.id)).toMatchObject({ status: "failed", endReason: "unavailable" });
+    }
   });
 
   it("keeps one session per person: starting another ends the first", async () => {

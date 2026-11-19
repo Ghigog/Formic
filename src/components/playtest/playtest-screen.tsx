@@ -44,6 +44,8 @@ const ENDED: Record<string, string> = {
   closed: "Closed",
   replaced: "Replaced by a newer playtest",
   failed: "Could not start",
+  unavailable: "Could not start",
+  "needs-config": "Could not start",
 };
 
 export function PlaytestScreen() {
@@ -57,6 +59,9 @@ export function PlaytestScreen() {
   const frame = useRef<HTMLIFrameElement>(null);
   /** The address whose helper said hello: the current one means screenshots can be taken inside the frame. */
   const [helloFrom, setHelloFrom] = useState<string | null>(null);
+  /** The product uses cookies: a sign-in may not stick inside the frame on Safari. */
+  const [cookiesFrom, setCookiesFrom] = useState<string | null>(null);
+  const [cookieHintClosed, setCookieHintClosed] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [shots, setShots] = useState<PlaytestShot[]>([]);
   const [shotError, setShotError] = useState<string | null>(null);
@@ -100,7 +105,10 @@ export function PlaytestScreen() {
   useEffect(() => {
     if (!origin) return;
     const onMessage = (e: MessageEvent) => {
-      if (e.origin === origin && (e.data as { type?: string } | null)?.type === "formic:hello") setHelloFrom(origin);
+      const data = e.data as { type?: string; cookies?: boolean } | null;
+      if (e.origin !== origin || data?.type !== "formic:hello") return;
+      setHelloFrom(origin);
+      if (data.cookies) setCookiesFrom(origin);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -288,6 +296,21 @@ export function PlaytestScreen() {
         </div>
       </div>
 
+      {live && cookiesFrom === origin && !cookieHintClosed && (
+        <div role="note" className="border-line bg-column text-muted flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-[12px] md:px-4">
+          <span className="min-w-0 flex-1">
+            Signing in? Some browsers, Safari among them, don&apos;t keep a sign-in inside this frame.{" "}
+            <a href={session!.url!} target="_blank" rel="noreferrer" className="text-ink underline">
+              Open it in a new tab
+            </a>{" "}
+            if it doesn&apos;t stick.
+          </span>
+          <button type="button" onClick={() => setCookieHintClosed(true)} aria-label="Dismiss" className="hover:text-ink">
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="relative flex min-h-0 flex-1">
         {/* The product */}
         <div data-tour="playtest-frame" className="relative min-w-0 flex-1">
@@ -420,27 +443,40 @@ function FrameState({
   }
 
   if (session.status === "failed") {
+    // Only the project's own failures are a ticket's to fix: an install, an export, a server that never answers.
+    const projects = session.endReason === "failed";
     return (
       <Centered>
         <p className="text-ink m-0 font-serif text-[18px] font-semibold">It did not start.</p>
         <p className="text-muted m-0 mt-1 text-[13px] whitespace-pre-line">{session.error}</p>
+        {session.endReason === "needs-config" ? (
+          <p className="text-muted m-0 mt-2 text-[12px]">
+            An agent can&apos;t add your secrets, so there is nothing to hand it. Playtest can run this once the app starts without them, for example with a demo mode.
+          </p>
+        ) : (
+          !projects && (
+            <p className="text-muted m-0 mt-2 text-[12px]">This one is on Playtest&apos;s side, not your project&apos;s, so there is nothing for an agent to fix. Try again in a moment.</p>
+          )
+        )}
         <Log lines={session.logTail} />
         <div className="mt-3 flex gap-2">
           <button type="button" onClick={onRetry} className={barButton}>
             Try again
           </button>
-          <button
-            type="button"
-            disabled={asked}
-            onClick={() =>
-              void onAskFix(
-                `Playtest could not start the default branch. Please propose a ticket to fix it.\n\n${session.error ?? ""}\n\nThe last lines of the log:\n${session.logTail.slice(-15).join("\n")}`,
-              ).then((ok) => setAsked(ok))
-            }
-            className="bg-cta inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold text-white disabled:opacity-60"
-          >
-            {asked ? "Asked the PM" : "Ask an agent to fix it"}
-          </button>
+          {projects && (
+            <button
+              type="button"
+              disabled={asked}
+              onClick={() =>
+                void onAskFix(
+                  `Playtest could not start the default branch. Please propose a ticket to fix it.\n\n${session.error ?? ""}\n\nThe last lines of the log:\n${session.logTail.slice(-15).join("\n")}`,
+                ).then((ok) => setAsked(ok))
+              }
+              className="bg-cta inline-flex h-8 items-center rounded-lg px-3 text-[12px] font-semibold text-white disabled:opacity-60"
+            >
+              {asked ? "Asked the PM" : "Ask an agent to fix it"}
+            </button>
+          )}
         </div>
       </Centered>
     );

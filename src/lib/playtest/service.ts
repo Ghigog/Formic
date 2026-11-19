@@ -13,7 +13,7 @@ import { repoHost, repoPath } from "@/lib/vcs/host";
 import { columnFor } from "@/lib/domain/status";
 import { credentialsFor } from "@/lib/auth/credentials";
 import { ownE2bKey } from "./access";
-import { e2bRunner, type PlaytestRunner, type PlaytestStage } from "./runner";
+import { PlaytestError, e2bRunner, type PlaytestRunner, type PlaytestStage } from "./runner";
 
 /**
  * Playtest sessions: start, watch, stop. See docs/plans/playtest.md.
@@ -26,8 +26,8 @@ import { e2bRunner, type PlaytestRunner, type PlaytestStage } from "./runner";
 
 /** How long a playtest lasts. */
 export const SESSION_MS = 20 * 60_000;
-/** How long it has to come up. */
-export const START_MS = 5 * 60_000;
+/** How long it has to come up: a clone with LFS, the toolchain, a Godot import and export. */
+export const START_MS = 12 * 60_000;
 /** When the PM says time is nearly up. */
 export const WARN_MS = 5 * 60_000;
 /** A screen that has not polled for this long was closed. */
@@ -145,7 +145,8 @@ async function runSession(
       cloneUrl: cloneUrl(repoFullName, input.repoToken),
       bareUrl,
       branch: baseBranch,
-      lifetimeMs: SESSION_MS + 60_000,
+      // The session's clock starts once it is live, so the sandbox must outlast the start as well.
+      lifetimeMs: START_MS + SESSION_MS + 60_000,
       startMs: START_MS,
       formicOrigin: input.formicOrigin,
       signal: abort.signal,
@@ -186,7 +187,15 @@ async function runSession(
     const now = await repo.playtest(id);
     if (now?.sandboxId) await runner.kill(now.sandboxId, input.e2bKey);
     if (now && isOpen(now)) {
-      await repo.updatePlaytest(id, { status: "failed", error: message, endedAt: new Date(), endReason: "failed" });
+      // "failed" is the project's to fix, so the screen offers an agent; "unavailable" is Playtest's own;
+      // "needs-config" wants secrets or services Playtest does not have.
+      const fault = e instanceof PlaytestError ? e.fault : "playtest";
+      await repo.updatePlaytest(id, {
+        status: "failed",
+        error: message,
+        endedAt: new Date(),
+        endReason: fault === "project" ? "failed" : fault === "config" ? "needs-config" : "unavailable",
+      });
     }
     live.delete(id);
   }

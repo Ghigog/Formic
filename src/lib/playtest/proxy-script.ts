@@ -9,6 +9,10 @@
  * - It adds one script to every HTML page: the capture helper below.
  * - It drops X-Frame-Options and Content-Security-Policy, which would keep the
  *   page out of Formic's frame or block the helper.
+ * - It marks the product's cookies SameSite=None; Secure; Partitioned, so a
+ *   sign-in works inside Formic's frame (a frame on another site gets no
+ *   Lax cookies; Chrome and Firefox take partitioned ones). It tells the
+ *   helper it saw cookies, so the screen can point Safari users to a new tab.
  * - /__formic/ready answers 200 once the product does.
  *
  * Plain Node with no packages: the sandbox has Node and nothing else is
@@ -121,8 +125,13 @@ export const HELPER_SCRIPT = String.raw`(function () {
     );
   });
 
-  post({ type: "formic:hello" });
-  window.addEventListener("load", function () { post({ type: "formic:hello" }); });
+  function hello() {
+    var cookies = false;
+    try { cookies = __FORMIC_COOKIES__ || document.cookie.length > 0; } catch (e) {}
+    post({ type: "formic:hello", cookies: cookies });
+  }
+  hello();
+  window.addEventListener("load", hello);
 })();`;
 
 /**
@@ -140,6 +149,14 @@ const APP_PORT = Number(process.env.APP_PORT || 0);
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
 const HELPER = fs.readFileSync(path.join(__dirname, "helper.js"), "utf8")
   .replace("__FORMIC_ORIGIN__", JSON.stringify(process.env.FORMIC_ORIGIN || ""));
+let sawCookie = false;
+
+/** A cookie that a frame on another site will still be sent. */
+function frameCookie(cookie) {
+  sawCookie = true;
+  const parts = cookie.split(";").map((p) => p.trim()).filter((p) => !/^(samesite|secure|partitioned)(=|$)/i.test(p));
+  return parts.concat(["SameSite=None", "Secure", "Partitioned"]).join("; ");
+}
 const TAG = '<script src="/__formic/helper.js"></script>';
 
 const TYPES = {
@@ -163,6 +180,7 @@ function cleanHeaders(headers) {
   delete out["x-frame-options"];
   delete out["content-security-policy"];
   delete out["content-security-policy-report-only"];
+  if (out["set-cookie"]) out["set-cookie"] = [].concat(out["set-cookie"]).map(frameCookie);
   return out;
 }
 
@@ -209,7 +227,7 @@ function ready(cb) {
 const server = http.createServer((req, res) => {
   if (req.url === "/__formic/helper.js") {
     res.writeHead(200, { "content-type": "text/javascript", "cache-control": "no-store" });
-    return res.end(HELPER);
+    return res.end(HELPER.replace("__FORMIC_COOKIES__", String(sawCookie)));
   }
   if (req.url === "/__formic/html-to-image.js") {
     return fs.readFile(path.join(__dirname, "html-to-image.js"), (err, data) => {
