@@ -199,6 +199,10 @@ describe("playtest sessions", () => {
     await service.stopPlaytest(r.id, "stopped");
     const ended = (await repo.playtest(r.id))!;
     expect(ended.summary).toBe("2 notes, 1 ticket proposed, 1 intended.");
+    expect(service.summarize([
+      { role: "user", content: "a" },
+      { role: "assistant", status: "done", content: "**Intended**: x", proposals: [{ action: { type: "create_todo_item" } }] },
+    ] as never)).toBe("1 note, 1 ticket proposed, 1 intended.");
     expect((await repo.playtestMessages(r.id)).at(-1)?.content).toBe("Playtest over. 2 notes, 1 ticket proposed, 1 intended.");
   });
 

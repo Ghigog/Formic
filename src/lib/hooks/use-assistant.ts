@@ -23,6 +23,7 @@ export interface AssistantMessageView {
     action: {
       type:
         | "create_backlog_item"
+        | "create_todo_item"
         | "create_epic_with_tickets"
         | "add_tickets_to_epic"
         | "rerun_ci"

@@ -71,6 +71,15 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
       .describe("For a playtest note: the screenshot ids its [Playtest note] line lists, so the item carries the pictures."),
   }),
   z.object({
+    type: z.literal("create_todo_item"),
+    request: z.string().trim().min(1).describe("The one fix or behaviour, as the Architect Agent should read it."),
+    screenshots: z
+      .array(z.string().min(1))
+      .max(5)
+      .optional()
+      .describe("For a playtest note: the screenshot ids its [Playtest note] line lists, so the ticket carries the pictures."),
+  }),
+  z.object({
     type: z.literal("create_epic_with_tickets"),
     title: z.string().trim().min(1).max(80),
     summary: z.string().trim().min(1).describe("What this Epic delivers, in a sentence or two."),
@@ -167,6 +176,25 @@ export function checkAction(
 /** Makes an approved change. Returns what now exists, for the conversation. */
 export async function applyAction(projectId: string, action: AssistantAction, approvedBy?: string): Promise<string> {
   if (action.type === "revise_rubric_check") return reviseRubric(projectId, action, approvedBy);
+  if (action.type === "create_todo_item") {
+    const shots = await ownScreenshots(projectId, action.screenshots ?? []);
+    const card = await boardPorts().service.createTodoItem(projectId, action.request);
+    // Copied, not moved: the note keeps its picture in the chat.
+    for (const shot of shots) {
+      const content = await repository().attachmentContent(shot.id);
+      if (!content) continue;
+      await repository().createAttachment({
+        projectId,
+        ticketId: card.id,
+        filename: shot.filename,
+        mimeType: content.mimeType,
+        kind: "image",
+        size: content.bytes.length,
+        bytes: content.bytes,
+      });
+    }
+    return `Added ${card.key} to To Do. The Architect Agent is drafting it.`;
+  }
   if (action.type === "create_backlog_item") {
     const shots = await ownScreenshots(projectId, action.screenshots ?? []);
     const card = await boardPorts().service.createBacklogItem(projectId, action.request);

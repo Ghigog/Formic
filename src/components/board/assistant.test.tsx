@@ -235,6 +235,14 @@ describe("proposal cards", () => {
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeEnabled();
   });
 
+  it("shows a To Do ticket proposal's request in the same muted clamp", () => {
+    const a = withProposal("proposed");
+    a.messages[0]!.proposals[0]!.action = { type: "create_todo_item", request: "Fix night pick-up" };
+    render(<AskBox a={a} repoName="demo" />);
+    expect(screen.getByText("Fix night pick-up")).toHaveClass("text-muted", "line-clamp-3");
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+  });
+
   it("grays out an approved card and drops the buttons", () => {
     render(<AskBox a={withProposal("applied")} repoName="demo" />);
     expect(card()).toHaveAttribute("data-state", "applied");

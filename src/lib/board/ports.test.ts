@@ -18,6 +18,7 @@ const fakes = (): BoardPorts => ({
     archiveEpic: vi.fn(),
     restoreEpic: vi.fn(),
     createBacklogItem: vi.fn(),
+    createTodoItem: vi.fn(),
     advanceQueens: vi.fn(),
   },
 });

@@ -81,7 +81,7 @@ export const PLAYTEST_RULE = [
   "Messages that start with [Playtest note] were written while the person played the default branch in Playtest. They are quick notes, not orders: never change code for one. For each note, or each group of notes about the same thing, check it against the Epics' PRDs, the tickets and the code, and start your answer with one bold verdict:",
   "- **Intended**: the PRD, a ticket or the code means it to work this way. Quote the line that says so.",
   "- **Already known**: a card or pull request already covers it. Name its key.",
-  "- **Worth a ticket**: propose create_backlog_item with the note in the person's words and what you found, and pass the note's screenshot ids as screenshots.",
+  "- **Worth a ticket**: a note that is one fix or one behaviour goes in the Epic it belongs to with add_tickets_to_epic when one is on the board, otherwise propose create_todo_item. Propose create_backlog_item only when the note asks for a new capability that needs a PRD and several tickets. Give the note in the person's words and what you found, and pass the note's screenshot ids as screenshots.",
   "One or two lines each. Use playtest_sessions to look at earlier playtests when a note refers back to one.",
 ].join("\n");
 
@@ -242,7 +242,8 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "- rerun_ci, to run a ticket's failed checks again when the failure is not the code's (a network error in an install, a lost runner). A head that does not change never gets new CI, so a card waiting on one stays stuck until it re-runs.",
     "- add_tickets_to_epic, for work that belongs to an Epic already on the board: a follow-up or a bug in a ticket's work goes in that ticket's Epic.",
     "- create_epic_with_tickets, for a new capability that is already planned. An Epic is a user-facing capability: user stories made of several user flows, each flow one or more tickets. One fix is not an Epic, and an Epic of one ticket is almost always wrong: add the ticket to the Epic it belongs to, or make the change yourself. It lands in To Do.",
-    "- create_backlog_item, for a request that still needs a PRD. The Product Agent writes one.",
+    "- create_todo_item, for a request that is one fix or one behaviour and belongs to no Epic on the board. It lands in To Do as a ticket the Architect Agent drafts. Use add_tickets_to_epic instead when an Epic it belongs to is on the board.",
+    "- create_backlog_item, for a request that needs a PRD and an Epic. The Product Agent writes one.",
     "- move_card, to move a card to another column. It follows the same rules as the person dragging it, so a move the board refuses (a ticket to Done with no pull request, say) fails: say so rather than propose it.",
     "- close_card, for a card that is no longer needed (a duplicate, work already done elsewhere). A ticket is archived; an Epic is deleted with all its tickets.",
     "- revise_rubric_check, when the person asks to correct one check of a Sentinel's rubric: give sentinel, check (its id, such as 5b) and note (what is wrong and the change wanted). The person must approve it; only then does the Sentinel revise that one check, and every other check stays as it was. Never change a rubric any other way, and never suggest lowering the bar.",
@@ -320,7 +321,7 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
   );
 }
 
-/** How a playtest note reads to the PM: what it is, and the ids of its screenshots for create_backlog_item. */
+/** How a playtest note reads to the PM: what it is, and the ids of its screenshots for create_todo_item or create_backlog_item. */
 export function playtestLabel(m: AssistantMessage): string {
   const shots = m.attachments.filter((a) => a.kind === "image").map((a) => a.id);
   return `[Playtest note${shots.length ? `, screenshots: ${shots.join(", ")}` : ""}]`;

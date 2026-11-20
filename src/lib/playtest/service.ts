@@ -226,6 +226,9 @@ export async function stopPlaytest(id: string, reason: "stopped" | "time" | "clo
   return repository().playtest(id);
 }
 
+/** The proposals that put work on the board, for the summary's ticket count. */
+const TICKET_ACTIONS = new Set(["create_backlog_item", "create_todo_item", "add_tickets_to_epic"]);
+
 /**
  * What a session came to: "3 notes, 1 ticket proposed, 2 intended". The PM
  * starts each verdict with its bold word (see the playtest rule in its prompt).
@@ -236,7 +239,11 @@ export function summarize(messages: AssistantMessage[]): string | null {
   const replies = messages.filter((m) => m.role === "assistant" && m.status === "done");
   const count = (word: RegExp) => replies.reduce((n, m) => n + (m.content.match(word)?.length ?? 0), 0);
   const tickets = replies.reduce(
-    (n, m) => n + m.proposals.filter((p) => (p.action as { type?: string } | null)?.type === "create_backlog_item").length,
+    (n, m) =>
+      n +
+      m.proposals.filter((p) =>
+        TICKET_ACTIONS.has((p.action as { type?: string } | null)?.type ?? ""),
+      ).length,
     0,
   );
   const intended = count(/\*\*Intended\*\*/g);

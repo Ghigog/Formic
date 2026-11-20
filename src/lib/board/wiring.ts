@@ -27,6 +27,7 @@ registerBoardPorts({
     archiveEpic: async (...args) => (await import("@/lib/board/service")).archiveEpic(...args),
     restoreEpic: async (...args) => (await import("@/lib/board/service")).restoreEpic(...args),
     createBacklogItem: async (...args) => (await import("@/lib/board/service")).createBacklogItem(...args),
+    createTodoItem: async (...args) => (await import("@/lib/board/service")).createTodoItem(...args),
     advanceQueens: async (...args) => (await import("@/lib/board/service")).advanceQueens(...args),
   },
 });
