@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DISPLAY_RULE } from "@/lib/agents/prompts";
 
 import {
   STOPPED_BY_PERSON,
@@ -1379,6 +1380,7 @@ describe("a CLI agent fixing red CI", () => {
       attempt: 1,
       maxAttempts: 3,
     });
+    expect(prompt).toContain(DISPLAY_RULE);
     expect(prompt).toContain("- Seed the test (1 pt): waiting for the person");
     expect(prompt).toContain("- Old idea (2 pt): dismissed");
 

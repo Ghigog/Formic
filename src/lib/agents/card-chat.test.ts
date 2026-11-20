@@ -816,3 +816,11 @@ describe("a question the card is waiting on", () => {
     expect(await noteTexts(PROJECT, ticket.id)).toEqual(["Why?"]);
   });
 });
+
+describe("the card chat's CLI prompt", () => {
+  it("carries the display rule, so screenshots go through xvfb-run", async () => {
+    const { cliPrompt } = await import("./card-chat");
+    const { DISPLAY_RULE } = await import("./prompts");
+    expect(cliPrompt("system", [{ role: "user", content: "hi" }])).toContain(DISPLAY_RULE);
+  });
+});

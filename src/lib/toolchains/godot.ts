@@ -110,7 +110,7 @@ formic_bin "$bin" godot
 godot --headless --version
 
 formic_note "## Godot"
-formic_note "Godot $tag, headless, is installed: run it as \`godot\`. There is no display, so always pass --headless."
+formic_note "Godot $tag, headless, is installed: run it as \`godot\`. Use --headless for the import, tests and scripts. To see or screenshot the game, run it under xvfb-run (see Display) with \`--rendering-driver opengl3\` and without --headless."
 formic_note "A fresh checkout has nothing imported. When there is no .godot/ folder, or after you add or change an asset, run \`godot --headless --import\` first: a script that loads an unimported resource fails."`.replaceAll(
   "GODOT_VERSION_FILE",
   GODOT_VERSION_FILE,
