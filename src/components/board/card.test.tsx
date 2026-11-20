@@ -602,8 +602,32 @@ describe("a problem notice", () => {
     blockedReason: `Something broke. ${"A long detail. ".repeat(30)}`,
   });
 
+  it("starts folded to the lead, and the header unfolds and folds the text", () => {
+    render(<ProblemNotice card={long} onOpenChat={vi.fn()} />);
+    const header = screen.getByRole("button", { name: /This needs you/ });
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/Something broke/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/Something broke/)).toBeTruthy();
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/Something broke/)).toBeNull();
+  });
+
+  it("titles a question 'Question' and keeps the chat button inside", () => {
+    const onOpenChat = vi.fn();
+    render(<ProblemNotice card={{ ...long, blockedReason: "Question: Which one?\nThe agent is waiting." }} onOpenChat={onOpenChat} />);
+    expect(screen.queryByRole("button", { name: "Answer in the chat" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Question/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Answer in the chat" }));
+    expect(onOpenChat).toHaveBeenCalled();
+  });
+
   it("clamps a long text to three lines and toggles the rest", () => {
     render(<ProblemNotice card={long} />);
+    fireEvent.click(screen.getByRole("button", { name: /This needs you/ }));
     const text = screen.getByText(/Something broke/).closest("p")!;
     expect(text.className).toContain("line-clamp-3");
     fireEvent.click(screen.getByRole("button", { name: "Show more" }));
@@ -616,6 +640,7 @@ describe("a problem notice", () => {
 
   it("has no toggle on a short text", () => {
     render(<ProblemNotice card={{ ...long, blockedReason: "Short." }} />);
+    fireEvent.click(screen.getByRole("button", { name: /This needs you/ }));
     expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
   });
 });
