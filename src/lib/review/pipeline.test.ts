@@ -9,6 +9,7 @@ import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
 import { setCheckoutFactory } from "@/lib/coder/checkout";
 import { MemoryWorkspace, scopedWorkspace, type Workspace } from "@/lib/sandbox/workspace";
 import { resetAgents, setAgents } from "@/lib/agents/registry";
+import { settleLaunched } from "@/lib/agents/pipeline";
 
 /**
  * The merge gate: what happens to an approved pull request with auto-merge
@@ -878,8 +879,10 @@ describe("red CI the ticket's change did not cause", () => {
 
     const bug = (await repository().ticketsForEpic(epicId)).find((t) => t.title === fix.bug.title)!;
     expect(["running", "queued"]).toContain(bug.status);
+    // Let the fix's run finish, so chat holds everything it will post before we read it.
+    await settleLaunched();
     const messages = (await repository().assistantMessages(PROJECT)).messages;
-    // No confirmation to start the fix is asked. (The fix's own coder run may post other messages meanwhile.)
+    // No confirmation to start the fix is asked. (The fix's own coder run may post other messages.)
     const asksToStart = messages.some((m) =>
       m.proposals?.some((p) => {
         const action = p.action as { type?: string; key?: string };
