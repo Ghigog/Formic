@@ -7,7 +7,7 @@ import { EMPTY_VIEW, type ColumnView } from "./view";
 describe("ViewMenu", () => {
   it("renders button with correct aria-label and opens on click", () => {
     const onChange = vi.fn();
-    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} scope="column" />);
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} />);
 
     const button = screen.getByRole("button", { name: "Column options" });
     expect(button).toBeInTheDocument();
@@ -19,7 +19,7 @@ describe("ViewMenu", () => {
 
   it("emits onChange when search query changes", () => {
     const onChange = vi.fn();
-    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} scope="column" />);
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Column options" }));
     const input = screen.getByPlaceholderText("Search key or title...");
@@ -32,7 +32,7 @@ describe("ViewMenu", () => {
 
   it("emits onChange when sort option is chosen", () => {
     const onChange = vi.fn();
-    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} scope="column" />);
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Column options" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Title/i }));
@@ -43,7 +43,7 @@ describe("ViewMenu", () => {
   });
 
   it("shows four unchecked type toggles by default", () => {
-    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={vi.fn()} scope="column" />);
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Column options" }));
     for (const name of ["Tickets", "Bugs", "Spikes", "Archived"]) {
       expect(screen.getByRole("menuitemcheckbox", { name })).toHaveAttribute("aria-checked", "false");
@@ -52,7 +52,7 @@ describe("ViewMenu", () => {
 
   it("toggles types independently", () => {
     const onChange = vi.fn();
-    renderInDnd(<ViewMenu value={{ ...EMPTY_VIEW, types: ["bug"] }} onChange={onChange} scope="column" />);
+    renderInDnd(<ViewMenu value={{ ...EMPTY_VIEW, types: ["bug"] }} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Column options" }));
     expect(screen.getByRole("menuitemcheckbox", { name: "Bugs" })).toHaveAttribute("aria-checked", "true");
 
@@ -64,7 +64,7 @@ describe("ViewMenu", () => {
   });
 
   it("lists the five types and the untyped tickets", () => {
-    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={vi.fn()} scope="column" />);
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Column options" }));
     for (const name of ["Tickets", "User stories", "Tasks", "Features", "Bugs", "Spikes"]) {
       expect(screen.getByRole("menuitemcheckbox", { name })).toBeInTheDocument();
@@ -73,7 +73,7 @@ describe("ViewMenu", () => {
 
   it("emits onChange when collapse/expand is clicked", () => {
     const onChange = vi.fn();
-    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} scope="column" />);
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Column options" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Collapse column" }));
@@ -91,7 +91,7 @@ describe("ViewMenu", () => {
       types: ["bug"],
       collapsed: true,
     };
-    renderInDnd(<ViewMenu value={activeView} onChange={onChange} scope="column" />);
+    renderInDnd(<ViewMenu value={activeView} onChange={onChange} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Column options" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Clear" }));
@@ -101,9 +101,9 @@ describe("ViewMenu", () => {
 
   it("closes on Escape key", () => {
     const onChange = vi.fn();
-    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} scope="board" />);
+    renderInDnd(<ViewMenu value={EMPTY_VIEW} onChange={onChange} />);
 
-    const button = screen.getByRole("button", { name: "Board options" });
+    const button = screen.getByRole("button", { name: "Column options" });
     fireEvent.click(button);
     expect(screen.getByRole("menu")).toBeInTheDocument();
 
