@@ -1,8 +1,8 @@
 import { COLUMNS, type ColumnId } from "@/lib/domain/status";
 import { EMPTY_VIEW, type ColumnSort, type ColumnView, type TypeFilter } from "./view";
 
-/** Versioned so a later change to the shape can start fresh. */
-export const BOARD_VIEW_KEY = "formic:board-view:v1";
+/** The retired board-wide view; cleared once on load so it cannot linger. */
+const OLD_BOARD_VIEW_KEY = "formic:board-view:v1";
 
 /** Each column's own view, keyed by ColumnId. */
 export const COLUMN_VIEWS_KEY = "formic:column-views:v1";
@@ -24,26 +24,13 @@ function parseView(parsed: unknown): ColumnView {
   };
 }
 
-/** The board-wide view saved in this browser; the default view when missing or unreadable. */
-export function loadBoardView(): ColumnView {
-  try {
-    const raw = window.localStorage.getItem(BOARD_VIEW_KEY);
-    return raw ? parseView(JSON.parse(raw)) : EMPTY_VIEW;
-  } catch {
-    return EMPTY_VIEW;
-  }
-}
-
-export function saveBoardView(view: ColumnView): void {
-  try {
-    window.localStorage.setItem(BOARD_VIEW_KEY, JSON.stringify(view));
-  } catch {
-    // Storage full or blocked: the view just won't persist.
-  }
-}
-
 /** The views saved per column in this browser; columns with none saved are absent. */
 export function loadColumnViews(): Partial<Record<ColumnId, ColumnView>> {
+  try {
+    window.localStorage.removeItem(OLD_BOARD_VIEW_KEY);
+  } catch {
+    // Storage blocked: nothing to clear.
+  }
   try {
     const raw = window.localStorage.getItem(COLUMN_VIEWS_KEY);
     if (!raw) return {};

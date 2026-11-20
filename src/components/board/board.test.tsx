@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { renderToString } from "react-dom/server";
 import userEvent from "@testing-library/user-event";
 import { Board, type BoardProps } from "./board";
-import { saveBoardView, saveColumnViews, loadColumnViews, BOARD_VIEW_KEY, COLUMN_VIEWS_KEY } from "./view-setting";
+import { saveColumnViews, loadColumnViews, COLUMN_VIEWS_KEY } from "./view-setting";
 import { EMPTY_VIEW } from "./view";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 import { setViewportMatches } from "@/test/viewport";
@@ -110,87 +110,6 @@ describe("Board column views", () => {
     expect(within(todo).getByText("Fix login")).toBeInTheDocument();
     expect(within(todo).queryByText("Add export")).toBeNull();
     expect(within(todo).queryByText("Other")).toBeNull();
-  });
-});
-
-describe("Board seeded from the saved board view", () => {
-  afterEach(() => window.localStorage.clear());
-
-  it("filters and sorts every column by the saved view", async () => {
-    saveBoardView({ ...EMPTY_VIEW, sort: "title", types: ["bug"] });
-    renderBoard([
-      makeCard({ status: "ready", title: "Zed bug", workType: "bug" }),
-      makeCard({ status: "ready", title: "Alpha bug", workType: "bug" }),
-      makeCard({ status: "ready", title: "Plain" }),
-      makeCard({ status: "draft", title: "Backlog plain" }),
-    ]);
-    const todo = screen.getByRole("region", { name: "To Do" });
-    await waitFor(() => expect(within(todo).queryByText("Plain")).toBeNull());
-    expect(within(todo).getAllByText(/bug$/).map((e) => e.textContent)).toEqual(["Alpha bug", "Zed bug"]);
-    const backlog = screen.getByRole("region", { name: "Backlog" });
-    expect(within(backlog).queryByText("Backlog plain")).toBeNull();
-  });
-
-  it("filters every column by a saved search", async () => {
-    saveBoardView({ ...EMPTY_VIEW, query: "login" });
-    renderBoard([
-      makeCard({ status: "ready", title: "Fix login" }),
-      makeCard({ status: "ready", title: "Add export" }),
-    ]);
-    const todo = screen.getByRole("region", { name: "To Do" });
-    await waitFor(() => expect(within(todo).queryByText("Add export")).toBeNull());
-    expect(within(todo).getByText("Fix login")).toBeInTheDocument();
-  });
-
-  it("shows default views when the saved value is corrupt", () => {
-    window.localStorage.setItem(BOARD_VIEW_KEY, "{nope");
-    renderBoard([makeCard({ status: "ready", title: "Fix login" })]);
-    expect(screen.getByText("Fix login")).toBeInTheDocument();
-  });
-
-  it("asks for archived cards when Archived is saved", async () => {
-    saveBoardView({ ...EMPTY_VIEW, types: ["archived"] });
-    const onArchivedWanted = vi.fn();
-    renderBoard([makeCard()], { onArchivedWanted });
-    await waitFor(() => expect(onArchivedWanted).toHaveBeenLastCalledWith(true));
-  });
-});
-
-describe("Board filter bar", () => {
-  afterEach(() => window.localStorage.clear());
-
-  it("narrows every column as you type and clears with Escape", async () => {
-    const user = userEvent.setup();
-    renderBoard([
-      makeCard({ status: "ready", key: "FOR-1", title: "Login page" }),
-      makeCard({ status: "draft", key: "FOR-2", title: "Fix sorting" }),
-      makeCard({ status: "ready", key: "FOR-3", title: "Sorting tests" }),
-    ]);
-    await user.type(screen.getByLabelText("Filter cards"), "sort");
-    expect(screen.queryByText("Login page")).toBeNull();
-    expect(screen.getByText("Fix sorting")).toBeInTheDocument();
-    expect(screen.getByText("Sorting tests")).toBeInTheDocument();
-    await user.keyboard("{Escape}");
-    expect(screen.getByText("Login page")).toBeInTheDocument();
-  });
-
-  it("applies a sort from the bar to every column and saves it", async () => {
-    const user = userEvent.setup();
-    renderBoard([
-      makeCard({ status: "ready", title: "Zed" }),
-      makeCard({ status: "ready", title: "Alpha" }),
-      makeCard({ status: "draft", title: "Yak" }),
-      makeCard({ status: "draft", title: "Bee" }),
-    ]);
-    await user.click(screen.getByRole("button", { name: "Board options" }));
-    await user.click(screen.getByRole("menuitemradio", { name: "Title" }));
-    const todo = screen.getByRole("region", { name: "To Do" });
-    const backlog = screen.getByRole("region", { name: "Backlog" });
-    const order = (r: HTMLElement, a: string, b: string) =>
-      r.textContent!.indexOf(a) < r.textContent!.indexOf(b);
-    expect(order(todo, "Alpha", "Zed")).toBe(true);
-    expect(order(backlog, "Bee", "Yak")).toBe(true);
-    expect(JSON.parse(window.localStorage.getItem(BOARD_VIEW_KEY)!).sort).toBe("title");
   });
 });
 
@@ -880,14 +799,18 @@ describe("Board remembering each column's view", () => {
     expect(within(backlog).getByText("Backlog plain")).toBeInTheDocument();
   });
 
-  it("uses the Settings view for a column with none of its own", async () => {
-    saveBoardView({ ...EMPTY_VIEW, types: ["bug"] });
-    window.localStorage.setItem(COLUMN_VIEWS_KEY, JSON.stringify({ backlog: EMPTY_VIEW }));
+  it("ignores a leftover saved board view and clears it", async () => {
+    window.localStorage.setItem(
+      "formic:board-view:v1",
+      JSON.stringify({ ...EMPTY_VIEW, query: "login", types: ["bug"] }),
+    );
     renderBoard(cards());
-    const todo = screen.getByRole("region", { name: "To Do" });
-    await waitFor(() => expect(within(todo).queryByText("Plain")).toBeNull());
-    const backlog = screen.getByRole("region", { name: "Backlog" });
-    expect(within(backlog).getByText("Backlog plain")).toBeInTheDocument();
+    expect(screen.getByText("Plain")).toBeInTheDocument();
+    expect(screen.getByText("Some bug")).toBeInTheDocument();
+    expect(screen.getByText("Backlog plain")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Filter cards")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Board options" })).toBeNull();
+    await waitFor(() => expect(window.localStorage.getItem("formic:board-view:v1")).toBeNull());
   });
 
   it("saves a change made on one column, without disturbing the saved views before mount", async () => {
@@ -936,7 +859,7 @@ describe("Board, redrawing", () => {
     rerender(<Board cards={[{ ...moving, status: "running", position: 2 }, ...others]} {...props} />);
 
     expect(renders.types).toEqual(["user_story"]);
-    // Two columns, plus the filter bar's menu, which redraws with the board.
-    expect(renders.menus).toBe(3);
+    // Only the two columns' menus redraw.
+    expect(renders.menus).toBe(2);
   });
 });

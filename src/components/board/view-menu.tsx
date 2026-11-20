@@ -2,21 +2,24 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/components/ui/cn";
-import { type ColumnView, type ColumnSort, type TypeFilter, EMPTY_VIEW, isViewActive } from "./view";
+import {
+  type ColumnView,
+  type ColumnSort,
+  type TypeFilter,
+  EMPTY_VIEW,
+  isViewActive,
+} from "./view";
 
 export interface ViewMenuProps {
   value: ColumnView;
   onChange: (view: ColumnView) => void;
-  scope?: "column" | "board";
-  /** Show the menu's own search box. The board hides it: its filter bar searches. */
-  search?: boolean;
 }
 
-export function ViewMenu({ value, onChange, scope = "column", search = true }: ViewMenuProps) {
+export function ViewMenu({ value, onChange }: ViewMenuProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const active = isViewActive(value);
-  const buttonLabel = scope === "board" ? "Board options" : "Column options";
+  const buttonLabel = "Column options";
 
   useEffect(() => {
     if (!open) return;
@@ -47,7 +50,7 @@ export function ViewMenu({ value, onChange, scope = "column", search = true }: V
         aria-label={buttonLabel}
         className={cn(
           "border-line bg-card hover:border-clay relative inline-flex size-11 shrink-0 md:size-8 items-center justify-center rounded-md border text-muted transition-colors",
-          active && "border-terracotta text-ink"
+          active && "border-terracotta text-ink",
         )}
       >
         <OptionsIcon />
@@ -62,21 +65,17 @@ export function ViewMenu({ value, onChange, scope = "column", search = true }: V
           aria-label={buttonLabel}
           className="bg-card border-line shadow-lift absolute top-full right-0 z-50 mt-1 w-64 rounded-lg border p-1"
         >
-          {search && (
-            <>
-            <div className="p-1.5">
-              <input
-                type="text"
-                placeholder="Search key or title..."
-                value={value.query}
-                onChange={(e) => onChange({ ...value, query: e.target.value })}
-                className="border-line bg-cream text-ink placeholder:text-muted focus:border-terracotta w-full rounded-md border px-2.5 py-1 text-[12px] outline-none"
-              />
-            </div>
+          <div className="p-1.5">
+            <input
+              type="text"
+              placeholder="Search key or title..."
+              value={value.query}
+              onChange={(e) => onChange({ ...value, query: e.target.value })}
+              className="border-line bg-cream text-ink placeholder:text-muted focus:border-terracotta w-full rounded-md border px-2.5 py-1 text-[12px] outline-none"
+            />
+          </div>
 
-            <div aria-hidden className="bg-hairline my-1 h-px" />
-            </>
-          )}
+          <div aria-hidden className="bg-hairline my-1 h-px" />
 
           {/* Sort options */}
           <div className="px-2 py-1 text-[10px] font-semibold text-muted uppercase tracking-wider">
@@ -96,7 +95,9 @@ export function ViewMenu({ value, onChange, scope = "column", search = true }: V
               role="menuitemradio"
               aria-checked={value.sort === sortVal}
               className={itemClass}
-              onClick={() => onChange({ ...value, sort: sortVal as ColumnSort })}
+              onClick={() =>
+                onChange({ ...value, sort: sortVal as ColumnSort })
+              }
             >
               <span className="flex-1 truncate">{sortLabel}</span>
               {value.sort === sortVal && <Check />}
@@ -154,13 +155,7 @@ export function ViewMenu({ value, onChange, scope = "column", search = true }: V
             onClick={() => onChange({ ...value, collapsed: !value.collapsed })}
           >
             <span className="flex-1 truncate">
-              {value.collapsed
-                ? scope === "board"
-                  ? "Expand all"
-                  : "Expand column"
-                : scope === "board"
-                  ? "Collapse all"
-                  : "Collapse column"}
+              {value.collapsed ? "Expand column" : "Collapse column"}
             </span>
           </button>
 
@@ -186,16 +181,40 @@ export function ViewMenu({ value, onChange, scope = "column", search = true }: V
 
 function OptionsIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M2 3.5h10M4 7h6M5.5 10.5h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M2 3.5h10M4 7h6M5.5 10.5h3"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
 
 function Check() {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="shrink-0">
-      <path d="M2.5 6.5 5 9l4.5-5.5" stroke="var(--color-jade)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path
+        d="M2.5 6.5 5 9l4.5-5.5"
+        stroke="var(--color-jade)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

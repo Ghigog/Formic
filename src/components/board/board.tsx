@@ -16,8 +16,7 @@ import {
   saveCollapsedEpics,
   type CollapsedEpics,
 } from "./collapsed-epics";
-import { loadBoardView, loadColumnViews, saveBoardView, saveColumnViews } from "./view-setting";
-import { BoardFilterBar } from "./board-filter-bar";
+import { loadColumnViews, saveColumnViews } from "./view-setting";
 import { adjacentColumn, ownsGesture, slideTowards, swipeDirection, type SwipeDirection } from "./swipe";
 import { BoardHeader } from "./header";
 import { CardEnvContext, LEAVE_MS, type CardEnv, type ExtrasMap } from "./card";
@@ -167,47 +166,22 @@ export function Board({
   const [viewsLoaded, setViewsLoaded] = useState(false);
   // Only columns the person changed are saved, so the rest keep following Settings.
   const ownViews = useRef<Partial<Record<ColumnId, ColumnView>>>({});
-  // What the filter bar shows and every column follows until its own menu overrides it.
-  const [boardView, setBoardView] = useState<ColumnView>(EMPTY_VIEW);
   useEffect(() => {
-    const boardWide = loadBoardView();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is only readable after mount
-    setBoardView(boardWide);
     const own = loadColumnViews();
     ownViews.current = own;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is only readable after mount
     setViews({
-      backlog: own.backlog ?? boardWide,
-      todo: own.todo ?? boardWide,
-      in_progress: own.in_progress ?? boardWide,
-      in_review: own.in_review ?? boardWide,
-      done: own.done ?? boardWide,
+      backlog: own.backlog ?? EMPTY_VIEW,
+      todo: own.todo ?? EMPTY_VIEW,
+      in_progress: own.in_progress ?? EMPTY_VIEW,
+      in_review: own.in_review ?? EMPTY_VIEW,
+      done: own.done ?? EMPTY_VIEW,
     });
     setViewsLoaded(true);
   }, []);
   useEffect(() => {
     if (viewsLoaded) saveColumnViews(ownViews.current);
   }, [views, viewsLoaded]);
-
-  // The bar hands back a whole view; only the fields it changed go to every column.
-  function changeBoardView(next: ColumnView) {
-    const changed: Partial<ColumnView> = {};
-    if (next.query !== boardView.query) changed.query = next.query;
-    if (next.sort !== boardView.sort) changed.sort = next.sort;
-    if (next.types.join() !== boardView.types.join()) changed.types = next.types;
-    if (next.collapsed !== boardView.collapsed) changed.collapsed = next.collapsed;
-    setBoardView(next);
-    saveBoardView(next);
-    const own = { ...ownViews.current };
-    for (const col of COLUMNS) {
-      if (col in own) own[col] = { ...own[col]!, ...changed };
-    }
-    ownViews.current = own;
-    setViews((prev) => {
-      const all = { ...prev };
-      for (const col of COLUMNS) all[col] = { ...prev[col], ...changed };
-      return all;
-    });
-  }
 
   const archivedWanted = COLUMNS.some((c) => views[c].types.includes("archived"));
   useEffect(() => {
@@ -775,7 +749,6 @@ export function Board({
         assistant={assistant}
       />
 
-      <BoardFilterBar value={boardView} onChange={changeBoardView} />
 
       {/* Where the board is below 768px: one column shows, a swipe changes it. */}
       <ul
