@@ -876,7 +876,8 @@ export function ColonyProvider({
     },
     sentinelsOpen,
     setSentinelsOpen: (open) => {
-      sfx(open ? "pickup" : "drop");
+      // Opening is silent: the sentinels' own landing sounds are the cue.
+      if (!open) sfx("drop");
       setSentinelsOpen(open);
       if (open) {
         setColonyOpen(false);
