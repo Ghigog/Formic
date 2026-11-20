@@ -613,6 +613,10 @@ ${indent(REPORTER_SCRIPT, 10)}
           # plan and progress bar are read from it.
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "true"
           CLAUDE_CODE_ENABLE_TASKS: "false"
+          # A software-rendered screenshot run takes a minute or two; Claude
+          # Code's own default cuts a command off at 2 minutes.
+          BASH_DEFAULT_TIMEOUT_MS: "300000"
+          BASH_MAX_TIMEOUT_MS: "600000"
           ${ATTACHMENTS_DIR_VAR}: \${{ runner.temp }}/formic-attachments
           CLAUDE_CODE_OAUTH_TOKEN: \${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
           CODEX_CREDENTIAL: \${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}

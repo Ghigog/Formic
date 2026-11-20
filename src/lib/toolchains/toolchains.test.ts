@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -50,6 +50,39 @@ function readNote(): string {
   }
 }
 
+/**
+ * Runs a script on a machine of Formic's making: only the tools the setup
+ * needs, a `uname` that says `os`, and stubs for what is named in `have`.
+ * The real machine's xvfb-run must not be seen, so PATH holds nothing else.
+ */
+function runOn(os: string, have: string[], script: string, env: Record<string, string> = {}) {
+  const bin = path.join(path.dirname(repo), "bin");
+  mkdirSync(bin, { recursive: true });
+  for (const tool of ["mkdir", "chmod", "ln", "cat", "sed", "tr", "head"]) {
+    const real = execFileSync("bash", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim();
+    if (!existsSync(path.join(bin, tool))) symlinkSync(real, path.join(bin, tool));
+  }
+  const stub = (name: string, body: string) => {
+    writeFileSync(path.join(bin, name), `#!/bin/bash\n${body}\n`, { mode: 0o755 });
+  };
+  stub("uname", `echo ${os}`);
+  for (const name of have) {
+    if (name === "sudo") stub(name, 'shift; [ "$1" = true ] && exit 0; exec "$@"');
+    else if (name === "apt-get") stub(name, `echo "$@" >> "${path.join(home, "apt.log")}"; for t in xvfb-run Xvfb; do printf '#!/bin/bash\\n' > "${bin}/$t"; chmod +x "${bin}/$t"; done`);
+    else stub(name, "exit 0");
+  }
+  const result = spawnSync("/bin/bash", ["-c", script], {
+    cwd: repo,
+    env: { NODE_ENV: "test", PATH: bin, HOME: home, ...env },
+    encoding: "utf8",
+  });
+  let apt = "";
+  try {
+    apt = readFileSync(path.join(home, "apt.log"), "utf8");
+  } catch {}
+  return { status: result.status, out: `${result.stdout}${result.stderr}`, note: readNote(), apt };
+}
+
 const fake = (id: string, setup: string): Toolchain => ({
   id,
   name: id,
@@ -85,7 +118,7 @@ describe("toolchains", () => {
   });
 
   it("do nothing, and write an empty note, for a repository that uses none of them", () => {
-    const result = run(setupScript("sandbox"));
+    const result = runOn("Darwin", [], setupScript("sandbox"));
     expect(result.status).toBe(0);
     expect(result.note).toBe("");
   });
@@ -99,14 +132,14 @@ describe("toolchains", () => {
 
     expect(result.status).toBe(0);
     expect(result.out).toContain("Setting up broken failed");
-    expect(result.note).toBe("fine ran\n");
+    expect(result.note).toContain("fine ran\n");
   });
 
   it("run the repository's own hook, which can write to the note", () => {
     mkdirSync(path.join(repo, path.dirname(REPO_SETUP_HOOK)), { recursive: true });
     writeFileSync(path.join(repo, REPO_SETUP_HOOK), 'formic_note "hook on $FORMIC_HOST"\n');
 
-    expect(run(setupScript("sandbox")).note).toBe("hook on sandbox\n");
+    expect(run(setupScript("sandbox")).note).toContain("hook on sandbox\n");
   });
 
   it("put what they install on the PATH of what runs next", () => {
@@ -124,8 +157,64 @@ describe("toolchains", () => {
   });
 });
 
+describe("the virtual display", () => {
+  const present = ["xvfb-run", "Xvfb", "dpkg"];
+
+  it("is explained in the note, with the wrapper and the time to allow, when xvfb-run is there", () => {
+    const result = runOn("Linux", present, setupScript("sandbox", []));
+    expect(result.status).toBe(0);
+    expect(result.note).toContain("## Display");
+    expect(result.note).toContain('no physical screen');
+    expect(result.note).toContain('xvfb-run -a -s "-screen 0 1920x1080x24" <command>');
+    expect(result.note).toContain("at least 3 minutes");
+    expect(result.note).not.toContain("DISPLAY=:99");
+  });
+
+  it("installs xvfb, xauth and Mesa when xvfb-run is missing and sudo needs no password", () => {
+    const result = runOn("Linux", ["sudo", "apt-get"], setupScript("sandbox", []));
+    expect(result.apt).toContain("install -y -qq xvfb xauth libgl1-mesa-dri");
+    expect(result.note).toContain("## Display");
+  });
+
+  it("notes that there is no display, and carries on, when it cannot install one", () => {
+    writeFileSync(path.join(repo, "a.marker"), "");
+    const result = runOn("Linux", [], setupScript("sandbox", [fake("a", "formic_note ran")]));
+    expect(result.status).toBe(0);
+    expect(result.note).toContain("ran");
+    expect(result.out).toContain("No virtual display is available");
+    expect(result.note).toContain("no virtual display");
+  });
+
+  it("starts Xvfb on :99 in a job, and exports it for later steps", () => {
+    const github = path.join(home, "env");
+    const result = runOn("Linux", present, setupScript("job", []), { GITHUB_ENV: github });
+    expect(readFileSync(github, "utf8")).toContain("DISPLAY=:99");
+    expect(result.note).toContain("DISPLAY=:99 is already set");
+    expect(setupScript("job", [])).toContain("Xvfb :99 -screen 0 1920x1080x24");
+  });
+
+  it("leaves a job's own DISPLAY alone, and starts nothing in a sandbox", () => {
+    const github = path.join(home, "env");
+    runOn("Linux", present, setupScript("job", []), { GITHUB_ENV: github, DISPLAY: ":0" });
+    runOn("Linux", present, setupScript("sandbox", []), { GITHUB_ENV: github });
+    expect(() => readFileSync(github, "utf8")).toThrow();
+    expect(setupScript("sandbox", [])).not.toContain("Xvfb :99");
+  });
+
+  it("is not set up at all on macOS", () => {
+    const result = runOn("Darwin", present, setupScript("job", []));
+    expect(result.note).toBe("");
+  });
+});
+
 describe("the Godot toolchain", () => {
   const godot = TOOLCHAINS.find((t) => t.id === "godot")!;
+
+  it("tells the agent to screenshot under xvfb-run, not to always pass --headless", () => {
+    const script = setupScript("sandbox", [godot]);
+    expect(script).toContain("--rendering-driver opengl3");
+    expect(script).not.toContain("always pass --headless");
+  });
 
   it("stops with a reason when project.godot names no version", () => {
     writeFileSync(path.join(repo, "project.godot"), "config_version=5\n");

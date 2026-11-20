@@ -49,6 +49,7 @@ import {
   ENGINEERING_PRACTICES,
   HANDOFF_RULE,
   CHECKS_RULE,
+  DISPLAY_RULE,
   VERIFY_RULE,
   withPlanningConventions,
   withProductConventions,
@@ -165,6 +166,7 @@ const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- [needed] Title (N pt): what and why" or "- [nice to have] Title (N pt): what and why" per line, before the plan.\n- ${RUBRIC_FIX_RULE} Put them in the summary as a "Rubric fixes:" section, one "- Collum 5b: what is wrong -> the change you suggest" per line.${mode === "implement" ? "" : `\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${CHECKS_RULE}
+- ${DISPLAY_RULE}
 - ${VERIFY_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
 - Do not commit, push, or create branches. Formic does that after checking your changes.

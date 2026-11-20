@@ -123,6 +123,12 @@ describe("the installed workflow", () => {
     expect(workflowCeiling(null).minutes).toBe(180);
   });
 
+  it("lets a Claude Code command run 5 minutes by default, for software-rendered screenshots", () => {
+    const text = runnerWorkflow();
+    expect(text).toContain('BASH_DEFAULT_TIMEOUT_MS: "300000"');
+    expect(text).toContain('BASH_MAX_TIMEOUT_MS: "600000"');
+  });
+
   it("parses as the YAML a runner will accept", () => {
     expect(() => parse(text)).not.toThrow();
     // The version is the first line, so anything reading the installed copy —
