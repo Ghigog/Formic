@@ -40,6 +40,7 @@ import { runCodingLoop } from "@/lib/agents/coding-loop";
 import type { AgentContext, CoderTask, Usage } from "@/lib/agents/ports";
 import { budgetTokens } from "@/lib/agents/ports";
 import { CODER_BRIEF, CHECKPOINT_RULE, withCodingRules } from "@/lib/agents/prompts";
+import { SCREENSHOT_RULE } from "@/lib/runner/screenshots";
 import { followUpsSection } from "@/lib/agents/follow-ups";
 import { billingFor, spendCeilingNote, turnCeiling } from "@/lib/budget/limits";
 import type { Budget } from "@/lib/budget/budget-for";
@@ -181,11 +182,14 @@ export interface LoopEntryOptions {
  * saves the checkout and the progress file while the run works, and those
  * notes are what a resumed run reads: with the files and no notes, the next
  * run knows where the work got to but not why, and explores it all again.
- * The rule is the same one a CLI agent's prompt carries.
+ * The screenshot rule is here for the same reason: the job's last step moves
+ * `.formic/screenshots/` onto the branch, which an in-process run has no step for.
+ * Both rules are the ones a CLI agent's prompt carries.
  */
 function jobBrief(task: CoderTask): string {
   const brief = withCodingRules(CODER_BRIEF, "coder", { spike: task.workType === "spike" });
-  return process.env.FORMIC_PROGRESS ? `${brief}\n\n${CHECKPOINT_RULE}` : brief;
+  const rules = [SCREENSHOT_RULE, ...(process.env.FORMIC_PROGRESS ? [CHECKPOINT_RULE] : [])];
+  return `${brief}\n\n${rules.join("\n\n")}`;
 }
 
 /**
