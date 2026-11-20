@@ -873,13 +873,31 @@ describe("red CI the ticket's change did not cause", () => {
   it("starts the fix at once when a Queen is running the Epic", async () => {
     const { epicId, prNumber } = await seed();
     await repository().placeQueen(PROJECT, epicId, "epic");
+    // The fix's own coder run starts on its own; stand in for it, held until the end, so the test can wait for it.
+    let finishFix = () => {};
+    const held = new Promise<void>((resolve) => (finishFix = resolve));
+    const implement = vi.fn(async () => {
+      await held;
+      return { ok: false, error: "stopped", usage: NO_USAGE };
+    });
+    setAgents({
+      reviewer: {
+        review: async () => ({
+          ok: true,
+          value: { summary: "blocked", detail: "", verifiedWith: null, sendBack: null, blockedByFix: fix },
+          usage: NO_USAGE,
+        }),
+      },
+      coder: { implement },
+    } as never);
 
     await reviewPullRequest(PROJECT, prNumber, (await vcs.pullRequest(prNumber)).headSha);
+    await vi.waitFor(() => expect(implement).toHaveBeenCalled());
 
     const bug = (await repository().ticketsForEpic(epicId)).find((t) => t.title === fix.bug.title)!;
     expect(["running", "queued"]).toContain(bug.status);
     const messages = (await repository().assistantMessages(PROJECT)).messages;
-    // No confirmation to start the fix is asked. (The fix's own coder run may post other messages meanwhile.)
+    // No confirmation to start the fix is asked: with a Queen, requestFix starts it and posts nothing.
     const asksToStart = messages.some((m) =>
       m.proposals?.some((p) => {
         const action = p.action as { type?: string; key?: string };
@@ -887,6 +905,7 @@ describe("red CI the ticket's change did not cause", () => {
       }),
     );
     expect(asksToStart).toBe(false);
+    finishFix();
   });
 
   it("reviews the blocked ticket again when the fix merges", async () => {
