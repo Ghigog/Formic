@@ -14,7 +14,9 @@ Production is **one AWS Lightsail instance**, not Vercel.
 - **Deploys:** manual, from `main`: Actions → CI → Run workflow. With the
   `DEPLOY_HOST` repository variable set, the `deploy` job builds on the CI
   runner, ships the build over SSH, and `deploy/server/deploy.sh` migrates
-  and switches to it.
+  and switches to it. One exception: a merge to `main` that changes
+  `.github/workflows/formic-agent.yml` deploys by itself, because a server
+  older than that file can't run agents (it says "Deploy Formic" on the card).
 - **GitLab:** gitlab.com projects work once `GITLAB_CLIENT_ID` and
   `GITLAB_CLIENT_SECRET` are in that `.env` ([`docs/gitlab.md`](docs/gitlab.md)).
   A board on one is named `gitlab:group/project`.

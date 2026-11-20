@@ -242,7 +242,32 @@ export async function closeStaleSetupPulls(client: VcsClient): Promise<void> {
 export type RunnerState =
   | { ready: true }
   /** `update` when an older version of the workflow is already there. */
-  | { ready: false; setupUrl: string; update: boolean };
+  | { ready: false; setupUrl: string; update: boolean }
+  /** The base branch has a newer workflow than this server: see serverBehind. */
+  | { ready: false; behind: true };
+
+/** What a card or the setup dialog says when serverBehind holds. */
+export const SERVER_BEHIND_REASON =
+  "This repository has a newer Formic agent workflow than the Formic server running it. Deploy Formic from main (Actions → CI → Run workflow), then try again.";
+
+/**
+ * Whether the base branch changed the workflow after the commit this server
+ * was deployed from. Then the server is behind its own repository, and the
+ * setup pull request it would open puts the older workflow back. Only the
+ * repository Formic deploys from has that commit: for any other the
+ * comparison fails, and the answer is no.
+ */
+export async function serverBehind(client: VcsClient, baseBranch: string): Promise<boolean> {
+  const deployed = process.env.FORMIC_COMMIT ?? process.env.VERCEL_GIT_COMMIT_SHA;
+  if (!deployed) return false;
+  const { path } = hostRunner(client);
+  try {
+    const { files } = await client.compare(deployed, baseBranch);
+    return files.includes(path);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Whether the repository has the current runner workflow on its base
@@ -259,6 +284,7 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
   const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch);
   if (current?.includes(version)) return { ready: true };
   const update = current !== null;
+  if (update && (await serverBehind(client, baseBranch))) return { ready: false, behind: true };
 
   await client.ensureBranch(branch, baseBranch);
   const onBranch = await client.readFile(RUNNER_WORKFLOW_PATH, branch);
@@ -743,6 +769,7 @@ async function dispatch(input: {
   try {
     const runner = await ensureRunner(client, input.baseBranch);
     if (!runner.ready) {
+      if ("behind" in runner) return { ok: false, reason: SERVER_BEHIND_REASON, blocked: true };
       return {
         ok: false,
         reason: `${agent.info.label} runs in this repository's GitHub Actions. Merge the setup pull request once (${runner.setupUrl}), then try again.`,
