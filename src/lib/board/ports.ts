@@ -46,6 +46,7 @@ export interface BoardServicePort {
   archiveEpic(projectId: string, epicId: string): Promise<EpicActionResult>;
   restoreEpic(projectId: string, epicId: string): Promise<EpicActionResult>;
   createBacklogItem(projectId: string, rawRequest: string, requestId?: string): Promise<BoardCard>;
+  createTodoItem(projectId: string, rawRequest: string): Promise<BoardCard>;
 }
 
 export interface BoardPorts {

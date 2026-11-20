@@ -112,14 +112,16 @@ last log lines and **Try again**. Each failure says whose it is
   tickets and the code. Say one of:
   - **Intended**, with the line that says so.
   - **Already known**, linking the card or pull request.
-  - **Worth a ticket**: propose `create_backlog_item` with the note, and the
-    screenshots attached. Never fix code from a playtest note.
+  - **Worth a ticket**: one fix or one behaviour goes in its Epic with
+    `add_tickets_to_epic` when one is on the board, otherwise `create_todo_item`
+    (a To Do ticket). `create_backlog_item` only for a new capability that
+    needs a PRD and several tickets. Screenshots attached. Never fix code from a playtest note.
 - **Screenshots:** the same as images in the PM chat (#1490). Each uploads
   under its own `playtest-…` request id, and the note claims it through
   `Attachment.assistantMessageId`, so the PM sees the picture itself (the
   latest three notes with images; older ones as a line naming the file). A
-  note only claims this board's own uploads. An approved `create_backlog_item`
-  copies the named screenshots onto the new Epic, so the Product and Coder
+  note only claims this board's own uploads. An approved `create_todo_item`
+  or `create_backlog_item` copies the named screenshots onto the new ticket or Epic, so the Product and Coder
   agents see them too, and the note keeps its own.
 - **Nudges, no tokens spent:** plain PM lines written by the server.
   - "5 minutes left in this playtest."

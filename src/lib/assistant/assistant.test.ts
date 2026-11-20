@@ -10,7 +10,7 @@ vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
   },
 }));
 
-import { answer, cancelPending, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
+import { answer, cancelPending, PLAYTEST_RULE, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
 import { applyAction, checkAction } from "./actions";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
@@ -513,6 +513,31 @@ describe("applying an approved proposal", () => {
     expect((await repo.attachmentContent(onEpic[0]!.id))?.bytes).toEqual(new Uint8Array([7, 8]));
     // The note keeps its own picture.
     expect((await repo.attachmentsFor({ assistantMessageId: note.id })).map((a) => a.id)).toEqual([shot.id]);
+  });
+
+  it("accepts create_todo_item and files a To Do ticket carrying the note's screenshot", async () => {
+    const repo = repository();
+    const shot = await repo.createAttachment({ projectId: PROJECT, requestId: "playtest-note-2", filename: "shot.png", mimeType: "image/png", kind: "image", size: 2, bytes: new Uint8Array([7, 8]) });
+    const note = await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "Night pick-up is off", playtestId: "pt2" });
+    await repo.claimAttachments("playtest-note-2", { assistantMessageId: note.id });
+
+    const checked = checkAction({ type: "create_todo_item", request: "Night pick-up should work by nearness", screenshots: [shot.id] });
+    if (!checked.ok) throw new Error(checked.problem);
+    const before = new Set((await repo.boardCards(PROJECT)).map((c) => c.id));
+    const said = await applyAction(PROJECT, checked.action);
+    const added = (await repo.boardCards(PROJECT)).filter((c) => !before.has(c.id));
+    const ticket = added.find((c) => c.kind === "ticket")!;
+
+    expect(said).toBe(`Added ${ticket.key} to To Do. The Architect Agent is drafting it.`);
+    expect(ticket.key).toMatch(/^T-\d+$/);
+    const onTicket = await repo.attachmentsFor({ ticketId: ticket.id });
+    expect(onTicket).toHaveLength(1);
+    expect((await repo.attachmentContent(onTicket[0]!.id))?.bytes).toEqual(new Uint8Array([7, 8]));
+    expect((await repo.attachmentsFor({ assistantMessageId: note.id })).map((a) => a.id)).toEqual([shot.id]);
+  });
+
+  it("tells the PM a single playtest fix is a To Do ticket", () => {
+    expect(PLAYTEST_RULE).toContain("create_todo_item");
   });
 
   async function plannedTickets() {

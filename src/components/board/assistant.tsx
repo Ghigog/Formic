@@ -432,7 +432,9 @@ export function ProposalCard({
     >
       <div className={cn(decided && "opacity-60")}>
         <div className="text-ink text-[13px] font-semibold">{p.summary}</div>
-        {p.action.type === "create_backlog_item" && p.action.request && (
+        {(p.action.type === "create_backlog_item" ||
+          p.action.type === "create_todo_item") &&
+          p.action.request && (
           <p className="text-muted mt-1 line-clamp-3 text-[12px]">
             {p.action.request}
           </p>
