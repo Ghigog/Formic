@@ -114,6 +114,7 @@ describe("TicketDrawer notice", () => {
   it("shows a red Warning banner with title, short and long description", async () => {
     open(stalled("failed", "CI broke\nline two of the log"));
     const banner = await screen.findByRole("alert");
+    fireEvent.click(within(banner).getByRole("button"));
     expect(banner.dataset.severity).toBe("warning");
     expect(banner.className).toContain("bg-crimson");
     expect(within(banner).getByText("Warning")).toBeInTheDocument();
@@ -125,6 +126,7 @@ describe("TicketDrawer notice", () => {
   it("shows a gray Paused banner for a run that hit the usage limit", async () => {
     open(stalled("failed", "Usage limit reached\nWorks again at 3pm"));
     const banner = await screen.findByRole("alert");
+    fireEvent.click(within(banner).getByRole("button"));
     expect(banner.dataset.severity).toBe("paused");
     expect(banner.className).not.toContain("crimson");
     expect(within(banner).getByText("Paused")).toBeInTheDocument();
@@ -134,9 +136,28 @@ describe("TicketDrawer notice", () => {
     expect(within(banner).queryByText("!")).toBeNull();
   });
 
+  it("starts folded to icon and title, and the header unfolds and folds it", async () => {
+    open(stalled("failed", "CI broke\nline two of the log"));
+    const banner = await screen.findByRole("alert");
+    const header = within(banner).getByRole("button");
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(within(banner).getByText("Warning")).toBeInTheDocument();
+    expect(within(banner).getByText("Failed")).toBeInTheDocument();
+    expect(within(banner).queryByText(/line two of the log/)).toBeNull();
+    expect(banner.querySelector("pre")).toBeNull();
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    expect(header.getAttribute("aria-controls")).toBe(banner.querySelector("pre")!.parentElement!.id);
+    expect(within(banner).getByText(/line two of the log/)).toBeInTheDocument();
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(within(banner).queryByText(/line two of the log/)).toBeNull();
+  });
+
   it("shows a single-line failure once, with no gray block", async () => {
     open(stalled("failed", "The run timed out"));
     const banner = await screen.findByRole("alert");
+    fireEvent.click(within(banner).getByRole("button"));
     expect(within(banner).getAllByText("The run timed out")).toHaveLength(1);
     expect(banner.querySelector("pre")).toBeNull();
   });
@@ -144,6 +165,7 @@ describe("TicketDrawer notice", () => {
   it("shows a yellow Alert banner for a ticket paused for authorization", async () => {
     open(stalled("blocked", "Needs files outside its scope: src/a.ts\nmore"));
     const banner = await screen.findByRole("alert");
+    fireEvent.click(within(banner).getByRole("button"));
     expect(banner.dataset.severity).toBe("alert");
     expect(banner.className).toContain("bg-clay");
     expect(within(banner).getByText("Alert")).toBeInTheDocument();
@@ -484,6 +506,7 @@ describe("TicketDrawer", () => {
       }),
     });
 
+    fireEvent.click(await screen.findByRole("button", { name: /Alert/ }));
     const link = await screen.findByRole("link", { name: url });
     expect(link).toHaveAttribute("href", url);
     expect(link).toHaveAttribute("target", "_blank");

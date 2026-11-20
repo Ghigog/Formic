@@ -393,6 +393,7 @@ describe("EpicDrawer on-screen keyboard", () => {
           epic: { ...epic, status: "blocked", stalledIn: "backlog", blockedReason: questionReason("The Product Agent", [{ question: "Which format?", why: "It sets the export." }]) },
         }),
       );
+      fireEvent.click(await screen.findByRole("button", { name: /Question/ }));
       await screen.findByRole("button", { name: "Answer in the chat" });
       expect(screen.getByRole("alert")).toHaveTextContent("Question for you from The Product Agent");
       expect(screen.queryByText(/Which format/)).not.toBeInTheDocument();
@@ -409,6 +410,7 @@ describe("EpicDrawer on-screen keyboard", () => {
           },
         }),
       );
+      fireEvent.click(await screen.findByRole("button", { name: /Question/ }));
       fireEvent.click(
         await screen.findByRole("button", { name: "Answer in the chat" }),
       );

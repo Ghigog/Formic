@@ -1,7 +1,7 @@
 "use client";
 
 import { AutoTour } from "@/components/onboarding/tour";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   keyboardStyles,
   useKeyboardInset,
@@ -22,7 +22,7 @@ import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
 import { TypeTag } from "./type-tag";
-import { NOTICE_INK, NoticeIcon, ProblemNotice, WorkTimer } from "./card";
+import { NOTICE_INK, NoticeChevron, NoticeIcon, ProblemNotice, WorkTimer } from "./card";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
 import { TicketKpis } from "./ticket-kpis";
@@ -443,26 +443,39 @@ function NoticeBanner({
   className?: string;
 }) {
   const { ground, label } = BANNER[notice.severity];
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
   return (
     <div
       role="alert"
       data-severity={notice.severity}
       className={cn("text-ink rounded-md px-2.5 py-2 text-[12px] leading-5", ground, className)}
     >
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-h-9 w-full cursor-pointer items-center gap-2 text-left"
+      >
         <NoticeIcon severity={notice.severity} />
         <span className={cn("text-[10px] font-bold uppercase", NOTICE_INK[notice.severity])}>{label}</span>
-        <span className="font-semibold">{notice.title}</span>
-      </div>
-      {notice.shortDescription && (
-        <p className="mt-1">
-          <LinkifiedText text={notice.shortDescription} />
-        </p>
-      )}
-      {notice.longDescription && (
-        <pre className="bg-sunken mt-1.5 max-h-40 overflow-auto rounded px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">
-          <LinkifiedText text={notice.longDescription} />
-        </pre>
+        <span className="min-w-0 flex-1 font-semibold">{notice.title}</span>
+        <NoticeChevron open={open} />
+      </button>
+      {open && (
+        <div id={bodyId}>
+          {notice.shortDescription && (
+            <p className="mt-1">
+              <LinkifiedText text={notice.shortDescription} />
+            </p>
+          )}
+          {notice.longDescription && (
+            <pre className="bg-sunken mt-1.5 max-h-40 overflow-auto rounded px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">
+              <LinkifiedText text={notice.longDescription} />
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );
