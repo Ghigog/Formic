@@ -99,6 +99,7 @@ import {
 } from "@/lib/vcs";
 import { NO_CHANGES } from "@/lib/domain/notice";
 import { hostName, repoHost } from "@/lib/vcs/host";
+import { SCREENSHOT_RULE, isScreenshotPath, screenshotSection, skippedScreenshots, withoutScreenshotTrailers } from "./screenshots";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ALREADY_DONE_TRAILER,
@@ -168,6 +169,7 @@ const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${CHECKS_RULE}
 - ${DISPLAY_RULE}
 - ${VERIFY_RULE}
+- ${SCREENSHOT_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
@@ -1902,7 +1904,8 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
       files = files.filter((f) => !brought.has(f));
     }
 
-    let violations = violationsInDiff(files, ticket.fileScope);
+    // Screenshots are evidence, not the change: the scope does not judge them.
+    let violations = violationsInDiff(files.filter((f) => !isScreenshotPath(f)), ticket.fileScope);
     if (violations.length > 0 && isTicketImplementation(result.mode) && (await widenScope(projectId, ticket, violations))) {
       violations = [];
     }
@@ -1975,10 +1978,16 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
       branch,
       change: {
         summary,
-        detail: withoutHandoff(rest.join("\n").trim()),
+        detail: withoutScreenshotTrailers(withoutHandoff(rest.join("\n").trim())),
         verifiedWith: null,
         handoff: handoffFromSummary(message),
       },
+      screenshots: screenshotSection({
+        repoFullName: project.repoFullName,
+        branch,
+        files,
+        skipped: skippedScreenshots(change.messages),
+      }),
       ...(usage ? { usage } : {}),
     });
   } catch (e) {

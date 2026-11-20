@@ -503,7 +503,7 @@ export async function openTicketPullRequest(
   projectId: string,
   ticket: TicketDetail,
   client: VcsClient,
-  input: { branch: string; change: CodeChange; usage?: Usage },
+  input: { branch: string; change: CodeChange; usage?: Usage; screenshots?: string },
 ): Promise<void> {
   // A scout's change stops at its branch: the Reviewer Agent picks among them.
   if (ticket.scoutOf) {
@@ -529,7 +529,7 @@ export async function openTicketPullRequest(
       headBranch: input.branch,
       baseBranch: stacked ?? target,
       title: pullRequestTitle(ticket, input.change),
-      body: pullRequestBody(ticket, input.change),
+      body: pullRequestBody(ticket, input.change, input.screenshots),
     }));
 
   await repo.updateTicket(ticket.id, {
