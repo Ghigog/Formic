@@ -1,4 +1,4 @@
-# formic-runner: aec0ce65c5cd
+# formic-runner: 1ab599094c05
 # Installed by Formic. Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -707,6 +707,32 @@ jobs:
           fi
           if [ -n "${FORMIC_MERGED:-}" ]; then
             printf '\nFormic-Merged: %s\n' "$FORMIC_MERGED" >> "$FORMIC_SUMMARY"
+          fi
+          # Screenshots the agent left behind: PNGs within the caps go on the branch.
+          if [ -d ".formic/screenshots" ]; then
+            shot_kept=0
+            for shot in ".formic/screenshots"/*; do
+              [ -f "$shot" ] || continue
+              shot_name="$(basename "$shot" | tr -c 'A-Za-z0-9._\n-' '-')"
+              shot_why=""
+              case "$(printf '%s' "$shot_name" | tr 'A-Z' 'a-z')" in
+                *.png) ;;
+                *) shot_why="not a PNG" ;;
+              esac
+              if [ -z "$shot_why" ] && [ "$(head -c 8 "$shot" | od -An -tx1 | tr -d ' \n')" != "89504e470d0a1a0a" ]; then shot_why="not a PNG"; fi
+              if [ -z "$shot_why" ] && [ "$(wc -c < "$shot")" -gt 1500000 ]; then shot_why="over 1500000 bytes"; fi
+              if [ -z "$shot_why" ] && [ "$shot_kept" -ge 8 ]; then shot_why="over the limit of 8 screenshots"; fi
+              if [ -n "$shot_why" ]; then
+                printf '\nFormic-Screenshot-Skipped: %s (%s)\n' "$shot_name" "$shot_why" >> "$FORMIC_SUMMARY"
+              else
+                mkdir -p "docs/screenshots/$TICKET"
+                cp "$shot" "docs/screenshots/$TICKET/$shot_name"
+                git add -f "docs/screenshots/$TICKET/$shot_name"
+                shot_kept=$((shot_kept + 1))
+              fi
+            done
+            git rm -r -q -f --cached --ignore-unmatch ".formic/screenshots" > /dev/null
+            rm -rf ".formic/screenshots"
           fi
           git commit --allow-empty -F "$FORMIC_SUMMARY"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}"

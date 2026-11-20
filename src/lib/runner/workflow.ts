@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 
 import { REPO_SETUP_HOOK, checkoutCachePaths, setupScript } from "../toolchains";
 import { CHECKOUT_ACTION, RUNS_ON, cacheStep } from "../toolchains/actions";
+import { screenshotStep } from "./screenshots";
 
 export const RUNNER_WORKFLOW_FILE = "formic-agent.yml";
 export const RUNNER_WORKFLOW_PATH = `.github/workflows/${RUNNER_WORKFLOW_FILE}`;
@@ -777,6 +778,7 @@ ${indent(REPORTER_SCRIPT, 10)}
           if [ -n "\${FORMIC_MERGED:-}" ]; then
             printf '\\n${MERGED_TRAILER} %s\\n' "$FORMIC_MERGED" >> "$FORMIC_SUMMARY"
           fi
+          ${screenshotStep().replace(/\n/g, "\n          ")}
           git commit --allow-empty -F "$FORMIC_SUMMARY"
           git push "https://x-access-token:\${GH_TOKEN}@github.com/\${REPO}.git" "HEAD:refs/heads/formic-staging/\${JOB}"
 `;

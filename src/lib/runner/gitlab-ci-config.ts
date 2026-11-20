@@ -26,6 +26,7 @@ import { createHash } from "node:crypto";
 import { parseDocument, isSeq, YAMLSeq } from "yaml";
 
 import { REPO_SETUP_HOOK, setupScript } from "../toolchains";
+import { screenshotStep } from "./screenshots";
 import {
   ALREADY_DONE_TRAILER,
   ANSWER_PATH,
@@ -291,6 +292,7 @@ if ! grep -q '^${USAGE_TRAILER}' "$FORMIC_SUMMARY" && [ -s "$FORMIC_STREAM" ]; t
   if [ -n "$usage" ]; then printf '\\n${USAGE_TRAILER} %s\\n' "$(jq -c . <<< "$usage")" >> "$FORMIC_SUMMARY"; fi
 fi
 if [ -n "$FORMIC_MERGED" ]; then printf '\\n${MERGED_TRAILER} %s\\n' "$FORMIC_MERGED" >> "$FORMIC_SUMMARY"; fi
+${screenshotStep()}
 # A merge stays the merge commit it is: GitLab cannot add the parent later.
 git commit -q --allow-empty -F "$FORMIC_SUMMARY"
 git push -q "$PUSH_URL" "HEAD:refs/heads/formic-staging/\${JOB}"`;
