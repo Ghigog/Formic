@@ -4,7 +4,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { vcs, VcsError } from "@/lib/vcs";
 import { boardHasCliAgent } from "@/lib/board/first-agent";
-import { closeStaleSetupPulls, ensureRunner, explain, hostRunner } from "./runner";
+import { closeStaleSetupPulls, ensureRunner, explain, hostRunner, SERVER_BEHIND_REASON, serverBehind } from "./runner";
 
 /**
  * Where a project stands on the one pull request a person has to merge
@@ -51,6 +51,10 @@ export async function runnerSetup(
     const { path, version, setupBranch } = hostRunner(client);
     const current = await client.readFile(path, project.baseBranch);
     if (current?.includes(version)) return { state: "ready" };
+    // Not the open setup pull request: it would put the older workflow back.
+    if (current !== null && (await serverBehind(client, project.baseBranch))) {
+      return { state: "blocked", reason: SERVER_BEHIND_REASON };
+    }
     const open = await client.findPullRequest(setupBranch);
     if (open) return { state: "waiting", setupUrl: open.url, update: current !== null };
 
@@ -62,9 +66,9 @@ export async function runnerSetup(
     }
 
     const runner = await ensureRunner(client, project.baseBranch);
-    return runner.ready
-      ? { state: "ready" }
-      : { state: "waiting", setupUrl: runner.setupUrl, update: runner.update };
+    if (runner.ready) return { state: "ready" };
+    if ("behind" in runner) return { state: "blocked", reason: SERVER_BEHIND_REASON };
+    return { state: "waiting", setupUrl: runner.setupUrl, update: runner.update };
   } catch (e) {
     if (e instanceof VcsError && (e.status === 403 || e.status === 404)) {
       return { state: "blocked", reason: explain(e) };
