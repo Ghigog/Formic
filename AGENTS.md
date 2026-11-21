@@ -37,3 +37,11 @@ So, when reasoning about production:
   Sign-in emails go out over SMTP through a Gmail account with an app
   password (`SMTP_*` and `FORMIC_EMAIL_FROM` in the server's `.env`), not
   Resend.
+
+## PM chat rebuild
+
+The PM chat is being rebuilt as a resumable Claude session per board. The
+plan, decisions and required safety rules are in
+[`docs/plans/pm-chat.md`](docs/plans/pm-chat.md). Read it before changing
+`src/lib/assistant`, `src/lib/mcp` or the chat panel, and tick its boxes as
+work lands.
