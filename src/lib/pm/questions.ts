@@ -1,7 +1,12 @@
 import "server-only";
 
 import { assistantAgentFor } from "@/lib/agents/presets";
+import { postPmMessage } from "@/lib/assistant/pm-messages";
+import { credentialsForProject } from "@/lib/auth/credentials";
+import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
+import { vcs } from "@/lib/vcs";
+import { admitWake, type WakeVerdict } from "./wake-gate";
 import { askedIn, askerOf, firstQuestion, isQuestion } from "@/lib/domain/question";
 
 /**
@@ -35,12 +40,42 @@ export function questionPrompt(card: { key: string; title: string }, reason: str
   ].join("\n");
 }
 
+/** The head of the card's branch, or "" when it has none or it cannot be read. */
+async function headOf(projectId: string, branch: string | null): Promise<string> {
+  if (!branch) return "";
+  try {
+    const project = await projectFor(projectId);
+    if (!project.repoFullName) return "";
+    const creds = await credentialsForProject(project);
+    return (await vcs(project.repoFullName, creds.repoToken).branchHead(branch)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Whether the PM may wake for this card now (./wake-gate.ts). A wake-up it
+ * may not take is said once in the chat, and the card waits for the person.
+ */
+async function admit(projectId: string, card: { id: string; key: string }, kind: "question" | "stall", now: Date): Promise<WakeVerdict> {
+  const detail = await repository().ticketDetail(card.id);
+  const head = await headOf(projectId, detail?.branchName ?? null);
+  return admitWake({ projectId, cardId: card.id, cardKey: card.key, head, kind, now });
+}
+
+/** The PM's turn on `prompt`, in a reply of its own. An API PM answers in-process, which can take minutes. */
+async function startWake(projectId: string, prompt: string): Promise<void> {
+  const pending = await repository().addAssistantMessage({ projectId, role: "assistant", content: "", status: "pending" });
+  const { answer } = await import("@/lib/assistant/turn");
+  await answer(projectId, pending.id, prompt);
+}
+
 /**
  * A card has started waiting on a question: wake the PM for it. Does nothing
- * when the board has no PM agent it can use, so the question simply waits
- * for the person, as before.
+ * when the board has no PM agent it can use, or the PM is at a wake-up
+ * limit, so the question simply waits for the person, as before.
  */
-export async function wakePm(projectId: string, cardId: string, reason: string): Promise<void> {
+export async function wakePm(projectId: string, cardId: string, reason: string, now = new Date()): Promise<void> {
   const asker = askerOf(reason);
   if (asker && FOR_THE_PERSON.has(asker)) return;
   const agent = await assistantAgentFor(projectId);
@@ -48,36 +83,56 @@ export async function wakePm(projectId: string, cardId: string, reason: string):
   const repo = repository();
   const card = await repo.cardById(cardId);
   if (!card) return;
-  const pending = await repo.addAssistantMessage({ projectId, role: "assistant", content: "", status: "pending" });
-  const { answer } = await import("@/lib/assistant/turn");
-  await answer(projectId, pending.id, questionPrompt({ key: card.key, title: card.title }, reason));
+  const verdict = await admit(projectId, card, "question", now);
+  if (!verdict.ok) {
+    if (verdict.say) await postPmMessage(projectId, { content: verdict.say, cards: [{ id: card.id, key: card.key, title: card.title }] });
+    return;
+  }
+  await startWake(projectId, questionPrompt({ key: card.key, title: card.title }, reason));
 }
 
-/** What wakes the PM when a card stops for a reason that is not a question. */
-export function stallPrompt(card: { key: string; title: string }, reason: string): string {
+/**
+ * What wakes the PM when a card stops for a reason that is not a question. A
+ * PM that can change code (a Claude Code session) fixes what it can on the
+ * ticket's branch; any other PM explains and proposes.
+ */
+export function stallPrompt(card: { key: string; title: string }, reason: string, canFix = false): string {
+  const act = canFix
+    ? `If you can see the fix, make it: check out ${card.key}'s branch, change what is needed, run the checks that failed, and commit on that branch (Formic pushes it when no agent is working there). Then rerun_checks and tell the person in one line what was wrong and what you did. If you cannot fix it, or the fix needs the person's decision, tell them in a few plain sentences what is failing, why you think so, and your suggested next step.`
+    : `Then tell the person in a few plain sentences: what the agents tried, what is actually failing and why you think so, and your suggested next step. Where the fix is a board action (rerun_ci, move_card), offer it with propose.`;
   return [
     `[From Formic, not the person] ${card.key} (${card.title}) has stopped and needs a person. Formic recorded this reason:`,
     "",
     reason,
     "",
-    `Do not just repeat it. Call card_status on ${card.key}, read its runs and the log of the check that failed, then tell the person in a few plain sentences: what the agents tried, what is actually failing and why you think so, and your suggested next step. Where the fix is a board action (rerun_ci, move_card), offer it with propose.`,
+    `Do not just repeat it. Call card_status on ${card.key}, read its runs and the log of the check that failed. ${act}`,
   ].join("\n");
 }
 
 /**
  * A card stopped for a reason other than a question or a usage limit: wake
- * the PM to look into it and tell the person what happened. Does nothing when
- * the board has no PM agent it can use.
+ * the PM to look into it. Returns whether it woke; when it did not (no PM
+ * agent it can use, or a wake-up limit), the caller tells the person, with
+ * `say`, the limit's line when it is new.
  */
-export async function wakePmForStall(projectId: string, cardId: string, reason: string): Promise<void> {
+export async function wakePmForStall(
+  projectId: string,
+  cardId: string,
+  reason: string,
+  now = new Date(),
+): Promise<{ woke: boolean; say: string | null }> {
   const agent = await assistantAgentFor(projectId);
-  if (agent.kind === "none" || agent.kind === "limited") return;
+  if (agent.kind === "none" || agent.kind === "limited") return { woke: false, say: null };
   const repo = repository();
   const card = await repo.cardById(cardId);
-  if (!card) return;
-  const pending = await repo.addAssistantMessage({ projectId, role: "assistant", content: "", status: "pending" });
-  const { answer } = await import("@/lib/assistant/turn");
-  await answer(projectId, pending.id, stallPrompt({ key: card.key, title: card.title }, reason));
+  if (!card) return { woke: false, say: null };
+  const verdict = await admit(projectId, card, "stall", now);
+  if (!verdict.ok) return { woke: false, say: verdict.say };
+  // Decided now; the turn itself runs on, so the caller is not held for minutes.
+  void startWake(projectId, stallPrompt({ key: card.key, title: card.title }, reason, agent.kind === "cli" && agent.agent.info.cli === "claude")).catch(
+    (e) => console.error("[formic] PM look into a stalled card failed:", e),
+  );
+  return { woke: true, say: null };
 }
 
 const ORDINALS = ["First", "Second", "Third", "Fourth", "Fifth"];

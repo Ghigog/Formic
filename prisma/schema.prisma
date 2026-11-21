@@ -229,6 +229,13 @@ model Project {
   /// keys and agents when they have none of their own. Off by default: each
   /// person brings their own.
   shareKeys                  Boolean   @default(false)
+  /// The PM's automatic wake-ups (docs/limits.md). Null is the default.
+  /// Fix attempts on one stuck ticket before it is left to the person.
+  pmFixCap                   Int?
+  /// Wake-ups an hour, every ticket together.
+  pmWakesPerHour             Int?
+  /// Wake-ups a day (UTC), every ticket together.
+  pmWakesPerDay              Int?
 
   members           ProjectMember[]
   memberAgents      MemberAgent[]
@@ -244,6 +251,7 @@ model Project {
   playtests         PlaytestSession[]
   accessTokens      AccessToken[]
   pmSession         PmSession?
+  pmWakes           PmWake[]
 
   @@index([ownerId])
   @@map("project")
@@ -1055,6 +1063,26 @@ model PmSession {
   updatedAt   DateTime  @updatedAt
 
   @@map("pm_session")
+}
+
+/// What the PM did on its own, for its wake-up limits (docs/plans/pm-chat.md,
+/// safety rows 3 and 5): a wake-up for a ticket's question or stop, a commit
+/// it landed on a ticket's branch, and each "held" notice it posted, so a
+/// limit is said once.
+model PmWake {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cardId    String
+  /// The ticket branch's head at the time, or the commit the PM landed.
+  head      String   @default("")
+  /// "question", "stall", "landed", "fix-cap", "hourly" or "daily".
+  kind      String
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([projectId, cardId])
+  @@map("pm_wake")
 }
 
 /// A one-time sign-in link sent by email. Only the SHA-256 of the token is

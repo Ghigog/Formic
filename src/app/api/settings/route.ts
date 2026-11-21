@@ -22,6 +22,7 @@ import {
 } from "@/lib/user-settings";
 import { authMode } from "@/lib/auth/session";
 import { LIMIT_AXES, validateLimitSetting } from "@/lib/domain/limit-settings";
+import { PM_WAKE_RANGE, wakeLimits } from "@/lib/domain/pm-wake";
 import { resetEnvCache } from "@/lib/secrets/env";
 import { VaultKeyMissingError, hintFor, seal } from "@/lib/secrets/vault";
 
@@ -38,6 +39,14 @@ const bodySchema = z.object({
   shareKeys: z.boolean().optional(),
   /** An existing agent preset id, or null for the In Progress column's agent. */
   scoutPresetId: z.string().min(1).nullable().optional(),
+  /** The PM's wake-up limits; null puts one back to its default. */
+  pmWakeLimits: z
+    .object({
+      fixCap: z.number().int().min(PM_WAKE_RANGE.fixCap[0]).max(PM_WAKE_RANGE.fixCap[1]).nullable().optional(),
+      perHour: z.number().int().min(PM_WAKE_RANGE.perHour[0]).max(PM_WAKE_RANGE.perHour[1]).nullable().optional(),
+      perDay: z.number().int().min(PM_WAKE_RANGE.perDay[0]).max(PM_WAKE_RANGE.perDay[1]).nullable().optional(),
+    })
+    .optional(),
 });
 
 function sealed(value: string | null | undefined, cipher: string, hint: string) {
@@ -129,6 +138,7 @@ export async function GET(req?: Request) {
       autoEscalate: found.project.autoEscalate,
       shareKeys: found.project.shareKeys,
       scoutPresetId: found.project.scoutPresetId,
+      pmWakeLimits: wakeLimits(await repository().pmWakeLimits(found.project.id)),
     });
   }
   return Response.json({
@@ -241,13 +251,13 @@ export async function PUT(req: Request) {
     return Response.json({ error: body.error.issues[0]?.message ?? "Malformed." }, { status: 400 });
   }
 
-  const { projectId, autoMerge, autoEscalate, shareKeys, scoutPresetId } = body.data;
+  const { projectId, autoMerge, autoEscalate, shareKeys, scoutPresetId, pmWakeLimits } = body.data;
   const forProject =
     autoMerge !== undefined || autoEscalate !== undefined || shareKeys !== undefined ||
-    scoutPresetId !== undefined;
+    scoutPresetId !== undefined || pmWakeLimits !== undefined;
   if (forProject !== (projectId !== undefined)) {
     return Response.json(
-      { error: "autoMerge, autoEscalate, shareKeys, scoutPresetId and projectId go together." },
+      { error: "autoMerge, autoEscalate, shareKeys, scoutPresetId, pmWakeLimits and projectId go together." },
       { status: 400 },
     );
   }
@@ -261,7 +271,9 @@ export async function PUT(req: Request) {
     if (autoEscalate !== undefined) await repository().setAutoEscalate(found.project.id, autoEscalate);
     if (shareKeys !== undefined) await repository().setShareKeys(found.project.id, shareKeys);
     if (scoutPresetId !== undefined) await repository().setScoutAgent(found.project.id, scoutPresetId);
+    if (pmWakeLimits !== undefined) await repository().setPmWakeLimits(found.project.id, pmWakeLimits);
     return Response.json({
+      ...(pmWakeLimits !== undefined && { pmWakeLimits: wakeLimits(await repository().pmWakeLimits(found.project.id)) }),
       ...(autoMerge !== undefined && { autoMerge }),
       ...(autoEscalate !== undefined && { autoEscalate }),
       ...(shareKeys !== undefined && { shareKeys }),

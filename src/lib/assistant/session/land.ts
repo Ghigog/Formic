@@ -3,6 +3,7 @@ import "server-only";
 import { repository } from "@/lib/db";
 import { branchProblem, openPmPullRequest, touchesWorkflows } from "@/lib/assistant/actions";
 import { postPmMessage } from "@/lib/assistant/pm-messages";
+import { noteLanded } from "@/lib/pm/wake-gate";
 import { branchHolder, lockBranch, pmHolder, PM_LOCK_MS, unlockBranch } from "@/lib/runner/branch-lock";
 import type { VcsClient } from "@/lib/vcs";
 import { BranchMovedError } from "@/lib/vcs/types";
@@ -103,6 +104,7 @@ export async function landPmChange(input: {
   let notice: string;
   if (ticket && target !== own) {
     notice = `The PM pushed ${commits} to ${ticket.key}'s branch ${target}.`;
+    await noteLanded(projectId, ticket.id, sha, new Date());
   } else {
     let pr = "";
     try {

@@ -234,7 +234,7 @@ Files: `src/lib/assistant/turn.ts` (CLI path), new `src/lib/assistant/session/`,
 - [ ] E2B: create, pause, resume, recreate from file.
 - [x] Actions and GitLab: restore session file, resume, upload at end (additive workflow inputs).
 - [ ] Streaming into the chat; "Starting…" timer; E2B hint when absent. (Streaming and the timer landed in 3a; the hint comes with E2B in 3b.)
-- [ ] Wake-ups from stuck tickets; fix cap; per-board rate limit; daily PM allowance.
+- [x] Wake-ups from stuck tickets; fix cap; per-board rate limit; daily PM allowance.
 - [x] Branch lock shared with ticket runs.
 - [ ] Fallback ladder; old chats seeded from a summary; Clear starts fresh. (3a: steps 3 and 4, seeding and Clear; the E2B steps come in 3b.)
 - [x] API-key PMs unchanged.
@@ -278,6 +278,31 @@ and the daily allowance):
   them live, and "Starting… 0:12" until the first arrives.
 - The scratch-repo check is still to do: it needs a repository with the new
   workflow and a Claude Code token.
+
+How it landed (PR 3b, part 1: wake-up limits):
+
+- Every wake-up passes `admitWake` (`src/lib/pm/wake-gate.ts`) first. Each
+  wake-up, each commit the PM lands on a ticket's branch and each limit it
+  said is a `pm_wake` row (deleted with the board).
+- Fix cap: the PM's looks at a stuck ticket are counted back to where
+  someone else last moved its branch (`fixAttempts` in
+  `src/lib/domain/pm-wake.ts`). A commit the PM lands links the head it
+  fixed from to the new one, so its own pushes never reset the count; an
+  agent's or a person's push does.
+- Hourly and daily (UTC) limits count every ticket's wake-ups together.
+  A question is never capped by fix attempts, only by those two.
+- Held: the limit's line is said once (per ticket and head, per hour, per
+  day) and the stop goes to the person as it did before the PM looked at
+  stops. A person's own message is never held.
+- All three are per-board settings (`pmFixCap`, `pmWakesPerHour`,
+  `pmWakesPerDay` on `project`, null for the default), in Settings under
+  "PM wake-ups", listed in `docs/limits.md`.
+- A Claude Code PM is told to fix a stuck ticket on its branch, rerun its
+  checks and say what it did in one line; an API PM still explains and
+  proposes.
+- Still to come in 3b: E2B (create, pause, resume, recreate from file), with
+  the person's Claude Code token stored encrypted on the PM agent (agreed
+  with the board owner, 2026-11-21), and the E2B hint.
 
 ### PR 4: Guests with memory
 

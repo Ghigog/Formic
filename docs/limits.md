@@ -81,6 +81,21 @@ What bounds a Claude Code PM's resumable session (docs/plans/pm-chat.md).
 | A ticket run's branch lock | minutes | 65 (`RUNNER_JOB_MINUTES` + headroom) | one branch | Hard rail (the lease lapses) | No |
 | A run's wait for the PM (`RUN_WAIT_MS`) | seconds | 60 | one dispatch | Gate, then the run starts anyway | No |
 
+## The PM's wake-ups
+
+A ticket that stops, or an agent's question, wakes the board's PM on its
+own (`src/lib/pm/questions.ts`). These bound that, so it never runs away with
+the person's Claude usage (`src/lib/pm/wake-gate.ts`, docs/plans/pm-chat.md
+safety rows 3 and 5). Only wake-ups count: a message the person types is
+never held. Past a limit the PM says so once in the chat, and the ticket
+comes to the person as it would with no PM.
+
+| Limit | Unit | Default | Scope | Enforcement | Settable |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| Fix cap (`pmFixCap`) | looks at one stuck ticket | 2; 0 to 10 | one ticket, until an agent or a person moves its branch (a commit the PM lands does not reset it) | Gate | Yes, per board in Settings |
+| Hourly wake-ups (`pmWakesPerHour`) | wake-ups in any hour | 6; 0 to 60 | one board, every ticket | Gate | Yes, per board in Settings |
+| Daily PM allowance (`pmWakesPerDay`) | wake-ups per UTC day | 20; 0 to 500 | one board, apart from the coders' allowances | Gate | Yes, per board in Settings |
+
 ## Epic budget
 
 `DEFAULT_EPIC_BUDGET` (`src/lib/budget/limits.ts`) is 2,000¢, 2 hours and 12

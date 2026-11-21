@@ -9,6 +9,10 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "./client";
 import type {
   PmSessionRecord,
+  NewPmWake,
+  PmWakeKind,
+  PmWakeRecord,
+  PmWakeLimitSettings,
   AttachmentContent,
   AttachmentRef,
   CreateAttachmentInput,
@@ -693,6 +697,41 @@ export class PrismaRepository implements Repository {
 
   async deletePmSession(projectId: string): Promise<void> {
     await prisma().pmSession.deleteMany({ where: { projectId } });
+  }
+
+  async addPmWake(wake: NewPmWake): Promise<void> {
+    await prisma().pmWake.create({ data: wake });
+  }
+
+  async pmWakes(projectId: string, filter: { since?: Date; cardId?: string }): Promise<PmWakeRecord[]> {
+    const rows = await prisma().pmWake.findMany({
+      where: {
+        projectId,
+        ...(filter.since && { createdAt: { gte: filter.since } }),
+        ...(filter.cardId && { cardId: filter.cardId }),
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    return rows.map((r) => ({ ...r, kind: r.kind as PmWakeKind }));
+  }
+
+  async pmWakeLimits(projectId: string): Promise<PmWakeLimitSettings> {
+    const row = await prisma().project.findUnique({
+      where: { id: projectId },
+      select: { pmFixCap: true, pmWakesPerHour: true, pmWakesPerDay: true },
+    });
+    return { fixCap: row?.pmFixCap ?? null, perHour: row?.pmWakesPerHour ?? null, perDay: row?.pmWakesPerDay ?? null };
+  }
+
+  async setPmWakeLimits(projectId: string, limits: Partial<PmWakeLimitSettings>): Promise<void> {
+    await prisma().project.updateMany({
+      where: { id: projectId },
+      data: {
+        ...(limits.fixCap !== undefined && { pmFixCap: limits.fixCap }),
+        ...(limits.perHour !== undefined && { pmWakesPerHour: limits.perHour }),
+        ...(limits.perDay !== undefined && { pmWakesPerDay: limits.perDay }),
+      },
+    });
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {

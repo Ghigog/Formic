@@ -2111,6 +2111,31 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.pmSession(board.id)).toBeNull();
       });
 
+      it("keeps the PM's wake-ups by board and card, in order, with the board's limits, and drops them with the board", async () => {
+        const id = githubId();
+        const user = await repo.upsertUser({ githubId: id, login: `pmw-${id}`, name: null, avatarUrl: null });
+        const board = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "PMW", baseBranch: "main" });
+        const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 0, minute));
+        await repo.addPmWake({ projectId: board.id, cardId: "c2", head: "", kind: "question", createdAt: at(5) });
+        await repo.addPmWake({ projectId: board.id, cardId: "c1", head: "abc", kind: "stall", createdAt: at(1) });
+        await repo.addPmWake({ projectId: board.id, cardId: "c1", head: "def", kind: "landed", createdAt: at(9) });
+
+        expect((await repo.pmWakes(board.id, {})).map((w) => w.createdAt)).toEqual([at(1), at(5), at(9)]);
+        expect((await repo.pmWakes(board.id, { since: at(5) })).map((w) => w.kind)).toEqual(["question", "landed"]);
+        expect(await repo.pmWakes(board.id, { cardId: "c1" })).toMatchObject([
+          { cardId: "c1", head: "abc", kind: "stall" },
+          { cardId: "c1", head: "def", kind: "landed" },
+        ]);
+
+        expect(await repo.pmWakeLimits(board.id)).toEqual({ fixCap: null, perHour: null, perDay: null });
+        await repo.setPmWakeLimits(board.id, { fixCap: 3 });
+        await repo.setPmWakeLimits(board.id, { perDay: 40 });
+        expect(await repo.pmWakeLimits(board.id)).toEqual({ fixCap: 3, perHour: null, perDay: 40 });
+
+        await repo.deleteUser(user.id);
+        expect(await repo.pmWakes(board.id, {})).toEqual([]);
+      });
+
       it("spends a sign-in link once, even when two spends race", async () => {
         const tokenHash = randomUUID();
         const address = email();

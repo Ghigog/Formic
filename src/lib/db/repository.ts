@@ -908,6 +908,35 @@ export interface PmSessionRepository {
   /** The session whose current turn is `job`, if any. */
   pmSessionByJob(job: string): Promise<PmSessionRecord | null>;
   deletePmSession(projectId: string): Promise<void>;
+  /** Records what the PM did on its own (src/lib/pm/wake-gate.ts). */
+  addPmWake(wake: NewPmWake): Promise<void>;
+  /** The board's records from `since` on, or for one card, oldest first. */
+  pmWakes(projectId: string, filter: { since?: Date; cardId?: string }): Promise<PmWakeRecord[]>;
+  /** The board's wake-up limits; null fields are the defaults. */
+  pmWakeLimits(projectId: string): Promise<PmWakeLimitSettings>;
+  setPmWakeLimits(projectId: string, limits: Partial<PmWakeLimitSettings>): Promise<void>;
+}
+
+/** What the PM did on its own: a wake-up, a commit it landed on a ticket's branch, or a limit it said. */
+export type PmWakeKind = "question" | "stall" | "landed" | "fix-cap" | "hourly" | "daily";
+
+export interface NewPmWake {
+  projectId: string;
+  cardId: string;
+  head: string;
+  kind: PmWakeKind;
+  createdAt: Date;
+}
+
+export interface PmWakeRecord extends NewPmWake {
+  id: string;
+}
+
+/** A board's PM wake-up limits as set; null is the default. */
+export interface PmWakeLimitSettings {
+  fixCap: number | null;
+  perHour: number | null;
+  perDay: number | null;
 }
 
 /** Push subscriptions and preferences. */

@@ -25,6 +25,9 @@ import type {
   UserRecord,
   AccessTokenRecord,
   PmSessionRecord,
+  NewPmWake,
+  PmWakeRecord,
+  PmWakeLimitSettings,
   NewAccessToken,
   PushPreferences,
   PushSubscriptionRecord,
@@ -217,6 +220,9 @@ interface Store {
   accessTokens: Map<string, AccessTokenRecord>;
   /** Board id to its PM session. */
   pmSessions: Map<string, PmSessionRecord>;
+  pmWakes: PmWakeRecord[];
+  /** Board id to its PM wake-up limits. */
+  pmWakeLimits: Map<string, PmWakeLimitSettings>;
   /** Sign-in links by token hash. */
   loginTokens: Map<string, NewLoginToken & { usedAt: Date | null; createdAt: Date }>;
   /** `${projectId}:${column}` to preset id. */
@@ -257,6 +263,8 @@ function store(): Store {
     existing.pushSubscriptions ??= new Map();
     existing.accessTokens ??= new Map();
     existing.pmSessions ??= new Map();
+    existing.pmWakes ??= [];
+    existing.pmWakeLimits ??= new Map();
     existing.loginTokens ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
@@ -331,6 +339,8 @@ function store(): Store {
     pushSubscriptions: new Map(),
     accessTokens: new Map(),
     pmSessions: new Map(),
+    pmWakes: [],
+    pmWakeLimits: new Map(),
     loginTokens: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
@@ -725,6 +735,8 @@ export class MemoryRepository implements Repository {
         if (token.projectId === projectId) s.accessTokens.delete(id);
       }
       s.pmSessions.delete(projectId);
+      s.pmWakes = s.pmWakes.filter((w) => w.projectId !== projectId);
+      s.pmWakeLimits.delete(projectId);
       s.projects.delete(projectId);
     }
     for (const preset of [...s.presets.values()]) {
@@ -877,6 +889,31 @@ export class MemoryRepository implements Repository {
 
   async deletePmSession(projectId: string): Promise<void> {
     store().pmSessions.delete(projectId);
+  }
+
+  async addPmWake(wake: NewPmWake): Promise<void> {
+    store().pmWakes.push({ ...wake, id: id("pmwake") });
+  }
+
+  async pmWakes(projectId: string, filter: { since?: Date; cardId?: string }): Promise<PmWakeRecord[]> {
+    return store()
+      .pmWakes.filter(
+        (w) =>
+          w.projectId === projectId &&
+          (!filter.since || w.createdAt >= filter.since) &&
+          (!filter.cardId || w.cardId === filter.cardId),
+      )
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((w) => ({ ...w }));
+  }
+
+  async pmWakeLimits(projectId: string): Promise<PmWakeLimitSettings> {
+    return { fixCap: null, perHour: null, perDay: null, ...store().pmWakeLimits.get(projectId) };
+  }
+
+  async setPmWakeLimits(projectId: string, limits: Partial<PmWakeLimitSettings>): Promise<void> {
+    if (!store().projects.has(projectId)) return;
+    store().pmWakeLimits.set(projectId, { ...(await this.pmWakeLimits(projectId)), ...limits });
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
