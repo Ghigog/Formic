@@ -43,7 +43,7 @@ test("a drag from inside a PM message stays inside the thread", async ({
 
   const from = await thread.getByText("Answer number 1.").boundingBox();
   const box = (await shade.boundingBox())!;
-  await page.mouse.move(from!.x + 4, from!.y + from!.height / 2);
+  await page.mouse.move(from!.x + 4, from!.y + 8);
   await page.mouse.down();
   await page.mouse.move(from!.x + 40, box.y + box.height - 20, { steps: 10 });
   await page.mouse.move(from!.x + 40, box.y + box.height + 120, { steps: 10 });
@@ -56,14 +56,26 @@ test("a drag from inside a PM message stays inside the thread", async ({
     const frag = sel.getRangeAt(0).cloneContents();
     return {
       text: sel.toString(),
-      inside: thread.contains(sel.anchorNode) && thread.contains(sel.focusNode),
+      anchorInside: thread.contains(sel.anchorNode),
+      // Nothing but PM messages is highlighted. The focus node itself may sit
+      // in unselectable chrome when the drag runs off the end of the thread,
+      // so judge by the selected text, not by where the focus is reported.
+      onlyMessages:
+        sel
+          .toString()
+          .replace(
+            /Answer number \d+\. The PM explains this part of the repository at some length\./g,
+            "",
+          )
+          .trim() === "",
       hasHeader: /Clear/.test(sel.toString()),
       attr: document.documentElement.hasAttribute("data-pm-selecting"),
       nodes: frag.childNodes.length,
     };
   });
   expect(result.text.length).toBeGreaterThan(0);
-  expect(result.inside).toBe(true);
+  expect(result.anchorInside).toBe(true);
+  expect(result.onlyMessages).toBe(true);
   expect(result.hasHeader).toBe(false);
   expect(result.attr).toBe(false);
   await expect(
