@@ -34,7 +34,7 @@ test("a drag from inside a PM message stays inside the thread", async ({
       : route.continue(),
   );
   await gotoBoard(page);
-  await page.getByRole("button", { name: "Pull the PM down" }).click();
+  await page.getByRole("button", { name: "Ask the PM" }).click();
 
   const shade = page.locator("section[aria-label=PM]");
   const thread = shade.locator(".pm-thread");
