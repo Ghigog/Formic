@@ -1,0 +1,220 @@
+# PM chat: a real Claude session per board
+
+**Status:** planned 2026-11-21. Four pull requests, in order below. Tick boxes
+as work lands; this file is the memory of the plan, so keep it current. Any
+agent picking this up should read all of it first.
+
+## Why
+
+The PM chat should feel like talking to Claude in the desktop app: it
+remembers the conversation, looks things up while it works, changes code,
+opens pull requests and sorts out the board, and it tells you what it did.
+
+Today it does not. A real exchange on the Juice board (2026-11-21) showed:
+
+- **It repeats itself.** It re-sent a whole report twice ("my last answer got
+  cut off"), because it never saw its own earlier work, only a flattened
+  transcript.
+- **It guesses which card you mean.** "e122 t1" was matched to an old `T-1`,
+  so it was handed the wrong card and answered about EPIC-119-T1.
+- **Everything is a proposal.** Opening its own PR, re-running CI and adding a
+  ticket each needed an Approve click.
+- **Formic's notices speak in the PM's voice.** "X is done", "Added
+  EPIC-122-T3", "Opened pull request #726" and "Re-running…" are posted as PM
+  messages, land between a question and its answer, and go back into the PM's
+  history as things it said. "Can you give me the answer first?" got
+  "Stopped." and a notice instead of an answer.
+- **"Is done" fires too early.** Follow-ups are announced when the Reviewer
+  approves (`src/lib/review/pipeline.ts`, the `proposeFollowUps` call after
+  "Finished as far as the review goes, merged yet or not"), not on merge.
+- **Text can't be copied reliably**, so the person can't tell whether they
+  have a whole message.
+
+## Root cause
+
+A CLI PM (Claude Code, the usual setup) answers each message with a **new
+GitHub Actions job from scratch** (`src/lib/assistant/turn.ts`, `answer` →
+`startCliAsk`). The job gets the conversation pasted in as text
+(`cliPrompt`), a handful of cards pre-read by regex (`cliReports`), and must
+reply with one JSON object (`cliAnswerSchema`). No memory, no live lookups,
+no streaming, and a format it often gets wrong (`askAgain`).
+
+API-key PMs (Anthropic, OpenAI-compatible) run in the in-process tool loop in
+the same file and already keep real history. They keep that loop; PR 1 fixes
+apply to them too.
+
+## Decisions (agreed with the board owner)
+
+1. **Where it runs.** A Claude Code session per board, resumed for every
+   message (`claude --resume <id>`).
+   - **With E2B** (a key on the project owner or `E2B_API_KEY` on the server):
+     the session lives in an E2B sandbox with the repo checked out, paused
+     between messages. Replies start in seconds and stream.
+   - **Without E2B:** the same session runs in GitHub Actions (or GitLab CI).
+     At the end of each job Formic saves the session file; the next job
+     restores it and resumes. Same memory and tools; each message takes about
+     30 to 60 s to start. The chat shows "Starting…" with a live timer, and a
+     one-line hint that adding E2B makes replies faster.
+   - Never on the Lightsail server itself: it has 1 GB of memory
+     (`docs/aws.md`) and cannot run Claude Code beside a build.
+   - The session file format is the same in both places, so a board can
+     switch without losing memory. Formic picks E2B when a key is set.
+   - It uses the person's Claude Code subscription token, as today.
+2. **It acts, then says what it did.** It creates tickets and Epics, moves
+   cards, re-runs CI, writes code, pushes and opens PRs without asking. It
+   asks first (a proposal with Approve / Dismiss) only for:
+   - closing, archiving or deleting a card;
+   - merging a pull request;
+   - creating **optional** cards: nice-to-haves and follow-ups the person did
+     not ask for.
+3. **It may push to any ticket's branch, without asking.** A ticket that gets
+   stuck or asks a question wakes the PM; the PM investigates, fixes it on
+   that branch, re-runs checks and tells the person in one line. The PM also
+   tidies the board when it gets messy (missing dependencies, overlapping
+   scopes, stale branches that need main).
+4. **Guests keep their context.** The person or the PM can summon an agent
+   into the chat. A guest is only useful with its real context, so Formic
+   saves each agent run's Claude Code session file, and summoning that agent
+   resumes its own session. Sentinels resume from their last audit.
+
+## Design
+
+### The chat stream (PR 1)
+
+- Messages have a **kind**: `person`, `pm`, `guest`, `notice`. Formic's own
+  posts (`postPmMessage`, follow-ups, stall messages, rubric-fix messages,
+  "Opened pull request", "Re-running") become `notice`s.
+- Notices render as compact timeline lines (icon, one line, card links), not
+  PM bubbles. They are given to the model as events (`[Board: EPIC-122-T3
+  added]`), never as the PM's own words.
+- **Answer first.** A notice that lands while a reply is pending is shown
+  above the pending reply, not between the question and its answer; the reply
+  always sits directly under the message it answers.
+- **"Is done" only on merge.** The review-approved call announces nothing;
+  `proposeFollowUps` runs on merge only. Needed follow-ups are added with a
+  `dependsOn` on the ticket they came from.
+- **Copy button** on every message (PM, guest and the person's own), copying
+  the raw Markdown. Fix whatever stops text selection in the chat panel.
+- **"Stopped."** only when the person pressed Stop. A new message no longer
+  cancels the pending one; it queues behind it (already the route's intent).
+
+### The PM session (PR 3)
+
+- **One session per board**, row `PmSession { projectId, sessionId, where:
+  "e2b" | "actions" | "gitlab", sandboxId?, fileCipher, bytes, summary,
+  updatedAt }`.
+- **Turn:** person's message → queue → resume the session with the new
+  message plus any notices since the last turn → stream assistant text and
+  tool calls to the chat over the existing event bus → save the session file
+  → finish.
+- **Tools:** Claude Code's own (read, edit, bash, git in the checkout) plus
+  Formic's MCP server (`src/lib/mcp`) with the PM's board-scoped token. New or
+  extended MCP tools the PM needs: `card_status` (live column, runs, PR,
+  checks, failed log), `rerun_checks`, `update_branch_from_base`,
+  `open_pull_request`, `answer_card_question`, `add_dependency`, plus the
+  existing card tools. Approval-gated tools return a proposal instead of
+  acting (see Safety).
+- **Pushes** use git in the checkout with a repo token. The PM works on
+  `formic-pm/<board>-<n>` branches for its own changes and may push to ticket
+  branches under the branch lock.
+- **Wake-ups:** a ticket blocked, failed or asking a question enqueues a PM
+  turn with the card's report as the message, subject to the fix cap.
+- **Streaming in Actions:** the job already streams through `FORMIC_STREAM`;
+  the chat shows those lines live as the PM's reply.
+- **Guests** (PR 4): each agent run uploads its session file at the end
+  (Actions artifact → Formic, encrypted). Summoning resumes it read-only in
+  the PM's sandbox or a job.
+
+### Fallback ladder
+
+1. E2B sandbox, resumed. 2. E2B sandbox recreated from the saved session
+file. 3. Actions or GitLab job from the saved session file. 4. A fresh
+session seeded with the stored summary, and a one-line "reconnected" notice.
+A reply is slower down the ladder, never lost.
+
+## Safety (from the risk assessment, 2026-11-21)
+
+Each item is required, not optional. Enforce on the server, never only in a
+prompt.
+
+| # | Risk | Mitigation | PR |
+|---|------|------------|----|
+| 1 | **Prompt injection with real power.** The PM reads PR comments, CI logs, issues, repo files and agent notes that anyone can write, and now acts without approval. | Approval rules enforced inside the MCP tools: close, archive, delete, merge and optional-card creation always return a proposal, whatever the model asks. Pushes allowed only to the board's own repo, only to `formic-pm/`, `formic-staging/` and ticket branches; never to the base branch; never to `.github/workflows/` (rejected before push, as `write_file` does today). Every action is a timeline notice. | 2, 3 |
+| 2 | **The PM's token is too powerful.** MCP access tokens act as the user across every board (`src/app/api/mcp/route.ts`, `mcpServerFor(user)`). | A new token kind: one board, one session, short-lived (hours), revoked when the session ends, carrying only the PM's tools. `verifyToken` returns the board scope; `mcpServerFor` refuses any other board. | 2 |
+| 3 | **Runaway fix loops.** Stuck → PM fixes → fails → wakes again, burning usage overnight. | At most 2 PM fix attempts per ticket per head change, then one clear message to the person and stop. Auto wake-ups rate-limited per board (for example 6 an hour). The cap is a board budget setting like the others (`docs/limits.md`). | 3 |
+| 4 | **Two writers on one branch.** | A branch lock row in the database. The PM pushes only when no agent run holds the branch; a ticket run waits while the PM holds it. Fast-forward pushes only, never forced. Lock expires on a timeout so a crash never wedges a branch. | 3 |
+| 5 | **Subscription limits.** Auto wake-ups spend the person's Claude usage; hitting the cap stalls ticket agents on the same token. | A daily PM allowance for auto wake-ups, separate from the coders'. At the limit the PM says so once and waits; no retry storm. Person-typed messages are never blocked by the allowance. | 3 |
+| 6 | **Session files hold secrets.** | Encrypted at rest with the API-key cipher. Size cap (compress; refuse above the cap and fall back to the summary). Keep only the latest per board or agent. Deleted on Clear and with the board. | 3, 4 |
+| 7 | **Sessions break or vanish** (E2B retention, failed upload, Claude Code version change). | The sandbox is a cache; the session file is the truth; the fallback ladder above. Formic keeps a short running summary of the conversation and board after each turn. | 3 |
+| 8 | **Long sessions bloat.** | Claude Code's own compaction, plus a fresh session seeded with the summary on Clear or past a size limit. | 3 |
+| 9 | **PMs not on Claude Code.** | API-key PMs keep the in-process loop in `turn.ts`. PR 1 applies to every PM. The session work is Claude Code only. Nobody loses their setup. | 1, 3 |
+| 10 | **Rolling out the workflow.** Merging a change to `.github/workflows/formic-agent.yml` (generated by `src/lib/runner/workflow.ts`) auto-deploys and Formic then replaces the file in every connected repo. A bad version breaks every agent run. | Additive only: new inputs optional, old runs behave as before. Tested end to end on a scratch repo before merge. Called out in the PR. | 3, 4 |
+| 11 | **GitLab parity.** GitLab boards run through `src/lib/runner/gitlab-ci-config.ts`. | Build the session layer once, for both. If GitLab lags, it keeps today's behaviour rather than half working. | 3 |
+| 12 | **Waiting in Actions.** | "Starting…" with a live timer; streaming once the job is up. | 3 |
+| 13 | **Guests acting out of turn.** A resumed agent session could push to its branch. | Guests get read-only tools plus chat. The PM does the acting. | 4 |
+| 14 | **Migrating old chats.** | History stays readable. The first new session is seeded with a summary of it, not a replay. | 3 |
+| 15 | **Testing gaps** across sandbox, Actions, MCP and streaming. | Unit tests on a fake sandbox and fake runner; one e2e test (in-memory repository) of message → tool call → streamed reply. Repo rules in `docs/testing.md` apply. | all |
+
+What does not change: the ticket pipeline, Sentinels, CI, review and merge
+rules. The PM acts through the same board rules a person follows (a move the
+board refuses still fails).
+
+## Pull requests
+
+Each is usable on its own. PRs 1 and 2 touch different files and run in
+parallel; 3 needs both; 4 needs 3.
+
+### PR 1: Chat foundation
+
+Files: `src/lib/assistant/*` (message kinds, notices, history),
+`src/components/board/assistant.tsx`, `src/lib/hooks/use-assistant*.ts`,
+`src/lib/review/pipeline.ts` (follow-up timing only),
+`src/lib/agents/follow-ups.ts`, `prisma/` (message kind column), the
+repositories in `src/lib/db/`.
+
+- [ ] Message `kind`; every Formic-authored post is a `notice`.
+- [ ] Notices render as timeline lines; given to the model as events, not as its words.
+- [ ] Replies sit directly under the message they answer; notices never split them.
+- [ ] Follow-ups and "is done" only on merge; needed follow-ups depend on their ticket.
+- [ ] Copy button on every message; text selection works in the panel.
+- [ ] "Stopped." only on an explicit Stop.
+- [ ] Tests for each; e2e for the panel.
+
+### PR 2: Board-scoped PM tokens and server-side approval
+
+Files: `src/lib/access-tokens*`, `src/app/api/mcp/`, `src/lib/mcp/*`,
+`src/lib/assistant/actions.ts` (shared action checks), `prisma/`.
+
+- [ ] Token kind scoped to one board and one session, short-lived, revocable, tools-limited.
+- [ ] `mcpServerFor` enforces the board scope.
+- [ ] MCP tools the PM needs: `card_status`, `rerun_checks`, `update_branch_from_base`, `open_pull_request`, `answer_card_question`, `add_dependency` (reusing the existing action code).
+- [ ] Approval gate inside the tools: close / archive / delete / merge / optional cards return a proposal posted to the chat.
+- [ ] Branch rules: no base branch, no `.github/workflows/`, only the board's repo.
+- [ ] Tests, including a fooled-model test (the tool refuses whatever it is told).
+
+### PR 3: The PM session
+
+Files: `src/lib/assistant/turn.ts` (CLI path), new `src/lib/assistant/session/`,
+`src/lib/sandbox/*` (pause / resume), `src/lib/runner/workflow.ts`,
+`src/lib/runner/gitlab-ci-config.ts`, `src/lib/runner/runner.ts`, `prisma/`,
+`docs/limits.md`.
+
+- [ ] `PmSession` store, encrypted, size-capped, summary kept per turn.
+- [ ] E2B: create, pause, resume, recreate from file.
+- [ ] Actions and GitLab: restore session file, resume, upload at end (additive workflow inputs).
+- [ ] Streaming into the chat; "Starting…" timer; E2B hint when absent.
+- [ ] Wake-ups from stuck tickets; fix cap; per-board rate limit; daily PM allowance.
+- [ ] Branch lock shared with ticket runs.
+- [ ] Fallback ladder; old chats seeded from a summary; Clear starts fresh.
+- [ ] API-key PMs unchanged.
+- [ ] Scratch-repo end-to-end check of the new workflow before merge.
+
+### PR 4: Guests with memory
+
+Files: `src/lib/runner/workflow.ts` (upload session at run end),
+`src/lib/assistant/guests.ts`, session store from PR 3.
+
+- [ ] Each agent run saves its session file, encrypted, latest per agent and card.
+- [ ] Summoning resumes it, read-only tools plus chat.
+- [ ] Sentinels resume from their last audit.
+- [ ] Tests.
