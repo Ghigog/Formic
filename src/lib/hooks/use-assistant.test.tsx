@@ -86,3 +86,52 @@ describe("useAssistant earlier messages", () => {
     expect(result.current.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
   });
 });
+
+describe("useAssistant events", () => {
+  const msg = (id: string) => ({ id, role: "assistant", content: id, status: "done", proposals: [] });
+  const fakeSubscribe = () => {
+    const listeners = new Set<(e: unknown, seq: number) => void>();
+    const subscribe = ((l: (e: unknown, seq: number) => void) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    }) as unknown as Parameters<typeof useAssistant>[1];
+    const emit = (type: string) => listeners.forEach((l) => l({ type }, 1));
+    return { subscribe, emit };
+  };
+
+  it("shows a message the PM posts unasked", async () => {
+    let list = [msg("m1")];
+    vi.stubGlobal("fetch", async () => Response.json({ presetId: null, messages: list }));
+    const { subscribe, emit } = fakeSubscribe();
+    const { result } = renderHook(() => useAssistant(true, subscribe));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    list = [msg("m1"), msg("m2")];
+    act(() => emit("assistant.message"));
+    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual(["m1", "m2"]));
+  });
+
+  it("fetches nothing on an event before the first load", () => {
+    const fetchMock = vi.fn(async () => Response.json({ presetId: null, messages: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { subscribe, emit } = fakeSubscribe();
+    renderHook(() => useAssistant(false, subscribe));
+    act(() => emit("assistant.message"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps earlier pages through a refetch caused by an event", async () => {
+    let newest = [msg("m3")];
+    vi.stubGlobal("fetch", async (url: string) =>
+      url.includes("before=m3")
+        ? Response.json({ presetId: null, messages: [msg("m1"), msg("m2")], earlierCursor: null })
+        : Response.json({ presetId: null, messages: newest, earlierCursor: "m3" }),
+    );
+    const { subscribe, emit } = fakeSubscribe();
+    const { result } = renderHook(() => useAssistant(true, subscribe));
+    await waitFor(() => expect(result.current.hasEarlier).toBe(true));
+    await act(() => result.current.loadEarlier());
+    newest = [msg("m3"), msg("m4")];
+    act(() => emit("assistant.message"));
+    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual(["m1", "m2", "m3", "m4"]));
+  });
+});

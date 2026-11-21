@@ -186,7 +186,7 @@ export function BoardShell({
   } | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantUsed, setAssistantUsed] = useState(false);
-  const assistant = useAssistant(assistantUsed);
+  const assistant = useAssistant(assistantUsed, subscribe);
   const [pmUnread, setPmUnread] = useState(initialPmUnread);
   // When the chat was last read, and what it was when it opened: the "New"
   // rule stays put while the chat is open, though opening reads it.

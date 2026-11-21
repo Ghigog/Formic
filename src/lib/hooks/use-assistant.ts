@@ -3,6 +3,7 @@
 import { mergeMessages } from "./merge-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AttachmentSummary } from "@/lib/domain/entities";
+import type { SubscribeToEvents } from "@/components/board/ticket-drawer";
 
 /** One message, as the assistant API returns it. */
 export interface AssistantMessageView {
@@ -82,7 +83,7 @@ const POLL_MS = 4_000;
  * answer is pending checks back until it lands: an API agent answers in
  * seconds, a CLI agent in GitHub Actions in a minute or two.
  */
-export function useAssistant(enabled: boolean) {
+export function useAssistant(enabled: boolean, subscribe?: SubscribeToEvents) {
   const [state, setStateRaw] = useState<State>({ presetId: null, messages: [] });
   // Earlier pages live apart from the polled newest page, so a poll cannot drop them.
   const [earlier, setEarlier] = useState<{ messages: AssistantMessageView[]; cursor: string | null } | null>(null);
@@ -140,6 +141,24 @@ export function useAssistant(enabled: boolean) {
       return [];
     }
   }, [setState]);
+
+  // A message the PM writes unasked lands as an event: refetch the newest page,
+  // once the chat has been opened. A burst shares the fetch already running.
+  const refetching = useRef(false);
+  useEffect(() => {
+    if (!subscribe) return;
+    return subscribe((event) => {
+      if (event.type !== "assistant.message" && event.type !== "assistant.failed") return;
+      if (!loaded.current || refetching.current) return;
+      refetching.current = true;
+      void send("/api/assistant", "GET")
+        .then((next) => alive.current && setState(next))
+        .catch(() => undefined)
+        .finally(() => {
+          refetching.current = false;
+        });
+    });
+  }, [subscribe, setState]);
 
   const answering = state.messages.some((m) => m.status === "pending");
   const pending = asking || answering;
