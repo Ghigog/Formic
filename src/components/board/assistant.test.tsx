@@ -611,3 +611,36 @@ describe("images in the composer", () => {
     expect(controls.setOpen).not.toHaveBeenCalledWith(false);
   });
 });
+
+describe("selecting in the thread", () => {
+  Element.prototype.scrollTo = vi.fn();
+  const attr = () => document.documentElement.hasAttribute("data-pm-selecting");
+  const a: AssistantControls = {
+    ...controls,
+    messages: [
+      { id: "m1", role: "assistant", content: "hello there", status: "done", proposals: [], cards: [{ id: "c1", key: "T-1", title: "Linked" }] },
+    ],
+  };
+
+  it("marks the page while a drag that began in the thread lasts", () => {
+    render(<AskBox a={a} repoName="demo" />);
+    fireEvent.pointerDown(screen.getByText("hello there"), { button: 0 });
+    expect(attr()).toBe(true);
+    fireEvent.pointerUp(window);
+    expect(attr()).toBe(false);
+  });
+
+  it("does not mark it for a press on a button or link in the thread", () => {
+    render(<AskBox a={a} repoName="demo" />);
+    const control = screen.getByTestId("pm-cards").querySelector("button")!;
+    fireEvent.pointerDown(control, { button: 0 });
+    expect(attr()).toBe(false);
+  });
+
+  it("clears the mark on unmount", () => {
+    const { unmount } = render(<AskBox a={a} repoName="demo" />);
+    fireEvent.pointerDown(screen.getByText("hello there"), { button: 0 });
+    unmount();
+    expect(attr()).toBe(false);
+  });
+});

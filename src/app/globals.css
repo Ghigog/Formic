@@ -1619,3 +1619,15 @@
     }
   }
 }
+
+/* While a selection drag that began in the PM thread is in progress, only the
+   thread is selectable, so the selection stays inside it while it scrolls. */
+[data-pm-selecting] body * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+[data-pm-selecting] .pm-thread,
+[data-pm-selecting] .pm-thread * {
+  -webkit-user-select: text;
+  user-select: text;
+}

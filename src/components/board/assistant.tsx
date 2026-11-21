@@ -722,6 +722,22 @@ function Shade({
       });
   }, [a.open, list]);
 
+  // While a drag that began in the thread is in progress, everything else is
+  // unselectable (globals.css), so the browser keeps the selection inside the
+  // thread and keeps auto-scrolling it. Ending the drag only removes the
+  // attribute; the selection already made stays, so Copy still works.
+  useEffect(() => {
+    const root = document.documentElement;
+    const end = () => root.removeAttribute("data-pm-selecting");
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      end();
+    };
+  }, []);
+
   useEffect(() => {
     if (!a.open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && a.setOpen(false);
@@ -749,7 +765,7 @@ function Shade({
       }}
     >
       {a.open && <AutoTour id="chat" delay={500} />}
-      <header className="border-hairline flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
+      <header className="border-hairline flex select-none shrink-0 items-center gap-2 border-b px-4 py-2.5">
         <div className="w-[240px] max-w-[70%]">
           <AgentSelect
             slot="assistant"
@@ -772,7 +788,16 @@ function Shade({
         )}
       </header>
 
-      <div ref={list} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+      <div
+        ref={list}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          if ((e.target as Element).closest("button, a, input, textarea"))
+            return;
+          document.documentElement.setAttribute("data-pm-selecting", "");
+        }}
+        className="pm-thread flex-1 space-y-4 overflow-y-auto px-5 py-4"
+      >
         {a.messages.length === 0 ? (
           <div className="text-muted mx-auto max-w-[460px] pt-6 text-center text-[13px] leading-[1.6]">
             <p className="text-ink font-serif text-[15px]">
@@ -823,7 +848,7 @@ function Shade({
         )}
       </div>
 
-      <footer className="flex shrink-0 items-end gap-2 px-3 pt-1 pb-3">
+      <footer className="flex shrink-0 items-end select-none gap-2 px-3 pt-1 pb-3">
         {withComposer ? (
           <Composer
             a={a}
