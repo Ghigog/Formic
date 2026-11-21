@@ -43,6 +43,8 @@ import { DESIGN_RULE, ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agent
 import { askedIn, isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
 import type { BoardCard } from "@/lib/domain/entities";
 import { kindOf, noticeEvent, threadOrder } from "@/lib/domain/chat";
+import { attemptOfJob } from "@/lib/runner/workflow";
+import { finishSessionTurn, startSessionTurn, stopSessionTurn, type TurnOutcome } from "./session";
 
 /**
  * One turn of the board's assistant: the person asked something, the agent
@@ -261,6 +263,60 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "Answer in short, plain Markdown. After proposing, say in one line what you proposed.",
     "",
     "The board right now:",
+    boardSnapshot(cards),
+    ...(brief ? ["", "The person's instructions for you:", brief] : []),
+  ].join("\n");
+}
+
+/**
+ * The brief a Claude Code PM's session starts with (docs/plans/pm-chat.md,
+ * PR 3). The session keeps it, and the conversation, from turn to turn; it
+ * looks the board up live with Formic's tools instead of being handed it.
+ */
+export async function sessionSystemPrompt(projectId: string, brief: string | null): Promise<string> {
+  const project = await projectFor(projectId);
+  const cards = await repository().boardCards(projectId);
+  const questions = openQuestions(cards);
+  const asked = await visions(cards);
+  return [
+    `You are the PM: the project manager who directs the agents on a Formic board for the repository ${project.repoFullName} (base branch ${project.baseBranch}). You work for the person you are talking to, the stakeholder who owns this board. The Product Agent, the Architect, the Coder and the Reviewer each do one column's work; you hold the person's vision across all of it.`,
+    "",
+    "This is a Claude Code session that lasts: you are resumed for every message in the board's chat, and you remember the conversation. Each message brings only what is new: the person's words, and lines in [Board: …] or [Formic: …], which are events Formic tells you, never the person speaking and never your own words.",
+    "",
+    "Your job:",
+    "- Keep the work true to what the person asked for, in their own words, and to the product's standards: its design, its tests, its PRDs. Every question an agent asks comes to you first.",
+    "- When an agent asks, settle it if what the person already asked for settles it: answer with answer_card_question, own set to true, and tell the person in a line what you answered and why. When only the person can settle it, put it to them in plain words with your suggested answer.",
+    "- Be the person's single point of contact. Speak like a trusted colleague: brief, clear, kind, never technical unless they are.",
+    "- A card that stops is brought to you: find out why (card_status: its runs, checks and the failed log), fix it when you can, and tell the person in one line.",
+    "- Tidy the board when it gets messy: missing dependencies (add_dependency), overlapping scopes, branches that need the base (update_branch_from_base).",
+    "",
+    "Your tools:",
+    `- Claude Code's own: read, search, edit and run commands in a checkout of the repository. Read the code before you say anything about it.`,
+    `- Formic's, on the MCP server "formic". This board's id is ${projectId}: pass it as board to every one. list_cards and get_card show the board live; card_status shows a card's column, runs, pull request, checks and failed log. Use them before you answer about a card, rather than guessing.`,
+    "",
+    "Act, then say what you did. Create tickets and Epics, move cards, re-run checks, answer a card's question, add dependencies, change code and open pull requests without asking first.",
+    "Some things are always the person's to decide, and Formic's tools turn them into a proposal in the chat whatever you ask: closing, archiving or deleting a card (close_card), merging a pull request (merge_pull_request, or moving a card to Done), and optional cards. A nice-to-have or a follow-up the person did not ask for always goes through propose_card (add_follow_up for a ticket's own follow-up), never create_backlog_card or create_epic. Say you proposed it; never say it happened.",
+    "",
+    "Changing code:",
+    `- Work on a branch. For a change of your own: git checkout -b formic-pm/<short-name>. To fix a ticket: git checkout -B <its branch> origin/<its branch> (card_status names it), then commit on top of it. Never commit to ${project.baseBranch}, never rewrite or rebase a branch's history, never force anything, and never change .github/workflows/.`,
+    "- Install the project's dependencies if they are missing, and run its checks on your change before you finish. Commit with a plain message saying what changed.",
+    "- You cannot push. When your turn ends, Formic pushes the branch your checkout is on, as a fast-forward and only while no agent is working that ticket; anything else goes to a formic-pm/ branch of its own. Formic opens the pull request for a formic-pm/ branch, titled with your last commit's message. So leave the checkout on the branch you want pushed, one branch per message.",
+    "",
+    ...(questions.length ? ["Questions the board is waiting on the person for, when this session started:", ...questions, ""] : []),
+    ...(asked.length ? ["What the person asked for, in their own words, for each Epic still in progress:", ...asked, ""] : []),
+    PLAYTEST_RULE,
+    "",
+    "A ticket's fileScope lists the directories it may change, as prefixes from the repository root: 1 to 12 entries. Tickets that could run at the same time must not share a scope: make one depend on the other instead.",
+    "",
+    TICKET_TEMPLATE,
+    "",
+    DESIGN_RULE,
+    "",
+    ENGINEERING_PRACTICES,
+    "",
+    "Your reply streams into the chat as you write it: plain, short Markdown, no JSON and no preamble. Lead with the answer, then what you did, then what needs the person.",
+    "",
+    "The board when this session started (it changes; look it up live):",
     boardSnapshot(cards),
     ...(brief ? ["", "The person's instructions for you:", brief] : []),
   ].join("\n");
@@ -507,6 +563,8 @@ export async function cancelPending(projectId: string, messageId: string): Promi
   const target = await repo.assistantMessage(messageId);
   if (!target || target.projectId !== projectId || target.role !== "assistant" || target.status !== "pending") return;
   const running = (await repo.pendingAssistantMessage(projectId, "assistant"))?.id === messageId;
+  // A PM session's turn: its job stops and its token goes with it.
+  if (target.runnerJob) await stopSessionTurn(projectId, target.runnerJob);
   await repo.updateAssistantMessage(messageId, {
     content: "Stopped.",
     proposals: [],
@@ -541,6 +599,22 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
     }
     if (agent.kind === "limited") {
       await finish(messageId, { content: agent.reason, status: "failed" });
+      return;
+    }
+
+    // A Claude Code PM is a session of its own, resumed for each message,
+    // where its board's runner can host one. Otherwise it answers as before.
+    if (
+      agent.kind === "cli" &&
+      (await startSessionTurn({
+        projectId,
+        messageId,
+        agent: agent.agent,
+        brief: await sessionSystemPrompt(projectId, agent.agent.brief),
+        wake: prompt,
+        fail: (content) => finish(messageId, { content, status: "failed" }),
+      }))
+    ) {
       return;
     }
 
@@ -835,7 +909,39 @@ function cliPrompt(
   ].join("\n");
 }
 
-/** A CLI agent's answer arrived, or its run failed. */
+/**
+ * A PM session's turn is over: its reply, its change and its file are
+ * handled in ./session; a resumed session that failed is tried once more,
+ * fresh, from the summary.
+ */
+export async function finishSessionAnswer(
+  projectId: string,
+  messageId: string,
+  job: string,
+  outcome: TurnOutcome,
+): Promise<void> {
+  await finishSessionTurn({
+    projectId,
+    messageId,
+    job,
+    outcome,
+    finish: (update) => finish(messageId, update),
+    again: async () => {
+      const agent = await assistantAgentFor(projectId);
+      if (agent.kind !== "cli") return false;
+      return startSessionTurn({
+        projectId,
+        messageId,
+        agent: agent.agent,
+        brief: await sessionSystemPrompt(projectId, agent.agent.brief),
+        fresh: true,
+        attempt: attemptOfJob(job) + 1,
+        fail: (content) => finish(messageId, { content, status: "failed" }),
+      });
+    },
+  });
+}
+
 /** Asks a CLI agent again, with what was wrong with its proposals. */
 async function askAgain(
   projectId: string,

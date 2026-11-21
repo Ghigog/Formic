@@ -8,6 +8,7 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { prisma } from "./client";
 import type {
+  PmSessionRecord,
   AttachmentContent,
   AttachmentRef,
   CreateAttachmentInput,
@@ -658,6 +659,40 @@ export class PrismaRepository implements Repository {
       data: { revokedAt: new Date() },
     });
     return count;
+  }
+
+  async pmSession(projectId: string): Promise<PmSessionRecord | null> {
+    const row = await prisma().pmSession.findUnique({ where: { projectId } });
+    return row ? toPmSession(row) : null;
+  }
+
+  async savePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">> & Pick<PmSessionRecord, "sessionId" | "where">,
+  ): Promise<PmSessionRecord> {
+    const row = await prisma().pmSession.upsert({
+      where: { projectId },
+      create: { projectId, ...update },
+      update,
+    });
+    return toPmSession(row);
+  }
+
+  async updatePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">>,
+  ): Promise<boolean> {
+    const { count } = await prisma().pmSession.updateMany({ where: { projectId }, data: update });
+    return count > 0;
+  }
+
+  async pmSessionByJob(job: string): Promise<PmSessionRecord | null> {
+    const row = await prisma().pmSession.findFirst({ where: { turnJob: job } });
+    return row ? toPmSession(row) : null;
+  }
+
+  async deletePmSession(projectId: string): Promise<void> {
+    await prisma().pmSession.deleteMany({ where: { projectId } });
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
@@ -3113,3 +3148,8 @@ function toAuditRecord(row: {
 
 /** The one row of host_usage_check: the meter of the host this deployment runs on. */
 const HOST_METER = "vercel";
+
+function toPmSession(row: Omit<PmSessionRecord, "where"> & { where: string }): PmSessionRecord {
+  const where = row.where === "e2b" || row.where === "gitlab" ? row.where : "actions";
+  return { ...row, where };
+}

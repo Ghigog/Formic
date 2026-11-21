@@ -61,6 +61,62 @@ export const ASSISTANT_CHANGE_SUFFIX = "-change";
  */
 export const RUNNER_JOB_MINUTES = 60;
 
+/**
+ * Whether a repository's installed workflow can run the board's PM as a
+ * resumable session (the `session` input, docs/plans/pm-chat.md PR 3). One
+ * without it is dispatched as before, and the PM answers the old way.
+ */
+export function workflowTakesSession(workflow: string | null): boolean {
+  return !!workflow?.includes("inputs.session");
+}
+
+/**
+ * The script that puts the PM's session in place before Claude Code starts,
+ * shared by the GitHub workflow and the GitLab job. It collects the turn's
+ * handoff from Formic once (SESSION, a signed address): the session file,
+ * if there is one yet, and the board-scoped token for Formic's MCP server.
+ * It writes the file where \`claude --resume\` looks for it, the MCP config
+ * beside the other temp files, and prints the variables the agent's step
+ * reads as NAME=value lines. Nothing here is fatal to an ordinary run: it
+ * only runs when SESSION is set.
+ */
+export const SESSION_RESTORE_SCRIPT = String.raw`set -euo pipefail
+curl -fsS --retry 3 "$SESSION" -o "$RUNNER_TEMP/formic-session.json"
+id="$(jq -r '.sessionId' "$RUNNER_TEMP/formic-session.json")"
+token="$(jq -r '.mcp.token' "$RUNNER_TEMP/formic-session.json")"
+if [ -n "${"$"}{GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$token"; fi
+dir="$HOME/.claude/projects/$(pwd | sed 's/[^A-Za-z0-9]/-/g')"
+mkdir -p "$dir"
+if [ -n "$(jq -r '.file // ""' "$RUNNER_TEMP/formic-session.json")" ]; then
+  jq -r '.file' "$RUNNER_TEMP/formic-session.json" | base64 -d | gunzip > "$dir/$id.jsonl"
+  echo "FORMIC_SESSION_RESUME=1" >> "$FORMIC_ENV_OUT"
+fi
+jq '{mcpServers: {formic: {type: "http", url: .mcp.url, headers: {Authorization: ("Bearer " + .mcp.token)}}}}' "$RUNNER_TEMP/formic-session.json" > "$RUNNER_TEMP/formic-mcp.json"
+rm -f "$RUNNER_TEMP/formic-session.json"
+echo "FORMIC_SESSION_ID=$id" >> "$FORMIC_ENV_OUT"
+echo "FORMIC_MCP_CONFIG=$RUNNER_TEMP/formic-mcp.json" >> "$FORMIC_ENV_OUT"
+# The PM commits its own work, under its own name.
+git config user.name > /dev/null || git config user.name "Formic PM"
+git config user.email > /dev/null || git config user.email formic-agent@users.noreply.github.com`;
+
+/**
+ * The script that hands the PM's session back when Claude Code has finished,
+ * whatever happened: the session file (gzipped, base64) and the branch the
+ * checkout is on, posted to the same signed address. A failure is a warning,
+ * never the run's failure: the reply still reaches the chat, and the next
+ * turn falls back to Formic's summary.
+ */
+export const SESSION_SAVE_SCRIPT = String.raw`id="$(jq -Rr 'fromjson? | select(.type == "result") | (.session_id // empty)' "$FORMIC_STREAM" 2>/dev/null | tail -n 1 || true)"
+if [ -z "$id" ]; then id="${"$"}{FORMIC_SESSION_ID:-}"; fi
+file="$(ls "$HOME"/.claude/projects/*/"$id".jsonl 2>/dev/null | head -n 1 || true)"
+if [ -n "$id" ] && [ -n "$file" ]; then gzip -c "$file" | base64 -w0 > "$RUNNER_TEMP/formic-session.b64"; else : > "$RUNNER_TEMP/formic-session.b64"; fi
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+jq -n --arg id "$id" --arg branch "$branch" --rawfile file "$RUNNER_TEMP/formic-session.b64" '{sessionId: $id, branch: $branch, file: $file}' > "$RUNNER_TEMP/formic-session-up.json"
+if ! curl -fsS --retry 3 -X POST -H "content-type: application/json" --data-binary "@$RUNNER_TEMP/formic-session-up.json" "$SESSION" > /dev/null; then
+  echo "Could not save the PM's session; the next turn starts from Formic's summary."
+fi
+rm -f "$RUNNER_TEMP/formic-session.b64" "$RUNNER_TEMP/formic-session-up.json"`;
+
 /** What a workflow installed before the `timeout` input holds a job to. */
 export const LEGACY_JOB_MINUTES = 180;
 
@@ -421,6 +477,10 @@ on:
         description: Minutes the job may run, at most ${RUNNER_JOB_MINUTES}
         required: false
         default: "${RUNNER_JOB_MINUTES}"
+      session:
+        description: Where the board's PM session is collected from and saved to, or empty
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -505,6 +565,22 @@ ${cacheStep()}
             gemini) npm install -g @google/gemini-cli ;;
             *) echo "Unknown agent: $CLI"; exit 1 ;;
           esac
+
+      # The board's PM only, as a resumable Claude Code session: its session
+      # file and its board-scoped MCP token, collected once from Formic. It
+      # also fetches the repository's branches so the PM can work on a
+      # ticket's branch; the token that fetches them never reaches the agent.
+      # Skipped, and nothing below changes, when there is no session.
+      - name: Restore the PM's session
+        if: inputs.session != '' && inputs.cli == 'claude'
+        env:
+          SESSION: \${{ inputs.session }}
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          export FORMIC_ENV_OUT="$GITHUB_ENV"
+${indent(SESSION_RESTORE_SCRIPT, 10)}
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=$auth" fetch --quiet --no-tags --depth=50 origin '+refs/heads/*:refs/remotes/origin/*' || true
 
       # Ready before the agent starts, so it spends its turns on the ticket:
       # whatever toolchains the checkout uses (src/lib/toolchains), then the
@@ -630,6 +706,11 @@ ${indent(REPORTER_SCRIPT, 10)}
               printf '%s' '${NOTES_HOOK}' > "$RUNNER_TEMP/formic-hooks.json"
               args=(-p "$PROMPT" --output-format stream-json --verbose --settings "$RUNNER_TEMP/formic-hooks.json" --dangerously-skip-permissions)
               if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+              # The board's PM: its own session, resumed, with Formic's tools.
+              if [ -n "\${FORMIC_SESSION_ID:-}" ]; then
+                if [ "\${FORMIC_SESSION_RESUME:-}" = "1" ]; then args+=(--resume "$FORMIC_SESSION_ID"); else args+=(--session-id "$FORMIC_SESSION_ID"); fi
+                args+=(--mcp-config "$FORMIC_MCP_CONFIG")
+              fi
               claude "\${args[@]}" | tee -a "$FORMIC_STREAM"
               jq -Rrj 'fromjson? | select(.type == "result") | (.result // empty)' "$FORMIC_STREAM" > "$FORMIC_STDOUT"
               ;;
@@ -657,6 +738,17 @@ ${indent(REPORTER_SCRIPT, 10)}
               jq -Rrj 'fromjson? | select(.type == "message" and .role == "assistant") | (.content // empty)' "$FORMIC_STREAM" > "$FORMIC_STDOUT"
               ;;
           esac
+
+      # The PM's session back to Formic, whatever happened above.
+      - name: Save the PM's session
+        if: always() && inputs.session != '' && inputs.cli == 'claude'
+        # Never the run's failure: the reply still reaches the chat.
+        continue-on-error: true
+        env:
+          SESSION: \${{ inputs.session }}
+          FORMIC_STREAM: \${{ runner.temp }}/formic-stream.jsonl
+        run: |
+${indent(SESSION_SAVE_SCRIPT, 10)}
 
       # Whatever happened above: tell the reporter it is the last round, and
       # give it a moment to post the end of the stream and the final checkpoint.
@@ -699,7 +791,16 @@ ${indent(REPORTER_SCRIPT, 10)}
                 git reset -q -- .github/workflows
                 if ! git diff --cached --quiet; then
                   git commit -q -m "Changes from the board's assistant"
-                  git push "https://x-access-token:\${GH_TOKEN}@github.com/\${REPO}.git" "HEAD:refs/heads/formic-staging/\${JOB}${ASSISTANT_CHANGE_SUFFIX}"
+                  # A PM session's commits that this token may not push (a
+                  # workflow change) never cost the person its reply.
+                  if ! git push "https://x-access-token:\${GH_TOKEN}@github.com/\${REPO}.git" "HEAD:refs/heads/formic-staging/\${JOB}${ASSISTANT_CHANGE_SUFFIX}"; then
+                    if [ -z "\${FORMIC_SESSION_ID:-}" ]; then exit 1; fi
+                    echo "::warning::The PM's change could not be kept."
+                  fi
+                # A PM session commits its own work: that is kept too.
+                elif [ -n "\${FORMIC_SESSION_ID:-}" ] && [ "$(git rev-parse HEAD)" != "$FORMIC_START" ]; then
+                  git push "https://x-access-token:\${GH_TOKEN}@github.com/\${REPO}.git" "HEAD:refs/heads/formic-staging/\${JOB}${ASSISTANT_CHANGE_SUFFIX}" \
+                    || echo "::warning::The PM's change could not be kept."
                 fi
               fi
               # The answer, on its own: only it leaves on this branch.

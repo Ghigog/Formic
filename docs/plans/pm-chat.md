@@ -230,15 +230,54 @@ Files: `src/lib/assistant/turn.ts` (CLI path), new `src/lib/assistant/session/`,
 `src/lib/runner/gitlab-ci-config.ts`, `src/lib/runner/runner.ts`, `prisma/`,
 `docs/limits.md`.
 
-- [ ] `PmSession` store, encrypted, size-capped, summary kept per turn.
+- [x] `PmSession` store, encrypted, size-capped, summary kept per turn.
 - [ ] E2B: create, pause, resume, recreate from file.
-- [ ] Actions and GitLab: restore session file, resume, upload at end (additive workflow inputs).
-- [ ] Streaming into the chat; "Starting…" timer; E2B hint when absent.
+- [x] Actions and GitLab: restore session file, resume, upload at end (additive workflow inputs).
+- [ ] Streaming into the chat; "Starting…" timer; E2B hint when absent. (Streaming and the timer landed in 3a; the hint comes with E2B in 3b.)
 - [ ] Wake-ups from stuck tickets; fix cap; per-board rate limit; daily PM allowance.
-- [ ] Branch lock shared with ticket runs.
-- [ ] Fallback ladder; old chats seeded from a summary; Clear starts fresh.
-- [ ] API-key PMs unchanged.
+- [x] Branch lock shared with ticket runs.
+- [ ] Fallback ladder; old chats seeded from a summary; Clear starts fresh. (3a: steps 3 and 4, seeding and Clear; the E2B steps come in 3b.)
+- [x] API-key PMs unchanged.
 - [ ] Scratch-repo end-to-end check of the new workflow before merge.
+
+How it landed (PR 3a; 3b adds E2B, wake-ups, the fix cap, the rate limit
+and the daily allowance):
+
+- `pm_session` holds one row per board: Claude Code's session id, the
+  session file (gzipped JSONL, sealed with the vault, at most 8 MiB, else
+  dropped and the next turn starts fresh), the running summary
+  (`runningSummary`, the latest 30 lines, at most 6,000 characters, kept
+  after every turn), the current turn's job and its one-time handoff.
+  Deleted on Clear (`endPmSession`) and with the board (cascade).
+- `src/lib/assistant/session/`: `startSessionTurn` builds the turn's message
+  (`transcript.ts`: only what is new since the PM's last reply; a fresh
+  session gets `sessionSystemPrompt` plus the summary instead of a replay),
+  mints a PM token for the session and dispatches an `ask` run with the new
+  `session` input. The job collects the file and the token once from
+  `/api/runner/session` (signed for its job, 90 minutes), runs
+  `claude --resume <id>` (or `--session-id` when fresh) with
+  `--mcp-config` for Formic's MCP server, and posts the file and its
+  checkout's branch back. `finishSessionTurn` revokes the token, lands the
+  change, posts the session's own words as the reply (no JSON), and on a
+  resumed turn that failed starts it again fresh, with a "Reconnected"
+  notice. Stop cancels the job and revokes the token.
+- The workflow change is additive: one optional input, two steps that only
+  run with it, and a session branch in the claude command that only runs
+  when the restore step set its variables. A repository whose workflow (or
+  GitLab job) predates it is never sent the input (`runnerTakesSession`),
+  and its PM answers the old way until the setup PR refreshes it.
+- The PM cannot push. The job keeps its commits on the answer's
+  `-change` staging branch, as before, and `landPmChange` moves them:
+  never the base branch or `.github/workflows/`, a ticket's branch only as
+  a fast-forward while no agent run holds it, anything else onto
+  `formic-pm/<board>-<nonce>` with a pull request. The branch lock is a
+  lease (`src/lib/runner/branch-lock.ts`): a ticket run holds its branch for
+  its job's length, the PM for one move; a run waits up to a minute for the PM.
+- Streaming: the reporter's lines for a session turn are written into the
+  pending reply (its words, and a `›` line per tool call); the panel shows
+  them live, and "Starting… 0:12" until the first arrives.
+- The scratch-repo check is still to do: it needs a repository with the new
+  workflow and a Claude Code token.
 
 ### PR 4: Guests with memory
 

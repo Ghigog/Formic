@@ -374,6 +374,54 @@ describe("proposal cards", () => {
   });
 });
 
+describe("a PM session's reply", () => {
+  Element.prototype.scrollTo = vi.fn();
+  const claude = {
+    id: "c1", ownerId: null, column: null, name: "Claude Code", provider: "claude-code",
+    model: null, prompt: "", hasKey: true, keyHint: null, limitedUntil: null, limitNote: null,
+  } as unknown as AssistantControls["presets"][number];
+  afterEach(() => vi.useRealTimers());
+
+  it("says it is starting, with a running timer, before the job has said anything", () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    const asked = new Date(Date.now() - 12_000).toISOString();
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          presets: [claude],
+          presetId: "c1",
+          messages: [{ id: "r", role: "assistant", content: "", status: "pending", proposals: [], createdAt: asked }],
+        }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Starting… 0:12");
+    act(() => vi.advanceTimersByTime(3_000));
+    expect(screen.getByRole("status")).toHaveTextContent("Starting… 0:15");
+  });
+
+  it("shows its words as they stream in, with Stop still there", () => {
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          presets: [claude],
+          presetId: "c1",
+          messages: [{ id: "r", role: "assistant", content: "Looking at **T-4** now.\n\n› Formic: card status", status: "pending", proposals: [] }],
+        }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.getByTestId("pm-streaming")).toHaveTextContent("Looking at T-4 now.");
+    expect(screen.getByTestId("pm-streaming")).toHaveTextContent("› Formic: card status");
+    expect(screen.getByRole("status")).toHaveTextContent("Working…");
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+  });
+});
+
 describe("agent selector", () => {
   Element.prototype.scrollTo = vi.fn();
   const planner = {
