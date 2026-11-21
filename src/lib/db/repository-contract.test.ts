@@ -124,6 +124,18 @@ function contract(name: string, make: () => Repository) {
       expect(await repo.pmReadAt(user.id, "no-such-project")).toBeNull();
     });
 
+    it("keeps each chat message's kind: the person's, the PM's, a guest's and a notice", async () => {
+      const p = await repo.ensureProject({ ownerId: null, repoFullName: `acme/${randomUUID()}`, baseBranch: "main" });
+      await repo.addAssistantMessage({ projectId: p.id, role: "user", content: "hi" });
+      await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "hello" });
+      await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "from review", speaker: "reviewer" });
+      const notice = await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "T-1 is done.", kind: "notice" });
+      expect(notice.kind).toBe("notice");
+      expect((await repo.assistantMessage(notice.id))?.kind).toBe("notice");
+      const { messages } = await repo.assistantMessages(p.id);
+      expect(messages.map((m) => m.kind)).toEqual(["person", "pm", "guest", "notice"]);
+    });
+
     it("adds host usage per day and totals it from a given day on", async () => {
       // A random year far in the past, so this case meets neither a real
       // deployment's days nor an earlier run's on a database that is kept.

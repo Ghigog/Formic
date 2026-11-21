@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { assistantPick } from "@/lib/agents/board-agents";
 import { applyAction, checkAction, dismissAction } from "@/lib/assistant/actions";
+import { postPmMessage } from "@/lib/assistant/pm-messages";
 import { asSignedIn, currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
 import { repository } from "@/lib/db";
@@ -51,7 +52,8 @@ async function postHandler(req: Request) {
     try {
       if (!checked.ok) throw new Error(checked.problem);
       const done = await applyAction(project.id, checked.action, user.id);
-      await repo.addAssistantMessage({ projectId: project.id, role: "assistant", content: done, playtestId: message.playtestId });
+      // What happened is Formic's word, not the PM's: "Opened pull request #726", "Re-running…".
+      await postPmMessage(project.id, { content: done, playtestId: message.playtestId ?? undefined });
     } catch (e) {
       proposals[body.data.index] = {
         ...proposal,

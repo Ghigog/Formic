@@ -772,6 +772,9 @@ model AssistantMessage {
   runnerAgent String?
   /// Who a reply comes from: "assistant", a column role or "sentinel:<id>".
   speaker     String   @default("assistant")
+  /// "person", "pm", "guest" or "notice" (Formic's own word on the board,
+  /// never the PM's). See src/lib/domain/chat.ts.
+  kind        String   @default("pm")
   /// The playtest a note was written in, and its replies. See docs/plans/playtest.md.
   playtestId  String?
   createdAt   DateTime @default(now())

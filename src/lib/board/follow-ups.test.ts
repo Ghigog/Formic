@@ -55,6 +55,15 @@ describe("recordFollowUps triage", () => {
     expect(rec.outcome).toEqual({ kind: "added", key: `${epic.key}-T2`, cardId: added.id });
   });
 
+  it("makes a needed follow-up wait for the ticket it came from", async () => {
+    const { ticket } = await seed();
+    await recordFollowUps(ticket.id, [needed]);
+    const rec = (await repository().ticketDetail(ticket.id))!.followUps.find((f) => f.title === needed.title)!;
+    const cardId = rec.outcome?.kind === "added" ? rec.outcome.cardId : "";
+    const card = (await repository().boardCards(PROJECT)).find((c) => c.id === cardId)!;
+    expect(card.dependsOn).toEqual([ticket.id]);
+  });
+
   it("creates no ticket for a nice one and stores it as pending", async () => {
     const { epic, ticket } = await seed();
     expect((await repository().ticketsForEpic(epic.id)).length).toBe(1);

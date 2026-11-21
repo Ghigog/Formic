@@ -183,6 +183,34 @@ describe("approval arriving after the last CI report", () => {
   });
 });
 
+describe("follow-ups and \"is done\"", () => {
+  const verdict = { summary: "ok", detail: "ok" };
+  const notices = async () => (await repository().assistantMessages(PROJECT)).messages.filter((m) => m.kind === "notice");
+
+  it("says nothing when the Reviewer approves, and tells the person once the pull request merges", async () => {
+    const { ticketId, prNumber, headSha } = await seedApproved(true);
+    // Still running: the approval cannot merge it yet.
+    (await vcs.pullRequest(prNumber) as { checks?: unknown[] }).checks = [
+      { name: "ci", status: "in_progress", conclusion: null },
+    ];
+    await repository().updateTicket(ticketId, {
+      reviewedSha: null,
+      followUps: [{ title: "Polish the copy", why: "Nice to have.", points: 1, need: "nice", outcome: { kind: "pending" } }],
+    });
+
+    await approve(PROJECT, (await repository().ticketDetail(ticketId))!, prNumber, headSha, verdict);
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
+    expect(await notices()).toEqual([]);
+
+    MockVcsClient.setPull(prNumber, { merged: true, state: "closed" });
+    await markMergedExternally(PROJECT, prNumber);
+    const [done, ...rest] = await notices();
+    expect(rest).toEqual([]);
+    expect(done!.content).toContain("T-1 · First is done.");
+    expect(done!.proposals.map((p) => p.summary)).toEqual(["Add ticket: Polish the copy (1 pt)"]);
+  });
+});
+
 describe("a merge that fails", () => {
   it("rolls the ticket back with the reason, awarding nothing and releasing nothing", async () => {
     const { ticketId, dependentId, prNumber, headSha } = await seedApproved(true);

@@ -29,8 +29,8 @@ export async function proposeRubricFixes(projectId: string, fixIds: string[]): P
   const states = await sentinelsFor(projectId);
   const lines = [
     fixes.length === 1
-      ? "An agent found a rubric check that looks wrong. I have not changed it; it is yours to decide."
-      : "Agents found rubric checks that look wrong. I have not changed any; they are yours to decide.",
+      ? "An agent found a rubric check that looks wrong. Nothing changes until you decide."
+      : "Agents found rubric checks that look wrong. Nothing changes until you decide.",
   ];
   const proposals = fixes.map((f) => {
     const who = findSentinel(f.sentinel)?.who ?? f.sentinel;

@@ -99,7 +99,7 @@ describe("landRevision", () => {
     expect((await landRevision("r1", check)).ok).toBe(false);
     expect(reviseCalibration).not.toHaveBeenCalled();
     expect(fix.status).toBe("failed");
-    expect((postPmMessage.mock.calls[0]![1] as { content: string }).content).toContain("did not change");
+    expect((postPmMessage.mock.calls[0]![1] as { content: string }).content).toContain("was not changed");
   });
 
   it("fails the fix when the rubric was recalibrated during the run", async () => {
@@ -115,6 +115,6 @@ describe("landRevision", () => {
     expect(reviseCalibration).not.toHaveBeenCalled();
     expect(calibration.rubric).toEqual(rubric);
     expect(fix.status).toBe("failed");
-    expect((postPmMessage.mock.calls[0]![1] as { content: string }).content).toContain("did not change");
+    expect((postPmMessage.mock.calls[0]![1] as { content: string }).content).toContain("was not changed");
   });
 });

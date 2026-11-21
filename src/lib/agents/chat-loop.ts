@@ -57,6 +57,8 @@ export interface PastMessage {
   images?: PastImage[];
   /** Every picture the message had, for a CLI agent that downloads them by link. */
   files?: AttachmentSummary[];
+  /** Formic's own word on the board (a notice), not the person's or the model's. */
+  notice?: boolean;
 }
 
 const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);

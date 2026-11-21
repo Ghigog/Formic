@@ -80,6 +80,7 @@ import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { provider as providerInfo } from "@/lib/llm/providers";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
+import { kindOf, type MessageKind } from "@/lib/domain/chat";
 
 /**
  * Runs the whole board with no database. Used when DATABASE_URL is unset so a
@@ -2394,6 +2395,7 @@ export class MemoryRepository implements Repository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    kind?: MessageKind;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
     playtestId?: string | null;
@@ -2405,6 +2407,7 @@ export class MemoryRepository implements Repository {
       speaker: "assistant",
       createdAt: new Date(),
       ...input,
+      kind: input.kind ?? kindOf(input),
       playtestId: input.playtestId ?? null,
       cards: input.cards ?? [],
       attachments: [],

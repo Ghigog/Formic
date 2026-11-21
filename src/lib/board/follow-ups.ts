@@ -19,8 +19,8 @@ import type { BlockedByFix } from "@/lib/agents/ports";
 
 /**
  * Keeps what an agent proposed on its ticket, beside what was there. A needed
- * follow-up becomes a ticket at the end of To Do at once; a nice one waits as
- * pending. A repeat of one already recorded does neither.
+ * follow-up becomes a ticket at the end of To Do at once, depending on the
+ * ticket it came from; a nice one waits as pending. A repeat of one already recorded does neither.
  */
 export async function recordFollowUps(ticketId: string, more: FollowUp[]): Promise<void> {
   if (more.length === 0) return;
@@ -33,7 +33,8 @@ export async function recordFollowUps(ticketId: string, more: FollowUp[]): Promi
     if (had.has(f.title.toLowerCase())) {
       merged.push(f);
     } else if (f.need === "needed") {
-      const card = await addFollowUpTicket(ticket.projectId, ticket, f);
+      // It builds on the work it was found in, so it waits for that to merge.
+      const card = await addFollowUpTicket(ticket.projectId, ticket, f, { after: true });
       merged.push({ ...f, outcome: { kind: "added", key: card.key, cardId: card.id } });
     } else {
       merged.push({ ...f, outcome: { kind: "pending" } });
@@ -64,6 +65,8 @@ export async function addFollowUpTicket(
   projectId: string,
   source: TicketDetail,
   followUp: FollowUp,
+  /** Make it depend on the ticket it came from. */
+  options: { after?: boolean } = {},
 ): Promise<BoardCard> {
   const repo = repository();
   // cardById is null for a standalone holder in the database, and the holder
@@ -106,6 +109,7 @@ export async function addFollowUpTicket(
     },
   ]);
   const card = created!;
+  if (options.after) await repo.addDependencies([{ ticketId: card.id, dependsOnTicketId: source.id }]);
   if (!realEpic) {
     await repo.move({
       cardId: card.id,
@@ -194,7 +198,7 @@ export async function requestFix(projectId: string, source: TicketDetail, fix: B
     });
   } else {
     await postPmMessage(projectId, {
-      content: `${source.key} is blocked: ${fix.check} fails and its change does not touch it. ${fix.cause}\n\nThe fix needs to go first, so I added ${card.key}: ${fix.bug.title}. Shall I start it?`,
+      content: `${source.key} is blocked: ${fix.check} fails and its change does not touch it. ${fix.cause}\n\nThe fix needs to go first: added ${card.key}: ${fix.bug.title}. Start it?`,
       cards: [{ id: card.id, key: card.key, title: card.title }],
       proposals: [
         {

@@ -3,6 +3,7 @@
 import { mergeMessages } from "./merge-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AttachmentSummary } from "@/lib/domain/entities";
+import type { MessageKind } from "@/lib/domain/chat";
 import type { SubscribeToEvents } from "@/components/board/ticket-drawer";
 
 /** One message, as the assistant API returns it. */
@@ -13,6 +14,8 @@ export interface AssistantMessageView {
   status: "done" | "pending" | "failed";
   /** Who a reply is from: "assistant", a column role or "sentinel:<id>". */
   speaker?: string;
+  /** person, pm, guest or notice (Formic's own word, a timeline line). Implied by role and speaker when absent. */
+  kind?: MessageKind;
   /** When it was written (ISO). */
   createdAt?: string;
   /** Cards it links to. */
@@ -59,11 +62,9 @@ async function send(
   url: string,
   method: string,
   body?: unknown,
-  signal?: AbortSignal,
 ): Promise<State> {
   const res = await fetch(url, {
     method,
-    signal,
     headers:
       body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -99,7 +100,6 @@ export function useAssistant(enabled: boolean, subscribe?: SubscribeToEvents) {
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
   const [asking, setAsking] = useState(false);
-  const asked = useRef<AbortController | null>(null);
 
   useEffect(() => {
     alive.current = true;
@@ -115,7 +115,6 @@ export function useAssistant(enabled: boolean, subscribe?: SubscribeToEvents) {
       setError(null);
       setState(next);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
     }
   }, [setState]);
@@ -175,34 +174,32 @@ export function useAssistant(enabled: boolean, subscribe?: SubscribeToEvents) {
 
   const ask = useCallback(
     async (text: string, speakers?: string[], requestId?: string) => {
-      const controller = new AbortController();
-      asked.current = controller;
       setAsking(true);
       try {
         await run(() =>
-          send(
-            "/api/assistant",
-            "POST",
-            { text, ...(speakers ? { speakers } : {}), ...(requestId ? { requestId } : {}) },
-            controller.signal,
-          ),
+          send("/api/assistant", "POST", {
+            text,
+            ...(speakers ? { speakers } : {}),
+            ...(requestId ? { requestId } : {}),
+          }),
         );
       } finally {
-        if (asked.current === controller) asked.current = null;
-        if (alive.current && !controller.signal.aborted) setAsking(false);
+        if (alive.current) setAsking(false);
       }
     },
     [run],
   );
-  /** Give up on the question being sent; the box is free again at once. */
-  const stop = useCallback(() => {
-    asked.current?.abort();
-    asked.current = null;
-    setAsking(false);
-    setError(null);
-    // The POST only enqueues the answer: cancel it on the server too.
-    void run(() => send("/api/assistant", "PATCH"));
-  }, [run]);
+  /**
+   * The person pressed Stop on one pending reply. Only that reply stops, as
+   * "Stopped."; sending another message never stops one, it queues.
+   */
+  const stop = useCallback(
+    (messageId: string) => {
+      setError(null);
+      void run(() => send("/api/assistant", "PATCH", { messageId }));
+    },
+    [run],
+  );
   const clear = useCallback(
     () => run(() => send("/api/assistant", "DELETE")),
     [run],
